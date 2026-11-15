@@ -9,7 +9,7 @@ import { openExternal } from "../../../../platform/tauri/openExternal";
 import { Button } from "../../../../shared/ui/Button";
 import { LoadingText } from "../../../../shared/ui/LoadingText";
 import { Copy, ExternalLink } from "../../../../shared/ui/icons";
-import { SettingsFeedback } from "../settingsControls";
+import { SettingsFeedback } from "../../../../shared/ui/settings";
 import {
   pollMicrosoftDeviceSignIn,
   startMicrosoftDeviceSignIn,

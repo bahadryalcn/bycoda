@@ -1,14 +1,14 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { ScrollArea, scrollAreaAttributes } from "../../../shared/ui/ScrollArea";
-import { SettingsFeedback } from "./settingsControls";
+import { SettingsFeedback } from "../../../shared/ui/settings";
 import { useContext, useEffect, useId, useRef, useState } from "react";
 import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { t, useLocale } from "../../../shared/i18n";
 import { AgentMarkdown } from "../../sessions/public/AgentMarkdown";
 import { POLICIES } from "../model/policies";
-import { RevealedSetting, Select, settingDomId } from "./settingsControls";
+import { RevealedSetting, Select, settingDomId } from "../../../shared/ui/settings";
 import "./policies.css";
 
 export function PoliciesSettings() {

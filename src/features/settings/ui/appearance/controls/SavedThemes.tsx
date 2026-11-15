@@ -12,7 +12,7 @@ import { Pencil, RefreshCw, Trash2 } from "../../../../../shared/ui/icons";
 import { ACCENT_COLOR_DEFAULT, THEME_DARK_LIGHTNESS_DEFAULT } from "../../../model/appearance";
 import { libraryImageSrc, useBackgroundLibrary } from "../../../model/backgroundLibrary";
 import { useSavedThemes, type SavedTheme } from "../../../model/savedThemes";
-import { SettingsFeedback } from "../../settingsControls";
+import { SettingsFeedback } from "../../../../../shared/ui/settings";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
 import { SaveLookButton } from "./SaveLookButton";
 import { paletteSwatches } from "./PaletteCards";

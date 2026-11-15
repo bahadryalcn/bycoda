@@ -7,7 +7,7 @@ import { Button } from "../../../shared/ui/Button";
 import { Text } from "../../../shared/ui/Text";
 import { Check, Copy } from "../../../shared/ui/icons";
 import { startContribution, useContributeFlow } from "../../projects/public/contribute";
-import { Row, SettingsFeedback } from "./settingsControls";
+import { Row, SettingsFeedback } from "../../../shared/ui/settings";
 
 function ContributeRow() {
   const flow = useContributeFlow();

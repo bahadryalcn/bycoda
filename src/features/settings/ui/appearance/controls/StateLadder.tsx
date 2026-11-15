@@ -16,7 +16,7 @@ import {
   subscribeInteractionTint,
   type InteractionTintSource,
 } from "../../../model/interactionTint";
-import { Group, Row, Segmented, Slider } from "../../settingsControls";
+import { Group, Row, Segmented, Slider } from "../../../../../shared/ui/settings";
 import "./ThemeControls.css";
 import "./StateLadder.css";
 

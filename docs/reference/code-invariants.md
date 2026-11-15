@@ -153,3 +153,10 @@ the export (`component-orphan`); an entry in `orphanAllowlist` needs a reason. T
 product importers. Native-control, loading, surface and interaction rules also cover progress bars,
 badges/chips, tab/segmented recipes and native `title` tooltips. Their messages name the shared owner.
 Existing debt is recorded per file/rule; only a new or widened rule justifies a baseline approval.
+
+## Optional settings help
+
+Long supporting copy beside settings labels belongs in `InfoPopover` or the `info` slot.
+The JSX view guard checks only literal translated secondary text directly under known
+shared labels; dynamic content, nested bodies and required status/error tones stay outside
+this narrow rule to avoid treating ordinary prose or runtime feedback as help.

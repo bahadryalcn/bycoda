@@ -52,7 +52,7 @@ it("reviews the explicit current target and approves exactly once without saving
   });
   expect(approve).not.toHaveBeenCalled();
   expect(document.body.textContent).toContain("alice@server.invalid:22");
-  expect(document.body.textContent).toContain("remote target can use identities");
+  expect(document.body.textContent).toContain("remote target can use your SSH agent identities");
   const action = button("Approve and connect");
   expect(action.disabled).toBe(false);
   await act(async () => {

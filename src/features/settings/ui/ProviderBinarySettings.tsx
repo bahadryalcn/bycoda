@@ -1,5 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
-import { SettingsFeedback } from "./settingsControls";
+import { SettingsFeedback } from "../../../shared/ui/settings";
 
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
@@ -212,7 +212,7 @@ export function ProviderBinaryControl({
         void pickFile({
           directory: false,
           multiple: false,
-          title: t("Select {p0} CLI executable", { p0: title }),
+          title: t("Choose {p0} executable", { p0: title }),
         })
           .then((path) => {
             if (mounted.current && generation === request.current && typeof path === "string") {

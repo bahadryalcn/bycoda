@@ -25,7 +25,7 @@ import {
   useDecorativeMotionPreference,
   usePrefersReducedMotion,
 } from "../model/decorativeMotion";
-import { Group, Row, Select, Toggle } from "./settingsControls";
+import { Group, Row, Select, Toggle } from "../../../shared/ui/settings";
 
 /** Tab and decorative animation preferences as one group with a single reset. */
 export function MotionSettings() {

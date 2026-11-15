@@ -8,7 +8,7 @@ import { PasswordField } from "../../../../shared/ui/PasswordField";
 import { Select } from "../../../../shared/ui/Select";
 import { TextField } from "../../../../shared/ui/TextField";
 import { ExternalLink } from "../../../../shared/ui/icons";
-import { AdvancedSettings, Row, Toggle } from "../settingsControls";
+import { AdvancedSettings, Row, Toggle } from "../../../../shared/ui/settings";
 import {
   APP_PASSWORD_PAGES,
   applyEmailPreset,

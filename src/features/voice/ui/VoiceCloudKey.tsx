@@ -4,7 +4,7 @@ import { Badge } from "../../../shared/ui/Badge";
 import { PasswordField } from "../../../shared/ui/PasswordField";
 import { t } from "../../../shared/i18n";
 import { errorText } from "../../../shared/lib/errors";
-import { Row, SettingsFeedback } from "../../settings/ui/settingsControls";
+import { Row, SettingsFeedback } from "../../../shared/ui/settings";
 import { localVoiceBackend, type VoiceCloudProvider } from "../model/localVoiceClient";
 
 const KEY_COPY: Record<VoiceCloudProvider, { label: () => string; description: () => string }> = {

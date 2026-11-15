@@ -4,7 +4,7 @@ import { Badge } from "../../../shared/ui/Badge";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Button } from "../../../shared/ui/Button";
 import { t } from "../../../shared/i18n";
-import { Row } from "../../settings/ui/settingsControls";
+import { Row } from "../../../shared/ui/settings";
 import { MicrophoneRecoveryAction } from "./MicrophoneRecoveryAction";
 import {
   isMicrophoneBlocked,

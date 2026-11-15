@@ -2,7 +2,7 @@ import { VoicePreferenceRow as Row } from "./VoicePreferenceRow";
 import { usePhraseDraft } from "../model/voiceSettingsDrafts";
 import { getLocale, t } from "../../../shared/i18n";
 import { TextField } from "../../../shared/ui/TextField";
-import { Toggle } from "../../settings/public/settingsControls";
+import { Toggle } from "../../../shared/ui/settings";
 import type { VoiceSettings as Preferences } from "../model/voiceSettings";
 import { defaultWakePhrases, WAKE_PHRASE_LIMITS } from "../model/voiceWakePhrase";
 import { isImeComposition } from "../../../shared/lib/keyboard";

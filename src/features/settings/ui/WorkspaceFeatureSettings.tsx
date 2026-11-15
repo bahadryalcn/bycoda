@@ -7,7 +7,7 @@ import {
   workspaceFeatureSettings,
   type WorkspaceFeatureId,
 } from "../model/workspaceFeatures";
-import { Row, SettingsFeedback, Toggle } from "./settingsControls";
+import { Row, SettingsFeedback, Toggle } from "../../../shared/ui/settings";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 
 export const WORKSPACE_FEATURE_CHOICES = [

@@ -10,7 +10,7 @@ import { ScrollArea } from "../../../../shared/ui/ScrollArea";
 import { Text } from "../../../../shared/ui/Text";
 import { Plus } from "../../../../shared/ui/icons";
 import { InboxAccountActions, InboxConnectionError } from "../InboxConnectionStatus";
-import { Row, SettingsFeedback } from "../settingsControls";
+import { Row, SettingsFeedback } from "../../../../shared/ui/settings";
 import type { SaveInputResult } from "./emailPresets";
 import {
   removeMessagingAccount,

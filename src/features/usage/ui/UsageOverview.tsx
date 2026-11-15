@@ -39,8 +39,8 @@ import {
 } from "../../providers/model/providerUsage";
 import { useLockSnapshot } from "../../group-lock/hooks/useGroupLock";
 import { isProjectLockedIn } from "../../group-lock/model/lockState";
-import { RevealedSetting } from "../../settings/ui/settingsControls";
-import { SettingsPageLoading } from "../../settings/public/settingsControls";
+import { RevealedSetting } from "../../../shared/ui/settings";
+import { SettingsPageLoading } from "../../settings/public/settingsPageLoading";
 import { recallUsageLoad, rememberUsageLoad } from "../model/usageLoadCache";
 import { railGroupLookup } from "../model/railGroups";
 import { ModelLabel } from "../../sessions/public/ModelLabel";

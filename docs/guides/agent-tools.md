@@ -61,8 +61,10 @@ so the screen moves as it does on the phone and input shows its result at once.
 iOS simulators, older Hosts and any stream failure use still captures instead,
 about one per second. Pausing keeps the picture that was on screen.
 
-Devices opens in view-only mode. The header shows whether control is active or in use
-by another controller. Claim control explicitly before sending input;
+Devices opens in view-only mode. The header has an **Allow device control** switch
+and a visible state: **View only**, **Control active**, or **Control in use**.
+A competing controller disables the switch and exposes its ownership reason.
+Claim control explicitly before sending input;
 release it when finished. Another controller's claim, an expired lease or an older
 Host without control ownership support prevents input. Switching conversations or
 computers does not transfer control. App and text drafts remain with their device.

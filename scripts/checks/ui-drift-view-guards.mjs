@@ -32,7 +32,7 @@ function isCard(opening) {
 }
 
 const isSettingsGroup = (opening, source) =>
-  opening.tagName.getText() === "Group" && /from\s+["'][^"']*settingsControls["']/.test(source);
+  opening.tagName.getText() === "Group" && /from\s+["'][^"']*shared\/ui\/settings["']/.test(source);
 
 /** Compile-time text of a JSX child or attribute value: literal, plain template or `t("...")`. */
 function staticText(node) {
@@ -153,12 +153,105 @@ function hoverOnly(className) {
   ].some(([hide, show]) => hidden(hide) && reveal(show, false) && !reveal(show, true));
 }
 
+/** Only known shared labels and direct translated copy: no prose-length guesses. */
+function inlineHelpGuard(tree, add) {
+  const names = new Map();
+  for (const statement of tree.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier))
+      continue;
+    const path = statement.moduleSpecifier.text;
+    const bindings = statement.importClause?.namedBindings;
+    if (!bindings || !ts.isNamedImports(bindings)) continue;
+    for (const item of bindings.elements) {
+      const imported = (item.propertyName ?? item.name).text;
+      if (
+        (/settingsControls$|shared\/ui\/settings(?:\/index)?$/.test(path) && imported === "Row") ||
+        (/shared\/ui\/(?:Text|Field|Heading|SectionLabel|SectionHeader|InfoPopover)$/.test(path) &&
+          ["Text", "Field", "Heading", "SectionLabel", "SectionHeader", "InfoPopover"].includes(
+            imported,
+          ))
+      )
+        names.set(item.name.text, imported);
+    }
+  }
+  const openingOf = (node) =>
+    ts.isJsxElement(node) ? node.openingElement : ts.isJsxSelfClosingElement(node) ? node : null;
+  const kindOf = (node) => {
+    const opening = openingOf(node);
+    return opening
+      ? (names.get(opening.tagName.getText()) ??
+          (/^(?:p|h[1-6])$/.test(opening.tagName.getText()) ? opening.tagName.getText() : null))
+      : null;
+  };
+  const label = (node) =>
+    [
+      "Row",
+      "Field",
+      "Heading",
+      "SectionLabel",
+      "SectionHeader",
+      "h1",
+      "h2",
+      "h3",
+      "h4",
+      "h5",
+      "h6",
+    ].includes(kindOf(node));
+  const insideInfo = (node) => {
+    for (let parent = node.parent; parent; parent = parent.parent) {
+      if (ts.isJsxAttribute(parent) && parent.name.getText() === "info") return true;
+      const opening = openingOf(parent);
+      if (
+        kindOf(parent) === "InfoPopover" ||
+        (opening && literal(attribute(opening, "slot")?.initializer) === "info")
+      )
+        return true;
+    }
+    return false;
+  };
+  const visit = (node) => {
+    if (ts.isJsxElement(node) && ["Text", "p"].includes(kindOf(node))) {
+      const tone = literal(attribute(node.openingElement, "tone")?.initializer);
+      const translated = node.children.some((child) => {
+        const expression = ts.isJsxExpression(child) && child.expression;
+        return (
+          expression &&
+          ts.isCallExpression(expression) &&
+          expression.expression.getText() === "t" &&
+          expression.arguments[0] &&
+          ts.isStringLiteralLike(expression.arguments[0]) &&
+          expression.arguments[0].text.length > 100
+        );
+      });
+      const parent = node.parent;
+      const siblings =
+        ts.isJsxElement(parent) || ts.isJsxFragment(parent)
+          ? parent.children
+              .filter((child) => !ts.isJsxText(child) || child.text.trim())
+              .filter((child) => !ts.isJsxExpression(child) || child.expression)
+          : [];
+      const previous = siblings[siblings.indexOf(node) - 1];
+      if (
+        ["muted", "secondary"].includes(tone) &&
+        translated &&
+        !insideInfo(node) &&
+        (["Row", "Field"].includes(kindOf(parent)) || (previous && label(previous)))
+      )
+        add("inline-help-text", node.getStart(tree));
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(tree);
+}
+
 /** Narrow JSX-only guards, routed through scanFile's existing suppression and ratchet. */
 export function scanViewGuards(file, source, add) {
   if (!file.endsWith(".tsx") || !/^src\/(?:app|features|shared)\//.test(file)) return;
   // Avoid parsing most source files; comments and string examples are rejected by the AST.
-  if (!/primary|card|opacity-0|invisible|Group|tooltip|Tooltip/.test(source)) return;
+  if (!/primary|card|opacity-0|invisible|Group|tooltip|Tooltip|muted|secondary/.test(source))
+    return;
   const tree = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  inlineHelpGuard(tree, add);
   let primaryReported = false;
   const visit = (node, cards = 0, groups = 0) => {
     if (ts.isFunctionLike(node)) cards = groups = 0;

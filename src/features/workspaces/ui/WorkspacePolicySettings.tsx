@@ -23,7 +23,7 @@ import { revealPath } from "../../../platform/tauri/fs";
 import type { Session } from "../../sessions/model/session";
 import { WorkspaceDirectoryRemoval } from "./WorkspaceDirectoryRemoval";
 import { WorkspaceReview } from "./WorkspaceReview";
-import { SettingsFeedback } from "../../settings/public/settingsControls";
+import { SettingsFeedback } from "../../../shared/ui/settings";
 import { CollectionToolbar } from "../../settings/ui/SettingsCollection";
 import type {
   ManagedWorkspace,

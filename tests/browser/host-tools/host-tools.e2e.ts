@@ -782,8 +782,8 @@ test("opens the browser and sends input using its control lease", async ({ page 
   ]);
   await page.keyboard.press("Escape");
   // The labelled control toggle releases the lease in one click.
-  await page.getByRole("button", { name: "Control active", exact: true }).click();
-  await expect(page.getByRole("button", { name: "View only", exact: true })).toBeVisible();
+  await page.getByRole("switch", { name: "Allow device control" }).click();
+  await expect(page.getByRole("switch", { name: "Allow device control" })).not.toBeChecked();
   await page.getByRole("button", { name: "Browser controls and setup", exact: true }).click();
   await expect(page.getByRole("button", { name: "Type text" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Refresh frame" })).toBeEnabled();

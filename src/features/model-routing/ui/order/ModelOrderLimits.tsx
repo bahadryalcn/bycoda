@@ -8,7 +8,7 @@ import { Badge } from "../../../../shared/ui/Badge";
 import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { UsageMeter } from "../../../../shared/ui/UsageMeter";
-import { Group, Row } from "../../../settings/public/settingsControls";
+import { Group, Row } from "../../../../shared/ui/settings";
 import { formatAgentMinutes, type MachineLimits } from "../../../tasks/public/hostSettings";
 import type { CapDraft, OrderDraft } from "../../model/modelRoutingDraft";
 

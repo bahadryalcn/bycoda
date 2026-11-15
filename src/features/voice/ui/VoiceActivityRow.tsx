@@ -3,7 +3,7 @@ import { useSyncExternalStore } from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { StatusDot } from "../../../shared/ui/StatusDot";
-import { Row } from "../../settings/public/settingsControls";
+import { Row } from "../../../shared/ui/settings";
 import { useActiveDictations, type ActiveDictation } from "../model/dictationActivity";
 import {
   isVoiceConversationActive,

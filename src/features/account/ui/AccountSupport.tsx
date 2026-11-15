@@ -7,7 +7,7 @@ import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { Select } from "../../../shared/ui/Select";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { TextField } from "../../../shared/ui/TextField";
-import { Group, Row } from "../../settings/public/settingsControls";
+import { Group, Row } from "../../../shared/ui/settings";
 import { accountApi, reportAccountFailure } from "../model/accountApi";
 import {
   EMPTY_SUPPORT_DRAFT,

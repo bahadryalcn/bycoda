@@ -11,7 +11,7 @@ import {
 import { Button } from "../../../shared/ui/Button";
 import { Check, Copy } from "../../../shared/ui/icons";
 import type { BuildIdentity } from "../../workspaces/model/contracts";
-import { SettingsFeedback } from "./settingsControls";
+import { SettingsFeedback } from "../../../shared/ui/settings";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 

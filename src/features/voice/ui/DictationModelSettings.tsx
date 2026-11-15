@@ -4,7 +4,7 @@ import { InlineError } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { ModelLabel } from "../../sessions/public/ModelLabel";
 import { modelDisplayName } from "../../sessions/public/modelDisplayName";
-import { Select } from "../../settings/public/settingsControls";
+import { Select } from "../../../shared/ui/settings";
 import { DICTATION_MODELS, dictationModel } from "../model/dictationModels";
 import { useTranscriptionModels } from "../hooks/useTranscriptionModels";
 import type { VoiceSettings } from "../model/voiceSettings";

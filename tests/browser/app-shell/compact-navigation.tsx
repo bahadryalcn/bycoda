@@ -232,7 +232,7 @@ function Fixture() {
                 </Badge>
               </div>
             ) : null}
-            <article className="ml-auto max-w-prose rounded-(--ui-radius-control) bg-(--ui-surface-raised) p-4">
+            <article className="ml-auto max-w-prose rounded-(--ui-radius-control) user-message-bubble bg-(--ui-message-bubble) p-4">
               <p className="text-ui-body">
                 Keep Sessions, Explorer and Changes where they are. Make project and tool navigation
                 easier to understand.

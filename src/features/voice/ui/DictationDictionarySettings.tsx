@@ -9,7 +9,7 @@ import { InlineError } from "../../../shared/ui/InlineError";
 import { TagInput } from "../../../shared/ui/TagInput";
 import { TextField } from "../../../shared/ui/TextField";
 import { Text } from "../../../shared/ui/Text";
-import { AdvancedSettings, Row, Select } from "../../settings/public/settingsControls";
+import { AdvancedSettings, Row, Select } from "../../../shared/ui/settings";
 import { useRecents } from "../../projects/public/recents";
 import { projectDisplayNameFrom, useProjectLabels } from "../../projects/public/projectNames";
 import type { VoiceSettings } from "../model/voiceSettings";

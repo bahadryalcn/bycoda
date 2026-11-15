@@ -18,7 +18,7 @@ import {
   Toggle,
   RevealedSetting,
   useSettingsPageReset,
-} from "./settingsControls";
+} from "../../../shared/ui/settings";
 
 const ActiveToolSettingsTab = createContext<ToolSettingsTab | null>(null);
 const ToolSettingsResetVersion = createContext(0);
@@ -39,7 +39,7 @@ export function ToolSettingsPage({ revealRequest = 0 }: { revealRequest?: number
   return (
     <ActiveToolSettingsTab.Provider value={tab}>
       <Tabs value={tab} onValueChange={setTab}>
-        <TabList label={t("Tool preferences")} className="flex-wrap">
+        <TabList label={t("Conversation tools")} className="flex-wrap">
           <Tab value="browser" className="shrink-0">
             {t("Browser")}
           </Tab>
@@ -50,7 +50,7 @@ export function ToolSettingsPage({ revealRequest = 0 }: { revealRequest?: number
             {t("Logs")}
           </Tab>
           <Tab value="devServers" className="shrink-0">
-            {t("Development Servers")}
+            {t("Development servers")}
           </Tab>
         </TabList>
         <TabPanel value="browser" keepMounted>

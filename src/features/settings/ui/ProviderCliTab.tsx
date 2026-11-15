@@ -4,7 +4,7 @@ import { isHarnessAvailable } from "../../../integrations/harness/core/availabil
 import { ProviderStatusGroup } from "../../providers/public/ProviderStatusGroup";
 import { t } from "../../../shared/i18n";
 import { DataTable, DataTableRow } from "../../../shared/ui/SortableDataTable";
-import { settingDomId } from "./settingsControls";
+import { settingDomId } from "../../../shared/ui/settings";
 
 /** Full-width CLI inventory. Rows stay mounted so setup drafts survive navigation. */
 export function ProviderCliTab({

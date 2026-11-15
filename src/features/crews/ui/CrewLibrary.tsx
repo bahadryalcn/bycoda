@@ -21,7 +21,7 @@ import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { TextField } from "../../../shared/ui/TextField";
 import { MoreHorizontal, Plus, Trash2 } from "../../../shared/ui/icons";
-import { Group } from "../../settings/ui/settingsControls";
+import { Group } from "../../../shared/ui/settings";
 import { CollectionToolbar } from "../../settings/ui/SettingsCollection";
 import { memberOf } from "../model/crewMembership";
 import { parseCrewAgent, type CrewAgent, type SavedCrewAgent } from "../model/crew";

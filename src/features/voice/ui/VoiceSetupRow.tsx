@@ -11,7 +11,7 @@ import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { Modal } from "../../../shared/ui/Modal";
 import { t } from "../../../shared/i18n";
-import { SettingsFeedback } from "../../settings/public/settingsControls";
+import { SettingsFeedback } from "../../../shared/ui/settings";
 import type { VoiceSettings as Preferences } from "../model/voiceSettings";
 import type { PathKey, VoiceSetup } from "./useVoiceSetup";
 import styles from "./VoiceSettings.module.css";

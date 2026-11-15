@@ -98,7 +98,12 @@ export function CollectionRow({
               "shrink-0 items-center gap-1 whitespace-nowrap tabular-nums",
             )}
           >
-            <Text size="micro" tone="secondary" as="span">
+            <Text
+              size="micro"
+              tone="secondary"
+              as="span"
+              className="inline-flex items-center gap-1"
+            >
               {trailing}
             </Text>
           </span>

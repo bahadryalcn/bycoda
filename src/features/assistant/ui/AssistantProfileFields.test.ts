@@ -11,7 +11,7 @@ const observed = vi.hoisted(() => ({
   defaultAvailable: true,
   automaticLabel: "Auto",
 }));
-vi.mock("../../settings/public/settingsControls", async () => {
+vi.mock("../../../shared/ui/settings", async () => {
   const { createElement } = await import("react");
   return {
     Row: ({ label, description, info, children }: any) =>

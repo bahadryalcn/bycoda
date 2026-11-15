@@ -266,6 +266,10 @@
   -webkit-user-select: none;
   -webkit-tap-highlight-color: transparent;
 }
+.scrubber:focus-visible {
+  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
+  outline-offset: var(--ui-focus-offset);
+}
 
 .srOnly {
   position: absolute;

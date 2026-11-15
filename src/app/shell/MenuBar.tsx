@@ -317,7 +317,7 @@ const MemoMenuBar = memo(function MenuBar({
           {
             kind: "item",
             id: "new_tab",
-            label: t("New Tab"),
+            label: t("New Session"),
             shortcut: shortcut("Tab: New", `${MOD}T`),
           },
           {

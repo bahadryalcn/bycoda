@@ -1,5 +1,5 @@
 import { t, useLocale } from "../../../../../shared/i18n";
-import { Group, Row, Segmented } from "../../settingsControls";
+import { Group, Row, Segmented } from "../../../../../shared/ui/settings";
 import { AppearanceSaveFeedback, type AppearanceSettings } from "../../useAppearanceSettings";
 import { isDefaultAccent } from "../../AppearancePreviews";
 import {

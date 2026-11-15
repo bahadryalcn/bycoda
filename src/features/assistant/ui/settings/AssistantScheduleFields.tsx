@@ -13,7 +13,7 @@ import styles from "./schedule.module.css";
 import viewStyles from "../AssistantView.module.css";
 import { Text } from "../../../../shared/ui/Text";
 import roleStyles from "../AssistantProfileFields.module.css";
-import { AdvancedSettings } from "../../../settings/public/settingsControls";
+import { AdvancedSettings } from "../../../../shared/ui/settings";
 
 const notificationOptions = [
   ["all", "All updates"],

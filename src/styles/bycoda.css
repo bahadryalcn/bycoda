@@ -97,7 +97,7 @@
 }
 .bycoda-titlebar {
   background: var(--ui-navigation-chrome);
-  border-block-end-color: var(--color-stroke);
+  border-block-end-color: var(--ui-pane-border);
 }
 .bycoda-project-rail {
   background: var(--bycoda-panel);
@@ -544,7 +544,7 @@ html.theme-light .project-sigil {
   min-height: var(--ui-pane-header-height);
   height: var(--ui-pane-header-height);
   background: var(--ui-navigation-chrome);
-  border-bottom: 1px solid var(--color-stroke);
+  border-bottom: 1px solid var(--ui-pane-border);
 }
 /* Keep the same native controls on the highest visible chrome row. */
 [data-workspace-chrome]:has(> [data-workspace-menubar]) {

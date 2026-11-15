@@ -14,7 +14,7 @@ import {
   SIDEBAR_BLUR_MAX,
 } from "../../../model/appearance";
 import { saveLiveBackground } from "../../../model/liveBackground";
-import { Group, Row, Slider, SettingsFeedback, Toggle } from "../../settingsControls";
+import { Group, Row, Slider, SettingsFeedback, Toggle } from "../../../../../shared/ui/settings";
 import { WindowGlassFeedback } from "../../WindowGlassFeedback";
 import { AppearanceSaveFeedback, type AppearanceSettings } from "../../useAppearanceSettings";
 

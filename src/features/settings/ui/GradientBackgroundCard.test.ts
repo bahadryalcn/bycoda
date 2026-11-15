@@ -9,7 +9,7 @@ import {
 } from "../model/workspaceBackground";
 import { retryAppearanceSave } from "../model/appearancePersistence";
 import { GradientBackgroundCard } from "./GradientBackgroundCard";
-import { RevealedSetting } from "./settingsControls";
+import { RevealedSetting } from "../../../shared/ui/settings";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 

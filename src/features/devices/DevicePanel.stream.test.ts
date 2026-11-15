@@ -129,7 +129,11 @@ it("follows the screen as video and stops still captures once the stream decodes
   await act(async () => vi.advanceTimersByTimeAsync(5000));
   expect(api.capture).toHaveBeenCalledTimes(captures);
   // Input no longer waits for a follow-up screenshot: the video shows the result.
-  await act(async () => container.querySelector<HTMLButtonElement>("[aria-pressed]")!.click());
+  await act(async () =>
+    container
+      .querySelector<HTMLButtonElement>('[role="switch"][aria-label="Allow device control"]')!
+      .click(),
+  );
   await act(async () => button("Home").click());
   expect(api.action).toHaveBeenCalledTimes(1);
   expect(api.capture).toHaveBeenCalledTimes(captures);

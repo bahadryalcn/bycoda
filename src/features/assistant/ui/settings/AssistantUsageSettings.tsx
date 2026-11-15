@@ -5,7 +5,7 @@ import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { LiveText } from "../../../../shared/ui/LiveText";
 import { Text } from "../../../../shared/ui/Text";
 import { Select } from "../../../../shared/ui/Select";
-import { Row } from "../../../settings/public/settingsControls";
+import { Row } from "../../../../shared/ui/settings";
 import styles from "./costUsage.module.css";
 import viewStyles from "../AssistantView.module.css";
 

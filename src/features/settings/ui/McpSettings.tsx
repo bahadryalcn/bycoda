@@ -8,7 +8,7 @@ import {
   type Provider,
 } from "./McpAddServer";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
-import { SettingsFeedback, Toggle } from "./settingsControls";
+import { SettingsFeedback, Toggle } from "../../../shared/ui/settings";
 import { Badge } from "../../../shared/ui/Badge";
 import { McpCapabilityStatus } from "./McpCapabilityStatus";
 import { Tooltip } from "../../../shared/ui/Tooltip";

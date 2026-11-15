@@ -116,7 +116,6 @@ export function RemoteDataStatus({
   return (
     <Alert
       data-remote-data-state={state.phase}
-      aria-live="polite"
       aria-busy={busy}
       tone={state.phase === "error" ? "danger" : "info"}
       icon={busy ? <Spinner /> : undefined}

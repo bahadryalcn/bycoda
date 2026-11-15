@@ -19,7 +19,7 @@ import {
   saveModelEnabled,
   type AgentModel,
 } from "../../sessions/public/models";
-import { Group, Row, Toggle } from "./settingsControls";
+import { Group, Row, Toggle } from "../../../shared/ui/settings";
 
 /** "200K context", with the upstream provider first for multi-provider harnesses. */
 function modelMeta(model: AgentModel): string | undefined {

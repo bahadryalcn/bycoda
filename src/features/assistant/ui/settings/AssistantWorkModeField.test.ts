@@ -7,7 +7,7 @@ const observed = vi.hoisted(() => ({
   patches: [] as AssistantProfilePatch[],
   defaultAvailable: true,
 }));
-vi.mock("../../../settings/public/settingsControls", async () => {
+vi.mock("../../../../shared/ui/settings", async () => {
   const { createElement } = await import("react");
   return {
     Row: ({ label, children }: any) =>

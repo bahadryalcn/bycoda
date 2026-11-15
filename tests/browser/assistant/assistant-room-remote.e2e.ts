@@ -23,7 +23,7 @@ for (const theme of ["light", "dark"])
       await expect(dialog.getByText("This Room is registered on its original Host.")).toBeVisible();
       await expect(
         dialog.getByText(
-          "The target project must be visible and the native identity trusted by both Hosts. Each connection requires native review.",
+          "The target project must be visible and the native identity trusted by both Hosts. Each connection needs native review.",
         ),
       ).toBeVisible();
       await expect(dialog.getByRole("button", { name: "Connect" })).toBeDisabled();

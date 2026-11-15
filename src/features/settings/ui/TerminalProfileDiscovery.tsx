@@ -1,5 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
-import { SettingsFeedback } from "./settingsControls";
+import { SettingsFeedback } from "../../../shared/ui/settings";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useContext, useEffect, useRef, useState } from "react";
@@ -7,7 +7,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { UserRound } from "../../../shared/ui/icons";
 import { Popover } from "../../../shared/ui/Popover";
-import { RevealedSetting } from "./settingsControls";
+import { RevealedSetting } from "../../../shared/ui/settings";
 import {
   providerAccounts,
   saveTerminalProviderAccount,
@@ -231,7 +231,7 @@ export function TerminalProfileDiscovery({
                     const path = await open({
                       directory: true,
                       multiple: false,
-                      title: t("Select terminal profile directory"),
+                      title: t("Choose terminal folder"),
                     });
                     if (current() && typeof path === "string") await connect(path, current);
                   })

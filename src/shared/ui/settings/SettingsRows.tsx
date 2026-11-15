@@ -1,57 +1,37 @@
-import { actionHostAttributes } from "../../../shared/ui/ActionHost";
-import { surfaceAttributes } from "../../../shared/ui/Surface";
-import { Text } from "../../../shared/ui/Text";
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useId,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { actionHostAttributes } from "../ActionHost";
+import { surfaceAttributes } from "../Surface";
+import { Text } from "../Text";
+import { useContext, useEffect, useId, useRef, useState, type ReactNode } from "react";
 
-import { FieldLabel } from "../../../shared/ui/Field";
-import { Select as SharedSelect, type SelectProps } from "../../../shared/ui/Select";
-import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
-import { Slider as SharedSlider } from "../../../shared/ui/Slider";
-import { Switch } from "../../../shared/ui/Switch";
-import { InlineMessage } from "../../../shared/ui/InlineError";
-import { Badge } from "../../../shared/ui/Badge";
-import { useTooltip } from "../../../shared/ui/Tooltip";
-import { Button } from "../../../shared/ui/Button";
-import { Heading } from "../../../shared/ui/Heading";
+import { FieldLabel } from "../Field";
+import { InlineMessage } from "../InlineError";
+import { Badge } from "../Badge";
+import { useTooltip } from "../Tooltip";
+import { Button } from "../Button";
+import { Heading } from "../Heading";
 import { SettingsOperationFeedback, type SettingsFeedbackProps } from "./SettingsFeedback";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
-import { Popover } from "../../../shared/ui/Popover";
-import { Info, RotateCcw } from "../../../shared/ui/icons";
+import { InfoPopover } from "../InfoPopover";
+import { Popover } from "../Popover";
+import { Info, RotateCcw } from "../icons";
 
-import { playCue } from "../model/sounds";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../i18n";
 
-// Reusable settings rows also appear in feature dialogs before SettingsView loads.
-import "./BycodaSettings.css";
+// Settings rows appear in feature dialogs before SettingsView loads, so they own their CSS.
+import "./settings.css";
 
-export const settingDomId = (id: string) => `setting-${id}`;
-
-/** The row or group Settings just jumped to, so it can flash where you landed. */
-export const RevealedSetting = createContext<string | null>(null);
-
-/** Layer editors use secondary subheadings within their parent section. */
-export const LayerEditorHeadings = createContext(false);
-
-/** The page already explains automatic saving; keep operation feedback local. */
-export const PageAutomaticSaveHint = createContext(false);
-
-export {
-  SettingsPageResetRegistry,
-  useSettingsPageReset,
-  type SettingsPageResetRegistration,
-} from "./settingsPageReset";
+import {
+  LayerEditorHeadings,
+  PageAutomaticSaveHint,
+  RevealedSetting,
+  settingDomId,
+} from "./settingsContexts";
 
 /**
  * Small reset icon shown next to a title only while a setting differs from its default.
  * Rows and groups render it from `modified` + `onReset`; use it directly for custom headers.
+ * @group actions
+ * @use Restore-default icon beside a custom settings title.
+ * @avoid Any other action: Button. On a Row or Group: pass `modified` and `onReset` instead.
  */
 export function SettingResetButton({
   onReset,
@@ -63,7 +43,7 @@ export function SettingResetButton({
   label?: string;
   disabled?: boolean;
 }) {
-  useLocale();
+  const t = useT();
   const name = label ?? t("Restore default");
   return (
     <Button
@@ -108,6 +88,13 @@ type SettingDetails = {
   feedback?: ReactNode;
 };
 
+/**
+ * Operation feedback for a settings row or group (loading, success, error, empty, warning), with
+ * the inset empty-state presentation Settings uses inside a frame.
+ * @group feedback
+ * @use Feedback tied to one settings operation, passed as `feedback` on a Row or Group.
+ * @avoid A page-level notice: Alert. One validation message: InlineError.
+ */
 export function SettingsFeedback(props: SettingsFeedbackProps) {
   if (props.state !== "empty" || props.presentation !== "inset")
     return <SettingsOperationFeedback {...props} />;
@@ -191,7 +178,7 @@ function SettingContext({ scope, dependency }: Pick<SettingDetails, "scope" | "d
 
 /** Visible persistence state only: errors, unsaved/saving/saved and explicit-save guidance. */
 function SettingStatus({ persistence }: Pick<SettingDetails, "persistence">) {
-  useLocale();
+  const t = useT();
   const state = persistence?.state;
   const showSaveHint = persistence?.mode === "explicit";
   if (!persistence || !(showSaveHint || (state && state !== "idle"))) return null;
@@ -225,7 +212,7 @@ function SettingStatus({ persistence }: Pick<SettingDetails, "persistence">) {
 
 /** Screen-reader description for a group or row; the automatic-save note lives here, not on screen. */
 function SettingDescriptionText({ persistence }: Pick<SettingDetails, "persistence">) {
-  useLocale();
+  const t = useT();
   const pageExplainsSaving = useContext(PageAutomaticSaveHint);
   return persistence?.mode === "automatic" && !pageExplainsSaving ? (
     <span className="sr-only">{t("Changes save automatically")}</span>
@@ -284,6 +271,9 @@ function useControlDescriptions(descriptionId: string | undefined) {
  * must start open (for example a form the user opened on purpose).
  * A search/reveal landing on this section or one of its `settingIds` opens it. Keep children to
  * Rows; never use it to hold only a paragraph (use `info` on the related row instead).
+ * @group layout
+ * @use Closing disclosure row for secondary settings inside a settings Group.
+ * @avoid A standalone collapsible panel: Disclosure. A paragraph of help: `info` on the Row.
  */
 export function AdvancedSettings({
   children,
@@ -301,7 +291,7 @@ export function AdvancedSettings({
   /** Retain draft/control identity while making a closed body hidden and inert. */
   keepMounted?: boolean;
 }) {
-  useLocale();
+  const t = useT();
   const headingId = useId();
   const contentId = useId();
   const revealed = useContext(RevealedSetting);
@@ -365,7 +355,12 @@ export function AdvancedSettings({
   );
 }
 
-/** Shared page help and optional page reset, reachable by pointer and keyboard. */
+/**
+ * Shared page help and optional page reset, reachable by pointer and keyboard.
+ * @group overlay
+ * @use The "About this page" button of a settings page: description, automatic-save note, page reset.
+ * @avoid A hint on one row or group: `info` on Row or Group. Any other hint: InfoPopover.
+ */
 export function SettingsPageHelp({
   description,
   automaticSave = false,
@@ -377,7 +372,7 @@ export function SettingsPageHelp({
   className?: string;
   reset?: { label: string; onClick: () => void };
 }) {
-  useLocale();
+  const t = useT();
   const anchor = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   if (!description && !automaticSave && !reset) return null;
@@ -446,6 +441,9 @@ export function SettingsPageHelp({
  * - `modified` + `onReset`: small reset icon next to the title while the group differs from default.
  * - `variant`: kept for existing callers; `"box"` hints an ownership/editing unit and uses the
  *   same frame.
+ * @group layout
+ * @use A titled topic of related settings rows on a settings page or in a feature dialog.
+ * @avoid Content that is not a setting: Surface. A collapsible panel: Disclosure. One setting: Row.
  */
 export function Group({
   id,
@@ -582,6 +580,9 @@ export function Group({
  *   "your choice is preserved" text.
  * - `disabled`: the same dimmed, inert state without the indent (e.g. while an operation runs).
  * - `stacked`: wide controls (fields, editors, lists) sit under the label at full width.
+ * @group layout
+ * @use One setting inside a Group: label and description left, control right.
+ * @avoid A row of a data list: CollectionRow. A whole topic: Group. A labelled form field outside settings: Field.
  */
 export function Row({
   id,
@@ -732,120 +733,4 @@ export function Row({
       {reasonTip.tooltip}
     </div>
   );
-}
-
-export function Segmented<T extends string>({
-  label,
-  value,
-  options,
-  onChange,
-  optionIdPrefix,
-}: {
-  label: string;
-  value: T;
-  options: { value: T; label: string }[];
-  onChange: (value: T) => void;
-  optionIdPrefix?: string;
-}) {
-  return (
-    <SegmentedControl
-      label={label}
-      value={value}
-      options={options}
-      onValueChange={(next) => {
-        const selected = options.find((option) => option.value === next);
-        if (selected) onChange(selected.value);
-      }}
-      selectionRole="radio"
-      optionIdPrefix={optionIdPrefix}
-    />
-  );
-}
-
-export function Slider({
-  label,
-  value,
-  display,
-  min,
-  max,
-  step = 1,
-  onChange,
-  disabled = false,
-  onValueCommit,
-  className,
-}: {
-  label: string;
-  value: number;
-  display: string;
-  min: number;
-  max: number;
-  step?: number;
-  onChange: (value: number) => void;
-  disabled?: boolean;
-  onValueCommit?: (value: number) => void;
-  /** Extra class on the track element, for a caller-owned track role (for example a hue ramp). */
-  className?: string;
-}) {
-  return (
-    <div className="flex w-56 max-w-full items-center gap-3">
-      <SharedSlider
-        label={label}
-        hideLabel
-        showValue={false}
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        disabled={disabled}
-        className={["min-w-0 flex-1", className].filter(Boolean).join(" ")}
-        format={() => display}
-        onValueChange={onChange}
-        onValueCommit={onValueCommit}
-      />
-      <Text
-        size="caption"
-        tone={disabled ? "disabled" : "primary"}
-        className="min-w-[5ch] shrink-0 text-right tabular-nums"
-      >
-        {display}
-      </Text>
-    </div>
-  );
-}
-
-export function Toggle({
-  label,
-  on,
-  onChange,
-  disabled = false,
-}: {
-  label: string;
-  on: boolean;
-  onChange: (on: boolean) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <Switch
-      type="button"
-      aria-label={label}
-      checked={on}
-      compact
-      disabled={disabled}
-      onCheckedChange={(next) => {
-        onChange(next);
-        playCue("switch");
-      }}
-      className="settings-toggle shrink-0"
-    />
-  );
-}
-
-/** Settings compatibility facade; shared UI owns the choice interaction. */
-export function Select({
-  onChange,
-  ...props
-}: Omit<SelectProps, "onValueChange"> & {
-  onChange: (value: string) => void;
-}) {
-  return <SharedSelect {...props} onValueChange={onChange} />;
 }

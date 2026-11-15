@@ -7,7 +7,7 @@ import { useThemeGeneratorModel } from "./useThemeGeneratorModel";
 import { generatorSession, useGeneratorState } from "./themeGeneratorSession";
 import { themeSuggestionFailureDetail } from "./themeSuggestionRequest";
 import type { BackgroundGradientSuggestion } from "../../../model/backgroundGradient";
-import { SettingsFeedback } from "../../settingsControls";
+import { SettingsFeedback } from "../../../../../shared/ui/settings";
 import { requestBackgroundSuggestion } from "./backgroundSuggestionRequest";
 import styles from "./GradientStrip.module.css";
 import { isImeComposition } from "../../../../../shared/lib/keyboard";

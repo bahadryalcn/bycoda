@@ -20,17 +20,13 @@ export function BootFailure({ error, onRetry }: { error: unknown; onRetry: () =>
             />
           </div>
         }
-        title={PRODUCT_IDENTITY.displayName + t(" couldn’t start")}
+        title={t("Couldn’t start")}
         description={
           isModuleLoadError(error)
             ? import.meta.env.DEV
-              ? t(
-                  "The development server could not load an application module. Reload the app. If this continues, check the dev server output and restart it.",
-                )
-              : t(
-                  "An application module could not be loaded. Reload the app to get the latest files.",
-                )
-            : t("Your saved workspace is still available. Reload the app to try again.")
+              ? t("Reload, or check the development server output.")
+              : t("Reload to restore the application files.")
+            : t("Your saved workspace is still available.")
         }
         error={error}
         onRetry={onRetry}

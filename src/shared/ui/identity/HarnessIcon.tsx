@@ -36,6 +36,7 @@ export const MONOCHROME_HARNESSES = new Set<HarnessId>([
   "pi",
   "fx",
   "hermes",
+  "acp",
 ]);
 
 function MonoIcon({
@@ -83,17 +84,19 @@ export function HarnessIcon({
       </MonoIcon>
     );
   }
-  if (harness === "hermes") {
+  // An <img> cannot inherit currentColor, so these single-colour marks are painted through a mask.
+  if (harness === "hermes" || harness === "acp") {
+    const mask = harness === "hermes" ? hermes : acp;
     return (
       <span aria-hidden className={`inline-flex items-center justify-center ${className}`}>
         <span
-          className="block size-[72%] bg-current"
+          className={`block bg-current ${harness === "hermes" ? "size-[72%]" : "size-full"}`}
           style={{
-            maskImage: `url(${hermes})`,
+            maskImage: `url(${mask})`,
             maskPosition: "center",
             maskRepeat: "no-repeat",
             maskSize: "contain",
-            WebkitMaskImage: `url(${hermes})`,
+            WebkitMaskImage: `url(${mask})`,
             WebkitMaskPosition: "center",
             WebkitMaskRepeat: "no-repeat",
             WebkitMaskSize: "contain",

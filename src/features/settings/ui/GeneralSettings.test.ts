@@ -21,7 +21,7 @@ vi.mock("../../../app/model/updater", async (original) => ({
   knownAppVersionState: () => undefined,
   knownUpdaterEnabledState: () => undefined,
 }));
-vi.mock("./settingsControls", async (original) => ({
+vi.mock("../../../shared/ui/settings", async (original) => ({
   ...(await original<object>()),
   useSettingsPageReset: (reset: () => Promise<void>) => {
     mocks.reset = reset;

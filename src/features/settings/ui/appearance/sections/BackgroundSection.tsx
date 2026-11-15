@@ -42,7 +42,14 @@ import {
   useLiveBackgroundIntensity,
   type LiveBackground,
 } from "../../../model/liveBackground";
-import { Group, Row, Segmented, SettingsFeedback, Slider, Toggle } from "../../settingsControls";
+import {
+  Group,
+  Row,
+  Segmented,
+  SettingsFeedback,
+  Slider,
+  Toggle,
+} from "../../../../../shared/ui/settings";
 import { AppearanceSaveFeedback, type AppearanceSettings } from "../../useAppearanceSettings";
 import { AppearanceSection } from "./AppearanceSection";
 import { LayerStack } from "../controls/LayerStack";

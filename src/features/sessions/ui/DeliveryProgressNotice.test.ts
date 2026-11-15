@@ -269,7 +269,7 @@ it("writes the duplicate risk as text and holds back Send again while the provid
     root.render(createElement(DeliveryProgressNotice, { sessionId: session.id, messages: [row] })),
   );
   expect(container.querySelector("[data-delivery-review-warning]")?.textContent).toContain(
-    "Sending again duplicates a message that was delivered",
+    "Sending again duplicates a delivered message",
   );
   expect(sendAgain().disabled).toBe(false);
   expect(container.querySelector("[title*='Check the conversation']")).toBeNull();

@@ -19,7 +19,7 @@ vi.mock("../../assistant/model/assistantClient", () => ({
   useAssistantSnapshot: () => ({ snapshot: undefined }),
   assistantIdentity: () => ({ title: "Assistant" }),
 }));
-import { RevealedSetting } from "../../settings/ui/settingsControls";
+import { RevealedSetting } from "../../../shared/ui/settings";
 import { clearRetainedVoiceDrafts } from "../model/voiceSettingsDrafts";
 import { voiceSaveFailures } from "../model/voiceSettingsSave";
 import { VoiceSettings } from "./VoiceSettings";

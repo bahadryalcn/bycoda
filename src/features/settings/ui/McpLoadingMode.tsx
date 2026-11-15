@@ -11,7 +11,7 @@ import type { RemoteMachine } from "../../connections";
 import { withDirectServer, type McpLoadingPolicy, type McpLoadingState } from "../model/mcp";
 import { cacheMcpLoading, getCachedMcpLoading } from "../model/mcpSettingsCache";
 import { playCue } from "../model/sounds";
-import { Select, SettingsFeedback } from "./settingsControls";
+import { Select, SettingsFeedback } from "../../../shared/ui/settings";
 import styles from "./McpLoadingMode.module.css";
 
 /** Owner-only: when the Host loads hub-hosted MCP servers into sessions. */

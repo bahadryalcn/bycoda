@@ -108,9 +108,7 @@ it("explains a saved checkpoint failure and refreshes without claiming to recrea
   await act(async () =>
     root.render(createElement(SessionReview, { sessionId: "failed", cwd: "/repo", onOpenDiff })),
   );
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-    "could not be fully recorded",
-  );
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("not fully recorded");
   expect(container.textContent).not.toContain("Retry");
   const refresh = [...container.querySelectorAll("button")].find(
     (button) => button.textContent === "Refresh",

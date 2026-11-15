@@ -3,7 +3,7 @@ import { useState } from "react";
 import { t } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
-import { Row } from "../../settings/public/settingsControls";
+import { Row } from "../../../shared/ui/settings";
 import {
   requestSystemPermission,
   type PermissionId,

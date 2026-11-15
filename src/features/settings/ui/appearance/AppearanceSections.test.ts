@@ -3,7 +3,7 @@ import { act, createElement, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AppearancePage } from "../AppearanceSettings";
-import { RevealedSetting } from "../settingsControls";
+import { RevealedSetting } from "../../../../shared/ui/settings";
 import type { AppearanceSettings } from "../useAppearanceSettings";
 
 vi.mock("./sections/ThemeSection", () => ({

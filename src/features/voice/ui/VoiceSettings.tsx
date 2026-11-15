@@ -3,13 +3,7 @@ import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { TextField } from "../../../shared/ui/TextField";
 import { t, useLocale } from "../../../shared/i18n";
 import { useAssistantSnapshot, assistantIdentity } from "../../assistant/model/assistantClient";
-import {
-  AdvancedSettings,
-  Group,
-  Segmented,
-  Select,
-  Toggle,
-} from "../../settings/public/settingsControls";
+import { AdvancedSettings, Group, Segmented, Select, Toggle } from "../../../shared/ui/settings";
 import { ProcessingRow } from "./VoiceProcessingRow";
 import { MicrophoneInputSettings } from "./MicrophoneInputSettings";
 import { DictationSettings } from "./DictationSettings";

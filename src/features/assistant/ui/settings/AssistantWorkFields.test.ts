@@ -8,7 +8,7 @@ const observed = vi.hoisted(() => ({
   resolvedDefault: "catalog-default",
   defaultAvailable: true,
 }));
-vi.mock("../../../settings/public/settingsControls", async () => {
+vi.mock("../../../../shared/ui/settings", async () => {
   const { createElement } = await import("react");
   return {
     Row: ({ label, description, info, children }: any) =>

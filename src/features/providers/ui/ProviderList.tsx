@@ -10,7 +10,7 @@ import { ActionHost } from "../../../shared/ui/ActionHost";
 import { Bot } from "../../../shared/ui/icons";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { HARNESS_TITLE, type HarnessId } from "../../sessions/model/session";
-import { Toggle } from "../../settings/ui/settingsControls";
+import { Toggle } from "../../../shared/ui/settings";
 import type { ProviderAuthState, ProviderAuthTone } from "./providerStatus";
 import { useGrokSignInState } from "./providerStatus";
 

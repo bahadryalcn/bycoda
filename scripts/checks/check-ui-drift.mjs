@@ -35,6 +35,7 @@ const catalogModule = await import("./ui-catalog.mjs").catch(() => null);
 const defaultRoot = fileURLToPath(new URL("../../", import.meta.url));
 export const baselineFile = "scripts/checks/ui-drift-baseline.json";
 export const ruleScopes = {
+  "inline-help-text": "TSX in src/app, src/features, src/shared (excluding tests)",
   "one-primary-per-view": "TSX in src/app, src/features, src/shared (excluding tests)",
   "nested-card": "TSX in src/app, src/features, src/shared (excluding tests)",
   "hover-only-reveal": "TSX in src/features, src/shared (excluding tests)",
@@ -43,6 +44,8 @@ export const ruleScopes = {
 };
 
 export const rules = {
+  "inline-help-text":
+    "muted/secondary shared Text or p with a literal t() key over 100 characters directly in a settings Row/Field or following a settings label/heading (move optional help to InfoPopover or the info slot)",
   "one-primary-per-view":
     "multiple literal primary Buttons in one JSX return (one finding per file; keep one primary action, use secondary for peers)",
   "nested-card":

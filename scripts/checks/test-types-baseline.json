@@ -320,7 +320,7 @@
     "src/features/settings/ui/PoliciesSettings.test.ts": 2,
     "src/features/settings/ui/ProviderBinarySettings.test.ts": 1,
     "src/features/settings/ui/live-background/reactBitsSurface.test.ts": 25,
-    "src/features/settings/ui/settingsControls.test.ts": 1,
+    "src/shared/ui/settings/settingsRows.test.ts": 1,
     "src/features/skills/model/skillCatalog.test.ts": 2,
     "src/features/skills/ui/SkillPromptField.test.ts": 1,
     "src/features/skills/ui/SkillsPage.test.ts": 6,

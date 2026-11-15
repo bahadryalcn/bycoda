@@ -4,7 +4,7 @@ import { expect, it } from "vitest";
 const settings = readFileSync("src/features/settings/ui/BycodaSettings.css", "utf8");
 const theme = readFileSync("src/styles/index.css", "utf8");
 const actionHost = readFileSync("src/shared/ui/ActionHost.module.css", "utf8");
-const controls = readFileSync("src/features/settings/ui/settingsControls.tsx", "utf8");
+const controls = readFileSync("src/shared/ui/settings/SettingsRows.tsx", "utf8");
 
 it("limits shared row hover to single-line settings", () => {
   expect(controls).toContain('stacked || layerEditor ? undefined : { variant: "settings" }');

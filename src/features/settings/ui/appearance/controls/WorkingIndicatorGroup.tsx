@@ -17,7 +17,7 @@ import {
   type WorkingIndicatorColor,
   type WorkingIndicatorStyle,
 } from "../../../model/workingIndicator";
-import { Group, Row, Segmented, Slider } from "../../settingsControls";
+import { Group, Row, Segmented, Slider } from "../../../../../shared/ui/settings";
 import "./ThemeControls.css";
 
 const snapshot = () => JSON.stringify(loadWorkingIndicator());

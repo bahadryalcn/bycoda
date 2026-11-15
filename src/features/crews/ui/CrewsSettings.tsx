@@ -1,7 +1,7 @@
 import { t, useLocale } from "../../../shared/i18n";
 import { useState } from "react";
 import { Button } from "../../../shared/ui/Button";
-import { Group, Row, SettingsFeedback, Toggle } from "../../settings/ui/settingsControls";
+import { Group, Row, SettingsFeedback, Toggle } from "../../../shared/ui/settings";
 import { loadCrewsOnRail, saveCrewsOnRail, useCrewsOnRail } from "../model/crewAppearance";
 import { requestOpenCrewsPage } from "../model/crewsPage";
 

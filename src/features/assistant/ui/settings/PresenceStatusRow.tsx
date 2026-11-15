@@ -4,7 +4,7 @@ import type {
   AssistantSnapshot,
 } from "../../../../shared/model/host-contracts/assistant";
 import { Text } from "../../../../shared/ui/Text";
-import { Row } from "../../../settings/public/settingsControls";
+import { Row } from "../../../../shared/ui/settings";
 import { keepAwakeLabel } from "../AssistantKeepAwakeStatus";
 import { AssistantPresenceStatus } from "../AssistantPresenceStatus";
 

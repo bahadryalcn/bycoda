@@ -104,9 +104,15 @@ export const InboxCard = memo(function InboxCard({
         title={item.title}
         secondary={secondary}
         seen={!unseen}
+        leading={
+          unseen ? (
+            <StatusDot data-inbox-unread tone="accent" label={t("Unread")} />
+          ) : (
+            <span className="size-2" />
+          )
+        }
         trailing={
           <>
-            {unseen ? <StatusDot data-inbox-unread tone="accent" label={t("Unread")} /> : null}
             {relatedSessionCount > 0 ? (
               <Tooltip label={sessionLabel} asChild>
                 <Badge

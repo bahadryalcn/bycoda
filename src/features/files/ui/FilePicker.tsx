@@ -51,6 +51,53 @@ export function layoutPaletteActions(): Action[] {
   }));
 }
 
+/** Destinations that also have a rail icon or menu item; the palette is the keyboard route. */
+function destinationActions(): Action[] {
+  const hint = (command: string, fallback: string) =>
+    keybindingShortcutLabel(command, fallback) ?? undefined;
+  return [
+    {
+      id: "open-settings",
+      get label() {
+        return t("Open Settings");
+      },
+      hint: hint("App: Settings", `${MOD},`),
+    },
+    {
+      id: "open-inbox",
+      get label() {
+        return t("Open Inbox");
+      },
+      hint: hint("App: Open Inbox", `${MOD}${SHIFT}I`),
+    },
+    ...(loadNotesEnabled()
+      ? [
+          {
+            id: "open-notes",
+            get label() {
+              return t("Open Notes");
+            },
+            hint: hint("App: Open Notes", `${MOD}${SHIFT}L`),
+          },
+        ]
+      : []),
+    {
+      id: "open-tasks",
+      get label() {
+        return t("Open Tasks");
+      },
+      hint: hint("App: Open Tasks", `${MOD}${SHIFT}Y`),
+    },
+    {
+      id: "open-automations",
+      get label() {
+        return t("Open Automations");
+      },
+      hint: hint("App: Open Automations", `${MOD}${SHIFT}U`),
+    },
+  ];
+}
+
 function paletteActions(
   cwd: string,
   stopBackgroundWork: boolean,
@@ -82,6 +129,7 @@ function paletteActions(
       },
       hint: keybindingShortcutLabel("App: Open Crews", `${MOD}${SHIFT}E`) ?? undefined,
     },
+    ...destinationActions(),
     ...(stopBackgroundWork
       ? [
           {

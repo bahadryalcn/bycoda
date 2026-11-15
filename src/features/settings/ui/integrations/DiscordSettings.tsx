@@ -2,7 +2,7 @@ import { useState } from "react";
 import { t, useLocale } from "../../../../shared/i18n";
 import { PasswordField } from "../../../../shared/ui/PasswordField";
 import { TextareaField } from "../../../../shared/ui/TextareaField";
-import { Row } from "../settingsControls";
+import { Row } from "../../../../shared/ui/settings";
 import { accountChannelIds, discordSaveInput, parseChannelIds } from "./chatAccountInputs";
 import {
   AccountFormActions,

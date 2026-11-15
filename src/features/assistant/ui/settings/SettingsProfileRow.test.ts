@@ -6,7 +6,7 @@ vi.mock("../../../../shared/i18n", () => ({
   t: (key: string) => key,
   useT: () => (key: string) => key,
 }));
-vi.mock("../../../settings/public/settingsControls", async () => {
+vi.mock("../../../../shared/ui/settings", async () => {
   const { createElement } = await import("react");
   return {
     Row: ({ label, description, info, children }: any) =>

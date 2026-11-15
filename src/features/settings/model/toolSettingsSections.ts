@@ -6,7 +6,7 @@ export const TOOL_SETTINGS_SECTIONS: SettingsSection[] = [
     id: "tools",
     group: "tools",
     get label() {
-      return t("Tool preferences");
+      return t("Conversation tools");
     },
     get description() {
       return t("Browser, devices, logs and development server defaults.");

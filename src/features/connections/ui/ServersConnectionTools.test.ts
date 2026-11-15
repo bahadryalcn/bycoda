@@ -335,7 +335,7 @@ it("previews certificate and ordered jump references before an import choice", a
   expect(container.textContent).toContain(
     "Each jump host uses its own identity and host-key verification",
   );
-  expect(container.textContent).toContain("choose a different key for each hop");
+  expect(container.textContent).toContain("pick keys");
 });
 
 it("offers agent forwarding only with the compatible terminal owner and delegates explicit approval", async () => {

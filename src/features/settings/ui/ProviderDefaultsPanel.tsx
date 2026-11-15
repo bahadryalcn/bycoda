@@ -25,7 +25,7 @@ import {
 import { globalModelFor, storedProjectModel } from "../model/providerDefaultsSave";
 import * as defaultsScope from "./providerDefaultsScope";
 import { ProviderDefaultsForm } from "./ProviderDefaultsForm";
-import { Group, Row, Select } from "./settingsControls";
+import { Group, Row, Select } from "../../../shared/ui/settings";
 
 /** The provider new conversations start with for a target, before pending changes. */
 export function storedDefaultProvider(target: DefaultsTarget): HarnessId {

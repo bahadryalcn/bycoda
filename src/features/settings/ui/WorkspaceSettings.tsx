@@ -18,7 +18,7 @@ import {
   saveQuickComposerEnabled,
   type FileTabMode,
 } from "../model/settings";
-import { Group, Row, Segmented, SettingsFeedback, Toggle } from "./settingsControls";
+import { Group, Row, Segmented, SettingsFeedback, Toggle } from "../../../shared/ui/settings";
 import { WorkspaceFeatureSettings, WorkspaceToolsHelp } from "./WorkspaceFeatureSettings";
 import { loadExactGitRewind, saveExactGitRewind } from "../model/exactGitRewind";
 import { Button } from "../../../shared/ui/Button";

@@ -3,7 +3,7 @@ import { NumberField } from "../../../../../shared/ui/NumberField";
 import { CODE_FONT_CATALOG } from "../../../model/fontCatalog";
 import { APPEARANCE_DEFAULTS } from "../../../model/appearancePreferences";
 import { RadioTiles } from "../../RadioTiles";
-import { Group, Row, Toggle } from "../../settingsControls";
+import { Group, Row, Toggle } from "../../../../../shared/ui/settings";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
 import { FontPicker } from "./FontPicker";
 import { useNumberDraft } from "./useNumberDraft";

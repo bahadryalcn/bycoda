@@ -4,7 +4,10 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { toolPreferences } from "../../host-tools/public/toolPreferences";
 import { TOOL_SETTINGS_INDEX, toolSettingsTabForAnchor } from "../model/toolSettingsSections";
-import { SettingsPageResetRegistry, type SettingsPageResetRegistration } from "./settingsPageReset";
+import {
+  SettingsPageResetRegistry,
+  type SettingsPageResetRegistration,
+} from "../../../shared/ui/settings";
 import {
   ToolSettingsPage,
   BrowserSettingsPage,
@@ -12,7 +15,7 @@ import {
   LogsSettingsPage,
   DevServersSettingsPage,
 } from "./ToolSettings";
-import { RevealedSetting } from "./settingsControls";
+import { RevealedSetting } from "../../../shared/ui/settings";
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -170,7 +173,7 @@ it("selects revealed topics before rendering and keeps keyboard tabs linked to p
     )!;
   try {
     await render("servers-refresh-interval", 1);
-    expect(tab("Development Servers").getAttribute("aria-selected")).toBe("true");
+    expect(tab("Development servers").getAttribute("aria-selected")).toBe("true");
     await render("browser-viewport-width", 2);
     expect(tab("Browser").getAttribute("aria-selected")).toBe("true");
     expect(

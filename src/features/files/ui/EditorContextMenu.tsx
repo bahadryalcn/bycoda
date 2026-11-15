@@ -7,6 +7,7 @@ import { copyAsyncWithFeedback } from "./clipboard";
 import { createEditorContextMenuItem } from "./editorContextMenuItem";
 import { ContextMenu, type ContextMenuItem } from "../../../shared/ui/ContextMenu";
 import { usePlatform } from "../../../shared/ui/shortcut";
+import { useKeybindingShortcut } from "../../settings/public/useKeybindingShortcut";
 import { editorCodeSelection, formatEditorSelectionReference } from "../model/editorSelection";
 import { requestAddToChat } from "../../sessions/public/quoteDraft";
 import {
@@ -39,6 +40,7 @@ export function EditorContextMenu({
   useLocale();
   const platform = usePlatform(),
     copyFeedback = useCopyFeedback({ resetKeys: [path] });
+  const findShortcut = useKeybindingShortcut("Editor: Find");
   const item = createEditorContextMenuItem(platform);
   const { view } = target;
   const writable = () =>
@@ -54,7 +56,7 @@ export function EditorContextMenu({
     item("paste", t("Paste"), !writable(), "Mod+V"),
     item("select", t("Select All"), false, "Mod+A"),
     { kind: "sep" },
-    item("find", t("Find"), false, "Mod+F"),
+    item("find", t("Find"), false, findShortcut ?? undefined),
     ...(target.format ? [item("format", t("Format document"), !writable(), "Alt+Shift+F")] : []),
     ...(target.save ? [item("save", t("Save"), !writable(), "Mod+S")] : []),
     ...(selection

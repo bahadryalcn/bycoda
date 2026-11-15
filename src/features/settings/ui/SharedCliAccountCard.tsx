@@ -27,7 +27,7 @@ import {
   AccountColorPopover,
   ProviderAccountSubtitle,
 } from "../../providers/public/accountIdentity";
-import { Group, SettingsFeedback } from "./settingsControls";
+import { Group, SettingsFeedback } from "../../../shared/ui/settings";
 import { ProviderAccountEditor, type AccountEditor } from "./ProviderAccountEditor";
 
 /** Personal/Work tag shared by every account row. */

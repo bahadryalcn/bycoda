@@ -8,6 +8,7 @@ import { EditorView, keymap, lineNumbers, placeholder } from "@codemirror/view";
 import { minimalSetup } from "codemirror";
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { MOD } from "../../../platform/tauri/platform";
+import { useKeybindingShortcut } from "../../settings/public/useKeybindingShortcut";
 import { useColorScheme } from "../../../shared/hooks/useColorScheme";
 import {
   BlockQuote,
@@ -530,6 +531,8 @@ export function NoteMarkdownToolbar({
   onInsertImage?: () => void;
 }) {
   useLocale();
+  const findShortcut = useKeybindingShortcut("Editor: Find");
+  const replaceShortcut = useKeybindingShortcut("Editor: Replace");
   const run = (action: (view: EditorView) => void) => {
     const view = viewRef.current;
     if (view) action(view);
@@ -564,7 +567,7 @@ export function NoteMarkdownToolbar({
           label={t("Find and replace")}
           motion="none"
           type="button"
-          shortcut="Mod+F / Mod+H"
+          shortcut={[findShortcut, replaceShortcut].filter(Boolean).join(" / ") || undefined}
           onClick={() => run(openSearchPanel)}
         >
           <Search className="icon-sm" />

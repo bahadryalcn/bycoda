@@ -1,7 +1,7 @@
 import { t, useLocale } from "../../../shared/i18n";
 import { isHarnessAvailable } from "../../../integrations/harness/core/availability";
 import { HARNESS_TITLE, type HarnessId } from "../../../shared/model/harnessIdentity";
-import { Group, Row, Toggle } from "./settingsControls";
+import { Group, Row, Toggle } from "../../../shared/ui/settings";
 
 /** Account-side options; CLI setup belongs to ProviderCliTab. */
 export function ProviderRuntimeGroup({

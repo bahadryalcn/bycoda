@@ -6,7 +6,7 @@ import { t } from "../../shared/i18n";
 import { Button } from "../../shared/ui/Button";
 import { TextField } from "../../shared/ui/TextField";
 import { SearchableSelect } from "../../shared/ui/SearchableSelect";
-import { AdvancedSettings, Row, Select, Toggle } from "../settings/ui/settingsControls";
+import { AdvancedSettings, Row, Select, Toggle } from "../../shared/ui/settings";
 import { Alert } from "../../shared/ui/Alert";
 import { Badge } from "../../shared/ui/Badge";
 import { RefreshCw } from "../../shared/ui/icons";

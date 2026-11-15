@@ -2,7 +2,7 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { ActionHost } from "../../../shared/ui/ActionHost";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Text } from "../../../shared/ui/Text";
-import { Group, Row, SettingsFeedback } from "./settingsControls";
+import { Group, Row, SettingsFeedback } from "../../../shared/ui/settings";
 import { Badge } from "../../../shared/ui/Badge";
 import { t, useLocale } from "../../../shared/i18n";
 import { Modal } from "../../../shared/ui/Modal";

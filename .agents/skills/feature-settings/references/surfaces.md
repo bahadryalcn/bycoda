@@ -29,7 +29,7 @@ Model order, pools, roles and delegation use [model routing](../../feature-model
 ## Shell and shared state
 
 - Navigation/search: `src/features/settings/ui/SettingsView.tsx`, `SettingsSearch.tsx`; `src/features/settings/model/settings.ts`; `src/app/shell/SettingsRail.tsx`. Follow `src/app/workspace/layout/WorkspaceSettingsSurface.tsx` for app wiring.
-- Common controls/layout: `src/features/settings/ui/settingsControls.tsx`, `BycodaSettings.css`; inspect current collection adapters before changing external consumers.
+- Common controls/layout: `src/shared/ui/settings/` (rows, inputs, `settings.css`), `BycodaSettings.css` (shell); inspect current collection adapters before changing external consumers.
 - Preference routing: `src/features/sessions/model/desktopPreferencesControl.ts`, `src/app/workspace/control/useAppControlRequests.ts`, `src-tauri/src/control.rs`; ordinary local preferences and capability-gated remote control are distinct.
 - Native registration/bridge: `src-tauri/src/lib.rs`, `remote.rs`. Host contracts: `host/workspaces/workspace-rpc-contracts.ts`; verify the actual dispatcher/service before claiming an RPC exists.
 - Localization: `src/shared/i18n/locales/`, `en-overrides.json`, `tr-overrides.json`. Search actual source messages; do not assume feature-key namespaces.
@@ -50,6 +50,6 @@ Model order, pools, roles and delegation use [model routing](../../feature-model
 
 ## Focused verification
 
-- Shell/model/control: colocated `SettingsView.test.ts`, `settingsControls.test.ts`, `settings.test.ts`, `settings.storage.test.ts`; Policies `PoliciesSettings.test.ts`.
+- Shell/model/control: colocated `SettingsView.test.ts`, `src/shared/ui/settings/settingsRows.test.ts`, `settings.test.ts`, `settings.storage.test.ts`; Policies `PoliciesSettings.test.ts`.
 - Browser: `tests/browser/settings/settings.e2e.ts`, `settings-layout.e2e.ts`, `settings-subviews.e2e.ts`, `settings-organization.e2e.ts`, `policies.e2e.ts`; inspect `playwright.settings.config.ts` for selected specs and port ownership.
 - Select tests for changed behavior, not the entire inventory by default. Shared changes need representative consumers, both themes and keyboard/reduced-motion checks. Native/pairing/installed acceptance remains distinct from fixture evidence.

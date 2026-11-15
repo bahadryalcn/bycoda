@@ -10,7 +10,7 @@ import { Badge } from "../../../shared/ui/Badge";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { t, useLocale } from "../../../shared/i18n";
 import { Plus } from "../../../shared/ui/icons";
-import { Group, Row, SettingsFeedback } from "./settingsControls";
+import { Group, Row, SettingsFeedback } from "../../../shared/ui/settings";
 import {
   CURSOR_PLACEHOLDER,
   loadPromptTemplates,

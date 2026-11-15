@@ -438,7 +438,7 @@ it("connects modifier selection, checkboxes, ordering and group moves to real pr
     await act(async () => button("Delete selected").click());
     expect(onRemoveProject).not.toHaveBeenCalled();
     const dialog = document.querySelector('[role="dialog"]')!;
-    expect(dialog.textContent).toContain("Their folders on disk stay put.");
+    expect(dialog.textContent).toContain("Folders on disk stay.");
     const confirm = [...dialog.querySelectorAll<HTMLButtonElement>("button")].find(
       (element) => element.textContent === "Delete",
     )!;

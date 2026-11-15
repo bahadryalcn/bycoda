@@ -480,7 +480,7 @@ export function ServerFiles({
                       void act(async (id) => {
                         const destination = await save({
                           defaultPath: entry.name,
-                          title: t("Download to a new filename"),
+                          title: t("Save download"),
                         });
                         if (!destination || !canContinue(id)) return;
                         const remotePath = sftpPath(path, entry.name);

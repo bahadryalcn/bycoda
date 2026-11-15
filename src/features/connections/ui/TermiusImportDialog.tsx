@@ -62,7 +62,7 @@ export function TermiusImportDialog({
           ? await open({
               directory: true,
               multiple: false,
-              title: t("Choose Termius profile folder"),
+              title: t("Choose Termius folder"),
             })
           : source === "path"
             ? profilePath.trim()

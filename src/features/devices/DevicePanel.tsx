@@ -27,6 +27,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 import * as technicalI18n from "../../shared/i18n/technical";
 import { DeviceNotices } from "./ui/DeviceNotices";
 import { LoadingText } from "../../shared/ui/LoadingText";
+import { Switch } from "../../shared/ui/Switch";
 import { Button } from "../../shared/ui/Button";
 import { Disclosure } from "../../shared/ui/Disclosure";
 import { Progress } from "../../shared/ui/Progress";
@@ -43,11 +44,9 @@ import {
   AppWindow,
   Check,
   CursorMagicSelection,
-  Eye,
   Home,
   ImagePlus,
   Keyboard,
-  Lock,
   MessageSquarePlus,
   MoreHorizontal,
   Pause,
@@ -1179,73 +1178,68 @@ function DevicePanelSurface({
           >
             {device && (
               <>
-                <Button
-                  variant="ghost"
-                  tooltipSide="bottom"
-                  label={t("Allow device control")}
-                  tooltip={control ? t("Release device control") : t("Claim device control")}
-                  tooltipDetails={[ownershipLabel]}
-                  aria-describedby={ownershipDescriptionId}
-                  tone={control ? "success" : controlStatus?.busy ? "warning" : "info"}
-                  pressed={control}
-                  selected={control && !annotating}
-                  loading={operation === "claim" || operation === "release"}
-                  disabled={busy || !device?.booted || !ownershipSupported}
-                  disabledReason={
+                <Tooltip
+                  label={
                     !ownershipSupported
                       ? t(
                           "This Host does not support device control ownership. Update the Host to control this device.",
                         )
-                      : undefined
+                      : ownershipLabel
                   }
-                  onClick={() => {
-                    setAnnotating(false);
-                    if (annotating && control) return;
-                    if (control && controlLease?.leaseId && api.releaseControl) {
-                      void execute(
-                        "release",
-                        () => api.releaseControl!(selected, controlLease.leaseId),
-                        () => {
-                          setControlStatus({
-                            deviceId: selected,
-                            busy: false,
-                          });
-                          setControl(false);
-                          setControlLease(undefined);
-                          delete claimRequests.current[selected];
-                          setInspection(undefined);
-                        },
-                      ).catch((cause: unknown) => setError(String(cause)));
-                    } else if (api.claimControl) {
-                      claimRequests.current[selected] ??= crypto.randomUUID();
-                      void execute(
-                        "claim",
-                        () => api.claimControl!(selected, claimRequests.current[selected]),
-                        (value) => {
-                          setControlLease(value);
-                          setControlStatus({
-                            deviceId: value.deviceId,
-                            busy: true,
-                          });
-                          setControl(!!value.leaseId);
-                        },
-                      ).catch((cause: unknown) => setError(String(cause)));
-                    }
-                  }}
+                  side="bottom"
                 >
-                  {control ? (
-                    <CursorMagicSelection className="icon-sm" aria-hidden />
-                  ) : controlStatus?.busy ? (
-                    <Lock className="icon-sm" aria-hidden />
-                  ) : (
-                    <Eye className="icon-sm" aria-hidden />
-                  )}
-                  {control
-                    ? t("Control active")
-                    : controlStatus?.busy
-                      ? t("Control in use")
-                      : t("View only")}
-                </Button>
+                  <Switch
+                    label={t("Allow device control")}
+                    checked={control}
+                    aria-describedby={ownershipDescriptionId}
+                    aria-busy={operation === "claim" || operation === "release"}
+                    disabled={
+                      busy ||
+                      !device?.booted ||
+                      !ownershipSupported ||
+                      (!control && controlStatus?.busy && !error)
+                    }
+                    onCheckedChange={() => {
+                      setAnnotating(false);
+                      if (annotating && control) return;
+                      if (control && controlLease?.leaseId && api.releaseControl) {
+                        void execute(
+                          "release",
+                          () => api.releaseControl!(selected, controlLease.leaseId),
+                          () => {
+                            setControlStatus({
+                              deviceId: selected,
+                              busy: false,
+                            });
+                            setControl(false);
+                            setControlLease(undefined);
+                            delete claimRequests.current[selected];
+                            setInspection(undefined);
+                          },
+                        ).catch((cause: unknown) => setError(String(cause)));
+                      } else if (api.claimControl) {
+                        claimRequests.current[selected] ??= crypto.randomUUID();
+                        void execute(
+                          "claim",
+                          () => api.claimControl!(selected, claimRequests.current[selected]),
+                          (value) => {
+                            setControlLease(value);
+                            setControlStatus({
+                              deviceId: value.deviceId,
+                              busy: true,
+                            });
+                            setControl(!!value.leaseId);
+                          },
+                        ).catch((cause: unknown) => setError(String(cause)));
+                      }
+                    }}
+                  />
+                </Tooltip>
+                {!control && controlStatus?.busy ? (
+                  <Text as="span" size="secondary" tone="warning" className="ms-2">
+                    {t("Control in use")}
+                  </Text>
+                ) : null}
                 <span id={ownershipDescriptionId} className="sr-only">
                   {ownershipLabel}
                 </span>

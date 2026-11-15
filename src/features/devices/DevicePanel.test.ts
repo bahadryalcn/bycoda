@@ -71,7 +71,11 @@ it("holds transfer while a device action is in flight", async () => {
     }),
   );
   await act(async () => root.render(createElement(DevicePanel, { api, transferScope: scope })));
-  await act(async () => container.querySelector<HTMLButtonElement>("[aria-pressed]")!.click());
+  await act(async () =>
+    container
+      .querySelector<HTMLButtonElement>('[role="switch"][aria-label="Allow device control"]')!
+      .click(),
+  );
   await act(async () => button("Home").click());
   expect(() => readToolsDraftTransfer(scope.cwd, scope.sessionId, scope.targetValue)).toThrow(
     "Wait for the current tool action",
@@ -221,7 +225,11 @@ it("offers Refresh frame, not a repeated action, when input succeeded but the sc
     .mockResolvedValueOnce({ mime: "image/png", base64: "frame", capturedAt: "now" })
     .mockRejectedValueOnce(new Error("Screenshot unavailable"));
   await act(async () => root.render(createElement(DevicePanel, { api })));
-  await act(async () => container.querySelector<HTMLButtonElement>("[aria-pressed]")!.click());
+  await act(async () =>
+    container
+      .querySelector<HTMLButtonElement>('[role="switch"][aria-label="Allow device control"]')!
+      .click(),
+  );
   await act(async () => button("Home").click());
   expect(container.textContent).toContain("Action completed");
   expect(container.querySelector("img")?.src).toContain("frame");
@@ -297,10 +305,11 @@ it("shows control ownership in the device header", async () => {
   await act(async () => root.render(createElement(DevicePanel, { api })));
   const control = button("Allow device control");
   expect(control.closest(".device-panel-bar")).not.toBeNull();
-  expect(control.textContent).toContain("View only");
+  expect(control.textContent).toContain("Allow device control");
+  expect(container.querySelector(".device-panel-bar")?.textContent).not.toContain("View only");
   await clickButton("Allow device control");
-  expect(control.textContent).toContain("Control active");
-  expect(control.getAttribute("aria-pressed")).toBe("true");
+  expect(container.querySelector(".device-panel-bar")?.textContent).not.toContain("Control active");
+  expect(control.getAttribute("aria-checked")).toBe("true");
 });
 
 it("explains an invalid control lease and disables input until an explicit new claim", async () => {
@@ -527,7 +536,9 @@ it("requires explicit connection for an installed runtime before following a pho
   expect(api.capture).toHaveBeenCalledWith("phone");
   expect(api.action).not.toHaveBeenCalled();
   expect(
-    container.querySelector<HTMLButtonElement>("[aria-pressed]")?.getAttribute("aria-pressed"),
+    container
+      .querySelector<HTMLButtonElement>('[role="switch"][aria-label="Allow device control"]')
+      ?.getAttribute("aria-checked"),
   ).toBe("false");
   expect(document.querySelector(".device-panel-setup")).toBeNull();
   expect(button("Device options").getAttribute("aria-expanded")).toBe("false");
@@ -633,7 +644,7 @@ it("does not clear a failed device action when live capture succeeds", async () 
   await act(async () => root.render(createElement(DevicePanel, { api })));
   await act(async () =>
     container
-      .querySelector<HTMLButtonElement>('[aria-pressed][aria-label="Allow device control"]')!
+      .querySelector<HTMLButtonElement>('[role="switch"][aria-label="Allow device control"]')!
       .click(),
   );
   await act(async () => button("Home").click());
@@ -714,7 +725,11 @@ it("retains successful action output when the follow-up screenshot fails", async
   vi.mocked(api.action).mockResolvedValue("Action result");
   vi.mocked(api.capture).mockRejectedValue(new Error("Screenshot unavailable"));
   await act(async () => root.render(createElement(DevicePanel, { api })));
-  await act(async () => container.querySelector<HTMLButtonElement>("[aria-pressed]")!.click());
+  await act(async () =>
+    container
+      .querySelector<HTMLButtonElement>('[role="switch"][aria-label="Allow device control"]')!
+      .click(),
+  );
   await act(async () => button("Home").click());
   await openOptions();
   await clickButton("Device action result");
@@ -732,7 +747,11 @@ it("does not request an old host's screenshot after an action finishes in a diff
     }),
   );
   await act(async () => root.render(createElement(DevicePanel, { api })));
-  await act(async () => container.querySelector<HTMLButtonElement>("[aria-pressed]")!.click());
+  await act(async () =>
+    container
+      .querySelector<HTMLButtonElement>('[role="switch"][aria-label="Allow device control"]')!
+      .click(),
+  );
   await act(async () => button("Home").click());
   await act(async () => root.render(createElement(DevicePanel, { api: makeApi() })));
   await act(async () => finish("Old host result"));
@@ -802,7 +821,11 @@ it("refreshes support and setup state without restarting the device host", async
   const api = makeApi();
   vi.mocked(api.status).mockResolvedValueOnce({ ...status, agentInstalled: false });
   await act(async () => root.render(createElement(DevicePanel, { api })));
-  await act(async () => container.querySelector<HTMLButtonElement>("[aria-pressed]")!.click());
+  await act(async () =>
+    container
+      .querySelector<HTMLButtonElement>('[role="switch"][aria-label="Allow device control"]')!
+      .click(),
+  );
   expect(container.textContent).toContain("Run setup with control enabled");
   await openSetup();
   await act(async () => button("Refresh status").click());
@@ -816,7 +839,11 @@ it("opens only an explicitly chosen iOS app and captures its screen after the ac
   vi.mocked(api.list).mockResolvedValue({ devices: [{ ...device, platform: "ios" }], errors: [] });
   await act(async () => root.render(createElement(DevicePanel, { api })));
   expect(button("Open app")).toBeUndefined();
-  await act(async () => container.querySelector<HTMLButtonElement>("[aria-pressed]")!.click());
+  await act(async () =>
+    container
+      .querySelector<HTMLButtonElement>('[role="switch"][aria-label="Allow device control"]')!
+      .click(),
+  );
   await clickButton("Choose app to open");
   expect(document.body.textContent).toContain("Open the app before interacting with it.");
   expect(button("Open app").disabled).toBe(true);
@@ -856,7 +883,11 @@ it("clears the app target when selecting another device or changing the host", a
     errors: [],
   });
   await act(async () => root.render(createElement(DevicePanel, { api })));
-  await act(async () => container.querySelector<HTMLButtonElement>("[aria-pressed]")!.click());
+  await act(async () =>
+    container
+      .querySelector<HTMLButtonElement>('[role="switch"][aria-label="Allow device control"]')!
+      .click(),
+  );
   const selectDevice = async (id: string) => {
     await act(async () => devicePicker().click());
     const options = document.body.querySelectorAll<HTMLButtonElement>('[role="option"]');
@@ -876,16 +907,26 @@ it("clears the app target when selecting another device or changing the host", a
   await enterApp();
   await selectDevice("second");
   expect(
-    container.querySelector<HTMLButtonElement>("[aria-pressed]")!.getAttribute("aria-pressed"),
+    container
+      .querySelector<HTMLButtonElement>('[role="switch"][aria-label="Allow device control"]')!
+      .getAttribute("aria-checked"),
   ).toBe("false");
-  await act(async () => container.querySelector<HTMLButtonElement>("[aria-pressed]")!.click());
+  await act(async () =>
+    container
+      .querySelector<HTMLButtonElement>('[role="switch"][aria-label="Allow device control"]')!
+      .click(),
+  );
   await clickButton("Choose app to open");
   expect(target().value).toBe("");
   expect(button("Open app").disabled).toBe(true);
   await enterApp();
   await act(async () => root.render(createElement(DevicePanel, { api: makeApi() })));
   await selectDevice(device.id);
-  await act(async () => container.querySelector<HTMLButtonElement>("[aria-pressed]")!.click());
+  await act(async () =>
+    container
+      .querySelector<HTMLButtonElement>('[role="switch"][aria-label="Allow device control"]')!
+      .click(),
+  );
   await clickButton("Choose app to open");
   expect(target().value).toBe("");
   expect(api.action).not.toHaveBeenCalled();
@@ -904,7 +945,11 @@ it("keeps platform-specific control help available without filling the device pa
   };
   const api = await renderDevice("win32", "android");
   expect(container.textContent).not.toContain("Android text input supports");
-  await act(async () => container.querySelector<HTMLButtonElement>("[aria-pressed]")!.click());
+  await act(async () =>
+    container
+      .querySelector<HTMLButtonElement>('[role="switch"][aria-label="Allow device control"]')!
+      .click(),
+  );
   expect(container.textContent).not.toContain("Android text input supports");
   // Each hint sits in the popover of the control it explains, not in the options menu.
   await openOptions();
@@ -922,7 +967,11 @@ it("keeps platform-specific control help available without filling the device pa
     ["win32", "ios"],
   ] as const) {
     await renderDevice(hostPlatform, devicePlatform);
-    await act(async () => container.querySelector<HTMLButtonElement>("[aria-pressed]")!.click());
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[role="switch"][aria-label="Allow device control"]')!
+        .click(),
+    );
     await openOptions();
     expect(container.textContent).not.toContain("For Android, enter Settings");
     expect(container.textContent).not.toContain("Android text input supports");
@@ -966,7 +1015,7 @@ it("freezes the source frame while marking and never turns annotation gestures i
   const api = makeApi();
   await act(async () => root.render(createElement(DevicePanel, { api })));
   await clickButton("Allow device control");
-  expect(button("Allow device control").getAttribute("aria-pressed")).toBe("true");
+  expect(button("Allow device control").getAttribute("aria-checked")).toBe("true");
   const originalFrame = container.querySelector("img")!.getAttribute("src");
   let finishCapture!: (frame: DeviceFrame) => void;
   vi.mocked(api.capture).mockReturnValueOnce(
@@ -1087,7 +1136,7 @@ it("requires control permission for Android screen gestures and maps tap and swi
   await pointer("pointerup", 60, 120);
   expect(api.action).not.toHaveBeenCalled();
   await clickButton("Allow device control");
-  expect(button("Allow device control").getAttribute("aria-pressed")).toBe("true");
+  expect(button("Allow device control").getAttribute("aria-checked")).toBe("true");
   await pointer("pointerdown", 60, 120);
   await pointer("pointerup", 60, 120);
   expect(api.action).toHaveBeenLastCalledWith(
@@ -1113,7 +1162,7 @@ it("requires control permission for Android screen gestures and maps tap and swi
   await pointer("pointerup", 160, 320);
   expect(api.action).toHaveBeenCalledTimes(2);
   await clickButton("Allow device control");
-  expect(button("Allow device control").getAttribute("aria-pressed")).toBe("false");
+  expect(button("Allow device control").getAttribute("aria-checked")).toBe("false");
 });
 
 it("returns from annotation to pointer control without revoking the already enabled permission", async () => {
@@ -1121,16 +1170,16 @@ it("returns from annotation to pointer control without revoking the already enab
   await act(async () => root.render(createElement(DevicePanel, { api })));
   await clickButton("Allow device control");
   await clickButton("Mark device screen");
-  expect(button("Allow device control").getAttribute("aria-pressed")).toBe("true");
+  expect(button("Allow device control").getAttribute("aria-checked")).toBe("true");
   expect(button("Home").matches(':disabled, [aria-disabled="true"]')).toBe(true);
   await clickButton("Allow device control");
   expect(container.querySelector(".image-annotation-canvas-layer")).toBeNull();
-  expect(button("Allow device control").getAttribute("aria-pressed")).toBe("true");
+  expect(button("Allow device control").getAttribute("aria-checked")).toBe("true");
   expect(button("Home").matches(':disabled, [aria-disabled="true"]')).toBe(false);
   await clickButton("Home");
   expect(api.action).toHaveBeenCalledWith(device.id, { type: "home" }, "test-lease");
   await clickButton("Allow device control");
-  expect(button("Allow device control").getAttribute("aria-pressed")).toBe("false");
+  expect(button("Allow device control").getAttribute("aria-checked")).toBe("false");
   expect(button("Home").matches(':disabled, [aria-disabled="true"]')).toBe(true);
 });
 
@@ -1163,7 +1212,7 @@ it("restores a scoped annotation after remount without sharing its image, note o
     capturedAt: "later",
   });
   await act(async () => root.render(createElement(DevicePanel, { api: restored, draftScope })));
-  expect(button("Allow device control").getAttribute("aria-pressed")).toBe("false");
+  expect(button("Allow device control").getAttribute("aria-checked")).toBe("false");
   expect(container.querySelector("img")!.getAttribute("src")).toContain("fresh-after-remount");
   await clickButton("Mark device screen");
   expect(container.querySelector("img")!.getAttribute("src")).toBe(frozenFrame);
@@ -1184,7 +1233,7 @@ it("restores a scoped annotation after remount without sharing its image, note o
   expect(button("Undo annotation").disabled).toBe(true);
   await clickButton("Annotation note");
   expect(document.querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("");
-  expect(button("Allow device control").getAttribute("aria-pressed")).toBe("false");
+  expect(button("Allow device control").getAttribute("aria-checked")).toBe("false");
   expect(restored.action).not.toHaveBeenCalled();
 });
 
@@ -1323,4 +1372,16 @@ it("keeps the mounted live default when a stopped device boots", async () => {
   } finally {
     localStorage.removeItem(key);
   }
+});
+
+it("labels a competing controller visibly and disables the switch until ownership is available", async () => {
+  const api = makeApi();
+  vi.mocked(api.controlStatus!).mockResolvedValue({ deviceId: device.id, busy: true });
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  const control = button("Allow device control");
+  expect(control.getAttribute("role")).toBe("switch");
+  expect(control.getAttribute("aria-checked")).toBe("false");
+  expect(control.disabled).toBe(true);
+  expect(container.querySelector(".device-panel-bar")?.textContent).toContain("Control in use");
+  expect(api.claimControl).not.toHaveBeenCalled();
 });

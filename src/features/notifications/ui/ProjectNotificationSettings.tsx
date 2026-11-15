@@ -17,7 +17,7 @@ import { EmptyState } from "../../../shared/ui/EmptyState";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { Heading } from "../../../shared/ui/Heading";
 import { Tooltip } from "../../../shared/ui/Tooltip";
-import { Segmented, SettingsFeedback } from "../../settings/ui/settingsControls";
+import { Segmented, SettingsFeedback } from "../../../shared/ui/settings";
 import { CollectionToolbar } from "../../settings/ui/SettingsCollection";
 import "./ProjectNotificationSettings.css";
 import { ProjectLogoIcon } from "../../projects/ui/ProjectLogoIcon";

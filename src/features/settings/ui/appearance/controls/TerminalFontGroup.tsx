@@ -2,7 +2,7 @@ import { t, useLocale } from "../../../../../shared/i18n";
 import { NumberField } from "../../../../../shared/ui/NumberField";
 import { CODE_FONT_CATALOG, fontFamilyValue } from "../../../model/fontCatalog";
 import { APPEARANCE_DEFAULTS } from "../../../model/appearancePreferences";
-import { Group, Row, Segmented } from "../../settingsControls";
+import { Group, Row, Segmented } from "../../../../../shared/ui/settings";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
 import { FontPicker } from "./FontPicker";
 import { useNumberDraft } from "./useNumberDraft";

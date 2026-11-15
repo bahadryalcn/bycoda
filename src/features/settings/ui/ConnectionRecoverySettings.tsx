@@ -7,7 +7,7 @@ import {
   subscribeRemoteAutoReconnect,
 } from "../model/settings";
 
-import { Group, Row, Toggle } from "./settingsControls";
+import { Group, Row, Toggle } from "../../../shared/ui/settings";
 
 export function RemoteReconnectGroup() {
   useLocale();

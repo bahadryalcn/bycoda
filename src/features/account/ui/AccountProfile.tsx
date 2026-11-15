@@ -8,7 +8,7 @@ import { Button } from "../../../shared/ui/Button";
 import { InlineEdit } from "../../../shared/ui/InlineEdit";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { PrivateEmail } from "../../../shared/ui/PrivateEmail";
-import { Group, Row } from "../../settings/public/settingsControls";
+import { Group, Row } from "../../../shared/ui/settings";
 import { localTimeZone, useProfileUpdate } from "../hooks/useAccountData";
 
 export function planLabel(tier: EntitlementsSummary["planTier"]): string {

@@ -3,7 +3,7 @@ import { DIFF_PALETTE_DEFAULT, type DiffPalette } from "../../../model/appearanc
 import { AppearanceContrast } from "../../AppearanceContrast";
 import { Text } from "../../../../../shared/ui/Text";
 import { RadioTiles } from "../../RadioTiles";
-import { Group, Row } from "../../settingsControls";
+import { Group, Row } from "../../../../../shared/ui/settings";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
 import "./InterfaceSections.css";
 

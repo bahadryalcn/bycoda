@@ -110,6 +110,10 @@
   -webkit-user-select: none;
   -webkit-tap-highlight-color: transparent;
 }
+.plot:focus-visible {
+  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
+  outline-offset: var(--ui-focus-offset);
+}
 .svg {
   display: block;
   overflow: visible;

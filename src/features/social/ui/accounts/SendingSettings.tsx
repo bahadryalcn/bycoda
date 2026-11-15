@@ -4,7 +4,7 @@ import { t } from "../../../../shared/i18n";
 import { Badge, type BadgeTone } from "../../../../shared/ui/Badge";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
 
-import { Group, Row } from "../../../settings/public/settingsControls";
+import { Group, Row } from "../../../../shared/ui/settings";
 import { DisabledReason, gateProps, type ActionGate } from "../common/DisabledReason";
 import type { SocialSnapshot } from "../../model/social";
 import type { SocialClient } from "../../model/socialClient";

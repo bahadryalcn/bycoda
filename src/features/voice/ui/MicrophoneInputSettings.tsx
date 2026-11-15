@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { ButtonGroup } from "../../../shared/ui/ButtonGroup";
-import { Select, SettingsFeedback } from "../../settings/public/settingsControls";
+import { Select, SettingsFeedback } from "../../../shared/ui/settings";
 import { MicrophoneRecording, type MicrophoneRecordingState } from "../model/microphoneRecording";
 import { useVoiceSettings } from "../model/voiceSettings";
 import { saveVoiceSettingsPatch } from "../model/voiceSettingsSave";

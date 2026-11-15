@@ -17,7 +17,7 @@ import {
   UI_SCALE_MIN,
   UI_SCALE_STEP,
 } from "../../../model/uiScale";
-import { Group, Row, Segmented, Toggle } from "../../settingsControls";
+import { Group, Row, Segmented, Toggle } from "../../../../../shared/ui/settings";
 import { resetSessionRows } from "../appearanceResets";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
 import { SidebarRowPreview } from "./SidebarRowPreview";

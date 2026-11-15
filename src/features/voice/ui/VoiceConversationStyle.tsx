@@ -13,7 +13,7 @@ import {
   SettingsFeedback,
   Toggle,
   AdvancedSettings,
-} from "../../settings/public/settingsControls";
+} from "../../../shared/ui/settings";
 import { VoiceWakeRows } from "./VoiceWakeSettings";
 import type { VoiceSettings as Preferences } from "../model/voiceSettings";
 

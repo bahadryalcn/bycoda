@@ -25,7 +25,7 @@ vi.mock("../../../../sessions/public/sessionListDisplay", () => ({
   useSessionListDisplay: () => state.display,
   updateSessionListDisplay: state.update,
 }));
-vi.mock("../../settingsControls", () => ({
+vi.mock("../../../../../shared/ui/settings", () => ({
   Group: ({ children }: { children: React.ReactNode }) => createElement("div", null, children),
   Row: ({
     children,

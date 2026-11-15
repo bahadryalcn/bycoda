@@ -18,7 +18,7 @@ import { Surface } from "../../../shared/ui/Surface";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
-import { AdvancedSettings, Group, settingDomId } from "../../settings/ui/settingsControls";
+import { AdvancedSettings, Group, settingDomId } from "../../../shared/ui/settings";
 import type { AcpRegistryEntry, GenericAcpConfig, GenericAcpSummary } from "../model/genericAcp";
 
 function Field({

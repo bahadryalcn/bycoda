@@ -1,13 +1,13 @@
 import { PasswordField } from "../../../shared/ui/PasswordField";
 import { Text } from "../../../shared/ui/Text";
 import { LoadingText } from "../../../shared/ui/LoadingText";
-import { SettingsFeedback, Toggle } from "./settingsControls";
+import { SettingsFeedback, Toggle } from "../../../shared/ui/settings";
 import { InboxScopeCollection } from "./InboxScopeCollection";
 import { JiraDefaultProjectSettings } from "./JiraDefaultProjectSettings";
 import { t, useLocale } from "../../../shared/i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { Row } from "./settingsControls";
+import { Row } from "../../../shared/ui/settings";
 import {
   InboxAccountActions,
   InboxConnectionStatus,

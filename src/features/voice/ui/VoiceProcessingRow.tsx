@@ -1,7 +1,7 @@
 import { VoicePreferenceRow as Row } from "./VoicePreferenceRow";
 import { t } from "../../../shared/i18n";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
-import { Segmented } from "../../settings/public/settingsControls";
+import { Segmented } from "../../../shared/ui/settings";
 import type { VoiceDevice } from "../model/localVoiceClient";
 import type { VoiceSettings } from "../model/voiceSettings";
 import type { VoiceSetup } from "./useVoiceSetup";

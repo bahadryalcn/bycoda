@@ -8,7 +8,7 @@ import { Select as SharedSelect } from "../../../shared/ui/Select";
 import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
-import { SettingsFeedback } from "./settingsControls";
+import { SettingsFeedback } from "../../../shared/ui/settings";
 import { MCP_PROVIDER_LABELS, type McpConnection } from "../model/mcp";
 type Scope = McpConnection["scope"];
 export type Provider = McpConnection["provider"];

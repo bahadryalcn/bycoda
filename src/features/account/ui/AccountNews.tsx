@@ -2,7 +2,7 @@ import { Text } from "../../../shared/ui/Text";
 import { AccountExternalLink } from "./AccountExternalLink";
 import { t, useLocale } from "../../../shared/i18n";
 import { formatRelativeTime } from "../../../shared/i18n/format";
-import { Group, Row, SettingsFeedback } from "../../settings/public/settingsControls";
+import { Group, Row, SettingsFeedback } from "../../../shared/ui/settings";
 import { useAnnouncementFeed } from "../hooks/useAnnouncements";
 
 const RECENT = 5;

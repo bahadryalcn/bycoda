@@ -36,7 +36,7 @@ vi.mock("./UsageActiveTime", () => ({
   UsageActiveTime: () => createElement("div", null, "Active time card"),
 }));
 import { UsagePage } from "./UsagePage";
-import { RevealedSetting } from "../../settings/ui/settingsControls";
+import { RevealedSetting } from "../../../shared/ui/settings";
 
 it("names missing Claude/Codex profiles while retaining Grok quota", () => {
   profiles.empty = true;

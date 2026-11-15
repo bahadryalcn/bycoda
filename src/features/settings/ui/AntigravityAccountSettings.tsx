@@ -1,7 +1,7 @@
 import { Code } from "../../../shared/ui/Code";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
-import { RevealedSetting, SettingsFeedback } from "./settingsControls";
+import { RevealedSetting, SettingsFeedback } from "../../../shared/ui/settings";
 import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { t, useLocale } from "../../../shared/i18n";
@@ -15,7 +15,7 @@ import {
 } from "../../../integrations/harness/core/availability";
 import { discoverAntigravityModels } from "../../../integrations/harness/providers/antigravity/antigravityCatalog";
 import { setHarnessModels } from "../../sessions/public/models";
-import { Group } from "./settingsControls";
+import { Group } from "../../../shared/ui/settings";
 import { HarnessIcon } from "../../sessions/public/HarnessIcon";
 
 export function AntigravityAccountSettings({ embedded = false }: { embedded?: boolean }) {

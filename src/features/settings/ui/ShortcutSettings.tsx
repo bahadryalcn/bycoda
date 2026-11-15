@@ -45,7 +45,7 @@ import {
   shortcutFromKeyEvent,
 } from "../../quick-composer/model/quickComposerShortcut";
 
-import { Group, Row, RevealedSetting, Select, SettingsFeedback } from "./settingsControls";
+import { Group, Row, RevealedSetting, Select, SettingsFeedback } from "../../../shared/ui/settings";
 import { ShortcutRecorder } from "../../../shared/ui/ShortcutRecorder";
 import { isImeComposition } from "../../../shared/lib/keyboard";
 

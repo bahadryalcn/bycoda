@@ -4516,7 +4516,7 @@ function SidebarProjectPicker({
       actions={
         <>
           {onNew ? (
-            <IconButton label={t("New tab")} command="Tab: New" onClick={onNew}>
+            <IconButton label={t("New session")} command="Tab: New" onClick={onNew}>
               <Plus className="icon-sm" strokeWidth={1.75} />
             </IconButton>
           ) : null}

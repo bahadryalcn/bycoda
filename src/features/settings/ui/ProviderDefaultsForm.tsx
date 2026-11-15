@@ -44,7 +44,7 @@ import {
   type RuntimeMode,
 } from "../../sessions/public/session";
 import { ProviderDefaultExtras, inheritedChoiceLabel } from "./ProviderDefaultExtras";
-import { Group, Row, Select, Toggle } from "./settingsControls";
+import { Group, Row, Select, Toggle } from "../../../shared/ui/settings";
 
 function modelDisplayName(harness: HarnessId, id: string | undefined): string {
   if (!id) return t("Automatic");

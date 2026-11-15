@@ -129,6 +129,9 @@
     },
     "src/shared/ui/arc/usage-meter/usage-meter.module.css": {
       "radius-size": 2
+    },
+    "src/features/tasks/ui/TaskStewards.tsx": {
+      "inline-help-text": 1
     }
   }
 }

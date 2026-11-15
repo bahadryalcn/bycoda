@@ -18,6 +18,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: mocks.open }));
+vi.mock("../../../shared/i18n", () => ({ t: (text: string) => `translated:${text}` }));
 
 describe("chat background image", () => {
   beforeEach(() => {
@@ -31,6 +32,9 @@ describe("chat background image", () => {
 
     await expect(pickAndSaveChatBackground()).resolves.toBe(
       "/app-data/backgrounds/chat-background.webp",
+    );
+    expect(mocks.open).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "translated:Choose background" }),
     );
     expect(mocks.invoke).toHaveBeenCalledWith("save_chat_background", {
       sourcePath: "/Pictures/aurora.webp",
@@ -55,6 +59,9 @@ describe("chat background image", () => {
 
     await expect(pickAndSaveProjectChatBackground("/work/agent-terminal")).resolves.toBe(
       "/app-data/backgrounds/project-abc.png",
+    );
+    expect(mocks.open).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "translated:Choose background" }),
     );
     expect(mocks.invoke).toHaveBeenCalledWith("save_project_chat_background", {
       project: "/work/agent-terminal",

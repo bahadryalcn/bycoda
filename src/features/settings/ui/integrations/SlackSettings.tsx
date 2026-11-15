@@ -7,7 +7,7 @@ import { Button } from "../../../../shared/ui/Button";
 import { PasswordField } from "../../../../shared/ui/PasswordField";
 import { TextField } from "../../../../shared/ui/TextField";
 import { Copy } from "../../../../shared/ui/icons";
-import { AdvancedSettings, Row, Toggle } from "../settingsControls";
+import { AdvancedSettings, Row, Toggle } from "../../../../shared/ui/settings";
 import { BrowserSignIn } from "./BrowserSignIn";
 import { slackSaveInput, slackSignInSaveInput } from "./chatAccountInputs";
 import {

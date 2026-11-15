@@ -1,7 +1,7 @@
 /* Hallmark: shape: app screen; theme: locked Bycoda; scope: app; signature: aligned provider and account rows. */
 /* Critique: remove repeated state and stacked navigation; preserve compact shared controls. */
 /* Providers page: a sticky provider list beside a detail column of framed groups.
-   Colors come from shared semantic tokens only; rows and frames come from settingsControls. */
+   Colors come from shared semantic tokens only; rows and frames come from shared/ui/settings. */
 .provider-cli-container {
   /* Named so the one-column switch follows the page width, not a nested settings frame. */
   container: provider-page / inline-size;

@@ -2161,10 +2161,10 @@
     "src/features/settings/ui/integrations/useMessagingAccounts.ts": {
       "bycoda/effect-names-its-sync": 1
     },
-    "src/features/settings/ui/settingsControls.tsx": {
+    "src/shared/ui/settings/SettingsRows.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
-    "src/features/settings/ui/settingsPageReset.ts": {
+    "src/shared/ui/settings/settingsPageReset.ts": {
       "bycoda/effect-names-its-sync": 2
     },
     "src/features/settings/ui/useAppearanceSettings.tsx": {

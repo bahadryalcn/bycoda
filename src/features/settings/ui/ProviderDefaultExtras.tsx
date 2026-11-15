@@ -24,7 +24,7 @@ import {
 } from "../../sessions/public/modelPickerData";
 import type { ProviderSessionDefaults } from "../../sessions/public/projectProviders";
 import { mergeProviderExtras } from "../../sessions/public/providerSessionDefaults";
-import { Row } from "./settingsControls";
+import { Row } from "../../../shared/ui/settings";
 import { ProviderDefaultSubagents } from "./ProviderDefaultSubagents";
 
 /** Label of the "follow the scope above" choice, naming the value it inherits. */

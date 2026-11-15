@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { t } from "../../../shared/i18n";
 import { APPEARANCE_DEFAULTS } from "../model/appearancePreferences";
-import { Row, Slider } from "./settingsControls";
+import { Row, Slider } from "../../../shared/ui/settings";
 import type { AppearanceSettings } from "./useAppearanceSettings";
 
 export function AppearanceContrast({ appearance: a }: { appearance: AppearanceSettings }) {

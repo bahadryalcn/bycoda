@@ -66,7 +66,7 @@ import {
   type ReactNode,
 } from "react";
 import { loadModelControls, subscribeModelControls } from "../../settings/model/settings";
-import { Row } from "../../settings/ui/settingsControls";
+import { Row } from "../../../shared/ui/settings";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import {
   Maximize2,
@@ -941,7 +941,7 @@ function AutomationPicker({
             variant="item"
             className="automation-start-option"
           >
-            <span className="flex gap-3">
+            <span className="flex items-center gap-3">
               <Text size="inherit" tone="muted" className="grid size-7 shrink-0 place-items-center">
                 <Plus className="icon-md" strokeWidth={1.75} />
               </Text>
@@ -960,7 +960,7 @@ function AutomationPicker({
               aria-haspopup="dialog"
               className="automation-start-option"
             >
-              <span className="flex gap-3">
+              <span className="flex items-center gap-3">
                 <Text
                   size="inherit"
                   tone="muted"

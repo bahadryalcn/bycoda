@@ -10,7 +10,7 @@ import {
   LinearSettings,
 } from "./InboxSettings";
 import { INTEGRATIONS, IntegrationsPage } from "./integrations/IntegrationsSettings";
-import { RevealedSetting } from "./settingsControls";
+import { RevealedSetting } from "../../../shared/ui/settings";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));

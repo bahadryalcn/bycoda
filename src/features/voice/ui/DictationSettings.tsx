@@ -1,10 +1,10 @@
 import { useContext } from "react";
 import { Button } from "../../../shared/ui/Button";
-import { RevealedSetting, settingDomId } from "../../settings/public/settingsControls";
+import { RevealedSetting, settingDomId } from "../../../shared/ui/settings";
 import { VoicePreferenceRow as Row } from "./VoicePreferenceRow";
 import { t, useFormat } from "../../../shared/i18n";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
-import { AdvancedSettings, Group, Select, Toggle } from "../../settings/public/settingsControls";
+import { AdvancedSettings, Group, Select, Toggle } from "../../../shared/ui/settings";
 import { DICTATION_LANGUAGES, DICTATION_PROVIDER_NAMES } from "../model/dictationModels";
 import type { DictationEngine, VoiceSettings as Preferences } from "../model/voiceSettings";
 import type { VoiceSetup } from "./useVoiceSetup";

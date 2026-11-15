@@ -12,7 +12,7 @@ import {
   type FontEntry,
 } from "../../../model/fontCatalog";
 import { RadioTiles } from "../../RadioTiles";
-import { Group } from "../../settingsControls";
+import { Group } from "../../../../../shared/ui/settings";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
 import "./TypographySamples.css";
 

@@ -58,7 +58,7 @@ afterEach(() => {
 describe("support tab", () => {
   it("says nothing is attached and not to paste secrets", async () => {
     await act(async () => root.render(createElement(AccountSupport)));
-    expect(container.textContent).toContain("Nothing from your sessions, code, logs or file paths");
+    expect(container.textContent).toContain("Nothing from your sessions, code, logs or paths");
     expect(container.textContent).toContain("Do not paste passwords, tokens");
   });
 

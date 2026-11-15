@@ -1,10 +1,10 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text, textAttributes } from "../../../shared/ui/Text";
-import cursorIcon from "../../../assets/providers/cursor.svg";
+import { HarnessIcon } from "../../../shared/ui/identity";
 import { CodeBlock } from "../../../shared/ui/icons";
 
 export function ExternalEditorIcon({ id }: { id: string }) {
-  if (id === "cursor") return <img src={cursorIcon} alt="" className="size-4" />;
+  if (id === "cursor") return <HarnessIcon harness="cursor" size="md" />;
   if (id === "vscode" || id === "vscode-insiders")
     return (
       <svg

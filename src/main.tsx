@@ -16,7 +16,8 @@ import { activateWindowAppearance, initAppearance } from "./features/settings/mo
 import { initInteractionTint } from "./features/settings/model/interactionTint";
 import { initWorkingIndicator } from "./features/settings/model/workingIndicator";
 import { initScrollbarStyle } from "./features/settings/model/scrollbarStyle";
-import { initSounds } from "./features/settings/model/sounds";
+import { initSounds, playCue } from "./features/settings/model/sounds";
+import { setToggleCue } from "./shared/ui/settings";
 import {
   abortQuit,
   askQuitConfirmation,
@@ -101,6 +102,7 @@ initInteractionTint();
 initWorkingIndicator();
 initScrollbarStyle();
 initSounds();
+setToggleCue(() => playCue("switch"));
 // Prime the real home directory before the first render so every `~/` file
 // reference resolves consistently. The IPC call is local and failures remain
 // best-effort, falling back to inference from a session's cwd.

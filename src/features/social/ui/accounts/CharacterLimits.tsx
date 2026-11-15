@@ -1,7 +1,7 @@
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
-import { Group, Row } from "../../../settings/public/settingsControls";
+import { Group, Row } from "../../../../shared/ui/settings";
 import { Select } from "../../../../shared/ui/Select";
 
 import { TextField } from "../../../../shared/ui/TextField";

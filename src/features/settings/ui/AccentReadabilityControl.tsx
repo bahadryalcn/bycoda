@@ -6,7 +6,7 @@ import {
   loadAppearancePreferences,
   saveAppearancePreferences,
 } from "../model/appearancePreferences";
-import { Row, Segmented } from "./settingsControls";
+import { Row, Segmented } from "../../../shared/ui/settings";
 
 function loadAccentReadability() {
   return loadAppearancePreferences().accentReadability;

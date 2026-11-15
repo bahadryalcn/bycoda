@@ -1,6 +1,6 @@
 import { writeGeneratorValue } from "../../../src/features/settings/ui/appearance/controls/themeGeneratorSession";
 import { ImageDropZone } from "../../../src/features/settings/ui/appearance/controls/ImageDropZone";
-import { AdvancedSettings, Row } from "../../../src/features/settings/ui/settingsControls";
+import { AdvancedSettings, Row } from "../../../src/shared/ui/settings";
 import { AntigravityAccountSettings } from "../../../src/features/settings/ui/AntigravityAccountSettings";
 import { seedProvidersFixture, providersFixtureCommand } from "./settings-providers-fixture";
 import { useState } from "react";

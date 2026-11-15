@@ -38,6 +38,10 @@ Title-bar project and conversation actions stay icon-only on hover and focus.
 Their tooltips show command names and configured shortcuts, with project details where available.
 Window caption controls, including Close, use the same neutral tone.
 
+Startup recovery shows a short failure title, Reload app and expandable error details.
+Native file pickers use the application language for their titles; system controls
+keep the OS language. Tray status labels stay compact inside their existing groups.
+
 Transient toast messages, including errors, close automatically after ten seconds
 while the Bycoda window is focused. Switching away or hiding the window pauses the
 countdown; returning resumes the remaining time. Hovering over a toast or focusing

@@ -8,7 +8,7 @@ import {
   saveFormatOnSave,
   subscribeFormatOnSave,
 } from "../model/settings";
-import { Group, Row, SettingsFeedback, Toggle } from "./settingsControls";
+import { Group, Row, SettingsFeedback, Toggle } from "../../../shared/ui/settings";
 
 export function WorkspaceEditorSettings() {
   useLocale();

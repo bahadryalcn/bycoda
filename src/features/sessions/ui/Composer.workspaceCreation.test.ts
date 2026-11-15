@@ -139,7 +139,7 @@ it.each([
 ])("retains the update requirement without claiming active sessions for %j", async (status) => {
   host.status = status;
   await draw({ workspaceMode: "worktree" });
-  expect(container.textContent).toContain(host.error);
+  expect(container.textContent).toContain("Your checkout is not used as a fallback.");
   expect(container.textContent).not.toContain("will install automatically");
   expect(button("Use current checkout")).toBeDefined();
   expect(button("Send")?.disabled).toBe(true);

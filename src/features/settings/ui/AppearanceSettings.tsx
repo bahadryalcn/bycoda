@@ -2,7 +2,7 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { useContext, useLayoutEffect, useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
-import { RevealedSetting, settingDomId, SettingsFeedback } from "./settingsControls";
+import { RevealedSetting, settingDomId, SettingsFeedback } from "../../../shared/ui/settings";
 import type { AppearanceSettings } from "./useAppearanceSettings";
 import { ThemeSection } from "./appearance/sections/ThemeSection";
 import { BackgroundSection } from "./appearance/sections/BackgroundSection";

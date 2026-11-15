@@ -3,7 +3,7 @@ import { t, useLocale, formatDate } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { RefreshCw } from "../../../shared/ui/icons";
 import { type HarnessId } from "../../sessions/model/session";
-import { SettingsFeedback } from "../../settings/ui/settingsControls";
+import { SettingsFeedback } from "../../../shared/ui/settings";
 import {
   getCatalogReceipt,
   getCatalogReceiptsSnapshot,

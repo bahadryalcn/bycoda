@@ -5,7 +5,7 @@ import { ColorPickerPopover, ColorSwatchRow } from "../../../../../shared/ui/Col
 import { Popover } from "../../../../../shared/ui/Popover";
 import { Button } from "../../../../../shared/ui/Button";
 import { ACCENT_COLOR_DEFAULT } from "../../../model/appearance";
-import { settingDomId } from "../../settingsControls";
+import { settingDomId } from "../../../../../shared/ui/settings";
 import "./ThemeControls.css";
 
 export const ACCENT_COLOR_PRESETS = [

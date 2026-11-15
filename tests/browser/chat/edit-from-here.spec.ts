@@ -24,7 +24,7 @@ async function open(page: Page, query = "") {
   await page.keyboard.press("Enter");
   await expect(dialog(page)).toBeVisible();
   await expect(dialog(page)).toHaveAccessibleDescription(
-    'Rewind chat to before this message. Your prompt and attachments return to the composer. "Revert files too" also undoes your own edits.',
+    'Rewind chat to before this message. Your prompt and attachments return to the composer; "Revert files too" undoes your edits.',
   );
 }
 async function restored(page: Page) {

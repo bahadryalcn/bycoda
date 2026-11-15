@@ -8,7 +8,7 @@ import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
 import { WorktreeRow } from "./WorktreeRow";
 import { DeleteWorktreeDialog } from "./DeleteWorktreeDialog";
 import { SearchableProjectPicker } from "../../projects/public/SearchableProjectPicker";
-import { SettingsFeedback } from "../../settings/public/settingsControls";
+import { SettingsFeedback } from "../../../shared/ui/settings";
 import { Heading } from "../../../shared/ui/Heading";
 import { Plus, RefreshCw } from "../../../shared/ui/icons";
 import { revealPath } from "../../../platform/tauri/fs";

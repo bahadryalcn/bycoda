@@ -4,7 +4,7 @@ import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { t, useLocale } from "../../../shared/i18n";
 import { saveShowRemainingUsage, useShowRemainingUsage } from "../../settings/model/displayPrefs";
-import { settingDomId, Toggle } from "../../settings/ui/settingsControls";
+import { settingDomId, Toggle } from "../../../shared/ui/settings";
 
 /** Compact toolbar switch; keeps the settings-search anchor of the former row. */
 export function UsageDisplaySettings() {

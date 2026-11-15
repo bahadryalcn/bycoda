@@ -1,4 +1,4 @@
-import { SettingsFeedback } from "./settingsControls";
+import { SettingsFeedback } from "../../../shared/ui/settings";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import {
@@ -6,7 +6,7 @@ import {
   getFileAccessMode,
   type FileAccessMode,
 } from "../../../platform/tauri/fileAccess";
-import { Group, Row } from "./settingsControls";
+import { Group, Row } from "../../../shared/ui/settings";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";

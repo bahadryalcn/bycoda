@@ -29,7 +29,7 @@ import {
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { loadSoundsEnabled, saveSoundsEnabled, subscribeSoundsEnabled } from "../model/sounds";
 import { TimePicker } from "../../../shared/ui/TimePicker";
-import { Group, Row, Toggle, SettingsFeedback } from "./settingsControls";
+import { Group, Row, Toggle, SettingsFeedback } from "../../../shared/ui/settings";
 import "./NotificationsSettings.css";
 
 /**

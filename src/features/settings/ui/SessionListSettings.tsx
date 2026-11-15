@@ -14,7 +14,7 @@ import {
 } from "../../sessions/public/sessionLifecycle";
 import { toast } from "../../../shared/ui/ToastRegion";
 
-import { Group, Row, Segmented, Select, Slider, Toggle } from "./settingsControls";
+import { Group, Row, Segmented, Select, Slider, Toggle } from "../../../shared/ui/settings";
 
 /** The sidebar's default session row layout; the list's view menu edits the same values. */
 export function SessionListSettings() {

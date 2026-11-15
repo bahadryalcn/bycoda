@@ -23,7 +23,7 @@ import {
   resetMotion,
   resetSessionRows,
 } from "./appearance/appearanceResets";
-import { SettingsFeedback } from "./settingsControls";
+import { SettingsFeedback } from "../../../shared/ui/settings";
 import { t, useLocale } from "../../../shared/i18n";
 import {
   LIVE_BACKGROUND_DEFAULT,

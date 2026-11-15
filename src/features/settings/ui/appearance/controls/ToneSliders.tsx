@@ -11,7 +11,7 @@ import {
   THEME_SATURATION_MIN,
 } from "../../../model/appearance";
 import { APPEARANCE_RANGES } from "../../../model/themeRanges";
-import { Row, Slider } from "../../settingsControls";
+import { Row, Slider } from "../../../../../shared/ui/settings";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
 import "./ThemeControls.css";
 import "./ToneSliders.css";

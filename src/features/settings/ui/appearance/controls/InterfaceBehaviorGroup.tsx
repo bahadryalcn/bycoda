@@ -7,7 +7,7 @@ import {
   updateSessionListDisplay,
   useSessionListDisplay,
 } from "../../../../sessions/public/sessionListDisplay";
-import { Group, Row, Segmented, Slider } from "../../settingsControls";
+import { Group, Row, Segmented, Slider } from "../../../../../shared/ui/settings";
 import { resetGroupDelay } from "../appearanceResets";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
 

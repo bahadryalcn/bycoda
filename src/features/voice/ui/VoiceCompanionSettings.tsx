@@ -4,7 +4,7 @@ import { Button } from "../../../shared/ui/Button";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Pencil, Settings } from "../../../shared/ui/icons";
 import { t } from "../../../shared/i18n";
-import { AdvancedSettings, Group, Toggle } from "../../settings/public/settingsControls";
+import { AdvancedSettings, Group, Toggle } from "../../../shared/ui/settings";
 import { saveVoicePreference } from "../model/voiceSettingsSave";
 import { VoiceVisualizer } from "./VoiceVisualizer";
 import { useVoicePersona } from "../model/voicePersona";

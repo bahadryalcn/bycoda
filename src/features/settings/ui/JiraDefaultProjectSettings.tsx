@@ -11,7 +11,7 @@ import {
   type JiraProject,
   type JiraBoard,
 } from "../../inbox/public/jiraDefaultProjects";
-import { Row, SettingsFeedback } from "./settingsControls";
+import { Row, SettingsFeedback } from "../../../shared/ui/settings";
 
 function snapshot() {
   try {

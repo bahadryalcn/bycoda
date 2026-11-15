@@ -11,7 +11,7 @@ import { Select } from "../../../shared/ui/Select";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { Heading } from "../../../shared/ui/Heading";
-import { Group, Row, SettingsFeedback } from "../../settings/public/settingsControls";
+import { Group, Row, SettingsFeedback } from "../../../shared/ui/settings";
 import type {
   WorkspacePolicy,
   WorkspacePolicyOverride,

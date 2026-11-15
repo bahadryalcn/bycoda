@@ -148,8 +148,9 @@ avatar picker also has **Generate with AI** for a portrait from your own
 description; generated avatars are stored on the Host.
 
 Quick setup has three steps: your name and how the assistant addresses you, a
-**Work mode**, and a review. Voice setup adds its provider, voice, microphone,
-conversation and hours steps. The work mode answers one question, how freely the
+**Work mode**, and a review. Voice setup has five steps: Identity (including language and conversation behavior),
+Voice (provider, playback and microphone checks), Work mode, Presence and hours
+(including first rules), and Review. Existing drafts resume in the matching grouped step. The work mode answers one question, how freely the
 assistant may work, and sets the job controls together:
 
 - **Only watch** reports what happens and starts no work.

@@ -8,7 +8,7 @@ import { EditorView } from "@codemirror/view";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
 import { SkillsPage } from "./SkillsPage";
-import { RevealedSetting } from "../../settings/ui/settingsControls";
+import { RevealedSetting } from "../../../shared/ui/settings";
 import { createSkillGroup, listSkillGroups } from "../index";
 import { SettingsView } from "../../settings/ui/SettingsView";
 import type { DiscoveredSkill } from "../../../platform/tauri/fs";

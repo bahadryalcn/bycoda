@@ -50,7 +50,7 @@ import {
   useSettingsPageReset,
   SettingsFeedback,
   settingDomId,
-} from "../settingsControls";
+} from "../../../../shared/ui/settings";
 import { ModelOrderSettings, ModelRolesSettings } from "../../../model-routing/public/settings";
 import { MODELS_TABS, modelsTabForSetting, type ModelsTab } from "./modelsSettingsLink";
 import {

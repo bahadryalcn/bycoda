@@ -4,6 +4,7 @@ import { invoke as invokeLocal } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { withGithubRead } from "../../shared/lib/githubReadGate";
 import { open } from "@tauri-apps/plugin-dialog";
+import { t } from "../../shared/i18n/core";
 import { parentPath, slash, joinPath } from "../../shared/lib/paths";
 import { REMOTE_PATH_PREFIX } from "../../shared/lib/remotePaths";
 import { localExplorerPath } from "../../shared/lib/remoteExplorerPaths";
@@ -1213,7 +1214,7 @@ export function pathEnvironment(): Promise<Record<string, string>> {
  * when only one was taken.
  */
 export async function pickNativeFolders(
-  title = "Open projects",
+  title = t("Open projects"),
   multiple = true,
 ): Promise<string[]> {
   const selected = await open({
@@ -1228,7 +1229,7 @@ export async function pickNativeFolders(
 }
 
 /** Shared in-app browser for adding projects and session folders. */
-export async function pickFolders(title = "Open projects", multiple = true): Promise<string[]> {
+export async function pickFolders(title = t("Open projects"), multiple = true): Promise<string[]> {
   const folders = await requestFolderPicker({ title, multiple });
   for (const path of folders) await invoke<void>("authorize_project_path", { path });
   return folders;
@@ -1239,13 +1240,13 @@ export async function pickCodeWorkspaceFile(): Promise<string | null> {
   const selected = await open({
     multiple: false,
     directory: false,
-    title: "Open VS Code workspace",
-    filters: [{ name: "VS Code workspace", extensions: ["code-workspace"] }],
+    title: t("Choose workspace"),
+    filters: [{ name: t("VS Code workspace"), extensions: ["code-workspace"] }],
   });
   return typeof selected === "string" && selected ? slash(selected) : null;
 }
 
-export async function pickFiles(title = "Attach files"): Promise<string[] | null> {
+export async function pickFiles(title = t("Attach files")): Promise<string[] | null> {
   const selected = await open({
     multiple: true,
     directory: false,
@@ -1259,12 +1260,12 @@ export async function pickFiles(title = "Attach files"): Promise<string[] | null
   return null;
 }
 
-export async function pickImageFiles(title = "Insert images"): Promise<string[] | null> {
+export async function pickImageFiles(title = t("Insert images")): Promise<string[] | null> {
   const selected = await open({
     multiple: true,
     directory: false,
     title,
-    filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "webp", "svg"] }],
+    filters: [{ name: t("Images"), extensions: ["png", "jpg", "jpeg", "gif", "webp", "svg"] }],
   });
   if (Array.isArray(selected)) {
     const paths = selected.filter((path): path is string => Boolean(path)).map(slash);

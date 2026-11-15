@@ -5,7 +5,7 @@ import { Tab, TabList, TabPanel, Tabs } from "../../../../shared/ui/Tabs";
 import { isPausedMessagingProvider, MessagingProviderMark } from "../../../messaging";
 import { INBOX_PROVIDERS, inboxProviderMark } from "../InboxSettings";
 import { JiraSettings } from "../JiraSettings";
-import { Group, RevealedSetting } from "../settingsControls";
+import { Group, RevealedSetting } from "../../../../shared/ui/settings";
 import { DiscordSettings } from "./DiscordSettings";
 import { EmailAccountsSettings } from "./EmailAccountsSettings";
 import { SlackSettings } from "./SlackSettings";

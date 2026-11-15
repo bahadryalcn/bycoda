@@ -5,7 +5,7 @@ import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { loadSessionFolder, saveSessionFolder, type SessionFolder } from "../model/sessionFolder";
-import { Group, Row, SettingsFeedback } from "./settingsControls";
+import { Group, Row, SettingsFeedback } from "../../../shared/ui/settings";
 
 /** Page-level "Restore defaults": sessions without a project go back to the home folder. */
 const changes = new EventTarget();
@@ -79,7 +79,7 @@ export function SessionFolderGroup() {
         directory: true,
         multiple: false,
         defaultPath: folder?.chosen ?? folder?.home ?? undefined,
-        title: t("Select folder for sessions without a project"),
+        title: t("Session folder"),
       });
       if (typeof path === "string") await save(path);
     } catch (cause) {

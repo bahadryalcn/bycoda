@@ -11,7 +11,7 @@ import {
 import { copyText } from "../../../platform/tauri/clipboard";
 import { Button } from "../../../shared/ui/Button";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
-import { Group, Row, Toggle, SettingsFeedback } from "./settingsControls";
+import { Group, Row, Toggle, SettingsFeedback } from "../../../shared/ui/settings";
 
 /**
  * Page-level "Restore defaults": the trace goes back to off. The mounted group follows through

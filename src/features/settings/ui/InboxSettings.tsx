@@ -35,7 +35,7 @@ import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
 import "./InboxSettings.css";
 import { isInboxScopeString, useInboxScopePreference } from "./useInboxScopePreference";
-import { Row, SettingsFeedback } from "./settingsControls";
+import { Row, SettingsFeedback } from "../../../shared/ui/settings";
 import { isImeComposition } from "../../../shared/lib/keyboard";
 
 export const INBOX_PROVIDERS = [

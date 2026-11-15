@@ -136,7 +136,7 @@ export const ChangeRow = memo(function ChangeRow({
       <ActionHost
         selected={selected}
         hoverReveal
-        padding={{ start: "md" }}
+        padding={{ start: "md", end: "md" }}
         className="flex w-full items-center gap-1"
       >
         <Button

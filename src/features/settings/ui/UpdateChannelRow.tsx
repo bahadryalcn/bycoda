@@ -6,7 +6,7 @@ import {
   saveUpdateChannel,
   subscribeUpdateChannel,
 } from "../model/updateChannel";
-import { Row, Toggle } from "./settingsControls";
+import { Row, Toggle } from "../../../shared/ui/settings";
 
 /** Opt-in to the preview feed; the updater re-checks as soon as the choice changes. */
 export function UpdateChannelRow() {

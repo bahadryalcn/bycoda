@@ -154,9 +154,9 @@ it("removes a folder and warns while standalone commands run without asking", as
     true,
     false,
   );
-  expect(container.textContent).not.toContain("A command can do anything you can do");
+  expect(container.textContent).not.toContain("A command can do anything you can.");
   await click("Run commands without asking");
-  expect(container.textContent).toContain("A command can do anything you can do");
+  expect(container.textContent).toContain("A command can do anything you can.");
   await click("Remove D:\\notes");
   expect(container.textContent).toContain("No folders added yet.");
   await act(async () => saveRef.current!());

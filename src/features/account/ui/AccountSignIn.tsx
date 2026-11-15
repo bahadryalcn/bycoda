@@ -2,7 +2,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
-import { Group, Row } from "../../settings/public/settingsControls";
+import { Group, Row } from "../../../shared/ui/settings";
 import type { AccountNotice, AccountState } from "../model/accountState";
 
 const REJECTED_CONFIG =

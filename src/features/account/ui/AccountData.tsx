@@ -12,7 +12,7 @@ import { errorText } from "../../../shared/lib/errors";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
-import { Group, Row } from "../../settings/public/settingsControls";
+import { Group, Row } from "../../../shared/ui/settings";
 import { useDataExport, useDataSummary } from "../hooks/useAccountData";
 
 export function retentionLabel(key: RetentionKey): string {

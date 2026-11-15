@@ -708,7 +708,7 @@ Usage limits view; both reuse the same quota and budget owners.
 
 ### Settings row contract
 
-Owner of the contract: `src/features/settings/ui/settingsControls.tsx` (Group, Row,
+Owner of the contract: `src/shared/ui/settings/SettingsRows.tsx` (Group, Row,
 AdvancedSettings, PageHeader) with `BycodaSettings.css` / `SettingsCollection.css`.
 Pages compose these; they never reskin them or add page-local surfaces.
 

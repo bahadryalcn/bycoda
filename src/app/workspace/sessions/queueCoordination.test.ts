@@ -520,7 +520,7 @@ describe("Resume always does something visible", () => {
     });
     expect(sendAgain().disabled).toBe(false);
     expect(container.querySelector("[data-delivery-review-warning]")?.textContent).toMatch(
-      /duplicates a message that was delivered/,
+      /duplicates a delivered message/,
     );
     // The inline choice: it never arrived, send it again.
     await click("Send again");

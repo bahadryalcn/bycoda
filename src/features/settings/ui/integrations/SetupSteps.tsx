@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Text } from "../../../../shared/ui/Text";
-import { AdvancedSettings, Row } from "../settingsControls";
+import { AdvancedSettings, Row } from "../../../../shared/ui/settings";
 
 /** Provider setup instructions behind a closed disclosure, so the form stays compact. */
 export function SetupSteps({

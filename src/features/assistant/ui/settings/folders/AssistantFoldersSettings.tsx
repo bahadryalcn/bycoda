@@ -11,7 +11,7 @@ import { InfoPopover } from "../../../../../shared/ui/InfoPopover";
 import { InlineError } from "../../../../../shared/ui/InlineError";
 import { LoadingText } from "../../../../../shared/ui/LoadingText";
 import { FolderPlus, X } from "../../../../../shared/ui/icons";
-import { Row, Toggle } from "../../../../settings/public/settingsControls";
+import { Row, Toggle } from "../../../../../shared/ui/settings";
 import type { assistantRequest } from "../../../model/assistantClient";
 import { useAssistantFolders, type FoldersDraftState } from "./useAssistantFolders";
 import styles from "./assistantFolders.module.css";

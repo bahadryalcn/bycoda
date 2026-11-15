@@ -1,6 +1,6 @@
 import { t } from "../../../shared/i18n";
 import { InlineMessage } from "../../../shared/ui/InlineError";
-import { Group } from "../../settings/public/settingsControls";
+import { Group } from "../../../shared/ui/settings";
 import { usePermissionStatus } from "../hooks/usePermissionStatus";
 import { PERMISSION_IDS, permissionInfo } from "../model/permissions";
 import { PermissionRow } from "./PermissionRow";

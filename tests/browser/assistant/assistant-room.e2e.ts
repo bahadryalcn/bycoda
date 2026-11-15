@@ -84,27 +84,18 @@ for (const theme of ["light", "dark"])
     });
   }
 
-const setupTitles = [
-  "Identity",
-  "Language",
-  "Voice provider",
-  "Voice",
-  "Microphone test",
-  "Conversation behavior",
-  "Work mode",
-  "Presence and hours",
-  "First rules",
-  "Review",
-];
+const setupTitles = ["Identity", "Voice", "Work mode", "Presence and hours", "Review"];
 test("an untouched discovered worker becomes explicit only after choosing a work mode", async ({
   page,
 }) => {
   await page.goto("/tests/browser/assistant/assistant-room.html?real-controls&setup=core&fresh");
   const dialog = page.getByRole("dialog");
-  await expect(dialog).toHaveAccessibleName("Identity");
+  await expect(dialog).toHaveAccessibleName("Set up");
+  await expect(dialog.locator('[aria-current="step"]')).toContainText("Identity");
   expect((await setupDraft(page)).patch.execution).toBeNull();
   await dialog.getByRole("button", { name: "Next", exact: true }).click();
-  await expect(dialog).toHaveAccessibleName("Work mode");
+  await expect(dialog).toHaveAccessibleName("Set up");
+  await expect(dialog.locator('[aria-current="step"]')).toContainText("Work mode");
   expect((await setupDraft(page)).patch.execution).toBeNull();
   const workAndAsk = dialog.getByRole("radio", { name: /^Work and ask/ });
   await expect(workAndAsk).toBeVisible();
@@ -123,7 +114,8 @@ test("an untouched discovered worker becomes explicit only after choosing a work
     ),
   ).toEqual([]);
   await dialog.getByRole("button", { name: "Next", exact: true }).click();
-  await expect(dialog).toHaveAccessibleName("Review");
+  await expect(dialog).toHaveAccessibleName("Set up");
+  await expect(dialog.locator('[aria-current="step"]')).toContainText("Review");
   await expect(dialog).toContainText("Fixture worker");
   await dialog.getByRole("button", { name: "Start", exact: true }).click();
   await finishSetup(page);
@@ -176,7 +168,7 @@ async function expectModelsNavigation(page: Page, group: Locator) {
 for (const theme of ["light", "dark"])
   for (const width of [1280, 800])
     test(`compact setup journey ${theme} ${width}`, async ({ page }) => {
-      const output = "temp/verification/assistant-setup-compact-2026-11-03/captures";
+      const output = "temp/verification/final-leftovers/captures";
       await mkdir(output, { recursive: true });
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ reducedMotion: "reduce" });
@@ -193,10 +185,11 @@ for (const theme of ["light", "dark"])
       }> = [];
       const dialog = page.getByRole("dialog");
       const capture = async (index: number) => {
-        await expect(dialog).toHaveAccessibleName(setupTitles[index]);
-        await expect(dialog.getByRole("progressbar")).toHaveAccessibleName(
-          `Step ${index + 1} of 10`,
-        );
+        await expect(dialog).toHaveAccessibleName("Set up");
+        await expect(
+          dialog.getByRole("group", { name: "Set up", exact: true }).getByRole("listitem"),
+        ).toHaveCount(5);
+        await expect(dialog.locator('[aria-current="step"]')).toContainText(setupTitles[index]);
         const box = (await dialog.boundingBox())!;
         expect(box.x).toBeGreaterThanOrEqual(0);
         expect(box.x + box.width).toBeLessThanOrEqual(width + 1);
@@ -206,7 +199,7 @@ for (const theme of ["light", "dark"])
           true,
         );
         await expect(
-          dialog.getByRole("button", { name: index === 9 ? "Start" : "Next", exact: true }),
+          dialog.getByRole("button", { name: index === 4 ? "Start" : "Next", exact: true }),
         ).toBeVisible();
         await page.screenshot({
           animations: "disabled",
@@ -231,34 +224,33 @@ for (const theme of ["light", "dark"])
         .getByRole("textbox", { name: "Assistant name", exact: true })
         .fill("Setup fixture");
       await capture(0);
-      await next();
       await chooseSetupValue(page, "Language", "English");
       await dialog.getByRole("button", { name: "Close", exact: true }).click();
       await expect(dialog).toHaveCount(0);
       await page.getByRole("button", { name: "Reopen setup", exact: true }).focus();
       await page.keyboard.press("Enter");
-      await expect(dialog).toHaveAccessibleName("Language");
+      await expect(dialog).toHaveAccessibleName("Set up");
+      await expect(dialog.locator('[aria-current="step"]')).toContainText("Identity");
       await page.reload();
-      await expect(dialog).toHaveAccessibleName("Language");
+      await expect(dialog).toHaveAccessibleName("Set up");
+      await expect(dialog.locator('[aria-current="step"]')).toContainText("Identity");
       expect((await setupDraft(page)).patch.name).toBe("Setup fixture");
       await expect(
         dialog.getByRole("button", { name: "Language: English", exact: true }),
       ).toBeVisible();
-      await capture(1);
+      await capture(0);
       await next();
       await expect(dialog.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
       expect(await page.evaluate(() => (window as any).setupVoice.microphoneStarts)).toBe(0);
       await dialog.getByRole("radio", { name: "On this computer", exact: true }).click();
       await dialog.getByRole("button", { name: "Check connection", exact: true }).click();
-      await expect(dialog.getByRole("status").filter({ hasText: "Ready" })).toBeVisible();
-      await capture(2);
-      await next();
+      await expect(dialog.getByRole("status").filter({ hasText: "Ready" }).first()).toBeVisible();
+      await capture(1);
       await expect(dialog.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
       await dialog.getByRole("button", { name: "Listen", exact: true }).click();
-      await expect(dialog.getByRole("status").filter({ hasText: "Ready" })).toBeVisible();
+      await expect(dialog.getByRole("status").filter({ hasText: "Ready" }).first()).toBeVisible();
       await dialog.getByRole("button", { name: "Stop", exact: true }).click();
-      await capture(3);
-      await next();
+      await capture(1);
       await expect(dialog.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
       await dialog.getByRole("button", { name: "Test microphone", exact: true }).click();
       await expect
@@ -271,9 +263,7 @@ for (const theme of ["light", "dark"])
       await expect(
         dialog.getByRole("status").filter({ hasText: "This is a synthetic microphone sentence." }),
       ).toBeVisible();
-      await capture(4);
-      await next();
-      await capture(5);
+      await capture(1);
       await next();
       for (const name of ["Only watch", "Work freely", "Work and ask"]) {
         const mode = dialog.getByRole("radio", { name: new RegExp(`^${name}`) });
@@ -294,7 +284,7 @@ for (const theme of ["light", "dark"])
         },
       });
       expect(await page.evaluate(() => (window as any).__setupModelSelections ?? 0)).toBe(0);
-      await capture(6);
+      await capture(2);
       await next();
       // "Work hours" is on while a range is set; off means all day.
       const workHours = dialog.getByRole("switch", { name: "Work hours", exact: true });
@@ -315,15 +305,14 @@ for (const theme of ["light", "dark"])
       const quietPatch = (await setupDraft(page)).patch;
       expect(quietPatch.quietStart).toBe(quietPatch.quietEnd);
       await quiet.click();
-      await capture(7);
-      await next();
+      await capture(3);
       await dialog
         .getByRole("textbox", { name: "Anything I should know?", exact: true })
         .fill("Keep my drafts intact.");
-      await capture(8);
+      await capture(3);
       await next();
       await expect(dialog).toContainText("2,000,000");
-      await capture(9);
+      await capture(4);
       expect(
         await page.evaluate(() =>
           (window as any).__setupRequests.filter(
@@ -1486,7 +1475,7 @@ for (const theme of ["light", "dark"])
       await openSettingsGroup(page, "Cost and context");
       await page.getByRole("button", { name: "About cost and context", exact: true }).click();
       const explanation = page.getByText(
-        "These limits estimate retained text. Summaries, daily renewal, review reservations and a 1 MB safety limit can shorten it earlier. They do not guarantee the provider's context window or charges.",
+        "Limits estimate retained text; summaries and a 1 MB safety limit can shorten it. Provider limits are not enforced.",
         { exact: true },
       );
       await explanation.scrollIntoViewIfNeeded();

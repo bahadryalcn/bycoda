@@ -10,10 +10,10 @@ import {
   loadVoiceSettings,
   saveVoiceSettings,
 } from "../../../src/features/voice/model/voiceSettings";
-import { SettingsFeedback } from "../../../src/features/settings/ui/settingsControls";
+import { SettingsFeedback } from "../../../src/shared/ui/settings";
 import { TextareaField } from "../../../src/shared/ui/TextareaField";
 import { setLanguagePreference } from "../../../src/shared/i18n";
-import { Segmented } from "../../../src/features/settings/public/settingsControls";
+import { Segmented } from "../../../src/shared/ui/settings";
 import { dictationDataOptions, dictationSettingsData } from "./dictation-settings-data";
 import { fixtureDictation } from "./dictation-permissions-mocks";
 import "../../../src/styles/index.css";

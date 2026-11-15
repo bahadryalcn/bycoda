@@ -16,7 +16,7 @@ import {
   productSessionDefaults,
   providerSessionDefaults,
 } from "../../sessions/public/providerSessionDefaults";
-import { Row, Select } from "./settingsControls";
+import { Row, Select } from "../../../shared/ui/settings";
 
 export function inheritedProviderDefaults(harness: HarnessId, projectScope: boolean) {
   return projectScope ? providerSessionDefaults(harness) : productSessionDefaults(harness);

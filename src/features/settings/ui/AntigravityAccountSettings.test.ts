@@ -27,7 +27,7 @@ vi.mock("../../sessions/model/models", () => ({
   setHarnessModels: mock.setModels,
 }));
 import { AntigravityAccountSettings } from "./AntigravityAccountSettings";
-import { RevealedSetting } from "./settingsControls";
+import { RevealedSetting } from "../../../shared/ui/settings";
 
 let container: HTMLDivElement;
 let root: Root;
@@ -71,7 +71,7 @@ it("opens shared-account setup from Accounts without offering unsupported named 
   expect(details.open).toBe(true);
   const panel = details;
   expect(panel.textContent).toContain(
-    "Separate named Antigravity accounts cannot currently be added",
+    "bycoda uses the shared Antigravity CLI account on this computer",
   );
   expect(panel.textContent).toContain("/logout");
   expect(container.textContent).not.toContain("Add account");

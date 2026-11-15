@@ -281,7 +281,7 @@ fn build(
     let new_tab = menu_item(
         app,
         "new_tab",
-        "New Tab",
+        "New Session",
         "CmdOrCtrl+T",
         "Tab: New",
         overrides,
@@ -579,7 +579,7 @@ fn build(
             .minimize()
             .maximize()
             .build()?;
-        let website = MenuItemBuilder::with_id("help_website", "bycoda Website").build(app)?;
+        let website = MenuItemBuilder::with_id("help_website", "Website").build(app)?;
         let github = MenuItemBuilder::with_id("help_github", "View on GitHub").build(app)?;
         let report_bug = MenuItemBuilder::with_id("help_report_bug", "Report a Bug…").build(app)?;
         let request_feature =

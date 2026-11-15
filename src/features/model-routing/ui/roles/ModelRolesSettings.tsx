@@ -2,7 +2,7 @@ import { retainedTransactionValue, useRetainedTransaction } from "../../model/re
 import { t, useLocale } from "../../../../shared/i18n";
 import type { ModelRoutingState } from "../../../../shared/model/host-contracts/model-routing";
 import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
-import { Group, SettingsFeedback } from "../../../settings/public/settingsControls";
+import { Group, SettingsFeedback } from "../../../../shared/ui/settings";
 import { useModelRouting } from "../../model/modelRoutingClient";
 import {
   effectiveRoleChoice,

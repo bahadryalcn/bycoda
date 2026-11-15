@@ -12,7 +12,7 @@ vi.mock("../../../sessions/public/ModelLabel", () => ({
 vi.mock("../../../sessions/public/models", () => ({
   resolveModel: (_harness: string, model: string) => ({ name: model }),
 }));
-vi.mock("../../../settings/public/settingsControls", () => ({
+vi.mock("../../../../shared/ui/settings", () => ({
   Group: ({ children, action }: { children: ReactNode; action: ReactNode }) =>
     createElement("section", null, action, children),
 }));

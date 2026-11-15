@@ -13,7 +13,7 @@ import { LoadingText } from "../../../shared/ui/LoadingText";
 import { PrivateEmail } from "../../../shared/ui/PrivateEmail";
 import { Timeline } from "../../../shared/ui/Timeline";
 import { Clock } from "../../../shared/ui/icons";
-import { Group, Row } from "../../settings/public/settingsControls";
+import { Group, Row } from "../../../shared/ui/settings";
 import { useDevices, useSecurityActivity } from "../hooks/useAccountData";
 import { securityUrl } from "../model/accountPortal";
 import {

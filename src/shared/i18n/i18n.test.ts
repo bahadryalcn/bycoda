@@ -226,6 +226,6 @@ it("shows the new CI parity copy in Turkish", async () => {
   expect(t("Failure allowed")).toBe("Hata kabul edilebilir");
   expect(t("Open {p0} check", { p0: "build" })).toBe("build kontrolünü aç");
   expect(t("Account changed; reload checks before repairing.")).toBe(
-    "Hesap değişti; düzeltmeden önce kontrolleri yeniden yükle.",
+    "Hesap değişti; düzeltmeden önce kontrolleri yeniden yükleyin.",
   );
 });

@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import {
   tabCopy,
+  buildTabCopy,
   tabStripOverflow,
   titleTabContextCloseIds,
   titleTabCanMoveToNewWindow,
@@ -26,6 +27,12 @@ function tab(overrides: Partial<Tab> = {}): Tab {
 }
 
 describe("tabCopy", () => {
+  it("uses the subscribed translator for count and dirty metadata", () => {
+    const translate = ((key: string) => `translated:${key}`) as typeof t;
+    const copy = buildTabCopy(tab({ sessionCount: 3, dirty: true }), "New session", translate);
+    expect(copy.tooltip).toContain("translated:Unsaved changes");
+    expect(copy.meta).toBe("translated:{p0} sessions");
+  });
   it("layers conversation and file when split across panes", () => {
     const focusedSession = tabCopy(
       tab({

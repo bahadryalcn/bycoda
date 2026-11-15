@@ -3,7 +3,7 @@ import { Text } from "../../../shared/ui/Text";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
-import { Select } from "../../settings/ui/settingsControls";
+import { Select } from "../../../shared/ui/settings";
 import { t } from "../../../shared/i18n";
 import { errorText } from "../../../shared/lib/errors";
 import {

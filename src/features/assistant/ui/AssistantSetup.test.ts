@@ -37,7 +37,7 @@ const models = vi.hoisted(() => ({
     ],
   },
 }));
-vi.mock("../../settings/public/settingsControls", async () => {
+vi.mock("../../../shared/ui/settings", async () => {
   const { createElement } = await import("react");
   return {
     Row: ({ label, description, info, children }: any) =>
@@ -122,8 +122,13 @@ vi.mock("./AssistantProfileFields", () => ({
       : null,
 }));
 vi.mock("../../voice/ui/VoiceSetupSteps", () => ({
-  VoiceSetupSteps: ({ onValidChange }: { onValidChange: (valid: boolean) => void }) =>
-    createElement("button", { onClick: () => onValidChange(true) }, "Verify fixture step"),
+  VoiceSetupSteps: ({
+    step,
+    onValidChange,
+  }: {
+    step: string;
+    onValidChange: (valid: boolean) => void;
+  }) => createElement("button", { onClick: () => onValidChange(true) }, `Verify ${step}`),
 }));
 vi.mock("../../voice/model/voicePersona", () => ({ loadVoicePersona: () => ({ rules: "" }) }));
 vi.mock("../../../shared/i18n", () => ({
@@ -138,7 +143,7 @@ import { AssistantSetup } from "./AssistantSetup";
 let root: Root, container: HTMLDivElement;
 const key = "bycoda.assistant.setup-draft";
 const draft = (environmentId?: string) => ({
-  step: 9,
+  step: "review",
   environmentId,
   patch: {
     ...state.profile,
@@ -266,39 +271,30 @@ it("makes no setup write without a verified Host identity", async () => {
   await start();
   expect(state.request).not.toHaveBeenCalled();
 });
-it("keeps all ten voice steps and gates each verification without any setup write before Start", async () => {
-  localStorage.setItem(key, JSON.stringify({ ...draft("host-a"), step: 0 }));
+it("groups all setup capabilities into five steps and gates every voice verification without any setup write before Start", async () => {
+  localStorage.setItem(key, JSON.stringify({ ...draft("host-a"), step: "identity" }));
   await render(true);
-  const titles = [
-    "Identity",
-    "Language",
-    "Voice provider",
-    "Voice",
-    "Microphone test",
-    "Conversation behavior",
-    "Work mode",
-    "Presence and hours",
-    "First rules",
-    "Review",
-  ];
+  const titles = ["Identity", "Voice", "Work mode", "Presence and hours", "Review"];
   for (let step = 0; step < titles.length; step++) {
     const dialog = document.querySelector('[role="dialog"]')!;
     const heading = document.getElementById(dialog.getAttribute("aria-labelledby")!);
-    expect(heading?.textContent).toBe(titles[step]);
+    expect(heading?.textContent).toBe("Set up");
+    expect(dialog.querySelector('[aria-current="step"]')?.textContent).toContain(titles[step]);
     expect(dialog.querySelectorAll("h2")).toHaveLength(1);
-    expect(dialog.querySelector('[role="progressbar"]')?.getAttribute("aria-valuenow")).toBe(
-      String(step + 1),
-    );
+    expect(dialog.querySelectorAll('[aria-current="step"]')).toHaveLength(1);
     expect(JSON.parse(localStorage.getItem(key)!).rules).toBe("Keep replies concise");
-    if (step >= 2 && step <= 4) {
-      expect(button("Next").disabled).toBe(true);
-      await click("Verify fixture step");
+    if (titles[step] === "Voice") {
+      for (const check of ["provider", "voice", "microphone"]) {
+        expect(button("Next").disabled).toBe(true);
+        await click(`Verify ${check}`);
+      }
+      expect(button("Next").disabled).toBe(false);
     }
     if (titles[step] === "Work mode") {
       expect(button("Next").disabled).toBe(true);
       await click("Fixture only watch");
     }
-    if (step < 9) await click("Next");
+    if (step < titles.length - 1) await click("Next");
   }
   expect(state.request).not.toHaveBeenCalled();
   expect(button("Start").disabled).toBe(false);
@@ -319,7 +315,7 @@ it("requires fresh voice verification when reopening a persisted Review draft", 
   await render(true);
   expect(button("Start").disabled).toBe(true);
   await click("Set up voice");
-  expect(JSON.parse(localStorage.getItem(key)!).step).toBe(2);
+  expect(JSON.parse(localStorage.getItem(key)!).step).toBe("voice");
   expect(state.request).not.toHaveBeenCalled();
 });
 it("offers a usable fresh budget without writing or changing its authority choices", async () => {
@@ -357,11 +353,17 @@ it("runs quick setup as identity, work mode and review, without model or rules s
   await render();
   const heading = () => {
     const dialog = document.querySelector('[role="dialog"]')!;
-    return document.getElementById(dialog.getAttribute("aria-labelledby")!)?.textContent;
+    const current = dialog.querySelector('[aria-current="step"]');
+    return ["Identity", "Work mode", "Review"].find((label) =>
+      current?.textContent?.includes(label),
+    );
   };
   const progress = () => {
-    const bar = document.querySelector('[role="progressbar"]')!;
-    return [bar.getAttribute("aria-valuenow"), bar.getAttribute("aria-valuemax")];
+    const items = [...document.querySelectorAll('[role="group"][aria-label="Set up"] ol > li')];
+    return [
+      String(items.findIndex((item) => item.hasAttribute("aria-current")) + 1),
+      String(items.length),
+    ];
   };
   expect(heading()).toBe("Identity");
   expect(progress()).toEqual(["1", "3"]);
@@ -386,7 +388,7 @@ it("shows Custom for an already set up profile whose job settings match no work 
   const retained = draft("host-a");
   retained.patch.setupComplete = true;
   retained.patch.autonomy = "jobs" as never;
-  localStorage.setItem(key, JSON.stringify({ ...retained, step: 6 }));
+  localStorage.setItem(key, JSON.stringify({ ...retained, step: "workmode" }));
   await render();
   expect(document.querySelector("[data-unchosen]")?.getAttribute("data-unchosen")).toBe("false");
   expect(button("Next").disabled).toBe(false);
@@ -415,7 +417,7 @@ it.each(["jobs", "chief"])(
       key,
       JSON.stringify({
         ...draft("host-a"),
-        step: 6,
+        step: "workmode",
         patch: {
           ...state.profile,
           autonomy,
@@ -538,7 +540,7 @@ it("does not replace a chosen execution or materialize a completed profile's nul
   );
 });
 it("hides confirmed sleep prevention off while retaining unknown, pending, active and errors", async () => {
-  localStorage.setItem(key, JSON.stringify({ ...draft("host-a"), step: 7 }));
+  localStorage.setItem(key, JSON.stringify({ ...draft("host-a"), step: "presence" }));
   await render(true);
   expect(document.body.textContent).toContain("Sleep prevention status unavailable");
   state.keepAwake = { supported: true, requested: false, active: false };
@@ -560,4 +562,24 @@ it("hides confirmed sleep prevention off while retaining unknown, pending, activ
   await render(true);
   expect(document.querySelector("[data-assistant-keep-awake]")?.getAttribute("role")).toBe("alert");
   expect(document.body.textContent).toContain("Fixture native failure");
+});
+
+it.each([
+  [0, "identity"],
+  [1, "identity"],
+  [2, "voice"],
+  [3, "voice"],
+  [4, "voice"],
+  [5, "identity"],
+  [6, "workmode"],
+  [7, "presence"],
+  [8, "presence"],
+  [9, "review"],
+])("migrates legacy step %s to %s without losing the draft", async (legacy, step) => {
+  const saved = { ...draft("host-a"), step: legacy };
+  localStorage.setItem(key, JSON.stringify(saved));
+  await render(true);
+  expect(JSON.parse(localStorage.getItem(key)!)).toEqual({ ...saved, step });
+  expect(state.request).not.toHaveBeenCalled();
+  if (step === "voice") expect(button("Next").disabled).toBe(true);
 });

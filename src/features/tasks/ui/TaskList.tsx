@@ -78,7 +78,11 @@ export function TaskList({
             task.prompt,
             Boolean(task.crewRunId || task.crewDefinitionId),
           );
-          const planning = planningLabel?.(task);
+          // Status already shows the delivery state; keep it out of the secondary line.
+          const planning = planningLabel?.(task)
+            .split(" · ")
+            .filter((part) => part !== status.label)
+            .join(" · ");
           const updatedAt = taskListUpdatedAt(task);
           const key = bulkTaskKey(task);
           const isActive = activeKey === `${task.machineId}:${task.id}`;

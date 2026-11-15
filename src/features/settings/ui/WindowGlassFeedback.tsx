@@ -8,7 +8,7 @@ import {
   readNativeGlassRestartRequired,
   subscribeNativeGlassStatus,
 } from "../model/nativeGlassStatus";
-import { SettingsFeedback } from "./settingsControls";
+import { SettingsFeedback } from "../../../shared/ui/settings";
 
 /** Shown under the Window glass row: a failed window sync with Retry, or the restart it needs. */
 export function WindowGlassFeedback({ light }: { light: boolean }) {

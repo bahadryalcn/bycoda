@@ -559,8 +559,8 @@ it("explains removal and removes the saved connection without stopping or revoki
   expect(invoke).not.toHaveBeenCalledWith("remote_disconnect", {
     machineId: "machine",
   });
-  expect(document.body.textContent).toContain("It does not stop the host");
-  expect(document.body.textContent).toContain("leaves this desktop’s credential valid");
+  expect(document.body.textContent).toContain("The host and its sessions keep running");
+  expect(document.body.textContent).toContain("leaves this desktop's credential valid");
   expect(document.body.textContent).toContain("~/.bycoda-host/bin/bycoda-host service uninstall");
   await act(async () => confirmRemove().click());
   expect(invoke).toHaveBeenCalledWith("remote_disconnect", {

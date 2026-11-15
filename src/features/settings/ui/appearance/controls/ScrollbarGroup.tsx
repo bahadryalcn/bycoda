@@ -18,7 +18,7 @@ import {
   type ScrollbarSize,
   type ScrollbarVisibility,
 } from "../../../model/scrollbarStyle";
-import { Group, Row, Segmented, Slider } from "../../settingsControls";
+import { Group, Row, Segmented, Slider } from "../../../../../shared/ui/settings";
 import "./ThemeControls.css";
 
 const PREVIEW_ROWS = [

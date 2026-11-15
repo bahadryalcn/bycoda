@@ -142,12 +142,18 @@ export function readUiCatalogSource(file, source) {
 }
 
 export function readUiCatalog(root = process.cwd()) {
-  const directory = path.join(root, "src/shared/ui");
   const entries = [];
-  for (const name of fs.readdirSync(directory).sort()) {
-    if (!name.endsWith(".tsx") || EXCLUDED_FILE.test(name)) continue;
-    const file = `src/shared/ui/${name}`;
-    entries.push(...readUiCatalogSource(file, fs.readFileSync(path.join(directory, name), "utf8")));
+  // Subfolders that expose a barrel (`index.ts`): their capitalised component files are catalogued.
+  for (const folder of ["", "settings/"]) {
+    const directory = path.join(root, "src/shared/ui", folder);
+    for (const name of fs.readdirSync(directory).sort()) {
+      if (!name.endsWith(".tsx") || EXCLUDED_FILE.test(name) || (folder && !/^[A-Z]/.test(name)))
+        continue;
+      const file = `src/shared/ui/${folder}${name}`;
+      entries.push(
+        ...readUiCatalogSource(file, fs.readFileSync(path.join(directory, name), "utf8")),
+      );
+    }
   }
   return entries.sort((a, b) => a.group.localeCompare(b.group) || a.name.localeCompare(b.name));
 }
@@ -254,7 +260,9 @@ export function findOrphanComponents(entries, sources, allowlist = orphanAllowli
         for (const entry of entries)
           if (
             entry.file !== file &&
-            entry.file.replace(/\.tsx$/, "") === target &&
+            (entry.file.replace(/\.tsx$/, "") === target ||
+              (path.posix.dirname(entry.file) !== "src/shared/ui" &&
+                path.posix.dirname(entry.file) === target)) &&
             (!names || names.includes(entry.name))
           )
             used.add(`${entry.file}#${entry.name}`);
@@ -286,7 +294,11 @@ export function catalogFindings(entries, sources) {
       rule: problem.rule ?? "component-metadata",
     })),
     ...findOrphanComponents(entries, sources),
-  ].map((problem) => ({ ...problem, line: 1, text: `${problem.name}: ${problem.problem}` }));
+  ].map((problem) => ({
+    ...problem,
+    line: 1,
+    text: `${problem.name}: ${problem.problem}`,
+  }));
 }
 
 const cell = (value) => value.replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
@@ -339,7 +351,9 @@ export function runUiCatalog({ root = process.cwd(), write = false } = {}) {
   const sources = new Map();
   const walk = (directory) => {
     if (!fs.existsSync(path.join(root, directory))) return;
-    for (const item of fs.readdirSync(path.join(root, directory), { withFileTypes: true })) {
+    for (const item of fs.readdirSync(path.join(root, directory), {
+      withFileTypes: true,
+    })) {
       const file = `${directory}/${item.name}`;
       if (item.isDirectory() && item.name !== "node_modules") walk(file);
       else if (/\.[cm]?[jt]sx?$/.test(item.name))

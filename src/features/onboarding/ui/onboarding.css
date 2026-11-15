@@ -130,6 +130,7 @@
 }
 .onboarding-row {
   display: flex;
+  inline-size: 100%;
   align-items: center;
   justify-content: space-between;
   gap: 12px;

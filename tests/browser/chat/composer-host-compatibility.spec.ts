@@ -125,7 +125,7 @@ for (const theme of ["light", "dark"] as const) {
     );
     const status = page.locator("[data-workspace-creation-status]");
     await expect(status).toContainText(
-      "Update bycoda Host on this project's machine to use managed workspaces. Your project checkout will not be used as a fallback.",
+      "Update bycoda Host on this project's machine to use managed workspaces. Your checkout is not used as a fallback.",
     );
     await expect(status).not.toContainText(waiting);
     await expect(page.getByRole("button", { name: blockedSend })).toBeDisabled();

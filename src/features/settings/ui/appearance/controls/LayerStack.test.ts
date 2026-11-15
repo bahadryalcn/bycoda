@@ -2,7 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it } from "vitest";
-import { RevealedSetting } from "../../settingsControls";
+import { RevealedSetting } from "../../../../../shared/ui/settings";
 import { LayerStack, type BackgroundLayer } from "./LayerStack";
 
 let container: HTMLDivElement;

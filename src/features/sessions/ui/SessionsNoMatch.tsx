@@ -6,6 +6,7 @@ import { Search, X } from "../../../shared/ui/icons";
 import { ShortcutKeys } from "../../../shared/ui/ShortcutKbd";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { useT } from "../../../shared/i18n";
+import { useKeybindingShortcut } from "../../settings/public/useKeybindingShortcut";
 
 /**
  * The sidebar answer to a search that matched no session in this project: what was searched,
@@ -24,6 +25,7 @@ export function SessionsNoMatch({
   children?: ReactNode;
 }) {
   const t = useT();
+  const searchShortcut = useKeybindingShortcut("App: Search");
   return (
     <div role="status" className="flex flex-col gap-2 px-3 py-2">
       <div className="flex min-w-0 items-start gap-2">
@@ -45,7 +47,9 @@ export function SessionsNoMatch({
             motion="none"
             type="button"
             onClick={onSearchAll}
-            endIcon={<ShortcutKeys shortcut="mod+k" size="xs" />}
+            endIcon={
+              searchShortcut ? <ShortcutKeys shortcut={searchShortcut} size="xs" /> : undefined
+            }
           >
             {t("Search all conversations")}
           </Button>

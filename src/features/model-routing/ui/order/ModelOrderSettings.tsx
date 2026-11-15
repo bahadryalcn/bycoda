@@ -10,7 +10,7 @@ import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { FailureState } from "../../../../shared/ui/FailureState";
 import { FieldGroup } from "../../../../shared/ui/FieldGroup";
 import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
-import { Group, SettingsFeedback } from "../../../settings/public/settingsControls";
+import { Group, SettingsFeedback } from "../../../../shared/ui/settings";
 import { defaultModelSettings } from "../../../sessions/public/models";
 import { useModelSource } from "../../../sessions/public/modelSource";
 import { isRemoteProvider } from "../../../connections/public/protocol";

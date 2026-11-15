@@ -71,6 +71,11 @@ function WorkspaceFilePickerComponent({
         if (layoutPreset) onArrangeActiveTab(layoutPreset);
         else if (id === "reload") actions.current.onReload();
         else if (id === "open-crews") requestOpenCrewsPage();
+        else if (id === "open-settings") actions.current.openSettings();
+        else if (id === "open-inbox") actions.current.onOpenInbox();
+        else if (id === "open-notes") actions.current.onOpenNotes();
+        else if (id === "open-tasks") actions.current.onOpenTasks();
+        else if (id === "open-automations") actions.current.onOpenAutomations();
         else if (id === "stop-background" && active) {
           void stopHarnessBackgroundWork(active.harness, active.id).catch(console.error);
         } else if (id === "reconnect-remote") {

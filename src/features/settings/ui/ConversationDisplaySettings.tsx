@@ -5,7 +5,7 @@ import {
   subscribeStreamingTextMode,
   saveStreamingTextMode,
 } from "../model/settings";
-import { Row, Select, SettingsFeedback, Toggle } from "./settingsControls";
+import { Row, Select, SettingsFeedback, Toggle } from "../../../shared/ui/settings";
 import type { AppearanceSettings } from "./useAppearanceSettings";
 
 export function ConversationDisplaySettings({ appearance: a }: { appearance: AppearanceSettings }) {

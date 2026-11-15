@@ -203,21 +203,21 @@ type Props = {
   layout?: TitleBarLayout;
 };
 
-function sessionMeta(tab: Tab): string {
+function sessionMeta(tab: Tab, translate: ReturnType<typeof useT>): string {
   if (tab.more.length === 1) return tab.more[0];
-  if (tab.sessionCount > 1) return `${tab.sessionCount} sessions`;
+  if (tab.sessionCount > 1) return translate("{p0} sessions", { p0: tab.sessionCount });
   return "";
 }
 
 export function tabCopy(tab: Tab) {
-  return buildTabCopy(tab, t("New session"));
+  return buildTabCopy(tab, t("New session"), t);
 }
 
-// Takes the translated placeholder so components can pass the `useT()` text instead of the
-// module `t`, which React Compiler cannot see change.
+// Pass the subscribed translator so React Compiler sees metadata change with the locale.
 export function buildTabCopy(
   tab: Tab,
   untitled: string,
+  translate: ReturnType<typeof useT>,
 ): {
   headline: string;
   meta: string;
@@ -226,7 +226,7 @@ export function buildTabCopy(
   const project = tab.project.trim() || "~";
   const conversation = tab.title.trim();
   const file = tab.files[0] ?? "";
-  const sessions = sessionMeta(tab);
+  const sessions = sessionMeta(tab, translate);
 
   let headline: string;
   const metaParts: string[] = [];
@@ -254,7 +254,7 @@ export function buildTabCopy(
   if (conversation) tooltipParts.push(conversation);
   tooltipParts.push(...tab.more);
   if (tab.files.length > 0) tooltipParts.push(tab.files.join(", "));
-  if (tab.dirty) tooltipParts.push("Unsaved changes");
+  if (tab.dirty) tooltipParts.push(translate("Unsaved changes"));
 
   return { headline, meta, tooltip: tooltipParts.join(" · ") };
 }
@@ -373,12 +373,12 @@ function TitleTabItem({
   itemRef?: (el: HTMLDivElement | null) => void;
 }) {
   const t = useT();
-  const { headline, meta, tooltip } = buildTabCopy(tab, t("New session"));
+  const { headline, meta, tooltip } = buildTabCopy(tab, t("New session"), t);
   const fileIcon = tab.files[0];
   const accessibleTooltip = [
     tooltip,
     ...(tab.previewSessionId || tab.previewFileId ? [t("Preview")] : []),
-    ...((tab.doneHarnesses?.length ?? 0) > 0 ? ["Response complete"] : []),
+    ...((tab.doneHarnesses?.length ?? 0) > 0 ? [t("Response complete")] : []),
   ].join(" · ");
 
   const setItemRef = sortable.setItemRef;
@@ -998,7 +998,7 @@ function TitleBarComponent({
   const sortable = useAnimatedReorder(tabIds, onReorder, "x", externalTabDrop, {
     label: (tabId) => {
       const tab = tabs.find((entry) => entry.id === tabId);
-      return tab ? buildTabCopy(tab, t("New session")).headline : "";
+      return tab ? buildTabCopy(tab, t("New session"), t).headline : "";
     },
   });
   const paneToTabDrop = useExternalTitleTabDrop();
@@ -1415,7 +1415,7 @@ function TitleBarComponent({
           y={tabMenu.y}
           width={244}
           items={contextMenuItems}
-          ariaLabel={`Tab actions for ${buildTabCopy(contextTab, t("New session")).headline}`}
+          ariaLabel={`Tab actions for ${buildTabCopy(contextTab, t("New session"), t).headline}`}
           onPick={onPickTabMenu}
           onClose={() => setTabMenu(null)}
         />

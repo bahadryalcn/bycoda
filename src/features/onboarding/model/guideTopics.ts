@@ -224,7 +224,7 @@ export function guideTopics(): GuideTopic[] {
           show: { targets: ["model-controls", "composer"], need: "chat" },
           done: "session-started",
           shortcuts: [
-            { command: "Tab: New", label: t("New tab") },
+            { command: "Tab: New", label: t("New session") },
             { command: "App: Switch Model", label: t("Switch model") },
           ],
         },
@@ -261,7 +261,7 @@ export function guideTopics(): GuideTopic[] {
         t("Split panes to run several sessions side by side."),
       ],
       shortcuts: [
-        { command: "Tab: New", label: t("New tab") },
+        { command: "Tab: New", label: t("New session") },
         { command: "App: Switch Model", label: t("Switch model") },
         { command: "Composer: Queue Message", label: t("Queue message") },
         { command: "Session: Stop Turn", label: t("Stop") },
@@ -615,7 +615,7 @@ export function guideTopics(): GuideTopic[] {
         { command: "App: Command Palette", label: t("Command palette") },
         { command: "App: Toggle Sidebar", label: t("Toggle sidebar") },
       ],
-      action: { id: "keybindings", label: t("Open Keybindings"), step: "settings.keys" },
+      action: { id: "keybindings", label: t("Open shortcuts"), step: "settings.keys" },
     },
   ];
 }

@@ -420,7 +420,7 @@ migrating its consumers.
 ## Verification
 
 Source interaction checks live in `arcAdapters.test.ts` and
-`settingsControls.test.ts`. The memory-only browser fixture checks geometry,
+`settingsRows.test.ts`. The memory-only browser fixture checks geometry,
 keyboard interaction, theme changes and narrow-window layout:
 
 ```powershell

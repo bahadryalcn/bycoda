@@ -2,7 +2,12 @@ import { surfaceAttributes } from "../../../../../shared/ui/Surface";
 import { Text } from "../../../../../shared/ui/Text";
 import { useContext, useId, useState, type ReactNode } from "react";
 import { Button } from "../../../../../shared/ui/Button";
-import { LayerEditorHeadings, RevealedSetting, settingDomId, Toggle } from "../../settingsControls";
+import {
+  LayerEditorHeadings,
+  RevealedSetting,
+  settingDomId,
+  Toggle,
+} from "../../../../../shared/ui/settings";
 import styles from "./LayerStack.module.css";
 
 export type BackgroundLayer = {

@@ -10,7 +10,7 @@ import { InlineEdit } from "../../../shared/ui/InlineEdit";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Laptop, Smartphone } from "../../../shared/ui/icons";
-import { Group, Row } from "../../settings/public/settingsControls";
+import { Group, Row } from "../../../shared/ui/settings";
 import { useDevices } from "../hooks/useAccountData";
 
 const PLATFORM_NAMES = {

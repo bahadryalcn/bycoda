@@ -5,7 +5,7 @@ import { Badge } from "../../../shared/ui/Badge";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { UsageMeter } from "../../../shared/ui/UsageMeter";
 import { RefreshCw } from "../../../shared/ui/icons";
-import { Group, SettingsFeedback } from "../../settings/public/settingsControls";
+import { Group, SettingsFeedback } from "../../../shared/ui/settings";
 import type { WorkspaceStorageStatus } from "../model/contracts";
 import { workspaceStorageSize } from "../model/workspacePresentation";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";

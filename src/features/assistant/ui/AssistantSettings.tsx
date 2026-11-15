@@ -43,7 +43,7 @@ import {
   DesktopControlSettings,
   type DesktopControlDraftState,
 } from "../../host-tools/DesktopControlSettings";
-import { AdvancedSettings, Group, Row } from "../../settings/public/settingsControls";
+import { AdvancedSettings, Group, Row } from "../../../shared/ui/settings";
 import { AssistantBuilderDialog } from "./builder/AssistantBuilderDialog";
 import { ProfileRowsProvider } from "./settings/SettingsProfileRow";
 import { AssistantRetentionField } from "./settings/AssistantUsageSettings";

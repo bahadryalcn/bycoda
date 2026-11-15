@@ -11,7 +11,7 @@ import { remoteRequest } from "../../connections/public/connections";
 import { isLocalSyncMachine } from "../../connections/public/localSync";
 import type { RemoteMachine } from "../../connections";
 import type { McpOAuthServer, McpOAuthState } from "../model/mcp";
-import { SettingsFeedback } from "./settingsControls";
+import { SettingsFeedback } from "../../../shared/ui/settings";
 import styles from "./McpOAuthSignIn.module.css";
 
 /** The browser sign-in is abandoned by the Host after this long, so polling stops with it. */

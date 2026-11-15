@@ -8,7 +8,7 @@ import { Text } from "../../../shared/ui/Text";
 import { RefreshCw } from "../../../shared/ui/icons";
 import { t } from "../../../shared/i18n";
 import { type ShellProfiles } from "../../terminal/public/terminalProfiles";
-import { RevealedSetting, settingDomId } from "./settingsControls";
+import { RevealedSetting, settingDomId } from "../../../shared/ui/settings";
 import { useContext, useId, useState, type ReactNode } from "react";
 
 type HostKind = "local" | "synced" | "remote";

@@ -6,7 +6,7 @@ import { Text } from "../../../shared/ui/Text";
 import { Select } from "../../../shared/ui/Select";
 import { Switch } from "../../../shared/ui/Switch";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
-import { AdvancedSettings, Row } from "../../settings/public/settingsControls";
+import { AdvancedSettings, Row } from "../../../shared/ui/settings";
 import { ProfileSegmented, ProfileSelect } from "./settings/ProfileControls";
 import { ProfileRow, ProfileSwitch, useProfileRows } from "./settings/SettingsProfileRow";
 import { AssistantWorkFields } from "./settings/AssistantWorkFields";

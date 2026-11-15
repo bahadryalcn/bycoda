@@ -20,7 +20,7 @@ import {
 import { hasProbedHarnessAvailability } from "../../../integrations/harness/core/availability";
 import { HARNESS_TITLE, type HarnessId } from "../../../shared/model/harnessIdentity";
 import { HarnessIcon } from "../../sessions/public/HarnessIcon";
-import { SettingsFeedback } from "../../settings/ui/settingsControls";
+import { SettingsFeedback } from "../../../shared/ui/settings";
 import {
   UPDATABLE_HARNESSES,
   checkHarnessVersions,

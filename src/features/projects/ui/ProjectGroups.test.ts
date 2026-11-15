@@ -345,7 +345,7 @@ it("confirms group deletion with projects and removes the active project last", 
   expect(remove).not.toHaveBeenCalled();
   expect(loadProjectGroups()).toHaveLength(1);
   const dialog = document.querySelector('[role="dialog"]')!;
-  expect(dialog.textContent).toContain("Their folders on disk stay put");
+  expect(dialog.textContent).toContain("Folders on disk stay");
   await act(async () =>
     (
       Array.from(dialog.querySelectorAll("button")).find(

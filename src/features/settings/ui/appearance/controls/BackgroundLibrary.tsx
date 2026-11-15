@@ -23,7 +23,7 @@ import {
   themesUsingImage,
   useSavedThemes,
 } from "../../../model/savedThemes";
-import { Row, SettingsFeedback } from "../../settingsControls";
+import { Row, SettingsFeedback } from "../../../../../shared/ui/settings";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
 import styles from "./BackgroundLibrary.module.css";
 import { generatorSession } from "./themeGeneratorSession";

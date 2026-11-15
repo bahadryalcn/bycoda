@@ -238,18 +238,6 @@ const ActivityPhaseGroup = memo(function ActivityPhaseGroup({
   const turnFor = useStepQueue(phase.steps);
   const title = activityPhaseTitle(phase, active);
   const bycodaPhase = !!bycodaWorkSummary(phase.steps, active);
-  let compactCommand: Block | undefined;
-  if (active && override !== true && !revealed && !needsAttention) {
-    for (let index = phase.steps.length - 1; index >= 0; index -= 1) {
-      const step = phase.steps[index];
-      if (step.role === "tool" && step.tool?.kind === "shell") {
-        // Recognized app calls already have a compact action row; repeating the
-        // shell preview here exposes their full executable path and arguments.
-        compactCommand = bycodaToolCall(step) ? undefined : step;
-        break;
-      }
-    }
-  }
   // Opening a group on purpose is also how you read the line that titled it,
   // whole. The auto-open while it runs is a live view, not a reading one, and
   // a one-line note the header already shows in full has nothing to add.
@@ -338,16 +326,6 @@ const ActivityPhaseGroup = memo(function ActivityPhaseGroup({
         <div className="zen-phase-body" data-open={open}>
           {open ? (
             <>
-              {compactCommand ? (
-                <div className="flex min-w-0 items-start gap-1.5 px-2 pt-1 pb-1.5 text-ui-caption text-(--ui-text-secondary)">
-                  <Terminal className="mt-0.5 icon-xs shrink-0" aria-hidden="true" />
-                  <OverflowTooltip label={toolCallLabel(compactCommand, cwd)}>
-                    <span className="line-clamp-1 break-all font-mono">
-                      {toolCallLabel(compactCommand, cwd)}
-                    </span>
-                  </OverflowTooltip>
-                </div>
-              ) : null}
               <div
                 ref={setLiveScroller}
                 className={

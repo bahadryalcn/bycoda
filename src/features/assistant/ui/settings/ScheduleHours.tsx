@@ -3,7 +3,7 @@ import { useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { SearchableSelect } from "../../../../shared/ui/SearchableSelect";
 import { Switch } from "../../../../shared/ui/Switch";
-import { Row } from "../../../settings/public/settingsControls";
+import { Row } from "../../../../shared/ui/settings";
 import { useProfileRows } from "./SettingsProfileRow";
 import styles from "./schedule.module.css";
 

@@ -3,7 +3,7 @@ import { Switch } from "../../../../shared/ui/Switch";
 import { Text } from "../../../../shared/ui/Text";
 import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { t } from "../../../../shared/i18n";
-import { Row } from "../../../settings/public/settingsControls";
+import { Row } from "../../../../shared/ui/settings";
 import roleStyles from "../AssistantProfileFields.module.css";
 
 /**

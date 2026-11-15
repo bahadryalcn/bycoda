@@ -1,11 +1,11 @@
-import { EmptyState } from "../../../shared/ui/EmptyState";
-import { LoadingText } from "../../../shared/ui/LoadingText";
+import { EmptyState } from "../EmptyState";
+import { LoadingText } from "../LoadingText";
 import type { ReactNode } from "react";
-import { Alert } from "../../../shared/ui/Alert";
-import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
-import { NoticeLink, type NoticeAction } from "../../../shared/ui/Notice";
-import { useT } from "../../../shared/i18n";
-import "./BycodaSettings.css";
+import { Alert } from "../Alert";
+import { InlineError, InlineMessage } from "../InlineError";
+import { NoticeLink, type NoticeAction } from "../Notice";
+import { useT } from "../../i18n";
+import "./settings.css";
 
 export type SettingsFeedbackProps = {
   state: "loading" | "success" | "error" | "empty" | "warning";
@@ -25,6 +25,14 @@ export type SettingsFeedbackProps = {
   immediate?: boolean;
 };
 
+/**
+ * Quiet, surface or inset feedback for one settings operation; SettingsFeedback is the entry point
+ * that adds the inset empty presentation.
+ * @group feedback
+ * @status internal
+ * @use Rendered by SettingsFeedback; import SettingsFeedback instead.
+ * @avoid Direct use: SettingsFeedback. A page-level notice: Alert.
+ */
 export function SettingsOperationFeedback({
   state,
   children,

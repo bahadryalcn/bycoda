@@ -78,7 +78,7 @@ mockIPC(async (command) => {
 const { PrivacyStartupSettings } =
   await import("../../../src/features/settings/ui/PrivacyStartupSettings");
 const { GroupLockSettings } = await import("../../../src/features/group-lock/ui/GroupLockSettings");
-const controls = await import("../../../src/features/settings/ui/settingsControls");
+const controls = await import("../../../src/shared/ui/settings");
 const { PermissionsSettings } =
   await import("../../../src/features/permissions/ui/PermissionsSettings");
 const { PermissionSetupSheet } =

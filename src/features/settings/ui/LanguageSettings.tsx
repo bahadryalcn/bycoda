@@ -10,7 +10,7 @@ import {
   t,
   useLocale,
 } from "../../../shared/i18n";
-import { Group, Row, Select, SettingsFeedback } from "./settingsControls";
+import { Group, Row, Select, SettingsFeedback } from "../../../shared/ui/settings";
 
 export function LanguageSettings() {
   useLocale();

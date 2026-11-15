@@ -42,7 +42,7 @@ it("selects an unrestricted single private-key path without reading, saving or c
   );
   await act(async () => browse().click());
   expect(native.open).toHaveBeenCalledExactlyOnceWith({
-    title: "Choose private SSH key",
+    title: "Choose SSH key",
     multiple: false,
     directory: false,
     defaultPath: "C:/keys/previous",
@@ -59,7 +59,7 @@ it("keeps the existing selection when the native picker is cancelled", async () 
   await act(async () => browse().click());
   expect(changed).not.toHaveBeenCalled();
   expect(native.open).toHaveBeenCalledExactlyOnceWith({
-    title: "Choose private SSH key",
+    title: "Choose SSH key",
     multiple: false,
     directory: false,
   });

@@ -1,7 +1,7 @@
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
-import { Group, Row } from "../../../settings/public/settingsControls";
+import { Group, Row } from "../../../../shared/ui/settings";
 import { Switch } from "../../../../shared/ui/Switch";
 
 import type { SocialClient } from "../../model/socialClient";

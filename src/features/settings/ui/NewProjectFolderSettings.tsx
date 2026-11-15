@@ -7,7 +7,7 @@ import { Button } from "../../../shared/ui/Button";
 import { homeDir, pickFolders } from "../../../platform/tauri/fs";
 import { newProjectFolderSetting, newProjectParent } from "../../projects/public/newProjectFolder";
 import { loadRecents } from "../../projects/public/recents";
-import { Group, Row, SettingsFeedback } from "./settingsControls";
+import { Group, Row, SettingsFeedback } from "../../../shared/ui/settings";
 
 /** Page-level "Restore defaults": bycoda chooses the folder again. */
 export const restoreNewProjectFolderDefault = () => {

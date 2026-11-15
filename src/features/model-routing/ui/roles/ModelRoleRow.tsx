@@ -6,7 +6,7 @@ import type {
   ModelRoutingTarget,
 } from "../../../../shared/model/host-contracts/model-routing";
 import { Select } from "../../../../shared/ui/Select";
-import { Row } from "../../../settings/public/settingsControls";
+import { Row } from "../../../../shared/ui/settings";
 import { ModelPicker } from "../../../sessions/public/ModelPicker";
 import {
   defaultModelId,

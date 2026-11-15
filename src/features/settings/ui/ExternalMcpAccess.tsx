@@ -2,7 +2,7 @@ import { ActionHost } from "../../../shared/ui/ActionHost";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { ScrollArea } from "../../../shared/ui/ScrollArea";
-import { SettingsFeedback } from "./settingsControls";
+import { SettingsFeedback } from "../../../shared/ui/settings";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
@@ -23,7 +23,7 @@ import { CircleHelp, RefreshCw, ListFilter, RotateCcw } from "../../../shared/ui
 import { remoteRequest } from "../../connections/public/connections";
 import { isLocalSyncMachine } from "../../connections/public/localSync";
 import type { HostProject, RemoteMachine } from "../../connections";
-import { Select } from "./settingsControls";
+import { Select } from "../../../shared/ui/settings";
 import { CopyButton } from "./CopyButton";
 import styles from "./ExternalMcpAccess.module.css";
 import { OutputBlock } from "../../../shared/ui/OutputBlock";

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { t } from "../../shared/i18n";
 import { Button } from "../../shared/ui/Button";
-import { Row } from "../settings/ui/settingsControls";
+import { Row } from "../../shared/ui/settings";
 import { desktopHelperRequest } from "./desktopControlClient";
 import type { DesktopHelperResponse } from "../../shared/model/host-contracts/desktop-helper";
 import { InlineError } from "../../shared/ui/InlineError";

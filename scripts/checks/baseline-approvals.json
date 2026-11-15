@@ -307,6 +307,13 @@
       "from": 0,
       "to": 0,
       "reason": "New rule tooltip-repeats-label (tooltip that only repeats the visible label) widens the view guards on 2026-11-15 and records existing debt; future per-file counts may only fall via --ratchet."
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "inline-help-text",
+      "from": 0,
+      "to": 1,
+      "reason": "New low-noise inline-help-text guard records existing long translated secondary copy directly under settings labels on 2026-11-15; future per-file counts may only fall."
     }
   ]
 }

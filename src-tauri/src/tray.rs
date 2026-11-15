@@ -90,8 +90,8 @@ impl Default for PresenceLabels {
             dnd: "Do not disturb".into(),
             idle: "Idle".into(),
             offline: "Offline".into(),
-            pending: "Updating availability...".into(),
-            failed: "Availability change was not confirmed.".into(),
+            pending: "Updating…".into(),
+            failed: "Not confirmed".into(),
             retry: "Retry".into(),
             refresh: "Refresh".into(),
         }
@@ -155,7 +155,7 @@ impl Default for Labels {
 }
 
 fn failed_label() -> String {
-    "Failed or usage limit".into()
+    "Failed".into()
 }
 fn retrying_label() -> String {
     "Retrying".into()

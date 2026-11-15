@@ -4,7 +4,7 @@ import { openFeedbackDialog } from "../../account";
 import { Button } from "../../../shared/ui/Button";
 import { Text } from "../../../shared/ui/Text";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
-import { SettingsFeedback } from "./settingsControls";
+import { SettingsFeedback } from "../../../shared/ui/settings";
 import {
   installPendingUpdate,
   isUpdaterEnabled,
@@ -56,7 +56,7 @@ import { UpdateChannelRow } from "./UpdateChannelRow";
 import { SessionFolderGroup, restoreSessionFolderDefault } from "./SessionFolderSettings";
 import { NewProjectFolderGroup, restoreNewProjectFolderDefault } from "./NewProjectFolderSettings";
 import { DiagnosticsGroup, restorePerformanceTraceDefault } from "./DiagnosticsSettings";
-import { Group, Row, Toggle, useSettingsPageReset } from "./settingsControls";
+import { Group, Row, Toggle, useSettingsPageReset } from "../../../shared/ui/settings";
 import { ProductDetails } from "./GeneralProductDetails";
 import "./GeneralSettings.css";
 
@@ -157,10 +157,15 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
           <Row
             id="close-to-tray"
             label={t("Close to tray")}
-            descriptionVisible
-            description={t(
-              "Keep agents running when you close the window. Reopen or quit the app from the tray icon.",
-            )}
+            info={
+              <InfoPopover className="shrink-0" label={t("Close to tray")}>
+                <p>
+                  {t(
+                    "Keep agents running when you close the window. Reopen or quit the app from the tray icon.",
+                  )}
+                </p>
+              </InfoPopover>
+            }
           >
             <Toggle label={t("Close to tray")} on={closeToTray} onChange={onCloseToTray} />
           </Row>

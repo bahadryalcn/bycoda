@@ -151,7 +151,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     id: "keybindings",
     group: "app",
     get label() {
-      return t("Keybindings");
+      return t("Shortcuts");
     },
     get description() {
       return t("Application shortcuts and the global quick composer shortcut.");
@@ -185,7 +185,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   },
   {
     id: "terminal",
-    group: "app",
+    group: "code",
     get label() {
       return t("Terminal");
     },
@@ -233,7 +233,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   },
   {
     id: "archive",
-    group: "about",
+    group: "app",
     get label() {
       return t("Archive settings");
     },

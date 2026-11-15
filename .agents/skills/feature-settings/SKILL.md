@@ -12,7 +12,7 @@ Model order, pools, role bindings and delegation defaults belong to [model routi
 ## Source starts
 
 - `src/features/settings/ui/SettingsView.tsx`, `src/app/shell/SettingsRail.tsx` and `src/features/settings/model/settings.ts` own navigation and reveal.
-- `src/features/settings/ui/settingsControls.tsx` and `BycodaSettings.css` own Settings presentation; verify the current collection adapter before editing.
+- `src/shared/ui/settings/` (row family, imported as `shared/ui/settings`) and `BycodaSettings.css` (shell) own Settings presentation; verify the current collection adapter before editing.
 - `src/shared/lib/storedSetting.ts` owns the preference primitive. See [routing and surfaces](references/surfaces.md) for Policies, Connections and page owners.
 
 ## Preserve

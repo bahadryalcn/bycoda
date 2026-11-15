@@ -145,7 +145,7 @@ export function SshIdentityField({
             setPickerError(false);
             try {
               const path = await open({
-                title: t("Choose private SSH key"),
+                title: t("Choose SSH key"),
                 directory: false,
                 multiple: false,
                 ...(value.startsWith("/") ||

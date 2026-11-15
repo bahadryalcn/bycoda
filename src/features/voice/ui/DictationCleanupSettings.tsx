@@ -4,7 +4,7 @@ import { ModelLabel } from "../../sessions/public/ModelLabel";
 import { modelDisplayName } from "../../sessions/public/modelDisplayName";
 import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
-import { AdvancedSettings, Select, Toggle } from "../../settings/public/settingsControls";
+import { AdvancedSettings, Select, Toggle } from "../../../shared/ui/settings";
 import { useModelCatalog } from "../../sessions/public/modelHooks";
 import type { VoiceSettings } from "../model/voiceSettings";
 

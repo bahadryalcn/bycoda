@@ -12,7 +12,7 @@ import {
   setStartInPrivacyMode,
   PrivacyStorageError,
 } from "../../group-lock/public/privacySettings";
-import { Group, Row, Toggle, SettingsFeedback } from "./settingsControls";
+import { Group, Row, Toggle, SettingsFeedback } from "../../../shared/ui/settings";
 import { saveMaskEmails, useMaskEmails, useMaskEmailsSaved } from "../model/displayPrefs";
 import { FileAccessSettings } from "./FileAccessSettings";
 import "../../group-lock/ui/GroupPrivacy.css";

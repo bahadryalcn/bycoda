@@ -11,7 +11,7 @@ import {
 import type { SocialClient } from "../../model/socialClient";
 import { isRemoteProvider, REMOTE_PROVIDERS } from "../../../connections/public/protocol";
 import { ModelPicker } from "../../../sessions/public/ModelPicker";
-import { Group, Row } from "../../../settings/public/settingsControls";
+import { Group, Row } from "../../../../shared/ui/settings";
 import { Select } from "../../../../shared/ui/Select";
 import { ModelLabel } from "../../../sessions/public/ModelLabel";
 import { useModelSource } from "../../../sessions/public/modelSource";

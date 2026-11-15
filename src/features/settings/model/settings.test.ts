@@ -790,14 +790,14 @@ describe("settings navigation", () => {
       "notifications",
       "permissions",
       "keybindings",
-      "terminal",
       "groupLock",
+      "archive",
     ]);
     expect(byGroup.agents).toEqual(["providers", "usage", "work", "crews"]);
     expect(byGroup.tools).toEqual(["skills", "mcp", "secrets", "tools"]);
-    expect(byGroup.code).toEqual(["workspace", "worktrees"]);
+    expect(byGroup.code).toEqual(["workspace", "terminal", "worktrees"]);
     expect(byGroup.connections).toEqual(["connections", "integrations"]);
-    expect(byGroup.about).toEqual(["archive", "policies"]);
+    expect(byGroup.about).toEqual(["policies"]);
   });
 
   it("points every indexed setting at a real section", () => {
@@ -815,7 +815,7 @@ describe("settings search", () => {
     for (const query of ["viewport", "device", "logs", "development servers", "search engine"]) {
       const matches = searchSettings(query, 100).filter((result) => result.section === "tools");
       expect(matches.length, query).toBeGreaterThan(0);
-      expect(matches.every((result) => result.sectionLabel === "Tool preferences")).toBe(true);
+      expect(matches.every((result) => result.sectionLabel === "Conversation tools")).toBe(true);
     }
     expect(
       SETTINGS_SECTIONS.filter((section) =>

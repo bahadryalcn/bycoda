@@ -30,7 +30,7 @@ import {
   Segmented,
   SettingsFeedback,
   Toggle,
-} from "./settingsControls";
+} from "../../../shared/ui/settings";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import {
   loadComposerSpelling,

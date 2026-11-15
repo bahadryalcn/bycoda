@@ -7,7 +7,7 @@ import {
   subscribeDiffViewer,
   type DiffViewer,
 } from "../model/settings";
-import { Group, Row, Segmented, SettingsFeedback } from "./settingsControls";
+import { Group, Row, Segmented, SettingsFeedback } from "../../../shared/ui/settings";
 import { Button } from "../../../shared/ui/Button";
 import { openModelsSettings } from "../public/modelsSettingsLink";
 

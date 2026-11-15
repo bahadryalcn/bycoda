@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { applyThemePreference } from "../../../src/features/settings/model/appearance";
 import { IntegrationsPage } from "../../../src/features/settings/ui/integrations/IntegrationsSettings";
-import { RevealedSetting } from "../../../src/features/settings/ui/settingsControls";
+import { RevealedSetting } from "../../../src/shared/ui/settings";
 import { InboxSourceRow } from "../../../src/features/inbox/ui/InboxSourceRow";
 import { MessagesPanel } from "../../../src/features/messaging";
 import type {

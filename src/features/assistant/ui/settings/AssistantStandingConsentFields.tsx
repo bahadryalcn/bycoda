@@ -2,7 +2,7 @@ import { t } from "../../../../shared/i18n";
 import type { AssistantProfilePatch } from "../../../../shared/model/host-contracts/assistant";
 import { Select } from "../../../../shared/ui/Select";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
-import { Row } from "../../../settings/public/settingsControls";
+import { Row } from "../../../../shared/ui/settings";
 import styles from "./settings.module.css";
 
 export const DEFAULT_CRITICAL_EXCLUSIONS = [

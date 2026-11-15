@@ -265,7 +265,7 @@ for (const width of [1280, 800])
         .locator("summary")
         .filter({ hasText: /^Work estimates$/ })
         .click();
-      await expect(form).toContainText("Points are not hours and do not limit running tasks.");
+      await expect(form).toContainText("Points are not hours and do not limit tasks.");
       await capture("sprint-estimates");
       await form.getByRole("button", { name: "Cancel", exact: true }).click();
       await page.getByRole("button", { name: "All sprints", exact: true }).click();

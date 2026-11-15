@@ -1,6 +1,6 @@
 import { useSyncExternalStore, type ComponentProps } from "react";
 import { t } from "../../../shared/i18n";
-import { Row, SettingsFeedback } from "../../settings/public/settingsControls";
+import { Row, SettingsFeedback } from "../../../shared/ui/settings";
 import { voiceSaveFailures } from "../model/voiceSettingsSave";
 
 /** Voice persistence feedback belongs to the initiating settings row, including after navigation. */

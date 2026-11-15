@@ -1,6 +1,6 @@
 import { t, useLocale } from "../../../../../shared/i18n";
 import type { CanvasBackground } from "../../../model/appearancePreferences";
-import { Segmented, settingDomId } from "../../settingsControls";
+import { Segmented, settingDomId } from "../../../../../shared/ui/settings";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
 
 /**

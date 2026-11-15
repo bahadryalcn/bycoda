@@ -10,7 +10,7 @@ import {
   WORKSPACE_BACKGROUND_DEFAULT,
   type WorkspaceBackground,
 } from "../model/workspaceBackground";
-import { Group, SettingsFeedback } from "./settingsControls";
+import { Group, SettingsFeedback } from "../../../shared/ui/settings";
 import { AppearanceSaveFeedback } from "./useAppearanceSettings";
 import {
   readAppearanceSaveIssues,

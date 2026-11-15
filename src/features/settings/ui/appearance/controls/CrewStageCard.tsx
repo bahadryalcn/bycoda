@@ -32,7 +32,7 @@ import {
   useFollowSystemMotionEnabled,
   usePrefersReducedMotion,
 } from "../../../model/decorativeMotion";
-import { Group, Row, Toggle } from "../../settingsControls";
+import { Group, Row, Toggle } from "../../../../../shared/ui/settings";
 import { resetCrew, resetMotion } from "../appearanceResets";
 import "./CrewStageCard.css";
 

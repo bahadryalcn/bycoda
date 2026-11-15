@@ -814,7 +814,7 @@ describe("settings pages", () => {
     )?.textContent;
     expect(help).toContain("Prevent idle sleep during agent work");
     expect(help).not.toContain("battery-powered Modern Standby");
-    expect(help).toContain("Automatic screen locking remains available");
+    expect(help).toContain("Screen locking stays available");
     expect(help).not.toContain("choosing Sleep still works");
     await act(async () => info.click());
 
@@ -1487,10 +1487,10 @@ describe("settings pages", () => {
     ["browser", "Browser"],
     ["devices", "Devices"],
     ["logs", "Logs"],
-    ["devServers", "Development Servers"],
+    ["devServers", "Development servers"],
   ] as const)("opens retired %s links in the matching tool tab", async (alias, label) => {
     await render(alias);
-    const list = container.querySelector('[role="tablist"][aria-label="Tool preferences"]')!;
+    const list = container.querySelector('[role="tablist"][aria-label="Conversation tools"]')!;
     expect(
       [...list.querySelectorAll('[role="tab"]')]
         .find((tab) => tab.textContent === label)
@@ -1501,7 +1501,8 @@ describe("settings pages", () => {
 
   it("replays an external tool link after switching its inner tab", async () => {
     await render("tools", { anchor: "browser-viewport", notificationSettingsRequest: 1 });
-    const list = () => container.querySelector('[role="tablist"][aria-label="Tool preferences"]')!;
+    const list = () =>
+      container.querySelector('[role="tablist"][aria-label="Conversation tools"]')!;
     const tab = (label: string) =>
       [...list().querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
         (node) => node.textContent === label,

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { t, useLocale } from "../../../../shared/i18n";
 import { TextField } from "../../../../shared/ui/TextField";
-import { AdvancedSettings, Row } from "../settingsControls";
+import { AdvancedSettings, Row } from "../../../../shared/ui/settings";
 import { teamsSaveInput } from "./chatAccountInputs";
 import {
   AccountFormActions,

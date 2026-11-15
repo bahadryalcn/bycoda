@@ -12,7 +12,7 @@ import { DescriptionItem, DescriptionList } from "../../../shared/ui/Description
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { TextareaField } from "../../../shared/ui/TextareaField";
-import { Progress } from "../../../shared/ui/Progress";
+import { Stepper } from "../../../shared/ui/Stepper";
 import { Sparkles } from "../../../shared/ui/icons";
 import { loadVoicePersona } from "../../voice/model/voicePersona";
 import { VoiceSetupSteps } from "../../voice/ui/VoiceSetupSteps";
@@ -50,33 +50,36 @@ const FREQUENCY_LABEL = {
   sometimes: "Sometimes use my name",
   never: "Never use my name",
 } as const;
-const labels = [
-  "Identity",
-  "Language",
-  "Voice provider",
-  "Voice",
-  "Microphone test",
-  "Conversation behavior",
-  "Work mode",
-  "Presence and hours",
-  "First rules",
-  "Review",
+const labels = {
+  identity: "Identity",
+  voice: "Voice",
+  workmode: "Work mode",
+  presence: "Presence and hours",
+  review: "Review",
+} as const;
+type StepId = keyof typeof labels;
+const voiceChecks = ["provider", "voice", "microphone"] as const;
+// Numeric drafts predate grouped setup. Preserve their content and resume in the owning step.
+const legacySteps: StepId[] = [
+  "identity",
+  "identity",
+  "voice",
+  "voice",
+  "voice",
+  "identity",
+  "workmode",
+  "presence",
+  "presence",
+  "review",
 ];
-/** A line per step only when it states a consequence the title does not. Indexed by step. */
-const intros = [
-  "",
-  "",
-  "Choose a speech provider and confirm it responds before you continue.",
-  "Choose a voice and confirm it plays before you continue.",
-  "The microphone opens only when you start this test.",
-  "",
-  "Choose how freely it may work. Jobs use your default worker model; change models and permissions later in Settings.",
-  "",
-  "Each line is saved as a rule when setup finishes.",
-  "Check these choices. Start saves them to the Host.",
-];
+function draftStep(value: unknown): StepId | undefined {
+  if (typeof value === "number" && Number.isInteger(value)) return legacySteps[value];
+  if (typeof value === "string" && Object.prototype.hasOwnProperty.call(labels, value))
+    return value as StepId;
+  return undefined;
+}
 type Draft = {
-  step: number;
+  step: StepId;
   patch: AssistantProfilePatch;
   rules: string;
   environmentId?: string;
@@ -85,13 +88,11 @@ function readDraft(): Draft | null {
   try {
     const value = JSON.parse(localStorage.getItem(DRAFT_KEY) ?? "null");
     return value &&
-      Number.isInteger(value.step) &&
-      value.step >= 0 &&
-      value.step <= 9 &&
+      draftStep(value.step) &&
       typeof value.rules === "string" &&
       value.patch &&
       typeof value.patch === "object"
-      ? { ...value, patch: assistantSetupDefaults(value.patch) }
+      ? { ...value, step: draftStep(value.step)!, patch: assistantSetupDefaults(value.patch) }
       : null;
   } catch {
     return null;
@@ -128,13 +129,15 @@ export function AssistantSetup({
     [draft?.environmentId],
   );
   const [verified, setVerified] = useState<Record<string, boolean>>({});
-  // Quick setup is identity, work mode, review. Rules are added later in Memory; the voice path keeps its step.
-  const steps = voice ? [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] : [0, 6, 9];
+  // Core setup stays short; voice setup groups every existing capability into five steps.
+  const steps: StepId[] = voice
+    ? ["identity", "voice", "workmode", "presence", "review"]
+    : ["identity", "workmode", "review"];
   useEffect(() => {
     if (!draft && snapshot && environmentId) {
       const legacy = loadVoicePersona();
       setDraft({
-        step: 0,
+        step: "identity",
         environmentId,
         patch: assistantSetupDefaults({
           ...snapshot.profile,
@@ -207,7 +210,8 @@ export function AssistantSetup({
   function next() {
     if (!draft) return;
     try {
-      const execution = step === 6 ? (assertSource(), reviewedExecution()) : patch.execution;
+      const execution =
+        step === "workmode" ? (assertSource(), reviewedExecution()) : patch.execution;
       setError("");
       setDraft({ ...draft, patch: { ...draft.patch, execution }, step: steps[index + 1] });
     } catch (cause) {
@@ -221,16 +225,16 @@ export function AssistantSetup({
     );
   }
   function valid() {
-    if (step === 0) return Boolean(patch.name?.trim());
-    if (step === 6 && workModeUnchosen) return false;
+    if (step === "identity") return Boolean(patch.name?.trim());
+    if (step === "workmode" && workModeUnchosen) return false;
     if (
-      (step === 6 || step === 9) &&
+      (step === "workmode" || step === "review") &&
       (!patch.name?.trim() ||
         !Number.isInteger(patch.dailyTokenBudget) ||
         (patch.dailyTokenBudget ?? 0) < ASSISTANT_MIN_DAILY_TOKEN_BUDGET)
     )
       return false;
-    if (step === 2 || step === 3 || step === 4) return verified[String(step)] === true;
+    if (step === "voice") return voiceChecks.every((check) => verified[check] === true);
     return true;
   }
   async function finish() {
@@ -362,8 +366,7 @@ export function AssistantSetup({
     );
   return (
     <Modal
-      title={draft ? t(labels[step]) : t("Set up")}
-      context={draft ? <span className={styles.context}>{t("Set up")}</span> : undefined}
+      title={t("Set up")}
       onClose={() => {
         if (!pending) onClose();
       }}
@@ -380,13 +383,11 @@ export function AssistantSetup({
             >
               {t("Back")}
             </Button>
-            {step === 9 ? (
+            {step === "review" ? (
               <Button
                 variant="primary"
                 loading={pending}
-                disabled={
-                  !valid() || (voice && ![2, 3, 4].every((value) => verified[String(value)]))
-                }
+                disabled={!valid() || (voice && !voiceChecks.every((check) => verified[check]))}
                 onClick={() => void finish()}
               >
                 {t("Start")}
@@ -416,26 +417,13 @@ export function AssistantSetup({
         ) : null}
         {!draft ? null : (
           <>
-            <Progress
-              value={index + 1}
-              max={steps.length}
-              compact
-              tone="neutral"
-              aria-label={t("Step {p0} of {p1}", { p0: index + 1, p1: steps.length })}
+            <Stepper
+              steps={steps.map((id) => ({ id, label: t(labels[id]) }))}
+              current={index}
+              label={t("Set up")}
             />
             <div className={styles.content}>
-              {intros[step] ? (
-                <Text
-                  as="p"
-                  size="secondary"
-                  tone="secondary"
-                  leading="normal"
-                  className={styles.intro}
-                >
-                  {t(intros[step])}
-                </Text>
-              ) : null}
-              {step === 0 && (
+              {step === "identity" && (
                 <Button
                   type="button"
                   className={styles.aiStart}
@@ -445,36 +433,35 @@ export function AssistantSetup({
                   {t("Set up with AI")}
                 </Button>
               )}
-              {step === 0 && (
+              {step === "identity" && (
                 <div className={styles.grid}>
                   <AssistantProfileFields section="identity" value={patch} onChange={update} />
                 </div>
               )}
-              {step === 1 && (
+              {step === "identity" && voice && (
                 <AssistantProfileFields section="language" value={patch} onChange={update} />
               )}
-              {(step === 2 || step === 3 || step === 4) && (
-                <VoiceSetupSteps
-                  key={step}
-                  step={step === 2 ? "provider" : step === 3 ? "voice" : "microphone"}
-                  language={patch.language}
-                  name={patch.name}
-                  onValidChange={(valid) =>
-                    setVerified((current) =>
-                      current[String(step)] === valid
-                        ? current
-                        : { ...current, [String(step)]: valid },
-                    )
-                  }
-                />
-              )}
-              {step === 5 && (
+              {step === "voice" &&
+                voiceChecks.map((check) => (
+                  <VoiceSetupSteps
+                    key={check}
+                    step={check}
+                    language={patch.language}
+                    name={patch.name}
+                    onValidChange={(valid) =>
+                      setVerified((current) =>
+                        current[check] === valid ? current : { ...current, [check]: valid },
+                      )
+                    }
+                  />
+                ))}
+              {step === "identity" && voice && (
                 <div className={styles.grid}>
                   <AssistantProfileFields section="personality" value={patch} onChange={update} />
                   <AssistantProfileFields section="behavior" value={patch} onChange={update} />
                 </div>
               )}
-              {step === 6 && (
+              {step === "workmode" && (
                 <div className={styles.grid}>
                   <AssistantProfileFields
                     section="workmode"
@@ -484,7 +471,7 @@ export function AssistantSetup({
                   />
                 </div>
               )}
-              {step === 7 && (
+              {step === "presence" && (
                 <div className={styles.grid}>
                   <AssistantProfileFields
                     section="presence"
@@ -494,13 +481,13 @@ export function AssistantSetup({
                   />
                 </div>
               )}
-              {step === 7 && (
+              {step === "presence" && (
                 <AssistantKeepAwakeStatus
                   state={snapshot?.keepAwake}
                   compact={Boolean(snapshot?.keepAwake)}
                 />
               )}
-              {step === 8 && (
+              {step === "presence" && (
                 <TextareaField
                   label={t("Anything I should know?")}
                   value={draft.rules}
@@ -510,7 +497,7 @@ export function AssistantSetup({
                   onChange={(event) => setDraft({ ...draft, rules: event.currentTarget.value })}
                 />
               )}
-              {step === 9 && (
+              {step === "review" && (
                 <div className={styles.review}>
                   <DescriptionList>
                     <DescriptionItem term={t("Name")}>{patch.name}</DescriptionItem>
@@ -558,12 +545,12 @@ export function AssistantSetup({
                   </Text>
                 </div>
               )}
-              {step === 9 && voice && ![2, 3, 4].every((value) => verified[String(value)]) && (
+              {step === "review" && voice && !voiceChecks.every((check) => verified[check]) && (
                 <Button
                   onClick={() =>
                     setDraft({
                       ...draft,
-                      step: [2, 3, 4].find((value) => !verified[String(value)])!,
+                      step: "voice",
                     })
                   }
                 >

@@ -5,7 +5,7 @@ import type {
   NotificationSettings,
 } from "@bycoda/account-contracts";
 import { t, useLocale } from "../../../shared/i18n";
-import { Group, Row, SettingsFeedback, Toggle } from "../../settings/public/settingsControls";
+import { Group, Row, SettingsFeedback, Toggle } from "../../../shared/ui/settings";
 import { Switch } from "../../../shared/ui/Switch";
 import { TimePicker } from "../../../shared/ui/TimePicker";
 import { localTimeZone, useNotificationSettings } from "../hooks/useAccountData";

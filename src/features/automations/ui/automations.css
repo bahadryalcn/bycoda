@@ -63,7 +63,6 @@
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr));
   gap: 8px;
 }
-.automation-start-option,
 .automation-template {
   display: flex;
   flex-direction: column;
@@ -74,7 +73,14 @@
   text-align: start;
 }
 .automation-start > .automation-start-option.automation-start-option[data-button-hierarchy] {
-  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: stretch;
+  min-inline-size: 0;
+  white-space: normal;
+  text-align: start;
+  padding: 8px 12px;
 }
 .automation-template-search {
   inline-size: min(100%, 16rem);

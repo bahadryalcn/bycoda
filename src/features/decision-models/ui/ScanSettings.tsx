@@ -8,7 +8,7 @@ import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
-import { Row } from "../../settings/public/settingsControls";
+import { Row } from "../../../shared/ui/settings";
 import type { DecisionModelsClient } from "../model/decisionModelsClient";
 import {
   MAX_EXTRA_FOLDERS,

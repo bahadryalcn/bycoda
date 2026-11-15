@@ -50,7 +50,7 @@ import {
   Row,
   Toggle,
   Select,
-} from "./settingsControls";
+} from "../../../shared/ui/settings";
 import { SettingsSearch } from "./SettingsSearch";
 import { settingsRevealControl } from "./settingsReveal";
 import { GeneralPage } from "./GeneralSettings";

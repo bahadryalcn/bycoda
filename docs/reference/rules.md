@@ -217,6 +217,8 @@ fall. Suppress one line only, always with a reason.
   - size-3/3.5/4/5 on a shared icon component (use icon-* sizes)
 - `icon-stroke-width` (`src/app, src/features, shared stylesheets`)
   - strokeWidth other than 1.75 or 2
+- `inline-help-text` (`TSX in src/app, src/features, src/shared (excluding tests)`)
+  - muted/secondary shared Text or p with a literal t() key over 100 characters directly in a settings Row/Field or following a settings label/heading (move optional help to InfoPopover or the info slot)
 - `inline-style-layout` (`src/app, src/features, shared stylesheets`)
   - literal layout number in style={{ width/height/margin/padding/top… }} (use classes or tokens)
 - `inline-style-property` (`src/app, src/features, shared stylesheets`)

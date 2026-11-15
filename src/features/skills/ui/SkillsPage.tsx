@@ -65,7 +65,7 @@ import { remoteProjectMachines } from "../../connections/model/localSync";
 import { machineFailure } from "../model/skillMachineFailure";
 import { cachedMachineSkills, listMachineSkills } from "../model/machineSkills";
 import { canDeleteSkill } from "../model/deleteSkill";
-import { RevealedSetting, Segmented, Toggle } from "../../settings/ui/settingsControls";
+import { RevealedSetting, Segmented, Toggle } from "../../../shared/ui/settings";
 import { cacheSkillPolicy, cachedSkillPolicy } from "../model/skillPreferences";
 import {
   parseSkillPolicy,

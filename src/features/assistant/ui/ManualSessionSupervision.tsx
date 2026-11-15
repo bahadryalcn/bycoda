@@ -11,7 +11,7 @@ import { Badge } from "../../../shared/ui/Badge";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Switch } from "../../../shared/ui/Switch";
 import { RefreshCw, Settings, Square } from "../../../shared/ui/icons";
-import { Row } from "../../settings/public/settingsControls";
+import { Row } from "../../../shared/ui/settings";
 import type { ManualProject, ManualSupervisionController } from "../model/assistantManual";
 import styles from "./AssistantView.module.css";
 import panelStyles from "./ManualSessionSupervision.module.css";

@@ -4,7 +4,7 @@ import { t } from "../../../shared/i18n";
 import { useRemoteMachines } from "../../connections/public/connections";
 import { isLocalSyncMachine } from "../../connections/public/localSync";
 import { decisionModelsClient, DecisionModelsSettings } from "../../decision-models";
-import { SettingsFeedback, settingDomId } from "./settingsControls";
+import { SettingsFeedback, settingDomId } from "../../../shared/ui/settings";
 
 /**
  * Providers > Decision models. Runs on this computer's Host, or the first Host listed. The page

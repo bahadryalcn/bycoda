@@ -27,7 +27,7 @@ import {
   type ThemeSuggestion,
   type ThemeSuggestionArea,
 } from "../../../model/themeSuggestions";
-import { SettingsFeedback } from "../../settingsControls";
+import { SettingsFeedback } from "../../../../../shared/ui/settings";
 import { SaveLookButton } from "./SaveLookButton";
 import { ImageProviderButton } from "./ImageProviderButton";
 import { applyDrawnImageTuning, applyThemeSuggestion } from "./applyThemeSuggestion";

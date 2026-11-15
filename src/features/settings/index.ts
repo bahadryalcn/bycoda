@@ -26,4 +26,4 @@ export type * as modelUseKeybindingShortcutApi from "./public/useKeybindingShort
 export type * as uiConnectionRecoverySettingsApi from "./public/ConnectionRecoverySettings";
 export type * as uiGradientBlurBackgroundApi from "./public/GradientBlurBackground";
 export type * as uiLiveBackgroundCanvasApi from "./public/LiveBackgroundCanvas";
-export type * as uiSettingsControlsApi from "./public/settingsControls";
+export type * as uiSettingsControlsApi from "../../shared/ui/settings";

@@ -19,7 +19,7 @@ vi.mock("../../model/modelRoutingClient", () => ({
   useModelRouting: mocks.routing,
   resolveModelRouting: mocks.resolve,
 }));
-vi.mock("../../../settings/public/settingsControls", () => ({
+vi.mock("../../../../shared/ui/settings", () => ({
   SettingsFeedback: ({
     children,
     action,

@@ -6,7 +6,7 @@ import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { LoadingText } from "../../../shared/ui/LoadingText";
-import { SettingsFeedback } from "../../settings/public/settingsControls";
+import { SettingsFeedback } from "../../../shared/ui/settings";
 import { ModelLabel } from "../../sessions/public/ModelLabel";
 import {
   localDictationModels,

@@ -1,0 +1,281 @@
+/* One section rhythm: a heading above a framed topic, --settings-group-gap between topics.
+   The frame is a thin border with hairline row dividers and no fill (owner decision 2026-10-31,
+   V3-013); its roles are --ui-settings-group-* and --ui-settings-hairline in styles/index.css. */
+.settings-group {
+  display: block;
+  min-inline-size: 0;
+  padding-block: var(--settings-group-gap, 28px) 0;
+}
+.settings-group:first-child {
+  padding-block-start: 0;
+}
+/* Topic collections own the 28px rhythm between groups, wherever the wrapper sits. */
+.settings-topics {
+  display: flex;
+  flex-direction: column;
+  gap: var(--settings-group-gap, 28px);
+  min-inline-size: 0;
+}
+.settings-topics > .settings-group {
+  padding-block: 0;
+}
+.settings-group > .settings-group-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+  padding-block-end: 8px;
+}
+.settings-group-title,
+.settings-row-label {
+  flex: 1;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+.settings-title-line {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-inline-size: 0;
+}
+/* Info and reset icons are 28px targets; they must not make a titled row taller than a plain one,
+   and the reset icon appearing must not move anything. */
+.settings-title-line > button {
+  margin-block: -4px;
+}
+.settings-row-title {
+  margin: 0;
+}
+/* Group headings: secondary, 13px, 500. The class-qualified selector outranks the legacy
+   `.bycoda-settings-content` heading rule in styles/bycoda.css. */
+.settings-group-action {
+  flex-shrink: 0;
+  max-inline-size: 100%;
+}
+/* The frame: every topic (open or box) uses it. Rows pad themselves, so the frame has no padding. */
+.settings-group[data-settings-variant][data-settings-layout] > .settings-group-content {
+  align-self: start;
+  min-inline-size: 0;
+  overflow: visible;
+  container: settings-group / inline-size;
+}
+
+/* One row padding (10px/16px) and one minimum height for every row. Dividers are hairlines
+   between rows; nothing inside the frame has a fill at rest. */
+.settings-row {
+  display: flex;
+  align-items: center;
+  min-inline-size: 0;
+  min-block-size: 3rem;
+  padding: 10px 16px;
+  gap: 12px 24px;
+}
+/* Dependent sub-row: indented under its parent; dimmed and inert (with a tooltip reason) when the
+   parent is off. The reason is never repeated as visible text. */
+.settings-row[data-dependent] {
+  padding-inline-start: 40px;
+}
+.settings-row[data-disabled] {
+  cursor: not-allowed;
+}
+.settings-row[data-disabled] > :is(.settings-row-label, .settings-row-control) {
+  opacity: var(--ui-disabled-opacity);
+}
+.settings-help-text,
+.settings-scope,
+.settings-dependency {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+
+/* Label block flexes; the control column holds 12-18rem, right aligned, and wraps below it. */
+.settings-row-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  min-inline-size: min(12rem, 100%);
+  max-inline-size: 18rem;
+  flex: 0 1 auto;
+  align-self: center;
+  gap: 8px;
+  overflow-wrap: anywhere;
+}
+/* One right column: every control kind ends on the row's right edge at the compact height, and a
+   Select keeps a fixed minimum width so neighbouring rows do not zig-zag. */
+.settings-row:not([data-stacked]) > .settings-row-control .bycoda-arc-select {
+  min-inline-size: 9rem;
+}
+.settings-row-control > * {
+  max-width: 100%;
+}
+/* Numeric fields share a column width instead of sizing from their current value/min/max. */
+.settings-row-control > .bycoda-arc-field:has(input[type="number"]) {
+  inline-size: 15rem;
+}
+/* Controls beside a label use the density-aware compact height (28px at the default density), so a
+   row is label height + 20px instead of a 36px form control + padding. Stacked rows keep the form
+   height for wide editors. */
+.settings-row:not([data-stacked]) > .settings-row-control .bycoda-arc {
+  --control-height-md: var(--ui-control-height-compact);
+}
+.settings-row:not([data-stacked]) > .settings-row-control .bycoda-arc.bycoda-arc-select {
+  min-block-size: var(--ui-control-height-compact);
+  padding-block: 0;
+}
+.settings-row-control:empty {
+  display: none;
+}
+/* Wide controls (fields, editors, lists) sit under their label at full width. */
+.settings-row[data-stacked] {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+/* In a column the 100% basis would mean the row's height and squeeze the feedback below its
+   content (the crew preview then overlapped the label and picker); size it by content instead. */
+.settings-row[data-stacked] > .settings-row-feedback {
+  flex-basis: auto;
+  /* A definite width: flex sizes the height before stretching, and width-contained content
+     (scenes, cards) would otherwise be measured at its narrow intrinsic width. */
+  inline-size: 100%;
+}
+.settings-row[data-stacked] > .settings-row-control {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  align-self: stretch;
+  justify-content: flex-start;
+}
+
+/* Feedback follows the operation and never competes with its input or card. */
+.settings-row:has(> .settings-row-feedback) {
+  flex-wrap: wrap;
+}
+.settings-row-feedback {
+  flex-basis: 100%;
+  grid-column: 1 / -1;
+  min-inline-size: 0;
+}
+.settings-feedback {
+  display: grid;
+  grid-column: 1 / -1;
+  flex-basis: 100%;
+  gap: 8px;
+  min-inline-size: 0;
+  inline-size: 100%;
+  overflow-wrap: anywhere;
+}
+.settings-feedback > button {
+  justify-self: start;
+}
+/* Quiet feedback is a caption line, not a card: no fill, border or box padding. */
+.settings-feedback[data-presentation="quiet"] {
+  padding-block: 2px;
+}
+.settings-group-content > .settings-feedback {
+  padding-block: 10px;
+}
+.settings-group-feedback {
+  padding-block: 10px;
+}
+.settings-group-content > .settings-feedback,
+.settings-group-feedback {
+  padding-inline: 16px;
+}
+.settings-group-feedback {
+}
+.settings-group-content > [role="alert"],
+.settings-row-control > [role="alert"] {
+  flex-basis: 100%;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  overflow-wrap: anywhere;
+}
+
+/* A row responds to its nearest topic container, or the caller's container for
+   standalone rows. This owns the former index.css settings behavior as well. */
+@container (width < 560px) {
+  .settings-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  /* Column rows only: a lone switch keeps its row, where 100% still wraps feedback below. */
+  .settings-row:not(:has(> .settings-row-control > [role="switch"]:only-child))
+    > .settings-row-feedback {
+    flex-basis: auto;
+    inline-size: 100%;
+  }
+  .settings-row-control {
+    min-inline-size: 0;
+    max-inline-size: 100%;
+    align-self: stretch;
+    justify-content: flex-start;
+  }
+  /* One wrapped alignment for every control: under the label, start aligned (a shared
+     MorphSelect would otherwise push itself to the end with its own auto margin). */
+  .settings-row-control > .ms-auto {
+    margin-inline-start: 0;
+  }
+  .settings-row:has(> .settings-row-control > [role="switch"]:only-child) {
+    flex-direction: row;
+    align-items: center;
+  }
+  .settings-row-control:has(> [role="switch"]:only-child) {
+    min-inline-size: 0;
+    align-self: center;
+    flex-shrink: 0;
+  }
+}
+
+/* Shared metadata wraps with its control instead of competing for its space. */
+.settings-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin-block-start: 6px;
+  overflow-wrap: anywhere;
+}
+.settings-group-title,
+.settings-group-heading {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+/* Group actions wrap before descriptions become an unreadable column. */
+.settings-group > .settings-group-heading > .settings-group-title {
+  flex-basis: min(100%, 16rem);
+}
+.settings-group-heading > :last-child {
+  max-inline-size: 100%;
+}
+.settings-row-control > :is(input, textarea, select) {
+  min-inline-size: 0;
+}
+.settings-advanced > .settings-subheading {
+  overflow-wrap: anywhere;
+}
+/* The disclosure row aligns with row titles (16px), spans the frame, and puts the chevron on the right. */
+.settings-advanced-toggle {
+  min-block-size: 3rem;
+  padding-inline: 16px;
+  justify-content: flex-start;
+}
+/* The shared trailing chevron sits at the row end. */
+.settings-advanced-toggle > :last-child {
+  margin-inline-start: auto;
+}
+
+/* Secondary settings sit inside their topic's frame as a closing disclosure row. Standalone
+   (outside a Group) they draw their own thin frame. */
+.settings-advanced {
+  min-inline-size: 0;
+  margin-block: 12px;
+}
+.settings-group-content > .settings-advanced {
+  margin: 0;
+}
+
+.settings-topics > .settings-advanced {
+  margin-block: 0;
+}

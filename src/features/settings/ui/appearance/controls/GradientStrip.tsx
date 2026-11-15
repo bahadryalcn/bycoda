@@ -12,7 +12,7 @@ import {
   type WorkspaceBackground,
 } from "../../../model/workspaceBackground";
 import { backgroundGradientChange } from "../../../model/backgroundGradient";
-import { Row, Slider } from "../../settingsControls";
+import { Row, Slider } from "../../../../../shared/ui/settings";
 import { AngleDial } from "./AngleDial";
 import { BackgroundGenerator } from "./BackgroundGenerator";
 import { generatorSession } from "./themeGeneratorSession";

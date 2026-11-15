@@ -9,7 +9,7 @@ import {
   workerContextSettings,
   validWorkerContextSettings,
 } from "../../../../shared/model/assistantContext";
-import { AdvancedSettings } from "../../../settings/public/settingsControls";
+import { AdvancedSettings } from "../../../../shared/ui/settings";
 import { ProfileNumber } from "./ProfileControls";
 import { useProfileRows } from "./SettingsProfileRow";
 import styles from "./costUsage.module.css";

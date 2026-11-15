@@ -35,14 +35,7 @@ import { ShortcutEditor } from "../../../src/features/settings/ui/ShortcutSettin
 import { SettingsSearch } from "../../../src/features/settings/ui/SettingsSearch";
 import { ImageLightbox } from "../../../src/shared/ui/ImageLightbox";
 import { setLanguagePreference } from "../../../src/shared/i18n";
-import {
-  Group,
-  Row,
-  Segmented,
-  Slider,
-  Toggle,
-  Select,
-} from "../../../src/features/settings/ui/settingsControls";
+import { Group, Row, Segmented, Slider, Toggle, Select } from "../../../src/shared/ui/settings";
 import "../../../src/styles/index.css";
 import "../../../src/features/host-tools/host-tools.css";
 import "../../../src/features/host-tools/runtime-logs.css";

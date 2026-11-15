@@ -12,6 +12,9 @@ import {
   listProjectFiles,
   listSkills,
   pickNativeFolders as pickFolders,
+  pickCodeWorkspaceFile,
+  pickFiles,
+  pickImageFiles,
   pickFolders as pickProjectFolders,
   resolveProjectLocation,
 } from "./fs";
@@ -23,6 +26,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 vi.mock("@tauri-apps/plugin-dialog", () => ({
   open: vi.fn(),
 }));
+vi.mock("../../shared/i18n/core", () => ({ t: (text: string) => `translated:${text}` }));
 
 const picker = vi.hoisted(() => ({ openFolderPicker: vi.fn() }));
 vi.mock("../../features/projects/ui/openFolderPicker", () => picker);
@@ -54,6 +58,20 @@ it("does not request native approval when the in-app picker is cancelled", async
 });
 
 describe("pickFolders", () => {
+  it("translates default native titles without changing picker selection modes", async () => {
+    for (const [pick, title, directory, multiple] of [
+      [pickFolders, "Open projects", true, true],
+      [pickCodeWorkspaceFile, "Choose workspace", false, false],
+      [pickFiles, "Attach files", false, true],
+      [pickImageFiles, "Insert images", false, true],
+    ] as const) {
+      vi.mocked(open).mockResolvedValueOnce(null);
+      await pick();
+      expect(open).toHaveBeenLastCalledWith(
+        expect.objectContaining({ title: `translated:${title}`, directory, multiple }),
+      );
+    }
+  });
   it("can request a single project folder", async () => {
     vi.mocked(open).mockResolvedValueOnce("/a/project");
     await expect(pickFolders("Choose session project", false)).resolves.toEqual(["/a/project"]);

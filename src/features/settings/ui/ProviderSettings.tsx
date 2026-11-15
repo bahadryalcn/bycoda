@@ -8,7 +8,12 @@ import { Text } from "../../../shared/ui/Text";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
-import { Group, RevealedSetting, SettingsFeedback, settingDomId } from "./settingsControls";
+import {
+  Group,
+  RevealedSetting,
+  SettingsFeedback,
+  settingDomId,
+} from "../../../shared/ui/settings";
 import { t, useLocale } from "../../../shared/i18n";
 import { ArrowDownCircle, RefreshCw } from "../../../shared/ui/icons";
 import { useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";

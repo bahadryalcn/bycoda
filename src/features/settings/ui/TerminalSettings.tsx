@@ -17,7 +17,7 @@ import {
 
 import { useEffect, useRef, useState } from "react";
 
-import { Group, SettingsFeedback } from "./settingsControls";
+import { Group, SettingsFeedback } from "../../../shared/ui/settings";
 import { HostShellRow, shellCount } from "./HostShellRow";
 import "./SettingsCollection.css";
 import "./TerminalSettings.css";

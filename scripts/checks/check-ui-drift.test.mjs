@@ -81,7 +81,7 @@ test("nested card guard follows JSX ancestry including surfaceAttributes spreads
 });
 
 test("nested surface guard treats a settings Group as a framed card", () => {
-  const imported = 'import { Group } from "./settingsControls";\n';
+  const imported = 'import { Group } from "../../shared/ui/settings";\n';
   const count = (source) =>
     rulesOf("src/features/demo/View.tsx", imported + source).filter(
       (rule) => rule === "nested-surface",
@@ -751,4 +751,48 @@ test("px and motion literal rules also cover Arc CSS modules", () => {
     ".a { font-size: 12px; border-radius: 6px; transition: opacity 120ms ease; z-index: 99; color: var(--missing); }";
   assert.deepEqual(rulesOf(file, css).sort(), ["motion-literal", "radius-size", "typography"]);
   assert.deepEqual(rulesOf(file, ".a { transition: opacity var(--motion-duration-fast); }"), []);
+});
+
+test("inline help guard limits findings to long translated secondary text directly below settings labels", () => {
+  const imports =
+    'import { Row as SettingRow } from "./settingsControls"; import { Text as Copy } from "../../shared/ui/Text"; import { Field } from "../../shared/ui/Field"; import { Heading } from "../../shared/ui/Heading"; import { InfoPopover } from "../../shared/ui/InfoPopover";';
+  const long = "x".repeat(101);
+  const help = `<Copy tone="secondary">{t("${long}")}</Copy>`;
+  const count = (source) =>
+    rulesOf("src/features/demo/View.tsx", imports + source).filter(
+      (rule) => rule === "inline-help-text",
+    ).length;
+  for (const source of [
+    `<SettingRow label="Mode">${help}</SettingRow>`,
+    `<Field label="Mode">${help}</Field>`,
+    `<><Heading>Mode</Heading>${help}</>`,
+    `<><h3>Mode</h3><p tone="muted">{t("${long}")}</p></>`,
+    `<><SettingRow label="Mode" />${help}</>`,
+    `<Field label="Mode"><Copy tone={"muted"}>{t('${long}')}</Copy></Field>`,
+  ])
+    assert.equal(count(source), 1, source);
+  for (const source of [
+    `<Field label="Mode"><Copy tone="muted">{t("${"x".repeat(100)}")}</Copy></Field>`,
+    `<div>${help}</div>`,
+    `<Field label="Mode"><div>${help}</div></Field>`,
+    `<Field label="Mode"><Copy tone="danger">{t("${long}")}</Copy></Field>`,
+    `<Field label="Mode"><Copy tone="muted">{t(key)}</Copy></Field>`,
+    `<Field label="Mode"><Copy tone="muted">${long}</Copy></Field>`,
+    `<Field label="Mode"><InfoPopover>${help}</InfoPopover></Field>`,
+    `<InfoPopover><Field label="Mode">${help}</Field></InfoPopover>`,
+    `<Field info={<><Heading>Mode</Heading>${help}</>} />`,
+    `<Field><div slot="info"><Heading>Mode</Heading>${help}</div></Field>`,
+    `<><Heading>Mode</Heading><Button />${help}</>`,
+    `<OtherRow>${help}</OtherRow>`,
+    `<Field><Copy tone="muted">{t()}</Copy></Field>`,
+    `<Field><Text tone="secondary">{t("${long}")}</Text></Field>`,
+    `const example = ${JSON.stringify(`<Field>${help}</Field>`)};`,
+  ])
+    assert.equal(count(source), 0, source);
+  assert.equal(
+    count(
+      `<Field>\n{/* ui-drift-ignore: inline-help-text -- required consequence */}\n${help}</Field>`,
+    ),
+    0,
+  );
 });

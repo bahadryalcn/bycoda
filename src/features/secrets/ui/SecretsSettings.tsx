@@ -7,7 +7,7 @@ import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Text } from "../../../shared/ui/Text";
 import { useRemoteMachines } from "../../connections/public/connections";
 import { isLocalSyncMachine } from "../../connections/public/localSync";
-import { Group, Row, SettingsFeedback } from "../../settings/public/settingsControls";
+import { Group, Row, SettingsFeedback } from "../../../shared/ui/settings";
 import { useOwnerSecrets } from "../hooks/useOwnerSecrets";
 import { secretsClient, type OwnerSecret } from "../model/secretsClient";
 import { groupSecretsByProject } from "../model/secretsGroups";

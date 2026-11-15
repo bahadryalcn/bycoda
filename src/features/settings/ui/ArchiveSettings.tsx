@@ -38,7 +38,7 @@ import type { SessionSummary } from "../../sessions";
 
 import { loadTabGroupLabels, resolveTabGroupLabel } from "../../workspace/model/tabGroups";
 
-import { Group, Row, Toggle, SettingsFeedback } from "./settingsControls";
+import { Group, Row, Toggle, SettingsFeedback } from "../../../shared/ui/settings";
 import { CollectionToolbar } from "./SettingsCollection";
 import "./ArchiveSettings.css";
 

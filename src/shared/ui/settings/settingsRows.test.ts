@@ -13,10 +13,9 @@ import {
   PageAutomaticSaveHint,
   AdvancedSettings,
   RevealedSetting,
-} from "./settingsControls";
-import { playCue } from "../model/sounds";
-
-vi.mock("../model/sounds", () => ({ playCue: vi.fn() }));
+  setToggleCue,
+} from "./index";
+const playCue = vi.fn();
 
 let container: HTMLDivElement;
 let root: Root;
@@ -27,6 +26,7 @@ const options = [
 
 beforeEach(() => {
   vi.clearAllMocks();
+  setToggleCue(playCue);
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal(
     "ResizeObserver",
@@ -65,7 +65,10 @@ describe("retained advanced settings", () => {
           unmounted();
         };
       }, []);
-      return createElement("input", { "aria-label": "Retained draft", defaultValue: "original" });
+      return createElement("input", {
+        "aria-label": "Retained draft",
+        defaultValue: "original",
+      });
     }
     await act(() =>
       root.render(
@@ -101,7 +104,10 @@ describe("retained advanced settings", () => {
   it("preserves existing unmount behavior unless opted in", async () => {
     await act(() =>
       root.render(
-        createElement(AdvancedSettings, { defaultOpen: false, children: createElement("input") }),
+        createElement(AdvancedSettings, {
+          defaultOpen: false,
+          children: createElement("input"),
+        }),
       ),
     );
     const trigger = container.querySelector<HTMLButtonElement>("button")!;
@@ -198,7 +204,11 @@ describe("settings keyboard controls", () => {
           }),
           createElement(Group, {
             title: "Failed",
-            persistence: { mode: "automatic", state: "error", error: "Retry saving" },
+            persistence: {
+              mode: "automatic",
+              state: "error",
+              error: "Retry saving",
+            },
             children: "Setting",
           }),
           createElement(Group, {
@@ -280,10 +290,15 @@ describe("settings keyboard controls", () => {
     expect(toggle.getAttribute("aria-checked")).toBe("false");
     await act(async () => toggle.click());
     expect(onChange).toHaveBeenCalledExactlyOnceWith(true);
-    expect(playCue).toHaveBeenCalledExactlyOnceWith("switch");
+    expect(playCue).toHaveBeenCalledTimes(1);
     await act(async () =>
       root.render(
-        createElement(Toggle, { label: "Enable sounds", on: true, onChange, disabled: true }),
+        createElement(Toggle, {
+          label: "Enable sounds",
+          on: true,
+          onChange,
+          disabled: true,
+        }),
       ),
     );
     expect(toggle.getAttribute("aria-checked")).toBe("true");

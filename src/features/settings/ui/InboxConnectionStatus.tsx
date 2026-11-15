@@ -1,12 +1,12 @@
 import { Text } from "../../../shared/ui/Text";
 import { useCallback, useState } from "react";
-import { SettingsFeedback } from "./settingsControls";
+import { SettingsFeedback } from "../../../shared/ui/settings";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { Modal } from "../../../shared/ui/Modal";
 import { Badge } from "../../../shared/ui/Badge";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { Row } from "./settingsControls";
+import { Row } from "../../../shared/ui/settings";
 import { MoreHorizontal, Check, CircleDashed, AlertCircle } from "../../../shared/ui/icons";
 import { Skeleton } from "../../../shared/ui/Skeleton";
 import { Spinner } from "../../../shared/ui/Spinner";

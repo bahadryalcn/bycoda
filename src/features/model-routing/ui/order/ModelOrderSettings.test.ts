@@ -32,7 +32,7 @@ vi.mock("../../model/modelProfile", () => ({
   inferAccountKind: (label: string) => (/work/i.test(label) ? "work" : undefined),
 }));
 vi.mock("./useOrderDraft", () => ({ useOrderSettings: vi.fn(), useOrderDraft: vi.fn() }));
-vi.mock("../../../settings/public/settingsControls", () => ({
+vi.mock("../../../../shared/ui/settings", () => ({
   SettingsFeedback: ({ children }: { children: ReactNode }) => createElement("p", null, children),
   Group: ({ children }: { children: ReactNode }) => createElement("section", null, children),
   Row: ({ label, children }: { label: ReactNode; children: ReactNode }) =>

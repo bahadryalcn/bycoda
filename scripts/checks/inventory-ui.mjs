@@ -191,11 +191,7 @@ export function scanSource(file, source) {
         });
       }
       const imported = imports.get(tag);
-      if (
-        imported &&
-        (imported.module.startsWith("src/shared/ui/") ||
-          imported.module === "src/features/settings/ui/settingsControls")
-      ) {
+      if (imported && imported.module.startsWith("src/shared/ui/")) {
         result.sharedControls.push({
           line: line(node),
           tag,
@@ -244,7 +240,12 @@ export function scanSource(file, source) {
 export function scanStyles(file, source) {
   file = normalize(file);
   const text = source.replace(/\/\*[\s\S]*?\*\//g, (comment) => comment.replace(/[^\n]/g, " "));
-  const result = { file, scope: scopeOf(file), localColorRecipes: [], controlSelectors: [] };
+  const result = {
+    file,
+    scope: scopeOf(file),
+    localColorRecipes: [],
+    controlSelectors: [],
+  };
   const line = (index) => text.slice(0, index).split("\n").length;
   for (const match of text.matchAll(
     /color-mix\(|(?:linear|radial|conic)-gradient\(|var\(--palette-[\w-]+/g,

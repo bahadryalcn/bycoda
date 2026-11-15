@@ -6,7 +6,7 @@ import { Button } from "../../../shared/ui/Button";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { TextareaField } from "../../../shared/ui/TextareaField";
-import { Group, Row } from "../../settings/public/settingsControls";
+import { Group, Row } from "../../../shared/ui/settings";
 import { useDeletion } from "../hooks/useAccountData";
 
 export const isDeactivated = (user: Pick<User, "status">) => user.status === "deactivated";
