@@ -26,7 +26,8 @@ import { PersonPanel } from "./PersonPanel";
 import { SegmentBuilder } from "./SegmentBuilder";
 import { removeFromList, suppressPeople } from "./audienceBulk";
 import { deleteCollection } from "./collectionDelete";
-import { collectionKind, errorMessage, listDisplayName } from "./audienceModel";
+import { collectionKind, listDisplayName } from "./audienceModel";
+import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import { useAudienceData } from "./useAudienceData";
 import "./audience.css";
 
@@ -106,7 +107,7 @@ export function AudienceScreen({ client, onNavigate, projectId }: SocialScreenPr
       setNotice(t("Deleted {p0}.", { p0: listDisplayName(list) }));
       data.reload();
     } catch (err) {
-      setError(errorMessage(err));
+      setError(presentRemoteError(err, { explicit: true }));
     }
   }
 
@@ -142,7 +143,7 @@ export function AudienceScreen({ client, onNavigate, projectId }: SocialScreenPr
       });
       setAiSteps(plan.steps.length);
     } catch (err) {
-      setError(errorMessage(err));
+      setError(presentRemoteError(err, { explicit: true }));
     } finally {
       setAiBusy(false);
     }
@@ -162,11 +163,16 @@ export function AudienceScreen({ client, onNavigate, projectId }: SocialScreenPr
     try {
       const changed = await removeFromList(client, activeList.id, selectedIds);
       setNoticeTone("success");
-      setNotice(t("{p0} removed from {p1}", { p0: formatNumber(changed), p1: activeList.name }));
+      setNotice(
+        t("{p0} removed from {p1}", {
+          p0: formatNumber(changed),
+          p1: activeList.name,
+        }),
+      );
       setSelected(new Set());
       data.reload();
     } catch (err) {
-      setError(errorMessage(err));
+      setError(presentRemoteError(err, { explicit: true }));
     } finally {
       setBulkBusy(false);
     }
@@ -197,7 +203,7 @@ export function AudienceScreen({ client, onNavigate, projectId }: SocialScreenPr
       setSelected(new Set());
       data.reload();
     } catch (err) {
-      setError(errorMessage(err));
+      setError(presentRemoteError(err, { explicit: true }));
     } finally {
       setBulkBusy(false);
     }
@@ -209,12 +215,21 @@ export function AudienceScreen({ client, onNavigate, projectId }: SocialScreenPr
     ? { disabled: true as const, reason: findReason }
     : { disabled: false as const };
   const findGate: ActionGate = noAccounts
-    ? { disabled: true, disabledReason: t("Connect an account in Accounts & Settings first.") }
+    ? {
+        disabled: true,
+        disabledReason: t("Connect an account in Accounts & Settings first."),
+      }
     : { disabled: false };
   const fillGate: ActionGate = noAccounts
-    ? { disabled: true, disabledReason: t("Connect an account in Accounts & Settings first.") }
+    ? {
+        disabled: true,
+        disabledReason: t("Connect an account in Accounts & Settings first."),
+      }
     : aiBusy
-      ? { disabled: true, disabledReason: t("Wait for the current operation to finish") }
+      ? {
+          disabled: true,
+          disabledReason: t("Wait for the current operation to finish"),
+        }
       : { disabled: false };
   const menuItems = [
     { kind: "item" as const, id: "import", label: t("Import people…") },
@@ -226,16 +241,29 @@ export function AudienceScreen({ client, onNavigate, projectId }: SocialScreenPr
     { kind: "item" as const, id: "tag", label: t("Add a tag…") },
     { kind: "item" as const, id: "sequence", label: t("Add to sequence…") },
     ...(activeList?.kind === "static"
-      ? [{ kind: "item" as const, id: "remove", label: t("Remove from this list") }]
+      ? [
+          {
+            kind: "item" as const,
+            id: "remove",
+            label: t("Remove from this list"),
+          },
+        ]
       : []),
-    { kind: "item" as const, id: "optout", label: t("Stop contacting…"), danger: true },
+    {
+      kind: "item" as const,
+      id: "optout",
+      label: t("Stop contacting…"),
+      danger: true,
+    },
   ];
 
   function pickBulk(id: string) {
     if (id === "list" || id === "tag" || id === "sequence") setDialog({ kind: "bulk", action: id });
     else if (id === "remove") void removeSelectedFromList().catch(() => undefined);
     else if (id === "optout")
-      void optOutSelected().catch((err: unknown) => setError(errorMessage(err)));
+      void optOutSelected().catch((err: unknown) =>
+        setError(presentRemoteError(err, { explicit: true })),
+      );
   }
 
   function pickMore(id: string) {
@@ -256,17 +284,26 @@ export function AudienceScreen({ client, onNavigate, projectId }: SocialScreenPr
     : emptyOpenList && collectionKind(emptyOpenList) === "segment"
       ? {
           message: t("No one matches this segment yet. It fills itself as people match."),
-          action: { label: t("Edit segment"), onClick: () => editCollection(emptyOpenList) },
+          action: {
+            label: t("Edit segment"),
+            onClick: () => editCollection(emptyOpenList),
+          },
         }
       : emptyOpenList && collectionKind(emptyOpenList) === "commenters"
         ? {
             message: t("No commenters yet. The Commenters rule adds them once it is on."),
-            action: { label: t("Open capture rules"), onClick: () => setSection("rules") },
+            action: {
+              label: t("Open capture rules"),
+              onClick: () => setSection("rules"),
+            },
           }
         : emptyOpenList
           ? {
               message: t("This list is empty. Add people from All people, or fill it with a rule."),
-              action: { label: t("Show all people"), onClick: () => selectList(null) },
+              action: {
+                label: t("Show all people"),
+                onClick: () => selectList(null),
+              },
             }
           : { message: t("No people to show.") };
 

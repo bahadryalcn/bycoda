@@ -25,7 +25,7 @@ import {
   saveHostSessionBinding,
   flushHostSessionBindings,
 } from "../model/sessionExecutionBinding";
-import { applySessionSync } from "../model/protocol";
+import { applyStreamSync } from "../model/protocol";
 import { mergePreviewBlocks } from "../model/mergePreviewBlocks";
 import { resolveQuestionDraft } from "../../sessions/public/questionDrafts";
 import {
@@ -99,7 +99,10 @@ import { isModelEnabled } from "../../sessions/public/models";
 import { RemoteBindingGeneration } from "../model/remoteBindingGeneration";
 import { useRemoteModelCatalog } from "../model/useRemoteModelCatalog";
 import { remoteSessionPollDelay } from "../model/remotePollingPolicy";
-import { subscribeRemoteMachineChannel } from "../model/remoteMachineChannel";
+import {
+  MachineChannelStreamError,
+  subscribeRemoteMachineChannel,
+} from "../model/remoteMachineChannel";
 import { ModelSourceContext, type ModelSource } from "../../sessions/public/modelSource";
 import {
   cachedDescriptors,
@@ -920,12 +923,13 @@ function ConnectedRemoteSession({
                 )
                   return { appliedRevision: current.revision };
                 if (
-                  !current.history &&
+                  // A windowed session takes only a tail stream's partial deltas.
+                  (!current.history || hint.sync.partial) &&
                   !current.historyLoading &&
                   hint.sync.base === current.revision
                 ) {
                   try {
-                    const next = applySessionSync(current, hint.sync);
+                    const next = applyStreamSync(current, hint.sync);
                     if (
                       !verifiedProjects.has(next.projectId) ||
                       next.projectId !== current.projectId ||
@@ -981,6 +985,8 @@ function ConnectedRemoteSession({
                         applied.revision >= hint.revision
                       )
                         return { appliedRevision: applied.revision };
+                      // The read finished older than the delta; its follow-up read commits it.
+                      return stale() ? undefined : { deferred: true as const };
                     });
                 } else if (!contentRetryTimer)
                   contentRetryTimer = setTimeout(
@@ -1004,9 +1010,18 @@ function ConnectedRemoteSession({
                 snapshotRef.current.revision >= hint.revision
               )
                 return { appliedRevision: snapshotRef.current.revision };
+              // An in-flight read refused this delta; it was queued as a follow-up read.
+              if (hint?.sync && !stale() && (polling || ownerReadNeeded))
+                return { deferred: true as const };
             },
             (reason) => {
               if (stale()) return;
+              if (reason instanceof MachineChannelStreamError) {
+                // One stream refused this consumer; the machine still answers, so
+                // refresh over HTTP without reporting an outage.
+                void poll().catch(() => undefined);
+                return;
+              }
               controlChannelFailed = true;
               setOnline(false);
               reportRemoteMachineStatus(machine.id, false, reason);

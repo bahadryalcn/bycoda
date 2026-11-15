@@ -10,6 +10,8 @@ export type PushPlatform = "ios" | "android";
  */
 export type PushRegistration = {
   pushToken: string;
+  /** New phones opt into data-only widget updates; legacy registrations stay unchanged. */
+  widgetUpdates?: boolean;
   platform: PushPlatform;
   title: string;
   texts: Record<PushEventKind, string> & { assistant: string; approvals: string };
@@ -49,6 +51,7 @@ export function parsePushRegistration(input: unknown): PushRegistration {
   const events = (value.events ?? {}) as Record<string, unknown>;
   return {
     pushToken: value.pushToken,
+    ...(value.widgetUpdates === true ? { widgetUpdates: true } : {}),
     platform: value.platform,
     title: pushText(value.title, "title"),
     texts: {

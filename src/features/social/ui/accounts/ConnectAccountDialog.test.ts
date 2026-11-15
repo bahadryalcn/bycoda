@@ -202,3 +202,17 @@ it("switches to the email account form from the same dialog", async () => {
   await act(async () => button("Add an email account instead")?.click());
   expect(element.querySelector('[data-testid="email-dialog"]')).not.toBeNull();
 });
+
+it("offers a new account only for browser accounts on platforms with a signup route", async () => {
+  const { client } = fakeClient();
+  render(client);
+  expect(button("Create a new X account instead")).toBeUndefined();
+  await choose("Platform", "Reddit");
+  expect(button("Create a new Reddit account instead")).toBeUndefined();
+  await choose("How to connect", "Browser sign-in");
+  expect(button("Create a new Reddit account instead")).toBeTruthy();
+  await act(async () => button("Create a new Reddit account instead")?.click());
+  expect(element.querySelector('[role="dialog"]')?.getAttribute("aria-label")).toBe(
+    "Create a Reddit account",
+  );
+});

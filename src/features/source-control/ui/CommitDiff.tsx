@@ -1,3 +1,5 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { useReloadOnReconnect } from "../../connections/public/useReloadOnReconnect";
 import { FailureState } from "../../../shared/ui/FailureState";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { t, useLocale } from "../../../shared/i18n/git";
@@ -91,7 +93,7 @@ export function CommitDiff({ cwd, sha }: Props) {
         })
         .catch((caught: unknown) => {
           if (disposed || current !== generation) return;
-          setError(caught instanceof Error ? caught.message : String(caught));
+          setError(presentRemoteError(caught, { explicit: true }));
           setFiles([]);
         });
     };
@@ -101,6 +103,8 @@ export function CommitDiff({ cwd, sha }: Props) {
       disposed = true;
     };
   }, [cwd, sha, retry]);
+  // A failed first load reruns once the machine's link is back.
+  useReloadOnReconnect(cwd, () => setRetry((value) => value + 1), { active: error !== null });
 
   const models = useMemo<UnifiedDiffFileModel[]>(() => {
     if (!files) return [];

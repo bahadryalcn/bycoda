@@ -72,10 +72,22 @@ it("splits large syncs into bounded pieces without splitting characters", () => 
 
 it("serves a transfer only for its session and forgets it after the last piece", () => {
   const transfers = new SyncTransfers({ inline: 64, chunk: 4096 });
-  const response = transfers.respond("session", sync("x".repeat(500)));
+  const response = transfers.respond("session", sync("x".repeat(9000)));
   if (response.kind !== "chunked") throw new Error("Expected a transfer");
   expect(() => transfers.chunk("other", response.transfer, 0)).toThrow("expired");
   expect(() => transfers.chunk("session", response.transfer, -1)).toThrow("offset");
   read(transfers, response.transfer, response.length);
   expect(() => transfers.chunk("session", response.transfer, 0)).toThrow("expired");
+});
+
+it("lets a lost last piece be read again but nothing else", () => {
+  const transfers = new SyncTransfers({ inline: 64, chunk: 4096 });
+  const response = transfers.respond("session", sync("x".repeat(9000)));
+  if (response.kind !== "chunked") throw new Error("Expected a transfer");
+  const pieces = read(transfers, response.transfer, response.length);
+  const lastOffset = response.length - pieces.at(-1)!.length;
+  expect(transfers.chunk("session", response.transfer, lastOffset).data).toBe(pieces.at(-1));
+  expect(transfers.chunk("session", response.transfer, lastOffset).data).toBe(pieces.at(-1));
+  expect(() => transfers.chunk("session", response.transfer, 0)).toThrow("expired");
+  expect(() => transfers.chunk("session", response.transfer, lastOffset)).toThrow("expired");
 });

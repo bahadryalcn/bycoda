@@ -4,6 +4,7 @@ import { remoteRequest } from "../../../connections/public/connections";
 import type { HostProject } from "../../../connections/public/protocol";
 import type { SocialSnapshot } from "../../model/social";
 import type { SocialClient } from "../../model/socialClient";
+import { presentRemoteError } from "../../../connections/public/remoteFailure";
 
 export type AccountsData = {
   loading: boolean;
@@ -64,7 +65,10 @@ export function useAccountsData(input: {
     if (!active) return;
     let alive = true;
     client
-      .sectionSnapshot({ section: "accounts", ...(projectId ? { projectId } : {}) })
+      .sectionSnapshot({
+        section: "accounts",
+        ...(projectId ? { projectId } : {}),
+      })
       .then(
         (response) => {
           if (!alive) return;
@@ -72,8 +76,8 @@ export function useAccountsData(input: {
           if (response.snapshot) setCheckedAt(Date.now());
           setError(response.snapshot ? "" : t("Could not read the accounts. Try again."));
         },
-        () => {
-          if (alive) setError(t("Could not reach this computer."));
+        (reason: unknown) => {
+          if (alive && presentRemoteError(reason)) setError(t("Could not reach this computer."));
         },
       )
       .finally(() => {

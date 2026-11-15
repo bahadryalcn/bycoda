@@ -25,6 +25,14 @@ import {
   SessionSyncSchema,
 } from "../../../shared/model/host-contracts";
 import { createTauriHostConnection } from "../../../platform/tauri/hostConnection";
+import {
+  STREAM_TAIL_CAPABILITY,
+  createStreamDeltaState,
+  expandStreamDelta,
+  rememberStreamDelta,
+  rememberStreamSnapshot,
+  type StreamDeltaState,
+} from "./sessionStreamDelta";
 import { z } from "zod";
 
 export type MachineChannelDemand = {
@@ -35,7 +43,12 @@ export type MachineChannelDemand = {
   git?: readonly { cwd: string; known?: string }[];
   tasksKnown?: string;
 };
-export type MachineChannelApplicationReceipt = { appliedRevision: number };
+/**
+ * `deferred`: the consumer could not apply the inline delta because an HTTP
+ * read is in flight; that read (or its queued follow-up) will commit the
+ * revision, so the stream continues instead of resyncing.
+ */
+export type MachineChannelApplicationReceipt = { appliedRevision: number } | { deferred: true };
 export type MachineChannelApplicationContext = { isCurrent(): boolean };
 export type MachineChannelListener = (
   changes: MachineChanges,
@@ -73,6 +86,8 @@ type Channel = {
   /** Watches the route's readiness so a stuck WebSocket falls back to HTTP. */
   wsWatch?: ReturnType<typeof setInterval>;
   wsSubscriptions: Map<string, () => void>;
+  /** Streams that failed in their consumer; they stay on HTTP until the route resets. */
+  wsExcluded?: Set<string>;
 };
 const channels = new Map<string, Channel>();
 type NativeRoute = {
@@ -167,6 +182,28 @@ function failWs(
   }
   schedule(machineId, channel);
 }
+/** A consumer-level stream failure: the machine link itself is fine. */
+export class MachineChannelStreamError extends Error {
+  constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause), { cause });
+    this.name = "MachineChannelStreamError";
+  }
+}
+/** A consumer error is not a transport failure: only its own stream falls back to HTTP. */
+function failWsStream(machineId: string, channel: Channel, key: string, error: unknown) {
+  if (channel.stopped || channel.wsFailed || !channel.wsSubscriptions.has(key)) return;
+  (channel.wsExcluded ??= new Set()).add(key);
+  channel.wsSubscriptions.get(key)?.();
+  channel.wsSubscriptions.delete(key);
+  for (const subscriber of channel.subscribers) {
+    try {
+      subscriber.onError?.(new MachineChannelStreamError(error));
+    } catch {
+      /* consumer isolation */
+    }
+  }
+  schedule(machineId, channel);
+}
 function watchWsRoute(machineId: string, channel: Channel) {
   if (channel.wsWatch) clearInterval(channel.wsWatch);
   let notReadySince: number | undefined;
@@ -209,6 +246,7 @@ function startWake() {
           void route.runtime.close().catch(() => {});
         }
         channel.wsFailed = false;
+        channel.wsExcluded = undefined;
         channel.epoch++;
         channel.refreshPending = true;
       }
@@ -346,7 +384,7 @@ const projectSnapshotSchema = z.strictObject({
   etag: z.string(),
   sessions: z.array(SessionSummarySchema),
 });
-function sessionSnapshot(data: unknown, sessionId: string): HostSession {
+function sessionSnapshot(data: unknown, sessionId: string, tail = false): HostSession {
   const value = SessionViewSchema.parse(data);
   const session = value.session;
   if (
@@ -370,7 +408,7 @@ function sessionSnapshot(data: unknown, sessionId: string): HostSession {
         typeof block.role !== "string" ||
         typeof block.text !== "string",
     ) ||
-    value.history ||
+    (value.history && !tail) ||
     value.historyLoading
   )
     throw new Error("Host stream is incompatible with a full transcript consumer");
@@ -383,6 +421,8 @@ function replacementDelta(value: HostSession, base: number): SessionSync {
   const { blockRevisions: _blockRevisions, ...metadata } = value;
   return {
     kind: "delta",
+    // A tail snapshot is a window: only the window and what follows it are authoritative.
+    ...(value.history ? { partial: true as const } : {}),
     base,
     value: { ...metadata, session },
     blocks,
@@ -396,17 +436,20 @@ function sessionStreamUpdate(
   data: unknown,
   id: string,
   metadata: RuntimeStreamMetadata,
+  /** Present for a tail stream: what this stream's earlier events established. */
+  tail?: StreamDeltaState,
 ): SessionStreamUpdate {
   if (metadata.kind === "snapshot") {
-    const value = sessionSnapshot(data, id);
+    const value = sessionSnapshot(data, id, !!tail);
     if (metadata.revision !== undefined && metadata.revision !== value.revision)
       throw new Error("Host snapshot revision changed");
+    if (tail) rememberStreamSnapshot(tail, value.session.blocks);
     return { kind: "snapshot", value };
   }
-  const delta = SessionSyncSchema.parse(data);
+  const delta = SessionSyncSchema.parse(tail ? expandStreamDelta(data, tail) : data);
   if (
     delta.kind !== "delta" ||
-    delta.partial ||
+    (delta.partial && !tail) ||
     delta.base !== metadata.baseRevision ||
     delta.value.revision !== metadata.revision ||
     delta.value.revision <= delta.base ||
@@ -416,6 +459,7 @@ function sessionStreamUpdate(
   sessionSnapshot(
     { ...delta.value, session: { ...delta.value.session, blocks: delta.blocks } },
     id,
+    !!tail,
   );
   const blockIds = new Set(delta.blockIds);
   if (
@@ -423,6 +467,8 @@ function sessionStreamUpdate(
     delta.blocks.some((block) => typeof block.id !== "string" || !blockIds.has(block.id))
   )
     throw new Error("Invalid changed transcript blocks");
+  if (tail)
+    rememberStreamDelta(tail, delta.blockIds, delta.blocks as { id: string; text: string }[]);
   return delta as unknown as Extract<SessionSync, { kind: "delta" }>;
 }
 
@@ -447,6 +493,7 @@ function transportDemand(machineId: string, channel: Channel): MachineChangesReq
   if (enabled) {
     for (const project of demand.projects) desired.add(`project:${project.projectId}`);
     for (const sessionId of demand.inlineSessionIds ?? []) desired.add(`session:${sessionId}`);
+    for (const key of channel.wsExcluded ?? []) desired.delete(key);
   }
   for (const [key, release] of channel.wsSubscriptions)
     if (!desired.has(key)) {
@@ -469,15 +516,23 @@ function transportDemand(machineId: string, channel: Channel): MachineChangesReq
       if (channel.wsSubscriptions.has(key)) continue;
       const id = key.slice(key.indexOf(":") + 1);
       const kind = key.startsWith("session:") ? "session" : "project";
-      const onError = (error: unknown) => failWs(machineId, channel, error);
+      const tail =
+        kind === "session" &&
+        !!environmentId &&
+        !!cachedRemoteCapabilities(environmentId)?.includes(STREAM_TAIL_CAPABILITY);
+      const tailState = tail ? createStreamDeltaState() : undefined;
+      const onError = (error: unknown) =>
+        nativeConnectionFailureCode(error)
+          ? failWs(machineId, channel, error)
+          : failWsStream(machineId, channel, key, error);
       let release: () => void;
       try {
         release =
           kind === "session"
             ? route.runtime.retain(
-                { kind: "session", sessionId: id },
+                { kind: "session", sessionId: id, ...(tail ? { tail: true as const } : {}) },
                 {
-                  parse: (data, metadata) => sessionStreamUpdate(data, id, metadata),
+                  parse: (data, metadata) => sessionStreamUpdate(data, id, metadata, tailState),
                   commit: async (update, input) => {
                     const subscribers = [...channel.subscribers];
                     for (const subscriber of subscribers) {
@@ -543,7 +598,12 @@ function transportDemand(machineId: string, channel: Channel): MachineChangesReq
                       );
                       if (!input.isCurrent())
                         throw new Error("Host subscription changed during application");
-                      if (current.inlineSync === true) {
+                      // A deferred delta is applied by the consumer's follow-up read, which
+                      // advances its own revision: forget the stale baseline so the next
+                      // delta is checked against what the consumer actually holds.
+                      if (current.inlineSync === true && receipt && "deferred" in receipt)
+                        subscriber.committedRevisions.delete(id);
+                      if (current.inlineSync === true && !(receipt && "deferred" in receipt)) {
                         if (
                           !receipt ||
                           !Number.isSafeInteger(receipt.appliedRevision) ||

@@ -4,8 +4,8 @@ import { Modal } from "../../../../shared/ui/Modal";
 import { TextField } from "../../../../shared/ui/TextField";
 import type { SocialList } from "../../model/audience";
 import type { SocialClient } from "../../model/socialClient";
-import { errorMessage } from "./audienceModel";
 import { useFormFooter, useTouched } from "./formFooter";
+import { presentRemoteError } from "../../../connections/public/remoteFailure";
 
 export type ListDialogProps = {
   client: SocialClient;
@@ -37,7 +37,7 @@ export function ListDialog({ client, list: existing, onClose, onSaved }: ListDia
       onSaved(list);
       onClose();
     } catch (err) {
-      setError(errorMessage(err));
+      setError(presentRemoteError(err, { explicit: true }));
     } finally {
       setSaving(false);
     }

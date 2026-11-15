@@ -7,6 +7,7 @@ import { Button } from "../../../../shared/ui/Button";
 import { CollectionFooter } from "../../../../shared/ui/ContinuousList";
 import type { SocialScreenProps } from "../shell/screens";
 import { NeedsHumanList } from "../browser/NeedsHumanList";
+import { AccountRequestList } from "./AccountRequestList";
 import { ActivityFeed } from "./ActivityFeed";
 import { AiSetupCard } from "./AiSetupCard";
 import { CommandInput } from "./CommandInput";
@@ -23,11 +24,19 @@ import "./command.css";
  * Command: one sentence in, a visible plan out, the live activity below, and the owner's queue
  * on the side. The global AI stop lives in the shell bar, so it is not repeated here.
  */
-export function CommandScreen({ client, machineId, projectId, active, target }: SocialScreenProps) {
+export function CommandScreen({
+  client,
+  machineId,
+  projectId,
+  active,
+  target,
+  onNavigate,
+}: SocialScreenProps) {
   const state = useCommandScreen(client, projectId, active);
   const navigation = useCommandTarget(target, active, state.text, state.setText, state.scopeKey);
   const modelRequired = isModelRequired(state.error);
   const [humanCount, setHumanCount] = useState(0);
+  const [requestCount, setRequestCount] = useState(0);
   const approvalCount = (state.actions ?? []).filter((item) => item.status === "queued").length;
   return (
     <div className="command-screen">
@@ -95,8 +104,15 @@ export function CommandScreen({ client, machineId, projectId, active, target }: 
           />
         </div>
         <aside className="command-side">
-          <WaitingForYou approvalCount={approvalCount} humanCount={humanCount}>
+          <WaitingForYou approvalCount={approvalCount} humanCount={humanCount + requestCount}>
+            <AccountRequestList
+              client={client}
+              active={active}
+              onNavigate={onNavigate}
+              onCountChange={setRequestCount}
+            />
             <NeedsHumanList
+              quietWhenEmpty={requestCount > 0}
               client={client}
               machineId={machineId}
               active={active}

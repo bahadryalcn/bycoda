@@ -50,12 +50,16 @@ const job = (
   createdAt: now,
 });
 const identity = '<a data-own href="/in/owner/">Owner</a>';
-const profile = (degree = "1st", label = "Message") =>
-  `${identity}<main><h1>Friend</h1><span class="dist-value">${degree}</span><button>${label}</button></main>`;
+const composeUrl =
+  "https://www.linkedin.com/messaging/compose/?profileUrn=urn%3Ali%3Afsd_profile%3AACoFriend123&recipient=ACoFriend123";
+/** The profile top card has no h1: the degree is a "· 1." paragraph before the Message link. */
+const profile = (degree = "1st", label = "Message", href = composeUrl) =>
+  `${identity}<main><h2>Friend</h2>${degree ? `<p>· ${degree}</p>` : ""}<div data-view-name="profile-primary-message"><a href="${href}">${label}</a></div></main>`;
+/** Message rows keep the msg-* classes, but the sender link moved and timestamps lost datetime. */
 const messageRow = (id = "urn:li:msg_message:new", text = "Hello", sender = "owner") =>
-  `<li class="msg-s-message-group"><a class="msg-s-message-group__profile-link" href="/in/${sender}/">Author</a><div data-event-urn="${id}"><p class="msg-s-event-listitem__body">${text}</p><time datetime="${new Date(now).toISOString()}"></time></div></li>`;
+  `<li class="msg-s-message-list__event"><div class="msg-s-event-listitem" data-event-urn="${id}"><a class="msg-s-event-listitem__link" href="/in/${sender}/"><img alt=""></a><div class="msg-s-event-listitem__message-bubble"><p class="msg-s-event-listitem__body">${text}</p></div></div></li>`;
 const conversation = (rows = "", recipient = "friend", draft = "", thread = false) =>
-  `${identity}<section class="msg-thread"><a class="msg-thread__link-to-profile" href="/in/${recipient}/">Recipient</a>${thread ? '<a href="/messaging/thread/thread-123/">Open conversation</a>' : ""}<ul class="msg-s-message-list">${rows}</ul><div class="msg-form__contenteditable" contenteditable="true">${draft}</div><button class="msg-form__send-button">Send</button></section>`;
+  `${identity}<section class="msg-thread"><a class="ember-view" href="/in/${recipient}/">Recipient</a>${thread ? '<a href="/messaging/thread/thread-123/">Open conversation</a>' : ""}<ul class="msg-s-message-list">${rows}</ul><div class="msg-form__contenteditable" contenteditable="true">${draft}</div><button class="msg-form__send-button">Gönder</button></section>`;
 type Options = {
   render?(url: string): string;
   click?(element: Element): void;
@@ -138,10 +142,9 @@ describe("LinkedIn free first-degree conversation initiation", () => {
       render: (url) =>
         url.includes("/in/")
           ? profile()
-          : conversation(sent ? messageRow() : "", "friend", "", true),
+          : conversation(sent ? messageRow() : "", "friend", "", sent),
       click: (el) => {
-        if (el.textContent === "Message") f.window.document.body.innerHTML = conversation();
-        if (el.textContent === "Send") {
+        if (el.textContent === "Gönder") {
           sent = true;
           f.window.document.body.innerHTML = conversation(messageRow(), "friend", "", true);
         }
@@ -151,43 +154,61 @@ describe("LinkedIn free first-degree conversation initiation", () => {
       platformId: "urn:li:msg_message:new",
       url: "https://www.linkedin.com/messaging/thread/thread-123/",
     });
+    expect(f.page.goto).toHaveBeenCalledWith(composeUrl);
     const index = f.order.indexOf("submitted");
     expect(f.order[index - 1]).toBe("identity");
     expect(f.order[index + 1]).toBe("click:message-send");
     expect(f.ctx.markSubmitted).toHaveBeenCalledTimes(1);
     expect(f.page.cookies).not.toHaveBeenCalled();
   });
-  it.each(["2nd", "3rd", ""])(
+  it.each(["2nd", "3. derece", ""])(
     "does not initiate for unverified free eligibility %s",
     async (degree) => {
       const f = fixture(profile(degree));
       await expect(linkedInStartMessage(f.ctx, job())).rejects.toMatchObject({ code: "denied" });
-      expect(f.page.click).not.toHaveBeenCalled();
+      expect(f.page.goto).toHaveBeenCalledTimes(1);
       expect(f.ctx.markSubmitted).not.toHaveBeenCalled();
     },
   );
+  it("ignores a hidden first-degree duplicate when the visible degree is second", async () => {
+    const f = fixture(profile("2."));
+    f.window.document
+      .querySelector("main")!
+      .insertAdjacentHTML("afterbegin", '<p data-hidden="true">· 1.</p>');
+    const rects = f.window.HTMLElement.prototype.getClientRects;
+    Object.defineProperty(f.window.HTMLElement.prototype, "getClientRects", {
+      configurable: true,
+      value(this: Element) {
+        return this.getAttribute("data-hidden") ? [] : rects.call(this);
+      },
+    });
+    await expect(linkedInStartMessage(f.ctx, job())).rejects.toMatchObject({ code: "denied" });
+  });
+  it.each([
+    ["offsite", "https://example.com/messaging/compose/?recipient=ACoFriend123"],
+    ["other path", "https://www.linkedin.com/messaging/thread/new/?recipient=ACoFriend123"],
+    ["no recipient", "https://www.linkedin.com/messaging/compose/"],
+  ])("never follows a %s Message link", async (_name, href) => {
+    const f = fixture(profile("1st", "Message", href));
+    await expect(linkedInStartMessage(f.ctx, job())).rejects.toMatchObject({ code: "denied" });
+    expect(f.page.goto).toHaveBeenCalledTimes(1);
+  });
   it.each(["wrong-recipient", "existing-draft", "inmail", "group"])(
     "rejects %s before Send",
     async (reason) => {
       const f = fixture(profile(), {
-        click: (el) => {
-          if (el.textContent !== "Message") return;
-          f.window.document.body.innerHTML = conversation(
+        render: (url) => {
+          if (url.includes("/in/")) return profile();
+          const html = conversation(
             "",
             reason === "wrong-recipient" ? "stranger" : "friend",
             reason === "existing-draft" ? "Owner's unsent draft" : "",
           );
           if (reason === "inmail")
-            f.window.document
-              .querySelector(".msg-thread")!
-              .insertAdjacentHTML("beforeend", '<input name="subject">');
+            return html.replace("</section>", '<input name="subject"></section>');
           if (reason === "group")
-            f.window.document
-              .querySelector(".msg-thread")!
-              .insertAdjacentHTML(
-                "beforeend",
-                '<a class="msg-thread__link-to-profile" href="/in/other/">Other</a>',
-              );
+            return html.replace("</section>", '<a href="/in/other/">Other</a></section>');
+          return html;
         },
       });
       await expect(linkedInStartMessage(f.ctx, job())).rejects.toMatchObject({ code: "denied" });
@@ -196,9 +217,7 @@ describe("LinkedIn free first-degree conversation initiation", () => {
   );
   it("honors an identity/Stop change before irreversible Send", async () => {
     const f = fixture(profile(), {
-      click: (el) => {
-        if (el.textContent === "Message") f.window.document.body.innerHTML = conversation();
-      },
+      render: (url) => (url.includes("/in/") ? profile() : conversation()),
     });
     const fill = f.page.fill;
     f.page.fill = async (selector, text) => {
@@ -208,7 +227,7 @@ describe("LinkedIn free first-degree conversation initiation", () => {
     await expect(linkedInStartMessage(f.ctx, job())).rejects.toMatchObject({ code: "denied" });
     expect(f.ctx.markSubmitted).not.toHaveBeenCalled();
   });
-  it.each(["no-thread", "unpersisted", "wrong-sender", "duplicate"])(
+  it.each(["no-thread", "unpersisted", "wrong-sender", "duplicate", "not-latest"])(
     "holds %s as unknown after Send",
     async (reason) => {
       let sent = false;
@@ -223,14 +242,15 @@ describe("LinkedIn free first-degree conversation initiation", () => {
                     ? messageRow(undefined, undefined, "stranger")
                     : reason === "duplicate"
                       ? messageRow() + messageRow("urn:li:msg_message:second")
-                      : messageRow(),
+                      : reason === "not-latest"
+                        ? messageRow() + messageRow("urn:li:msg_message:reply", "Thanks", "friend")
+                        : messageRow(),
                 "friend",
                 "",
                 true,
               ),
         click: (el) => {
-          if (el.textContent === "Message") f.window.document.body.innerHTML = conversation();
-          if (el.textContent === "Send") {
+          if (el.textContent === "Gönder") {
             sent = true;
             f.window.document.body.innerHTML = conversation(
               messageRow(),
@@ -249,27 +269,28 @@ describe("LinkedIn free first-degree conversation initiation", () => {
 });
 
 describe("LinkedIn image description", () => {
+  const thumbs = (count = 1) =>
+    `<img src="blob:owner-upload" alt="Resim Önizleme">${Array.from({ length: count }, (_, index) => `<img src="blob:owner-upload" alt="image ${index}">`).join("")}`;
   it("saves and reopens one image's description without any external Post click", async () => {
     let saved = "",
       editing = false;
     const media = [{ kind: "image" as const, uploadId: "upload", alt: "Bycoda workflow" }];
+    // The media editor is a native <dialog>; reopened unchanged, the alt view shows a disabled Update.
     const render = () =>
-      `${identity}<div role="dialog"><img src="blob:owner-upload">${editing ? `<textarea>${saved}</textarea><button>Save</button>` : "<button>Alt.text</button>"}</div>`;
+      `${identity}<dialog open>${thumbs()}${editing ? `<textarea>${saved}</textarea><button aria-label="Geri"></button>${saved ? "<button disabled>Güncelle</button>" : "<button>Ekle</button>"}` : '<button aria-label="Alternatif metin"></button><button>Ekle</button>'}</dialog>`;
     const f = fixture(render(), {
       click: (el) => {
-        if (el.textContent === "Alt.text") {
-          editing = true;
-          f.window.document.body.innerHTML = render();
-        }
-        if (el.textContent === "Save") {
+        if (el.getAttribute("aria-label") === "Alternatif metin") editing = true;
+        else if (el.textContent === "Ekle" && editing) {
           saved = (f.window.document.querySelector("textarea") as any).value;
           editing = false;
-          f.window.document.body.innerHTML = render();
-        }
+        } else if (el.getAttribute("aria-label") === "Geri") editing = false;
+        f.window.document.body.innerHTML = render();
       },
     });
     await linkedInApplyImageAlt(f.ctx, media);
     expect(saved).toBe(media[0].alt);
+    expect(editing).toBe(false);
     expect(f.ctx.markSubmitted).not.toHaveBeenCalled();
     const id = "urn:li:activity:123";
     f.window.document.body.innerHTML = `<article data-urn="${id}"><div class="update-components-image"><img src="https://media.licdn.com/a.jpg" alt="${saved}"></div></article>`;
@@ -278,23 +299,30 @@ describe("LinkedIn image description", () => {
     expect(await f.page.evaluate(linkedInImageAltEvidence(id, media))).toBe(false);
   });
   it("rejects a lost saved description and ambiguous multiple-image mapping", async () => {
-    const f = fixture(
-      `${identity}<div role="dialog"><img src="blob:owner-upload"><button>Alt.text</button></div>`,
-      {
-        click: (el) => {
-          if (el.textContent === "Alt.text")
-            f.window.document.body.innerHTML = `${identity}<div role="dialog"><textarea></textarea><button>Save</button></div>`;
-          else
-            f.window.document.body.innerHTML = `${identity}<div role="dialog"><img src="blob:owner-upload"><button>Alt.text</button></div>`;
-        },
+    const initial = `${identity}<dialog open>${thumbs()}<button aria-label="Alternatif metin"></button></dialog>`;
+    const f = fixture(initial, {
+      click: (el) => {
+        f.window.document.body.innerHTML =
+          el.getAttribute("aria-label") === "Alternatif metin"
+            ? `${identity}<dialog open>${thumbs()}<textarea></textarea><button>Ekle</button></dialog>`
+            : initial;
       },
-    );
+    });
     const media = [{ kind: "image" as const, uploadId: "one", alt: "Description" }];
     await expect(linkedInApplyImageAlt(f.ctx, media)).rejects.toMatchObject({ code: "denied" });
     await expect(
       linkedInApplyImageAlt(f.ctx, [...media, { kind: "image", uploadId: "two" }]),
     ).rejects.toMatchObject({ code: "unsupported" });
     expect(f.ctx.markSubmitted).not.toHaveBeenCalled();
+  });
+  it("does not edit when the media editor holds more than one image", async () => {
+    const f = fixture(
+      `${identity}<dialog open>${thumbs(2)}<button aria-label="Alternatif metin"></button></dialog>`,
+    );
+    await expect(
+      linkedInApplyImageAlt(f.ctx, [{ kind: "image", uploadId: "one", alt: "Description" }]),
+    ).rejects.toMatchObject({ code: "unsupported" });
+    expect(f.page.click).not.toHaveBeenCalled();
   });
 });
 
@@ -329,22 +357,31 @@ describe("LinkedIn document upload", () => {
       const id = "urn:li:activity:123456",
         title = "Bycoda guide";
       const initial = () =>
-        `${identity}<button class="share-box-feed-entry__trigger">Start a post</button><div role="dialog"><button>Add a document</button></div>`;
+        `${identity}<div data-view-name="share-sharebox-focus">Start a post</div><dialog open><button aria-label="İçerik türlerini genişlet"></button></dialog>`;
+      const expanded = () =>
+        `${identity}<dialog open><button aria-label="İçerik türlerini daralt"></button><a data-view-name="share-sharebox-bottom-bar-document">Belge</a></dialog>`;
+      const picker = () =>
+        `${identity}<dialog open><button data-view-name="media-document-share-select-file">Dosya seçin</button></dialog>`;
       const document = () =>
-        `${identity}<div role="dialog"><input type="file" accept="application/pdf"><input type="text" aria-label="Document title"><iframe title="Preview"></iframe><button>Done</button></div>`;
+        `${identity}<input type="file" accept="application/pdf,application/msword"><dialog open><input type="text" placeholder="Belgenize açıklayıcı bir başlık ekleyin"><div data-view-name="media-document-share-remove-preview"></div><button data-view-name="media-document-share-confirm">Bitti</button></dialog>`;
       const editor = () =>
-        `${identity}<div role="dialog"><div class="ql-editor" contenteditable="true"></div><button class="share-actions__primary-action">Post</button></div>`;
+        `${identity}<dialog open><div contenteditable="true" role="textbox"></div><button data-view-name="share-post">Yayınla</button></dialog>`;
       const persisted = () =>
         `${outcome === "identity-change" ? identity.replace("/in/owner/", "/in/stranger/") : identity}<article data-urn="${id}"><a class="update-components-actor__meta-link" href="/in/owner/">Owner</a><div class="update-components-text">Hello</div><iframe title="${outcome === "different-title" ? "Other guide" : title}"></iframe></article>`;
       const f = fixture(initial(), {
         response: outcome === "unknown-receipt" ? "{}" : JSON.stringify({ value: id }),
         render: (url) => (url.includes("/feed/update/") ? persisted() : initial()),
         click: (el) => {
-          if (el.textContent === "Add a document") {
+          const view = el.closest("[data-view-name]")?.getAttribute("data-view-name");
+          if (el.getAttribute("aria-label") === "İçerik türlerini genişlet")
+            f.window.document.body.innerHTML = expanded();
+          if (view === "share-sharebox-bottom-bar-document")
+            f.window.document.body.innerHTML = picker();
+          if (view === "media-document-share-select-file") {
             stage = "document";
             f.window.document.body.innerHTML = document();
           }
-          if (el.textContent === "Done") {
+          if (view === "media-document-share-confirm") {
             stage = "editor";
             f.window.document.body.innerHTML = editor();
           }

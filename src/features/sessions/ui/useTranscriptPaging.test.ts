@@ -3,7 +3,11 @@ import { act, createElement, useRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Block } from "../model/session";
-import { MAX_TRANSCRIPT_WINDOW_TURNS, useTranscriptPaging } from "./useTranscriptPaging";
+import {
+  MAX_TRANSCRIPT_WINDOW_TURNS,
+  runRemoteLoad,
+  useTranscriptPaging,
+} from "./useTranscriptPaging";
 
 let root: Root;
 let host: HTMLDivElement;
@@ -180,4 +184,22 @@ it("leaves the scroll position alone when a turn is appended while the reader is
   scroller.scrollTop = 50;
   render(history(6), undefined, false, false);
   expect(scroller.scrollTop).toBe(50);
+});
+
+it.each([
+  ["a dropped link", new Error("RPC_WS_INTERRUPTED: Host connection was interrupted"), null],
+  ["a real failure", new Error("Session history is unreadable"), "Session history is unreadable"],
+])("reports %s to the paging error only when it is not transient", async (_name, error, shown) => {
+  const setPagingError = vi.fn();
+  const loadingRef = { current: true };
+  await runRemoteLoad({
+    load: () => Promise.reject(error),
+    stale: () => false,
+    apply: () => {},
+    loadingRef,
+    setPagingLoading: () => {},
+    setPagingError,
+  });
+  expect(setPagingError).toHaveBeenCalledWith(shown);
+  expect(loadingRef.current).toBe(false);
 });

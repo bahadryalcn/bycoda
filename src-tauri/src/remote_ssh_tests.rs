@@ -1,4 +1,76 @@
 #[test]
+fn tunnel_keepalive_is_fifteen_seconds() {
+    assert_eq!(TUNNEL_KEEPALIVE_SECS, 15);
+}
+
+#[test]
+fn tunnel_is_kept_unless_ssh_exited_or_probe_failed() {
+    use tunnel_probe::{verdict, Probe, Verdict};
+    assert_eq!(verdict(true, Some(Probe::Answered)), Verdict::Keep);
+    assert!(matches!(
+        verdict(true, Some(Probe::Failed)),
+        Verdict::Teardown(_)
+    ));
+    assert!(matches!(
+        verdict(false, Some(Probe::Answered)),
+        Verdict::Teardown(_)
+    ));
+    assert!(matches!(verdict(false, None), Verdict::Teardown(_)));
+}
+
+#[test]
+fn wake_is_detected_from_a_late_tick_or_a_wall_clock_jump() {
+    use tunnel_probe::sleep_gap;
+    let second = Duration::from_secs(1);
+    assert_eq!(sleep_gap(second, Some(second), second), None);
+    assert_eq!(sleep_gap(Duration::from_millis(1400), None, second), None);
+    // The monotonic clock stopped during sleep; the wall clock did not.
+    assert_eq!(
+        sleep_gap(second, Some(Duration::from_secs(40)), second),
+        Some(Duration::from_secs(39))
+    );
+    // The wall clock was stepped back; the late tick still shows it.
+    assert!(sleep_gap(Duration::from_secs(30), None, second).is_some());
+}
+
+#[test]
+fn probe_answers_for_any_http_status_and_fails_for_a_dead_port() {
+    use std::io::{Read, Write};
+    use tunnel_probe::{probe_once, Probe, PROBE_TIMEOUT};
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut buffer = [0; 512];
+        let _ = stream.read(&mut buffer);
+        stream
+            .write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n")
+            .unwrap();
+    });
+    assert_eq!(probe_once(port, PROBE_TIMEOUT), Probe::Answered);
+    server.join().unwrap();
+    // The listener is gone now.
+    assert_eq!(probe_once(port, PROBE_TIMEOUT), Probe::Failed);
+}
+
+#[test]
+fn probe_waits_for_a_slow_host_instead_of_calling_the_tunnel_dead() {
+    use std::io::{Read, Write};
+    use tunnel_probe::{probe_once, Probe, PROBE_TIMEOUT};
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut buffer = [0; 512];
+        let _ = stream.read(&mut buffer);
+        std::thread::sleep(std::time::Duration::from_millis(1500));
+        let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
+    });
+    assert_eq!(probe_once(port, PROBE_TIMEOUT), Probe::Answered);
+    server.join().unwrap();
+}
+
+#[test]
 fn job_remains_readable_and_writable_after_mutex_poison() {
     let job = Job::new();
     let poisoned = job.clone();
@@ -850,61 +922,4 @@ fn a_tunnel_on_a_later_address_moves_to_a_preferred_one_only_while_unchanged() {
     );
     // The tunnel it saw is gone, so a second switch from the same check is refused.
     assert!(!tunnels.switch(&later[0], on("me@preferred-route.invalid")));
-}
-
-#[test]
-fn a_single_failed_request_keeps_a_tunnel_that_answers_its_probe() {
-    let tunnels = Tunnels::default();
-    tunnels.insert(
-        "host".into(),
-        "env",
-        Tunnel::adopt(long_lived_child(), 4321),
-    );
-    let slot = tunnels.slots().get("host").unwrap().clone();
-    let lease = TunnelLease {
-        endpoint: "http://127.0.0.1:4321".into(),
-        generation: 1,
-        slot: slot.clone(),
-    };
-    assert!(!tunnels.invalidate_after_probe("host", &lease, |_| true));
-    assert!(tunnels.is_current("host", &lease));
-    assert!(tunnels.invalidate_after_probe("host", &lease, |_| false));
-    assert!(slot.lock().unwrap().tunnel.is_none());
-}
-
-#[test]
-fn request_failure_probes_through_the_forward_and_accepts_http_errors() {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
-    let server = std::thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
-        stream
-            .set_read_timeout(Some(Duration::from_secs(5)))
-            .unwrap();
-        let mut request = [0; 2048];
-        let count = stream.read(&mut request).unwrap();
-        let request = String::from_utf8_lossy(&request[..count]);
-        assert!(request.starts_with("GET / HTTP/1.1"));
-        assert!(!request.to_ascii_lowercase().contains("authorization:"));
-        stream
-            .write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
-            .unwrap();
-    });
-    let tunnels = Tunnels::default();
-    tunnels.insert(
-        "host".into(),
-        "env",
-        Tunnel::adopt(long_lived_child(), port),
-    );
-    let lease = TunnelLease {
-        endpoint: format!("http://127.0.0.1:{port}"),
-        slot: tunnels.slots().get("host").unwrap().clone(),
-        generation: 1,
-    };
-    assert!(!tunnels.invalidate("host", &lease));
-    server.join().unwrap();
-    assert!(tunnels.is_current("host", &lease));
-    // ssh still runs, but the end-to-end probe can no longer reach Host.
-    assert!(tunnels.invalidate("host", &lease));
-    assert!(!tunnels.is_current("host", &lease));
 }

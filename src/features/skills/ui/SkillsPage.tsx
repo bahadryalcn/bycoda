@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { SkillAdvancedDialog } from "./SkillAdvancedDialog";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
@@ -99,7 +100,10 @@ export function SkillsPage({
   const [groupError, setGroupError] = useState<string | null>(null);
   const revealed = useContext(RevealedSetting);
   const [advancedOpen, setAdvancedOpen] = useState(revealed === "skill-folders");
-  const [lastReveal, setLastReveal] = useState({ id: revealed, request: revealRequest });
+  const [lastReveal, setLastReveal] = useState({
+    id: revealed,
+    request: revealRequest,
+  });
   if (lastReveal.id !== revealed || lastReveal.request !== revealRequest) {
     setLastReveal({ id: revealed, request: revealRequest });
     if (revealed === "skill-folders") setAdvancedOpen(true);
@@ -202,9 +206,10 @@ export function SkillsPage({
     {},
   );
   const [saving, setSaving] = useState(false);
-  const [savedDocument, setSavedDocument] = useState<{ path: string; content: string } | null>(
-    null,
-  );
+  const [savedDocument, setSavedDocument] = useState<{
+    path: string;
+    content: string;
+  } | null>(null);
   const savePending = useRef(false);
   const editorView = useRef<EditorView | null>(null);
   const editable = previewSkill !== null && !previewMachine && canDeleteSkill(previewSkill);
@@ -671,7 +676,7 @@ export function SkillsPage({
       requestRefresh(to?.environmentId ?? "local");
     } catch (err) {
       setActionError(
-        `${t("Copy could not be confirmed for {p0} on {p1}. Check the target before trying again.", { p0: skill.name, p1: targetName })} ${err instanceof Error ? err.message : String(err)}`,
+        `${t("Copy could not be confirmed for {p0} on {p1}. Check the target before trying again.", { p0: skill.name, p1: targetName })} ${presentRemoteError(err, { explicit: true })}`,
       );
       requestRefresh(to?.environmentId ?? "local");
     } finally {
@@ -722,7 +727,7 @@ export function SkillsPage({
       requestRefresh(machine?.environmentId ?? "local");
     } catch (err) {
       setActionError(
-        `Could not delete ${skill.name}. ${err instanceof Error ? err.message : String(err)}`,
+        `Could not delete ${skill.name}. ${presentRemoteError(err, { explicit: true })}`,
       );
     } finally {
       deletePending.current = false;
@@ -1281,7 +1286,10 @@ export function SkillsPage({
         <SkillActionsMenu
           target={actionsMenu}
           policyAvailable={!!policies[actionsMenu.machine?.environmentId ?? "local"]}
-          off={isOff({ skill: actionsMenu.skill, machine: actionsMenu.machine })}
+          off={isOff({
+            skill: actionsMenu.skill,
+            machine: actionsMenu.machine,
+          })}
           policySaving={policySaving}
           deleteBlocked={deleting !== null || transferring !== null || saving}
           onClose={() => setActionsMenu(null)}

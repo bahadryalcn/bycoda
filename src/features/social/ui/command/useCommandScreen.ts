@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import { useEffect, useRef } from "react";
 import { t } from "../../../../shared/i18n";
 import type { SocialClient } from "../../model/socialClient";
@@ -73,7 +74,9 @@ export function useCommandScreen(client: SocialClient, projectId?: string, activ
         // Traverse its continuation again; mergeActions deduplicates retained history.
         const connected = feed.value.items.some((item) => runtime.read().headIds?.has(item.id));
         if (!runtime.read().paged || !connected) setNext(feed.value.next);
-        runtime.update({ headIds: new Set(feed.value.items.map((item) => item.id)) });
+        runtime.update({
+          headIds: new Set(feed.value.items.map((item) => item.id)),
+        });
       }
       setActivityError(
         sum.status === "rejected" || feed.status === "rejected"
@@ -108,7 +111,7 @@ export function useCommandScreen(client: SocialClient, projectId?: string, activ
     try {
       await task(current);
     } catch (caught) {
-      if (current()) setError(messageOf(caught));
+      if (current()) setError(presentRemoteError(caught, { explicit: true }));
     } finally {
       if (current()) {
         runtime.update({ operation: undefined });
@@ -137,7 +140,10 @@ export function useCommandScreen(client: SocialClient, projectId?: string, activ
   const runPlan = () => {
     if (!plan) return;
     void run("run", async (current) => {
-      const response = await client.ai.runPlan({ planId: plan.planId, approvedStepIds: approved });
+      const response = await client.ai.runPlan({
+        planId: plan.planId,
+        approvedStepIds: approved,
+      });
       if (!current()) return;
       setResults(Object.fromEntries(response.results.map((item) => [item.stepId, item])));
       await refresh();
@@ -157,7 +163,10 @@ export function useCommandScreen(client: SocialClient, projectId?: string, activ
     void run("model", async (current) => {
       const policies = await client.request<SocialPolicies>("policy.get");
       if (current())
-        await savePolicyScope(client, policies, "global", { ...policies.global, agent });
+        await savePolicyScope(client, policies, "global", {
+          ...policies.global,
+          agent,
+        });
     }).catch(() => undefined);
   const loadMore = async () => {
     if (

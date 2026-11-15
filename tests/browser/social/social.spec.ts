@@ -423,6 +423,61 @@ test("account settings and connection forms visual matrix", async ({ page }, tes
   }
 });
 
+test("a new account is created through the owner-assisted signup dialog", async ({
+  page,
+}, testInfo) => {
+  for (const theme of ["light", "dark"]) {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/tests/browser/social/social.html?signup-create");
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      theme === "light",
+    );
+    await page.getByRole("tab", { name: "Hesaplar ve Ayarlar", exact: true }).click();
+    await page.getByRole("button", { name: "Hesap bağla", exact: true }).click();
+    await page.getByRole("button", { name: /^Platform: / }).click();
+    await page.getByRole("option", { name: "Reddit" }).click();
+    await page.getByRole("button", { name: /^Nasıl bağlanılacak: / }).click();
+    await page.getByRole("option", { name: "Tarayıcıda oturum açma" }).click();
+    await page.getByRole("button", { name: "Bunun yerine yeni bir Reddit hesabı oluştur" }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("İsim").fill("Studio");
+    await page.screenshot({
+      path: testInfo.outputPath(`signup-start-${theme}.png`),
+      animations: "disabled",
+    });
+    await dialog.getByRole("button", { name: "Kayıt penceresini aç" }).click();
+    await expect(dialog.getByLabel("E-posta adresi")).toBeVisible();
+    await expect(dialog.locator('input[type="password"]')).toHaveCount(0);
+    await page.screenshot({
+      path: testInfo.outputPath(`signup-fields-${theme}.png`),
+      animations: "disabled",
+    });
+    await dialog.getByLabel("E-posta adresi").fill("studio@example.com");
+    await dialog.getByRole("button", { name: "Devam et" }).click();
+    await expect(dialog.getByText("Doğrulama kodunu gir")).toHaveCount(1);
+    await expect(dialog.getByLabel("E-posta adresi")).toHaveCount(0);
+    await page.screenshot({
+      path: testInfo.outputPath(`signup-blockers-${theme}.png`),
+      animations: "disabled",
+    });
+    await page.evaluate(() =>
+      (
+        window as unknown as { socialFixtureCloseSignupWindow: () => void }
+      ).socialFixtureCloseSignupWindow(),
+    );
+    await expect(dialog.getByRole("button", { name: "Girişe devam et" })).toBeVisible({
+      timeout: 8000,
+    });
+    await page.screenshot({
+      path: testInfo.outputPath(`signup-closed-${theme}.png`),
+      animations: "disabled",
+    });
+    await dialog.getByRole("button", { name: "Girişe devam et" }).click();
+    await expect(page.getByRole("dialog", { name: "Studio" })).toBeVisible();
+  }
+});
+
 test("automatic audience labels stay on one line", async ({ page }, testInfo) => {
   for (const theme of ["light", "dark"]) {
     for (const width of [800, 1280]) {

@@ -19,7 +19,10 @@ const state = vi.hoisted(() => ({
 }));
 vi.mock("../model/useRemoteConnection", () => ({
   useRemoteConnection: (environmentId: string) =>
-    state.machines.get(environmentId) ?? { status: "connected", reconnecting: false },
+    state.machines.get(environmentId) ?? {
+      status: "connected",
+      reconnecting: false,
+    },
 }));
 vi.mock("../../settings/model/settings", () => ({
   loadRemoteAutoReconnect: () => state.autoReconnect,
@@ -48,7 +51,10 @@ vi.mock("./RemoteLoadError", () => ({
 }));
 
 type Consumer = { id: string; cwd: string; failure?: RemoteFailure };
-const outage: RemoteFailure = { kind: "unreachable", message: "Machine is unreachable" };
+const outage: RemoteFailure = {
+  kind: "unreachable",
+  message: "Machine is unreachable",
+};
 let root: Root;
 let container: HTMLDivElement;
 
@@ -97,18 +103,24 @@ it("shares one reconnecting state and does not restart its deadline for repeated
   ];
   await render(consumers);
   expect(container.querySelectorAll("[data-pane]")).toHaveLength(2);
-  expect(container.textContent).toBe("Reconnecting…sharedshared");
-  expect(notices()).toHaveLength(1);
-  expect(container.textContent).toContain("Reconnecting…");
-  await advance(4_000);
+  expect(container.textContent).toBe("sharedshared");
+  expect(notices()).toHaveLength(0);
+  await advance(1_000);
   await render(
     consumers.map((consumer) => ({
       ...consumer,
-      failure: { ...outage, message: "SSH timed out connecting to the machine." },
+      failure: {
+        ...outage,
+        message: "SSH timed out connecting to the machine.",
+      },
     })),
   );
-  await advance(40_999);
+  await advance(999);
+  expect(notices()).toHaveLength(0);
+  await advance(1);
   expect(notices()).toHaveLength(1);
+  expect(container.textContent).toContain("Reconnecting…");
+  await advance(42_999);
   expect(container.textContent).toContain("Reconnecting…");
   await advance(1);
   expect(notices()).toHaveLength(1);
@@ -121,10 +133,10 @@ it("shares one reconnecting state and does not restart its deadline for repeated
 it("clears reconnecting when the active pane recovers within the grace period", async () => {
   state.machines.set("env", { status: "unreachable" });
   await render([{ id: "session", cwd: "env", failure: outage }]);
-  await advance(3_000);
+  await advance(1_000);
   state.machines.set("env", { status: "connected" });
   await render([{ id: "session", cwd: "env" }]);
-  await advance(10_000);
+  await advance(5_000);
   expect(notices()).toHaveLength(0);
 });
 
@@ -132,7 +144,7 @@ it("retains a pane's reported failure when a sibling request alone reports the m
   const consumers = [{ id: "files", cwd: "remote://env/repo", failure: outage }];
   state.machines.set("env", { status: "unreachable" });
   await render(consumers);
-  await advance(8_000);
+  await advance(2_000);
   expect(notices()).toHaveLength(1);
   state.machines.set("env", { status: "connected" });
   await render(consumers);
@@ -159,7 +171,10 @@ it("does not delay a typed native authentication refusal even if another request
     {
       id: "session",
       cwd: "env",
-      failure: { kind: "unreachable", message: "RPC_WS_BLOCKED: Host admission was refused" },
+      failure: {
+        kind: "unreachable",
+        message: "RPC_WS_BLOCKED: Host admission was refused",
+      },
     },
   ]);
   expect(notices()).toHaveLength(1);
@@ -184,7 +199,7 @@ it("hands feedback back to panes when the actual common outlet is absent", async
   expect(container.querySelector("[data-pane]")?.textContent).toBe("local");
   await render(consumers);
   expect(container.querySelector("[data-pane]")?.textContent).toBe("shared");
-  await advance(8_000);
+  await advance(2_000);
   expect(notices()).toHaveLength(1);
   await render(consumers, true, false);
   expect(notices()).toHaveLength(0);
@@ -268,7 +283,10 @@ it("dismisses only one outage episode and never hides a later hard refusal", asy
     container.querySelector<HTMLButtonElement>('[data-machine="a"] button')!.click(),
   );
   expect(notices()).toHaveLength(1);
-  state.machines.set("a", { status: "connection-blocked", error: "RPC_WS_TLS: refused" });
+  state.machines.set("a", {
+    status: "connection-blocked",
+    error: "RPC_WS_TLS: refused",
+  });
   await render(consumers);
   expect(notices()).toHaveLength(2);
   state.machines.set("a", { status: "connected" });
@@ -277,4 +295,30 @@ it("dismisses only one outage episode and never hides a later hard refusal", asy
   state.machines.set("a", { status: "unreachable" });
   await render(consumers);
   expect(notices()).toHaveLength(2);
+});
+
+it("shows one global notice per machine in an outage after the grace, with no pane mounted, and clears on recovery", async () => {
+  const { recordRemoteConnection, notifyRemoteRecovered, resetRemoteHealth } =
+    await import("../model/remoteHealth");
+  resetRemoteHealth();
+  state.machines.set("a", { status: "unreachable" });
+  state.machines.set("b", { status: "unreachable" });
+  await render([]);
+  await act(async () => {
+    recordRemoteConnection("a", new Error("Machine is unreachable"));
+    recordRemoteConnection("b", new Error("Machine is unreachable"));
+  });
+  expect(notices()).toHaveLength(0);
+  await advance(1_999);
+  expect(notices()).toHaveLength(0);
+  await advance(1);
+  expect(notices()).toHaveLength(2);
+  // A mounted pane for the same machine does not add a second notice.
+  await render([{ id: "pane", cwd: "remote://a/repo", failure: outage }]);
+  expect(notices()).toHaveLength(2);
+  state.machines.set("a", { status: "connected" });
+  await act(async () => notifyRemoteRecovered("a"));
+  await render([]);
+  expect(notices().map((n) => n.getAttribute("data-remote-connection-notice"))).toEqual(["b"]);
+  resetRemoteHealth();
 });

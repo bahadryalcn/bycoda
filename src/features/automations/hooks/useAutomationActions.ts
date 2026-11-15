@@ -9,6 +9,8 @@ import {
 import { t } from "../../../shared/i18n";
 import type { ConfirmRequest } from "../../../shared/ui/ConfirmDialog";
 import type { RemoteMachine } from "../../connections/model/protocol";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
+
 import { automationKey } from "../model/automationKey";
 import {
   createManualAutomationRun,
@@ -94,7 +96,7 @@ export function useAutomationActions({
   const setActionError = (message: string | null) =>
     setFailure(message === null ? null : { message, stamp: stampRef.current });
   const failWith = (reason: unknown) =>
-    setActionError(reason instanceof Error ? reason.message : String(reason));
+    setActionError(presentRemoteError(reason, { explicit: true }));
 
   const onSave = async (event: FormEvent, nextDraft: AutomationDraft) => {
     event.preventDefault();

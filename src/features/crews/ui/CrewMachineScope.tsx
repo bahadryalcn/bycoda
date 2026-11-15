@@ -29,6 +29,7 @@ import {
 import { crewMachineLabel } from "../model/crewActionError";
 import { useProjectCrews } from "../model/crewClient";
 import { crewCwdOn, orderCrewMachines } from "../model/crewMachineScope";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 
 type CrewState = ReturnType<typeof useProjectCrews>;
 
@@ -68,7 +69,7 @@ export function useCrewMachineScope(cwd: string, state: CrewState) {
           }),
         );
     } catch (reason) {
-      setSwitchError(reason instanceof Error ? reason.message : String(reason));
+      setSwitchError(presentRemoteError(reason, { explicit: true }));
     } finally {
       setSwitching(false);
     }
@@ -106,7 +107,7 @@ export function useCrewMachineScope(cwd: string, state: CrewState) {
       setScopeCwd(next);
       setNewName(null);
     } catch (reason) {
-      setCreateError(reason instanceof Error ? reason.message : String(reason));
+      setCreateError(presentRemoteError(reason, { explicit: true }));
     } finally {
       setCreating(false);
     }
@@ -228,7 +229,9 @@ export function useCrewMachineScope(cwd: string, state: CrewState) {
             }))}
             disabled={disabled || switching}
             onChange={(id) =>
-              void choose(id).catch((reason: unknown) => setSwitchError(String(reason)))
+              void choose(id).catch((reason: unknown) =>
+                setSwitchError(presentRemoteError(reason, { explicit: true })),
+              )
             }
           />
         ) : null}

@@ -15,6 +15,7 @@ import { DisabledReason } from "../common/DisabledReason";
 import { LabeledSelect } from "./LabeledSelect";
 import { PlatformIcon } from "../common/PlatformIcon";
 import { errorMessage } from "./audienceModel";
+import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import {
   IMPORT_FIELDS,
   IMPORT_MAX_BYTES,
@@ -65,7 +66,10 @@ async function readWorkbook(file: File): Promise<ImportTable> {
   const book = read(await file.arrayBuffer(), { type: "array" });
   const sheet = book.Sheets[book.SheetNames[0] ?? ""];
   if (!sheet) return { headers: [], rows: [] };
-  const matrix = utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "" });
+  const matrix = utils.sheet_to_json<unknown[]>(sheet, {
+    header: 1,
+    defval: "",
+  });
   const [header = [], ...body] = matrix;
   return {
     headers: header.map((cell) => String(cell).trim()),
@@ -157,7 +161,7 @@ export function ImportDialog({ client, accounts, lists, onClose, onImported }: I
       setResult(imported);
       onImported(imported);
     } catch (err) {
-      setError(errorMessage(err));
+      setError(presentRemoteError(err, { explicit: true }));
     } finally {
       setImporting(false);
     }
@@ -264,10 +268,16 @@ export function ImportDialog({ client, accounts, lists, onClose, onImported }: I
                   disabled={importing}
                   options={[
                     { value: "", label: t("Not in file") },
-                    ...table.headers.map((header) => ({ value: header, label: header })),
+                    ...table.headers.map((header) => ({
+                      value: header,
+                      label: header,
+                    })),
                   ]}
                   onChange={(column) =>
-                    setMapping((current) => ({ ...current, [field]: column || undefined }))
+                    setMapping((current) => ({
+                      ...current,
+                      [field]: column || undefined,
+                    }))
                   }
                 />
               ))}
@@ -281,7 +291,10 @@ export function ImportDialog({ client, accounts, lists, onClose, onImported }: I
                 <ul className="audience-list">
                   {attention.slice(0, REPORT_LIMIT).map((check) => (
                     <li key={check.row}>
-                      {t("Row {p0}: {p1}", { p0: check.row, p1: check.issues.join(" ") })}
+                      {t("Row {p0}: {p1}", {
+                        p0: check.row,
+                        p1: check.issues.join(" "),
+                      })}
                     </li>
                   ))}
                 </ul>
@@ -293,7 +306,9 @@ export function ImportDialog({ client, accounts, lists, onClose, onImported }: I
                     leading="inherit"
                     className="audience-muted"
                   >
-                    {t("And {p0} more rows.", { p0: attention.length - REPORT_LIMIT })}
+                    {t("And {p0} more rows.", {
+                      p0: attention.length - REPORT_LIMIT,
+                    })}
                   </Text>
                 ) : null}
               </section>
@@ -305,7 +320,9 @@ export function ImportDialog({ client, accounts, lists, onClose, onImported }: I
           <section aria-labelledby="import-result-heading" className="audience-stack">
             <InlineMessage tone="success">
               <span id="import-result-heading">
-                {t("{p0} people imported", { p0: formatNumber(result.imported) })}
+                {t("{p0} people imported", {
+                  p0: formatNumber(result.imported),
+                })}
               </span>
             </InlineMessage>
             {result.rejected.length ? (

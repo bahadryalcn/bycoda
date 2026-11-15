@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { GitGraphConflictEditor } from "./GitGraphConflictEditor";
+import { announceRemoteRecovery } from "../../connections/model/remoteHealth";
 import {
   gitConflictStages,
   gitResolveConflict,
@@ -49,11 +50,11 @@ afterEach(() => {
   host.remove();
   vi.unstubAllGlobals();
 });
-async function mount() {
+async function mount(cwd = "/repo") {
   await act(async () =>
     root.render(
       createElement(GitGraphConflictEditor, {
-        cwd: "/repo",
+        cwd,
         path: stages.path,
         relative: stages.relative,
         disabled: false,
@@ -252,4 +253,17 @@ it("preserves mixed separators when saving a conflict resolution", async () => {
   });
   await click("Save and stage");
   expect(writeTextFile).toHaveBeenCalledWith(stages.path, "FIRST\r\nsecond\nthird\r");
+});
+
+it("shows the wait with a retry when the first load fails offline, then reloads once the machine answers", async () => {
+  vi.mocked(gitConflictStages)
+    .mockReset()
+    .mockRejectedValueOnce(new Error("RPC_HOST_UNAVAILABLE"))
+    .mockResolvedValue(stages);
+  await mount("remote://env-1/repo");
+  expect(host.textContent).toContain("Conflict versions unavailable");
+  expect(host.textContent).toContain("Retry");
+  await act(async () => announceRemoteRecovery("env-1"));
+  expect(gitConflictStages).toHaveBeenCalledTimes(2);
+  expect(host.textContent).not.toContain("Conflict versions unavailable");
 });

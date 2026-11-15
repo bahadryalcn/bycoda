@@ -12,6 +12,7 @@ import { DisabledReason } from "../common/DisabledReason";
 import { LabeledSelect } from "./LabeledSelect";
 import { addTag, addToList, addToSequence, type BulkResult } from "./audienceBulk";
 import { errorMessage } from "./audienceModel";
+import { presentRemoteError } from "../../../connections/public/remoteFailure";
 
 export type BulkAction = "list" | "tag" | "sequence";
 
@@ -99,7 +100,7 @@ export function BulkDialog({ client, action, people, lists, onClose, onDone }: B
       }
       onDone();
     } catch (err) {
-      setError(errorMessage(err));
+      setError(presentRemoteError(err, { explicit: true }));
     } finally {
       setRunning(false);
     }
@@ -139,7 +140,10 @@ export function BulkDialog({ client, action, people, lists, onClose, onDone }: B
             disabled={running}
             options={[
               { value: "", label: t("Choose a list") },
-              ...staticLists.map((list) => ({ value: list.id, label: list.name })),
+              ...staticLists.map((list) => ({
+                value: list.id,
+                label: list.name,
+              })),
             ]}
             onChange={setListId}
           />
@@ -160,7 +164,10 @@ export function BulkDialog({ client, action, people, lists, onClose, onDone }: B
               disabled={running}
               options={[
                 { value: "", label: t("Choose a sequence") },
-                ...sequences.map((sequence) => ({ value: sequence.id, label: sequence.name })),
+                ...sequences.map((sequence) => ({
+                  value: sequence.id,
+                  label: sequence.name,
+                })),
               ]}
               onChange={setSequenceId}
             />

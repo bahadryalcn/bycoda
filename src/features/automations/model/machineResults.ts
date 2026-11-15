@@ -1,5 +1,6 @@
 import { isLocalSyncMachine } from "../../connections/model/localSync";
 import type { RemoteMachine } from "../../connections/model/protocol";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 
 /** What one machine gave for one list. On "error", `data` is what the machine
  * last answered successfully (flagged stale), or empty if it never did. */
@@ -78,7 +79,8 @@ export async function collectMachineResults<T>(
           stale: false,
         };
       } catch (reason: unknown) {
-        return failed(machine, reason instanceof Error ? reason.message : String(reason));
+        // A passing outage keeps the last known entries (see `failed`) and shows no raw error.
+        return failed(machine, presentRemoteError(reason) ?? "The machine is not reachable.");
       }
     }),
   );

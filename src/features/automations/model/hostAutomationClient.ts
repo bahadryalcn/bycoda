@@ -27,6 +27,7 @@ import {
   type HostAutomationInput,
   type HostAutomationRun,
 } from "./hostAutomations";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 
 export const BACKGROUND_TRIGGER_ERROR =
   "A background automation runs on one schedule. Remove the other triggers.";
@@ -84,7 +85,7 @@ export async function probeMachines(
         return {
           machine,
           capable: null,
-          error: error instanceof Error ? error.message : String(error),
+          error: presentRemoteError(error), // undefined for a passing outage
         };
       }
     }),

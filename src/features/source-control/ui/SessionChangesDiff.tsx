@@ -1,3 +1,5 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { useReloadOnReconnect } from "../../connections/public/useReloadOnReconnect";
 import { FailureState } from "../../../shared/ui/FailureState";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { t, useLocale } from "../../../shared/i18n/git";
@@ -141,7 +143,7 @@ export function SessionChangesDiff({ cwd, sessionId, focusPath }: Props) {
         })
         .catch((caught: unknown) => {
           if (disposed || current !== generation) return;
-          setError(caught instanceof Error ? caught.message : String(caught));
+          setError(presentRemoteError(caught, { explicit: true }));
           setFiles([]);
         });
     };
@@ -162,6 +164,8 @@ export function SessionChangesDiff({ cwd, sessionId, focusPath }: Props) {
       unsubscribe();
     };
   }, [cwd, sessionId, retry]);
+  // A failed first load reruns once the machine's link is back.
+  useReloadOnReconnect(cwd, () => setRetry((value) => value + 1), { active: error !== null });
 
   const modelCache = useRef(new Map<string, CachedModel>());
   const models = useMemo<UnifiedDiffFileModel[]>(() => {

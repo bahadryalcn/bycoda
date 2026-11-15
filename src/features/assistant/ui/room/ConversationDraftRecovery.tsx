@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { Text } from "../../../../shared/ui/Text";
 import { formatDate, t } from "../../../../shared/i18n";
@@ -22,8 +23,7 @@ export function ConversationDraftRecovery({ c }: { c: ConversationContext }) {
     restoreDraftBackup,
   } = c;
   if (!draftRecovery) return null;
-  const report = (cause: unknown) =>
-    setError(cause instanceof Error ? cause.message : String(cause));
+  const report = (cause: unknown) => setError(presentRemoteError(cause, { explicit: true }));
   return (
     <Modal
       title={t("Recover draft")}

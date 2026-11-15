@@ -1,3 +1,5 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { useReloadOnReconnect } from "../../connections/public/useReloadOnReconnect";
 import { Text as UiText } from "../../../shared/ui/Text";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Tooltip } from "../../../shared/ui/Tooltip";
@@ -634,7 +636,7 @@ export function FileEditor({
         try {
           actual = await readTextFile(path);
         } catch (error) {
-          diskError = error instanceof Error ? error.message : String(error);
+          diskError = presentRemoteError(error, { explicit: true });
         }
         if (cancelled || generation !== loadGeneration.current) return;
         verifyLane();
@@ -671,10 +673,7 @@ export function FileEditor({
     })()
       .catch((error: unknown) => {
         if (cancelled || generation !== loadGeneration.current) return;
-        setLoadState({
-          status: "error",
-          message: error instanceof Error ? error.message : String(error),
-        });
+        setLoadState({ status: "error", message: presentRemoteError(error, { explicit: true }) });
       })
       .finally(settled);
     return () => {
@@ -689,6 +688,10 @@ export function FileEditor({
     editorClosure,
     admissionRetry,
   ]);
+  // A failed load or disk verification reruns once the machine's link is back.
+  useReloadOnReconnect(path, () => setReloadKey((value) => value + 1), {
+    active: loadState.status === "error" || diskVerificationError !== null,
+  });
 
   useEffect(() => {
     if (!showDiff) {
@@ -951,7 +954,7 @@ export function FileEditor({
           setSaveState({ status: "saved" });
         }
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = presentRemoteError(error, { explicit: true });
         if (generation === saveGeneration.current) {
           setSaveState({ status: "error", message });
         }
@@ -1023,7 +1026,7 @@ export function FileEditor({
         );
         notifyGitChanged(cwd, "index");
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = presentRemoteError(error, { explicit: true });
         setSaveState({ status: "error", message });
         throw error;
       }
@@ -1108,7 +1111,7 @@ export function FileEditor({
       await handle.flush();
     } catch (error) {
       if (generation === draftViewGeneration.current)
-        setDraftActionError(error instanceof Error ? error.message : String(error));
+        setDraftActionError(presentRemoteError(error, { explicit: true }));
     } finally {
       settled();
       if (generation === draftViewGeneration.current) {
@@ -1133,7 +1136,7 @@ export function FileEditor({
       await draftHandleRef.current?.retry();
     } catch (error) {
       if (generation === draftViewGeneration.current)
-        setDraftActionError(error instanceof Error ? error.message : String(error));
+        setDraftActionError(presentRemoteError(error, { explicit: true }));
     } finally {
       settled();
       if (generation === draftViewGeneration.current) {

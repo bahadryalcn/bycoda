@@ -25,12 +25,14 @@ import {
 } from "../model/workspaceClient";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { Heading } from "../../../shared/ui/Heading";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 
 const CommitDiff = lazy(() =>
-  import("../../source-control/ui/CommitDiff").then((module) => ({ default: module.CommitDiff })),
+  import("../../source-control/ui/CommitDiff").then((module) => ({
+    default: module.CommitDiff,
+  })),
 );
 const branchName = (ref: string) => ref.replace(/^refs\/heads\//, "");
-const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
 type PublicationDraft = Extract<BranchDeliveryPlan, { action: "publish" }>["publication"];
 type PublicationAttempt = {
   plan: Extract<BranchDeliveryPlan, { action: "publish" }>;
@@ -123,7 +125,8 @@ export function WorkspaceReview({
         if (live) setCapabilities(value);
       })
       .catch((reason) => {
-        if (live) setError(errorText(reason));
+        const message = presentRemoteError(reason);
+        if (live && message) setError(message);
       });
     return () => {
       live = false;
@@ -157,7 +160,8 @@ export function WorkspaceReview({
       setPlan(result);
       setNow(Date.now());
     } catch (reason) {
-      setError(errorText(reason));
+      const message = presentRemoteError(reason);
+      if (message) setError(message);
     } finally {
       lock.current = false;
       setPending(null);
@@ -190,7 +194,7 @@ export function WorkspaceReview({
     } catch (reason) {
       // Keep the original token and operation key for publication reconciliation.
       // A lost response must never generate a second push or PR intent.
-      setError(errorText(reason));
+      setError(presentRemoteError(reason, { explicit: true }));
       if (plan.action === "merge") setPlan(null);
     } finally {
       lock.current = false;
@@ -206,7 +210,11 @@ export function WorkspaceReview({
     };
     if (attempt.plan.action === "merge") {
       await workspaceRequest("workspaces.delivery.merge", params, context);
-      setMessage(t("Merged into {p0}.", { p0: branchName(attempt.plan.targetBranchRef) }));
+      setMessage(
+        t("Merged into {p0}.", {
+          p0: branchName(attempt.plan.targetBranchRef),
+        }),
+      );
       setPlan(null);
     } else {
       const result = await workspaceRequest("workspaces.delivery.publish", params, context);
@@ -234,7 +242,7 @@ export function WorkspaceReview({
     try {
       await apply(publicationAttempt.current);
     } catch (reason) {
-      setError(errorText(reason));
+      setError(presentRemoteError(reason, { explicit: true }));
     } finally {
       lock.current = false;
       setPending(null);
@@ -286,7 +294,9 @@ export function WorkspaceReview({
                 >
                   {mode === "publish"
                     ? t("Push branch and create PR")
-                    : t("Merge into {p0}", { p0: branchName(plan.targetBranchRef) })}
+                    : t("Merge into {p0}", {
+                        p0: branchName(plan.targetBranchRef),
+                      })}
                 </Button>
               )}
             </>
@@ -348,7 +358,10 @@ export function WorkspaceReview({
                   value={publication[key]}
                   disabled={!!pending || attempted}
                   onChange={(event) => {
-                    setPublication((value) => ({ ...value, [key]: event.target.value }));
+                    setPublication((value) => ({
+                      ...value,
+                      [key]: event.target.value,
+                    }));
                     setPlan(null);
                   }}
                 />
@@ -360,7 +373,10 @@ export function WorkspaceReview({
               value={publication.body}
               disabled={!!pending || attempted}
               onChange={(event) => {
-                setPublication((value) => ({ ...value, body: event.target.value }));
+                setPublication((value) => ({
+                  ...value,
+                  body: event.target.value,
+                }));
                 setPlan(null);
               }}
             />

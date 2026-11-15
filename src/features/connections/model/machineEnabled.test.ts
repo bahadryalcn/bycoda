@@ -11,6 +11,11 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => undefined) })
 
 beforeEach(() => localStorage.clear());
 
+it("does not call native code just because the module was imported", () => {
+  // Regression: an import-time call leaked into every module that imports connections.
+  expect(invoke).not.toHaveBeenCalled();
+});
+
 it("turns a machine off and on by its environment, leaving other machines alone", () => {
   expect(isMachineEnabled("env-a")).toBe(true);
   setMachineEnabled("env-a", false);

@@ -1,3 +1,5 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { useReloadOnReconnect } from "../../connections/public/useReloadOnReconnect";
 import { FailureState } from "../../../shared/ui/FailureState";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { InlineError } from "../../../shared/ui/InlineError";
@@ -162,8 +164,7 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
               if (context.active) refreshNow.current?.([path]);
             }
           } catch (caught) {
-            if (context.active)
-              setMutationError(caught instanceof Error ? caught.message : String(caught));
+            if (context.active) setMutationError(presentRemoteError(caught, { explicit: true }));
           } finally {
             if (context.active) setBusyId(null);
           }
@@ -357,7 +358,7 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
         })
         .catch((caught: unknown) => {
           if (disposed || current !== generation) return;
-          setError(caught instanceof Error ? caught.message : String(caught));
+          setError(presentRemoteError(caught, { explicit: true }));
           setFiles([]);
         });
     };
@@ -405,6 +406,8 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
       document.removeEventListener("visibilitychange", onFocus);
     };
   }, [cwd, focusKind, retry]);
+  // A failed first load reruns once the machine's link is back.
+  useReloadOnReconnect(cwd, () => setRetry((value) => value + 1), { active: error !== null });
 
   // A focus change only reorders the loads that are still pending; the diffs
   // already on screen stay loaded.

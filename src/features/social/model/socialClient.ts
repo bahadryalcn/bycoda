@@ -12,6 +12,7 @@ import type {
   SocialWorkspaceQuery,
   SocialWorkspaceResponse,
 } from "./social";
+import type { AccountRequestApproveInput, SocialAccountRequest } from "./accountRequests";
 import type { AiAction, AutonomyPolicy } from "./autonomy";
 import type { CaptureRule, SocialList, SocialPerson } from "./audience";
 import type { EmailAccount, Sequence, SequenceEnrollment, Suppression } from "./outreach";
@@ -255,6 +256,21 @@ export function socialClient(machineId: string) {
         request<InboxReplyOptions>("inbox.replyOptions", { threadId }),
       settings: (input: InboxSettingsInput, requestId?: string) =>
         request<InboxSettings>("inbox.settings", input, requestId),
+    },
+    accountRequests: {
+      list: (projectId?: string) =>
+        request<{ items: SocialAccountRequest[] }>(
+          "accounts.requests.list",
+          projectId ? { projectId } : {},
+        ),
+      approve: (input: AccountRequestApproveInput, requestId?: string) =>
+        request<{ request: SocialAccountRequest; accountId: string }>(
+          "accounts.requests.approve",
+          input,
+          requestId,
+        ),
+      dismiss: (id: string, requestId?: string) =>
+        request<SocialAccountRequest>("accounts.requests.dismiss", { id }, requestId),
     },
     autonomy: {
       get: (accountId: string) => request<AutonomyPolicy>("autonomy.get", { accountId }),

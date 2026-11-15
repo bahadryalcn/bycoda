@@ -13,6 +13,7 @@ import {
   type AutomationProposal,
   type HostAutomation,
 } from "../../../shared/model/host-contracts/automations";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 
 type ProposalState = {
   session: Session;
@@ -121,7 +122,7 @@ export function openAutomationProposal(session: Session, request: string): boole
       publish({
         ...state,
         status: "failed",
-        error: error instanceof Error ? error.message : String(error),
+        error: presentRemoteError(error, { explicit: true }),
       });
   });
   return true;
@@ -282,7 +283,7 @@ export async function saveAutomationProposal() {
         status: "failed",
         saveInput: automation,
         saveAttempted: true,
-        error: error instanceof Error ? error.message : String(error),
+        error: presentRemoteError(error, { explicit: true }),
       });
   }
 }

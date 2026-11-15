@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { Text } from "../../../../shared/ui/Text";
@@ -43,7 +44,7 @@ export function TrashPanel({
         );
       onRestored(id);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(presentRemoteError(cause, { explicit: true }));
     } finally {
       setPending(null);
     }

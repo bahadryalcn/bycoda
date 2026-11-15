@@ -103,10 +103,12 @@ describe("Reddit capability map", () => {
     });
   });
 
-  it("reports every operation unsupported on a browser connection, since no browser recipe is enabled", () => {
+  it("offers posts, comments and polling on a browser connection but no chat", () => {
     const rows = accountCapabilities(account({ connection: "browser", scopes: [] }), NOW);
-    expect(rows.every((row) => row.status === "unsupported")).toBe(true);
-    expect(rowOf(rows, "publish")?.reasonCode).toBe("browser.no_recipe");
+    for (const operation of ["publish", "comment", "reply", "poll", "comments.read"] as const)
+      expect(rowOf(rows, operation)?.status).toBe("available");
+    expect(rowOf(rows, "message.reply")?.reasonCode).toBe("browser.no_recipe");
+    expect(rowOf(rows, "message.start")?.reasonCode).toBe("browser.no_recipe");
     expect(rowOf(rows, "delete")?.reasonCode).toBe("unsupported.not_yet");
   });
 

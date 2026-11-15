@@ -7,6 +7,7 @@ import { RefreshCw } from "../../../shared/ui/icons";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import type { SprintBoardController } from "../model/sprintClient";
 import "./sprints.css";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 
 /**
  * One slim row for the planning Host (when several can plan) and refresh, with the
@@ -82,7 +83,7 @@ export function SprintHostBar({
               onClick={() => {
                 setRefreshError(null);
                 board.refresh().catch((reason: unknown) => {
-                  setRefreshError(reason instanceof Error ? reason.message : String(reason));
+                  setRefreshError(presentRemoteError(reason, { explicit: true }));
                 });
               }}
             >

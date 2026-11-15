@@ -24,6 +24,7 @@ import { workspaceOperationKey, workspaceRequest } from "../../workspaces/public
 import { taskWorkspaceState } from "../../workspaces/public/taskWorkspaceState";
 import { COLUMN_LABELS } from "./TaskBoardColumns";
 import type { PlanningRecovery, useTaskBoardOperations } from "./useTaskBoardOperations";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 
 /** The board's task mutations: move, reorder, save, delete and edit, each writing the
  * host's answer back through `put` so a later poll cannot roll it back. */
@@ -52,8 +53,7 @@ export function useTaskMutations({
 }) {
   const { setError, saving, setSaving, acting, act, refresh, confirm } = ops;
   const { task: putTask, tasks: putTasks, remove: removeTask } = put;
-  const report = (reason: unknown) =>
-    setError(reason instanceof Error ? reason.message : String(reason));
+  const report = (reason: unknown) => setError(presentRemoteError(reason, { explicit: true }));
 
   const actOnTask = (task: BoardTask, action: () => Promise<BoardTask>) =>
     act(task, action, putTask);
@@ -155,7 +155,7 @@ export function useTaskMutations({
           });
           setError(
             t("Task created. Sprint assignment failed: {p0}", {
-              p0: reason instanceof Error ? reason.message : String(reason),
+              p0: presentRemoteError(reason, { explicit: true }),
             }),
           );
           refresh().catch(report);
@@ -169,7 +169,7 @@ export function useTaskMutations({
       setError(null);
       refresh().catch(report);
     } catch (reason: unknown) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(presentRemoteError(reason, { explicit: true }));
     } finally {
       setSaving(false);
     }
@@ -213,7 +213,7 @@ export function useTaskMutations({
       refresh().catch(report);
       return true;
     } catch (reason: unknown) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(presentRemoteError(reason, { explicit: true }));
       return false;
     }
   };

@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { useEffect, useRef, useState } from "react";
 import { Compartment, EditorState, type Text } from "@codemirror/state";
 import { Decoration, EditorView, keymap } from "@codemirror/view";
@@ -298,7 +299,7 @@ export function MergeConflictEditor(props: MergeConflictEditorProps) {
         propsRef.current.onDirtyChange(changed);
         return true;
       } catch (error) {
-        if (!disposed) setError(String(error));
+        if (!disposed) setError(presentRemoteError(error, { explicit: true }));
         return false;
       } finally {
         settled?.();
@@ -376,7 +377,7 @@ export function MergeConflictEditor(props: MergeConflictEditorProps) {
       setResolved(true);
       propsRef.current.onResolved?.();
     } catch (error) {
-      setError(String(error));
+      setError(presentRemoteError(error, { explicit: true }));
     } finally {
       settled?.();
       busyRef.current = false;
@@ -392,7 +393,7 @@ export function MergeConflictEditor(props: MergeConflictEditorProps) {
       if (next) propsRef.current.onOpenFile?.(`${cwd.replace(/[\\/]+$/, "")}/${next}`);
       else setError(t("No other conflicted files"));
     } catch (error) {
-      setError(String(error));
+      setError(presentRemoteError(error, { explicit: true }));
     } finally {
       settled?.();
     }

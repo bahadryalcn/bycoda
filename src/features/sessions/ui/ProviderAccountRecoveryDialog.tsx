@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { useRef, useState } from "react";
@@ -92,7 +93,7 @@ async function selectAccount(accountId: string, deps: SelectAccountDeps) {
     if (await onSelect(accountId)) onClose();
     else setError(failure);
   } catch (reason) {
-    setError(reason instanceof Error ? reason.message : String(reason));
+    setError(presentRemoteError(reason, { explicit: true }));
   } finally {
     selecting.current = false;
     setPendingAccount(null);

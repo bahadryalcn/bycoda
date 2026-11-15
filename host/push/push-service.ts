@@ -1,3 +1,4 @@
+import { widgetPushPayload, widgetPushIdentity } from "./widget-payload";
 import type { HostSessionSummary } from "../../src/features/connections/model/protocol";
 import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps";
 import { hostWarnDeduped } from "../diagnostics/log-dedupe";
@@ -49,6 +50,8 @@ type Dependencies = {
  */
 export class PushNotifications {
   private snapshot: PushSnapshot | undefined;
+  private widgetIdentity = "";
+  private widgetSentAt = 0;
   private presence = new Map<string, number>();
   private timer: ReturnType<typeof setTimeout> | undefined;
   private stopped = true;
@@ -114,9 +117,38 @@ export class PushNotifications {
     if (recipients.length === 0) {
       // Nobody to notify: skip the list read, and start from a fresh baseline later.
       this.snapshot = undefined;
+      this.widgetIdentity = "";
       return;
     }
-    const { events, next } = detectPushEvents(this.snapshot, await this.deps.sessions());
+    const sessions = await this.deps.sessions();
+    const widget = widgetPushPayload(sessions, (this.deps.wallNow ?? Date.now)());
+    const widgetRecipients = recipients.filter(
+      (r) => r.widgetUpdates === true && (r.events.finished || r.events.input || r.events.failed),
+    );
+    const widgetIdentity = `${widgetPushIdentity(widget)}:${JSON.stringify(widgetRecipients.map((r) => [r.deviceHash, r.pushToken]).sort())}`;
+    if (widgetIdentity !== this.widgetIdentity || widget.at - this.widgetSentAt >= 4 * 60_000) {
+      // Data-only delivery reaches headless tasks. Existing registration and event consent gates apply.
+      const messages = widgetRecipients.map((r): ExpoPushMessage => ({
+        to: r.pushToken,
+        data: {
+          kind: "widget",
+          environmentId: this.deps.environmentId,
+          widget: JSON.stringify(widget),
+        },
+        priority: "high",
+        _contentAvailable: true,
+        collapseId: `bycoda-widget-${this.deps.environmentId}`,
+        ttl: 600,
+      }));
+      try {
+        await this.deliver(messages);
+        this.widgetIdentity = widgetIdentity;
+        this.widgetSentAt = widget.at;
+      } catch {
+        hostWarnDeduped("Widget push delivery unavailable; session notifications remain active.");
+      }
+    }
+    const { events, next } = detectPushEvents(this.snapshot, sessions);
     this.snapshot = next;
     const away = !this.desktopActive();
     if (events.length > 0 && away)

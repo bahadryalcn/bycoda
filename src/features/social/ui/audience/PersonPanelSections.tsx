@@ -11,7 +11,8 @@ import { TextareaField } from "../../../../shared/ui/TextareaField";
 import type { SocialPerson } from "../../model/audience";
 import type { SocialClient } from "../../model/socialClient";
 import type { PeopleUpdateInput } from "../../model/socialActions";
-import { errorMessage, uniqueTags } from "./audienceModel";
+import { uniqueTags } from "./audienceModel";
+import { presentRemoteError } from "../../../connections/public/remoteFailure";
 
 export type PatchSaver = (patch: PeopleUpdateInput["patch"]) => Promise<boolean>;
 
@@ -95,7 +96,7 @@ export function MergeSection({
           .filter((item) => item.personIds.length > 0),
       );
     } catch (err) {
-      setError(errorMessage(err));
+      setError(presentRemoteError(err, { explicit: true }));
     } finally {
       setChecking(false);
     }
@@ -117,7 +118,7 @@ export function MergeSection({
       setSuggestions((rows) => rows?.filter((row) => row !== item));
       onMerged(merged, item.personIds);
     } catch (err) {
-      setError(errorMessage(err));
+      setError(presentRemoteError(err, { explicit: true }));
     }
   }
 
@@ -151,7 +152,11 @@ export function MergeSection({
             variant="secondary"
             size="sm"
             disabled={disabled}
-            onClick={() => void merge(item).catch((err: unknown) => setError(errorMessage(err)))}
+            onClick={() =>
+              void merge(item).catch((err: unknown) =>
+                setError(presentRemoteError(err, { explicit: true })),
+              )
+            }
           >
             {t("Merge into this person")}
           </Button>
@@ -185,7 +190,7 @@ export function PersonDataSection({
       const result = await client.people.export({ personId: person.id });
       setExported(result.json);
     } catch (err) {
-      setError(errorMessage(err));
+      setError(presentRemoteError(err, { explicit: true }));
     }
   }
 
@@ -204,7 +209,7 @@ export function PersonDataSection({
       await client.people.delete(person.id);
       onDeleted(person.id);
     } catch (err) {
-      setError(errorMessage(err));
+      setError(presentRemoteError(err, { explicit: true }));
     }
   }
 
@@ -223,7 +228,11 @@ export function PersonDataSection({
           variant="danger"
           size="sm"
           disabled={disabled}
-          onClick={() => void deletePerson().catch((err: unknown) => setError(errorMessage(err)))}
+          onClick={() =>
+            void deletePerson().catch((err: unknown) =>
+              setError(presentRemoteError(err, { explicit: true })),
+            )
+          }
         >
           {t("Delete person data")}
         </Button>

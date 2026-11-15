@@ -23,7 +23,13 @@ type Entry = {
   authorities: readonly (() => Promise<boolean>)[];
   users: number;
   retained: boolean;
+  /** Last time a chunk was served; a transfer with a recent chunk is mid-download. */
+  lastServed?: number;
+  /** The final chunk was served; nothing more is expected. */
+  finished?: boolean;
 };
+/** A transfer that served a chunk this recently is still being downloaded. */
+const DOWNLOAD_PIN_MS = 30_000;
 export class HostBulkError extends Error {
   constructor(
     readonly status: 404 | 409 | 413 | 429,
@@ -174,8 +180,17 @@ export class HostBulkTransfers {
     ) {
       let oldest: Entry | undefined;
       for (const entry of this.entries.values())
-        if (!oldest || entry.touched < oldest.touched) oldest = entry;
-      if (!oldest) throw new HostBulkError(429, "Transfer capacity is busy.");
+        if (!this.downloading(entry) && (!oldest || entry.touched < oldest.touched)) oldest = entry;
+      if (!oldest) {
+        // Every entry is mid-download: evicting one would 404 its reader and force a
+        // full resync, so exceed the slot count (not the byte budget) up to twice over.
+        if (
+          this.entries.size < this.limits.maxTransfers * 2 &&
+          this.bytes + bytes.length <= this.limits.maxBytes
+        )
+          break;
+        throw new HostBulkError(429, "Transfer capacity is busy.");
+      }
       this.remove(oldest.descriptor.transferId);
     }
     const descriptor = BulkDescriptorSchema.parse({
@@ -258,8 +273,18 @@ export class HostBulkTransfers {
       throw new HostBulkError(409, "Transfer offset is outside the chunk boundary.");
     return entry;
   }
+  private downloading(entry: Entry): boolean {
+    return (
+      entry.users > 0 ||
+      (!entry.finished &&
+        entry.lastServed !== undefined &&
+        this.now() - entry.lastServed < DOWNLOAD_PIN_MS)
+    );
+  }
   private copyChunk(entry: Entry, offset: number): Buffer {
     entry.touched = this.now();
+    entry.lastServed = entry.touched;
+    entry.finished = offset + entry.descriptor.chunkBytes >= entry.bytes.length;
     // Never expose the retained backing buffer to callers.
     return Buffer.from(entry.bytes.subarray(offset, offset + entry.descriptor.chunkBytes));
   }

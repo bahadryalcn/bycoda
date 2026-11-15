@@ -20,7 +20,7 @@ import { subscribeRemoteMachineChannel } from "./remoteMachineChannel";
 import { remoteProjectFor } from "./remoteProjects";
 import { railSessions, type RemoteRailSession } from "./remoteRailSessions";
 import { blocksSending } from "./remoteConnection";
-import { isMachineEnabled } from "./machineEnabled";
+import { isMachineEnabled, startNativeDisabledMachinesSync } from "./machineEnabled";
 import {
   bindMachineEnvironment,
   captureConnectionGeneration,
@@ -356,6 +356,8 @@ export function remoteRequest<T>(
   expectedEnvironmentId?: string,
   syncCycleId?: string,
 ): Promise<T> {
+  // Native admission must know the off list before the first remote request.
+  startNativeDisabledMachinesSync();
   if (method === "commands.dispatch" && requiresDesktopControlReceipts(params))
     params = structuredClone(params);
   const machine = cachedMachines.find((entry) => entry.id === machineId);

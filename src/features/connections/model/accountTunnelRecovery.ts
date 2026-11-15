@@ -1,5 +1,4 @@
 import { invoke } from "@tauri-apps/api/core";
-import { accountApi } from "../../account";
 
 type Computer = { environmentId: string; routes: { endpoint: string }[] };
 type Dependencies = {
@@ -7,7 +6,9 @@ type Dependencies = {
   learn: (machineId: string, environmentId: string, routes: string[]) => Promise<boolean>;
 };
 const defaults: Dependencies = {
-  list: () => accountApi().listComputers(),
+  // Loaded on first use: a static import pulls the account feature (and its
+  // session imports) into every module that imports connections.
+  list: async () => (await import("../../account")).accountApi().listComputers(),
   learn: (machineId, environmentId, routes) =>
     invoke("remote_learn_account_routes", {
       machineId,

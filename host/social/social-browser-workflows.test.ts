@@ -115,9 +115,14 @@ const registrationProfile = {
   familyName: "FixtureFamily",
   accountKind: "person" as const,
 };
-async function registrationFixture(waitForLock?: Promise<void>) {
-  const window = new Window({ url: "https://www.linkedin.com/signup" });
-  window.document.body.innerHTML = `<form class="join-form" action="/signup/api/cors/createAccount" method="post">
+async function registrationFixture(
+  waitForLock?: Promise<void>,
+  site?: { platform: "x"; url: string; html: string },
+) {
+  const window = new Window({ url: site?.url ?? "https://www.linkedin.com/signup" });
+  window.document.body.innerHTML =
+    site?.html ??
+    `<form class="join-form" action="/signup/api/cors/createAccount" method="post">
     <input id="email-address" name="email-address" type="email">
     <input id="password" name="password" type="password" autocomplete="new-password">
     <input id="first-name" name="first-name" type="text">
@@ -167,7 +172,7 @@ async function registrationFixture(waitForLock?: Promise<void>) {
     }),
   };
   const automated = vi.fn<BrowserLauncher>(async () => session);
-  const f = await fixture("linkedin", automated, waitForLock);
+  const f = await fixture(site?.platform ?? "linkedin", automated, waitForLock);
   cleanups.push(async () => {
     await window.happyDOM.abort();
   });
@@ -186,6 +191,35 @@ async function registrationFixture(waitForLock?: Promise<void>) {
 }
 
 describe("owner registration preparation lifecycle", () => {
+  it("prepares X's name, email and birthdate in the owner window and stops before Next", async () => {
+    const options = (n: number, extra = "") =>
+      `<option value="">-</option>${Array.from({ length: n }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join("")}${extra}`;
+    const s = await registrationFixture(undefined, {
+      platform: "x",
+      url: "https://x.com/i/flow/signup",
+      html: `<div role="dialog"><input name="name" type="text"><input name="email" type="text">
+        <select id="SELECTOR_1" aria-label="Month">${options(12)}</select>
+        <select id="SELECTOR_2" aria-label="Day">${options(31)}</select>
+        <select id="SELECTOR_3" aria-label="Year">${options(1, '<option value="1990">1990</option>')}</select>
+        <button data-testid="ocfSettingsListNextButton">Next</button></div>`,
+    });
+    await s.begin({
+      accountKind: "person",
+      displayName: "Fixture Owner",
+      email: "automation-owner@example.invalid",
+      birthdate: "1990-04-07",
+    });
+    const flow = await s.ready();
+    expect(s.fill.mock.calls.map(([, value]) => value)).toEqual([
+      "Fixture Owner",
+      "automation-owner@example.invalid",
+    ]);
+    expect(s.window.document.querySelector<HTMLSelectElement>("#SELECTOR_1")!.value).toBe("4");
+    expect(s.window.document.querySelector<HTMLSelectElement>("#SELECTOR_3")!.value).toBe("1990");
+    expect(s.page.click).not.toHaveBeenCalled();
+    expect(flow.registration).toMatchObject({ status: "awaiting_owner", step: "terms" });
+    expect(JSON.stringify(flow)).not.toContain("automation-owner");
+  });
   it("prepares only supplied nonsecret fields in one headed isolated profile and records no values", async () => {
     const s = await registrationFixture();
     await s.begin();
@@ -545,6 +579,14 @@ describe("browser route boundaries", () => {
     "https://x.com/i/flow/signup",
   ])("rejects arbitrary navigation: %s", (url) => {
     expect(() => socialBrowserUrl("x", "comments", url)).toThrow();
+  });
+  it("allows only Reddit's signup route while its recipe has no operations", () => {
+    expect(socialBrowserUrl("reddit", "signup")).toBe("https://www.reddit.com/register/");
+    for (const intent of ["login", "inbox", "publish"] as const)
+      expect(() => socialBrowserUrl("reddit", intent)).toThrow();
+    expect(() =>
+      socialBrowserUrl("reddit", "comments", "https://www.reddit.com/r/a/comments/1/"),
+    ).toThrow();
   });
   it("retains YouTube's video identifier, removes other query material and refuses non-video watch links", () => {
     expect(socialBrowserUrl("youtube", "signup")).toBe("https://www.youtube.com/channel_switcher");

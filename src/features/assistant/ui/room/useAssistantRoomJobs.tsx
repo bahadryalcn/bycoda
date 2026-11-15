@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import { Text } from "../../../../shared/ui/Text";
 import type {
   AssistantJob,
@@ -106,7 +107,7 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
                 "The task deletion scope could not be verified. You can still delete only the job.",
               );
           } catch (cause) {
-            reviewError = cause instanceof Error ? cause.message : String(cause);
+            reviewError = presentRemoteError(cause, { explicit: true });
           }
         }
         if (

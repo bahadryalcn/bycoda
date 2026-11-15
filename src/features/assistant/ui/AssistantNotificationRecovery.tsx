@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { Text } from "../../../shared/ui/Text";
 import { RefreshCw } from "../../../shared/ui/icons";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -15,6 +16,7 @@ import type {
 } from "../../../shared/model/host-contracts/assistant";
 import { useAssistantControlSource } from "../model/useAssistantControlSource";
 import rt from "./room/RoomTabs.module.css";
+const actionError = (cause: unknown) => presentRemoteError(cause, { explicit: true });
 
 type Row = NonNullable<AssistantResponse["observationDeliveries"]>[number];
 export function AssistantNotificationRecovery({
@@ -59,7 +61,8 @@ export function AssistantNotificationRecovery({
         if (active) setThreadId(result.thread.id);
       })
       .catch((cause) => {
-        if (active) setError(cause instanceof Error ? cause.message : String(cause));
+        const message = presentRemoteError(cause);
+        if (active && message) setError(message);
       });
     return () => {
       active = false;
@@ -101,7 +104,7 @@ export function AssistantNotificationRecovery({
         bound.current.environmentId === host &&
         bound.current.projects.some((project) => project.id === projectId)
       )
-        setError(cause instanceof Error ? cause.message : String(cause));
+        setError(actionError(cause));
     } finally {
       if (sequence === epoch.current) setBusy(false);
     }
@@ -148,9 +151,7 @@ export function AssistantNotificationRecovery({
             size="sm"
             disabled={!choice || busy || source !== "registered"}
             onClick={() => {
-              void read(choice).catch((cause) =>
-                setError(cause instanceof Error ? cause.message : String(cause)),
-              );
+              void read(choice).catch((cause) => setError(actionError(cause)));
             }}
           >
             {t("Check notifications")}
@@ -178,7 +179,7 @@ export function AssistantNotificationRecovery({
                 disabled={busy}
                 onClick={() => {
                   void read(row.projectId, row.notificationId).catch((cause) =>
-                    setError(cause instanceof Error ? cause.message : String(cause)),
+                    setError(actionError(cause)),
                   );
                 }}
               >

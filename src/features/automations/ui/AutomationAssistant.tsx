@@ -12,6 +12,7 @@ import type { RecentProject } from "../../projects/model/recents";
 import type { QuickLaunch } from "../../quick-composer/model/quickComposer";
 import { defaultSessionChoice } from "../../sessions/model/models";
 import { ModelPicker } from "../../sessions/ui/ModelPicker";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 
 /**
  * On-demand assistant entry. It opens above the page, so it never competes with the
@@ -84,7 +85,7 @@ export function AutomationAssistant({
       )
         onClose();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(presentRemoteError(reason, { explicit: true }));
     } finally {
       setBusy(false);
     }

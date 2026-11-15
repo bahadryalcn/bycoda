@@ -11,6 +11,7 @@ import type { SocialClient } from "../../model/socialClient";
 import { DisabledReason, gateProps, type ActionGate } from "../common/DisabledReason";
 import type { SocialScreenProps } from "../shell/screens";
 import { askAiForPost, type AiPostDraft } from "./contentAi";
+import { presentRemoteError } from "../../../connections/public/remoteFailure";
 
 export type ContentEditorAiProps = {
   client: SocialClient;
@@ -23,7 +24,10 @@ export type ContentEditorAiProps = {
   onNavigate: SocialScreenProps["onNavigate"];
 };
 
-const closed = (reason: string): ActionGate => ({ disabled: true, disabledReason: reason });
+const closed = (reason: string): ActionGate => ({
+  disabled: true,
+  disabledReason: reason,
+});
 
 /** Ask AI for one post. The result is a suggestion the owner accepts or discards; nothing is saved. */
 export function ContentEditorAi({
@@ -64,7 +68,11 @@ export function ContentEditorAi({
           if (result) setSuggestion(result);
           else setError(t("AI did not return a post. Write it yourself or try again."));
         } catch (caught) {
-          setError(caught instanceof Error ? caught.message : t("AI could not write the post."));
+          setError(
+            caught instanceof Error
+              ? presentRemoteError(caught, { explicit: true })
+              : t("AI could not write the post."),
+          );
         }
       })
       .catch(() => setError(t("AI could not write the post.")));

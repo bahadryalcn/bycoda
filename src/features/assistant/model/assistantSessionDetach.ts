@@ -7,6 +7,7 @@ import { assistantRequest } from "./assistantClient";
 import { captureAssistantHostRead } from "./assistantHostRead";
 import { assistantJobProjectIds } from "./assistantJobs";
 import { isProjectLocked } from "../../group-lock/model/groupLock";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 export class AssistantSessionDetachError extends Error {
   constructor(
     message: string,
@@ -113,7 +114,7 @@ export async function prepareAssistantSessionDetach(input: {
           );
       } catch (error) {
         throw new AssistantSessionDetachError(
-          error instanceof Error ? error.message : String(error),
+          presentRemoteError(error, { explicit: true }),
           submitted,
         );
       }

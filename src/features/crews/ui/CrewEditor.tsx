@@ -50,6 +50,7 @@ import { useCrewAutosave } from "./useCrewAutosave";
 import { useCrewRebase } from "./useCrewRebase";
 import { usePageFocus } from "./usePageFocus";
 import { useCrewLook } from "./useCrewLook";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 
 export { emptyCrew };
 
@@ -197,7 +198,7 @@ function ConnectedCrewEditor({
     try {
       await operation();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(presentRemoteError(reason, { explicit: true }));
     } finally {
       gate.current = false;
       setPendingAction(null);

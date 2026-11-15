@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import {
   useEffect,
   useRef,
@@ -14,6 +15,7 @@ import {
 } from "../../connections/public/connections";
 import type { HostSession } from "../../connections";
 import { type HostSessionBinding } from "../../connections/public/sessionExecutionBinding";
+import { useReloadOnMachineReconnect } from "../../connections/public/useReloadOnReconnect";
 import { useHostSessionBinding } from "../../connections/public/useHostSessionBinding";
 import { sessionExecutionClient } from "../../connections/public/sessionExecutionClient";
 import { getGroupLockView, subscribeGroupLock } from "../../group-lock/model/groupLock";
@@ -120,7 +122,8 @@ function startReadOnlyReader({ binding, key, privacy, previous, reader, setState
           publish({ snapshot });
           return next.session.blocks.length - original.session.blocks.length;
         } catch (error) {
-          publish({ historyError: String(error).replace(/^Error: /, "") });
+          const message = presentRemoteError(error);
+          if (message) publish({ historyError: message });
         } finally {
           historyLoading = false;
           publish({ historyLoading: false });
@@ -165,7 +168,10 @@ function startReadOnlyReader({ binding, key, privacy, previous, reader, setState
           publish({ snapshot, loading: false, error: undefined });
         }
       } catch (error) {
-        publish({ loading: false, error: String(error).replace(/^Error: /, "") });
+        // A transient link drop keeps the last snapshot; the shared connection notice covers it.
+        // With nothing loaded yet there is no snapshot to keep: show the wait and its retry.
+        const message = presentRemoteError(error, { explicit: snapshot === undefined });
+        publish(message ? { loading: false, error: message } : { loading: false });
       } finally {
         if (current())
           timer = setTimeout(() => {
@@ -210,6 +216,10 @@ export function useReadOnlyHostSession(shell: Session, visible: boolean) {
   const valid = state.key === key && state.privacy === privacy;
   const snapshot = valid ? state.snapshot : undefined;
   const retry = () => setRefresh((value) => value + 1);
+  // A first connect that failed reconnects once the machine's link is back.
+  useReloadOnMachineReconnect(binding?.environmentId, retry, {
+    active: !snapshot && !!state.error,
+  });
   const loadHistory = () => reader.current?.loadHistory() ?? Promise.resolve();
   const loadBlock = (id: string) => reader.current?.loadBlock(id) ?? Promise.resolve();
   return {

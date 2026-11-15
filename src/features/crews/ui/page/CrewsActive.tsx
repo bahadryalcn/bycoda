@@ -27,6 +27,7 @@ import { CREW_ATTENTION_TONE } from "../../model/crewSignal";
 import { crewAttentionLabel } from "../../model/crewPresentation";
 import { roleLabel } from "../CrewMemberForm";
 import { MemberAvatar } from "../MemberAvatar";
+import { presentRemoteError } from "../../../connections/public/remoteFailure";
 
 const FACE_SIZE = 28;
 
@@ -77,9 +78,7 @@ export function CrewsActive({
     setError("");
     void activeSessionTarget(item, known)
       .then(onOpenSession)
-      .catch((reason: unknown) =>
-        setError(reason instanceof Error ? reason.message : String(reason)),
-      );
+      .catch((reason: unknown) => setError(presentRemoteError(reason, { explicit: true })));
   };
   return (
     <div className="flex flex-col gap-4 p-4">

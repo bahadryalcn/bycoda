@@ -29,8 +29,16 @@ function syncNativeDisabledMachines(): void {
     // Browser fixtures have no native transport.
   }
 }
-stored.subscribe(syncNativeDisabledMachines);
-syncNativeDisabledMachines();
+let nativeSyncStarted = false;
+/** Mirrors the off list into native transport admission from now on. Importing this
+ * module has no side effect; remote recovery starts this, and so does any change. */
+export function startNativeDisabledMachinesSync(): void {
+  if (nativeSyncStarted) return;
+  nativeSyncStarted = true;
+  stored.subscribe(syncNativeDisabledMachines);
+  // Native starts with nothing turned off, so an empty list needs no call.
+  if (stored.load().length > 0) syncNativeDisabledMachines();
+}
 
 export function isMachineEnabled(environmentId: string): boolean {
   return !stored.load().includes(environmentId);
@@ -48,6 +56,7 @@ export function subscribeMachineTurnedOff(listener: (environmentId: string) => v
 }
 
 export function setMachineEnabled(environmentId: string, enabled: boolean): void {
+  startNativeDisabledMachinesSync();
   const wasEnabled = isMachineEnabled(environmentId);
   const rest = stored.load().filter((id) => id !== environmentId);
   stored.save(enabled ? rest : [...rest, environmentId]);

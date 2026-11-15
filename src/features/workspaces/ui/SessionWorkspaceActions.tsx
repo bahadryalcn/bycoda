@@ -12,6 +12,7 @@ import { remotePath, parseRemotePath } from "../../connections/model/remoteProje
 import { hostSessionBinding } from "../../connections/model/sessionExecutionBinding";
 import { useRemoteConnection } from "../../connections/model/useRemoteConnection";
 import { classifyRemoteError, isConnectionFailure } from "../../connections/model/remoteFailure";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { subscribeRemoteRecovered } from "../../connections/model/remoteHealth";
 import type { ManagedWorkspace } from "../model/contracts";
 import {
@@ -118,9 +119,10 @@ export function SessionWorkspaceActions({
           worktreeRemoved: removed,
         };
         if (shouldPersistSession(updated))
-          void upsertSession(updated).catch((reason: unknown) =>
-            setError(reason instanceof Error ? reason.message : String(reason)),
-          );
+          void upsertSession(updated).catch((reason: unknown) => {
+            const message = presentRemoteError(reason);
+            if (message) setError(message);
+          });
         return updated;
       }),
     );
@@ -151,7 +153,7 @@ export function SessionWorkspaceActions({
         ),
       );
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(presentRemoteError(reason, { explicit: true }));
     } finally {
       lock.current = false;
       setPending(null);

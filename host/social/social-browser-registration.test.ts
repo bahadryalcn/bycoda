@@ -1111,3 +1111,220 @@ describe("exact owner-approved LinkedIn Page final DOM contract", () => {
     expect(f.legalClicks()).toHaveLength(2);
   });
 });
+
+// Reddit's live signup is gated by a Google reCAPTCHA "Prove your humanity" interstitial for
+// automated profiles (observed 2026-11-15), so the form steps below are fixtures of the
+// documented faceplate-text-input shadow-root layout, not an observed account creation.
+describe("Reddit owner-assisted registration contracts", () => {
+  const challenge =
+    '<h1>Prove your humanity</h1><form><iframe src="https://www.google.com/recaptcha/api2/anchor?ar=1"></iframe></form>';
+  function reddit(html: string, shadowInputs: Record<string, string> = {}) {
+    const f = fixture("https://www.reddit.com/register/", html);
+    for (const [name, attributes] of Object.entries(shadowInputs)) {
+      const host = f.window.document.createElement("faceplate-text-input");
+      host.setAttribute("name", name);
+      host.attachShadow({ mode: "open" }).innerHTML = `<input ${attributes}>`;
+      f.window.document.body.append(host);
+    }
+    const fill = vi.fn(async (selector: string, value: string) => {
+      const host = f.window.document.querySelector(selector)!;
+      const input = (host.shadowRoot ?? host).querySelector("input")!;
+      if (input.type === "password" || input.autocomplete === "one-time-code")
+        throw new Error("A secret field was touched.");
+      input.value = value;
+    });
+    return { ...f, fill, page: { ...f.page, fill } satisfies BrowserPage };
+  }
+  const emailInput = 'name="email" type="text" autocomplete="email"';
+
+  it("fills the owner email inside the shadow root and stops at Continue and the agreement", async () => {
+    const f = reddit("<h1>Sign Up</h1>", { email: emailInput });
+    expect(await inspectSocialRegistration(f.page, "reddit", {})).toMatchObject({
+      status: "needs_fields",
+      requiredFields: ["email"],
+    });
+    const state = await advanceSocialRegistration(f.page, "reddit", {
+      email: "bycoda@example.com",
+    });
+    expect(state).toMatchObject({
+      status: "awaiting_owner",
+      step: "terms",
+      blockers: ["terms"],
+      filledFields: ["email"],
+      canAdvance: false,
+    });
+    expect(f.fill).toHaveBeenCalledTimes(1);
+    expect(f.click).not.toHaveBeenCalled();
+    expect(
+      f.window.document.querySelector("faceplate-text-input")!.shadowRoot!.querySelector("input")!
+        .value,
+    ).toBe("bycoda@example.com");
+    expect(JSON.stringify(state)).not.toContain("bycoda@example.com");
+  });
+  it("fills only the username on the credentials step and leaves the password to the owner", async () => {
+    const f = reddit("<h1>Create your username and password</h1>", {
+      username: 'name="username" type="text"',
+      password: 'name="password" type="password" autocomplete="new-password"',
+    });
+    const state = await advanceSocialRegistration(f.page, "reddit", {
+      email: "bycoda@example.com",
+      username: "bycoda_team",
+    });
+    expect(state).toMatchObject({ status: "awaiting_owner", filledFields: ["username"] });
+    expect(state.blockers).toEqual(["password", "terms"]);
+    expect(f.fill).toHaveBeenCalledTimes(1);
+    expect(f.fill.mock.calls[0][1]).toBe("bycoda_team");
+    expect(JSON.stringify(f.fill.mock.calls)).not.toMatch(/password/i);
+  });
+  it("preserves a different owner-typed email", async () => {
+    const f = reddit("", { email: `${emailInput} value="other@example.com"` });
+    const state = await advanceSocialRegistration(f.page, "reddit", {
+      email: "bycoda@example.com",
+    });
+    expect(state.status).toBe("changed");
+    expect(f.fill).not.toHaveBeenCalled();
+  });
+  it("reports the reCAPTCHA interstitial and never fills through it", async () => {
+    const f = reddit(challenge, { email: emailInput });
+    const state = await advanceSocialRegistration(f.page, "reddit", {
+      email: "bycoda@example.com",
+    });
+    expect(state).toMatchObject({ status: "awaiting_owner", step: "challenge" });
+    expect(f.fill).not.toHaveBeenCalled();
+    expect(f.click).not.toHaveBeenCalled();
+  });
+  it("reports an email verification code step without typing a code", async () => {
+    const f = reddit("<h1>Verify your email</h1>", {
+      code: 'name="code" type="text" autocomplete="one-time-code"',
+    });
+    const state = await advanceSocialRegistration(f.page, "reddit", {
+      email: "bycoda@example.com",
+    });
+    expect(state).toMatchObject({ status: "awaiting_owner", step: "verification" });
+    expect(state.blockers).toContain("verification");
+    expect(f.fill).not.toHaveBeenCalled();
+  });
+  it("does not guess at an unknown Reddit layout or another path", async () => {
+    const f = reddit("<h1>Sign Up</h1>");
+    expect(
+      await advanceSocialRegistration(f.page, "reddit", { email: "bycoda@example.com" }),
+    ).toMatchObject({
+      status: "unsupported",
+    });
+    const other = reddit("", { email: emailInput });
+    other.window.location.href = "https://www.reddit.com/login/";
+    expect((await inspectSocialRegistration(other.page, "reddit", {})).status).toBe("unsupported");
+    const foreign = fixture("https://example.com/register/", "");
+    expect((await inspectSocialRegistration(foreign.page, "reddit", {})).status).toBe(
+      "unsupported",
+    );
+  });
+});
+
+// x.com answers headless Chrome with HTTP 403 (observed 2026-11-15), so the profile step below
+// is a fixture of the remembered name/email/SELECTOR_n layout, not an observed account creation.
+describe("X owner-assisted registration contracts", () => {
+  const url = "https://x.com/i/flow/signup";
+  const options = (count: number, extra = "") =>
+    `<option value="">-</option>${Array.from({ length: count }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join("")}${extra}`;
+  const dates = `<select id="SELECTOR_1" aria-label="Month">${options(12)}</select>
+    <select id="SELECTOR_2" aria-label="Day">${options(31)}</select>
+    <select id="SELECTOR_3" aria-label="Year">${options(1, '<option value="1990">1990</option>')}</select>`;
+  const profileForm = `<div role="dialog"><input name="name" type="text"><input name="email" type="text">${dates}
+    <button data-testid="ocfSettingsListNextButton">Next</button></div>`;
+  const owner = {
+    displayName: "Fixture Owner",
+    email: "bycoda@example.com",
+    birthdate: "1990-04-07",
+  };
+  const value = (f: ReturnType<typeof fixture>, selector: string) =>
+    f.window.document.querySelector<HTMLInputElement>(selector)!.value;
+
+  it("asks for the three non-secret fields before touching the form", async () => {
+    const f = fixture(url, profileForm);
+    expect(await inspectSocialRegistration(f.page, "x", {})).toMatchObject({
+      status: "needs_fields",
+      step: "profile",
+      requiredFields: ["displayName", "email", "birthdate"],
+    });
+    expect(f.fill).not.toHaveBeenCalled();
+  });
+  it("fills name, email and birthdate then stops at terms without clicking Next", async () => {
+    const f = fixture(url, profileForm);
+    const state = await advanceSocialRegistration(f.page, "x", owner);
+    expect(state).toMatchObject({
+      status: "awaiting_owner",
+      step: "terms",
+      blockers: ["terms"],
+      filledFields: ["displayName", "email", "birthdate"],
+      canAdvance: false,
+    });
+    expect(value(f, 'input[name="name"]')).toBe("Fixture Owner");
+    expect(value(f, 'input[name="email"]')).toBe("bycoda@example.com");
+    expect([1, 2, 3].map((n) => value(f, `#SELECTOR_${n}`))).toEqual(["4", "7", "1990"]);
+    expect(f.click).not.toHaveBeenCalled();
+    expect(JSON.stringify(state)).not.toContain("bycoda@example.com");
+  });
+  it("does not overwrite an owner birthdate or field choice", async () => {
+    const f = fixture(url, profileForm);
+    f.window.document.querySelector<HTMLSelectElement>("#SELECTOR_1")!.value = "9";
+    const state = await advanceSocialRegistration(f.page, "x", owner);
+    expect(state).toMatchObject({ status: "changed", step: "birthdate" });
+    expect(value(f, "#SELECTOR_1")).toBe("9");
+    const g = fixture(url, profileForm);
+    g.window.document.querySelector<HTMLInputElement>('input[name="email"]')!.value =
+      "other@example.com";
+    expect(await advanceSocialRegistration(g.page, "x", owner)).toMatchObject({
+      status: "changed",
+      step: "profile",
+    });
+  });
+  it("leaves the phone variant and the initial choice to the owner", async () => {
+    const phone = fixture(url, `<input name="name"><input name="phone_number">${dates}`);
+    expect((await inspectSocialRegistration(phone.page, "x", owner)).status).toBe("unsupported");
+    const choice = fixture(url, '<div role="dialog"><button>Create account</button></div>');
+    expect(await advanceSocialRegistration(choice.page, "x", owner)).toMatchObject({
+      status: "unsupported",
+    });
+    expect(choice.click).not.toHaveBeenCalled();
+  });
+  it.each([
+    [
+      "Arkose challenge iframe",
+      '<iframe src="https://client-api.arkoselabs.com/fc/gc/"></iframe>',
+      "challenge",
+    ],
+    ["Authenticate heading", "<h1>Authenticate</h1>", "challenge"],
+    ["suspicious login", "<h2>Suspicious login prevented</h2>", "challenge"],
+    [
+      "verification code input",
+      '<h1>We sent you a code</h1><input name="verfication_code">',
+      "verification",
+    ],
+    ["password", '<input name="password" type="password" autocomplete="new-password">', "password"],
+  ])("reports %s without typing or clicking", async (_label, html, blocker) => {
+    const f = fixture(url, html);
+    const state = await advanceSocialRegistration(f.page, "x", owner);
+    expect(state.status).toBe("awaiting_owner");
+    expect(state.blockers).toContain(blocker);
+    expect(f.fill).not.toHaveBeenCalled();
+    expect(f.click).not.toHaveBeenCalled();
+  });
+  it("stops filling when a challenge appears over the profile form", async () => {
+    const f = fixture(
+      url,
+      `${profileForm}<iframe src="https://client-api.arkoselabs.com/x"></iframe>`,
+    );
+    expect(await advanceSocialRegistration(f.page, "x", owner)).toMatchObject({
+      status: "awaiting_owner",
+      step: "challenge",
+    });
+    expect(f.fill).not.toHaveBeenCalled();
+  });
+  it("ignores other origins and routes", async () => {
+    const other = fixture("https://x.com/home", profileForm);
+    expect((await inspectSocialRegistration(other.page, "x", {})).status).toBe("unsupported");
+    const foreign = fixture("https://example.com/i/flow/signup", profileForm);
+    expect((await inspectSocialRegistration(foreign.page, "x", {})).status).toBe("unsupported");
+  });
+});

@@ -12,6 +12,7 @@ import {
 import { connectionOutcome, RECONNECT_GRACE_MS } from "../model/remoteConnection";
 import { isConnectionFailure, type RemoteFailure } from "../model/remoteFailure";
 import { parseRemotePath } from "../model/remoteProjects";
+import { useRemoteOutages } from "../model/remoteHealth";
 import { useRemoteConnection } from "../model/useRemoteConnection";
 import {
   loadRemoteAutoReconnect,
@@ -19,7 +20,10 @@ import {
 } from "../../settings/public/settings";
 import { RemoteLoadError } from "./RemoteLoadError";
 
-const TRANSIENT_NOTICE_DELAY_MS = RECONNECT_GRACE_MS;
+/** A blip shorter than this shows nothing at all. */
+const TRANSIENT_NOTICE_DELAY_MS = 2_000;
+/** Until then a short outage reads "Reconnecting…"; after it, the full notice. */
+const TRANSIENT_ESCALATE_MS = RECONNECT_GRACE_MS;
 type Registration = { environmentId: string; failure?: RemoteFailure };
 type Feedback = {
   entries: ReadonlyMap<symbol, Registration>;
@@ -89,6 +93,7 @@ export function RemoteConnectionNotices() {
   const feedback = useContext(FeedbackContext);
   const [ownerKey] = useState(() => Symbol("remote-connection-notices"));
   const registerOwner = feedback?.registerOwner;
+  const outages = useRemoteOutages();
   useLayoutEffect(() => {
     if (!registerOwner) return;
     registerOwner(ownerKey, true);
@@ -107,6 +112,9 @@ export function RemoteConnectionNotices() {
     )
       machines.set(environmentId, failure ?? previous);
   }
+  // Machines in an outage get their one notice even with no pane mounted for them.
+  for (const environmentId of outages)
+    if (!machines.has(environmentId)) machines.set(environmentId, undefined);
   return [...machines].map(([environmentId, failure]) => (
     <MachineConnectionNotice key={environmentId} environmentId={environmentId} failure={failure} />
   ));
@@ -150,21 +158,30 @@ function MachineConnectionNotice({
     }, 0);
     return () => clearTimeout(timer);
   }, [active]);
-  // Escalate a sustained outage once, after the Host restart window.
+  // Re-render when a short outage becomes visible and again when it escalates.
   useEffect(() => {
     if (!active || !transient || !autoReconnect || reconnecting || firstFailureAt === undefined)
       return;
-    const remaining = firstFailureAt + TRANSIENT_NOTICE_DELAY_MS - Date.now();
-    const timer = setTimeout(() => setNow(Date.now()), Math.max(0, remaining));
+    const elapsed = Date.now() - firstFailureAt;
+    const next =
+      elapsed < TRANSIENT_NOTICE_DELAY_MS
+        ? TRANSIENT_NOTICE_DELAY_MS - elapsed
+        : TRANSIENT_ESCALATE_MS - elapsed;
+    if (next <= 0) return;
+    const timer = setTimeout(() => setNow(Date.now()), next);
     return () => clearTimeout(timer);
-  }, [active, transient, autoReconnect, reconnecting, firstFailureAt]);
+  }, [active, transient, autoReconnect, reconnecting, firstFailureAt, now]);
   if (!active || (dismissed && transient)) return null;
+  const quiet =
+    transient &&
+    autoReconnect &&
+    !reconnecting &&
+    (firstFailureAt === undefined || now < firstFailureAt + TRANSIENT_NOTICE_DELAY_MS);
+  if (quiet) return null;
   const recovering =
     transient &&
     autoReconnect &&
-    (reconnecting ||
-      firstFailureAt === undefined ||
-      now < firstFailureAt + TRANSIENT_NOTICE_DELAY_MS);
+    (reconnecting || firstFailureAt === undefined || now < firstFailureAt + TRANSIENT_ESCALATE_MS);
   const hardState =
     status !== "connected" &&
     status !== "connecting" &&

@@ -18,6 +18,7 @@ import {
   undoSessionChanges,
   type CheckpointFile,
 } from "../model/checkpoint";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { invalidateProjectFiles } from "../../files/public/fileIndex";
 import { invalidateWatchedFiles } from "../../files/public/fileWatch";
 import { basename, notifyGitChanged, subscribeGitChanged } from "../../../platform/tauri/fs";
@@ -102,7 +103,7 @@ function SessionReviewContent({
           const message = cause instanceof Error ? cause.message : String(cause);
           const pending = message.includes("Workspace checkpoint is still recording this turn");
           setRecording(pending);
-          setError(pending ? null : message);
+          setError(pending ? null : (presentRemoteError(cause) ?? null));
         }
       })
       .finally(() => {
@@ -220,8 +221,7 @@ function SessionReviewContent({
         if (generation === request.current) setFiles(status.files);
       })
       .catch((cause: unknown) => {
-        if (generation === request.current)
-          setError(cause instanceof Error ? cause.message : String(cause));
+        if (generation === request.current) setError(presentRemoteError(cause, { explicit: true }));
       })
       .finally(() => {
         actingRef.current = false;

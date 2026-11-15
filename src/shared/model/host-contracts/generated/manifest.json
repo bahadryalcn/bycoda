@@ -45902,7 +45902,8 @@
                   "sessionId": {
                     "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                     "type": "string"
-                  }
+                  },
+                  "tail": { "const": true, "type": "boolean" }
                 },
                 "required": ["kind", "sessionId"],
                 "type": "object"
@@ -67253,7 +67254,8 @@
                         "sessionId": {
                           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                           "type": "string"
-                        }
+                        },
+                        "tail": { "const": true, "type": "boolean" }
                       },
                       "required": ["kind", "sessionId"],
                       "type": "object"
@@ -77576,5 +77578,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "b5d47021a063c320b7dfbdc43ae11aa59bde7e642b7b4af9477a34644ed80367"
+  "schemaHash": "81af7910b5d6669dc28ea3cd43088c293f1b57f87cc8e63a8e067a22a5b16ec8"
 }

@@ -26,6 +26,7 @@ import {
   listDisplayName,
   ruleConditionSummary,
 } from "./audienceModel";
+import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import "./audience.css";
 
 export type CaptureRulesProps = {
@@ -75,14 +76,17 @@ export function CaptureRules({ client, accounts, lists, onChanged }: CaptureRule
     setBusyId(rule.id);
     setError(undefined);
     try {
-      const updated = await client.captureRules.setEnabled({ id: rule.id, enabled });
+      const updated = await client.captureRules.setEnabled({
+        id: rule.id,
+        enabled,
+      });
       // Merge over the row we already hold so a partial echo never drops system or source fields.
       setRules((current) =>
         current?.map((item) => (item.id === rule.id ? { ...item, ...updated } : item)),
       );
       onChanged();
     } catch (err) {
-      setError(errorMessage(err));
+      setError(presentRemoteError(err, { explicit: true }));
     } finally {
       setBusyId(undefined);
     }
@@ -110,7 +114,9 @@ export function CaptureRules({ client, accounts, lists, onChanged }: CaptureRule
     if (!rule) return;
     if (id === "edit") setEditing(rule);
     else if (id === "delete")
-      void remove(rule).catch((err: unknown) => setError(errorMessage(err)));
+      void remove(rule).catch((err: unknown) =>
+        setError(presentRemoteError(err, { explicit: true })),
+      );
   }
 
   function nextStep(rule: CaptureRule): string | undefined {
@@ -118,7 +124,9 @@ export function CaptureRules({ client, accounts, lists, onChanged }: CaptureRule
     if (rule.action?.kind === "enroll") {
       const sequenceId = rule.action.sequenceId;
       const sequence = sequences.find((item) => item.id === sequenceId);
-      return t("Then starts the sequence {p0}", { p0: sequence?.name ?? t("(deleted)") });
+      return t("Then starts the sequence {p0}", {
+        p0: sequence?.name ?? t("(deleted)"),
+      });
     }
     return undefined;
   }
@@ -151,7 +159,10 @@ export function CaptureRules({ client, accounts, lists, onChanged }: CaptureRule
           </Text>
           <Text as="span" tone="muted" leading="inherit" truncate>
             {account
-              ? t("{p0} on {p1}", { p0: captureSourceLabel(rule.source.kind), p1: account.name })
+              ? t("{p0} on {p1}", {
+                  p0: captureSourceLabel(rule.source.kind),
+                  p1: account.name,
+                })
               : captureSourceLabel(rule.source.kind)}
           </Text>
           <Text as="span" tone="muted" leading="inherit">
@@ -258,7 +269,12 @@ export function CaptureRules({ client, accounts, lists, onChanged }: CaptureRule
           items={[
             { kind: "item", id: "edit", label: t("Edit rule…") },
             { kind: "sep" },
-            { kind: "item", id: "delete", label: t("Delete rule…"), danger: true },
+            {
+              kind: "item",
+              id: "delete",
+              label: t("Delete rule…"),
+              danger: true,
+            },
           ]}
           onPick={pickMenu}
           onClose={() => setMenu(null)}

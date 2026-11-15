@@ -1,11 +1,13 @@
 import { expect, it } from "vitest";
 import {
   applySessionSync,
+  applyStreamSync,
   HOST_PROTOCOL_VERSION,
   protocolMismatchMessage,
   requireHostDescriptor,
   sessionReferenceKey,
   type HostSession,
+  type SessionSync,
 } from "./protocol";
 
 const known: HostSession = {
@@ -162,4 +164,51 @@ it("names the side to update when protocol versions differ", () => {
   expect(protocolMismatchMessage(undefined, HOST_PROTOCOL_VERSION)).toMatch(
     /Update the bycoda Host/,
   );
+});
+
+const windowed = (ids: string[], before: number | undefined, revision = 4): HostSession => ({
+  ...known,
+  revision,
+  history: { before, revision, totalBlocks: 10 },
+  session: {
+    ...known.session,
+    blocks: ids.map((id) => ({ id, role: "assistant", text: id })),
+  },
+});
+const { blocks: _knownBlocks, ...knownSession } = known.session;
+const streamDelta = (ids: string[], before: number, changed: string[]): SessionSync => ({
+  kind: "delta",
+  partial: true,
+  base: 4,
+  value: {
+    ...known,
+    revision: 5,
+    history: { before, revision: 5, totalBlocks: 11 },
+    session: knownSession,
+  },
+  blockIds: ids,
+  blocks: changed.map((id) => ({ id, role: "assistant", text: `${id}!` })),
+});
+
+it("rebases a tail stream's partial delta onto the window the client holds", () => {
+  // The client only holds a later window than the stream's.
+  const later = applyStreamSync(
+    windowed(["w3", "w4"], 5),
+    streamDelta(["w2", "w3", "w4", "w5"], 4, ["w5"]),
+  );
+  expect(later.session.blocks.map((block) => block.id)).toEqual(["w3", "w4", "w5"]);
+  expect(later.history).toEqual({ before: 5, revision: 5, totalBlocks: 11 });
+  // The client paged older history than the stream's window: it keeps those blocks.
+  const older = applyStreamSync(
+    windowed(["o1", "w2", "w3"], 2),
+    streamDelta(["w2", "w3", "w4"], 4, ["w4"]),
+  );
+  expect(older.session.blocks.map((block) => block.id)).toEqual(["o1", "w2", "w3", "w4"]);
+  expect(older.history).toEqual({ before: 2, revision: 5, totalBlocks: 11 });
+  expect(() => applyStreamSync(windowed(["x1"], 8), streamDelta(["w2", "w3"], 4, []))).toThrow(
+    "overlap",
+  );
+  expect(() =>
+    applyStreamSync(windowed(["w2"], 4, 3), streamDelta(["w2", "w3"], 4, ["w3"])),
+  ).toThrow("base");
 });

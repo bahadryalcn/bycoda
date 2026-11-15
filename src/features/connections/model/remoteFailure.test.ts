@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { TimeoutError } from "../../../shared/lib/withTimeout";
-import { classifyRemoteError, isConnectionFailure, unreachablePollDelay } from "./remoteFailure";
+import {
+  classifyRemoteError,
+  isConnectionFailure,
+  isTransientTransportError,
+  presentRemoteError,
+  unreachablePollDelay,
+} from "./remoteFailure";
 import { delegatedDiscoveryFailure } from "./useDelegatedRunDiscovery";
 
 describe("classifyRemoteError", () => {
@@ -139,4 +145,52 @@ it("does not mistake a Host operation error for a transport outage", () => {
   expect(
     classifyRemoteError("Host rejected request: SSH connection failed in deployment script").kind,
   ).toBe("other");
+});
+
+describe("presentRemoteError", () => {
+  it("never returns an empty message for an error without text", () => {
+    expect(presentRemoteError(new Error(""), { explicit: true })).toBe(
+      "Something went wrong. Try again.",
+    );
+    expect(presentRemoteError(new Error(""))).toBe("Something went wrong. Try again.");
+  });
+
+  it.each([
+    "RPC_WS_INTERRUPTED: Host connection was interrupted",
+    "Connection changed while the request was running. Its outcome is unknown; refresh before retrying an action.",
+    "ConnectionReset: os error 10054",
+    "ConnectionAborted",
+    "TimedOut",
+    "RPC_WS_DEADLINE: late",
+    "RPC_WS_OVERLOAD: busy",
+  ])("hides transient transport error %s on background reads", (text) => {
+    expect(isTransientTransportError(text)).toBe(true);
+    expect(presentRemoteError(text)).toBeUndefined();
+    expect(presentRemoteError(text, { explicit: true })).toBeTruthy();
+  });
+
+  it("asks the user to repeat an action once the link is back instead of showing transport text", () => {
+    expect(presentRemoteError("ConnectionReset: os error 10054", { explicit: true })).toBe(
+      "Waiting for the connection to this computer. Try again once it is back.",
+    );
+    expect(presentRemoteError("RPC_WS_OVERLOAD: busy", { explicit: true })).toBe(
+      "This computer is busy right now. Try again in a moment.",
+    );
+    expect(presentRemoteError("Permission denied", { explicit: true })).toBe("Permission denied");
+  });
+
+  it.each([
+    "Not a Git repository",
+    "RPC_WS_BLOCKED: Owner sign-in is required",
+    "RPC_WS_TLS: refused",
+    "RPC_WS_IDENTITY: changed",
+    "Unsupported host method",
+  ])("keeps real failure %s visible", (text) => {
+    expect(isTransientTransportError(text)).toBe(false);
+    expect(presentRemoteError(text)).toBe(text);
+  });
+
+  it("strips the host prefix", () => {
+    expect(presentRemoteError("Host rejected request: bad path")).toBe("bad path");
+  });
 });

@@ -1146,9 +1146,12 @@ fn machine_rpc_for_consumer(
                     .is_some_and(|error| error.starts_with("Machine is unreachable"))
                 {
                     if let Some(lease) = &lease {
-                        if state.tunnels.invalidate(&machine.id, lease) {
-                            state.invalidate_ws(&machine.id);
-                        }
+                        // Probe first: a failed request on a live tunnel (a sleep gap, a
+                        // slow Host) must not rebuild it.
+                        state.tunnels.invalidate_unless_healthy(&machine.id, lease);
+                        // Pooled WS links of this machine are retired even when the tunnel
+                        // survives, so a half-open socket does not linger.
+                        state.invalidate_ws(&machine.id);
                     }
                 }
                 response
@@ -1162,12 +1165,15 @@ fn machine_rpc_for_consumer(
 /// a clear flag on a mutating request means it was never dispatched. A read that
 /// was sent and then timed out is also clear here; re-running a read is harmless.
 /// `unsupported` is the separate pre-dispatch case that the WS path already reports.
+/// A socket lost mid-request is retried the same way when nothing is uncertain: a
+/// half-open WS on a live tunnel then answers over HTTP at once, and a dead tunnel
+/// fails fast into the unreachable path that probes it.
 fn ws_failure_allows_http_fallback(error: &WsFailure) -> bool {
     error.unsupported
         || (!error.uncertain
             && matches!(
                 error.code.as_str(),
-                "RPC_WS_DEADLINE" | "RPC_WS_UNAVAILABLE" | "RPC_WS_BLOCKED"
+                "RPC_WS_DEADLINE" | "RPC_WS_UNAVAILABLE" | "RPC_WS_BLOCKED" | "RPC_WS_INTERRUPTED"
             ))
 }
 

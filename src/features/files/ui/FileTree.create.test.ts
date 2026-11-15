@@ -55,6 +55,10 @@ vi.mock("@tauri-apps/api/core", () => ({
 vi.mock("@tauri-apps/api/webview", () => ({
   getCurrentWebview: () => ({ onDragDropEvent: async () => () => {} }),
 }));
+// These tests drive health reports by hand; a real reload would hit the unconnected machine.
+vi.mock("../../connections/public/useReloadOnReconnect", () => ({
+  useReloadOnReconnect: () => {},
+}));
 vi.mock("./FileTypeIcon", () => ({
   FileTypeIcon: ({ name }: { name: string }) => createElement("span", { "data-icon": name }),
 }));

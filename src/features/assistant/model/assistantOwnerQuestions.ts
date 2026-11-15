@@ -14,6 +14,7 @@ import {
   type UserQuestionReply,
 } from "../../sessions/model/userQuestion";
 import type { QuestionDraft } from "../../sessions/model/questionDrafts";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 
 type Storage = Pick<globalThis.Storage, "getItem" | "setItem" | "removeItem">;
 export type OwnerQuestionRequest =
@@ -61,7 +62,7 @@ export function ownerQuestionError(error: unknown): string {
     return error.issues.some((issue) => issue.code === "too_big" && issue.path.includes("custom"))
       ? "Keep custom answers within 2,000 characters."
       : "The question data could not be verified. Refresh its original Host.";
-  return error instanceof Error ? error.message : String(error);
+  return presentRemoteError(error, { explicit: true });
 }
 const semantic = (question: AssistantOwnerQuestion) => ({
   id: question.id,

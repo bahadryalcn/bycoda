@@ -92,6 +92,24 @@ it("reuses identical scoped content, expires snapshots and bounds retained/admit
   expect(retain("owner", "three", { value: 3 }).transferId).not.toBe(third.transferId);
 });
 
+it("never evicts a transfer that is still being downloaded and caps the overflow", () => {
+  const { pool, retain, advance } = fixture({ maxTransfers: 1, ttlMs: 100_000 });
+  const first = retain("owner", "one", { text: "a".repeat(60) });
+  expect(first.totalBytes).toBeGreaterThan(first.chunkBytes);
+  pool.chunk("owner", first.transferId, 0);
+  advance(1);
+  const second = retain("owner", "two", { text: "b".repeat(60) });
+  expect(pool.chunk("owner", first.transferId, first.chunkBytes).length).toBeGreaterThan(0);
+  expect(pool.chunk("owner", second.transferId, 0).length).toBeGreaterThan(0);
+  // A third pinned transfer reaches twice the slot count.
+  expect(() => retain("owner", "three", { text: "c".repeat(60) })).toThrow("capacity is busy");
+  // A finished download frees its slot.
+  for (let offset = 0; offset < first.totalBytes; offset += first.chunkBytes)
+    pool.chunk("owner", first.transferId, offset);
+  retain("owner", "three", { text: "c".repeat(60) });
+  expect(() => pool.chunk("owner", first.transferId, 0)).toThrow("unavailable");
+});
+
 it("fails bounded oversized content and closed/released contexts before retaining a result", () => {
   const { pool } = fixture({ maxSnapshotBytes: 32 });
   const lease = pool.begin("owner", "session");

@@ -1,4 +1,8 @@
-import { isMachineEnabled, subscribeMachineTurnedOff } from "./machineEnabled";
+import {
+  isMachineEnabled,
+  startNativeDisabledMachinesSync,
+  subscribeMachineTurnedOff,
+} from "./machineEnabled";
 import { closeTurnedOffMachine } from "./machineTurnOff";
 import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
 import {
@@ -318,6 +322,7 @@ const pauseOffline = () => schedule();
  * of the retrying happens while "Automatically reconnect" is off. */
 export function startRemoteAutoRecovery(): () => void {
   if (stopRecovery) return stopRecovery;
+  startNativeDisabledMachinesSync();
   const onVisibility = () => {
     const wasHidden = hiddenSince !== undefined;
     hiddenSince = document.visibilityState === "hidden" ? Date.now() : undefined;

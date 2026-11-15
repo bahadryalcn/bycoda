@@ -28,6 +28,7 @@ import { CrewDialogHost } from "./CrewDialogHost";
 import { crewMenuDialog, crewMenuItems, type CrewDialog } from "./crewMenuItems";
 import { CREW_ATTENTION_TONE, CREW_EXECUTION_TONE, crewSignal } from "../model/crewSignal";
 import { crewAttentionLabel, crewWorkStatusLabel } from "../model/crewPresentation";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 export { crewWorkStatus, crewWorkStatusLabel } from "../model/crewPresentation";
 
 const RAIL_FACE_SIZE = 20;
@@ -76,7 +77,7 @@ export function CrewRailSection({
     try {
       await operation();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(presentRemoteError(reason, { explicit: true }));
     } finally {
       pendingGate.current = false;
       setPendingCrew(null);

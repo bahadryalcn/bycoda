@@ -245,3 +245,17 @@ it("records RPC transport failures and recovery without requiring a pane reporte
   await remoteRequest("rpc-health", "environment.describe");
   expect(readRemoteConnection("rpc-env").status).toBe("connected");
 });
+
+it("lists machines in an outage and notifies subscribers, without any pane", async () => {
+  const { listRemoteOutages, subscribeChanges } = await import("./remoteHealth");
+  const seen: string[][] = [];
+  const stop = subscribeChanges(() => seen.push(listRemoteOutages()));
+  expect(listRemoteOutages()).toEqual([]);
+  recordRemoteConnection("a", new Error(down));
+  recordRemoteConnection("b", undefined);
+  expect(listRemoteOutages()).toEqual(["a"]);
+  notifyRemoteRecovered("a");
+  expect(listRemoteOutages()).toEqual([]);
+  expect(seen.some((ids) => ids.includes("a"))).toBe(true);
+  stop();
+});

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { hostToolRequest } from "../../connections/model/hostFeatureClient";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { t, useLocale } from "../../../shared/i18n";
 import { AssistantResponseValidationSchema } from "../../../shared/model/host-contracts/assistant";
 import type {
@@ -67,7 +68,8 @@ function runRefresh(showLoading: boolean): Promise<void> {
         error: "",
       };
     } catch (cause) {
-      patch = { ...patch, error: cause instanceof Error ? cause.message : String(cause) };
+      const message = presentRemoteError(cause);
+      if (message) patch = { ...patch, error: message };
     } finally {
       pending = null;
       emit(patch);

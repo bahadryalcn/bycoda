@@ -15,7 +15,7 @@ import type { Sequence } from "../../model/outreach";
 import type { SocialClient } from "../../model/socialClient";
 import { PlatformIcon } from "../common/PlatformIcon";
 import { LabeledSelect } from "./LabeledSelect";
-import { errorMessage, uniqueTags } from "./audienceModel";
+import { uniqueTags } from "./audienceModel";
 import { useFormFooter, useTouched } from "./formFooter";
 import {
   FIND_PEOPLE_KINDS,
@@ -27,6 +27,7 @@ import {
   type CaptureSourceKind,
   type FindPeopleForm,
 } from "./findPeopleSource";
+import { presentRemoteError } from "../../../connections/public/remoteFailure";
 
 type ActionKind = "none" | "tag" | "enroll";
 type Sentiment = "" | "positive" | "neutral" | "negative";
@@ -126,7 +127,7 @@ export function CaptureRuleForm({
       onSaved(saved);
       onClose();
     } catch (err) {
-      setError(errorMessage(err));
+      setError(presentRemoteError(err, { explicit: true }));
     } finally {
       setSaving(false);
     }

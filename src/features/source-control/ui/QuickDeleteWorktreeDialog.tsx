@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Text } from "../../../shared/ui/Text";
 import { useEffect, useState } from "react";
@@ -92,7 +93,7 @@ export function QuickDeleteWorktreeDialog({
       await onRemove(request.cwd, tree.path, true, true);
       onClose();
     } catch (reason) {
-      setError(String(reason));
+      setError(presentRemoteError(reason, { explicit: true }));
     } finally {
       setBusy(false);
     }

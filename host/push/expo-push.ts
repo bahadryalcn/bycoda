@@ -5,12 +5,15 @@ const DEADLINE_MS = 15_000;
 
 export type ExpoPushMessage = {
   to: string;
-  title: string;
-  body: string;
+  title?: string;
+  body?: string;
   data: Record<string, string>;
-  sound: "default";
-  channelId: "bycoda";
+  sound?: "default";
+  channelId?: "bycoda";
   priority: "high";
+  _contentAvailable?: boolean;
+  collapseId?: string;
+  ttl?: number;
 };
 
 export type ExpoPushResult = {

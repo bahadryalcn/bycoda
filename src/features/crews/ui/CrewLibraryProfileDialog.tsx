@@ -9,6 +9,7 @@ import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import type { CrewAgent, SavedCrewAgent } from "../model/crew";
 import type { ProjectCrews, useProjectCrews } from "../model/crewClient";
 import { CrewMemberForm } from "./CrewMemberForm";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 
 /**
  * Edits one library profile from inside a crew. The Host carries the change into every
@@ -61,7 +62,7 @@ export function CrewLibraryProfileDialog({
         expectedUpdatedAt: profile.updatedAt,
       })
       .then(onClose, (reason: unknown) => {
-        setError(reason instanceof Error ? reason.message : String(reason));
+        setError(presentRemoteError(reason, { explicit: true }));
         setPending(false);
       });
   };

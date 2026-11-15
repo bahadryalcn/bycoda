@@ -1,3 +1,4 @@
+import { sessionWidgetContext } from "./sessions/session-widget-context";
 import { sessionMetadataUpdate, type SessionMetadataPatch } from "./sessions/session-metadata";
 import {
   sessionAttention,
@@ -2917,6 +2918,7 @@ export function summary(value: HostSession): HostSessionSummary {
     .sort((a, b) => positions.get(a.id)! - positions.get(b.id)!);
   return {
     ...summaryFromBlocks({ ...value, session: { ...value.session, blocks: representatives } }),
+    widgetContext: sessionWidgetContext(value, root.user?.startedAt, root.user?.durationMs),
     providerHistory: cachedProviderHistory(value.session),
     delegationParent:
       decodeDelegationParent(value.session.modelSettings?.[DELEGATION_PARENT_KEY]) ?? null,

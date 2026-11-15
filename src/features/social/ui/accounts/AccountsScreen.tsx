@@ -18,6 +18,14 @@ import { accountHealth } from "./accountsModel";
 import { useAccountsData } from "./useAccountsData";
 import "./accounts.css";
 
+function accountTargetId(target: unknown): string | undefined {
+  return target && typeof target === "object" && "accountId" in target
+    ? typeof target.accountId === "string"
+      ? target.accountId
+      : undefined
+    : undefined;
+}
+
 /** Accounts & Settings: the account list, per-account detail and the general settings below it. */
 export function AccountsScreen({
   client,
@@ -25,9 +33,17 @@ export function AccountsScreen({
   projectId,
   shellState,
   active,
+  target,
 }: SocialScreenProps) {
   const data = useAccountsData({ client, machineId, projectId, active });
   const [selectedId, setSelectedId] = useState<string>();
+  // A navigation target `{ accountId }` (an approved account request) opens that account once.
+  const [seenTarget, setSeenTarget] = useState<unknown>();
+  if (target !== seenTarget) {
+    setSeenTarget(target);
+    const id = accountTargetId(target);
+    if (id) setSelectedId(id);
+  }
   const [connectOpen, setConnectOpen] = useState(false);
   const { snapshot } = data;
   const accounts = snapshot?.accounts ?? [];

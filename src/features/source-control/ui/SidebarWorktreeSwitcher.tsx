@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { PickerList, usePickerList } from "../../../shared/ui/picker";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
@@ -127,7 +128,7 @@ export function SidebarWorktreeSwitcher({
       closePicker();
     } catch (err) {
       if (mounted.current && currentCwd.current === cwd)
-        setCreationError(err instanceof Error ? err.message : String(err));
+        setCreationError(presentRemoteError(err, { explicit: true }));
     } finally {
       creatingRef.current = false;
       if (mounted.current) setCreating(false);

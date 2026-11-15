@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../../../connections/public/remoteFailure";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { t } from "../../../../../shared/i18n";
 import type { AssistantFoldersResponse } from "../../../../../shared/model/assistantFolders";
@@ -108,7 +109,7 @@ export function useAssistantFolders(
         setError(conflictMessage);
         throw new Error(conflictMessage);
       }
-      setError(message(cause));
+      setError(presentRemoteError(cause, { explicit: true }));
       throw cause;
     } finally {
       setPending(false);

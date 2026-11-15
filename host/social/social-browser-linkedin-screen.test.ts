@@ -61,13 +61,37 @@ describe("LinkedIn browser screen handling", () => {
     });
     expect(result.coverage).toContainEqual({ channel: "mentions", status: "read" });
     expect(result.events.map((event) => event.eventId)).toEqual([
-      `mention:urn:li:activity:111:${Date.parse("2026-10-26T09:00:00Z")}:web:linkedin:in:ada-example`,
+      "mention:urn:li:activity:111:web:linkedin:in:ada-example",
+      "mention:urn:li:activity:222:web:linkedin:in:grace-example",
     ]);
+    // The page only shows relative times ("2 saat"), converted when read.
+    expect(Math.abs(result.events[0].at - (Date.now() - 7_200_000))).toBeLessThan(60_000);
     expect(result.events[0]).toMatchObject({
       kind: "comment",
       contactId: "web:linkedin:in:ada-example",
       postId: "urn:li:activity:111",
     });
+  });
+
+  it("reports mentions as unavailable when the Mentions filter is not the active one", async () => {
+    const f = fixture(linkedinBrowserRecipe, memberAccount(), owner, {
+      render: (url) =>
+        url.includes("/notifications/")
+          ? fixtureHtml("notifications-mention.html").replace(
+              'aria-checked="true">Bahsetmeler',
+              'aria-checked="false">Bahsetmeler',
+            )
+          : url.includes("/feed/update/")
+            ? emptyComments
+            : owner,
+    });
+    const result = await linkedinBrowserRecipe.poll(f.ctx, ["urn:li:activity:1"]);
+    expect(result.coverage).toContainEqual({
+      channel: "mentions",
+      status: "unavailable",
+      reason: "response_unavailable",
+    });
+    expect(result.events).toEqual([]);
   });
 
   it("keeps a fully read comment window as read", async () => {

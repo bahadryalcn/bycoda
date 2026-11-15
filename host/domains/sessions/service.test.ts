@@ -311,6 +311,42 @@ it("forwards original read cancellation through full stream ports and stops afte
   expect(f.ports.repository.session).not.toHaveBeenCalled();
 });
 
+it("opens a tail stream with the newest page only when the transcript does not fit one", async () => {
+  const f = setup();
+  const tail = {
+    ...f.value,
+    session: { ...f.value.session, blocks: f.value.session.blocks.slice(2) },
+  };
+  const pageValue = { ...tail, history: { before: 2, revision: 8, totalBlocks: 4 } };
+  vi.mocked(f.ports.transcript.page).mockResolvedValueOnce({
+    value: pageValue as unknown as View,
+    before: 2,
+    revision: 8,
+    totalBlocks: 4,
+  });
+  const paged = await f.service.stream({ sessionId: "session", tail: true }, f.auth);
+  expect(paged).toMatchObject({ kind: "snapshot", value: { history: { before: 2 } } });
+  // Everything fits one page: the full snapshot is kept.
+  vi.mocked(f.ports.transcript.page).mockResolvedValueOnce({
+    value: f.value,
+    revision: 8,
+    totalBlocks: 4,
+  });
+  const full = await f.service.stream({ sessionId: "session", tail: true }, f.auth);
+  expect(full).toMatchObject({
+    kind: "snapshot",
+    value: { session: { blocks: f.value.session.blocks } },
+  });
+  // A client that did not ask for a tail still gets the whole transcript.
+  vi.mocked(f.ports.transcript.page).mockClear();
+  const legacy = await f.service.stream({ sessionId: "session" }, f.auth);
+  expect(legacy).toMatchObject({
+    kind: "snapshot",
+    value: { session: { blocks: f.value.session.blocks } },
+  });
+  expect(f.ports.transcript.page).not.toHaveBeenCalled();
+});
+
 it("sums finished submitted turns for the worked-time read", async () => {
   const f = setup();
   f.value.session.blocks = [
