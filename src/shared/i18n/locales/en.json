@@ -14372,5 +14372,17 @@
   "Desktop-owned work may stop when this app restarts. Host-owned work continues while its Host stays running.": "Desktop-owned work may stop when this app restarts. Host-owned work continues while its Host stays running.",
   "Running sessions and shells on the updated Host are interrupted.": "Running sessions and shells on the updated Host are interrupted.",
   "Session history is kept. Interrupted work may require resuming.": "Session history is kept. Interrupted work may require resuming.",
-  "Denied": "Denied"
+  "Denied": "Denied",
+  "Machines found": "Machines found",
+  "Sign in to see your other computers.": "Sign in to see your other computers.",
+  "No new machines found": "No new machines found",
+  "Shared with you": "Shared with you",
+  "Phones and tablets": "Phones and tablets",
+  "Online": "Online",
+  "Why Add is unavailable": "Why Add is unavailable",
+  "This computer has no SSH address to set it up from here yet.": "This computer has no SSH address to set it up from here yet.",
+  "Advanced: add manually": "Advanced: add manually",
+  "Add manually": "Add manually",
+  "Pick one of the machines found above to get started.": "Pick one of the machines found above to get started.",
+  "No machines are connected yet. Pick one found on your account in Settings, then open a folder on it here.": "No machines are connected yet. Pick one found on your account in Settings, then open a folder on it here."
 }

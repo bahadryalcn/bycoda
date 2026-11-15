@@ -14372,5 +14372,17 @@
   "Desktop-owned work may stop when this app restarts. Host-owned work continues while its Host stays running.": "Bu uygulama yeniden başladığında masaüstünün yürüttüğü işler durabilir. Host’un yürüttüğü işler, Host çalıştığı sürece devam eder.",
   "Running sessions and shells on the updated Host are interrupted.": "Güncellenen Host üzerindeki çalışan oturumlar ve terminaller kesintiye uğrar.",
   "Session history is kept. Interrupted work may require resuming.": "Oturum geçmişi korunur. Kesilen işleri devam ettirmeniz gerekebilir.",
-  "Denied": "Reddedildi"
+  "Denied": "Reddedildi",
+  "Machines found": "Bulunan makineler",
+  "Sign in to see your other computers.": "Diğer bilgisayarlarını görmek için giriş yap.",
+  "No new machines found": "Yeni makine bulunamadı",
+  "Shared with you": "Seninle paylaşılanlar",
+  "Phones and tablets": "Telefonlar ve tabletler",
+  "Online": "Çevrimiçi",
+  "Why Add is unavailable": "Ekle neden kullanılamıyor",
+  "This computer has no SSH address to set it up from here yet.": "Bu bilgisayarın buradan kurulum yapılabilecek bir SSH adresi henüz yok.",
+  "Advanced: add manually": "Gelişmiş: elle ekle",
+  "Add manually": "Elle ekle",
+  "Pick one of the machines found above to get started.": "Başlamak için yukarıda bulunan makinelerden birini seç.",
+  "No machines are connected yet. Pick one found on your account in Settings, then open a folder on it here.": "Henüz bağlı makine yok. Ayarlar'da hesabında bulunan birini seç, sonra burada üzerinde bir klasör aç."
 }
