@@ -134,8 +134,17 @@ export function createSubscriptionsRuntime(
                 .get(target.sessionId),
             );
             const projectId = projectRow ? String(projectRow.project_id) : undefined;
+            streamSessionVersions.set(
+              target.sessionId,
+              dependencies.engine.store.versions.session(target.sessionId, false),
+            );
             if (projectId) {
               streamProjects.set(target.sessionId, projectId);
+              if (!streamProjectScopes.has(projectId))
+                streamProjectScopes.set(
+                  projectId,
+                  dependencies.engine.store.versions.scope(projectId, false),
+                );
               if (!streamProjectVersions.has(projectId))
                 streamProjectVersions.set(
                   projectId,
@@ -184,18 +193,26 @@ export function createSubscriptionsRuntime(
   });
   const streamProjects = new Map<string, string>();
   const streamProjectVersions = new Map<string, number>();
+  // Session streams refresh from their own save counter, or when an unattributed
+  // change hit their project; a sibling's streaming save does neither.
+  const streamProjectScopes = new Map<string, number>();
+  const streamSessionVersions = new Map<string, number>();
   const pruneStreamVersions = () => {
     const targets = subscriptionHub.targets();
     const sessions = new Set(
       targets.flatMap((target) => (target.kind === "session" ? [target.sessionId] : [])),
     );
     for (const id of streamProjects.keys()) if (!sessions.has(id)) streamProjects.delete(id);
+    for (const id of streamSessionVersions.keys())
+      if (!sessions.has(id)) streamSessionVersions.delete(id);
     const projects = new Set([
       ...targets.flatMap((target) => (target.kind === "project" ? [target.projectId] : [])),
       ...streamProjects.values(),
     ]);
     for (const id of streamProjectVersions.keys())
       if (!projects.has(id)) streamProjectVersions.delete(id);
+    for (const id of streamProjectScopes.keys())
+      if (!projects.has(id)) streamProjectScopes.delete(id);
   };
   let unattributedVersion = dependencies.engine.store.unattributedChangeVersion;
   const unsubscribeChanges = dependencies.engine.store.subscribeChanges(() => {
@@ -209,8 +226,21 @@ export function createSubscriptionsRuntime(
       attributed = true;
       streamProjectVersions.set(projectId, current);
       subscriptionHub.invalidate({ kind: "project", projectId });
+    }
+    for (const [projectId, scope] of streamProjectScopes) {
+      const current = dependencies.engine.store.versions.scope(projectId, false);
+      if (current === scope) continue;
+      attributed = true;
+      streamProjectScopes.set(projectId, current);
       for (const [sessionId, project] of streamProjects)
         if (project === projectId) subscriptionHub.invalidate({ kind: "session", sessionId });
+    }
+    for (const [sessionId, version] of streamSessionVersions) {
+      const current = dependencies.engine.store.versions.session(sessionId, false);
+      if (current === version) continue;
+      attributed = true;
+      streamSessionVersions.set(sessionId, current);
+      subscriptionHub.invalidate({ kind: "session", sessionId });
     }
     // A commit no project version explains (queue, approval, settings…) still
     // refreshes every stream, as before targeted invalidation.
@@ -293,6 +323,8 @@ export function createSubscriptionsRuntime(
     subscriptionHub,
     streamProjects,
     streamProjectVersions,
+    streamProjectScopes,
+    streamSessionVersions,
     pruneStreamVersions,
     get unattributedVersion() {
       return unattributedVersion;

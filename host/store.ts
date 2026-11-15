@@ -3,6 +3,8 @@ import {
   DELEGATION_PARENT_KEY,
 } from "../src/shared/model/host-contracts/delegation";
 import { checkpointWrites } from "./storage/checkpoint-writes";
+import { prefetchColdSession } from "./storage/cold-session-read";
+import { SessionChangeVersions } from "./storage/session-change-versions";
 import {
   assertNextRevision,
   isStorageConstraintFailure,
@@ -415,6 +417,7 @@ export class HostStore {
     return this.db.unattributedMutationVersion;
   }
   private projectVersions = new Map<string, number>();
+  readonly versions = new SessionChangeVersions();
   private summaryRows = new Map<
     string,
     {
@@ -436,10 +439,11 @@ export class HostStore {
       return;
     }
     const entry = this.summaryRows.get(value.projectId);
+    const step = this.versions.lastStep(value.session.id);
     if (!entry) return;
     if (
       this.inTransaction ||
-      entry.version + 1 !== this.projectVersion(value.projectId) ||
+      entry.version + step !== this.projectVersion(value.projectId) ||
       entry.external !== (await this.dataVersion())
     ) {
       this.summaryRows.delete(value.projectId);
@@ -456,17 +460,28 @@ export class HostStore {
       (this.transactionActive ? (this.transactionProjectChanges.get(projectId) ?? 0) : 0)
     );
   }
-  private touchProject(projectId: string): void {
-    if (this.transactionActive)
-      this.transactionProjectChanges.set(
-        projectId,
-        (this.transactionProjectChanges.get(projectId) ?? 0) + 1,
-      );
-    else {
-      this.projectVersions.set(projectId, this.projectVersion(projectId) + 1);
+  private touchProject(projectId: string, sessionId?: string, moves = true): void {
+    if (sessionId === undefined) this.versions.addScope(projectId, this.transactionActive);
+    if (this.transactionActive) {
+      if (moves)
+        this.transactionProjectChanges.set(
+          projectId,
+          (this.transactionProjectChanges.get(projectId) ?? 0) + 1,
+        );
+    } else {
+      if (moves) this.projectVersions.set(projectId, this.projectVersion(projectId) + 1);
       this.changes.notify();
       this.publishChanges();
     }
+  }
+  private touchSavedSession(value: HostSession): void {
+    const { revision: _r, updatedAt: _u, createdAt: _c, ...visible } = summary(value);
+    const moves = this.versions.saved(
+      value.session.id,
+      JSON.stringify(visible),
+      this.transactionActive,
+    );
+    this.touchProject(value.projectId, value.session.id, moves);
   }
   private readonly sessionReadSignals = new AsyncLocalStorage<AbortSignal>();
   private readonly sessionReadProcesses = new SessionReadProcesses();
@@ -517,6 +532,7 @@ export class HostStore {
     this.cacheWeights.clear();
     this.summaryRows.clear();
     this.stateMetadata.clear();
+    this.versions.forgetListed();
     this.bumpChangeVersion();
     for (const project of this.projectVersions.keys()) this.touchProject(project);
   }
@@ -746,6 +762,7 @@ export class HostStore {
         this.inTransaction = true;
         this.transactionChanges = 0;
         this.transactionProjectChanges.clear();
+        this.versions.clearPending();
         this.flushedInTransaction = [];
         try {
           const value = await fn();
@@ -753,7 +770,8 @@ export class HostStore {
           this.committedChangeVersion += this.transactionChanges;
           for (const [id, count] of this.transactionProjectChanges)
             this.projectVersions.set(id, (this.projectVersions.get(id) ?? 0) + count);
-          const changed = this.transactionProjectChanges.size > 0;
+          const changed = this.transactionProjectChanges.size > 0 || this.versions.pendingChanged;
+          this.versions.commit();
           this.pendingBefore = undefined;
           this.inTransaction = false;
           this.transactionChanges = 0;
@@ -775,6 +793,8 @@ export class HostStore {
           this.inTransaction = false;
           this.transactionChanges = 0;
           this.transactionProjectChanges.clear();
+          this.versions.clearPending();
+          this.versions.forgetListed();
           this.cache.clear();
           this.summaryRows.clear();
           this.cacheWeights.clear();
@@ -1399,8 +1419,23 @@ export class HostStore {
     }
     return this.remember(value);
   }
+  /** Cold cancellable reads parse outside the SQL queue; see `prefetchColdSession`. */
+  private prefetchCold(id: string, signal: AbortSignal): Promise<void> {
+    return prefetchColdSession({
+      id,
+      signal,
+      path: this.sessionReadPath,
+      processes: this.sessionReadProcesses,
+      db: this.db,
+      resident: (key) => this.pending.has(key) || this.cache.has(key),
+      admit: (value) => this.remember(value),
+    });
+  }
   async session(id: string, signal?: AbortSignal): Promise<HostSession> {
-    if (signal) return this.withReadCancellation(signal, () => this.session(id));
+    if (signal)
+      return this.prefetchCold(id, signal).then(() =>
+        this.withReadCancellation(signal, () => this.session(id)),
+      );
     return this.db.storeScope(async () => {
       const value = await this.find(id);
       if (!value) throw new Error("Session not found on this machine");
@@ -1581,7 +1616,10 @@ export class HostStore {
     });
   }
   async sync(id: string, revision?: number, signal?: AbortSignal): Promise<SessionSync> {
-    if (signal) return this.withReadCancellation(signal, () => this.sync(id, revision));
+    if (signal)
+      return this.prefetchCold(id, signal).then(() =>
+        this.withReadCancellation(signal, () => this.sync(id, revision)),
+      );
     return this.db.storeScope(async () => {
       const value = await this.session(id);
       const { blockRevisions, ...snapshot } = value;
@@ -1887,7 +1925,7 @@ export class HostStore {
               // never reach the pending rows, where every later write would replay it.
               assertNextRevision(input.session.id, previous?.revision, input.revision);
               this.bumpChangeVersion();
-              this.touchProject(input.projectId);
+              this.touchSavedSession(input);
               // Legacy mirrors may omit display provenance. They cannot erase
               // or replace a Host-accepted author on the same block identity.
               const previousIndex = previous ? indexBlocks(previous.session.blocks) : undefined;
