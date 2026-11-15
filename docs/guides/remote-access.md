@@ -75,8 +75,18 @@ Pairing and device permissions still apply. A headless Host does not run the
 desktop account publisher. Quick Tunnels have no uptime guarantee and do not
 support SSE; HTTP RPC remains the fallback transport.
 
+**Settings → Connections** lists **Machines found** above the saved machines. It
+combines computers signed in to your account, Tailscale devices and SSH config
+aliases, each with its OS, online state and sources; **Refresh machines** reloads
+it. Choose **Add** to connect one. A machine with an SSH address is set up as in
+the SSH section below, without a form. Manual entry stays under **Advanced: add
+manually**, collapsed by default.
+
+Each saved machine row shows its status and a route count; **N routes ›** opens
+its addresses. The row's switch turns that machine's connection on or off.
+
 A computer that only the account knows (no SSH address) is added with one click
-from Settings → Machines → Machines found. The requesting desktop sends an end-to-end
+from Machines found. The requesting desktop sends an end-to-end
 encrypted request through the account; the other computer shows the requester's name,
 platform and a six-digit code to compare, with Allow and Deny. On Allow, that computer
 issues a device credential, seals it to the requester's one-time key and the account
@@ -344,7 +354,7 @@ for copying without repeating it in the status row.
 SSH settings load keys, known hosts and agent information independently. A failed
 section has its own **Retry** action; successfully loaded sections remain available.
 
-In **Settings → Connections → Add machine**, enter an SSH address (`user@my-mac-mini`) or an alias from your SSH config and click **Connect**. The machine picker also links to this Settings page. An optional name and SSH port are available.
+To type an address yourself, open **Settings → Connections → Advanced: add manually**, enter an SSH address (`user@my-mac-mini`) or an alias from your SSH config and click **Connect**. The machine picker also links to this Settings page. An optional name and SSH port are available.
 
 bycoda downloads the host package matching the desktop release and remote architecture, verifies its checksum, installs a background service, pairs this desktop, and opens a private SSH forward. Node is included in the host package; users do not build the host, install Node, copy tokens, or run a tunnel command. Existing running hosts are reused without interrupting their agents.
 
@@ -404,7 +414,7 @@ Open an SSH tunnel from your laptop:
 ssh -N -L 3776:127.0.0.1:3776 user@your-host
 ```
 
-Under **Settings → Connections → Machines → Add machine**, choose **Host URL** and enter `http://127.0.0.1:3776` and the device token.
+Under **Settings → Connections → Advanced: add manually**, choose **Host URL** and enter `http://127.0.0.1:3776` and the device token.
 
 When the laptop wakes, restore the SSH tunnel. The remote view reconnects automatically and loads the host's latest persisted snapshot. An uncertain request retains its original command ID, including creation of a new session and its first message. **Retry** asks the host for that same command’s receipt, so a lost response does not create another conversation or submit the prompt again. Pending requests survive restarting the desktop and belong to the tab that created them.
 
@@ -558,7 +568,7 @@ This remains development-source behavior pending installed-platform acceptance.
 
 Supported: persistent remote text conversations with all ten local provider adapters, follow-up turns, approvals, questions where the provider offers them, cancellation, per-device revocation, reconnect, remote file browsing and text editing, Git status, file diffs, and history, staging and commits, branch selection and creation, worktree selection and creation, and a tracked Git diff against HEAD. OpenCode's server and event stream stay on the host's loopback interface. Cursor's optional enrichment from its native session database is not available on the headless host; basic transcript and subagent events still work. The desktop polls the host and downloads only transcript blocks that changed since its last update (every 0.75 s while a session runs, 3 s otherwise). The desktop rejects any single host response over 16 MiB. A sync above 4 MiB, such as reopening a very long transcript or one very large tool output, is sent as a series of bounded pieces of one consistent revision. Transcript size is therefore not limited by the response cap. The host writes streamed output in 120 ms batches and keeps a bounded event journal.
 
-Remote history appears in the Sessions sidebar of each project on a machine. Host snapshots also populate the app's normal session state while the tab is open; they are not written to the local session store. Remote `/compact` uses the provider's context compaction, and `/plan` selects the host provider's plan mode. Queued follow-ups and editing the last message still need host commands. Other local slash commands and skill expansion are not yet available remotely. Worktree deletion, terminals, generated image output, named provider accounts, `/operator`, automations, orchestration, LAN discovery, and account-based tunnels are not implemented yet. Other remote prompts are sent directly to the provider.
+Remote history appears in the Sessions sidebar of each project on a machine. Host snapshots also populate the app's normal session state while the tab is open; they are not written to the local session store. Remote `/compact` uses the provider's context compaction, and `/plan` selects the host provider's plan mode. Queued follow-ups and editing the last message still need host commands. Other local slash commands and skill expansion are not yet available remotely. Worktree deletion, terminals, generated image output, named provider accounts, `/operator`, automations, and orchestration are not implemented yet. Other remote prompts are sent directly to the provider.
 
 The headless host runs the reused TypeScript adapters with a Node process backend. It proves the execution boundary without introducing the planned Rust daemon/worker IPC yet. Node is included in host release archives, separately from the desktop application.
 

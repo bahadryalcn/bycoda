@@ -55,7 +55,7 @@ and verified unexpected retirement creates a replacement. Unknown retirement
 blocks replacement. Stopping the Host tunnel or turning the switch off disables
 automatic restart. Foreign/corrupt state is preserved and reported as unavailable.
 
-While account computer discovery is enabled and the desktop is signed in, the
+While **Let my signed-in phones find this computer** is on and the desktop is signed in, the
 publisher checks Host routes every five seconds. Routes are ordered LAN, Tailscale,
 then the live tunnel, capped at four with one slot reserved for the tunnel.
 Stopping a tunnel removes its URL at the next successful check. Only endpoints
