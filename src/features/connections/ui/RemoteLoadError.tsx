@@ -23,6 +23,7 @@ export function RemoteLoadError({
   compact = false,
   coordinated = true,
   onDismiss,
+  recovering = false,
 }: {
   cwd: string;
   failure: RemoteFailure;
@@ -32,12 +33,20 @@ export function RemoteLoadError({
   /** The workspace notice renders the single shared recovery control. */
   coordinated?: boolean;
   onDismiss?: () => void;
+  /** Shared machine notice while automatic recovery handles a short outage. */
+  recovering?: boolean;
 }) {
   useLocale();
   const { machine, status, reconnecting, reconnect } = useRemoteConnection(cwd);
   const [reconnectError, setReconnectError] = useState("");
   const shared = useRemoteConnectionFeedback(coordinated ? cwd : undefined, failure);
   if (shared) return null;
+  if (recovering)
+    return (
+      <Alert tone="info" inline>
+        {machine?.name ?? t("this machine")} · {t("Reconnecting…")}
+      </Alert>
+    );
   const name = machine?.name ?? t("this machine");
   const title =
     failure.kind === "unreachable"

@@ -292,7 +292,7 @@ function AddRemoteProjectForm({
             size="inline"
             kind="empty"
             description={t(
-              "No machines are connected yet. Add one in Settings, then open a folder on it here.",
+              "No machines are connected yet. Pick one found on your account in Settings, then open a folder on it here.",
             )}
           />
         </>

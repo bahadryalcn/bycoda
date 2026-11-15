@@ -58,6 +58,34 @@ A folder on a connected machine is a project in the rail, marked with a globe. E
 
 When a continued Codex conversation is archived in Codex, sending a follow-up asks the owning provider to restore that same thread before starting the turn. Opening history alone does not restore it. If restoration or identity verification fails, the follow-up fails rather than silently starting an empty thread. Check the owning machine and account before retrying.
 
+## Free access outside your network
+
+In **Settings → Connections → External tunnels**, enable **Access from outside
+the network (Cloudflare Quick Tunnel)** for the selected Host. It is off by default.
+No Cloudflare account, token or paid service is needed. bycoda uses an installed
+cloudflared or downloads a pinned, checksum-verified copy into its private data
+directory. The URL changes whenever the tunnel starts. The Host starts it again
+after restart or verified unexpected exit. Stopping the tunnel disables this setting.
+
+With account computer discovery enabled and the desktop signed in, URL changes
+are published within the next five-second check. Paired desktop clients re-fetch
+account routes during reconnect and verify the Host environment identity before
+sending their saved credential. Account listing permission remains required.
+Pairing and device permissions still apply. A headless Host does not run the
+desktop account publisher. Quick Tunnels have no uptime guarantee and do not
+support SSE; HTTP RPC remains the fallback transport.
+
+A computer that only the account knows (no SSH address) is added with one click
+from Settings → Machines → Machines found. The requesting desktop sends an end-to-end
+encrypted request through the account; the other computer shows the requester's name,
+platform and a six-digit code to compare, with Allow and Deny. On Allow, that computer
+issues a device credential, seals it to the requester's one-time key and the account
+only relays the sealed box. The requester verifies the Host identity on the published
+HTTPS route before sending the one-time ticket, then saves and connects the machine.
+Plain HTTP is used only for loopback. The other computer must be signed in with the same
+account, online, and have "Let my signed-in phones find this computer" on; pairing needs
+its phone access (Tailscale or local network) to be set up once.
+
 ## Create a Host conversation on this computer
 
 Windows Host packages include a native background launcher. Its per-user login
@@ -574,3 +602,15 @@ Host CI runs on Windows, macOS, and Linux. Windows-specific tests cover ACL inhe
 Required approvals appear inside the source conversation when it is visible, or in an application confirmation when it is not. SSH, desktop actions, management, Inbox, Room delegation, file access, privacy recovery and quit confirmations use this flow. The exact target and operation remain visible. Expired requests, closed source windows and changed privacy scope cannot authorize work. Application-owned approvals never fall back to an operating-system or browser confirmation dialog; system permission prompts and file pickers remain platform-owned.
 
 Full access reuses execution permission for saved SSH commands in the original coding session. It does not grant publication, credentials, clipboard or physical input, persistent file access, privacy changes or delegation. Those decisions keep their existing approval boundaries.
+
+### Short connection interruptions
+
+During sleep, network changes or a Host restart, mounted workspace panes share one
+**Reconnecting…** notice per machine for up to 45 seconds. Loaded content and drafts
+stay available; authentication, identity and protocol refusals still need immediate
+attention. A longer outage exposes the existing reconnect controls and details.
+Automatic reconnect disabled keeps manual recovery available immediately.
+
+A failed request does not close an SSH forward that still answers a bounded HTTP
+probe. SSH keepalives tolerate three missed replies at 15-second intervals. Recovery
+never replays an operation whose outcome is unknown.

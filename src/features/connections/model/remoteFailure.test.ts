@@ -127,3 +127,16 @@ describe("classifyRemoteError", () => {
     expect([1, 2, 5].map(unreachablePollDelay)).toEqual([15_000, 30_000, 30_000]);
   });
 });
+
+it("classifies serialized RPC transport errors without losing their message", () => {
+  expect(
+    classifyRemoteError({
+      message: "The host request did not complete [RPC_HOST_UNAVAILABLE] (workspace.run).",
+    }).kind,
+  ).toBe("unreachable");
+});
+it("does not mistake a Host operation error for a transport outage", () => {
+  expect(
+    classifyRemoteError("Host rejected request: SSH connection failed in deployment script").kind,
+  ).toBe("other");
+});

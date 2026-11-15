@@ -1,0 +1,38 @@
+{
+  "Self": { "ID": "self", "UserID": 1 },
+  "Peer": {
+    "a": {
+      "ID": "a",
+      "HostName": "win",
+      "DNSName": "win.tail.ts.net.",
+      "OS": "windows",
+      "Online": true,
+      "UserID": 1,
+      "TailscaleIPs": ["100.64.0.1"]
+    },
+    "b": {
+      "ID": "b",
+      "HostName": "mac",
+      "DNSName": "mac.tail.ts.net.",
+      "OS": "macOS",
+      "Online": false,
+      "UserID": 1,
+      "TailscaleIPs": ["100.64.0.2"]
+    },
+    "c": {
+      "ID": "c",
+      "HostName": "phone",
+      "OS": "android",
+      "UserID": 1,
+      "TailscaleIPs": ["100.64.0.3"]
+    },
+    "d": {
+      "ID": "d",
+      "HostName": "shared",
+      "OS": "linux",
+      "UserID": 2,
+      "TailscaleIPs": ["100.64.0.4"]
+    },
+    "e": { "ID": "self", "HostName": "self", "UserID": 1 }
+  }
+}

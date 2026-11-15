@@ -16,6 +16,24 @@ const tailnetReady: MobileAccessStatus = {
 afterEach(() => vi.useRealTimers());
 
 describe("createMobileRoutes", () => {
+  it("publishes LAN, Tailscale, then the live tunnel and removes a stopped tunnel", async () => {
+    let tunnel: string | undefined = "https://fresh.trycloudflare.com";
+    const routes = createMobileRoutes({
+      lan: async () => lanReady,
+      tailscale: async () => tailnetReady,
+      tunnel: () => tunnel,
+    });
+    expect((await routes()).map((route) => route.endpoint)).toEqual([
+      lanReady.endpoint,
+      tailnetReady.endpoint,
+      tunnel,
+    ]);
+    tunnel = undefined;
+    expect((await routes()).map((route) => route.endpoint)).toEqual([
+      lanReady.endpoint,
+      tailnetReady.endpoint,
+    ]);
+  });
   it("retries a failed slow probe one minute after it settles", async () => {
     vi.useFakeTimers();
     let fail!: (reason: Error) => void;

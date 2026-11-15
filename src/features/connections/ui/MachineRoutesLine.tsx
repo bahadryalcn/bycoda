@@ -9,26 +9,39 @@ import { Button } from "../../../shared/ui/Button";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Select } from "../../../shared/ui/Select";
 import { Switch } from "../../../shared/ui/Switch";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import {
+  mergeRoutes,
+  type MachineRoute as Route,
+  type MachineRoutes,
+  type RoutePreference,
+} from "../model/machineRoutes";
 import type { RemoteMachine } from "../model/protocol";
 
-export type RoutePreference = "saved" | "lan" | "tailscale";
-type Route = {
-  address: string;
-  kind: "tailscale" | "lan" | "name";
-  source: "saved" | "other" | "reported";
-  enabled: boolean;
-};
-type MachineRoutes = { routes: Route[]; prefer: RoutePreference; active?: string | null };
+export type { RoutePreference };
+
 type RouteCheck = { address: string; reachable: boolean | null };
 
 const kindLabel = (kind: Route["kind"]) =>
-  kind === "tailscale" ? t("Tailscale") : kind === "lan" ? t("Home network") : t("SSH name");
-const sourceLabel = (source: Route["source"]) =>
-  source === "saved"
-    ? t("SSH address")
-    : source === "other"
-      ? t("Other address")
-      : t("Found by the host");
+  kind === "tailscale"
+    ? t("Tailscale")
+    : kind === "lan"
+      ? t("Home network")
+      : kind === "tunnel"
+        ? t("Tunnel")
+        : kind === "url"
+          ? t("Host URL")
+          : t("SSH name");
+const sourceLabel = (route: Route, ssh: boolean) =>
+  route.source === "account"
+    ? t("Found automatically")
+    : route.source === "saved"
+      ? ssh
+        ? t("SSH address")
+        : t("Saved address")
+      : route.source === "other"
+        ? t("Other address")
+        : t("Found by the host");
 
 /** A machine's ways in, in the order a connection tries them, with whether each
  * answers now and which one is in use. The SSH and other address are the
@@ -51,16 +64,19 @@ function MachineRouteDetails({ machine }: { machine: RemoteMachine }) {
   const [probeError, setProbeError] = useState(false);
   const [loading, setLoading] = useState(true);
   const [retry, setRetry] = useState(0);
-  const key = ssh ? JSON.stringify(ssh) : "";
+  const key = JSON.stringify(ssh ?? null);
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keeps this mounted machine's native route snapshot current across retries and cancels obsolete reads on cleanup.
   useEffect(() => {
-    if (!key) return;
     let current = true;
-    const target = JSON.parse(key);
+    const target = JSON.parse(key) as RemoteMachine["ssh"];
     setLoading(true);
     setReadError(false);
     setProbeError(false);
-    invoke<MachineRoutes>("remote_machine_routes", { machineId: machine.id, target })
+    invoke<MachineRoutes>("remote_machine_routes", {
+      machineId: machine.id,
+      target,
+      environmentId: machine.environmentId,
+    })
       .then((value) => current && setRoutes(value))
       .catch((reason: unknown) => {
         if (current)
@@ -71,7 +87,11 @@ function MachineRouteDetails({ machine }: { machine: RemoteMachine }) {
       .finally(() => {
         if (current) setLoading(false);
       });
-    invoke<RouteCheck[]>("remote_machine_route_check", { target })
+    // Only SSH addresses can be checked from here; a Host URL answers through its own requests.
+    (target
+      ? invoke<RouteCheck[]>("remote_machine_route_check", { target })
+      : Promise.resolve<RouteCheck[]>([])
+    )
       .then(
         (value) =>
           current &&
@@ -86,8 +106,8 @@ function MachineRouteDetails({ machine }: { machine: RemoteMachine }) {
     return () => {
       current = false;
     };
-  }, [machine.id, key, retry]);
-  if (!ssh) return null;
+  }, [machine.id, machine.environmentId, key, retry]);
+  if (!ssh && !routes) return null;
   // Without the desktop's route store only the saved other address is known.
   if (!routes)
     return (
@@ -102,15 +122,16 @@ function MachineRouteDetails({ machine }: { machine: RemoteMachine }) {
             {t("Retry")}
           </Button>
         ) : null}
-        {ssh.alternate ? (
+        {ssh?.alternate ? (
           <Text wrap="anywhere" as="div" tone="muted" className="mt-1">
             {t("Other address · ")}
-            {ssh.alternate}
+            {ssh?.alternate}
           </Text>
         ) : null}
       </div>
     );
   const save = (disabled: string[], prefer: RoutePreference) => {
+    if (!ssh) return;
     setSaving(true);
     setError("");
     invoke<MachineRoutes>("remote_machine_route_settings", {
@@ -123,6 +144,7 @@ function MachineRouteDetails({ machine }: { machine: RemoteMachine }) {
       .catch((reason: unknown) => setError(String(reason)))
       .finally(() => setSaving(false));
   };
+  const shown = mergeRoutes(machine, routes);
   const disabled = routes.routes.filter((route) => !route.enabled).map((route) => route.address);
   const toggle = (address: string, on: boolean) =>
     save(
@@ -133,14 +155,21 @@ function MachineRouteDetails({ machine }: { machine: RemoteMachine }) {
     <section className="mt-3 flex flex-col gap-2" data-machine-routes aria-label={t("Addresses")}>
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div className="min-w-0">
-          <Text as="div" size="secondary" tone="inherit" weight="medium">
-            {t("Addresses")}
-          </Text>
-          <Text as="p" tone="muted">
-            {t("Tried in this order; the first one that answers is used.")}
-          </Text>
+          <div className="flex items-center gap-1">
+            <Text as="div" size="secondary" tone="inherit" weight="medium">
+              {t("Addresses")}
+            </Text>
+            <InfoPopover label={t("About addresses")}>
+              <Text as="p">{t("Tried in this order; the first one that answers is used.")}</Text>
+              {ssh ? (
+                <Text as="p" tone="muted" className="mt-2">
+                  {t("Change the SSH and other address with Edit name and address.")}
+                </Text>
+              ) : null}
+            </InfoPopover>
+          </div>
         </div>
-        {routes.routes.length > 1 ? (
+        {ssh && routes.routes.length > 1 ? (
           <div className="w-48">
             <Select
               label={t("Try first")}
@@ -160,7 +189,7 @@ function MachineRouteDetails({ machine }: { machine: RemoteMachine }) {
         ) : null}
       </div>
       <Surface as="ul" variant="outline" padding="none" dividers="stroke" className="flex flex-col">
-        {routes.routes.map((route) => {
+        {shown.routes.map((route) => {
           const inUse = route.address === routes.active;
           const reachable = checks?.[route.address];
           return (
@@ -174,7 +203,7 @@ function MachineRouteDetails({ machine }: { machine: RemoteMachine }) {
                   {route.address}
                 </Text>
                 <Text as="div" tone="muted">
-                  {kindLabel(route.kind)} · {sourceLabel(route.source)}
+                  {kindLabel(route.kind)} · {sourceLabel(route, Boolean(ssh))}
                 </Text>
               </div>
               <div className="flex shrink-0 items-center gap-2">
@@ -209,9 +238,6 @@ function MachineRouteDetails({ machine }: { machine: RemoteMachine }) {
           );
         })}
       </Surface>
-      <Text as="p" tone="muted">
-        {t("Change the SSH and other address with Edit name and address.")}
-      </Text>
       {error ? <InlineError>{error}</InlineError> : null}
       {readError ? <InlineError>{t("Addresses could not be loaded.")}</InlineError> : null}
       {probeError ? <InlineError>{t("Address check unavailable.")}</InlineError> : null}

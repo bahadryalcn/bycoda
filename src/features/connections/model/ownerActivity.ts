@@ -24,8 +24,7 @@ const defaults: OwnerActivityDeps = {
  */
 export function reportOwnerActivity(deps: OwnerActivityDeps = defaults): void {
   if (!deps.active()) return;
-  for (const machine of deps.machines())
-    deps.send(machine.id).catch(() => undefined);
+  for (const machine of deps.machines()) deps.send(machine.id).catch(() => undefined);
 }
 
 /** Starts the periodic report; returns the stop function. */

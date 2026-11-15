@@ -16,6 +16,7 @@ const TAILSCALE_TTL_MS = 60_000;
 export function createMobileRoutes(dependencies: {
   lan: () => Promise<MobileAccessStatus>;
   tailscale: () => Promise<MobileAccessStatus>;
+  tunnel?: () => string | undefined;
 }) {
   let tailscale:
     | { at: number; pending: boolean; endpoint: Promise<string | undefined> }
@@ -42,11 +43,13 @@ export function createMobileRoutes(dependencies: {
       // start another CLI while the original probe is still running.
       withTimeout(tailscale.endpoint, 250, "Mobile route discovery").catch(() => undefined),
     ]);
+    const tunnel = dependencies.tunnel?.();
     return [
       ...(lan?.state === "ready" && lan.endpoint && lan.lanKey
         ? [{ endpoint: lan.endpoint, lanKey: lan.lanKey }]
         : []),
       ...(tailnet ? [{ endpoint: tailnet }] : []),
+      ...(tunnel ? [{ endpoint: tunnel }] : []),
     ];
   };
 }
