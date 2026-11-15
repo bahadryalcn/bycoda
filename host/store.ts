@@ -1,4 +1,10 @@
-import { sessionAttention, sessionUnread } from "./sessions/session-attention";
+import { sessionMetadataUpdate, type SessionMetadataPatch } from "./sessions/session-metadata";
+import {
+  sessionAttention,
+  sessionUnread,
+  sessionAttentionListFields,
+  sessionAttentionSummary,
+} from "./sessions/session-attention";
 import {
   decodeDelegationParent,
   DELEGATION_PARENT_KEY,
@@ -61,7 +67,6 @@ import type {
   RemoteProvider,
   SessionSync,
 } from "../src/features/connections/model/protocol";
-import type { LinkedWorkItem } from "../src/features/sessions/model/session";
 import { sessionNeedsInput, type Block } from "../src/features/sessions/model/session";
 import { changedBlocks } from "../src/features/sessions/model/blockChanges";
 import { streamingTextUpdate } from "../src/features/sessions/model/stableBlocks";
@@ -476,7 +481,12 @@ export class HostStore {
     }
   }
   private touchSavedSession(value: HostSession): void {
-    const { revision: _r, updatedAt: _u, createdAt: _c, ...visible } = summary(value);
+    const {
+      revision: _r,
+      updatedAt: _u,
+      createdAt: _c,
+      ...visible
+    } = sessionAttentionListFields(summary(value));
     const moves = this.versions.saved(
       value.session.id,
       JSON.stringify(visible),
@@ -1440,7 +1450,7 @@ export class HostStore {
     return this.db.storeScope(async () => {
       const value = await this.find(id);
       if (!value) throw new Error("Session not found on this machine");
-      return value;
+      return { ...value, unread: sessionUnread(value), snoozedUntil: value.snoozedUntil ?? null };
     });
   }
   /** Authorization must not parse/load a transcript, even on a cold cache. */
@@ -1927,7 +1937,6 @@ export class HostStore {
               // never reach the pending rows, where every later write would replay it.
               assertNextRevision(input.session.id, previous?.revision, input.revision);
               this.bumpChangeVersion();
-              this.touchSavedSession(input);
               // Legacy mirrors may omit display provenance. They cannot erase
               // or replace a Host-accepted author on the same block identity.
               const previousIndex = previous ? indexBlocks(previous.session.blocks) : undefined;
@@ -1990,7 +1999,11 @@ export class HostStore {
                 this.touchProject(previous.projectId);
               const value = {
                 ...accepted,
-                ...sessionAttention(accepted, previous),
+                ...sessionAttention(
+                  accepted,
+                  previous,
+                  (event as { type?: string } | null)?.type === "session.metadata",
+                ),
                 ...(authorityGeneration === undefined ? {} : { authorityGeneration }),
                 // Older snapshots have no creation time. Preserve their last recorded
                 // timestamp when they are first written by this version of the host.
@@ -1998,6 +2011,7 @@ export class HostStore {
                   input.createdAt ?? previous?.createdAt ?? previous?.updatedAt ?? input.updatedAt,
                 blockRevisions: blockRevisions(previous, accepted, options.blockChanges),
               };
+              this.touchSavedSession(value);
               const id = value.session.id;
               const row = { revision: value.revision, event };
               if (
@@ -2369,55 +2383,16 @@ export class HostStore {
 
   async updateSession(
     id: string,
-    patch: {
-      title?: string;
-      archived?: boolean;
-      pinned?: boolean;
-      linkedWorkItem?: LinkedWorkItem | null;
-      unread?: boolean;
-      snoozedUntil?: number | null;
-      expectedRevision?: number;
-    },
+    patch: SessionMetadataPatch,
     authorityGeneration?: number,
   ): Promise<HostSessionSummary> {
-    if (
-      Object.keys(patch).some(
-        (key) => !["title", "archived", "pinned", "linkedWorkItem", "unread", "snoozedUntil", "expectedRevision"].includes(key),
-      )
-    )
-      throw new Error("Unsupported client-editable session metadata.");
     return this.db.storeScope(async () => {
       return await this.withAuthorityGeneration(id, authorityGeneration, async () => {
         const current = await this.session(id);
-        if (patch.expectedRevision !== undefined && patch.expectedRevision !== current.revision)
-          throw new Error("This session changed. Refresh the list and review it again.");
-        if (patch.unread !== undefined && typeof patch.unread !== "boolean") throw new Error("Invalid unread value");
-        if (patch.snoozedUntil !== undefined && patch.snoozedUntil !== null &&
-            (!Number.isSafeInteger(patch.snoozedUntil) || patch.snoozedUntil <= Date.now()))
-          throw new Error("Invalid snooze time");
-        if (patch.title !== undefined && (!patch.title.trim() || patch.title.length > 200))
-          throw new Error("Invalid session title");
-        const next = await this.save(
-          {
-            ...current,
-            revision: current.revision + 1,
-            archived: patch.archived ?? current.archived,
-            pinned: patch.pinned ?? current.pinned,
-            ...(patch.unread === undefined ? {} : {
-              forceUnread: patch.unread,
-              ...(patch.unread ? {} : { lastViewedAt: Date.now(), lastViewedRevision: current.revision }),
-            }),
-            ...(patch.snoozedUntil === undefined ? {} : { snoozedUntil: patch.snoozedUntil }),
-            session: {
-              ...current.session,
-              ...(patch.title === undefined ? {} : { title: patch.title.trim() }),
-              ...(patch.linkedWorkItem === undefined
-                ? {}
-                : { linkedWorkItem: patch.linkedWorkItem ?? undefined }),
-            },
-          },
-          { type: "session.metadata", patch },
-        );
+        const next = await this.save(sessionMetadataUpdate(current, patch), {
+          type: "session.metadata",
+          patch,
+        });
         return summary(next);
       });
     });
@@ -2992,12 +2967,7 @@ function summaryFromBlocks(value: HostSession): HostSessionSummary {
     createdAt: value.createdAt ?? value.updatedAt,
     archived: value.archived,
     pinned: value.pinned,
-    unread: sessionUnread(value),
-    lastViewedAt: value.lastViewedAt ?? 0,
-    lastViewedRevision: value.lastViewedRevision ?? value.revision,
-    agentActivityRevision: value.agentActivityRevision ?? 0,
-    forceUnread: value.forceUnread ?? false,
-    snoozedUntil: value.snoozedUntil ?? null,
+    ...sessionAttentionSummary(value),
     linkedWorkItem: value.session.linkedWorkItem,
     needsInput: sessionNeedsInput(value.session),
     draft: value.session.blocks.some((block) => block.role === "user" && block.draft),

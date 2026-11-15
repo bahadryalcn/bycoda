@@ -51,6 +51,24 @@ async function open(input: Parameters<typeof confirmSessionDelete>[0]) {
 }
 
 describe("app confirmation host", () => {
+  it("renders a structured interruption preview and cancels without native dialogs", async () => {
+    const pending = confirmInApp({
+      title: "Update available",
+      message: "Update this computer",
+      confirmLabel: "Install and restart",
+      tone: "danger",
+      body: createElement("p", null, "Work PC: 2 running sessions"),
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 60));
+    });
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+      "Work PC: 2 running sessions",
+    );
+    await act(async () => button("Cancel")!.click());
+    expect(await pending).toBe(false);
+    expect(mocks.ask).not.toHaveBeenCalled();
+  });
   it("shows the shared dialog, never the platform dialog, with the target and a danger action", async () => {
     const { pending } = await open({ count: 1, title: "Fix login" });
     expect(mocks.ask).not.toHaveBeenCalled();

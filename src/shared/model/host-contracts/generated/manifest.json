@@ -38950,6 +38950,11 @@
           {
             "additionalProperties": false,
             "properties": {
+              "agentActivityRevision": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
               "archived": { "type": "boolean" },
               "authorityGeneration": {
                 "maximum": 9007199254740991,
@@ -38986,6 +38991,7 @@
                 "type": "object"
               },
               "executionOwner": { "enum": ["host", "desktop"], "type": "string" },
+              "forceUnread": { "type": "boolean" },
               "head": {
                 "additionalProperties": false,
                 "properties": {
@@ -39007,6 +39013,12 @@
               },
               "historyLoading": { "type": "boolean" },
               "lastActivityAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+              "lastViewedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+              "lastViewedRevision": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
               "managedBy": {
                 "additionalProperties": false,
                 "properties": {
@@ -39056,11 +39068,18 @@
                 "propertyNames": { "type": "string" },
                 "type": "object"
               },
+              "snoozedUntil": {
+                "anyOf": [
+                  { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                  { "type": "null" }
+                ]
+              },
               "sourceEpoch": {
                 "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                 "type": "string"
               },
               "status": { "enum": ["idle", "running", "interrupted"], "type": "string" },
+              "unread": { "type": "boolean" },
               "updatedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
             },
             "required": ["projectId", "revision", "status", "updatedAt", "session"],
@@ -39356,6 +39375,11 @@
             "items": {
               "additionalProperties": false,
               "properties": {
+                "agentActivityRevision": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
                 "archived": { "type": "boolean" },
                 "authorityGeneration": {
                   "maximum": 9007199254740991,
@@ -39403,6 +39427,7 @@
                 },
                 "draft": { "type": "boolean" },
                 "executionOwner": { "enum": ["host", "desktop"], "type": "string" },
+                "forceUnread": { "type": "boolean" },
                 "harness": {
                   "enum": [
                     "codex",
@@ -39447,6 +39472,12 @@
                 "issueMessage": { "type": "string" },
                 "issueTurnId": { "type": "string" },
                 "lastActivityAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                "lastViewedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                "lastViewedRevision": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
                 "linkedWorkItem": {
                   "additionalProperties": false,
                   "properties": {
@@ -39571,12 +39602,19 @@
                   "enum": ["supervised", "auto-accept-edits", "auto", "full-access"],
                   "type": "string"
                 },
+                "snoozedUntil": {
+                  "anyOf": [
+                    { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                    { "type": "null" }
+                  ]
+                },
                 "sourceEpoch": {
                   "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                   "type": "string"
                 },
                 "status": { "enum": ["idle", "running", "interrupted"], "type": "string" },
                 "title": { "type": "string" },
+                "unread": { "type": "boolean" },
                 "updatedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                 "waiting": {
                   "additionalProperties": false,
@@ -39648,6 +39686,11 @@
                 "items": {
                   "additionalProperties": false,
                   "properties": {
+                    "agentActivityRevision": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
                     "archived": { "type": "boolean" },
                     "authorityGeneration": {
                       "maximum": 9007199254740991,
@@ -39702,6 +39745,7 @@
                     },
                     "draft": { "type": "boolean" },
                     "executionOwner": { "enum": ["host", "desktop"], "type": "string" },
+                    "forceUnread": { "type": "boolean" },
                     "harness": {
                       "enum": [
                         "codex",
@@ -39754,6 +39798,16 @@
                     "issueMessage": { "type": "string" },
                     "issueTurnId": { "type": "string" },
                     "lastActivityAt": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "lastViewedAt": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "lastViewedRevision": {
                       "maximum": 9007199254740991,
                       "minimum": 0,
                       "type": "integer"
@@ -39890,12 +39944,19 @@
                       "enum": ["supervised", "auto-accept-edits", "auto", "full-access"],
                       "type": "string"
                     },
+                    "snoozedUntil": {
+                      "anyOf": [
+                        { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                        { "type": "null" }
+                      ]
+                    },
                     "sourceEpoch": {
                       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                       "type": "string"
                     },
                     "status": { "enum": ["idle", "running", "interrupted"], "type": "string" },
                     "title": { "type": "string" },
+                    "unread": { "type": "boolean" },
                     "updatedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                     "waiting": {
                       "additionalProperties": false,
@@ -40029,6 +40090,11 @@
                       "value": {
                         "additionalProperties": false,
                         "properties": {
+                          "agentActivityRevision": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
                           "archived": { "type": "boolean" },
                           "authorityGeneration": {
                             "maximum": 9007199254740991,
@@ -40081,6 +40147,7 @@
                             "type": "object"
                           },
                           "executionOwner": { "enum": ["host", "desktop"], "type": "string" },
+                          "forceUnread": { "type": "boolean" },
                           "head": {
                             "additionalProperties": false,
                             "properties": {
@@ -40118,6 +40185,16 @@
                           },
                           "historyLoading": { "type": "boolean" },
                           "lastActivityAt": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "lastViewedAt": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "lastViewedRevision": {
                             "maximum": 9007199254740991,
                             "minimum": 0,
                             "type": "integer"
@@ -40183,6 +40260,12 @@
                             "propertyNames": { "type": "string" },
                             "type": "object"
                           },
+                          "snoozedUntil": {
+                            "anyOf": [
+                              { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                              { "type": "null" }
+                            ]
+                          },
                           "sourceEpoch": {
                             "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                             "type": "string"
@@ -40191,6 +40274,7 @@
                             "enum": ["idle", "running", "interrupted"],
                             "type": "string"
                           },
+                          "unread": { "type": "boolean" },
                           "updatedAt": {
                             "maximum": 9007199254740991,
                             "minimum": 0,
@@ -40222,6 +40306,11 @@
                       "value": {
                         "additionalProperties": false,
                         "properties": {
+                          "agentActivityRevision": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
                           "archived": { "type": "boolean" },
                           "authorityGeneration": {
                             "maximum": 9007199254740991,
@@ -40265,6 +40354,7 @@
                             "type": "object"
                           },
                           "executionOwner": { "enum": ["host", "desktop"], "type": "string" },
+                          "forceUnread": { "type": "boolean" },
                           "head": {
                             "additionalProperties": false,
                             "properties": {
@@ -40302,6 +40392,16 @@
                           },
                           "historyLoading": { "type": "boolean" },
                           "lastActivityAt": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "lastViewedAt": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "lastViewedRevision": {
                             "maximum": 9007199254740991,
                             "minimum": 0,
                             "type": "integer"
@@ -40367,6 +40467,12 @@
                             "propertyNames": { "type": "string" },
                             "type": "object"
                           },
+                          "snoozedUntil": {
+                            "anyOf": [
+                              { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                              { "type": "null" }
+                            ]
+                          },
                           "sourceEpoch": {
                             "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                             "type": "string"
@@ -40375,6 +40481,7 @@
                             "enum": ["idle", "running", "interrupted"],
                             "type": "string"
                           },
+                          "unread": { "type": "boolean" },
                           "updatedAt": {
                             "maximum": 9007199254740991,
                             "minimum": 0,
@@ -43177,6 +43284,11 @@
                   "value": {
                     "additionalProperties": false,
                     "properties": {
+                      "agentActivityRevision": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
                       "archived": { "type": "boolean" },
                       "authorityGeneration": {
                         "maximum": 9007199254740991,
@@ -43225,6 +43337,7 @@
                         "type": "object"
                       },
                       "executionOwner": { "enum": ["host", "desktop"], "type": "string" },
+                      "forceUnread": { "type": "boolean" },
                       "head": {
                         "additionalProperties": false,
                         "properties": {
@@ -43258,6 +43371,16 @@
                       },
                       "historyLoading": { "type": "boolean" },
                       "lastActivityAt": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "lastViewedAt": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "lastViewedRevision": {
                         "maximum": 9007199254740991,
                         "minimum": 0,
                         "type": "integer"
@@ -43319,11 +43442,18 @@
                         "propertyNames": { "type": "string" },
                         "type": "object"
                       },
+                      "snoozedUntil": {
+                        "anyOf": [
+                          { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                          { "type": "null" }
+                        ]
+                      },
                       "sourceEpoch": {
                         "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                         "type": "string"
                       },
                       "status": { "enum": ["idle", "running", "interrupted"], "type": "string" },
+                      "unread": { "type": "boolean" },
                       "updatedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
                     },
                     "required": ["projectId", "revision", "status", "updatedAt", "session"],
@@ -43351,6 +43481,11 @@
                   "value": {
                     "additionalProperties": false,
                     "properties": {
+                      "agentActivityRevision": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
                       "archived": { "type": "boolean" },
                       "authorityGeneration": {
                         "maximum": 9007199254740991,
@@ -43390,6 +43525,7 @@
                         "type": "object"
                       },
                       "executionOwner": { "enum": ["host", "desktop"], "type": "string" },
+                      "forceUnread": { "type": "boolean" },
                       "head": {
                         "additionalProperties": false,
                         "properties": {
@@ -43423,6 +43559,16 @@
                       },
                       "historyLoading": { "type": "boolean" },
                       "lastActivityAt": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "lastViewedAt": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "lastViewedRevision": {
                         "maximum": 9007199254740991,
                         "minimum": 0,
                         "type": "integer"
@@ -43484,11 +43630,18 @@
                         "propertyNames": { "type": "string" },
                         "type": "object"
                       },
+                      "snoozedUntil": {
+                        "anyOf": [
+                          { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                          { "type": "null" }
+                        ]
+                      },
                       "sourceEpoch": {
                         "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                         "type": "string"
                       },
                       "status": { "enum": ["idle", "running", "interrupted"], "type": "string" },
+                      "unread": { "type": "boolean" },
                       "updatedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
                     },
                     "required": ["projectId", "revision", "status", "updatedAt", "session"],
@@ -76542,6 +76695,7 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "properties": {
+        "agentActivityRevision": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
         "archived": { "type": "boolean" },
         "authorityGeneration": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
         "autoWorktreeBranch": { "type": "string" },
@@ -76573,6 +76727,7 @@
         },
         "draft": { "type": "boolean" },
         "executionOwner": { "enum": ["host", "desktop"], "type": "string" },
+        "forceUnread": { "type": "boolean" },
         "harness": {
           "enum": [
             "codex",
@@ -76614,6 +76769,8 @@
         "issueMessage": { "type": "string" },
         "issueTurnId": { "type": "string" },
         "lastActivityAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+        "lastViewedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+        "lastViewedRevision": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
         "linkedWorkItem": {
           "additionalProperties": false,
           "properties": {
@@ -76734,12 +76891,19 @@
           "enum": ["supervised", "auto-accept-edits", "auto", "full-access"],
           "type": "string"
         },
+        "snoozedUntil": {
+          "anyOf": [
+            { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+            { "type": "null" }
+          ]
+        },
         "sourceEpoch": {
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
           "type": "string"
         },
         "status": { "enum": ["idle", "running", "interrupted"], "type": "string" },
         "title": { "type": "string" },
+        "unread": { "type": "boolean" },
         "updatedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
         "waiting": {
           "additionalProperties": false,
@@ -76821,6 +76985,11 @@
                 "value": {
                   "additionalProperties": false,
                   "properties": {
+                    "agentActivityRevision": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
                     "archived": { "type": "boolean" },
                     "authorityGeneration": {
                       "maximum": 9007199254740991,
@@ -76869,6 +77038,7 @@
                       "type": "object"
                     },
                     "executionOwner": { "enum": ["host", "desktop"], "type": "string" },
+                    "forceUnread": { "type": "boolean" },
                     "head": {
                       "additionalProperties": false,
                       "properties": {
@@ -76898,6 +77068,16 @@
                     },
                     "historyLoading": { "type": "boolean" },
                     "lastActivityAt": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "lastViewedAt": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "lastViewedRevision": {
                       "maximum": 9007199254740991,
                       "minimum": 0,
                       "type": "integer"
@@ -76959,11 +77139,18 @@
                       "propertyNames": { "type": "string" },
                       "type": "object"
                     },
+                    "snoozedUntil": {
+                      "anyOf": [
+                        { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                        { "type": "null" }
+                      ]
+                    },
                     "sourceEpoch": {
                       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                       "type": "string"
                     },
                     "status": { "enum": ["idle", "running", "interrupted"], "type": "string" },
+                    "unread": { "type": "boolean" },
                     "updatedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
                   },
                   "required": ["projectId", "revision", "status", "updatedAt", "session"],
@@ -76991,6 +77178,11 @@
                 "value": {
                   "additionalProperties": false,
                   "properties": {
+                    "agentActivityRevision": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
                     "archived": { "type": "boolean" },
                     "authorityGeneration": {
                       "maximum": 9007199254740991,
@@ -77030,6 +77222,7 @@
                       "type": "object"
                     },
                     "executionOwner": { "enum": ["host", "desktop"], "type": "string" },
+                    "forceUnread": { "type": "boolean" },
                     "head": {
                       "additionalProperties": false,
                       "properties": {
@@ -77059,6 +77252,16 @@
                     },
                     "historyLoading": { "type": "boolean" },
                     "lastActivityAt": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "lastViewedAt": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "lastViewedRevision": {
                       "maximum": 9007199254740991,
                       "minimum": 0,
                       "type": "integer"
@@ -77120,11 +77323,18 @@
                       "propertyNames": { "type": "string" },
                       "type": "object"
                     },
+                    "snoozedUntil": {
+                      "anyOf": [
+                        { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                        { "type": "null" }
+                      ]
+                    },
                     "sourceEpoch": {
                       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                       "type": "string"
                     },
                     "status": { "enum": ["idle", "running", "interrupted"], "type": "string" },
+                    "unread": { "type": "boolean" },
                     "updatedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
                   },
                   "required": ["projectId", "revision", "status", "updatedAt", "session"],
@@ -77175,6 +77385,7 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "properties": {
+        "agentActivityRevision": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
         "archived": { "type": "boolean" },
         "authorityGeneration": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
         "autoWorktreeBranch": { "type": "string" },
@@ -77203,6 +77414,7 @@
           "type": "object"
         },
         "executionOwner": { "enum": ["host", "desktop"], "type": "string" },
+        "forceUnread": { "type": "boolean" },
         "head": {
           "additionalProperties": false,
           "properties": {
@@ -77224,6 +77436,8 @@
         },
         "historyLoading": { "type": "boolean" },
         "lastActivityAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+        "lastViewedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+        "lastViewedRevision": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
         "managedBy": {
           "additionalProperties": false,
           "properties": {
@@ -77269,11 +77483,18 @@
           "propertyNames": { "type": "string" },
           "type": "object"
         },
+        "snoozedUntil": {
+          "anyOf": [
+            { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+            { "type": "null" }
+          ]
+        },
         "sourceEpoch": {
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
           "type": "string"
         },
         "status": { "enum": ["idle", "running", "interrupted"], "type": "string" },
+        "unread": { "type": "boolean" },
         "updatedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
       },
       "required": ["projectId", "revision", "status", "updatedAt", "session"],
@@ -77355,5 +77576,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "fe3d59f1e5646e992a710f5e27d4905657798b1270cb44565ebe799750d61db1"
+  "schemaHash": "b5d47021a063c320b7dfbdc43ae11aa59bde7e642b7b4af9477a34644ed80367"
 }

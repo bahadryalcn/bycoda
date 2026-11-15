@@ -14356,5 +14356,21 @@
   "{p0} planned the order, pools and assignments. Review them, then save.": "{p0} planificó el orden, los pools y las asignaciones. Revísalos y guarda.",
   "No model could plan the setup, so the researched benefit-per-cost ranking was used. Review it, then save.": "Ningún modelo pudo planificar la configuración, así que se usó la clasificación investigada de beneficio por coste. Revísala y guarda.",
   "Driver": "Controlador",
-  "The native helper that reads and controls apps. Cua Driver works in the background without taking focus.": "El asistente nativo que lee y controla las apps. Cua Driver trabaja en segundo plano sin tomar el foco."
+  "The native helper that reads and controls apps. Cua Driver works in the background without taking focus.": "El asistente nativo que lee y controla las apps. Cua Driver trabaja en segundo plano sin tomar el foco.",
+  "Update Host on {p0}?": "¿Actualizar Host en {p0}?",
+  "The selected Host restarts. Other machines are not updated.": "El Host seleccionado se reinicia. Los otros equipos no se actualizan.",
+  "Update impact by machine": "Efectos de la actualización por equipo",
+  "Running sessions": "Sesiones en ejecución",
+  "This app restarts": "Esta aplicación se reinicia",
+  "Host restarts": "Host se reinicia",
+  "No update on this machine": "Este equipo no se actualiza",
+  "{p0} may stop": "{p0} podrían detenerse",
+  "Machine activity could not be checked.": "No se pudo comprobar la actividad de los equipos.",
+  "Checking machine activity…": "Comprobando la actividad de los equipos…",
+  "Sessions that may be interrupted: {p0}.": "Sesiones que podrían interrumpirse: {p0}.",
+  "Unverified activity may also be interrupted.": "La actividad no verificada también podría interrumpirse.",
+  "Desktop-owned work may stop when this app restarts. Host-owned work continues while its Host stays running.": "El trabajo ejecutado por la aplicación de escritorio podría detenerse al reiniciarla. El del Host continúa mientras el Host siga en ejecución.",
+  "Running sessions and shells on the updated Host are interrupted.": "Se interrumpen las sesiones y terminales en ejecución en el Host actualizado.",
+  "Session history is kept. Interrupted work may require resuming.": "Se conserva el historial de sesiones. Podría ser necesario reanudar el trabajo interrumpido.",
+  "Denied": "Denegado"
 }

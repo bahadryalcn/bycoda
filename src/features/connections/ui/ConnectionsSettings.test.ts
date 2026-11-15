@@ -6,6 +6,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { ConnectionsSettings } from "./ConnectionsSettings";
 import { RevealedSetting } from "../../settings/public/ConnectionRecoverySettings";
 import { requestMachineAdd } from "../model/machineAdd";
+import { registerAppConfirmHost } from "../../../shared/model/appConfirm";
 import { useSyncStatus } from "../../sync/model/useSyncStatus";
 import { REMOTE_PROVIDERS, type RemoteMachine, type SshSetup } from "../model/protocol";
 
@@ -21,6 +22,8 @@ let container: HTMLDivElement;
 let root: Root;
 let state: SshSetup;
 let machines: RemoteMachine[];
+let stopConfirm: () => void;
+const approveUpdate = vi.fn(async () => true);
 const machine: RemoteMachine = {
   id: "machine",
   name: "Home Mac",
@@ -29,6 +32,9 @@ const machine: RemoteMachine = {
   ssh: { target: "me@home", remotePort: 3774 },
 };
 beforeEach(() => {
+  approveUpdate.mockResolvedValue(true);
+  approveUpdate.mockClear();
+  stopConfirm = registerAppConfirmHost(approveUpdate);
   vi.mocked(useSyncStatus).mockReturnValue({ state: "idle", pendingOps: 0 });
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.useFakeTimers();
@@ -68,6 +74,7 @@ beforeEach(() => {
   root = createRoot(container);
 });
 afterEach(() => {
+  stopConfirm();
   act(() => root.unmount());
   container.remove();
   vi.useRealTimers();
@@ -439,10 +446,28 @@ it("offers an explicit host update for an SSH machine missing workspace methods"
   expect(container.textContent).toContain("host update needed for Explorer and Changes");
   expect(container.textContent).toContain("interrupts active agent turns");
   await act(async () => button("Update Host").click());
+  expect(approveUpdate).toHaveBeenCalledWith(
+    expect.objectContaining({
+      title: "Update Host on Home Mac?",
+      tone: "danger",
+      body: expect.anything(),
+    }),
+  );
   expect(invoke).toHaveBeenCalledWith("remote_ssh_reconnect", {
     machineId: machine.id,
     upgrade: true,
   });
+});
+
+it("does not restart an SSH Host when interruption approval is cancelled", async () => {
+  machines = [machine];
+  approveUpdate.mockResolvedValue(false);
+  await render();
+  await act(async () => button("Update Host").click());
+  expect(approveUpdate).toHaveBeenCalledOnce();
+  expect(vi.mocked(invoke).mock.calls.some(([command]) => command === "remote_ssh_reconnect")).toBe(
+    false,
+  );
 });
 
 it("advertises every supported provider when checking a host", async () => {

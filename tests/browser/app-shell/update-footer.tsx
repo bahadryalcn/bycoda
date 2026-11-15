@@ -16,6 +16,8 @@ import { useUpdateNotices } from "../../../src/app/workspace/surfaces/useUpdateN
 import { languageReady } from "../../../src/shared/i18n";
 import { Button } from "../../../src/shared/ui/Button";
 import { ButtonGroup } from "../../../src/shared/ui/ButtonGroup";
+import { ConfirmDialog } from "../../../src/shared/ui/ConfirmDialog";
+import { UpdateImpactDetails } from "../../../src/features/connections/ui/UpdateImpact";
 import {
   Clock,
   FolderTree,
@@ -70,8 +72,71 @@ function ToolsFixture() {
 }
 
 function Fixture() {
+  if (params.has("impact")) return <UpdateImpactFixture />;
   if (params.has("tools")) return <ToolsFixture />;
   return <UpdateFixture />;
+}
+
+function UpdateImpactFixture() {
+  const kind = params.get("impact");
+  const target =
+    kind === "ssh"
+      ? { machineId: "remote" }
+      : kind === "host"
+        ? ("local-host" as const)
+        : ("app" as const);
+  return (
+    <ConfirmDialog
+      request={{
+        title:
+          kind === "ssh"
+            ? "Update Host on Studio Mac?"
+            : kind === "host"
+              ? "Update this computer's host now?"
+              : "Update available",
+        message: "Browser fixture · bycoda 0.8.0",
+        danger: true,
+        confirmLabel: kind === "host" || kind === "ssh" ? "Stop and update" : "Install and restart",
+        body: (
+          <UpdateImpactDetails
+            target={target}
+            failed={kind === "error"}
+            rows={
+              kind === "error" || kind === "loading"
+                ? undefined
+                : [
+                    {
+                      id: "local",
+                      name: "Work PC",
+                      local: true,
+                      affected: kind !== "ssh",
+                      running: 3,
+                      desktopRunning: 1,
+                    },
+                    {
+                      id: "remote",
+                      name: "Studio Mac",
+                      local: false,
+                      affected: kind === "ssh",
+                      running: 2,
+                      desktopRunning: 0,
+                    },
+                    {
+                      id: "offline",
+                      name: "Offline laptop",
+                      local: false,
+                      affected: false,
+                      running: null,
+                      desktopRunning: null,
+                    },
+                  ]
+            }
+          />
+        ),
+      }}
+      onSettle={() => {}}
+    />
+  );
 }
 
 function UpdateFixture() {

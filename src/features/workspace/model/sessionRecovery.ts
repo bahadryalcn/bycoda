@@ -21,7 +21,12 @@ export function eligibleRecoverySessions(
   const seen = new Set<string>();
   const rows: WorkspaceSessionStub[] = [];
   for (const stub of recovery.workspace.sessions) {
-    if (seen.has(stub.id) || recovery.resolvedIds?.includes(stub.id) || isLocked(stub.cwd))
+    if (
+      seen.has(stub.id) ||
+      recovery.resolvedIds?.includes(stub.id) ||
+      isLocked(stub.cwd) ||
+      (stub.worktreeCwd && isLocked(stub.worktreeCwd))
+    )
       continue;
     seen.add(stub.id);
     if (isRemoteProjectPath(stub.cwd) && stub.remoteSessionId) {
@@ -85,6 +90,60 @@ export type SessionRecovery = {
   workspace: WorkspaceSnapshot;
 };
 
+type RecoveryRemoval = { before: SessionRecovery; next: SessionRecovery; token: object };
+const removalOwners = new WeakMap<SessionRecovery, ReadonlyMap<string, object>>();
+
+function inheritRemovalOwners(from: SessionRecovery, to: SessionRecovery) {
+  const owners = removalOwners.get(from);
+  if (owners) removalOwners.set(to, owners);
+  return to;
+}
+
+/** An optimistic removal owns only its references, never a newer acknowledgment. */
+export function beginRecoveryRemoval(
+  before: SessionRecovery,
+  ids: readonly string[],
+): RecoveryRemoval {
+  const token = {};
+  const removed = recoveryIdsPresent(before, ids);
+  if (!removed.size) return { before, next: before, token };
+  const next = removeRecoverySessions(before, [...removed]);
+  const owners = new Map(removalOwners.get(next));
+  for (const id of removed) owners.set(id, token);
+  removalOwners.set(next, owners);
+  return { before, next, token };
+}
+
+/** Invert one failed removal while retaining newer captures, choices and acknowledgments. */
+export function rollbackRecoveryRemoval(
+  removal: RecoveryRemoval,
+  latest: SessionRecovery | null,
+): SessionRecovery | null {
+  if (!latest) return latest;
+  const owners = removalOwners.get(latest);
+  const ids = new Set(
+    removal.before.workspace.sessions
+      .filter((row) => owners?.get(row.id) === removal.token)
+      .map((row) => row.id),
+  );
+  if (!ids.size) return latest;
+  if (latest === removal.next) return removal.before;
+  const base = inheritRemovalOwners(latest, {
+    ...latest,
+    resolvedIds: (latest.resolvedIds ?? []).filter((id) => !ids.has(id)),
+  });
+  const restored = captureSessionRecovery(base, {
+    ...removal.before.workspace,
+    sessions: removal.before.workspace.sessions.filter((row) => ids.has(row.id)),
+    tabs: sessionRecoveryTabs(removal.before.workspace.tabs, ids),
+  })!;
+  const next = inheritRemovalOwners(restored, { ...restored, dismissed: latest.dismissed });
+  const remaining = new Map(removalOwners.get(next));
+  for (const id of ids) remaining.delete(id);
+  removalOwners.set(next, remaining);
+  return next;
+}
+
 // Stored with the native workspace snapshot, never in browser preferences.
 // All workspace writes (including quit) retain this journal.
 let journal: SessionRecovery | null = null;
@@ -97,6 +156,13 @@ export function hasInitializedSessionRecovery(): boolean {
   return initialized;
 }
 export function setSessionRecovery(value: SessionRecovery | null): void {
+  if (
+    journal &&
+    value &&
+    value.workspace === journal.workspace &&
+    value.resolvedIds === journal.resolvedIds
+  )
+    inheritRemovalOwners(journal, value);
   journal = value;
   initialized = true;
   heldIds = new Set([
@@ -142,7 +208,7 @@ export function captureSessionRecovery(
   const addedIds = new Set(added.map((s) => s.id));
   const tabs = sessionRecoveryTabs(workspace.tabs, addedIds);
   const used = new Set(previous.workspace.tabs.map((tab) => tab.id));
-  return {
+  return inheritRemovalOwners(previous, {
     ...previous,
     dismissed: false,
     workspace: {
@@ -153,7 +219,7 @@ export function captureSessionRecovery(
         ...tabs.map((tab) => ({ ...tab, id: used.has(tab.id) ? crypto.randomUUID() : tab.id })),
       ],
     },
-  };
+  });
 }
 
 /** Remove only recovery references; history and running work remain intact. */
@@ -162,10 +228,14 @@ export function removeRecoverySessions(
   ids: readonly string[],
 ): SessionRecovery {
   const removed = recoveryIdsPresent(recovery, ids);
-  return {
+  const next = {
     ...withoutRecoverySessions(recovery, removed),
     resolvedIds: [...new Set([...(recovery.resolvedIds ?? []), ...removed])],
   };
+  const owners = new Map(removalOwners.get(recovery));
+  for (const id of ids) owners.delete(id);
+  removalOwners.set(next, owners);
+  return next;
 }
 
 /**
@@ -192,7 +262,7 @@ function withoutRecoverySessions(
 ): SessionRecovery {
   const sessions = recovery.workspace.sessions.filter((s) => !removed.has(s.id));
   const tabs = sessionRecoveryTabs(recovery.workspace.tabs, new Set(sessions.map((s) => s.id)));
-  return {
+  return inheritRemovalOwners(recovery, {
     ...recovery,
     dismissed: sessions.length === 0 ? true : recovery.dismissed,
     workspace: {
@@ -203,7 +273,7 @@ function withoutRecoverySessions(
         ? recovery.workspace.activeTabId
         : (tabs[0]?.id ?? ""),
     },
-  };
+  });
 }
 
 /** Only chat panes: stale terminals/editors are never recreated by recovery. */

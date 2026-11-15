@@ -1,5 +1,5 @@
 import { Fragment, memo, useEffect, useState, type ReactNode, type RefObject } from "react";
-import { ExternalLink, Server, Sparkles, StickyNote } from "../../../shared/ui/icons";
+import { ExternalLink, Server, SkillGroupIcon, StickyNote } from "../../../shared/ui/icons";
 import { DraftToken } from "../../../shared/ui/DraftToken";
 import { UserLinkIcon } from "./UserLinkIcon";
 import { useLocale } from "../../../shared/i18n";
@@ -84,19 +84,29 @@ export const ComposerHighlight = memo(function ComposerHighlight({
               skillParts(plain, names).map((part, index) => {
                 const name = part.text.slice(1);
                 const group = part.skill ? groups.get(name) : undefined;
-                return part.skill ? (
+                return group ? (
                   <DraftToken
                     key={index}
                     prefix={part.text[0]}
-                    icon={<Sparkles />}
-                    label={group ? `${group.name} · ${group.members.length}` : name}
+                    icon={<SkillGroupIcon />}
+                    label={`${group.name} · ${group.members.length}`}
                     className="text-skill"
                     data-composer-skill-token=""
-                    data-composer-skill-group={group ? name : undefined}
-                    data-composer-skill-group-prefix={group ? part.text[0] : undefined}
+                    data-composer-skill-group={name}
+                    data-composer-skill-group-prefix={part.text[0]}
                   >
                     {name}
                   </DraftToken>
+                ) : part.skill ? (
+                  // The source text itself, at body size: every skill chip reads the same and
+                  // stays one space from its neighbours.
+                  <span
+                    key={index}
+                    className={`text-skill ${styles.skill}`}
+                    data-composer-skill-token=""
+                  >
+                    {part.text}
+                  </span>
                 ) : (
                   // Skill tokens always end on whitespace, so each remaining run still
                   // starts on a boundary `@mention` matching can rely on.

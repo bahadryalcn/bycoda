@@ -2,7 +2,7 @@ import { isoTimestamp } from "../../../shared/lib/time/timestamps";
 import { isChannelOnForPush, type ServerSyncDeps } from "./serverSyncSupport";
 import { applyToServerSettings, mergeSettings, readServerSnapshot } from "./serverPreferences";
 import { planFeed } from "./serverFeed";
-import type { NotificationSettings } from "@bycoda/account-contracts";
+import type { NotificationItem, NotificationSettings } from "@bycoda/account-contracts";
 import type { ServerReportEvent } from "./serverPort";
 
 export type ServerSync = ReturnType<typeof createServerSync>;
@@ -17,6 +17,8 @@ export function createServerSync(deps: ServerSyncDeps) {
   const { port, userId, store, local } = deps;
   let settings: NotificationSettings | null = null;
   let announcing = false;
+  /** Announced items by feed id, so reading them later can tell the in-app copy. */
+  const announcedItems = new Map<string, NotificationItem>();
 
   async function syncSettings(): Promise<NotificationSettings> {
     const server = await port.getSettings();
@@ -41,6 +43,7 @@ export function createServerSync(deps: ServerSyncDeps) {
     try {
       const current = settings ?? (await syncSettings());
       const feed = await port.listFeed({ limit: 30 });
+      deps.onItemsRead?.(feed.items.filter((item) => item.readAt !== null));
       const plan = planFeed(feed.items, {
         settings: current,
         now: deps.now(),
@@ -53,6 +56,7 @@ export function createServerSync(deps: ServerSyncDeps) {
         if (await deps.announce(item)) {
           announced.push(item.dedupeKey);
           readLater.push(item.id);
+          announcedItems.set(item.id, item);
         }
       }
       store.rememberShown([...announced, ...plan.handled.map((item) => item.dedupeKey)]);
@@ -75,6 +79,8 @@ export function createServerSync(deps: ServerSyncDeps) {
     if (ids.length === 0) return;
     const sent = ids.slice(0, 100);
     await port.markRead(sent);
+    deps.onItemsRead?.(sent.flatMap((id) => announcedItems.get(id) ?? []));
+    for (const id of sent) announcedItems.delete(id);
     // Ids appended while the request was in flight stay pending.
     const done = new Set(sent);
     store.savePendingRead(store.loadPendingRead().filter((id) => !done.has(id)));

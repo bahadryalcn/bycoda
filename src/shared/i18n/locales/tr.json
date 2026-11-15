@@ -14356,5 +14356,21 @@
   "{p0} planned the order, pools and assignments. Review them, then save.": "{p0} sıralamayı, pool'ları ve atamaları planladı. Gözden geçirip kaydedin.",
   "No model could plan the setup, so the researched benefit-per-cost ranking was used. Review it, then save.": "Kurulumu planlayabilecek model bulunamadı; araştırılmış fayda/maliyet sıralaması kullanıldı. Gözden geçirip kaydedin.",
   "Driver": "Sürücü",
-  "The native helper that reads and controls apps. Cua Driver works in the background without taking focus.": "Uygulamaları okuyan ve kontrol eden yerel yardımcı. Cua Driver odağı almadan arka planda çalışır."
+  "The native helper that reads and controls apps. Cua Driver works in the background without taking focus.": "Uygulamaları okuyan ve kontrol eden yerel yardımcı. Cua Driver odağı almadan arka planda çalışır.",
+  "Update Host on {p0}?": "{p0} üzerindeki Host güncellensin mi?",
+  "The selected Host restarts. Other machines are not updated.": "Seçilen Host yeniden başlar. Diğer bilgisayarlar güncellenmez.",
+  "Update impact by machine": "Bilgisayara göre güncelleme etkisi",
+  "Running sessions": "Çalışan oturumlar",
+  "This app restarts": "Bu uygulama yeniden başlar",
+  "Host restarts": "Host yeniden başlar",
+  "No update on this machine": "Bu bilgisayar güncellenmez",
+  "{p0} may stop": "{p0} oturum durabilir",
+  "Machine activity could not be checked.": "Bilgisayarlardaki etkinlik kontrol edilemedi.",
+  "Checking machine activity…": "Bilgisayarlardaki etkinlik kontrol ediliyor…",
+  "Sessions that may be interrupted: {p0}.": "Kesintiye uğrayabilecek oturum sayısı: {p0}.",
+  "Unverified activity may also be interrupted.": "Doğrulanamayan etkinlik de kesintiye uğrayabilir.",
+  "Desktop-owned work may stop when this app restarts. Host-owned work continues while its Host stays running.": "Bu uygulama yeniden başladığında masaüstünün yürüttüğü işler durabilir. Host’un yürüttüğü işler, Host çalıştığı sürece devam eder.",
+  "Running sessions and shells on the updated Host are interrupted.": "Güncellenen Host üzerindeki çalışan oturumlar ve terminaller kesintiye uğrar.",
+  "Session history is kept. Interrupted work may require resuming.": "Oturum geçmişi korunur. Kesilen işleri devam ettirmeniz gerekebilir.",
+  "Denied": "Reddedildi"
 }

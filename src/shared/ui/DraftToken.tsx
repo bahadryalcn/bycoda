@@ -45,8 +45,7 @@ export function DraftToken({
     while (block && getComputedStyle(block).display.startsWith("inline")) {
       block = block.parentElement;
     }
-    const sync = () =>
-      el.toggleAttribute("data-draft-token-wrapped", el.getClientRects().length > 1);
+    const sync = () => fitFace(el);
     sync();
     return block ? observeResize(block, sync) : undefined;
   });
@@ -90,4 +89,12 @@ export function DraftToken({
       {children}
     </span>
   );
+}
+
+/**
+ * A face token the text wraps across lines shows its source instead, since one face
+ * cannot span two line boxes.
+ */
+function fitFace(token: HTMLElement) {
+  token.toggleAttribute("data-draft-token-wrapped", token.getClientRects().length > 1);
 }

@@ -13,6 +13,17 @@ import * as groupLock from "../../group-lock/hooks/useGroupLock";
 import { pathKey } from "../../../shared/lib/paths";
 import { rememberNotificationProjects } from "../../notifications/model/notificationProjects";
 import { saveTabGroupLabel } from "../../workspace/model/tabGroups";
+import {
+  ownerApprovalsSnapshot,
+  requestOwnerApproval,
+  settleOwnerApproval,
+} from "../../notifications/model/ownerApprovals";
+import {
+  cancelOwnerSecretInput,
+  ownerSecretInputsSnapshot,
+  requestOwnerSecretInput,
+  submitOwnerSecretInput,
+} from "../../notifications/model/ownerSecretInputs";
 
 type Notice = ComponentProps<typeof ApprovalToasts>["notices"][number];
 function notice(id: string, kind: Notice["kind"] = "approval", requestId = 1): Notice {
@@ -799,4 +810,115 @@ it("opens a history conversation from its row and reports an unavailable one", a
   open.mockResolvedValueOnce(true as never);
   await act(async () => body().click());
   expect(document.querySelector('[role="dialog"]')).toBeNull();
+});
+
+const OWNER_SECRET = "synthetic-owner-typed-secret";
+function ownerApproval(id: string, sessionId?: string) {
+  const promise = requestOwnerApproval({
+    id,
+    sessionId,
+    input: {
+      title: `Approve ${id}`,
+      message: "Private details of the operation",
+      confirmLabel: "Run",
+      cancelLabel: "Cancel",
+      deadline: Date.now() + 90_000,
+    },
+  });
+  promise.catch(() => undefined);
+  return promise;
+}
+function ownerSecret(id: string, sessionId?: string) {
+  const promise = requestOwnerSecretInput({
+    id,
+    sessionId,
+    input: {
+      title: `Secret ${id}`,
+      message: "Which token",
+      fieldLabel: "TOKEN",
+      confirmLabel: "Save",
+      cancelLabel: "Cancel",
+      deadline: Date.now() + 90_000,
+    },
+  });
+  return promise;
+}
+const ownerOutcomes = () =>
+  (JSON.parse(localStorage.getItem(NOTIFICATION_HISTORY_KEY) ?? "[]") as NotificationHistoryEntry[])
+    .filter((entry) => entry.kind === "owner")
+    .map((entry) => `${entry.title}:${entry.label}`);
+afterEach(() => {
+  act(() => {
+    for (const request of ownerApprovalsSnapshot()) settleOwnerApproval(request.id, false);
+    for (const request of ownerSecretInputsSnapshot()) cancelOwnerSecretInput(request.id);
+  });
+});
+
+it("lists a live owner approval in the pending card with its time left and counts it", () => {
+  act(() => render([]));
+  act(() => void ownerApproval("p1"));
+  expect(button("Notifications").querySelector(".notification-trigger-count")?.textContent).toBe(
+    "1",
+  );
+  openHistory();
+  const card = document.querySelector<HTMLElement>(".notification-pending-card")!;
+  expect(card.textContent).toContain("Approve p1");
+  expect(card.textContent).toContain("1:30 left");
+  expect(card.textContent).not.toContain("Private details");
+  expect(document.querySelector(".notification-summary")?.textContent).toContain("1 waiting");
+});
+
+it("opens the owner request's conversation, or only closes the sheet without one", () => {
+  act(() => render([]));
+  act(() => void ownerApproval("with-session", "s-owner"));
+  act(() => void ownerApproval("no-session"));
+  openHistory();
+  act(() => button("Approve with-session")?.click());
+  expect(onFocusSession).toHaveBeenCalledWith("s-owner");
+  expect(document.querySelector(".notification-sheet")).toBeNull();
+  onFocusSession.mockClear();
+  openHistory();
+  act(() => button("Approve no-session").click());
+  expect(onFocusSession).not.toHaveBeenCalled();
+  expect(document.querySelector(".notification-sheet")).toBeNull();
+});
+
+it("never shows or stores a secret value, only its title and outcome", async () => {
+  act(() => render([]));
+  const answer = ownerSecret("sec-1");
+  act(() => void answer);
+  openHistory();
+  expect(document.querySelector(".notification-pending-card")!.textContent).toContain(
+    "Secret sec-1",
+  );
+  await act(async () => void submitOwnerSecretInput("sec-1", OWNER_SECRET));
+  expect(await answer).toBe(OWNER_SECRET);
+  expect(document.body.innerHTML).not.toContain(OWNER_SECRET);
+  expect(JSON.stringify({ ...localStorage })).not.toContain(OWNER_SECRET);
+  expect(ownerOutcomes()).toEqual(["Secret sec-1:Closed"]);
+});
+
+it("records each owner outcome once: approved, denied, expired and an expired secret", async () => {
+  act(() => render([]));
+  const approved = ownerApproval("o-yes");
+  const denied = ownerApproval("o-no");
+  vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+  const late = ownerApproval("o-late");
+  const secret = ownerSecret("o-secret");
+  act(() => {
+    settleOwnerApproval("o-yes", true);
+    settleOwnerApproval("o-yes", false);
+    settleOwnerApproval("o-no", false);
+  });
+  await Promise.all([approved, denied]);
+  await act(async () => void vi.advanceTimersByTime(91_000));
+  await late.catch(() => undefined);
+  expect(await secret).toBeNull();
+  expect(ownerOutcomes().sort()).toEqual([
+    "Approve o-late:Expired",
+    "Approve o-no:Denied",
+    "Approve o-yes:Approved",
+    "Secret o-secret:Expired",
+  ]);
+  expect(ownerApprovalsSnapshot()).toHaveLength(0);
 });

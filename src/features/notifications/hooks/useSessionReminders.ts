@@ -7,11 +7,17 @@ import { loadNotificationsEnabled, subscribeNotificationsEnabled } from "../mode
 import { loadSoundsEnabled, subscribeSoundsEnabled } from "../../settings/model/sounds";
 import {
   getProjectNotificationRule,
+  loadNotificationPreferences,
   subscribeNotificationPreferences,
 } from "../model/notificationPreferences";
+import { pathKey } from "../../../shared/lib/paths";
 import { isProjectLocked } from "../../group-lock/public/projectLock";
 import { logNotification } from "../model/notificationLog";
-import { knownNotificationProject } from "../model/notificationProjects";
+import {
+  knownNotificationProject,
+  loadNotificationProjects,
+  subscribeNotificationProjects,
+} from "../model/notificationProjects";
 import {
   clearReminders,
   listReminders,
@@ -21,6 +27,34 @@ import {
   type ReminderTarget,
   type SessionReminder,
 } from "../../sessions/model/sessionReminders";
+
+/**
+ * Native cannot resolve a Room banner's projects from session ids, so it gets
+ * the rules of every project with an override, keyed by `pathKey` (a catalog
+ * project wins over `local:<pathKey>`, as in `knownNotificationProject`).
+ */
+function assistantProjectRules() {
+  const preferences = loadNotificationPreferences();
+  const rulesFor = (projectId: string) => ({
+    finished: getProjectNotificationRule(projectId, "agentFinished"),
+    input: getProjectNotificationRule(projectId, "agentInput"),
+  });
+  const rules: Record<string, ReturnType<typeof rulesFor>> = {};
+  const claimed = new Set<string>();
+  for (const project of loadNotificationProjects()) {
+    for (const path of project.paths) {
+      const key = pathKey(path);
+      if (claimed.has(key)) continue;
+      claimed.add(key);
+      if (preferences[project.id]) rules[key] = rulesFor(project.id);
+    }
+  }
+  for (const id of Object.keys(preferences)) {
+    const key = id.startsWith("local:") ? id.slice("local:".length) : "";
+    if (key && !claimed.has(key)) rules[key] = rulesFor(id);
+  }
+  return rules;
+}
 
 export function useSessionReminders(
   onOpenSession: (sessionId: string) => Promise<void>,
@@ -53,6 +87,7 @@ export function useSessionReminders(
             notificationsEnabled: loadNotificationsEnabled(),
             sound: loadSoundsEnabled(),
             events: loadNotificationEvents(),
+            assistantProjectRules: assistantProjectRules(),
             projectRules: Object.fromEntries(
               remindersRef.current.flatMap((reminder) => {
                 const project = knownNotificationProject(reminder.cwd);
@@ -212,9 +247,12 @@ export function useSessionReminders(
     const unsubscribeEvents = subscribeNotificationEvents(configureCurrent);
     const unsubscribeSounds = subscribeSoundsEnabled(configureCurrent);
     const unsubscribePreferences = subscribeNotificationPreferences(configureCurrent);
+    // Catalog changes move which paths belong to a muted project.
+    const unsubscribeProjects = subscribeNotificationProjects(configureCurrent);
     return () => {
       disposed = true;
       unsubscribePreferences();
+      unsubscribeProjects();
       revision.current++;
       configurationRevision.current++;
       subscriptions.forEach((unlisten) => unlisten());

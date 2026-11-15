@@ -25,7 +25,10 @@ import { HostAssistantManualSessions } from "../assistant/sessions/assistant-man
 import { assistantSessionRuntime } from "../assistant/sessions/assistant-session-runtime";
 import { HostDesktopHelper } from "../desktop-helper";
 import { HostDesktopControl } from "../desktop/desktop-control-host";
-import { readDesktopPresenceWithVoice } from "../desktop/desktop-voice-activity";
+import {
+  readDesktopPresenceWithVoice,
+  readOwnerAvailability,
+} from "../desktop/desktop-voice-activity";
 import { projectDisplayNames } from "../projects/project-display-names";
 import type { ServerBindings } from "./bindings";
 export async function createAssistantRuntime(
@@ -115,7 +118,7 @@ export async function createAssistantRuntime(
   const assistantKeepAwake = new HostAssistantKeepAwake();
   assistantPorts.keepAwake = (enabled) => assistantKeepAwake.setEnabled(enabled);
   assistantPorts.readPushPhones = () => dependencies.pushDevices.recipients();
-  assistantPorts.readPresence = readDesktopPresenceWithVoice;
+  assistantPorts.readPresence = () => readOwnerAvailability();
   const assistant = new HostAssistant(dependencies.engine.store, assistantPorts);
   const roomChildren = new RoomAutomationChildren(dependencies.engine.store, () => ({
     engine: dependencies.engine,

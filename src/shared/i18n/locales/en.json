@@ -14356,5 +14356,21 @@
   "{p0} planned the order, pools and assignments. Review them, then save.": "{p0} planned the order, pools and assignments. Review them, then save.",
   "No model could plan the setup, so the researched benefit-per-cost ranking was used. Review it, then save.": "No model could plan the setup, so the researched benefit-per-cost ranking was used. Review it, then save.",
   "Driver": "Driver",
-  "The native helper that reads and controls apps. Cua Driver works in the background without taking focus.": "The native helper that reads and controls apps. Cua Driver works in the background without taking focus."
+  "The native helper that reads and controls apps. Cua Driver works in the background without taking focus.": "The native helper that reads and controls apps. Cua Driver works in the background without taking focus.",
+  "Update Host on {p0}?": "Update Host on {p0}?",
+  "The selected Host restarts. Other machines are not updated.": "The selected Host restarts. Other machines are not updated.",
+  "Update impact by machine": "Update impact by machine",
+  "Running sessions": "Running sessions",
+  "This app restarts": "This app restarts",
+  "Host restarts": "Host restarts",
+  "No update on this machine": "No update on this machine",
+  "{p0} may stop": "{p0} may stop",
+  "Machine activity could not be checked.": "Machine activity could not be checked.",
+  "Checking machine activity…": "Checking machine activity…",
+  "Sessions that may be interrupted: {p0}.": "Sessions that may be interrupted: {p0}.",
+  "Unverified activity may also be interrupted.": "Unverified activity may also be interrupted.",
+  "Desktop-owned work may stop when this app restarts. Host-owned work continues while its Host stays running.": "Desktop-owned work may stop when this app restarts. Host-owned work continues while its Host stays running.",
+  "Running sessions and shells on the updated Host are interrupted.": "Running sessions and shells on the updated Host are interrupted.",
+  "Session history is kept. Interrupted work may require resuming.": "Session history is kept. Interrupted work may require resuming.",
+  "Denied": "Denied"
 }

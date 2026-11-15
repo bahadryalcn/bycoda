@@ -1,4 +1,5 @@
 import { t } from "../../../shared/i18n";
+import { truncateGraphemes } from "../../../shared/lib/text/truncate";
 import { LOCKED_NOTIFICATION_TEXT } from "./attention";
 import {
   recordNotificationHistory,
@@ -11,12 +12,47 @@ function record(entry: NotificationHistoryEntry) {
   void recordNotificationHistory(entry).catch(() => undefined);
 }
 
+export type OwnerRequestOutcome = "approved" | "denied" | "expired" | "closed";
+
+function ownerOutcomeLabel(outcome: OwnerRequestOutcome): string {
+  switch (outcome) {
+    case "approved":
+      return t("Approved");
+    case "denied":
+      return t("Denied");
+    case "expired":
+      return t("Expired");
+    default:
+      return t("Closed");
+  }
+}
+
+/**
+ * Logs how an owner request ended, once. Only the request title and the outcome are kept:
+ * never the message, details or a typed secret.
+ */
+export function logOwnerRequest(entry: {
+  id: string;
+  title: string;
+  outcome: OwnerRequestOutcome;
+}) {
+  record({
+    key: `owner:${entry.id}`,
+    sessionId: "",
+    cwd: "",
+    title: truncateGraphemes(entry.title, 200),
+    label: ownerOutcomeLabel(entry.outcome),
+    kind: "owner",
+    occurredAt: Date.now(),
+  });
+}
+
 /**
  * Logs one announced event: a conversation (finished, failed, reminder) or a view
  * (`background:*` target). Text in a locked group is replaced by the banner's masked wording.
  */
 export function logNotification(entry: {
-  kind: Exclude<NotificationHistoryKind, "approval" | "question">;
+  kind: Exclude<NotificationHistoryKind, "approval" | "question" | "owner">;
   key: string;
   title: string;
   label: string;

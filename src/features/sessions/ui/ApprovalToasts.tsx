@@ -45,6 +45,8 @@ import { LAYER } from "../../../shared/lib/layers";
 import type { Session } from "../model/session";
 import { HistoryItem } from "./NotificationHistoryItem";
 import { NotificationRequestCard } from "./NotificationRequestCard";
+import { OwnerRequestRow } from "./OwnerRequestRow";
+import { useOwnerNotifications, type OwnerRequestRow as OwnerRow } from "./useOwnerNotifications";
 import {
   historyOccurrenceIds,
   MAX_NOTIFICATION_HISTORY,
@@ -142,6 +144,7 @@ export function ApprovalToasts({
   const localHostNotice = useLocalHostDownNotice();
   useProjectNotificationPreferences();
   const lock = useLockSnapshot();
+  const ownerRequests = useOwnerNotifications();
   const [expanded, setExpanded] = useState(false);
   const seenAt = useNotificationSeenAt();
   // The marker from before the sheet opened: rows newer than it show "New" while the sheet stays open.
@@ -185,7 +188,8 @@ export function ApprovalToasts({
   if ([...dismissed].some((key) => !liveKeys.has(key))) {
     setDismissed(new Set([...dismissed].filter((key) => liveKeys.has(key))));
   }
-  const count = open.length + (hasLocked ? 1 : 0) + (localHostNotice.visible ? 1 : 0);
+  const count =
+    open.length + ownerRequests.length + (hasLocked ? 1 : 0) + (localHostNotice.visible ? 1 : 0);
   const liveRequests = new Set(notices.map(noticeKey));
   const historyIds = historyOccurrenceIds(visibleHistory);
   // A request that is still pending is answered in the pending card, so Recent skips it.
@@ -229,6 +233,11 @@ export function ApprovalToasts({
     hidePanel();
     trigger.current?.focus();
   };
+  // A conversation answers its own request; otherwise the shared confirmation is already open.
+  const openOwnerRequest = (row: OwnerRow) => {
+    hidePanel();
+    if (row.sessionId) onFocusSession(row.sessionId);
+  };
   const focusSession = (id: string) => {
     const notice = notices.find((item) => item.sessionId === id);
     if (notice) dismiss(noticeKey(notice));
@@ -249,9 +258,11 @@ export function ApprovalToasts({
   };
   const livePending = new Set(notices.map((notice) => notice.sessionId));
   const canOpenHistory = (entry: NotificationHistoryEntry) =>
-    entry.target
-      ? Boolean(onOpenBackground)
-      : Boolean(onOpenHistorySession) || livePending.has(entry.sessionId);
+    entry.kind === "owner"
+      ? false
+      : entry.target
+        ? Boolean(onOpenBackground)
+        : Boolean(onOpenHistorySession) || livePending.has(entry.sessionId);
   const openHistorySession = async (entry: NotificationHistoryEntry) => {
     if (entry.target) {
       onOpenBackground?.(entry.target);
@@ -275,6 +286,10 @@ export function ApprovalToasts({
     ...(localHostNotice.visible
       ? [{ key: "local-host", node: <LocalHostDownNotice notice={localHostNotice} /> }]
       : []),
+    ...ownerRequests.map((row) => ({
+      key: row.key,
+      node: <OwnerRequestRow row={row} onOpen={openOwnerRequest} />,
+    })),
     ...open.map((notice) => ({
       key: noticeKey(notice),
       node: (

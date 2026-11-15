@@ -13,7 +13,12 @@ import type { ServerSyncDeps } from "./serverSyncSupport";
 const NOW = Date.parse("2026-11-08T10:00:00Z");
 
 function setup(
-  options: { settings?: NotificationSettings; items?: NotificationItem[]; focused?: boolean } = {},
+  options: {
+    settings?: NotificationSettings;
+    items?: NotificationItem[];
+    focused?: boolean;
+    onItemsRead?: ServerSyncDeps["onItemsRead"];
+  } = {},
 ) {
   const settings = options.settings ?? defaultNotificationSettings();
   const port: NotificationsServerPort = {
@@ -32,6 +37,7 @@ function setup(
     isFocused: () => options.focused ?? false,
     localSummarySentAt: () => null,
     announce: vi.fn(async () => true),
+    onItemsRead: options.onItemsRead,
     local: {
       read: () => ({
         dailySummaryTime: "18:00",
@@ -65,6 +71,34 @@ const announcement = (key: string): NotificationItem => ({
 });
 
 describe("server sync", () => {
+  it("tells the in-app copy about items read elsewhere and about banners once the user is back", async () => {
+    const readElsewhere = {
+      ...announcement("a1"),
+      event: "announcement.published" as const,
+      readAt: new Date(NOW).toISOString(),
+    };
+    const onItemsRead = vi.fn();
+    const { sync } = setup({ items: [readElsewhere], focused: true, onItemsRead });
+    await sync.poll();
+    expect(onItemsRead).toHaveBeenCalledWith([readElsewhere]);
+
+    const unread = { ...announcement("a2"), event: "announcement.published" as const };
+    const second = vi.fn();
+    const base = defaultNotificationSettings();
+    const settings = {
+      ...base,
+      preferences: [
+        ...base.preferences.filter((p) => !(p.event === unread.event && p.channel === "os")),
+        { scope: "user" as const, event: unread.event, channel: "os" as const, enabled: true },
+      ],
+    };
+    const fresh = setup({ settings, items: [unread], focused: true, onItemsRead: second });
+    await fresh.sync.poll();
+    second.mockClear();
+    await fresh.sync.flushRead();
+    expect(second).toHaveBeenCalledWith([unread]);
+  });
+
   it("announces each feed item once across polls and marks it read after the user returns", async () => {
     const { sync, port, deps } = setup({ items: [announcement("d1")] });
     expect(await sync.poll()).toBe(1);

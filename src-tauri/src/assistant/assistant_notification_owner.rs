@@ -152,6 +152,7 @@ pub(super) fn call(
         let worker_hash = operation_hash.to_owned();
         let worker_kind = kind.to_owned();
         let worker_scope = scope.clone();
+        let worker_paths: Vec<String> = paths.iter().map(|path| (*path).to_owned()).collect();
         crate::notifications::assistant_notification_once(app, &key, operation_hash, move || {
             let _permit = permit;
             if !worker_channel.is_current() {
@@ -182,10 +183,13 @@ pub(super) fn call(
             if !allowed {
                 return Ok(false);
             }
-            // Local preferences (master switch, event kind) mute Room banners too.
+            // Local preferences (master switch, event kind, project mute) mute Room banners too.
+            let project_paths: Vec<&str> = worker_paths.iter().map(String::as_str).collect();
             if !worker_app
                 .try_state::<crate::reminders::ReminderService>()
-                .is_some_and(|service| service.allows_event(event_for_kind(&worker_kind)))
+                .is_some_and(|service| {
+                    service.allows_assistant_banner(event_for_kind(&worker_kind), &project_paths)
+                })
             {
                 return Ok(false);
             }

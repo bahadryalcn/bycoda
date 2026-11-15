@@ -427,6 +427,11 @@ question opens its conversation with **Answer**. The expanded row's **Open** act
 opens its conversation, or for background work, assistant and account notices,
 the view they belong to. If that conversation no longer exists, the row says so
 and the sheet stays open. Unanswered requests stay in the pending section.
+Application approvals and secret requests that wait for you are listed there too,
+with their title and the time left, and count toward the bell badge; click one to
+open the conversation that answers it, or the shared confirmation when it has
+none. Their message and any secret you type are never shown or stored. When one is
+answered, denied or expires, the log records its title and outcome once.
 Each recent row can be removed on its own. **Clear all** in the header asks for
 confirmation before removing history. Removing and clearing happen only after the change is saved; if
 saving fails, the list stays and says so.

@@ -1,11 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useEffectEvent, useRef } from "react";
 import { sessionIssue } from "../../sessions/model/sessionIssue";
-import type { Session } from "../../sessions/model/session";
+import type { Session } from "../../sessions";
+import {
+  subscribeUnseenFinished,
+  unseenFinishedSnapshot,
+} from "../../sessions/public/unseenFinished";
 import {
   enteredBackgroundFinish,
   flashFor,
-  pruneUnseen,
   sessionPhase,
   taskbarAttention,
   type SessionPhase,
@@ -15,9 +18,7 @@ import {
   announceBackgroundFinish,
   announceSessionIssue,
   isWindowFocused,
-  replaceUnseenAttention,
   subscribeAttention,
-  unseenAttentionSessions,
 } from "../model/notifications";
 
 /**
@@ -56,12 +57,9 @@ export function useAttentionNotifications(
 
   const syncAttention = useEffectEvent(() => {
     const focused = isWindowFocused();
-    replaceUnseenAttention(
-      pruneUnseen(unseenAttentionSessions(), sessions, activeSessionId, focused),
-    );
     const next = taskbarAttention(
       sessions,
-      unseenAttentionSessions(),
+      unseenFinishedSnapshot(),
       activeSessionId,
       focused,
       attentionRulesFor("taskbar"),
@@ -86,7 +84,11 @@ export function useAttentionNotifications(
     // Badge, event and project preferences (including mute expiry) change what
     // the taskbar may show without any session changing.
     const sync = () => syncAttention();
-    const unsubscribe = [subscribeAttention(sync), subscribeAttentionRules(sync)];
+    const unsubscribe = [
+      subscribeAttention(sync),
+      subscribeAttentionRules(sync),
+      subscribeUnseenFinished(sync),
+    ];
     return () => unsubscribe.forEach((off) => off());
   }, []);
 }

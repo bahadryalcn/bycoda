@@ -14356,5 +14356,21 @@
   "{p0} planned the order, pools and assignments. Review them, then save.": "{p0} 已规划顺序、池和分配。请检查后保存。",
   "No model could plan the setup, so the researched benefit-per-cost ranking was used. Review it, then save.": "没有模型能规划此设置，因此使用了调研得出的性价比排名。请检查后保存。",
   "Driver": "驱动",
-  "The native helper that reads and controls apps. Cua Driver works in the background without taking focus.": "读取并控制应用的本地辅助程序。Cua Driver 在后台工作,不会抢占焦点。"
+  "The native helper that reads and controls apps. Cua Driver works in the background without taking focus.": "读取并控制应用的本地辅助程序。Cua Driver 在后台工作,不会抢占焦点。",
+  "Update Host on {p0}?": "更新 {p0} 上的 Host？",
+  "The selected Host restarts. Other machines are not updated.": "所选 Host 将重启。其他计算机不会更新。",
+  "Update impact by machine": "各计算机的更新影响",
+  "Running sessions": "运行中的会话",
+  "This app restarts": "此应用将重启",
+  "Host restarts": "Host 将重启",
+  "No update on this machine": "此计算机不会更新",
+  "{p0} may stop": "{p0} 个可能停止",
+  "Machine activity could not be checked.": "无法检查计算机活动。",
+  "Checking machine activity…": "正在检查计算机活动…",
+  "Sessions that may be interrupted: {p0}.": "可能中断的会话数：{p0}。",
+  "Unverified activity may also be interrupted.": "未经确认的活动也可能中断。",
+  "Desktop-owned work may stop when this app restarts. Host-owned work continues while its Host stays running.": "此应用重启时，由桌面端执行的任务可能停止。只要 Host 保持运行，由 Host 执行的任务就会继续。",
+  "Running sessions and shells on the updated Host are interrupted.": "更新的 Host 上运行中的会话和终端将中断。",
+  "Session history is kept. Interrupted work may require resuming.": "会话历史会保留。中断的任务可能需要手动恢复。",
+  "Denied": "已拒绝"
 }

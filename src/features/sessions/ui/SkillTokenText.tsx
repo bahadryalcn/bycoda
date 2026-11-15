@@ -1,6 +1,6 @@
 import { createContext, useContext, type ReactNode } from "react";
 import { Badge } from "../../../shared/ui/Badge";
-import { Sparkles } from "../../../shared/ui/icons";
+import { SkillIcon } from "../../../shared/ui/icons";
 import { skillTextParts } from "../../skills/model/skills";
 import type { HarnessId } from "../model/session";
 import { useComposerSkills } from "./useComposerSkills";
@@ -42,7 +42,7 @@ export function SkillTokenText({ text }: { text: string }) {
         size="xs"
         tone="accent"
         appearance="subtle"
-        icon={<Sparkles />}
+        icon={<SkillIcon />}
         className="text-skill"
         data-skill-token="true"
       >

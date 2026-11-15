@@ -8,7 +8,6 @@ import {
   lastLine,
   LOCKED_NOTIFICATION_TEXT,
   maskLockedNotification,
-  pruneUnseen,
   sessionPhase,
   sessionsNeedingAttention,
   taskbarAttention,
@@ -398,13 +397,6 @@ describe("taskbar attention", () => {
     );
     expect(found.input.map((s) => s.id)).toEqual(["wait"]);
     expect(found.unseen.map((s) => s.id)).toEqual(["quiet"]);
-  });
-
-  it("clears unseen entries once viewed or closed", () => {
-    const unseen = new Set(["quiet", "gone"]);
-    expect([...pruneUnseen(unseen, [quiet], "other", true)]).toEqual(["quiet"]);
-    expect([...pruneUnseen(unseen, [quiet], "quiet", true)]).toEqual([]);
-    expect([...pruneUnseen(unseen, [quiet], "quiet", false)]).toEqual(["quiet"]);
   });
 
   it("flashes only when the count grows while unfocused", () => {

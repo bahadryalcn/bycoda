@@ -1,4 +1,5 @@
 import { boundedSet, createStore } from "../../../shared/lib/store";
+import { logOwnerRequest } from "./notificationLog";
 import { isRemoteApproval } from "./ownerApprovalRemote";
 import { parseInboxApprovalDetails, type InboxApprovalDetails } from "./inboxApprovalDetails";
 
@@ -83,6 +84,11 @@ function finishOwnerApproval(id: string, approved?: boolean): void {
   if (answer === undefined) entry.reject(new Error("Application approval expired or was revoked."));
   else entry.resolve(answer);
   store.notify();
+  logOwnerRequest({
+    id,
+    title: request.title,
+    outcome: answer === undefined ? "expired" : answer ? "approved" : "denied",
+  });
   for (const listener of outcomes) {
     try {
       listener({ id, answer });

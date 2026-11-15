@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 /**
  * One confirmation, whatever opens it. Every feature describes the decision (what, to which target, with
  * which effect) and the app renders it with the shared ConfirmDialog; no feature builds its own dialog.
@@ -7,6 +9,8 @@ export type AppConfirmRequest = {
   title: string;
   /** Target and effect, plain text (line breaks are kept). */
   message: string;
+  /** Structured preview rendered by the shared confirmation dialog. */
+  body?: ReactNode;
   /** The real action, e.g. "Delete branch". Cancel is always the secondary choice. */
   confirmLabel: string;
   /** `danger` only when the action destroys data or stops running work. */

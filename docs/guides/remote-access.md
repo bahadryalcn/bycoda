@@ -2,6 +2,18 @@
 
 ## Work from both computers
 
+Before installing an app update, the interruption confirmation lists saved machines,
+their freshly checked running-session counts and which computer restarts. Local
+and SSH Host updates use the same preview for their selected Host. Alternate routes
+to one environment count once. Unavailable or incomplete activity is shown as
+unknown, never idle. Counts refresh while the confirmation remains open.
+
+An app update installs only on this computer. Desktop-owned or legacy work may
+stop; Host-owned work continues while its Host remains running. A Host update
+interrupts sessions and shells on that Host. History is retained, but interrupted
+work may need resuming. Other computers are not silently updated, and cancelling
+the confirmation does not start an installation.
+
 Open the same conversation through its owning Host on either computer. Ordinary
 messages can steer a Host-owned active turn. A turn running in the desktop app
 keeps new remote messages queued until it finishes. A busy owner or a request

@@ -164,6 +164,15 @@ export function cachedRemoteCapabilities(environmentId: string): string[] | unde
   return capabilitiesByEnvironment.get(environmentId);
 }
 
+/** Machines whose Host advertised `capability` in this session; the local sync link is excluded. */
+export function remoteMachinesAdvertising(capability: string): RemoteMachine[] {
+  return cachedMachines.filter(
+    (machine) =>
+      !isLocalSyncMachine(machine) &&
+      cachedRemoteCapabilities(machine.environmentId)?.includes(capability) === true,
+  );
+}
+
 export function subscribeRemoteCapabilities(listener: () => void): () => void {
   capabilityListeners.add(listener);
   return () => capabilityListeners.delete(listener);

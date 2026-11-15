@@ -101,10 +101,36 @@ export function linkedInCreatedId(raw: string): string | undefined {
     : undefined;
 }
 
+/**
+ * Reads the signed-in member from LinkedIn's own `/voyager/api/me` with the page's session, so
+ * identity survives feed markup changes. Only the public identifier and name leave the page.
+ */
+const LINKEDIN_ME = String.raw`(async () => {
+  if (location.origin !== ${json(LI)} || /\/(login|checkpoint|signup|authwall)(\/|$)/.test(location.pathname)) return;
+  const csrf = /(?:^|;\s*)JSESSIONID="?([^";]+)/.exec(document.cookie)?.[1];
+  if (!csrf) return;
+  const response = await fetch('/voyager/api/me', { credentials: 'include', headers: {
+    'csrf-token': csrf, accept: 'application/vnd.linkedin.normalized+json+2.1', 'x-restli-protocol-version': '2.0.0' } });
+  if (!response.ok) return;
+  const body = await response.json();
+  const urn = body?.data?.['*miniProfile'];
+  const mini = (body?.included || []).find(item => item && item.entityUrn === urn);
+  const slug = typeof mini?.publicIdentifier === 'string' ? mini.publicIdentifier : '';
+  if (!urn || !/^[\w-]+$/.test(slug)) return;
+  const name = [mini.firstName, mini.lastName].filter(part => typeof part === 'string' && part.trim()).join(' ').trim();
+  return { platformId: 'web:linkedin:in:' + slug.toLowerCase(), name: name || slug };
+})()`;
+
 async function linkedInIdentity(
   page: BrowserPage,
   account?: SocialAccount,
 ): Promise<BrowserIdentity | undefined> {
+  if (account?.accountType !== "organization") {
+    const member = await page
+      .evaluate<BrowserIdentity | undefined>(LINKEDIN_ME)
+      .catch(() => undefined);
+    if (member) return member;
+  }
   const result = await page.evaluate<BrowserIdentity | undefined>(String.raw`(() => {
     if (location.origin !== ${json(LI)} || /\/(login|checkpoint|signup|authwall)(\/|$)/.test(location.pathname)) return;
     const organization = ${account?.accountType === "organization"};

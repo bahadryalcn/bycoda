@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { linkedInBrowserConnectionUrl } from "./social-browser-publishing";
 import { account, fixture, job, now, recipe } from "./social-browser-publishing-test-support";
 const liIdentity = `<div class="feed-identity-module__actor-meta"><a href="/in/bycoda-owner/">Owner</a></div>`;
@@ -79,6 +79,32 @@ describe("LinkedIn ordinary browser post", () => {
       platformId: "web:linkedin:in:bycoda-owner",
       name: "Owner",
     });
+  });
+  it("reads the member from the session's /me endpoint when the feed markup has no known identity controls", async () => {
+    const f = fixture(
+      recipe("linkedin"),
+      account("linkedin", "web:linkedin:in:bycoda-owner"),
+      `<main data-view-name="feed"><a href="/in/stranger/">A different author</a></main>`,
+    );
+    const urn = "urn:li:fs_miniProfile:ACo1";
+    f.window.document.cookie = 'JSESSIONID="ajax:123"';
+    const fetch = vi.fn(async (_url: string, _init: { headers: Record<string, string> }) => ({
+      ok: true,
+      json: async () => ({
+        data: { "*miniProfile": urn },
+        included: [
+          { entityUrn: "urn:li:fs_miniProfile:other", publicIdentifier: "stranger" },
+          { entityUrn: urn, publicIdentifier: "Bycoda-Owner", firstName: "By", lastName: "Coda" },
+        ],
+      }),
+    }));
+    Object.assign(f.window, { fetch });
+    await expect(recipe("linkedin").identity(f.page, f.ctx.account)).resolves.toEqual({
+      platformId: "web:linkedin:in:bycoda-owner",
+      name: "By Coda",
+    });
+    expect(fetch.mock.calls[0][0]).toBe("/voyager/api/me");
+    expect(fetch.mock.calls[0][1].headers["csrf-token"]).toBe("ajax:123");
   });
   it("does not infer an organization from the owner's member identity", async () => {
     const f = fixture(

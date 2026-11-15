@@ -72,6 +72,21 @@ it("applies a path-based project mute without discovery", async () => {
   expect(api.reminders).toEqual([reminder]);
 });
 
+it("sends path-keyed assistant project rules and re-sends when they change", async () => {
+  updateNotificationPreferences(["local:c:/work/app"], { disabled: ["agentFinished"] });
+  await mount();
+  const latest = () =>
+    invoke.mock.calls.filter(([command]) => command === "reminder_configure").at(-1)![1].preferences
+      .assistantProjectRules;
+  expect(latest()["c:/work/app"]).toEqual({
+    finished: { enabled: false, after: 0 },
+    input: { enabled: true, after: 0 },
+  });
+  await act(async () => updateNotificationPreferences(["local:/muted"], { mutedUntil: null }));
+  expect(latest()["/muted"].finished.enabled).toBe(false);
+  expect(latest()["c:/work/app"].finished.enabled).toBe(false);
+});
+
 async function mount() {
   await act(async () => root.render(createElement(StrictMode, null, createElement(Harness))));
 }

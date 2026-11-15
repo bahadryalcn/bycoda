@@ -16,11 +16,17 @@ const catalog = {
 describe("provider account status", () => {
   it("omits signed-out accounts and marks the rest", async () => {
     const probe = vi.fn(async (_provider: string, id: string) =>
-      id === "old" ? ("signedOut" as const) : id === "work" ? ("signedIn" as const) : ("unknown" as const),
+      id === "old"
+        ? ("signedOut" as const)
+        : id === "work"
+          ? ("signedIn" as const)
+          : ("unknown" as const),
     );
     const cache = createProviderAccountStatusCache({ probe });
     const result = withProviderAccountStatus(catalog, await cache.read(catalog));
-    expect(result.claude?.map((account) => [account.id, (account as { status?: string }).status])).toEqual([
+    expect(
+      result.claude?.map((account) => [account.id, (account as { status?: string }).status]),
+    ).toEqual([
       ["default", "unknown"],
       ["work", "ready"],
     ]);
@@ -49,7 +55,9 @@ describe("provider account status", () => {
         probe: () => new Promise(() => {}),
         firstReadWaitMs: 50,
       });
-      const read = cache.read({ claude: [{ id: "work", label: "work", color: "#b" }] });
+      const read = cache.read({
+        claude: [{ id: "work", label: "work", color: "#b" }],
+      });
       await vi.advanceTimersByTimeAsync(50);
       expect((await read).get("claude\nwork")).toBe("unknown");
     } finally {
@@ -69,7 +77,11 @@ describe("provider account status", () => {
       },
     });
     const many = {
-      claude: Array.from({ length: 7 }, (_, index) => ({ id: `a${index}`, label: "a", color: "#a" })),
+      claude: Array.from({ length: 7 }, (_, index) => ({
+        id: `a${index}`,
+        label: "a",
+        color: "#a",
+      })),
     };
     await cache.read(many);
     expect(peak).toBe(3);

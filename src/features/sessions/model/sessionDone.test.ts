@@ -81,4 +81,24 @@ describe("nextUnseenFinishedSessions", () => {
       }),
     ).toEqual(new Set(["lead"]));
   });
+
+  it("counts a newly failed turn once, and not while focused", () => {
+    const base = {
+      previousBusyIds: new Set<string>(),
+      busyIds: new Set<string>(),
+      previousUnseenIds: new Set<string>(),
+      focusedSessionId: "b",
+    };
+    expect(nextUnseenFinishedSessions({ ...base, failedIds: new Set(["a"]) })).toEqual(
+      new Set(["a"]),
+    );
+    expect(
+      nextUnseenFinishedSessions({
+        ...base,
+        previousFailedIds: new Set(["a"]),
+        failedIds: new Set(["a"]),
+      }),
+    ).toEqual(new Set());
+    expect(nextUnseenFinishedSessions({ ...base, failedIds: new Set(["b"]) })).toEqual(new Set());
+  });
 });

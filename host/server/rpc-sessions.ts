@@ -293,7 +293,10 @@ export async function handleSessionsRpc(
         patch.unread = request.params.unread;
       }
       if (request.params.snoozedUntil !== undefined)
-        patch.snoozedUntil = request.params.snoozedUntil === null ? null : SafeCounterSchema.parse(request.params.snoozedUntil);
+        patch.snoozedUntil =
+          request.params.snoozedUntil === null
+            ? null
+            : SafeCounterSchema.parse(request.params.snoozedUntil);
       if (request.params.expectedRevision !== undefined)
         patch.expectedRevision = SafeCounterSchema.parse(request.params.expectedRevision);
       if (request.params.linkedWorkItem !== undefined) {

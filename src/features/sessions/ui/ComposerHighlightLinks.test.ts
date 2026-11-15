@@ -122,13 +122,10 @@ it("decorates recognized skills and MCP references without changing the draft", 
       }),
     ),
   );
-  // Each skill's source text stays once in a hidden span; its face is the label.
-  const clone = host.cloneNode(true) as HTMLElement;
-  for (const face of clone.querySelectorAll("[data-draft-token-face] > [aria-hidden]")) {
-    face.remove();
-  }
-  expect(clone.textContent).toBe(text);
-  expect(host.querySelectorAll("[data-composer-skill-token] svg")).toHaveLength(2);
+  // Skill chips are the source text itself, at the textarea's size.
+  expect(host.textContent).toBe(text);
+  expect(host.querySelectorAll("[data-composer-skill-token]")).toHaveLength(2);
+  expect(host.querySelector("[data-composer-skill-token] svg")).toBeNull();
   expect(host.querySelector("[data-mcp-tag] svg")).not.toBeNull();
 });
 

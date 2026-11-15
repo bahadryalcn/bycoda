@@ -25,6 +25,8 @@ import { ExternalTunnelsPanel } from "./ExternalTunnelsPanel";
 import { RemoteDataStatus } from "./RemoteDataStatus";
 import { EMPTY_SSH_DRAFT, MachineForm, type MachineMethod, type SshDraft } from "./MachineForm";
 import { MachineRow } from "./MachineRow";
+import { UpdateImpact } from "./UpdateImpact";
+import { confirmInApp } from "../../../shared/model/appConfirm";
 import { RemoveMachineDialog } from "./RemoveMachineDialog";
 import { useContext, useRef, useState } from "react";
 import { Internet, Plus, RefreshCw } from "../../../shared/ui/icons";
@@ -158,6 +160,21 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
   });
   const begin = async (machine?: RemoteMachine, upgrade = false, edited = false) => {
     if (submitting.current) return;
+    if (upgrade && machine) {
+      submitting.current = true;
+      try {
+        const approved = await confirmInApp({
+          title: t("Update Host on {p0}?", { p0: machine.name }),
+          message: t("The selected Host restarts. Other machines are not updated."),
+          body: <UpdateImpact target={{ machineId: machine.id }} />,
+          confirmLabel: t("Stop and update"),
+          tone: "danger",
+        });
+        if (!approved || !alive.current) return;
+      } finally {
+        submitting.current = false;
+      }
+    }
     setView("machines");
     const parsed = machine ? undefined : parseMachineDraft(sshFields(false));
     if (parsed && !parsed.ok) return setError(t(parsed.error));

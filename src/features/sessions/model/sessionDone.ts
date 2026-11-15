@@ -6,6 +6,8 @@ export function nextUnseenFinishedSessions({
   previousUnseenIds,
   focusedSessionId,
   untrackedIds,
+  previousFailedIds,
+  failedIds,
 }: {
   previousBusyIds: ReadonlySet<string>;
   busyIds: ReadonlySet<string>;
@@ -15,10 +17,18 @@ export function nextUnseenFinishedSessions({
    * workers and inbox discussions. An unseen session stays loaded until it
    * is looked at, so marking one of these would keep it in memory for good. */
   untrackedIds?: ReadonlySet<string>;
+  /** Sessions whose turn failed before and now; a newly failed one counts as finished. */
+  previousFailedIds?: ReadonlySet<string>;
+  failedIds?: ReadonlySet<string>;
 }): Set<string> {
   const next = new Set(previousUnseenIds);
   for (const id of previousBusyIds) {
     if (!busyIds.has(id) && id !== focusedSessionId) next.add(id);
+  }
+  if (failedIds) {
+    for (const id of failedIds) {
+      if (!previousFailedIds?.has(id) && id !== focusedSessionId) next.add(id);
+    }
   }
   for (const id of busyIds) next.delete(id);
   if (focusedSessionId) next.delete(focusedSessionId);

@@ -1,4 +1,4 @@
-import type { Announcement } from "@bycoda/account-contracts";
+import type { Announcement, NotificationFeed, NotificationItem } from "@bycoda/account-contracts";
 
 const DISMISSED_KEY = "bycoda.account.announcements.dismissed.v1";
 const MAX_REMEMBERED = 200;
@@ -125,4 +125,33 @@ export function startAnnouncementPolling(deps: AnnouncementPollDeps): () => void
     clearInterval(timer);
     if (typeof window !== "undefined") window.removeEventListener("online", poll);
   };
+}
+
+/**
+ * The announcement a server feed item stands for, or null for other events. The feed item's
+ * dedupe key is the announcement id, optionally prefixed (`announcement:<id>`).
+ */
+export function announcementIdOfFeedItem(
+  item: Pick<NotificationItem, "event" | "dedupeKey">,
+): string | null {
+  if (item.event !== "announcement.published") return null;
+  const cut = item.dedupeKey.lastIndexOf(":");
+  return cut < 0 ? item.dedupeKey : item.dedupeKey.slice(cut + 1);
+}
+
+export type AnnouncementReadPort = {
+  listFeed(query: { limit: number }): Promise<Pick<NotificationFeed, "items">>;
+  markRead(ids: string[]): Promise<void>;
+};
+
+/** Marks the server feed copies of a dismissed announcement read, so the banner copy agrees. */
+export async function markAnnouncementRead(
+  announcementId: string,
+  port: AnnouncementReadPort,
+): Promise<void> {
+  const feed = await port.listFeed({ limit: 100 });
+  const ids = feed.items
+    .filter((item) => item.readAt === null && announcementIdOfFeedItem(item) === announcementId)
+    .map((item) => item.id);
+  if (ids.length > 0) await port.markRead(ids);
 }

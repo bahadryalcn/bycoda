@@ -200,6 +200,7 @@ export function createEnvironmentRuntime(
         "shell.profile.compare.v1",
         "sessions.desktop",
         "sessions.desktopLive",
+        "assistant.ownerActive",
         "sessions.desktop-writer-retirement.v1",
         "sessions.host-writer-retirement.v1",
         "sessions.queue",

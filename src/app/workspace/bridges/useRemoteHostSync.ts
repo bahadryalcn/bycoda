@@ -13,6 +13,7 @@ import {
   type RefreshAdoptedSession,
 } from "../../../features/connections/model/useAdoptedSessions";
 import { useDesktopLive } from "../../../features/connections/model/useDesktopLive";
+import { startOwnerActivityReports } from "../../../features/connections/model/ownerActivity";
 import { useSharedLocalQueues } from "../../../features/connections/model/useSharedLocalQueues";
 import type { DesktopLiveHandlers } from "../../../features/connections/model/desktopLive";
 import type { HostSession } from "../../../features/connections/model/protocol";
@@ -55,6 +56,8 @@ export function useRemoteHostSync(): RemoteHostSync {
   const refreshAdoptedSessionRef = useRef<RefreshAdoptedSession>(undefined);
   useEffect(() => startProviderAccountHostSync(), []);
   useEffect(() => startModelEnabledHostSync(), []);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- timer reporting owner input to other connected Hosts while the workspace is mounted
+  useEffect(() => startOwnerActivityReports(), []);
   const localHostReachable = useAdoptedSessions(
     sessionsRef,
     setSessions,

@@ -14356,5 +14356,21 @@
   "{p0} planned the order, pools and assignments. Review them, then save.": "{p0} が順序、プール、割り当てを計画しました。確認してから保存してください。",
   "No model could plan the setup, so the researched benefit-per-cost ranking was used. Review it, then save.": "設定を計画できるモデルがなかったため、調査済みの費用対効果ランキングを使用しました。確認してから保存してください。",
   "Driver": "ドライバー",
-  "The native helper that reads and controls apps. Cua Driver works in the background without taking focus.": "アプリを読み取り操作するネイティブヘルパーです。Cua Driver はフォーカスを奪わずにバックグラウンドで動作します。"
+  "The native helper that reads and controls apps. Cua Driver works in the background without taking focus.": "アプリを読み取り操作するネイティブヘルパーです。Cua Driver はフォーカスを奪わずにバックグラウンドで動作します。",
+  "Update Host on {p0}?": "{p0} の Host を更新しますか？",
+  "The selected Host restarts. Other machines are not updated.": "選択した Host が再起動します。他のコンピュータは更新されません。",
+  "Update impact by machine": "コンピュータ別の更新の影響",
+  "Running sessions": "実行中のセッション",
+  "This app restarts": "このアプリが再起動します",
+  "Host restarts": "Host が再起動します",
+  "No update on this machine": "このコンピュータは更新されません",
+  "{p0} may stop": "{p0} 件が停止する可能性があります",
+  "Machine activity could not be checked.": "コンピュータのアクティビティを確認できませんでした。",
+  "Checking machine activity…": "コンピュータのアクティビティを確認中…",
+  "Sessions that may be interrupted: {p0}.": "中断する可能性のあるセッション数：{p0}。",
+  "Unverified activity may also be interrupted.": "未確認のアクティビティも中断する可能性があります。",
+  "Desktop-owned work may stop when this app restarts. Host-owned work continues while its Host stays running.": "このアプリの再起動時にデスクトップ側の作業が停止する可能性があります。Host 側の作業は Host が稼働している間は継続します。",
+  "Running sessions and shells on the updated Host are interrupted.": "更新する Host 上で実行中のセッションとシェルは中断されます。",
+  "Session history is kept. Interrupted work may require resuming.": "セッション履歴は保持されます。中断した作業は再開が必要な場合があります。",
+  "Denied": "拒否しました"
 }

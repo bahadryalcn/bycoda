@@ -10,7 +10,11 @@ const FRESH_MS = 5 * 60_000;
 const FIRST_READ_WAIT_MS = 4_000;
 const MAX_PARALLEL_PROBES = 3;
 
-type Entry = { status?: Exclude<ProbeStatus, "unknown">; checkedAt?: number; pending?: Promise<void> };
+type Entry = {
+  status?: Exclude<ProbeStatus, "unknown">;
+  checkedAt?: number;
+  pending?: Promise<void>;
+};
 
 /**
  * Last known sign-in state per provider account, refreshed in the background with bounded
@@ -29,10 +33,13 @@ export function createProviderAccountStatusCache(deps: {
   const pump = () => {
     while (running < MAX_PARALLEL_PROBES && queue.length) {
       running++;
-      void queue.shift()!().finally(() => {
-        running--;
-        pump();
-      });
+      void queue.shift()!()
+        // The probe already maps failures to "unknown"; this only keeps the slot accounting safe.
+        .catch(() => {})
+        .finally(() => {
+          running--;
+          pump();
+        });
     }
   };
   const refresh = (provider: Probed, id: string, entry: Entry) => {
@@ -57,8 +64,10 @@ export function createProviderAccountStatusCache(deps: {
           const key = `${provider}\n${account.id}`;
           let entry = entries.get(key);
           if (!entry) entries.set(key, (entry = {}));
-          const stale = entry.checkedAt === undefined || elapsedSince(entry.checkedAt, now()) >= FRESH_MS;
-          const pending = entry.pending ?? (stale ? refresh(provider, account.id, entry) : undefined);
+          const stale =
+            entry.checkedAt === undefined || elapsedSince(entry.checkedAt, now()) >= FRESH_MS;
+          const pending =
+            entry.pending ?? (stale ? refresh(provider, account.id, entry) : undefined);
           if (pending && entry.status === undefined) firstReads.push(pending);
         }
       if (firstReads.length) {
@@ -73,7 +82,14 @@ export function createProviderAccountStatusCache(deps: {
       }
       const result = new Map<string, CatalogAccountStatus>();
       for (const [key, entry] of entries)
-        result.set(key, entry.status === "signedIn" ? "ready" : entry.status === "signedOut" ? "signed-out" : "unknown");
+        result.set(
+          key,
+          entry.status === "signedIn"
+            ? "ready"
+            : entry.status === "signedOut"
+              ? "signed-out"
+              : "unknown",
+        );
       return result;
     },
   };
@@ -93,7 +109,10 @@ export function withProviderAccountStatus<T extends HostProviderAccountCatalog>(
     const accounts = catalog[provider];
     if (!accounts) continue;
     result[provider] = accounts
-      .map((account) => ({ ...account, status: statuses.get(`${provider}\n${account.id}`) ?? "unknown" }))
+      .map((account) => ({
+        ...account,
+        status: statuses.get(`${provider}\n${account.id}`) ?? "unknown",
+      }))
       .filter((account) => account.status !== "signed-out") as never;
   }
   return result;

@@ -122,31 +122,12 @@ export function isWindowFocused(): boolean {
   return windowFocused;
 }
 
-/** Sessions whose finish or failure was announced and not yet looked at. */
-const unseenAttention = new Set<string>();
 const attentionListeners = new Set<() => void>();
 
-export function unseenAttentionSessions(): ReadonlySet<string> {
-  return unseenAttention;
-}
-
-export function replaceUnseenAttention(next: ReadonlySet<string>) {
-  if (next.size === unseenAttention.size && [...next].every((id) => unseenAttention.has(id))) {
-    return;
-  }
-  unseenAttention.clear();
-  for (const id of next) unseenAttention.add(id);
-}
-
-/** Notified when focus or the unseen set changes, so the taskbar can follow. */
+/** Notified when window focus changes, so the taskbar can follow. */
 export function subscribeAttention(listener: () => void): () => void {
   attentionListeners.add(listener);
   return () => attentionListeners.delete(listener);
-}
-
-function markUnseen(sessionId: string) {
-  unseenAttention.add(sessionId);
-  for (const listener of attentionListeners) listener();
 }
 
 /**
@@ -573,9 +554,6 @@ async function notifyProjectSession(
     },
   );
   if (!payload) return false;
-  // Preserve unread attention for other chats even when foreground delivery
-  // is suppressed by deliver(). The active chat was excluded above.
-  if (kind !== "input") markUnseen(session.id);
   const cwd = session.cwd;
   return batcher.enqueue(
     isProjectLocked(cwd) ? maskLockedNotification(payload) : payload,

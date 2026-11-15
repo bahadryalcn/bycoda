@@ -17,6 +17,8 @@ export type ServerSyncDeps = {
   localSummarySentAt(): number | null;
   /** Shows one OS notification; true once the OS accepted it. */
   announce(item: NotificationItem): Promise<boolean>;
+  /** Items the user has read or handled on this side; lets the in-app copy of an announcement go. */
+  onItemsRead?(items: readonly NotificationItem[]): void;
   local: { read(): SyncSnapshot; write(changes: SyncSnapshot): void };
   store: {
     loadBase(userId: string): SyncSnapshot | null;

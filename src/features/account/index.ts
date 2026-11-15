@@ -11,6 +11,7 @@ export {
   type StatsChoice,
 } from "./model/accountPrivacy";
 export { useAnonymousStats } from "./hooks/useAnonymousStats";
+export { announcementFeed, announcementIdOfFeedItem } from "./model/announcementFeed";
 export { AnnouncementNotices } from "./ui/AnnouncementNotices";
 export { FeedbackDialog } from "./ui/FeedbackDialog";
 export { openFeedbackDialog } from "./model/feedbackDialog";
