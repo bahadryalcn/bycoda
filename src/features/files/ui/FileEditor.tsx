@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { Text as UiText } from "../../../shared/ui/Text";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Tooltip } from "../../../shared/ui/Tooltip";
@@ -951,7 +952,7 @@ export function FileEditor({
           setSaveState({ status: "saved" });
         }
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = presentRemoteError(error, { explicit: true });
         if (generation === saveGeneration.current) {
           setSaveState({ status: "error", message });
         }
@@ -1023,7 +1024,7 @@ export function FileEditor({
         );
         notifyGitChanged(cwd, "index");
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = presentRemoteError(error, { explicit: true });
         setSaveState({ status: "error", message });
         throw error;
       }
@@ -1108,7 +1109,7 @@ export function FileEditor({
       await handle.flush();
     } catch (error) {
       if (generation === draftViewGeneration.current)
-        setDraftActionError(error instanceof Error ? error.message : String(error));
+        setDraftActionError(presentRemoteError(error, { explicit: true }));
     } finally {
       settled();
       if (generation === draftViewGeneration.current) {
@@ -1133,7 +1134,7 @@ export function FileEditor({
       await draftHandleRef.current?.retry();
     } catch (error) {
       if (generation === draftViewGeneration.current)
-        setDraftActionError(error instanceof Error ? error.message : String(error));
+        setDraftActionError(presentRemoteError(error, { explicit: true }));
     } finally {
       settled();
       if (generation === draftViewGeneration.current) {

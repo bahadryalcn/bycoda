@@ -15,7 +15,7 @@ import { DisabledReason } from "../common/DisabledReason";
 import { TechnicalDetails } from "../common/TechnicalDetails";
 import { LabeledSelect } from "./LabeledSelect";
 import { PlatformIcon } from "../common/PlatformIcon";
-import { errorMessage } from "./audienceModel";
+import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import {
   FIND_PEOPLE_KINDS,
   buildFindPeopleSource,
@@ -84,7 +84,7 @@ export function FindPeopleDialog({
       setResult(collected);
       onCollected(collected);
     } catch (err) {
-      setError(errorMessage(err));
+      setError(presentRemoteError(err, { explicit: true }));
     } finally {
       setRunning(false);
     }
@@ -184,7 +184,9 @@ export function FindPeopleDialog({
           error={
             limitValid
               ? undefined
-              : t("Enter a whole number from 1 to {p0}.", { p0: COLLECT_LIMIT_MAX })
+              : t("Enter a whole number from 1 to {p0}.", {
+                  p0: COLLECT_LIMIT_MAX,
+                })
           }
           onChange={(event) => setLimit(event.target.value)}
         />

@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { ActionHost, InlineMoreAction } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -293,7 +294,7 @@ export function GitGraphBranches({
                 else await gitCreateBranchFrom(cwd, name, naming.reference);
                 setNaming(null);
               } catch (error) {
-                setNameError(String(error));
+                setNameError(presentRemoteError(error, { explicit: true }));
                 throw error;
               }
             })

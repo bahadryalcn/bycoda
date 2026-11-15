@@ -19,7 +19,10 @@ const state = vi.hoisted(() => ({
 }));
 vi.mock("../model/useRemoteConnection", () => ({
   useRemoteConnection: (environmentId: string) =>
-    state.machines.get(environmentId) ?? { status: "connected", reconnecting: false },
+    state.machines.get(environmentId) ?? {
+      status: "connected",
+      reconnecting: false,
+    },
 }));
 vi.mock("../../settings/model/settings", () => ({
   loadRemoteAutoReconnect: () => state.autoReconnect,
@@ -39,14 +42,21 @@ vi.mock("./RemoteLoadError", () => ({
   }) =>
     createElement(
       "div",
-      { role: "alert", "data-machine": cwd, "data-coordinated": String(coordinated) },
+      {
+        role: "alert",
+        "data-machine": cwd,
+        "data-coordinated": String(coordinated),
+      },
       failure.message,
       onDismiss && createElement("button", { onClick: onDismiss }, "Dismiss"),
     ),
 }));
 
 type Consumer = { id: string; cwd: string; failure?: RemoteFailure };
-const outage: RemoteFailure = { kind: "unreachable", message: "Machine is unreachable" };
+const outage: RemoteFailure = {
+  kind: "unreachable",
+  message: "Machine is unreachable",
+};
 let root: Root;
 let container: HTMLDivElement;
 
@@ -101,7 +111,10 @@ it("shares one delayed notice and does not restart its deadline for repeated pan
   await render(
     consumers.map((consumer) => ({
       ...consumer,
-      failure: { ...outage, message: "SSH timed out connecting to the machine." },
+      failure: {
+        ...outage,
+        message: "SSH timed out connecting to the machine.",
+      },
     })),
   );
   await advance(999);
@@ -154,7 +167,10 @@ it("does not delay a typed native authentication refusal even if another request
     {
       id: "session",
       cwd: "env",
-      failure: { kind: "unreachable", message: "RPC_WS_BLOCKED: Host admission was refused" },
+      failure: {
+        kind: "unreachable",
+        message: "RPC_WS_BLOCKED: Host admission was refused",
+      },
     },
   ]);
   expect(notices()).toHaveLength(1);
@@ -263,7 +279,10 @@ it("dismisses only one outage episode and never hides a later hard refusal", asy
     container.querySelector<HTMLButtonElement>('[data-machine="a"] button')!.click(),
   );
   expect(notices()).toHaveLength(1);
-  state.machines.set("a", { status: "connection-blocked", error: "RPC_WS_TLS: refused" });
+  state.machines.set("a", {
+    status: "connection-blocked",
+    error: "RPC_WS_TLS: refused",
+  });
   await render(consumers);
   expect(notices()).toHaveLength(2);
   state.machines.set("a", { status: "connected" });
@@ -272,4 +291,30 @@ it("dismisses only one outage episode and never hides a later hard refusal", asy
   state.machines.set("a", { status: "unreachable" });
   await render(consumers);
   expect(notices()).toHaveLength(2);
+});
+
+it("shows one global notice per machine in an outage after the grace, with no pane mounted, and clears on recovery", async () => {
+  const { recordRemoteConnection, notifyRemoteRecovered, resetRemoteHealth } =
+    await import("../model/remoteHealth");
+  resetRemoteHealth();
+  state.machines.set("a", { status: "unreachable" });
+  state.machines.set("b", { status: "unreachable" });
+  await render([]);
+  await act(async () => {
+    recordRemoteConnection("a", new Error("Machine is unreachable"));
+    recordRemoteConnection("b", new Error("Machine is unreachable"));
+  });
+  expect(notices()).toHaveLength(0);
+  await advance(1_999);
+  expect(notices()).toHaveLength(0);
+  await advance(1);
+  expect(notices()).toHaveLength(2);
+  // A mounted pane for the same machine does not add a second notice.
+  await render([{ id: "pane", cwd: "remote://a/repo", failure: outage }]);
+  expect(notices()).toHaveLength(2);
+  state.machines.set("a", { status: "connected" });
+  await act(async () => notifyRemoteRecovered("a"));
+  await render([]);
+  expect(notices().map((n) => n.getAttribute("data-remote-connection-notice"))).toEqual(["b"]);
+  resetRemoteHealth();
 });

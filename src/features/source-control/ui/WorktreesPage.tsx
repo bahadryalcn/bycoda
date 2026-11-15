@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
@@ -332,7 +333,7 @@ export function WorktreesPage({
                       `The sessions were deleted, but the worktree was kept. ${String(error)}`,
                     )
                   : error;
-                setError(String(failure));
+                setError(presentRemoteError(failure, { explicit: true }));
                 throw failure;
               } finally {
                 // The row stays blocked until a fresh listing replaces its saved session IDs.

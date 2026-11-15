@@ -88,6 +88,8 @@ import { ProjectMascot } from "../../projects/ui/ProjectMascot";
 import { SearchableProjectPicker } from "../../projects/ui/SearchableProjectPicker";
 import { HostModelSource } from "../../connections/ui/HostModelSource";
 import { UnreachableMachinesNotice } from "../../connections/public/UnreachableMachinesNotice";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
+
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { SkillPromptField } from "../../skills/ui/SkillPromptField";
 import { OverlayNav } from "../../../app/shell/TitleBar";
@@ -784,7 +786,7 @@ function AutomationsContent({
                             taskId,
                           });
                         } catch (reason) {
-                          setActionError(reason instanceof Error ? reason.message : String(reason));
+                          setActionError(presentRemoteError(reason, { explicit: true }));
                         }
                       }
                     : undefined
@@ -800,7 +802,7 @@ function AutomationsContent({
                       });
                     else await onOpenSession(sessionId);
                   } catch (reason: unknown) {
-                    setActionError(reason instanceof Error ? reason.message : String(reason));
+                    setActionError(presentRemoteError(reason, { explicit: true }));
                   }
                 }}
               />

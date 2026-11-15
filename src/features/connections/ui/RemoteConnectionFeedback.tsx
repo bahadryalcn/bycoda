@@ -12,6 +12,7 @@ import {
 import { connectionOutcome } from "../model/remoteConnection";
 import { isConnectionFailure, type RemoteFailure } from "../model/remoteFailure";
 import { parseRemotePath } from "../model/remoteProjects";
+import { useRemoteOutages } from "../model/remoteHealth";
 import { useRemoteConnection } from "../model/useRemoteConnection";
 import {
   loadRemoteAutoReconnect,
@@ -89,6 +90,7 @@ export function RemoteConnectionNotices() {
   const feedback = useContext(FeedbackContext);
   const [ownerKey] = useState(() => Symbol("remote-connection-notices"));
   const registerOwner = feedback?.registerOwner;
+  const outages = useRemoteOutages();
   useLayoutEffect(() => {
     if (!registerOwner) return;
     registerOwner(ownerKey, true);
@@ -107,6 +109,9 @@ export function RemoteConnectionNotices() {
     )
       machines.set(environmentId, failure ?? previous);
   }
+  // Machines in an outage get their one notice even with no pane mounted for them.
+  for (const environmentId of outages)
+    if (!machines.has(environmentId)) machines.set(environmentId, undefined);
   return [...machines].map(([environmentId, failure]) => (
     <MachineConnectionNotice key={environmentId} environmentId={environmentId} failure={failure} />
   ));

@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import type { DeviceHostStatus, DevicePanelApi } from "../types";
 
 /** Opening a surface observes the runtime; starting it remains an explicit action. */
@@ -23,7 +24,8 @@ export function useDeviceStatus(
       (cause: unknown) => {
         if (current) {
           setStatus(undefined);
-          setError(String(cause));
+          const message = presentRemoteError(cause);
+          if (message) setError(message);
           setBusy(false);
         }
       },

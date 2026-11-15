@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import {
   useEffect,
   useRef,
@@ -120,7 +121,8 @@ function startReadOnlyReader({ binding, key, privacy, previous, reader, setState
           publish({ snapshot });
           return next.session.blocks.length - original.session.blocks.length;
         } catch (error) {
-          publish({ historyError: String(error).replace(/^Error: /, "") });
+          const message = presentRemoteError(error);
+          if (message) publish({ historyError: message });
         } finally {
           historyLoading = false;
           publish({ historyLoading: false });
@@ -165,7 +167,9 @@ function startReadOnlyReader({ binding, key, privacy, previous, reader, setState
           publish({ snapshot, loading: false, error: undefined });
         }
       } catch (error) {
-        publish({ loading: false, error: String(error).replace(/^Error: /, "") });
+        // A transient link drop keeps the last snapshot; the shared connection notice covers it.
+        const message = presentRemoteError(error);
+        publish(message ? { loading: false, error: message } : { loading: false });
       } finally {
         if (current())
           timer = setTimeout(() => {

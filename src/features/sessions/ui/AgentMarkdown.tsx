@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { Skeleton } from "../../../shared/ui/Skeleton";
 import { MarkdownSource as IncrementalMarkdownSource } from "./markdownSource";
 import { Button } from "../../../shared/ui/Button";
@@ -293,7 +294,7 @@ function MarkdownLink({
           if (open) {
             setLinkError(undefined);
             void open().catch((error: unknown) => {
-              setLinkError(error instanceof Error ? error.message : String(error));
+              setLinkError(presentRemoteError(error, { explicit: true }));
             });
           }
         }}
@@ -971,7 +972,11 @@ export const AgentMarkdown = memo(function AgentMarkdown({
         if (await isLocalDirectory(resolved)) await openPathWithDefaultApp(resolved);
         else await revealPath(resolved);
       })().catch((error) =>
-        setFileActionError(t("Could not open the containing folder: {p0}", { p0: String(error) })),
+        setFileActionError(
+          t("Could not open the containing folder: {p0}", {
+            p0: presentRemoteError(error, { explicit: true }),
+          }),
+        ),
       );
     },
     [cwd, resolveInMessage, t],

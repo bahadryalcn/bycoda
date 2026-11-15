@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useT } from "../../../shared/i18n";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
@@ -132,8 +133,7 @@ export function SessionDiscussionPanel({
           mount({ sessionId, host: host.current });
       })
       .catch((cause: unknown) => {
-        if (generation === request.current)
-          setError(cause instanceof Error ? cause.message : String(cause));
+        if (generation === request.current) setError(presentRemoteError(cause, { explicit: true }));
       })
       .finally(() => {
         if (generation === request.current) setLoading(false);

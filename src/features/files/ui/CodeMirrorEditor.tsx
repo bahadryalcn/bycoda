@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { EditorBlameResize } from "./EditorBlameResize";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
@@ -588,7 +589,8 @@ function StandardCodeMirrorEditor({
         if (!disposed) setBlameError(null);
       } catch (error: unknown) {
         if (disposed || !blameOnRef.current) return;
-        setBlameError(error instanceof Error ? error.message : String(error));
+        const message = presentRemoteError(error);
+        if (message) setBlameError(message);
       }
     };
     function scheduleBlame() {
@@ -1079,7 +1081,7 @@ function StandardCodeMirrorEditor({
       setFileNote(null);
       onOpenFile(`${cwd.replace(/[\\/]+$/, "")}/${next}`);
     } catch (error: unknown) {
-      setFileNote(error instanceof Error ? error.message : String(error));
+      setFileNote(presentRemoteError(error, { explicit: true }));
     }
   }, [cwd, gitRelative, onOpenFile, setFileNote]);
 
@@ -1096,7 +1098,7 @@ function StandardCodeMirrorEditor({
     } catch (error: unknown) {
       setMarking({
         busy: false,
-        error: error instanceof Error ? error.message : String(error),
+        error: presentRemoteError(error, { explicit: true }),
       });
     }
   }, [cwd, gitRelative]);

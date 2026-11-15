@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { Text } from "../../../shared/ui/Text";
@@ -166,7 +167,7 @@ export function DeliveryProgressNotice({
       setResolveError(undefined);
       void resolver(unknownRow.id, outcome)
         .then(finish)
-        .catch((reason) => setResolveError(String(reason).replace(/^Error: /, "")))
+        .catch((reason) => setResolveError(presentRemoteError(reason, { explicit: true })))
         .finally(() => setWorking(false));
       return;
     }

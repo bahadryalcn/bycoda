@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { CheckoutCache } from "../model/checkoutCache";
 import { useCallback, useSyncExternalStore } from "react";
 import { createStore } from "../../../shared/lib/store";
@@ -62,7 +63,7 @@ function load(entry: Entry, invalidated = false): Promise<boolean> {
     } catch (error) {
       // A background failure must not replace a usable list with a loading or
       // error screen. The caller can still surface the error beside the list.
-      publish(entry, { ...entry.snapshot, error: String(error), loading: false });
+      publish(entry, { ...entry.snapshot, error: presentRemoteError(error), loading: false });
     }
     entry.inFlight = undefined;
     if (entry.invalidated) {

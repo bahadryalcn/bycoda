@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { FailureState } from "../../../shared/ui/FailureState";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { InlineError } from "../../../shared/ui/InlineError";
@@ -162,8 +163,7 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
               if (context.active) refreshNow.current?.([path]);
             }
           } catch (caught) {
-            if (context.active)
-              setMutationError(caught instanceof Error ? caught.message : String(caught));
+            if (context.active) setMutationError(presentRemoteError(caught, { explicit: true }));
           } finally {
             if (context.active) setBusyId(null);
           }

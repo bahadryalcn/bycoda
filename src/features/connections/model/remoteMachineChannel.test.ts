@@ -1030,7 +1030,7 @@ it("keeps the other WebSocket streams when one consumer fails with a non-transpo
     ([, params]) => (params as { target: { kind: string } }).target.kind === "project",
   );
   expect(projectOpens).toHaveLength(1);
-  const projectId = (projectOpens[0]?.[1] as { subscriptionId: string }).subscriptionId;
+  const projectId = (projectOpens[0]![1] as { subscriptionId: string }).subscriptionId;
   expect(
     calls("subscriptions.close").some(
       ([, params]) => (params as { subscriptionId: string }).subscriptionId === projectId,

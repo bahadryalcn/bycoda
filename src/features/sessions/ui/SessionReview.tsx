@@ -103,7 +103,7 @@ function SessionReviewContent({
           const message = cause instanceof Error ? cause.message : String(cause);
           const pending = message.includes("Workspace checkpoint is still recording this turn");
           setRecording(pending);
-          setError(pending ? null : message);
+          setError(pending ? null : (presentRemoteError(cause) ?? null));
         }
       })
       .finally(() => {

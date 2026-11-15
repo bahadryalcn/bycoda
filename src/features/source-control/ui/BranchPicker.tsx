@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { t, useLocale } from "../../../shared/i18n/git";
@@ -180,7 +181,7 @@ export function BranchPicker({
     dismiss(true);
   };
 
-  const failMessage = (err: unknown) => (err instanceof Error ? err.message : String(err));
+  const failMessage = (err: unknown) => presentRemoteError(err, { explicit: true });
 
   const run = async (pending: PendingSwitch, source: "picker" | "dialog" = "picker") => {
     if (busy || blocked) return;

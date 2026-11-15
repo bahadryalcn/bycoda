@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isGitWatched, subscribeGitChanged } from "../../../platform/tauri/fs";
 
@@ -178,7 +179,7 @@ export function useGitResource<T>(
           setSnapshot((previous) => ({
             ...previous,
             loading: false,
-            error: error instanceof Error ? error.message : String(error),
+            error: presentRemoteError(error) ?? null,
           }));
       } finally {
         inFlight = false;

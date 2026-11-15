@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import {
   expandSkillGroupTokens,
   isSkillGroupPickerItem,
@@ -3349,7 +3350,7 @@ export const Composer = memo(function Composer({
                   })
                   .catch((err: unknown) => {
                     initialParentAttempt.finish();
-                    setCreateError(err instanceof Error ? err.message : String(err));
+                    setCreateError(presentRemoteError(err, { explicit: true }));
                   })
                   .finally(() => {
                     initialParentAttempt.finish();

@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { Text } from "../../../shared/ui/Text";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
@@ -89,7 +90,9 @@ export function LocalSessionReferenceLink({
         },
         error: (cause) => {
           if (sequence.current === request)
-            setError(cause instanceof Error ? cause.message : unavailable);
+            setError(
+              cause instanceof Error ? presentRemoteError(cause, { explicit: true }) : unavailable,
+            );
         },
         done: () => {
           if (sequence.current === request) setReading(false);
@@ -117,7 +120,9 @@ export function LocalSessionReferenceLink({
         },
         error: (cause) => {
           if (sequence.current === request)
-            setError(cause instanceof Error ? cause.message : unavailable);
+            setError(
+              cause instanceof Error ? presentRemoteError(cause, { explicit: true }) : unavailable,
+            );
         },
         done: () => {
           if (activeOpen.current === operation) activeOpen.current = null;

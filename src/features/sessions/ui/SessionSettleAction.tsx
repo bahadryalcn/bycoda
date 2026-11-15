@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { InlineAction } from "../../../shared/ui/ActionHost";
@@ -54,7 +55,10 @@ export function SessionSettleAction({
           .catch((cause: unknown) =>
             toast.show({
               tone: "danger",
-              message: cause instanceof Error ? cause.message : t("Could not update the session."),
+              message:
+                cause instanceof Error
+                  ? presentRemoteError(cause, { explicit: true })
+                  : t("Could not update the session."),
             }),
           )
           .finally(() => setBusy(false));

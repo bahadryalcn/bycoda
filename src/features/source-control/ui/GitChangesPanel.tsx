@@ -360,7 +360,7 @@ export function GitChangesPanel({
                         get title() {
                           return t("Retry failed");
                         },
-                        detail: String(error),
+                        detail: presentRemoteError(error, { explicit: true }),
                         retry: feedback.retry,
                       }),
                     )
@@ -577,7 +577,7 @@ export function GitChangesPanel({
               setGitFeedback(cwd, {
                 kind: "error",
                 title: t("Could not trust repository"),
-                detail: String(error),
+                detail: presentRemoteError(error, { explicit: true }),
               });
             } finally {
               setBusy(null);
@@ -617,7 +617,7 @@ export function GitChangesPanel({
                       await gitInit(cwd);
                       onMutated();
                     } catch (error) {
-                      setInitError(String(error).replace(/^Error: /, ""));
+                      setInitError(presentRemoteError(error, { explicit: true }));
                     } finally {
                       setBusy(null);
                     }
@@ -808,13 +808,12 @@ function ChangedFiles({
   const committing = busy === "commit" || busy === "pr";
   const canGenerate = files.length > 0 && !committing && !isRemoteProjectPath(cwd);
   const fail = (error: unknown, operation = "Git operation failed") => {
-    const text = error instanceof Error ? error.message : String(error);
     setGitFeedback(cwd, {
       kind: "error",
       get title() {
         return t(operation);
       },
-      detail: text,
+      detail: presentRemoteError(error, { explicit: true }),
     });
   };
   const {
@@ -1140,7 +1139,7 @@ function ChangedFiles({
             title: pushed
               ? t("Commit pushed; pull request creation failed")
               : t("Commit created; push failed"),
-            detail: error instanceof Error ? error.message : String(error),
+            detail: presentRemoteError(error, { explicit: true }),
             retry: () =>
               retryPublication(!pushed && (push || createPr), createPr, index?.branch ?? null),
           });
@@ -1248,7 +1247,7 @@ function ChangedFiles({
         setGitFeedback(cwd, {
           kind: "warning",
           title: remainingPush ? t("Commit created; push failed") : t("Publication incomplete"),
-          detail: String(error),
+          detail: presentRemoteError(error, { explicit: true }),
           retry: () => retryPublication(remainingPush, createPr, branch),
         });
       } finally {
@@ -1282,7 +1281,7 @@ function ChangedFiles({
           title: pushed
             ? t("Branch pushed; pull request creation failed")
             : t("Couldn’t create pull request"),
-          detail: String(error),
+          detail: presentRemoteError(error, { explicit: true }),
           retry: () =>
             retryPublication(!pushed && (index?.ahead ?? 0) > 0, true, index?.branch ?? null),
         });

@@ -15,6 +15,7 @@ import { EmptyHint } from "../common/EmptyHint";
 import { OutreachSequenceCard } from "./OutreachSequenceCard";
 import { SequenceEditor } from "./SequenceEditor";
 import { errorMessage, listDisplayName, rateText } from "./audienceModel";
+import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import "./audience.css";
 
 export type OutreachBoardProps = {
@@ -23,7 +24,13 @@ export type OutreachBoardProps = {
   onChanged: () => void;
 };
 
-const EMPTY_STATS: SequenceStats = { sent: 0, replied: 0, positive: 0, optedOut: 0, failed: 0 };
+const EMPTY_STATS: SequenceStats = {
+  sent: 0,
+  replied: 0,
+  positive: 0,
+  optedOut: 0,
+  failed: 0,
+};
 
 /** Why a sequence cannot start yet, in plain words. Undefined means it can start. */
 export function startBlockReason(sequence: Sequence): string | undefined {
@@ -71,7 +78,7 @@ export function OutreachBoard({ client, lists, onChanged }: OutreachBoardProps) 
       onChanged();
       load();
     } catch (err) {
-      setError(errorMessage(err));
+      setError(presentRemoteError(err, { explicit: true }));
     } finally {
       setBusyId(undefined);
     }
@@ -139,7 +146,10 @@ export function OutreachBoard({ client, lists, onChanged }: OutreachBoardProps) 
           message={t(
             "No sequences yet. A sequence sends a few messages over days and stops when someone replies.",
           )}
-          action={{ label: t("New sequence"), onClick: () => setEditing("new") }}
+          action={{
+            label: t("New sequence"),
+            onClick: () => setEditing("new"),
+          }}
         />
       ) : null}
 

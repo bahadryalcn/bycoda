@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import type { CSSProperties } from "react";
 /** Different job: Explorer hierarchy owns rename, drag/drop and range selection; TreeRow owns each interactive row. */
 import { Tooltip } from "../../../shared/ui/Tooltip";
@@ -903,7 +904,7 @@ function FileTreeInner({
       .catch((err: unknown) => {
         if (request !== rootRefreshRequest.current) return;
         setChildren(previous);
-        setError(err instanceof Error ? err.message : String(err));
+        setError(presentRemoteError(err, { explicit: true }));
       })
       .finally(() => {
         if (request === rootRefreshRequest.current) {
@@ -1657,7 +1658,7 @@ export function NameRow({
       void onCommit(value).catch((err: unknown) => {
         finished.current = false;
         setBusy(false);
-        setSubmitError(err instanceof Error ? err.message : String(err));
+        setSubmitError(presentRemoteError(err, { explicit: true }));
       });
       return;
     }

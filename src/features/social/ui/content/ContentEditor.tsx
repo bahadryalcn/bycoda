@@ -31,6 +31,7 @@ import {
 } from "./contentPublish";
 import { draftGate, publishGate } from "./contentGate";
 import { useTikTokCreators } from "./useTikTokCreators";
+import { presentRemoteError } from "../../../connections/public/remoteFailure";
 
 /** What happened to the draft; the screen closes the editor and clears the draft for each. */
 export type EditorOutcome = "published" | "scheduled" | "draft" | "program";
@@ -98,7 +99,14 @@ export function ContentEditor(props: ContentEditorProps) {
   const selected = selectedAccounts(draft, accounts);
   const creators = useTikTokCreators(client, selected, !locked);
   const now = wallClockNow();
-  const problems = draftProblems({ draft, projectId, accounts, snapshot, creator: creators, now });
+  const problems = draftProblems({
+    draft,
+    projectId,
+    accounts,
+    snapshot,
+    creator: creators,
+    now,
+  });
   const submissionBusy =
     !!operationPending ||
     pending.is("content.publish") ||
@@ -162,7 +170,9 @@ export function ContentEditor(props: ContentEditorProps) {
           onDone("draft");
         } catch (caught) {
           const message =
-            caught instanceof Error ? caught.message : t("The post could not be saved.");
+            caught instanceof Error
+              ? presentRemoteError(caught, { explicit: true })
+              : t("The post could not be saved.");
           setError(message);
           onOperationError?.(message);
         } finally {
@@ -210,7 +220,9 @@ export function ContentEditor(props: ContentEditorProps) {
           onDone(draft.when === "now" ? "published" : "scheduled");
         } catch (caught) {
           const message =
-            caught instanceof Error ? caught.message : t("The post could not be published.");
+            caught instanceof Error
+              ? presentRemoteError(caught, { explicit: true })
+              : t("The post could not be published.");
           setError(message);
           onOperationError?.(message);
         } finally {

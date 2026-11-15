@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { useEffect, useRef, useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
@@ -60,7 +61,11 @@ export function SessionTaskLinkDialog({
       })
       .catch((cause: unknown) => {
         if (mounted.current)
-          setError(cause instanceof Error ? cause.message : t("Could not update the task link."));
+          setError(
+            cause instanceof Error
+              ? presentRemoteError(cause, { explicit: true })
+              : t("Could not update the task link."),
+          );
       })
       .finally(() => {
         inFlight.current = false;

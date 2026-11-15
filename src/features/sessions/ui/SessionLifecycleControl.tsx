@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -38,7 +39,10 @@ export function SessionLifecycleControl({
   const report = (cause: unknown) =>
     toast.show({
       tone: "danger",
-      message: cause instanceof Error ? cause.message : t("Could not update the session."),
+      message:
+        cause instanceof Error
+          ? presentRemoteError(cause, { explicit: true })
+          : t("Could not update the session."),
     });
   // A pending settle is withdrawn the same way a settled session comes back.
   const settled = view.state !== "active";

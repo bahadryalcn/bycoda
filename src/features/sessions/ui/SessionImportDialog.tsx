@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
@@ -127,7 +128,7 @@ async function performImport({
         failed: [
           {
             candidate: toImport[0],
-            error: error instanceof Error ? error.message : String(error),
+            error: presentRemoteError(error, { explicit: true }),
           },
         ],
         cancelled: false,

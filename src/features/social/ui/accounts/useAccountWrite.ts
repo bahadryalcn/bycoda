@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import { useState } from "react";
 import { useSocialPending } from "../../hooks/useSocialPending";
 
@@ -13,7 +14,11 @@ export function useAccountWrite(failure: string) {
     try {
       return await pending.run(key, work);
     } catch (cause) {
-      setError(cause instanceof Error && cause.message ? cause.message : failure);
+      setError(
+        cause instanceof Error && cause.message
+          ? presentRemoteError(cause, { explicit: true })
+          : failure,
+      );
       return undefined;
     }
   };
