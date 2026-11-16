@@ -46,6 +46,33 @@ afterEach(async () => {
   await act(() => root.unmount());
   container.remove();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+
+it("retries a failed design after switching away and returning", async () => {
+  vi.mocked(invoke).mockRejectedValueOnce(new Error("Temporary read failure"));
+  await act(() => root.render(createElement(ChatBackgroundMedia, { path: "/asset.html" })));
+  expect(container.querySelector("iframe")).toBeNull();
+  await act(() => root.render(createElement(ChatBackgroundMedia, { path: null })));
+  await act(() => root.render(createElement(ChatBackgroundMedia, { path: "/asset.html" })));
+  expect(container.querySelector("iframe")).not.toBeNull();
+});
+
+it("releases the video decoder immediately when hidden or failed", async () => {
+  const pause = vi.spyOn(HTMLVideoElement.prototype, "pause").mockImplementation(() => {});
+  const load = vi.spyOn(HTMLVideoElement.prototype, "load").mockImplementation(() => {});
+  await act(() => root.render(createElement(ChatBackgroundMedia, { path: "/asset.mp4" })));
+  const video = container.querySelector("video")!;
+  await act(() => intersect([{ isIntersecting: false }]));
+  expect(pause).toHaveBeenCalled();
+  expect(load).toHaveBeenCalled();
+  expect(video.hasAttribute("src")).toBe(false);
+  await act(() => intersect([{ isIntersecting: true }]));
+  const failedVideo = container.querySelector("video")!;
+  pause.mockClear();
+  await act(() => failedVideo.dispatchEvent(new Event("error")));
+  expect(pause).toHaveBeenCalled();
+  expect(failedVideo.hasAttribute("src")).toBe(false);
 });
 
 it("holds one opaque preview token and disposes when hidden, including a late reply", async () => {

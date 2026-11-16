@@ -4,21 +4,23 @@ import { chatBackgroundKind } from "../../../shared/lib/chatBackgroundKind";
 import { useDecorativeMotionEnabled, useSystemReducedMotion } from "../model/decorativeMotion";
 import { t } from "../../../shared/i18n";
 
-/** Decorative media only. Opaque native HTML preview has no app or file authority. */
-export function ChatBackgroundMedia({
-  path,
-  active = true,
-  className = "",
-  style,
-}: {
+type BackgroundMediaProps = {
   path: string | null;
   active?: boolean;
   className?: string;
   style?: CSSProperties;
-}) {
+};
+
+/** Decorative media only. Each selection owns its failures and native resources. */
+export function ChatBackgroundMedia(props: BackgroundMediaProps) {
+  return props.path ? <BackgroundMedia key={props.path} {...props} /> : null;
+}
+
+function BackgroundMedia({ path, active = true, className = "", style }: BackgroundMediaProps) {
   const motion = useDecorativeMotionEnabled();
   const reduced = useSystemReducedMotion();
   const container = useRef<HTMLDivElement>(null);
+  const videoElement = useRef<HTMLVideoElement>(null);
   const [visible, setVisible] = useState(false);
   const [pageVisible, setPageVisible] = useState(document.visibilityState !== "hidden");
   const [frame, setFrame] = useState<{ path: string; url: string } | null>(null);
@@ -39,6 +41,17 @@ export function ChatBackgroundMedia({
       document.removeEventListener("visibilitychange", visibility);
     };
   }, []);
+
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Release the detached video's decoder and source immediately on failure, hiding or selection change.
+  useEffect(() => {
+    const video = videoElement.current;
+    if (!video) return;
+    return () => {
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+    };
+  }, [running, path, failed]);
 
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Hold one native preview token while this visible scene is active; fence late replies and close on teardown.
   useEffect(() => {
@@ -94,6 +107,7 @@ export function ChatBackgroundMedia({
       {path && failed !== path && running ? (
         kind === "video" ? (
           <video
+            ref={videoElement}
             key={path}
             src={convertFileSrc(path)}
             autoPlay
