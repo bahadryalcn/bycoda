@@ -1,16 +1,57 @@
-import { beforeEach, expect, it, vi } from "vitest";
-import { BYKIT_HINT, bykitAvailable, bykitHint, resetBykitCache } from "./bykit-hint";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { HostStore } from "../store";
+import {
+  BYKIT_HINT,
+  bykitAvailable,
+  bykitHint,
+  readBykitEnabled,
+  resetBykitCache,
+  saveBykitEnabled,
+} from "./bykit-hint";
+
+const cleanups: (() => Promise<void>)[] = [];
+
+function store() {
+  const dir = mkdtempSync(join(tmpdir(), "bykit-"));
+  const host = new HostStore(join(dir, "host.db"));
+  cleanups.push(async () => {
+    await host.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+  return host;
+}
 
 beforeEach(() => {
   resetBykitCache();
   vi.useRealTimers();
 });
 
+afterEach(async () => {
+  for (const cleanup of cleanups.splice(0)) await cleanup();
+});
+
 it("adds the instruction block only when bykit resolves", async () => {
-  expect(await bykitHint(async () => "/usr/bin/bykit")).toBe(BYKIT_HINT);
+  const host = store();
+  expect(await bykitHint(host, async () => "/usr/bin/bykit")).toBe(BYKIT_HINT);
   expect(BYKIT_HINT).toContain("bykit edit");
   resetBykitCache();
-  expect(await bykitHint(async () => undefined)).toBe("");
+  expect(await bykitHint(host, async () => undefined)).toBe("");
+});
+
+it("follows the owner's switch, which is on until a choice is saved", async () => {
+  const host = store();
+  const installed = async () => "/usr/bin/bykit";
+  expect(await readBykitEnabled(host)).toBe(true);
+  expect(await saveBykitEnabled(host, false)).toBe(false);
+  expect(await readBykitEnabled(host)).toBe(false);
+  expect(await bykitHint(host, installed)).toBe("");
+  await saveBykitEnabled(host, true);
+  expect(await bykitHint(host, installed)).toBe(BYKIT_HINT);
+  await expect(saveBykitEnabled(host, "off")).rejects.toThrow("true or false");
+  expect(await readBykitEnabled(host)).toBe(true);
 });
 
 it("treats a lookup error as absent", async () => {

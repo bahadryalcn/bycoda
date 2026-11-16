@@ -11717,5 +11717,7 @@
   "Update bycoda Host in Machines settings before controlling this desktop turn.": "Mettez à jour bycoda Host dans les paramètres des machines avant de contrôler ce tour du bureau.",
   "This isn’t available for projects on another machine yet.": "Ce n’est pas encore disponible pour les projets d’une autre machine.",
   "{p0}'s {p1} Host needs updating to list skills. Update it in Machines settings.": "Le {p1} Host de {p0} doit être mis à jour pour lister les compétences. Mettez-le à jour dans les paramètres des machines.",
-  "Couldn't reach {p0}.": "Impossible de joindre {p0}."
+  "Couldn't reach {p0}.": "Impossible de joindre {p0}.",
+  "Tell agents to use bykit": "Demander aux agents d'utiliser bykit",
+  "When bykit is installed, agents are told to use it for large files, diffs, long command output and bulk edits. Applies to the next agent turn.": "Si bykit est installé, les agents sont invités à l'utiliser pour les gros fichiers, les diffs, les longues sorties de commande et les modifications en masse. S'applique au prochain tour de l'agent."
 }

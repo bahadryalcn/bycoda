@@ -1,21 +1,57 @@
 import { resolveOnPath } from "../mcp/hub/launch";
+import type { HostStore } from "../store";
 
 /** Agent instruction block from the bykit contract (SPEC.md); keep it short, it costs tokens per session. */
 export const BYKIT_HINT = [
-  "Use `bykit` for file work instead of writing Python/Node/shell scripts:",
-  "`bykit find` to search, `bykit read` to read, `bykit edit` (JSON on stdin) for any",
-  "multi-place edit or new file, `bykit replace` for repository-wide replacements,",
-  "`bykit diff` for git changes, `bykit json` for JSON/locale data, `bykit run -- <cmd>`",
-  "for builds and tests (prints only failures). Do not format or fix line endings by hand.",
-  "Narrow by path or `--glob` first; fetch more with `--page N`; use `--all` only when the task",
-  "needs every result (for bulk edits use `bykit replace`).",
+  "Never write Python, Node or shell scripts to edit, search or inspect files.",
+  "Use bykit where output is large or edits are bulk: `bykit read` for big files,",
+  "`bykit diff` for long diffs, `bykit run -- <cmd>` for long command output,",
+  "`bykit find` for searches that may return many results (usage counts,",
+  "repo-wide scans, before a bulk change), `bykit edit`/`replace` for multi-place",
+  "edits, `bykit json` for JSON. For a single definition or a one-place edit,",
+  "your own tools are enough. Output is paged: narrow by path first, then",
+  "`--page N`; `--all` only when the task needs every result.",
 ].join("\n");
 
 const LOOKUP_DEADLINE_MS = 1_500;
 const CACHE_MS = 60_000;
+const SETTING_KEY = "bykitInstructions";
 
 type Lookup = (command: string) => Promise<string | undefined>;
+type SettingsStore = Pick<HostStore, "ready" | "db">;
 let cached: { at: number; found: boolean } | undefined;
+
+function settingsTable(store: SettingsStore) {
+  return store.db.exec(
+    "CREATE TABLE IF NOT EXISTS host_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+  );
+}
+
+/** The owner's Settings switch; on until the desktop publishes a choice. */
+export async function readBykitEnabled(store: SettingsStore): Promise<boolean> {
+  await store.ready;
+  return store.db.scope(async () => {
+    await settingsTable(store);
+    const row = await store.db
+      .prepare("SELECT value FROM host_settings WHERE key=?")
+      .get(SETTING_KEY);
+    return row?.value !== "false";
+  });
+}
+
+export async function saveBykitEnabled(store: SettingsStore, raw: unknown): Promise<boolean> {
+  if (typeof raw !== "boolean") throw new Error("bykitInstructions must be true or false.");
+  await store.ready;
+  await store.db.scope(async () => {
+    await settingsTable(store);
+    await store.db
+      .prepare(
+        "INSERT INTO host_settings VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+      )
+      .run(SETTING_KEY, String(raw));
+  });
+  return raw;
+}
 
 /**
  * Whether a `bykit` executable resolves on PATH. The lookup has a deadline (a slow or
@@ -37,9 +73,15 @@ export async function bykitAvailable(
   return cached.found;
 }
 
-/** The instruction block when bykit is installed, otherwise an empty string. */
-export async function bykitHint(lookup?: Lookup, now?: () => number): Promise<string> {
-  return (await bykitAvailable(lookup, now)) ? BYKIT_HINT : "";
+/** The instruction block when the owner's switch is on and bykit is installed, otherwise "". */
+export async function bykitHint(
+  store: SettingsStore,
+  lookup?: Lookup,
+  now?: () => number,
+): Promise<string> {
+  // An unreadable setting must not block the turn; the switch defaults to on.
+  const enabled = await readBykitEnabled(store).catch(() => true);
+  return enabled && (await bykitAvailable(lookup, now)) ? BYKIT_HINT : "";
 }
 
 export function resetBykitCache() {

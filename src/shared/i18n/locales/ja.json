@@ -11717,5 +11717,7 @@
   "Update bycoda Host in Machines settings before controlling this desktop turn.": "このデスクトップ操作を行う前に、マシン設定でbycoda Hostを更新してください。",
   "This isn’t available for projects on another machine yet.": "別のマシン上のプロジェクトではまだ利用できません。",
   "{p0}'s {p1} Host needs updating to list skills. Update it in Machines settings.": "スキルを一覧表示するには、{p0}の{p1} Hostを更新する必要があります。マシン設定で更新してください。",
-  "Couldn't reach {p0}.": "{p0}に接続できませんでした。"
+  "Couldn't reach {p0}.": "{p0}に接続できませんでした。",
+  "Tell agents to use bykit": "エージェントに bykit を使わせる",
+  "When bykit is installed, agents are told to use it for large files, diffs, long command output and bulk edits. Applies to the next agent turn.": "bykit がインストールされている場合、大きなファイル、差分、長いコマンド出力、一括編集に bykit を使うようエージェントに指示します。次のエージェントのターンから適用されます。"
 }

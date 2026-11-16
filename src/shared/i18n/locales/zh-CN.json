@@ -11717,5 +11717,7 @@
   "Update bycoda Host in Machines settings before controlling this desktop turn.": "在控制此桌面轮次之前，请在“设备”设置中更新 bycoda Host。",
   "This isn’t available for projects on another machine yet.": "其他设备上的项目暂不支持此功能。",
   "{p0}'s {p1} Host needs updating to list skills. Update it in Machines settings.": "{p0} 上的 {p1} Host 需要更新才能列出技能。请在“设备”设置中更新。",
-  "Couldn't reach {p0}.": "无法连接到 {p0}。"
+  "Couldn't reach {p0}.": "无法连接到 {p0}。",
+  "Tell agents to use bykit": "让代理使用 bykit",
+  "When bykit is installed, agents are told to use it for large files, diffs, long command output and bulk edits. Applies to the next agent turn.": "安装 bykit 后，代理会被要求在处理大文件、差异、较长的命令输出和批量编辑时使用它。从下一个代理回合开始生效。"
 }

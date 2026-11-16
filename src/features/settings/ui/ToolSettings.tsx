@@ -52,6 +52,9 @@ export function ToolSettingsPage({ revealRequest = 0 }: { revealRequest?: number
           <Tab value="devServers" className="shrink-0">
             {t("Development servers")}
           </Tab>
+          <Tab value="bykit" className="shrink-0">
+            bykit
+          </Tab>
         </TabList>
         <TabPanel value="browser" keepMounted>
           <BrowserSettingsPage />
@@ -64,6 +67,9 @@ export function ToolSettingsPage({ revealRequest = 0 }: { revealRequest?: number
         </TabPanel>
         <TabPanel value="devServers" keepMounted>
           <DevServersSettingsPage />
+        </TabPanel>
+        <TabPanel value="bykit" keepMounted>
+          <BykitSettingsPage />
         </TabPanel>
       </Tabs>
     </ActiveToolSettingsTab.Provider>
@@ -257,11 +263,13 @@ function ChoicePreference<T extends string | number>({
 function ToolSettingsGroup({
   tab,
   title,
+  description,
   reset,
   children,
 }: {
   tab: ToolSettingsTab;
   title: string;
+  description?: string;
   reset: () => void;
   children: ReactNode;
 }) {
@@ -285,9 +293,10 @@ function ToolSettingsGroup({
     <Group
       title={title}
       layout="full"
-      description={t(
-        "Defaults apply when opening a new tool view. Existing views keep their local choices.",
-      )}
+      description={
+        description ??
+        t("Defaults apply when opening a new tool view. Existing views keep their local choices.")
+      }
       feedback={
         failed ? (
           <SettingsFeedback state="error">{t("Could not save tool preferences.")}</SettingsFeedback>
@@ -531,6 +540,27 @@ export function DevServersSettingsPage() {
           { value: 30000, label: t("30 seconds") },
           { value: 60000, label: t("1 minute") },
         ]}
+      />
+    </ToolSettingsGroup>
+  );
+}
+
+export function BykitSettingsPage() {
+  useLocale();
+  return (
+    <ToolSettingsGroup
+      tab="bykit"
+      title="bykit"
+      description={t(
+        "When bykit is installed, agents are told to use it for large files, diffs, long command output and bulk edits. Applies to the next agent turn.",
+      )}
+      reset={() => toolPreferences.bykitInstructions.save(true)}
+    >
+      <BooleanPreference
+        id="bykit-instructions"
+        label={t("Tell agents to use bykit")}
+        preference={toolPreferences.bykitInstructions}
+        fallback={true}
       />
     </ToolSettingsGroup>
   );

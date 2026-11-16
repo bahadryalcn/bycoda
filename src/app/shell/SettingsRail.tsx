@@ -50,6 +50,7 @@ export const SETTINGS_SECTION_ICONS: Record<SettingsSectionId, IconComponent> = 
   devices: Smartphone,
   logs: ListBullet,
   devServers: Server,
+  bykit: Terminal,
   general: Settings,
   policies: CheckList,
   notifications: CircleDot,

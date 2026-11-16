@@ -801,7 +801,7 @@ export class HostEngine {
     const child = !!session.modelSettings?.[DELEGATION_PARENT_KEY];
     const hints = [
       await harnessRuntimeHints(session.id, session.modelSettings, session),
-      await bykitHint(),
+      await bykitHint(this.store),
       child ? "" : await this.ownerInstructions?.(),
     ];
     return hints.filter(Boolean).join("\n");

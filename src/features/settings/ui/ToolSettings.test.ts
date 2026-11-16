@@ -14,6 +14,7 @@ import {
   DevicesSettingsPage,
   LogsSettingsPage,
   DevServersSettingsPage,
+  BykitSettingsPage,
 } from "./ToolSettings";
 import { RevealedSetting } from "../../../shared/ui/settings";
 
@@ -32,6 +33,7 @@ it.each([
   ["devices", DevicesSettingsPage],
   ["logs", LogsSettingsPage],
   ["devServers", DevServersSettingsPage],
+  ["bykit", BykitSettingsPage],
 ] as const)("renders every searchable %s control", async (section, Page) => {
   const container = document.createElement("div");
   document.body.append(container);
