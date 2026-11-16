@@ -14,6 +14,13 @@ Skills show only the saved owner preference: the switch on a skill's page, and *
 in the list. Bycoda does not observe skill readiness or activity, so the Skills
 screen does not display them.
 
+## bykit
+
+When the `bykit` command-line tool is installed and on the Host's PATH, every agent
+session is told to use it for searching, reading and editing files instead of writing
+throwaway scripts. Without it nothing changes. Installing it takes effect within about
+a minute for sessions started afterward.
+
 ## Tool defaults
 
 **Settings > Tools** has Browser, Devices, Logs and Development Servers tabs on

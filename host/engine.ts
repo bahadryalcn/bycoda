@@ -134,6 +134,7 @@ import { isTaskWorktreeRemoving } from "./tasks/task-worktree-cleanup";
 import { prepareHostSkillPrompt } from "./skills/prompt-skills";
 import { DELEGATION_PARENT_KEY } from "../src/shared/model/host-contracts/delegation";
 import { projectChatCitationsForProvider } from "../src/features/sessions/model/chatCitation";
+import { bykitHint } from "./bykit/bykit-hint";
 import {
   forgetRuntimeHint,
   harnessRuntimeHints,
@@ -800,6 +801,7 @@ export class HostEngine {
     const child = !!session.modelSettings?.[DELEGATION_PARENT_KEY];
     const hints = [
       await harnessRuntimeHints(session.id, session.modelSettings, session),
+      await bykitHint(),
       child ? "" : await this.ownerInstructions?.(),
     ];
     return hints.filter(Boolean).join("\n");

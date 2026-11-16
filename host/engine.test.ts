@@ -148,6 +148,7 @@ import { mergeAdoptedSession } from "../src/features/connections/model/adoptedSe
 import { appendReadyHandoff } from "../src/features/sessions/model/handoff";
 import { setHarnessModels, resetHarnessModelOverlays } from "../src/features/sessions/model/models";
 import * as runtimeGuidance from "../src/integrations/harness/core/runtimeGuidance";
+import * as bykit from "./bykit/bykit-hint";
 import { HandoffHistoryStore } from "./tasks/handoff-history";
 import * as skillPrompts from "./skills/prompt-skills";
 import { withChatCitations } from "../src/features/sessions/model/chatCitation";
@@ -3545,7 +3546,8 @@ describe("handoff context capacity", () => {
   it("charges injected runtime instructions once and keeps them out of the owner's transcript", async () => {
     const hint = "Runtime skill policy. ".repeat(1000);
     const hints = vi.spyOn(runtimeGuidance, "harnessRuntimeHints").mockResolvedValue(hint);
-    cleanups.push(() => hints.mockRestore());
+    const kit = vi.spyOn(bykit, "bykitHint").mockResolvedValue("");
+    cleanups.push(() => (hints.mockRestore(), kit.mockRestore()));
     const { engine, store, turns, id, waitForTurnStart } = await seedHandoff(1024);
     await engine.command({
       type: "send",
@@ -3565,10 +3567,23 @@ describe("handoff context capacity", () => {
     turns[0].finish();
   });
 
+  it("appends the bykit instruction block to runtime instructions only when bykit is installed", async () => {
+    const hint = "bycoda tools for this session:";
+    const hints = vi.spyOn(runtimeGuidance, "harnessRuntimeHints").mockResolvedValue(hint);
+    const kit = vi.spyOn(bykit, "bykitHint").mockResolvedValue(bykit.BYKIT_HINT);
+    cleanups.push(() => (hints.mockRestore(), kit.mockRestore()));
+    const { engine, turns, id, waitForTurnStart } = await seedHandoff(1024);
+    await engine.command({ type: "send", commandId: "bykit-turn", sessionId: id, text: "Go." });
+    await waitForTurnStart();
+    expect(turns[0].input.runtimeInstructions).toBe(`${hint}\n${bykit.BYKIT_HINT}`);
+    turns[0].finish();
+  });
+
   it("keeps the owner's persona and style out of a delegated child's runtime instructions", async () => {
     const hint = "Child bycoda tools.";
     const hints = vi.spyOn(runtimeGuidance, "harnessRuntimeHints").mockResolvedValue(hint);
-    cleanups.push(() => hints.mockRestore());
+    const kit = vi.spyOn(bykit, "bykitHint").mockResolvedValue("");
+    cleanups.push(() => (hints.mockRestore(), kit.mockRestore()));
     const { engine, store, turns, id, waitForTurnStart } = await seedHandoff(1024);
     engine.ownerInstructions = async () => "Call the owner Arif and answer in his style.";
     const saved = await store.session(id);
