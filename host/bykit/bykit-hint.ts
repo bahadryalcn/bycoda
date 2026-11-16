@@ -4,8 +4,9 @@ import { resolveOnPath } from "../mcp/hub/launch";
 export const BYKIT_HINT = [
   "Use `bykit` for file work instead of writing Python/Node/shell scripts:",
   "`bykit find` to search, `bykit read` to read, `bykit edit` (JSON on stdin) for any",
-  "multi-place edit or new file, `bykit replace` for repository-wide replacements.",
-  "Do not format or fix line endings by hand.",
+  "multi-place edit or new file, `bykit replace` for repository-wide replacements,",
+  "`bykit diff` for git changes, `bykit json` for JSON/locale data, `bykit run -- <cmd>`",
+  "for builds and tests (prints only failures). Do not format or fix line endings by hand.",
 ].join("\n");
 
 const LOOKUP_DEADLINE_MS = 1_500;
