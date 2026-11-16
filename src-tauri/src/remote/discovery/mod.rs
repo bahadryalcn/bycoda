@@ -375,7 +375,7 @@ fn merge(mut all: Vec<MachineCandidate>) -> Vec<MachineCandidate> {
         }
         out.push(c);
     }
-    out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    out.sort_by_key(|a| a.name.to_lowercase());
     out
 }
 fn combine(a: &mut MachineCandidate, b: MachineCandidate) {

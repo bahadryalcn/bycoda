@@ -93,7 +93,9 @@ pub struct ReminderService {
 }
 
 impl ReminderService {
-    /// Fails closed until the renderer has sent its first preference snapshot.
+    /// Fails closed until the renderer has sent its first preference snapshot. Only tests read
+    /// the bare event gate; delivery goes through `allows_assistant_banner`.
+    #[cfg(test)]
     pub(crate) fn allows_event(&self, event: &str) -> bool {
         self.preferences
             .lock()

@@ -361,8 +361,15 @@ it("retires the exact worker after two nudges, queues the same retained task onc
   expect(readFileSync(join(f.directory, "retained.txt"), "utf8")).toBe(
     "Unmerged owner and worker edits must remain.",
   );
-  await f.tasks.tick();
-  await vi.waitFor(() => expect(f.turns).toHaveLength(2));
+  // Launch runs git and worktree preparation, which can exceed the default 1s wait on a loaded
+  // runner; a tick that overlapped the nudge is not joined, so keep ticking until it starts.
+  await vi.waitFor(
+    async () => {
+      await f.tasks.tick();
+      expect(f.turns).toHaveLength(2);
+    },
+    { timeout: 20_000, interval: 50 },
+  );
   const restarted = (await f.tasks.get("canonical-task"))!;
   expect(restarted.sessionId).not.toBe(f.sessionId);
   expect(restarted.goalId).toBe(`assistant-${f.job.id}`);

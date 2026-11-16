@@ -1079,6 +1079,7 @@ pub fn pty_kill_all(window: tauri::Window, host: State<'_, PtyHost>) -> Result<(
 
 #[cfg(unix)]
 // Preserve the existing IPC/process-launch argument contract.
+#[allow(clippy::too_many_arguments)]
 fn spawn_unix(
     app: AppHandle,
     host: State<PtyHost>,
@@ -1345,6 +1346,7 @@ fn spawn_unix(
 
 #[cfg(windows)]
 // Preserve the existing IPC/process-launch argument contract.
+#[allow(clippy::too_many_arguments)]
 fn spawn_windows(
     app: AppHandle,
     host: State<PtyHost>,

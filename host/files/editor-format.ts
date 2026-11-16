@@ -25,6 +25,9 @@ export function formatWorkspaceText(
       ["--input-type=module", "-e", FORMAT_WORKER],
       {
         cwd: root,
+        // Launched from bycoda's own Vite+ toolchain, VP_VERSION would make Oxfmt load the
+        // enclosing vite.config `fmt` instead of the project's own .oxfmtrc.
+        env: { ...process.env, VP_VERSION: undefined },
         windowsHide: true,
         timeout: 20_000,
         maxBuffer: NATIVE_FORMAT_MAX_RESULT_BYTES,

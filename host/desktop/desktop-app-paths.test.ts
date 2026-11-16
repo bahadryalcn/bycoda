@@ -63,7 +63,8 @@ it("leaves paths, system folder names and unregistered apps to the helper", asyn
   const windows = tempDir();
   expect(await resolveWindowsAppPath("missing", run, { SystemRoot: windows })).toBeUndefined();
   expect(calls).toBe(2);
-  writeFileSync(join(windows, "notepad.exe"), "");
+  // Windows resolves case-insensitively; match the case so a case-sensitive runner agrees.
+  writeFileSync(join(windows, "Notepad.exe"), "");
   expect(await resolveWindowsAppPath("Notepad", run, { SystemRoot: windows })).toBeUndefined();
   expect(calls).toBe(2);
 });

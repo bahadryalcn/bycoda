@@ -234,6 +234,9 @@ describe("model panel", () => {
     const binding = KEYBINDINGS.find((row) => row.command === "App: Switch Model")!;
     expect(KEYBINDINGS.filter((row) => row.keys === binding.keys)).toHaveLength(1);
     await render({ harness: "claude", model: "claude:opus-5", hotkeys: true });
+    // A controlled clock keeps the 80 ms duplicate-shortcut guard independent of how slow the runner renders.
+    let clock = 1000;
+    const nowSpy = vi.spyOn(performance, "now").mockImplementation(() => clock);
     const press = async () =>
       act(async () => {
         window.dispatchEvent(
@@ -254,8 +257,9 @@ describe("model panel", () => {
     expect(panel()).not.toBeNull();
     await act(async () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
     expect(document.activeElement?.getAttribute("aria-label")).toBe("Search models");
-    await new Promise((resolve) => setTimeout(resolve, 85));
+    clock += 85;
     await press();
+    nowSpy.mockRestore();
     expect(panel()).toBeNull();
     expect(document.activeElement).toBe(trigger());
   });

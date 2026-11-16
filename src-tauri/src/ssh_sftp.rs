@@ -324,7 +324,7 @@ fn retire_cancelled(
         #[cfg(unix)]
         kill_process_tree(child.id());
         #[cfg(not(windows))]
-        let _ = job;
+        let () = job;
         let _ = child.kill();
         let exited = child.wait().is_ok();
         #[cfg(windows)]

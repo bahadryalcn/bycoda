@@ -785,6 +785,12 @@ it("clears edit state after reconnect succeeds so the next connection adds a mac
 it("keeps the other address when saving a new primary address", async () => {
   machines = [{ ...machine, ssh: { ...machine.ssh!, alternate: "me@tailnet" } }];
   await render();
+  // Route details sit behind the machine summary's routes disclosure.
+  await act(async () =>
+    container
+      .querySelector<HTMLButtonElement>("[data-machine-summary] button[aria-expanded]")!
+      .click(),
+  );
   expect(container.textContent).toContain("Other address · me@tailnet");
   await editMachine("Home Mac");
   await fill('input[placeholder="user@my-mac-mini or an SSH alias"]', "me@new-home");

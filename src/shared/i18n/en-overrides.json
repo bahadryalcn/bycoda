@@ -195,5 +195,15 @@
   "These folders were removed from {p0} and taken out of the group \"{p1}\". The projects and their sessions are still in the rail:\n\n{p2}": "These folders were removed from {p0} and taken out of the group \"{p1}\". Their projects remain in the rail:\n\n{p2}",
   "An account is optional and only syncs your stats across devices. Your sessions, projects and settings stay on this computer either way. You can sign in later in Settings → Account.": "An account is optional and only syncs stats across devices. Your sessions, projects and settings stay on this computer.",
   "Once a day bycoda can send a small signal that helps count installs and plan support. It is off unless you say yes. You can change this any time in Settings → Account → Privacy & data, or in Settings → Privacy without an account.": "Once a day bycoda can send a small signal that helps count installs. Off unless you say yes.",
-  "Choose categories per project. Sounds and desktop alerts follow the application settings above. Mute pauses alerts without changing categories; unread items stay in Inbox.": "Choose categories per project. Mute pauses alerts; unread items stay in Inbox."
+  "Choose categories per project. Sounds and desktop alerts follow the application settings above. Mute pauses alerts without changing categories; unread items stay in Inbox.": "Choose categories per project. Mute pauses alerts; unread items stay in Inbox.",
+  "Manage machines": "Manage connections",
+  "Update bycoda Host in Machines settings to use this on projects on another machine.": "Update bycoda Host in Connections settings to use this on projects on another machine.",
+  "Open Machines": "Open Connections",
+  "Add a machine in Settings → Machines.": "Add a machine in Settings → Connections.",
+  "Update bycoda Host in Machines settings to use this project’s files.": "Update bycoda Host in Connections settings to use this project’s files.",
+  "Update bycoda Host in Machines settings to browse folders outside projects.": "Update bycoda Host in Connections settings to browse folders outside projects.",
+  "The other machine’s bycoda Host needs updating to copy skills. Update it in Machines settings.": "The other machine’s bycoda Host needs updating to copy skills. Update it in Connections settings.",
+  "The other machine’s bycoda Host needs updating to delete skills. Update it in Machines settings.": "The other machine’s bycoda Host needs updating to delete skills. Update it in Connections settings.",
+  "Update bycoda Host in Machines settings before controlling this desktop turn.": "Update bycoda Host in Connections settings before controlling this desktop turn.",
+  "{p0}'s {p1} Host needs updating to list skills. Update it in Machines settings.": "{p0}'s {p1} Host needs updating to list skills. Update it in Connections settings."
 }

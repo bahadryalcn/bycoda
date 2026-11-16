@@ -383,6 +383,7 @@ const RPC_METHOD_NAMES: readonly string[] = [
   "git.createBranch",
   "git.diff",
   "git.fileDiff",
+  "git.generateText",
   "git.index",
   "git.switch",
   "git.worktreeCreate",
