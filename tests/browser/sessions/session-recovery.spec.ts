@@ -192,7 +192,7 @@ test("compact navigation keeps tabs reachable and recovery count above its icon"
   });
   for (const [label, tab] of [
     ["Explorer", "files"],
-    ["Source Control", "changes"],
+    ["Changes", "changes"],
     ["Sessions", "sessions"],
   ]) {
     const button = pane.getByRole("tab", { name: label, exact: true });
@@ -200,6 +200,26 @@ test("compact navigation keeps tabs reachable and recovery count above its icon"
     await button.click();
     await expect(page.getByTestId("active-sidebar-tab")).toHaveText(tab);
   }
+  for (const theme of ["light", "dark"]) {
+    for (const width of [1280, 800]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(`/tests/browser/sessions/session-recovery.html?sidebar&theme=${theme}`);
+      await pane.evaluate((element) => {
+        (element as HTMLElement).style.width = "360px";
+      });
+      const changes = pane.getByRole("tab", { name: "Changes", exact: true });
+      await expect(changes).toBeVisible();
+      await changes.click();
+      await expect(page.getByTestId("active-sidebar-tab")).toHaveText("changes");
+      await page.screenshot({
+        path: `temp/verification/remote-git-generation/changes-${theme}-${width}.png`,
+      });
+    }
+  }
+  await page.setViewportSize({ width: 600, height: 760 });
+  await pane.evaluate((element) => {
+    (element as HTMLElement).style.width = "220px";
+  });
   const recovery = page.locator("[data-compact-project-rail] .recovery-rail-control");
   await expect(recovery).toHaveAccessibleName("Recovered sessions (40)");
   const icon = await recovery.locator("svg").boundingBox();

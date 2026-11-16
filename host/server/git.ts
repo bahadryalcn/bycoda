@@ -10,6 +10,11 @@ import { createHostTasksService } from "../domains/tasks/service";
 import { createTerminalService } from "../domains/terminals/service";
 import { createHostBranch, hostBranches, switchHostBranch } from "../git/git-branches";
 import { withHostGitMutation } from "../git/git-mutations";
+import { generateGitText } from "../git/git-text-generation";
+import { hostModelRoutingService } from "../model-routing/runtime";
+import { readModelRouting } from "../model-routing/storage";
+import { TEXT_HARNESSES } from "../../src/features/source-control/model/gitGenerationChoice";
+import type { GitStagedContext, GitRangeContext } from "../../src/platform/tauri/fs";
 import { createHostWorktree, hostWorktrees, resolveHostWorktreeAsync } from "../git/git-worktrees";
 import { HostTasks } from "../tasks/tasks";
 import {
@@ -29,6 +34,7 @@ export function createGitRuntime(
   dependencies: Pick<
     ServerBindings,
     | "engine"
+    | "providers"
     | "startWorkspaceActivity"
     | "terminals"
     | "touchTerminalWorkspace"
@@ -83,6 +89,35 @@ export function createGitRuntime(
     worktrees: hostWorktrees,
     worktreeCreate: createHostWorktree,
     index: hostGitIndex,
+    generateText: async (cwd, params, authorize) => {
+      const routing = await readModelRouting(dependencies.engine.store);
+      let choice = params.choice;
+      if (routing.roles["text.git"]) {
+        const resolution = await hostModelRoutingService(dependencies.engine.store).resolve({
+          role: "text.git",
+        });
+        if (!resolution.ok) throw new Error(`Git model routing failed: ${resolution.reason}`);
+        choice = resolution.target;
+      }
+      const preferred =
+        params.preferred && dependencies.providers.includes(params.preferred)
+          ? params.preferred
+          : dependencies.providers.find((provider) => TEXT_HARNESSES.includes(provider));
+      if (!choice && !preferred)
+        throw new Error("No text generation provider is available on this Host");
+      return generateGitText(
+        cwd,
+        { ...params, preferred, choice },
+        {
+          authorize,
+          context: async (kind) =>
+            (await dependencies.workspace.run(
+              kind === "commit" ? "git_staged_context" : "git_range_context",
+              { cwd },
+            )) as GitStagedContext | GitRangeContext,
+        },
+      );
+    },
     fileDiff: hostFileDiff,
     action: hostGitAction,
   });

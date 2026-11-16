@@ -28,6 +28,7 @@ Full paths are repository-root relative; adjacent abbreviated names share the pr
 - Filtering changes visible entries, not All-operation scope; partial staging may show one path twice. Explain exact target/consequence before mutations.
 - Commit remains independently available from push; preserve explicit combined variants, amend behavior and upstream-aware Push/Pull/Sync/Publish gates.
 - Generation preserves cancellation and stale draft/index protection. Diff layout keeps shared persisted preference, auto-width behavior and sibling-window synchronization.
+- Remote commit/PR generation uses `git.generateText` on the repository Host with its model routing and account profiles. Cancellation dismisses the wait while bounded Host execution settles. Never send remote cwd to desktop providers.
 - Keep expected-state/permission checks, confirmation and partial/uncertain result recovery at the actual Git operation boundary; never clear unrelated work to pass checks.
 
 ## Workflow

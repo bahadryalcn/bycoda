@@ -27696,6 +27696,99 @@
       "retry": "safe-query",
       "scope": "device"
     },
+    "git.generateText": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "choice": {
+            "additionalProperties": false,
+            "properties": {
+              "harness": {
+                "enum": [
+                  "codex",
+                  "claude",
+                  "cursor",
+                  "grok",
+                  "opencode",
+                  "pi",
+                  "omp",
+                  "fx",
+                  "hermes",
+                  "antigravity",
+                  "acp"
+                ],
+                "type": "string"
+              },
+              "model": { "maxLength": 200, "minLength": 1, "type": "string" },
+              "modelSettings": {
+                "additionalProperties": { "maxLength": 500, "type": "string" },
+                "propertyNames": { "maxLength": 80, "type": "string" },
+                "type": "object"
+              },
+              "providerAccountId": { "maxLength": 80, "minLength": 1, "type": "string" }
+            },
+            "required": ["harness", "model", "modelSettings"],
+            "type": "object"
+          },
+          "cwd": { "type": "string" },
+          "kind": { "enum": ["commit", "pr"], "type": "string" },
+          "preferred": {
+            "enum": [
+              "codex",
+              "claude",
+              "cursor",
+              "grok",
+              "opencode",
+              "pi",
+              "omp",
+              "fx",
+              "hermes",
+              "antigravity",
+              "acp"
+            ],
+            "type": "string"
+          },
+          "projectId": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+            "type": "string"
+          }
+        },
+        "required": ["projectId", "kind"],
+        "type": "object"
+      },
+      "requiredCapability": "transport.ws.git.v2",
+      "responseTimeoutMs": 120000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": { "message": { "minLength": 1, "type": "string" } },
+            "required": ["message"],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "base": { "type": "string" },
+              "body": { "type": "string" },
+              "head": { "type": "string" },
+              "title": { "minLength": 1, "type": "string" }
+            },
+            "required": ["title", "body", "base", "head"],
+            "type": "object"
+          }
+        ]
+      },
+      "retry": "never",
+      "scope": "device"
+    },
     "git.index": {
       "admissionTimeoutMs": 5000,
       "cancellation": "query",
@@ -74669,6 +74762,78 @@
               "type": "string"
             },
             "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "git.generateText", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "choice": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "harness": {
+                      "enum": [
+                        "codex",
+                        "claude",
+                        "cursor",
+                        "grok",
+                        "opencode",
+                        "pi",
+                        "omp",
+                        "fx",
+                        "hermes",
+                        "antigravity",
+                        "acp"
+                      ],
+                      "type": "string"
+                    },
+                    "model": { "maxLength": 200, "minLength": 1, "type": "string" },
+                    "modelSettings": {
+                      "additionalProperties": { "maxLength": 500, "type": "string" },
+                      "propertyNames": { "maxLength": 80, "type": "string" },
+                      "type": "object"
+                    },
+                    "providerAccountId": { "maxLength": 80, "minLength": 1, "type": "string" }
+                  },
+                  "required": ["harness", "model", "modelSettings"],
+                  "type": "object"
+                },
+                "cwd": { "type": "string" },
+                "kind": { "enum": ["commit", "pr"], "type": "string" },
+                "preferred": {
+                  "enum": [
+                    "codex",
+                    "claude",
+                    "cursor",
+                    "grok",
+                    "opencode",
+                    "pi",
+                    "omp",
+                    "fx",
+                    "hermes",
+                    "antigravity",
+                    "acp"
+                  ],
+                  "type": "string"
+                },
+                "projectId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                  "type": "string"
+                }
+              },
+              "required": ["projectId", "kind"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
             "method": { "const": "git.fileDiff", "type": "string" },
             "params": {
               "additionalProperties": false,
@@ -79153,5 +79318,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "3f46af37682de3b438803886c5b0e94da0b1f0cf9655c788bfdda426673fa76e"
+  "schemaHash": "9db605839c7e7e29fef440fc4adc253fc84fc00c528ee88943cc07e6a605beec"
 }

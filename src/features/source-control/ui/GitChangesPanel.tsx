@@ -65,7 +65,6 @@ import {
   gitPrCreate,
   gitPrStatus,
   gitPush,
-  gitRangeContext,
   gitStageAll,
   gitStageFile,
   gitStageFiles,
@@ -88,7 +87,6 @@ import { generatePrContent } from "../model/gitTextGeneration";
 import { invalidateWatchedFiles } from "../../files/public/fileWatch";
 import { MOD } from "../../../platform/tauri/platform";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
-import { isRemoteProjectPath } from "../../projects/public/recents";
 import {
   GIT_ACTIONS,
   GIT_CONFLICTS,
@@ -788,7 +786,7 @@ function ChangedFiles({
   const onDefault =
     !!index?.branch && !!index.defaultBranch && index.branch === index.defaultBranch;
   const committing = busy === "commit" || busy === "pr";
-  const canGenerate = files.length > 0 && !committing && !isRemoteProjectPath(cwd);
+  const canGenerate = files.length > 0 && !committing;
   const fail = (error: unknown, operation = "Git operation failed") => {
     setGitFeedback(cwd, {
       kind: "error",
@@ -1168,11 +1166,9 @@ function ChangedFiles({
 
   async function openCreatedPr() {
     return withGitPanelRuntime(cwd, async () => {
-      const content = isRemoteProjectPath(cwd)
-        ? await remotePrContent(cwd)
-        : generationChoice
-          ? await generatePrContent(cwd, textHarness, generationChoice)
-          : await generatePrContent(cwd, textHarness);
+      const content = generationChoice
+        ? await generatePrContent(cwd, textHarness, generationChoice)
+        : await generatePrContent(cwd, textHarness);
       if (!content) throw new Error("Could not prepare pull request content");
       const url = await gitPrCreate(cwd, content.title, content.body, content.base, content.head);
       const number = Number(/\/pull\/(\d+)(?:[/?#]|$)/.exec(url)?.[1]);
@@ -1644,21 +1640,4 @@ function ChangedFiles({
       ) : null}
     </aside>
   );
-}
-
-async function remotePrContent(cwd: string) {
-  const range = await gitRangeContext(cwd);
-  const commits = range.commitSummary.trim();
-  const firstCommit = commits
-    .split(/\r?\n/, 1)[0]
-    ?.replace(/^[0-9a-f]+\s+/i, "")
-    .trim();
-  const title = firstCommit || `Changes on ${range.head}`;
-  const body = [
-    commits && `## Commits\n\n${commits}`,
-    range.diffSummary.trim() && `## Changes\n\n${range.diffSummary.trim()}`,
-  ]
-    .filter(Boolean)
-    .join("\n\n");
-  return { title, body: body || title, base: range.base, head: range.head };
 }

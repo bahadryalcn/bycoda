@@ -218,6 +218,7 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "files.create"
             | "files.write"
             | "git.index"
+            | "git.generateText"
             | "git.fileDiff"
             | "git.action"
             | "sync.pull"
@@ -356,6 +357,12 @@ pub(super) fn decision_model_key_allowed(
 #[cfg(test)]
 mod tests {
     use super::{decision_model_key_allowed, supported_remote_method};
+
+    #[test]
+    fn git_generation_forwards_only_the_named_operation() {
+        assert!(supported_remote_method("git.generateText"));
+        assert!(!supported_remote_method("git.generateAnything"));
+    }
 
     #[test]
     fn decision_source_edits_preserve_credential_locality() {

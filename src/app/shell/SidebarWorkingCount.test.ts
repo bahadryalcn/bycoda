@@ -130,12 +130,12 @@ it.each([
   },
 );
 
-it("keeps Explorer and Source Control reachable from the workspace beside a compact rail", async () => {
+it("keeps Explorer and Changes reachable from the workspace beside a compact rail", async () => {
   props.projectRailOpen = false;
   props.compactProjectRail = true;
   await render();
   const pane = container.querySelector('[data-side-pane="workspace"]')!;
-  for (const label of ["Explorer", "Source Control"]) {
+  for (const label of ["Explorer", "Changes"]) {
     const button = pane.querySelector<HTMLButtonElement>(`[role="tab"][aria-label="${label}"]`)!;
     expect(button).not.toBeNull();
     act(() => button.click());

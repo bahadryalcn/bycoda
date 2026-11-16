@@ -65,6 +65,26 @@ it("uses real repository owners for reads and index mutations, preserving strict
   expect((await f.git("diff", "--cached", "--name-only")).stdout.trim()).toBe("file.txt");
   expect(f.release).toHaveBeenCalledTimes(1);
 });
+it("checks the generation checkout and rejects revoked readers before returning text", async () => {
+  const f = await fixture(),
+    other = await fixture();
+  const generateText = vi.fn(async () => ({ message: "Generated" }));
+  f.ports.generateText = generateText;
+  await expect(
+    f.service.generateText({ projectId: "project", cwd: other.root, kind: "commit" }, f.context),
+  ).rejects.toThrow();
+  expect(generateText).not.toHaveBeenCalled();
+  await expect(
+    f.service.generateText({ projectId: "project", kind: "commit" }, f.context),
+  ).resolves.toEqual({ message: "Generated" });
+  generateText.mockImplementationOnce(async () => {
+    f.context.authorized.mockResolvedValue(false);
+    return { message: "Discard revoked result" };
+  });
+  await expect(
+    f.service.generateText({ projectId: "project", kind: "commit" }, f.context),
+  ).rejects.toThrow();
+});
 it("rejects foreign checkout and traversal before any owner mutation", async () => {
   const f = await fixture(),
     other = await fixture();

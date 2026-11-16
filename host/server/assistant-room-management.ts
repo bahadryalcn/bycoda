@@ -750,7 +750,7 @@ export function registerRoomManagement(
               supportedProviders: ["github", "jira"],
               credentialsChecked: false,
               reason:
-                "Provider discovery verifies the current Native account and saved visibility. Supply an explicit provider to inbox.providers.list; keep its accountProof for follow-up operations.",
+                "Call inbox.providers.connections for per-provider connection state. Provider discovery verifies the current Native account and saved visibility. Supply an explicit provider to inbox.providers.list; keep its accountProof for follow-up operations. Jira boards use inbox.jira.* without discovery.",
             };
           });
         if (isRoomInboxAction(call.action))

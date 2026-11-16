@@ -14,10 +14,22 @@ type Receipt = {
   source: RoomInboxSource;
   provider: string;
   accountProof?: string;
+  /** Pinned by a native board snapshot or carrying only connection state, not a discovery. */
+  direct?: true;
   state: "pending" | "completed" | "uncertain";
   result?: unknown;
 };
+/** Room tools that need no prior discovery; native pins Jira board work to its snapshot. */
+const DIRECT: Partial<Record<string, string>> = {
+  "inbox.providers.connections": "providers",
+  "inbox.jira.boards": "jira-boards",
+  "inbox.jira.board": "jira-board-read",
+  "inbox.jira.transitions": "jira-issue-transitions",
+  "inbox.jira.transition": "jira-board-transition",
+  "inbox.jira.move": "jira-board-move",
+};
 const actions = new Set([
+  ...Object.keys(DIRECT),
   "inbox.providers.list",
   "inbox.details",
   "inbox.thread",
@@ -79,6 +91,8 @@ export class AssistantRoomInbox {
       )
         throw new Error("Original Inbox source identity changed.");
       if (receipt.state !== "completed") return { requestId: originalId, state: "uncertain" };
+      if (receipt.direct)
+        return { requestId: originalId, state: "completed", result: receipt.result };
       const proof =
         receipt.accountProof ?? (receipt.result as { accountProof?: unknown })?.accountProof;
       if (typeof proof !== "string" || !proof)
@@ -111,37 +125,50 @@ export class AssistantRoomInbox {
     const item = input.item as { provider?: unknown; projectPath?: unknown } | undefined;
     if (item?.projectPath !== undefined && item.projectPath !== source.projectCwd)
       throw new Error("Inbox record belongs to another project.");
-    const provider = action === "inbox.providers.list" ? input.provider : item?.provider;
-    if (provider !== "github" && provider !== "jira")
+    const direct = DIRECT[action];
+    const provider = direct
+      ? direct === "providers"
+        ? "all"
+        : "jira"
+      : action === "inbox.providers.list"
+        ? input.provider
+        : item?.provider;
+    if (provider !== "github" && provider !== "jira" && provider !== "all")
       throw new Error("Choose the GitHub or Jira provider for this Room request.");
+    if (direct && input.accountProof !== undefined)
+      throw new Error("This Room Inbox request takes no accountProof.");
     const operation = parseRemoteInboxOperation(
-      {
-        ...input,
-        ...(item ? { item: { ...item, projectPath: source.projectCwd } } : {}),
-        projectId: source.projectId,
-        action:
-          action === "inbox.providers.list"
-            ? "list"
-            : action === "inbox.prAction"
-              ? "pr-action"
-              : action === "inbox.reviewContext"
-                ? "review-context"
-                : action.slice(6),
-        ...(action === "inbox.providers.list"
-          ? {
-              query: {
-                assignedToMe: input.assignedToMe,
-                state: input.state,
-                search: input.search,
-                githubKinds: input.githubKinds,
-              },
-            }
-          : {}),
-      },
+      direct === "providers"
+        ? { action: "providers" }
+        : direct
+          ? { ...input, projectId: source.projectId, action: direct }
+          : {
+              ...input,
+              ...(item ? { item: { ...item, projectPath: source.projectCwd } } : {}),
+              projectId: source.projectId,
+              action:
+                action === "inbox.providers.list"
+                  ? "list"
+                  : action === "inbox.prAction"
+                    ? "pr-action"
+                    : action === "inbox.reviewContext"
+                      ? "review-context"
+                      : action.slice(6),
+              ...(action === "inbox.providers.list"
+                ? {
+                    query: {
+                      assignedToMe: input.assignedToMe,
+                      state: input.state,
+                      search: input.search,
+                      githubKinds: input.githubKinds,
+                    },
+                  }
+                : {}),
+            },
       [{ id: source.projectId, cwd: source.projectCwd }],
     );
     const accountProof = typeof input.accountProof === "string" ? input.accountProof : undefined;
-    if (action !== "inbox.providers.list" && !accountProof)
+    if (!direct && action !== "inbox.providers.list" && !accountProof)
       throw new Error("Use the accountProof returned by the original provider list.");
     const signature = createHash("sha256")
       .update(
@@ -176,6 +203,7 @@ export class AssistantRoomInbox {
         source: { ...source },
         provider,
         ...(accountProof ? { accountProof } : {}),
+        ...(direct ? { direct: true as const } : {}),
         state: "pending",
       };
       await this.ports.write(key, receipt);

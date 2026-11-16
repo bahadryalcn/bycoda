@@ -362,7 +362,7 @@ test("compact navigation keeps workspace tabs in place and stacks app tool short
       // The collapsed rail is icon-only: the name lives in the accessible name and tooltip.
       expect((await projects.textContent())?.trim()).toBe("");
       await expect(projects).toHaveAttribute("aria-label", "Projects and groups");
-      for (const label of ["Sessions", "Explorer", "Source Control"]) {
+      for (const label of ["Sessions", "Explorer", "Changes"]) {
         const tab = tabNamed(label);
         await expect(tab).toBeVisible();
         // The same icon stays at every width; the label steps away before it could be clipped.

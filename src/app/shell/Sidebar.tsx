@@ -385,7 +385,7 @@ const TAB_LABELS: Record<SidebarTabId, string> = {
   sessions: "Sessions",
   inbox: "Inbox",
   files: "Explorer",
-  changes: "Source Control",
+  changes: "Changes",
 };
 
 const COMPACT_TAB_ICONS: Record<SidebarTabId, typeof PanelLeft> = {

@@ -679,6 +679,7 @@ const handlers: Record<
   "git.worktrees": handleGitRpc,
   "git.worktreeCreate": handleGitRpc,
   "git.index": handleGitRpc,
+  "git.generateText": handleGitRpc,
   "git.fileDiff": handleGitRpc,
   "git.action": handleGitRpc,
   "files.read": handleFilesRpc,

@@ -1,4 +1,5 @@
 //! Finite native Room Inbox owner. Credentials remain in their native owners.
+use crate::jira::board::mobile_board;
 use crate::remote::{NativeServiceChannel, NativeServiceReply};
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -64,24 +65,44 @@ fn parse_operation(input: &Value, cwd: &str) -> Result<(String, String, Value), 
     let action = field(op, "action", 32)?;
     if !matches!(
         (provider, action),
-        (
-            "jira",
-            "list" | "details" | "thread" | "comment" | "source-check"
-        ) | (
-            "github",
-            "list"
-                | "details"
-                | "thread"
-                | "comment"
-                | "review-context"
-                | "review"
-                | "pr-action"
-                | "source-check"
-        )
+        ("all", "providers")
+            | (
+                "jira",
+                "list"
+                    | "details"
+                    | "thread"
+                    | "comment"
+                    | "source-check"
+                    | "jira-boards"
+                    | "jira-board-read"
+                    | "jira-issue-transitions"
+                    | "jira-board-transition"
+                    | "jira-board-move"
+            )
+            | (
+                "github",
+                "list"
+                    | "details"
+                    | "thread"
+                    | "comment"
+                    | "review-context"
+                    | "review"
+                    | "pr-action"
+                    | "source-check"
+            )
     ) {
         return Err("Room Inbox operation is unavailable".into());
     }
-    if action == "list" {
+    if action == "providers" {
+        if object.contains_key("accountProof") || op.as_object().is_none_or(|v| v.len() != 1) {
+            return Err("Invalid Room Inbox connection read".into());
+        }
+    } else if action.starts_with("jira-") {
+        // Board snapshots, not discovery receipts, pin these to the native account.
+        if object.contains_key("accountProof") || op["cwd"].as_str() != Some(cwd) {
+            return Err("Room Inbox source project changed".into());
+        }
+    } else if action == "list" {
         if object.contains_key("accountProof")
             || op["projects"].as_array().is_none_or(|projects| {
                 projects.len() != 1 || projects[0]["path"].as_str() != Some(cwd)
@@ -196,8 +217,18 @@ pub(super) fn execute(
         )?;
         let object = value
             .as_object()
-            .filter(|o| o.len() == 2 && o.contains_key("projectIds") && o.contains_key("revision"))
+            .filter(|o| {
+                o.len() == 3
+                    && o.contains_key("projectIds")
+                    && o.contains_key("revision")
+                    && o.contains_key("allowedBoardIds")
+            })
             .ok_or("Invalid Room Inbox visibility scope")?;
+        if object["allowedBoardIds"].as_array().is_none_or(|ids| {
+            ids.len() > 500 || ids.iter().any(|id| id.as_u64().is_none_or(|id| id == 0))
+        }) {
+            return Err("Invalid Room Inbox board scope".into());
+        }
         let revision = object["revision"]
             .as_str()
             .filter(|s| !s.is_empty() && s.len() <= 20000)
@@ -385,6 +416,65 @@ pub(super) fn execute(
         );
         return Ok(json!({"accountProof":proof,"items":records,"errors":{},"limited":true}));
     }
+    if action == "providers" {
+        // Connection state only; account names, sites and tokens stay native.
+        let states = [
+            (
+                "github",
+                tauri::async_runtime::block_on(crate::fs::git_github_status()).map(|s| s.connected),
+            ),
+            (
+                "gitlab",
+                crate::gitlab::gitlab_status(app.clone()).map(|s| s.connected),
+            ),
+            (
+                "azuredevops",
+                crate::azure_devops::azure_devops_status(app.clone()).map(|s| s.connected),
+            ),
+            (
+                "linear",
+                crate::linear::linear_status(app.clone()).map(|s| s.connected),
+            ),
+            (
+                "jira",
+                crate::jira::jira_status(app.clone()).map(|s| s.connected),
+            ),
+        ];
+        check()?;
+        return Ok(Value::Array(
+            states
+                .into_iter()
+                .map(|(provider, state)| match state {
+                    Ok(connected) => json!({"provider": provider, "connected": connected}),
+                    Err(_) => json!({"provider": provider, "connected": false, "error": "Status unavailable"}),
+                })
+                .collect(),
+        ));
+    }
+    if action.starts_with("jira-") {
+        return room_jira_board(
+            app,
+            &window,
+            cwd,
+            &operation,
+            deadline,
+            &check,
+            &capture_scope,
+            || {
+                crate::control::workspace_effect_receipts::begin(
+                    app,
+                    relay,
+                    environment,
+                    thread,
+                    project,
+                    cwd,
+                    "inbox.room.execute",
+                    &request["input"],
+                )
+            },
+            relay,
+        );
+    }
     let mut expected_scope = None;
     let discovery_proof = field(&request["input"], "accountProof", 100)?.to_owned();
     let (jira, github) = {
@@ -571,6 +661,139 @@ pub(super) fn execute(
     Ok(result)
 }
 
+/// Room filters come from the window's saved Inbox visibility, never the model.
+fn room_jira_filters(scope: &Value) -> Result<mobile_board::Filters, String> {
+    serde_json::from_value(json!({
+        "allowedBoardIds": scope["allowedBoardIds"],
+        "projectIds": scope["projectIds"],
+    }))
+    .map_err(|_| "Invalid Room Jira visibility".into())
+}
+
+/// Builds the native board mutation; mobile_board validates keys, anchors and sprints.
+fn room_jira_mutation(operation: &Value) -> Result<mobile_board::Mutation, String> {
+    let key = field(operation, "key", 200)?;
+    let value = if operation["action"] == "jira-board-transition" {
+        json!({"action": "transition", "key": key, "transitionId": field(operation, "transitionId", 100)?})
+    } else {
+        json!({
+            "action": "move",
+            "key": key,
+            "target": field(operation, "target", 20)?,
+            "sprintId": operation["sprintId"],
+            "beforeKey": operation["beforeKey"],
+            "afterKey": operation["afterKey"],
+        })
+    };
+    serde_json::from_value(value).map_err(|_| "Invalid Room Jira board change".into())
+}
+
+/// Room Jira board reads and owner-approved changes through the existing native board owner.
+#[allow(clippy::too_many_arguments)]
+fn room_jira_board(
+    app: &AppHandle,
+    window: &tauri::WebviewWindow,
+    cwd: &str,
+    operation: &Value,
+    deadline: u64,
+    check: &dyn Fn() -> Result<(), String>,
+    capture_scope: &dyn Fn() -> Result<Value, String>,
+    begin_receipt: impl FnOnce() -> Result<(), String>,
+    relay: &str,
+) -> Result<Value, String> {
+    use tauri::async_runtime::block_on;
+    let scope = capture_scope()?;
+    let filters = room_jira_filters(&scope)?;
+    check()?;
+    let action = field(operation, "action", 32)?;
+    let snapshot = || field(operation, "snapshotId", 100).map(str::to_owned);
+    let result = match action {
+        "jira-boards" => serde_json::to_value(block_on(mobile_board::jira_mobile_boards(
+            app.clone(),
+            filters,
+        ))?)
+        .map_err(|_| "Invalid Jira boards".to_string())?,
+        "jira-board-read" => {
+            let board_scope = serde_json::from_value(json!({
+                "scope": operation["scope"],
+                "sprintId": operation["sprintId"],
+                "pageToken": operation["pageToken"],
+            }))
+            .map_err(|_| "Invalid Jira board scope")?;
+            block_on(mobile_board::jira_mobile_board_read(
+                app.clone(),
+                window.clone(),
+                cwd.into(),
+                filters,
+                operation["boardId"]
+                    .as_u64()
+                    .filter(|id| *id > 0)
+                    .ok_or("Invalid Jira board")?,
+                board_scope,
+            ))?
+        }
+        "jira-issue-transitions" => {
+            serde_json::to_value(block_on(mobile_board::jira_mobile_issue_transitions(
+                app.clone(),
+                window.clone(),
+                cwd.into(),
+                filters,
+                snapshot()?,
+                field(operation, "key", 200)?.into(),
+            ))?)
+            .map_err(|_| "Invalid Jira transitions".to_string())?
+        }
+        "jira-board-transition" | "jira-board-move" => {
+            let at = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|_| "Clock unavailable")?
+                .as_millis() as u64;
+            // The native board review accepts at most a two-minute approval window.
+            let review_deadline = deadline.min(at + 110_000);
+            let prepared = block_on(mobile_board::jira_mobile_board_prepare(
+                app.clone(),
+                window.clone(),
+                cwd.into(),
+                filters.clone(),
+                snapshot()?,
+                room_jira_mutation(operation)?,
+                review_deadline,
+            ))?;
+            let Some(approval) = prepared["approvalId"].as_str().map(str::to_owned) else {
+                // Declined or refused before submission: nothing was sent to Jira.
+                check()?;
+                return Ok(prepared);
+            };
+            let fresh = capture_scope().and_then(|scope| room_jira_filters(&scope));
+            if check().is_err() || fresh.as_ref().ok() != Some(&filters) {
+                mobile_board::jira_mobile_board_discard_approval(window.clone(), approval)?;
+                return Ok(json!({
+                    "outcome": "not-submitted",
+                    "reason": "Room authority or Jira visibility changed after approval. Read the board again.",
+                }));
+            }
+            begin_receipt()?;
+            let committed = block_on(mobile_board::jira_mobile_board_commit(
+                app.clone(),
+                window.clone(),
+                approval,
+                filters,
+            ));
+            match &committed {
+                Ok(value) => crate::control::workspace_effect_receipts::complete(
+                    relay,
+                    &json!({"ok": true, "result": value}),
+                )?,
+                Err(_) => crate::control::workspace_effect_receipts::mark_unknown(relay),
+            }
+            committed?
+        }
+        _ => return Err("Room Inbox operation unavailable".into()),
+    };
+    check()?;
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -588,6 +811,37 @@ mod tests {
         let check = json!({"requestId":"r", "provider":"jira", "accountProof":"opaque", "operation":{"action":"source-check", "cwd":"/p"}});
         assert!(parse_operation(&check, "/p").is_ok());
         assert!(parse_operation(&check, "/other").is_err());
+    }
+    #[test]
+    fn connection_and_board_reads_need_no_discovery_but_keep_the_project() {
+        let providers =
+            json!({"requestId":"r","provider":"all","operation":{"action":"providers"}});
+        assert!(parse_operation(&providers, "/p").is_ok());
+        let mut invalid = providers.clone();
+        invalid["accountProof"] = json!("opaque");
+        assert!(parse_operation(&invalid, "/p").is_err());
+        let mut invalid = providers;
+        invalid["operation"]["cwd"] = json!("/p");
+        assert!(parse_operation(&invalid, "/p").is_err());
+        let board = json!({"requestId":"r","provider":"jira","operation":{"action":"jira-board-read","cwd":"/p","boardId":7,"scope":"board"}});
+        assert!(parse_operation(&board, "/p").is_ok());
+        assert!(parse_operation(&board, "/other").is_err());
+        let mut invalid = board;
+        invalid["provider"] = json!("github");
+        assert!(parse_operation(&invalid, "/p").is_err());
+    }
+    #[test]
+    fn board_changes_map_to_the_native_mutation_contract() {
+        let transition =
+            json!({"action":"jira-board-transition","key":"ENG-1","transitionId":"31"});
+        assert!(room_jira_mutation(&transition).is_ok());
+        let rank =
+            json!({"action":"jira-board-move","key":"ENG-1","target":"rank","beforeKey":"ENG-2"});
+        assert!(room_jira_mutation(&rank).is_ok());
+        assert!(room_jira_mutation(&json!({"action":"jira-board-move","key":"ENG-1"})).is_err());
+        let filters = json!({"allowedBoardIds":[7],"projectIds":null,"revision":"x"});
+        assert!(room_jira_filters(&filters).is_ok());
+        assert!(room_jira_filters(&json!({"projectIds":null})).is_err());
     }
     #[test]
     fn discovery_matches_full_record_identity() {

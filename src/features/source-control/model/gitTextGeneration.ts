@@ -4,12 +4,19 @@ import {
 } from "../../../integrations/harness/core/textHarness";
 import { resolveGitGenerationChoice } from "./gitGenerationPreferences";
 import { captureTextInput } from "../../../integrations/harness/core/textSource";
+import { REMOTE_PATH_PREFIX } from "../../../shared/lib/remotePaths";
+import { remoteGitTextGeneration } from "./remoteGitTextGeneration";
 
 /** Resolve feature-owned routing before handing concrete execution inputs to the harness. */
 export async function generateCommitMessage(
   ...[cwd, preferred, signal, choice, context]: Parameters<typeof generateSelectedCommitMessage>
 ) {
   const captured = captureTextInput({ operationContext: context }).operationContext;
+  if (cwd.startsWith(REMOTE_PATH_PREFIX)) {
+    const result = await remoteGitTextGeneration(cwd, "commit", preferred, choice, signal);
+    if (!("message" in result)) throw new Error("Host returned no commit message");
+    return result.message;
+  }
   return generateSelectedCommitMessage(
     cwd,
     preferred,
@@ -23,6 +30,11 @@ export async function generatePrContent(
   ...[cwd, preferred, choice, context]: Parameters<typeof generateSelectedPrContent>
 ) {
   const captured = captureTextInput({ operationContext: context }).operationContext;
+  if (cwd.startsWith(REMOTE_PATH_PREFIX)) {
+    const result = await remoteGitTextGeneration(cwd, "pr", preferred, choice);
+    if (!("title" in result)) throw new Error("Host returned no pull request content");
+    return result;
+  }
   return generateSelectedPrContent(
     cwd,
     preferred,

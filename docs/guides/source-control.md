@@ -1,5 +1,12 @@
 # Source control review
 
+The sidebar's **Changes** tab opens source control. **Generate commit message**
+and pull request text generation run on the Host that owns the selected remote
+repository, using that Host's Git model routing and provider accounts. They never
+fall back to a local provider when the remote Host is unavailable. Stopping
+generation dismisses the pending result; the Host call retains its 90-second
+provider deadline. Edited drafts and changed staged content remain protected.
+
 Linked workspace repository lists include every declared folder, including `.`
 when the containing folder is itself a repository. Root and nested repositories
 keep separate changes, commit drafts and action targets.

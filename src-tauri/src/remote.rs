@@ -628,6 +628,7 @@ fn rpc_timeout(method: &str, params: &Value) -> std::time::Duration {
         "voice.local.start" => std::time::Duration::from_secs(180),
         "voice.local.transcribe" | "voice.cloud.transcribe" => std::time::Duration::from_secs(40),
         "voice.dictation.process" => std::time::Duration::from_secs(110),
+        "git.generateText" => std::time::Duration::from_secs(130),
         // Tool calls may await an existing native owner approval dialog.
         "voice.tools.call" => std::time::Duration::from_secs(250),
         "devices.boot" => std::time::Duration::from_secs(240),

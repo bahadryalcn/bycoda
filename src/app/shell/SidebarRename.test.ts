@@ -2067,7 +2067,7 @@ describe("collapsed rail Inbox actions", () => {
       Array.from(workspaceTabs.querySelectorAll('[role="tab"]'), (button) =>
         button.getAttribute("aria-label"),
       ),
-    ).toEqual(["Sessions, 1 working session", "Explorer", "Source Control"]);
+    ).toEqual(["Sessions, 1 working session", "Explorer", "Changes"]);
     const sessionsTab = workspaceTabs.querySelector<HTMLButtonElement>('[aria-label^="Sessions"]')!;
     expect(sessionsTab.getAttribute("aria-selected")).toBe("true");
     expect(sessionsTab.textContent).toContain("Sessions");
@@ -2328,7 +2328,7 @@ describe("collapsed rail Inbox actions", () => {
     expect(pickerRow("/workspace/other", "Client site").textContent).toContain("Client site");
   });
 
-  it("keeps Source Control labeled in the horizontal row with full working-tree totals", async () => {
+  it("keeps Changes labeled in the horizontal row with full working-tree totals", async () => {
     vi.mocked(useProjectDiffStats).mockReturnValue({
       files: 1,
       additions: 3,
@@ -2340,13 +2340,13 @@ describe("collapsed rail Inbox actions", () => {
     await act(async () => render());
 
     // The tab name states the changed-file count and the line churn separately.
-    const changesLabel = "Source Control, 1 changed file, 3 lines added";
+    const changesLabel = "Changes, 1 changed file, 3 lines added";
     const changes = container.querySelector<HTMLButtonElement>(
       `button[aria-label="${changesLabel}"]`,
     )!;
     expect(changes).not.toBeNull();
     expect(changes.closest('[role="tablist"]')?.closest("aside")).not.toBeNull();
-    expect(changes.textContent).toContain("Source Control");
+    expect(changes.textContent).toContain("Changes");
     // The scope and totals ride in the shared tooltip, not a native title.
     expect(changes.title).toBe("");
     expect(changes.getAttribute("role")).toBe("tab");

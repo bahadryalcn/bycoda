@@ -917,6 +917,10 @@ export const HOST_RPC_METHODS = Object.freeze({
   "git.branches": gitOperation(gitDto.GitReadParamsSchema, gitDto.GitBranchesSchema),
   "git.worktrees": gitOperation(gitDto.GitReadParamsSchema, gitDto.GitWorktreesSchema),
   "git.index": gitOperation(gitDto.GitReadParamsSchema, gitDto.GitIndexSchema),
+  "git.generateText": {
+    ...gitOperation(gitDto.GitGenerateTextParamsSchema, gitDto.GitGenerateTextResultSchema, true),
+    responseTimeoutMs: 120_000,
+  },
   "git.fileDiff": gitOperation(gitDto.GitFileDiffParamsSchema, gitDto.GitFileDiffSchema),
   "git.switch": gitOperation(gitDto.GitSwitchParamsSchema, gitDto.GitBranchesSchema, true),
   "git.createBranch": gitOperation(

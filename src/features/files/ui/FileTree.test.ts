@@ -1469,9 +1469,13 @@ describe("FileTree drag feedback", () => {
       await down("a.ts", pointerId);
       await move(pointerId);
       expect(hint()).not.toBeNull();
+      // The drag cursor lives on the captured row, never as a document-wide class (full restyle).
+      expect(document.documentElement.classList.contains("is-explorer-file-dragging")).toBe(false);
+      expect(container.querySelector("[data-explorer-dragging]")).not.toBeNull();
       await act(async () => {
         end();
       });
+      expect(container.querySelector("[data-explorer-dragging]")).toBeNull();
       expect(hint()).toBeNull();
       expect(row("dest").getAttribute("data-drop-indicator")).toBeNull();
       expect(document.documentElement.classList.contains("is-grabbing")).toBe(false);

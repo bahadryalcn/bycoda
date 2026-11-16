@@ -805,6 +805,9 @@ HEAD, upstream or draft after review cancels the operation, and a merge conflict
 aborted with the checkout restored. Force push, deleting remote branches, history
 rewrite and sending anything other than the reviewed draft are never available by voice.
 Existing owner approvals still apply, including social sends and Inbox/PR writes.
+In a project, voice can ask which Inbox providers are connected, read GitHub and Jira
+items, and read the Jira boards enabled in Inbox settings. Moving or transitioning a
+Jira issue opens the native approval with the exact issue and change.
 An automation's **pause** stops future launches; **stop run** targets a specific
 active run. Acceptance or queuing does not mean completion. When a tool result
 is uncertain, the assistant must inspect its state rather than blindly retry.

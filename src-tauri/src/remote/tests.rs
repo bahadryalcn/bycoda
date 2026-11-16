@@ -1080,6 +1080,7 @@ fn voice_rpc_methods_are_bounded_and_model_loading_has_time_to_finish() {
 
 #[test]
 fn git_actions_outlast_the_hosts_network_limit_and_others_keep_the_default() {
+    assert!(rpc_timeout("git.generateText", &json!({})) > Duration::from_secs(120));
     use std::time::Duration;
     // Allow queue admission, safety reads, and both 120 s sync commands.
     let none = json!({});

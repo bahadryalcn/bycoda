@@ -23,6 +23,11 @@ export interface HostGitServicePorts {
     source: string,
   ): Promise<dto.GitWorktree>;
   index(cwd: string): Promise<dto.GitIndex>;
+  generateText?(
+    cwd: string,
+    params: z.output<typeof dto.GitGenerateTextParamsSchema>,
+    authorize: () => Promise<void>,
+  ): Promise<z.output<typeof dto.GitGenerateTextResultSchema>>;
   fileDiff(cwd: string, path: unknown, staged: boolean): Promise<dto.GitFileDiff>;
   action(
     cwd: string,
@@ -126,6 +131,11 @@ export function createHostGitService(ports: HostGitServicePorts) {
       read(dto.GitReadParamsSchema, p, c, o, (_cwd, _params, root) => ports.worktrees(root)),
     index: (p: unknown, c: HostDomainContext, o: Options = {}) =>
       read(dto.GitReadParamsSchema, p, c, o, (cwd) => ports.index(cwd)),
+    generateText: (p: unknown, c: HostDomainContext, o: Options = {}) =>
+      read(dto.GitGenerateTextParamsSchema, p, c, o, (cwd, params) => {
+        if (!ports.generateText) throw new Error("Git text generation is unavailable on this Host");
+        return ports.generateText(cwd, params, () => assertDomainAuthority(c));
+      }),
     fileDiff: (p: unknown, c: HostDomainContext, o: Options = {}) =>
       read(dto.GitFileDiffParamsSchema, p, c, o, (cwd, params) =>
         ports.fileDiff(cwd, params.path, params.staged === true),

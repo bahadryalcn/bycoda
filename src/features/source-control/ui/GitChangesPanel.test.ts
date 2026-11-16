@@ -384,6 +384,22 @@ describe("GitChangesPanel branch switching", () => {
 });
 
 describe("GitChangesPanel commit message generation", () => {
+  it("enables generation for a remote repository and applies its result", async () => {
+    const cwd = "remote://generation-host/home/repo";
+    vi.mocked(gitDiffIndex).mockResolvedValue(
+      index({ files: [{ ...changedFile("src/app.ts"), staged: true, unstaged: false }] }),
+    );
+    vi.mocked(generateCommitMessage).mockResolvedValue("Fix remote generation");
+    await renderPanel(cwd);
+    const button = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Generate commit message"]',
+    )!;
+    expect(button.disabled).toBe(false);
+    await act(async () => button.click());
+    expect(generateCommitMessage).toHaveBeenCalledWith(cwd, undefined, expect.any(AbortSignal));
+    expect(container.querySelector("textarea")?.value).toBe("Fix remote generation");
+  });
+
   it("keeps global model settings out of the commit field", async () => {
     vi.mocked(gitDiffIndex).mockResolvedValue(index());
     await renderPanel();
@@ -1896,12 +1912,11 @@ describe("GitChangesPanel remote pull request", () => {
         aheadOfDefault: 1,
       }),
     );
-    vi.mocked(gitRangeContext).mockResolvedValue({
+    vi.mocked(generatePrContent).mockResolvedValue({
       base: "main",
       head: "feature/pull",
-      commitSummary: "abc123 Fix link",
-      diffSummary: "1 file changed",
-      diffPatch: "",
+      title: "Fix link",
+      body: "1 file changed",
     });
     vi.mocked(gitPrCreate).mockClear().mockResolvedValue("https://example.test/pull/43");
     vi.mocked(openUrl).mockRejectedValueOnce(new Error("Browser unavailable"));
@@ -1922,7 +1937,7 @@ describe("GitChangesPanel remote pull request", () => {
     expect(openUrl).toHaveBeenLastCalledWith("https://example.test/pull/43");
   });
 
-  it("creates it from the host Git range without calling a local harness", async () => {
+  it("creates it from Host-generated content through the shared generation facade", async () => {
     const cwd = "remote://machine/home/user/repo";
     vi.mocked(gitDiffIndex).mockResolvedValue(
       index({
@@ -1932,12 +1947,11 @@ describe("GitChangesPanel remote pull request", () => {
         aheadOfDefault: 1,
       }),
     );
-    vi.mocked(gitRangeContext).mockResolvedValue({
+    vi.mocked(generatePrContent).mockResolvedValue({
       base: "main",
       head: "feature/pull",
-      commitSummary: "abc123 Fix remote flow\ndef456 Add coverage",
-      diffSummary: "2 files changed, 4 insertions(+)\n",
-      diffPatch: "",
+      title: "Fix remote flow",
+      body: "## Changes\n\n2 files changed, 4 insertions(+)",
     });
     vi.mocked(gitPrCreate).mockResolvedValue("https://example.test/pull/42");
     await renderPanel(cwd);
@@ -1947,8 +1961,8 @@ describe("GitChangesPanel remote pull request", () => {
     await chooseCommitOption("Create PR");
 
     expect(gitPush).toHaveBeenCalledWith(cwd);
-    expect(gitRangeContext).toHaveBeenCalledWith(cwd);
-    expect(generatePrContent).not.toHaveBeenCalled();
+    expect(gitRangeContext).not.toHaveBeenCalled();
+    expect(generatePrContent).toHaveBeenCalledWith(cwd, undefined);
     expect(gitPrCreate).toHaveBeenCalledWith(
       cwd,
       "Fix remote flow",

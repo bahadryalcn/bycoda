@@ -243,6 +243,7 @@ export function createRegistryRuntime(
       "git.worktrees": dependencies.gitService.worktrees,
       "git.worktreeCreate": dependencies.gitService.worktreeCreate,
       "git.index": dependencies.gitService.index,
+      "git.generateText": dependencies.gitService.generateText,
       "git.fileDiff": dependencies.gitService.fileDiff,
       "git.action": dependencies.gitService.action,
       "terminals.list": dependencies.terminalService.list,

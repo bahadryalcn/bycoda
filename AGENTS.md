@@ -151,8 +151,8 @@ behavior changes. After editing `.agents/skills/`, run
   installed, use it where output is large or edits are bulk: `bykit read` for big files,
   `bykit diff` for long diffs, `bykit run -- <cmd>` for long command output, `bykit find`
   for searches that may return many results, `bykit edit`/`replace` for multi-place
-  edits, `bykit json` for JSON. For a single definition or a one-place edit, your own
-  tools are enough. Output is paged: narrow by path first, then `--page N`; `--all` only
+  edits, `bykit json` for JSON, `bykit sql` for SQLite, `bykit shot` for screenshots.
+  For a single definition or a one-place edit, your own tools are enough. Output is paged: narrow by path first, then `--page N`; `--all` only
   when the task needs every result. Never format or fix line endings by hand or mention
   them in reports: `pnpm check:changed` formats changed files in place.
 - While implementing run only `tsc-rs --fast` on the changed project and

@@ -111,3 +111,35 @@ it("supplies the captured CWD for canonical list items and rejects foreign item 
   ).rejects.toThrow("another project");
   expect(execute).toHaveBeenCalledOnce();
 });
+
+it("sends connection and Jira board requests to Native without a discovery proof", async () => {
+  const rows = new Map<string, any>();
+  const execute = vi.fn(async (input) => ({ echoed: input.operation.action }));
+  const inbox = new AssistantRoomInbox({
+    read: async (key) => rows.get(key),
+    write: async (key, value) => {
+      rows.set(key, value);
+    },
+    execute,
+  });
+  const call = (action: string, input: Record<string, unknown>) =>
+    inbox.call(action, input, source, String(input.requestId), async () => true);
+  await call("inbox.providers.connections", { requestId: "connections" });
+  await call("inbox.jira.board", { requestId: "board", boardId: 7, scope: "board" });
+  expect(execute.mock.calls.map(([input]) => input)).toEqual([
+    { requestId: "connections", provider: "all", operation: { action: "providers" } },
+    {
+      requestId: "board",
+      provider: "jira",
+      operation: { action: "jira-board-read", cwd: source.projectCwd, boardId: 7, scope: "board" },
+    },
+  ]);
+  // A board readback is pinned by its native snapshot, so no account source-check runs.
+  expect(
+    await inbox.call("inbox.result", { requestId: "board" }, source, "read", async () => true),
+  ).toEqual({ requestId: "board", state: "completed", result: { echoed: "jira-board-read" } });
+  expect(execute).toHaveBeenCalledTimes(2);
+  await expect(
+    call("inbox.jira.boards", { requestId: "proof", accountProof: "native-opaque" }),
+  ).rejects.toThrow("no accountProof");
+});

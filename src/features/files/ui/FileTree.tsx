@@ -561,7 +561,6 @@ function FileTreeInner({
       delete handle.dataset.explorerDragging;
       preview?.remove();
       preview = null;
-      document.documentElement.classList.remove("is-explorer-file-dragging");
       if (restoreSelection) {
         restoreSelection();
         restoreSelection = undefined;
@@ -594,7 +593,6 @@ function FileTreeInner({
       restoreSelection = suppressTextSelection();
       setGrabbing(true);
       createPreview();
-      document.documentElement.classList.add("is-explorer-file-dragging");
       handle.dataset.explorerDragging = "true";
       try {
         handle.setPointerCapture(pointerId);

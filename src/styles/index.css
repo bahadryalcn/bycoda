@@ -2825,7 +2825,10 @@ html.is-reordering {
   user-select: none !important;
 }
 
-html.is-explorer-file-dragging {
+/* The dragged explorer row holds pointer capture, so its cursor is the drag cursor; a
+   document-wide class here restyled the whole app at drag start and end (see .reorder-item). */
+[data-explorer-dragging],
+[data-explorer-dragging] * {
   cursor: grabbing !important;
 }
 
@@ -5226,23 +5229,6 @@ html:is([data-decorative-motion="off"], [data-window-focus="off"])
 /* A terminal mark is live only inside its existing active terminal control. */
 .terminal-live:not(button[aria-pressed] .terminal-live, [data-active="true"]) .terminal-live-bar {
   animation: none;
-}
-html.is-explorer-file-dragging {
-  --interaction-cursor: grabbing;
-}
-html.is-explorer-file-dragging
-  :is(
-    button,
-    a,
-    input,
-    textarea,
-    select,
-    [role="button"],
-    [data-tab-draggable],
-    [data-tauri-drag-region],
-    [class*="cursor-"]
-  ) {
-  cursor: var(--interaction-cursor) !important;
 }
 html.is-reordering
   :is(input, textarea, [contenteditable], .select-text, .cm-content, .xterm-screen) {

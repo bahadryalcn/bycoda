@@ -5,6 +5,12 @@ export async function handleGitRpc(
   request: OwnerRpcRequest,
 ): Promise<void> {
   switch (request.input.method) {
+    case "git.generateText":
+      request.result = await dependencies.gitService.generateText(
+        request.params,
+        request.domainContext,
+      );
+      break;
     case "git.diff":
       request.result = await dependencies.gitService.diff(request.params, request.domainContext, {
         legacy: true,

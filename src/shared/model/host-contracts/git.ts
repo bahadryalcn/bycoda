@@ -1,10 +1,33 @@
 import { z } from "zod";
 import { IdentifierSchema, JsonValueSchema, SafeCounterSchema } from "./schemas";
+import { SessionProviderSchema } from "./session-commands";
 
 const base = { projectId: IdentifierSchema, cwd: z.string().optional() };
 // Semantic branch limits remain in the Git owner shared with legacy HTTP.
 const branch = z.string();
 export const GitReadParamsSchema = z.strictObject(base);
+export const GitGenerateTextParamsSchema = z.strictObject({
+  ...base,
+  kind: z.enum(["commit", "pr"]),
+  preferred: SessionProviderSchema.optional(),
+  choice: z
+    .strictObject({
+      harness: SessionProviderSchema,
+      model: z.string().min(1).max(200),
+      modelSettings: z.record(z.string().max(80), z.string().max(500)),
+      providerAccountId: z.string().min(1).max(80).optional(),
+    })
+    .optional(),
+});
+export const GitGenerateTextResultSchema = z.union([
+  z.strictObject({ message: z.string().min(1) }),
+  z.strictObject({
+    title: z.string().min(1),
+    body: z.string(),
+    base: z.string(),
+    head: z.string(),
+  }),
+]);
 export const GitSwitchParamsSchema = z.strictObject({
   ...base,
   branch,
