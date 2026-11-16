@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, type MutableRefObject } from "react";
 import { startProviderAccountHostSync } from "../../../features/providers/public/providerAccountHostSync";
 import { startModelEnabledHostSync } from "../../../features/sessions/model/modelEnabledHostSync";
+import { startBykitHostSync } from "../../../features/host-tools/public/bykitHostSync";
 import {
   getShellSessions,
   sessionsRef,
@@ -56,6 +57,8 @@ export function useRemoteHostSync(): RemoteHostSync {
   const refreshAdoptedSessionRef = useRef<RefreshAdoptedSession>(undefined);
   useEffect(() => startProviderAccountHostSync(), []);
   useEffect(() => startModelEnabledHostSync(), []);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- publishes the Settings bykit switch to the local Host while the workspace is mounted
+  useEffect(() => startBykitHostSync(), []);
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- timer reporting owner input to other connected Hosts while the workspace is mounted
   useEffect(() => startOwnerActivityReports(), []);
   const localHostReachable = useAdoptedSessions(

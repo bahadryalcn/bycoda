@@ -11864,5 +11864,7 @@
   "Loading configuration…": "Yapılandırma yükleniyor…",
   "Configuration for {p0}": "{p0} için yapılandırma",
   "bycoda Host status unavailable. Check the local host connection, then refresh.": "bycoda Host durumu kullanılamıyor. Yerel Host bağlantısını kontrol edin, sonra yenileyin.",
-  "Enter secret: {p0}": "Gizli anahtarı girin: {p0}"
+  "Enter secret: {p0}": "Gizli anahtarı girin: {p0}",
+  "Tell agents to use bykit": "Ajanlara bykit kullanmalarını söyle",
+  "When bykit is installed, agents are told to use it for large files, diffs, long command output and bulk edits. Applies to the next agent turn.": "bykit kuruluysa ajanlara büyük dosyalar, farklar, uzun komut çıktısı ve toplu düzenlemeler için onu kullanmaları söylenir. Bir sonraki ajan turunda geçerli olur."
 }

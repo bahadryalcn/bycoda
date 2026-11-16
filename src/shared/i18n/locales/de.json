@@ -11864,5 +11864,7 @@
   "Loading configuration…": "Konfiguration wird geladen…",
   "Configuration for {p0}": "Konfiguration für {p0}",
   "bycoda Host status unavailable. Check the local host connection, then refresh.": "bycoda-Host-Status nicht verfügbar. Prüfen Sie die lokale Host-Verbindung und aktualisieren Sie dann.",
-  "Enter secret: {p0}": "Geheimnis eingeben: {p0}"
+  "Enter secret: {p0}": "Geheimnis eingeben: {p0}",
+  "Tell agents to use bykit": "Agenten anweisen, bykit zu nutzen",
+  "When bykit is installed, agents are told to use it for large files, diffs, long command output and bulk edits. Applies to the next agent turn.": "Wenn bykit installiert ist, werden Agenten angewiesen, es für große Dateien, Diffs, lange Befehlsausgaben und Massenänderungen zu nutzen. Gilt ab dem nächsten Agentenzug."
 }

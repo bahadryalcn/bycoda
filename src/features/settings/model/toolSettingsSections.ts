@@ -12,7 +12,7 @@ export const TOOL_SETTINGS_SECTIONS: SettingsSection[] = [
       return t("Browser, devices, logs and development server defaults.");
     },
     keywords:
-      "browser device phone emulator simulator viewport live preview scale logs tail grouped development dev servers localhost refresh interval",
+      "browser device phone emulator simulator viewport live preview scale logs tail grouped development dev servers localhost refresh interval bykit agent instructions files search edit scripts",
   },
 ];
 
@@ -21,6 +21,7 @@ export const TOOL_SETTINGS_TAB_ANCHORS = {
   devices: "device-auto-live",
   logs: "logs-follow",
   devServers: "servers-auto-refresh",
+  bykit: "bykit-instructions",
 } as const;
 export type ToolSettingsTab = keyof typeof TOOL_SETTINGS_TAB_ANCHORS;
 
@@ -41,6 +42,7 @@ export function toolSettingsTabForAnchor(anchor: string | null): ToolSettingsTab
   if (anchor?.startsWith("device-")) return "devices";
   if (anchor?.startsWith("logs-")) return "logs";
   if (anchor?.startsWith("servers-")) return "devServers";
+  if (anchor?.startsWith("bykit-")) return "bykit";
   return null;
 }
 
@@ -164,5 +166,13 @@ export const TOOL_SETTINGS_INDEX: SettingsEntry[] = [
       return t("Refresh interval");
     },
     keywords: "development servers polling frequency",
+  },
+  {
+    id: "bykit-instructions",
+    section: "tools",
+    get label() {
+      return t("Tell agents to use bykit");
+    },
+    keywords: "bykit agent instructions files search edit scripts command line",
   },
 ];

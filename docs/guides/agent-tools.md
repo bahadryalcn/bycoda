@@ -14,10 +14,19 @@ Skills show only the saved owner preference: the switch on a skill's page, and *
 in the list. Bycoda does not observe skill readiness or activity, so the Skills
 screen does not display them.
 
+## bykit
+
+When the `bykit` command-line tool is installed and on the Host's PATH, every agent
+session is told not to write throwaway scripts and to use `bykit` for large files,
+diffs, long command output, broad searches and bulk edits. Without it nothing changes.
+Installing it takes effect within about a minute for sessions started afterward.
+**Settings > Tools > bykit** turns the instructions off or on for this computer's
+Host; the change applies from the next agent turn.
+
 ## Tool defaults
 
-**Settings > Tools** has Browser, Devices, Logs and Development Servers tabs on
-one page. It saves local application defaults. New tool views use these defaults;
+**Settings > Tools** has Browser, Devices, Logs, Development Servers and bykit tabs
+on one page. It saves local application defaults. New tool views use these defaults;
 retained views, explicit choices and restored drafts keep their own state. Reset
 applies to the active tab.
 

@@ -42,6 +42,14 @@ commands and Codex Plan instructions retain their existing behavior. Bridge pres
 means offered transport metadata, not a ready browser/device or authorized external
 action. Workflow guidance is context, never new permission.
 
+`host/bykit/bykit-hint.ts` appends the short `bykit` instruction block (from the bykit
+contract) to the Host's per-turn runtime instructions, for every provider and delegated
+children, only when the owner's switch is on and a `bykit` executable resolves on PATH.
+The switch is the Settings > Tools `bykitInstructions` preference, published to the local
+Host with `host.settings.save` and kept in its `host_settings` table (on until published).
+The lookup has a 1.5 s deadline and its answer is cached for a minute; there is no
+configured path setting yet.
+
 Read-before-write, native owner approvals, disabled skills and provider restrictions
 remain authoritative. Browser fallback rules do not apply to uncertain sends,
 publication, deletion or credential operations. Reconcile the original receipt

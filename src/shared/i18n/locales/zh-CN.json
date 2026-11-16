@@ -11864,5 +11864,7 @@
   "Loading configuration…": "正在加载配置…",
   "Configuration for {p0}": "{p0} 的配置",
   "bycoda Host status unavailable. Check the local host connection, then refresh.": "bycoda Host 状态不可用。请检查本地 Host 连接，然后刷新。",
-  "Enter secret: {p0}": "输入机密：{p0}"
+  "Enter secret: {p0}": "输入机密：{p0}",
+  "Tell agents to use bykit": "让代理使用 bykit",
+  "When bykit is installed, agents are told to use it for large files, diffs, long command output and bulk edits. Applies to the next agent turn.": "安装 bykit 后，代理会被要求在处理大文件、差异、较长的命令输出和批量编辑时使用它。从下一个代理回合开始生效。"
 }

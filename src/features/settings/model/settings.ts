@@ -2,6 +2,7 @@ import { isImeComposition } from "../../../shared/lib/keyboard";
 import { modelsSettingsEntries } from "./modelsSettingsEntries";
 import { TOOL_SETTINGS_INDEX, TOOL_SETTINGS_SECTIONS } from "./toolSettingsSections";
 import { toolSettingsAnchorForSection, toolSettingsTabForSection } from "./toolSettingsSections";
+import type { ToolSettingsTab } from "./toolSettingsSections";
 import {
   createStoredSetting,
   storedFlag,
@@ -58,10 +59,7 @@ export function saveStreamingTextMode(value: StreamingTextMode) {
 
 export type SettingsSectionId =
   | "tools"
-  | "browser"
-  | "devices"
-  | "logs"
-  | "devServers"
+  | ToolSettingsTab // a Tools tab opens the Tools page on that tab
   | "permissions"
   | "notifications"
   | "workspace"

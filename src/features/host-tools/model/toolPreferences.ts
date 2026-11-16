@@ -85,6 +85,7 @@ export const toolPreferences = {
     oneOf([1500, 3000, 5000] as const),
   ),
   serversAutoRefresh: preference("serversAutoRefresh", true, boolean),
+  bykitInstructions: preference("bykitInstructions", true, boolean),
   serversRefreshInterval: preference(
     "serversRefreshInterval",
     15000 as 15000 | 30000 | 60000,
