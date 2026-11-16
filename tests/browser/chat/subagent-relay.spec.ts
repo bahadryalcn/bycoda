@@ -71,7 +71,7 @@ for (const theme of ["light", "dark"])
       await expect(output).toContainText("command output fixture");
       const fill = await command.evaluate((node) => {
         const probe = document.createElement("span");
-        probe.style.background = "var(--ui-card-surface)";
+        probe.style.background = "var(--ui-surface-muted)";
         node.appendChild(probe);
         const expected = getComputedStyle(probe).backgroundColor;
         probe.remove();
@@ -331,9 +331,10 @@ for (const theme of ["light", "dark"])
       await page.setViewportSize({ width, height: 1100 });
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(`/tests/browser/chat/subagent-relay.html?audit&theme=${theme}`);
-      // Queue: one batched row for three children, not owner input.
-      await expect(page.getByText(/^3 subagent results waiting/)).toBeVisible();
-      await expect(page.getByRole("button", { name: "Remove queued message" })).toBeVisible();
+      // Queue: results waiting for the main agent are not owner messages; the activity dock
+      // shows those runs, so the queue lists nothing while it drains normally.
+      await expect(page.getByText(/subagent results? waiting/)).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Remove queued message" })).toHaveCount(0);
       // Transcript: a completion folds into its card; a notice without a card stays a disclosure.
       const benchmark = page.getByRole("button", { name: /^(Show|Hide) Benchmark review's work$/ });
       await expect(async () => {

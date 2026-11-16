@@ -8,10 +8,14 @@ for (const theme of ["light", "dark"])
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(`/settings/title-settings.html?theme=${theme}`);
+      await page.getByRole("button", { name: "Help", exact: true }).click();
       await expect(
-        page.getByText("Chosen in Models > Assignments.", { exact: true }),
+        page
+          .getByRole("dialog", { name: "Help" })
+          .getByText("Model set in Work > Assignments.", { exact: true }),
       ).toBeVisible();
-      await page.getByRole("button", { name: "Manage in Models", exact: true }).click();
+      await page.keyboard.press("Escape");
+      await page.getByRole("button", { name: "Manage models", exact: true }).click();
       await expect
         .poll(() =>
           page.evaluate(
@@ -30,7 +34,10 @@ for (const theme of ["light", "dark"])
           (
             window as unknown as {
               titleRoleFixture: {
-                state: () => { roles: Record<string, unknown>; version: number };
+                state: () => {
+                  roles: Record<string, unknown>;
+                  version: number;
+                };
               };
             }
           ).titleRoleFixture.state(),
@@ -61,7 +68,7 @@ for (const theme of ["light", "dark"])
         )
         .toEqual([{ machineId: "fixture-host", expectedVersion: 1 }]);
       await page.reload();
-      await page.getByRole("button", { name: "Manage in Models", exact: true }).click();
+      await page.getByRole("button", { name: "Manage models", exact: true }).click();
       await expect(choice).toContainText("Any model, in order");
       await choice.scrollIntoViewIfNeeded();
       await page.screenshot({
@@ -81,9 +88,11 @@ for (const theme of ["light", "dark"])
 
 test("unsupported Host never reads or mutates routing", async ({ page }) => {
   await page.goto("/settings/title-settings.html?unsupported");
-  await page.getByRole("button", { name: "Manage in Models", exact: true }).click();
+  await page.getByRole("button", { name: "Manage models", exact: true }).click();
   await expect(
-    page.getByText("Model routing is not available on this Host.", { exact: true }),
+    page.getByText("Model routing is not available on this Host.", {
+      exact: true,
+    }),
   ).toBeVisible();
   expect(
     await page.evaluate(
@@ -95,13 +104,15 @@ test("unsupported Host never reads or mutates routing", async ({ page }) => {
 
 test("denied Host save preserves the role draft and persisted state", async ({ page }) => {
   await page.goto("/settings/title-settings.html?denied");
-  await page.getByRole("button", { name: "Manage in Models", exact: true }).click();
+  await page.getByRole("button", { name: "Manage models", exact: true }).click();
   const choice = page.getByRole("button", { name: /^Model for Title:/ });
   await choice.click();
   await page.getByRole("option", { name: "Any model, in order", exact: true }).click();
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(
-    page.getByText("Model roles could not be saved. Try again.", { exact: true }),
+    page.getByText("Model roles could not be saved. Try again.", {
+      exact: true,
+    }),
   ).toBeVisible();
   await expect(choice).toContainText("Any model, in order");
   expect(
@@ -109,7 +120,9 @@ test("denied Host save preserves the role draft and persisted state", async ({ p
       () =>
         (
           window as unknown as {
-            titleRoleFixture: { state: () => { roles: Record<string, unknown> } };
+            titleRoleFixture: {
+              state: () => { roles: Record<string, unknown> };
+            };
           }
         ).titleRoleFixture.state().roles["text.title"],
     ),

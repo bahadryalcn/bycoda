@@ -31,6 +31,10 @@ test.beforeAll(async () => {
 
 test.beforeEach(async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
+  // Fixture messages are dated relative to now (22 h to 4 min ago). Pin the clock to mid
+  // afternoon so they always split into "Yesterday" and "Today", whatever time CI runs;
+  // timers keep running.
+  await page.clock.setFixedTime(new Date(2026, 10, 16, 15, 0, 0));
 });
 
 for (const theme of themes) {

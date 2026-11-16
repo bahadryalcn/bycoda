@@ -60,8 +60,10 @@ for (const theme of ["dark", "light"]) {
         path: `temp/verification/2026-10-20-rail-header/${theme}-${width}.png`,
       });
     }
-    await page.getByRole("button", { name: "Manage hidden groups", exact: true }).click();
-    await expect(page.getByTestId("settings-destination")).toHaveText("groupLock");
+    // Hidden groups moved from the footer to Settings (Group privacy); the footer keeps one menu.
+    await footer.getByRole("button", { name: "Workspace controls", exact: true }).click();
+    await expect(page.getByRole("menuitem", { name: "Refresh current view" })).toBeVisible();
+    await page.keyboard.press("Escape");
     await recovery.click();
     await expect(page.getByRole("dialog", { name: "Recovered sessions" })).toBeVisible();
   });

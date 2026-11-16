@@ -149,7 +149,7 @@ test("terminal shell discovery recovery and empty or missing profiles", async ({
   ).toBeVisible();
   await page.goto("/tests/browser/settings/settings.html?section=terminal&terminal=empty&lang=en");
   await expect(
-    terminal.getByText("Connect a machine in Connections to configure its default shell here."),
+    terminal.getByText("Add a machine under Machines to configure its default shell here."),
   ).toBeVisible();
 
   await expect(terminal.getByText("No shells found", { exact: true })).toBeVisible();

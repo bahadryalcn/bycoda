@@ -156,6 +156,7 @@ test("informative 300-frame DPR 2 width 320 timing", async ({ page }, testInfo) 
 });
 
 test("classic main baseline timing", async ({ page }, testInfo) => {
+  test.setTimeout(480000); // 1200 software-rendered frames on shared CI runners
   await page.goto("/tests/browser/crews/canvas-paired.html");
   const results = await page.evaluate(() => window.classicMainTiming());
   console.log("CLASSIC_BASELINE", JSON.stringify(results));
@@ -338,6 +339,7 @@ for (const renderer of ["auto", "canvas"] as const) {
     });
 }
 test("classic worker 300 frame timing", async ({ page }, testInfo) => {
+  test.setTimeout(480000); // 300 frames per backend, slow on software-rendered CI runners
   await page.goto("/tests/browser/crews/canvas-paired.html");
   const result = await page.evaluate(() => window.classicWorkerTiming());
   console.log("CLASSIC_WORKER", JSON.stringify(result));

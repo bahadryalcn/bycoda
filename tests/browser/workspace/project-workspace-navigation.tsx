@@ -20,6 +20,7 @@ import {
 import { savePinnedProjects } from "../../../src/features/projects/model/recents";
 import { languageReady } from "../../../src/shared/i18n";
 import { Button } from "../../../src/shared/ui/Button";
+import { installInputModality } from "../../../src/shared/ui/inputModality";
 import "../support/w7-shell.css";
 
 // Exercise the production rail without changing a real repository or session.
@@ -218,6 +219,8 @@ if (new URL(location.href).searchParams.has("inbox-layout")) {
   });
   saveInboxSource("jira");
 }
+// The app tracks keyboard versus pointer input at startup; keyboard-only focus cues depend on it.
+installInputModality();
 createRoot(document.getElementById("root")!).render(
   new URL(location.href).searchParams.has("session-preview") ? (
     <SessionPreviewFixture />

@@ -40,6 +40,9 @@ test("two renderer windows follow focused sessions, retain pin, select manually,
   await hub.getByRole("option").filter({ hasText: "Studio" }).click();
   await expect(identity).toContainText("Studio");
   await source.bringToFront();
+  // A selection change is the signal: re-clicking the already active Atlas only publishes a new
+  // selection when the OS gives the window focus, which headless Linux runners do not.
+  await source.getByRole("button", { name: "Studio", exact: true }).click();
   await source.getByRole("button", { name: "Atlas", exact: true }).click();
   await expect(identity).toContainText("Atlas");
   for (const theme of ["light", "dark"])

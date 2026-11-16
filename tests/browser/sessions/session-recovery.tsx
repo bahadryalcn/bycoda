@@ -112,11 +112,7 @@ function RailFixture() {
         {settings}
       </output>
       <div style={{ position: "fixed", insetBlockEnd: 0, insetInlineEnd: 0 }}>
-        <WorkspaceControls
-          onHiddenGroups={() => setSettings("groupLock")}
-          onPullRequests={() => {}}
-          onUsage={() => {}}
-        />
+        <WorkspaceControls />
       </div>
       {open ? (
         <SessionRecoveryPanel

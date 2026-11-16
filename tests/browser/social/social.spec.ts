@@ -137,13 +137,14 @@ for (const theme of ["light", "dark"])
         const colors = await today.evaluate((node) => {
           const probe = document.createElement("span");
           node.append(probe);
-          probe.style.background = "var(--ui-fill-faint)";
+          probe.style.background = "var(--ui-surface-inset, var(--ui-surface-muted))";
           const ground = getComputedStyle(probe).backgroundColor;
           probe.style.background = "var(--ui-tone-accent-solid)";
           const number = getComputedStyle(probe).backgroundColor;
           probe.remove();
           return { ground, number };
         });
+        // Today is the inset surface role (muted ground), not a custom tint.
         await expect(today).toHaveCSS("background-color", colors.ground);
         await expect(today.locator(".content-day-number")).toHaveCSS(
           "background-color",
@@ -588,7 +589,7 @@ test("the five sections render and switch by click and keyboard", async ({ page 
   const screens: [string, () => ReturnType<Page["getByRole"]>][] = [
     ["İçerik", () => page.getByRole("button", { name: "Yeni gönderi" })],
     ["Hedef kitle", () => page.getByRole("tabpanel", { name: "Kişiler" })],
-    ["Gelen kutusu", () => page.getByRole("searchbox", { name: "Konuşmaları arayın" })],
+    ["Gelen kutusu", () => page.getByRole("searchbox", { name: "Konuşmalarda ara" })],
     ["Hesaplar ve Ayarlar", () => page.getByRole("region", { name: "Hesaplar" })],
   ];
   for (const [name, landmark] of screens) {
@@ -656,7 +657,8 @@ test("undo on an AI action asks the Host once and removes the undo offer", async
 test("stopping all AI is confirmed first and then shown in the shell bar", async ({ page }) => {
   await openSocial(page);
   await expect(page.getByText("AI etkin", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Tüm AI işlemlerini durdur" }).click();
+  // The shell button is named by its visible state; the stop action is its tooltip.
+  await page.getByRole("button", { name: "AI etkin", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Tüm AI durdurulsun mu?" });
   await expect(dialog).toBeVisible();
   // Nothing is stopped while the confirmation is open.
@@ -664,7 +666,8 @@ test("stopping all AI is confirmed first and then shown in the shell bar", async
   await dialog.getByRole("button", { name: "Tüm AI işlemlerini durdur" }).click();
   await expect(dialog).toBeHidden();
   await expect(page.getByText("AI durduruldu", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "AI'yi devam ettir" })).toBeVisible();
+  // The shell button is named by its state again; resuming is its tooltip.
+  await expect(page.getByRole("button", { name: "AI durduruldu", exact: true })).toBeVisible();
   expect(await requests(page, "ai.stop")).toHaveLength(1);
 });
 
@@ -712,7 +715,7 @@ test("inbox auto-refresh follows the Host setting after the owner turns it on", 
   await sections(page).getByRole("tab", { name: "Gelen kutusu" }).click();
   const inbox = page.getByRole("region", { name: "Gelen kutusu" });
   await expect(
-    inbox.getByText("Yeni görüşmeleri kontrol etmek için bir hesap bağlayın."),
+    inbox.getByText("Yeni konuşmaları kontrol etmek için bir hesap bağlayın."),
   ).toBeVisible();
   const autoRefresh = inbox.getByRole("switch", { name: "Otomatik yenileme" });
   await expect(autoRefresh).not.toBeChecked();
@@ -736,9 +739,10 @@ test("account detail lists what a disconnected account cannot do and sending sta
   const detail = page.getByRole("dialog", { name: "Demo account" });
   await detail.locator("summary").filter({ hasText: "Bağlantı gerekli" }).click();
   const capabilities = detail.getByRole("list", { name: "Bu hesabın yapabilecekleri" });
-  await expect(
-    capabilities.getByRole("listitem").filter({ hasText: "Yayın" }).first(),
-  ).toContainText("Bağlantı gerekli");
+  // The "Connection needed" group names the state once; each row only carries its unavailable mark.
+  const publishRow = capabilities.getByRole("listitem").filter({ hasText: "Yayın" }).first();
+  await expect(publishRow).toHaveAttribute("data-available", "false");
+  await expect(publishRow.getByRole("img", { name: "Kullanılamıyor" })).toBeVisible();
   await expect(detail.getByRole("button", { name: "Tarayıcıda bağla", exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(detail).toBeHidden();
@@ -1005,7 +1009,7 @@ for (const theme of ["light", "dark"])
       // Approving opens the signup window at once; leaving cancels it and opens the new account.
       await page
         .getByRole("dialog")
-        .getByRole("button", { name: "Kaydı iptal et", exact: true })
+        .getByRole("button", { name: "Kaydı durdur", exact: true })
         .click();
       await expect(
         page.getByRole("tab", { name: "Hesaplar ve Ayarlar", exact: true }),

@@ -1,4 +1,4 @@
-import { expect, test, type Locator } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
 const appVersion = (
@@ -118,26 +118,31 @@ async function paint(locator: Locator) {
   });
 }
 
-test("joined actions paint hover per segment and retain separate hit targets, focus and update access", async ({
+test("footer update is the only rail action and the dialog joined actions paint hover per segment", async ({
   page,
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(route);
-  const github = page.getByRole("button", { name: "View bycoda on GitHub", exact: true });
-  const close = page.getByRole("button", { name: "Dismiss GitHub repository prompt", exact: true });
   const update = page.getByRole("button", { name: `Update to ${nextVersion}`, exact: true });
-  const group = page.locator("[data-github-star-prompt]");
   await expect(update).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(group.getByRole("button")).toHaveCount(3);
-  const boxes = await Promise.all([github, close, update].map((button) => button.boundingBox()));
+  // The repository prompt is part of the update dialog, never a standing footer action.
+  await expect(page.locator("[data-github-star-prompt]")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "View bycoda on GitHub" })).toHaveCount(0);
+  await update.focus();
+  expect(await update.evaluate((element) => getComputedStyle(element).outlineStyle)).not.toBe(
+    "none",
+  );
+  const { dialog, github, close } = await openUpdatePrompt(page);
+  const group = dialog.locator("[data-github-star-prompt]");
+  await expect(group.getByRole("button")).toHaveCount(2);
+  const boxes = await Promise.all([github, close].map((button) => button.boundingBox()));
   expect(boxes.every(Boolean)).toBe(true);
   expect(boxes[0]!.x + boxes[0]!.width).toBeLessThanOrEqual(boxes[1]!.x + 0.5);
-  expect(boxes[1]!.x + boxes[1]!.width).toBeLessThanOrEqual(boxes[2]!.x + 0.5);
   // The group owns only the outer boundary; each segment paints its own hover and press,
   // so the state always names the action under the pointer.
-  const segments = [github, close, update];
+  const segments = [github, close];
   const rest = (await paint(group)).background;
   const hovers = [];
   for (const button of segments) {
@@ -163,11 +168,6 @@ test("joined actions paint hover per segment and retain separate hit targets, fo
   await expect(github).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(close).toBeFocused();
-  await page.keyboard.press("Tab");
-  await expect(update).toBeFocused();
-  expect(await update.evaluate((element) => getComputedStyle(element).outlineStyle)).not.toBe(
-    "none",
-  );
   await github.click();
   expect(
     await page.evaluate(
@@ -176,12 +176,7 @@ test("joined actions paint hover per segment and retain separate hit targets, fo
   ).toEqual(["https://github.com/bahadryalcn/bycoda"]);
   await close.click();
   await expect(github).toHaveCount(0);
-  await expect(update).toBeVisible();
-  await page.reload();
-  await expect(github).toHaveCount(0);
-  await expect(update).toBeVisible();
-  await update.click();
-  await expect(page.getByRole("dialog", { name: "Update available" })).toBeVisible();
+  await expect(dialog).toBeVisible();
   expect(errors).toEqual([]);
 });
 
@@ -244,20 +239,23 @@ test("captures both themes and widths with disabled and pending shared actions",
       );
     }
   }
-  await page.getByRole("button", { name: "Dismiss GitHub repository prompt" }).hover();
+  await page.getByRole("button", { name: `Update to ${nextVersion}`, exact: true }).hover();
   await page.screenshot({ path: `${captureRoot}/footer-dark-hover.png` });
   await page.mouse.move(790, 10);
   await page.locator(".update-fixture-rail").evaluate((element) => {
     (element as HTMLElement).style.inlineSize = "200px";
   });
-  const group = page.locator("[data-github-star-prompt]");
   const railBounds = (await page.locator(".update-fixture-rail").boundingBox())!;
   for (const button of await page.locator(".update-fixture-rail button").all()) {
     const bounds = (await button.boundingBox())!;
     expect(bounds.x).toBeGreaterThanOrEqual(railBounds.x);
     expect(bounds.x + bounds.width).toBeLessThanOrEqual(railBounds.x + railBounds.width);
   }
-  expect(await group.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  expect(
+    await page
+      .locator(".update-fixture-rail")
+      .evaluate((element) => element.scrollWidth <= element.clientWidth),
+  ).toBe(true);
   await page.screenshot({ path: `${captureRoot}/footer-dark-narrow-200.png` });
   await page.locator(".update-fixture-rail").evaluate((element) => {
     (element as HTMLElement).style.removeProperty("inline-size");
@@ -283,17 +281,13 @@ test("compact account rail preserves its width, standard targets and action orde
     expect((await icon.boundingBox())!.width).toBe(14);
   }
   for (const button of await footer.getByRole("button").all()) {
-    const cornerDismiss =
-      (await button.getAttribute("aria-label")) === "Dismiss GitHub repository prompt";
-    expect((await button.boundingBox())!.height).toBe(cornerDismiss ? 20 : 28);
+    expect((await button.boundingBox())!.height).toBe(28);
   }
   const order = await footer
     .getByRole("button", { includeHidden: true })
     .evaluateAll((buttons) => buttons.map((button) => button.getAttribute("aria-label")));
   expect(order).toEqual([
     "Talk to Arif",
-    "View bycoda on GitHub",
-    "Dismiss GitHub repository prompt",
     `Update to ${nextVersion}`,
     "Settings",
     expect.stringMatching(/^Account: Guest\./),
@@ -306,7 +300,7 @@ test("compact account rail preserves its width, standard targets and action orde
   }
 });
 
-test("footer star and assistant share the idle Settings surface", async ({ page }) => {
+test("footer update and assistant share the idle Settings surface", async ({ page }) => {
   const backgroundCaptureRoot = "temp/verification/2026-11-12-footer-background";
   mkdirSync(backgroundCaptureRoot, { recursive: true });
   writeFileSync(
@@ -317,11 +311,10 @@ test("footer star and assistant share the idle Settings surface", async ({ page 
     await page.goto(`${route}?account${compact ? "&compact" : ""}`);
     const footer = page.locator("[data-sidebar-account-footer]");
     const assistant = footer.getByRole("button", { name: "Talk to Arif", exact: true });
-    const github = footer.getByRole("button", { name: "View bycoda on GitHub", exact: true });
+    const update = footer.getByRole("button", { name: `Update to ${nextVersion}`, exact: true });
     const settings = footer.getByRole("button", { name: "Settings", exact: true });
-    const group = footer.locator("[data-github-star-prompt]");
     await expect(assistant).toBeVisible();
-    await expect(github).toBeVisible();
+    await expect(update).toBeVisible();
     for (const theme of ["light", "dark"]) {
       await page.evaluate(
         (light) => document.documentElement.classList.toggle("theme-light", light),
@@ -333,7 +326,7 @@ test("footer star and assistant share the idle Settings surface", async ({ page 
       });
       const settingsBackground = (await paint(settings)).background;
       expect.soft(settingsBackground).toBe("rgba(0, 0, 0, 0)");
-      for (const control of [assistant, github, group]) {
+      for (const control of [assistant, update]) {
         expect.soft((await paint(control)).background).toBe(settingsBackground);
         const borders = await control.evaluate((element) => {
           const visible = (style: CSSStyleDeclaration) =>
@@ -353,85 +346,41 @@ test("footer star and assistant share the idle Settings surface", async ({ page 
   }
 });
 
-for (const compact of [false, true]) {
-  test(`footer star dismiss stays bare at the upper right (${compact ? "compact" : "wide"})`, async ({
-    page,
-  }) => {
-    const directory = "temp/verification/2026-11-13-star-dismiss";
-    mkdirSync(directory, { recursive: true });
+test("account footer carries no repository prompt, which lives in the update dialog", async ({
+  page,
+}) => {
+  for (const compact of [false, true]) {
     await page.goto(`${route}?account${compact ? "&compact" : ""}`);
     const footer = page.locator("[data-sidebar-account-footer]");
-    const github = footer.getByRole("button", { name: "View bycoda on GitHub", exact: true });
-    const close = footer.getByRole("button", {
-      name: "Dismiss GitHub repository prompt",
-      exact: true,
-    });
-    for (const theme of ["light", "dark"]) {
-      await page.evaluate(
-        (light) => document.documentElement.classList.toggle("theme-light", light),
-        theme === "light",
-      );
-      for (const width of [1280, 800]) {
-        await page.setViewportSize({ width, height: 800 });
-        await page.keyboard.press("Escape");
-        await page.evaluate(() => {
-          if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
-        });
-        await github.hover();
-        await expect(close).toBeVisible();
-        const star = (await github.boundingBox())!;
-        const dismiss = (await close.boundingBox())!;
-        const capture = `${directory}/${compact ? "compact" : "wide"}-${theme}-${width}`;
-        await github.dispatchEvent("keydown", { key: "Escape" });
-        await footer.screenshot({ path: `${capture}-star-hover.png` });
-        expect(dismiss.x).toBeGreaterThanOrEqual(star.x + star.width / 2);
-        expect(dismiss.y).toBeLessThan(star.y);
-        expect(dismiss.y + dismiss.height).toBeLessThanOrEqual(star.y + star.height / 2);
-        expect((await paint(close)).background).toBe("rgba(0, 0, 0, 0)");
-        await close.hover();
-        expect((await paint(close)).background).toBe("rgba(0, 0, 0, 0)");
-        await close.dispatchEvent("keydown", { key: "Escape" });
-        await footer.screenshot({ path: `${capture}-dismiss-hover.png` });
-        for (const attribute of ["data-button-selected", "aria-expanded"]) {
-          await close.evaluate((element, name) => element.setAttribute(name, "true"), attribute);
-          expect((await paint(close)).background).toBe("rgba(0, 0, 0, 0)");
-          await close.evaluate((element, name) => element.removeAttribute(name), attribute);
-        }
-        await page.mouse.down();
-        expect((await paint(close)).background).toBe("rgba(0, 0, 0, 0)");
-        await page.mouse.move(width - 10, 10);
-        await page.mouse.up();
-        await github.focus();
-        await page.keyboard.press("Tab");
-        await expect(close).toBeFocused();
-        expect((await paint(close)).background).toBe("rgba(0, 0, 0, 0)");
-        expect(await close.evaluate((element) => getComputedStyle(element).outlineStyle)).not.toBe(
-          "none",
-        );
-      }
-    }
-  });
+    await expect(
+      footer.getByRole("button", { name: `Update to ${nextVersion}`, exact: true }),
+    ).toBeVisible();
+    await expect(footer.getByRole("button", { name: "View bycoda on GitHub" })).toHaveCount(0);
+    await expect(
+      footer.getByRole("button", { name: "Dismiss GitHub repository prompt" }),
+    ).toHaveCount(0);
+    await expect(footer.locator("[data-github-star-prompt]")).toHaveCount(0);
+  }
+});
+
+/** Opens the update dialog from the footer and returns its repository prompt controls. */
+async function openUpdatePrompt(page: Page) {
+  await page.getByRole("button", { name: `Update to ${nextVersion}`, exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Update available" });
+  await expect(dialog).toBeVisible();
+  return {
+    dialog,
+    github: dialog.getByRole("button", { name: "View bycoda on GitHub", exact: true }),
+    close: dialog.getByRole("button", { name: "Dismiss GitHub repository prompt", exact: true }),
+  };
 }
 
-test("footer star and corner dismiss retain separate pointer targets", async ({ page }) => {
+test("update dialog star and dismiss retain separate pointer targets", async ({ page }) => {
   await page.goto(`${route}?account&compact`);
-  const github = page.getByRole("button", { name: "View bycoda on GitHub", exact: true });
-  const close = page.getByRole("button", { name: "Dismiss GitHub repository prompt", exact: true });
-  const update = page.getByRole("button", { name: `Update to ${nextVersion}`, exact: true });
-  await expect(update).toBeVisible();
-  await page.mouse.move(1270, 10);
-  // Corner hints keep their keyboard target while the idle paint is clipped.
-  await expect(close).toHaveCSS("clip-path", "inset(50%)");
-  await github.hover();
-  await expect(close).toHaveCSS("clip-path", "none");
+  const { dialog, github, close } = await openUpdatePrompt(page);
   const starBounds = (await github.boundingBox())!;
   const dismissBounds = (await close.boundingBox())!;
-  expect(dismissBounds.x).toBeGreaterThanOrEqual(starBounds.x + starBounds.width / 2);
-  expect(dismissBounds.y).toBeLessThan(starBounds.y);
-  expect(dismissBounds.x).toBeLessThan(starBounds.x + starBounds.width);
-  expect(dismissBounds.y + dismissBounds.height).toBeLessThanOrEqual(
-    starBounds.y + starBounds.height / 2,
-  );
+  expect(dismissBounds.x).toBeGreaterThanOrEqual(starBounds.x + starBounds.width - 0.5);
   const targets = await page.evaluate(
     ({ star, dismiss }) => {
       const nameAt = (x: number, y: number) =>
@@ -454,30 +403,24 @@ test("footer star and corner dismiss retain separate pointer targets", async ({ 
       () => (window as unknown as { __fixtureOpenedUrls: string[] }).__fixtureOpenedUrls,
     ),
   ).toEqual(["https://github.com/bahadryalcn/bycoda"]);
-  await github.hover();
   await close.click();
   await expect(github).toHaveCount(0);
-  await expect(update).toBeVisible();
+  await expect(dialog).toBeVisible();
+  await page.getByRole("button", { name: "Later", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
   await page.reload();
+  await page.getByRole("button", { name: `Update to ${nextVersion}`, exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Update available" })).toBeVisible();
   await expect(github).toHaveCount(0);
-  await expect(update).toBeVisible();
 });
 
 test.describe("touch footer targets", () => {
   test.use({ hasTouch: true, isMobile: true });
 
-  test("corner dismiss never captures a tap intended for the star", async ({ page }) => {
+  test("update dialog dismiss never captures a tap intended for the star", async ({ page }) => {
     await page.goto(`${route}?account&compact`);
     expect(await page.evaluate(() => matchMedia("(pointer: coarse)").matches)).toBe(true);
-    const rail = page.locator("[data-account-fixture-rail]");
-    const github = page.getByRole("button", { name: "View bycoda on GitHub", exact: true });
-    const close = page.getByRole("button", {
-      name: "Dismiss GitHub repository prompt",
-      exact: true,
-    });
-    const update = page.getByRole("button", { name: `Update to ${nextVersion}`, exact: true });
-    await expect(update).toBeVisible();
-    await expect(close).toBeVisible();
+    const { dialog, github, close } = await openUpdatePrompt(page);
     const starBounds = (await github.boundingBox())!;
     const dismissBounds = (await close.boundingBox())!;
     const targets = await page.evaluate(
@@ -495,10 +438,9 @@ test.describe("touch footer targets", () => {
       star: "View bycoda on GitHub",
       dismiss: "Dismiss GitHub repository prompt",
     });
-    expect((await rail.boundingBox())!.width).toBe(56);
-    const railBounds = (await rail.boundingBox())!;
+    const dialogBounds = (await dialog.boundingBox())!;
     expect(dismissBounds.x + dismissBounds.width).toBeLessThanOrEqual(
-      railBounds.x + railBounds.width,
+      dialogBounds.x + dialogBounds.width,
     );
     await page.touchscreen.tap(
       starBounds.x + starBounds.width * 0.525,
@@ -513,7 +455,7 @@ test.describe("touch footer targets", () => {
     await page.screenshot({ path: `${accountCaptureRoot}/compact-dark-touch-targets.png` });
     await close.tap();
     await expect(github).toHaveCount(0);
-    await expect(update).toBeVisible();
+    await expect(dialog).toBeVisible();
   });
 });
 
@@ -583,8 +525,6 @@ test("captures account rail and footer in both themes and widths", async ({ page
       }
     }
   }
-  await page.getByRole("button", { name: "View bycoda on GitHub", exact: true }).hover();
-  await page.screenshot({ path: `${accountCaptureRoot}/wide-dark-star-hover.png` });
   await page.getByRole("button", { name: `Update to ${nextVersion}`, exact: true }).hover();
   await page.screenshot({ path: `${accountCaptureRoot}/wide-dark-update-hover.png` });
 });

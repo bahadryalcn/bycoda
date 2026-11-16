@@ -137,7 +137,7 @@ test("working sessions and usage meters stay contained in narrow and short works
     }
   }
   const firstCard = rail.locator("[data-live-agent-card]").first();
-  const more = rail.getByRole("button", { name: "6 more", exact: true });
+  const more = rail.getByRole("button", { name: "5 more", exact: true });
   await more.click();
   await expect(rail.locator("[data-live-agent-card]")).toHaveCount(8);
   // The expanded list must scroll, never squeeze record rows until their text overlaps.
@@ -175,22 +175,22 @@ test("working sessions and usage meters stay contained in narrow and short works
   const less = rail.getByRole("button", { name: "Show less", exact: true });
   await expect(less).toBeInViewport();
   await less.click();
-  await expect(rail.locator("[data-live-agent-card]")).toHaveCount(2);
+  // The attention row leads the list and sits outside the two-row cap.
+  await expect(rail.locator("[data-live-agent-card]")).toHaveCount(3);
   await firstCard.focus();
   await firstCard.press("Enter");
-  await expect(page.getByLabel("Selected live session")).toHaveText("live-0");
-  // The headline count and attention badge remain separate from the disclosure.
-  const working = rail.getByRole("region", { name: "Working agents", exact: true });
-  await expect(working.getByLabel("1 needs attention", { exact: true })).toHaveText("1");
-  const workingToggle = working.getByRole("button", {
-    name: "Working 5 1 needs attention",
-    exact: true,
-  });
-  await workingToggle.click();
-  await expect(workingToggle).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByLabel("Selected live session")).toHaveText("live-1");
+  // The total stays in the header; the attention badge joins it only while the section is collapsed.
+  const activity = rail.getByRole("region", { name: "Activity", exact: true });
+  const activityToggle = activity.getByRole("button", { name: /^Activity/ });
+  await expect(activityToggle).toHaveAttribute("aria-expanded", "true");
+  await expect(activity.getByLabel("1 needs attention", { exact: true })).toHaveCount(0);
+  await activityToggle.click();
+  await expect(activityToggle).toHaveAttribute("aria-expanded", "false");
+  await expect(activity.getByLabel("1 needs attention", { exact: true })).toHaveText("1");
   await expect(firstCard).toBeHidden();
-  await workingToggle.click();
-  await expect(workingToggle).toHaveAttribute("aria-expanded", "true");
+  await activityToggle.click();
+  await expect(activityToggle).toHaveAttribute("aria-expanded", "true");
   await expect(firstCard).toBeVisible();
   const details = page.getByRole("button", {
     name: "Codex usage details",
@@ -222,9 +222,11 @@ test("Inbox keeps long issue titles readable and list actions available", async 
       await page.setViewportSize({ width, height: 800 });
       expect(await card.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
       const title = card.getByText(/^Preserve readable shared interface/);
-      expect(await title.evaluate((node) => node.getBoundingClientRect().height)).toBeGreaterThan(
-        25,
-      );
+      // A row is one compact line: the long title is cut with an ellipsis inside the card
+      // (the hover card carries the full title) and never wraps or widens it.
+      expect(await title.evaluate((node) => node.getBoundingClientRect().height)).toBeLessThan(25);
+      if (width === 390)
+        expect(await title.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
@@ -329,6 +331,8 @@ test("Inbox review separates unread, draft, review and pending checks and restor
   await page.screenshot({
     path: testInfo.outputPath("inbox-review-checks.png"),
   });
+  // Rows are compact, so a short window keeps the filtered list taller than its viewport.
+  await page.setViewportSize({ width: 1440, height: 400 });
   const search = page.getByRole("textbox", {
     name: "Filter loaded items",
     exact: true,

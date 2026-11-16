@@ -83,13 +83,12 @@ for (const light of [true, false])
             element.appendChild(probe);
             probe.style.background = "var(--ui-composer-surface)";
             const opaque = getComputedStyle(probe).backgroundColor;
-            probe.style.background = "var(--ui-activity-dock-glass)";
-            const glass = getComputedStyle(probe).backgroundColor;
             probe.remove();
-            return { background: s.backgroundColor, filter: s.backdropFilter, opaque, glass };
+            return { background: s.backgroundColor, filter: s.backdropFilter, opaque };
           });
-          expect(actual.background).toBe(mode === "glass" ? actual.glass : actual.opaque);
-          if (mode !== "glass") expect(actual.filter).toBe("none");
+          // Glass was dropped (DECISIONS-LOG): every mode paints the one opaque composer surface.
+          expect(actual.background).toBe(actual.opaque);
+          expect(actual.filter).toBe("none");
         }
         await expect(field(page)).toHaveValue("Retained composer draft");
         await page.screenshot({
@@ -112,7 +111,7 @@ for (const light of [true, false])
         const actual = await node.evaluate((element) => {
           const s = getComputedStyle(element);
           const probe = document.createElement("span");
-          probe.style.borderTop = "1px solid var(--color-stroke)";
+          probe.style.borderTop = "1px solid var(--ui-pane-border)";
           element.appendChild(probe);
           const expected = getComputedStyle(probe).borderTopColor;
           probe.remove();
@@ -140,7 +139,7 @@ for (const light of [true, false])
         const style = getComputedStyle(node);
         const probe = document.createElement("span");
         node.appendChild(probe);
-        probe.style.borderTop = "1px solid var(--color-stroke)";
+        probe.style.borderTop = "1px solid var(--ui-pane-border)";
         const stroke = getComputedStyle(probe).borderTopColor;
         probe.style.borderTop = "1px solid var(--ui-pane-border)";
         const pane = getComputedStyle(probe).borderTopColor;
@@ -158,7 +157,7 @@ for (const light of [true, false])
       if (width < 600) {
         expect(values.topWidth).toBe("1px");
         expect(values.leftWidth).toBe("0px");
-        expect(values.topColor).toBe(values.stroke);
+        expect(values.topColor).toBe(values.pane);
       } else {
         expect(values.topWidth).toBe("0px");
         expect(values.leftWidth).toBe("1px");
@@ -182,7 +181,7 @@ for (const light of [true, false])
       );
       const result = await header.evaluate((node) => {
         const probe = document.createElement("span");
-        probe.style.borderBottom = "1px solid var(--ui-tone-neutral-border)";
+        probe.style.borderBottom = "1px solid var(--ui-pane-border)";
         node.appendChild(probe);
         const expected = getComputedStyle(probe).borderBottomColor;
         probe.remove();
