@@ -7,6 +7,8 @@ export const BYKIT_HINT = [
   "multi-place edit or new file, `bykit replace` for repository-wide replacements,",
   "`bykit diff` for git changes, `bykit json` for JSON/locale data, `bykit run -- <cmd>`",
   "for builds and tests (prints only failures). Do not format or fix line endings by hand.",
+  "Narrow by path or `--glob` first; fetch more with `--page N`; use `--all` only when the task",
+  "needs every result (for bulk edits use `bykit replace`).",
 ].join("\n");
 
 const LOOKUP_DEADLINE_MS = 1_500;
