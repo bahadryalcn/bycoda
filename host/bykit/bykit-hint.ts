@@ -8,7 +8,7 @@ export const BYKIT_HINT = [
   "`bykit diff` for long diffs, `bykit run -- <cmd>` for long command output,",
   "`bykit find` for searches that may return many results (usage counts,",
   "repo-wide scans, before a bulk change), `bykit edit`/`replace` for multi-place",
-  "edits, `bykit json` for JSON, `bykit sql` for SQLite, `bykit shot` for screenshots.",
+  "edits, `bykit json` for JSON (`--has` checks keys across locale files), `bykit sql` for SQLite, `bykit shot` for screenshots.",
   "For a single definition or a one-place edit, your own tools are enough. Output is paged: narrow by path first, then",
   "`--page N`; `--all` only when the task needs every result.",
 ].join("\n");
