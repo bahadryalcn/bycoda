@@ -111,6 +111,22 @@ describe("pure remote provider inbox contract", () => {
       ),
     ).toThrow("another project");
   });
+  it("accepts a known, deduplicated provider filter for discovery", () => {
+    const list = (providers: unknown) =>
+      parseRemoteInboxOperation(
+        { action: "list", projectId: "project-1", query: { providers } },
+        projects,
+      );
+    expect(list(["jira", "jira"])).toMatchObject({ query: { providers: ["jira"] } });
+    expect(list(undefined)).not.toHaveProperty("query.providers");
+    for (const invalid of [
+      [],
+      ["shell"],
+      "jira",
+      ["jira", "github", "linear", "gitlab", "azuredevops", "x"],
+    ])
+      expect(() => list(invalid)).toThrow("provider filter");
+  });
   it("only accepts finite inbox operations and matching provider item kinds", () => {
     for (const action of ["shell", "jira_set_config", "gitlab_set_config", "invoke"])
       expect(() => parseRemoteInboxOperation({ action }, projects)).toThrow("Unsupported");

@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { toast } from "../../../shared/ui/ToastRegion";
 import {
   backgroundRemovals,
@@ -31,6 +31,17 @@ it("tracks a running removal, refuses a duplicate and releases the folder when i
   expect(isBackgroundRemoval(backgroundRemovals(), "/repo-worktrees/a")).toBe(false);
   expect(changes).toBe(2);
   stop();
+});
+
+it("shows no toast while the removal runs or when it succeeds", async () => {
+  const work = deferred();
+  const show = vi.spyOn(toast, "show");
+  const running = runBackgroundRemoval("/repo-worktrees/c", "c", () => work.promise);
+  expect(show).not.toHaveBeenCalled();
+  work.resolve();
+  await expect(running).resolves.toBe(true);
+  expect(show).not.toHaveBeenCalled();
+  show.mockRestore();
 });
 
 it("reports a failed removal and releases the folder for a retry", async () => {

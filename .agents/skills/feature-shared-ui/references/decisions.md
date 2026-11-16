@@ -201,3 +201,11 @@ Owner correction, 2026-10-28, session `0567326f-aade-4baa-89f3-b44c6256ae9e`:
 > borders and the like appear on focus; I do not want these, for example stripe lines on the left, right, bottom and top; these need tidying up too. (translated)
 
 Recorded direction: no surrounding focus frame or decorative edge stripe on a large composer, panel, card or row. Required input, drag and resize boundaries are handled separately.
+
+## Feedback: One top-center alert location
+
+Owner decision, 2026-11-16:
+
+> let us gather the alerts in one single place, like t3code, and show them at the top centre of the page; the same errors are shown in so many places … not only errors, infos and warnings arrive like this too (translated)
+
+Recorded direction: every toast, warning and information notice, including feature cards in `ToastSlot`, uses the shared `top-center` stack (`DEFAULT_TOAST_PLACEMENT`). A machine connection failure is shown once there; panes, rows and fields do not repeat it or add their own small retry while it is shown (`connectionErrorGate`). Redundant information and success toasts are removed rather than moved.

@@ -3,7 +3,7 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { layoutStack } from "./arc/toast-stack/toast-stack";
-import { toast, ToastRegion, ToastSlot } from "./ToastRegion";
+import { DEFAULT_TOAST_PLACEMENT, toast, ToastRegion, ToastSlot } from "./ToastRegion";
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -236,6 +236,29 @@ it("renders structured actions as secondary buttons and puts the glyph in a firs
         .click(),
     );
     expect(onYes).toHaveBeenCalledOnce();
+  } finally {
+    unmount();
+  }
+});
+
+it("stacks in the top-center column by default and keeps explicit placements working", () => {
+  const unmount = mount();
+  try {
+    act(() => {
+      toast.show({ message: "Default", durationMs: null });
+      toast.show({ message: "Corner", durationMs: null, placement: "bottom-end" });
+    });
+    const center = document.querySelector<HTMLElement>('[data-toast-region="top-center"]')!;
+    expect(DEFAULT_TOAST_PLACEMENT).toBe("top-center");
+    expect(center.className).toContain("inset-x-0");
+    expect(center.className).toContain("items-center");
+    expect(center.className).toContain("top-0");
+    expect(center.textContent).toContain("Default");
+    expect(center.textContent).not.toContain("Corner");
+    const corner = document.querySelector<HTMLElement>('[data-toast-region="bottom-end"]')!;
+    expect(corner.className).toContain("end-0");
+    expect(corner.className).not.toContain("inset-x-0");
+    expect(corner.textContent).toContain("Corner");
   } finally {
     unmount();
   }

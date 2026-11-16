@@ -1,5 +1,10 @@
 # Workbench navigation
 
+Remote workspace headers show the project's saved name and icon, like local projects.
+The machine icon beside the name shows the owning machine and data freshness on hover
+or keyboard focus. Click it to refresh conversations. Loading and connection failures
+keep their existing feedback; a healthy remote project has no success checkmark.
+
 The workspace footer uses one compact spacing rhythm for conversation tools,
 terminal, navigation, sound, view refresh, fullscreen and notifications.
 Click a provider's quota summary to inspect its accounts. Refresh usage in that
@@ -483,11 +488,13 @@ retry feedback. In compact navigation, open the recovery panel to use its full
 list controls. Unsaved-file indicators remain visible independently of tab-close
 controls.
 
-Remote workspace panels share one connection notice per machine. When automatic
-reconnection is enabled, short network interruptions retry quietly for eight
-seconds while loaded conversations, files and Git data remain available. A longer
-interruption shows the shared recovery controls instead of repeating the same
-warning in each pane. Dismiss a transient outage notice for its current episode; it returns if the machine recovers and later disconnects again. Dismissal changes presentation only. Content that has never loaded remains unverified, not empty.
+Alerts, warnings and information appear in one place: a stack at the top centre
+of the window, under the title bar. Remote workspace panels share one connection
+notice per machine there. When automatic reconnection is enabled, short network
+interruptions retry quietly while loaded conversations, files and Git data remain
+available. A longer interruption shows the shared recovery controls in that notice;
+panes, rows and fields do not repeat the same connection error or their own retry
+while it is shown. Dismiss a transient outage notice for its current episode; it returns if the machine recovers and later disconnects again. Dismissal changes presentation only. Content that has never loaded remains unverified, not empty.
 Authentication, identity and compatibility problems appear immediately; turning
 automatic reconnection off also makes the recovery control available immediately.
 Independent service, storage and operation errors retain their own feedback and
@@ -554,10 +561,9 @@ project without moving or relinking the note. The message remains unsent.
 
 ## Models and providers
 
-**Settings > Background work** contains **Model order**, **Assignments** and **Subagents**.
-Configure shared priority, automation limits, pools, role bindings and delegation
-there. **Settings > Models** keeps **Chat defaults**. **Settings > Providers** contains
-**Accounts**, **CLI**, **Catalog** and **Decision models**. The Grok account row
+**Settings > Models** has four tabs: **Background work** (Who uses what, All models,
+Groups and Work limits), **Chats**, **Subagents** and **Providers** (provider list and
+detail, CLI table and Decision models). The Grok account row
 reports the local Grok Build CLI sign-in. See [Models](models.md) for selection,
 inheritance and running-session behavior.
 

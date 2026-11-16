@@ -19,10 +19,31 @@ import { LiveBackgroundCanvas } from "../../LiveBackgroundCanvas";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
 import styles from "./BackgroundPreview.module.css";
 
+/** Compact header action: rolls a random scene, intensity and gradient in one step. */
+export function RandomCombinationButton({ background }: { background: WorkspaceBackground }) {
+  useLocale();
+  const roll = () => {
+    const combination = randomBackgroundCombination();
+    saveLiveBackground(combination.scene);
+    saveLiveBackgroundIntensity(combination.intensity);
+    saveWorkspaceBackground(
+      { ...background, ...combination.gradient },
+      {
+        base: background,
+        fields: Object.keys(combination.gradient) as (keyof WorkspaceBackground)[],
+      },
+    );
+  };
+  return (
+    <Button size="sm" variant="secondary" startIcon={<Dices />} onClick={roll}>
+      {t("Random combination")}
+    </Button>
+  );
+}
+
 /**
  * Live composite of the real layers, bottom to top: Live, Image, Color, Glass. Glass shows only
- * when it applies; the legend under the stage lists every layer in that order and mutes the ones
- * that are off.
+ * when it applies. The live canvas pauses off screen (LiveBackgroundCanvas observes visibility).
  */
 export function BackgroundPreview({
   appearance,
@@ -43,26 +64,6 @@ export function BackgroundPreview({
   const hasImage = Boolean(appearance.chatBackgroundPath && src);
   const hasLive = effect !== "none";
   const glassActive = (IS_LINUX || appearance.windowGlass) && !light && !hasLive;
-  const layers = [
-    { label: t("Live"), on: hasLive },
-    { label: t("Image"), on: hasImage },
-    { label: t("Color"), on: background.enabled },
-    { label: t("Glass"), on: glassActive },
-  ];
-
-  const roll = () => {
-    const combination = randomBackgroundCombination();
-    saveLiveBackground(combination.scene);
-    saveLiveBackgroundIntensity(combination.intensity);
-    saveWorkspaceBackground(
-      { ...background, ...combination.gradient },
-      {
-        base: background,
-        fields: Object.keys(combination.gradient) as (keyof WorkspaceBackground)[],
-      },
-    );
-  };
-
   return (
     <div className={styles.preview}>
       <div className={styles.stage} aria-hidden>
@@ -82,6 +83,8 @@ export function BackgroundPreview({
             className={styles.layer}
             src={src}
             alt=""
+            loading="lazy"
+            decoding="async"
             style={{
               opacity:
                 appearance.preferences?.chatBackgroundLayer === false
@@ -114,19 +117,6 @@ export function BackgroundPreview({
             <span />
           </div>
         </div>
-      </div>
-      <div className={styles.actions}>
-        <ul className={styles.legend} aria-label={t("Layers from back to front")}>
-          {layers.map((layer) => (
-            <li key={layer.label} data-off={!layer.on || undefined}>
-              {layer.label}
-              {layer.on ? null : <span className="sr-only"> ({t("Off")})</span>}
-            </li>
-          ))}
-        </ul>
-        <Button size="sm" variant="secondary" startIcon={<Dices />} onClick={roll}>
-          {t("Random combination")}
-        </Button>
       </div>
     </div>
   );

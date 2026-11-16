@@ -240,6 +240,14 @@
 .swapIcon > * {
   grid-area: 1 / 1;
 }
+/* The resting slot is `display: contents`, so its child is the grid item: pin it to the
+   chevron's cell (auto-placement would push it to a second row) and center its glyph. */
+.swapIcon > [data-button-resting-icon] > * {
+  grid-area: 1 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 .icon > svg {
   inline-size: var(--button-icon-size);
   block-size: var(--button-icon-size);

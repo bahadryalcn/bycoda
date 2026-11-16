@@ -1,11 +1,13 @@
 import { memo, useEffect, useRef, useState } from "react";
 import { projectName } from "../../../shared/lib/paths";
 import { t, useLocale } from "../../../shared/i18n";
+import { ActionHost } from "../../../shared/ui/ActionHost";
 import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
-import { CollectionRow } from "../../../shared/ui/CollectionRow";
+import { Button } from "../../../shared/ui/Button";
+import { useHoverCard } from "../../../shared/ui/HoverCard";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { StatusText, type StatusTextTone } from "../../../shared/ui/StatusText";
-import { Tooltip } from "../../../shared/ui/Tooltip";
+import { Text } from "../../../shared/ui/Text";
 import { MessageMultiple } from "../../../shared/ui/icons";
 import {
   formatRelativeTime,
@@ -16,6 +18,7 @@ import {
 } from "../model/githubTasks";
 import { prefetchInboxItem } from "../model/inboxPrefetch";
 import { useInboxItemUnseen } from "../model/inboxSeen";
+import { InboxCardPreview } from "./InboxCardPreview";
 import { inboxStatusMark } from "./InboxPresentation";
 
 export const InboxCard = memo(function InboxCard({
@@ -94,55 +97,46 @@ export const InboxCard = memo(function InboxCard({
   const statusWord = jira
     ? statusLabel
     : `${t(status.label)}${attentionLabel ? ` · ${t(attentionLabel)}` : ""}`;
-  const secondary = [inboxItemRef(item), source].filter(Boolean).join(" · ");
+  const reference = inboxItemRef(item);
+  const secondary = [reference, source].filter(Boolean).join(" · ");
+  const statusMark = (rowMetadata?: boolean) => (
+    <StatusText
+      data-inbox-row-metadata={rowMetadata ? "" : undefined}
+      tone={statusTextTone(rowStatus.tone)}
+      icon={<rowStatus.Icon strokeWidth={1.75} />}
+      className={rowMetadata ? "min-w-0 max-w-[60%] shrink-0" : "min-w-0 max-w-full"}
+    >
+      <Text as="span" size="inherit" tone="inherit" truncate className="min-w-0">
+        {statusWord}
+      </Text>
+    </StatusText>
+  );
+  // No title tooltip on the row: the hover card carries the full title and details.
+  const hover = useHoverCard({
+    side: "right",
+    align: "start",
+    width: 300,
+    "aria-label": item.title,
+    className: "grid gap-2 p-3",
+  });
 
   return (
     <div ref={visibilityRef}>
-      <CollectionRow
+      <ActionHost
         selected={active}
+        data-seen={unseen ? undefined : "true"}
         className="w-full min-w-0"
-        title={item.title}
-        secondary={secondary}
-        seen={!unseen}
-        leading={
-          unseen ? (
-            <StatusDot data-inbox-unread tone="accent" label={t("Unread")} />
-          ) : (
-            <span className="size-2" />
-          )
-        }
-        trailing={
-          <>
-            {relatedSessionCount > 0 ? (
-              <Tooltip label={sessionLabel} asChild>
-                <Badge
-                  variant="count"
-                  size="xs"
-                  icon={<MessageMultiple className="icon-xs" strokeWidth={1.75} />}
-                  className="shrink-0"
-                >
-                  {relatedSessionCount}
-                </Badge>
-              </Tooltip>
-            ) : null}
-            <StatusText
-              data-inbox-row-metadata
-              tone={statusTextTone(rowStatus.tone)}
-              icon={<rowStatus.Icon strokeWidth={1.75} />}
-            >
-              {statusWord}
-            </StatusText>
-            {time ? <span>{time}</span> : null}
-          </>
-        }
-        primary={{
-          tooltip: item.title,
-          tooltipWhen: "overflow",
-          type: "button",
-          "aria-current": active ? "true" : undefined,
-          selected: active,
-          "aria-label": [
-            `${t(status.label)} ${t(kindLabel).toLocaleLowerCase()} ${inboxItemRef(item)}: ${item.title}`,
+      >
+        <Button
+          variant="item"
+          layout="stacked"
+          type="button"
+          className="w-full min-w-0 gap-0.5"
+          {...hover.trigger}
+          aria-current={active ? "true" : undefined}
+          selected={active}
+          aria-label={[
+            `${t(status.label)} ${t(kindLabel).toLocaleLowerCase()} ${reference}: ${item.title}`,
             source,
             attentionLabel ? t(attentionLabel) : "",
             unseen ? t("Unread") : "",
@@ -150,12 +144,71 @@ export const InboxCard = memo(function InboxCard({
             sessionLabel,
           ]
             .filter(Boolean)
-            .join(", "),
-          onMouseEnter: () => prefetchInboxItem(item),
-          onFocus: () => prefetchInboxItem(item),
-        }}
-        onOpen={() => onSelect(item)}
-      />
+            .join(", ")}
+          onMouseEnter={() => prefetchInboxItem(item)}
+          onFocus={(event) => {
+            hover.trigger.onFocus(event);
+            prefetchInboxItem(item);
+          }}
+          onClick={() => {
+            hover.close();
+            onSelect(item);
+          }}
+        >
+          <span className="flex min-w-0 items-center gap-1.5">
+            <Text
+              as="span"
+              dir="auto"
+              size="secondary"
+              tone="primary"
+              leading="snug"
+              weight={unseen ? "medium" : "regular"}
+              truncate
+              className="min-w-0 flex-1"
+            >
+              {item.title}
+            </Text>
+            {time ? (
+              <Text as="span" size="micro" tone="secondary" className="shrink-0 tabular-nums">
+                {time}
+              </Text>
+            ) : null}
+            {unseen ? <StatusDot data-inbox-unread tone="accent" label={t("Unread")} /> : null}
+          </span>
+          <Text
+            as="span"
+            size="micro"
+            tone="secondary"
+            className="flex min-w-0 items-center gap-1.5"
+          >
+            <Text as="span" size="inherit" tone="muted" truncate className="min-w-0 flex-1">
+              {secondary}
+            </Text>
+            {relatedSessionCount > 0 ? (
+              <Badge
+                variant="count"
+                size="xs"
+                icon={<MessageMultiple className="icon-xs" strokeWidth={1.75} />}
+                className="shrink-0"
+              >
+                {relatedSessionCount}
+              </Badge>
+            ) : null}
+            {statusMark(true)}
+          </Text>
+        </Button>
+        {hover.card(() => (
+          <InboxCardPreview
+            item={item}
+            reference={reference}
+            kindLabel={t(kindLabel)}
+            source={source}
+            status={statusMark()}
+            attention={attentionLabel ? t(attentionLabel) : ""}
+            sessionLabel={sessionLabel}
+          />
+        ))}
+      </ActionHost>
     </div>
   );
 });

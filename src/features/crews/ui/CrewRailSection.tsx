@@ -18,7 +18,6 @@ import {
 import type { BackgroundSessionTarget } from "../../tasks/model/backgroundSession";
 import type { CrewDefinition } from "../model/crew";
 import { useProjectCrews, type CrewRunView } from "../model/crewClient";
-import { useCrewsOnRail } from "../model/crewAppearance";
 import { activeCrewRuns } from "../model/crewRoster";
 import { activeMemberIds } from "../model/crewTableLayout";
 import { CrewAvatar } from "./CrewAvatar";
@@ -52,9 +51,7 @@ export function CrewRailSection({
   onOpenSession?: (target: BackgroundSessionTarget) => void | Promise<void>;
 }) {
   useLocale();
-  const onRail = useCrewsOnRail();
-  // Hidden from the rail: no host polling for a section that is not shown.
-  const state = useProjectCrews(cwd, onRail);
+  const state = useProjectCrews(cwd);
   const data = state.data;
   const [dialog, setDialog] = useState<CrewDialog | null>(null);
   const [menu, setMenu] = useState<Menu | null>(null);
@@ -62,12 +59,12 @@ export function CrewRailSection({
   const pending = pendingCrew !== null;
   const [error, setError] = useState("");
   const pendingGate = useRef(false);
-  const shown = !!data && onRail;
+  const shown = !!data;
   useEffect(() => {
     onShownChange?.(shown);
     return () => onShownChange?.(false);
   }, [shown, onShownChange]);
-  if (!data || !onRail) return null;
+  if (!data) return null;
 
   const act = async (crewId: string, operation: () => Promise<unknown>) => {
     if (pendingGate.current) return;
@@ -149,8 +146,9 @@ export function CrewRailSection({
       <div
         role="list"
         aria-label={label}
-        hidden={drag.folded || collapsed}
-        className={`flex-col gap-0 px-2 ${drag.folded || collapsed ? "hidden" : "flex"}`}
+        hidden={collapsed}
+        data-reorder-fold-body
+        className={`flex-col gap-0 px-2 ${collapsed ? "hidden" : "flex"}`}
       >
         {data.definitions.length === 0 ? (
           <span className="@max-[140px]/rail:hidden">

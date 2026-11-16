@@ -1,6 +1,7 @@
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { useReloadOnReconnect } from "../../connections/public/useReloadOnReconnect";
 import { FailureState } from "../../../shared/ui/FailureState";
+import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { runDiffWorker } from "../model/diffWorker";
@@ -128,6 +129,7 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
     [diffs],
   );
   const [error, setError] = useState<string | null>(null);
+  const shownCentrally = useConnectionErrorShownCentrally(error);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
@@ -509,6 +511,7 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
     );
   }
   if (error) {
+    if (shownCentrally) return null;
     return (
       <div className="grid h-full place-items-center p-6">
         <FailureState

@@ -28,10 +28,10 @@ Local project options can appear while other sources are still loading. Sprint d
 
 ## Model selection
 
-Tasks, epics and stewards choose **Default**, **Pool** or **Fixed** for each model
-role. Default follows the matching role in **Settings > Background work**. Pool uses a
-named ordered subset; Fixed keeps the selected model. **Manage models** opens
-the shared Work order and limits. Workers, reviewers and planners resolve when their
+Tasks, epics and stewards choose **Default**, **Any model** or **Fixed** for each model
+role. Default follows the matching role in **Settings > Models > Background work**. Any model uses
+**Any model, in order** or a named group (an ordered subset); Fixed keeps the selected model. **Manage models** opens
+the shared model order and limits. Workers, reviewers and planners resolve when their
 run starts; changing settings never switches an existing session. If every model
 is skipped, pending work waits for eligibility. See [Models](models.md).
 

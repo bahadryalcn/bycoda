@@ -8,6 +8,7 @@ import {
 import {
   loadProjectProviderSettings,
   normalizeProviderDefaults,
+  projectDefaultAccountId,
   type ProviderSessionDefaults,
 } from "./projectProviders";
 import { loadLastModelSettings, modelEffortSetting, modelsFor, type AgentModel } from "./models";
@@ -89,14 +90,16 @@ export function loadGlobalSessionDefaults(): Partial<Record<HarnessId, ProviderS
 }
 
 /**
- * Defaults for a new conversation: the provider's global values, then the
- * account's own (the default account when none is given), then the project's.
+ * Defaults for a new conversation: the provider's global values, then the account's own, then
+ * the project's. Without an explicit account the project's account applies, else the
+ * provider's default account.
  */
 export function providerSessionDefaults(
   harness: HarnessId,
   cwd?: string,
-  accountId?: string,
+  explicitAccountId?: string,
 ): ProviderSessionDefaults {
+  const accountId = explicitAccountId ?? projectDefaultAccountId(cwd, harness);
   const product = productSessionDefaults(harness, accountId);
   const global = loadGlobalSessionDefaults()[harness];
   const { model: _model, ...account } = accountSessionDefaults(harness, accountId);

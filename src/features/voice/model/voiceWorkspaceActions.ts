@@ -35,6 +35,20 @@ export type VoiceWorkspaceResult = {
   [key: string]: unknown;
 };
 
+/** A refusal the assistant can resolve with the owner: `details` (reason, options, next) reach the model. */
+export class VoiceActionRefusal extends Error {
+  constructor(
+    message: string,
+    readonly details: Record<string, unknown>,
+  ) {
+    super(message);
+  }
+}
+
+/** Default recovery hint for any rejected workspace action, so the assistant never goes silent. */
+export const VOICE_REJECTED_NEXT =
+  "Tell the owner in one short sentence what blocked this and ask how to continue. Do not silently try a different operation instead.";
+
 /**
  * The project paths one accepted spoken turn may act on, after a tool returned.
  *
@@ -129,7 +143,7 @@ export const voiceWorkspaceTools = [
   ],
   [
     "workspace.projects.create",
-    'Create a brand-new project when the owner asks to start or create one (for example "create a snake game"). Makes a new folder named after the project, adds it to the bycoda project list and shows it. Omit parentPath to use the owner\'s New projects folder setting or the folder their projects already share. Returns the new projectPath; pass it as projectPath to sessions, tasks, goals and crews for the new project. An existing folder is never reused.',
+    'Create a brand-new project when the owner asks to start or create one (for example "create a snake game"). Makes a new folder named after the project, adds it to the bycoda project list and shows it. Omit parentPath to use the owner\'s New projects folder setting or the folder their projects already share. Returns the new projectPath; pass it as projectPath to sessions, tasks, goals and crews for the new project. An existing folder is never reused: when the name is taken the result says reason "name-taken" and, if that folder is already a project, its existingProjectPath; ask the owner whether to continue that project or use another name.',
     {
       name: { type: "string", minLength: 1, maxLength: 120 },
       parentPath: text,

@@ -34,6 +34,29 @@ export function inheritedChoiceLabel(inherited: string | undefined, valid: boole
     : t("Automatic");
 }
 
+/**
+ * The inheriting segment of a segmented default: the wand and the value it resolves to stay
+ * visible, while the full "Bycoda defaults (…)" text is the tooltip and accessible name, so
+ * the control fits the row instead of scrolling.
+ */
+function inheritedSegment(inherited: string | undefined, valid: boolean) {
+  const full = inheritedChoiceLabel(inherited, valid);
+  return {
+    value: "",
+    icon: <WandSparkles className="icon-sm" />,
+    label: inherited ? (valid ? inherited : `${inherited} · ${t("Unavailable")}`) : full,
+    tooltip: inherited ? full : undefined,
+    ariaLabel: inherited ? full : undefined,
+  };
+}
+
+/** Fast and service tier read Fast / Standard whatever the catalog calls them. */
+function speedLabel(value: string, label: string): string {
+  if (value === "true" || value === "fast") return t("Fast");
+  if (value === "false" || value === "default") return t("Standard");
+  return t(label);
+}
+
 export function ProviderDefaultExtras({
   extras,
   harness,
@@ -129,7 +152,13 @@ export function ProviderDefaultExtras({
                 <SegmentedControl
                   label={t(setting.label)}
                   value={saved ?? ""}
-                  options={compactOptions}
+                  options={[
+                    inheritedSegment(
+                      inheritedLabel ? t(inheritedLabel) : undefined,
+                      Boolean(inheritedOption),
+                    ),
+                    ...compactOptions.slice(1),
+                  ]}
                   onValueChange={updateCompact}
                 />
               ) : (
@@ -149,6 +178,7 @@ export function ProviderDefaultExtras({
               <div className="provider-effort provider-effort-ceiling">
                 <SubagentEffortSwitch
                   value={effectiveValues[setting.id] ?? ""}
+                  levels={setting.options.map((option) => option.value).filter(Boolean)}
                   onChange={(next) =>
                     onSessionDefaultsChange({
                       ...scopeDefaults,
@@ -161,7 +191,7 @@ export function ProviderDefaultExtras({
                   showLabel={false}
                   showValue={Boolean(subagentEffortCeiling(effectiveValues[setting.id]))}
                   value={subagentEffortCeiling(effectiveValues[setting.id]) || ""}
-                  disabled={!subagentEffortCeiling(effectiveValues[setting.id])}
+                  // Choosing a bar while Automatic is on sets a manual ceiling; the switch follows.
                   options={setting.options
                     .filter((option) => SUBAGENT_EFFORT_LEVELS.includes(option.value))
                     .map((option) => ({
@@ -219,22 +249,17 @@ export function ProviderDefaultExtras({
                   label={t(setting.label)}
                   value={saved ?? ""}
                   options={[
-                    {
-                      value: "",
-                      icon: <WandSparkles className="icon-sm" />,
-                      label: inheritedChoiceLabel(
-                        inheritedLabel ? t(inheritedLabel) : undefined,
-                        Boolean(inheritedOption),
-                      ),
-                    },
+                    inheritedSegment(
+                      inheritedOption
+                        ? speedLabel(inheritedOption.value, inheritedOption.label)
+                        : inheritedLabel
+                          ? t(inheritedLabel)
+                          : undefined,
+                      Boolean(inheritedOption),
+                    ),
                     ...setting.options.map((option) => ({
                       value: option.value,
-                      label:
-                        option.value === "true" || option.value === "fast"
-                          ? t("Fast")
-                          : option.value === "false" || option.value === "default"
-                            ? t("Standard")
-                            : t(option.label),
+                      label: speedLabel(option.value, option.label),
                       icon:
                         option.value === "true" || option.value === "fast" ? (
                           <Zap className="icon-sm" tone="accent" fill="currentColor" />

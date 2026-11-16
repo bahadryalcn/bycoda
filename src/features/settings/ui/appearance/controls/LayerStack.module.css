@@ -60,11 +60,6 @@
   text-align: left;
 }
 
-.description {
-  overflow: hidden;
-  white-space: nowrap;
-}
-
 .strength {
   font-variant-numeric: tabular-nums;
   overflow: hidden;

@@ -27,12 +27,13 @@ import { EMPTY_SSH_DRAFT, MachineForm, type MachineMethod, type SshDraft } from 
 import { MachineRow } from "./MachineRow";
 import { DiscoveredMachines } from "./DiscoveredMachines";
 import type { SshAddPlan } from "../model/machineCandidates";
-import { Disclosure } from "../../../shared/ui/Disclosure";
+import { SearchInput } from "../../../shared/ui/SearchInput";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { UpdateImpact } from "./UpdateImpact";
 import { confirmInApp } from "../../../shared/model/appConfirm";
 import { RemoveMachineDialog } from "./RemoveMachineDialog";
 import { useContext, useRef, useState } from "react";
-import { Internet, RefreshCw } from "../../../shared/ui/icons";
+import { Plus, RefreshCw } from "../../../shared/ui/icons";
 import {
   connectMachine,
   disconnectMachine,
@@ -74,6 +75,15 @@ export function ConnectionsSettings() {
     }
   }
   const { machines, loaded, loading, error: loadError, refresh } = useRemoteMachines();
+  const [query, setQuery] = useState("");
+  const needle = query.trim().toLowerCase();
+  const shownMachines = needle
+    ? machines.filter((machine) =>
+        [machine.name, machine.endpoint, machine.ssh?.target, machine.ssh?.alternate].some(
+          (value) => value?.toLowerCase().includes(needle),
+        ),
+      )
+    : machines;
   const [adding, setAdding] = useState(false);
   // The machine whose definition the form edits; none when it adds one.
   const [editing, setEditing] = useState<RemoteMachine>();
@@ -403,8 +413,8 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
           setVisited((previous) => (previous.includes(next) ? previous : [...previous, next]));
         }}
       >
-        <TabList label={t("Machines")}>
-          <Tab value="machines">{t("Machines")}</Tab>
+        <TabList label={t("Connections")}>
+          <Tab value="machines">{t("Computers")}</Tab>
           <Tab value="phone">{t("Phone")}</Tab>
           <Tab value="tunnels">{t("Sharing")}</Tab>
         </TabList>
@@ -421,47 +431,38 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
               onRefresh={refresh}
             />
           ) : null}
-          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-            <Text tone="muted">
-              {machines.length === 1 ? t("1 machine") : t("{p0} machines", { p0: machines.length })}
-            </Text>
-            <div className="flex items-center gap-2">
-              <Button
-                stableWidth
-                iconOnly
-                label={t("Refresh machines")}
-                variant="ghost"
-                disabled={busy || loading}
-                onClick={() => void refresh()}
-              >
-                <RefreshCw aria-hidden className="icon-md" />
-              </Button>
-            </div>
-          </div>
-          <div ref={candidatesRef}>
-            <DiscoveredMachines
-              saved={machines}
-              active={view === "machines"}
-              busy={busy || revoking}
-              onAdd={(plan) => void begin(undefined, false, false, plan)}
-              onPaired={() => void refresh()}
+          <div className="flex items-center gap-2">
+            <SearchInput
+              standalone
+              appearance="field"
+              containerClassName="min-w-0 flex-1"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              textSize="secondary"
+              placeholder={t("Search connections")}
+              aria-label={t("Search connections")}
             />
+            <Button
+              stableWidth
+              iconOnly
+              label={t("Refresh")}
+              variant="ghost"
+              disabled={busy || loading}
+              onClick={() => void refresh()}
+            >
+              <RefreshCw aria-hidden className="icon-md" />
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={busy && !(adding && !editing)}
+              aria-expanded={adding && !editing}
+              onClick={() => (adding && !editing ? closeForm() : startAdd())}
+            >
+              <Plus aria-hidden className="icon-sm" />
+              {t("Add manually")}
+            </Button>
           </div>
-          {editing ? machineForm : null}
-          <Disclosure
-            size="sm"
-            textSize="caption"
-            tone="muted"
-            summary={t("Advanced: add manually")}
-            open={adding && !editing}
-            onOpenChange={(next) => {
-              if (next && busy) return;
-              if (next) startAdd();
-              else closeForm();
-            }}
-          >
-            {editing ? null : machineForm}
-          </Disclosure>
+          {editing ? null : machineForm}
           {busy && jobId && (
             <Surface
               variant="card"
@@ -513,44 +514,64 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
             </div>
           ) : null}
           {notice && <InlineMessage tone="success">{notice}</InlineMessage>}
-          {machines.length > 0 ? (
-            <Surface variant="card" padding="none" dividers="card" className="overflow-hidden">
-              {machines.map((machine) => (
-                <MachineRow
-                  key={machine.id}
-                  machine={machine}
-                  machines={machines}
-                  probed={status[machine.id]}
-                  version={versions[machine.id]}
-                  needsUpdate={Boolean(needsUpdate[machine.id])}
-                  showDetails={
-                    detailMachine === machine.id ||
-                    status[machine.id] === "offline" ||
-                    Boolean(needsUpdate[machine.id])
-                  }
-                  editing={editing?.id === machine.id}
-                  busy={busy}
-                  revoking={revoking}
-                  menuOpen={rowMenu?.machine.id === machine.id}
-                  onUpdateHost={() => void begin(machine, true)}
-                  onReconnect={() => void begin(machine)}
-                  onSyncNow={() => void syncNow(machine.id)}
-                  onToggleDetails={() =>
-                    setDetailMachine((current) => (current === machine.id ? undefined : machine.id))
-                  }
-                  onToggleMenu={(anchor) =>
-                    setRowMenu(rowMenu?.machine.id === machine.id ? undefined : { machine, anchor })
-                  }
-                />
-              ))}
-            </Surface>
-          ) : loaded && !loading && !loadError && !adding ? (
-            <EmptyState
-              icon={<Internet aria-hidden className="icon-lg" />}
-              description={t("Pick one of the machines found above to get started.")}
-              action={{ label: t("Add manually"), disabled: busy, onClick: startAdd }}
+          <section aria-label={t("Your connections")} className="flex flex-col gap-2">
+            <SectionLabel count={shownMachines.length || undefined}>
+              {t("Your connections")}
+            </SectionLabel>
+            {shownMachines.length > 0 ? (
+              <Surface variant="card" padding="none" dividers="card" className="overflow-hidden">
+                {shownMachines.map((machine) => (
+                  <MachineRow
+                    key={machine.id}
+                    machine={machine}
+                    machines={machines}
+                    probed={status[machine.id]}
+                    version={versions[machine.id]}
+                    needsUpdate={Boolean(needsUpdate[machine.id])}
+                    showDetails={
+                      detailMachine === machine.id ||
+                      status[machine.id] === "offline" ||
+                      Boolean(needsUpdate[machine.id])
+                    }
+                    editing={editing?.id === machine.id}
+                    busy={busy}
+                    revoking={revoking}
+                    menuOpen={rowMenu?.machine.id === machine.id}
+                    onUpdateHost={() => void begin(machine, true)}
+                    onReconnect={() => void begin(machine)}
+                    onSyncNow={() => void syncNow(machine.id)}
+                    onToggleDetails={() =>
+                      setDetailMachine((current) =>
+                        current === machine.id ? undefined : machine.id,
+                      )
+                    }
+                    onToggleMenu={(anchor) =>
+                      setRowMenu(
+                        rowMenu?.machine.id === machine.id ? undefined : { machine, anchor },
+                      )
+                    }
+                  />
+                ))}
+              </Surface>
+            ) : loaded && !loading && !loadError ? (
+              <EmptyState
+                size="inline"
+                kind="empty"
+                description={needle ? t("No matches") : t("No connections yet")}
+              />
+            ) : null}
+            {editing ? machineForm : null}
+          </section>
+          <div ref={candidatesRef}>
+            <DiscoveredMachines
+              saved={machines}
+              active={view === "machines"}
+              busy={busy || revoking}
+              query={query}
+              onAdd={(plan) => void begin(undefined, false, false, plan)}
+              onPaired={() => void refresh()}
             />
-          ) : null}
+          </div>
           {rowMenu ? (
             <DropdownMenu
               anchor={rowMenu.anchor}

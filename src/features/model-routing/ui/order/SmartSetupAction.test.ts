@@ -81,10 +81,10 @@ it("tells the owner who planned the setup once the draft changed", async () => {
   );
   vi.mocked(planSmartSetup).mockResolvedValue({ candidates: [candidate], plan, plannedBy: "Sol" });
   await act(async () => container.querySelector("button")!.click());
-  expect(vi.mocked(toast.show).mock.calls[0]![0]).toMatchObject({ tone: "success" });
+  expect(toast.show).not.toHaveBeenCalled();
   vi.mocked(planSmartSetup).mockResolvedValue({ candidates: [candidate], plan });
   await act(async () => container.querySelector("button")!.click());
-  expect(vi.mocked(toast.show).mock.calls[1]![0]).toMatchObject({ tone: "warning" });
+  expect(vi.mocked(toast.show).mock.calls[0]![0]).toMatchObject({ tone: "warning" });
 });
 
 it("surfaces a missing catalog and a thrown error through the draft editor", async () => {

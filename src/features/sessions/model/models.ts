@@ -6,7 +6,7 @@ export { withAutoCompactSettings, withAutoCompactToggle } from "./autoCompact";
 import * as delegation from "../../../shared/model/host-contracts/delegation";
 import { HARNESSES } from "../../../shared/model/harnessIdentity";
 import { humanizeModelId } from "../../../shared/model/modelNameFromId";
-import { loadProjectProviderSettings } from "./projectProviders";
+import { loadProjectProviderSettings, projectDefaultAccountId } from "./projectProviders";
 import { accountSessionDefaults } from "./accountSessionDefaults";
 import {
   hasProbedHarnessAvailability,
@@ -120,6 +120,27 @@ export const MODELS: AgentModel[] = [
     nativeId: "grok-4.6",
   },
   {
+    id: "grok:grok-4.7",
+    harness: "grok",
+    name: "Grok 4.7",
+    nativeId: "grok-4.7",
+    contextWindow: 500_000,
+    settings: [
+      {
+        id: "effort",
+        label: "Reasoning",
+        kind: "select",
+        value: "high",
+        options: [
+          { value: "xhigh", label: "Extra High" },
+          { value: "high", label: "High" },
+          { value: "medium", label: "Medium" },
+          { value: "low", label: "Low" },
+        ],
+      },
+    ],
+  },
+  {
     id: "grok:grok-4.6",
     harness: "grok",
     name: "Grok 4.6",
@@ -212,7 +233,7 @@ export const DEFAULT_MODEL_ID: Record<HarnessId, string> = {
   claude: "claude:sonnet-5",
   codex: "",
   cursor: "cursor:composer-2.5",
-  grok: "grok:grok-4.6",
+  grok: "grok:grok-4.7",
   opencode: "opencode:glm-5",
   pi: "pi:default",
   omp: "omp:default",
@@ -1086,7 +1107,8 @@ export function defaultSessionChoice(cwd?: string): LastModelChoice {
     [
       project.models?.[harness],
       project.defaultHarness === harness ? project.defaultModel : undefined,
-    ].find((id) => id && isEnabledChoice(harness, id)) ?? preferredModelId(harness);
+    ].find((id) => id && isEnabledChoice(harness, id)) ??
+    preferredModelId(harness, projectDefaultAccountId(cwd, harness));
   return { harness, model };
 }
 
@@ -1238,8 +1260,8 @@ function pickDefaultId(harness: HarnessId, models: AgentModel[]): string {
   }
   if (harness === "grok") {
     return (
-      models.find((model) => model.nativeId === "grok-4.6")?.id ??
       models.find((model) => model.id === DEFAULT_MODEL_ID.grok)?.id ??
+      models.find((model) => model.nativeId === "grok-4.6")?.id ??
       models[0]?.id ??
       DEFAULT_MODEL_ID.grok
     );

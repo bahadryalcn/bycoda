@@ -2,6 +2,7 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { FilePickerError } from "./FilePickerError";
+import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import {
   isTransientTransportError,
   presentRemoteError,
@@ -300,6 +301,7 @@ export function FilePicker({
     search.current?.focus();
   }, [open]);
 
+  const errorShownCentrally = useConnectionErrorShownCentrally(error);
   if (!open) return null;
 
   const pick = (file: RankedFile) => {
@@ -348,7 +350,7 @@ export function FilePicker({
     cwd,
     query,
     loading,
-    error,
+    error: errorShownCentrally ? t("Waiting for the machine…") : error,
     fileCount: files.length,
     matchCount: results.length,
     paletteMode,
@@ -414,7 +416,7 @@ export function FilePicker({
             />
           </Text>
         </div>
-        {!paletteMode && (error || retrying) ? (
+        {!paletteMode && ((error && !errorShownCentrally) || retrying) ? (
           <Text
             as="div"
             size="caption"

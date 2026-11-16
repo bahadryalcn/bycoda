@@ -118,7 +118,13 @@ export function BackgroundLibrary({ appearance }: { appearance: AppearanceSettin
                   tooltip={image.prompt ?? undefined}
                   onClick={() => apply(image)}
                 >
-                  <img src={libraryImageSrc(image)} alt="" draggable={false} loading="lazy" />
+                  <img
+                    src={libraryImageSrc(image)}
+                    alt=""
+                    draggable={false}
+                    loading="lazy"
+                    decoding="async"
+                  />
                   {generated ? (
                     <Text
                       size="inherit"

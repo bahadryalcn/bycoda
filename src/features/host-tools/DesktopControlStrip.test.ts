@@ -60,6 +60,12 @@ afterEach(async () => {
 async function render(props: Partial<Parameters<typeof DesktopControlStrip>[0]> = {}) {
   await act(async () => root.render(createElement(DesktopControlStrip, { port, ...props })));
 }
+it("uses the floating panel ground for the native overlay", async () => {
+  await render({ floating: true });
+  expect(container.querySelector("aside")?.getAttribute("data-surface-variant")).toBe("floating");
+  await render();
+  expect(container.querySelector("aside")?.hasAttribute("data-surface-variant")).toBe(false);
+});
 it("only reads the shared native state on mount and hides never-active disabled control", async () => {
   read.mockResolvedValue({ ...stopped, visible: false });
   await render();

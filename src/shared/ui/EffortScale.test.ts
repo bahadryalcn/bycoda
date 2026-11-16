@@ -96,3 +96,45 @@ it("can drop the visible label when a row already names the scale", async () => 
     node.remove();
   }
 });
+
+it("fills muted bars up to the inherited level while the inheriting choice is selected", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const node = document.createElement("div");
+  document.body.append(node);
+  const root = createRoot(node);
+  const options = [
+    { value: "", label: "Bycoda defaults (Medium)", icon: createElement("svg") },
+    { value: "low", label: "Low" },
+    { value: "medium", label: "Medium" },
+    { value: "high", label: "High" },
+  ];
+  const render = (value: string) =>
+    act(async () =>
+      root.render(
+        createElement(EffortScale, {
+          options,
+          value,
+          inheritedValue: "medium",
+          label: "Effort",
+          onValueChange: vi.fn(),
+        }),
+      ),
+    );
+  try {
+    await render("");
+    const flags = (attr: string) =>
+      [...node.querySelectorAll('[role="radio"]')].map((radio) => radio.hasAttribute(attr));
+    expect(flags("data-filled")).toEqual([false, true, true, false]);
+    expect(flags("data-inherited")).toEqual([false, true, true, false]);
+    expect(node.querySelector('[aria-checked="true"]')?.getAttribute("aria-label")).toBe(
+      options[0].label,
+    );
+    await render("high");
+    expect(flags("data-filled")).toEqual([false, true, true, true]);
+    expect(flags("data-inherited")).toEqual([false, false, false, false]);
+  } finally {
+    await act(async () => root.unmount());
+    node.remove();
+    vi.unstubAllGlobals();
+  }
+});

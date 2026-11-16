@@ -31,6 +31,7 @@ export type RemoteInboxItem = {
   title: string;
   url: string;
   state: string;
+  priority?: string;
   updatedAt: string;
   repo: string;
   projectPath: string;
@@ -93,6 +94,8 @@ export type RemoteInboxQuery = {
   state: "open" | "all";
   search: string;
   githubKinds?: ("issue" | "pr")[];
+  /** Limits discovery to these providers; omitted means every connected provider. */
+  providers?: RemoteInboxProvider[];
 };
 export type RemoteInboxReviewComment = {
   path: string;
@@ -205,6 +208,15 @@ export function parseRemoteInboxOperation(
         kinds.some((kind) => kind !== "issue" && kind !== "pr"))
     )
       throw new Error("Invalid inbox item filters.");
+    const providers = query.providers;
+    if (
+      providers !== undefined &&
+      (!Array.isArray(providers) ||
+        providers.length < 1 ||
+        providers.length > REMOTE_INBOX_PROVIDERS.length ||
+        providers.some((name) => !REMOTE_INBOX_PROVIDERS.includes(name as RemoteInboxProvider)))
+    )
+      throw new Error("Invalid inbox provider filter.");
     return {
       action,
       projects: scoped.slice(0, 40).map((project) => ({ path: project.cwd })),
@@ -213,6 +225,9 @@ export function parseRemoteInboxOperation(
         state: query.state === "all" ? "all" : "open",
         search: query.search === undefined ? "" : text(query.search, "search", 500, true),
         ...(kinds === undefined ? {} : { githubKinds: kinds as ("issue" | "pr")[] }),
+        ...(providers === undefined
+          ? {}
+          : { providers: [...new Set(providers as RemoteInboxProvider[])] }),
       },
     };
   }

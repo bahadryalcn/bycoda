@@ -35,10 +35,7 @@ import {
 import { flushAssistantDrafts } from "../../../features/assistant/model/assistantDraftFlush";
 import type { TabActivation } from "../tabs/useTabActivation";
 import { beginWindowMoveTiming } from "../../model/windowMoveTiming";
-import {
-  publishWindowTransferNotice,
-  queuedTransferMessage,
-} from "../../model/windowTransferNotice";
+import {} from "../../model/windowTransferNotice";
 
 export interface MoveTabsOptions {
   position?: WindowMovePosition;
@@ -182,7 +179,6 @@ export function useMoveTabsToNewWindow(deps: MoveTabsToNewWindowDeps): {
             targetWindowLabel: opts?.targetWindowLabel,
           }),
         );
-        publishWindowTransferNotice("info", queuedTransferMessage());
         return "queued" as const;
       }
       timing.stage("preparing");
@@ -338,11 +334,7 @@ export function useMoveTabsToNewWindow(deps: MoveTabsToNewWindowDeps): {
             await getCurrentWindow().destroy();
           } catch (error) {
             abortQuit();
-            toast.show({
-              tone: "warning",
-              title: t("The tab was moved, but its empty window could not close."),
-              message: String(error),
-            });
+            console.error("Could not close the emptied window", error);
           }
         }
         for (const id of sessionIds) skipForgetSessionIds.current.delete(id);

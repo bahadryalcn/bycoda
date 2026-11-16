@@ -152,6 +152,8 @@ export function createEnvironmentRuntime(
           : []),
         "projects.browse",
         "projects.directory.v1",
+        // The environment stream carries `directory` (groups, privacy proof) beside `projects`.
+        "projects.directory.stream.v1",
         "projects.createDirectory",
         "models.list",
         "models.providerAccounts.v1",

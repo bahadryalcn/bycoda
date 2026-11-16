@@ -214,6 +214,7 @@ type Shared = {
   onDetachPane: (paneId: string, targetTabId: string, position: TitleTabDropPosition) => void;
   onNewTerminal: (sessionId: string) => void;
   onRunProjectAction?: (sessionId: string, action: ProjectAction) => void;
+  onRunCode?: (sessionId: string, cwd: string, profile: string, terminalId: string) => boolean;
   onTerminalMetaChange?: (fileId: string, patch: TerminalMetaPatch) => void;
   transcriptPool?: TranscriptPool;
 };
@@ -311,6 +312,7 @@ function PaneTreeComponent({
   onPopOutPane,
   onNewTerminal,
   onRunProjectAction,
+  onRunCode,
   onTerminalMetaChange,
   transcriptPool,
 }: Props) {
@@ -894,6 +896,7 @@ function PaneTreeComponent({
                         onBtwModelChange={onBtwModelChange}
                         onNewTerminal={onNewTerminal}
                         onRunProjectAction={onRunProjectAction}
+                        onRunCode={onRunCode}
                         onPaneDragStart={onPaneDragStart}
                         transcriptPool={transcriptPool}
                       />

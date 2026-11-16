@@ -434,7 +434,6 @@ function AgentTranscriptComponent({
   );
   const follow = useTranscriptFollow({
     visible,
-    parked,
     lastUserId,
     onPromptChange: introducePrompt,
     onJumpToBottomChange,

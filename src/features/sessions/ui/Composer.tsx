@@ -1043,6 +1043,8 @@ export const Composer = memo(function Composer({
       slashTrigger: slash?.trigger,
       slashQuery: slash?.query ?? "",
     });
+  const hasGroupToken =
+    skillGroups.length > 0 && expandSkillGroupTokens(draft, skillGroups) !== draft;
   const sessionDirsHarness =
     harness === "claude" || harness === "codex" || harness === "antigravity";
   const showSessionDirs =
@@ -3486,7 +3488,8 @@ export const Composer = memo(function Composer({
               data-composer-plain={plainDraft ? "true" : undefined}
               style={{ textIndent: modeIndent }}
               rows={reading ? 1 : 2}
-              spellCheck={spelling}
+              // A group chip hides its source slug, which the spellchecker would still underline.
+              spellCheck={spelling && !hasGroupToken}
               autoCorrect={spelling ? "on" : "off"}
               defaultValue={mountDraft}
               placeholder={

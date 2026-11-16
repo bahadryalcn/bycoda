@@ -18,14 +18,14 @@ export function ModelRoutingPoolSelect({
   useLocale();
   return (
     <Select
-      label={t("Model pool")}
+      label={t("Model group")}
       value={value}
       disabled={disabled}
       options={[
-        ...(includeOrder ? [{ value: "", label: t("Model order") }] : []),
+        ...(includeOrder ? [{ value: "", label: t("Any model, in order") }] : []),
         ...pools.map((pool) => ({ value: pool.id, label: pool.name })),
         ...(value && !pools.some((pool) => pool.id === value)
-          ? [{ value, label: t("Deleted pool"), disabled: true }]
+          ? [{ value, label: t("Deleted group"), disabled: true }]
           : []),
       ]}
       onValueChange={onChange}

@@ -35,6 +35,7 @@ const PREVIEW_ROWS = [
 ];
 
 const snapshot = () => JSON.stringify(loadScrollbarStyle());
+const DEFAULT_SNAPSHOT = JSON.stringify(SCROLLBAR_STYLE_DEFAULT);
 
 /**
  * "Scrollbars": thumb color, thickness, visibility and strength for native scrollbars, the editor
@@ -43,9 +44,8 @@ const snapshot = () => JSON.stringify(loadScrollbarStyle());
  */
 export function ScrollbarGroup() {
   useLocale();
-  const value = JSON.parse(
-    useSyncExternalStore(subscribeScrollbarStyle, snapshot, snapshot),
-  ) as ReturnType<typeof loadScrollbarStyle>;
+  const raw = useSyncExternalStore(subscribeScrollbarStyle, snapshot, snapshot);
+  const value = JSON.parse(raw) as ReturnType<typeof loadScrollbarStyle>;
   const [open, setOpen] = useState(false);
   const anchor = useRef<HTMLDivElement>(null);
   const update = (change: Partial<typeof value>) => saveScrollbarStyle({ ...value, ...change });
@@ -54,7 +54,7 @@ export function ScrollbarGroup() {
   return (
     <Group
       title={t("Scrollbars")}
-      modified={snapshot() !== JSON.stringify(SCROLLBAR_STYLE_DEFAULT)}
+      modified={raw !== DEFAULT_SNAPSHOT}
       resetLabel={t("Reset scrollbars")}
       onReset={() => saveScrollbarStyle(SCROLLBAR_STYLE_DEFAULT)}
     >
@@ -120,6 +120,7 @@ export function ScrollbarGroup() {
           <Row
             id="scrollbar-size"
             label={t("Scrollbar size")}
+            stacked
             disabled={IS_MAC}
             disabledReason={systemBars}
           >

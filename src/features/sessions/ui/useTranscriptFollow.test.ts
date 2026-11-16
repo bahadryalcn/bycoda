@@ -94,7 +94,6 @@ describe("rememberScroll", () => {
     function Probe() {
       follow = useTranscriptFollow({
         visible: false,
-        parked: false,
         lastUserId: undefined,
         virtualization,
       });

@@ -219,7 +219,7 @@ function StatusSection() {
   );
 }
 
-/** Toasts for the corner stack, added one per press so the newest sits in front. */
+/** Toasts for the top-center stack, added one per press so the newest sits in front. */
 const STACK_SAMPLES: ToastOptions[] = [
   { tone: "success", title: "Changes saved", message: "Synced to all devices." },
   {

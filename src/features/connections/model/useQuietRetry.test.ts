@@ -6,8 +6,16 @@ import { QUIET_RETRY_DELAYS_MS, useQuietRetry } from "./useQuietRetry";
 
 const BUSY = "Host rejected request: Host read capacity is busy; retry later.";
 let hidden: boolean[] = [];
-function Probe({ error, retry }: { error?: string; retry?: () => void }) {
-  hidden.push(useQuietRetry(error, retry));
+function Probe({
+  error,
+  retry,
+  loading,
+}: {
+  error?: string;
+  retry?: () => void;
+  loading?: boolean;
+}) {
+  hidden.push(useQuietRetry(error, retry, loading));
   return null;
 }
 
@@ -21,11 +29,11 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function mount(props: { error?: string; retry?: () => void }) {
+async function mount(props: { error?: string; retry?: () => void; loading?: boolean }) {
   const root = createRoot(document.createElement("div"));
   await act(async () => root.render(createElement(Probe, props)));
   return {
-    render: (next: { error?: string; retry?: () => void }) =>
+    render: (next: { error?: string; retry?: () => void; loading?: boolean }) =>
       act(async () => root.render(createElement(Probe, next))),
     unmount: () => act(async () => root.unmount()),
   };
@@ -65,6 +73,20 @@ it("shows other failures at once and starts over after a success", async () => {
 
 it("does not hide a busy failure that nothing can retry", async () => {
   const view = await mount({ error: BUSY });
+  expect(hidden.at(-1)).toBe(false);
+  await view.unmount();
+});
+
+it("keeps counting while a retry is loading, so the ladder escalates to the error", async () => {
+  const retry = vi.fn();
+  const view = await mount({ error: BUSY, retry });
+  for (const delay of QUIET_RETRY_DELAYS_MS) {
+    await act(async () => vi.advanceTimersByTime(delay));
+    // The caller hides the error while the retry runs, then the same busy failure returns.
+    await view.render({ retry, loading: true });
+    await view.render({ error: BUSY, retry });
+  }
+  expect(retry).toHaveBeenCalledTimes(QUIET_RETRY_DELAYS_MS.length);
   expect(hidden.at(-1)).toBe(false);
   await view.unmount();
 });

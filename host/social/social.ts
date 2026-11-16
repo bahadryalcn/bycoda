@@ -4970,13 +4970,15 @@ export class SocialService implements SocialServiceApi {
         });
     };
     // `this.timer` stays set while a tick runs: it also tells snapshots the scheduler is online.
-    const timer = setTimeout(fire, delay);
+    // A write's `wake()` reschedules from inside that write's database scope. The tick must not
+    // inherit it: once the write closes, every later tick (and its successors) would fail.
+    const timer = this.store.db.outsideScope(() => setTimeout(fire, delay));
     timer.unref?.();
     this.timer = timer;
     if (delay === 0) {
       // The first tick starts at once, inside `start()`.
       clearTimeout(timer);
-      fire();
+      this.store.db.outsideScope(fire);
     }
   }
   private async nextDelay(): Promise<number> {

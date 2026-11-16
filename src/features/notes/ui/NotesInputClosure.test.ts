@@ -25,7 +25,11 @@ import {
   type Note,
   type NoteUpsert,
 } from "../notes";
-import { NoteInputOwner, publishNoteInputResult } from "../notesInputOwners";
+import {
+  getNotePrivateRecoveries,
+  NoteInputOwner,
+  publishNoteInputResult,
+} from "../notesInputOwners";
 import { useNoteExternal } from "../useNoteInput";
 import { OPEN_NOTE_LIBRARY_EVENT } from "../noteNavigation";
 import { TagInput } from "../../../shared/ui/TagInput";
@@ -232,6 +236,18 @@ async function input(field: HTMLInputElement | HTMLTextAreaElement, text: string
     Object.getOwnPropertyDescriptor(prototype, "value")!.set!.call(field, text);
     field.dispatchEvent(new Event("input", { bubbles: true }));
   });
+}
+/** The session dock's Source editor view; the library's editors live outside `[data-notes-panel]`. */
+function dockView() {
+  return EditorView.findFromDOM(
+    host.querySelector<HTMLElement>("[data-notes-panel] [data-note-editor] .cm-editor")!,
+  )!;
+}
+async function dockInput(text: string) {
+  const view = dockView();
+  await act(async () =>
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } }),
+  );
 }
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -468,10 +484,7 @@ it("retains independently divergent library and dock bodies when both actual CAS
       : actual(command, args),
   );
   act(() => source().dispatch({ changes: { from: 0, insert: "library-only " } }));
-  await input(
-    host.querySelector<HTMLTextAreaElement>('textarea[aria-label="Note"]')!,
-    "dock-only exact body",
-  );
+  await dockInput("dock-only exact body");
   await vi.waitFor(() =>
     expect(invoke.mock.calls.filter(([command]) => command === "notes_upsert")).toHaveLength(2),
   );
@@ -912,6 +925,48 @@ it("preserves an original clean-draft image insertion after unmount until its la
   }
 });
 
+it.each(["match", "different", "missing", "failed"])(
+  "opens retained input and clears only exact current note text (%s)",
+  async (outcome) => {
+    const owner = new NoteInputOwner(() => ({ noteId: stored.id, canonical: stored }));
+    const text = "private title";
+    owner
+      .observer("title")
+      .attach(() => ({ snapshot: { inputKind: "native-text", text } }), {
+        canClose: () => true,
+        close: () => {},
+      })
+      .unregister();
+    if (outcome === "match") stored = { ...stored, title: text };
+    if (outcome === "missing" || outcome === "failed") {
+      const actual = invoke.getMockImplementation()!;
+      invoke.mockImplementation(async (command, args) => {
+        if (command === "notes_get") {
+          if (outcome === "failed") throw new Error("Note unavailable");
+          return null;
+        }
+        return actual(command, args);
+      });
+    }
+    const opened = vi.fn();
+    window.addEventListener(OPEN_NOTE_LIBRARY_EVENT, opened);
+    try {
+      await act(async () => root.render(createElement(NoteDraftRecoveryNotice)));
+      await act(async () => button("Open note").click());
+      expect(opened).toHaveBeenCalledOnce();
+      expect(getNotePrivateRecoveries()).toHaveLength(outcome === "match" ? 0 : 1);
+      if (outcome !== "match") {
+        await act(async () => button("Dismiss notice").click());
+        expect(getNotePrivateRecoveries()).toEqual([]);
+      }
+      expect(document.querySelector("[data-note-private-recovery]")).toBeNull();
+    } finally {
+      window.removeEventListener(OPEN_NOTE_LIBRARY_EVENT, opened);
+      owner.retire();
+    }
+  },
+);
+
 it("keeps exact private tags through actual Escape, visible Copy/Open recovery, and two remount generations without applying them", async () => {
   function Owner() {
     const [open, setOpen] = useState(true);
@@ -1150,13 +1205,12 @@ it("preserves unadmitted native title/body callbacks, invalidates the cut and ho
   const baseline = await ready();
   baseline.release();
   const title = host.querySelector<HTMLInputElement>('input[aria-label="Note title"]')!;
-  const body = host.querySelector<HTMLTextAreaElement>('textarea[aria-label="Note"]')!;
+  const body = dockView().contentDOM;
   const gate = close();
   const before = await gate.capture();
   await input(title, "  exact unadmitted title  ");
-  await input(body, "exact unadmitted body\n漢🦀");
+  await dockInput("exact unadmitted body\n漢🦀");
   expect(title.value).toBe("  exact unadmitted title  ");
-  expect(body.value).toBe("exact unadmitted body\n漢🦀");
   expect(gate.current()).toBe(false);
   expect(before.current()).toBe(false);
   before.release();
@@ -1168,11 +1222,16 @@ it("preserves unadmitted native title/body callbacks, invalidates the cut and ho
   await act(async () => new Promise((resolve) => setTimeout(resolve, 450)));
   expect(invoke.mock.calls.some(([command]) => command === "notes_upsert")).toBe(false);
   const data = await ready();
+  const rows = data.snapshots.filter((row) => row.snapshot.noteId === stored.id);
+  expect(rows.map((row) => row.snapshot.unadmittedInputs)).toEqual(
+    expect.arrayContaining([["title"]]),
+  );
+  // The dock's CodeMirror body refuses input while the window is closed, so the
+  // refused text never reaches the draft or a save.
+  expect(dockView().state.doc.toString()).not.toContain("exact unadmitted body");
   expect(
-    data.snapshots
-      .filter((row) => row.snapshot.noteId === stored.id)
-      .map((row) => row.snapshot.unadmittedInputs),
-  ).toEqual(expect.arrayContaining([["title"], ["body"]]));
+    rows.some((row) => (row.snapshot.canonical as { body?: string })?.body?.includes("exact")),
+  ).toBe(false);
   data.release();
 });
 
@@ -1180,10 +1239,9 @@ it("preserves an oversized direct native body callback as unadmitted data withou
   await render(true);
   const baseline = await ready();
   baseline.release();
-  const body = host.querySelector<HTMLTextAreaElement>('textarea[aria-label="Note"]')!;
+  const body = dockView().contentDOM;
   const raw = "x".repeat(8 * 1024 * 1024 + 1);
-  await input(body, raw);
-  expect(body.value).toBe(raw);
+  await dockInput(raw);
   await act(async () => body.dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
   await act(async () => root.render(null));
   await act(async () =>

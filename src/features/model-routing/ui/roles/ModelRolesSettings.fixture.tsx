@@ -230,13 +230,13 @@ it("renders only the fixed slot without capability or machine, and undefined use
   await render(field({ allowDefault: false }));
   expect(container.textContent).not.toContain("Default");
 });
-it("maps Pool to main order, lists named pools, and preserves missing pools", async () => {
+it("maps Any model to the main order, lists named groups, and preserves missing groups", async () => {
   const onChange = vi.fn();
   await render(field({ onChange }));
-  await click("Pool");
+  await click("Any model");
   expect(onChange).toHaveBeenLastCalledWith({ kind: "order" });
   await render(field({ value: { kind: "pool", poolId: "gone" }, onChange }));
-  expect(container.textContent).toContain("Deleted pool");
+  expect(container.textContent).toContain("Deleted group");
   const select = container.querySelector("select")!;
   await act(async () => {
     select.value = "p";
@@ -299,11 +299,11 @@ it("groups all roles and saves fixed targets using optimistic version without de
   });
   expect(input.draft.pools).toEqual(state.pools);
 });
-it("omits roles switched to Model order", async () => {
+it("omits roles switched to Any model, in order", async () => {
   state.roles = { "task.worker": { kind: "pool", poolId: "p" } };
   await render(<ModelRolesSettings machineId="host" supported />);
   const row = container.querySelector('section[aria-label="Task worker"]')!;
-  expect(selected(row)).toBe("Pool: Named pool");
+  expect(selected(row)).toBe("Group: Named pool");
   await choose(row, "order");
   await click("Save");
   expect(mocks.save.mock.calls[0][0].draft.roles).toEqual({});
@@ -358,7 +358,11 @@ it("acknowledges a saved role snapshot without discarding a newer fixed target",
 it("keeps edited draft and original version when another save arrives, and reports conflicts", async () => {
   await render(<ModelRolesSettings machineId="host" supported />);
   await choose(container.querySelector('section[aria-label="Task worker"]')!, "pool:p");
-  state = { ...state, version: 9 };
+  state = {
+    ...state,
+    version: 9,
+    roles: { ...state.roles, "task.reviewer": { kind: "pool", poolId: "p" } },
+  };
   await render(<ModelRolesSettings machineId="host" supported />);
   await click("Save");
   expect(mocks.save).not.toHaveBeenCalled();
@@ -366,8 +370,21 @@ it("keeps edited draft and original version when another save arrives, and repor
   expect(container.querySelector('section[aria-label="Task worker"] select')).toBeTruthy();
   await click("Use latest settings");
   expect(selected(container.querySelector('section[aria-label="Task worker"]')!)).toBe(
-    "Model order",
+    "Any model, in order",
   );
+});
+
+it("carries a role draft onto a save from the model list that left every job alone", async () => {
+  await render(<ModelRolesSettings machineId="host" supported />);
+  await choose(container.querySelector('section[aria-label="Task worker"]')!, "pool:p");
+  state = { ...state, version: 9, defaultMaxRunMinutes: 30 };
+  await render(<ModelRolesSettings machineId="host" supported />);
+  await click("Save");
+  expect(container.textContent).not.toContain("Settings changed elsewhere.");
+  expect(mocks.save.mock.calls[0][0]).toMatchObject({
+    expectedVersion: 9,
+    draft: { defaultMaxRunMinutes: 30, roles: { "task.worker": { kind: "pool", poolId: "p" } } },
+  });
 });
 
 it("shows Automatic for helpers and stores explicit Model order, then resets", async () => {
@@ -398,7 +415,7 @@ it("describes helper fallback when every entry is ineligible", async () => {
   expect(row.textContent).not.toContain("Runs wait");
 });
 
-it("keeps rows on the order quiet and previews only pools", async () => {
+it("says which model every job uses now, on the order and on groups", async () => {
   state.entries = [
     { id: "e", harness: "codex", model: "m", modelSettings: {}, unknownLimit: "use" },
   ];
@@ -414,14 +431,14 @@ it("keeps rows on the order quiet and previews only pools", async () => {
   await act(async () => {});
   const worker = container.querySelector('section[aria-label="Task worker"]')!;
   const reviewer = container.querySelector('section[aria-label="Task reviewer"]')!;
-  expect(worker.textContent).not.toContain("Now uses");
+  expect(worker.textContent).toContain("Now uses");
   expect(reviewer.textContent).toContain("Now uses");
 });
 
 it("explains an empty order once and links to it instead of repeating per row", async () => {
   const onOpenOrder = vi.fn();
   await render(<ModelRolesSettings machineId="host" supported onOpenOrder={onOpenOrder} />);
-  expect(container.textContent).toContain("Model order is empty");
+  expect(container.textContent).toContain("Add models to the list below first.");
   expect(container.textContent).not.toContain("No model order configured");
   expect(mocks.resolve).not.toHaveBeenCalled();
   await click("Add models");
@@ -455,17 +472,21 @@ it("keeps a conflicted draft on failed fresh read and applies a successful retry
   await render(<ModelRolesSettings machineId="host" supported />);
   const row = container.querySelector('section[aria-label="Task worker"]')!;
   await choose(row, "pool:p");
-  state = { ...state, version: 9 };
+  state = {
+    ...state,
+    version: 9,
+    roles: { ...state.roles, "task.reviewer": { kind: "pool", poolId: "p" } },
+  };
   await render(<ModelRolesSettings machineId="host" supported />);
   await click("Save");
   expect(mocks.save).not.toHaveBeenCalled();
   await click("Use latest settings");
   await act(async () => rejectRead(new Error("offline")));
-  expect(selected(row)).toBe("Pool: Named pool");
+  expect(selected(row)).toBe("Group: Named pool");
   expect(container.textContent).toContain("Model routing could not be loaded.");
   await click("Use latest settings");
   await act(async () => resolveRead({ data: state, isError: false }));
-  expect(selected(row)).toBe("Model order");
+  expect(selected(row)).toBe("Any model, in order");
 });
 
 it("offers retry when initial roles read fails", async () => {
@@ -489,7 +510,7 @@ it("retains a dirty role choice after unmount", async () => {
   await render(null);
   await render(<ModelRolesSettings machineId="retention-host" supported />);
   expect(selected(container.querySelector('section[aria-label="Task worker"]')!)).toBe(
-    "Pool: Named pool",
+    "Group: Named pool",
   );
 });
 
@@ -507,11 +528,11 @@ it("keeps originating Host pending save across remount and isolates another Host
   await render(null);
   await render(<ModelRolesSettings machineId="host-b" supported />);
   expect(selected(container.querySelector('section[aria-label="Task worker"]')!)).toBe(
-    "Model order",
+    "Any model, in order",
   );
   await render(<ModelRolesSettings machineId="host-a" supported />);
   expect(selected(container.querySelector('section[aria-label="Task worker"]')!)).toBe(
-    "Pool: Named pool",
+    "Group: Named pool",
   );
   await click("Save");
   expect(mocks.save).toHaveBeenCalledTimes(1);
@@ -524,7 +545,7 @@ it("keeps originating Host pending save across remount and isolates another Host
   expect(container.textContent).not.toContain("Unsaved changes");
   await render(<ModelRolesSettings machineId="host-b" supported />);
   expect(selected(container.querySelector('section[aria-label="Task worker"]')!)).toBe(
-    "Model order",
+    "Any model, in order",
   );
 });
 it("preserves a dirty Host draft across failed read and recovery", async () => {
@@ -542,6 +563,6 @@ it("preserves a dirty Host draft across failed read and recovery", async () => {
   expect(container.textContent).toContain("could not be loaded");
   await render(<ModelRolesSettings machineId="host-a" supported />);
   expect(selected(container.querySelector('section[aria-label="Task worker"]')!)).toBe(
-    "Pool: Named pool",
+    "Group: Named pool",
   );
 });

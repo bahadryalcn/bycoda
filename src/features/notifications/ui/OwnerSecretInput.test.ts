@@ -2,7 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { OwnerSecretForm } from "./OwnerSecretInput";
+import { OwnerSecretForm, OwnerSecretHeader, parseOwnerSecretMessage } from "./OwnerSecretInput";
 import {
   MAX_OWNER_SECRET_LENGTH,
   submitOwnerSecretInput,
@@ -82,4 +82,35 @@ it("keeps typed drafts out of browser storage", async () => {
   } finally {
     write.mockRestore();
   }
+});
+
+it("parses the Host message into project, name and purpose and falls back to plain text", () => {
+  expect(
+    parseOwnerSecretMessage("Project: /repo\nName: API_KEY\nPurpose: Call the API\nsecond line"),
+  ).toEqual({
+    project: "/repo",
+    name: "API_KEY",
+    purpose: "Call the API\nsecond line",
+  });
+  expect(parseOwnerSecretMessage("Synthetic request")).toEqual({
+    project: "",
+    name: "",
+    purpose: "Synthetic request",
+  });
+});
+
+it("shows the purpose as body text and the secret name in the title, with the note behind an info button", async () => {
+  await act(async () =>
+    root.render(
+      createElement(OwnerSecretHeader, {
+        request: {
+          ...request,
+          message: "Project: /repo\nName: API_KEY\nPurpose: Call the API",
+        },
+      }),
+    ),
+  );
+  expect(container.textContent).toContain("Enter secret: API_KEY");
+  expect(container.textContent).not.toContain("The agent receives only a reference");
+  expect(container.querySelector('button[aria-haspopup="dialog"]')).not.toBeNull();
 });

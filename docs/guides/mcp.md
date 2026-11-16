@@ -10,6 +10,18 @@ health can confirm readiness; a failed refresh clears the old health observation
 Activity stays unknown where the provider does not expose a live operation feed.
 Opening this page only reads configuration and status; it does not enable a server.
 
+Settings > MCP shows one list of every server: provider config files plus the Claude
+plugins and accounts the bycoda Host finds. Each row has a status dot and, when the
+server needs it, a **Sign in** quick action. Clicking a row opens its detail panel with
+bycoda sign-in, **Start with every session**, and, per provider file, **Enabled**, the
+file path, the editable JSON configuration, the provider CLI sign-in and **Remove**
+(Claude Code only). The configuration saves back to the same file. The save is refused
+if the file changed on disk meanwhile; reload it and apply the change again.
+
+**Session startup** below the list chooses **When needed** (a server starts the first
+time a session uses one of its tools) or **With every session** (all servers start when
+a session opens).
+
 Settings > MCP opens in **Global** view. Use the **Global / Project** buttons to switch;
 Project reveals the local project picker and includes its inherited global entries.
 Global reads only machine-wide provider configuration, independently of project-path
@@ -27,8 +39,8 @@ only refreshes discovery; it does not add the server again. **Done** closes the 
 Credentials saved by one provider are not evidence that another
 provider is signed in; complete that provider's authorization when needed.
 
-Use a connection's switch to enable or disable a server for Codex, OpenCode or
-Claude Code. Codex and OpenCode changes apply
+Use a file's **Enabled** switch in the detail panel to enable or disable a server for
+Codex, OpenCode or Claude Code. Codex and OpenCode changes apply
 to that exact provider, scope and configuration file. Claude Code changes apply to
 every scope with that server name in the selected project. Cursor and Claude Desktop
 connections require their own client controls and do not support this action here.
@@ -62,8 +74,8 @@ do not offer this browser action. Manage Claude Desktop authentication
 in that client. Cursor uses its [CLI MCP login](https://cursor.com/docs/cli/mcp).
 Some MCP services use API keys or environment variables instead
 of OAuth; follow the service's setup instructions in the owning provider's config.
-The row's status hint identifies its config file. The action menu offers **Show
-config** and **Copy config path**.
+The detail panel shows each file's path, with **Show in folder** and **Copy config
+path**.
 
 Adding a Cursor, Claude Desktop or OpenCode server keeps unrelated JSON/JSONC
 settings, comments and property order. Existing symbolic links continue to point to the

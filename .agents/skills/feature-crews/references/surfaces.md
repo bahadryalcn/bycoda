@@ -4,7 +4,7 @@ Paths are repository-root relative. Basenames in a named directory are relative 
 
 ## UI, state and adjacent consumers
 
-- `src/features/crews/ui/`: `CrewsSettings.tsx`, `CrewRailSection.tsx`, `CrewSessions.tsx`, `CrewEditor.tsx`, `CrewDialogs.tsx`, `CrewDeleteButton.tsx`, `CrewLibrary.tsx`, `CrewMemberPicker.tsx`, `CrewMemberForm.tsx`, `MemberModelPicker.tsx`, `CrewTaskPicker.tsx`.
+- `src/features/crews/ui/`: `CrewRailSection.tsx`, `CrewSessions.tsx`, `CrewEditor.tsx`, `CrewDialogs.tsx`, `CrewDeleteButton.tsx`, `CrewLibrary.tsx`, `CrewMemberPicker.tsx`, `CrewMemberForm.tsx`, `MemberModelPicker.tsx`, `CrewTaskPicker.tsx`.
 - Work details: `CrewWorkList.tsx`, `CrewWorkDetail.tsx`, `CrewWorkSessions.tsx`, `CrewWorkState.tsx`; shared working choices: `CrewWorkingSettings.tsx`. Search library uses `CrewLibrarySearch.ts`; appearance uses `CrewAppearancePicker.tsx` and `CrewAvatar.tsx`.
 - `src/features/crews/model/`: `crew.ts` schema/capabilities, `crewClient.ts` queries/mutations/reconciliation, `crewDefaults.ts` seeded profiles, `crewRoster.ts`, `crewPresentation.ts`, `crewAppearance.ts`.
 - Follow callers in `src/app/App.tsx`, `src/app/shell/Sidebar.tsx`, `ProjectRail.tsx`, `SettingsRail.tsx`, settings navigation, `src/features/tasks/` and onboarding. Shared model choices use `src/features/sessions/ui/ModelPicker.tsx`.

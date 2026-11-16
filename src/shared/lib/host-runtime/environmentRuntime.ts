@@ -77,6 +77,11 @@ function isInterruptedRead(error: unknown): boolean {
     (error instanceof Error && error.message === "Stale Host connection or access scope")
   );
 }
+/** A stream event's bulk payload can no longer be fetched (late, reused or revoked grant). */
+function isStreamPayloadGone(error: unknown): boolean {
+  const code = typeof error === "object" && error !== null && "code" in error ? error.code : "";
+  return code === "RPC_WS_BULK_GRANT" || code === "RPC_WS_BULK";
+}
 
 export class HostCommandUncertainError extends Error {
   readonly delivery = "unknown";
@@ -676,7 +681,16 @@ export class EnvironmentRuntime {
           baseRevision: update.baseRevision,
           revision: update.revision,
         };
-        const data = await this.resolveBulk(update.data, event.generation, version);
+        let data: unknown;
+        try {
+          data = await this.resolveBulk(update.data, event.generation, version);
+        } catch (error) {
+          // A payload reference is single-use and expires; a late, reused or revoked one is
+          // gone but the Host state is not, so take a fresh snapshot instead of failing the view.
+          if (!isStreamPayloadGone(error) || !isEntryCurrent()) throw error;
+          await this.refresh(entry, true);
+          return;
+        }
         this.assertCurrent(event.generation, version);
         if (!isEntryCurrent()) return;
         let applied = true;

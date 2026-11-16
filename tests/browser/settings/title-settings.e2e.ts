@@ -24,7 +24,7 @@ for (const theme of ["light", "dark"])
       const choice = page.getByRole("button", { name: /^Model for Title:/ });
       await expect(choice).toContainText("Automatic");
       await choice.click();
-      await page.getByRole("option", { name: "Model order", exact: true }).click();
+      await page.getByRole("option", { name: "Any model, in order", exact: true }).click();
       const read = () =>
         page.evaluate(() =>
           (
@@ -62,7 +62,7 @@ for (const theme of ["light", "dark"])
         .toEqual([{ machineId: "fixture-host", expectedVersion: 1 }]);
       await page.reload();
       await page.getByRole("button", { name: "Manage in Models", exact: true }).click();
-      await expect(choice).toContainText("Model order");
+      await expect(choice).toContainText("Any model, in order");
       await choice.scrollIntoViewIfNeeded();
       await page.screenshot({
         path: info.outputPath(`title-host-role-${theme}-${width}.png`),
@@ -98,12 +98,12 @@ test("denied Host save preserves the role draft and persisted state", async ({ p
   await page.getByRole("button", { name: "Manage in Models", exact: true }).click();
   const choice = page.getByRole("button", { name: /^Model for Title:/ });
   await choice.click();
-  await page.getByRole("option", { name: "Model order", exact: true }).click();
+  await page.getByRole("option", { name: "Any model, in order", exact: true }).click();
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(
     page.getByText("Model roles could not be saved. Try again.", { exact: true }),
   ).toBeVisible();
-  await expect(choice).toContainText("Model order");
+  await expect(choice).toContainText("Any model, in order");
   expect(
     await page.evaluate(
       () =>

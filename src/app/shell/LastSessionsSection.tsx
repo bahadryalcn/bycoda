@@ -173,16 +173,18 @@ export function LastSessionsSection({
         }
       />
       {prefs.collapsed ? null : (
-        <LastSessionsRows
-          rows={rows}
-          activeSessionId={activeSessionId}
-          searchActive={searchActive}
-          onOpenSession={onOpenSession}
-          onOpenProject={onOpenProject}
-          className={drag?.folded ? "hidden" : "flex"}
-          listScopeKey={listScopeKey}
-          {...appearance}
-        />
+        // `contents` keeps the rows in the section's flex layout; a folding drag hides it.
+        <div className="contents" data-reorder-fold-body>
+          <LastSessionsRows
+            rows={rows}
+            activeSessionId={activeSessionId}
+            searchActive={searchActive}
+            onOpenSession={onOpenSession}
+            onOpenProject={onOpenProject}
+            listScopeKey={listScopeKey}
+            {...appearance}
+          />
+        </div>
       )}
     </div>
   );

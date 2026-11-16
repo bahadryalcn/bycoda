@@ -95,23 +95,22 @@ describe("providers scope inheritance", () => {
   });
 });
 
-it("separates Accounts from CLI and keeps setup rows mounted across tabs", async () => {
+it("lists the four Models tabs and keeps provider setup rows mounted across tabs", async () => {
   await render();
   const tabs = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
   expect(tabs.map((node) => node.textContent?.trim())).toEqual([
-    "Accounts",
-    "Defaults",
-    "CLI",
-    "Catalog",
-    "Decision models",
+    "Background work",
+    "Chats",
+    "Subagents",
+    "Providers",
   ]);
   const row = container.querySelector('[data-setting-id="cli-path-codex"]')!;
   expect(row.closest<HTMLElement>("[hidden]")).not.toBeNull();
-  await act(async () => tabs.find((node) => node.textContent === "CLI")!.click());
+  await act(async () => tabs.find((node) => node.textContent === "Providers")!.click());
   expect(row.closest("[hidden]")).toBeNull();
-  expect(container.querySelector(".provider-cli-container")?.hasAttribute("hidden")).toBe(true);
-  await act(async () => tabs.find((node) => node.textContent === "Accounts")!.click());
+  await act(async () => tabs.find((node) => node.textContent === "Chats")!.click());
   expect(container.querySelector('[data-setting-id="cli-path-codex"]')).toBe(row);
+  expect(row.closest<HTMLElement>("[hidden]")).not.toBeNull();
 });
 
 it("validates new account names against the selected provider before sign-in", async () => {
@@ -160,7 +159,7 @@ it("does not claim every installed CLI is current from a checked subset", async 
   try {
     await render();
     const cli = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
-      (node) => node.textContent === "CLI",
+      (node) => node.textContent === "Providers",
     )!;
     await act(async () => cli.click());
     const summary = container.querySelector("#setting-harness-updates")!;

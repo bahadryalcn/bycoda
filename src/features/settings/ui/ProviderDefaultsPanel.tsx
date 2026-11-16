@@ -7,6 +7,7 @@ import { HARNESSES } from "../../sessions";
 import { defaultSessionChoice, loadHiddenPickerProviders } from "../../sessions/public/models";
 import {
   loadProjectProviderSettings,
+  storedProjectAccountId,
   type ProviderSessionDefaults,
 } from "../../sessions/public/projectProviders";
 import {
@@ -73,6 +74,26 @@ export function ProviderDefaultsPanel({
     ? draft.accounts[accountDraftKey(harness, accountId)]
     : draft.providers[harness];
 
+  // Project and group targets save which account the provider starts on; the rows below then
+  // inherit through that account. Global keeps its scope switch instead.
+  const storedAccount =
+    target.kind === "project" ? storedProjectAccountId(project ?? undefined, harness) : undefined;
+  const projectAccount =
+    target.kind === "global"
+      ? undefined
+      : change?.account !== undefined
+        ? (change.account ?? undefined)
+        : storedAccount;
+  const knownProjectAccount = defaultsScope
+    .defaultsAccounts(harness)
+    .some((account) => account.id === projectAccount)
+    ? projectAccount
+    : undefined;
+  const inheritedModel =
+    (knownProjectAccount
+      ? accountSessionDefaults(harness, knownProjectAccount).model
+      : undefined) ?? globalModel;
+
   let base: ProviderSessionDefaults;
   let inherited: ProviderSessionDefaults;
   let storedModel: string | undefined;
@@ -87,11 +108,11 @@ export function ProviderDefaultsPanel({
     storedModel = globalModel;
   } else {
     base = project ? (loadProjectProviderSettings(project).defaults?.[harness] ?? {}) : {};
-    inherited = defaultsScope.inheritedProviderDefaults(harness, true);
+    inherited = defaultsScope.inheritedProviderDefaults(harness, true, knownProjectAccount);
     storedModel = project ? storedProjectModel(project, harness) : undefined;
   }
   const modelValue = change?.model !== undefined ? (change.model ?? undefined) : storedModel;
-  const selectedModel = modelValue ?? globalModel;
+  const selectedModel = modelValue ?? inheritedModel;
 
   const hiddenGlobally = loadHiddenPickerProviders().includes(harness);
   const storedHidden = project
@@ -172,7 +193,7 @@ export function ProviderDefaultsPanel({
         }
         inherits={inherits}
         modelOverride={inherits ? modelValue : undefined}
-        globalModel={inherits ? globalModel : undefined}
+        globalModel={inherits ? inheritedModel : undefined}
         onModelChange={(model) =>
           onDraftChange(withChange(draft, slot, recordField(change, "model", model, storedModel)))
         }
@@ -185,12 +206,27 @@ export function ProviderDefaultsPanel({
             : undefined
         }
         accountId={accountId}
+        projectAccountId={knownProjectAccount}
         scopeControl={
           target.kind === "global" ? (
             <defaultsScope.AccountDefaultsScope
               harness={harness}
               value={accountScope[harness] ?? ""}
               onChange={(id) => onAccountScopeChange(harness, id)}
+            />
+          ) : section !== "delegation" ? (
+            <defaultsScope.ProjectAccountChoice
+              harness={harness}
+              value={projectAccount ?? ""}
+              onChange={(id) =>
+                onDraftChange(
+                  withChange(
+                    draft,
+                    slot,
+                    recordField(change, "account", id || null, storedAccount ?? null),
+                  ),
+                )
+              }
             />
           ) : null
         }

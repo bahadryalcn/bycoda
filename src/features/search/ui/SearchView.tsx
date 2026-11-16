@@ -12,6 +12,7 @@ import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { ShortcutKbd } from "../../../shared/ui/ShortcutKbd";
 import { Alert } from "../../../shared/ui/Alert";
+import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Button } from "../../../shared/ui/Button";
 import { ListRow } from "../../../shared/ui/ListRow";
@@ -363,6 +364,11 @@ export function SearchView({
       ? (projectSearch.error ?? (fileIndexError?.cwd === cwd ? fileIndexError.error : null))
       : null;
   const conversationError = conversationMode ? conversation.error : null;
+  // A machine connection failure is explained once by the central notice, not by this strip.
+  const fileShownCentrally = useConnectionErrorShownCentrally(error);
+  const conversationShownCentrally = useConnectionErrorShownCentrally(conversationError);
+  const showFileError = !!error && !fileShownCentrally;
+  const showConversationError = !!conversationError && !conversationShownCentrally;
   const loading =
     (fileMode && projectSearch.loading) ||
     (conversationMode && conversation.loading) ||
@@ -636,9 +642,9 @@ export function SearchView({
         </div>
       </div>
 
-      {!empty && (error || conversationError) ? (
+      {!empty && (showFileError || showConversationError) ? (
         <Alert tone="danger" className="mx-2 mt-2 max-h-40 shrink-0 overflow-auto break-words">
-          {error ? (
+          {showFileError ? (
             <p>
               {t("File search failed: ")}
               {error}{" "}
@@ -655,7 +661,7 @@ export function SearchView({
               </Button>
             </p>
           ) : null}
-          {conversationError ? (
+          {showConversationError ? (
             <p>
               {t("Conversation search failed: ")}
               {conversationError}{" "}

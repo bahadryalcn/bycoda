@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { truncateGraphemes } from "../../../shared/lib/text/truncate";
 import {
   canRunHarnessTextPrompt,
   runHarnessTextPrompt,
@@ -28,34 +29,54 @@ const TIMEOUT_MS = 150_000;
 const MAX_POOLS = 12;
 
 const index = z.number().int().nonnegative();
+/** Keeps the valid items of an array and drops the rest, so one bad item never voids a plan. */
+const lenient = <T extends z.ZodType>(item: T, max: number) =>
+  z
+    .array(z.unknown())
+    .default([])
+    .transform((items) =>
+      items
+        .flatMap((value) => {
+          const parsed = item.safeParse(value);
+          return parsed.success ? [parsed.data as z.output<T>] : [];
+        })
+        .slice(0, max),
+    );
 const PlanAnswerSchema = z.object({
-  accounts: z
-    .array(
-      z.object({ ref: z.string(), kind: z.union([ModelRoutingScopeSchema, z.literal("shared")]) }),
-    )
-    .max(500)
-    .default([]),
-  models: z
-    .array(
-      z.object({
-        key: index,
-        intelligence: z.number().int().min(1).max(5),
-        cost: z.number().int().min(1).max(4),
-      }),
-    )
-    .max(500)
-    .default([]),
-  order: z.array(index).max(1000),
-  pools: z
-    .array(
-      z.object({
-        name: z.string().trim().min(1).max(80),
-        members: z.array(index).max(500).default([]),
-        includes: z.array(z.string().max(80)).max(MAX_POOLS).default([]),
-      }),
-    )
-    .max(MAX_POOLS),
-  roles: z.record(z.string(), z.union([z.literal("order"), z.object({ pool: z.string() })])),
+  accounts: lenient(
+    z.object({ ref: z.string(), kind: z.union([ModelRoutingScopeSchema, z.literal("shared")]) }),
+    500,
+  ),
+  models: lenient(
+    z.object({
+      key: index,
+      intelligence: z.number().int().min(1).max(5),
+      cost: z.number().int().min(1).max(4),
+    }),
+    500,
+  ),
+  order: lenient(index, 1000),
+  pools: lenient(
+    z.object({
+      name: z.string().trim().min(1).max(80),
+      members: lenient(index, 500),
+      includes: lenient(z.string().max(80), MAX_POOLS),
+    }),
+    MAX_POOLS,
+  ),
+  roles: z
+    .record(z.string(), z.unknown())
+    .default({})
+    .transform((roles) => {
+      const valid: Record<string, "order" | { pool: string }> = {};
+      for (const [role, value] of Object.entries(roles)) {
+        const parsed = z
+          .union([z.literal("order"), z.object({ pool: z.string() })])
+          .safeParse(value);
+        if (parsed.success) valid[role] = parsed.data;
+      }
+      return valid;
+    }),
 });
 export type PlanAnswer = z.infer<typeof PlanAnswerSchema>;
 
@@ -262,6 +283,8 @@ export type SmartSetupResult = {
   plan: SetupPlan;
   /** The model that planned it; undefined when the researched rules did. */
   plannedBy?: string;
+  /** Why the chosen planner fell back to the researched rules. */
+  failure?: { planner: string; reason: "timeout" | "unreadable" | "error"; detail?: string };
 };
 
 /** Never rejects except on abort; falls back to the researched rule plan on any failure. */
@@ -272,15 +295,31 @@ export async function planSmartSetup(
 ): Promise<SmartSetupResult> {
   const fallback = { candidates, plan: rulePlan(candidates, names) };
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let choice: PlannerChoice | undefined;
+  let timedOut = false;
+  const plannerName = () =>
+    candidates.find((c) => c.target.model === choice?.model)?.modelName ?? choice?.model ?? "";
+  const failed = (
+    reason: NonNullable<SmartSetupResult["failure"]>["reason"],
+    detail?: string,
+  ): SmartSetupResult => ({
+    ...fallback,
+    failure: {
+      planner: plannerName(),
+      reason,
+      ...(detail?.trim() ? { detail: truncateGraphemes(detail.trim(), 160) } : {}),
+    },
+  });
   const controller = new AbortController();
   const abort = () => controller.abort();
   options.signal?.addEventListener("abort", abort, { once: true });
   try {
     if (options.signal?.aborted) return fallback;
-    const choice = await plannerChoice(candidates);
+    choice = await plannerChoice(candidates);
     if (!choice) return fallback;
     const deadline = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
+        timedOut = true;
         reject(new Error("Routing setup timed out"));
         controller.abort();
       }, TIMEOUT_MS);
@@ -288,7 +327,8 @@ export async function planSmartSetup(
     const text = await Promise.race([
       runHarnessTextPrompt({
         ...choice,
-        cwd: "",
+        // The project-less session folder; an empty cwd is not a directory and fails the spawn.
+        cwd: "~",
         ephemeral: true,
         signal: controller.signal,
         timeoutMs: TIMEOUT_MS,
@@ -297,20 +337,26 @@ export async function planSmartSetup(
       }),
       deadline,
     ]);
+    if (options.signal?.aborted) return fallback;
     const answer = parsePlanAnswer(text);
-    if (!answer || options.signal?.aborted) return fallback;
+    if (!answer) return failed("unreadable");
     const planned = planFromAnswer(candidates, answer);
     // An answer without pools or roles is not a plan; keep its kinds and profiles only.
     if (!planned.plan.pools.length || !Object.keys(planned.plan.roles).length)
-      return { candidates: planned.candidates, plan: rulePlan(planned.candidates, names) };
-    const name = candidates.find((c) => c.target.model === choice.model)?.modelName;
+      return {
+        ...failed("unreadable"),
+        candidates: planned.candidates,
+        plan: rulePlan(planned.candidates, names),
+      };
     return {
       candidates: planned.candidates,
       plan: enforceRoleNeeds(planned.candidates, planned.plan),
-      plannedBy: name ?? choice.model,
+      plannedBy: plannerName(),
     };
-  } catch {
-    return fallback;
+  } catch (cause) {
+    if (!choice || options.signal?.aborted) return fallback;
+    if (timedOut) return failed("timeout");
+    return failed("error", cause instanceof Error ? cause.message : String(cause));
   } finally {
     clearTimeout(timer);
     options.signal?.removeEventListener("abort", abort);

@@ -100,7 +100,7 @@ it("saves the selected theme and keeps the real scene still under reduced motion
   }
 });
 
-it("offers The Matrix and explains its cast once selected", async () => {
+it("offers The Matrix as a selectable theme", async () => {
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
@@ -114,16 +114,13 @@ it("offers The Matrix and explains its cast once selected", async () => {
     expect(matrix).not.toBeNull();
     await act(async () => matrix!.click());
     expect(loadCrewTheme()).toBe("matrix");
-    expect(host.querySelector(".crew-stage-hint")?.textContent).toBe(
-      "Neo leads, Morpheus advises, and every subagent is another Agent Smith.",
-    );
   } finally {
     await act(async () => root.unmount());
     host.remove();
   }
 });
 
-it("keeps the stage reachable but dimmed while the crew is off", async () => {
+it("collapses the stage and disables the theme row while the crew is off", async () => {
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
@@ -136,7 +133,7 @@ it("keeps the stage reachable but dimmed while the crew is off", async () => {
     await act(async () => toggle!.click());
     const row = host.querySelector("#setting-crew-theme");
     expect(row?.getAttribute("data-disabled")).toBe("true");
-    expect(row?.querySelector(".crew-scene")).not.toBeNull();
+    expect(row?.querySelector(".crew-scene")).toBeNull();
     expect(
       [...row!.querySelectorAll<HTMLButtonElement>('[role="radio"]')].every(
         (button) => button.disabled,

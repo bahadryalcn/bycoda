@@ -22,6 +22,27 @@ describe("native desktop inbox heartbeat runner", () => {
     ]);
     expect(JSON.stringify(result)).not.toContain("never-forward");
   });
+  it("limits discovery to the requested providers", async () => {
+    const list = vi.fn().mockResolvedValue({
+      items: [{ provider: "jira" }, { provider: "linear" }],
+      errors: { jira: "slow", linear: "down" },
+    });
+    const result = await executeDesktopInboxOperation(
+      {
+        action: "list",
+        projects: [{ path: "/project" }],
+        query: { assignedToMe: false, state: "open", search: "", providers: ["jira"] },
+      },
+      { invoke: vi.fn(), list },
+    );
+    expect(list).toHaveBeenCalledWith([{ path: "/project" }], {
+      assignedToMe: false,
+      state: "open",
+      search: "",
+      githubKinds: [],
+    });
+    expect(result).toEqual({ items: [{ provider: "jira" }], errors: { jira: "slow" } });
+  });
   it("continues session controls while provider work is slow, and executes a claimed job once", async () => {
     let finish!: () => void;
     const native = new Promise<unknown>((resolve) => {

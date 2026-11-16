@@ -19,7 +19,16 @@ import { isImeComposition } from "../../../shared/lib/keyboard";
 export type GroupEdit =
   | { kind: "create"; skillNames: string[] }
   | { kind: "rename" | "delete"; group: SkillGroup };
-export function SkillGroupDialogs({ edit, onClose }: { edit: GroupEdit; onClose: () => void }) {
+export function SkillGroupDialogs({
+  edit,
+  onClose,
+  onCreated,
+}: {
+  edit: GroupEdit;
+  onClose: () => void;
+  /** A new group opens in the membership editor. */
+  onCreated?: (group: SkillGroup) => void;
+}) {
   useLocale();
   const [name, setName] = useState(edit.kind === "create" ? "" : edit.group.name);
   const [command, setCommand] = useState(
@@ -52,11 +61,13 @@ export function SkillGroupDialogs({ edit, onClose }: { edit: GroupEdit; onClose:
       )
         throw new Error(t("Another group already uses /{p0}", { p0: effective }));
       if (edit.kind === "create")
-        createSkillGroup({
-          name,
-          skillNames: edit.skillNames,
-          ...(invocation ? { invocation } : {}),
-        });
+        onCreated?.(
+          createSkillGroup({
+            name,
+            skillNames: edit.skillNames,
+            ...(invocation ? { invocation } : {}),
+          }),
+        );
       else renameSkillGroup(edit.group.id, name, invocation);
       onClose();
     } catch (cause) {

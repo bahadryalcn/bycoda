@@ -20,7 +20,11 @@ export type RemoteFailure = { kind: RemoteFailureKind; message: string };
 
 /** Messages from `remote.rs`, `remote_ssh.rs`, `remoteCommands.ts` and the host. */
 const UNREACHABLE =
-  /RPC_HOST_UNAVAILABLE|RPC_CONNECTION_INTERRUPTED|RPC_DNS|RPC_PROXY|Machine is unreachable|Host is not running on the machine|SSH connection failed|SSH timed out|Could not start OpenSSH|Machine is no longer connected|machine isn.t connected on this computer|Connect this project.s machine|Connection changed while the request was running|Connection ?(reset|aborted)|ConnectionReset|ConnectionAborted|ConnectionRefused|TimedOut|forcibly closed|os error 10(053|054|060)|Broken pipe/i;
+  /RPC_HOST_UNAVAILABLE|RPC_CONNECTION_INTERRUPTED|RPC_DNS|RPC_PROXY|Machine is unreachable|Host is not running on the machine|SSH connection failed|SSH timed out|Could not start OpenSSH|Machine is no longer connected|machine isn.t connected on this computer|Connect this project.s machine|Connection ?(reset|aborted)|ConnectionReset|ConnectionAborted|ConnectionRefused|TimedOut|forcibly closed|os error 10(053|054|060)|Broken pipe/i;
+/** A request whose connection was replaced mid-flight: not an outage, its outcome is unknown. */
+const SUPERSEDED = /Connection changed while the request was running/;
+/** `TimeoutError` after it was turned into text (`String(error)`). */
+const LOCAL_TIMEOUT = /TimeoutError: .*timed out after \d+ ?ms/i;
 const OUTDATED =
   /Unsupported (host method|remote operation|workspace command)|Update bycoda Host in (?:Connections|Machines) settings/i;
 const UNSUPPORTED = /isn.t available for projects on another machine/i;
@@ -50,7 +54,11 @@ export function classifyRemoteError(error: unknown): RemoteFailure {
   const code = nativeConnectionFailureCode(error);
   if (code === "RPC_WS_IDENTITY") return { kind: "identity", message };
   if (code === "RPC_WS_UNSUPPORTED") return { kind: "outdated", message };
-  if (code && ["RPC_WS_DEADLINE", "RPC_WS_OVERLOAD", "RPC_WS_DETACHED"].includes(code))
+  // CANCELLED never reached the Host (its window or issuer was replaced mid-reconnect).
+  if (
+    code &&
+    ["RPC_WS_DEADLINE", "RPC_WS_OVERLOAD", "RPC_WS_DETACHED", "RPC_WS_CANCELLED"].includes(code)
+  )
     return { kind: "temporary", message };
   // A local bounded wait (e.g. Host discovery) elapsed; the same request can be sent again.
   if (error instanceof TimeoutError) return { kind: "temporary", message };
@@ -74,6 +82,7 @@ export function classifyRemoteError(error: unknown): RemoteFailure {
     if (TEMPORARY.test(text)) return { kind: "temporary", message };
     return { kind: "other", message };
   }
+  if (SUPERSEDED.test(text) || LOCAL_TIMEOUT.test(text)) return { kind: "temporary", message };
   if (UNREACHABLE.test(text)) return { kind: "unreachable", message };
   if (OUTDATED.test(text)) return { kind: "outdated", message };
   if (UNSUPPORTED.test(text)) return { kind: "unsupported", message };
@@ -83,7 +92,7 @@ export function classifyRemoteError(error: unknown): RemoteFailure {
 
 /** The fixed messages thrown in English (they are matched above) shown in the user's language. */
 function localizeRemoteMessage(message: string): string {
-  const text = message.replace(/^Host rejected request:s*/i, "");
+  const text = message.replace(/^Host rejected request:\s*/i, "");
   const known: Record<string, string> = {
     "Update bycoda Host in Machines settings to use this on projects on another machine.": t(
       "Update bycoda Host in Machines settings to use this on projects on another machine.",
@@ -153,6 +162,10 @@ export function presentRemoteError(
       t("Something went wrong. Try again.")
     );
   if (!options.explicit) return undefined;
+  if (SUPERSEDED.test(remoteErrorText(error)))
+    return t(
+      "The connection changed while the request was running. Its outcome is unknown; refresh before retrying an action.",
+    );
   // An action is never replayed on its own, since it could apply twice: tell the
   // user to repeat it once the link is back instead of showing transport text.
   return classifyRemoteError(error).kind === "unreachable"

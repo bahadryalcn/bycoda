@@ -164,6 +164,14 @@ async function render(
   );
 }
 
+/** Selects an Appearance tab; hidden tabs keep their DOM but defer updates. */
+async function openAppearanceTab(label: string) {
+  const tab = [...container.querySelectorAll<HTMLElement>('[role="tab"]')].find(
+    (item) => item.textContent === label,
+  );
+  await act(async () => tab!.click());
+}
+
 /** Opens a provider account's overflow menu and picks one of its items. */
 async function accountAction(account: string, item: string) {
   await act(async () =>
@@ -263,6 +271,7 @@ describe("settings pages", () => {
       initial: "1",
       next: "0",
       selector: '[role="switch"][aria-label="Agent crew"]',
+      tab: "Motion",
     },
     {
       section: "appearance",
@@ -270,6 +279,7 @@ describe("settings pages", () => {
       initial: "1",
       next: "0",
       selector: '[data-setting-id="crew-growth"] [role="switch"]',
+      tab: "Motion",
     },
     {
       section: "chat",
@@ -374,7 +384,7 @@ describe("settings pages", () => {
     },
   ])(
     "refreshes mounted $section controls after sibling storage changes to $key",
-    async ({ section, key, initial, next, selector, index = 0 }) => {
+    async ({ section, key, initial, next, selector, index = 0, tab }) => {
       platform.isWindows = true;
       localStorage.setItem(
         "bycoda.lastModel",
@@ -382,6 +392,8 @@ describe("settings pages", () => {
       );
       localStorage.setItem(key, initial);
       await render(section as SettingsSectionId);
+      // Hidden Appearance tabs pause their updates, so the control's tab is opened first.
+      if (tab) await openAppearanceTab(tab);
       if (section === "chat") {
         const advanced = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
           (button) => button.textContent === "Advanced conversation settings",
@@ -1020,6 +1032,7 @@ describe("settings pages", () => {
   it("shows background effect choices above scope when artwork is available", async () => {
     localStorage.setItem("bycoda.chatBackgroundPath", "/app-data/backgrounds/chat-background.png");
     await render("appearance");
+    await openAppearanceTab("Background");
 
     const effect = container.querySelector("#new-thread-background-effect-dither")!;
     const effectRow = effect.closest(".settings-row")!;
@@ -1038,7 +1051,6 @@ describe("settings pages", () => {
     await act(async () => (effect as HTMLButtonElement).click());
     expect(localStorage.getItem("bycoda.newThreadBackgroundEffect")).toBe("dither");
     expect(effect.getAttribute("aria-checked")).toBe("true");
-    expect(container.textContent).toContain("Rebuilds the artwork with a dithered color palette.");
   });
 
   it("previews and restores Haze with the existing empty-chat visibility", async () => {
@@ -1056,6 +1068,7 @@ describe("settings pages", () => {
     globalThis.Image = DecodedImage as unknown as typeof Image;
     try {
       await render("appearance");
+      await openAppearanceTab("Background");
 
       const option = container.querySelector<HTMLButtonElement>(
         "#new-thread-background-effect-gradient-blur",
@@ -1687,7 +1700,7 @@ describe("settings pages", () => {
     await render("providers");
     await act(async () =>
       [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
-        .find((button) => button.textContent === "CLI")!
+        .find((button) => button.textContent === "Providers")!
         .click(),
     );
     const group = container.querySelector('[data-setting-id="harness-updates"]')!;

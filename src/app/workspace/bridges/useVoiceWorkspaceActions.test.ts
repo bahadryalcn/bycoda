@@ -5,6 +5,7 @@ import type {
   VoiceWorkspaceSession,
 } from "../../../features/voice/model/voiceWorkspaceActions";
 import { voiceProjectNames } from "../../../features/voice/model/voiceProjectNames";
+import { projectNameTaken } from "../../../features/voice/model/voiceProjectConflict";
 
 const entry = (
   id: string,
@@ -49,6 +50,32 @@ describe("voice workspace owner actions", () => {
     expect(
       await execute("workspace.projects.create", { name: "x", requestId: "create-2" }),
     ).toMatchObject({ status: "completed" });
+  });
+  it("returns a taken project name as choices and lets the corrected retry reuse the ID", async () => {
+    const onCreateProject = vi.fn(async ({ name }: { name: string }) => {
+      if (name === "mini golf")
+        throw projectNameTaken(name, "/work/mini-golf", ["/project", "/work/mini-golf"]);
+      return "/work/mini-golf-2";
+    });
+    const { execute } = setup({ onCreateProject });
+    expect(
+      await execute("workspace.projects.create", { name: "mini golf", requestId: "golf-1" }),
+    ).toMatchObject({
+      status: "rejected",
+      reason: "name-taken",
+      existingProjectPath: "/work/mini-golf",
+      options: ["continue-existing-project", "create-with-another-name"],
+    });
+    expect(
+      await execute("workspace.projects.create", { name: "mini golf 2", requestId: "golf-1" }),
+    ).toMatchObject({ status: "accepted", projectPath: "/work/mini-golf-2" });
+  });
+  it("gives every rejection a recovery hint", async () => {
+    const { execute } = setup();
+    expect(await execute("workspace.projects.select", { projectPath: "/missing" })).toMatchObject({
+      status: "rejected",
+      next: expect.stringContaining("ask how to continue"),
+    });
   });
   it("lists a visible project's run actions without running anything", async () => {
     const listProjectActions = vi.fn(async () => ({

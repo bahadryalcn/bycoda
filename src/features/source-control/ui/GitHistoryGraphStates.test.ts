@@ -103,6 +103,39 @@ async function click(label: string) {
   );
 }
 
+it("keeps the active repository picker in the Graph header when expanded or collapsed", async () => {
+  const onChange = vi.fn();
+  for (const expanded of [true, false]) {
+    await act(async () =>
+      root.render(
+        createElement(GitHistoryGraph, {
+          cwd: "/repo/mobile",
+          enabled: true,
+          expanded,
+          onToggleExpanded: vi.fn(),
+          onOpenCommit: vi.fn(),
+          repositories: {
+            value: "/repo/mobile",
+            onChange,
+            options: [
+              { value: "/repo", label: "api" },
+              { value: "/repo/mobile", label: "mobile" },
+            ],
+          },
+        }),
+      ),
+    );
+    const heading = container.querySelector("h3")!;
+    const picker = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Repository: mobile"]',
+    );
+    expect(picker).not.toBeNull();
+    expect(picker!.textContent).toContain("mobile");
+    expect(heading.parentElement!.contains(picker)).toBe(true);
+    expect(heading.querySelector("button button")).toBeNull();
+  }
+});
+
 it("retains history search and branch scope on remount without leaking them to another repository", async () => {
   await graph();
   await click("Show all branches");

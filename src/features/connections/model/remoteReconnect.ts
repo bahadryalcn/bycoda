@@ -20,13 +20,15 @@ import {
   AUTO_RETRY_STABLE_MS,
   autoRetryDelay,
   blocksSending,
+  connectionOutcome,
+  localizeConnectionReason,
   needsSignIn,
-  sanitizeConnectionError,
   shouldAutoRetry,
   shouldRetryBlocked,
   type ReconnectOutcome,
 } from "./remoteConnection";
-import { remoteErrorText } from "./remoteFailure";
+import { t } from "../../../shared/i18n";
+import { presentRemoteError } from "./remoteFailure";
 import { watchTunnelExits } from "./remoteTunnelEvents";
 import {
   beginConnectionAttempt,
@@ -41,6 +43,7 @@ import {
 } from "./remoteLifecycle";
 import {
   listRemoteConnections,
+  forgetRemoteConnection,
   notifyRemoteRecovered,
   readRemoteConnection,
   recordRemoteConnection,
@@ -93,6 +96,14 @@ function setRequested(environmentId: string, value: boolean) {
   reconnectListeners.forEach((listener) => listener());
 }
 
+/** Why this attempt failed, in the user's language: its own reason, never an older one. */
+function reconnectFailureReason(reason: unknown): string {
+  const outcome = connectionOutcome(reason);
+  if (outcome.status && outcome.status !== "connected" && outcome.error)
+    return localizeConnectionReason(outcome.error);
+  return presentRemoteError(reason, { explicit: true });
+}
+
 /** One quiet attempt: never prompts. `fresh` skips the desktop's short memory
  * of a just-failed attempt. Attempts for one machine share a single request. */
 function attempt(environmentId: string, fresh: boolean): Promise<ReconnectOutcome> {
@@ -101,17 +112,25 @@ function attempt(environmentId: string, fresh: boolean): Promise<ReconnectOutcom
   const token = beginConnectionAttempt(environmentId);
   lastAttemptAt.set(environmentId, monotonicNow());
   setReconnecting(environmentId, true);
+  let unregistered = false;
   const run = (async (): Promise<ReconnectOutcome> => {
-    const machine = await remoteMachineFor(environmentId).catch(() => undefined);
+    let lookupFailed = false;
+    const machine = await remoteMachineFor(environmentId).catch(() => {
+      // A failed lookup is not proof the machine is gone; keep its health for the next attempt.
+      lookupFailed = true;
+      return undefined;
+    });
     if (!isCurrentConnectionAttempt(environmentId, token))
       return { ok: false, error: SUPERSEDED_CONNECTION };
-    if (!machine) {
-      recordRemoteConnection(environmentId, "Machine is no longer connected");
+    if (!machine && lookupFailed) {
       setConnectionPhase(environmentId, "failed");
-      return {
-        ok: false,
-        error: "This machine is not connected on this computer.",
-      };
+      return { ok: false, error: t("Couldn’t read this machine’s connection settings.") };
+    }
+    if (!machine) {
+      // An unregistered machine can never answer: no outage to retry or Reconnect from.
+      unregistered = true;
+      setConnectionPhase(environmentId, "failed");
+      return { ok: false, error: t("This machine is not connected on this computer.") };
     }
     try {
       const host = await remoteRequest<{ capabilities?: unknown }>(
@@ -136,17 +155,13 @@ function attempt(environmentId: string, fresh: boolean): Promise<ReconnectOutcom
       recordFeatureHealth(environmentId, "host", false);
       const status = readRemoteConnection(environmentId).status;
       setConnectionPhase(environmentId, needsSignIn(status) ? "waiting" : "failed", status);
-      return {
-        ok: false,
-        error:
-          readRemoteConnection(environmentId).error ??
-          (sanitizeConnectionError(remoteErrorText(reason)) || "The machine did not answer."),
-      };
+      return { ok: false, error: reconnectFailureReason(reason) };
     }
   })().finally(() => {
     if (attempts.get(environmentId)?.promise !== run) return;
     attempts.delete(environmentId);
     setReconnecting(environmentId, false);
+    if (unregistered) forgetRemoteConnection(environmentId);
     if (stopRecovery) schedule();
   });
   attempts.set(environmentId, { promise: run, token });

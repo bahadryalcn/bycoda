@@ -25,7 +25,7 @@ fn hold(store: &SessionStore, scope: &str, key: &str, phase: &str, process: Opti
 fn release(store: &SessionStore, scope: &str, key: &str) -> bool {
     let db = store.conn.lock().unwrap();
     let own = store.native_instance_id().to_string();
-    release_if_orphaned(&db, &db, &own, "new-page", scope, key).unwrap()
+    release_if_orphaned(&db, &db, &own, "new-page", scope, key, |_| false).unwrap()
 }
 
 fn held(store: &SessionStore, scope: &str, key: &str) -> bool {
@@ -75,10 +75,35 @@ fn quit_process_session_claims_release_only_after_its_lease_ends() {
 }
 
 #[test]
-fn own_process_claims_are_never_released() {
+fn own_process_claims_stay_held_while_their_page_is_not_retired() {
     let store = SessionStore::open(temp_store_path()).unwrap();
     let own = store.native_instance_id().to_string();
     hold(&store, BINDING_SCOPE, "mine", "submitted", Some(&own));
     assert!(!release(&store, BINDING_SCOPE, "mine"));
     assert!(held(&store, BINDING_SCOPE, "mine"));
+}
+
+#[test]
+fn reloaded_page_claims_release_once_its_retirement_is_confirmed() {
+    let store = SessionStore::open(temp_store_path()).unwrap();
+    let own = store.native_instance_id().to_string();
+    hold(&store, BINDING_SCOPE, "reloaded", "submitted", Some(&own));
+    hold(&store, SEND_SCOPE, "send", "submitted", Some(&own));
+    let retired = |page: &str| page == "old-page";
+    let db = store.conn.lock().unwrap();
+    assert!(release_if_orphaned(
+        &db,
+        &db,
+        &own,
+        "new-page",
+        BINDING_SCOPE,
+        "reloaded",
+        retired
+    )
+    .unwrap());
+    // A submitted Host send may have been accepted; receipts reconcile it.
+    assert!(!release_if_orphaned(&db, &db, &own, "new-page", SEND_SCOPE, "send", retired).unwrap());
+    drop(db);
+    assert!(!held(&store, BINDING_SCOPE, "reloaded"));
+    assert!(held(&store, SEND_SCOPE, "send"));
 }

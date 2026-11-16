@@ -70,3 +70,27 @@ test("revisiting a parked transcript returns to the latest turn", async ({ page 
   await page.waitForTimeout(300);
   expect(await distanceFromBottom()).toBeLessThanOrEqual(1);
 });
+
+test("revisiting a parked transcript keeps the reader's place in history", async ({ page }) => {
+  await page.goto("/tests/browser/chat/transcript.html");
+  const scroller = page.locator(".agent-transcript");
+  const distanceFromBottom = () =>
+    scroller.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop);
+  await expect(scroller.locator(".transcript-turn")).toHaveCount(20, { timeout: 30_000 });
+  await expect.poll(distanceFromBottom).toBeLessThanOrEqual(1);
+  await scroller.hover();
+  for (let tick = 0; tick < 12; tick++) await page.mouse.wheel(0, -160);
+  await expect.poll(distanceFromBottom).toBeGreaterThan(1000);
+  await page.waitForTimeout(300);
+  const reading = await distanceFromBottom();
+
+  await page.evaluate(() => (window as unknown as { parkTranscript: () => void }).parkTranscript());
+  await expect(scroller).toHaveCount(0);
+  await page.evaluate(() => (window as unknown as { showTranscript: () => void }).showTranscript());
+
+  // Revealing replays the follow effects; none of them may treat it as a new prompt.
+  await expect(scroller).toHaveCount(1);
+  expect(Math.abs((await distanceFromBottom()) - reading)).toBeLessThanOrEqual(2);
+  await page.waitForTimeout(500);
+  expect(Math.abs((await distanceFromBottom()) - reading)).toBeLessThanOrEqual(2);
+});

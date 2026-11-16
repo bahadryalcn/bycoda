@@ -32,13 +32,13 @@ export type ModelOrderSettingsProps = {
   supported: boolean;
 };
 
-/** Settings > Work > Model order, bound to one capable Host. */
+/** Settings > Models > Background work > All models, bound to one capable Host. */
 export function ModelOrderSettings({ machineId, supported }: ModelOrderSettingsProps) {
   const t = useT();
   if (!supported || !machineId)
     return (
       <SettingsFeedback state="error">
-        {t("Model order is unavailable on this Host.")}
+        {t("Model routing is not available on this Host.")}
       </SettingsFeedback>
     );
   return <OrderSettingsLoader key={machineId} machineId={machineId} />;
@@ -91,6 +91,13 @@ function OrderSettingsForm({
   const status = useModelRoutingStatus(machineId, true);
   const { draft, change } = editor;
   const { entries } = draft.routing;
+  // The first saved model the Host would not skip is where new work starts.
+  const nextEntryId = editor.dirty
+    ? undefined
+    : entries.find((entry) => {
+        const entryStatus = status.entries.find((candidate) => candidate.entryId === entry.id);
+        return entryStatus && !entryStatus.skip;
+      })?.id;
   const sortable = useAnimatedReorder(
     entries.map((entry) => entry.id),
     (ids) =>
@@ -138,10 +145,10 @@ function OrderSettingsForm({
           />
         ) : (
           <Group
-            title={t("Model order")}
+            title={t("All models")}
             layout="full"
             info={t(
-              "New work starts on the first model with quota left. Running work keeps its model.",
+              "Tried from the top: new work starts on the first model with quota left. Running work keeps its model.",
             )}
             action={
               <div className="flex items-center gap-2">
@@ -152,7 +159,7 @@ function OrderSettingsForm({
                   disabled={entries.length >= MODEL_ROUTING_MAX_ENTRIES}
                   disabledReason={
                     entries.length >= MODEL_ROUTING_MAX_ENTRIES
-                      ? t("The model order is full.")
+                      ? t("The model list is full.")
                       : undefined
                   }
                   onClick={addEntry}
@@ -177,6 +184,7 @@ function OrderSettingsForm({
                 entry={entry}
                 index={index}
                 count={entries.length}
+                next={entry.id === nextEntryId}
                 percent={draft.percentages[entry.id] ?? "0"}
                 status={status.entries.find((candidate) => candidate.entryId === entry.id)}
                 statusLoading={status.loading}

@@ -180,6 +180,30 @@ it("detects background changes without overwriting dirty draft", async () => {
   );
 });
 
+it("carries a dirty draft onto a save that changed only job choices", async () => {
+  await mount();
+  await act(() => editor.change({ ...editor.draft, maxRunMinutes: "30" }));
+  const roles = { "task.worker": { kind: "order" as const } };
+  hostState = { ...hostState, version: 5, roles };
+  await act(async () => {
+    client.setQueryData([HOST_MODEL_ROUTING, "host"], hostState);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  });
+  expect(editor.conflict).toBe(false);
+  expect(editor.draft.maxRunMinutes).toBe("30");
+  await act(() => editor.save());
+  expect(remoteRequest).toHaveBeenCalledWith(
+    "host",
+    "modelRouting.save",
+    expect.objectContaining({
+      expectedVersion: 5,
+      draft: expect.objectContaining({ defaultMaxRunMinutes: 30, roles }),
+    }),
+    false,
+    true,
+  );
+});
+
 it("adopts a background update when clean and clears prior success", async () => {
   await mount();
   await act(async () => {
@@ -205,7 +229,7 @@ it("reports partial acknowledgement and retries only unsaved limits", async () =
   );
   vi.mocked(saveMachineLimits).mockRejectedValueOnce(new Error("Host disconnected"));
   await act(() => editor.save());
-  expect(editor.error).toContain("Model order saved; work limits were not saved.");
+  expect(editor.error).toContain("Models saved; work limits were not saved.");
   expect(editor.dirty).toBe(true);
   expect(editor.draft.limits.maxRunningTasks).toBe("3");
   expect(editor.conflict).toBe(false);

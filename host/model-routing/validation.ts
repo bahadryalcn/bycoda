@@ -8,7 +8,7 @@ import {
   modelRoutingPoolCycle,
   modelRoutingProjectKey,
 } from "../../src/shared/model/modelRoutingPools";
-import type { HostProviderAccountCatalog } from "../providers/provider-accounts";
+import { isProfileProvider, type HostProviderAccountCatalog } from "../providers/provider-accounts";
 
 export type ModelRoutingCatalog = { models: Partial<Record<string, { id: string }[]>> };
 export function validateModelRoutingDraft(
@@ -55,7 +55,7 @@ export function validateModelRoutingDraft(
   for (const target of targets) {
     if (MODEL_ROUTING_DELEGATION_KEYS.some((key) => key in target.modelSettings))
       throw new Error("Delegation keys belong in model routing delegation settings.");
-    if (target.harness === "codex" || target.harness === "claude") {
+    if (isProfileProvider(target.harness)) {
       const account = target.providerAccountId ?? "default";
       if (account !== "default" && !accounts[target.harness]?.some((entry) => entry.id === account))
         throw new Error(`Unknown ${target.harness} account "${account}".`);

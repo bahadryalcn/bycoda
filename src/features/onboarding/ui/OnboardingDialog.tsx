@@ -253,7 +253,7 @@ export default function OnboardingDialog({
         ) : null}
       </div>
       {connections ? (
-        <Modal title={t("Machines")} size="lg" onClose={() => setConnections(false)}>
+        <Modal title={t("Connections")} size="lg" onClose={() => setConnections(false)}>
           <Suspense fallback={<SurfaceLoading />}>
             <ConnectionsSettings />
           </Suspense>

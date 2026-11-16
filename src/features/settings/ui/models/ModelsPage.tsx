@@ -1,8 +1,6 @@
-import { useContext, useState, useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { t, useLocale } from "../../../../shared/i18n";
-import { Tab, TabList, TabPanel, Tabs } from "../../../../shared/ui/Tabs";
-import { TabDirtyDot } from "../../../../shared/ui/TabLabel";
 import { HARNESSES, HARNESS_TITLE } from "../../../sessions";
 import type { HarnessId } from "../../../sessions/public/session";
 import type { RecentProject } from "../../../projects/public/recents";
@@ -46,13 +44,11 @@ import {
 } from "../ProviderDefaultsSaveBar";
 import { hasProjectOverrides } from "../providerDefaultsScope";
 import {
-  RevealedSetting,
   useSettingsPageReset,
   SettingsFeedback,
   settingDomId,
 } from "../../../../shared/ui/settings";
 import { ModelOrderSettings, ModelRolesSettings } from "../../../model-routing/public/settings";
-import { MODELS_TABS, modelsTabForSetting, type ModelsTab } from "./modelsSettingsLink";
 import {
   useRetainedTransaction,
   retainedTransactionValue,
@@ -64,7 +60,6 @@ function providerAccountsSnapshot() {
 }
 
 const retained = {
-  tab: "order" as ModelsTab,
   draft: EMPTY_DRAFT,
   target: "global",
   provider: undefined as HarnessId | undefined,
@@ -75,7 +70,6 @@ function updateRetainedModelsPage(next: Partial<typeof retained>) {
 }
 export function resetRetainedModelsPage() {
   Object.assign(retained, {
-    tab: "order",
     draft: EMPTY_DRAFT,
     target: "global",
     provider: undefined,
@@ -83,15 +77,22 @@ export function resetRetainedModelsPage() {
   });
 }
 
+/** The Models page views this component owns; the page's tab strip picks one. */
+export type ModelsView = "work" | "chat" | "delegation";
+
 export function ModelsPage({
   cwd,
   recents,
-  work = false,
+  view,
+  onOpenOrder,
 }: {
   cwd?: string;
   recents?: RecentProject[];
-  work?: boolean;
+  view: ModelsView;
+  /** Scrolls to the model list when an assignment needs models first. */
+  onOpenOrder?: () => void;
 }) {
+  const tab = view;
   useLocale();
   useSyncExternalStore(subscribeModels, getModelSnapshot, getModelSnapshot);
   useSyncExternalStore(
@@ -127,25 +128,6 @@ export function ModelsPage({
     queryFn: loadLocalModelRoutingHost,
   });
   const delegation = useDelegationProfile(host.data?.machineId, host.data?.supported === true);
-  const revealed = useContext(RevealedSetting);
-  const [handled, setHandled] = useState<string | null | undefined>(undefined);
-  const [tab, setTabState] = useState<ModelsTab>(
-    (work
-      ? modelsTabForSetting(revealed) === "chat"
-        ? undefined
-        : modelsTabForSetting(revealed)
-      : "chat") ?? (retained.tab === "chat" ? "order" : retained.tab),
-  );
-  const setTab = (next: ModelsTab) => {
-    updateRetainedModelsPage({ tab: next });
-    setTabState(next);
-  };
-  // A new search/deep link selects once; manual tab changes remain stable.
-  if (handled !== revealed) {
-    setHandled(revealed);
-    const next = modelsTabForSetting(revealed);
-    if (next && (work ? next !== "chat" : next === "chat")) setTab(next);
-  }
   const [targetChoice, setTargetChoice] = useState(retained.target);
   const [accountScope, setAccountScope] = useState(retained.accountScope);
   const [activeProvider, setProvider] = useState<HarnessId>(
@@ -241,137 +223,108 @@ export function ModelsPage({
       : null,
   );
 
-  const labels = {
-    order: t("Model order"),
-    roles: t("Assignments"),
-    chat: t("Chat"),
-    delegation: t("Subagents"),
-  };
   return (
     <div className="settings-topics grid min-w-0 gap-4">
-      <Tabs value={tab} onValueChange={setTab} panels="shared" size="md">
-        {/* Providers embeds only conversation defaults; Background work owns the other tabs. */}
-        <TabList label={t(work ? "Background work" : "Chat models")} hidden={!work}>
-          {MODELS_TABS.filter((id) => (work ? id !== "chat" : id === "chat")).map((id) => (
-            <Tab
-              key={id}
-              value={id}
-              accessory={
-                (id === "chat" || id === "delegation") && pending > 0 ? <TabDirtyDot /> : undefined
-              }
-            >
-              {labels[id]}
-            </Tab>
-          ))}
-        </TabList>
-        <TabPanel tabIndex={-1}>
-          {host.error || delegation.error ? (
-            <SettingsFeedback
-              state="error"
-              action={
-                host.error
-                  ? {
-                      label: t("Retry"),
-                      onClick: () => {
-                        void host.refetch();
-                      },
-                    }
-                  : undefined
-              }
-            >
-              {String(host.error ?? delegation.error)}
-            </SettingsFeedback>
-          ) : null}
-          <div
-            id={settingDomId("models-order")}
-            data-setting-id="models-order"
-            hidden={tab !== "order"}
-          >
-            {host.isPending ? (
-              <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>
-            ) : (
-              <ModelOrderSettings
-                machineId={host.data?.machineId}
-                supported={host.data?.supported === true}
-              />
-            )}
-          </div>
-          <div
-            id={settingDomId("models-roles")}
-            data-setting-id="models-roles"
-            hidden={tab !== "roles"}
-          >
-            {host.isPending ? (
-              <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>
-            ) : (
-              <ModelRolesSettings
-                machineId={host.data?.machineId}
-                supported={host.data?.supported === true}
-                onOpenOrder={() => setTab("order")}
-              />
-            )}
-          </div>
-          {!host.data && host.isPending ? (
-            <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>
-          ) : null}
-          {host.data ? (
-            <div
-              id={settingDomId(tab === "delegation" ? "models-delegation" : "models-chat")}
-              data-setting-id={tab === "delegation" ? "models-delegation" : "models-chat"}
-              hidden={tab !== "chat" && tab !== "delegation"}
-            >
-              <ProviderDefaultsPanel
-                harness={activeProvider}
-                accountScope={accountScope}
-                onAccountScopeChange={(harness, accountId) => {
-                  const next = { ...accountScope, [harness]: accountId };
-                  updateRetainedModelsPage({ accountScope: next });
-                  setAccountScope(next);
-                }}
-                target={target}
-                draft={draft}
-                onDraftChange={setDraft}
-                section={tab === "delegation" ? "delegation" : "chat"}
-                providerControl={{
-                  options: orderedHarnesses.map((id) => ({ value: id, label: HARNESS_TITLE[id] })),
-                  onChange: (id) => {
-                    updateRetainedModelsPage({ provider: id });
-                    setProvider(id);
+      {host.error || delegation.error ? (
+        <SettingsFeedback
+          state="error"
+          action={
+            host.error
+              ? {
+                  label: t("Retry"),
+                  onClick: () => {
+                    void host.refetch();
                   },
-                }}
-              />
-              {tab === "chat" || tab === "delegation" ? (
-                <ProviderDefaultsSaveBar
-                  selection={targetChoice}
-                  draft={draft}
-                  activeProvider={activeProvider ?? undefined}
-                  providers={orderedHarnesses.filter(
-                    (harness) => isHarnessAvailable(harness) && !hiddenGlobally.includes(harness),
-                  )}
-                  onDraftChange={setDraft}
-                  target={target}
-                  options={targets.options.map((option) =>
-                    tab === "delegation" && delegation.supported && option.value !== "global"
-                      ? { ...option, label: `${option.label} (${t("Chats only")})` }
-                      : option,
-                  )}
-                  onTargetChange={(value) => {
-                    updateRetainedModelsPage({ target: value });
-                    setTargetChoice(value);
-                  }}
-                  pending={pending}
-                  saveState={saveState}
-                  saving={saving}
-                  onSave={() => {
-                    void saveDraft();
-                  }}
-                  onDiscard={() => setDraft(EMPTY_DRAFT)}
-                />
-              ) : null}
-            </div>
+                }
+              : undefined
+          }
+        >
+          {String(host.error ?? delegation.error)}
+        </SettingsFeedback>
+      ) : null}
+      {/* Background work reads top-down: who uses what, then the models they draw from. */}
+      <div id={settingDomId("models-roles")} data-setting-id="models-roles" hidden={tab !== "work"}>
+        {host.isPending ? (
+          <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>
+        ) : (
+          <ModelRolesSettings
+            machineId={host.data?.machineId}
+            supported={host.data?.supported === true}
+            onOpenOrder={onOpenOrder}
+          />
+        )}
+      </div>
+      <div id={settingDomId("models-order")} data-setting-id="models-order" hidden={tab !== "work"}>
+        {host.isPending ? null : (
+          <ModelOrderSettings
+            machineId={host.data?.machineId}
+            supported={host.data?.supported === true}
+          />
+        )}
+      </div>
+      {!host.data && host.isPending && tab !== "work" ? (
+        <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>
+      ) : null}
+      {host.data ? (
+        <div
+          id={settingDomId(tab === "delegation" ? "models-delegation" : "models-chat")}
+          data-setting-id={tab === "delegation" ? "models-delegation" : "models-chat"}
+          hidden={tab !== "chat" && tab !== "delegation"}
+        >
+          <ProviderDefaultsPanel
+            harness={activeProvider}
+            accountScope={accountScope}
+            onAccountScopeChange={(harness, accountId) => {
+              const next = { ...accountScope, [harness]: accountId };
+              updateRetainedModelsPage({ accountScope: next });
+              setAccountScope(next);
+            }}
+            target={target}
+            draft={draft}
+            onDraftChange={setDraft}
+            // Subagent rows live only on the Subagents tab.
+            section={tab === "delegation" ? "delegation" : "chat"}
+            providerControl={{
+              options: orderedHarnesses.map((id) => ({ value: id, label: HARNESS_TITLE[id] })),
+              onChange: (id) => {
+                updateRetainedModelsPage({ provider: id });
+                setProvider(id);
+              },
+            }}
+          />
+          {tab === "chat" || tab === "delegation" ? (
+            <ProviderDefaultsSaveBar
+              selection={targetChoice}
+              draft={draft}
+              activeProvider={activeProvider ?? undefined}
+              providers={orderedHarnesses.filter(
+                (harness) => isHarnessAvailable(harness) && !hiddenGlobally.includes(harness),
+              )}
+              onDraftChange={setDraft}
+              target={target}
+              options={targets.options.map((option) =>
+                delegation.supported && option.value !== "global"
+                  ? {
+                      ...option,
+                      label: `${option.label} (${t("Chats only")})`,
+                    }
+                  : option,
+              )}
+              onTargetChange={(value) => {
+                updateRetainedModelsPage({ target: value });
+                setTargetChoice(value);
+              }}
+              pending={pending}
+              saveState={saveState}
+              saving={saving}
+              onSave={() => {
+                void saveDraft();
+              }}
+              onDiscard={() => setDraft(EMPTY_DRAFT)}
+            />
           ) : null}
-        </TabPanel>
-      </Tabs>
+        </div>
+      ) : null}
     </div>
   );
 }

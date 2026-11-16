@@ -1,5 +1,5 @@
 import type { ModelRoutingScope } from "../../src/shared/model/host-contracts/model-routing";
-import type { HostProviderAccountCatalog } from "../providers/provider-accounts";
+import { isProfileProvider, type HostProviderAccountCatalog } from "../providers/provider-accounts";
 
 const WORK_WORDS = new Set(["work", "iş", "is", "şirket", "company", "corp", "office", "job"]);
 const PERSONAL_WORDS = new Set(["personal", "kişisel", "private", "home", "kendi"]);
@@ -24,7 +24,7 @@ export function providerAccountKind(
   harness: string,
   providerAccountId: string | undefined,
 ): ModelRoutingScope | undefined {
-  if (harness !== "claude" && harness !== "codex") return undefined;
+  if (!isProfileProvider(harness)) return undefined;
   const account = accounts[harness]?.find((item) => item.id === providerAccountId);
   return account && (account.kind ?? account.derivedKind ?? inferAccountKind(account.label));
 }

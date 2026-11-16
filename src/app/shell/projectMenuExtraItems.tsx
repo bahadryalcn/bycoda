@@ -29,13 +29,10 @@ export const REVEAL_LABEL = IS_MAC
     ? "Reveal in File Explorer"
     : "Open Containing Folder";
 
-/** What the Machine item shows for a remote project: the machine, its connection and a status dot. */
+/** What the Machine item shows for a remote project: the machine and its connection, as plain text. */
 type MachineMenuStatus = {
   description: string;
-  badge: NonNullable<TabGroupMenuExtraItem["badge"]>;
 };
-
-const CONNECTION_BADGE = { connected: "success", connecting: "warning", down: "danger" } as const;
 
 export function machineMenuStatus(
   machineName: string | undefined,
@@ -51,7 +48,6 @@ export function machineMenuStatus(
           : t("Not connected");
   return {
     description: [machineName, status].filter(Boolean).join(" · "),
-    badge: { tone: CONNECTION_BADGE[indicator.tone], label: status },
   };
 }
 
@@ -137,7 +133,6 @@ export function projectMenuExtraItems(
             },
             description: machine.description,
             icon: Internet,
-            badge: machine.badge,
             submenu: [
               {
                 kind: "item" as const,

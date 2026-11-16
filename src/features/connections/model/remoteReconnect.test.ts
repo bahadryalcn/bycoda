@@ -1,9 +1,10 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { request, requestReconnect } = vi.hoisted(() => ({
+const { request, requestReconnect, registry } = vi.hoisted(() => ({
   request: vi.fn(),
   requestReconnect: vi.fn(),
+  registry: { missing: false },
 }));
 const machine = {
   id: "m1",
@@ -15,7 +16,7 @@ const machine = {
 vi.mock("./connections", () => ({
   knownRemoteMachine: () => machine,
   recordRemoteCapabilities: vi.fn(),
-  remoteMachineFor: async () => machine,
+  remoteMachineFor: async () => (registry.missing ? undefined : machine),
   remoteRequest: request,
   requestMachineReconnect: requestReconnect,
 }));
@@ -52,6 +53,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(0);
   resetRemoteHealth();
+  registry.missing = false;
   request.mockReset();
   requestReconnect.mockReset();
   stop = startRemoteAutoRecovery();
@@ -406,5 +408,28 @@ describe("reconnectRemoteMachine", () => {
     request.mockResolvedValue({});
     await Promise.all([reconnectRemoteMachine("env"), reconnectRemoteMachine("env")]);
     expect(request).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("reconnect failures", () => {
+  it("explains a timed-out attempt in words instead of raw RPC text or an older reason", async () => {
+    recordRemoteConnection("env", down);
+    request.mockRejectedValue("Host rejected request: [RPC_TIMEOUT] request timed out");
+    const result = await reconnectRemoteMachine("env");
+    expect(result).toEqual({
+      ok: false,
+      error: "This computer is busy right now. Try again in a moment.",
+    });
+  });
+
+  it("does not turn an unregistered machine into an outage that retries forever", async () => {
+    registry.missing = true;
+    recordRemoteConnection("env", down);
+    const result = await reconnectRemoteMachine("env");
+    expect(result).toEqual({ ok: false, error: "This machine is not connected on this computer." });
+    expect(readRemoteConnection("env").status).toBe("connecting");
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    expect(request).not.toHaveBeenCalled();
+    expect(isReconnecting("env")).toBe(false);
   });
 });

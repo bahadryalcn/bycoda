@@ -122,6 +122,20 @@ const RANDOM_NAMES = [
   "Dune",
   "Frost",
   "Cinder",
+  "Harbor",
+  "Moss",
+  "Quartz",
+  "Saffron",
+  "Indigo",
+  "Lagoon",
+  "Ash",
+  "Orchid",
+  "Basalt",
+  "Aurora",
+  "Juniper",
+  "Copper",
+  "Mist",
+  "Sable",
 ];
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
@@ -234,10 +248,14 @@ export function parseThemeSuggestions(input: unknown): ThemeSuggestion[] {
  */
 export function randomThemeSuggestions(random: () => number = Math.random): ThemeSuggestion[] {
   const base = Math.floor(random() * 360);
+  const names = [...RANDOM_NAMES];
   return Array.from({ length: THEME_SUGGESTION_COUNT }, (_, index) => {
     const hue = (base + index * (360 / THEME_SUGGESTION_COUNT)) % 360;
+    // Drawn without replacement, so one roll never shows the same name twice.
+    const [name] = names.splice(Math.floor(random() * names.length), 1);
     return {
-      name: RANDOM_NAMES[Math.floor(random() * RANDOM_NAMES.length)] ?? RANDOM_NAMES[0]!,
+      name: name ?? RANDOM_NAMES[0]!,
+      canvas: random() < 0.5 ? "pure" : "tinted",
       hue: Math.round(hue),
       saturation: 10 + Math.floor(random() * 31),
       accent: ensureAccentContrast(accentForHue(hue)),

@@ -46,6 +46,11 @@ beforeEach(async () => {
   document.body.append(container);
   root = createRoot(container);
   await act(async () => root.render(createElement(Page)));
+  // The notice lives on the Background tab; hidden Appearance tabs defer their updates.
+  const tab = [...container.querySelectorAll<HTMLElement>('[role="tab"]')].find(
+    (item) => item.textContent === "Background",
+  );
+  await act(async () => tab!.click());
 });
 
 afterEach(async () => {

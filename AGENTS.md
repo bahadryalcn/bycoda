@@ -93,10 +93,8 @@ to satisfy a number.
 Line targets are a hint, not a gate: 600 lines for `.tsx`, 800 for `.ts`, 1,500 for
 Rust. Past a target, look for a separable responsibility and split if there is one;
 otherwise keep going. Never refuse, shrink or delay requested work because of a line
-count, and do not count lines while writing. The only hard limit is twice the target
-(1,200 / 1,600 / 3,000): no new file may cross it. A file already over it takes fixes
-and small needed additions in place (up to 50 lines over its baseline); a new
-responsibility goes into the owning folder instead.
+count, and do not count lines while writing. There is no hard line limit: when the code
+belongs in a long file, write it there.
 
 # Code invariants
 
@@ -148,9 +146,21 @@ behavior changes. After editing `.agents/skills/`, run
   logs. Give mechanical work the smallest offered model; keep design, scope, risky
   edits, review and final verification on the capable one. In crews and tasks give
   specialists a small model and reviewers a strong one. One writer per file.
+- Never write Python, Node or shell scripts to edit, search or inspect files (on Windows
+  they turn LF into CRLF and apply edits partially without an error). When `bykit` is
+  installed, use it where output is large or edits are bulk: `bykit read` for big files,
+  `bykit diff` for long diffs, `bykit run -- <cmd>` for long command output, `bykit find`
+  for searches that may return many results, `bykit edit`/`replace` for multi-place
+  edits, `bykit json` for JSON. For a single definition or a one-place edit, your own
+  tools are enough. Output is paged: narrow by path first, then `--page N`; `--all` only
+  when the task needs every result. Never format or fix line endings by hand or mention
+  them in reports: `pnpm check:changed` formats changed files in place.
 - While implementing run only `tsc-rs --fast` on the changed project and
   `pnpm check:changed`. Not full `vitest`, `check:web`, browser suites or `cargo test`
   after each edit.
+- Full gates are shared per checkout: `check:web` and `check:preflight` queue behind
+  one lock and reuse a run on the same working tree. A reused result counts; never
+  bypass it with the `:run` scripts, and wait in the queue instead of starting another.
 - A check that failed twice for the same reason is a blocker to report, not a loop.
   If a task cannot finish within a working session, stop, leave a clean tree, write the
   handoff under `temp/local/<id>/` and report what remains.

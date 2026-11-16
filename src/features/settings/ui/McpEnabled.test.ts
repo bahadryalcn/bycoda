@@ -8,6 +8,22 @@ import type { McpConnection } from "../model/mcp";
 import { McpSettings } from "./McpSettings";
 
 vi.mock("./ExternalMcpAccess", () => ({ ExternalMcpAccess: () => null }));
+// Host hub state has its own coverage in useMcpHub.test.ts; these tests exercise provider rows only.
+vi.mock("../hooks/useMcpHub", () => ({
+  useMcpHub: () => ({
+    pending: false,
+    error: "",
+    saving: false,
+    waiting: "",
+    busy: "",
+    dismissError: () => {},
+    refresh: async () => {},
+    setMode: async () => {},
+    setDirect: async () => {},
+    signIn: async () => {},
+    signOut: async () => {},
+  }),
+}));
 vi.mock("../../sessions", () => import("../../sessions/ui/HarnessIcon"));
 vi.mock("../../projects", () => import("../../projects/ui/SearchableProjectPicker"));
 const invoke = vi.fn();
@@ -68,6 +84,7 @@ beforeEach(async () => {
   invoke.mockImplementation(async (command: string, args: Record<string, unknown>) => {
     if (command === "mcp_discover") return servers.map((server) => ({ ...server }));
     if (command === "claude_mcp_list") return "";
+    if (command === "mcp_server_config_read") return { config: "{}", revision: "r1" };
     if (command === "mcp_set_enabled") {
       const server = servers.find(
         (entry) =>
@@ -90,18 +107,26 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
+/** Renders the list and opens the detail sheet of the one grouped "shared" server. */
 async function render() {
   await act(async () => root.render(createElement(McpSettings, { cwd: "/project" })));
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label="Open shared"]')!.click(),
+  );
 }
 
-function menus() {
-  return [
-    ...container.querySelectorAll<HTMLButtonElement>('button[aria-label="Actions for shared"]'),
-  ];
+/** Rows of the sheet that can act while an operation is pending. */
+function controls() {
+  return [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button[role="switch"]')];
 }
 
+/** The Enabled switches, one per provider configuration, in discovery order. */
 function toggles() {
-  return [...container.querySelectorAll<HTMLButtonElement>('button[role="switch"]')];
+  return [
+    ...document.querySelectorAll<HTMLButtonElement>(
+      '[role="dialog"] button[role="switch"][aria-label^="Enable shared in"]',
+    ),
+  ];
 }
 
 async function pick(index: number, action: "Enable" | "Disable") {
@@ -161,7 +186,7 @@ it("locks every row while enable is pending and refreshes only after confirmed s
   await render();
   await pick(0, "Enable");
   expect(
-    [...menus(), ...toggles()].every(
+    controls().every(
       (button) => button.disabled || button.getAttribute("aria-disabled") === "true",
     ),
   ).toBe(true);
@@ -170,7 +195,7 @@ it("locks every row while enable is pending and refreshes only after confirmed s
   expect(invoke.mock.calls.filter(([command]) => command === "mcp_discover")).toHaveLength(1);
   await act(async () => finish());
   expect(invoke.mock.calls.filter(([command]) => command === "mcp_discover")).toHaveLength(2);
-  expect(menus().every((button) => !button.disabled)).toBe(true);
+  expect(toggles().every((button) => !button.disabled)).toBe(true);
 });
 
 it("preserves disabled state after a rejected write without refreshing or retrying", async () => {

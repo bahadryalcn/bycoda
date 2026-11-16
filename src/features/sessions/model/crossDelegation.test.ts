@@ -430,3 +430,46 @@ it("retains a persisted Claude alias alongside another provider and its account"
   expect(option?.label).not.toContain("Unavailable");
   expect(delegationOptionSelected(subagents, values, option!.value)).toBe(true);
 });
+
+describe("subagent max effort levels", () => {
+  const effort = (...values: string[]) => [
+    {
+      id: "reasoningEffort",
+      label: "Effort",
+      kind: "select" as const,
+      value: values[0],
+      options: values.map((value) => ({ value, label: value })),
+    },
+  ];
+  const withEffort: Record<string, AgentModel[]> = {
+    claude: [{ ...CLAUDE_OPUS, settings: effort("low", "medium", "high", "max") }],
+    codex: [{ ...CODEX_A, settings: effort("low", "medium", "high", "xhigh") }],
+  };
+  const levels = (overrides: Partial<DelegationInput> = {}) =>
+    crossDelegationSettings(
+      input({
+        harnesses: ["claude", "codex"] as DelegationInput["harnesses"],
+        source: {
+          modelsFor: (harness: string) => withEffort[harness] ?? [],
+        } as DelegationInput["source"],
+        ...overrides,
+      }),
+    )[2].options.map((option) => option.value);
+
+  it("offers only levels a candidate model supports while subagents are Automatic", () => {
+    expect(levels()).toEqual(["", "low", "medium", "high", "xhigh", "max"]);
+  });
+
+  it("follows the chosen subagent models", () => {
+    const values = { [CROSS_SUBAGENTS_KEY]: encodeSubagents([ref("claude", CLAUDE_OPUS.id)])! };
+    expect(levels({ values })).toEqual(["", "low", "medium", "high", "max"]);
+  });
+
+  it("keeps a saved ceiling the models no longer offer, and the full list without a catalog", () => {
+    const values = { crossSubagentMaxEffort: "ultra" };
+    expect(levels({ values })).toContain("ultra");
+    expect(
+      levels({ source: { modelsFor: () => [] } as unknown as DelegationInput["source"] }),
+    ).toEqual(["", "low", "medium", "high", "xhigh", "max", "ultra"]);
+  });
+});

@@ -4,7 +4,6 @@ import { PhoneAccountConnect } from "../../../features/connections/ui/PhoneAccou
 import { ContributePrompt } from "../../../features/projects/ui/ContributePrompt";
 import { HarnessUpdateNotice } from "../../../features/providers/ui/HarnessUpdateNotice";
 import { ReminderNotices } from "../../../features/sessions/ui/ReminderNotices";
-import { SyncMergedNotice } from "../../../features/sync/ui/SyncMergedNotice";
 import type { useSessionReminders } from "../../../features/notifications/hooks/useSessionReminders";
 import type { SettingsAnchor } from "../../../features/settings/ui/SettingsView";
 import type { SettingsSectionId } from "../../../features/settings/model/settings";
@@ -35,9 +34,8 @@ export function WorkspaceNotices({ sessionReminders, openSettings }: WorkspaceNo
       <FeedbackDialog />
       <PhoneAccountConnect />
       <ContributePrompt />
-      <SyncMergedNotice />
       <WindowTransferNotice />
-      <ToastRegion insets={{ "top-end": 48 }} />
+      <ToastRegion insets={{ "top-center": 48, "top-end": 48 }} />
     </>
   );
 }

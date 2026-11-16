@@ -6,6 +6,7 @@ import { pathKey } from "../../../shared/lib/paths";
 import { Button } from "../../../shared/ui/Button";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { InlineError } from "../../../shared/ui/InlineError";
+import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { TextField } from "../../../shared/ui/TextField";
@@ -82,6 +83,7 @@ export function useCrewMachineScope(cwd: string, state: CrewState) {
     staleTime: 30_000,
     retry: false,
   });
+  const projectsShownCentrally = useConnectionErrorShownCentrally(projects.error);
   const [newName, setNewName] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
@@ -206,7 +208,7 @@ export function useCrewMachineScope(cwd: string, state: CrewState) {
             </form>
           </Modal>
         ) : null}
-        {projects.error ? (
+        {projects.error && !projectsShownCentrally ? (
           <InlineMessage tone="warning">
             {projects.error instanceof Error ? projects.error.message : String(projects.error)}
           </InlineMessage>

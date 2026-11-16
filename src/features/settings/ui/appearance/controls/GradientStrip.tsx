@@ -199,7 +199,7 @@ export function GradientStrip({
       <BackgroundGenerator
         onGenerated={(suggestion) => update(backgroundGradientChange(suggestion))}
       />
-      <Row label={t("Strength")} description={t("How strongly the color shows through.")}>
+      <Row label={t("Strength")} info={t("How strongly the color shows through.")}>
         <Slider
           label={t("Background strength")}
           value={value.strength}

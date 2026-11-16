@@ -4,7 +4,9 @@ import { Text } from "../../../shared/ui/Text";
 import { NoteSaveStatus } from "./NoteSaveStatus";
 import { Alert } from "../../../shared/ui/Alert";
 import { EmptyState } from "../../../shared/ui/EmptyState";
-import { NoteBodyField } from "./NoteBodyField";
+import { SessionNoteDocument, type SessionNoteSelection } from "./SessionNoteDocument";
+import { NoteTagsEditor, sameTags } from "./NoteTagsEditor";
+import { NoteWordCount } from "./NoteWordCount";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Sash } from "../../../shared/ui/Sash";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
@@ -20,6 +22,7 @@ import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { hasActiveOverlay } from "../../../shared/ui/overlay";
 import { requestOpenNoteLibrary } from "../noteNavigation";
 import "./notes.css";
+import "./sessionNotes.css";
 import { ButtonGroup } from "../../../shared/ui/ButtonGroup";
 import { SurfaceSelection } from "../../sessions/ui/SurfaceSelection";
 import { errorText } from "../../../shared/lib/errors";
@@ -80,7 +83,6 @@ import {
   useNoteExternal,
   useNoteInputState,
   useNotePreparing,
-  useNoteTextInput,
   noteInputBudgetHandlers,
 } from "../useNoteInput";
 import type { NativeInputPublication } from "../../../shared/lib/native-input-observer";
@@ -106,6 +108,7 @@ const pendingSaves = new Map<string, Promise<void>>();
 type NoteDraft = {
   title: string;
   body: string;
+  tags?: string[];
   base: Note;
   owner?: NoteInputOwner;
   mounts?: number;
@@ -205,6 +208,10 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
     return () => window.removeEventListener(NOTES_CHANGED_EVENT, onChanged);
   }, [refresh]);
 
+  const availableTags = useMemo(
+    () => [...new Set(notes.flatMap((note) => note.tags))].sort(),
+    [notes],
+  );
   const offered = useMemo(() => panelNotes(notes, sessionId, project), [notes, sessionId, project]);
   const selected = pickPanelNote(offered, selectedId);
   const {
@@ -525,6 +532,8 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
           }}
           onDelete={onDelete}
           sessionId={sessionId}
+          cwd={project}
+          availableTags={availableTags}
           onLink={onLink}
         />
       ) : error ? null : loaded && !selected ? (
@@ -567,6 +576,8 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
   onRecovered,
   onDelete,
   sessionId,
+  cwd,
+  availableTags,
   onLink,
 }: {
   note: Note;
@@ -576,6 +587,8 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
   onRecovered: (note: Note) => void;
   onDelete: (id: string, expectedUpdatedAt?: number, parent?: NoteInputWork) => Promise<boolean>;
   sessionId: string;
+  cwd: string;
+  availableTags: string[];
   onLink: (id: string, parent?: NoteInputWork) => Promise<boolean>;
 }) {
   useLocale();
@@ -592,7 +605,12 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
     noteId: note.id,
     sessionRelation: sessionId,
     base: restored.base,
-    canonical: { ...restored.base, title: restored.title, body: restored.body },
+    canonical: {
+      ...restored.base,
+      title: restored.title,
+      body: restored.body,
+      tags: restored.tags ?? restored.base.tags,
+    },
     error: restored.error,
     skipSave: restored.skipSave,
     conflict: restored.conflict,
@@ -626,10 +644,11 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
   const [recovering, setRecovering] = useState(false);
   const [linking, setLinking] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const field = useRef<HTMLTextAreaElement>(null);
-  useNoteTextInput(inputOwner, "body", field);
+  const [selection] = useState<SessionNoteSelection>(() => ({ current: null }));
   const titleRef = useRef(title);
   const bodyRef = useRef(body);
+  const [tags, setTags] = useState(restored.tags ?? note.tags);
+  const tagsRef = useRef(tags);
   const savedRef = useRef(restored?.base ?? note);
   const [conflict, setConflict] = useState(false);
   const conflictRef = useRef(false);
@@ -641,6 +660,7 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
     Object.assign(restored, {
       title: titleRef.current,
       body: bodyRef.current,
+      tags: tagsRef.current,
       base: savedRef.current,
     });
     editorDrafts.set(draftKey, restored);
@@ -651,10 +671,18 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
     if (note.updatedAt < previous.updatedAt) return;
     if (note.title === previous.title && note.body === previous.body) {
       savedRef.current = note;
+      // Metadata-only refresh: adopt tags unless the draft has its own tag edit.
+      if (sameTags(tagsRef.current, previous.tags) && !sameTags(note.tags, tagsRef.current)) {
+        tagsRef.current = note.tags;
+        setTags(note.tags);
+      }
       retainDraft();
       return;
     }
-    const dirty = bodyRef.current !== previous.body || titleRef.current !== previous.title;
+    const dirty =
+      bodyRef.current !== previous.body ||
+      titleRef.current !== previous.title ||
+      !sameTags(tagsRef.current, previous.tags);
     if (dirty) {
       conflictRef.current = true;
       setConflict(true);
@@ -664,8 +692,10 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
     savedRef.current = note;
     titleRef.current = note.title;
     bodyRef.current = note.body;
+    tagsRef.current = note.tags;
     setTitle(note.title);
     setBody(note.body);
+    setTags(note.tags);
     retainDraft();
   }, [note, retainDraft]);
   const titleTouched = useRef(false);
@@ -675,12 +705,6 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
   const saveTimerWork = useRef<NoteInputWork | null>(null);
   const onSavedRef = useRef(onSaved);
   onSavedRef.current = onSaved;
-
-  useEffect(() => {
-    if (!autoFocus) return;
-    field.current?.focus();
-    onFocused();
-  }, [autoFocus, onFocused]);
 
   useNoteInputState(inputOwner, "session-state", {
     saving,
@@ -698,13 +722,20 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
       if (skipSave.current || conflictRef.current || restored.unadmittedInputs?.length) return;
       const current = restored.base;
       const nextBody = restored.body;
+      const nextTags = restored.tags ?? current.tags;
       const typed = restored.title.trim();
       // An untouched placeholder title follows the first line, as on the Notes screen.
       const nextTitle =
         typed && (typed !== "Untitled" || titleTouched.current) ? typed : noteTitle(nextBody);
       const finalizeSlug =
         !!current.slugPending && finalizeRequested.current && !!typed && typed !== "Untitled";
-      if (!finalizeSlug && nextTitle === current.title && nextBody === current.body) return;
+      if (
+        !finalizeSlug &&
+        nextTitle === current.title &&
+        nextBody === current.body &&
+        sameTags(nextTags, current.tags)
+      )
+        return;
       setSaving(true);
       try {
         const saved = await upsertNote(
@@ -713,7 +744,7 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
             expectedUpdatedAt: current.updatedAt,
             title: nextTitle,
             body: nextBody,
-            tags: current.tags,
+            tags: nextTags,
             ...(finalizeSlug ? { finalizeSlug: true } : {}),
           },
           parent,
@@ -730,7 +761,11 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
           savedRef.current = saved;
           restored.base = saved;
           const retained = editorDrafts.get(draftKey);
-          if (retained?.body === nextBody && retained.title.trim() === typed) {
+          if (
+            retained?.body === nextBody &&
+            retained.title.trim() === typed &&
+            sameTags(retained.tags ?? current.tags, nextTags)
+          ) {
             if (!restored.mounts && !inputOwner.hasUnappliedPrivateInputs())
               editorDrafts.delete(draftKey);
             else
@@ -738,6 +773,7 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
                 base: saved,
                 title: titleRef.current,
                 body: bodyRef.current,
+                tags: tagsRef.current,
               });
           } else if (
             retained &&
@@ -826,7 +862,9 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
           !restored.mounts &&
           !inputOwner.hasUnappliedPrivateInputs() &&
           (!editorDrafts.has(draftKey) ||
-            (restored.title === restored.base.title && restored.body === restored.base.body))
+            (restored.title === restored.base.title &&
+              restored.body === restored.base.body &&
+              sameTags(restored.tags ?? restored.base.tags, restored.base.tags)))
         ) {
           editorDrafts.delete(draftKey);
           inputOwner.retire();
@@ -839,12 +877,8 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
     copyAsync(() => navigator.clipboard.writeText(bodyRef.current), { parallel: true });
 
   const sendToChat = () => {
-    const el = field.current;
-    const selection =
-      el && el.selectionStart !== el.selectionEnd
-        ? bodyRef.current.slice(el.selectionStart, el.selectionEnd)
-        : "";
-    if (selection) requestAddToChat(selection, "plain");
+    const selected = selection.current?.() ?? "";
+    if (selected) requestAddToChat(selected, "plain");
     else
       requestAddNoteToChat({
         ...note,
@@ -853,16 +887,24 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
       });
   };
 
+  // Input the admission budget or gate refused stays in the draft as unadmitted data.
+  const retainUnadmittedBody = (value: string) =>
+    inputOwner.external(() => {
+      // The editor keeps showing the admitted text; the refused text lives in the draft only.
+      restored.unadmittedInputs = [...new Set([...(restored.unadmittedInputs ?? []), "body"])];
+      bodyRef.current = value;
+      retainDraft();
+      setSaveError(
+        t("This input was not admitted. Your text is retained; open the note to edit it."),
+      );
+    });
+
   const hasBody = Boolean(body.trim());
 
   return (
     <SurfaceSelection
       {...noteInputBudgetHandlers(inputOwner, (field) =>
-        field.getAttribute("aria-label") === t("Note title")
-          ? "title"
-          : field.getAttribute("aria-label") === t("Note")
-            ? "body"
-            : undefined,
+        field.getAttribute("aria-label") === t("Note title") ? "title" : undefined,
       )}
       className="flex min-h-0 min-w-0 flex-1 flex-col"
       allowNotes={false}
@@ -896,24 +938,40 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
           }
         }}
       />
-      <NoteBodyField
-        label={t("Note")}
-        ref={field}
-        value={body}
-        onChange={(event) => {
-          const value = event.target.value;
-          if (!inputOwner.allowed() || !inputOwner.canRetainText("body", value)) {
-            inputOwner.external(() => {
-              restored.unadmittedInputs = [
-                ...new Set([...(restored.unadmittedInputs ?? []), "body"]),
-              ];
-              bodyRef.current = value;
-              setBody(value);
+      <div className="session-note-meta">
+        <div className="min-w-0 flex-1">
+          <NoteTagsEditor
+            availableTags={availableTags}
+            inputObserver={inputOwner.observer("tags")}
+            tags={tags}
+            onChange={(next) => {
+              if (!inputOwner.allowed()) return;
+              tagsRef.current = next;
+              setTags(next);
               retainDraft();
-              setSaveError(
-                t("This input was not admitted. Your text is retained; open the note to edit it."),
-              );
-            });
+              scheduleSave();
+            }}
+          />
+        </div>
+        <Text size="caption" tone="muted" leading="inherit" className="tabular-nums">
+          <NoteWordCount body={body} />
+        </Text>
+      </div>
+      <SessionNoteDocument
+        noteId={note.id}
+        body={body}
+        cwd={note.sourceCwd ?? cwd}
+        inputOwner={inputOwner}
+        readOnly={preparing}
+        autoFocus={autoFocus}
+        onFocused={onFocused}
+        selectionRef={selection}
+        onSave={() => void saveNow()}
+        onBlur={() => void saveNow()}
+        onRejectedInput={retainUnadmittedBody}
+        onChange={(value) => {
+          if (!inputOwner.allowed() || !inputOwner.canRetainText("source", value)) {
+            retainUnadmittedBody(value);
             return;
           }
           restored.unadmittedInputs = restored.unadmittedInputs?.filter((key) => key !== "body");
@@ -922,69 +980,59 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
           retainDraft();
           scheduleSave();
         }}
-        onBlur={() => void saveNow()}
-        readOnly={preparing}
-        placeholder={t("Write markdown…")}
-        spellCheck={false}
       />
       {conflict ? (
-        <Alert tone="warning">
-          <span>{t("This note changed elsewhere. Your draft is preserved.")}</span>
-          <Button
-            variant="ghost"
-            onClick={() => {
+        <Alert
+          tone="warning"
+          className="session-note-alert"
+          action={{
+            label: t("Keep my draft"),
+            onClick: () => {
               if (!inputOwner.allowed()) return;
               savedRef.current = note;
               conflictRef.current = false;
               setConflict(false);
               retainDraft();
               void saveNow();
-            }}
-          >
-            {t("Keep my draft")}
-          </Button>
-          <Button
-            variant="ghost"
-            onClick={() => {
+            },
+          }}
+          secondaryAction={{
+            label: t("Use saved version"),
+            onClick: () => {
               if (!inputOwner.allowed()) return;
               savedRef.current = note;
               titleRef.current = note.title;
               bodyRef.current = note.body;
+              tagsRef.current = note.tags;
               setTitle(note.title);
               setBody(note.body);
+              setTags(note.tags);
               retainDraft();
               editorDrafts.delete(draftKey);
               conflictRef.current = false;
               setConflict(false);
-            }}
-          >
-            {t("Use saved version")}
-          </Button>
+            },
+          }}
+        >
+          {t("This note changed elsewhere. Your draft is preserved.")}
         </Alert>
       ) : null}
       {saveError ? (
-        <Alert tone="danger">
-          <span className="min-w-0 flex-1">
-            {t("Could not save: ")}
-            {saveError}
-          </span>
-          <Button
-            variant="ghost"
-            size="sm"
-            type="button"
-            onClick={() => {
+        <Alert
+          tone="danger"
+          className="session-note-alert"
+          action={{
+            label: t("Retry"),
+            onClick: () => {
               if (!inputOwner.allowed()) return;
               setSaveError(null);
               void saveNow();
-            }}
-          >
-            {t("Retry")}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={recovering}
-            onClick={async () => {
+            },
+          }}
+          secondaryAction={{
+            label: t("Save as new note"),
+            pending: recovering,
+            onClick: async () => {
               const work = inputOwner.operation("session-recovery-copy");
               if (!work) {
                 if (!inputOwner.closed()) setSaveError(noteInputWorkError(inputOwner).message);
@@ -1002,7 +1050,7 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
                   {
                     title: submittedTitle,
                     body: submittedBody,
-                    tags: savedRef.current.tags,
+                    tags: tagsRef.current,
                     sourceCwd: savedRef.current.sourceCwd,
                     sourceSessionId: sessionId,
                   },
@@ -1028,10 +1076,11 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
                 setRecovering(false);
                 work();
               }
-            }}
-          >
-            {t("Save as new note")}
-          </Button>
+            },
+          }}
+        >
+          {t("Could not save: ")}
+          {saveError}
         </Alert>
       ) : null}
       <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-1 px-2 py-1">

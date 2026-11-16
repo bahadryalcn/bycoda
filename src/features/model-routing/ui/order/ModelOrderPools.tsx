@@ -21,7 +21,7 @@ export function ModelOrderPools({
   const { entries, pools } = draft.routing;
   return (
     <Group
-      title={t("Pools")}
+      title={t("Groups")}
       layout="full"
       action={
         <Button
@@ -31,7 +31,7 @@ export function ModelOrderPools({
             !entries.length
               ? t("Add a model first.")
               : pools.length >= MODEL_ROUTING_MAX_POOLS
-                ? t("The pool limit is reached.")
+                ? t("The group limit is reached.")
                 : undefined
           }
           onClick={() =>
@@ -41,33 +41,33 @@ export function ModelOrderPools({
                 ...draft.routing,
                 pools: [
                   ...pools,
-                  { id: crypto.randomUUID(), name: t("New pool"), entryIds: [entries[0]!.id] },
+                  { id: crypto.randomUUID(), name: t("New group"), entryIds: [entries[0]!.id] },
                 ],
               },
             })
           }
         >
-          {t("Create pool")}
+          {t("New group")}
         </Button>
       }
     >
       <>
         {!pools.length && (
           <div className="px-4 py-3">
-            <EmptyState size="inline" title={t("No pools")} description="" />
+            <EmptyState size="inline" title={t("No groups")} description="" />
           </div>
         )}
         {pools.map((pool) => (
           <div
             key={pool.id}
             role="group"
-            aria-label={pool.name || t("Unnamed pool")}
+            aria-label={pool.name || t("Unnamed group")}
             className="flex flex-col gap-2 px-4 py-3"
           >
             <div className="flex items-center gap-2">
               <div className="min-w-0 flex-1">
                 <TextField
-                  label={t("Pool name")}
+                  label={t("Group name")}
                   hideLabel
                   maxLength={80}
                   value={pool.name}
@@ -89,7 +89,7 @@ export function ModelOrderPools({
               <Button
                 iconOnly
                 variant="ghost"
-                label={t("Delete pool {p0}", { p0: pool.name })}
+                label={t("Delete group {p0}", { p0: pool.name })}
                 onClick={() => onEdit((current) => removeOrderPool(current, pool.id))}
               >
                 <Trash2 className="icon-sm" />

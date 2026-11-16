@@ -77,6 +77,17 @@ export function ThemeSection({ appearance }: { appearance: AppearanceSettings })
         <Row id="theme-palettes" stacked label={t("Theme palettes")}>
           <PaletteCards appearance={appearance} />
         </Row>
+        <Row
+          id="accent-color"
+          label={t("Accent color")}
+          modified={!isDefaultAccent(appearance.accentColor)}
+          onReset={() => {
+            generatorSession.invalidateImageIntent();
+            appearance.onAccentColor(ACCENT_COLOR_DEFAULT);
+          }}
+        >
+          <AccentRing appearance={appearance} />
+        </Row>
         <Row id="saved-themes" stacked label={t("Saved themes")}>
           <SavedThemes appearance={appearance} />
         </Row>
@@ -103,19 +114,6 @@ export function ThemeSection({ appearance }: { appearance: AppearanceSettings })
         }}
       >
         <ToneSliders appearance={appearance} />
-      </Group>
-      <Group
-        title={t("Accent")}
-        modified={!isDefaultAccent(appearance.accentColor)}
-        resetLabel={t("Reset accent")}
-        onReset={() => {
-          generatorSession.invalidateImageIntent();
-          appearance.onAccentColor(ACCENT_COLOR_DEFAULT);
-        }}
-      >
-        <Row id="accent-color" label={t("Accent color")}>
-          <AccentRing appearance={appearance} />
-        </Row>
       </Group>
       <StateLadder />
       <AppearanceSaveFeedback

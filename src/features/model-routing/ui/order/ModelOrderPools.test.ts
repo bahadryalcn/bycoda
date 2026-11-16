@@ -85,7 +85,7 @@ it("lists only a pool's members, in order, instead of every model", () => {
 it("reorders and removes members through one setPoolMembers edit", async () => {
   await act(() => main().querySelector<HTMLElement>('[aria-label="Move a down"]')!.click());
   expect(applied.routing.pools[0]).toMatchObject({ entryIds: ["b", "a"] });
-  await act(() => main().querySelector<HTMLElement>('[aria-label="Remove b from pool"]')!.click());
+  await act(() => main().querySelector<HTMLElement>('[aria-label="Remove b from group"]')!.click());
   expect(applied.routing.pools[0]).toMatchObject({ entryIds: ["a"] });
 });
 

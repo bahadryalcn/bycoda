@@ -6,7 +6,12 @@ export default defineConfig({
   build: {
     outDir: "temp/build/browser-external-mcp",
     emptyOutDir: false,
-    rolldownOptions: { input: "tests/browser/settings/external-mcp.html" },
+    rolldownOptions: {
+      input: [
+        "tests/browser/settings/external-mcp.html",
+        "tests/browser/settings/mcp-servers.html",
+      ],
+    },
   },
   preview: { host: "127.0.0.1", port: 1479, strictPort: true },
 });

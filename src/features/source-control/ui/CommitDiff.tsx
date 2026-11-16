@@ -1,6 +1,7 @@
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { useReloadOnReconnect } from "../../connections/public/useReloadOnReconnect";
 import { FailureState } from "../../../shared/ui/FailureState";
+import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useEffect, useMemo, useState } from "react";
@@ -30,6 +31,7 @@ export function CommitDiff({ cwd, sha }: Props) {
   const [files, setFiles] = useState<GitChangedFile[] | null>(null);
   const [diffs, setDiffs] = useState<Map<string, LoadedDiff>>(new Map());
   const [error, setError] = useState<string | null>(null);
+  const shownCentrally = useConnectionErrorShownCentrally(error);
   const [retry, setRetry] = useState(0);
 
   useEffect(() => {
@@ -153,6 +155,7 @@ export function CommitDiff({ cwd, sha }: Props) {
     );
   }
   if (error) {
+    if (shownCentrally) return null;
     return (
       <div className="grid h-full place-items-center p-6">
         <FailureState

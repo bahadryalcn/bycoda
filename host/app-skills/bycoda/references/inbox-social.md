@@ -9,11 +9,21 @@
 
 Provider items:
 
-1. `inbox.providers.list` with a `requestId`. Poll `inbox.result` until it completes.
+0. Asked about Jira, GitHub, GitLab, Azure DevOps or Linear? Call
+   `inbox.providers.connections` and poll `inbox.result`. A connected provider is reached
+   through these tools; never ask for a token, an Atlassian/other MCP connection or a
+   reconnect for it.
+1. `inbox.providers.list` with a `requestId` (optional `provider` to read only one).
+   Poll `inbox.result` until it completes.
 2. Copy the returned `item` fields. Read with `inbox.details` / `inbox.thread`, then
    `inbox.reviewContext`.
 3. Write with `inbox.review` (inline, full 40-char `commitId`), `inbox.comment` or
    `inbox.prAction` (merge, squash, rebase, draft, ready, close, reopen).
+
+Jira boards: `inbox.jira.boards` → `inbox.jira.board` (scope board, backlog or sprint;
+returns a `snapshotId`) → `inbox.jira.transitions` for an issue key → `inbox.jira.transition`
+or `inbox.jira.move` (board, backlog, sprint or rank). Only boards enabled in desktop
+Inbox visibility are readable.
 
 Every Inbox write needs in-app owner approval of the exact target and text. Queued is
 not sent: poll `inbox.result` with the same `requestId`. Never resend an uncertain write

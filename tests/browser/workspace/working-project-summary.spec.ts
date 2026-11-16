@@ -93,7 +93,7 @@ for (const light of [true, false])
 
 for (const light of [false, true])
   for (const width of [1280, 800]) {
-    test(`attention groups and recovery navigation ${width} ${light ? "light" : "dark"}`, async ({
+    test(`single activity list and recovery navigation ${width} ${light ? "light" : "dark"}`, async ({
       page,
     }) => {
       await page.emulateMedia({ reducedMotion: "reduce" });
@@ -102,19 +102,15 @@ for (const light of [false, true])
         `/tests/browser/workspace/working-project-summary.html?issues${light ? "&light" : ""}`,
       );
       const rail = page.locator('[data-fixture="rail"]');
-      const attention = rail.locator('[data-live-agents-group="attention"]');
-      await expect(attention.locator("[data-live-agent-card]")).toHaveCount(4);
-      await expect(rail.locator('[data-live-agents-group="working"]')).toContainText(
+      const list = rail.locator("[data-live-agents-list]");
+      await expect(list.locator("[data-live-agents-group]")).toHaveCount(0);
+      await expect(list.locator("[data-live-agents-project-summary]")).toContainText(
         "This project1",
       );
-      await expect(rail.locator('[data-live-agents-group="waiting"]')).toContainText(
-        "Wait for build",
-      );
-      await expect(rail.locator('[data-live-agents-group="finished"]')).toContainText(
-        "Update documentation",
-      );
+      await expect(list).toContainText("Wait for build");
+      await expect(list).toContainText("Update documentation");
       for (const id of ["failed", "approval", "question", "retry"]) {
-        await attention.locator(`[data-live-agent-card="${id}"]`).click();
+        await list.locator(`[data-live-agent-card="${id}"]`).click();
         await expect(page.locator("[data-selected]")).toHaveText(id);
       }
       await rail.locator("[data-live-agents-project-summary]").click();
@@ -138,11 +134,11 @@ for (const light of [false, true])
       await page.screenshot({
         path: path.join(evidence, `${light ? "light" : "dark"}-${width}-waiting-finished.png`),
       });
-      await attention.locator('[data-live-agent-card="failed"]').scrollIntoViewIfNeeded();
+      await list.locator('[data-live-agent-card="failed"]').scrollIntoViewIfNeeded();
       await rail.evaluate((element) => {
         element.style.width = "200px";
       });
-      await expect(attention.locator('[data-live-agent-card="failed"]')).toBeVisible();
+      await expect(list.locator('[data-live-agent-card="failed"]')).toBeVisible();
       expect(await rail.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
         true,
       );

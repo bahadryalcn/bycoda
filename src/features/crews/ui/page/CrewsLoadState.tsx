@@ -1,12 +1,15 @@
 import type { ReactNode } from "react";
 import { t } from "../../../../shared/i18n";
 import { Alert } from "../../../../shared/ui/Alert";
+import { useConnectionErrorShownCentrally } from "../../../../shared/ui/connectionErrorGate";
 import { LoadingText } from "../../../../shared/ui/LoadingText";
 import type { ProjectCrews, useProjectCrews } from "../../model/crewClient";
 
 type CrewState = ReturnType<typeof useProjectCrews>;
 
 function RetryAlert({ state }: { state: CrewState }) {
+  const shownCentrally = useConnectionErrorShownCentrally(state.error);
+  if (shownCentrally) return null;
   return (
     <Alert
       tone="warning"

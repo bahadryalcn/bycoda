@@ -393,7 +393,12 @@ function SettingRow({
             <Text as="span" size="caption" tone="secondary">
               {value ? valueLabel : t("No limit")}
             </Text>
-            <SubagentEffortSwitch value={value} disabled={disabled} onChange={onChoose} />
+            <SubagentEffortSwitch
+              value={value}
+              levels={setting.options.map((option) => option.value).filter(Boolean)}
+              disabled={disabled}
+              onChange={onChoose}
+            />
           </div>
         ) : null}
         <EffortBars

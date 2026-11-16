@@ -6,9 +6,14 @@ import { useDelayedVisible } from "../../../shared/hooks/useDelayedVisible";
 import { t, useLocale, getLocale } from "../../../shared/i18n";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { Tooltip } from "../../../shared/ui/Tooltip";
-import { Check, RefreshCw } from "../../../shared/ui/icons";
+import { Check, RefreshCw, Server } from "../../../shared/ui/icons";
 import type { RemoteDataState } from "../model/remoteDataState";
-import { classifyRemoteError, isConnectionFailure } from "../model/remoteFailure";
+import {
+  classifyRemoteError,
+  isConnectionFailure,
+  isTransientTransportError,
+  presentRemoteError,
+} from "../model/remoteFailure";
 import { useQuietRetry } from "../model/useQuietRetry";
 import { useRemoteConnectionFeedback } from "./RemoteConnectionFeedback";
 
@@ -21,6 +26,7 @@ export function RemoteDataStatus({
   disabled = false,
   connectionIssueHandled = false,
   presentation = "auto",
+  machineName,
 }: {
   state: RemoteDataState;
   /** The data's owning remote project, for the workspace connection notice. */
@@ -32,6 +38,8 @@ export function RemoteDataStatus({
   connectionIssueHandled?: boolean;
   /** Place routine health in an existing toolbar; keep actionable warnings in the body. */
   presentation?: "auto" | "indicator" | "notice";
+  /** Keep remote identity in a project heading, with freshness in its tooltip. */
+  machineName?: string;
 }) {
   useLocale();
   // A first load that ends quickly never shows its indicator; a background refresh only spins
@@ -43,44 +51,68 @@ export function RemoteDataStatus({
   const retrying = useQuietRetry(
     state.phase === "error" ? state.error : undefined,
     disabled ? undefined : onRefresh,
+    state.phase === "loading" || state.phase === "refreshing",
   );
   // A machine-level notice cannot explain a failed data/service operation.
   if (
-    (connectionIssueHandled && !failure) ||
-    (failure && isConnectionFailure(failure) && (connectionIssueHandled || sharedConnectionIssue))
+    !machineName &&
+    ((connectionIssueHandled && !failure) ||
+      (failure &&
+        isConnectionFailure(failure) &&
+        (connectionIssueHandled || sharedConnectionIssue)))
   )
     return null;
   const dataLabel = label ?? t("conversation");
+  // The classified, localized reason; the raw transport text stays behind Details.
+  const replacedError = !!state.error && isTransientTransportError(state.error);
+  const shownError = state.error ? presentRemoteError(state.error, { explicit: true }) : undefined;
   const busy = retrying || state.phase === "loading" || state.phase === "refreshing";
   const needsAttention = !retrying && (state.phase === "error" || state.phase === "stale");
-  const message = retrying
-    ? t("The machine is busy. Retrying…")
-    : state.phase === "loading"
-      ? t("Loading {p0}…", { p0: dataLabel })
-      : state.phase === "refreshing"
-        ? t("Refreshing {p0}… Showing last loaded data.", { p0: dataLabel })
-        : state.phase === "error"
-          ? state.updatedAt
-            ? t("Couldn’t refresh {p0}. Showing last loaded data.", { p0: dataLabel })
-            : t("Couldn’t refresh {p0}. Data has not been verified.", { p0: dataLabel })
-          : state.phase === "stale"
-            ? t("Showing last loaded data. Updates have not been verified.")
-            : state.phase === "empty"
-              ? t("No {p0}.", { p0: dataLabel })
-              : t("Up to date");
+  const message =
+    machineName &&
+    (connectionIssueHandled || sharedConnectionIssue) &&
+    !failure &&
+    (state.phase === "ready" || state.phase === "empty")
+      ? state.updatedAt
+        ? t("Showing last loaded data. Updates have not been verified.")
+        : t("Couldn’t refresh {p0}. Data has not been verified.", { p0: dataLabel })
+      : retrying
+        ? t("The machine is busy. Retrying…")
+        : state.phase === "loading"
+          ? t("Loading {p0}…", { p0: dataLabel })
+          : state.phase === "refreshing"
+            ? t("Refreshing {p0}… Showing last loaded data.", { p0: dataLabel })
+            : state.phase === "error"
+              ? state.updatedAt
+                ? t("Couldn’t refresh {p0}. Showing last loaded data.", { p0: dataLabel })
+                : t("Couldn’t refresh {p0}. Data has not been verified.", { p0: dataLabel })
+              : state.phase === "stale"
+                ? t("Showing last loaded data. Updates have not been verified.")
+                : state.phase === "empty"
+                  ? t("No {p0}.", { p0: dataLabel })
+                  : t("Up to date");
   const time = state.updatedAt
     ? new Date(state.updatedAt).toLocaleTimeString(getLocale(), {
         hour: "2-digit",
         minute: "2-digit",
       })
     : undefined;
-  if (state.phase === "loading" && !loadingShown) return null;
+  if (state.phase === "loading" && !loadingShown && !machineName) return null;
   if (presentation === "notice" && !needsAttention) return null;
-  if (presentation === "indicator" && needsAttention) return null;
-  if (!needsAttention) {
-    const detail = `${message}${time ? ` · ${t("Last verified {p0}", { p0: new Date(state.updatedAt!).toLocaleString(getLocale()) })}` : ""}`;
-    const spinning = retrying || state.phase === "loading" || (busy && onRefresh !== undefined);
-    const icon = spinning ? <Spinner /> : <Check aria-hidden className="icon-sm" />;
+  if (presentation === "indicator" && needsAttention && !machineName) return null;
+  if (!needsAttention || (presentation === "indicator" && machineName)) {
+    const detail = `${machineName ? `${machineName} · ` : ""}${message}${time ? ` · ${t("Last verified {p0}", { p0: new Date(state.updatedAt!).toLocaleString(getLocale()) })}` : ""}`;
+    const spinning =
+      retrying ||
+      (state.phase === "loading" && loadingShown) ||
+      (state.phase === "refreshing" && onRefresh !== undefined);
+    const icon = spinning ? (
+      <Spinner />
+    ) : machineName ? (
+      <Server aria-hidden className="icon-sm" />
+    ) : (
+      <Check aria-hidden className="icon-sm" />
+    );
     return (
       <Text
         data-remote-data-state={state.phase}
@@ -89,13 +121,17 @@ export function RemoteDataStatus({
         className="inline-flex shrink-0 items-center"
         aria-busy={busy}
       >
-        <span role="status" className="sr-only">
-          {detail}
-        </span>
+        {(!machineName || (!connectionIssueHandled && !sharedConnectionIssue)) &&
+        (state.phase !== "loading" || loadingShown) ? (
+          <span role="status" className="sr-only">
+            {detail}
+          </span>
+        ) : null}
         {onRefresh ? (
           <Button
             variant="ghost"
             iconOnly
+            data-tauri-drag-region="false"
             label={t("Refresh {p0}", { p0: dataLabel })}
             tooltip={detail}
             onClick={onRefresh}
@@ -134,16 +170,23 @@ export function RemoteDataStatus({
               </Text>
             </Tooltip>
           ) : null}
-          {state.error ? (
-            fitsOneLine(state.error) ? (
-              <Text as="p" size="inherit" tone="muted" className="mt-1 break-words">
-                {state.error}
-              </Text>
-            ) : (
-              <p className="mt-1">
-                <ErrorDetails title={message} detail={state.error} />
-              </p>
-            )
+          {shownError ? (
+            <>
+              {fitsOneLine(shownError) ? (
+                <Text as="p" size="inherit" tone="muted" className="mt-1 break-words">
+                  {shownError}
+                </Text>
+              ) : (
+                <p className="mt-1">
+                  <ErrorDetails title={message} detail={shownError} />
+                </p>
+              )}
+              {replacedError && fitsOneLine(shownError) ? (
+                <p className="mt-1">
+                  <ErrorDetails title={message} detail={state.error ?? shownError} />
+                </p>
+              ) : null}
+            </>
           ) : null}
         </div>
         {onRefresh ? (

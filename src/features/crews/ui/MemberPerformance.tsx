@@ -34,6 +34,7 @@ export function MemberPerformance({
   useLocale();
   const [status, setStatus] = useState<Status>("idle");
   const [performance, setPerformance] = useState<Performance>();
+  const [failure, setFailure] = useState("");
   const load = () => {
     setStatus("loading");
     state
@@ -46,7 +47,10 @@ export function MemberPerformance({
           setPerformance(memberPerformance(result.candidates ?? []));
           setStatus("ready");
         },
-        () => setStatus("error"),
+        (reason: unknown) => {
+          setFailure(reason instanceof Error ? reason.message : String(reason));
+          setStatus("error");
+        },
       );
   };
 
@@ -61,7 +65,9 @@ export function MemberPerformance({
       {status === "loading" || status === "idle" ? (
         <LoadingText delay={false}>{t("Loading performance…")}</LoadingText>
       ) : status === "error" ? (
-        <InlineError retry={{ onRetry: load }}>{t("Could not load performance")}</InlineError>
+        <InlineError details={failure} retry={{ onRetry: load }}>
+          {t("Could not load performance")}
+        </InlineError>
       ) : performance && performance.reviewed > 0 ? (
         <div className="flex min-w-0 flex-col gap-2">
           <ul className="flex flex-col gap-1">

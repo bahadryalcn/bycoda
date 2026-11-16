@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import { useState, type CSSProperties } from "react";
 import { t, useLocale } from "../../../../../shared/i18n";
 import { useColorScheme } from "../../../../../shared/hooks/useColorScheme";
 import { Text } from "../../../../../shared/ui/Text";
@@ -9,7 +9,10 @@ import {
   THEME_HUE_MIN,
   THEME_SATURATION_MAX,
   THEME_SATURATION_MIN,
+  applyThemeDarkLightness,
+  applyThemeTint,
 } from "../../../model/appearance";
+import { applyAppearancePreferences } from "../../../model/appearancePreferences";
 import { APPEARANCE_RANGES } from "../../../model/themeRanges";
 import { Row, Slider } from "../../../../../shared/ui/settings";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
@@ -23,6 +26,47 @@ const HUE_TRACK = `linear-gradient(to right, ${[0, 60, 120, 180, 240, 300, 360]
   .join(", ")})`;
 const HUE_TRACK_STYLE = { "--ui-hue-track": HUE_TRACK } as CSSProperties;
 
+/**
+ * Settings slider that previews while dragging and persists once on release: `apply` paints the
+ * value live, `commit` writes it. The draft clears on commit, so the stored value shows again.
+ */
+export function DraftSlider({
+  value,
+  format,
+  apply,
+  commit,
+  ...slider
+}: {
+  label: string;
+  value: number;
+  format: (value: number) => string;
+  min: number;
+  max: number;
+  step?: number;
+  disabled?: boolean;
+  className?: string;
+  apply: (value: number) => void;
+  commit: (value: number) => void;
+}) {
+  const [draft, setDraft] = useState<number | null>(null);
+  const shown = draft ?? value;
+  return (
+    <Slider
+      {...slider}
+      value={shown}
+      display={format(shown)}
+      onChange={(next) => {
+        setDraft(next);
+        apply(next);
+      }}
+      onValueCommit={(next) => {
+        setDraft(null);
+        commit(next);
+      }}
+    />
+  );
+}
+
 /** Hue, saturation and depth as labelled sliders, then the four surface steps they produce. */
 export function ToneSliders({ appearance }: { appearance: AppearanceSettings }) {
   useLocale();
@@ -34,25 +78,27 @@ export function ToneSliders({ appearance }: { appearance: AppearanceSettings }) 
       <div className="theme-detail-controls">
         <Row id="hue" label={t("Hue")}>
           <div className="theme-hue-field" style={HUE_TRACK_STYLE}>
-            <Slider
+            <DraftSlider
               label={t("Hue")}
               className="theme-hue-slider"
               value={hue}
-              display={`${hue}°`}
+              format={(next) => `${next}°`}
               min={THEME_HUE_MIN}
               max={THEME_HUE_MAX}
-              onChange={(next) => appearance.onTint(next, saturation)}
+              apply={(next) => applyThemeTint(next, saturation)}
+              commit={(next) => appearance.onTint(next, saturation)}
             />
           </div>
         </Row>
         <Row id="saturation" label={t("Saturation")}>
-          <Slider
+          <DraftSlider
             label={t("Saturation")}
             value={saturation}
-            display={`${saturation}%`}
+            format={(next) => `${next}%`}
             min={THEME_SATURATION_MIN}
             max={THEME_SATURATION_MAX}
-            onChange={(next) => appearance.onTint(hue, next)}
+            apply={(next) => applyThemeTint(hue, next)}
+            commit={(next) => appearance.onTint(hue, next)}
           />
         </Row>
         <Row
@@ -61,14 +107,15 @@ export function ToneSliders({ appearance }: { appearance: AppearanceSettings }) 
           description={t("Dark mode only. Sets how deep the dark canvas is.")}
           disabled={light}
         >
-          <Slider
+          <DraftSlider
             label={t("Depth")}
             value={depth}
-            display={String(depth)}
+            format={String}
             min={THEME_DARK_LIGHTNESS_MIN}
             max={THEME_DARK_LIGHTNESS_MAX}
             disabled={light}
-            onChange={appearance.onDarkLightness}
+            apply={applyThemeDarkLightness}
+            commit={appearance.onDarkLightness}
           />
         </Row>
         <Row
@@ -76,14 +123,17 @@ export function ToneSliders({ appearance }: { appearance: AppearanceSettings }) 
           label={t("Surface contrast")}
           description={t("How strongly cards, fields and dialogs lift off the canvas.")}
         >
-          <Slider
+          <DraftSlider
             label={t("Surface contrast")}
             value={surfaceContrast}
-            display={`${surfaceContrast}%`}
+            format={(next) => `${next}%`}
             min={APPEARANCE_RANGES.surfaceContrast.min}
             max={APPEARANCE_RANGES.surfaceContrast.max}
             step={5}
-            onChange={(next) =>
+            apply={(next) =>
+              applyAppearancePreferences({ ...appearance.preferences, surfaceContrast: next })
+            }
+            commit={(next) =>
               appearance.onPreferences({ ...appearance.preferences, surfaceContrast: next })
             }
           />

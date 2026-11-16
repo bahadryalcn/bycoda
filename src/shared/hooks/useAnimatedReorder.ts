@@ -61,9 +61,11 @@ function keyboardMoveDelta(
 /**
  * Direct manipulation for a row or column of equal-sized items.
  *
- * `foldOnDrag` is for blocks that differ in size (a header with a body): once
- * a drag starts, `draggingId` is rendered synchronously, so the caller can fold
- * every block to one size, and the items are measured again before they move.
+ * `foldOnDrag` is for blocks that differ in size (a header with a body): once a
+ * drag starts every item gets `data-reorder-folding`, and the stylesheet hides
+ * each `[data-reorder-fold-body]` inside it, so every block folds to its header;
+ * the items are measured again before they move. A folding drag never sets
+ * `draggingId`: re-rendering a whole rail at drag start and end froze the gesture.
  */
 export function useAnimatedReorder<T extends string>(
   ids: T[],
@@ -234,13 +236,14 @@ export function useAnimatedReorder<T extends string>(
           element.style.removeProperty("transition");
           element.style.removeProperty("transform");
           delete element.dataset.settling;
+          delete element.dataset.reorderFolding;
         }
         releasePointer();
         if (active) suppressClickUntil.current = performance.now() + 400;
         endExternalDrop();
         cleanup.current = null;
         finishSettling.current = null;
-        setDraggingId(null);
+        if (!foldOnDrag) setDraggingId(null);
       }
 
       function preview(to: number) {
@@ -312,7 +315,7 @@ export function useAnimatedReorder<T extends string>(
             // Folding moves the blocks: measure again, and keep the grabbed
             // point under the pointer.
             const grab = startPosition - rects[from].start;
-            flushSync(() => setDraggingId(id));
+            for (const element of tabs) element.dataset.reorderFolding = "";
             rects = measure();
             startPosition = rects[from].start + grab;
             for (const parent of scrollParents) {

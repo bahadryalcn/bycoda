@@ -56,13 +56,15 @@ are evidence for a finished change set, not a progress bar. Order one task like 
 | Phase                  | What runs                                                                                                                                                                                                        | Not yet                                                             |
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
 | 1. Implement           | Editor feedback, `tsc-rs --noEmit --fast` for the changed project (`-p host/tsconfig.json` for Host), the one test file you are writing with `vitest run <path>`                                                 | Full vitest, `check:web`, browser suites, `cargo test`, screenshots |
-| 2. Change set complete | `pnpm check:changed` (format, lint ratchet, invariants, structure, UI drift, test-file types and up to `--max-tests` related tests, all bounded)                                                                 | Everything else                                                     |
+| 2. Change set complete | `pnpm check:changed` (formats changed files in place, lint ratchet, invariants, structure, UI drift, test-file types and up to `--max-tests` related tests, all bounded)                                         | Everything else                                                     |
 | 3. Focused tests       | `vitest run src/features/<feature>` or `vitest run --config host/vitest.config.ts host/<feature>`; `cargo test -p <crate> <module>` for Rust                                                                     | Suites of untouched features                                        |
 | 4. One full gate       | `pnpm check:web` (or `check:web:fast`), `pnpm host:build` or `pnpm check:rust` when the change touches that layer; for T1/T2 also `pnpm check:preflight`; run once, in the background, while writing the handoff | A second full run unless a fix changed code                         |
 | 5. Evidence            | Screenshots per tier, saved under `temp/verification/<id>/` and opened                                                                                                                                           |                                                                     |
 | 6. Review              | A capable model reads the diff and the phase 2–5 results; fixes go back to phase 1 for the touched files only                                                                                                    |                                                                     |
 
-`check:changed` also runs `cargo fmt --all --check` when a Rust file changed, the
+`check:changed` rewrites changed files with the formatter (LF line endings included),
+so never run a formatter or convert line endings by hand, and do not report either.
+It also runs `cargo fmt --all --check` when a Rust file changed, the
 evaluation harness types when application TypeScript changed, and the browser
 manifest/type checks when `tests/browser/` changed, because CI runs them for the
 whole repository.
@@ -86,6 +88,13 @@ Rules that keep the order honest:
   not retried in a loop and not fixed by widening the task.
 - Parallel work uses isolated Host/desktop data and allocated ports; two full gates
   on one checkout race each other and prove nothing.
+- `pnpm check:web`, `check:web:fast` and `check:preflight` go through
+  `scripts/checks/shared-gate.mjs`: sessions sharing a checkout queue behind one lock,
+  and a gate that already ran on the exact same working tree is reused (pass or
+  failure, with its log under `temp/gate-cache/`) instead of run again. A reused line
+  in the output is valid evidence for the report. Never bypass it with the `:run`
+  scripts; `GATE_FORCE=1` reruns a result you believe was flaky. A run during which
+  another session edited the tree is not shared.
 - Delegated subagents on small models may run phases 1–3 for their own files; the
   full gate and the review stay with the responsible session.
 - Report fast mode when used, and UNVERIFIED only for a named check with its blocker.

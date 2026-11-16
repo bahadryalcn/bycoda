@@ -19,8 +19,6 @@ import { useTurnScrollAnchor } from "./useTurnScrollAnchor";
 
 type Options = {
   visible: boolean;
-  /** Parking detaches the scroller, which drops its scroll offset. */
-  parked: boolean;
   lastUserId: string | undefined;
   /**
    * Runs between the "new prompt pins the end" step and the "tab opened" step
@@ -49,7 +47,6 @@ export type TranscriptFollow = ReturnType<typeof useTranscriptFollow>;
  */
 export function useTranscriptFollow({
   visible,
-  parked,
   lastUserId,
   onPromptChange,
   onJumpToBottomChange,
@@ -84,13 +81,8 @@ export function useTranscriptFollow({
   const wasVisible = useRef(false);
   const [scrollerEl, setScrollerEl] = useState<HTMLDivElement | null>(null);
   const checkpointUserId = useRef(lastUserId);
-  const restoreScroll = useRef(false);
-  const wasParked = useRef(parked);
-  useLayoutEffect(() => {
-    if (wasParked.current === parked) return;
-    wasParked.current = parked;
-    if (parked) restoreScroll.current = true;
-  }, [parked]);
+  // `null` until the first prompt is handled, so the first layout pass pins the end.
+  const pinnedUserId = useRef<string | undefined | null>(null);
 
   const setShowJump = useCallback(
     (show: boolean) => {
@@ -362,7 +354,11 @@ export function useTranscriptFollow({
     };
   }, [publishReading, rememberScroll, scrollerEl, setShowJump, syncPinned, visible]);
 
+  // Activity replays layout effects whenever a hidden transcript is revealed;
+  // only a prompt this transcript has not pinned yet moves the reader.
   useLayoutEffect(() => {
+    if (pinnedUserId.current === lastUserId) return;
+    pinnedUserId.current = lastUserId;
     if (restoreCheckpoint.current && lastUserId === checkpointUserId.current) return;
     // A dropped checkpoint's anchor must not stay a reveal target.
     virtualization?.settleReveal(restoreCheckpoint.current?.virtualAnchorBlockId);
@@ -385,6 +381,15 @@ export function useTranscriptFollow({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastUserId]);
 
+  // Activity hides a transcript by running effect cleanups, without a render
+  // where `visible` is false, so the next reveal must count as opening.
+  useLayoutEffect(
+    () => () => {
+      wasVisible.current = false;
+    },
+    [],
+  );
+
   useLayoutEffect(() => {
     const opened = visible && !wasVisible.current;
     wasVisible.current = visible;
@@ -392,19 +397,20 @@ export function useTranscriptFollow({
     const el = scroller.current;
     if (!el) return;
     syncTranscriptViewport(el);
-    const restore = restoreScroll.current;
-    restoreScroll.current = false;
-    // Previously opened tabs normally retain their scroll position. Only pin
-    // when the scroller looks empty after being hidden with `display: none`.
+    // A tab hidden with `display: none` keeps its offset; parking detaches the
+    // scroller, which drops it.
+    const kept = scrollGeometry.current;
+    const dropped = kept?.el === el && Math.abs(el.scrollTop - kept.top) > 1;
+    // Only pin when the scroller looks empty after being hidden.
     if (el.scrollHeight <= el.clientHeight + NEAR_BOTTOM_PX) {
       stickToBottom.current = true;
       setShowJump(false);
       pinToBottom(el);
       publishReading(el);
-    } else if (restore && stickToBottom.current) {
+    } else if (dropped && stickToBottom.current) {
       pinToBottom(el);
       rememberScroll(el);
-    } else if (restore) {
+    } else if (dropped) {
       el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight - distanceFromBottom.current);
     }
   }, [publishReading, rememberScroll, visible, setShowJump]);

@@ -57,7 +57,7 @@ export function ReminderNotices({
   if (!visible) return null;
 
   return (
-    <ToastSlot placement="top-end" order={-1}>
+    <ToastSlot order={-1}>
       <Text
         as="section"
         size="inherit"

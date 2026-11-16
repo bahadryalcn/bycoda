@@ -136,9 +136,6 @@ it("explains why removal is unavailable", () => {
     label: "Delete directory",
     disabledReason: "Stop the session using this workspace first.",
   });
-  expect(
-    workspaceRemovalAction(workspace({ directoryState: "removed" }), present, true).disabledReason,
-  ).toBe("This directory is already removed.");
   expect(workspaceRemovalAction(workspace({}), present, false).disabledReason).toMatch(/Update/);
   expect(workspaceRemovalAction(workspace({ directoryState: "blocked" }), present, true)).toEqual({
     label: "Review blocked cleanup",

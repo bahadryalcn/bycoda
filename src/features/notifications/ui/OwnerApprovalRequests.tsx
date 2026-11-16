@@ -1,6 +1,4 @@
 import { Surface } from "../../../shared/ui/Surface";
-import { OutputBlock } from "../../../shared/ui/OutputBlock";
-import { Text } from "../../../shared/ui/Text";
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useT } from "../../../shared/i18n";
 import { ApprovalRequest } from "../../../shared/ui/ApprovalRequest";
@@ -15,7 +13,35 @@ import {
   type OwnerApproval,
 } from "../model/ownerApprovals";
 import { ownerSecretInputsSnapshot, subscribeOwnerSecretInputs } from "../model/ownerSecretInputs";
-import { OwnerSecretDialog, OwnerSecretForm } from "./OwnerSecretInput";
+import { OwnerSecretDialog, OwnerSecretForm, OwnerSecretHeader } from "./OwnerSecretInput";
+
+/** Filled, accent-framed card in the chat column (same width as messages and composer) so an owner request reads as pending action. */
+function OwnerRequestCard({
+  as,
+  children,
+  ...props
+}: {
+  as: "div" | "section";
+  children: ReactNode;
+  "aria-label"?: string;
+}) {
+  return (
+    <div data-chat-column className="mx-auto w-full min-w-0 max-w-4xl shrink-0 px-3 pb-2">
+      <Surface
+        {...props}
+        as={as}
+        variant="card"
+        tone="info"
+        frame="accent"
+        radius="card"
+        elevation="floating"
+        padding="md"
+      >
+        {children}
+      </Surface>
+    </div>
+  );
+}
 
 /** Native decisions stay transient; they are never copied into provider transcripts. */
 export function OwnerApprovalChat({
@@ -51,15 +77,7 @@ export function OwnerApprovalChat({
         requests
           .filter((request) => request.sessionId === sessionId)
           .map((request) => (
-            <Surface
-              as="div"
-              key={request.id}
-              variant="canvas"
-              frame="pane"
-              edge="top"
-              padding="md"
-              className="shrink-0"
-            >
+            <OwnerRequestCard as="div" key={request.id}>
               <ApprovalRequest
                 title={request.title}
                 detail={request.message}
@@ -73,7 +91,12 @@ export function OwnerApprovalChat({
                 }}
                 actions={
                   request.inbox
-                    ? [{ label: t("Review"), onClick: () => setReviewing(request.id) }]
+                    ? [
+                        {
+                          label: t("Review"),
+                          onClick: () => setReviewing(request.id),
+                        },
+                      ]
                     : undefined
                 }
                 details={
@@ -90,35 +113,19 @@ export function OwnerApprovalChat({
               {reviewing === request.id ? (
                 <InboxApprovalDialog request={request} onClose={() => setReviewing(null)} />
               ) : null}
-            </Surface>
+            </OwnerRequestCard>
           ))}
       {visible &&
         sessionId &&
         secrets
           .filter((request) => request.sessionId === sessionId)
           .map((request) => (
-            <Surface
-              as="section"
-              key={request.id}
-              aria-label={t("Secret request")}
-              variant="canvas"
-              frame="pane"
-              edge="top"
-              padding="md"
-              className="shrink-0"
-            >
-              <Text as="strong" size="body" tone="inherit">
-                {t("Secret request")}
-              </Text>
-              <OutputBlock
-                size="caption"
-                tone="secondary"
-                className="my-2 max-h-48 overflow-auto break-words"
-              >
-                {request.message}
-              </OutputBlock>
-              <OwnerSecretForm request={request} />
-            </Surface>
+            <OwnerRequestCard as="section" key={request.id} aria-label={t("Secret request")}>
+              <div className="flex min-w-0 flex-col gap-2">
+                <OwnerSecretHeader request={request} />
+                <OwnerSecretForm request={request} />
+              </div>
+            </OwnerRequestCard>
           ))}
     </>
   );

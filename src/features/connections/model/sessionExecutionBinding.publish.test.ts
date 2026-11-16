@@ -131,3 +131,52 @@ it("coalesces owner writes queued behind one in flight to the latest", async () 
   expect(JSON.parse(previous.raw).shell.title).toBe("One");
   expect(JSON.parse(latest.raw).shell.title).toBe("Three");
 });
+
+it("rebases a save over another window's change to the same owner", async () => {
+  database.writeBindingEvidence.mockImplementation(
+    async (previous: unknown, next: { shellId: string }) => {
+      if (previous !== database.rows.get(next.shellId)) throw new Error("changed elsewhere");
+      database.rows.set(next.shellId, next);
+    },
+  );
+  const storage = await import("./sessionExecutionBinding");
+  await storage.hydrateHostSessionBindings();
+  const shell = { ...newSession("codex", "/repo"), title: "Base" };
+  storage.saveHostSessionBinding(shell, binding);
+  await storage.flushHostSessionBindings(shell.id);
+  const other = database.rows.get(shell.id) as { raw: string };
+  const record = JSON.parse(other.raw);
+  // Another window renames the same conversation; this window's cache still holds "Base".
+  database.rows.set(shell.id, {
+    ...other,
+    raw: JSON.stringify({ ...record, shell: { ...record.shell, title: "Elsewhere" } }),
+  });
+  storage.saveHostSessionBinding({ ...shell, title: "Here" }, binding);
+  await expect(storage.flushHostSessionBindings(shell.id)).resolves.toBeUndefined();
+  const stored = database.rows.get(shell.id) as { raw: string };
+  expect(JSON.parse(stored.raw).shell.title).toBe("Here");
+});
+
+it("still refuses a save when another window changed the owner", async () => {
+  database.writeBindingEvidence.mockImplementation(
+    async (previous: unknown, next: { shellId: string }) => {
+      if (previous !== database.rows.get(next.shellId)) throw new Error("changed elsewhere");
+      database.rows.set(next.shellId, next);
+    },
+  );
+  const storage = await import("./sessionExecutionBinding");
+  await storage.hydrateHostSessionBindings();
+  const shell = { ...newSession("codex", "/repo"), title: "Base" };
+  storage.saveHostSessionBinding(shell, binding);
+  await storage.flushHostSessionBindings(shell.id);
+  const other = database.rows.get(shell.id) as { raw: string };
+  const record = JSON.parse(other.raw);
+  database.rows.set(shell.id, {
+    ...other,
+    raw: JSON.stringify({ ...record, binding: { ...record.binding, sessionId: "moved" } }),
+  });
+  storage.saveHostSessionBinding({ ...shell, title: "Here" }, binding);
+  await expect(storage.flushHostSessionBindings(shell.id)).rejects.toThrow("changed elsewhere");
+  const stored = database.rows.get(shell.id) as { raw: string };
+  expect(JSON.parse(stored.raw).binding.sessionId).toBe("moved");
+});

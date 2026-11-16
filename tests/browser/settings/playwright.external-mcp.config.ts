@@ -1,7 +1,7 @@
 import { defineConfig } from "@playwright/test";
 export default defineConfig({
   testDir: "..",
-  testMatch: ["external-mcp.spec.ts", "mcp-loading.spec.ts", "mcp-oauth.spec.ts"],
+  testMatch: ["external-mcp.spec.ts", "mcp-servers.spec.ts"],
   workers: 1,
   timeout: 30_000,
   outputDir: "../../../temp/test-results/external-mcp",

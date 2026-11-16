@@ -49,6 +49,10 @@ button.bar {
 .bar[data-filled][data-ultra] > .fill {
   background: var(--ui-effort-ultra-fill);
 }
+/* An inherited level shows where the default lands without reading as a saved choice. */
+.bar[data-inherited] > .fill {
+  opacity: 0.5;
+}
 button.bar[aria-checked="true"][data-button-selected] {
   background: var(--ui-surface-selected);
 }

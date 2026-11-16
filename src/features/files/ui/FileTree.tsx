@@ -16,6 +16,7 @@ import { Button } from "../../../shared/ui/Button";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
+import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { t, useLocale } from "../../../shared/i18n/technical";
@@ -361,6 +362,7 @@ function FileTreeInner({
   // File History and Blame need this computer or a host with `git.actions`.
   const canInspectGit = useRemoteSupports(cwd, GIT_ACTIONS) === true;
   const connectionFailure = useRemoteLoadFailure(cwd, "files");
+  const refreshFailureShownCentrally = useConnectionErrorShownCentrally(refreshFailure?.message);
   // Why creating cannot start at all: no folder to create in, or a remote machine that cannot be
   // asked. These are the capability signals the tree already has; there is no per-folder permission.
   const createUnavailableReason =
@@ -1182,7 +1184,11 @@ function FileTreeInner({
               {opError}
             </InlineError>
           ) : null}
-          {refreshFailure?.cwd === cwd ? (
+          {refreshFailure?.cwd === cwd && refreshFailureShownCentrally ? (
+            <InlineMessage className="mx-2 my-1" tone="info">
+              {t("File change saved.")}
+            </InlineMessage>
+          ) : refreshFailure?.cwd === cwd ? (
             <InlineError
               className="mx-2 my-1"
               action={{

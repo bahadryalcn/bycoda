@@ -21,6 +21,7 @@ import { Group, Row, Segmented, Slider } from "../../../../../shared/ui/settings
 import "./ThemeControls.css";
 
 const snapshot = () => JSON.stringify(loadWorkingIndicator());
+const DEFAULT_SNAPSHOT = JSON.stringify(WORKING_INDICATOR_DEFAULT);
 
 /**
  * "Working projects": the color, pulse and strength of the decoration a project row shows while an
@@ -29,9 +30,8 @@ const snapshot = () => JSON.stringify(loadWorkingIndicator());
  */
 export function WorkingIndicatorGroup() {
   useLocale();
-  const value = JSON.parse(
-    useSyncExternalStore(subscribeWorkingIndicator, snapshot, snapshot),
-  ) as ReturnType<typeof loadWorkingIndicator>;
+  const raw = useSyncExternalStore(subscribeWorkingIndicator, snapshot, snapshot);
+  const value = JSON.parse(raw) as ReturnType<typeof loadWorkingIndicator>;
   const [open, setOpen] = useState(false);
   const anchor = useRef<HTMLDivElement>(null);
   const update = (change: Partial<typeof value>) => saveWorkingIndicator({ ...value, ...change });
@@ -40,7 +40,7 @@ export function WorkingIndicatorGroup() {
     <Group
       title={t("Working projects")}
       description={t("How a project row looks while an agent works in it.")}
-      modified={snapshot() !== JSON.stringify(WORKING_INDICATOR_DEFAULT)}
+      modified={raw !== DEFAULT_SNAPSHOT}
       resetLabel={t("Reset working projects")}
       onReset={() => saveWorkingIndicator(WORKING_INDICATOR_DEFAULT)}
     >

@@ -333,3 +333,41 @@ it("places the action after the message and blocks a second activation while pen
     vi.unstubAllGlobals();
   }
 });
+
+it("joins the top-center stack by default and honours an explicit placement", () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    act(() =>
+      root.render(
+        createElement(
+          "div",
+          null,
+          createElement(TransientNotice, {
+            message: "Default",
+            durationMs: null,
+            onDismiss: () => {},
+          }),
+          createElement(TransientNotice, {
+            message: "Corner",
+            durationMs: null,
+            placement: "top-end",
+            onDismiss: () => {},
+          }),
+        ),
+      ),
+    );
+    expect(document.querySelector('[data-toast-region="top-center"]')?.textContent).toContain(
+      "Default",
+    );
+    expect(document.querySelector('[data-toast-region="top-end"]')?.textContent).toContain(
+      "Corner",
+    );
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});

@@ -23,6 +23,7 @@ import { useCitedTurnHistory } from "./useCitedTurnHistory";
 import { useReadOnlyHostSession } from "./useReadOnlyHostSession";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
+import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 
 type AgentTabViewProps = {
   title: string;
@@ -49,9 +50,11 @@ export function AgentTabView(props: AgentTabViewProps) {
 function HostAgentTabView(props: AgentTabViewProps & { session: Session }) {
   const t = useT();
   const remote = useReadOnlyHostSession(props.session, props.visible);
+  // The central connection notice already explains a machine outage; reconnecting reloads this view.
+  const shownCentrally = useConnectionErrorShownCentrally(remote.error);
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {remote.error && (
+      {remote.error && !shownCentrally && (
         <Alert tone="danger">
           {remote.error}
           <Button type="button" variant="secondary" onClick={remote.retry}>

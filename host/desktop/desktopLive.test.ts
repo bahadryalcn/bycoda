@@ -854,3 +854,31 @@ describe("remote requester on desktop commands", () => {
     expect("requestedBy" in JSON.parse(unknown.delivery)).toBe(false);
   });
 });
+
+describe("project directory change notification", () => {
+  const projection = (name: string) => ({
+    version: 1 as const,
+    groups: [],
+    excludedPaths: [],
+    excludedGroupIds: [],
+    projects: [{ cwd: "/work", name }],
+  });
+  it("announces a changed projection and a lapsed window, not an unchanged heartbeat", () => {
+    let now = 0;
+    const live = new DesktopLive(() => now);
+    const changes = vi.fn();
+    live.onDirectoryChange = changes;
+    const beat = (extra: Record<string, unknown>) =>
+      live.beat({ clientId: "a", sessions: [], ...extra });
+    beat({ projectDirectoryRevision: "1", projectDirectory: projection("One") });
+    expect(changes).toHaveBeenCalledTimes(1);
+    beat({ projectDirectoryRevision: "1", projectDirectory: projection("One") });
+    beat({ projectDirectoryRevision: "1" });
+    expect(changes).toHaveBeenCalledTimes(1);
+    beat({ projectDirectoryRevision: "2", projectDirectory: projection("Two") });
+    expect(changes).toHaveBeenCalledTimes(2);
+    now = 30_000;
+    live.beat({ clientId: "b", sessions: [] });
+    expect(changes).toHaveBeenCalledTimes(3);
+  });
+});

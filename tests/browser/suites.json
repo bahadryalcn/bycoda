@@ -570,7 +570,7 @@
     {
       "id": "external-mcp",
       "config": "tests/browser/settings/playwright.external-mcp.config.ts",
-      "files": ["external-mcp.spec.ts", "mcp-loading.spec.ts", "mcp-oauth.spec.ts"],
+      "files": ["external-mcp.spec.ts", "mcp-servers.spec.ts"],
       "fixture": {
         "config": "tests/browser/settings/vite.external-mcp.config.ts",
         "mode": "preview",
@@ -580,12 +580,12 @@
         {
           "name": "chromium",
           "browser": "chromium",
-          "files": ["external-mcp.spec.ts", "mcp-loading.spec.ts", "mcp-oauth.spec.ts"]
+          "files": ["external-mcp.spec.ts", "mcp-servers.spec.ts"]
         },
         {
           "name": "webkit",
           "browser": "webkit",
-          "files": ["external-mcp.spec.ts", "mcp-loading.spec.ts", "mcp-oauth.spec.ts"]
+          "files": ["external-mcp.spec.ts", "mcp-servers.spec.ts"]
         }
       ]
     },

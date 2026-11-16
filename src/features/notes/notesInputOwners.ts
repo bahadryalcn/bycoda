@@ -65,6 +65,18 @@ function unappliedInput(
       (Array.isArray(snapshot.acceptedChanges) && snapshot.acceptedChanges.length > 0)
     );
   if (snapshot.source === "inline-edit") {
+    const canonical = state.canonical as Record<string, unknown> | undefined;
+    const pending = snapshot.pendingInput as { raw?: unknown } | null | undefined;
+    // Conflict recovery can retire a control before its error/outcome view settles.
+    // Exact text already owned by the domain is not a separate private draft.
+    if (
+      key === "title" &&
+      typeof snapshot.draft === "string" &&
+      snapshot.draft === canonical?.title &&
+      (!pending || pending.raw === snapshot.draft) &&
+      (typeof snapshot.failed !== "string" || snapshot.failed === snapshot.draft)
+    )
+      return false;
     if (snapshot.pendingInput || snapshot.failed !== null || snapshot.error !== null) {
       if (
         snapshot.pendingInput ||
@@ -201,6 +213,9 @@ export function subscribeNotePrivateRecoveries(listener: () => void) {
 export function getNotePrivateRecoveries(): readonly NotePrivateRecovery[] {
   return [...allOwners].flatMap((owner) => owner.privateRecoveries());
 }
+export function discardNotePrivateRecovery(id: string) {
+  for (const owner of allOwners) if (owner.discardPrivateRecovery(id)) return;
+}
 export function notePrivateInputCapacityUnavailable() {
   return [...allOwners].some((owner) => owner.privateCapacityUnavailable());
 }
@@ -221,6 +236,7 @@ export class NoteInputOwner {
   private readonly retained = new Map<string, RetainedInput>();
   private readonly retainedCoverage = new Map<string, readonly string[]>();
   private readonly retainedWeights = new Map<string, number>();
+  private readonly dismissedUnadmitted = new Map<string, string>();
   private readonly observers = new Map<string, NativeInputObserver>();
   private readonly works = new Set<NativeInputWork>();
   private readonly settledWaiters = new Set<() => void>();
@@ -514,6 +530,45 @@ export class NoteInputOwner {
     }
     return true;
   }
+  discardPrivateRecovery(id: string) {
+    const recovery = this.privateRecoveries().find((input) => input.id === id);
+    if (!recovery) return false;
+    this.external(() => {
+      if (id === `${this.ownerId}:unadmitted:${recovery.field}`) {
+        // Dismiss presentation only; admission failures must still block writes.
+        if (recovery.text !== null) this.dismissedUnadmitted.set(recovery.field, recovery.text);
+        return;
+      }
+      for (const [key, input] of this.retained) {
+        const baseId = `${this.ownerId}:${input.generation}`;
+        if (id !== baseId && !id.startsWith(`${baseId}:`)) continue;
+        if (input.source === "tag-input" && Array.isArray(input.acceptedChanges)) {
+          const remaining = {
+            ...input,
+            draft: id === baseId ? "" : input.draft,
+            acceptedChanges: input.acceptedChanges.map((change, index) =>
+              id === `${baseId}:${index}` ? null : change,
+            ),
+          };
+          if (privateText(remaining) !== "" || remaining.acceptedChanges.some(Boolean)) {
+            this.retained.set(key, remaining);
+            this.retainedWeights.set(
+              key,
+              privateEncoder.encode(JSON.stringify(remaining)).byteLength,
+            );
+            return;
+          }
+        }
+        this.retained.delete(key);
+        this.retainedCoverage.delete(key);
+        this.retainedWeights.delete(key);
+        return;
+      }
+    });
+    this.finishRetirement();
+    notifyPrivateInputs();
+    return true;
+  }
   privateRecoveries(): NotePrivateRecovery[] {
     let state: Record<string, unknown>;
     try {
@@ -550,7 +605,11 @@ export class NoteInputOwner {
       });
     if (Array.isArray(state.unadmittedInputs))
       for (const field of state.unadmittedInputs) {
-        if (typeof field === "string" && typeof canonical?.[field] === "string")
+        if (
+          typeof field === "string" &&
+          typeof canonical?.[field] === "string" &&
+          this.dismissedUnadmitted.get(field) !== canonical[field]
+        )
           result.push({
             id: `${this.ownerId}:unadmitted:${field}`,
             noteId: state.noteId,

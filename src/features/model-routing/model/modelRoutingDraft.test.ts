@@ -88,7 +88,7 @@ describe("model routing order draft", () => {
 
   it("blocks emptying any pool, including through main-order removal", () => {
     const edit = setPoolMembers(draft(), "p", { entryIds: ["a"], poolIds: [] });
-    expect(() => removeOrderEntry(edit, "a")).toThrow("last model in a pool");
+    expect(() => removeOrderEntry(edit, "a")).toThrow("last model in a group");
     expect(() => setPoolMembers(edit, "p", { entryIds: [], poolIds: [] })).toThrow(
       "at least one model",
     );
@@ -99,7 +99,7 @@ describe("model routing order draft", () => {
     const edit = draft();
     expect(removeOrderPool(edit, "p").routing.pools).toEqual([]);
     edit.routing.roles["voice.reply"] = { kind: "pool", poolId: "p" };
-    expect(() => removeOrderPool(edit, "p")).toThrow("A role uses this pool");
+    expect(() => removeOrderPool(edit, "p")).toThrow("A job uses this group");
   });
 
   it("pool priority is independent from main order", () => {
@@ -154,14 +154,16 @@ describe("model routing order draft", () => {
     expect(() => prepareOrderSave(edit)).toThrow("unique models");
     edit.routing.pools[0]!.entryIds = ["a"];
     edit.routing.pools[0]!.name = " ";
-    expect(() => prepareOrderSave(edit)).toThrow("Give every pool a name");
+    expect(() => prepareOrderSave(edit)).toThrow("Give every group a name");
     edit.routing.pools[0]!.name = "Work";
     edit.routing.roles["task.worker"] = { kind: "pool", poolId: "missing" };
     expect(() => prepareOrderSave(edit)).toThrow("no longer exists");
     edit.routing.roles = {};
     edit.routing.entries[0]!.harness = "grok";
     edit.routing.entries[0]!.providerAccountId = "default";
-    expect(() => prepareOrderSave(edit)).toThrow("Only Claude and Codex");
+    expect(() => prepareOrderSave(edit)).not.toThrow();
+    edit.routing.entries[0]!.harness = "opencode";
+    expect(() => prepareOrderSave(edit)).toThrow("no account choice");
   });
 
   it("empty main order is valid and one shared draft includes numeric text edits", () => {
@@ -243,11 +245,11 @@ describe("Work calendar cap drafts", () => {
       const edit = nested();
       expect(prepareOrderSave(edit).routing.pools[1]!.poolIds).toEqual(["p"]);
       edit.routing.pools[1]!.poolIds = ["missing"];
-      expect(() => prepareOrderSave(edit)).toThrow("only pools that exist");
+      expect(() => prepareOrderSave(edit)).toThrow("only groups that exist");
       edit.routing.pools[1]!.poolIds = ["outer"];
-      expect(() => prepareOrderSave(edit)).toThrow("only pools that exist");
+      expect(() => prepareOrderSave(edit)).toThrow("only groups that exist");
       edit.routing.pools[1]!.poolIds = ["p", "p"];
-      expect(() => prepareOrderSave(edit)).toThrow("only pools that exist");
+      expect(() => prepareOrderSave(edit)).toThrow("only groups that exist");
       edit.routing.pools[1]!.poolIds = ["p"];
       edit.routing.pools[0]!.poolIds = ["outer"];
       expect(() => prepareOrderSave(edit)).toThrow("loop");
@@ -262,12 +264,12 @@ describe("Work calendar cap drafts", () => {
         poolIds: ["p"],
       });
       edit.routing.pools[1]!.poolIds = [];
-      expect(() => removeOrderEntry(edit, "a")).toThrow("last model in a pool");
+      expect(() => removeOrderEntry(edit, "a")).toThrow("last model in a group");
     });
 
     it("blocks deleting a pool another pool includes", () => {
       const edit = nested();
-      expect(() => removeOrderPool(edit, "p")).toThrow("Another pool includes");
+      expect(() => removeOrderPool(edit, "p")).toThrow("Another group includes");
       expect(removeOrderPool(edit, "outer").routing.pools.map((pool) => pool.id)).toEqual(["p"]);
     });
   });

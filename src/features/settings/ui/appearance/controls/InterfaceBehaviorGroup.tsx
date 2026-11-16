@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { t, useLocale } from "../../../../../shared/i18n";
 import { COLLAPSED_PROJECT_RAIL_MODE_DEFAULT } from "../../../model/settings";
 import {
@@ -15,6 +16,9 @@ import type { AppearanceSettings } from "../../useAppearanceSettings";
 export function InterfaceBehaviorGroup({ appearance: a }: { appearance: AppearanceSettings }) {
   useLocale();
   const display = useSessionListDisplay();
+  // The delay has no preview, so it is written on release rather than on every drag tick.
+  const [delayDraft, setDelayDraft] = useState<number | null>(null);
+  const delay = delayDraft ?? display.groupDelayMs;
   return (
     <Group title={t("Behavior and layout")}>
       <Row
@@ -25,12 +29,16 @@ export function InterfaceBehaviorGroup({ appearance: a }: { appearance: Appearan
       >
         <Slider
           label={t("Group after holding")}
-          value={display.groupDelayMs}
-          display={t("{p1} ms", { p1: display.groupDelayMs })}
+          value={delay}
+          display={t("{p1} ms", { p1: delay })}
           min={GROUP_DELAY_MIN_MS}
           max={GROUP_DELAY_MAX_MS}
           step={50}
-          onChange={(groupDelayMs) => updateSessionListDisplay({ groupDelayMs })}
+          onChange={setDelayDraft}
+          onValueCommit={(groupDelayMs) => {
+            updateSessionListDisplay({ groupDelayMs });
+            setDelayDraft(null);
+          }}
         />
       </Row>
       <Row

@@ -57,9 +57,9 @@ The idle unload preference releases unused model memory after its chosen interva
 OpenRouter transcription choices come from its current catalog; discovery failures
 remain visible, and a removed model requires an explicit replacement.
 
-Voice reply models are configured in **Settings > Background work > Where models are
-used**, under the voice reply role. The assistant uses the same Host-wide order,
-pools and limits; Room no longer has a separate model pool editor. Selection is
+Voice reply models are configured in **Settings > Models > Background work > Who uses
+what**, under the voice reply role. The assistant uses the same Host-wide order,
+groups and limits; Room no longer has a separate model pool editor. Selection is
 resolved when execution starts and never switches a running session. See
 [Models](models.md) and [Assistant](assistant.md) for shared routing and jobs.
 
@@ -95,6 +95,11 @@ Cloud voice retries temporary connection failures with fresh credentials: five
 quick attempts (1, 2, 5, 10 and 30 seconds), then once a minute for up to 30
 minutes. It shows **Reconnecting...** with a **Stop** button, and retries at once
 when the network comes back. A stable minute restores the quick attempts.
+If the connection dropped before your last request was answered, the assistant
+says so after reconnecting and asks whether to continue instead of repeating it.
+When an action fails or its result is unknown, the assistant tells you what
+blocked it and asks how to continue; for example, a new project whose name is
+taken prompts a choice between continuing that project and picking another name.
 Sign-in, billing and microphone permission failures require your action.
 **Stop**, **Disconnect voice** and sleep cancel any scheduled reconnect. A muted
 microphone stays muted. Escape closes menus without disconnecting voice.

@@ -1,5 +1,6 @@
 import { Tooltip } from "../../shared/ui/Tooltip";
 import { Alert } from "../../shared/ui/Alert";
+import { useConnectionErrorShownCentrally } from "../../shared/ui/connectionErrorGate";
 import { Text } from "../../shared/ui/Text";
 import { DropdownMenu } from "../../shared/ui/DropdownMenu";
 import { t, useLocale } from "../../shared/i18n/technical";
@@ -217,6 +218,7 @@ function ConversationHostTools({
   const [machines, setMachines] = useState<RemoteMachine[]>([]);
   const [machinesLoading, setMachinesLoading] = useState(false);
   const [machinesError, setMachinesError] = useState("");
+  const machinesShownCentrally = useConnectionErrorShownCentrally(machinesError);
   const [machinesRefresh, setMachinesRefresh] = useState(0);
   useEffect(() => {
     if (!hostScoped || !active) return;
@@ -435,7 +437,7 @@ function ConversationHostTools({
                     variant="ghost"
                     size="sm"
                     iconOnly
-                    label={machinesError ? t("Retry") : t("Refresh")}
+                    label={machinesError && !machinesShownCentrally ? t("Retry") : t("Refresh")}
                     className="host-tools-machine-refresh"
                     loading={machinesLoading}
                     disabled={machinesLoading}
@@ -516,7 +518,9 @@ function ConversationHostTools({
           ) : null}
         </div>
         {presentationError ? <Alert tone="danger">{presentationError}</Alert> : null}
-        {hostScoped && machinesError ? <Alert tone="danger">{machinesError}</Alert> : null}
+        {hostScoped && machinesError && !machinesShownCentrally ? (
+          <Alert tone="danger">{machinesError}</Alert>
+        ) : null}
         {hostScoped && target.kind === "machine" && !selectedMachine && !machinesLoading ? (
           <Alert tone="danger">{t("Selected machine unavailable")}</Alert>
         ) : null}

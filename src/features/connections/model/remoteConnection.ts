@@ -1,3 +1,4 @@
+import { t } from "../../../shared/i18n";
 import { classifyRemoteError, nativeConnectionFailureCode, remoteErrorText } from "./remoteFailure";
 import { classifySshFailure, parseSshStartFailure } from "./sshFailure";
 
@@ -77,6 +78,25 @@ export function connectionReason(status: RemoteConnectionStatus, raw: string): s
     return detail ? `SSH could not connect: ${detail}` : "SSH could not connect.";
   }
   return sanitizeConnectionError(raw) || "The machine did not answer.";
+}
+
+/** `connectionReason` in the user's language, for the fixed sentences it returns. */
+export function localizeConnectionReason(reason: string): string {
+  const known: Record<string, string> = {
+    "bycoda Host on the machine needs an update.": t("bycoda Host on the machine needs an update."),
+    "The machine is reachable, but bycoda Host is not running there. Start it, then reconnect.": t(
+      "The machine is reachable, but bycoda Host is not running there. Start it, then reconnect.",
+    ),
+    "The machine did not answer. It may be off, asleep or offline.": t(
+      "The machine did not answer. It may be off, asleep or offline.",
+    ),
+    "This machine is not connected on this computer.": t(
+      "This machine is not connected on this computer.",
+    ),
+    "SSH could not connect.": t("SSH could not connect."),
+    "The machine did not answer.": t("The machine did not answer."),
+  };
+  return known[reason] ?? reason;
 }
 
 /** Which status a failed request means. `connected` when the machine itself

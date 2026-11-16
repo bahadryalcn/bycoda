@@ -55,7 +55,7 @@ import { AppearanceSection } from "./AppearanceSection";
 import { LayerStack } from "../controls/LayerStack";
 import { GlassControl } from "../controls/GlassControl";
 import { SceneStrip } from "../controls/SceneStrip";
-import { BackgroundPreview } from "../controls/BackgroundPreview";
+import { BackgroundPreview, RandomCombinationButton } from "../controls/BackgroundPreview";
 import { BackgroundLibrary } from "../controls/BackgroundLibrary";
 import { ImageDropZone } from "../controls/ImageDropZone";
 import { generatorSession } from "../controls/themeGeneratorSession";
@@ -86,14 +86,17 @@ export function BackgroundSection({ appearance }: { appearance: AppearanceSettin
         intensity={intensity}
         background={background}
       />
+      {/* The layer list is already framed; the roll action sits above it instead of a second card. */}
+      <div className="flex justify-end">
+        <RandomCombinationButton background={background} />
+      </div>
       <LayerStack
         label={t("Backgrounds")}
-        description={t("Layers from back to front")}
+        description={t("Layers from front to back")}
         layers={[
           {
             id: "glass",
             name: t("Glass"),
-            description: t("Transparency of the sidebar and main pane"),
             enabled: glassOn,
             dimmed: !glassApplies,
             onToggle:
@@ -127,7 +130,6 @@ export function BackgroundSection({ appearance }: { appearance: AppearanceSettin
           {
             id: "color",
             name: t("Color"),
-            description: t("Gradient or solid color behind the workspace"),
             enabled: background.enabled,
             onToggle: () =>
               saveWorkspaceBackground(
@@ -164,19 +166,21 @@ export function BackgroundSection({ appearance }: { appearance: AppearanceSettin
           {
             id: "image",
             name: t("Image"),
-            description: t("Picture behind chat panes, global or per project"),
             enabled: Boolean(appearance.chatBackgroundPath),
             strength: appearance.chatBackgroundPath
               ? `${t("On")} · ${appearance.chatBackgroundBlur}px`
               : t("None"),
-            thumbnail: imageSrc ? <img src={imageSrc} alt="" /> : <ImagePlus aria-hidden />,
+            thumbnail: imageSrc ? (
+              <img src={imageSrc} alt="" loading="lazy" decoding="async" />
+            ) : (
+              <ImagePlus aria-hidden />
+            ),
             settingIds: ["chat-background", "new-thread-background-effect"],
             content: <ChatBackgroundCard appearance={appearance} />,
           },
           {
             id: "live",
             name: t("Live"),
-            description: t("Animated scene that moves behind the workspace"),
             enabled: effect !== "none",
             onToggle: () => saveLiveBackground(effect === "none" ? lastScene : "none"),
             strength:
@@ -212,7 +216,7 @@ export function BackgroundSection({ appearance }: { appearance: AppearanceSettin
                 />
                 <Row
                   label={t("Visibility")}
-                  description={t("How strongly the scene shows through.")}
+                  info={t("How strongly the scene shows through.")}
                   disabled={effect === "none"}
                   disabledReason={t("Choose a scene first.")}
                 >
@@ -388,7 +392,7 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
               </Button>
             )}
           </div>
-          <div className={imageStyles.blur}>
+          <Row label={t("Blur")} info={t("Applies to global and project images.")}>
             <Slider
               label={t("Chat background blur")}
               value={appearance.chatBackgroundBlur}
@@ -397,15 +401,12 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
               max={CHAT_BACKGROUND_BLUR_MAX}
               onChange={appearance.onChatBackgroundBlur}
             />
-            <Text as="p" tone="muted" leading="inherit" className={imageStyles.hint}>
-              {t("Applies to global and project images.")}
-            </Text>
-          </div>
+          </Row>
         </div>
       </div>
       <Row
         label={t("Chat background layer")}
-        description={t(
+        info={t(
           "Adds a layer over the image for readability. Text may be harder to read without it.",
         )}
         modified={appearance.preferences.chatBackgroundLayer === false}
@@ -446,9 +447,7 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
           <Row
             stacked
             label={t("Background effect")}
-            description={
-              NEW_THREAD_BACKGROUND_EFFECT_DESCRIPTIONS[appearance.newThreadBackgroundEffect]
-            }
+            info={NEW_THREAD_BACKGROUND_EFFECT_DESCRIPTIONS[appearance.newThreadBackgroundEffect]}
           >
             <Segmented
               label={t("Background effect")}
@@ -461,7 +460,7 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
               optionIdPrefix="new-thread-background-effect"
             />
           </Row>
-          <Row label={t("Show on")} description={t("Empty sessions only, or every conversation.")}>
+          <Row label={t("Show on")} info={t("Empty sessions only, or every conversation.")}>
             <Segmented
               label={t("Show background on")}
               value={appearance.chatBackgroundScope}
@@ -484,7 +483,7 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
           </Row>
           <Row
             label={t("Empty chat visibility")}
-            description={t("Background strength before a chat has messages.")}
+            info={t("Background strength before a chat has messages.")}
           >
             <Slider
               label={t("Empty chat background visibility")}
@@ -497,7 +496,7 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
           </Row>
           <Row
             label={t("Session visibility")}
-            description={t("Background strength once the conversation has messages.")}
+            info={t("Background strength once the conversation has messages.")}
           >
             <Slider
               label={t("Session background visibility")}

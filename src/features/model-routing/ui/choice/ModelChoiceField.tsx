@@ -61,7 +61,7 @@ function RoutingChoice({
         value={segment}
         options={[
           ...(allowDefault ? [{ value: "default", label: t("Default"), disabled }] : []),
-          { value: "pool", label: t("Pool"), disabled },
+          { value: "pool", label: t("Any model"), disabled },
           { value: "fixed", label: t("Fixed"), disabled },
         ]}
         onValueChange={(next) =>
@@ -100,7 +100,7 @@ function RoutingChoice({
           />
           {routing.error ? (
             <Text as="p">
-              {t("Model pools could not be loaded. You can still choose a fixed model.")}
+              {t("Model groups could not be loaded. You can still choose a fixed model.")}
             </Text>
           ) : null}
         </>

@@ -3,6 +3,7 @@ import { Alert } from "../../../shared/ui/Alert";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { NoticeButton, NoticeLink, type NoticeAction } from "../../../shared/ui/Notice";
 import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
+import { Toast } from "../../../shared/ui/ToastRegion";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { useState } from "react";
@@ -24,6 +25,7 @@ export function RemoteLoadError({
   coordinated = true,
   onDismiss,
   recovering = false,
+  toast = false,
 }: {
   cwd: string;
   failure: RemoteFailure;
@@ -35,12 +37,23 @@ export function RemoteLoadError({
   onDismiss?: () => void;
   /** Shared machine notice while automatic recovery handles a short outage. */
   recovering?: boolean;
+  /** The workspace owner's one top-center notice per machine (shared toast stack). */
+  toast?: boolean;
 }) {
   useLocale();
   const { machine, status, reconnecting, reconnect } = useRemoteConnection(cwd);
   const [reconnectError, setReconnectError] = useState("");
   const shared = useRemoteConnectionFeedback(coordinated ? cwd : undefined, failure);
   if (shared) return null;
+  if (recovering && toast)
+    return (
+      <Toast
+        tone="info"
+        title={t("Reconnecting…")}
+        message={machine?.name ?? t("this machine")}
+        durationMs={null}
+      />
+    );
   if (recovering)
     return (
       <InlineMessage tone="info">
@@ -106,6 +119,34 @@ export function RemoteLoadError({
         ? { label: t("Retry"), onClick: onRetry }
         : undefined;
   const reconnectFailed = reconnectError && reconnectError !== failure.message;
+  if (toast) {
+    const detail = [
+      failure.message,
+      reconnectFailed ? `${t("Reconnecting failed: ")}${reconnectError}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+    return (
+      <Toast
+        tone="warning"
+        title={title}
+        message={stale ? t("Showing what was last loaded.") : undefined}
+        action={primary}
+        extra={
+          detail ? (
+            <ErrorDetails
+              title={title}
+              detail={detail}
+              actions={(close) => secondaryActions(close).map(renderButton)}
+            />
+          ) : undefined
+        }
+        actions={detail ? undefined : secondaryActions()}
+        durationMs={null}
+        onDismiss={onDismiss}
+      />
+    );
+  }
   if (compact) {
     // One stable row: the raw transport text stays behind Details, never in the bar.
     const dismiss: NoticeAction | undefined = onDismiss

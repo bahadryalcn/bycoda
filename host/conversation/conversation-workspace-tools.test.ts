@@ -272,6 +272,58 @@ describe("direct application workspace tools", () => {
       "not found",
     );
   });
+  it("queues provider connections, filtered discovery and Jira board operations without host approval", async () => {
+    const s = await setup();
+    await s.inbox.beat("native", "desktop", { version: 1 });
+    await s.call("inbox.providers.connections", { requestId: "connections" });
+    await s.call("inbox.providers.list", {
+      requestId: "jira-list",
+      provider: "jira",
+      githubKinds: ["pr"],
+    });
+    await s.call("inbox.jira.board", { requestId: "board", boardId: 7, scope: "backlog" });
+    const snapshotId = "0f8fad5b-d9cb-469f-a165-70867728950e";
+    await s.call("inbox.jira.transition", {
+      requestId: "transition",
+      snapshotId,
+      key: "ENG-12",
+      transitionId: "31",
+    });
+    const jobs: any[] = [];
+    let replies: { id: string; result: null }[] = [];
+    for (let beat = 0; beat < 4 && jobs.length < 4; beat++) {
+      const delivered = (await s.inbox.beat("native", "desktop", { version: 1, replies })).jobs;
+      jobs.push(...delivered);
+      replies = delivered.map((job: any) => ({ id: job.id, result: null }));
+    }
+    expect(jobs.map((job: any) => job.operation)).toEqual([
+      { action: "providers" },
+      {
+        action: "list",
+        projects: [{ path: s.project.cwd }],
+        query: {
+          assignedToMe: false,
+          state: "open",
+          search: "",
+          githubKinds: ["pr"],
+          providers: ["jira"],
+        },
+      },
+      { action: "jira-board-read", cwd: s.project.cwd, boardId: 7, scope: "backlog" },
+      {
+        action: "jira-board-transition",
+        cwd: s.project.cwd,
+        snapshotId,
+        key: "ENG-12",
+        transitionId: "31",
+      },
+    ]);
+    // The desktop's native Jira prepare dialog is the owner approval.
+    expect(s.approval).not.toHaveBeenCalled();
+    await expect(
+      s.call("inbox.jira.move", { requestId: "rank", snapshotId, key: "ENG-12", target: "rank" }),
+    ).rejects.toThrow("rank anchor");
+  });
   it("exposes run history and cancellation while preventing an automation from controlling itself", async () => {
     const s = await setup(true);
     await s.call("automations.create", automation);

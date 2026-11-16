@@ -8,8 +8,21 @@ import {
   storageFailure,
   type PersistenceHealth,
 } from "./storage/persistence-health";
+import { createDedupedWarn } from "./diagnostics/log-dedupe";
 
 export type StoreRow = Record<string, any>;
+/** Every Host read and write waits behind a scope this long; the owner names the holder. */
+const SLOW_SCOPE_MS = 1_000;
+const slowScopeWarn = createDedupedWarn({ windowMs: 10 * 60_000 });
+/** The functions that entered a scope: names only, no paths and none of this module's frames. */
+const scopeSite = (entry: Error): string =>
+  (entry.stack ?? "")
+    .split("\n")
+    .slice(1)
+    .map((line) => /^\s*at (?:async )?([\w$.<>]+) \(/.exec(line)?.[1])
+    .filter((name): name is string => !!name && !/^(?:StoreDatabase|StoreStatement)\./.test(name))
+    .slice(0, 3)
+    .join(" < ") || "unknown";
 /**
  * Structured clone ships a typed-array view's entire backing ArrayBuffer. A 64 KiB
  * chunk sliced from a 64 MiB artifact would otherwise copy 64 MiB per statement, so
@@ -431,7 +444,10 @@ export class StoreDatabase {
     if (signal && this.queuedCancellableReads >= 128)
       return Promise.reject(new Error("Database cancellable read queue is full."));
     if (signal) this.queuedCancellableReads++;
-    this.admissionVersion++;
+    // Every later admission queues behind this one (FIFO); nested work never admits.
+    const admittedBefore = ++this.admissionVersion;
+    // V8 formats the stack only when it is read, so an unread entry costs one capture.
+    const entry = new Error();
     let entered = false;
     const pending = this.tail.then(async () => {
       if (this.failed) throw this.failed;
@@ -439,6 +455,7 @@ export class StoreDatabase {
       if (signal?.aborted) throw new Error("Database read admission cancelled.");
       entered = true;
       const owner: Owner = { id: randomUUID(), phase: "open" };
+      const enteredAt = performance.now();
       return this.owners.run(owner, async () => {
         await this.request("enter", undefined, [], owner);
         let primary: unknown;
@@ -470,6 +487,12 @@ export class StoreDatabase {
         } finally {
           owner.phase = "closed";
         }
+        const held = performance.now() - enteredAt;
+        if (held >= SLOW_SCOPE_MS)
+          slowScopeWarn(
+            `Host database queue held by ${scopeSite(entry)}`,
+            `ms=${Math.round(held)} queued=${this.admissionVersion - admittedBefore}`,
+          );
         if (workFailed) throw primary;
         return result as Awaited<ReturnType<typeof work>>;
       });

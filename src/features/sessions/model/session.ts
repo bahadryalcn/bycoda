@@ -749,7 +749,8 @@ export function newSession(
   runtimeMode?: RuntimeMode,
   modelSettings?: Record<string, string>,
 ): Session {
-  const resolved = resolveModel(harness, model ?? preferredModelId(harness));
+  const accountId = projectDefaultAccountId(cwd, harness);
+  const resolved = resolveModel(harness, model ?? preferredModelId(harness, accountId));
   const defaults = providerSessionDefaults(harness, cwd);
   const preferred = preferredModelSettings(resolved, modelSettings);
   const settings = modelSettings ? preferred : applySessionDefaults(resolved, preferred, defaults);
@@ -762,7 +763,7 @@ export function newSession(
     runtimeMode: runtimeMode ?? runtimeModeForNewSession(harness, defaults.runtimeMode),
     title: HARNESS_LABEL[harness],
     cwd,
-    providerAccountId: projectDefaultAccountId(cwd, harness),
+    providerAccountId: accountId,
     blocks: [],
   };
 }
@@ -832,14 +833,21 @@ export function newSessionForProject(seed: Session | undefined, cwd: string): Se
  */
 export function retargetSessionToProject(session: Session, cwd: string): Session {
   const { harness, model } = projectSessionChoice(session, cwd);
-  const resolved = resolveModel(harness, model ?? preferredModelId(harness));
+  const blank = session.blocks.length === 0 && !session.providerSessionId;
+  // The account the session ends on; its model and defaults apply, as in a new session.
+  const keepsAccount = harness === session.harness && !(blank && cwd !== session.cwd);
+  const providerAccountId = keepsAccount
+    ? session.providerAccountId
+    : blank
+      ? projectDefaultAccountId(cwd, harness)
+      : undefined;
+  const resolved = resolveModel(harness, model ?? preferredModelId(harness, providerAccountId));
   const carriesSeed = model != null && model === session.model && harness === session.harness;
   const preferred = preferredModelSettings(
     resolved,
     carriesSeed ? session.modelSettings : undefined,
   );
-  const defaults = providerSessionDefaults(harness, cwd);
-  const blank = session.blocks.length === 0 && !session.providerSessionId;
+  const defaults = providerSessionDefaults(harness, cwd, providerAccountId);
   const settings = blank ? applySessionDefaults(resolved, preferred, defaults) : preferred;
   return {
     ...session,
@@ -853,9 +861,7 @@ export function retargetSessionToProject(session: Session, cwd: string): Session
         : session.runtimeMode,
     title: HARNESS_LABEL[harness],
     ...(harness === session.harness ? {} : { providerSessionId: undefined }),
-    ...(harness === session.harness && !(blank && cwd !== session.cwd)
-      ? {}
-      : { providerAccountId: blank ? projectDefaultAccountId(cwd, harness) : undefined }),
+    ...(keepsAccount ? {} : { providerAccountId }),
     ...(resolved.id === session.model ? {} : { context: dropContextWindow(session.context) }),
   };
 }

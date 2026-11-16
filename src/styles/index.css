@@ -43,6 +43,7 @@ html[data-control-density="touch"] {
 }
 
 html [data-transcript-content],
+html [data-chat-column],
 html [data-session-composer].max-w-4xl {
   max-width: var(--appearance-chat-width, 56rem);
 }
@@ -989,6 +990,12 @@ input[type="checkbox"]:not([class*="appearance-none"]) {
 }
 input[type="checkbox"]:disabled {
   cursor: default;
+}
+
+/* PasswordField draws its own show/hide toggle; hide the WebView2 reveal and clear buttons. */
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear {
+  display: none;
 }
 
 html {
@@ -2992,9 +2999,12 @@ header[data-tauri-drag-region] [data-tab-draggable="true"] [data-no-drag] * {
   cursor: default !important;
 }
 
-html.is-grabbing {
+/* A pointer drag shows `grabbing` from `body.style.cursor` (setGrabbing) and, while the pointer is
+   captured, from the captured item. `html.is-grabbing` is only a state flag: a document-wide
+   cursor rule under it restyled the whole app twice per drag and made every reorder stutter. */
+.reorder-item[data-dragging],
+.reorder-item[data-dragging] * {
   cursor: grabbing !important;
-  --interaction-cursor: grabbing;
 }
 
 /* Drop-target roles. One vocabulary for every surface that moves, reorders, groups or splits:
@@ -4052,8 +4062,13 @@ html:not(.theme-light) .markdown-code-token {
   animation-play-state: paused;
 }
 
-.project-group-section[data-folded="true"],
-.project-group-body[data-folded="true"] {
+/* A folding reorder (useAnimatedReorder `foldOnDrag`) shows every block as its header only. */
+[data-reorder-folding] [data-reorder-fold-body] {
+  display: none !important;
+}
+
+.project-group-section[data-reorder-folding] {
+  margin-bottom: 0;
   transition: none;
 }
 
@@ -5215,7 +5230,7 @@ html:is([data-decorative-motion="off"], [data-window-focus="off"])
 html.is-explorer-file-dragging {
   --interaction-cursor: grabbing;
 }
-html:is(.is-grabbing, .is-explorer-file-dragging)
+html.is-explorer-file-dragging
   :is(
     button,
     a,

@@ -1,6 +1,7 @@
 import { Text } from "../../shared/ui/Text";
 import { EmptyState } from "../../shared/ui/EmptyState";
 import { Alert } from "../../shared/ui/Alert";
+import { useConnectionErrorShownCentrally } from "../../shared/ui/connectionErrorGate";
 import { Button } from "../../shared/ui/Button";
 import { InfoPopover } from "../../shared/ui/InfoPopover";
 import { Meter } from "../../shared/ui/Meter";
@@ -160,6 +161,7 @@ function ProjectDiagnosticsPanel({
   }, [active, transferScope?.cwd, transferScope?.sessionId, transferScope?.targetValue, samples]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const shownCentrally = useConnectionErrorShownCentrally(error);
   const alive = useRef(false);
   const visible = useRef(active);
   visible.current = active;
@@ -235,7 +237,7 @@ function ProjectDiagnosticsPanel({
           motion="none"
           variant="ghost"
           iconOnly
-          label={error ? t("Retry") : t("Sample now")}
+          label={error && !shownCentrally ? t("Retry") : t("Sample now")}
           loading={busy}
           loadingLabel={t("Measuring…")}
           disabled={busy}
@@ -271,7 +273,7 @@ function ProjectDiagnosticsPanel({
           </p>
         </InfoPopover>
       </header>
-      {error ? <Alert tone="danger">{error}</Alert> : null}
+      {error && !shownCentrally ? <Alert tone="danger">{error}</Alert> : null}
       {!sample && !busy && !error ? (
         <EmptyState
           description={t("Take a sample to start the charts.")}

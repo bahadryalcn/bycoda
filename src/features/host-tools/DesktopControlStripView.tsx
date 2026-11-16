@@ -78,7 +78,7 @@ export function DesktopControlStripView({
         {
           frame: "pane",
           edge: floating ? "all" : "block-end",
-          variant: floating ? "card" : undefined,
+          variant: floating ? "floating" : undefined,
           radius: floating ? "card" : undefined,
         },
         `${styles.strip} ${floating ? styles.floating : ""}`,

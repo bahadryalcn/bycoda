@@ -175,12 +175,17 @@
   padding-block-end: 8px;
 }
 
+/* One strip that scrolls sideways. Each chip keeps its own width (no shrinking into
+   its neighbour) and a long tag ends in an ellipsis at its max width. */
 .note-quick-tags {
   display: flex;
   flex: none;
   gap: 4px;
   padding: 4px 8px;
-  overflow-x: auto;
+}
+.note-quick-tags > * {
+  flex: none;
+  max-inline-size: 12rem;
 }
 
 .note-detail-words {

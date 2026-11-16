@@ -34,6 +34,8 @@ const failures = new Map<string, RemoteFailure>();
 const unreachable = new Map<string, { count: number; at: number }>();
 /** One connection state per machine, fed by the outcome of every load. */
 const connections = new Map<string, RemoteConnectionState>();
+/** When each machine's status first left `connected`; cleared once it connects again. */
+const downSince = new Map<string, number>();
 const changeListeners = new Set<() => void>();
 const recoveredListeners = new Set<(environmentId?: string) => void>();
 
@@ -48,6 +50,9 @@ export function applyRemoteConnection(environmentId: string, event: RemoteConnec
   const next = reduceConnection(previous, event);
   if (next === previous) return;
   connections.set(environmentId, next);
+  if (next.status === "connected") downSince.delete(environmentId);
+  else if (next.status !== "connecting" && !downSince.has(environmentId))
+    downSince.set(environmentId, "at" in event ? event.at : Date.now());
   if (next.status !== previous.status) recordHostConnection(next.status, previous.status);
   if (next.status !== previous.status && next.status !== "connected")
     markRemoteFeaturesStale(environmentId);
@@ -69,10 +74,17 @@ export function listRemoteConnections(): [string, RemoteConnectionState][] {
   return [...connections];
 }
 
-/** Machines whose connection is down or refused right now, in first-seen order. */
+/** Machines whose connection is down or refused right now, in first-seen order. An
+ * outdated Host still answers (the row shows it connected), so it is no outage here;
+ * a pane's own outdated failure still raises its notice. */
 export function listRemoteOutages(): string[] {
   return [...connections]
-    .filter(([, state]) => state.status !== "connected" && state.status !== "connecting")
+    .filter(
+      ([, state]) =>
+        state.status !== "connected" &&
+        state.status !== "connecting" &&
+        state.status !== "outdated-host",
+    )
     .map(([environmentId]) => environmentId);
 }
 
@@ -94,12 +106,17 @@ export function readRemoteConnection(environmentId: string): RemoteConnectionSta
   return connections.get(environmentId) ?? INITIAL_CONNECTION;
 }
 
+/** When this machine's current outage began, if it is not connected. */
+export function readRemoteDownSince(environmentId: string): number | undefined {
+  return downSince.get(environmentId);
+}
+
 /** Records one load: `error` undefined means it succeeded. */
 export function reportRemoteLoad(cwd: string, source: string, error?: unknown): void {
   if (error !== undefined && remoteErrorText(error) === SUPERSEDED_CONNECTION) return;
   const environmentId = environmentOf(cwd);
   if (!environmentId) return;
-  const feature = /git|graph|changes/.test(source)
+  const feature = /git|graph|changes|status/.test(source)
     ? "git"
     : /file|tree|search/.test(source)
       ? "files"
@@ -170,12 +187,9 @@ export function announceRemoteRecovery(environmentId?: string): void {
 export function resetRemoteConnection(environmentId: string): void {
   invalidateConnection(environmentId);
   unreachable.delete(environmentId);
+  downSince.delete(environmentId);
   for (const key of Array.from(failures.keys()))
-    if (
-      key.startsWith(`${environmentId}
-`)
-    )
-      failures.delete(key);
+    if (key.startsWith(`${environmentId}\n`)) failures.delete(key);
   applyRemoteConnection(environmentId, { type: "reset" });
   emit();
 }
@@ -225,6 +239,7 @@ export function useRemoteLoadFailure(cwd: string, source: string): RemoteFailure
 export function forgetRemoteConnection(environmentId: string): void {
   invalidateConnection(environmentId);
   connections.delete(environmentId);
+  downSince.delete(environmentId);
   unreachable.delete(environmentId);
   for (const key of Array.from(failures.keys()))
     if (key.startsWith(`${environmentId}\n`)) failures.delete(key);
@@ -237,4 +252,5 @@ export function resetRemoteHealth(): void {
   failures.clear();
   unreachable.clear();
   connections.clear();
+  downSince.clear();
 }

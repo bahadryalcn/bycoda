@@ -721,7 +721,9 @@ function AssistantRoomFixture() {
           </Button>
         </div>
       )}
-      {params.has("desktop") && <DesktopControlStrip port={indicatorPort} />}
+      {params.has("desktop") && (
+        <DesktopControlStrip port={indicatorPort} floating={params.has("desktop-floating")} />
+      )}
       <AssistantView
         initialTab={
           params.has("settings")

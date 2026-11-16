@@ -51,6 +51,18 @@ it("uses desktop visibility owners instead of caller filters and preserves exact
   ).rejects.toThrow(/Enable/);
   expect(state.invoke).toHaveBeenCalledTimes(1);
 });
+it("preserves priority in the native board response", async () => {
+  const result = { page: { issues: [{ identifier: "ENG-7", priority: "High" }] } };
+  state.invoke.mockResolvedValueOnce(result);
+  await expect(
+    executeRemoteJiraBoard({
+      action: "jira-board-read",
+      cwd: "/project",
+      boardId: 7,
+      scope: "board",
+    }),
+  ).resolves.toEqual(result);
+});
 it("routes new mutations only to native approval with the original host deadline", async () => {
   const operation = {
     action: "jira-board-transition" as const,

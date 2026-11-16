@@ -25,7 +25,7 @@ function choiceValue(choice: ModelRoutingChoice | undefined): string {
   return choice.kind === "pool" ? `${POOL_PREFIX}${choice.poolId}` : choice.kind;
 }
 
-/** One role: a single choice (Automatic for helpers, Model order, a pool, or a fixed model). */
+/** One job: a single choice (Automatic for helpers, any model in order, a group, or a fixed model). */
 export function ModelRoleRow({
   role,
   label,
@@ -75,24 +75,23 @@ export function ModelRoleRow({
       : undefined;
   const options = [
     ...(helper ? [{ value: "automatic", label: t("Automatic") }] : []),
-    { value: "order", label: t("Model order") },
+    { value: "order", label: t("Any model, in order") },
     ...pools.map((pool) => ({
       value: `${POOL_PREFIX}${pool.id}`,
-      label: t("Pool: {p0}", { p0: pool.name || t("Unnamed pool") }),
+      label: t("Group: {p0}", { p0: pool.name || t("Unnamed group") }),
     })),
     ...(missingPool
       ? [
           {
             value: `${POOL_PREFIX}${missingPool}`,
-            label: t("Deleted pool"),
+            label: t("Deleted group"),
             disabled: true,
           },
         ]
       : []),
     { value: "fixed", label: t("Fixed model") },
   ];
-  // Rows on the plain order would all repeat the same first model; they speak up only on a problem.
-  const problemsOnly = choice?.kind === "order";
+  // Every job says which model it runs on now, so the order and groups need no explanation.
   const preview =
     choice && choice.kind !== "fixed" && orderReady ? (
       helper ? (
@@ -101,7 +100,6 @@ export function ModelRoleRow({
           role={role as HelperModelRole}
           choice={choice}
           version={version}
-          problemsOnly={problemsOnly}
         />
       ) : (
         <ModelRoutingResolution
@@ -109,7 +107,6 @@ export function ModelRoleRow({
           role={role}
           choice={choice}
           revision={version}
-          problemsOnly={problemsOnly}
         />
       )
     ) : null;

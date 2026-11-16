@@ -1114,34 +1114,59 @@ it("opens the shared actions on right click and adds a skill to a group", async 
   ]);
 });
 
-it("opens the preview when pointer capture retargets a grouped row click to its drag wrapper", async () => {
-  createSkillGroup({ name: "Writing", skillNames: ["Project guide"] });
-  await render();
-  await click("Groups");
-  const name = container.querySelector<HTMLButtonElement>('button[aria-label="Project guide"]');
-  // Name button sits in the row; the row sits in the drag wrapper that captures the pointer.
-  const wrapper = name?.parentElement?.parentElement;
-  expect(wrapper).toBeTruthy();
-  const original = document.elementFromPoint;
-  document.elementFromPoint = () => name ?? null;
-  try {
-    await act(async () => {
-      wrapper!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-  } finally {
-    document.elementFromPoint = original;
-  }
-  expect(container.querySelector('[aria-label="Skill instructions"]')).not.toBeNull();
-});
+function checkbox(label: string): HTMLInputElement {
+  const found = Array.from(
+    document.querySelectorAll<HTMLInputElement>("input[type=checkbox]"),
+  ).find((input) => input.closest("label")?.textContent?.startsWith(label));
+  expect(found, `Checkbox: ${label}`).toBeDefined();
+  return found!;
+}
 
-it("renders saved groups, missing members, search and a source removal action", async () => {
+it("edits group membership in bulk from the Groups view, keeping missing members", async () => {
   const group = createSkillGroup({ name: "Writing", skillNames: ["Project guide", "Gone"] });
   await render();
   await click("Groups");
-  expect(container.textContent).toContain("Writing");
-  expect(container.textContent).toContain("1 missing skills");
-  expect(container.textContent).toContain("Ungrouped");
-  await click("Actions for Project guide");
-  await click("Remove from Writing");
+  expect(container.querySelector('[aria-label="Skill groups"]')?.textContent).toContain(
+    "/group-writing",
+  );
+  expect(container.textContent).toContain("Select a group");
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Skill groups"] button')!.click(),
+  );
+  expect(container.textContent).toContain("1 missing skills stay in the group: Gone");
+  expect(checkbox("Project guide").checked).toBe(true);
+  await act(async () => checkbox("Select all").click());
+  const all = listSkillGroups().find((item) => item.id === group.id)!.skillNames;
+  expect(all.slice(0, 2)).toEqual(["Project guide", "Gone"]);
+  expect(all.length).toBeGreaterThan(2);
+  await act(async () => checkbox("Select all").click());
   expect(listSkillGroups().find((item) => item.id === group.id)?.skillNames).toEqual(["Gone"]);
+  await act(async () => checkbox("Project guide").click());
+  expect(listSkillGroups().find((item) => item.id === group.id)?.skillNames).toEqual([
+    "Gone",
+    "Project guide",
+  ]);
+  // Under a membership filter, a toggled row stays put until the filter changes.
+  await click("In group");
+  await act(async () => checkbox("Project guide").click());
+  expect(checkbox("Project guide").checked).toBe(false);
+  await click("Remove missing");
+  expect(listSkillGroups().find((item) => item.id === group.id)?.skillNames).toEqual([]);
+  await click("Close group");
+  expect(container.textContent).toContain("Select a group");
+});
+
+it("opens a new group in the membership editor", async () => {
+  await render();
+  await chooseFromMenu("New", "New group");
+  const name = document.querySelector<HTMLInputElement>('[role="dialog"] input')!;
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    setter.call(name, "Design");
+    name.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await click("Save");
+  expect(container.querySelector('[aria-label="Edit Design"]')).not.toBeNull();
+  await act(async () => checkbox("Project guide").click());
+  expect(listSkillGroups()[0].skillNames).toEqual(["Project guide"]);
 });

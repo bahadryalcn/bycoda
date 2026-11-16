@@ -4,7 +4,6 @@ import { useAccount } from "../../account";
 import { t, useLocale } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
-import { Disclosure } from "../../../shared/ui/Disclosure";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { LoadingText } from "../../../shared/ui/LoadingText";
@@ -51,21 +50,18 @@ function CandidateRow({
 }) {
   const plan = sshAddPlan(machine);
   const pair = plan ? null : accountPairPlan(machine);
-  const sources = [...new Set(machine.sources.map((source) => SOURCE_LABEL[source]))];
+  const sources = [...new Set(machine.sources.map((source) => t(SOURCE_LABEL[source])))];
+  if (machine.group === "shared") sources.unshift(t("Shared with you"));
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2.5">
+    <div className="flex items-center gap-3 px-3 py-2">
       <MachineIcon machine={machine} />
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <Text wrap="anywhere" weight="medium" tone="primary">
+      <div className="flex min-w-0 flex-1 items-baseline gap-2">
+        <Text truncate weight="medium" tone="primary">
           {machine.name}
         </Text>
-        <div className="flex flex-wrap items-center gap-1">
-          {sources.map((source) => (
-            <Badge key={source} size="xs">
-              {t(source)}
-            </Badge>
-          ))}
-        </div>
+        <Text truncate size="caption" tone="muted">
+          {sources.join(" · ")}
+        </Text>
       </div>
       {machine.online !== undefined ? (
         <Badge variant="dot" size="sm" tone={machine.online ? "success" : "neutral"}>
@@ -73,6 +69,11 @@ function CandidateRow({
         </Badge>
       ) : null}
       <div className="flex shrink-0 items-center gap-1">
+        {plan || pair ? null : (
+          <InfoPopover label={t("Why Add is unavailable")} width={280}>
+            <p>{t("This computer has no SSH address to set it up from here yet.")}</p>
+          </InfoPopover>
+        )}
         <Button
           stableWidth
           variant="secondary"
@@ -81,51 +82,34 @@ function CandidateRow({
         >
           {t("Add")}
         </Button>
-        {plan || pair ? null : (
-          <InfoPopover label={t("Why Add is unavailable")} width={280}>
-            <p>{t("This computer has no SSH address to set it up from here yet.")}</p>
-          </InfoPopover>
-        )}
       </div>
     </div>
   );
 }
 
-function Rows({
-  machines,
-  busy,
-  onAdd,
-  onPair,
-}: {
-  machines: DiscoveredMachine[];
-  busy: boolean;
-  onAdd: (plan: SshAddPlan) => void;
-  onPair: (plan: AccountPairPlan) => void;
-}) {
-  return (
-    <Surface variant="card" padding="none" dividers="card" className="overflow-hidden">
-      {machines.map((machine) => (
-        <CandidateRow
-          key={machine.key}
-          machine={machine}
-          busy={busy}
-          onAdd={onAdd}
-          onPair={onPair}
-        />
-      ))}
-    </Surface>
+/** Rows shown before Show all; a search always shows every match. */
+const COLLAPSED_ROWS = 5;
+const GROUP_ORDER = { shared: 1, mobile: 2 } as const;
+
+/** Whether a found machine matches the search: name or any of its addresses. */
+function matches(machine: DiscoveredMachine, query: string) {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return true;
+  return [machine.name, ...machine.routes.map((route) => route.address)].some((value) =>
+    value?.toLowerCase().includes(needle),
   );
 }
 
 /**
- * Machines the desktop found that are not added yet: the account's computers first, then
- * Tailscale and SSH candidates. Add starts the SSH setup with the address filled in; a computer
- * only the account knows is added by asking it through the account, with no address typed.
+ * Machines the desktop found that are not added yet, as one list: the account's computers
+ * first, then shared machines and phones. Add starts the SSH setup with the address filled
+ * in; a computer only the account knows is added by asking it through the account.
  */
 export function DiscoveredMachines({
   saved,
   active,
   busy,
+  query = "",
   onAdd,
   onPaired,
 }: {
@@ -133,21 +117,33 @@ export function DiscoveredMachines({
   /** The list is visible; it refreshes only then. */
   active: boolean;
   busy: boolean;
+  /** The page search; rows filter by name and address. */
+  query?: string;
   onAdd: (plan: SshAddPlan) => void;
   /** An account-paired machine was saved; the caller refreshes its machine list. */
   onPaired: () => void;
 }) {
   useLocale();
   const [pairing, setPairing] = useState<AccountPairPlan | null>(null);
+  const [expanded, setExpanded] = useState(false);
   const { signIn } = useAccount();
   const { machines, loading, signedOut } = useDiscoveredMachines(saved, active);
-  const open = machines.filter((machine) => !machine.alreadyAdded);
-  const main = open.filter((machine) => !machine.group);
-  const shared = open.filter((machine) => machine.group === "shared");
-  const mobile = open.filter((machine) => machine.group === "mobile");
+  const open = machines
+    .filter((machine) => !machine.alreadyAdded)
+    .map((machine, index) => ({ machine, index }))
+    .sort(
+      (a, b) =>
+        (a.machine.group ? GROUP_ORDER[a.machine.group] : 0) -
+          (b.machine.group ? GROUP_ORDER[b.machine.group] : 0) || a.index - b.index,
+    )
+    .map(({ machine }) => machine);
+  const searching = query.trim() !== "";
+  const found = open.filter((machine) => matches(machine, query));
+  const shown = searching || expanded ? found : found.slice(0, COLLAPSED_ROWS);
+  const hidden = found.length - shown.length;
   return (
-    <section aria-label={t("Machines found")} className="flex flex-col gap-2">
-      <SectionLabel>{t("Machines found")}</SectionLabel>
+    <section aria-label={t("Available to add")} className="flex flex-col gap-2">
+      <SectionLabel count={found.length || undefined}>{t("Available to add")}</SectionLabel>
       {signedOut ? (
         <div className="flex flex-wrap items-center justify-between gap-2">
           <Text tone="muted">{t("Sign in to also find computers on your account.")}</Text>
@@ -156,36 +152,37 @@ export function DiscoveredMachines({
           </Button>
         </div>
       ) : null}
-      {main.length > 0 ? (
-        <Rows machines={main} busy={busy} onAdd={onAdd} onPair={setPairing} />
+      {shown.length > 0 ? (
+        <Surface variant="card" padding="none" dividers="card" className="overflow-hidden">
+          {shown.map((machine) => (
+            <CandidateRow
+              key={machine.key}
+              machine={machine}
+              busy={busy}
+              onAdd={onAdd}
+              onPair={setPairing}
+            />
+          ))}
+        </Surface>
       ) : null}
-      {main.length === 0 && loading ? (
+      {hidden > 0 ? (
+        <Button variant="ghost" className="self-start" onClick={() => setExpanded(true)}>
+          {t("Show all ({p0})", { p0: found.length })}
+        </Button>
+      ) : null}
+      {expanded && !searching && found.length > COLLAPSED_ROWS ? (
+        <Button variant="ghost" className="self-start" onClick={() => setExpanded(false)}>
+          {t("Show less")}
+        </Button>
+      ) : null}
+      {found.length === 0 && loading ? (
         <LoadingText>{t("Looking for machines…")}</LoadingText>
       ) : null}
-      {main.length === 0 && !loading && !signedOut ? (
+      {found.length === 0 && !loading && searching ? (
+        <EmptyState size="inline" kind="empty" description={t("No matches")} />
+      ) : null}
+      {found.length === 0 && !loading && !searching && !signedOut ? (
         <EmptyState size="inline" kind="empty" description={t("No new machines found")} />
-      ) : null}
-      {shared.length > 0 ? (
-        <Disclosure
-          size="sm"
-          textSize="caption"
-          tone="muted"
-          summary={t("Shared with you")}
-          count={shared.length}
-        >
-          <Rows machines={shared} busy={busy} onAdd={onAdd} onPair={setPairing} />
-        </Disclosure>
-      ) : null}
-      {mobile.length > 0 ? (
-        <Disclosure
-          size="sm"
-          textSize="caption"
-          tone="muted"
-          summary={t("Phones and tablets")}
-          count={mobile.length}
-        >
-          <Rows machines={mobile} busy={busy} onAdd={onAdd} onPair={setPairing} />
-        </Disclosure>
       ) : null}
       {pairing ? (
         <AccountPairDialog

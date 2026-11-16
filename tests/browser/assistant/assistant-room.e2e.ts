@@ -1507,6 +1507,25 @@ for (const theme of ["light", "dark"])
       await expect(strip).not.toBeVisible();
     });
 
+for (const theme of ["light", "dark"])
+  test(`floating desktop strip ${theme}`, async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(
+      `/tests/browser/assistant/assistant-room.html?theme=${theme}&desktop=1&desktop-floating=1`,
+    );
+    const strip = page.getByRole("complementary", { name: "Computer controls", exact: true });
+    await expect(strip).toHaveAttribute("data-surface-variant", "floating");
+    await expect(
+      strip.getByRole("button", { name: "Stop computer use", exact: true }),
+    ).toBeEnabled();
+    const background = await strip.evaluate((element) => getComputedStyle(element).backgroundColor);
+    expect(background).not.toBe("rgba(0, 0, 0, 0)");
+    await page.screenshot({
+      path: `temp/verification/computer-use-opacity/${theme}.png`,
+      animations: "disabled",
+    });
+  });
+
 test("searches all conversations and saved memory through the Host adapter", async ({ page }) => {
   await page.goto("/tests/browser/assistant/assistant-room.html?theme=light");
   await page.getByRole("tab", { name: "Conversations", exact: true }).click();

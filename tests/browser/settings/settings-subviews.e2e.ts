@@ -8,19 +8,31 @@ for (const theme of ["light", "dark"])
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(
-        `/tests/browser/settings/settings.html?providersFixture&section=models&theme=${theme}&lang=en`,
+        `/tests/browser/settings/settings.html?providersFixture&section=providers&theme=${theme}&lang=en`,
       );
-      await expect(page.locator(".settings-page-title")).toHaveText("Providers");
+      await expect(page.locator(".settings-page-title")).toHaveText("Models");
       const tabs = page.locator(".provider-tabs");
-      await expect(tabs.getByRole("tab", { name: "Defaults", exact: true })).toHaveAttribute(
+      await expect(tabs.getByRole("tab")).toHaveText([
+        "Background work",
+        "Chats",
+        "Subagents",
+        "Providers",
+      ]);
+      await tabs.getByRole("tab", { name: "Chats", exact: true }).click();
+      await expect(tabs.getByRole("tab", { name: "Chats", exact: true })).toHaveAttribute(
         "aria-selected",
         "true",
       );
       await expect(
         page
           .getByRole("tablist", { name: "Settings categories", exact: true })
-          .getByRole("tab", { name: "Models", exact: true }),
+          .getByRole("tab", { name: "Background work", exact: true }),
       ).toHaveCount(0);
+      await expect(
+        page
+          .getByRole("tablist", { name: "Settings categories", exact: true })
+          .getByRole("tab", { name: "Models", exact: true }),
+      ).toHaveCount(1);
       const saveBar = page.locator(".provider-defaults-save-bar:visible");
       const scope = saveBar.getByRole("button", { name: "Save in", exact: true });
       await expect(scope).toHaveText("Bycoda defaults");
@@ -56,9 +68,9 @@ for (const theme of ["light", "dark"])
       await dialog.getByRole("radio", { name: "Bycoda defaults", exact: true }).click();
       await dialog.getByRole("button", { name: "Done", exact: true }).click();
       await expect(scope).toHaveText("Bycoda defaults");
-      await tabs.getByRole("tab", { name: "Accounts", exact: true }).click();
+      await tabs.getByRole("tab", { name: "Providers", exact: true }).click();
       await expect(saveBar).toHaveCount(0);
-      await tabs.getByRole("tab", { name: "Defaults", exact: true }).click();
+      await tabs.getByRole("tab", { name: "Chats", exact: true }).click();
       await expect(scope).toHaveText("Bycoda defaults");
     });
 
@@ -73,7 +85,8 @@ for (const theme of ["light", "dark"])
       );
       const categories = page.getByRole("tablist", { name: "Settings categories", exact: true });
       const providerTabs = page.locator(".provider-tabs");
-      await expect(providerTabs.getByRole("tab")).toHaveCount(5);
+      await expect(providerTabs.getByRole("tab")).toHaveCount(4);
+      await providerTabs.getByRole("tab", { name: "Providers", exact: true }).click();
       await expect(
         categories.getByRole("tab", { name: "Usage & limits", exact: true }),
       ).toHaveCount(1);
@@ -149,15 +162,24 @@ for (const theme of ["light", "dark"])
         node.scrollTop = node.scrollHeight;
       });
       await capture("usage-bottom");
-      await categories.getByRole("tab", { name: "Providers", exact: true }).click();
+      await categories.getByRole("tab", { name: "Models", exact: true }).click();
       await expect(draft).toHaveValue("Retained provider draft");
       await accounts.locator("form").getByRole("button", { name: "Cancel", exact: true }).click();
+      // CLI table, catalog and decision models now share the Providers tab.
       for (const [tab, surface] of [
         ["CLI", "cli"],
         ["Catalog", "catalog"],
         ["Decision models", "decision-empty"],
       ]) {
-        await providerTabs.getByRole("tab", { name: tab, exact: true }).click();
+        await page
+          .locator(
+            tab === "CLI"
+              ? "#setting-harness-updates"
+              : tab === "Catalog"
+                ? ".provider-models-list"
+                : "#setting-decision-models",
+          )
+          .scrollIntoViewIfNeeded();
         if (tab === "CLI" && width === 800) {
           const columns = await page.locator(".provider-inventory table").evaluate((table) => ({
             headers: [...table.querySelectorAll("thead th")].map(

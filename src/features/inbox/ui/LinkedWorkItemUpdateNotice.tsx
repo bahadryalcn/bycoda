@@ -137,7 +137,6 @@ export function LinkedWorkItemUpdateNotice({
   return (
     <TransientNotice
       tone="info"
-      placement="top-end"
       width="lg"
       durationMs={null}
       aria-label={t("New activity on {p0} {p1}", { p0: kindLabel, p1: card.number })}

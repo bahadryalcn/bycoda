@@ -5,14 +5,18 @@
 Completed PowerShell (`powershell`, `pwsh`, `ps1`) and POSIX shell (`bash`, `sh`,
 `zsh`, `shell`) code blocks show **Run in terminal** (Play) beside the code-block
 actions. The command runs in a matching installed shell on the conversation's
-machine, using its working copy. The focused terminal dialog shows output, **Stop**
-and the exit code. If completion cannot be confirmed, the status remains unknown.
+machine, using its working copy. On this computer it opens as a new terminal in the
+project's terminal dock. A remote conversation, or one outside the open project,
+uses the terminal dialog instead, which shows output, **Stop** and the exit code.
+If completion cannot be confirmed, the status remains unknown.
 
-Choose **Add result to chat** to attach the bounded terminal output to the original
-conversation's composer. **Add result to chat when finished** does this after the
-command finishes. Existing draft text stays intact; review and send the result
-when ready. Adding a result does not automatically send a message to the model.
-Long output includes only the latest retained terminal output.
+When the command finishes, its bounded output is added to the original
+conversation's composer. Turn this off in **Settings → Terminal → Code blocks**
+(**Add result to chat when finished**); the dialog's checkbox starts from that
+setting and **Add result to chat** attaches it by hand. Existing draft text stays
+intact; review and send the result when ready. Adding a result does not
+automatically send a message to the model. Long output includes only the latest
+retained terminal output.
 
 CMD/batch fences and other programming-language blocks do not show Play because
 their quoting is not yet supported safely.

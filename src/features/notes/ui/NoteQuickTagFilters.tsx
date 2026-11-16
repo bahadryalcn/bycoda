@@ -1,5 +1,6 @@
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { ScrollArea } from "../../../shared/ui/ScrollArea";
 
 /** A single-click library scope; selection/drafts stay owned by NotesView. */
 export function NoteQuickTagFilters({
@@ -14,10 +15,18 @@ export function NoteQuickTagFilters({
   useLocale();
   if (!tags.length) return null;
   return (
-    <div className="note-quick-tags" role="group" aria-label={t("Filter by tag")}>
+    <ScrollArea
+      axis="x"
+      scrollbar="hidden"
+      className="note-quick-tags"
+      role="group"
+      aria-label={t("Filter by tag")}
+    >
       <Button
         variant={selected === null ? "secondary" : "ghost"}
         size="sm"
+        shape="pill"
+        truncate
         pressed={selected === null}
         onClick={() => onSelect(null)}
       >
@@ -28,12 +37,16 @@ export function NoteQuickTagFilters({
           key={tag}
           variant={selected === tag ? "secondary" : "ghost"}
           size="sm"
+          shape="pill"
+          truncate
+          tooltip={`#${tag}`}
+          tooltipWhen="overflow"
           pressed={selected === tag}
           onClick={() => onSelect(selected === tag ? null : tag)}
         >
           #{tag}
         </Button>
       ))}
-    </div>
+    </ScrollArea>
   );
 }

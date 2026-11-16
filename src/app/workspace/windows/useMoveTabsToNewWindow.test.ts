@@ -201,11 +201,11 @@ describe("transfer to another window: ownership, ACK, reject and queue", () => {
     expect(published).toEqual([]);
   });
 
-  it("queues a busy conversation and says so exactly once", async () => {
+  it("queues a busy conversation without a notice", async () => {
     expect(await actions.onMoveTabsToNewWindow([deps.activeTabIdRef.current])).toBe("queued");
     expect(invoke).not.toHaveBeenCalled();
     expect(deps.setPendingWindowMoves).toHaveBeenCalledOnce();
-    expect(published).toEqual(["This tab moves to a new window when the response finishes."]);
+    expect(published).toEqual([]);
   });
 
   it("refuses unsaved files before anything leaves this window", async () => {

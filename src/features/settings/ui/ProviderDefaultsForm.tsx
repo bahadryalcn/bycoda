@@ -46,6 +46,16 @@ import {
 import { ProviderDefaultExtras, inheritedChoiceLabel } from "./ProviderDefaultExtras";
 import { Group, Row, Select, Toggle } from "../../../shared/ui/settings";
 
+/** Rows that choose subagents, the advisor and their limits, shown together. */
+const DELEGATION_SETTINGS = new Set([
+  CROSS_SUBAGENTS_KEY,
+  "subagentPolicy",
+  CROSS_ADVISOR_KEY,
+  CROSS_SUBAGENT_MAX_EFFORT_KEY,
+  IMAGE_MODELS_KEY,
+]);
+const isDelegationSetting = (setting: { id: string }) => DELEGATION_SETTINGS.has(setting.id);
+
 function modelDisplayName(harness: HarnessId, id: string | undefined): string {
   if (!id) return t("Automatic");
   return resolveModel(harness, id).name;
@@ -67,6 +77,7 @@ export function ProviderDefaultsForm({
   onModelChange,
   onModelReset,
   accountId,
+  projectAccountId,
   scopeControl,
   picker,
   section,
@@ -90,10 +101,16 @@ export function ProviderDefaultsForm({
   onModelReset?: () => void;
   /** Account scope: the account whose own defaults these rows edit. */
   accountId?: string;
+  /** Project and group targets: the account their chats start on, for account-bound options. */
+  projectAccountId?: string;
   /** Picks which account's defaults the rows below edit. */
   scopeControl?: ReactNode;
   /** Project and group targets: keep the provider out of their picker. */
-  picker?: { inPicker: boolean; locked: boolean; onChange: (visible: boolean) => void };
+  picker?: {
+    inPicker: boolean;
+    locked: boolean;
+    onChange: (visible: boolean) => void;
+  };
 }) {
   useLocale();
   const delegationUsage = useSyncExternalStore(
@@ -126,7 +143,7 @@ export function ProviderDefaultsForm({
         source: { modelsFor },
         accountChoices: true,
         currentAccountId: supportsProviderAccounts(harness)
-          ? (accountId ?? defaultProviderAccountId(harness))
+          ? (accountId ?? projectAccountId ?? defaultProviderAccountId(harness))
           : undefined,
         signedOutAccounts: signedOutAccountKeys(delegationUsage),
         signedOutLabel: t("Not signed in"),
@@ -265,6 +282,7 @@ export function ProviderDefaultsForm({
                   label={t("{p0} default effort", { p0: HARNESS_TITLE[harness] })}
                   showLabel={false}
                   value={scopeDefaults.effort ?? ""}
+                  inheritedValue={validInheritedEffort ? inheritedDefaults?.effort : undefined}
                   options={effortOptions}
                   onValueChange={(next) =>
                     onSessionDefaultsChange({ ...scopeDefaults, effort: next || undefined })
@@ -328,15 +346,17 @@ export function ProviderDefaultsForm({
         </>
       ) : null}
       <ProviderDefaultExtras
-        extras={extras.filter((setting) => {
-          const delegation = [
-            CROSS_SUBAGENTS_KEY,
-            CROSS_ADVISOR_KEY,
-            CROSS_SUBAGENT_MAX_EFFORT_KEY,
-            IMAGE_MODELS_KEY,
-          ].includes(setting.id);
-          return !section || (section === "delegation" ? delegation : !delegation);
-        })}
+        extras={
+          section === "delegation"
+            ? extras.filter(isDelegationSetting)
+            : section === "chat"
+              ? extras.filter((setting) => !isDelegationSetting(setting))
+              : // Both together: conversation rows first, then who the agent delegates to.
+                [
+                  ...extras.filter((setting) => !isDelegationSetting(setting)),
+                  ...extras.filter(isDelegationSetting),
+                ]
+        }
         harness={harness}
         inheritedDefaults={inheritedDefaults}
         scopeDefaults={scopeDefaults}

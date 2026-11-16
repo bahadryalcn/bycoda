@@ -171,3 +171,31 @@ it("shows recovery status without transport error details or retry actions", asy
   expect(container.textContent).not.toContain("RPC_HOST_UNAVAILABLE");
   expect(container.querySelectorAll("button")).toHaveLength(0);
 });
+
+it("renders the machine notice as one toast with the raw text behind Details", async () => {
+  state.shared = false;
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  await act(async () =>
+    root.render(
+      createElement(RemoteLoadError, {
+        cwd: "env",
+        failure: { kind: "unreachable", message: "SSH timed out" },
+        toast: true,
+        coordinated: false,
+      }),
+    ),
+  );
+  const region = document.querySelector('[data-toast-region="top-center"]');
+  expect(region?.textContent).toContain("Can’t reach Server");
+  expect(region?.textContent).toContain("Reconnect");
+  expect(region?.textContent).not.toContain("SSH timed out");
+  expect(container.textContent).toBe("");
+  vi.unstubAllGlobals();
+});

@@ -50,6 +50,24 @@ mockIPC((command, args = {}) => {
       return { ...attempts.get(String(input.requestId)), status: "installed" };
     return [];
   }
+  if (command === "list_skills" && params.has("groups"))
+    // Enough skills, with long names and descriptions, to exercise the group membership editor.
+    return [
+      ["frontend-design", "Distinctive, production-grade frontend interfaces."],
+      ["impeccable", "Design, critique, audit and polish a frontend interface."],
+      ["minimalist-ui", "Clean editorial interfaces with a warm monochrome palette."],
+      ["web-design-guidelines", "Review UI code for Web Interface Guidelines compliance."],
+      ["systematic-debugging", "Find the root cause before proposing a fix."],
+      ["tdd", "Write the failing test first, then the smallest change that passes."],
+      ["unslop", "Cut AI tells from any writing."],
+      ["redesign-existing-projects-with-a-very-long-skill-name", "Upgrade existing apps."],
+    ].map(([name, description]) => ({
+      name,
+      description,
+      scope: "user",
+      source: "agents",
+      path: `/fixture/.agents/skills/${name}/SKILL.md`,
+    }));
   if (command === "list_skills")
     return [
       {

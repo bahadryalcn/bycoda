@@ -49,3 +49,43 @@ it("emphasizes recognized skills alongside attachments without changing copied t
     act(() => root.unmount());
   }
 });
+
+it("shows a sent skill group as one chip", async () => {
+  const { TranscriptSkillGroups } = await import("./SkillTokenText");
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  const group = {
+    kind: "template" as const,
+    scope: "template" as const,
+    source: "bycoda" as const,
+    templateId: "skill-group:g",
+    groupId: "g",
+    name: "Review",
+    invocation: "group-review",
+    description: "",
+    memberCount: 2,
+    members: ["lint", "test"],
+    body: "",
+  };
+  try {
+    act(() =>
+      root.render(
+        createElement(TranscriptSkillNames, {
+          value: new Set(["lint", "test"]),
+          children: createElement(TranscriptSkillGroups, {
+            value: [group],
+            children: createElement(AttachmentTokenText, {
+              text: "/lint /test fix it",
+              attachments: undefined,
+            }),
+          }),
+        }),
+      ),
+    );
+    expect(container.querySelector("[data-skill-group-token]")?.textContent).toBe("Review · 2");
+    expect(container.querySelectorAll("[data-skill-token]")).toHaveLength(0);
+  } finally {
+    act(() => root.unmount());
+  }
+});

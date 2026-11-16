@@ -33,3 +33,11 @@ it("uses the same policy text in the realtime and local prompts", async () => {
   expect(voiceInstructions("en")).toContain(VOICE_SHARED_POLICY);
   expect(VOICE_SHARED_POLICY).toContain("give_jobs");
 });
+
+it("tells the assistant to ask instead of going silent after a failure or a dropped turn", async () => {
+  const { VOICE_SHARED_POLICY, voiceInterruptedTurnNotice } = await import("./voiceInstructions");
+  expect(VOICE_SHARED_POLICY).toContain("never ends the turn in silence");
+  const notice = voiceInterruptedTurnNotice(`  ${"x".repeat(400)}  `);
+  expect(notice).toContain("do not repeat any action until they answer");
+  expect(notice).not.toContain("x".repeat(301));
+});

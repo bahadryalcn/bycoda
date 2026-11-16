@@ -86,10 +86,7 @@ const button = (name: string) =>
     copy.querySelectorAll('[aria-hidden="true"]').forEach((node) => node.remove());
     return copy.textContent?.trim() === name;
   })!;
-const openAdvanced = () =>
-  [...container.querySelectorAll("summary")]
-    .find((summary) => summary.textContent?.includes("Advanced: add manually"))!
-    .click();
+const openAdvanced = () => button("Add manually").click();
 const confirmRemove = () =>
   [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].at(-1)!;
 async function pick(machineName: string, label: string) {
@@ -108,7 +105,7 @@ async function render() {
 }
 
 it("reveals Phone, Sharing and recovery from any nested tab while preserving manual tab choice", async () => {
-  for (const start of ["Machines", "Phone", "Sharing"]) {
+  for (const start of ["Computers", "Phone", "Sharing"]) {
     await render();
     const tab = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
       (item) => item.textContent === start,
@@ -117,7 +114,7 @@ it("reveals Phone, Sharing and recovery from any nested tab while preserving man
     for (const [id, title] of [
       ["connections-phone", "Phone"],
       ["connections-sharing", "Sharing"],
-      ["remote-auto-reconnect", "Machines"],
+      ["remote-auto-reconnect", "Computers"],
     ]) {
       await act(async () =>
         root.render(
@@ -168,13 +165,13 @@ it("labels the kind and icon of each machine row", async () => {
   expect(ssh.querySelector("svg.lucide-server")).toBeTruthy();
   expect(direct.textContent).toContain("Host URL");
   expect(direct.querySelector("svg.lucide-server")).toBeTruthy();
-  expect(container.textContent).toContain("2 machines");
+  expect(container.textContent).toContain("Your connections");
 });
 
 it("opens the existing add editor for a Servers request made before Settings mounts", async () => {
   requestMachineAdd();
   await render();
-  expect(container.textContent).toContain("Machines found");
+  expect(container.textContent).toContain("Available to add");
   expect(
     container.querySelector('input[placeholder="user@my-mac-mini or an SSH alias"]'),
   ).toBeNull();

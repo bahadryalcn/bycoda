@@ -286,6 +286,23 @@ describe("session wire contracts", () => {
     expect(JSON.stringify(manifest)).toBe(JSON.stringify(exportHostContractManifest()));
   });
 
+  it("delivers a queue whose head is the Host's stamped subagent notice", () => {
+    const author = { kind: "delegation", runId: "run-a", title: "Child", reason: "completion" };
+    const queue = {
+      revision: 3,
+      messages: [{ id: "agent_message_a", text: "Done", attachments: [], author }],
+    };
+    const method = getHostRpcMethod("sessions.queue.get")!;
+    expect(method.resultSchema.parse(queue)).toMatchObject({ messages: [{ author }] });
+    // Only the Host's delegation stamp travels; any other author is still refused.
+    expect(() =>
+      method.resultSchema.parse({
+        ...queue,
+        messages: [{ ...queue.messages[0], author: { ...author, kind: "assistant" } }],
+      }),
+    ).toThrow();
+  });
+
   it("validates credential-free bounded bulk indirection before HTTP resolution", () => {
     const descriptor = {
       kind: "bulk",

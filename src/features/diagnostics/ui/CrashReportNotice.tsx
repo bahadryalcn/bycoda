@@ -19,17 +19,7 @@ export function CrashReportNotice() {
   const pending = useSyncExternalStore(subscribeDiagnostics, getPendingCrash);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<DiagnosticSendStatus | null>(null);
-  if (!pending && result !== "sent") return null;
-  if (!pending) {
-    return (
-      <Toast
-        tone="success"
-        message={diagnosticResultText("sent")}
-        durationMs={4000}
-        onDismiss={() => setResult(null)}
-      />
-    );
-  }
+  if (!pending) return null; // -- Sending clears the crash toast; no second success toast.
   const send = async (always: boolean) => {
     setBusy(true);
     try {

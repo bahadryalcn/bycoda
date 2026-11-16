@@ -190,8 +190,6 @@ export function SectionMenuButton({
 export type RailSectionDrag = {
   /** Goes on the section's root element, which is what moves. */
   setRef: (element: HTMLElement | null) => void;
-  /** True while a section is dragged: every section shows only its header. */
-  folded: boolean;
   /** Spread on the header element. */
   headerProps: {
     onPointerDown: (event: PointerEvent<HTMLElement>) => void;
@@ -240,11 +238,10 @@ export function useRailSections(shown: ReadonlySet<RailSectionId>) {
     undefined,
     { foldOnDrag: true, label: sectionName },
   );
-  const folded = sortable.draggingId !== null;
-
+  // While a section is dragged every section shows only its header: the reorder hook marks the
+  // blocks and each body carries `data-reorder-fold-body`, so no render happens mid-gesture.
   const drag = (id: RailSectionId): RailSectionDrag => ({
     setRef: (element) => sortable.setItemRef(id, element),
-    folded,
     headerProps: {
       onPointerDown: (event) => {
         if (event.button !== 0) return;
@@ -319,5 +316,5 @@ export function useRailSections(shown: ReadonlySet<RailSectionId>) {
   const handleToggleCollapsed = (id: CollapsibleRailSection) => {
     setCollapsed(toggleRailSectionCollapse(id, !collapsed[id]));
   };
-  return { order, drag, folded, element, collapsed, toggleCollapsed: handleToggleCollapsed };
+  return { order, drag, element, collapsed, toggleCollapsed: handleToggleCollapsed };
 }

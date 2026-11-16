@@ -2,6 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { getHostRpcMethod } from "../../src/shared/model/host-contracts";
 import { HostStore } from "../store";
 import { SessionQueues } from "../sessions/session-queue";
 import {
@@ -158,6 +159,8 @@ it("queues a completion as a system-authored row and batches later ones into it"
     text: expect.stringContaining("Done one"),
   });
   expect(queue.messages[0]!.text).toContain("Done two");
+  // A stamped row once failed the wire contract, so every queue read held the owner's sends.
+  expect(getHostRpcMethod("sessions.queue.get")!.resultSchema.safeParse(queue).success).toBe(true);
 });
 
 it("does not merge notices across reasons, owner rows or a row being sent, and caps each section", async () => {

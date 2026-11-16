@@ -23,6 +23,7 @@ import {
 } from "../model/documentViewer";
 import { DocumentMessage } from "./DocumentMessage";
 import { FileActionError } from "./FileActionError";
+import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { formatFileSize } from "../model/filePreview";
 import { watchFile } from "../model/fileWatch";
 import { SurfaceSelection } from "../../sessions/public/SurfaceSelection";
@@ -130,6 +131,9 @@ export function DocumentView({
     };
   }, [path, reload, readBytes]);
 
+  const loadShownCentrally = useConnectionErrorShownCentrally(
+    state.status === "error" ? state.message : undefined,
+  );
   const remote = !!parseRemotePath(externalPath ?? path);
   const localCopy = remote && !localExplorerPath(externalPath ?? path);
   const detail = (
@@ -173,6 +177,8 @@ export function DocumentView({
         {detail}
       </DocumentMessage>
     );
+  } else if (state.status === "error" && loadShownCentrally) {
+    body = null;
   } else if (state.status === "error") {
     body = (
       <DocumentMessage title={t("Couldn’t open {p0}", { p0: name })} error>

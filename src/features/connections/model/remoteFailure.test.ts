@@ -25,7 +25,8 @@ describe("classifyRemoteError", () => {
     expect(isConnectionFailure(classifyRemoteError(error))).toBe(true);
   });
 
-  it.each(["RPC_WS_DEADLINE", "RPC_WS_OVERLOAD", "RPC_WS_DETACHED"])(
+  // CANCELLED once surfaced as a lasting "Retry workspace" error on a background read.
+  it.each(["RPC_WS_DEADLINE", "RPC_WS_OVERLOAD", "RPC_WS_DETACHED", "RPC_WS_CANCELLED"])(
     "classifies native %s as temporary, not a lost connection",
     (code) => {
       const error = Object.assign(new Error("Host request was not sent"), { code });
@@ -192,5 +193,20 @@ describe("presentRemoteError", () => {
 
   it("strips the host prefix", () => {
     expect(presentRemoteError("Host rejected request: bad path")).toBe("bad path");
+  });
+});
+
+describe("superseded and timed-out requests", () => {
+  const superseded =
+    "Connection changed while the request was running. Its outcome is unknown; refresh before retrying an action.";
+  it("never treats a request replaced mid-flight as an outage", () => {
+    expect(classifyRemoteError(superseded).kind).toBe("temporary");
+    expect(isConnectionFailure(classifyRemoteError(superseded))).toBe(false);
+    expect(presentRemoteError(superseded, { explicit: true })).toContain("outcome is unknown");
+  });
+  it("classifies a stringified TimeoutError as temporary", () => {
+    expect(classifyRemoteError("TimeoutError: Host discovery timed out after 5000ms").kind).toBe(
+      "temporary",
+    );
   });
 });

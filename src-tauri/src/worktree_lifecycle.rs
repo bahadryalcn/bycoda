@@ -43,9 +43,11 @@ impl Lifecycle {
         {
             return Err("This working copy has an unfinished removal. Retry cleanup before starting a process.".into());
         }
-        if reservations.iter().any(|(other, exclusive)| {
-            (removing || *exclusive)
-                && (contains_working_dir(&path, other) || contains_working_dir(other, &path))
+        // A process conflicts only with a removal of its own directory or an ancestor.
+        // Removing a worktree nested inside a checkout leaves that checkout usable.
+        if reservations.iter().any(|(other, other_removing)| {
+            (removing && contains_working_dir(&path, other))
+                || (*other_removing && contains_working_dir(other, &path))
         }) {
             return Err(
                 "This working copy is starting a process or being deleted. Try again when it finishes."
@@ -292,5 +294,23 @@ mod tests {
         std::fs::remove_dir_all(&root).unwrap();
         assert!(lifecycle.reserve(&child, false).is_err());
         std::fs::remove_dir_all(&sibling).unwrap();
+    }
+
+    #[test]
+    fn removing_a_nested_worktree_leaves_the_enclosing_checkout_free() {
+        let root =
+            std::env::temp_dir().join(format!("bycoda-lifecycle-nest-{}", uuid::Uuid::new_v4()));
+        let nested = root.join(".claude/worktrees/feature");
+        std::fs::create_dir_all(nested.join("src")).unwrap();
+        let lifecycle = Lifecycle::default();
+        let removal = lifecycle.reserve(&nested, true).unwrap();
+        assert!(lifecycle.reserve(&root, false).is_ok());
+        assert!(lifecycle.reserve(&nested.join("src"), false).is_err());
+        assert!(lifecycle.reserve(&root, true).is_err());
+        drop(removal);
+        let spawn = lifecycle.reserve(&root, false).unwrap();
+        assert!(lifecycle.reserve(&nested, true).is_ok());
+        drop(spawn);
+        std::fs::remove_dir_all(&root).unwrap();
     }
 }

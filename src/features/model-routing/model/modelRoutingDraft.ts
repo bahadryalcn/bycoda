@@ -12,6 +12,7 @@ import {
   modelRoutingPoolReaches,
 } from "../../../shared/model/modelRoutingPools";
 import { parseHostSettings, type HostSettings } from "../../tasks/public/hostSettings";
+import { supportsProviderAccounts } from "../../providers/public/providerAccounts";
 
 export type CapDraft = {
   daily: { tokens: string; costUsd: string };
@@ -131,37 +132,37 @@ export function prepareOrderSave(draft: OrderDraft): {
   };
   if (!ModelRoutingDraftSchema.safeParse(routing).success)
     throw new Error(
-      "Choose a model for every entry and a name and at least one model or pool for every pool.",
+      "Choose a model for every entry and a name and at least one model or group for every group.",
     );
   const entries = new Set(routing.entries.map((entry) => entry.id));
   const pools = new Set(routing.pools.map((pool) => pool.id));
   if (entries.size !== routing.entries.length || pools.size !== routing.pools.length)
-    throw new Error("Model and pool IDs must be unique.");
+    throw new Error("Model and group IDs must be unique.");
   for (const entry of routing.entries) {
-    if (entry.providerAccountId && entry.harness !== "claude" && entry.harness !== "codex")
-      throw new Error("Only Claude and Codex support an account choice.");
+    if (entry.providerAccountId && !supportsProviderAccounts(entry.harness))
+      throw new Error("This provider has no account choice.");
   }
   for (const pool of routing.pools) {
-    if (!pool.name.trim()) throw new Error("Give every pool a name.");
+    if (!pool.name.trim()) throw new Error("Give every group a name.");
     if (!pool.entryIds.length && !pool.poolIds?.length)
-      throw new Error("Every pool needs at least one model or pool.");
+      throw new Error("Every group needs at least one model or group.");
     if (
       new Set(pool.entryIds).size !== pool.entryIds.length ||
       pool.entryIds.some((id) => !entries.has(id))
     )
-      throw new Error("Pools must contain unique models from the main order.");
+      throw new Error("Groups must contain unique models from the model list.");
     const included = pool.poolIds ?? [];
     if (
       new Set(included).size !== included.length ||
       included.some((id) => id === pool.id || !pools.has(id))
     )
-      throw new Error("A pool can include each other pool once, and only pools that exist.");
+      throw new Error("A group can include each other group once, and only groups that exist.");
   }
   if (modelRoutingPoolCycle(routing.pools))
-    throw new Error("Pools cannot include each other in a loop.");
+    throw new Error("Groups cannot include each other in a loop.");
   for (const choice of Object.values(routing.roles)) {
     if (choice?.kind === "pool" && !pools.has(choice.poolId))
-      throw new Error("A role uses a pool that no longer exists.");
+      throw new Error("A job uses a group that no longer exists.");
   }
   return {
     routing,
@@ -203,7 +204,7 @@ export function removeOrderEntry(draft: OrderDraft, id: string): OrderDraft {
     )
   )
     throw new Error(
-      "This model is the last model in a pool. Add another model to that pool or delete the pool first.",
+      "This model is the last model in a group. Add another model to that group or delete the group first.",
     );
   const { [id]: _removed, ...percentages } = draft.percentages;
   return {
@@ -226,9 +227,9 @@ export function removeOrderPool(draft: OrderDraft, id: string): OrderDraft {
       (choice) => choice?.kind === "pool" && choice.poolId === id,
     )
   )
-    throw new Error("A role uses this pool. Change it in Assignments before deleting the pool.");
+    throw new Error("A job uses this group. Change it in Who uses what before deleting the group.");
   if (draft.routing.pools.some((pool) => pool.poolIds?.includes(id)))
-    throw new Error("Another pool includes this pool. Remove it from that pool first.");
+    throw new Error("Another group includes this group. Remove it from that group first.");
   return {
     ...draft,
     routing: {
@@ -245,7 +246,7 @@ export function setPoolMembers(
   members: { entryIds: string[]; poolIds: string[] },
 ): OrderDraft {
   if (!members.entryIds.length && !members.poolIds.length)
-    throw new Error("Keep at least one model or pool in a pool.");
+    throw new Error("Keep at least one model or group in a group.");
   const pools = draft.routing.pools.map((pool) => {
     if (pool.id !== poolId) return pool;
     const { poolIds: _previous, ...rest } = pool;
@@ -255,7 +256,7 @@ export function setPoolMembers(
       ...(members.poolIds.length ? { poolIds: members.poolIds } : {}),
     };
   });
-  if (modelRoutingPoolCycle(pools)) throw new Error("Pools cannot include each other in a loop.");
+  if (modelRoutingPoolCycle(pools)) throw new Error("Groups cannot include each other in a loop.");
   return { ...draft, routing: { ...draft.routing, pools } };
 }
 

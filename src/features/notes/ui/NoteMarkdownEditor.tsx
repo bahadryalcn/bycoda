@@ -111,6 +111,7 @@ export function NoteMarkdownEditor({
   inputObserver,
   inputPublication,
   readOnly = false,
+  onRejectedInput,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -127,6 +128,8 @@ export function NoteMarkdownEditor({
   inputPublication?: NativeInputPublication;
   /** Freeze edits while the owning save operation has an unresolved outcome. */
   readOnly?: boolean;
+  /** The document the input budget refused, so its owner can retain it as unadmitted data. */
+  onRejectedInput?: (text: string) => void;
 }) {
   const translate = useT();
   const placeholderText = translate("Write markdown…");
@@ -154,6 +157,8 @@ export function NoteMarkdownEditor({
   const inputRef = useRef<NativeInputRegistration | null>(null);
   valueRef.current = value;
   onChangeRef.current = onChange;
+  const onRejectedRef = useRef(onRejectedInput);
+  onRejectedRef.current = onRejectedInput;
   onSaveRef.current = onSave;
   onPasteImagesRef.current = onPasteImages;
 
@@ -309,8 +314,11 @@ export function NoteMarkdownEditor({
         next &&
         transactions.some((transaction) => transaction.docChanged) &&
         !canRetainNoteInputText(inputObserver, documentText(next))
-      )
+      ) {
+        if (!transactions.every((transaction) => transaction.annotation(externalChange)))
+          onRejectedRef.current?.(documentText(next));
         return;
+      }
       update.call(view, transactions);
     };
     const budgetedState: EditorView["setState"] = (state) => {

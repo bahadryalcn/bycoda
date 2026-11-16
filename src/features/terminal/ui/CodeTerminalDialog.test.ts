@@ -1,12 +1,13 @@
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { CodeTerminalDialog } from "./CodeTerminalDialog";
 import type { CodeTerminalController, CodeTerminalState } from "../runtime/codeTerminalController";
 
-it("retains the result when chat admission refuses it and allows an explicit retry", async () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+afterEach(() => localStorage.clear());
+
+const exitedController = (): CodeTerminalController => {
   const state: CodeTerminalState = {
     id: "terminal",
     shell: "PowerShell",
@@ -15,13 +16,52 @@ it("retains the result when chat admission refuses it and allows an explicit ret
     output: "done",
     truncated: false,
   };
-  const controller: CodeTerminalController = {
+  return {
     snapshot: () => state,
     subscribe: () => () => {},
     start: async () => {},
     refresh: async () => {},
     stop: async () => {},
   };
+};
+const options = {
+  cwd: "/project",
+  projectCwd: "/project",
+  native: false,
+  command: "echo done",
+  shellKind: "posix" as const,
+  isCurrent: () => true,
+};
+
+it("adds the finished result to chat once by default", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const report = vi.fn().mockReturnValue(true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(
+        createElement(CodeTerminalDialog, {
+          controller: exitedController(),
+          options,
+          onClose: () => {},
+          onReport: report,
+        }),
+      ),
+    );
+    expect(report).toHaveBeenCalledTimes(1);
+    expect(report.mock.calls[0][0]).toContain("done");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+});
+
+it("retains the result when chat admission refuses it and allows an explicit retry", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  localStorage.setItem("bycoda.codeRunReport", "off");
+  const controller = exitedController();
   const report = vi.fn().mockReturnValueOnce(false).mockReturnValue(true);
   const container = document.createElement("div");
   document.body.append(container);
@@ -35,14 +75,7 @@ it("retains the result when chat admission refuses it and allows an explicit ret
       root.render(
         createElement(CodeTerminalDialog, {
           controller,
-          options: {
-            cwd: "/project",
-            projectCwd: "/project",
-            native: false,
-            command: "echo done",
-            shellKind: "posix",
-            isCurrent: () => true,
-          },
+          options,
           onClose: () => {},
           onReport: report,
         }),

@@ -4,17 +4,17 @@ import type { SettingsEntry } from "./settings";
 export const modelsSettingsEntries: SettingsEntry[] = [
   {
     id: "models-order",
-    section: "work",
+    section: "providers",
     get label() {
-      return t("Model order");
+      return t("All models");
     },
     keywords: "main order pools quota capacity unattended work limits",
   },
   {
     id: "models-roles",
-    section: "work",
+    section: "providers",
     get label() {
-      return t("Assignments");
+      return t("Who uses what");
     },
     keywords: "where models are used roles tasks goals crew assistant voice helper models",
   },
@@ -36,7 +36,7 @@ export const modelsSettingsEntries: SettingsEntry[] = [
   },
   {
     id: "models-delegation",
-    section: "work",
+    section: "providers",
     get label() {
       return t("Subagents");
     },

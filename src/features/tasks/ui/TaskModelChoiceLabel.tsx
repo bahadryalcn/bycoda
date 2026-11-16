@@ -15,9 +15,11 @@ export function TaskModelChoiceLabel({
     case "default":
       return t("Default");
     case "order":
-      return t("Model order");
+      return t("Any model, in order");
     case "pool":
-      return routing.state?.pools.find((pool) => pool.id === choice.poolId)?.name ?? t("Pool");
+      return (
+        routing.state?.pools.find((pool) => pool.id === choice.poolId)?.name ?? t("Model group")
+      );
     default:
       return t("Fixed");
   }

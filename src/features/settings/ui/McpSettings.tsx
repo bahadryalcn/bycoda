@@ -1,66 +1,77 @@
-import { Text } from "../../../shared/ui/Text";
-import {
-  AddServerModal,
-  ProviderIcon,
-  PROVIDERS,
-  scopeLabel,
-  scopeDescription,
-  type Provider,
-} from "./McpAddServer";
-import { OverflowTooltip } from "../../../shared/ui/Tooltip";
-import { SettingsFeedback, Toggle } from "../../../shared/ui/settings";
-import { Badge } from "../../../shared/ui/Badge";
-import { McpCapabilityStatus } from "./McpCapabilityStatus";
-import { Tooltip } from "../../../shared/ui/Tooltip";
-import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
-import { Select as SharedSelect } from "../../../shared/ui/Select";
+import { invoke } from "@tauri-apps/api/core";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { pathKey } from "../../../shared/lib/paths";
-import { invoke } from "@tauri-apps/api/core";
 import { confirmInApp } from "../../../shared/model/appConfirm";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { copyText } from "../../../platform/tauri/clipboard";
-import { revealPath } from "../../../platform/tauri/fs";
-import { SearchableProjectPicker } from "../../projects/public/SearchableProjectPicker";
-import type { RecentProject } from "../../projects";
+import { InlineTextAction } from "../../../shared/ui/ActionHost";
+import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
-import { SectionLabel } from "../../../shared/ui/SectionLabel";
-import { ContinuousList, CollectionFooter } from "../../../shared/ui/ContinuousList";
-import { Surface } from "../../../shared/ui/Surface";
-import { SearchInput } from "../../../shared/ui/SearchInput";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
-import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
-import styles from "./McpSettings.module.css";
-import { ExternalMcpAccess } from "./ExternalMcpAccess";
-import { McpLoadingMode } from "./McpLoadingMode";
-import { McpOAuthSignIn } from "./McpOAuthSignIn";
+import { CollectionFooter, ContinuousList } from "../../../shared/ui/ContinuousList";
+import { CollectionRow } from "../../../shared/ui/CollectionRow";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { FilterTrigger } from "../../../shared/ui/FilterTrigger";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { Modal } from "../../../shared/ui/Modal";
 import { Popover } from "../../../shared/ui/Popover";
-import { Globe, Plus, RefreshCw, ListFilter, MoreHorizontal } from "../../../shared/ui/icons";
+import { SearchInput } from "../../../shared/ui/SearchInput";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { Select as SharedSelect } from "../../../shared/ui/Select";
+import { StatusDot } from "../../../shared/ui/StatusDot";
+import { Surface } from "../../../shared/ui/Surface";
+import { Group, Row, SettingsFeedback } from "../../../shared/ui/settings";
+import { Globe, Plus, RefreshCw } from "../../../shared/ui/icons";
+import type { RecentProject } from "../../projects";
+import { SearchableProjectPicker } from "../../projects/public/SearchableProjectPicker";
+import { useMcpHub } from "../hooks/useMcpHub";
 import {
   canSignInMcp,
+  isMcpConnected,
   MCP_PROVIDER_LABELS,
   needsMcpSignIn,
   type McpConnection,
+  type McpLoadingPolicy,
 } from "../model/mcp";
+import {
+  buildMcpCatalog,
+  mcpEntrySearchText,
+  mcpEntryStatus,
+  type McpCatalogEntry,
+  type McpEntryStatus,
+} from "../model/mcpCatalog";
 import {
   getCachedMcpSettings,
   invalidateMcpSettings,
   loadMcpSettings,
-  subscribeMcpSettings,
   MCP_LOCAL_ONLY_ERROR,
+  subscribeMcpSettings,
   type McpServerRow,
   type McpSettingsSnapshot,
 } from "../model/mcpSettingsCache";
+import { ExternalMcpAccess } from "./ExternalMcpAccess";
+import {
+  AddServerModal,
+  PROVIDERS,
+  scopeDescription,
+  scopeLabel,
+  type Provider,
+} from "./McpAddServer";
+import {
+  McpServerDetail,
+  sourceLabel,
+  STATUS_TONE,
+  statusLabel,
+  type McpRowActions,
+} from "./McpServerDetail";
+import styles from "./McpSettings.module.css";
 
 type Scope = McpConnection["scope"];
-type ServerRow = McpServerRow;
-const serverRowKey = (server: ServerRow) =>
+type ProviderFilter = "all" | Provider | "host";
+type StatusFilter = "all" | "sign-in" | "off";
+const serverRowKey = (server: McpServerRow) =>
   `${server.provider}:${server.scope}:${server.configPath}:${server.name}`;
-type Filter = "all" | McpConnection["provider"];
-type ScopeFilter = "all" | Scope;
-const canToggleMcp = (server: ServerRow) =>
+const canToggleMcp = (server: McpServerRow) =>
   !!server.configPath && ["claude", "codex", "opencode"].includes(server.provider);
 
 /** A missing provider CLI is an install step, not a failed sign-in. */
@@ -76,47 +87,6 @@ function actionErrorText(cause: unknown, provider?: Provider): string {
         });
   }
   return text;
-}
-/** A long provider message stays two lines until the reader asks for the rest. */
-function ExpandableWarning({ children }: { children: ReactNode }) {
-  useLocale();
-  const [expanded, setExpanded] = useState(false);
-  const [overflowing, setOverflowing] = useState(false);
-  const text = useRef<HTMLSpanElement>(null);
-  useEffect(() => {
-    const node = text.current;
-    if (!node || expanded) return;
-    const measure = () => setOverflowing(node.scrollHeight > node.clientHeight + 1);
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [expanded, children]);
-  return (
-    <SettingsFeedback
-      state="warning"
-      action={
-        overflowing || expanded
-          ? {
-              label: expanded ? t("Show less") : t("Show more"),
-              onClick: () => setExpanded((open) => !open),
-            }
-          : undefined
-      }
-    >
-      <Text
-        as="span"
-        size="inherit"
-        tone="inherit"
-        lines={expanded ? undefined : 2}
-        ref={text}
-        className={styles.clamp}
-        data-expanded={expanded || undefined}
-      >
-        {children}
-      </Text>
-    </SettingsFeedback>
-  );
 }
 
 export function McpSettings({ cwd, recents = [] }: { cwd: string; recents?: RecentProject[] }) {
@@ -168,8 +138,6 @@ export function McpSettings({ cwd, recents = [] }: { cwd: string; recents?: Rece
         globalOnly={globalOnly}
         projectPicker={projectPicker}
       />
-      <McpLoadingMode cwd={project} />
-      <McpOAuthSignIn cwd={project} />
       <ExternalMcpAccess cwd={project} />
     </div>
   );
@@ -186,21 +154,21 @@ function McpConnections({
 }) {
   useLocale();
   const cached = getCachedMcpSettings(cwd, globalOnly);
-  const [servers, setServers] = useState<ServerRow[]>(cached?.servers ?? []);
+  const [servers, setServers] = useState<McpServerRow[]>(cached?.servers ?? []);
   const stateKey = `mcp-connections:${pathKey(cwd)}:${globalOnly ? "global" : "project"}`;
-  const [filter, setFilter] = useRetainedState<Filter>(`${stateKey}:filter`, "all");
-  const [query, setQuery] = useRetainedState(`${stateKey}:query`, "");
-  const [scopeFilter, setScopeFilter] = useRetainedState<ScopeFilter>(`${stateKey}:scope`, "all");
-  const [actionError, setActionError] = useState("");
-  const [showAllProviders, setShowAllProviders] = useRetainedState(
-    `${stateKey}:all-providers`,
-    false,
+  const [providerFilter, setProviderFilter] = useRetainedState<ProviderFilter>(
+    `${stateKey}:filter`,
+    "all",
   );
+  const [statusFilter, setStatusFilter] = useRetainedState<StatusFilter>(
+    `${stateKey}:status`,
+    "all",
+  );
+  const [query, setQuery] = useRetainedState(`${stateKey}:query`, "");
+  const [selected, setSelected] = useState("");
+  const [actionError, setActionError] = useState("");
   const [loading, setLoading] = useState(!cached);
-  const [busy, setBusy] = useState<{
-    server: string;
-    action: "login" | "remove" | "enable" | "disable";
-  } | null>(null);
+  const [busy, setBusy] = useState("");
   const busyRef = useRef(false);
   const [error, setError] = useState(cached?.error ?? "");
   const [claudeError, setClaudeError] = useState(cached?.claudeError ?? "");
@@ -209,174 +177,178 @@ function McpConnections({
   const [addOpen, setAddOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const filterAnchor = useRef<HTMLButtonElement>(null);
-  const [removeTarget, setRemoveTarget] = useState<ServerRow | null>(null);
-  const [removeScopes, setRemoveScopes] = useState<Record<string, Scope>>({});
-  const removeScope = removeTarget ? (removeScopes[removeTarget.name] ?? "local") : "local";
-  const [menu, setMenu] = useState<{
-    server: ServerRow;
-    anchor: HTMLButtonElement;
-  } | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<McpServerRow | null>(null);
+  const [removeScope, setRemoveScope] = useState<Scope>("local");
   const refreshGeneration = useRef(0);
+  const hub = useMcpHub(cwd, globalOnly);
 
-  const applySnapshot = useCallback((snapshot: McpSettingsSnapshot) => {
+  function applySnapshot(snapshot: McpSettingsSnapshot) {
     setServers(snapshot.servers);
     setError(snapshot.error);
     setClaudeError(snapshot.claudeError);
     setClaudeChecking(snapshot.claudeChecking ?? false);
     setClaudePartial(snapshot.claudePartial ?? false);
     setLoading(false);
-  }, []);
+  }
 
-  useEffect(
-    () => subscribeMcpSettings(cwd, applySnapshot, globalOnly),
-    [cwd, applySnapshot, globalOnly],
-  );
+  // Reason: the shared discovery cache publishes health and Codex auth after the list; mirror it here.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- subscribes to the shared MCP discovery store for this view
+  useEffect(() => subscribeMcpSettings(cwd, applySnapshot, globalOnly), [cwd, globalOnly]);
 
-  const refresh = useCallback(
-    async (force = true) => {
-      const generation = ++refreshGeneration.current;
-      const previous = getCachedMcpSettings(cwd, globalOnly);
-      if (!force) {
-        setServers(previous?.servers ?? []);
-        setError(previous?.error ?? "");
-        setClaudeError(previous?.claudeError ?? "");
-        setClaudeChecking(previous?.claudeChecking ?? false);
-        setClaudePartial(previous?.claudePartial ?? false);
-      }
-      if (force) invalidateMcpSettings(cwd);
-      setLoading(force || !previous);
-      const snapshot = await loadMcpSettings(cwd, force, { claudeHealth: force, globalOnly });
-      if (generation === refreshGeneration.current) {
-        applySnapshot(getCachedMcpSettings(cwd, globalOnly) ?? snapshot);
-      }
-    },
-    [cwd, applySnapshot, globalOnly],
-  );
+  async function refresh(force = true) {
+    const generation = ++refreshGeneration.current;
+    const previous = getCachedMcpSettings(cwd, globalOnly);
+    if (force) invalidateMcpSettings(cwd);
+    setLoading(force || !previous);
+    const [snapshot] = await Promise.all([
+      loadMcpSettings(cwd, force, { claudeHealth: force, globalOnly }),
+      force ? hub.refresh() : Promise.resolve(),
+    ]);
+    if (generation === refreshGeneration.current)
+      applySnapshot(getCachedMcpSettings(cwd, globalOnly) ?? snapshot);
+  }
 
+  // Reason: read discovery once per view; later reads come from Refresh or a configuration change.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- loads provider discovery for this view; generation drops stale results
   useEffect(() => {
     void refresh(false);
     return () => {
       refreshGeneration.current += 1;
     };
-  }, [refresh]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh is recreated per render; the view identity is the key
+  }, [cwd, globalOnly]);
 
-  const filterProviders = showAllProviders
-    ? PROVIDERS
-    : PROVIDERS.filter(
-        (provider) =>
-          servers.some((server) => server.provider === provider) ||
-          (provider === filter && (loading || !!error || !!claudeError)),
-      );
-  // A stored provider filter that no longer has servers falls back to "all" without rewriting it.
-  const effectiveFilter: Filter =
-    loading || error || claudeError || filter === "all" || filterProviders.includes(filter)
-      ? filter
-      : "all";
-  const visible = useMemo(() => {
-    const search = query.trim().toLocaleLowerCase();
-    return servers.filter(
-      (server) =>
-        (effectiveFilter === "all" || server.provider === effectiveFilter) &&
-        (scopeFilter === "all" || server.scope === scopeFilter) &&
-        (!search ||
-          [
-            server.name,
-            MCP_PROVIDER_LABELS[server.provider],
-            scopeLabel(server.scope),
-            server.transport,
-            server.status,
-            server.configPath,
-          ]
-            .join(" ")
-            .toLocaleLowerCase()
-            .includes(search)),
+  // Until Claude reports health, a configured Claude row is unknown, not signed out.
+  const pendingHealth = (row: McpServerRow) =>
+    (claudeChecking || loading) && row.provider === "claude" && row.status === "Configured";
+  const catalog = buildMcpCatalog(servers, hub.loading, hub.oauth);
+  const statusOf = (entry: McpCatalogEntry): McpEntryStatus =>
+    mcpEntryStatus(
+      entry,
+      (row) => isMcpConnected(row.status),
+      (row) => !pendingHealth(row) && needsMcpSignIn(row),
     );
-  }, [effectiveFilter, scopeFilter, servers, query]);
+  const providerOptions = PROVIDERS.filter((provider) =>
+    catalog.some((entry) => entry.configs.some((config) => config.provider === provider)),
+  );
+  const hasHostOnly = catalog.some((entry) => entry.configs.length === 0);
+  const search = query.trim().toLocaleLowerCase();
+  const visible = catalog.filter((entry) => {
+    if (providerFilter === "host" && entry.configs.length > 0) return false;
+    if (
+      providerFilter !== "all" &&
+      providerFilter !== "host" &&
+      !entry.configs.some((config) => config.provider === providerFilter)
+    )
+      return false;
+    const status = statusOf(entry);
+    if (statusFilter === "sign-in" && status !== "sign-in" && status !== "expired") return false;
+    if (statusFilter === "off" && status !== "off") return false;
+    return (
+      !search ||
+      mcpEntrySearchText(
+        entry,
+        (row) => `${MCP_PROVIDER_LABELS[row.provider]} ${scopeLabel(row.scope)}`,
+      ).includes(search)
+    );
+  });
+  const activeFilters = (providerFilter !== "all" ? 1 : 0) + (statusFilter !== "all" ? 1 : 0);
+  const resetFilters = () => {
+    setProviderFilter("all");
+    setStatusFilter("all");
+    setQuery("");
+  };
+  const signInCount = catalog.filter((entry) => {
+    const status = statusOf(entry);
+    return status === "sign-in" || status === "expired";
+  }).length;
 
-  async function login(server: ServerRow) {
-    if (busyRef.current || !canSignInMcp(server)) return;
-    busyRef.current = true;
-    setBusy({ server: serverRowKey(server), action: "login" });
-    setActionError("");
-    try {
-      await invoke("mcp_provider_login", {
-        cwd,
-        provider: server.provider,
-        name: server.name,
-      });
-      await refresh();
-    } catch (cause) {
-      setActionError(actionErrorText(cause, server.provider));
-    } finally {
-      busyRef.current = false;
-      setBusy(null);
-    }
-  }
-
-  const canToggle = (server: ServerRow) =>
-    canToggleMcp(server) && !(globalOnly && server.provider === "claude");
-
-  async function setEnabled(server: ServerRow) {
-    if (busyRef.current || !canToggle(server)) return;
-    busyRef.current = true;
-    const enabled = server.enabled === false;
-    setBusy({ server: serverRowKey(server), action: enabled ? "enable" : "disable" });
-    setActionError("");
-    try {
-      await invoke("mcp_set_enabled", {
-        cwd,
-        provider: server.provider,
-        name: server.name,
-        scope: server.scope,
-        configPath: server.configPath,
-        enabled,
-        expectedEnabled: server.enabled !== false,
-        ...(globalOnly ? { globalOnly: true } : {}),
-      });
-      await refresh();
-    } catch (cause) {
-      setActionError(actionErrorText(cause, server.provider));
-    } finally {
-      busyRef.current = false;
-      setBusy(null);
-    }
-  }
-
-  async function remove(server: ServerRow, confirmedScope?: Scope) {
+  async function run(server: McpServerRow, action: string, work: () => Promise<void>) {
     if (busyRef.current) return;
     busyRef.current = true;
-    setBusy({ server: serverRowKey(server), action: "remove" });
-    const selectedScope = confirmedScope ?? server.scope;
+    setBusy(`${serverRowKey(server)}:${action}`);
     setActionError("");
     try {
-      if (
-        confirmedScope === undefined &&
-        !(await confirmInApp({
-          title: t("Remove MCP server?"),
-          message: t(
-            "“{p0}” is removed from the {p1} scope. Conversations that use it lose its tools; you can add it again later.",
-            { p0: server.name, p1: scopeLabel(selectedScope) },
-          ),
-          confirmLabel: t("Remove server"),
-          tone: "danger",
-        }))
-      )
-        return;
-      await invoke("claude_mcp_remove", {
-        cwd,
-        name: server.name,
-        scope: selectedScope,
-      });
-      setRemoveTarget(null);
-      await refresh();
+      await work();
     } catch (cause) {
-      setActionError(String(cause));
+      setActionError(actionErrorText(cause, server.provider));
     } finally {
       busyRef.current = false;
-      setBusy(null);
+      setBusy("");
     }
   }
 
+  const canToggle = (server: McpServerRow) =>
+    canToggleMcp(server) && !(globalOnly && server.provider === "claude");
+
+  const actions: McpRowActions = {
+    locked: loading || busy !== "",
+    busyKey: busy,
+    canToggle,
+    toggleBlockedReason: (server) =>
+      canToggle(server)
+        ? undefined
+        : globalOnly && server.provider === "claude"
+          ? t("Select a project to change Claude Code permissions.")
+          : t("{p0} does not support turning servers off here.", {
+              p0: MCP_PROVIDER_LABELS[server.provider],
+            }),
+    refresh: () => refresh(),
+    setEnabled: (server) =>
+      run(server, "toggle", async () => {
+        if (!canToggle(server)) return;
+        await invoke("mcp_set_enabled", {
+          cwd,
+          provider: server.provider,
+          name: server.name,
+          scope: server.scope,
+          configPath: server.configPath,
+          enabled: server.enabled === false,
+          expectedEnabled: server.enabled !== false,
+          ...(globalOnly ? { globalOnly: true } : {}),
+        });
+        await refresh();
+      }),
+    providerSignIn: (server) =>
+      run(server, "login", async () => {
+        if (!canSignInMcp(server)) return;
+        await invoke("mcp_provider_login", { cwd, provider: server.provider, name: server.name });
+        await refresh();
+      }),
+    remove: async (server) => {
+      if (!server.configPath) {
+        setRemoveScope("local");
+        setRemoveTarget(server);
+        return;
+      }
+      const confirmed = await confirmInApp({
+        title: t("Remove MCP server?"),
+        message: t(
+          "“{p0}” is removed from the {p1} scope. Conversations that use it lose its tools; you can add it again later.",
+          { p0: server.name, p1: scopeLabel(server.scope) },
+        ),
+        confirmLabel: t("Remove server"),
+        tone: "danger",
+      });
+      if (!confirmed) return;
+      await run(server, "remove", async () => {
+        await invoke("claude_mcp_remove", { cwd, name: server.name, scope: server.scope });
+        await refresh();
+      });
+    },
+  };
+
+  /** The quick action asks for the sign-in that unblocks sessions first: bycoda's own, then the provider's. */
+  function quickSignIn(entry: McpCatalogEntry) {
+    const hubEntry = entry.hub;
+    if (hubEntry?.kind === "http" && hubEntry.oauth !== "signed-in")
+      return () => void hub.signIn(hubEntry.name);
+    const row = entry.configs.find((config) => !pendingHealth(config) && needsMcpSignIn(config));
+    return row ? () => void actions.providerSignIn(row) : undefined;
+  }
+
+  const open = catalog.find((entry) => entry.name === selected);
+  const policy = hub.loading?.policy;
   return (
     <div
       id="setting-mcp-servers"
@@ -384,421 +356,254 @@ function McpConnections({
       tabIndex={-1}
       className={styles.connections}
     >
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="flex flex-wrap items-center gap-3">
-            <Text
-              size="caption"
-              tone="muted"
-              leading="inherit"
-              id="setting-mcp-scopes"
-              data-setting-id="mcp-scopes"
-              tabIndex={-1}
-              className={styles.scopeHelp}
-            >
-              <InfoPopover label={t("Advanced: scopes and connection status")}>
-                {[
-                  scopeDescription("local"),
-                  scopeDescription("project"),
-                  scopeDescription("user"),
-                ].map((description) => (
-                  <p key={description}>{description}</p>
-                ))}
-                <p>
-                  {t(
-                    "Claude Code status comes from its CLI. Other providers show configured entries. Sign in opens your browser when supported.",
-                  )}
-                </p>
-                <p>
-                  {t(
-                    "Claude CLI status is matched by server name; it is not verified separately for each scope.",
-                  )}
-                </p>
-              </InfoPopover>
-            </Text>
-            {projectPicker(busy !== null)}
-          </div>
-        </div>
+      <div className={styles.header}>
+        {projectPicker(busy !== "")}
         <div className={styles.actions}>
           <Button
-            type="button"
             variant="ghost"
             iconOnly
             label={t("Refresh")}
             loading={loading}
+            disabled={loading || busy !== ""}
             onClick={() => void refresh()}
-            disabled={loading || busy !== null}
           >
             <RefreshCw className="icon-sm" />
           </Button>
-          <Button type="button" variant="primary" onClick={() => setAddOpen(true)}>
+          <Button variant="primary" onClick={() => setAddOpen(true)}>
             <Plus className="icon-sm" />
             <span>{t("Add server")}</span>
           </Button>
         </div>
       </div>
-      {servers.length > 0 ||
-      loading ||
-      query ||
-      effectiveFilter !== "all" ||
-      scopeFilter !== "all" ||
-      showAllProviders ? (
-        <div className={styles.toolbar}>
-          <div className={styles.search}>
-            <SearchInput
-              appearance="field"
-              aria-label={t("Search MCP servers")}
-              type="search"
-              placeholder={t("Search MCP servers")}
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-            />
-          </div>
-          <Button
-            ref={filterAnchor}
-            iconOnly
-            label={t("Filters")}
-            selected={effectiveFilter !== "all" || scopeFilter !== "all" || showAllProviders}
-            aria-expanded={filtersOpen}
-            aria-haspopup="dialog"
-            onClick={() => setFiltersOpen(!filtersOpen)}
-          >
-            <ListFilter className="icon-sm" />
-          </Button>
-          {effectiveFilter !== "all" || scopeFilter !== "all" ? (
-            <Text size="caption" tone="secondary" leading="inherit" className={styles.filterLabel}>
-              {[
-                effectiveFilter !== "all" ? MCP_PROVIDER_LABELS[effectiveFilter] : "",
-                scopeFilter !== "all" ? scopeLabel(scopeFilter) : "",
-              ]
-                .filter(Boolean)
-                .join(" · ")}
-            </Text>
-          ) : null}
+      <div className={styles.toolbar}>
+        <div className={styles.search}>
+          <SearchInput
+            appearance="field"
+            aria-label={t("Search MCP servers")}
+            type="search"
+            placeholder={t("Search MCP servers")}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
         </div>
-      ) : null}
+        <FilterTrigger
+          ref={filterAnchor}
+          label={t("Filters")}
+          activeCount={activeFilters}
+          onReset={resetFilters}
+          resetLabel={t("Reset filters")}
+          aria-haspopup="dialog"
+          aria-expanded={filtersOpen}
+          onClick={() => setFiltersOpen(!filtersOpen)}
+        />
+        {signInCount > 0 && statusFilter === "all" ? (
+          <Button size="sm" variant="ghost" onClick={() => setStatusFilter("sign-in")}>
+            <StatusDot tone="warning" />
+            {t("{p0} need sign-in", { p0: signInCount })}
+          </Button>
+        ) : null}
+      </div>
       {filtersOpen ? (
         <Popover
           anchor={filterAnchor}
           role="dialog"
-          aria-label={t("Filter MCP servers by provider")}
+          aria-label={t("Filter MCP servers")}
           width={360}
           onDismiss={() => setFiltersOpen(false)}
         >
-          <Text
-            as="div"
-            size="secondary"
-            tone="primary"
-            leading="inherit"
-            className={styles.filterPanel}
-          >
-            <SectionLabel as="h3">{t("Provider")}</SectionLabel>
+          <div className={styles.filterPanel}>
+            <SectionLabel as="h3">{t("Source")}</SectionLabel>
             <SegmentedControl
-              label={t("Filter MCP servers by provider")}
+              label={t("Filter MCP servers by source")}
               selectionRole="pressed"
-              value={effectiveFilter}
-              onValueChange={(provider) => setFilter(provider as Filter)}
-              options={(["all", ...filterProviders] as const).map((provider) => ({
-                value: provider,
-                label: provider === "all" ? t("All") : MCP_PROVIDER_LABELS[provider],
-                icon:
-                  provider === "all" ? (
-                    <Globe className="icon-sm" />
-                  ) : (
-                    <ProviderIcon provider={provider} />
-                  ),
-                accessory: (
-                  <Badge variant="count" size="xs" tone="neutral">
-                    {provider === "all"
-                      ? servers.length
-                      : servers.filter((server) => server.provider === provider).length}
-                  </Badge>
-                ),
-              }))}
+              value={providerFilter}
+              onValueChange={(value) => setProviderFilter(value as ProviderFilter)}
+              options={[
+                { value: "all", label: t("All") },
+                ...providerOptions.map((provider) => ({
+                  value: provider,
+                  label: MCP_PROVIDER_LABELS[provider],
+                })),
+                ...(hasHostOnly ? [{ value: "host", label: t("Plugins and accounts") }] : []),
+              ]}
             />
-            <SectionLabel as="h3">{t("Scope")}</SectionLabel>
+            <SectionLabel as="h3">{t("Status")}</SectionLabel>
             <SegmentedControl
-              label={t("Filter MCP servers by scope")}
+              label={t("Filter MCP servers by status")}
               selectionRole="pressed"
-              value={scopeFilter}
-              onValueChange={(scope) => setScopeFilter(scope as ScopeFilter)}
-              options={(["all", "user", "project", "local"] as const).map((scope) => ({
-                value: scope,
-                label: scope === "all" ? t("All") : scopeLabel(scope),
-                accessory: (
-                  <Badge variant="count" size="xs" tone="neutral">
-                    {scope === "all"
-                      ? servers.length
-                      : servers.filter((server) => server.scope === scope).length}
-                  </Badge>
-                ),
-              }))}
+              value={statusFilter}
+              onValueChange={(value) => setStatusFilter(value as StatusFilter)}
+              options={[
+                { value: "all", label: t("All") },
+                { value: "sign-in", label: t("Needs sign-in") },
+                { value: "off", label: t("Off") },
+              ]}
             />
-            <Button
-              variant="ghost"
-              aria-label={
-                showAllProviders ? t("Show available providers") : t("Show all providers")
-              }
-              aria-pressed={showAllProviders}
-              onClick={() => setShowAllProviders(!showAllProviders)}
-            >
-              {showAllProviders ? t("Show available providers") : t("Show all providers")}
-            </Button>
-            <Button
-              variant="secondary"
-              disabled={
-                effectiveFilter === "all" && scopeFilter === "all" && !showAllProviders && !query
-              }
-              onClick={() => {
-                setFilter("all");
-                setScopeFilter("all");
-                setQuery("");
-                setShowAllProviders(false);
-              }}
-            >
-              {t("Reset filters")}
-            </Button>
-          </Text>
+          </div>
         </Popover>
       ) : null}
       {actionError ? (
-        <SettingsFeedback state="error" onDismiss={() => setActionError("")}>
-          {actionError}
-        </SettingsFeedback>
+        <InlineError
+          details={actionError}
+          secondaryAction={{ label: t("Dismiss"), onClick: () => setActionError("") }}
+        />
       ) : null}
-      {loading && servers.length === 0 ? (
-        <SettingsFeedback state="loading">{t("Checking servers…")}</SettingsFeedback>
-      ) : visible.length === 0 && !error ? (
-        <SettingsFeedback
-          state="empty"
-          action={
-            servers.length > 0 &&
-            (query.trim() || effectiveFilter !== "all" || scopeFilter !== "all")
-              ? {
-                  label: t("Reset filters"),
-                  onClick: () => {
-                    setFilter("all");
-                    setScopeFilter("all");
-                    setQuery("");
-                    setShowAllProviders(false);
-                  },
-                }
-              : undefined
-          }
-        >
-          {query.trim()
-            ? t("No MCP servers match your search.")
-            : effectiveFilter === "all"
-              ? t("No MCP servers configured. Add a server or choose another project.")
-              : t("No MCP servers configured for this provider.")}
-        </SettingsFeedback>
-      ) : visible.length > 0 ? (
-        <div role="region" aria-label={t("MCP connections")}>
-          <Surface
-            variant="card"
-            frame="card"
-            radius="card"
-            padding="none"
-            className={styles.listFrame}
-          >
-            <ContinuousList
-              rowAppearance="settings"
-              className={styles.list}
-              items={visible}
-              itemKey={serverRowKey}
-              stateKey={`${stateKey}:${effectiveFilter}:${scopeFilter}`}
-              estimateSize={40}
-              renderItem={(server) => {
-                // Until Claude reports health, a configured Claude row is unknown, not signed out.
-                const checking =
-                  claudeChecking && server.provider === "claude" && server.status === "Configured";
-                return (
-                  <div key={serverRowKey(server)} className={styles.row}>
-                    <McpCapabilityStatus
-                      server={server}
-                      checking={loading || checking}
-                      failed={!!error || (server.provider === "claude" && !!claudeError)}
-                      ambiguous={
-                        server.provider === "claude" &&
-                        servers.filter(
-                          (entry) => entry.provider === "claude" && entry.name === server.name,
-                        ).length > 1
-                      }
-                    />
-                    <span className={styles.providerIcon}>
-                      <ProviderIcon provider={server.provider} />
-                    </span>
-                    <OverflowTooltip label={server.name}>
-                      <Text
-                        as="span"
-                        size="secondary"
-                        tone="inherit"
-                        weight="medium"
-                        leading="inherit"
-                        truncate
-                      >
-                        {server.name}
-                      </Text>
-                    </OverflowTooltip>
-                    <Text
-                      as="span"
-                      size="caption"
-                      tone="muted"
-                      leading="inherit"
-                      className={styles.scope}
-                    >
-                      {scopeLabel(server.scope)}
-                    </Text>
-                    {!checking && needsMcpSignIn(server) ? (
-                      <Button
-                        stableWidth
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className={styles.signIn}
-                        textTone="warning"
-                        loading={busy?.server === serverRowKey(server) && busy.action === "login"}
-                        disabled={loading || busy !== null}
-                        onClick={() => void login(server)}
-                      >
-                        {t("Sign in")}
-                      </Button>
-                    ) : null}
-                    {!canToggle(server) ? (
-                      <Text size="caption" tone="muted" leading="inherit" truncate>
-                        {globalOnly && server.provider === "claude"
-                          ? t("Select a project to change Claude Code permissions.")
-                          : t("Edit in provider config")}
-                      </Text>
-                    ) : null}
-                    <Tooltip
-                      label={
-                        canToggle(server) && server.provider === "claude"
-                          ? t("Applies to this project for Claude Code.")
-                          : undefined
-                      }
-                    >
-                      <span className={styles.toggle}>
-                        <Toggle
-                          label={`${server.name} · ${MCP_PROVIDER_LABELS[server.provider]} · ${scopeLabel(server.scope)}`}
-                          on={server.enabled !== false}
-                          disabled={loading || busy !== null || !canToggle(server)}
-                          onChange={() => void setEnabled(server)}
-                        />
-                      </span>
-                    </Tooltip>
-                    <Button
-                      className={styles.rowMenu}
-                      type="button"
-                      variant="ghost"
-                      iconOnly
-                      label={t("Actions for {p0}", { p0: server.name })}
-                      aria-haspopup="menu"
-                      aria-expanded={menu?.server === server}
-                      disabled={loading || busy !== null}
-                      loading={busy?.server === serverRowKey(server) && busy.action !== "login"}
-                      onClick={(event) => setMenu({ server, anchor: event.currentTarget })}
-                    >
-                      <MoreHorizontal className="icon-sm" />
-                    </Button>
-                  </div>
-                );
-              }}
-            />
-          </Surface>
-        </div>
-      ) : null}
-      <CollectionFooter loading={loading && servers.length > 0} />
       {error ? (
-        <SettingsFeedback
-          state="error"
-          action={{ label: t("Retry"), pending: loading, onClick: () => void refresh() }}
-        >
-          {servers.length ? `${t("Showing the last successful result.")} ` : ""}
-          {error}
-        </SettingsFeedback>
+        <InlineError details={error} retry={{ onRetry: () => void refresh(), pending: loading }}>
+          {servers.length ? t("Showing the last successful result.") : undefined}
+        </InlineError>
       ) : null}
-      {claudeError && (effectiveFilter === "all" || effectiveFilter === "claude") ? (
-        <ExpandableWarning>
-          {t("Claude connection status unavailable: ")} {claudeError}
-        </ExpandableWarning>
-      ) : claudePartial && (effectiveFilter === "all" || effectiveFilter === "claude") ? (
+      {claudeError ? (
+        <InlineError details={claudeError}>
+          {t("Claude connection status unavailable.")}
+        </InlineError>
+      ) : claudePartial ? (
         <SettingsFeedback state="warning">
           {t(
             "Claude did not finish checking every server in time. Servers it did not reach show Configured.",
           )}
         </SettingsFeedback>
       ) : null}
-      {busy ? (
-        <Text role="status" as="p" size="caption" tone="secondary">
-          {t(
-            "Operation in progress for {p0}. Wait for the result before starting another operation.",
-            {
-              p0: (() => {
-                const server = servers.find((entry) => serverRowKey(entry) === busy.server);
-                return server
-                  ? `${t(busy.action === "login" ? "Sign in" : busy.action === "enable" ? "Enable" : busy.action === "disable" ? "Disable" : "Remove")}: ${server.name} · ${MCP_PROVIDER_LABELS[server.provider]} · ${scopeLabel(server.scope)}`
-                  : busy.server;
-              })(),
-            },
-          )}
-        </Text>
+      {loading && catalog.length === 0 ? (
+        <SettingsFeedback state="loading">{t("Checking servers…")}</SettingsFeedback>
+      ) : visible.length === 0 ? (
+        search || activeFilters ? (
+          <EmptyState
+            size="inline"
+            context="list"
+            kind="filtered"
+            onReset={resetFilters}
+            title={t("No MCP servers match your search.")}
+          />
+        ) : (
+          <EmptyState
+            size="inline"
+            context="list"
+            title={t("No MCP servers configured. Add a server or choose another project.")}
+          />
+        )
+      ) : (
+        <div role="region" aria-label={t("MCP servers")}>
+          <Surface variant="card" frame="card" radius="card" padding="none">
+            <ContinuousList
+              rowAppearance="settings"
+              className={styles.list}
+              items={visible}
+              itemKey={(entry) => entry.name}
+              stateKey={`${stateKey}:${providerFilter}:${statusFilter}`}
+              estimateSize={40}
+              renderItem={(entry) => {
+                const status = statusOf(entry);
+                const signIn =
+                  status === "sign-in" || status === "expired" ? quickSignIn(entry) : undefined;
+                const sources = entry.configs.length
+                  ? [
+                      ...new Set(
+                        entry.configs.map(
+                          (config) =>
+                            `${MCP_PROVIDER_LABELS[config.provider]}${config.scope === "user" ? "" : ` (${scopeLabel(config.scope)})`}`,
+                        ),
+                      ),
+                    ]
+                  : (entry.hub?.sources ?? []).map(sourceLabel);
+                return (
+                  <CollectionRow
+                    key={entry.name}
+                    leading={
+                      <StatusDot
+                        tone={status === "off" ? "muted" : STATUS_TONE[status]}
+                        label={statusLabel(status)}
+                      />
+                    }
+                    title={entry.name}
+                    secondary={sources.join(" · ")}
+                    trailing={
+                      <>
+                        {entry.hub?.direct && policy?.mode === "onDemand" ? (
+                          <Badge size="xs" tone="neutral">
+                            {t("Starts with session")}
+                          </Badge>
+                        ) : null}
+                        {statusLabel(status)}
+                      </>
+                    }
+                    action={
+                      signIn ? (
+                        <InlineTextAction
+                          reveal="always"
+                          disabled={actions.locked || !!hub.busy}
+                          onClick={signIn}
+                        >
+                          {t("Sign in")}
+                        </InlineTextAction>
+                      ) : undefined
+                    }
+                    onOpen={() => setSelected(entry.name)}
+                    primary={{ "aria-label": t("Open {p0}", { p0: entry.name }) }}
+                  />
+                );
+              }}
+            />
+          </Surface>
+        </div>
+      )}
+      <CollectionFooter loading={loading && catalog.length > 0} />
+      {hub.waiting ? (
+        <SettingsFeedback state="loading" immediate>
+          {t("Finish signing in in your browser…")}
+        </SettingsFeedback>
       ) : null}
-      {menu ? (
-        <DropdownMenu
-          anchor={menu.anchor}
-          label={t("Actions for {p0}", { p0: menu.server.name })}
-          onClose={() => setMenu(null)}
-          items={[
-            ...(canSignInMcp(menu.server) &&
-            menu.server.auth !== "none" &&
-            !needsMcpSignIn(menu.server)
-              ? [
-                  {
-                    kind: "item" as const,
-                    id: "login",
-                    label: t("Sign in again"),
-                    disabled: loading || busy !== null,
-                  },
-                ]
-              : []),
-            {
-              kind: "item",
-              id: "reveal",
-              label: t("Show config"),
-              disabled: !menu.server.configPath,
-            },
-            {
-              kind: "item",
-              id: "copy",
-              label: t("Copy config path"),
-              disabled: !menu.server.configPath,
-            },
-            {
-              kind: "item",
-              id: "remove",
-              label: t("Remove"),
-              danger: true,
-              disabled: menu.server.provider !== "claude" || loading || busy !== null,
-              description:
-                menu.server.provider !== "claude" ? t("Edit in provider config") : undefined,
-            },
-          ]}
-          onPick={(action) => {
-            const server = menu.server;
-            setMenu(null);
-            if (action === "login") void login(server);
-            if (action === "reveal")
-              void revealPath(server.configPath).catch((cause) => setActionError(String(cause)));
-            if (action === "copy")
-              void copyText(server.configPath).catch((cause) => setActionError(String(cause)));
-            if (action === "remove") {
-              if (server.configPath) void remove(server);
-              else {
-                setRemoveTarget(server);
-              }
-            }
-          }}
+      {hub.error && !open ? (
+        <InlineError
+          details={hub.error}
+          secondaryAction={{ label: t("Dismiss"), onClick: hub.dismissError }}
+        />
+      ) : null}
+      <Group
+        title={t("Session startup")}
+        description={t("Applies to new sessions.")}
+        feedback={
+          hub.loading?.corrupt ? (
+            <SettingsFeedback state="error">
+              {t(
+                "The MCP loading file is unreadable, so servers load on demand. Repair it to save changes.",
+              )}
+            </SettingsFeedback>
+          ) : undefined
+        }
+      >
+        <Row
+          id="mcp-loading"
+          label={t("Start MCP servers")}
+          description={[
+            t("When needed: a server starts the first time a session uses one of its tools."),
+            t("With every session: all servers start when a session opens."),
+            t("Open a server to start just that one with every session."),
+          ].join(" ")}
+          disabled={!policy || hub.saving || !!hub.loading?.corrupt}
+        >
+          <SharedSelect
+            hideLabel
+            label={t("Start MCP servers")}
+            value={policy?.mode ?? "onDemand"}
+            disabled={!policy || hub.saving || !!hub.loading?.corrupt}
+            onValueChange={(mode) => void hub.setMode(mode as McpLoadingPolicy["mode"])}
+            options={[
+              { value: "onDemand", label: t("When needed") },
+              { value: "always", label: t("With every session") },
+            ]}
+          />
+        </Row>
+      </Group>
+      {open ? (
+        <McpServerDetail
+          entry={open}
+          status={statusOf(open)}
+          cwd={cwd}
+          globalOnly={globalOnly}
+          hub={hub}
+          actions={actions}
+          onClose={() => setSelected("")}
         />
       ) : null}
       {removeTarget ? (
@@ -810,13 +615,23 @@ function McpConnections({
           }}
           footer={
             <>
-              <Button disabled={busy !== null} onClick={() => setRemoveTarget(null)}>
+              <Button disabled={busy !== ""} onClick={() => setRemoveTarget(null)}>
                 {t("Cancel")}
               </Button>
               <Button
                 tone="danger"
-                loading={busy !== null}
-                onClick={() => void remove(removeTarget, removeScope)}
+                loading={busy !== ""}
+                onClick={() =>
+                  void run(removeTarget, "remove", async () => {
+                    await invoke("claude_mcp_remove", {
+                      cwd,
+                      name: removeTarget.name,
+                      scope: removeScope,
+                    });
+                    setRemoveTarget(null);
+                    await refresh();
+                  })
+                }
               >
                 {t("Remove server")}
               </Button>
@@ -831,26 +646,26 @@ function McpConnections({
           </p>
           <SharedSelect
             label={t("Scope to remove {p0} from", { p0: removeTarget.name })}
-            disabled={busy !== null}
+            disabled={busy !== ""}
             value={removeScope}
-            onValueChange={(value) =>
-              setRemoveScopes((current) => ({ ...current, [removeTarget.name]: value as Scope }))
-            }
-            options={[
-              { value: "local", label: t("Local project") },
-              { value: "project", label: t("Project") },
-              { value: "user", label: t("Personal") },
-            ]}
+            onValueChange={(value) => setRemoveScope(value as Scope)}
+            options={(["local", "project", "user"] as const).map((scope) => ({
+              value: scope,
+              label: scopeLabel(scope),
+              description: scopeDescription(scope),
+            }))}
           />
-          {actionError ? <SettingsFeedback state="error">{actionError}</SettingsFeedback> : null}
+          {actionError ? <InlineError details={actionError} /> : null}
         </Modal>
       ) : null}
       {addOpen ? (
         <AddServerModal
           cwd={cwd}
-          initialProvider={effectiveFilter === "all" ? "claude" : effectiveFilter}
+          initialProvider={
+            providerFilter === "all" || providerFilter === "host" ? "claude" : providerFilter
+          }
           onClose={() => setAddOpen(false)}
-          onAdded={refresh}
+          onAdded={() => refresh()}
         />
       ) : null}
     </div>

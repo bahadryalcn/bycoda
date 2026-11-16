@@ -69,3 +69,13 @@ it("keeps, sets and clears an owner-chosen command", () => {
   expect(listSkillGroups()[0]).not.toHaveProperty("invocation");
   expect(() => renameSkillGroup(group.id, "Interface", "Not Valid")).toThrow();
 });
+
+it("applies a bulk membership change in one write, keeping member order", async () => {
+  const { setSkillGroupMembers } = await import("./skillGroups");
+  const group = createSkillGroup({ name: "Design", skillNames: ["a", "gone", "b"] });
+  setSkillGroupMembers(group.id, ["c", "d"], ["a"]);
+  expect(listSkillGroups()[0].skillNames).toEqual(["gone", "b", "c", "d"]);
+  setSkillGroupMembers(group.id, ["b"], []);
+  expect(listSkillGroups()[0].skillNames).toEqual(["gone", "b", "c", "d"]);
+  expect(() => setSkillGroupMembers("missing", ["a"], [])).toThrow();
+});

@@ -8,6 +8,7 @@ import { BadgeList } from "../../shared/ui/BadgeList";
 import { InfoPopover } from "../../shared/ui/InfoPopover";
 import { Alert } from "../../shared/ui/Alert";
 import { ErrorDetails } from "../../shared/ui/ErrorDetails";
+import { useConnectionErrorShownCentrally } from "../../shared/ui/connectionErrorGate";
 import { NumberField } from "../../shared/ui/NumberField";
 import { TextField } from "../../shared/ui/TextField";
 import { Text } from "../../shared/ui/Text";
@@ -155,6 +156,7 @@ function ProjectDevServersPanel({
   const [operation, setOperation] = useState<string>();
   const [scanning, setScanning] = useState(toolPreferences.serversAutoRefresh.load);
   const [scanError, setScanError] = useState("");
+  const scanShownCentrally = useConnectionErrorShownCentrally(scanError);
   const [autoRefresh, setAutoRefresh] = useState(toolPreferences.serversAutoRefresh.load);
   const [pollInterval] = useState(toolPreferences.serversRefreshInterval.load);
   const [search, setSearch] = useRetainedState(`dev-servers:${pathKey(cwd)}:search`, "");
@@ -1026,7 +1028,7 @@ function ProjectDevServersPanel({
           )}
         </div>
       </header>
-      {scanError ? (
+      {scanError && !scanShownCentrally ? (
         <Alert
           tone="danger"
           title={t("Could not refresh servers.")}

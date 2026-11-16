@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn pages_are_self_contained() {
-    for kind in [Kind::Success, Kind::Failure, Kind::Cancelled] {
+    for kind in [Kind::Success, Kind::Failure, Kind::Cancelled, Kind::Invalid] {
         for lang in [Lang::En, Lang::Tr] {
             let page = render(kind, "Sign-in failed (x).", lang);
             for forbidden in [

@@ -106,9 +106,9 @@ export function memberModelSummary(
   if (!agent.candidates.length) return t("No model");
   return agent.selection === "automatic"
     ? agent.modelChoice?.kind === "order"
-      ? t("Model order")
+      ? t("Any model, in order")
       : agent.modelChoice?.kind === "pool"
-        ? t("Model pool")
+        ? t("Model group")
         : t("Default")
     : t("Fixed: {p0}", { p0: candidateLabel(catalog, agent.candidates[0]) });
 }

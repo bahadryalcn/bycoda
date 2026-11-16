@@ -14,8 +14,8 @@ export function InterfaceSection({ appearance }: { appearance: AppearanceSetting
       <div className="interface-grid">
         <InterfaceSizeGroup appearance={appearance} />
         <InterfaceReadabilityGroup appearance={appearance} />
-        <ScrollbarGroup />
         <InterfaceBehaviorGroup appearance={appearance} />
+        <ScrollbarGroup />
       </div>
       <AppearanceSaveFeedback settingIds={["ui-scale", "diff-palette", "scrollbar-style"]} />
     </AppearanceSection>

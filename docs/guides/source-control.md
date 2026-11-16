@@ -30,8 +30,9 @@ repository. A file with the same relative name in another checkout is a separate
 target. A single review target shows its Stashes and Graph sections below its changes.
 All repositories and All checkouts show one Stashes and Graph below the rows instead
 of one per row: Auto follows the repository you last used in the list, and the
-selector above the sections, also offered in the full Commit Graph, switches to
-another repository. Right-click an empty part of the Git panel to show or
+selector in the Graph header shows the active repository even when collapsed and
+switches to another repository. The full Commit Graph offers the same selector;
+when Graph is hidden, it appears above Stashes. Right-click an empty part of the Git panel to show or
 hide Stashes and Graph in every panel, or to switch Auto Fetch. The Changes tab totals include discovered child repositories in All
 checkouts and wait for every target's reading before showing a complete total.
 
@@ -75,7 +76,7 @@ The commit field retains its checkout draft. Message generation remains cancella
 and allows staging. Commit variants are unavailable while generation is pending;
 if the draft or index changes, an obsolete generated result does not replace the
 current draft. Configure the commit and pull request generation model globally in
-**Settings > Background work > Assignments**. The commit field keeps only the generate/cancel
+**Settings > Models > Background work > Who uses what**. The commit field keeps only the generate/cancel
 action, without a separate model settings menu. Saved legacy checkout selections
 remain available as a fallback when global model routing is unavailable. Account
 selection is resolved when generation runs.

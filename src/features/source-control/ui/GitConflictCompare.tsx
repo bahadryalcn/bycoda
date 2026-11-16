@@ -1,6 +1,7 @@
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { useReloadOnReconnect } from "../../connections/public/useReloadOnReconnect";
 import { FailureState } from "../../../shared/ui/FailureState";
+import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
@@ -34,6 +35,9 @@ type Load =
 export function GitConflictCompare({ cwd, relative, onClose }: Props) {
   useLocale();
   const [load, setLoad] = useState<Load>({ status: "loading" });
+  const shownCentrally = useConnectionErrorShownCentrally(
+    load.status === "error" ? load.message : undefined,
+  );
   const [pair, setPair] = useState<CompareId>("sides");
   const [retry, setRetry] = useState(0);
 
@@ -119,14 +123,16 @@ export function GitConflictCompare({ cwd, relative, onClose }: Props) {
           <SurfaceLoading label={t("Loading conflict versions")} />
         </div>
       ) : load.status === "error" ? (
-        <div className="grid flex-1 place-items-center p-6">
-          <FailureState
-            context="panel"
-            title={t("Couldn’t load the versions")}
-            description={load.message}
-            onRetry={() => setRetry((value) => value + 1)}
-          />
-        </div>
+        shownCentrally ? null : (
+          <div className="grid flex-1 place-items-center p-6">
+            <FailureState
+              context="panel"
+              title={t("Couldn’t load the versions")}
+              description={load.message}
+              onRetry={() => setRetry((value) => value + 1)}
+            />
+          </div>
+        )
       ) : (
         <>
           {notes.length > 0 ? (

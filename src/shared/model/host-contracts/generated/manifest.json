@@ -40961,6 +40961,17 @@
                       "maxItems": 20,
                       "type": "array"
                     },
+                    "author": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "kind": { "const": "delegation", "type": "string" },
+                        "reason": { "enum": ["completion", "message"], "type": "string" },
+                        "runId": { "type": "string" },
+                        "title": { "type": "string" }
+                      },
+                      "required": ["kind", "runId", "title", "reason"],
+                      "type": "object"
+                    },
                     "authorityGeneration": {
                       "maximum": 9007199254740991,
                       "minimum": 1,
@@ -41273,6 +41284,17 @@
                       },
                       "maxItems": 20,
                       "type": "array"
+                    },
+                    "author": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "kind": { "const": "delegation", "type": "string" },
+                        "reason": { "enum": ["completion", "message"], "type": "string" },
+                        "runId": { "type": "string" },
+                        "title": { "type": "string" }
+                      },
+                      "required": ["kind", "runId", "title", "reason"],
+                      "type": "object"
                     },
                     "authorityGeneration": {
                       "maximum": 9007199254740991,
@@ -41606,6 +41628,17 @@
                   },
                   "maxItems": 20,
                   "type": "array"
+                },
+                "author": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "kind": { "const": "delegation", "type": "string" },
+                    "reason": { "enum": ["completion", "message"], "type": "string" },
+                    "runId": { "type": "string" },
+                    "title": { "type": "string" }
+                  },
+                  "required": ["kind", "runId", "title", "reason"],
+                  "type": "object"
                 },
                 "authorityGeneration": {
                   "maximum": 9007199254740991,
@@ -41951,6 +41984,17 @@
                   },
                   "maxItems": 20,
                   "type": "array"
+                },
+                "author": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "kind": { "const": "delegation", "type": "string" },
+                    "reason": { "enum": ["completion", "message"], "type": "string" },
+                    "runId": { "type": "string" },
+                    "title": { "type": "string" }
+                  },
+                  "required": ["kind", "runId", "title", "reason"],
+                  "type": "object"
                 },
                 "authorityGeneration": {
                   "maximum": 9007199254740991,
@@ -42300,6 +42344,17 @@
                   "maxItems": 20,
                   "type": "array"
                 },
+                "author": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "kind": { "const": "delegation", "type": "string" },
+                    "reason": { "enum": ["completion", "message"], "type": "string" },
+                    "runId": { "type": "string" },
+                    "title": { "type": "string" }
+                  },
+                  "required": ["kind", "runId", "title", "reason"],
+                  "type": "object"
+                },
                 "authorityGeneration": {
                   "maximum": 9007199254740991,
                   "minimum": 1,
@@ -42641,6 +42696,17 @@
                   },
                   "maxItems": 20,
                   "type": "array"
+                },
+                "author": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "kind": { "const": "delegation", "type": "string" },
+                    "reason": { "enum": ["completion", "message"], "type": "string" },
+                    "runId": { "type": "string" },
+                    "title": { "type": "string" }
+                  },
+                  "required": ["kind", "runId", "title", "reason"],
+                  "type": "object"
                 },
                 "authorityGeneration": {
                   "maximum": 9007199254740991,
@@ -42985,6 +43051,17 @@
                   "maxItems": 20,
                   "type": "array"
                 },
+                "author": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "kind": { "const": "delegation", "type": "string" },
+                    "reason": { "enum": ["completion", "message"], "type": "string" },
+                    "runId": { "type": "string" },
+                    "title": { "type": "string" }
+                  },
+                  "required": ["kind", "runId", "title", "reason"],
+                  "type": "object"
+                },
                 "authorityGeneration": {
                   "maximum": 9007199254740991,
                   "minimum": 1,
@@ -43326,6 +43403,17 @@
                   },
                   "maxItems": 20,
                   "type": "array"
+                },
+                "author": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "kind": { "const": "delegation", "type": "string" },
+                    "reason": { "enum": ["completion", "message"], "type": "string" },
+                    "runId": { "type": "string" },
+                    "title": { "type": "string" }
+                  },
+                  "required": ["kind", "runId", "title", "reason"],
+                  "type": "object"
                 },
                 "authorityGeneration": {
                   "maximum": 9007199254740991,
@@ -75403,6 +75491,17 @@
                             "maxItems": 20,
                             "type": "array"
                           },
+                          "author": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "kind": { "const": "delegation", "type": "string" },
+                              "reason": { "enum": ["completion", "message"], "type": "string" },
+                              "runId": { "type": "string" },
+                              "title": { "type": "string" }
+                            },
+                            "required": ["kind", "runId", "title", "reason"],
+                            "type": "object"
+                          },
                           "authorityGeneration": {
                             "maximum": 9007199254740991,
                             "minimum": 1,
@@ -75733,6 +75832,17 @@
                             },
                             "maxItems": 20,
                             "type": "array"
+                          },
+                          "author": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "kind": { "const": "delegation", "type": "string" },
+                              "reason": { "enum": ["completion", "message"], "type": "string" },
+                              "runId": { "type": "string" },
+                              "title": { "type": "string" }
+                            },
+                            "required": ["kind", "runId", "title", "reason"],
+                            "type": "object"
                           },
                           "authorityGeneration": {
                             "maximum": 9007199254740991,
@@ -79043,5 +79153,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "f762637f28087d0ea405d26288f02c6325909b5d4df33e55a731f51bf2c3135f"
+  "schemaHash": "3f46af37682de3b438803886c5b0e94da0b1f0cf9655c788bfdda426673fa76e"
 }

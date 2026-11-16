@@ -47,7 +47,17 @@
           if (command === "git_branches") return { current: "main", detached: false, branches: [] };
           if (command === "git_worktrees") return { defaultRoot: "/fixture/bycoda", worktrees: [] };
           if (command === "git_status") return { files: [], branch: "main" };
-          if (command === "remote_machines") return [];
+          if (command === "remote_machines")
+            return new URLSearchParams(location.search).has("remote-header")
+              ? [
+                  {
+                    id: "fixture-office",
+                    environmentId: "fixture-office",
+                    name: "Office Mac",
+                    endpoint: "http://fixture.invalid",
+                  },
+                ]
+              : [];
           if (command === "plugin:event|listen") return 1;
           if (command === "plugin:window|is_visible" || command === "plugin:window|is_focused")
             return true;

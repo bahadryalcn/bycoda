@@ -434,7 +434,7 @@ test.describe("feedback behavior", () => {
     await expect(fileError).toBeVisible();
   });
 
-  test("corner toasts stack newest in front and fan out on hover", async ({ page }) => {
+  test("toasts stack newest in front and fan out on hover", async ({ page }) => {
     await open(page);
     const add = page.getByRole("button", { name: "Add toast" });
     for (let i = 0; i < 4; i++) await add.click();
@@ -469,7 +469,7 @@ test.describe("feedback behavior", () => {
     await expect(front).toContainText("Sync is slow");
     // The toast that waited behind returns once there is room.
     await expect(stack.locator("[data-toast-item][inert]")).toHaveCount(0);
-    // The corner leaves the page with its last toast, once that toast has faded.
+    // The region leaves the page with its last toast, once that toast has faded.
     for (let left = 3; left > 0; left--)
       await front.getByRole("button", { name: "Dismiss notice" }).click();
     await expect(page.locator("[data-toast-region]")).toHaveCount(0);

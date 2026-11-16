@@ -115,3 +115,24 @@ it.each(["claude", "opencode"])(
     }
   },
 );
+
+it("names an abbreviated option by its full label", () => {
+  const markup = renderToStaticMarkup(
+    createElement(SegmentedControl, {
+      label: "Fast",
+      value: "",
+      onValueChange: () => {},
+      options: [
+        {
+          value: "",
+          label: "Standard",
+          tooltip: "Bycoda defaults (Standard)",
+          ariaLabel: "Bycoda defaults (Standard)",
+        },
+        { value: "false", label: "Standard" },
+      ],
+    }),
+  );
+  expect(markup).toContain('aria-label="Bycoda defaults (Standard)"');
+  expect(markup).toContain('aria-label="Standard"');
+});

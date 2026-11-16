@@ -104,8 +104,33 @@ describe("LiveAgentsPreview", () => {
     );
     expect(container.querySelectorAll("[data-live-agent-card]")).toHaveLength(5);
     expect(container.textContent).not.toContain("more");
-    expect(container.querySelector('[data-live-agents-group="waiting"]')).not.toBeNull();
-    expect(container.querySelector('[data-live-agents-group="finished"]')).not.toBeNull();
+    expect(container.querySelector('[data-live-agent-card="waiting"]')).not.toBeNull();
+    expect(container.querySelector('[data-live-agent-card="done"]')).not.toBeNull();
+  });
+
+  it("shows one list without per-state headings, most urgent first", () => {
+    render({
+      agents: [
+        agent("done", "/a", { done: true }),
+        agent("waiting", "/b", { waiting: { kind: "commands", count: 1 } }),
+        agent("run", "/c"),
+        agent("failed", "/d", { issue: "failed", done: true }),
+      ],
+      collapsible: true,
+    });
+    act(() =>
+      Array.from(container.querySelectorAll("button"))
+        .find((button) => button.textContent?.includes("1 more"))!
+        .click(),
+    );
+    const list = container.querySelector("[data-live-agents-list]")!;
+    expect(list.querySelector("[data-live-agents-group]")).toBeNull();
+    expect(list.textContent).not.toContain("Needs attention");
+    expect(
+      Array.from(list.querySelectorAll("[data-live-agent-card]"), (card) =>
+        card.getAttribute("data-live-agent-card"),
+      ),
+    ).toEqual(["failed", "run", "waiting", "done"]);
   });
 
   it("summarizes this project's work before applying the other-project row cap", () => {
@@ -382,9 +407,9 @@ describe("LiveAgentsPreview mixed collections", () => {
     const header = container.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
     expect(header.textContent).toContain("Activity");
     expect(header.textContent).not.toContain("need attention");
-    expect(container.querySelector('[data-live-agents-group="attention"]')?.textContent).toContain(
-      "Needs attention2",
-    );
+    const cards = container.querySelectorAll("[data-live-agent-card]");
+    expect(cards[0].getAttribute("data-live-agent-card")).toBe("failed");
+    expect(cards[1].getAttribute("data-live-agent-card")).toBe("input");
     expect(header.textContent).not.toContain("Needs attention");
     expect(container.querySelector('.sr-only[role="status"]')!.textContent).toBe(
       "2 working agents, 2 need attention, 1 finished agent",
@@ -395,9 +420,6 @@ describe("LiveAgentsPreview mixed collections", () => {
     render({ agents: [mixed[0]], collapsible: true });
     const header = container.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
     expect(header.textContent).toContain("Activity");
-    expect(container.querySelector('[data-live-agents-group="attention"]')?.textContent).toContain(
-      "Needs attention",
-    );
     expect(container.querySelector("[data-live-agents-preview]")!.getAttribute("aria-label")).toBe(
       "Activity",
     );
@@ -444,7 +466,8 @@ it("uses warning for multiple failures", () => {
     ],
     collapsible: true,
   });
+  act(() => container.querySelector<HTMLButtonElement>("button[aria-expanded]")!.click());
   expect(
-    container.querySelector('[data-live-agents-group="attention"] [data-tone="warning"]'),
-  ).not.toBeNull();
+    container.querySelector('[aria-label="2 need attention"]')?.getAttribute("data-tone"),
+  ).toBe("warning");
 });

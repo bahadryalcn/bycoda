@@ -476,3 +476,44 @@ it("offers one Automatic entry without redundant wand decoration in extras", () 
     vi.unstubAllGlobals();
   }
 });
+
+it("turns Automatic off when a ceiling bar is chosen", () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const change = vi.fn();
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  act(() =>
+    root.render(
+      createElement(ProviderDefaultExtras, {
+        harness: "claude",
+        scopeDefaults: { extras: {} },
+        projectScope: false,
+        resetLabel: "Reset",
+        onSessionDefaultsChange: change,
+        extras: [
+          {
+            id: "crossSubagentMaxEffort",
+            label: "Subagent max effort",
+            kind: "select",
+            value: "",
+            options: [
+              { value: "", label: "Automatic" },
+              { value: "low", label: "Low" },
+              { value: "high", label: "High" },
+            ],
+          },
+        ],
+      }),
+    ),
+  );
+  const automatic = container.querySelector<HTMLButtonElement>('[role="switch"]')!;
+  expect(automatic.getAttribute("aria-checked")).toBe("true");
+  const high = container.querySelector<HTMLButtonElement>('[role="radio"][aria-label="High"]')!;
+  expect(high.disabled).toBe(false);
+  act(() => high.click());
+  expect(change).toHaveBeenLastCalledWith({ extras: { crossSubagentMaxEffort: "high" } });
+  act(() => root.unmount());
+  container.remove();
+  vi.unstubAllGlobals();
+});

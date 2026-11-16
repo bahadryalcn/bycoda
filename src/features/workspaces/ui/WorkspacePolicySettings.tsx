@@ -324,7 +324,9 @@ export function WorkspacePolicySettings({
   const search = query.trim().toLocaleLowerCase();
   const rosterFacts = (workspace: ManagedWorkspace) =>
     workspaceRosterFacts(workspace, storage?.missingPaths ?? [], policy?.resolved.policy);
-  const visibleWorkspaces = workspaces.filter(
+  // A removed directory is no longer a worktree; its record stays on the Host so the session can resume.
+  const onDisk = workspaces.filter((workspace) => workspace.directoryState !== "removed");
+  const visibleWorkspaces = onDisk.filter(
     (workspace) =>
       matchesRosterFilter(filter, workspace, rosterFacts(workspace)) &&
       (!search ||
@@ -342,7 +344,7 @@ export function WorkspacePolicySettings({
   const showUnmanaged = filter === "all"; // unmanaged worktrees have no lifecycle to filter
   const showRoster =
     !!renderWorktrees ||
-    !!workspaces.length ||
+    !!onDisk.length ||
     (inventoryLoaded && !!capabilities?.includes("workspaces.managed.v1"));
   /** A failed read keeps the last good data visible, labelled stale, with a local retry. */
   const stageNotice = (stage: Stage, label: string, hasData: boolean) =>
@@ -401,7 +403,7 @@ export function WorkspacePolicySettings({
               {t("Update the execution Host to pin or unpin individual workspaces.")}
             </SettingsFeedback>
           )}
-          {!workspaces.length && !renderWorktrees ? (
+          {!onDisk.length && !renderWorktrees ? (
             <Text as="p" size="caption" tone="secondary" role="status">
               {t(
                 "No managed workspace directories yet. Workspaces created by sessions appear here.",
@@ -423,7 +425,7 @@ export function WorkspacePolicySettings({
                     ? undefined
                     : t("Showing {p0} of {p1} workspaces", {
                         p0: visibleWorkspaces.length,
-                        p1: workspaces.length,
+                        p1: onDisk.length,
                       })
                 }
               >

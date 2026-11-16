@@ -10,10 +10,11 @@ import {
   type Note,
   type NoteUpsert,
 } from "../notes";
+import { EditorView } from "@codemirror/view";
 import { SessionNotesPanel } from "./SessionNotesPanel";
 
 const invoke = vi.hoisted(() => vi.fn());
-vi.mock("@tauri-apps/api/core", () => ({ invoke }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke, isTauri: () => false }));
 /** A note row in the switch-note dropdown, found by its visible title (the title is a shared
  *  tooltip now, not a native title attribute). */
 function noteRow(title: string): HTMLButtonElement | null {
@@ -151,7 +152,17 @@ function button(label: string) {
 async function click(label: string) {
   await act(async () => button(label).click());
 }
-async function input(field: HTMLInputElement | HTMLTextAreaElement, value: string) {
+async function input(
+  field: HTMLInputElement | HTMLTextAreaElement | ReturnType<typeof body>,
+  value: string,
+) {
+  if ("editor" in field) {
+    const { editor } = field;
+    await act(async () =>
+      editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: value } }),
+    );
+    return;
+  }
   await act(async () => {
     const prototype =
       field instanceof HTMLTextAreaElement
@@ -161,7 +172,20 @@ async function input(field: HTMLInputElement | HTMLTextAreaElement, value: strin
     field.dispatchEvent(new Event("input", { bubbles: true }));
   });
 }
-const body = () => container.querySelector("textarea")!;
+/** The dock's Source editor, wrapped like the old textarea so tests read and drive it the same way. */
+function body() {
+  const view = container.querySelector<HTMLElement>("[data-note-editor] .cm-editor");
+  const editor = view ? EditorView.findFromDOM(view) : null;
+  if (!editor) return null as never;
+  return {
+    editor,
+    get value() {
+      return editor.state.doc.toString();
+    },
+    focus: () => editor.focus(),
+    blur: () => editor.contentDOM.dispatchEvent(new FocusEvent("focusout", { bubbles: true })),
+  };
+}
 
 it("keeps autosaving the draft after deletion fails", async () => {
   await render();
@@ -669,4 +693,14 @@ it("saves a preserved draft only after choosing Keep my draft", async () => {
   await render();
   expect(body().value).toBe("Keep this local body");
   expect(container.textContent).not.toContain("Your draft is preserved");
+});
+
+it("shows the library's Document editor with tabs, tags and word count", async () => {
+  await render();
+  expect(container.querySelector('[role="tablist"][aria-label="Note sections"]')).toBeTruthy();
+  expect(container.querySelector('input[aria-label="Add note tag"]')).toBeTruthy();
+  expect(container.textContent).toContain("0 words");
+  await input(body(), "Hello ![x.png](/note-assets/x.png)");
+  expect(container.querySelector("[data-note-preview] img")).toBeTruthy();
+  expect(container.querySelector("[data-note-preview]")?.textContent).not.toContain("![x.png]");
 });

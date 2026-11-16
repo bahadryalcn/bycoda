@@ -31,6 +31,7 @@ import { LoadingText } from "../../shared/ui/LoadingText";
 import { Switch } from "../../shared/ui/Switch";
 import { Button } from "../../shared/ui/Button";
 import { Disclosure } from "../../shared/ui/Disclosure";
+import { useConnectionErrorShownCentrally } from "../../shared/ui/connectionErrorGate";
 import { Progress } from "../../shared/ui/Progress";
 import { Popover } from "../../shared/ui/Popover";
 import { PanelHeader } from "../../shared/ui/PanelHeader";
@@ -834,6 +835,10 @@ function DevicePanelSurface({
   const sdkAvailable = !!status?.platforms.some((item) => item.available);
   const refreshDevices = () => void execute("refresh", api.list, applyDevices);
   const discoveryError = errorOperation === "status" || errorOperation === "refresh";
+  // A machine connection failure while loading devices is explained once by the central notice.
+  const discoveryShownCentrally = useConnectionErrorShownCentrally(
+    discoveryError ? error : undefined,
+  );
   const draft = annotations[selected];
   const updateDraft = (change: (value: AnnotationDraft) => AnnotationDraft) =>
     setAnnotations((values) =>
@@ -1111,7 +1116,7 @@ function DevicePanelSurface({
       aria-label={t("Devices")}
       aria-busy={busy || loadingDevices}
     >
-      {error && (
+      {error && !discoveryShownCentrally && (
         <Disclosure
           {...surfaceAttributes(
             { frame: "danger", edge: "bottom", tone: "danger" },
@@ -1140,7 +1145,7 @@ function DevicePanelSurface({
           {t("Checking device support…")}
         </LoadingText>
       )}
-      {!status && (error || operation === "status") && (
+      {!status && ((error && !discoveryShownCentrally) || operation === "status") && (
         <Button
           loading={operation === "status"}
           disabled={unavailable("status")}

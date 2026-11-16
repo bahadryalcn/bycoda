@@ -519,7 +519,7 @@ export function ApprovalToasts({
           </ScrollArea>
         </Sheet>
       ) : popupsEnabled && (eligible.length > 0 || (hasLocked && !dismissed.has("locked"))) ? (
-        <ToastSlot placement="top-end">
+        <ToastSlot>
           <div className="flex w-[min(360px,calc(100vw-24px))] flex-col gap-2">
             {eligible.slice(0, MAX_POPUPS).map((notice) => (
               <TimedPopup

@@ -7,7 +7,7 @@ description: "Use when changing task boards, goals, sprints, stewards and review
 
 Own background-work lifecycle and UI. Crews owns team/member/run composition; managed-workspaces owns execution/delivery contracts; Host runtime owns operation writers and transport. A task tool or PASS result grants no merge/push/publication permission.
 
-Model order, pools, role bindings and delegation defaults belong to [model routing](../feature-model-routing/SKILL.md) in Settings > Work. Feature choices resolve at run start; existing running sessions keep their concrete model.
+Model order, pools, role bindings and delegation defaults belong to [model routing](../feature-model-routing/SKILL.md) in Settings > Models > Background work. Feature choices resolve at run start; existing running sessions keep their concrete model.
 
 ## Source starts
 

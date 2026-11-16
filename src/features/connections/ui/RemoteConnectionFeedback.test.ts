@@ -44,7 +44,12 @@ vi.mock("./RemoteLoadError", () => ({
   }) =>
     createElement(
       "div",
-      { role: "alert", "data-machine": cwd, "data-coordinated": String(coordinated) },
+      {
+        role: "alert",
+        "data-remote-connection-notice": cwd,
+        "data-machine": cwd,
+        "data-coordinated": String(coordinated),
+      },
       recovering ? "Reconnecting…" : failure.message,
       onDismiss && createElement("button", { onClick: onDismiss }, "Dismiss"),
     ),
@@ -140,7 +145,7 @@ it("clears reconnecting when the active pane recovers within the grace period", 
   expect(notices()).toHaveLength(0);
 });
 
-it("retains a pane's reported failure when a sibling request alone reports the machine connected", async () => {
+it("ignores a pane's stale unreachable failure once the machine is connected", async () => {
   const consumers = [{ id: "files", cwd: "remote://env/repo", failure: outage }];
   state.machines.set("env", { status: "unreachable" });
   await render(consumers);
@@ -148,9 +153,21 @@ it("retains a pane's reported failure when a sibling request alone reports the m
   expect(notices()).toHaveLength(1);
   state.machines.set("env", { status: "connected" });
   await render(consumers);
-  expect(notices()).toHaveLength(1);
-  await render([{ id: "files", cwd: "remote://env/repo" }]);
   expect(notices()).toHaveLength(0);
+  await advance(60_000);
+  expect(notices()).toHaveLength(0);
+});
+
+it("does not present an old outage as a fresh blip when a notice mounts late", async () => {
+  const { recordRemoteConnection, resetRemoteHealth } = await import("../model/remoteHealth");
+  resetRemoteHealth();
+  await act(async () => recordRemoteConnection("env", new Error("Machine is unreachable")));
+  await advance(120_000);
+  state.machines.set("env", { status: "unreachable" });
+  await render([{ id: "files", cwd: "remote://env/repo", failure: outage }]);
+  expect(notices()).toHaveLength(1);
+  expect(container.textContent).not.toContain("Reconnecting…");
+  resetRemoteHealth();
 });
 
 it.each<RemoteConnectionStatus>([
@@ -321,4 +338,25 @@ it("shows one global notice per machine in an outage after the grace, with no pa
   await render([]);
   expect(notices().map((n) => n.getAttribute("data-remote-connection-notice"))).toEqual(["b"]);
   resetRemoteHealth();
+});
+
+it("hides shared connection errors only while a machine notice is actually visible", async () => {
+  const { isConnectionErrorShownCentrally } =
+    await import("../../../shared/ui/connectionErrorGate");
+  const remote = "RPC_HOST_UNAVAILABLE: Machine is unreachable";
+  state.machines.set("env", { status: "unreachable", error: outage.message });
+  await render([{ id: "files", cwd: "remote://env/repo", failure: outage }]);
+  // The quiet window shows no notice, so panes must keep explaining the failure.
+  expect(notices()).toHaveLength(0);
+  expect(isConnectionErrorShownCentrally(remote)).toBe(false);
+  await advance(2_500);
+  expect(notices()).toHaveLength(1);
+  expect(isConnectionErrorShownCentrally(remote)).toBe(true);
+  // A bare socket error of a local command is not this machine's outage.
+  expect(isConnectionErrorShownCentrally("Connection reset by peer")).toBe(false);
+  expect(isConnectionErrorShownCentrally("fatal: not a git repository")).toBe(false);
+  state.machines.set("env", { status: "connected" });
+  await render([]);
+  expect(notices()).toHaveLength(0);
+  expect(isConnectionErrorShownCentrally(remote)).toBe(false);
 });

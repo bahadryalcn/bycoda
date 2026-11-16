@@ -14,10 +14,15 @@ import {
   useTerminalProfile,
   type ShellProfiles,
 } from "../../terminal/model/terminalProfiles";
+import {
+  CODE_RUN_REPORT_DEFAULT,
+  saveCodeRunReport,
+  useCodeRunReport,
+} from "../../terminal/public/terminalProfiles";
 
 import { useEffect, useRef, useState } from "react";
 
-import { Group, SettingsFeedback } from "../../../shared/ui/settings";
+import { Group, Row, SettingsFeedback, Toggle } from "../../../shared/ui/settings";
 import { HostShellRow, shellCount } from "./HostShellRow";
 import "./SettingsCollection.css";
 import "./TerminalSettings.css";
@@ -186,7 +191,35 @@ export function TerminalPage() {
           <RemoteMachineShells />
         </div>
       </Group>
+      <CodeBlockSettings />
     </div>
+  );
+}
+
+/** Chat code blocks run in the terminal dock; their output can return to the composer. */
+function CodeBlockSettings() {
+  const report = useCodeRunReport();
+  return (
+    <Group
+      title={t("Code blocks")}
+      modified={report !== CODE_RUN_REPORT_DEFAULT}
+      resetLabel={t("Reset code blocks")}
+      onReset={() => saveCodeRunReport(CODE_RUN_REPORT_DEFAULT)}
+    >
+      <Row
+        id="terminal-code-result"
+        label={t("Add result to chat when finished")}
+        description={t(
+          "When a code block you run from a chat finishes, its output is added to the message box for you to review and send.",
+        )}
+      >
+        <Toggle
+          label={t("Add result to chat when finished")}
+          on={report}
+          onChange={saveCodeRunReport}
+        />
+      </Row>
+    </Group>
   );
 }
 

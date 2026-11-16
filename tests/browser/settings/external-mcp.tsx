@@ -1,8 +1,6 @@
 import { createRoot } from "react-dom/client";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { ExternalMcpAccess } from "../../../src/features/settings/ui/ExternalMcpAccess";
-import { McpLoadingMode } from "../../../src/features/settings/ui/McpLoadingMode";
-import { McpOAuthSignIn } from "../../../src/features/settings/ui/McpOAuthSignIn";
 import { setLanguagePreference } from "../../../src/shared/i18n";
 import {
   applyThemePreference,
@@ -105,8 +103,6 @@ await setLanguagePreference(
 );
 createRoot(document.getElementById("root")!).render(
   <main style={{ padding: 16, maxWidth: 720, marginInline: "auto" }}>
-    <McpLoadingMode cwd="/fixture" />
-    <McpOAuthSignIn cwd="/fixture" />
     <ExternalMcpAccess cwd="/fixture" />
   </main>,
 );

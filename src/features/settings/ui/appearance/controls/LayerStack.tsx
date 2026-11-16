@@ -13,8 +13,6 @@ import styles from "./LayerStack.module.css";
 export type BackgroundLayer = {
   id: string;
   name: string;
-  /** One short muted line under the name. */
-  description?: string;
   enabled: boolean;
   /** Dims the row and its thumbnail; the switch keeps showing `enabled`. Defaults to `!enabled`. */
   dimmed?: boolean;
@@ -110,17 +108,6 @@ function LayerRow({
               >
                 {layer.name}
               </Text>
-              {layer.description ? (
-                <Text
-                  size="caption"
-                  tone="secondary"
-                  leading="inherit"
-                  truncate
-                  className={styles.description}
-                >
-                  {layer.description}
-                </Text>
-              ) : null}
             </span>
             <Text
               size="inherit"

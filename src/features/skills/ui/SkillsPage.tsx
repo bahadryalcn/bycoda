@@ -7,10 +7,11 @@ import { LoadingText } from "../../../shared/ui/LoadingText";
 import { SkillActionsMenu } from "./SkillActionsMenu";
 import { SkillsLibraryToolbar } from "./SkillsLibraryToolbar";
 import { useSkillGroups } from "../index";
-import { SkillGroupsList } from "./SkillGroupsList";
+import { SkillGroupNavList } from "./SkillGroupNavList";
+import { SkillGroupEditor } from "./SkillGroupEditor";
 import { SkillGroupDialogs, type GroupEdit } from "./SkillGroupDialogs";
 import { AutoGroupDialog } from "./AutoGroupDialog";
-import { useSkillGroupView, startSkillDrag } from "./useSkillGroupView";
+import { useSkillGroupView } from "./useSkillGroupView";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Heading } from "../../../shared/ui/Heading";
 import { Alert } from "../../../shared/ui/Alert";
@@ -97,6 +98,8 @@ export function SkillsPage({
   useLocale();
   const skillGroups = useSkillGroups();
   const groupView = useSkillGroupView();
+  const openGroup = skillGroups.find((group) => group.id === groupView.groupId) ?? null;
+  const groupedNames = new Set(skillGroups.flatMap((group) => group.skillNames));
   const [groupEdit, setGroupEdit] = useState<GroupEdit | null>(null);
   const [groupError, setGroupError] = useState<string | null>(null);
   const revealed = useContext(RevealedSetting);
@@ -764,7 +767,6 @@ export function SkillsPage({
         nameRef={registerPreviewButton(`name:${skill.path}`)}
         onOpen={() => onPreview(skill, machine)}
         onActions={(anchor) => setActionsMenu({ skill, machine, anchor, groupId })}
-        onDragStart={(event) => startSkillDrag(event, entry.name, groupId)}
         copy={{
           transferable: canTransferSkill(skill),
           blocked:
@@ -928,21 +930,19 @@ export function SkillsPage({
         <SkillList
           groupedContent={
             groupView.view === "groups" ? (
-              <SkillGroupsList
+              <SkillGroupNavList
                 groups={skillGroups}
-                entries={entries}
-                shownEntries={shownEntries}
-                collapsed={groupView.collapsed}
-                toggle={groupView.toggle}
-                renderRow={renderRow}
-                onEdit={setGroupEdit}
-                onError={setGroupError}
+                ungroupedCount={entries.filter((entry) => !groupedNames.has(entry.name)).length}
+                query={query}
+                selectedId={openGroup?.id ?? null}
+                onSelect={groupView.selectGroup}
+                onNewGroup={() => setGroupEdit({ kind: "create", skillNames: [] })}
               />
             ) : undefined
           }
           cwd={cwd}
           groups={groups}
-          machineNames={machines.length ? machineNames : []}
+          machineNames={machines.length && groupView.view !== "groups" ? machineNames : []}
           renderRow={renderRow}
           loading={localLoading}
         >
@@ -952,6 +952,7 @@ export function SkillsPage({
             <CollectionFooter error={error} onRetry={() => requestRefresh("local")} />
           ) : null}
           {!libraryLoading &&
+            groupView.view !== "groups" &&
             shownEntries.length === 0 &&
             (entries.length ? (
               <EmptyState
@@ -975,7 +976,21 @@ export function SkillsPage({
       </section>
       {advancedOpen ? <SkillAdvancedDialog onClose={() => setAdvancedOpen(false)} /> : null}
       <div className={styles.workspace}>
-        {previewSkill && shownCopy ? (
+        {groupView.view === "groups" && openGroup ? (
+          <SkillGroupEditor
+            key={openGroup.id}
+            group={openGroup}
+            groups={skillGroups}
+            entries={entries}
+            onEdit={setGroupEdit}
+            onClose={() => groupView.selectGroup(null)}
+          />
+        ) : groupView.view === "groups" ? (
+          <EmptyState
+            title={t("Select a group")}
+            description={t("Choose a group to add or remove its skills.")}
+          />
+        ) : previewSkill && shownCopy ? (
           <aside id={previewId} aria-label={t("Skill preview")} className={styles.detail}>
             <header className={styles.detailHeader}>
               <div
@@ -1248,7 +1263,13 @@ export function SkillsPage({
         )}
         {actionFeedback}
       </div>
-      {groupEdit ? <SkillGroupDialogs edit={groupEdit} onClose={() => setGroupEdit(null)} /> : null}
+      {groupEdit ? (
+        <SkillGroupDialogs
+          edit={groupEdit}
+          onClose={() => setGroupEdit(null)}
+          onCreated={(group) => groupView.selectGroup(group.id)}
+        />
+      ) : null}
       {actionsMenu ? (
         <SkillActionsMenu
           target={actionsMenu}

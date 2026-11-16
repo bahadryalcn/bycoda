@@ -64,21 +64,26 @@ export function SmartSetupAction({
       return next;
     });
     if (!applied || !result) return;
-    toast.show(
-      result.plannedBy
-        ? {
-            tone: "success",
-            message: t("{p0} planned the order, pools and assignments. Review them, then save.", {
-              p0: result.plannedBy,
-            }),
-          }
-        : {
-            tone: "warning",
-            message: t(
-              "No model could plan the setup, so the researched benefit-per-cost ranking was used. Review it, then save.",
-            ),
-          },
-    );
+    if (result.plannedBy) return;
+    toast.show({
+      tone: "warning",
+      message: result.failure
+        ? t(
+            "{p0} could not plan the setup ({p1}), so the researched benefit-per-cost ranking was used. Review it, then save.",
+            {
+              p0: result.failure.planner,
+              p1:
+                result.failure.reason === "timeout"
+                  ? t("it timed out")
+                  : result.failure.reason === "unreadable"
+                    ? t("its answer could not be read")
+                    : (result.failure.detail ?? t("it failed")),
+            },
+          )
+        : t(
+            "No model could plan the setup, so the researched benefit-per-cost ranking was used. Review it, then save.",
+          ),
+    });
   }
   return (
     <>

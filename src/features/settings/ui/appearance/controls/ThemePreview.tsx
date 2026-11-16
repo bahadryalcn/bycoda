@@ -38,6 +38,8 @@ export function ThemePreview({ appearance }: { appearance: AppearanceSettings })
             className="theme-preview-background"
             src={image}
             alt=""
+            loading="lazy"
+            decoding="async"
             style={{
               opacity:
                 appearance.preferences?.chatBackgroundLayer === false

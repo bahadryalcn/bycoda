@@ -3,6 +3,10 @@
     "arc": {
       "type": "http",
       "url": "https://uiarc.dev/api/mcp"
+    },
+    "panelui": {
+      "command": "npx",
+      "args": ["-y", "panelui-cli@latest", "mcp", "--cwd", "mobile"]
     }
   }
 }

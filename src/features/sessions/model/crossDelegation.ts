@@ -1,4 +1,4 @@
-import { isModelEnabled, type AgentModel, type ModelSetting } from "./models";
+import { isModelEnabled, modelEffortSetting, type AgentModel, type ModelSetting } from "./models";
 import { modelDisplayName } from "./modelDisplayName";
 import { HARNESS_TITLE, type HarnessId } from "./session";
 import { CLAUDE_SUBAGENT_SETTINGS } from "./claudeSubagents";
@@ -240,13 +240,38 @@ export function crossDelegationSettings(input: DelegationInput): ModelSetting[] 
       value: "",
       options: [
         { value: "", label: "Automatic" },
-        ...SUBAGENT_EFFORT_LEVELS.map((value) => ({
+        ...ceilingLevels(input, savedSubagents).map((value) => ({
           value,
           label: value[0].toUpperCase() + value.slice(1),
         })),
       ],
     },
   ];
+}
+
+/**
+ * Ceiling levels a subagent can actually reach: the levels offered by the chosen subagent
+ * models (every enabled candidate while the choice is Automatic). The saved ceiling stays
+ * listed so it remains visible; an empty catalog keeps the full list.
+ */
+function ceilingLevels(input: DelegationInput, saved: DelegateModelRef[]): string[] {
+  const candidates = input.harnesses.flatMap((harness) =>
+    input.source.modelsFor(harness).filter((model) => isModelEnabled(model.id)),
+  );
+  const chosen = saved.length
+    ? candidates.filter((model) =>
+        saved.some((ref) => ref.harness === model.harness && ref.model === model.id),
+      )
+    : candidates;
+  const offered = new Set(
+    (chosen.length ? chosen : candidates).flatMap(
+      (model) => modelEffortSetting(model)?.options.map((option) => option.value) ?? [],
+    ),
+  );
+  const current = subagentEffortCeiling(input.values[CROSS_SUBAGENT_MAX_EFFORT_KEY]);
+  if (current) offered.add(current);
+  const levels = SUBAGENT_EFFORT_LEVELS.filter((level) => offered.has(level));
+  return levels.length ? levels : SUBAGENT_EFFORT_LEVELS;
 }
 
 /** Whether an option is on: subagents by membership, the advisor by equality. */

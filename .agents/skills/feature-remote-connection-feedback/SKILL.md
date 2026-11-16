@@ -57,8 +57,12 @@ features own their mutations, retained data, drafts and uncertain outcomes.
   mutations or stand in for connection recovery.
 - Retain loaded content and drafts. Never-loaded content is waiting/unknown,
   not verified empty. Missing log/build evidence is unknown, not healthy.
-- The compact notice stays one row: title, Reconnect and `ErrorDetails`. Raw transport
-  text and the secondary actions (edit address, connection settings) live in that popover.
+- The machine notice is a persistent `Toast` in the shared top-center stack (the one
+  alert location): title, Reconnect and `ErrorDetails`. Raw transport text and the
+  secondary actions (edit address, connection settings) live in that popover.
+- While a machine is down the owner installs `src/shared/ui/connectionErrorGate.ts`;
+  `InlineError` and `FailureState` then render nothing for connection failures. Other
+  surfaces showing a raw remote error gate it with `useConnectionErrorShownCentrally`.
 
 ## Focused checks
 

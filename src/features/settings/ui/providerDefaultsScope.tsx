@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { t } from "../../../shared/i18n";
-import type { HarnessId } from "../../../shared/model/harnessIdentity";
+import { HARNESS_TITLE, type HarnessId } from "../../../shared/model/harnessIdentity";
 import { AccountColorDot } from "../../providers/public/accountIdentity";
 import {
   providerAccounts,
@@ -18,8 +18,15 @@ import {
 } from "../../sessions/public/providerSessionDefaults";
 import { Row, Select } from "../../../shared/ui/settings";
 
-export function inheritedProviderDefaults(harness: HarnessId, projectScope: boolean) {
-  return projectScope ? providerSessionDefaults(harness) : productSessionDefaults(harness);
+/** What unset rows follow: Global through the target's account in projects, the product in Global. */
+export function inheritedProviderDefaults(
+  harness: HarnessId,
+  projectScope: boolean,
+  accountId?: string,
+) {
+  return projectScope
+    ? providerSessionDefaults(harness, undefined, accountId)
+    : productSessionDefaults(harness);
 }
 
 /** True when a project stores anything that "Use global defaults" would clear. */
@@ -63,6 +70,58 @@ export function AccountDefaultsScope({
         value={accounts.some((account) => account.id === value) ? value : ""}
         options={[
           { value: "", label: t("All accounts") },
+          ...accounts.map((account) => ({
+            value: account.id,
+            label: account.label,
+            icon: <AccountColorDot account={account} />,
+          })),
+        ]}
+        onChange={onChange}
+      />
+    </Row>
+  );
+}
+
+/**
+ * Project and group targets: which account the provider's new conversations start on there.
+ * Unlike the Global scope switch this is a value the target saves; account defaults stay
+ * machine-wide.
+ */
+export function ProjectAccountChoice({
+  harness,
+  value,
+  onChange,
+}: {
+  harness: HarnessId;
+  value: string;
+  onChange: (accountId: string) => void;
+}) {
+  useSyncExternalStore(subscribeProviderAccounts, accountsSnapshot, accountsSnapshot);
+  const accounts = defaultsAccounts(harness);
+  if (!accounts.length) return null;
+  const fallback = accounts.find((account) => account.isDefault) ?? accounts[0];
+  const missing = value && !accounts.some((account) => account.id === value);
+  return (
+    <Row
+      label={t("Account")}
+      description={t(
+        "New chats here start on this account and follow its defaults below. Chats only.",
+      )}
+    >
+      <Select
+        hideLabel
+        label={t("{p0} account for this project", {
+          p0: HARNESS_TITLE[harness],
+        })}
+        value={value}
+        options={[
+          {
+            value: "",
+            label: fallback
+              ? t("Provider default ({p0})", { p0: fallback.label })
+              : t("Provider default"),
+          },
+          ...(missing ? [{ value, label: `${value} (${t("Unavailable")})` }] : []),
           ...accounts.map((account) => ({
             value: account.id,
             label: account.label,

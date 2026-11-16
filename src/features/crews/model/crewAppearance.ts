@@ -4,9 +4,7 @@ import { createWindowStore } from "../../../shared/lib/store";
 
 // A host with `crews.identity.v1` stores a crew's look on the definition (`crewLook.ts`).
 // This device-local copy serves older hosts and looks not yet migrated to the host.
-// "Show crews on rail" is always a device preference.
 const APPEARANCE_KEY = "bycoda:crews:appearance";
-const RAIL_KEY = "bycoda:crews:show-on-rail";
 const CHANGED = "bycoda:crews-appearance-changed";
 
 export type { CrewAppearance };
@@ -14,7 +12,7 @@ export type { CrewAppearance };
 let cache: { raw: string | null; value: Record<string, CrewAppearance> } | null = null;
 const appearanceStore = createWindowStore({
   event: CHANGED,
-  storageKeys: [APPEARANCE_KEY, RAIL_KEY],
+  storageKeys: [APPEARANCE_KEY],
   onStorage: () => {
     cache = null;
   },
@@ -73,20 +71,8 @@ export function crewColor(appearance: CrewAppearance | undefined): string | unde
   return crewPaletteColor(appearance?.color);
 }
 
-export function loadCrewsOnRail(): boolean {
-  return read(RAIL_KEY) !== "false";
-}
-
-export function saveCrewsOnRail(shown: boolean) {
-  write(RAIL_KEY, String(shown));
-}
-
 const subscribe = appearanceStore.subscribe;
 
 export function useCrewAppearances() {
   return useSyncExternalStore(subscribe, loadCrewAppearances, loadCrewAppearances);
-}
-
-export function useCrewsOnRail() {
-  return useSyncExternalStore(subscribe, loadCrewsOnRail, loadCrewsOnRail);
 }

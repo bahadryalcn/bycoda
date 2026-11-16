@@ -1,5 +1,6 @@
 import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { Button } from "../../../shared/ui/Button";
+import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { TextField } from "../../../shared/ui/TextField";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
@@ -560,6 +561,7 @@ function PdfPage({
 
   // Keep unmeasured frames visible to IntersectionObserver so their page load
   // (and any page-specific failure) does not depend on eager getPage(1).
+  const errorShownCentrally = useConnectionErrorShownCentrally(error);
   const width = Math.floor((size?.[0] ?? 600) * visualScale);
   const height = Math.floor((size?.[1] ?? 800) * visualScale);
 
@@ -578,7 +580,7 @@ function PdfPage({
     >
       <canvas ref={canvasRef} className="block h-full w-full" />
       <div ref={textRef} className="pdf-text-layer" />
-      {error && (
+      {error && !errorShownCentrally && (
         <div className="absolute inset-0">
           <DocumentMessage title={t("Couldn’t render page {p0}", { p0: number })} error>
             <p>{error}</p>

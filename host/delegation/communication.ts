@@ -229,7 +229,10 @@ export class AgentCommunication {
         throw new Error("Recipient no longer belongs to this agent group.");
       const recipient = await this.deps.inspect(message.targetSessionId);
       if (recipient.projectId !== message.projectId) throw new Error("Recipient changed projects.");
-      if (!mayMessage(group.own.runtimeMode, recipient.runtimeMode))
+      // A completion notice is the Host returning the result the parent asked for (the same
+      // data agents.wait returns), not a peer instruction, so the peer permission gate skips it.
+      const completion = message.requestKey.startsWith("completion:");
+      if (!completion && !mayMessage(group.own.runtimeMode, recipient.runtimeMode))
         throw new Error("Recipient has broader or unknown execution permissions.");
       if (target?.status === "cancelled") throw new Error("Recipient was cancelled.");
       // A sibling's message must not wake a finished child: that would start a new turn,
@@ -257,9 +260,7 @@ export class AgentCommunication {
                 kind: "delegation" as const,
                 runId: group.child.runId,
                 title: group.child.title,
-                reason: message.requestKey.startsWith("completion:")
-                  ? ("completion" as const)
-                  : ("message" as const),
+                reason: completion ? ("completion" as const) : ("message" as const),
               },
             }
           : {}),

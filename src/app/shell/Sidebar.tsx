@@ -65,6 +65,10 @@ import {
   useWorktreeFocus,
 } from "../../features/source-control/model/worktreeFocus";
 import { SidebarWorkspaceSwitcher } from "./SidebarWorkspaceSwitcher";
+import {
+  SidebarRemoteWorkspaceStatus,
+  SidebarRemoteWorkspaceTitle,
+} from "./SidebarRemoteWorkspaceTitle";
 import { OrchestrationSidebarAgents } from "../../features/orchestration/ui/OrchestrationSidebarAgents";
 import { nextCrewManagedSessions } from "../../features/crews/model/crewPresentation";
 import { CrewSidebar } from "../../features/crews/ui/CrewSessions";
@@ -1396,17 +1400,12 @@ function SidebarComponent({
     if (!NATIVE_SESSION_ORGANIZATION_ACTIVE) return;
     let alive = true;
     let reconciliation = 0;
-    const clearLoadingNotice = () =>
-      setOrganizationNotice((current) => (current === t("Loading folders…") ? null : current));
     const onOrganizationChange = () => {
       const snapshot = cachedSessionOrganization();
       if (!snapshot) return;
       try {
         setSessionFolders(folderCollapse.overlay(organizationFoldersForProject(snapshot, cwd)));
         setSessionOrder(organizationOrderForProject(snapshot, cwd));
-        // The folders are on screen now; the reconciliation below only decides
-        // whether a follow-up notice is needed and must not hold the loading one.
-        clearLoadingNotice();
         organizationRefreshRequired.current = false;
         if (!organizationBusy.current) {
           const generation = ++reconciliation;
@@ -1436,7 +1435,6 @@ function SidebarComponent({
     };
     // A snapshot already in memory (another project was open) shows at once.
     if (cachedSessionOrganization()) onOrganizationChange();
-    else setOrganizationNotice(t("Loading folders…"));
     const unsubscribe = subscribeSessionOrganization(onOrganizationChange, (error) =>
       setOrganizationNotice(String(error)),
     );
@@ -3001,6 +2999,14 @@ function SidebarComponent({
   const showSessionTools =
     tab === "sessions" && (lastSessionsOpen || (Boolean(cwd) && cwd !== "~"));
   if (!showSessionTools && sessionSearchExpanded) setSessionSearchExpanded(false);
+  const remoteWorkspaceStatus =
+    remoteProject && !lastSessionsOpen ? (
+      <SidebarRemoteWorkspaceStatus
+        cwd={cwd}
+        remote={remote}
+        connectionIssueHandled={remoteConnectionIssue}
+      />
+    ) : null;
   const sessionToolbar = showSessionTools ? (
     <div
       data-session-selection-keep
@@ -3008,19 +3014,6 @@ function SidebarComponent({
       className="ms-auto flex min-w-fit flex-1 items-center justify-end gap-0.5"
       data-tauri-drag-region="false"
     >
-      {remoteProject && !lastSessionsOpen ? (
-        <RemoteDataStatus
-          cwd={cwd}
-          presentation="indicator"
-          state={remote.dataState}
-          connectionIssueHandled={remoteConnectionIssue}
-          label={
-            remote.machine ? t("sessions from {p0}", { p0: remote.machine.name }) : t("sessions")
-          }
-          onRefresh={remote.refresh}
-          disabled={!remote.machine && !remote.dataState.error}
-        />
-      ) : null}
       <div
         className="min-w-(--ui-control-height-compact) max-w-[248px] flex-1"
         style={
@@ -3288,7 +3281,7 @@ function SidebarComponent({
         chromeInset={withVisitNav}
         data-workspace-header
         className={styles.workspaceHeader}
-        titleAs={switcher ? "div" : "h2"}
+        titleAs={switcher || (remoteProject && !lastSessionsOpen) ? "div" : "h2"}
         title={
           switcher ? (
             <SidebarWorkspaceSwitcher
@@ -3298,6 +3291,8 @@ function SidebarComponent({
               pending={workspaceSwitchPending}
               switchError={workspaceSwitchError}
             />
+          ) : remoteProject && !lastSessionsOpen ? (
+            <SidebarRemoteWorkspaceTitle cwd={cwd} status={remoteWorkspaceStatus} />
           ) : (
             <Text as="span" size="title" weight="medium" tone="inherit">
               {t(lastSessionsOpen ? "Last sessions" : "Workspace")}
@@ -3404,11 +3399,12 @@ function SidebarComponent({
             />
           )}
           {compactRailVisible ? workspaceHeader(!titleBarAbove) : null}
-          {lastSessionsOpen && !compactRailVisible ? (
+          {(lastSessionsOpen || (remoteProject && !onSelectProject)) && !compactRailVisible ? (
             workspaceHeader()
           ) : onSelectProject && !compactRailVisible ? (
             <SidebarProjectPicker
               cwd={cwd}
+              remoteStatus={remoteWorkspaceStatus}
               recents={visibleRecents}
               busy={projectPathBusy(busyProjectPaths, cwd)}
               onSelectProject={onSelectProject}
@@ -3491,7 +3487,10 @@ function SidebarComponent({
           )}
         </div>
         {/* The tools live in the Workspace header row; without that row they get their own slim one. */}
-        {sessionToolbar && !railVisible && !compactRailVisible ? (
+        {sessionToolbar &&
+        !railVisible &&
+        !compactRailVisible &&
+        (!remoteProject || onSelectProject) ? (
           <PaneHeader actions={sessionToolbar} />
         ) : null}
         {tab === "sessions" && !lastSessionsOpen && cwd && cwd !== "~" && showBulkBar ? (
@@ -4458,6 +4457,7 @@ function SearchableProjectPickerWithMenu({
 
 function SidebarProjectPicker({
   cwd,
+  remoteStatus,
   recents,
   busy,
   onSelectProject,
@@ -4482,6 +4482,7 @@ function SidebarProjectPicker({
   inboxUnseen = false,
 }: {
   cwd: string;
+  remoteStatus?: ReactNode;
   recents: RecentProject[];
   busy: boolean;
   onSelectProject: (path: string) => void;
@@ -4513,6 +4514,7 @@ function SidebarProjectPicker({
     <PaneHeader
       dragRegion
       className="@container/picker"
+      data-workspace-header={remoteStatus ? true : undefined}
       actions={
         <>
           {onNew ? (
@@ -4624,6 +4626,7 @@ function SidebarProjectPicker({
         onRemoveProject={onRemoveProject}
         onOpenNotificationSettings={onOpenNotificationSettings}
       />
+      {remoteStatus}
       {inboxMenu ? (
         <InboxNotificationMenu
           {...inboxMenu}

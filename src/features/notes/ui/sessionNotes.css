@@ -1,0 +1,43 @@
+/* Session dock layout around the shared note editor: compact, one column, in-flow notices. */
+.session-note-meta {
+  display: flex;
+  flex: none;
+  min-inline-size: 0;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+}
+
+.session-note-document {
+  container-type: inline-size;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-block-size: 0;
+  min-inline-size: 0;
+}
+
+.session-note-document > [role="tablist"],
+.session-note-document .session-note-toolbar {
+  flex: none;
+  padding-inline: var(--space-3);
+}
+
+.session-note-document .note-editor-body {
+  min-block-size: 0;
+}
+
+/* The dock is narrow: the reading pane drops its page padding. */
+.session-note-document .note-pane-content {
+  padding: var(--space-2) var(--space-3);
+}
+
+.session-note-document .note-editor-pane[data-document] .note-pane-content {
+  padding-block: var(--space-2) var(--space-4);
+}
+
+/* Notices stay in the flow between the editor and the footer; they never overlay either. */
+.session-note-alert {
+  flex: none;
+  margin: var(--space-1) var(--space-2);
+}

@@ -11,6 +11,27 @@ import { RequestAuthorizationError, StoreDatabase } from "./store-db";
 import type { HostSession } from "../src/features/connections/model/protocol";
 
 const cleanups: Array<() => void | Promise<void>> = [];
+it("names the caller that held the store queue past a second, and how many waited behind it", async () => {
+  const database = new StoreDatabase(":memory:");
+  await database.ready;
+  cleanups.push(() => database.close());
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  try {
+    const holdTheQueue = () =>
+      database.scope(() => new Promise<void>((resolve) => setTimeout(resolve, 1_050)));
+    const held = holdTheQueue();
+    const waiting = database.prepare("SELECT 1 AS n").get();
+    await Promise.all([held, waiting]);
+    await database.scope(async () => undefined);
+    const lines = warn.mock.calls.map(([line]) => String(line));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(/^Host database queue held by .*holdTheQueue.* ms=1\d{3} queued=1$/);
+    expect(lines[0]).not.toMatch(/StoreDatabase|file:|[\\/]/);
+  } finally {
+    warn.mockRestore();
+  }
+});
+
 it("captures request authority without restoring a closed SQL owner, and rechecks the original grant inside a different live transaction", async () => {
   const { store } = await fixture();
   let allowed = true,

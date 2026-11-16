@@ -198,7 +198,8 @@ it("retains cached sessions without repeating the shared connection warning", as
     refuse(new Error("SSH connection failed (exit 255, host unreachable): connection timed out")),
   );
   expect(container.textContent).toContain("Current conversation");
-  expect(container.querySelector("[data-remote-data-state]")).toBeNull();
+  expect(container.querySelector("[data-workspace-header] .lucide-server")).not.toBeNull();
+  expect(container.querySelector('[role="alert"]')).toBeNull();
   expect(container.textContent).not.toContain("connection timed out");
   expect(container.textContent).not.toContain("Couldn’t refresh sessions");
 });

@@ -1,9 +1,5 @@
 # Crews
 
-In Settings > Crews, Show crews controls this device's sidebar. If browser storage
-refuses the change, the previous value stays visible and Retry applies the intended
-value again. Open Crews opens the team and member editors.
-
 Bulk model Apply shows progress while applying a choice and blocks duplicate
 submissions. Controls in the bulk model bar stay disabled until it finishes;
 the existing crew and library save rules still apply.
@@ -200,8 +196,7 @@ listed with its reason.
 **Work** shows the same work management as the **Crew work** dialog, inline on the
 page. The project rail lists the same crews with overlapping member faces and the
 same options menu. The **Crews** heading opens the page; its separate chevron
-collapses or expands the list. **Settings > Agents > Crews** keeps **Show crews** for the rail
-and an **Open Crews** button.
+collapses or expands the list.
 
 The editor is one page. Give the crew a name, and choose **This project** or
 **All projects** when creating it; All projects means projects on the same host.
@@ -236,10 +231,10 @@ unique among library members you can see together and unique within the crew.
 live preview; **Shuffle** picks a random complete look and **Reset** returns to the
 look drawn from the profile.
 
-Members choose **Default**, **Pool** or **Fixed**. Default follows the Crew member
-role in **Settings > Background work**; Pool follows a named subset of the shared order;
+Members choose **Default**, **Any model** or **Fixed**. Default follows the Crew member
+role in **Settings > Models > Background work**; Any model follows the shared order or a named group;
 Fixed uses the selected model. **Manage in Models** opens the shared model order,
-limits and pools. The former Crew Models tab and cost/quality ranking are removed.
+limits and groups. The former Crew Models tab and cost/quality ranking are removed.
 Running work keeps its concrete model
 and team snapshot. See [Models](models.md) for eligibility and waiting behavior.
 
@@ -322,7 +317,7 @@ tasks and conversations remain available.
 
 ## Crew work and conversations
 
-Open **Crew work** from Settings or the rail. The management dialog has a crew
+Open **Crew work** from the rail. The management dialog has a crew
 selector, **Ongoing** and **Finished** views, a search over the loaded work and a
 selectable work list with update times. The search and selection survive refreshes;
 switching crews clears the search. Each item shows a live or paused state only when it says something, and,

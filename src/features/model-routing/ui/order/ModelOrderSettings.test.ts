@@ -124,7 +124,7 @@ it.each([
   { machineId: undefined, supported: true },
 ])("shows unavailable state without querying when %j", async (props) => {
   await act(() => root.render(createElement(ModelOrderSettings, props)));
-  expect(container.textContent).toContain("Model order is unavailable");
+  expect(container.textContent).toContain("Model routing is not available");
   expect(useOrderSettings).not.toHaveBeenCalled();
   expect(container.querySelector("input")).toBeNull();
 });

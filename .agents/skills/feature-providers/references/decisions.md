@@ -127,3 +127,11 @@ on low and subagents on max. People must be able to set this easily and effectiv
 Subagent max effort is a portable, independently inherited ceiling. Automatic means
 no ceiling; a saved level caps explicit effort and model-default effort, including
 continuations. Provider Defaults use the existing draft/save and scope rules.
+
+## Projects choose their account; Providers shows subagent rows
+
+Date: 2026-11-16
+
+Owner: "plan and arrange this screen so providers with several accounts can be managed more easily for each project, one project at a time ... I can't select subagents and advisors." (translated from Turkish)
+
+A project, group or workspace target stores the account each provider's new chats start on (`accounts` in project provider settings); a picker pin of the same provider stays the latest choice and moves with it. New-conversation defaults resolve through that account unless an explicit account is given. Account defaults themselves stay machine-wide; per-project-per-account overrides are not built. Providers > Defaults lists subagent, advisor, subagent policy and ceiling rows after the conversation rows; Background work > Subagents keeps them too, with the same draft and save rules.

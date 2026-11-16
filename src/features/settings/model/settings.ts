@@ -1,4 +1,3 @@
-import { CREWS_SETTINGS_SECTION, WORK_SETTINGS_SECTION } from "./workSettingsSections";
 import { isImeComposition } from "../../../shared/lib/keyboard";
 import { modelsSettingsEntries } from "./modelsSettingsEntries";
 import { TOOL_SETTINGS_INDEX, TOOL_SETTINGS_SECTIONS } from "./toolSettingsSections";
@@ -36,6 +35,7 @@ import { DESKTOP_STOP_COMMAND, DESKTOP_TALK_ROW, requireGlobal } from "./desktop
 import { APPEARANCE_SETTINGS_INDEX } from "./appearanceSettingsIndex";
 import { PRIVACY_SETTINGS_INDEX } from "./privacySettingsIndex";
 import { GENERAL_SETTINGS_INDEX } from "./generalSettingsIndex";
+import { TERMINAL_SETTINGS_INDEX } from "./terminalSettingsIndex";
 import {
   INTEGRATIONS_CONTROL_LABELS,
   INTEGRATIONS_SETTINGS_INDEX,
@@ -77,7 +77,6 @@ export type SettingsSectionId =
   | "usage"
   | "models"
   | "work"
-  | "crews"
   | "mcp"
   | "skills"
   | "integrations"
@@ -198,7 +197,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     id: "connections",
     group: "connections",
     get label() {
-      return t("Machines");
+      return t("Connections");
     },
     get description() {
       return t("Manage your computers, phone access, and tunnels.");
@@ -242,7 +241,6 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     },
     keywords: "archived restore delete hidden",
   },
-  CREWS_SETTINGS_SECTION,
   {
     id: "chat",
     group: "app",
@@ -270,14 +268,15 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     id: "providers",
     group: "agents",
     get label() {
-      return t("Providers");
+      return t("Models");
     },
     get description() {
-      return t("Provider accounts, agent CLIs and ACP agents for {p0}.", {
-        p0: PRODUCT_IDENTITY.displayName,
-      });
+      return t(
+        "Which models chats, subagents and background work use, and the provider accounts behind them.",
+      );
     },
-    keywords: "account sign in login model harness claude codex cli default hooks",
+    keywords:
+      "providers account sign in login model harness claude codex cli default hooks background work order groups pools assignments roles limits subagents delegation",
   },
   {
     id: "usage",
@@ -290,7 +289,6 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     },
     keywords: "usage tokens cost spend billing quota budget limits account",
   },
-  WORK_SETTINGS_SECTION,
   {
     id: "mcp",
     group: "tools",
@@ -447,14 +445,6 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     keywords: "technical language terminal developer file editor teknik dil geliştirici",
   },
   {
-    id: "terminal-default-profile",
-    section: "terminal",
-    get label() {
-      return t("Default terminal profile");
-    },
-    keywords: "shell bash git bash powershell pwsh cmd wsl zsh default ! command",
-  },
-  {
     id: "hidden-project-groups",
     section: "groupLock",
     get label() {
@@ -491,7 +481,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     id: "remote-machines",
     section: "connections",
     get label() {
-      return t("Machines");
+      return t("Connections");
     },
     keywords: "ssh remote connect host server environment",
   },
@@ -533,15 +523,17 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     get label() {
       return t("MCP servers");
     },
-    keywords: "claude tools connections oauth authenticate login add remove",
+    keywords:
+      "claude tools connections oauth authenticate login add remove edit config json file sign-in plugin düzenle dosya giriş eklenti",
   },
   {
     id: "mcp-loading",
     section: "mcp",
     get label() {
-      return t("MCP loading");
+      return t("Session startup");
     },
-    keywords: "on demand session start context load yükleme isteğe bağlı oturum başında",
+    keywords:
+      "on demand session start context load yükleme isteğe bağlı oturum başında startup start every session when needed başlangıç",
   },
   {
     id: "workspace-policy",
@@ -1079,12 +1071,6 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   },
   ...[
     {
-      id: "mcp-scopes",
-      section: "mcp",
-      label: "Advanced: scopes and connection status",
-      keywords: "scope personal user project local configuration status kapsam kişisel proje yerel",
-    },
-    {
       id: "file-access-permissions",
       section: "groupLock",
       label: "Advanced: file access and agent permissions",
@@ -1161,18 +1147,6 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
       section: "groupLock",
       label: "Unlock groups together",
       keywords: "unlock all password gruplar kilit birlikte",
-    },
-    {
-      id: "terminal-available-shells",
-      section: "terminal",
-      label: "Advanced terminal settings",
-      keywords: "local available shells discovery advanced gelişmiş kabuk keşif",
-    },
-    {
-      id: "host-shells",
-      section: "terminal",
-      label: "Default shell",
-      keywords: "remote server local sync host shell ssh uzak sunucu kabuk",
     },
     {
       id: "acp-agents",
@@ -1304,6 +1278,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   })),
   ...APPEARANCE_SETTINGS_INDEX,
   ...PRIVACY_SETTINGS_INDEX,
+  ...TERMINAL_SETTINGS_INDEX,
   ...INTEGRATIONS_SETTINGS_INDEX,
 ];
 
@@ -1322,7 +1297,7 @@ export function settingsSectionForAnchor(
 ): SettingsSectionId | undefined {
   const target =
     (anchor && SETTINGS_INDEX.find((entry) => entry.id === anchor)?.section) || section;
-  return target === "models"
+  return target === "models" || target === "work"
     ? "providers"
     : target === "inbox"
       ? "integrations"
@@ -1401,7 +1376,6 @@ const SETTINGS_CONTROL_LABELS: Record<string, readonly string[]> = {
   "prompt-templates": ["Template name", "Template trigger", "Template text"],
   "cost-overview": ["Cost range", "Estimated cost", "Input", "Output", "Cache"],
   "daily-summary": ["Daily summary time"],
-  "mcp-scopes": ["Scope", "Personal", "Project", "Local project"],
   "terminal-available-shells": ["Advanced terminal settings", "This computer · Available shells"],
   "group-lock-options": ["Advanced: automatic locking"],
   "claude-hooks": ["Advanced provider options"],
@@ -1511,6 +1485,7 @@ export const SETTINGS_SECTION_DEFAULT: SettingsSectionId = "general";
 export function isSettingsSectionId(value: unknown): value is SettingsSectionId {
   return (
     value === "models" ||
+    value === "work" ||
     !!toolSettingsTabForSection(value) ||
     SETTINGS_SECTIONS.some((section) => section.id === value)
   );
@@ -1558,7 +1533,11 @@ export function saveSettingsSection(id: SettingsSectionId) {
 export function loadSettingsAliasAnchor(): string | null {
   try {
     const saved = localStorage.getItem(SECTION_KEY);
-    return saved === "models" ? "models-chat" : toolSettingsAnchorForSection(saved);
+    return saved === "models"
+      ? "models-chat"
+      : saved === "work"
+        ? "models-order"
+        : toolSettingsAnchorForSection(saved);
   } catch {
     return null;
   }

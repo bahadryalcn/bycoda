@@ -95,3 +95,46 @@ export function expandSkillGroupTokens(text: string, groups: readonly SkillGroup
   }
   return out + text.slice(cursor);
 }
+
+export type SkillGroupRun = {
+  text: string;
+  group?: { name: string; members: readonly string[]; prefix: string };
+};
+
+/**
+ * Inverse of `expandSkillGroupTokens` for display: a sent message's run of member
+ * invocations, one space apart with one introducer, reads as its group again.
+ */
+export function skillGroupRuns(
+  text: string,
+  groups: readonly Pick<SkillGroupPickerItem, "name" | "members">[],
+): SkillGroupRun[] {
+  const tokens = skillInvocationTokens(text);
+  // Longest first, so a group that contains another group's members wins.
+  const ordered = groups
+    .filter((group) => group.members.length > 1)
+    .sort((a, b) => b.members.length - a.members.length);
+  const runs: SkillGroupRun[] = [];
+  let cursor = 0;
+  for (let i = 0; i < tokens.length; i++) {
+    const prefix = text[tokens[i].start];
+    const group = ordered.find((entry) =>
+      entry.members.every((member, offset) => {
+        const token = tokens[i + offset];
+        if (token?.name !== member || text[token.start] !== prefix) return false;
+        return offset === 0 || text.slice(tokens[i + offset - 1].end, token.start) === " ";
+      }),
+    );
+    if (!group) continue;
+    const end = tokens[i + group.members.length - 1].end;
+    if (tokens[i].start > cursor) runs.push({ text: text.slice(cursor, tokens[i].start) });
+    runs.push({
+      text: text.slice(tokens[i].start, end),
+      group: { name: group.name, members: group.members, prefix },
+    });
+    cursor = end;
+    i += group.members.length - 1;
+  }
+  if (cursor < text.length) runs.push({ text: text.slice(cursor) });
+  return runs;
+}

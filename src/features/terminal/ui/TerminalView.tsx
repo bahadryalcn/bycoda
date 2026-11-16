@@ -22,6 +22,7 @@ import { useSshShellIntegration } from "../model/sshShellIntegration";
 import { Modal } from "../../../shared/ui/Modal";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
+import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { useT } from "../../../shared/i18n";
 import { bindTerminalDomInput } from "../runtime/terminalDomInput";
@@ -205,6 +206,8 @@ export function TerminalView({
   const [tool, setTool] = useState<TerminalTool>(null);
   const [shellReady, setShellReady] = useState(false);
   const [inputError, setInputError] = useState<string | null>(null);
+  // The raw reason of a connection failure is left to the central connection notice.
+  const inputErrorShownCentrally = useConnectionErrorShownCentrally(inputError);
   const [exitCode, setExitCode] = useState<number | null | undefined>(undefined);
   const [reconnecting, setReconnecting] = useState(false);
   const reconnectPending = useRef(false);
@@ -745,7 +748,9 @@ export function TerminalView({
                 </Button>
               ) : null}
             </div>
-            {inputError ? <p className="mbs-2 break-words text-ui-caption">{inputError}</p> : null}
+            {inputError && !inputErrorShownCentrally ? (
+              <p className="mbs-2 break-words text-ui-caption">{inputError}</p>
+            ) : null}
             {inputError ? (
               <p className="mbs-2 break-words text-ui-caption text-(--ui-text-muted)">
                 {t(
@@ -769,7 +774,11 @@ export function TerminalView({
                 "Input paused. Some input may not have reached the terminal. Check the shell before continuing.",
               )}
             </p>
-            <p className="mbs-2 break-words text-ui-caption text-(--ui-text-muted)">{inputError}</p>
+            {inputErrorShownCentrally ? null : (
+              <p className="mbs-2 break-words text-ui-caption text-(--ui-text-muted)">
+                {inputError}
+              </p>
+            )}
           </Alert>
         </div>
       ) : null}

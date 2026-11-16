@@ -246,3 +246,31 @@ it("narrows the roster to Needs attention and keeps the text search", async () =
   expect(rows()).toHaveLength(1);
   expect(rows()[0].textContent).toContain("bycoda/s/branch-b");
 });
+
+it("leaves workspaces whose directory is already removed out of the roster", async () => {
+  inventory = [
+    {
+      id: "workspace-a",
+      path: "/repo-worktrees/wt-a",
+      owner: { kind: "session", id: "session-a" },
+      branchRef: "refs/heads/bycoda/s/branch-a",
+      state: "abandoned",
+      directoryState: "removed",
+      pinned: false,
+    } as ManagedWorkspace,
+    {
+      id: "workspace-b",
+      path: "/repo-worktrees/wt-b",
+      owner: { kind: "session", id: "session-b" },
+      branchRef: "refs/heads/bycoda/s/branch-b",
+      state: "idle",
+      directoryState: "present",
+      pinned: false,
+    } as ManagedWorkspace,
+  ];
+  await mount();
+  const rows = container.querySelectorAll<HTMLElement>('[role="listitem"]');
+  expect(rows).toHaveLength(1);
+  expect(rows[0].textContent).toContain("bycoda/s/branch-b");
+  expect(container.textContent).toContain("Showing 1 of 1 workspaces");
+});

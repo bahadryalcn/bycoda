@@ -20,11 +20,11 @@ export type ModelRolesSettingsProps = {
   machineId: string | undefined;
   /** Whether that Host advertises `models.routing.v1`. */
   supported: boolean;
-  /** Opens the Model order tab. */
+  /** Brings the model list into view. */
   onOpenOrder?: () => void;
 };
 
-/** Settings > Models > Assignments. */
+/** Settings > Models > Background work > Who uses what. */
 export function ModelRolesSettings({ machineId, supported, onOpenOrder }: ModelRolesSettingsProps) {
   useLocale();
   const routing = useModelRouting(machineId, supported);
@@ -80,6 +80,18 @@ function RolesEditor({
     setBase(state);
     setRoles(state.roles);
   }
+  // The model list below saves the same document; a save that left every job alone moves
+  // this draft onto the new version instead of reporting a conflict.
+  if (
+    state.version > base.version &&
+    dirty &&
+    !pending &&
+    MODEL_ROLE_METADATA.every(({ role }) =>
+      modelChoicesEqual(state.roles[role], base.roles[role], role),
+    )
+  ) {
+    setBase(state);
+  }
   async function persist() {
     if (
       retainedTransactionValue<boolean>(`roles:${machineId}:pending`) ||
@@ -126,7 +138,7 @@ function RolesEditor({
           live="off"
           action={onOpenOrder ? { label: t("Add models"), onClick: onOpenOrder } : undefined}
         >
-          {t("Model order is empty")}
+          {t("Add models to the list below first.")}
         </InlineMessage>
       ) : null}
       {MODEL_ROLE_GROUPS.map((group) => (

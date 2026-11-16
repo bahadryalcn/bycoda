@@ -1,4 +1,3 @@
-import { FailureState } from "../../../shared/ui/FailureState";
 import { Code } from "../../../shared/ui/Code";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
@@ -54,7 +53,7 @@ type Props = {
   enabled: boolean;
   expanded: boolean;
   selectedSha?: string;
-  /** In a multi-repository overview, lets the full graph switch repository in place. */
+  /** In a multi-repository overview, switches the header and full graph repository in place. */
   repositories?: SectionRepositoryChoice;
   onToggleExpanded: () => void;
   onOpenCommit: (commit: GitHistoryCommit, pin?: boolean) => void;
@@ -307,15 +306,7 @@ export function GitHistoryGraph({
       ) : commits.length === 0 ? (
         loading ? (
           <GitLoading text="Loading commit graph…" />
-        ) : error || failure ? (
-          <FailureState
-            size="inline"
-
-            className="px-3"
-            description={t("Commit history unavailable")}
-            onRetry={refresh}
-          />
-        ) : (
+        ) : error || failure ? undefined : ( // The failure notice above the list already explains it; no second failure state here.
           <EmptyState
             size="inline"
             kind="empty"
@@ -415,52 +406,70 @@ export function GitHistoryGraph({
         expanded={expanded}
         onExpandedChange={onToggleExpanded}
         actions={
-          expanded ? (
-            <>
-              <Button
-                size="sm"
-                iconOnly
-                label={t("Refresh commit graph")}
-                variant="ghost"
-                motion="none"
-                type="button"
-                loading={loading}
-                loadingLabel={t("Refreshing…")}
-                onClick={refresh}
-              >
-                <RefreshCw className="icon-sm" />
-              </Button>
-              {showAllButton}
-              <Button
-                size="sm"
-                iconOnly
-                label={t("Search commits")}
-                variant="ghost"
-                motion="none"
-                type="button"
-                aria-pressed={searchOpen}
-                onClick={() => {
-                  setSearchOpen((open) => !open);
-                  setQuery("");
-                }}
-              >
-                <Search className="icon-sm" strokeWidth={1.75} />
-              </Button>
-              {cwd && cwd !== "~" ? (
+          <>
+            {repositories ? (
+              <SearchableSelect
+                hideLabel
+                label={t("Repository")}
+                value={repositories.value}
+                onChange={(value) => void switchRepository(value)}
+                variant="row"
+                side="top"
+                options={repositories.options}
+                renderTrigger={({ props, open, selectedLabel }) => (
+                  <Button {...props} variant="ghost" size="sm" expanded={open}>
+                    {selectedLabel}
+                  </Button>
+                )}
+              />
+            ) : null}
+            {expanded ? (
+              <>
                 <Button
                   size="sm"
                   iconOnly
-                  label={t("Open full graph")}
+                  label={t("Refresh commit graph")}
                   variant="ghost"
                   motion="none"
                   type="button"
-                  onClick={() => setFullOpen(true)}
+                  loading={loading}
+                  loadingLabel={t("Refreshing…")}
+                  onClick={refresh}
                 >
-                  <Maximize2 className="icon-sm" strokeWidth={1.75} />
+                  <RefreshCw className="icon-sm" />
                 </Button>
-              ) : null}
-            </>
-          ) : undefined
+                {showAllButton}
+                <Button
+                  size="sm"
+                  iconOnly
+                  label={t("Search commits")}
+                  variant="ghost"
+                  motion="none"
+                  type="button"
+                  aria-pressed={searchOpen}
+                  onClick={() => {
+                    setSearchOpen((open) => !open);
+                    setQuery("");
+                  }}
+                >
+                  <Search className="icon-sm" strokeWidth={1.75} />
+                </Button>
+                {cwd && cwd !== "~" ? (
+                  <Button
+                    size="sm"
+                    iconOnly
+                    label={t("Open full graph")}
+                    variant="ghost"
+                    motion="none"
+                    type="button"
+                    onClick={() => setFullOpen(true)}
+                  >
+                    <Maximize2 className="icon-sm" strokeWidth={1.75} />
+                  </Button>
+                ) : null}
+              </>
+            ) : null}
+          </>
         }
       >
         {t("Graph")}

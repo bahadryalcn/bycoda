@@ -498,6 +498,15 @@ export function modelsFromGrokModelsOutput(stdout: string): AgentModel[] {
 
 export function fallbackGrokModels(): AgentModel[] {
   return [
+    modelFromNative("grok-4.7", "Grok 4.7", {
+      contextWindow: 500_000,
+      efforts: [
+        { value: "xhigh", label: "Extra High" },
+        { value: "high", label: "High", default: true },
+        { value: "medium", label: "Medium" },
+        { value: "low", label: "Low" },
+      ],
+    }),
     modelFromNative("grok-4.6", "Grok 4.6", {
       contextWindow: 500_000,
       efforts: [

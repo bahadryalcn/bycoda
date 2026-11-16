@@ -3,14 +3,16 @@ import { act, createElement, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useRetainedState, resetRetainedState } from "../../../shared/hooks/useRetainedState";
+import type { McpHub } from "../hooks/useMcpHub";
 import { McpSettings } from "./McpSettings";
 import { clearMcpSettingsCache } from "../model/mcpSettingsCache";
 
 // External owner-token lifecycle has its own isolated browser coverage. Keep
 // these discovery/cache assertions scoped to provider MCP connections.
 vi.mock("./ExternalMcpAccess", () => ({ ExternalMcpAccess: () => null }));
-vi.mock("./McpLoadingMode", () => ({ McpLoadingMode: () => null }));
-vi.mock("./McpOAuthSignIn", () => ({ McpOAuthSignIn: () => null }));
+// The Host hub hook has its own tests (useMcpHub.test.ts); here it is a controllable stub.
+const hubMock = vi.hoisted(() => ({ hub: undefined as unknown as McpHub }));
+vi.mock("../hooks/useMcpHub", () => ({ useMcpHub: () => hubMock.hub }));
 // Keep this settings fixture independent of unrelated application barrel cycles.
 vi.mock("../../sessions", () => import("../../sessions/ui/HarnessIcon"));
 vi.mock("../../projects", () => import("../../projects/ui/SearchableProjectPicker"));
@@ -29,6 +31,23 @@ vi.mock("../../../shared/model/appConfirm", () => ({
   confirmInApp: (...args: unknown[]) => ask(...args),
 }));
 
+function makeHub(over: Partial<McpHub> = {}): McpHub {
+  return {
+    pending: false,
+    error: "",
+    saving: false,
+    waiting: "",
+    busy: "",
+    dismissError: vi.fn(),
+    refresh: vi.fn(async () => {}),
+    setMode: vi.fn(async () => {}),
+    setDirect: vi.fn(async () => {}),
+    signIn: vi.fn(async () => {}),
+    signOut: vi.fn(async () => {}),
+    ...over,
+  };
+}
+
 let container: HTMLDivElement;
 const addServerButton = () =>
   [...container.querySelectorAll<HTMLButtonElement>("button")].find(
@@ -39,6 +58,7 @@ let root: Root;
 beforeEach(async () => {
   resetRetainedState();
   clearMcpSettingsCache();
+  hubMock.hub = makeHub();
   const storage = new Map<string, string>();
   vi.stubGlobal("localStorage", {
     getItem: (key: string) => storage.get(key) ?? null,
@@ -75,7 +95,9 @@ beforeEach(async () => {
         ]
       : command === "claude_mcp_list"
         ? "sentry: https://mcp.example.com - ! Needs authentication"
-        : undefined,
+        : command === "mcp_server_config_read"
+          ? { config: "{}", revision: "r1" }
+          : undefined,
   );
 });
 
@@ -92,20 +114,28 @@ async function refreshStatus() {
   );
 }
 
-/** Row status lives on the status dot's accessible name, not in visible text. */
-function statuses() {
-  return [...container.querySelectorAll("[data-mcp-state]")]
-    .map((dot) => dot.getAttribute("aria-label"))
-    .join(" | ");
-}
-function status(name: string) {
-  return container
-    .querySelector(`[aria-label="Actions for ${name}"]`)!
-    .parentElement!.querySelector("[data-mcp-state]")!
-    .getAttribute("aria-label");
+const rowButton = (name: string) =>
+  container.querySelector<HTMLButtonElement>(`button[aria-label="Open ${name}"]`);
+const rowOf = (name: string) => rowButton(name)!.closest<HTMLElement>("[data-collection-row]")!;
+const quickSignIn = (name: string) =>
+  [...rowOf(name).querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent === "Sign in",
+  );
+const allQuickSignIns = () =>
+  [...container.querySelectorAll<HTMLButtonElement>("[data-collection-row] button")].filter(
+    (button) => button.textContent === "Sign in",
+  );
+const sheet = () => document.querySelector<HTMLElement>('[role="dialog"]');
+const sheetButtons = (label: string) =>
+  [...(sheet()?.querySelectorAll<HTMLButtonElement>("button") ?? [])].filter(
+    (button) => button.textContent === label,
+  );
+async function openDetail(name: string) {
+  await act(async () => rowButton(name)!.click());
+  expect(sheet(), `detail sheet for ${name}`).not.toBeNull();
 }
 
-it("keeps MCP progress on the exact action and server even when providers share a name", async () => {
+it("groups providers that share a name into one row and keeps progress on the exact action", async () => {
   let finishLogin!: () => void;
   invoke.mockImplementation(async (command: string) => {
     if (command === "mcp_discover")
@@ -127,6 +157,7 @@ it("keeps MCP progress on the exact action and server even when providers share 
       ];
     if (command === "claude_mcp_list")
       return "shared-name: https://mcp.example.com - ! Needs authentication";
+    if (command === "mcp_server_config_read") return { config: "{}", revision: "r1" };
     if (command === "mcp_provider_login")
       return new Promise((resolve) => {
         finishLogin = () => resolve(undefined);
@@ -134,40 +165,31 @@ it("keeps MCP progress on the exact action and server even when providers share 
     return undefined;
   });
   await act(async () => root.render(createElement(McpSettings, { cwd: "/local-project" })));
-  const signIns = [...container.querySelectorAll<HTMLButtonElement>("button")].filter(
-    (button) => button.textContent === "Sign in",
-  );
+  expect(container.querySelectorAll("[data-collection-row]")).toHaveLength(1);
+  expect(rowOf("shared-name").textContent).toContain("Claude Code · Codex");
+  await openDetail("shared-name");
+  // One Sign in per provider configuration.
+  const signIns = sheetButtons("Sign in");
   expect(signIns).toHaveLength(2);
   await act(async () => signIns[0].click());
   expect(signIns[0].getAttribute("aria-busy")).toBe("true");
-  expect(
-    container.querySelector('[aria-label="Actions for shared-name"][aria-busy="true"]'),
-  ).toBeNull();
+  expect(signIns[1].getAttribute("aria-busy")).not.toBe("true");
   await act(async () => signIns[0].click());
   expect(invoke.mock.calls.filter(([command]) => command === "mcp_provider_login")).toHaveLength(1);
-  await act(async () => finishLogin());
-
-  let finishConfirm!: (confirmed: boolean) => void;
-  ask.mockImplementationOnce(
-    () =>
-      new Promise((resolve) => {
-        finishConfirm = resolve;
-      }),
-  );
-  const remove = container.querySelector<HTMLButtonElement>(
-    'button[aria-label="Actions for shared-name"]',
-  )!;
-  await act(async () => remove.click());
-  await act(async () => {
-    [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
-      .find((item) => item.textContent === "Remove")!
-      .click();
+  expect(invoke).toHaveBeenCalledWith("mcp_provider_login", {
+    cwd: "/local-project",
+    provider: "claude",
+    name: "shared-name",
   });
-  expect(remove.getAttribute("aria-busy")).toBe("true");
-  expect([...container.querySelectorAll<HTMLButtonElement>('button[aria-busy="true"]')]).toEqual([
-    remove,
-  ]);
-  expect(ask).toHaveBeenCalledTimes(1);
+  await act(async () => finishLogin());
+});
+
+it("confirms before removing a Claude entry and sends scope and name only after confirmation", async () => {
+  await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
+  await openDetail("sentry");
+  const remove = () => sheetButtons("Remove")[0];
+  ask.mockResolvedValueOnce(false);
+  await act(async () => remove().click());
   expect(ask).toHaveBeenCalledWith(
     expect.objectContaining({
       title: "Remove MCP server?",
@@ -175,9 +197,19 @@ it("keeps MCP progress on the exact action and server even when providers share 
       tone: "danger",
     }),
   );
-  await act(async () => finishConfirm(false));
-  expect(remove.getAttribute("aria-busy")).not.toBe("true");
   expect(invoke.mock.calls.some(([command]) => command === "claude_mcp_remove")).toBe(false);
+  await act(async () => remove().click());
+  expect(invoke).toHaveBeenCalledWith("claude_mcp_remove", {
+    cwd: "/repo",
+    name: "sentry",
+    scope: "user",
+  });
+  // Only Claude entries can be removed here; the Codex entry offers no Remove.
+  await act(async () =>
+    sheet()!.querySelector<HTMLButtonElement>('button[aria-label="Close"]')?.click(),
+  );
+  await openDetail("docs");
+  expect(sheetButtons("Remove")).toHaveLength(0);
 });
 
 it("shows unsupported remote targets without local discovery or Add and permits choosing a local project", async () => {
@@ -225,24 +257,34 @@ async function selectProject(path: string) {
   await act(async () => option.click());
 }
 
+const filterDialog = () =>
+  document.querySelector('[role="dialog"][aria-label="Filter MCP servers"]');
 async function openFilters() {
-  if (!document.querySelector('[role="dialog"][aria-label="Filter MCP servers by provider"]')) {
+  if (!filterDialog()) {
     await act(async () =>
       container.querySelector<HTMLButtonElement>('[aria-label="Filters"]')!.click(),
     );
   }
 }
+const sourceButton = (label: string) =>
+  [...filterDialog()!.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent === label,
+  )!;
+async function search(text: string) {
+  const input = container.querySelector<HTMLInputElement>('input[type="search"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, text);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
 
-it("lists servers and routes sign in through Claude MCP", async () => {
+it("lists servers and offers a quick Sign in that routes through the provider", async () => {
   await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
   await refreshStatus();
   expect(container.textContent).toContain("sentry");
-  expect(status("sentry")).toContain("Needs authentication");
-  expect(container.querySelector('[aria-label="docs · Codex · Global"]')).not.toBeNull();
-  const signIn = [...container.querySelectorAll("button")].find(
-    (button) => button.textContent === "Sign in",
-  )!;
-  await act(async () => signIn.click());
+  expect(rowOf("sentry").textContent).toContain("Needs sign-in");
+  expect(rowOf("docs").textContent).toContain("Codex");
+  await act(async () => quickSignIn("sentry")!.click());
   expect(invoke).toHaveBeenCalledWith("mcp_provider_login", {
     cwd: "/repo",
     provider: "claude",
@@ -253,16 +295,10 @@ it("lists servers and routes sign in through Claude MCP", async () => {
 it("filters connections by provider", async () => {
   await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
   await openFilters();
-  const codex = [...document.querySelectorAll("button")].find((button) =>
-    button.textContent?.startsWith("Codex"),
-  )!;
-  await act(async () => codex.click());
+  await act(async () => sourceButton("Codex").click());
   expect(container.textContent).toContain("docs");
   expect(container.textContent).not.toContain("sentry");
-  const signIn = [...container.querySelectorAll("button")].find(
-    (button) => button.textContent === "Sign in",
-  )!;
-  await act(async () => signIn.click());
+  await act(async () => quickSignIn("docs")!.click());
   expect(invoke).toHaveBeenCalledWith("mcp_provider_login", {
     cwd: "/repo",
     provider: "codex",
@@ -270,44 +306,39 @@ it("filters connections by provider", async () => {
   });
 });
 
+it("searches by name, provider and config path", async () => {
+  await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
+  await search("sentry");
+  expect(rowButton("sentry")).not.toBeNull();
+  expect(rowButton("docs")).toBeNull();
+  await search("config.toml");
+  expect(rowButton("docs")).not.toBeNull();
+  expect(rowButton("sentry")).toBeNull();
+  await search("nothing-like-this");
+  expect(container.textContent).toContain("No MCP servers match your search.");
+});
+
 it("resets the provider and search together from the filter panel", async () => {
   await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
   await openFilters();
-  await act(async () => {
-    document
-      .querySelector<HTMLButtonElement>('[role="group"] button[aria-pressed="false"]')!
-      .click();
-  });
-  const search = container.querySelector<HTMLInputElement>('input[type="search"]')!;
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
-      search,
-      "missing",
-    );
-    search.dispatchEvent(new Event("input", { bubbles: true }));
-  });
+  await act(async () => sourceButton("Codex").click());
+  await search("missing");
   await act(async () => {
     [...document.querySelectorAll<HTMLButtonElement>("button")]
       .find((button) => button.textContent === "Reset filters")!
       .click();
   });
-  expect(search.value).toBe("");
+  const input = container.querySelector<HTMLInputElement>('input[type="search"]')!;
+  expect(input.value).toBe("");
   expect(container.textContent).toContain("sentry");
   expect(container.textContent).toContain("docs");
-  expect(container.querySelector('[aria-label="Filters"]')!.getAttribute("aria-expanded")).toBe(
-    "true",
-  );
 });
 
 it("keeps a saved provider filter during a cold delayed discovery after returning to Settings", async () => {
   const render = () => act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
-  const codexButton = () =>
-    [...document.querySelectorAll("button")].find((button) =>
-      button.textContent?.startsWith("Codex"),
-    )!;
   await render();
   await openFilters();
-  await act(async () => codexButton().click());
+  await act(async () => sourceButton("Codex").click());
   await act(async () => root.unmount());
   clearMcpSettingsCache();
   root = createRoot(container);
@@ -321,12 +352,11 @@ it("keeps a saved provider filter during a cold delayed discovery after returnin
       : configured(command, ...args),
   );
   await render();
-  await openFilters();
-  expect(codexButton().getAttribute("aria-pressed")).toBe("true");
   await act(async () => finish(await configured("mcp_discover")));
-  expect(codexButton().getAttribute("aria-pressed")).toBe("true");
   expect(container.textContent).toContain("docs");
   expect(container.textContent).not.toContain("sentry");
+  await openFilters();
+  expect(sourceButton("Codex").getAttribute("aria-pressed")).toBe("true");
 });
 
 it("shows configured rows while Claude health is still pending", async () => {
@@ -344,8 +374,11 @@ it("shows configured rows while Claude health is still pending", async () => {
   expect(container.textContent).toContain("docs");
   expect(container.textContent).toContain("sentry");
   expect(container.textContent).not.toContain("Checking servers…");
+  // Unknown until Claude answers: not "Needs sign-in" yet.
+  expect(rowOf("sentry").textContent).not.toContain("Needs sign-in");
+  expect(quickSignIn("sentry")).toBeUndefined();
   await act(async () => resolveHealth("sentry: https://example.com - Needs authentication"));
-  expect(status("sentry")).toBe("Needs authentication");
+  expect(rowOf("sentry").textContent).toContain("Needs sign-in");
 });
 
 it("adds a standard mcpServers entry to the selected provider and project", async () => {
@@ -427,9 +460,9 @@ it("hides Sign in when a server has no known transport", async () => {
   );
   await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
   expect(container.textContent).toContain("unknown");
-  expect(
-    [...container.querySelectorAll("button")].some((button) => button.textContent === "Sign in"),
-  ).toBe(false);
+  expect(allQuickSignIns()).toHaveLength(0);
+  await openDetail("unknown");
+  expect(sheetButtons("Sign in")).toHaveLength(0);
 });
 
 it("exposes configured remote sign-in per provider without offering it to disabled or local tools", async () => {
@@ -468,27 +501,22 @@ it("exposes configured remote sign-in per provider without offering it to disabl
     command === "mcp_discover" ? connections : "",
   );
   await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
-  const signIns = [...container.querySelectorAll<HTMLButtonElement>("button")].filter(
-    (button) => button.textContent === "Sign in",
-  );
-  expect(signIns).toHaveLength(4);
+  expect(allQuickSignIns()).toHaveLength(4);
   for (const provider of ["claude", "codex", "cursor", "opencode"]) {
-    const actions = container.querySelector(`[aria-label="Actions for ${provider}-cloudflare"]`)!;
-    const signIn = [...actions.parentElement!.querySelectorAll<HTMLButtonElement>("button")].find(
-      (button) => button.textContent === "Sign in",
-    )!;
-    await act(async () => signIn.click());
+    await act(async () => quickSignIn(`${provider}-cloudflare`)!.click());
     expect(invoke).toHaveBeenCalledWith("mcp_provider_login", {
       cwd: "/repo",
       provider,
       name: `${provider}-cloudflare`,
     });
   }
-  expect(statuses()).toContain("Configured");
-  expect(statuses()).not.toContain("Connected");
+  expect(rowOf("disabled").textContent).toContain("Off");
+  expect(rowOf("local-tool").textContent).toContain("Configured");
+  expect(rowOf("desktop").textContent).toContain("Configured");
+  expect(container.textContent).not.toContain("Ready");
 });
 
-it("keeps repeat sign-in in the connected row menu", async () => {
+it("shows a connected server as Ready and keeps repeat sign-in in its detail", async () => {
   invoke.mockImplementation(async (command: string) =>
     command === "mcp_discover"
       ? [
@@ -502,21 +530,16 @@ it("keeps repeat sign-in in the connected row menu", async () => {
         ]
       : command === "claude_mcp_list"
         ? "connected: https://example.test/mcp - ✔ Connected"
-        : undefined,
+        : command === "mcp_server_config_read"
+          ? { config: "{}", revision: "r1" }
+          : undefined,
   );
   await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
   await refreshStatus();
-  expect(
-    [...container.querySelectorAll("button")].some((button) => button.textContent === "Sign in"),
-  ).toBe(false);
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Actions for connected"]')!.click(),
-  );
-  const signIn = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
-    (button) => button.textContent === "Sign in again",
-  )!;
-  expect(signIn).toBeDefined();
-  await act(async () => signIn.click());
+  expect(rowOf("connected").textContent).toContain("Ready");
+  expect(allQuickSignIns()).toHaveLength(0);
+  await openDetail("connected");
+  await act(async () => sheetButtons("Sign in")[0].click());
   expect(invoke).toHaveBeenCalledWith("mcp_provider_login", {
     cwd: "/repo",
     provider: "claude",
@@ -524,7 +547,7 @@ it("keeps repeat sign-in in the connected row menu", async () => {
   });
 });
 
-it("shows checking instead of sign-in until Claude health arrives, then keeps a timed-out partial result", async () => {
+it("shows no sign-in until Claude health arrives, then keeps a timed-out partial result", async () => {
   let finish!: (result: { output: string; timedOut: boolean }) => void;
   invoke.mockImplementation((command: string) =>
     command === "mcp_discover"
@@ -552,21 +575,16 @@ it("shows checking instead of sign-in until Claude health arrives, then keeps a 
   );
   await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
   await refreshStatus();
-  const signInButtons = () =>
-    [...container.querySelectorAll("button")].filter((button) => button.textContent === "Sign in");
-  expect(statuses()).toContain("Checking…");
-  expect(signInButtons()).toHaveLength(0);
+  expect(allQuickSignIns()).toHaveLength(0);
   // Windows consoles print √; arc was never reached before the CLI was stopped.
   await act(async () =>
     finish({ output: "hostinger: https://mcp.hostinger.com (HTTP) - √ Connected", timedOut: true }),
   );
-  const row = (name: string) =>
-    container.querySelector(`[aria-label="Actions for ${name}"]`)!.parentElement!;
-  expect(status("hostinger")).toBe("√ Connected");
-  expect(row("hostinger").textContent).not.toContain("Sign in");
+  expect(rowOf("hostinger").textContent).toContain("Ready");
+  expect(quickSignIn("hostinger")).toBeUndefined();
   expect(container.textContent).toContain("Claude did not finish checking every server in time.");
-  expect(signInButtons()).toHaveLength(1);
-  expect(row("arc").textContent).toContain("Sign in");
+  expect(allQuickSignIns()).toHaveLength(1);
+  expect(quickSignIn("arc")).toBeDefined();
 });
 
 it("uses Codex sign-in state, tags scopes and explains a missing Cursor CLI", async () => {
@@ -616,42 +634,96 @@ it("uses Codex sign-in state, tags scopes and explains a missing Cursor CLI", as
   );
   await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
   await refreshStatus();
-  const row = (name: string) =>
-    container.querySelector(`[aria-label="Actions for ${name}"]`)!.parentElement!;
-  expect(status("cloudflare")).toBe("Signed in");
-  expect(row("cloudflare").textContent).not.toContain("Sign in");
-  expect(row("stripe").textContent).toContain("Sign in");
-  expect(row("mem0").textContent).not.toContain("Sign in");
-  expect(row("cloudflare").textContent).toContain("Global");
-  expect(row("hostinger").textContent).toContain("Project");
-  const signIn = [...row("hostinger").querySelectorAll("button")].find(
-    (button) => button.textContent === "Sign in",
-  )!;
-  await act(async () => signIn.click());
+  expect(quickSignIn("cloudflare")).toBeUndefined();
+  expect(quickSignIn("stripe")).toBeDefined();
+  expect(quickSignIn("mem0")).toBeUndefined();
+  expect(rowOf("hostinger").textContent).toContain("Cursor (Project)");
+  await act(async () => quickSignIn("hostinger")!.click());
   expect(container.textContent).toContain("Cursor CLI (cursor-agent) is not installed.");
   expect(container.textContent).not.toContain("Showing the last successful result.");
 });
 
-it("shows only configured provider chips until the filter button reveals all", async () => {
+it("starts a Host sign-in from the quick action and lists Host-only servers", async () => {
+  hubMock.hub = makeHub({
+    loading: {
+      policy: { version: 1, mode: "onDemand", direct: [] },
+      corrupt: false,
+      servers: [],
+      inventory: [
+        {
+          name: "plugin-docs",
+          kind: "http",
+          source: "claude-plugin",
+          sources: ["claude-plugin"],
+          aliases: [],
+          signedIn: false,
+        },
+      ],
+    },
+    oauth: [{ name: "plugin-docs", state: "none" }],
+  });
   await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
-  await openFilters();
-  const chips = document.querySelector(
-    '[role="group"][aria-label="Filter MCP servers by provider"]',
+  expect(rowOf("plugin-docs").textContent).toContain("Claude plugin");
+  await act(async () => quickSignIn("plugin-docs")!.click());
+  expect(hubMock.hub.signIn).toHaveBeenCalledWith("plugin-docs");
+  expect(invoke.mock.calls.some(([command]) => command === "mcp_provider_login")).toBe(false);
+});
+
+it("sets the session startup mode and a per-server direct start from the Host policy", async () => {
+  hubMock.hub = makeHub({
+    loading: {
+      policy: { version: 1, mode: "onDemand", direct: [] },
+      corrupt: false,
+      servers: ["docs"],
+      inventory: [
+        {
+          name: "docs",
+          kind: "stdio",
+          source: "codex",
+          sources: ["codex"],
+          aliases: [{ provider: "codex", name: "docs" }],
+          signedIn: false,
+        },
+      ],
+    },
+  });
+  await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
+  await act(async () =>
+    container
+      .querySelector<HTMLButtonElement>('[aria-label="Start MCP servers: When needed"]')!
+      .click(),
+  );
+  const option = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
+    (button) => button.textContent === "With every session",
   )!;
-  expect(chips.textContent).toContain("Codex");
-  expect(chips.textContent).not.toContain("Cursor");
+  await act(async () => option.click());
+  expect(hubMock.hub.setMode).toHaveBeenCalledWith("always");
+  await openDetail("docs");
   await act(async () =>
-    [...document.querySelectorAll<HTMLButtonElement>("button")]
-      .find((button) => button.getAttribute("aria-label") === "Show all providers")!
+    sheet()!
+      .querySelector<HTMLButtonElement>(
+        'button[role="switch"][aria-label="Start docs with every session"]',
+      )!
       .click(),
   );
-  expect(chips.textContent).toContain("Cursor");
-  await act(async () =>
-    [...document.querySelectorAll<HTMLButtonElement>("button")]
-      .find((button) => button.getAttribute("aria-label") === "Show available providers")!
-      .click(),
-  );
-  expect(chips.textContent).not.toContain("Cursor");
+  expect(hubMock.hub.setDirect).toHaveBeenCalledWith("docs", true);
+});
+
+it("locks the startup select while the Host policy file is corrupt", async () => {
+  hubMock.hub = makeHub({
+    loading: {
+      policy: { version: 1, mode: "onDemand", direct: [] },
+      corrupt: true,
+      servers: [],
+      inventory: [],
+    },
+  });
+  await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
+  expect(container.textContent).toContain("The MCP loading file is unreadable");
+  expect(
+    container.querySelector<HTMLButtonElement>('[aria-label="Start MCP servers: When needed"]')!
+      .disabled,
+  ).toBe(true);
 });
 
 it("ignores discovery from a previous project after cwd changes", async () => {
@@ -717,6 +789,7 @@ it("reuses the loaded list when returning to the page and reloads on Refresh", a
   )!;
   await act(async () => refresh.click());
   expect(invoke).toHaveBeenCalledTimes(4);
+  expect(hubMock.hub.refresh).toHaveBeenCalledTimes(1);
   expect(container.textContent).toContain("updated");
   expect(container.textContent).not.toContain("sentry");
 
@@ -822,9 +895,7 @@ it("uses the shared project picker and caches each project's list", async () => 
 it("opens without starting Claude's health helper but reads Codex sign-in state", async () => {
   await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
   expect(invoke.mock.calls.map(([command]) => command)).toEqual(["mcp_discover", "codex_mcp_list"]);
-  expect(container.querySelector("[data-mcp-state]")?.getAttribute("data-mcp-state")).not.toBe(
-    "connected",
-  );
+  expect(container.textContent).not.toContain("Ready");
 });
 
 it("dismisses the displayed login error without retrying or hiding a later failure", async () => {
@@ -845,11 +916,7 @@ it("dismisses the displayed login error without retrying or hiding a later failu
     return "";
   });
   await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
-  const signIn = () =>
-    [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-      (button) => button.textContent === "Sign in",
-    )!;
-  await act(async () => signIn().click());
+  await act(async () => quickSignIn("docs")!.click());
   const alert = container.querySelector('[role="alert"]')!;
   expect(alert.textContent).toContain("failure 1:");
   const dismiss = [...alert.querySelectorAll<HTMLButtonElement>("button")].find(
@@ -858,7 +925,7 @@ it("dismisses the displayed login error without retrying or hiding a later failu
   expect(dismiss).toBeTruthy();
   await act(async () => dismiss.click());
   expect(invoke.mock.calls.filter(([command]) => command === "mcp_provider_login")).toHaveLength(1);
-  await act(async () => signIn().click());
+  await act(async () => quickSignIn("docs")!.click());
   expect(container.textContent).toContain("failure 2:");
   expect(invoke.mock.calls.filter(([command]) => command === "mcp_provider_login")).toHaveLength(2);
 });
@@ -899,4 +966,80 @@ it("opens Global independently of ambiguous project settings", async () => {
   await act(async () => global.click());
   expect(container.textContent).toContain("global-docs");
   expect(container.textContent).not.toContain("ambiguous project settings");
+});
+
+const configArea = () =>
+  sheet()!.querySelector<HTMLTextAreaElement>('textarea[aria-label="Configuration for sentry"]')!;
+async function type(area: HTMLTextAreaElement, value: string) {
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(area, value);
+    area.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+it("reads the entry when the detail opens and saves with the loaded revision", async () => {
+  await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
+  await openDetail("sentry");
+  expect(invoke).toHaveBeenCalledWith("mcp_server_config_read", {
+    cwd: "/repo",
+    provider: "claude",
+    scope: "user",
+    configPath: "/home/.claude.json",
+    name: "sentry",
+  });
+  expect(configArea().value).toBe("{}");
+  const save = () => sheetButtons("Save")[0];
+  expect(save().disabled).toBe(true);
+  await type(configArea(), '{"url":"https://new.example"}');
+  expect(save().disabled).toBe(false);
+  const discovery = invoke.getMockImplementation()!;
+  invoke.mockImplementation(async (command: string, args: unknown) =>
+    command === "mcp_server_config_write"
+      ? { config: '{\n  "url": "https://new.example"\n}', revision: "r2" }
+      : discovery(command, args),
+  );
+  await act(async () => save().click());
+  expect(invoke).toHaveBeenCalledWith("mcp_server_config_write", {
+    cwd: "/repo",
+    provider: "claude",
+    scope: "user",
+    configPath: "/home/.claude.json",
+    name: "sentry",
+    config: '{"url":"https://new.example"}',
+    expectedRevision: "r1",
+  });
+  // The saved text replaces the draft and discovery is reread.
+  expect(configArea().value).toBe('{\n  "url": "https://new.example"\n}');
+  expect(invoke.mock.calls.filter(([command]) => command === "mcp_discover")).toHaveLength(2);
+});
+
+it("keeps the draft and shows the error when the file changed since it was read", async () => {
+  await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
+  await openDetail("sentry");
+  const draft = '{"url":"https://mine.example"}';
+  await type(configArea(), draft);
+  const discovers = invoke.mock.calls.filter(([command]) => command === "mcp_discover").length;
+  invoke.mockImplementation(async (command: string) => {
+    if (command === "mcp_server_config_write")
+      throw new Error("The configuration changed on disk. Reload it before saving.");
+    return "";
+  });
+  await act(async () => sheetButtons("Save")[0].click());
+  expect(sheet()!.textContent).toContain("The configuration changed on disk");
+  expect(configArea().value).toBe(draft);
+  expect(sheetButtons("Save")[0].disabled).toBe(false);
+  expect(invoke.mock.calls.filter(([command]) => command === "mcp_discover")).toHaveLength(
+    discovers,
+  );
+});
+
+it("rejects an invalid draft locally without writing", async () => {
+  await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
+  await openDetail("sentry");
+  await type(configArea(), "{ nope");
+  await act(async () => sheetButtons("Save")[0].click());
+  expect(invoke.mock.calls.some(([command]) => command === "mcp_server_config_write")).toBe(false);
+  expect(sheet()!.querySelector('[role="alert"]')).not.toBeNull();
+  await act(async () => sheetButtons("Revert")[0].click());
+  expect(configArea().value).toBe("{}");
 });

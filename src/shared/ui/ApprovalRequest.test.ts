@@ -38,7 +38,8 @@ it("keeps exact request on the shared code ground and Allow as the sole primary"
   expect(host.querySelector("pre")?.getAttribute("data-frame")).toBe("filled");
   expect(host.querySelectorAll('[data-button-variant="primary"]')).toHaveLength(1);
   const buttons = host.querySelectorAll("button");
-  expect(buttons[0].textContent).toBe("Allow");
+  expect([...buttons].map((button) => button.textContent)).toEqual(["Always", "Deny", "Allow"]);
+  expect(host.querySelector('[data-button-variant="primary"]')?.textContent).toBe("Allow");
   act(() => buttons.forEach((button) => button.click()));
   expect(allow).toHaveBeenCalledOnce();
   expect(deny).toHaveBeenCalledOnce();
@@ -55,12 +56,13 @@ it("preserves caller-owned pending and disabled state and details disclosure", (
   });
   expect(host.querySelector("details")?.open).toBe(false);
   expect(host.querySelector("details")?.textContent).toContain("Full request context");
-  const buttons = host.querySelectorAll("button");
-  expect(buttons[0].getAttribute("aria-busy")).toBe("true");
-  expect(buttons[1].disabled).toBe(true);
+  const [always, denyButton, allowButton] = host.querySelectorAll("button");
+  expect(always.textContent).toBe("Always");
+  expect(allowButton.getAttribute("aria-busy")).toBe("true");
+  expect(denyButton.disabled).toBe(true);
   act(() => {
-    buttons[0].click();
-    buttons[1].click();
+    allowButton.click();
+    denyButton.click();
   });
   expect(allow).not.toHaveBeenCalled();
   expect(deny).not.toHaveBeenCalled();

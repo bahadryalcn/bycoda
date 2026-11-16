@@ -933,8 +933,9 @@ export function ProjectRail({
             onAddGroup={(x, y) => projectMenu.createGroup(x, y)}
           />
           <div
-            hidden={rail.folded || rail.collapsed.groups}
-            className={`flex-col gap-0.5 px-2 ${rail.folded || rail.collapsed.groups ? "hidden" : "flex"}`}
+            hidden={rail.collapsed.groups}
+            data-reorder-fold-body
+            className={`flex-col gap-0.5 px-2 ${rail.collapsed.groups ? "hidden" : "flex"}`}
           >
             {groupedProjectSections.grouped
               .filter((entry) => !entry.parentId)
@@ -1380,20 +1381,22 @@ function ProjectSection({
         collapsed={collapsed}
         onToggleCollapsed={onToggleCollapsed}
       />
-      {items.length === 0 && emptyLabel && !drag.folded && !collapsed ? (
+      {items.length === 0 && emptyLabel && !collapsed ? (
         <Text
           as="p"
           size="caption"
           tone="secondary"
           leading="tight"
           className="px-4 pb-1 @max-[140px]/rail:hidden"
+          data-reorder-fold-body
         >
           {emptyLabel}
         </Text>
       ) : null}
       <div
-        hidden={drag.folded || collapsed}
-        className={`flex-col gap-0.5 px-2 ${drag.folded || collapsed ? "hidden" : "flex"}`}
+        hidden={collapsed}
+        data-reorder-fold-body
+        className={`flex-col gap-0.5 px-2 ${collapsed ? "hidden" : "flex"}`}
       >
         {items.map((item) => (
           <ProjectCard
@@ -1736,10 +1739,10 @@ function ProjectGroupSection({
   const countLabel = `${memberCount} ${memberCount === 1 ? "project" : "projects"}`;
   const expanded = (!group.collapsed || revealed) && !locked;
   const collapsed = !expanded;
-  // While any group is dragged, every group shows only its header.
-  const folded = sortableGroups.draggingId !== null;
-  const showBody = expanded && !folded;
-  const { viewportRef, contentRef, settledOpen } = useCollapsibleHeight(showBody, folded || locked);
+  // While any group is dragged, every group shows only its header: the reorder hook marks the
+  // blocks and the stylesheet hides `data-reorder-fold-body`, with no re-render.
+  const showBody = expanded;
+  const { viewportRef, contentRef, settledOpen } = useCollapsibleHeight(showBody, locked);
   // Keep rows alive for the closing transition, then release their subscriptions.
   const [retainedBody, releaseRetainedBody] = useRetainedWhileClosing(
     expanded,
@@ -1796,7 +1799,6 @@ function ProjectGroupSection({
       )}
       data-project-group={group.id}
       data-workspace-root={workspaceRoot ?? undefined}
-      data-folded={folded || undefined}
       role="group"
       aria-label={group.name}
     >
@@ -2060,7 +2062,7 @@ function ProjectGroupSection({
         ref={viewportRef}
         className="project-group-body"
         data-open={showBody}
-        data-folded={folded || undefined}
+        data-reorder-fold-body
         aria-hidden={!showBody}
         inert={!showBody}
         onTransitionEnd={(event) => {
@@ -2199,8 +2201,6 @@ function ProjectCard({
   useRemoteMachineOnline(machine?.id);
   const remoteConnection = useRemoteConnection(item.path);
   const indicator = connectionIndicator(remoteConnection, remoteConnection.reconnecting);
-  const reconnectable = !!machine && indicator.tone === "down";
-  const showReconnect = reconnectable || remoteConnection.reconnecting;
   const connection = !remote
     ? ""
     : !machine
@@ -2232,10 +2232,7 @@ function ProjectCard({
   // The wide "+a -d" needs room: the compact indicator replaces it once the row itself is narrower than
   // this bucket (see projectRailRow.css). Fixed items sharing the row make the detail need more.
   const detailBucket = change
-    ? projectGitDetailBucket(
-        change,
-        (remote && !showReconnect ? 1 : 0) + (muteStatus ? 1 : 0) + (showReconnect ? 1 : 0),
-      )
+    ? projectGitDetailBucket(change, (remote ? 1 : 0) + (muteStatus ? 1 : 0))
     : null;
 
   return (
@@ -2347,7 +2344,7 @@ function ProjectCard({
         aria-label={cardAriaLabel}
         aria-current={selected ? "true" : undefined}
         padding={{ start: "xs", end: "none" }}
-        reserveEndAction={showReconnect ? "inline" : !change ? "interaction" : undefined}
+        reserveEndAction={!change ? "interaction" : undefined}
         {...surfaceAttributes(
           { frame: "none" },
           "project-card-primary flex min-w-0 flex-1 cursor-default items-center gap-2 text-left @max-[140px]/rail:justify-center",
@@ -2409,7 +2406,7 @@ function ProjectCard({
           </Text>
         ) : null}
         <span className="ms-auto flex min-w-0 shrink-0 items-center gap-1 @max-[140px]/rail:hidden">
-          {remote && !showReconnect ? (
+          {remote ? (
             <Text
               role="img"
               aria-label={connection}
@@ -2465,23 +2462,6 @@ function ProjectCard({
       ) : null}
       {!multi?.active ? (
         <>
-          {showReconnect ? (
-            <InlineAction
-              reveal="always"
-              label={t("{p0} Reconnect machine", { p0: connection })}
-              motion="none"
-              data-no-drag
-              loading={remoteConnection.reconnecting}
-              onPointerDown={(event) => event.stopPropagation()}
-              onClick={(event) => {
-                event.stopPropagation();
-                void remoteConnection.reconnect({ signIn: true });
-              }}
-              className="absolute end-7 top-1/2 -translate-y-1/2 @max-[140px]/rail:hidden!"
-            >
-              <Internet className="icon-sm" strokeWidth={1.75} aria-hidden />
-            </InlineAction>
-          ) : null}
           <InlineAction
             data-project-options
             label={t("Project options")}

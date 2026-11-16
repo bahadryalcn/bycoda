@@ -29,7 +29,7 @@ export function remotePendingRequestNotice(
       ? t("Saved requests need review before continuing.")
       : online || needsConfirmation
         ? t("Waiting for the host to confirm your request.")
-        : t("Reconnecting. Your message will be sent automatically."),
+        : t("Your message is saved and will be sent automatically."),
     detail: error,
     action: {
       kind: "retry" as const,

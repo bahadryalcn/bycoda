@@ -64,6 +64,17 @@ export type McpLoadingState = {
   /** The stored file is invalid: loading stays on demand and saving is refused until repaired. */
   corrupt: boolean;
   servers: string[];
+  /** Secret-free hub inventory; absent on older Hosts. */
+  inventory?: McpHubServer[];
+};
+
+export type McpHubServer = {
+  name: string;
+  kind: "stdio" | "http";
+  source: string;
+  sources: string[];
+  aliases: { provider: "claude" | "codex" | "opencode"; name: string }[];
+  signedIn: boolean;
 };
 
 /** Adds or removes one name; the result is sorted and unique so repeated toggles stay stable. */

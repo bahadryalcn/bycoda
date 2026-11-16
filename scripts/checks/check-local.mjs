@@ -94,9 +94,11 @@ export function localPlan({ decision, root = repositoryRoot, limit = 12, scripts
     /\.(?:[cm]?[jt]sx?|jsonc?|ya?ml|md|css|html|toml)$/.test(file),
   );
   const code = files.filter((file) => /\.[cm]?[jt]sx?$/.test(file));
+  // Formats in place instead of reporting: a format or line-ending slip (CRLF from a
+  // script-written file) is repaired here, not sent back to the session as a failure.
   batched(
-    "Changed-file formatting",
-    (batch) => tool("vite-plus", ["fmt", "--check", ...batch], "vp"),
+    "Changed-file formatting (fixes in place)",
+    (batch) => tool("vite-plus", ["fmt", ...batch], "vp"),
     supported,
   );
   batched(

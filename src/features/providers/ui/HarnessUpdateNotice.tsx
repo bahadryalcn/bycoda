@@ -105,7 +105,6 @@ export function HarnessUpdateNotice() {
       tone="info"
       title={updates.length === 1 ? t("Harness update available") : t("Harness updates available")}
       durationMs={allUpdated ? 5000 : null}
-      placement="top-end"
       width="lg"
       onDismiss={dismiss}
       actionsPlacement="footer"

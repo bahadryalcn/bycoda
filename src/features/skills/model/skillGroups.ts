@@ -123,6 +123,21 @@ export function deleteSkillGroup(id: string): void {
 export function addSkillsToGroup(id: string, names: string[]): void {
   update(id, (group) => ({ ...group, skillNames: [...group.skillNames, ...names] }));
 }
+/**
+ * One durable write for a bulk membership change: unchecked names leave, current members keep
+ * their order and newly checked names append in the given order.
+ */
+export function setSkillGroupMembers(
+  id: string,
+  add: readonly string[],
+  remove: readonly string[],
+) {
+  const gone = new Set(remove);
+  update(id, (group) => ({
+    ...group,
+    skillNames: [...group.skillNames.filter((name) => !gone.has(name)), ...add],
+  }));
+}
 export function removeSkillFromGroup(id: string, name: string): void {
   update(id, (group) => ({
     ...group,

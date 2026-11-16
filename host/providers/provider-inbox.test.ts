@@ -34,6 +34,21 @@ afterEach(async () => {
   for (const db of databases.splice(0)) await db.close();
 });
 describe("desktop provider inbox job bridge", () => {
+  it("returns Jira board priority only to the requesting client", async () => {
+    const { bridge } = setup();
+    await bridge.beat("native", "desktop", { version: 1 });
+    const receipt = await bridge.request("client", "jira-priority", {
+      action: "jira-board-read",
+      cwd: "/project",
+      boardId: 7,
+      scope: "board",
+    });
+    await bridge.beat("native", "desktop", { version: 1 });
+    const result = { page: { issues: [{ identifier: "ENG-7", priority: "High" }] } };
+    await bridge.beat("native", "desktop", { version: 1, replies: [{ id: receipt.id, result }] });
+    expect((await bridge.result("client", "jira-priority")).result).toEqual(result);
+    await expect(bridge.result("other", "jira-priority")).rejects.toThrow();
+  });
   it("delivers the requesting device name with a job and omits it when unknown", async () => {
     const { bridge } = setup();
     await bridge.beat("native", "desktop", { version: 1 });

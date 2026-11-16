@@ -73,3 +73,50 @@ it("blocks partial source and executes complete source once despite double click
     await act(async () => root.unmount());
   }
 });
+
+it("opens a native run in the project dock and reports its settled output once", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  localStorage.clear();
+  const listeners = new Set<() => void>();
+  let state = { id: "run-1", phase: "starting", shell: "bash", profile: "bash", output: "" };
+  const controller = {
+    start: vi.fn(async () => {
+      state = { ...state, phase: "running" };
+    }),
+    snapshot: () => ({ ...state, truncated: false, exitCode: 0 }),
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
+  mocks.create.mockReturnValue(controller);
+  const openTerminal = vi.fn().mockReturnValue(true);
+  const report = vi.fn();
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(
+        createElement(CodeExecutionProvider, {
+          scope: { sessionId: "s", projectCwd: "/project", native: true, openTerminal },
+          cwd: "/project",
+          onReport: report,
+          children: createElement(CodeRunButton, {
+            code: "echo hi",
+            language: "bash",
+            incomplete: false,
+          }),
+        }),
+      ),
+    );
+    await act(async () => container.querySelector("button")!.click());
+    expect(openTerminal).toHaveBeenCalledWith("s", "/project", "bash", "run-1");
+    state = { ...state, phase: "exited", output: "hi" };
+    for (const listener of listeners) listener();
+    for (const listener of listeners) listener();
+    expect(report).toHaveBeenCalledTimes(1);
+    expect(report.mock.calls[0][0]).toContain("hi");
+  } finally {
+    await act(async () => root.unmount());
+  }
+});

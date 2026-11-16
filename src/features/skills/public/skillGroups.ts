@@ -5,6 +5,7 @@ export {
   isSkillGroupPickerItem,
   skillGroupPickerItems,
   skillGroupInsertion,
+  skillGroupRuns,
 } from "../model/skillGroupPicker";
-export type { SkillGroupPickerItem } from "../model/skillGroupPicker";
+export type { SkillGroupPickerItem, SkillGroupRun } from "../model/skillGroupPicker";
 export { cachedSkillPolicy } from "../model/skillPreferences";

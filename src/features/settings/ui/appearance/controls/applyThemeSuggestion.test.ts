@@ -12,6 +12,7 @@ import {
 } from "../../../model/settings";
 import { normalizeThemeSuggestion } from "../../../model/themeSuggestions";
 import { loadWorkingIndicator } from "../../../model/workingIndicator";
+import { loadWorkspaceBackground } from "../../../model/workspaceBackground";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
 import { applyDrawnImageTuning, applyThemeSuggestion } from "./applyThemeSuggestion";
 
@@ -49,6 +50,19 @@ const suggest = (extra: Record<string, unknown>) =>
 beforeEach(() => localStorage.clear());
 
 describe("applyThemeSuggestion", () => {
+  it("switches the previous gradient off when the new look has none, and replaces it otherwise", () => {
+    const { appearance } = mockAppearance();
+    applyThemeSuggestion(
+      appearance,
+      suggest({
+        gradient: { name: "Glow", type: "linear", angle: 90, stops: ["#101820", "#203040"] },
+      }),
+    );
+    expect(loadWorkspaceBackground()).toMatchObject({ enabled: true, style: "linear" });
+    applyThemeSuggestion(appearance, suggest({}));
+    expect(loadWorkspaceBackground().enabled).toBe(false);
+  });
+
   it("keeps generated terminal text close to the effective code size", () => {
     const { appearance, fns } = mockAppearance();
     applyThemeSuggestion(appearance, suggest({ typography: { terminalSize: 40 } }));

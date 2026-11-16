@@ -35,6 +35,11 @@ export function useOrderSettings(machineId: string) {
   return { routing, limits };
 }
 
+function routingWithoutRoles(state: ModelRoutingState): string {
+  const { version: _version, updatedAt: _updatedAt, roles: _roles, ...rest } = state;
+  return JSON.stringify(rest);
+}
+
 type Settings = ReturnType<typeof useOrderSettings>;
 type Baseline = { routing: ModelRoutingState; limits: HostSettings };
 
@@ -81,6 +86,24 @@ export function useOrderDraft(settings: Settings, initial: Baseline, machineId: 
     setBaseline({ routing: latestRouting, limits: latestLimits });
     setDraft(orderDraft(latestRouting, latestLimits));
     setSaved(false);
+  }
+  // Who uses what saves the same document from the same screen. When only its job choices
+  // moved and this draft left them alone, carry the draft onto the new version.
+  if (
+    !pending &&
+    dirty &&
+    !saveConflict &&
+    latestRouting.version !== baseline.routing.version &&
+    latestLimits.maxRunningTasks === baseline.limits.maxRunningTasks &&
+    latestLimits.dailyAgentMinutes === baseline.limits.dailyAgentMinutes &&
+    routingWithoutRoles(latestRouting) === routingWithoutRoles(baseline.routing) &&
+    JSON.stringify(draft.routing.roles) === JSON.stringify(baseline.routing.roles)
+  ) {
+    setBaseline({ routing: latestRouting, limits: baseline.limits });
+    setDraft({
+      ...draft,
+      routing: { ...draft.routing, roles: structuredClone(latestRouting.roles) },
+    });
   }
   const conflict = saveConflict || (dirty && changedElsewhere && !pending);
   let validation = "";
@@ -177,9 +200,7 @@ export function useOrderDraft(settings: Settings, initial: Baseline, machineId: 
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
       setSaveConflict(/conflict|version|changed/i.test(message));
-      setError(
-        routingSaved ? `Model order saved; work limits were not saved. ${message}` : message,
-      );
+      setError(routingSaved ? `Models saved; work limits were not saved. ${message}` : message);
     } finally {
       submitting.current = false;
       setPending(false);

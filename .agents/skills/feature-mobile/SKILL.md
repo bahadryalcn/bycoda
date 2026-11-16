@@ -16,6 +16,7 @@ The mobile app is a separate nested repository under mobile/. Inspect its own ru
 - `mobile/src/features/workspace/`
 - `mobile/src/remote/host-transport.ts`, `mobile/src/remote/ws-connection.ts`
 - `mobile/src/state/host-runtime.ts`, `mobile/src/state/queries.ts`
+- `mobile/src/features/workspace/directory-sync.ts`, `mobile/src/remote/directory-stream.ts`
 
 ## Workflow
 
@@ -27,6 +28,7 @@ The mobile app is a separate nested repository under mobile/. Inspect its own ru
 ## Preserve
 
 - Keep project/session/Host identity, pairing credentials and permission gates under existing owners. Phone attachment does not move execution or history authority.
+- Project directory live sync uses the capability-gated environment stream, shared per query cache and transport. Preserve RPC fallback, snapshot ordering and privacy proof: an expired or denied proof cannot be restored by a late stream callback.
 - Preserve drafts, selection, model/settings choices, restored navigation and held uncertain sends. Reconnect does not authorize replay.
 - Use mobile PanelUI/shared controls, platform safe-area and keyboard handling; do not invoke Tauri commands from Expo.
 - Keep compact workspace changes scoped to the requested Projects, global Sessions, project Sessions and chat surfaces. Reuse row previews and full accessible labels, retain 48dp targets and virtualized lists, and keep all actions, drafts and recovery available. This scope does not authorize redesigning unrelated screens.

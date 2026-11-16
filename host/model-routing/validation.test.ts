@@ -41,6 +41,11 @@ it("accepts default accounts, validates named accounts and forbids accounts else
     validateModelRoutingDraft(d, { codex: [{ id: "work", label: "Work", color: "blue" }] }),
   ).toEqual(d);
   d.entries[0]!.harness = "grok";
+  expect(() => validateModelRoutingDraft(d, {})).toThrow("Unknown grok account");
+  expect(
+    validateModelRoutingDraft(d, { grok: [{ id: "work", label: "Work", color: "blue" }] }),
+  ).toEqual(d);
+  d.entries[0]!.harness = "opencode";
   expect(() => validateModelRoutingDraft(d, {})).toThrow("has no provider accounts");
 });
 it("checks listed catalog models but permits unavailable catalog", () => {

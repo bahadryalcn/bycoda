@@ -108,9 +108,6 @@ export function WorkspaceManagedRow({
                     {t("Cleanup blocked")}
                   </Badge>
                 )}
-                {workspace.directoryState === "removed" && (
-                  <Badge size="sm">{t("Directory removed")}</Badge>
-                )}
                 {(removing ||
                   workspace.directoryState === "pendingRemoval" ||
                   workspace.directoryState === "removing") && (
@@ -148,7 +145,7 @@ export function WorkspaceManagedRow({
               variant="ghost"
               iconOnly
               label={t("Reveal folder")}
-              disabled={missing || workspace.directoryState === "removed"}
+              disabled={missing}
               disabledReason={t("This folder is not on disk.")}
               onClick={onReveal}
             >

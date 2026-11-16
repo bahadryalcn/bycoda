@@ -12,6 +12,7 @@ mod discovery_tests;
 pub(crate) mod enablement;
 #[path = "mcp_jsonc.rs"]
 mod jsonc;
+pub(crate) mod server_config;
 use config::write_json_config;
 #[cfg(test)]
 use config::{publish_config, publish_new_config, write_json_config_inner};

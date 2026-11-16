@@ -25,6 +25,7 @@ import { useOverlay } from "../../../shared/ui/overlay";
 import { GripVertical } from "../../../shared/ui/icons";
 import { t, useLocale } from "../../../shared/i18n";
 import { voiceError } from "../model/voiceAssistantNotices";
+import { voiceInterruptedTurnNotice } from "../model/voiceInstructions";
 import { invalidateFeatureHosts } from "../../connections/model/hostFeatureClient";
 import { useVoiceSessionProgress } from "../model/voiceSessionProgress";
 import { VoiceToolActivity, type VoiceToolActivityEntry } from "../model/voiceToolActivity";
@@ -291,6 +292,8 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   const [transcript, setTranscript, transcriptTurn] = useVoiceTranscript();
   const [error, setError] = useState("");
   const ownerSpeech = useRef("");
+  /** The owner's last request until a reply to it plays; a reconnect reports it as interrupted. */
+  const unansweredTurn = useRef("");
   const spokenLanguage = useRef<VoiceSpokenLanguageWrites | null>(null);
   if (!spokenLanguage.current)
     spokenLanguage.current = new VoiceSpokenLanguageWrites(assistantRequest);
@@ -1490,6 +1493,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     clearTimeout(stableTimer.current);
     reconnect.reset();
     recentTurns.current = [];
+    unansweredTurn.current = "";
     generation.current++;
     turnCaptured.current = false;
     sequence.current++;
@@ -2345,7 +2349,9 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     // response owner suppresses stale speech; retain the actual delivery receipt.
     return result;
   }
-  function recoverRealtime(provider: RealtimeProvider, _reason: string, rotation = false) {
+  function recoverRealtime(provider: RealtimeProvider, reason: string, rotation = false) {
+    // The app log is the only record of why a live voice session dropped.
+    console.warn("[voice] realtime recovering", { provider, reason, rotation });
     invalidateFeatureHosts();
     const wasMuted = mutedRef.current;
     if (presenceRef.current !== "active") {
@@ -2391,7 +2397,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   async function startRealtime(
     epoch: number,
     provider: RealtimeProvider,
-    _reconnect = false,
+    reconnecting = false,
     restoreMuted = false,
   ) {
     const capturedHistory = activeHistoryBinding.current;
@@ -2436,6 +2442,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           )
             return;
           lastDeliveredAssistant.current = pending.text;
+          unansweredTurn.current = "";
           rememberTurn("assistant", pending.text);
           transcriptStore.current?.finish();
         },
@@ -2445,6 +2452,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         transcript: (text) => {
           if (generation.current === epoch) {
             ownerSpeech.current = text;
+            unansweredTurn.current = text;
             void spokenLanguage.current!.record(text).catch(() => {});
             rememberTurn("user", text);
             const history = activeHistoryBinding.current,
@@ -2600,6 +2608,11 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       if (generation.current === epoch) {
         if (restoreMuted) voice.mute(true);
         setStatus("live");
+        // A dropped connection must not swallow the owner's request: ask instead of going silent.
+        if (reconnecting && unansweredTurn.current) {
+          voice.speak(voiceInterruptedTurnNotice(unansweredTurn.current));
+          unansweredTurn.current = "";
+        }
         // A brief connection must not replenish an endless retry loop.
         stableTimer.current = setTimeout(() => {
           if (generation.current === epoch) reconnect.reset();

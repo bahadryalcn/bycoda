@@ -48,12 +48,16 @@ it("blocks duplicate approval, denial and close while connecting, then settles",
   act(() => {
     answer = read().confirm(request(approve));
   });
-  await act(async () => host.querySelector("button")!.click());
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[data-button-variant="primary"]')!.click(),
+  );
   const buttons = host.querySelectorAll("button");
   act(() => buttons.forEach((button) => button.click()));
   expect(approve).toHaveBeenCalledOnce();
-  expect(buttons[0].getAttribute("aria-busy")).toBe("true");
-  expect(buttons[1].disabled).toBe(true);
+  const allowButton = host.querySelector<HTMLButtonElement>('[data-button-variant="primary"]')!;
+  const denyButton = [...buttons].find((button) => button.textContent === "Deny")!;
+  expect(allowButton.getAttribute("aria-busy")).toBe("true");
+  expect(denyButton.disabled).toBe(true);
   await act(async () => finish());
   await expect(answer).resolves.toBe(true);
 });
@@ -64,9 +68,15 @@ it("shows retry error, resets replacement state and resolves abandoned requests"
   act(() => {
     first = read().confirm(request(approve));
   });
-  await act(async () => host.querySelector("button")!.click());
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[data-button-variant="primary"]')!.click(),
+  );
   expect(host.textContent).toContain("Host unavailable");
-  expect(host.querySelector("button")!.getAttribute("aria-busy")).toBeNull();
+  expect(
+    host
+      .querySelector<HTMLButtonElement>('[data-button-variant="primary"]')!
+      .getAttribute("aria-busy"),
+  ).toBeNull();
   let second!: Promise<boolean>;
   act(() => {
     second = read().confirm(request(approve));
@@ -90,7 +100,9 @@ it("does not let an old async completion settle a replacement request", async ()
   act(() => {
     oldAnswer = read().confirm(request(oldApprove));
   });
-  await act(async () => host.querySelector("button")!.click());
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[data-button-variant="primary"]')!.click(),
+  );
   act(() => {
     nextAnswer = read().confirm(request(nextApprove));
   });

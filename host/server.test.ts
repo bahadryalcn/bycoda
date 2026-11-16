@@ -548,6 +548,14 @@ describe("managed workspace owner RPCs", () => {
   });
 });
 
+it("keeps an idle client connection open well past the desktop's 5 s heartbeat", async () => {
+  // Node closes idle keep-alive sockets after 5 s by default: exactly the idle beat, so
+  // the desktop reused sockets the Host was closing and saw resets on a healthy Host.
+  const s = await setup([]);
+  expect(s.server.keepAliveTimeout).toBeGreaterThanOrEqual(30_000);
+  expect(s.server.headersTimeout).toBeLessThanOrEqual(s.server.requestTimeout);
+});
+
 it("routes owner crew work deletion through authenticated RPC", async () => {
   const s = await setup([]);
   const crewCall = vi.spyOn(HostCrews.prototype, "call").mockResolvedValue({ deleted: true });
@@ -4128,9 +4136,9 @@ describe("shared queued messages", () => {
 describe("project directory endpoint", () => {
   it("advertises the version and returns only the desktop's visible group projection", async () => {
     const s = await setup();
-    expect((await s.call("environment.describe")).value.result.capabilities).toContain(
-      "projects.directory.v1",
-    );
+    const capabilities = (await s.call("environment.describe")).value.result.capabilities;
+    expect(capabilities).toContain("projects.directory.v1");
+    expect(capabilities).toContain("projects.directory.stream.v1");
     expect((await s.call("projects.directory", {}, "invalid")).status).toBe(401);
     expect((await s.call("projects.directory")).value.result).toMatchObject({
       privacyReady: false,

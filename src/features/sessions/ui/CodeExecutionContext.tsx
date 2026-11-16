@@ -10,6 +10,7 @@ import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { Play } from "../../../shared/ui/icons";
+import { toast } from "../../../shared/ui/ToastRegion";
 import {
   codeShellKind,
   type CodeShellKind,
@@ -17,9 +18,42 @@ import {
   type CodeTerminalController,
   type CodeTerminalOptions,
   CodeTerminalDialog,
+  discardTerminalRun,
+  loadCodeRunReport,
+  terminalResultMessage,
 } from "../../terminal/public/codeExecution";
 
-export type CodeExecutionScope = { sessionId: string; projectCwd: string; native: boolean };
+export type CodeExecutionScope = {
+  sessionId: string;
+  projectCwd: string;
+  native: boolean;
+  /** Opens the queued native run as a project dock terminal; false falls back to the dialog. */
+  openTerminal?: (sessionId: string, cwd: string, profile: string, terminalId: string) => boolean;
+};
+
+/** Adds the settled dock run's output to the composer once, when the owner setting allows it. */
+function reportWhenSettled(
+  controller: CodeTerminalController,
+  options: CodeTerminalOptions,
+  report: ((text: string) => void) | undefined,
+) {
+  const unsubscribe = controller.subscribe(() => {
+    const state = controller.snapshot();
+    if (state.phase !== "exited" && state.phase !== "unknown") return;
+    unsubscribe();
+    if (state.phase !== "exited" || !report || !loadCodeRunReport()) return;
+    report(
+      terminalResultMessage(
+        options.command,
+        options.cwd,
+        state.shell,
+        state.output,
+        state.exitCode,
+        state.truncated,
+      ),
+    );
+  });
+}
 const CodeExecutionContext = createContext<
   ((command: string, shellKind: CodeShellKind) => void) | undefined
 >(undefined);
@@ -36,6 +70,7 @@ export function CodeExecutionProvider({
   onReport?: (text: string) => void;
   children: ReactNode;
 }) {
+  const t = useT();
   const latest = useRef({ scope, cwd });
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keep pending native launch guards synchronized with the committed conversation authority.
   useLayoutEffect(() => {
@@ -64,8 +99,38 @@ export function CodeExecutionProvider({
         latest.current.scope?.native === scope.native,
     };
     const controller = createCodeTerminal(options);
-    setRun({ controller, options, report: onReport });
-    void controller.start().catch(() => {});
+    const openTerminal = scope.openTerminal;
+    if (!scope.native || !openTerminal) {
+      setRun({ controller, options, report: onReport });
+      void controller.start().catch(() => {});
+      return;
+    }
+    // Native runs open in the project terminal dock; the dialog stays the fallback.
+    void controller
+      .start()
+      .then(() => {
+        const state = controller.snapshot();
+        if (state.phase !== "running" || !state.profile) {
+          active.current = false;
+          toast.show({ tone: "danger", message: state.error ?? t("Could not run the command.") });
+          return;
+        }
+        if (!options.isCurrent()) {
+          // The conversation moved on before the terminal opened: never run its code later.
+          discardTerminalRun(state.id);
+          active.current = false;
+          return;
+        }
+        if (!openTerminal(scope.sessionId, cwd, state.profile, state.id)) {
+          setRun({ controller, options, report: onReport });
+          return;
+        }
+        active.current = false;
+        reportWhenSettled(controller, options, onReport);
+      })
+      .catch(() => {
+        active.current = false;
+      });
   });
   return (
     <CodeExecutionContext.Provider value={scope && cwd ? execute : undefined}>

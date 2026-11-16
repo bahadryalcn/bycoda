@@ -21,7 +21,8 @@ export function subscribeBackgroundRemovals(listener: () => void) {
 
 /**
  * Runs a slow worktree removal after its dialog closes. The row shows progress through
- * `useBackgroundRemovals` and one toast follows the operation from start to result.
+ * `useBackgroundRemovals`; only the result raises a dismissible toast, so a long removal
+ * never leaves a notice covering the window.
  * Resolves false when the folder is already being removed or the work fails.
  */
 export async function runBackgroundRemoval(
@@ -33,16 +34,8 @@ export async function runBackgroundRemoval(
   if (running.has(key)) return false;
   publish(new Set([...running, key]));
   const id = `background-removal:${key}`;
-  toast.show({
-    id,
-    tone: "info",
-    title: t("Deleting {p0}", { p0: label }),
-    message: t("You can keep working. A notification follows when it finishes."),
-    dismissible: false,
-  });
   try {
     await work();
-    toast.show({ id, tone: "success", message: t("Deleted {p0}", { p0: label }) });
     return true;
   } catch (error) {
     toast.show({

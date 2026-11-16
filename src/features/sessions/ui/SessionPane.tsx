@@ -106,6 +106,7 @@ import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { useStableValue } from "../../../shared/hooks/useStableValue";
 import { BtwSheet, useBtwConversation } from "./BtwSheet";
 import { ActivityDock } from "./ActivityDock";
+import { ApprovalDecisionProvider } from "./ApprovalDecisionContext";
 import { sessionSubagents } from "../model/sessionSubagents";
 import { InterruptedNotice } from "./InterruptedNotice";
 import { CONTINUE_PROMPT } from "../model/inFlight";
@@ -115,6 +116,7 @@ import { useSubagentRelay } from "./useSubagentRelay";
 import { isBackgroundOnly } from "../model/activityDock";
 import { requestOpenSubagent } from "./subagentFocus";
 import { AgentTranscript } from "./AgentTranscript";
+import type { CodeExecutionScope } from "./CodeExecutionContext";
 import type { ApprovalDispatch } from "./ApprovalDecisionContext";
 import { EditFromHereDialog } from "./EditFromHereDialog";
 import { useEditingLastTurn } from "./useEditingLastTurn";
@@ -296,6 +298,7 @@ export type SessionPaneProps = {
   ) => void;
   onNewTerminal: (sessionId: string) => void;
   onRunProjectAction?: (sessionId: string, action: ProjectAction) => void;
+  onRunCode?: CodeExecutionScope["openTerminal"];
   onPaneDragStart?: (event: ReactPointerEvent<HTMLElement>) => void;
   /** Keeps this transcript mounted after the pane closes. */
   transcriptPool?: TranscriptPool;
@@ -477,6 +480,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   onBtwModelChange,
   onNewTerminal,
   onRunProjectAction,
+  onRunCode,
   onPaneDragStart,
   transcriptPool,
   onRewindMessage,
@@ -1249,27 +1253,29 @@ const LocalSessionPane = memo(function LocalSessionPane({
   // One status stack above the card: running work, goal, interrupted turn, provider retry.
   const composerNotices = (
     <>
-      <ActivityDock
-        sessionId={session.id}
-        harness={session.harness}
-        blocks={stableBlocks}
-        busy={sessionBusy}
-        pendingQuestion={hasPendingQuestion}
-        pendingOwnerApproval={session.pendingOwnerApproval}
-        questionPresented={hasPendingQuestion}
-        deliveryUnconfirmed={stableSession.queuedMessages?.some(
-          (message) => message.deliveryUnknown,
-        )}
-        backgroundTasks={session.backgroundTasks}
-        backgroundAgents={session.backgroundAgents}
-        visible={visible}
-        atEnd={dockAtEnd}
-        onOpenAgent={openDockAgent}
-        perItemStop={perItemStop}
-        onStopAgent={stopDockAgent}
-        onStopAll={stopDockAll}
-        delegatedAgents={delegatedAgents}
-      />
+      <ApprovalDecisionProvider {...approvalContext}>
+        <ActivityDock
+          sessionId={session.id}
+          harness={session.harness}
+          blocks={stableBlocks}
+          busy={sessionBusy}
+          pendingQuestion={hasPendingQuestion}
+          pendingOwnerApproval={session.pendingOwnerApproval}
+          questionPresented={hasPendingQuestion}
+          deliveryUnconfirmed={stableSession.queuedMessages?.some(
+            (message) => message.deliveryUnknown,
+          )}
+          backgroundTasks={session.backgroundTasks}
+          backgroundAgents={session.backgroundAgents}
+          visible={visible}
+          atEnd={dockAtEnd}
+          onOpenAgent={openDockAgent}
+          perItemStop={perItemStop}
+          onStopAgent={stopDockAgent}
+          onStopAll={stopDockAll}
+          delegatedAgents={delegatedAgents}
+        />
+      </ApprovalDecisionProvider>
       <SessionProviderGoal
         key={`${session.id}:${session.providerSessionId}:${session.providerGoal?.status}`}
         session={stableSession}
@@ -1509,19 +1515,22 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const closeShortcut = useKeybindingShortcut("Pane: Close");
   const paneActions: ExpandingButtonGroupItem[] = [
     ...(!session.inboxAsk && findAction ? [findAction] : []),
-    ...(outlineAction ? [outlineAction] : []),
-    ...(notesEnabled && visible && focused && !showNotesPanel
+    // Notes stays put while its dock is open (pressed, click closes); the transient Prompts
+    // menu follows it so neither displaces the other.
+    ...(notesEnabled && visible && focused
       ? [
           {
             id: "notes",
             label: t("Notes"),
-            ariaLabel: t("Open notes panel"),
+            ariaLabel: showNotesPanel ? t("Close notes") : t("Open notes panel"),
             shortcut: notesShortcut,
+            active: showNotesPanel,
             icon: <StickyNote className="icon-sm" strokeWidth={1.75} />,
             onSelect: () => toggleNotesPanel(),
           },
         ]
       : []),
+    ...(outlineAction ? [outlineAction] : []),
   ];
   const projectActions = visible ? (
     <ProjectQuickActions
@@ -1822,7 +1831,12 @@ const LocalSessionPane = memo(function LocalSessionPane({
                         !session.inboxAsk &&
                         !session.orchestrationLeadId &&
                         !managed
-                          ? { sessionId: session.id, projectCwd: session.cwd, native: !remote }
+                          ? {
+                              sessionId: session.id,
+                              projectCwd: session.cwd,
+                              native: !remote,
+                              openTerminal: onRunCode,
+                            }
                           : undefined
                       }
                       approvalContext={approvalContext}

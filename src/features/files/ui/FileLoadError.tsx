@@ -7,6 +7,7 @@ import { Folder, RotateCcw } from "../../../shared/ui/icons";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
 import { Progress } from "../../../shared/ui/Progress";
+import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { useEffect, useState } from "react";
 import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
 import { isRemoteProjectPath } from "../../projects/public/recents";
@@ -45,8 +46,10 @@ export function FileLoadError({
   useLocale();
   const local = !isRemoteProjectPath(path);
   const [fallback, setFallback] = useState<string | null>(null);
+  const shownCentrally = useConnectionErrorShownCentrally(message);
   if (local && isTooLargeToEdit(message) && fallback === null)
     return <LargeTextFileView key={path} path={path} onError={setFallback} />;
+  if (shownCentrally) return null;
   return (
     <div className="grid h-full place-items-center p-6">
       <Alert tone="danger" className="max-w-md" title={`${t("Couldn’t open ")}${basename(path)}`}>

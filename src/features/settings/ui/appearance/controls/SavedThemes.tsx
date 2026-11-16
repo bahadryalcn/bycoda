@@ -3,7 +3,7 @@ import {
   actionContentScopeAttributes,
 } from "../../../../../shared/ui/ActionHost";
 import { surfaceAttributes } from "../../../../../shared/ui/Surface";
-import { useLayoutEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { t, useLocale } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
 import { Text } from "../../../../../shared/ui/Text";
@@ -27,7 +27,7 @@ import "./ThemeControls.css";
 import { writeGeneratorValue } from "./themeGeneratorSession";
 
 /**
- * Saved looks as a wrapping grid of compact cards (two rows, then a toggle), ending in a dashed
+ * Saved looks as one horizontally scrolling strip of compact cards, starting with a dashed
  * save card: click applies the whole look including its background image. Each card can
  * be renamed, overwritten with the current look, or deleted (after a confirmation).
  */
@@ -39,30 +39,6 @@ export function SavedThemes({ appearance }: { appearance: AppearanceSettings }) 
   const [renaming, setRenaming] = useState<SavedTheme | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-
-  // Collapsed, the grid shows two rows (the add card takes the last slot); the column count is
-  // whatever the responsive grid currently lays out.
-  const grid = useRef<HTMLUListElement>(null);
-  const [columns, setColumns] = useState(3);
-  const [expanded, setExpanded] = useState(false);
-  useLayoutEffect(() => {
-    const element = grid.current;
-    if (!element || typeof ResizeObserver === "undefined") return;
-    const measure = () =>
-      setColumns(
-        Math.max(
-          1,
-          getComputedStyle(element).gridTemplateColumns.split(" ").filter(Boolean).length,
-        ),
-      );
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
-  const limit = columns * 2 - 1;
-  const collapsible = themes.length > limit;
-  const visible = collapsible && !expanded ? themes.slice(0, limit) : themes;
 
   const apply = async (theme: SavedTheme) => {
     if (busy || appearance.chatBackgroundBusy) return;
@@ -106,8 +82,14 @@ export function SavedThemes({ appearance }: { appearance: AppearanceSettings }) 
 
   return (
     <>
-      <ul ref={grid} className="theme-saved" aria-label={t("Saved themes")}>
-        {visible.map((theme) => {
+      <ul className="theme-saved" aria-label={t("Saved themes")}>
+        <li
+          {...surfaceAttributes({ frame: "pane", borderStyle: "dashed" }, "theme-saved-card")}
+          data-add
+        >
+          <SaveLookButton appearance={appearance} card />
+        </li>
+        {themes.map((theme) => {
           const look = theme.look;
           const image = images.find((entry) => entry.id === theme.imageId);
           const swatches = paletteSwatches(
@@ -147,7 +129,15 @@ export function SavedThemes({ appearance }: { appearance: AppearanceSettings }) 
                       style={{ "--surface-user-color": color } as React.CSSProperties}
                     />
                   ))}
-                  {image ? <img src={libraryImageSrc(image)} alt="" draggable={false} /> : null}
+                  {image ? (
+                    <img
+                      src={libraryImageSrc(image)}
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                      draggable={false}
+                    />
+                  ) : null}
                 </span>
                 <Text
                   as="span"
@@ -198,18 +188,7 @@ export function SavedThemes({ appearance }: { appearance: AppearanceSettings }) 
             </li>
           );
         })}
-        <li
-          {...surfaceAttributes({ frame: "pane", borderStyle: "dashed" }, "theme-saved-card")}
-          data-add
-        >
-          <SaveLookButton appearance={appearance} card />
-        </li>
       </ul>
-      {collapsible ? (
-        <Button size="sm" variant="ghost" onClick={() => setExpanded((value) => !value)}>
-          {expanded ? t("Show less") : t("Show all ({p0})", { p0: themes.length })}
-        </Button>
-      ) : null}
       {notice ? (
         <SettingsFeedback state="warning" onDismiss={() => setNotice(null)}>
           {notice}

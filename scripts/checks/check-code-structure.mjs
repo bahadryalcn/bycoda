@@ -20,10 +20,9 @@ export const baselineFile = "scripts/checks/code-structure-baseline.json";
 /**
  * Line targets per layer. Above `limit` a file is only reported as an advisory
  * (`file-lines-target`, never counted or gated): a prompt to look for a separable
- * responsibility, not a reason to stop or to split mechanically. Above
- * `limit * hardCeilingRatio` it is the gated `file-lines` finding.
+ * responsibility, not a reason to stop, refuse work or split mechanically. There is no
+ * gated line ceiling; the owner decided on 2026-11-16 that size never blocks a change.
  */
-export const hardCeilingRatio = 2;
 export const lineBudgets = [
   {
     rule: "rust-test-file",
@@ -170,23 +169,13 @@ export function scanFile(file, text, publicEntries = new Set()) {
   const findings = [];
   const lines = text.split("\n").length;
   const budget = lineBudgets.find((candidate) => candidate.test(file));
-  if (budget && lines > budget.limit) {
-    const ceiling = budget.limit * hardCeilingRatio;
-    findings.push(
-      lines > ceiling
-        ? {
-            rule: "file-lines",
-            detail: `${lines} lines > ${ceiling} (${budget.rule} hard ceiling)`,
-            lines,
-          }
-        : {
-            rule: "file-lines-target",
-            advisory: true,
-            detail: `${lines} lines > ${budget.limit} (${budget.rule} target)`,
-            lines,
-          },
-    );
-  }
+  if (budget && lines > budget.limit)
+    findings.push({
+      rule: "file-lines-target",
+      advisory: true,
+      detail: `${lines} lines > ${budget.limit} (${budget.rule} target)`,
+      lines,
+    });
   if (!testFile.test(file)) {
     const dir = path.posix.dirname(file);
     const name = path.posix.basename(file);
@@ -201,7 +190,7 @@ export function scanFile(file, text, publicEntries = new Set()) {
 }
 
 /**
- * counts: { [file]: { [rule]: number } }; `file-lines` stores the line count, not 1.
+ * counts: { [file]: { [rule]: number } }.
  * Advisory findings (`file-lines-target`) are returned separately and never counted.
  */
 export function countFindings(
@@ -220,20 +209,12 @@ export function countFindings(
         continue;
       }
       counts[file] ??= {};
-      counts[file][finding.rule] =
-        finding.rule === "file-lines" ? finding.lines : (counts[file][finding.rule] ?? 0) + 1;
+      counts[file][finding.rule] = (counts[file][finding.rule] ?? 0) + 1;
       details.push({ file, ...finding });
     }
   }
   return { counts, details, advisories };
 }
-
-/**
- * Lines a baselined file over its hard ceiling may grow past its recorded count, so a fix
- * or a small needed addition is never blocked. Not renewed by `--ratchet`; moving a
- * responsibility out lowers the count and frees the room again.
- */
-export const growthTolerance = 50;
 
 export function compare(counts, baseline, files) {
   const increases = [];
@@ -242,8 +223,7 @@ export function compare(counts, baseline, files) {
     if (scope && !scope.has(file)) continue;
     for (const [rule, count] of Object.entries(rules)) {
       const allowed = baseline[file]?.[rule] ?? 0;
-      const tolerance = rule === "file-lines" && allowed > 0 ? growthTolerance : 0;
-      if (count > allowed + tolerance) increases.push({ file, rule, count, allowed, tolerance });
+      if (count > allowed) increases.push({ file, rule, count, allowed });
     }
   }
   return increases;
@@ -298,11 +278,8 @@ export function main(argv = process.argv.slice(2)) {
     console.log("\nFindings per owner:");
     for (const [owner, count] of Object.entries(perOwner).sort((a, b) => b[1] - a[1]))
       console.log(`${count}\t${owner}`);
-    const largest = details
-      .filter((f) => f.rule === "file-lines")
-      .sort((a, b) => b.lines - a.lines)
-      .slice(0, 25);
-    console.log("\nLargest files over the hard ceiling:");
+    const largest = [...advisories].sort((a, b) => b.lines - a.lines).slice(0, 25);
+    console.log("\nLargest files over their line target:");
     for (const finding of largest) console.log(`${finding.lines}\t${finding.file}`);
     console.log(`\n${advisories.length} files over their line target (advisory, not gated).`);
     return 0;
@@ -327,7 +304,7 @@ export function main(argv = process.argv.slice(2)) {
         {
           schemaVersion: 1,
           purpose:
-            "Existing code-structure findings counted per file and rule by scripts/checks/check-code-structure.mjs. file-lines stores the current line count of a file over its hard ceiling. Counts may only fall; regenerate with --update-baseline after reducing them and review the diff.",
+            "Existing code-structure findings counted per file and rule by scripts/checks/check-code-structure.mjs. Counts may only fall; regenerate with --update-baseline after reducing them and review the diff.",
           counts: sortedCounts(next),
         },
         null,
@@ -348,16 +325,13 @@ export function main(argv = process.argv.slice(2)) {
   for (const increase of increases) {
     const detail =
       details.find((f) => f.file === increase.file && f.rule === increase.rule)?.detail ?? "";
-    const allowance = increase.tolerance
-      ? ` (baseline ${increase.allowed} + ${increase.tolerance} tolerated)`
-      : "";
     console.error(
-      `${increase.file}: ${increase.rule} ${increase.count} > ${increase.allowed + increase.tolerance}${allowance} ${detail}`,
+      `${increase.file}: ${increase.rule} ${increase.count} > ${increase.allowed} ${detail}`,
     );
   }
   if (increases.length) {
     console.error(
-      `\nA file may not cross its hard ceiling (${hardCeilingRatio}x the line target). A baselined file already over it may grow by up to ${growthTolerance} lines over its baseline for fixes and small needed additions; beyond that, move a responsibility into its owning feature/module folder or import through the layer's public entry (docs/reference/code-structure.md). Only an owner-approved exception may be accepted with --update-baseline.`,
+      `\nMove the file into its owning feature/module folder or import through the layer's public entry (docs/reference/code-structure.md). Only an owner-approved exception may be accepted with --update-baseline.`,
     );
   }
   // Advisories never fail the check. Listed per file only in changed-file mode to keep full runs quiet.

@@ -239,6 +239,20 @@ impl Drop for PageAdmission {
         }
     }
 }
+/// Whether a page of this process is confirmed retired with no admitted
+/// canonical operation left. Take it before the store lock (admissions first);
+/// a retired page is never admitted again, so its snapshot count can only fall.
+fn retired_page_check() -> Result<impl Fn(&str) -> bool, String> {
+    let admitted = admissions()
+        .lock()
+        .map_err(|_| "CANONICAL_ADMISSION_UNAVAILABLE")?
+        .clone();
+    Ok(move |owner: &str| {
+        admitted.get(owner).is_none_or(|count| *count == 0)
+            && crate::harness::page_retirement_status(owner)
+                == crate::harness::PageRetirement::Confirmed
+    })
+}
 pub(crate) fn admit(window: &tauri::Window, expected: &str) -> Result<PageAdmission, String> {
     validate(expected)?;
     let mut entries = admissions()
@@ -1228,6 +1242,7 @@ pub async fn canonical_store_transaction(
     let request_raw = serde_json::to_string(&(&checks,&writes,&legacy,&claim,expected_revision)).map_err(|e| e.to_string())?;
     let request = format!("sha256:{:x}", Sha256::digest(request_raw.as_bytes()));
     let result = crate::native_window_lifecycle::persistence_write(&window, || {
+        let page_retired = retired_page_check()?;
         let db = store.conn.lock().map_err(|_| "Session store is locked")?;
         if page(&window)? != captured { return Err("Canonical owner page has changed".into()); }
         durable(&db, || {
@@ -1255,7 +1270,7 @@ pub async fn canonical_store_transaction(
                     let settled: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM canonical_claim_settlements WHERE scope=?1 AND key=?2 AND operation_id=?3)",params![scope,claim.key,claim.operation_id],|r| r.get(0)).map_err(|e| e.to_string())?;
                     if settled { return Err("Canonical claim operation is already settled".into()); }
                     let process = store.native_instance_id().to_string();
-                    orphans::release_if_orphaned(&db,&tx,&process,&captured,&scope,&claim.key)?;
+                    orphans::release_if_orphaned(&db,&tx,&process,&captured,&scope,&claim.key,&page_retired)?;
                     tx.execute("INSERT OR IGNORE INTO canonical_claims(scope,key,operation_id,window,page) VALUES(?1,?2,?3,?4,?5)",params![scope,claim.key,claim.operation_id,window.label(),captured]).map_err(|e| e.to_string())?;
                     orphans::record_process(&tx,&scope,&claim.key,&claim.operation_id,window.label(),&captured,&process)?;
                     tx.execute("INSERT OR IGNORE INTO canonical_claim_phases(scope,key,operation_id,phase) SELECT ?1,?2,?3,'prepared' WHERE EXISTS(SELECT 1 FROM canonical_claims WHERE scope=?1 AND key=?2 AND operation_id=?3 AND window=?4 AND page=?5)",params![scope,claim.key,claim.operation_id,window.label(),captured]).map_err(|e| e.to_string())?;
@@ -1325,6 +1340,7 @@ pub async fn canonical_store_claim(
 
     validate(&scope)?; validate(&key)?; validate(&operation_id)?; let captured = captured_page.clone();
     crate::native_window_lifecycle::persistence_write(&window, || {
+        let page_retired = retired_page_check()?;
         let db = store.conn.lock().map_err(|_| "Session store is locked")?;
         if page(&window)? != captured { return Err("Canonical owner page has changed".into()); }
         durable(&db, || {
@@ -1332,7 +1348,7 @@ pub async fn canonical_store_claim(
         let settled: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM canonical_claim_settlements WHERE scope=?1 AND key=?2 AND operation_id=?3)",params![scope,key,operation_id],|r| r.get(0)).map_err(|e| e.to_string())?;
         if settled { return Err("Canonical claim operation is already settled".into()); }
         let process = store.native_instance_id().to_string();
-        orphans::release_if_orphaned(&db,&tx,&process,&captured,&scope,&key)?;
+        orphans::release_if_orphaned(&db,&tx,&process,&captured,&scope,&key,&page_retired)?;
         tx.execute("INSERT OR IGNORE INTO canonical_claims(scope,key,operation_id,window,page) VALUES(?1,?2,?3,?4,?5)",params![scope,key,operation_id,window.label(),captured]).map_err(|e| e.to_string())?;
         orphans::record_process(&tx,&scope,&key,&operation_id,window.label(),&captured,&process)?;
         tx.execute("INSERT OR IGNORE INTO canonical_claim_phases(scope,key,operation_id,phase) SELECT ?1,?2,?3,'prepared' WHERE EXISTS(SELECT 1 FROM canonical_claims WHERE scope=?1 AND key=?2 AND operation_id=?3 AND window=?4 AND page=?5)",params![scope,key,operation_id,window.label(),captured]).map_err(|e| e.to_string())?;

@@ -222,6 +222,17 @@ export function useProjectTerminalOpen(deps: ProjectTerminalOpenDeps) {
     [appendTab],
   );
 
+  /** A chat code block runs in its own project's dock; false leaves it to the run dialog. */
+  const onRunSessionCode = useCallback(
+    (sessionId: string, cwd: string, profile: string, terminalId: string) => {
+      const session = sessionsRef.current.find((entry) => entry.id === sessionId);
+      if (!session || session.worktreeRemoved || session.cwd !== projectCwdRef.current)
+        return false;
+      return openProjectTerminal(cwd, profile, terminalId);
+    },
+    [openProjectTerminal, projectCwdRef, sessionsRef],
+  );
+
   return {
     focusProjectTerminal,
     openProjectTerminal,
@@ -232,5 +243,6 @@ export function useProjectTerminalOpen(deps: ProjectTerminalOpenDeps) {
     onShowProjectTerminal,
     onNewTerminalInSession,
     onRunSessionProjectAction,
+    onRunSessionCode,
   };
 }

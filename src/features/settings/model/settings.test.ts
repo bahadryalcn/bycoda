@@ -746,8 +746,8 @@ describe("settings navigation", () => {
     ]);
     expect(groups.at(-1)?.sections.map((section) => section.id)).toEqual(["account"]);
     const ids = groups.flatMap((group) => group.sections.map((section) => section.id));
-    expect(ids).toHaveLength(24);
-    expect(new Set(ids).size).toBe(24);
+    expect(ids).toHaveLength(22);
+    expect(new Set(ids).size).toBe(22);
     expect([...ids].sort()).toEqual(SETTINGS_SECTIONS.map((section) => section.id).sort());
     for (const group of groups) {
       expect(group.sections.every((section) => section.group === group.id)).toBe(true);
@@ -793,7 +793,7 @@ describe("settings navigation", () => {
       "groupLock",
       "archive",
     ]);
-    expect(byGroup.agents).toEqual(["providers", "usage", "work", "crews"]);
+    expect(byGroup.agents).toEqual(["providers", "usage"]);
     expect(byGroup.tools).toEqual(["skills", "mcp", "secrets", "tools"]);
     expect(byGroup.code).toEqual(["workspace", "terminal", "worktrees"]);
     expect(byGroup.connections).toEqual(["connections", "integrations"]);

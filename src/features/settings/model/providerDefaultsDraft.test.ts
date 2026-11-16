@@ -163,7 +163,52 @@ it("saves account overrides whatever the target and keeps their model", () => {
     { providers: {}, accounts: { [key]: { model: null } } },
     { kind: "project", path: "/work/web" },
   );
-  expect(accountSessionDefaults("claude", "account-home")).toEqual({ effort: "high" });
+  expect(accountSessionDefaults("claude", "account-home")).toEqual({
+    effort: "high",
+  });
+});
+
+it("keeps a project's account choice through later edits and saves it per provider", () => {
+  saveProviderAccount({
+    id: "account-home",
+    provider: "claude",
+    label: "Home",
+  });
+  saveProviderAccount({
+    id: "account-work",
+    provider: "claude",
+    label: "Work",
+  });
+  let change = recordField(undefined, "account", "account-work", undefined);
+  change = recordSessionDefaults(change, {}, { effort: "high" });
+  expect(change).toEqual({ account: "account-work", effort: "high" });
+  expect(draftSize({ ...EMPTY_DRAFT, providers: { claude: change } })).toBe(2);
+  expect(recordField(change, "account", null, null)).toEqual({
+    effort: "high",
+  });
+
+  saveDefaultsDraft(
+    { ...EMPTY_DRAFT, providers: { claude: { account: "account-work" } } },
+    { kind: "project", path: "/work/web" },
+  );
+  expect(loadProjectProviderSettings("/work/web").accounts).toEqual({
+    claude: "account-work",
+  });
+  // Account defaults stay machine-wide; Global ignores a project's account choice.
+  saveDefaultsDraft(
+    { ...EMPTY_DRAFT, providers: { claude: { account: "account-home" } } },
+    {
+      kind: "global",
+    },
+  );
+  expect(loadProjectProviderSettings("/work/web").accounts).toEqual({
+    claude: "account-work",
+  });
+  saveDefaultsDraft(
+    { ...EMPTY_DRAFT, providers: { claude: { account: null } } },
+    { kind: "project", path: "/work/web" },
+  );
+  expect(loadProjectProviderSettings("/work/web").accounts).toBeUndefined();
 });
 
 it("reports unsaved when storage refuses the write", () => {
@@ -178,12 +223,14 @@ it("reports unsaved when storage refuses the write", () => {
 });
 
 it("maps searched settings to their Providers tab", () => {
-  expect(providersTabForSetting("agent-clis")).toBe("defaults");
-  expect(providersTabForSetting("enabled-models")).toBe("models");
-  expect(providersTabForSetting("cli-path-codex")).toBe("cli");
+  expect(providersTabForSetting("agent-clis")).toBe("chat");
+  expect(providersTabForSetting("enabled-models")).toBe("providers");
+  expect(providersTabForSetting("cli-path-codex")).toBe("providers");
   expect(providersTabForSetting("terminal-account-profiles-codex")).toBe("providers");
   expect(providersTabForSetting("acp-registry")).toBe("providers");
-  expect(providersTabForSetting("decision-models")).toBe("decision");
+  expect(providersTabForSetting("models-roles")).toBe("work");
+  expect(providersTabForSetting("subagents")).toBe("delegation");
+  expect(providersTabForSetting("decision-models")).toBe("providers");
   expect(providersTabForSetting("show-remaining-usage")).toBeUndefined();
   expect(providersTabForSetting(null)).toBeUndefined();
 });

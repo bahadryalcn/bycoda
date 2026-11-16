@@ -523,6 +523,24 @@ mockIPC(
         }
         if (command === "remote_machine_route_check") return [];
       }
+      // Machines found on this computer that are not added yet, for the Add list.
+      if (command === "discover_machine_candidates")
+        return [
+          ["HSM-DC-01", ["servers"]],
+          ["github.com", ["known-hosts"]],
+          ["LM-VM-2", ["servers"]],
+          ["monocode-mac", ["known-hosts", "ssh-config"]],
+          ["petrol ofisi", ["servers"]],
+          ["staging.brewline.localtest.me", ["known-hosts"]],
+          ["UBUNTU-NTP-01", ["servers"]],
+        ].map(([name, sources]) => ({
+          key: `ssh:${name}`,
+          name,
+          sources,
+          routes: [{ address: name, kind: "name" }],
+          sshUser: "me",
+          alreadyAdded: false,
+        }));
       if (command === "remote_machines") return machines;
       if (command === "local_host_bundle_status") return { state: "current" };
       if (command === "remote_request") {

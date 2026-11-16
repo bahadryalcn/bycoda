@@ -30,6 +30,7 @@ import { SubagentMarks, SubagentStatusSummary } from "./SubagentAnatomy";
 import { formatElapsed, useElapsedFrom } from "./useElapsedFrom";
 import { STOP_ALL, useStopRequests } from "./useStopRequests";
 import { PacingUncle } from "./PacingUncle";
+import { DockApprovalActions } from "./ActivityDockApproval";
 import "./chat-controls.css";
 
 const expandedBySession = new Map<string, boolean>();
@@ -179,6 +180,7 @@ export const ActivityDock = memo(function ActivityDock({
           key={dock.state === "done" ? "done" : "live"}
           sessionId={sessionId}
           harness={harness}
+          blocks={blocks}
           dock={dock}
           visible={visible}
           label={displayLabel}
@@ -206,6 +208,7 @@ type DockStop = ReturnType<typeof useStopRequests> & {
 function DockBody({
   sessionId,
   harness,
+  blocks,
   dock,
   visible,
   label,
@@ -216,6 +219,7 @@ function DockBody({
 }: {
   sessionId: string;
   harness?: HarnessId;
+  blocks: Block[];
   dock: ActivityDockModel;
   visible: boolean;
   label: string;
@@ -296,6 +300,7 @@ function DockBody({
               </div>
             ) : null}
           </div>
+          {dock.state === "needs-input" ? <DockApprovalActions blocks={blocks} /> : null}
           {stopAll ? (
             <Button
               className="shrink-0"

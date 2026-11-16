@@ -996,6 +996,8 @@ pub fn run() {
             mcp::mcp_discover,
             mcp::enablement::mcp_set_enabled,
             mcp::mcp_add,
+            mcp::server_config::mcp_server_config_read,
+            mcp::server_config::mcp_server_config_write,
             harness::claude_mcp_add,
             harness::claude_mcp_remove,
             harness::mcp_provider_login,

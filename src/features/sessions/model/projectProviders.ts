@@ -22,6 +22,8 @@ export type ProjectProviderSettings = {
   defaultModel?: string;
   /** Account the default provider starts on; unset follows the provider's default account. */
   defaultAccount?: string;
+  /** Account each provider's new conversations start on here; unset follows the provider's default account. */
+  accounts?: Partial<Record<HarnessId, string>>;
   models?: Partial<Record<HarnessId, string>>;
   defaults?: Partial<Record<HarnessId, ProviderSessionDefaults>>;
   /** Providers this project keeps out of the picker and out of new sessions. */
@@ -141,10 +143,49 @@ export function projectDefaultAccountId(
   project: string | undefined,
   harness: HarnessId,
 ): string | undefined {
-  const settings = loadProjectProviderSettings(project);
-  const id = settings.defaultHarness === harness ? settings.defaultAccount : undefined;
+  const id = storedProjectAccountId(project, harness);
   if (!id || !supportsProviderAccounts(harness)) return undefined;
   return providerAccounts(harness).some((account) => account.id === id) ? id : undefined;
+}
+
+function withAccount(
+  accounts: ProjectProviderSettings["accounts"],
+  harness: HarnessId,
+  accountId: string | undefined,
+): ProjectProviderSettings["accounts"] {
+  const next = { ...accounts };
+  if (accountId) next[harness] = accountId;
+  else delete next[harness];
+  return next;
+}
+
+/**
+ * The account `harness` conversations in `project` start on; undefined follows the provider's
+ * default account. A pinned default on the same provider moves with it, so both agree.
+ */
+export function setProjectProviderAccount(
+  project: string,
+  harness: HarnessId,
+  accountId: string | undefined,
+): void {
+  update(project, (current) => ({
+    ...current,
+    accounts: withAccount(current.accounts, harness, accountId),
+    ...(current.defaultHarness === harness ? { defaultAccount: accountId } : {}),
+  }));
+}
+
+/** The account this project stores for `harness`, whether or not it still exists. */
+export function storedProjectAccountId(
+  project: string | undefined,
+  harness: HarnessId,
+): string | undefined {
+  const settings = loadProjectProviderSettings(project);
+  // A pinned default from the model picker is the latest explicit choice for its provider.
+  return (
+    (settings.defaultHarness === harness ? settings.defaultAccount : undefined) ??
+    settings.accounts?.[harness]
+  );
 }
 
 export function setProjectDefaultModel(project: string, harness: HarnessId, model: string): void {
@@ -204,9 +245,12 @@ export function clearProjectProviders(project: string): void {
   writeAll(all);
 }
 
-/** Restore future-session inheritance without changing picker visibility. */
+/** Restore future-session inheritance without changing picker visibility or accounts. */
 export function resetProjectSessionPreferences(project: string): void {
-  update(project, (current) => ({ hidden: current.hidden }));
+  update(project, (current) => ({
+    hidden: current.hidden,
+    accounts: current.accounts,
+  }));
 }
 
 /** Follow a project rename so its overrides are not orphaned. */
@@ -255,6 +299,7 @@ function empty(value: ProjectProviderSettings): boolean {
     value.defaultHarness == null &&
     value.defaultModel == null &&
     value.defaultAccount == null &&
+    Object.keys(value.accounts ?? {}).length === 0 &&
     Object.keys(value.models ?? {}).length === 0 &&
     Object.keys(value.defaults ?? {}).length === 0 &&
     (value.hidden ?? []).length === 0
@@ -310,6 +355,14 @@ function normalize(value: ProjectProviderSettings): ProjectProviderSettings {
   }
   if (typeof value.defaultAccount === "string" && value.defaultAccount && next.defaultHarness) {
     next.defaultAccount = value.defaultAccount;
+  }
+  if (value.accounts && typeof value.accounts === "object") {
+    const accounts = Object.fromEntries(
+      Object.entries(value.accounts).filter(
+        ([harness, id]) => harness && typeof id === "string" && id,
+      ),
+    ) as Partial<Record<HarnessId, string>>;
+    if (Object.keys(accounts).length > 0) next.accounts = accounts;
   }
   if (value.models && typeof value.models === "object") {
     const models: Partial<Record<HarnessId, string>> = {};

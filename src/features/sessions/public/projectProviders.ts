@@ -10,6 +10,8 @@ export {
   resetProjectSessionPreferences,
   setProjectDefaultModel,
   setProjectDefaultProvider,
+  setProjectProviderAccount,
+  storedProjectAccountId,
   setProjectProviderHidden,
   setProjectSessionDefaults,
   subscribeProjectProviders,

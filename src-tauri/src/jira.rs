@@ -18,8 +18,8 @@ use tauri::{AppHandle, Manager};
 const HTTP_TIMEOUT: Duration = Duration::from_secs(20);
 const DEFAULT_LIMIT: u32 = 40;
 const COMMENT_LIMIT: u32 = 50;
-const ISSUE_FIELDS: [&str; 6] = [
-    "summary", "status", "updated", "labels", "assignee", "project",
+const ISSUE_FIELDS: [&str; 7] = [
+    "summary", "status", "updated", "labels", "assignee", "project", "priority",
 ];
 
 #[derive(Serialize)]
@@ -72,6 +72,8 @@ pub struct JiraIssue {
     pub title: String,
     pub url: String,
     pub state: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub priority: Option<String>,
     pub state_type: String,
     pub updated_at: String,
     pub labels: Vec<JiraLabel>,
@@ -534,6 +536,7 @@ fn parse_jira_issue(node: &Value, site: &str) -> Option<JiraIssue> {
         state: status
             .and_then(|value| string_field(value, "name"))
             .unwrap_or_else(|| "Open".into()),
+        priority: fields.get("priority").and_then(|value| string_field(value, "name")).filter(|name| !name.is_empty()),
         state_type: status
             .and_then(|value| value.pointer("/statusCategory/key"))
             .and_then(Value::as_str)
@@ -1199,6 +1202,7 @@ mod tests {
                 "key": "ENG-42",
                 "fields": {
                     "summary": "Fix auth",
+                    "priority": { "name": "High" },
                     "updated": "2026-08-27T10:00:00.000+0000",
                     "status": { "name": "In Progress", "statusCategory": { "key": "indeterminate" } },
                     "labels": ["bug", "backend"],
@@ -1220,6 +1224,7 @@ mod tests {
         assert_eq!(item.number, 42);
         assert_eq!(item.url, "https://acme.atlassian.net/browse/ENG-42");
         assert_eq!(item.state, "In Progress");
+        assert_eq!(item.priority.as_deref(), Some("High"));
         assert_eq!(item.state_type, "indeterminate");
         assert_eq!(item.updated_at, "2026-08-27T10:00:00.000+00:00");
         assert_eq!(item.labels[1].name, "backend");

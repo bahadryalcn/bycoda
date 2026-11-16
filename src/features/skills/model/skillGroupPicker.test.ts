@@ -62,3 +62,20 @@ it("expands group tokens to member invocations at send, keeping the introducer",
   expect(expandSkillGroupTokens("use $group-ui\n/other", items)).toBe("use $a $b\n/other");
   expect(expandSkillGroupTokens("path/group-ui stays", items)).toBe("path/group-ui stays");
 });
+
+it("reads a sent group's expanded members as the group again", async () => {
+  const { skillGroupRuns } = await import("./skillGroupPicker");
+  const groups = [
+    { name: "Design", members: ["a", "b"] },
+    { name: "All", members: ["a", "b", "c"] },
+  ];
+  const text = "/a /b /c fix it /a /b $a $b /a  /b";
+  const runs = skillGroupRuns(text, groups);
+  expect(runs.map((run) => run.text).join("")).toBe(text);
+  expect(runs.filter((run) => run.group).map((run) => [run.text, run.group?.name])).toEqual([
+    ["/a /b /c", "All"],
+    ["/a /b", "Design"],
+    ["$a $b", "Design"],
+  ]);
+  expect(skillGroupRuns("/a $b", groups)).toEqual([{ text: "/a $b" }]);
+});

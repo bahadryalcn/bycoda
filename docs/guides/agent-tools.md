@@ -275,8 +275,8 @@ member when a Host provider works, and for Antigravity members through Nano Bana
 
 When Work concurrency is one, an active Work turn cannot start a delegated child while it holds the only slot. The child returns a failed result immediately; the caller can do the work itself or the owner can increase Work concurrency. An advisor requested after the parent turn has retired can still run.
 
-**Settings > Background work > Subagents** sets advisor and subagent defaults for new
-conversations. **Chat defaults** holds provider, model, effort, permissions and
+**Settings > Models > Subagents** sets advisor and subagent defaults for new
+conversations. **Chats** holds provider, model, effort, permissions and
 Fast / Service Tier choices. Main-model effort uses a stepped scale; Subagent max
 effort uses a select.
 The apply bar separates provider scope from save destinations. **Apply to** chooses
@@ -330,8 +330,7 @@ their values. Advisors keep their independent selection and may use the main mod
 **Subagent max effort** is independent of main-model effort. Automatic means no
 ceiling. A selected level caps both requested effort and an omitted model default,
 including later replies to that child. For example the main model may use Low while
-subagents may use Max. The control appears beside Subagents in the Agents tab and
-Provider Defaults; defaults remain drafts until saved, inherit through the existing
+subagents may use Max. The control appears beside Subagents in the Subagents tab; defaults remain drafts until saved, inherit through the existing
 scopes, and the ceiling is portable across providers.
 
 A provider with several accounts shows an **Account** picker above its defaults.

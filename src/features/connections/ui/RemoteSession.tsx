@@ -2,6 +2,7 @@ import { Text } from "../../../shared/ui/Text";
 import { setSessions } from "../../sessions/public/sessionsStore";
 import { modelDisplayName } from "../../sessions/public/modelDisplayName";
 import { Alert } from "../../../shared/ui/Alert";
+import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { Button } from "../../../shared/ui/Button";
 import { ErrorDetails, fitsOneLine } from "../../../shared/ui/ErrorDetails";
 import { LoadingText } from "../../../shared/ui/LoadingText";
@@ -3064,9 +3065,14 @@ function ConnectedRemoteSession({
     commandRetry.current.stopped;
   const pendingNeedsConfirmation =
     pending && ["shell", "cancel", "approve", "answer"].includes(pending.type);
+  // While the central notice says the machine is reconnecting, a saved request waiting for it adds no
+  // second alert; the request stays saved and goes out by itself.
+  const outageShownCentrally = useConnectionErrorShownCentrally(error);
+  const waitingForReconnect =
+    !!pending && !sending && !retryStopped && !online && !pendingNeedsConfirmation;
   const notice = queue.error
     ? remoteQueueReadNotice(queue.error, queue.retry)
-    : pending && !sending
+    : pending && !sending && !(waitingForReconnect && outageShownCentrally)
       ? remotePendingRequestNotice(
           retryStopped,
           online,
@@ -3901,7 +3907,7 @@ function ConnectedRemoteSession({
                 )
               : blocksSending(connection.status)
                 ? needsSignIn(connection.status)
-                  ? t("{p0} needs you to sign in first. Use “Sign in and reconnect” above.", {
+                  ? t("{p0} needs you to sign in first. Use the notice at the top of the window.", {
                       p0: hostLabel,
                     })
                   : t("Can’t reach {p0}. Send reconnects first.", { p0: hostLabel })

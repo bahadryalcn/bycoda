@@ -1,5 +1,5 @@
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
-import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Surface, surfaceAttributes } from "../../../shared/ui/Surface";
 import { TranscriptVirtualRows, type TranscriptVirtualElement } from "./TranscriptVirtualRows";
 import { useTranscriptRevealTarget } from "./transcriptVirtualization";
 import { useFollowBottom } from "../hooks/useFollowBottom";
@@ -41,6 +41,8 @@ import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { ApprovalRequest } from "../../../shared/ui/ApprovalRequest";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { useApprovalDecisionContext } from "./ApprovalDecisionContext";
+import { useReportApprovalCardOnScreen } from "./approvalCardVisibility";
+import { approvalDetail } from "../model/approvalDetail";
 import { useApprovalDecisionControl } from "./useApprovalDecisionControl";
 import type { ApprovalDecision } from "../../../integrations/harness";
 import { isEditTool, stubFilePreview } from "../../../integrations/harness/core/preview";
@@ -1282,16 +1284,15 @@ function ConnectedApprovalControls({
     context.dispatch,
     block,
   );
+  const cardRef = useReportApprovalCardOnScreen<HTMLElement>(
+    context.session.id,
+    block.approval!.requestId,
+  );
   return (
-    <div>
+    <Surface ref={cardRef} as="div" variant="card" padding="sm" className="mt-1.5 min-w-0">
       <ApprovalRequest
         title={t("Needs approval")}
-        detail={
-          bycodaToolCall(block)?.command ??
-          (block.tool?.preview?.kind === "shell" ? block.tool.preview.title : undefined) ??
-          block.tool?.title ??
-          block.text
-        }
+        detail={approvalDetail(block)}
         details={
           hasToolInspection(block)
             ? { label: t("Details"), content: <ToolInspectionPanel block={block} /> }
@@ -1319,7 +1320,7 @@ function ConnectedApprovalControls({
           </div>
         )
       ) : null}
-    </div>
+    </Surface>
   );
 }
 

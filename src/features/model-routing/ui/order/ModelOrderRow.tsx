@@ -35,6 +35,7 @@ export function ModelOrderRow({
   status,
   statusLoading,
   statusError = false,
+  next = false,
   sortable,
   onChange,
   onPercent,
@@ -47,6 +48,8 @@ export function ModelOrderRow({
   status?: ModelRoutingEntryStatus;
   statusLoading: boolean;
   statusError?: boolean;
+  /** New work starts on this model now. */
+  next?: boolean;
   sortable: ReturnType<typeof useAnimatedReorder<string>>;
   onChange: (entry: ModelRoutingEntry) => void;
   onPercent: (text: string) => void;
@@ -121,9 +124,11 @@ export function ModelOrderRow({
       </div>
       {account.supported ? (
         <div className="flex w-40 shrink-0 items-center gap-1">
-          <Text size="caption" tone="secondary" truncate>
-            {accountLabel}
-          </Text>
+          <OverflowTooltip label={accountLabel}>
+            <Text size="caption" tone="secondary" truncate>
+              {accountLabel}
+            </Text>
+          </OverflowTooltip>
           {account.kind && kindLabel.toLowerCase() !== accountLabel.trim().toLowerCase() ? (
             <Badge
               size="xs"
@@ -142,6 +147,11 @@ export function ModelOrderRow({
       </div>
       {/* Fixed columns keep the pickers, tags and quota aligned across rows. */}
       <div className="flex w-56 shrink-0 items-center justify-end gap-2">
+        {next ? (
+          <Badge size="xs" tone="success" className="shrink-0">
+            {t("Next")}
+          </Badge>
+        ) : null}
         {status?.skip ? (
           <OverflowTooltip label={t(skipLabels[status.skip])}>
             <Badge size="xs" tone="warning" truncate className="max-w-36">

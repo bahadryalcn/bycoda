@@ -36,14 +36,21 @@ const native: MachineCandidate = {
 const onAdd = vi.fn();
 const onPaired = vi.fn();
 
-async function render(candidates: MachineCandidate[] | "missing") {
+async function render(candidates: MachineCandidate[] | "missing", query = "") {
   vi.mocked(invoke).mockImplementation(async (command) => {
     if (command === "discover_machine_candidates" && candidates !== "missing") return candidates;
     throw new Error("unknown command");
   });
   await act(async () => {
     root.render(
-      createElement(DiscoveredMachines, { saved: [], active: true, busy: false, onAdd, onPaired }),
+      createElement(DiscoveredMachines, {
+        saved: [],
+        active: true,
+        busy: false,
+        query,
+        onAdd,
+        onPaired,
+      }),
     );
   });
 }
@@ -122,4 +129,31 @@ it("keeps Add disabled for an account computer without a published https route",
   vi.mocked(listOtherComputers).mockResolvedValue([{ ...studio, routes: [] }] as never);
   await render([]);
   expect(addButton().disabled).toBe(true);
+});
+
+const many = Array.from({ length: 7 }, (_, index) => ({
+  ...native,
+  key: `ssh:box-${index}`,
+  name: `box-${index}`,
+  routes: [{ address: `box-${index}.lan`, kind: "name" as const }],
+}));
+
+it("shows five found machines until Show all, and every match while searching", async () => {
+  account.state = { phase: "signed-out" };
+  vi.mocked(listOtherComputers).mockResolvedValue([]);
+  await render(many);
+  expect(container.textContent).toContain("box-4");
+  expect(container.textContent).not.toContain("box-5");
+  const showAll = [...container.querySelectorAll("button")].find((b) =>
+    b.textContent?.startsWith("Show all"),
+  )!;
+  await act(async () => showAll.click());
+  expect(container.textContent).toContain("box-6");
+
+  await render(many, "BOX-6.LAN");
+  expect(container.textContent).toContain("box-6");
+  expect(container.textContent).not.toContain("box-0");
+
+  await render(many, "nothing-like-this");
+  expect(container.textContent).toContain("No matches");
 });

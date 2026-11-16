@@ -4,10 +4,17 @@
   gap: 12px;
   scroll-margin-block-start: 8px;
 }
-.search {
-  flex: 1 1 16rem;
-  min-inline-size: 0;
-  max-inline-size: 32rem;
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 /* The filter stays beside the search field at every width. */
 .toolbar {
@@ -19,69 +26,16 @@
 .toolbar > :not(.search) {
   flex: none;
 }
-.filterLabel {
+.search {
+  flex: 1 1 16rem;
+  min-inline-size: 0;
 }
 .filterPanel {
   display: grid;
   gap: 12px;
   padding: 12px;
 }
-.actions,
-.pagination {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-.listFrame {
-  overflow: hidden;
-}
 .list {
   max-block-size: min(60dvh, 38rem);
   overflow: auto;
-}
-.row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-block-size: 40px;
-  padding-inline: 14px 8px;
-}
-.providerIcon {
-  display: flex;
-  flex: none;
-  align-items: center;
-}
-.scope {
-  flex: none;
-  margin-inline-end: auto;
-}
-.signIn {
-  flex: none;
-}
-.toggle,
-.rowMenu {
-  display: flex;
-  flex: none;
-}
-.continuation {
-  display: flex;
-  justify-content: center;
-  padding: 8px;
-}
-.scopeHelp {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.clamp {
-  overflow-wrap: anywhere;
-}
-.clamp[data-expanded] {
-  display: inline;
-  overflow: visible;
-}
-.pagination {
-  justify-content: space-between;
-  font-variant-numeric: tabular-nums;
 }

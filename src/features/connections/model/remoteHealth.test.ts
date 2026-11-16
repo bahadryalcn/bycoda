@@ -259,3 +259,18 @@ it("lists machines in an outage and notifies subscribers, without any pane", asy
   expect(seen.some((ids) => ids.includes("a"))).toBe(true);
   stop();
 });
+
+it("keeps an outdated Host out of the outage list and times an outage from its first failure", async () => {
+  const { listRemoteOutages, readRemoteDownSince } = await import("./remoteHealth");
+  recordRemoteConnection("old", "Unsupported host method: git.status");
+  expect(readRemoteConnection("old").status).toBe("outdated-host");
+  expect(listRemoteOutages()).toEqual([]);
+  vi.setSystemTime(1_000);
+  recordRemoteConnection("env", down);
+  vi.setSystemTime(90_000);
+  recordRemoteConnection("env", down);
+  expect(listRemoteOutages()).toEqual(["env"]);
+  expect(readRemoteDownSince("env")).toBe(1_000);
+  recordRemoteConnection("env");
+  expect(readRemoteDownSince("env")).toBeUndefined();
+});

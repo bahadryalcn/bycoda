@@ -1,0 +1,316 @@
+{
+  "numTotalTestSuites": 1,
+  "numPassedTestSuites": 0,
+  "numFailedTestSuites": 1,
+  "numPendingTestSuites": 0,
+  "numTotalTests": 27,
+  "numPassedTests": 0,
+  "numFailedTests": 2,
+  "numPendingTests": 25,
+  "numTodoTests": 0,
+  "snapshot": {
+    "added": 0,
+    "failure": false,
+    "filesAdded": 0,
+    "filesRemoved": 0,
+    "filesRemovedList": [],
+    "filesUnmatched": 0,
+    "filesUpdated": 0,
+    "matched": 0,
+    "total": 0,
+    "unchecked": 0,
+    "uncheckedKeysByFile": [],
+    "unmatched": 0,
+    "updated": 0,
+    "didUpdate": false
+  },
+  "startTime": 1794840301307,
+  "success": false,
+  "testResults": [
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": [],
+          "fullName": "retains independent exact library/session drafts as note-editor, never a file ACK",
+          "status": "skipped",
+          "title": "retains independent exact library/session drafts as note-editor, never a file ACK",
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "carries actual original delayed queue work through Native result while denying new service ingress",
+          "status": "skipped",
+          "title": "carries actual original delayed queue work through Native result while denying new service ingress",
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "never carries a synchronous original permit across await or into another owner",
+          "status": "skipped",
+          "title": "never carries a synchronous original permit across await or into another owner",
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "retains retiring accepted work and its unapplied original without reading removed DOM after its real finalizer",
+          "status": "skipped",
+          "title": "retains retiring accepted work and its unapplied original without reading removed DOM after its real finalizer",
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "forwards live and retained missing coverage and explicitly marks unreadable retired input",
+          "status": "skipped",
+          "title": "forwards live and retained missing coverage and explicitly marks unreadable retired input",
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "preserves an actual Native failure once and permits raw failed data after true settlement",
+          "status": "skipped",
+          "title": "preserves an actual Native failure once and permits raw failed data after true settlement",
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "preserves external ABA and invalidates the original cut even when final bytes match",
+          "status": "skipped",
+          "title": "preserves external ABA and invalidates the original cut even when final bytes match",
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "reports actual open work capacity without invoking Native, clearing private input or inventing a completed save",
+          "status": "skipped",
+          "title": "reports actual open work capacity without invoking Native, clearing private input or inventing a completed save",
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "holds the original successful writer until the exact published canonical object commits",
+          "status": "skipped",
+          "title": "holds the original successful writer until the exact published canonical object commits",
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "rejects equal unmarked refresh and actual external ABA while an owned result awaits commit",
+          "status": "skipped",
+          "title": "rejects equal unmarked refresh and actual external ABA while an owned result awaits commit",
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "never lets an old admitted writer publish into a replacement view generation",
+          "status": "skipped",
+          "title": "never lets an old admitted writer publish into a replacement view generation",
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "commits the exact later queued publication without orphaning batched earlier writer obligations",
+          "status": "skipped",
+          "title": "commits the exact later queued publication without orphaning batched earlier writer obligations",
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "drops a definitely rejected production upsert request even without an editor owner",
+          "status": "skipped",
+          "title": "drops a definitely rejected production upsert request even without an editor owner",
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "preserves actual production Native success and its request when local result publication fails",
+          "status": "skipped",
+          "title": "preserves actual production Native success and its request when local result publication fails",
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "does not execute mutated DTO accessors or accept extra symbols as original publication bytes",
+          "status": "skipped",
+          "title": "does not execute mutated DTO accessors or accept extra symbols as original publication bytes",
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "prunes a clean retired view only after every actual accepted job settles, including a canceled picker",
+          "status": "skipped",
+          "title": "prunes a clean retired view only after every actual accepted job settles, including a canceled picker",
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "archives exact private whitespace across same-key view generations without evicting an original",
+          "status": "skipped",
+          "title": "archives exact private whitespace across same-key view generations without evicting an original",
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "preserves an empty private inline title distinctly from the loaded nonempty title",
+          "status": "skipped",
+          "title": "preserves an empty private inline title distinctly from the loaded nonempty title",
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "preserves an empty private native title distinctly from the loaded nonempty title",
+          "status": "skipped",
+          "title": "preserves an empty private native title distinctly from the loaded nonempty title",
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "prunes a fully acknowledged clean CM view using line ending equivalence without changing saved bytes",
+          "status": "skipped",
+          "title": "prunes a fully acknowledged clean CM view using line ending equivalence without changing saved bytes",
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "keeps an unapplied CM document's original bytes instead of treating a canonical value as application proof",
+          "status": "skipped",
+          "title": "keeps an unapplied CM document's original bytes instead of treating a canonical value as application proof",
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "does not retain canonical title after conflict recovery (pending: false)",
+          "status": "failed",
+          "title": "does not retain canonical title after conflict recovery (pending: false)",
+          "duration": 6.862699999999904,
+          "failureMessages": [
+            "AssertionError: expected true to be false // Object.is equality\n    at G:/Projects/my_projects/monocode/src/features/notes/notesInputOwners.test.ts:604:45\n    at file:///G:/Projects/my_projects/monocode/node_modules/.pnpm/vitest@5.1.0_@opentelemetry_5be44a38e942480fd88a290d7e4533a8/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2886:64\n    at file:///G:/Projects/my_projects/monocode/node_modules/.pnpm/vitest@5.1.0_@opentelemetry_5be44a38e942480fd88a290d7e4533a8/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:1632:35\n    at file:///G:/Projects/my_projects/monocode/node_modules/.pnpm/vitest@5.1.0_@opentelemetry_5be44a38e942480fd88a290d7e4533a8/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:26\n    at file:///G:/Projects/my_projects/monocode/node_modules/.pnpm/vitest@5.1.0_@opentelemetry_5be44a38e942480fd88a290d7e4533a8/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3338:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///G:/Projects/my_projects/monocode/node_modules/.pnpm/vitest@5.1.0_@opentelemetry_5be44a38e942480fd88a290d7e4533a8/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3333:10)\n    at file:///G:/Projects/my_projects/monocode/node_modules/.pnpm/vitest@5.1.0_@opentelemetry_5be44a38e942480fd88a290d7e4533a8/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3318:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///G:/Projects/my_projects/monocode/node_modules/.pnpm/vitest@5.1.0_@opentelemetry_5be44a38e942480fd88a290d7e4533a8/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3276:10)"
+          ],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "does not retain canonical title after conflict recovery (pending: true)",
+          "status": "failed",
+          "title": "does not retain canonical title after conflict recovery (pending: true)",
+          "duration": 0.7661000000000513,
+          "failureMessages": [
+            "AssertionError: expected true to be false // Object.is equality\n    at G:/Projects/my_projects/monocode/src/features/notes/notesInputOwners.test.ts:604:45\n    at file:///G:/Projects/my_projects/monocode/node_modules/.pnpm/vitest@5.1.0_@opentelemetry_5be44a38e942480fd88a290d7e4533a8/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2886:64\n    at file:///G:/Projects/my_projects/monocode/node_modules/.pnpm/vitest@5.1.0_@opentelemetry_5be44a38e942480fd88a290d7e4533a8/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:1632:35\n    at file:///G:/Projects/my_projects/monocode/node_modules/.pnpm/vitest@5.1.0_@opentelemetry_5be44a38e942480fd88a290d7e4533a8/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:26\n    at file:///G:/Projects/my_projects/monocode/node_modules/.pnpm/vitest@5.1.0_@opentelemetry_5be44a38e942480fd88a290d7e4533a8/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3338:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///G:/Projects/my_projects/monocode/node_modules/.pnpm/vitest@5.1.0_@opentelemetry_5be44a38e942480fd88a290d7e4533a8/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3333:10)\n    at file:///G:/Projects/my_projects/monocode/node_modules/.pnpm/vitest@5.1.0_@opentelemetry_5be44a38e942480fd88a290d7e4533a8/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3318:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///G:/Projects/my_projects/monocode/node_modules/.pnpm/vitest@5.1.0_@opentelemetry_5be44a38e942480fd88a290d7e4533a8/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3276:10)"
+          ],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "does not retain the exact already acknowledged InlineEdit raw form forever after its saved indicator expires",
+          "status": "skipped",
+          "title": "does not retain the exact already acknowledged InlineEdit raw form forever after its saved indicator expires",
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "bounds original private generations upfront without evicting any retained data or granting a fake permit",
+          "status": "skipped",
+          "title": "bounds original private generations upfront without evicting any retained data or granting a fake permit",
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "never charges the first same-key generation's larger reservation on behalf of a different port near the aggregate byte bound",
+          "status": "skipped",
+          "title": "never charges the first same-key generation's larger reservation on behalf of a different port near the aggregate byte bound",
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "keeps exact original recovery and a genuine current data lease after generic retirement without a user discard or ACK",
+          "status": "skipped",
+          "title": "keeps exact original recovery and a genuine current data lease after generic retirement without a user discard or ACK",
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        }
+      ],
+      "startTime": 1794840302259,
+      "endTime": 1794840302266.766,
+      "status": "failed",
+      "message": "",
+      "name": "G:/Projects/my_projects/monocode/src/features/notes/notesInputOwners.test.ts"
+    }
+  ]
+}

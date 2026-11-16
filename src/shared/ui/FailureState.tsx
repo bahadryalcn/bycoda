@@ -10,6 +10,7 @@ import { CircleAlert } from "./icons";
 import { Button } from "./Button";
 import { useCopyFeedback } from "../hooks/useCopyFeedback";
 import styles from "./FailureState.module.css";
+import { useConnectionErrorShownCentrally } from "./connectionErrorGate";
 
 const moduleLoadFailures = new WeakSet<object>();
 
@@ -116,6 +117,7 @@ export function FailureState({
   const shown = truncated && !showAll ? full.slice(0, FAILURE_PREVIEW_CHARS) : full;
   const retryBusy = retrying || retryPending;
   const Heading = fullScreen ? "h1" : "h2";
+  const shownCentrally = useConnectionErrorShownCentrally(fullScreen ? undefined : error);
 
   function copyDetails() {
     copyFeedback.copy(() => navigator.clipboard.writeText(`${title}\n\n${full}`));
@@ -154,6 +156,8 @@ export function FailureState({
   }, [copy]);
 
   const retryText = retryLabel ?? t("Retry");
+  // The central connection notice explains an unreachable machine once, with its own Reconnect.
+  if (shownCentrally) return null;
   if (size === "inline") {
     return (
       <InlineError

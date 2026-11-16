@@ -7,6 +7,7 @@ import { formatDate } from "../../../shared/i18n";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { CircleAlert, RefreshCw } from "../../../shared/ui/icons";
 import { type RemoteDataState } from "../../connections";
+import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 
 /** Root freshness at the end of the project row: icon, time, refresh. */
 export function ExplorerSyncStatus({
@@ -18,7 +19,8 @@ export function ExplorerSyncStatus({
 }) {
   useLocale();
   const busy = state.phase === "loading" || state.phase === "refreshing";
-  const warn = state.phase === "error" || state.phase === "stale";
+  const shownCentrally = useConnectionErrorShownCentrally(state.error);
+  const warn = (state.phase === "error" || state.phase === "stale") && !shownCentrally;
   const time = state.updatedAt
     ? formatDate(state.updatedAt, { hour: "2-digit", minute: "2-digit" })
     : undefined;
@@ -35,7 +37,7 @@ export function ExplorerSyncStatus({
           }),
         })
       : undefined,
-    state.error,
+    shownCentrally ? undefined : state.error,
   ]
     .filter(Boolean)
     .join("\n");
@@ -51,7 +53,7 @@ export function ExplorerSyncStatus({
         leading="none"
         className="flex shrink-0 items-center gap-1 pr-1.5"
       >
-        {state.phase === "error" && (
+        {state.phase === "error" && !shownCentrally && (
           <LiveText className="sr-only" mode="assertive" text={state.error ?? ""} />
         )}
         {warn ? (
@@ -65,7 +67,7 @@ export function ExplorerSyncStatus({
         <InlineAction
           reveal="always"
           label={
-            state.phase === "error"
+            state.phase === "error" && !shownCentrally
               ? t("Retry loading {p0}", { p0: "files" })
               : t("Refresh {p0}", { p0: "files" })
           }

@@ -14,7 +14,10 @@ import {
 
 export type DesktopInboxRunner = {
   invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
-  list: (projects: { path: string }[], query: RemoteInboxQuery) => Promise<RemoteInboxList>;
+  list: (
+    projects: { path: string }[],
+    query: Omit<RemoteInboxQuery, "providers"> & { jiraEnabled?: boolean },
+  ) => Promise<RemoteInboxList>;
   results: Map<string, DesktopInboxReply>;
   running: Set<string>;
   onNotesChanged?: () => void | Promise<void>;
@@ -64,11 +67,23 @@ export async function executeDesktopInboxOperation(
     );
   }
   if (operation.action === "list") {
-    const value = await runner.list(operation.projects, operation.query);
+    const { providers, ...query } = operation.query;
+    const wanted = (provider: string) =>
+      !providers || providers.includes(provider as (typeof providers)[number]);
+    // shortcut: Linear/GitLab/Azure DevOps are still read and dropped here; add
+    // per-provider skip flags to listInboxItems if those reads become costly.
+    const value = await runner.list(operation.projects, {
+      ...query,
+      ...(wanted("github") ? {} : { githubKinds: [] }),
+      ...(wanted("jira") ? {} : { jiraEnabled: false }),
+    });
     return {
       ...value,
+      items: value.items.filter((item) => wanted(item.provider)),
       errors: Object.fromEntries(
-        Object.entries(value.errors).map(([provider, error]) => [provider, safeInboxError(error)]),
+        Object.entries(value.errors)
+          .filter(([provider]) => wanted(provider))
+          .map(([provider, error]) => [provider, safeInboxError(error)]),
       ),
     };
   }

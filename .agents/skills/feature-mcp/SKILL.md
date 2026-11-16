@@ -9,7 +9,7 @@ Use for Settings MCP list/discovery/add/login/remove/config and External MCP acc
 
 ## Source starts
 
-- `src/features/settings/ui/McpSettings.tsx` and `ExternalMcpAccess.tsx` own outgoing configuration and incoming grants.
+- `src/features/settings/ui/McpSettings.tsx` and `ExternalMcpAccess.tsx` own the outgoing list and incoming grants; `McpServerDetail.tsx` is the per-server detail sheet, `hooks/useMcpHub.ts` loads Host state and runs OAuth, and `model/mcpCatalog.ts` merges provider rows with the Host inventory by alias.
 - `src/features/settings/model/mcp.ts`, `mcpSettingsCache.ts`, native `src-tauri/src/mcp.rs` and Host `host/mcp/mcp-tokens.ts` own data/authority.
 - Read [surfaces](references/surfaces.md) for operation identifiers, bridge boundaries and checks.
 

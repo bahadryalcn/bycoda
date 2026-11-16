@@ -33,16 +33,6 @@ test("theme specimens retain paint without exempting their surrounding controls"
       ".presetDot",
       "background-image: var(--gradient-image)",
     ],
-    [
-      "appearance/controls/StateLadder.css",
-      ".state-preview-row:hover",
-      "background: var(--ui-surface-hover)",
-    ],
-    [
-      "appearance/controls/StateLadder.css",
-      ".state-preview-row:active",
-      "background: var(--ui-surface-pressed)",
-    ],
     ["AppearanceSettings.css", ".appearance-tone", "background: var(--palette-base)"],
     ["AppearanceSettings.css", ".appearance-tone > i", "background: var(--palette-raised)"],
     [
@@ -85,16 +75,6 @@ test("theme specimens retain paint without exempting their surrounding controls"
       "appearance/controls/GradientStrip.module.css",
       ".needle::before",
       "background: var(--color-content); border-radius: var(--radius-pill)",
-    ],
-    [
-      "appearance/controls/StateLadder.css",
-      '.state-preview-row[data-state="hover"]',
-      "background: var(--ui-surface-hover)",
-    ],
-    [
-      "appearance/controls/StateLadder.css",
-      '.state-preview-row[data-state="pressed"]',
-      "background: var(--ui-surface-pressed)",
     ],
   ];
   for (const [path, selector, declaration] of cases) {

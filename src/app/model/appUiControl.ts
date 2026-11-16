@@ -25,7 +25,6 @@ export const APP_UI_SETTINGS = [
   "chat",
   "voice",
   "providers",
-  "crews",
   "mcp",
   "skills",
   "inbox",

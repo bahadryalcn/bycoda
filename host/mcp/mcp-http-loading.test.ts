@@ -18,9 +18,35 @@ function setup() {
     resetPublications,
     oauthSignedIn: async () => false,
     inventory: async () => [
-      { name: "zeta", kind: "stdio" },
-      { name: "alpha", kind: "stdio" },
-      { name: "remote", kind: "http" },
+      {
+        name: "zeta",
+        kind: "stdio",
+        source: "claude",
+        sources: ["claude"],
+        aliases: [],
+        command: "SECRET-cmd",
+        args: ["SECRET-arg"],
+        env: { TOKEN: "SECRET" },
+      },
+      {
+        name: "alpha",
+        kind: "stdio",
+        source: "claude",
+        sources: ["claude"],
+        aliases: [{ provider: "claude", name: "alpha" }],
+        command: "x",
+        args: [],
+        env: {},
+      },
+      {
+        name: "remote",
+        kind: "http",
+        source: "codex",
+        sources: ["codex"],
+        aliases: [],
+        url: "https://SECRET.example/mcp",
+        headers: { Authorization: "SECRET" },
+      },
     ],
   };
   const store = {
@@ -59,7 +85,42 @@ describe("mcp.hub.loading owner RPCs", () => {
       policy: { version: 1, mode: "onDemand", direct: [] },
       corrupt: false,
       servers: ["alpha", "zeta"],
+      inventory: [
+        {
+          name: "alpha",
+          kind: "stdio",
+          source: "claude",
+          sources: ["claude"],
+          aliases: [{ provider: "claude", name: "alpha" }],
+          signedIn: false,
+        },
+        {
+          name: "remote",
+          kind: "http",
+          source: "codex",
+          sources: ["codex"],
+          aliases: [],
+          signedIn: false,
+        },
+        {
+          name: "zeta",
+          kind: "stdio",
+          source: "claude",
+          sources: ["claude"],
+          aliases: [],
+          signedIn: false,
+        },
+      ],
     });
+  });
+
+  it("never exposes launch or endpoint secrets in the inventory", async () => {
+    const s = setup();
+    const { result } = await s.call("mcp.hub.loading.get", {});
+    const text = JSON.stringify(result);
+    for (const key of ["command", "args", "env", "url", "headers"])
+      expect(text).not.toContain(`"${key}"`);
+    expect(text).not.toContain("SECRET");
   });
 
   it("validates, persists atomically and resets publications", async () => {

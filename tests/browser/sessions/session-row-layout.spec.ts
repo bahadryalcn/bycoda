@@ -4,6 +4,35 @@ import path from "node:path";
 
 const evidence = path.resolve("temp/verification/2026-11-04-last-sessions-workspace");
 const titleEvidence = path.resolve("temp/verification/2026-11-04-session-titles");
+for (const light of [false, true])
+  for (const width of [1280, 800])
+    for (const rail of ["compact", "wide", "hidden"])
+      test(`remote project header ${light ? "light" : "dark"} ${width} ${rail}`, async ({
+        page,
+      }) => {
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto(
+          `/tests/browser/sessions/session-row-layout.html?remote-header&${light ? "light" : "dark"}${rail === "wide" ? "&wide" : rail === "hidden" ? "&no-rail" : ""}`,
+        );
+        const header = page.locator("[data-workspace-header]");
+        await expect(header).toContainText("bycoda-cloud");
+        await expect(header.getByText("Workspace", { exact: true })).toHaveCount(0);
+        const machine = header.getByRole("button", {
+          name: "Refresh sessions from Office Mac",
+          exact: true,
+        });
+        await expect(machine).toBeVisible();
+        await expect(machine).toBeEnabled();
+        await machine.hover();
+        await expect(page.getByRole("tooltip")).toContainText("Office Mac");
+        const directory = path.resolve("temp/verification/2026-11-16-remote-workspace");
+        await mkdir(directory, { recursive: true });
+        await page.screenshot({
+          path: path.join(directory, `${light ? "light" : "dark"}-${width}-${rail}.png`),
+        });
+        await machine.click();
+        await expect(machine).toBeEnabled();
+      });
 for (const light of [true, false])
   for (const width of [800, 1280])
     test(`sessions no match visual ${light ? "light" : "dark"} ${width}`, async ({ page }) => {

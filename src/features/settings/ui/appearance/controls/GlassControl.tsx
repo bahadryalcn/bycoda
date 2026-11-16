@@ -75,7 +75,7 @@ export function GlassControl({
       <Row
         id="sidebar-opacity"
         label={t("Sidebar opacity")}
-        description={t("How much of the window shows through the sidebar.")}
+        info={t("How much of the window shows through the sidebar.")}
         disabled={!active}
         disabledReason={reason}
       >
@@ -92,7 +92,7 @@ export function GlassControl({
       <Row
         id="main-pane-glass"
         label={t("Main pane glass")}
-        description={t("Let the main pane show through as well.")}
+        info={t("Let the main pane show through as well.")}
         disabled={!active}
         disabledReason={reason}
       >

@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { AlertTone } from "./Alert";
 import type { NoticeAction } from "./Notice";
-import { Toast } from "./ToastRegion";
+import { DEFAULT_TOAST_PLACEMENT, Toast, type ToastPlacement } from "./ToastRegion";
 
 export type TransientNoticeTone = AlertTone;
 
@@ -30,21 +30,24 @@ export interface TransientNoticeProps {
   /** Auto-dismiss delay; defaults to ten seconds of focused window time. `null` keeps the notice until dismissed. */
   durationMs?: number | null;
   /**
-   * Corner stack. Viewport notices join the shared corner
+   * Stack placement; defaults to `top-center`. Viewport notices join the shared
    * stack (see `ToastRegion`): newest in front, older ones tucked behind.
    */
-  placement?: "bottom-end" | "top-end";
+  placement?: ToastPlacement;
   width?: "md" | "lg";
   "aria-label"?: string;
 }
 
 /**
- * A corner notice with tone, optional action, progress and dismiss. Expires after
- * `durationMs` unless it is `null`. It is a Toast in its corner stack.
+ * A notice with tone, optional action, progress and dismiss. Expires after
+ * `durationMs` unless it is `null`. It is a Toast in the shared top-center stack.
  * @group feedback
- * @use Existing corner notices only; new ones use Toast.
+ * @use Existing transient notices only; new ones use Toast.
  * @avoid New background feedback: Toast or useToast. Inline result near a control: InlineMessage. Persistent page notice: Alert.
  */
-export function TransientNotice({ placement = "bottom-end", ...props }: TransientNoticeProps) {
+export function TransientNotice({
+  placement = DEFAULT_TOAST_PLACEMENT,
+  ...props
+}: TransientNoticeProps) {
   return <Toast placement={placement} {...props} />;
 }

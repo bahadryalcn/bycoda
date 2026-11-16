@@ -1,7 +1,10 @@
-/* Both collections occupy the complete control column, even with fewer presets. */
-#appearance-topic-colors :is(.theme-palettes, .theme-saved) {
+/* Palettes fill the control column; saved themes scroll as one horizontal strip. */
+#appearance-topic-colors .theme-palettes {
   inline-size: 100%;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 8.5rem), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 7.5rem), 1fr));
+}
+#appearance-topic-colors .theme-saved {
+  inline-size: 100%;
 }
 
 .theme-detail-split {
@@ -29,7 +32,7 @@
   padding: 0;
 }
 
-.theme-detail-preview :is(.tone-ramp, .state-preview) {
+.theme-detail-preview .tone-ramp {
   max-inline-size: none;
 }
 

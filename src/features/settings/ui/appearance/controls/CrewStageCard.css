@@ -1,4 +1,4 @@
-/* The crew theme row opens with the stage: the real scene and its caption sit above the
+/* The crew theme row opens with the stage: the real scene sits above the
    "Crew theme" label and picker. The stage is not interactive, so visual order is enough. */
 #setting-crew-theme > .settings-row-feedback {
   order: -1;
@@ -15,18 +15,6 @@
 .crew-stage-card .crew-scene {
   max-inline-size: 32rem;
   padding-block-end: 0;
-}
-
-.crew-stage-hint {
-  margin: 0;
-  max-inline-size: 36rem;
-  text-align: center;
-}
-
-/* The crew is off: the preview dims with the row's label and picker, and the row's tooltip
-   explains why. */
-#setting-crew-theme[data-disabled] > .settings-row-feedback {
-  opacity: var(--ui-disabled-opacity);
 }
 
 /* Four theme names need the row's remaining width; the shared control scrolls when it still

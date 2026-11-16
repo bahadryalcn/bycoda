@@ -14,7 +14,13 @@ import {
   mergeProviderExtras,
   applySessionDefaults,
 } from "./providerSessionDefaults";
-import { rebaseProjectProviders, setProjectSessionDefaults } from "./projectProviders";
+import {
+  rebaseProjectProviders,
+  setProjectProviderAccount,
+  setProjectSessionDefaults,
+} from "./projectProviders";
+import { saveAccountSessionDefaults } from "./accountSessionDefaults";
+import { saveProviderAccount } from "../../providers/model/providerAccounts";
 import {
   modelEffortSetting,
   resolveModel,
@@ -83,6 +89,49 @@ describe("provider session defaults", () => {
     expect(newSession("claude", "/repo").runtimeMode).toBe("supervised");
   });
 
+  it("starts a project's conversations on its account with that account's defaults", () => {
+    saveProviderAccount({
+      id: "account-home",
+      provider: "codex",
+      label: "Home",
+    });
+    saveProviderAccount({
+      id: "account-work",
+      provider: "codex",
+      label: "Work",
+    });
+    saveAccountSessionDefaults("codex", "account-work", { effort: "high" });
+    expect(providerSessionDefaults("codex", "/work/api").effort).not.toBe("high");
+    setProjectProviderAccount("/work/api", "codex", "account-work");
+    expect(providerSessionDefaults("codex", "/work/api").effort).toBe("high");
+    // An explicit account still wins over the project's.
+    expect(providerSessionDefaults("codex", "/work/api", "account-home").effort).not.toBe("high");
+    const session = newSession("codex", "/work/api");
+    expect(session.providerAccountId).toBe("account-work");
+    expect(session.modelSettings.reasoningEffort).toBe("high");
+  });
+  it("starts default project chats on the account's model and moves blank chats to its account", () => {
+    const sol = resolveModel("codex", "codex:gpt-6.1-sol");
+    setHarnessModels("codex", [sol, { ...sol, id: "codex:gpt-6.1-terra", name: "GPT-6.1-Terra" }]);
+    saveProviderAccount({ id: "account-home", provider: "codex", label: "Home" });
+    saveProviderAccount({ id: "account-work", provider: "codex", label: "Work" });
+    saveAccountSessionDefaults("codex", "account-work", {
+      model: "codex:gpt-6.1-terra",
+      effort: "high",
+    });
+    setProjectProviderAccount("/work/api", "codex", "account-work");
+    const fresh = newDefaultSession("/work/api");
+    expect(fresh).toMatchObject({
+      model: "codex:gpt-6.1-terra",
+      providerAccountId: "account-work",
+    });
+    expect(fresh.modelSettings.reasoningEffort).toBe("high");
+    const blank = newSession("codex", "/elsewhere");
+    const moved = retargetSessionToProject(blank, "/work/api");
+    // A blank session keeps the model it carries; account and defaults follow the project.
+    expect(moved).toMatchObject({ model: blank.model, providerAccountId: "account-work" });
+    expect(moved.modelSettings.reasoningEffort).toBe("high");
+  });
   it("inherits global fields, supports project overrides and resetting them", () => {
     saveGlobalSessionDefaults("codex", {
       effort: "high",

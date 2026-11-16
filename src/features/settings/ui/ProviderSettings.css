@@ -324,8 +324,13 @@
 .provider-inventory-heading {
   margin: 12px 8px 4px;
 }
+/* Badges wrap under a narrow row instead of squeezing the provider name to nothing. */
 .provider-cli-option-name {
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+.provider-cli-option-name > :first-child {
+  max-inline-size: 100%;
 }
 .provider-cli-add .provider-cli-item {
   inline-size: 100%;

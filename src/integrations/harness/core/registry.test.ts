@@ -32,6 +32,11 @@ vi.mock("./socialBridge", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./socialBridge")>()),
   socialBridge: socialBridgeMock,
 }));
+const writerHandoffMock = vi.hoisted(() => vi.fn(async (_sessionId: string) => true));
+vi.mock("./writerHandoff", () => ({
+  serveWriterHandoff: vi.fn(),
+  requestWriterHandoff: writerHandoffMock,
+}));
 vi.mock("./runtimeLogsBridge", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./runtimeLogsBridge")>()),
   runtimeLogsBridge: runtimeLogsBridgeMock,
@@ -271,6 +276,39 @@ describe("harness registry", () => {
     );
     expect(sendTurn).toHaveBeenCalledOnce();
     expect(nativeInvoke.mock.calls.some(([command]) => command === "skill_policy_set")).toBe(false);
+  });
+
+  it("takes over a conversation writer another window holds and retries after a refused handoff", async () => {
+    nativeReceipts();
+    const fixture = nativeInvoke.getMockImplementation()!;
+    let held = 2;
+    nativeInvoke.mockImplementation(async (command, raw) => {
+      const claim = (raw as { claim?: { mode: string } } | undefined)?.claim;
+      if (command === "canonical_store_transaction" && claim?.mode === "acquire" && held > 0) {
+        held -= 1;
+        throw "CANONICAL_CLAIM_HELD";
+      }
+      return fixture(command, raw);
+    });
+    const sendTurn = vi.fn(async (_input: SendTurnInput) => {});
+    registerHarness(stub("claude", { sendTurn }));
+    const input = {
+      harness: "claude" as const,
+      sessionId: "window-handoff",
+      cwd: "/tmp",
+      model: "claude:test",
+      runtimeMode: "supervised" as const,
+      text: "Continue.",
+      onEvent: vi.fn(),
+    };
+    // No window answered: the refusal is not cached, so the next send asks again.
+    writerHandoffMock.mockResolvedValueOnce(false);
+    await expect(sendHarnessTurn(input)).rejects.toThrow("Another window still holds");
+    expect(sendTurn).not.toHaveBeenCalled();
+    await sendHarnessTurn(input);
+    expect(writerHandoffMock).toHaveBeenCalledWith("window-handoff");
+    expect(writerHandoffMock).toHaveBeenCalledTimes(2);
+    expect(sendTurn).toHaveBeenCalledOnce();
   });
 
   it("refuses a queued follow-up after its original preparation fails without entering the provider", async () => {

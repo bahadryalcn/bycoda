@@ -824,7 +824,6 @@ setLanguagePreference("en");
 applyThemePreference(params.get("theme") === "light" ? "light" : "dark");
 const drag = {
   setRef: () => {},
-  folded: false,
   headerProps: {
     onPointerDown: () => {},
     onClickCapture: () => {},

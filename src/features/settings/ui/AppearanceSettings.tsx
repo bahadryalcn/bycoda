@@ -1,5 +1,5 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
-import { useContext, useLayoutEffect, useRef, useState } from "react";
+import { Activity, useContext, useLayoutEffect, useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
 import { RevealedSetting, settingDomId, SettingsFeedback } from "../../../shared/ui/settings";
@@ -146,7 +146,9 @@ export function AppearancePage({
         </div>
         {sections.map(({ id, content }) => (
           <TabPanel key={id} value={id} keepMounted data-appearance-section={id}>
-            {content}
+            {/* Hidden tabs keep their DOM for search reveal, but their renders wait and their
+                canvases and effects pause, so a change re-renders only the visible tab. */}
+            <Activity mode={section === id ? "visible" : "hidden"}>{content}</Activity>
           </TabPanel>
         ))}
       </Tabs>

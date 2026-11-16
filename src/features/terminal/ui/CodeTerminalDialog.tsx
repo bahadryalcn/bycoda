@@ -11,6 +11,7 @@ import { OutputBlock } from "../../../shared/ui/OutputBlock";
 import { Surface } from "../../../shared/ui/Surface";
 import { stripAnsi } from "../../../shared/lib/ansi";
 import { terminalResultMessage } from "../model/codeTerminal";
+import { loadCodeRunReport } from "../model/codeRunReport";
 import type {
   CodeTerminalController,
   CodeTerminalOptions,
@@ -33,7 +34,7 @@ export function CodeTerminalDialog({
 }) {
   const t = useT();
   const state = useSyncExternalStore(controller.subscribe, controller.snapshot);
-  const [autoReport, setAutoReport] = useState(false);
+  const [autoReport, setAutoReport] = useState(loadCodeRunReport);
   const [reported, setReported] = useState(false);
   const [reportError, setReportError] = useState<string>();
   const [reporting, setReporting] = useState(false);

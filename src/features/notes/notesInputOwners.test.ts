@@ -11,6 +11,7 @@ import {
   publishNoteInputResult,
   deriveNoteInputResult,
   getNotePrivateRecoveries,
+  subscribeNotePrivateRecoveries,
   NOTE_PRIVATE_INPUT_LIMITS,
 } from "./notesInputOwners";
 import {
@@ -591,6 +592,106 @@ it("keeps an unapplied CM document's original bytes instead of treating a canoni
     .unregister();
   expect(input.hasUnappliedPrivateInputs()).toBe(true);
   expect(getNotePrivateRecoveries().find((entry) => entry.noteId === note.id)?.text).toBe(text);
+});
+
+it.each([false, true])(
+  "does not retain canonical title after conflict recovery (pending: %s)",
+  (pending) => {
+    const input = owner("session-dock");
+    input
+      .observer("title")
+      .attach(
+        () => ({
+          snapshot: {
+            source: "inline-edit",
+            draft: note.title,
+            value: note.title,
+            committed: "Previous title",
+            shown: note.title,
+            editing: false,
+            phase: "error",
+            failed: note.title,
+            error: "Could not save note",
+            pendingInput: pending ? { raw: note.title, next: note.title } : null,
+          },
+        }),
+        { canClose: () => true, close: () => {} },
+      )
+      .unregister();
+    expect(input.hasUnappliedPrivateInputs()).toBe(false);
+    expect(getNotePrivateRecoveries()).toEqual([]);
+  },
+);
+
+it.each(["different", "  Original  "])(
+  "keeps distinct private title %s despite a canonical title",
+  (raw) => {
+    const input = owner();
+    input
+      .observer("title")
+      .attach(
+        () => ({
+          snapshot: {
+            source: "inline-edit",
+            draft: raw,
+            value: note.title,
+            committed: note.title,
+            pendingInput: { raw, next: raw.trim() },
+            error: "Could not save note",
+          },
+        }),
+        { canClose: () => true, close: () => {} },
+      )
+      .unregister();
+    expect(getNotePrivateRecoveries().map((entry) => entry.text)).toEqual([raw]);
+  },
+);
+
+it("dismisses unadmitted recovery without admitting input or losing canonical text", () => {
+  const state = { noteId: note.id, canonical: { ...note }, unadmittedInputs: ["title"] };
+  const input = new NoteInputOwner(() => state);
+  owners.push(input);
+  expect(input.discardPrivateRecovery(input.privateRecoveries()[0].id)).toBe(true);
+  expect(input.privateRecoveries()).toEqual([]);
+  expect(state.unadmittedInputs).toEqual(["title"]);
+  expect(state.canonical.title).toBe(note.title);
+  state.canonical.title = "New unadmitted title";
+  expect(input.privateRecoveries().map((entry) => entry.text)).toEqual([state.canonical.title]);
+});
+
+it("discards one private recovery, not siblings or another owner, and notifies subscribers", () => {
+  const input = owner();
+  const other = owner();
+  for (const current of [input, other])
+    current
+      .observer("tags")
+      .attach(
+        () => ({
+          snapshot: {
+            source: "tag-input",
+            draft: "private raw",
+            acceptedChanges: [{ raw: "accepted one" }, { raw: "accepted two" }],
+          },
+        }),
+        { canClose: () => true, close: () => {} },
+      )
+      .unregister();
+  const changed = vi.fn();
+  const unsubscribe = subscribeNotePrivateRecoveries(changed);
+  const recoveries = input.privateRecoveries();
+  expect(input.discardPrivateRecovery(recoveries[1].id)).toBe(true);
+  expect(changed).toHaveBeenCalled();
+  expect(input.privateRecoveries().map((entry) => entry.text)).toEqual([
+    "private raw",
+    "accepted two",
+  ]);
+  expect(other.privateRecoveries()).toHaveLength(3);
+  expect(input.discardPrivateRecovery(recoveries[0].id)).toBe(true);
+  expect(input.privateRecoveries().map((entry) => entry.text)).toEqual(["accepted two"]);
+  expect(input.discardPrivateRecovery(recoveries[2].id)).toBe(true);
+  expect(input.hasUnappliedPrivateInputs()).toBe(false);
+  expect(input.discardPrivateRecovery(recoveries[2].id)).toBe(false);
+  unsubscribe();
 });
 
 it("does not retain the exact already acknowledged InlineEdit raw form forever after its saved indicator expires", () => {

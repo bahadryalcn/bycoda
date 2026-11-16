@@ -61,7 +61,7 @@ function MemberFrame({
         iconOnly
         variant="ghost"
         size="sm"
-        label={t("Remove {p0} from pool", { p0: label })}
+        label={t("Remove {p0} from group", { p0: label })}
         onClick={onRemove}
       >
         <X className="icon-sm" />
@@ -135,11 +135,11 @@ export function PoolMembers({
           {
             kind: "group" as const,
             id: "pools",
-            label: t("Pools"),
+            label: t("Groups"),
             items: addablePools.map((other) => ({
               kind: "item" as const,
               id: `pool:${other.id}`,
-              label: other.name || t("Unnamed pool"),
+              label: other.name || t("Unnamed group"),
               icon: <FolderTree className="icon-sm" />,
             })),
           },
@@ -166,7 +166,7 @@ export function PoolMembers({
       {poolIds.map((id, index) => {
         const included = pools.find((candidate) => candidate.id === id);
         if (!included) return null;
-        const name = included.name || t("Unnamed pool");
+        const name = included.name || t("Unnamed group");
         return (
           <MemberFrame
             key={id}
@@ -206,7 +206,7 @@ export function PoolMembers({
         {open ? (
           <DropdownMenu
             anchor={anchor}
-            label={t("Add to pool")}
+            label={t("Add to group")}
             align="start"
             items={items}
             onPick={(id) =>

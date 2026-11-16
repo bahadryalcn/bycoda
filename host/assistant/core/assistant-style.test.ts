@@ -92,6 +92,30 @@ describe("assistantOwnerInstructions", () => {
     expect(text).toContain('"name":"Arif"');
     expect(text).toContain('"rules":["rule"]');
   });
+
+  it("leaves the assistant persona out of coding-session instructions", () => {
+    const text = assistantOwnerInstructions(
+      {
+        ...base,
+        addressFrequency: "always",
+        tone: "casual",
+        allowProfanity: true,
+        persona: "Talk like a pirate.",
+        name: "Arif",
+        language: "tr",
+      },
+      ["rule"],
+      ["fact"],
+      { persona: false },
+    );
+    expect(text).not.toContain("Style:");
+    expect(text).not.toContain("pirate");
+    expect(text).not.toContain("Bahadır");
+    expect(text).not.toContain("Arif");
+    expect(text).toContain('"language":"tr"');
+    expect(text).toContain('"rules":["rule"]');
+    expect(text).toContain('"context":["fact"]');
+  });
 });
 
 describe("assistant profile style defaults", () => {

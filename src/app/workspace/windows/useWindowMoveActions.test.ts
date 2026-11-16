@@ -122,7 +122,7 @@ describe("queued window moves", () => {
     expect(deps.setPendingWindowMoves).not.toHaveBeenCalled();
   });
 
-  it("cancels one queued move, keeps the others and tells the user once", () => {
+  it("cancels one queued move, keeps the others and adds no notice", () => {
     render();
     act(() => actions.onCancelMoveToNewWindow("busy-tab"));
     expect(deps.setPendingWindowMoves).toHaveBeenCalledOnce();
@@ -131,7 +131,7 @@ describe("queued window moves", () => {
     ) => PendingWindowMoves;
     expect(update({ "busy-tab": null, other: null })).toEqual({ other: null });
     expect(deps.onMoveTabsToNewWindow).not.toHaveBeenCalled();
-    expect(published).toEqual(["The move to a new window was cancelled."]);
+    expect(published).toEqual([]);
   });
 });
 

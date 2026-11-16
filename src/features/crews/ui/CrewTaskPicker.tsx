@@ -7,6 +7,7 @@ import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { RefreshCw } from "../../../shared/ui/icons";
+import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { useProjectCrews } from "../model/crewClient";
 
 /** Shared by task creation and editing; selecting a crew never starts it. */
@@ -27,6 +28,7 @@ export function CrewTaskPicker({
 }) {
   useLocale();
   const crews = useProjectCrews(cwd, !!cwd && !!machineId);
+  const centrally = useConnectionErrorShownCentrally(crews.error);
   const available = crews.data?.machine.id === machineId && crews.data?.taskExecutionSupported;
   const definitions = available ? crews.data!.definitions : [];
   const valid = !value || definitions.some((definition) => definition.id === value);
@@ -45,11 +47,11 @@ export function CrewTaskPicker({
         </Text>
         <InfoPopover label={t("Crews unavailable")} className="shrink-0">
           <p>
-            {crews.error
+            {crews.error && !centrally
               ? crews.error.message
               : t("This host cannot run tasks with a crew. Connect an updated host to use crews.")}
           </p>
-          {crews.error ? (
+          {crews.error && !centrally ? (
             <Button
               variant="ghost"
               startIcon={<RefreshCw className="icon-sm" />}
@@ -79,7 +81,7 @@ export function CrewTaskPicker({
         onChange={(id) => onChange(id || undefined)}
       />
       {loading && <LoadingText>{t("Loading crews…")}</LoadingText>}
-      {crews.error && (
+      {crews.error && !centrally && (
         <Alert
           tone="warning"
           action={{

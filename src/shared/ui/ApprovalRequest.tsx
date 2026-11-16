@@ -17,8 +17,10 @@ export type ApprovalRequestProps = {
 };
 
 /**
- * Owner approval with warning glyph, neutral title and the exact request on the code ground.
- * The caller owns authority, handlers and pending state; only Allow gets primary emphasis.
+ * Owner approval: one header line (warning glyph, title, then the decision buttons ending with
+ * Allow), the exact request on the code ground below it, and optional details last. Frameless:
+ * the caller places it in its card, pane or dialog. The caller owns authority, handlers and
+ * pending state; only Allow gets primary emphasis.
  * @group feedback
  * @use Tool, permission or owner requests requiring an explicit Allow/Deny decision.
  * @avoid Informational warning without a decision: Alert. OS readiness/setup rows: Row. Destructive confirmation: ConfirmDialog. Questions: forms.
@@ -35,12 +37,32 @@ export function ApprovalRequest({
   details,
 }: ApprovalRequestProps) {
   return (
-    <section aria-label={title} className="flex min-w-0 flex-col gap-2">
-      <div className="flex items-start gap-2">
-        <NoticeGlyph tone="warning" size="box" />
-        <Heading as="div" size="item">
-          {title}
-        </Heading>
+    <section aria-label={title} className="flex min-w-0 flex-col gap-1.5">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <NoticeGlyph tone="warning" size="inline" />
+          <Heading as="div" size="item">
+            {title}
+          </Heading>
+        </div>
+        <div className="ms-auto flex flex-wrap items-center gap-1.5" data-no-drag="">
+          {[...(actions ?? []), deny, allow].map((action, index, all) => (
+            <Button
+              key={index}
+              variant={index === all.length - 1 ? "primary" : "ghost"}
+              size="sm"
+              type="button"
+              motion="none"
+              loading={action.pending ?? false}
+              disabled={action.disabled}
+              aria-label={action.ariaLabel}
+              tooltip={action.disabled ? action.disabledReason : undefined}
+              onClick={action.onClick}
+            >
+              {action.label}
+            </Button>
+          ))}
+        </div>
       </div>
       <OutputBlock frame="filled" scroll className="max-h-48 min-w-0">
         {detail}
@@ -50,24 +72,6 @@ export function ApprovalRequest({
           {details.content}
         </Disclosure>
       ) : null}
-      <div className="flex flex-wrap items-center gap-2" data-no-drag="">
-        {[allow, deny, ...(actions ?? [])].map((action, index) => (
-          <Button
-            key={index}
-            variant={index === 0 ? "primary" : "ghost"}
-            size="sm"
-            type="button"
-            motion="none"
-            loading={action.pending ?? false}
-            disabled={action.disabled}
-            aria-label={action.ariaLabel}
-            tooltip={action.disabled ? action.disabledReason : undefined}
-            onClick={action.onClick}
-          >
-            {action.label}
-          </Button>
-        ))}
-      </div>
     </section>
   );
 }

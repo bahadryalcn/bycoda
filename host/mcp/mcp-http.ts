@@ -74,8 +74,10 @@ const MAX_BYTES = 1024 * 1024;
  * MCP tool deadline (300 s, conversationToolsBridge.ts). */
 const SESSION_RPC_TIMEOUT_MS = 120_000;
 const LOG_WAIT_RPC_TIMEOUT_MS = 245_000;
+/** secrets.request waits for the owner's 240 s dialog (relay, Rust and UI), so it needs the long deadline. */
+const OWNER_WAIT_ACTIONS = new Set(["logs.wait", "secrets.request"]);
 export const sessionRpcTimeoutMs = (action: string): number =>
-  action === "logs.wait" ? LOG_WAIT_RPC_TIMEOUT_MS : SESSION_RPC_TIMEOUT_MS;
+  OWNER_WAIT_ACTIONS.has(action) ? LOG_WAIT_RPC_TIMEOUT_MS : SESSION_RPC_TIMEOUT_MS;
 const LOADING_SET_INPUT = z.object({
   mode: z.enum(["onDemand", "always"]),
   direct: z.array(z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/)).max(200),
@@ -150,11 +152,15 @@ const externalConversationActions = new Set<ConversationTool>([
   "automations.runNow",
   "automations.stopRun",
   "inbox.providers.status",
+  "inbox.providers.connections",
   "inbox.providers.list",
   "inbox.details",
   "inbox.thread",
   "inbox.reviewContext",
   "inbox.result",
+  "inbox.jira.boards",
+  "inbox.jira.board",
+  "inbox.jira.transitions",
 ]);
 const externalOwnerActions = new Set([
   "replies.send",
@@ -261,7 +267,18 @@ export class McpHttp {
       .filter((def) => def.kind === "stdio" || hostedHttp.has(def.name))
       .map((def) => def.name)
       .sort((a, b) => a.localeCompare(b));
-    return { policy, corrupt: corrupt === true, servers };
+    // Secret-free view: command, args, env, url and headers are never copied.
+    const hub = inventory
+      .map((def) => ({
+        name: def.name,
+        kind: def.kind,
+        source: def.source as string,
+        sources: [...def.sources],
+        aliases: def.aliases.map((alias) => ({ provider: alias.provider, name: alias.name })),
+        signedIn: def.kind === "http" && hostedHttp.has(def.name),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    return { policy, corrupt: corrupt === true, servers, inventory: hub };
   }
 
   private async loadingSet(input: Record<string, unknown>) {

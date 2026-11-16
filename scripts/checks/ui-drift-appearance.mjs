@@ -609,13 +609,6 @@ export const bespokeParts = [
       "Gradient artwork displays the current workspace background or a two-colour preset; shared Surface owns its frame.",
   },
   {
-    file: "src/features/settings/ui/appearance/controls/StateLadder.css",
-    rules: ["interaction-state"],
-    selector: /^\.state-preview-row:(?:hover|active)$/,
-    reason:
-      "Theme comparison specimens demonstrate real pointer hover/press over their pinned sample states.",
-  },
-  {
     file: "src/features/settings/ui/AppearanceSettings.css",
     rules: ["surface-style"],
     selector: /^\.appearance-tone(?: > [ib]|::after)?$/,
@@ -708,12 +701,6 @@ export const bespokeParts = [
     rules: ["surface-style"],
     selector: /^\.(?:thumbnail|glassSwatch)$/,
     reason: "Layer thumbnail image and the glass specimen gradient.",
-  },
-  {
-    file: "src/features/settings/ui/appearance/controls/StateLadder.css",
-    rules: ["surface-style"],
-    selector: /^\.state-preview$|^\.state-preview-row(?:\[data-state="(?:hover|pressed)"\])?$/,
-    reason: "Interaction-state specimen that previews the theme's hover and pressed fills.",
   },
   {
     file: "src/features/settings/ui/appearance/controls/ThemeControls.css",

@@ -34,6 +34,7 @@ import { Heading } from "../../../shared/ui/Heading";
 import { Divider } from "../../../shared/ui/Divider";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { InlineError } from "../../../shared/ui/InlineError";
+import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
@@ -371,6 +372,8 @@ function AutomationsContent({
     setDraft,
   });
   // Collection failures block first use; one offline machine only makes its own data unknown.
+  // The central connection notice already explains machines that did not answer.
+  const unreachableShownCentrally = useConnectionErrorShownCentrally(host.unreachableDetail);
   const readFailed = (localQuery.isError && storedAutomations.length === 0) || !!host.error;
   const error = actionError ?? (readFailed ? null : (localQuery.error?.message ?? null));
 
@@ -614,7 +617,7 @@ function AutomationsContent({
           ) : null}
         </div>
       ) : null}
-      {unreachableNames.length ? (
+      {unreachableNames.length && !unreachableShownCentrally ? (
         <UnreachableMachinesNotice
           className="shrink-0 px-2 py-1"
           message={unreachableNotice(unreachableNames)}

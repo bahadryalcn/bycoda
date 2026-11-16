@@ -1,6 +1,6 @@
 # Manage decision models
 
-Open **Settings > Providers > Decision models**. These models answer small, typed
+Open **Settings > Models > Providers**, section **Decision models**. These models answer small, typed
 questions, such as choosing a visible button or classifying a message. They do not
 replace your conversation model or grant permission to send, publish or delete.
 

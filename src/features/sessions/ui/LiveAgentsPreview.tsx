@@ -130,35 +130,27 @@ export function LiveAgentsPreview({
       ) : null}
     </span>
   );
-  const groups = [
-    {
-      key: "attention",
-      label: t("Needs attention"),
-      count: summary.attention,
-      rows: attentionAgents,
-    },
-    {
-      key: "working",
-      label: t("Working"),
-      count: summary.working,
-      rows: [
-        ...(projectExpanded ? projectAgents : []),
-        ...visible.filter((agent) => !agent.done && !agent.waiting),
-      ],
-    },
-    {
-      key: "waiting",
-      label: t("Waiting"),
-      count: summary.waiting,
-      rows: visible.filter((agent) => !agent.done && agent.waiting),
-    },
-    {
-      key: "finished",
-      label: t("Finished"),
-      count: summary.finished,
-      rows: visible.filter((agent) => agent.done),
-    },
+  // One list, most urgent first; each row's own status mark says which state it is in.
+  const leadingRows = attentionAgents;
+  const trailingRows = [
+    ...(projectExpanded ? projectAgents : []),
+    ...visible.filter((agent) => !agent.done && !agent.waiting),
+    ...visible.filter((agent) => !agent.done && agent.waiting),
+    ...visible.filter((agent) => agent.done),
   ];
+  const renderCard = (agent: LiveAgent) => (
+    <LiveAgentCard
+      key={agent.id}
+      agent={agent}
+      now={now}
+      selected={agent.id === activeSessionId}
+      onSelect={onSelect}
+      groupLabels={groupLabels}
+      groupColors={groupColors}
+      groupCustomColors={groupCustomColors}
+      groupMascots={groupMascots}
+    />
+  );
   // Announced when a count changes, never per second: elapsed times stay out of this text.
   const announcement = [
     summary.working > 0
@@ -211,60 +203,33 @@ export function LiveAgentsPreview({
       <div id={listId} hidden={collapsed} className="px-2 pb-1">
         <div
           ref={lockList}
-          className="flex max-h-[min(24rem,40vh)] flex-col gap-2 overflow-y-auto overscroll-none"
+          className="flex max-h-[min(24rem,40vh)] min-w-0 flex-col overflow-y-auto overscroll-none"
+          data-live-agents-list
         >
-          {groups.map((group) =>
-            group.rows.length > 0 || (group.key === "working" && projectWorkingCount > 0) ? (
-              <div key={group.key} data-live-agents-group={group.key} className="min-w-0">
-                <SectionLabel
-                  count={group.count}
-                  tone={group.key === "attention" ? attentionTone : "secondary"}
-                >
-                  {group.label}
-                </SectionLabel>
-                {group.key === "working" && projectWorkingCount > 0 ? (
-                  <Button
-                    variant="item"
-                    fullWidth
-                    motion="none"
-                    expanded={projectExpanded}
-                    aria-controls={`${listId}-project`}
-                    onClick={() => setExpandedProject(projectExpanded ? null : currentProjectKey)}
-                    aria-label={t("{p0} working in this project", { p0: projectWorkingCount })}
-                    data-live-agents-project-summary
-                    className="min-w-0 gap-1.5"
-                  >
-                    <Text
-                      size="caption"
-                      tone="secondary"
-                      truncate
-                      className="min-w-0 flex-1 text-start"
-                    >
-                      {t("This project")}
-                    </Text>
-                    <Badge variant="count" size="xs" tone="neutral">
-                      {projectWorkingCount}
-                    </Badge>
-                  </Button>
-                ) : null}
-                <div id={group.key === "working" ? `${listId}-project` : undefined}>
-                  {group.rows.map((agent) => (
-                    <LiveAgentCard
-                      key={agent.id}
-                      agent={agent}
-                      now={now}
-                      selected={agent.id === activeSessionId}
-                      onSelect={onSelect}
-                      groupLabels={groupLabels}
-                      groupColors={groupColors}
-                      groupCustomColors={groupCustomColors}
-                      groupMascots={groupMascots}
-                    />
-                  ))}
-                </div>
-              </div>
-            ) : null,
-          )}
+          {leadingRows.map(renderCard)}
+          {projectWorkingCount > 0 ? (
+            <Button
+              variant="item"
+              fullWidth
+              motion="none"
+              expanded={projectExpanded}
+              aria-controls={`${listId}-project`}
+              onClick={() => setExpandedProject(projectExpanded ? null : currentProjectKey)}
+              aria-label={t("{p0} working in this project", { p0: projectWorkingCount })}
+              data-live-agents-project-summary
+              className="min-w-0 shrink-0 gap-1.5"
+            >
+              <Text size="caption" tone="secondary" truncate className="min-w-0 flex-1 text-start">
+                {t("This project")}
+              </Text>
+              <Badge variant="count" size="xs" tone="neutral">
+                {projectWorkingCount}
+              </Badge>
+            </Button>
+          ) : null}
+          <div id={`${listId}-project`} className="contents">
+            {trailingRows.map(renderCard)}
+          </div>
         </div>
         {extra > 0 ? (
           <Button

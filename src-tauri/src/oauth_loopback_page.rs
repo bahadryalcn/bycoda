@@ -37,6 +37,8 @@ pub(crate) enum Kind {
     Success,
     Failure,
     Cancelled,
+    /// Any request that is not the expected callback (wrong path or `state`).
+    Invalid,
 }
 
 const LOGO: &str = include_str!("../../public/brand/bycoda/logo-horizontal-black.svg");
@@ -78,7 +80,7 @@ fn icon(kind: Kind) -> &'static str {
         Kind::Success => {
             "<svg class=\"icon ok\" viewBox=\"0 0 48 48\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"24\" cy=\"24\" r=\"20\"/><path d=\"M15 25l6 6 12-13\"/></svg>"
         }
-        Kind::Failure => {
+        Kind::Failure | Kind::Invalid => {
             "<svg class=\"icon bad\" viewBox=\"0 0 48 48\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M24 5L2.5 42h43z\"/><path d=\"M24 19v10M24 35v.5\"/></svg>"
         }
         Kind::Cancelled => {
@@ -105,6 +107,11 @@ fn texts(kind: Kind, lang: Lang) -> (&'static str, &'static str) {
         (Kind::Cancelled, Lang::En) => (
             "Sign-in cancelled",
             "Nothing was changed. Go back to bycoda whenever you want to try again.",
+        ),
+        (Kind::Invalid, Lang::En) => ("This link isn't valid", "Start sign-in again from bycoda."),
+        (Kind::Invalid, Lang::Tr) => (
+            "Bu bağlantı geçerli değil",
+            "Oturum açmayı bycoda'dan yeniden başlat.",
         ),
         (Kind::Cancelled, Lang::Tr) => (
             "Oturum açma iptal edildi",
@@ -133,8 +140,13 @@ pub(crate) fn render(kind: Kind, reason: &str, lang: Lang) -> String {
 
 pub(crate) fn respond_page(stream: &mut TcpStream, kind: Kind, reason: &str, lang: Lang) {
     let page = render(kind, reason, lang);
+    let status = if kind == Kind::Invalid {
+        "404 Not Found"
+    } else {
+        "200 OK"
+    };
     let reply = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\nCache-Control: no-store\r\n\r\n{page}",
+        "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\nCache-Control: no-store\r\n\r\n{page}",
         page.len()
     );
     let _ = stream.write_all(reply.as_bytes()); // -- the browser tab may already be closed.

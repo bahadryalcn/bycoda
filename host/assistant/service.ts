@@ -2843,6 +2843,8 @@ export class HostAssistant {
       await this.profile(),
       rules.map((r) => r.text),
       facts.map((r) => r.text),
+      // Coding sessions keep the owner's rules but not the assistant's voice persona.
+      { persona: scope !== "sessions" },
     );
   }
   private async safeOutput(text: string) {
@@ -6697,12 +6699,11 @@ export class HostAssistant {
       threads: await this.repository.list("threads", limit),
       activity: [
         ...(await this.repository.list<AssistantActivity>("activity", limit)),
-        ...(await this.actionJournal.activity(
-          limit,
-          this.ports,
-          admission,
-          (await this.globalRoomBinding())?.id,
-        )),
+        // Action history is disclosed under its Room's native source, which the Room
+        // registers only after this snapshot loads; failing here would deadlock it.
+        ...(await this.actionJournal
+          .activity(limit, this.ports, admission, (await this.globalRoomBinding())?.id)
+          .catch(() => [])),
       ]
         .sort((left, right) => right.createdAt - left.createdAt)
         .slice(0, limit),

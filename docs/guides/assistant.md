@@ -80,7 +80,7 @@ the public installation identity; it does not enroll it or grant access. Headles
 access needs a separate owner decision.
 
 Task observation has separate, default-off completion and needs-input settings
-under **Settings > Work > Notifications**. They apply only to explicitly supervised projects.
+under **Settings > Notifications**. They apply only to explicitly supervised projects.
 Preferences can be saved while the source is unavailable; notifications wait
 until this Host can verify the source and transfer an exact notification to its
 native owner. Native acceptance and actual notification display are separate.
@@ -161,7 +161,7 @@ assistant may work, and sets the job controls together:
 
 Nothing is selected until you choose one. Models are not asked for: the available
 default model becomes the worker, and you manage the model list later in
-**Settings > Background work**. If no default model is available, choose a work mode
+**Settings > Models > Background work**. If no default model is available, choose a work mode
 that starts no work, or add a model in Settings first. Rules you want the assistant
 to follow are added in Memory. Opening setup alone does not save a worker or start
 work.
@@ -280,7 +280,7 @@ second note.
 
 Choose **Scheduled automation** for recurring work. Review the project, schedule,
 model choice and run limits before saving. **Default** follows the automation
-role, **Pool** selects a shared pool, and **Fixed** uses the chosen model.
+role, **Any model** uses the shared order or a group, and **Fixed** uses the chosen model.
 **Manage in Models** opens shared priority and limits. The model resolves when
 each run starts; running sessions keep their model. Creation saves the schedule without
 starting a run. Open its confirmed result in Automations to inspect or change it.
@@ -574,7 +574,7 @@ unavailable. This breakdown does not claim cache measurements for the separate
 Chief or conversational utility calls.
 
 Configure separate assistant planning, Chief and reply roles in **Settings >
-Models > Assignments**. Worker permissions and independent review retain
+Models > Background work > Who uses what**. Worker permissions and independent review retain
 their existing settings.
 
 Advanced context settings separately control when workers compact their context
@@ -592,8 +592,8 @@ limit. Chief context renews at the local briefing time and earlier when it reach
 
 ### Shared model routing
 
-Manage models in **Settings > Background work**, using **Model order** for priority,
-accounts, quota reserves and pools, and **Assignments** for Worker,
+Manage models in **Settings > Models > Background work**, using **All models** for priority,
+accounts, quota reserves, **Groups** for named subsets, and **Who uses what** for Worker,
 Planning, Chief and Reply roles. Room settings link there; the separate assistant
 pool editor is removed. Assistant jobs follow the assistant worker role.
 
@@ -684,7 +684,8 @@ available. Actions are recorded in History and the daily note using metadata;
 typed text and observed app contents are excluded from that audit.
 
 The screen-edge control indicator uses its own native window so it can remain
-visible while the workspace is minimized. It appears only when the assistant
+visible while the workspace is minimized. Its floating panel background keeps
+the controls readable over other applications in both themes. It appears only when the assistant
 starts using the computer, not when computer use is merely enabled, and hides
 about 20 seconds after activity ends. Its Stop button, the settings controls
 and the global shortcut share the same captured Host connection. Connection

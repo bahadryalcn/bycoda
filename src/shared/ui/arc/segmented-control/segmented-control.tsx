@@ -18,6 +18,8 @@ export interface Segment {
   label: string;
   /** Full label when the visible label is abbreviated. */
   tooltip?: string;
+  /** Accessible name when the visible label is abbreviated; defaults to `label`. */
+  ariaLabel?: string;
   /** Optional leading icon before the label. Decorative: the label stays the accessible name.
    *  With `iconOnly`, only the icon shows and the label becomes the accessible name. */
   icon?: ReactNode;
@@ -174,7 +176,7 @@ export default function SegmentedControl({
                 aria-pressed={selectionRole === "pressed" ? value === option.value : undefined}
                 tabIndex={index === tabStop ? 0 : -1}
                 disabled={option.disabled}
-                aria-label={option.label}
+                aria-label={option.ariaLabel ?? option.label}
                 onClick={() => onValueChange(option.value)}
                 onKeyDown={onKeyDown}
                 onPointerEnter={onOptionIntent ? () => onOptionIntent(option.value) : undefined}

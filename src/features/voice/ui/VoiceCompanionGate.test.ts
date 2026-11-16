@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, createElement, useEffect } from "react";
+import { act, createElement, Fragment, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({ stop: vi.fn(), start: vi.fn() }));
@@ -29,6 +29,7 @@ vi.mock("./VoiceCompanion", () => ({
   },
 }));
 import { VoiceCompanionGate } from "./VoiceCompanionGate";
+import { VoiceLauncherSlot } from "./companion/voiceLauncherSlot";
 import { loadVoiceSettings, saveVoiceSettings } from "../model/voiceSettings";
 let root: Root | undefined;
 let element: HTMLDivElement;
@@ -113,4 +114,29 @@ it("is entirely absent by default and unmounts voice immediately when disabled",
   expect(element.innerHTML).toBe("");
   expect(state.stop).toHaveBeenCalledOnce();
   expect(stopCoding).not.toHaveBeenCalled();
+});
+
+it("docks the pre-setup launcher into a visible sidebar footer slot", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  host.profile.voiceSetupComplete = false;
+  saveVoiceSettings({ ...loadVoiceSettings(), enabled: true });
+  // happy-dom has no layout; treat every element as rendered so the slot counts as visible.
+  const rects = vi
+    .spyOn(Element.prototype, "getClientRects")
+    .mockImplementation(() => [{}] as unknown as DOMRectList);
+  element = document.createElement("div");
+  document.body.append(element);
+  root = createRoot(element);
+  await act(async () =>
+    root!.render(
+      createElement(
+        Fragment,
+        null,
+        createElement(VoiceLauncherSlot, { compact: true }),
+        createElement(VoiceCompanionGate, { sessions: [], onSubmit: () => true, onStop: vi.fn() }),
+      ),
+    ),
+  );
+  expect(element.querySelector("[data-voice-launcher-slot] button")).not.toBeNull();
+  rects.mockRestore();
 });

@@ -47,7 +47,7 @@
   removes one.
 - Secrets: when a task needs a credential, call `secrets.request` (`name`, `purpose`).
   A secret saved for the project with that name is reused without asking; `replace: true`
-  asks the owner again. Never ask the owner to paste a secret into chat. Prefer
+  asks the owner again. The owner has about 4 minutes to answer. Never ask the owner to paste a secret into chat. Prefer
   `secrets.run` to run a command with the secrets injected as env vars; output comes back
   redacted. `secrets.materialize` writes an owner-only file for commands that must run in
   your own shell; it is deleted after 10 minutes.
@@ -55,7 +55,7 @@
 ## Crews
 
 - A crew is a team definition: a coordinator plus member agents with roles, models and
-  file scopes. Users manage them in Settings > Crews.
+  file scopes. Users manage them on the Crews page.
 - One expert, one job: `crews.member.ask` (`handle` or `memberId`, `prompt`, `requestId`,
   optional `files`) is the `@member` ask. It runs one library member in its own
   conversation, with no coordinator or review, and reports back to this conversation.

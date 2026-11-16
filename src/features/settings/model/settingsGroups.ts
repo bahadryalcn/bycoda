@@ -42,7 +42,7 @@ export const SETTINGS_GROUPS: { id: SettingsGroupId; label: string }[] = [
   {
     id: "connections",
     get label() {
-      return t("Machines");
+      return t("Connections");
     },
   },
   {
@@ -73,7 +73,6 @@ export const SETTINGS_SECTION_ORDER: readonly SettingsSectionId[] = [
   "providers",
   "usage",
   "work",
-  "crews",
   "skills",
   "mcp",
   "secrets",

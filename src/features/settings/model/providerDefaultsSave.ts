@@ -24,6 +24,7 @@ import {
   projectProviderSettingsPersisted,
   setProjectDefaultModel,
   setProjectDefaultProvider,
+  setProjectProviderAccount,
   setProjectProviderHidden,
   setProjectSessionDefaults,
 } from "../../sessions/public/projectProviders";
@@ -111,6 +112,8 @@ function writeProject(project: string, draft: DefaultsDraft) {
       setProjectSessionDefaults(project, harness, overlaySessionDefaults(stored, change));
     }
     if (change.hidden !== undefined) setProjectProviderHidden(project, harness, change.hidden);
+    if (change.account !== undefined)
+      setProjectProviderAccount(project, harness, change.account ?? undefined);
   }
   const provider = draft.defaultProvider;
   if (provider) {

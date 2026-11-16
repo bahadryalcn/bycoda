@@ -173,6 +173,8 @@ export class DesktopLive {
 
   onChange?: (sessionIds: string[]) => void;
   onSourceChange?: (sessionIds: string[]) => void;
+  /** A window's project directory projection changed or its window stopped answering. */
+  onDirectoryChange?: () => void;
   /** A window reported a conversation busy (each beat while it runs). */
   onBusy?: (sessionId: string, clientId: string) => void;
   /** A conversation a window ran is no longer busy there (`idle`), or the window stopped answering (`gone`). */
@@ -243,8 +245,11 @@ export class DesktopLive {
       value.projectDirectoryRevision.length <= 64
         ? value.projectDirectoryRevision
         : undefined;
+    let directoryChanged = false;
     if (Object.hasOwn(value, "projectDirectory")) {
       const projection = parseDesktopProjectDirectory(value.projectDirectory);
+      directoryChanged =
+        JSON.stringify(this.directories.get(clientId)?.value) !== JSON.stringify(projection);
       this.directories.set(clientId, {
         at: this.now(),
         value: projection,
@@ -394,7 +399,7 @@ export class DesktopLive {
     for (const [id, beatAt] of this.clients) {
       if (this.now() - beatAt <= DESKTOP_BEAT_STALE_MS) continue;
       this.clients.delete(id);
-      this.directories.delete(id);
+      if (this.directories.delete(id)) directoryChanged = true;
       for (const [sessionId, session] of this.sessions)
         if (session.clientId === id) {
           this.sessions.delete(sessionId);
@@ -408,6 +413,7 @@ export class DesktopLive {
     this.reclaimCommands();
     if (sourceChangedIds.size) this.onSourceChange?.([...sourceChangedIds]);
     if (changedIds.size) this.onChange?.([...changedIds]);
+    if (directoryChanged) this.onDirectoryChange?.();
     return {
       ...(revision && this.directories.get(clientId)?.revision === revision
         ? { projectDirectoryRevision: revision }

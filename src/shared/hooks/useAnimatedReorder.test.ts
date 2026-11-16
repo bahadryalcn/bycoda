@@ -465,12 +465,16 @@ describe("workspace tab gestures", () => {
       pointerId: 1,
     } as ReactPointerEvent);
     isFolded = true;
+    expect(tabs[0].dataset.reorderFolding).toBeUndefined();
     pointer("pointermove", 40);
     vi.advanceTimersByTime(16);
+    // Folding is a DOM mark on every block, not a React render of the list.
+    expect(tabs.every((tab) => tab.dataset.reorderFolding === "")).toBe(true);
     // The grabbed point stays under the pointer: 66 + 16 - 42 = 40.
     expect(tabs[2].style.transform).toBe("translate3d(0, -42px, 0)");
     pointer("pointerup", 40);
     vi.runAllTimers();
+    expect(tabs.some((tab) => tab.dataset.reorderFolding !== undefined)).toBe(false);
     expect(onReorder).toHaveBeenCalledExactlyOnceWith(
       ["sessions", "explorer", "changes"],
       "explorer",

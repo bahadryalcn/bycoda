@@ -1819,6 +1819,10 @@ it("reconnects a recoverable cloud drop with fresh credentials and text context 
     expect.objectContaining({ summary: "", disclosureCurrent: expect.any(Function) }),
   );
   expect(container.textContent).toContain("Listening");
+  // The unanswered request is reported once instead of silently dropped.
+  const notices = mock.speak.mock.calls.filter(([text]) => text.includes("connection dropped"));
+  expect(notices).toHaveLength(1);
+  expect(notices[0][0]).toContain('"Continue my work"');
 });
 it("seeds a verified global summary once and captures its immutable Host proof for subsequent speech", async () => {
   const original = assistantHost.request.getMockImplementation()!;

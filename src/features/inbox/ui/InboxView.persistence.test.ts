@@ -249,7 +249,7 @@ it("bounds loaded rows and restores a scrolled position beyond the initial windo
     container.querySelectorAll<HTMLButtonElement>('button[aria-label*=": Inbox issue "]');
   expect(rows().length).toBeLessThan(64);
   const scroller = container.querySelector<HTMLElement>("[data-continuous-list]")!;
-  scroller.scrollTop = 1280;
+  scroller.scrollTop = 1920;
   await act(async () => scroller.dispatchEvent(new Event("scroll")));
   expect(inboxRow(container, "Inbox issue 40")).not.toBeNull();
   expect(rows().length).toBeLessThan(64);
@@ -257,7 +257,7 @@ it("bounds loaded rows and restores a scrolled position beyond the initial windo
   root = createRoot(container);
   await show();
   const restoredScroller = container.querySelector<HTMLElement>("[data-continuous-list]")!;
-  expect(restoredScroller.scrollTop).toBe(1280);
+  expect(restoredScroller.scrollTop).toBe(1920);
   expect(inboxRow(container, "Inbox issue 50")).not.toBeNull();
   expect(rows().length).toBeLessThan(64);
 });

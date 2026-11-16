@@ -8,7 +8,8 @@ import { AssistantSetup } from "../../assistant/ui/AssistantSetup";
 import { useVoiceSettings } from "../model/voiceSettings";
 import { VoiceWake } from "./VoiceWake";
 import type { VoiceCompanionProps } from "./VoiceCompanion";
-import styles from "./VoiceCompanion.module.css";
+import { VoiceLauncherFrame } from "./companion/VoiceLauncher";
+import { useVoiceLauncherSlot } from "./companion/voiceLauncherSlot";
 
 const Companion = lazy(() =>
   import("./VoiceCompanion").then((module) => ({ default: module.VoiceCompanion })),
@@ -19,6 +20,7 @@ export function VoiceCompanionGate(props: VoiceCompanionProps) {
   const settings = useVoiceSettings();
   const { snapshot, error, loading, refresh } = useAssistantSnapshot();
   const [setup, setSetup] = useState(false);
+  const slot = useVoiceLauncherSlot();
   useEffect(() => {
     if (snapshot?.profile.setupComplete)
       void migrateVoiceOwnerMemory(snapshot, assistantRequest).catch(() => {
@@ -29,9 +31,10 @@ export function VoiceCompanionGate(props: VoiceCompanionProps) {
   if (!snapshot || !snapshot.profile.setupComplete || !snapshot.profile.voiceSetupComplete)
     return (
       <>
-        <div className={styles.launcher}>
+        <VoiceLauncherFrame>
           <Button
             iconOnly
+            variant={slot ? "ghost" : undefined}
             label={t(error ? "Retry" : "Set up voice")}
             tooltip={error || t("Set up voice")}
             loading={loading}
@@ -39,7 +42,7 @@ export function VoiceCompanionGate(props: VoiceCompanionProps) {
           >
             <Mic className="icon-lg" />
           </Button>
-        </div>
+        </VoiceLauncherFrame>
         {setup && snapshot ? <AssistantSetup voice onClose={() => setSetup(false)} /> : null}
       </>
     );

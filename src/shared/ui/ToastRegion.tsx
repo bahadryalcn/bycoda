@@ -27,8 +27,21 @@ export {
   type ToastTone,
 } from "./ToastCard";
 
-/** The corner a toast stacks in. One stack per corner; `bottom-end` is the default. */
-export type ToastPlacement = "bottom-end" | "top-end" | "bottom-start" | "top-start";
+/**
+ * Where a toast stacks. One stack per placement; `top-center` is the default and the one place
+ * every alert, warning and info shows. Corners remain only for explicitly placed legacy cards.
+ */
+export type ToastPlacement = "top-center" | "bottom-end" | "top-end" | "bottom-start" | "top-start";
+
+/** The single shared alert location under the title bar. */
+export const DEFAULT_TOAST_PLACEMENT: ToastPlacement = "top-center";
+const PLACEMENTS: readonly ToastPlacement[] = [
+  "top-center",
+  "bottom-end",
+  "top-end",
+  "bottom-start",
+  "top-start",
+];
 
 const DEFAULT_INSET = 12;
 /** Keeps the toast stack on the inner side of every feature card in its corner. */
@@ -147,13 +160,14 @@ function corner(placement: ToastPlacement): Corner {
     const node = document.createElement("div");
     const top = placement.startsWith("top");
     const end = placement.endsWith("end");
+    const center = placement.endsWith("center");
     node.dataset.toastRegion = placement;
     node.setAttribute("aria-live", "polite");
     // A bottom column grows upward: what leaves through the window edge then never scrolls it.
     node.className = [
       "pointer-events-none fixed flex max-h-dvh gap-2 overflow-y-auto overscroll-contain px-3",
       top ? "top-0 flex-col" : "bottom-0 flex-col-reverse",
-      end ? "end-0 items-end" : "start-0 items-start",
+      center ? "inset-x-0 items-center" : end ? "end-0 items-end" : "start-0 items-start",
     ].join(" ");
     node.style.zIndex = String(LAYER.toast);
     applyInset(placement, node);
@@ -278,15 +292,19 @@ export type ToastSlotProps = {
 };
 
 /**
- * Puts a feature's own card (a reminder panel, an approval request) into a corner. The card owns
+ * Puts a feature's own card (a reminder panel, an approval request) into the alert stack column. The card owns
  * its surface, roles and actions; the slot owns placement, offset and the layer. Feature cards
  * stay fully visible next to the window edge and never tuck into the toast stack beside them.
  * Menus opened from inside open above the stack.
  * @group feedback
- * @use Put a feature's own card (reminder panel, approval request) in the shared toast corner.
+ * @use Put a feature's own card (reminder panel, approval request) in the shared top-center alert column.
  * @avoid Plain messages: Toast or useToast. Never position a notice with fixed and an offset.
  */
-export function ToastSlot({ placement = "bottom-end", order, children }: ToastSlotProps) {
+export function ToastSlot({
+  placement = DEFAULT_TOAST_PLACEMENT,
+  order,
+  children,
+}: ToastSlotProps) {
   const entry = useCorner(placement);
   if (!entry) return null;
   return createPortal(
@@ -307,7 +325,8 @@ export type ToastProps = ToastContentProps & {
 };
 
 /**
- * A declarative toast owned by a component: it shows while rendered and joins its corner's stack.
+ * A declarative toast owned by a component: it shows while rendered and joins the shared
+ * top-center stack (or its explicit placement's stack).
  *
  * ```tsx
  * {saved ? <Toast tone="success" message={t("Saved")} onDismiss={() => setSaved(false)} /> : null}
@@ -322,7 +341,7 @@ export type ToastProps = ToastContentProps & {
  * @avoid Save feedback next to its control: InlineMessage. Page or panel notice: Alert. Code with no component: useToast. A feature's own card: ToastSlot.
  * @arc toast-stack
  */
-export function Toast({ placement = "bottom-end", ...props }: ToastProps) {
+export function Toast({ placement = DEFAULT_TOAST_PLACEMENT, ...props }: ToastProps) {
   return (
     <StackedToast placement={placement}>
       <ToastCard {...props} />
@@ -383,7 +402,7 @@ function dismiss(id: string) {
 
 function dismissAll(placement?: ToastPlacement) {
   const leaving = queue.filter(
-    (item) => !placement || (item.placement ?? "bottom-end") === placement,
+    (item) => !placement || (item.placement ?? DEFAULT_TOAST_PLACEMENT) === placement,
   );
   publish(queue.filter((item) => !leaving.includes(item)));
   for (const item of leaving) item.onDismiss?.();
@@ -413,7 +432,7 @@ export type ToastRegionProps = {
  * the corner insets. Component-owned `<Toast>` and `<ToastSlot>` use the same corners whether
  * or not the region is mounted.
  * @group feedback
- * @use Mount once per window to render the imperative `toast` queue and set corner insets.
+ * @use Mount once per window to render the imperative `toast` queue and set placement insets.
  * @avoid Mounting a second region or a second toast layer. Component-owned messages: Toast.
  */
 export function ToastRegion({ insets: next }: ToastRegionProps) {
@@ -426,7 +445,7 @@ export function ToastRegion({ insets: next }: ToastRegionProps) {
   const key = JSON.stringify(next ?? {});
   useLayoutEffect(() => {
     const parsed = JSON.parse(key) as Partial<Record<ToastPlacement, number>>;
-    for (const placement of ["bottom-end", "top-end", "bottom-start", "top-start"] as const) {
+    for (const placement of PLACEMENTS) {
       if (parsed[placement] === undefined) delete insets[placement];
       else insets[placement] = parsed[placement];
       const entry = corners.get(placement);

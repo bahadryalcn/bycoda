@@ -76,15 +76,23 @@ it("sends every candidate with researched facts, the baseline, accounts and role
   expect(prompt).not.toContain('"id":"x"');
 });
 
-it("parses strictly and tolerates a code fence", () => {
-  expect(parsePlanAnswer("```json\n" + JSON.stringify(answer) + "\n```")?.pools).toHaveLength(2);
-  for (const text of [
-    "nope",
-    "{}",
-    JSON.stringify({ ...answer, models: [{ key: 0, intelligence: 9, cost: 2 }] }),
-    JSON.stringify({ ...answer, accounts: [{ ref: "a1", kind: "boss" }] }),
-  ])
-    expect(parsePlanAnswer(text)).toBeUndefined();
+it("tolerates a code fence and drops invalid items instead of the whole answer", () => {
+  const fenced = ["```json", JSON.stringify(answer), "```"].join(String.fromCharCode(10));
+  expect(parsePlanAnswer(fenced)?.pools).toHaveLength(2);
+  expect(parsePlanAnswer("nope")).toBeUndefined();
+  const partial = parsePlanAnswer(
+    JSON.stringify({
+      ...answer,
+      models: [{ key: 0, intelligence: 9, cost: 2 }, ...answer.models],
+      accounts: [{ ref: "a1", kind: "unknown" }],
+      roles: { ...answer.roles, steward: { pool: 3 } },
+      pools: [...answer.pools, ...Array.from({ length: 20 }, (_, i) => ({ name: `P${i}` }))],
+    }),
+  )!;
+  expect(partial.models).toEqual(answer.models);
+  expect(partial.accounts).toEqual([]);
+  expect(partial.roles).not.toHaveProperty("steward");
+  expect(partial.pools).toHaveLength(12);
 });
 
 it("keeps only valid keys, known roles and estimated or kind-less answers", () => {
@@ -114,7 +122,12 @@ it("plans through the routing-setup binding and names the planner", async () => 
   expect(result.plan.pools[0]!.name).toBe("Heavy");
   expect(provider.resolve).toHaveBeenCalledWith("text.routingSetup");
   expect(provider.run).toHaveBeenCalledWith(
-    expect.objectContaining({ model: "helper", ephemeral: true, timeoutMs: expect.any(Number) }),
+    expect.objectContaining({
+      model: "helper",
+      cwd: "~",
+      ephemeral: true,
+      timeoutMs: expect.any(Number),
+    }),
   );
 });
 
@@ -133,13 +146,19 @@ it("never rejects: no model, garbage, failure and hang use the researched rules"
   expect(await planSmartSetup(candidates, names, {})).toEqual(rules);
   provider.resolve.mockResolvedValue({ harness: "codex", model: "helper", modelSettings: {} });
   provider.run.mockResolvedValueOnce("garbage");
-  expect(await planSmartSetup(candidates, names, {})).toEqual(rules);
+  expect(await planSmartSetup(candidates, names, {})).toEqual({
+    ...rules,
+    failure: { planner: "helper", reason: "unreadable" },
+  });
   provider.run.mockRejectedValueOnce(new Error("offline"));
-  expect(await planSmartSetup(candidates, names, {})).toEqual(rules);
+  expect(await planSmartSetup(candidates, names, {})).toEqual({
+    ...rules,
+    failure: { planner: "helper", reason: "error", detail: "offline" },
+  });
   vi.useFakeTimers();
   provider.run.mockReturnValueOnce(new Promise(() => {}));
   const pending = planSmartSetup(candidates, names, {});
   await vi.advanceTimersByTimeAsync(200_000);
-  expect(await pending).toEqual(rules);
+  expect(await pending).toEqual({ ...rules, failure: { planner: "helper", reason: "timeout" } });
   expect(provider.run.mock.calls.at(-1)?.[0].signal.aborted).toBe(true);
 });

@@ -295,6 +295,13 @@ and its effective policy, account permissions and owner approval rules.
   from this session's scoped discovery receipts can be selected. Copy the target's
   `provider`, `kind`, `number`, `repo`, `id` and `identifier` into `item`; the host
   supplies `projectPath`. Existing provider allowlists remain in effect.
+  `inbox.providers.list` takes an optional `provider` to read a single provider.
+- `inbox.providers.connections` reports which provider accounts the desktop has
+  connected, so an agent checks it instead of asking for separate credentials.
+- `inbox.jira.boards/board/transitions` read the Jira boards enabled in desktop
+  Inbox visibility; a board read returns the `snapshotId` the issue operations use.
+  `inbox.jira.transition` and `inbox.jira.move` change an issue on that snapshot after
+  the desktop's native approval of the exact issue and change.
 
 Provider operations return durable receipts, not immediate success. A receipt's
 state is `queued`, `running`, `completed`, `failed` or `uncertain`. Keep the same

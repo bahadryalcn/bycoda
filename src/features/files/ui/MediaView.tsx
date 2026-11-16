@@ -2,6 +2,7 @@ import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
 import { Progress } from "../../../shared/ui/Progress";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
+import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
@@ -62,6 +63,9 @@ export function MediaView({
   );
   const opening = openingOwner === actionOwner;
   const actionError = actionFailure?.owner === actionOwner ? actionFailure.message : undefined;
+  const loadShownCentrally = useConnectionErrorShownCentrally(
+    state.status === "error" ? state.message : undefined,
+  );
   const isVideo = mediaKind(path) === "video";
   const player = useRef<HTMLMediaElement | null>(null);
   const generation = useRef(0);
@@ -176,7 +180,7 @@ export function MediaView({
               )
             }
           />
-        ) : state.status === "error" ? (
+        ) : state.status === "error" && loadShownCentrally ? null : state.status === "error" ? (
           <DocumentMessage title={t("Couldn’t open {p0}", { p0: basename(path) })} error>
             <InlineError>{state.message}</InlineError>
             <Button

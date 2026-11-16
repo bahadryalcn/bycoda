@@ -198,6 +198,12 @@ test("changed Rust, application and browser files select the matching cheap CI g
     (step) => step.name === "Rust formatting (CI preflight)",
   );
   assert.deepEqual([rust.command, ...rust.args], ["cargo", "fmt", "--all", "--check"]);
+  const format = localPlan({ root, decision: classifyChanges(changed) }).steps.find((step) =>
+    step.name.startsWith("Changed-file formatting"),
+  );
+  // The changed-file run repairs formatting and line endings itself; only the
+  // whole-repository preflight still reports them.
+  assert(format.args.includes("fmt") && !format.args.includes("--check"));
   const rustOnly = names(["src-tauri/src/lib.rs"]);
   assert(!rustOnly.includes("Evaluation harness types (CI scripts)"));
   assert(!rustOnly.includes("Browser manifest ownership (CI browser)"));

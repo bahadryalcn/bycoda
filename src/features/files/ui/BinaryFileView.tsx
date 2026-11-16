@@ -3,6 +3,7 @@ import { Text } from "../../../shared/ui/Text";
 import { Progress } from "../../../shared/ui/Progress";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
+import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertCircle, Check, Copy, Folder, Minus, Plus, RotateCcw } from "../../../shared/ui/icons";
@@ -106,6 +107,10 @@ export function BinaryFileView({ path, cwd }: Props) {
     };
   }, [path, reload]);
 
+  const loadShownCentrally = useConnectionErrorShownCentrally(
+    state.status === "error" ? state.message : undefined,
+  );
+
   if (state.status === "loading") {
     return (
       <div className="grid h-full place-items-center p-3">
@@ -115,6 +120,7 @@ export function BinaryFileView({ path, cwd }: Props) {
   }
 
   if (state.status === "error") {
+    if (loadShownCentrally) return null;
     return (
       <FileCard
         path={path}

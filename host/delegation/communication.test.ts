@@ -175,6 +175,25 @@ it("notifies the parent once per opted-in child turn and does not wake on runnin
   expect(f.deliver).toHaveBeenCalledTimes(2);
 });
 
+it("delivers a completion to a parent with broader permissions than its child", async () => {
+  const f = await fixture();
+  await f.records.patch("a", { notifyOnCompletion: true, childRunId: "turn-a" });
+  f.inspect.mockImplementation(async (id) => ({
+    projectId: "p",
+    runtimeMode: id === "parent" ? "full-access" : "supervised",
+    status: "idle",
+  }));
+  await f.communication.tick();
+  expect(f.deliver).toHaveBeenCalledOnce();
+  // The peer gate still holds for messages the child writes itself.
+  await expect(
+    f.communication.send(
+      { requestId: "peer", runId: "parent", message: "Question" },
+      { sessionId: "child-a", projectId: "p" },
+    ),
+  ).rejects.toThrow("broader or unknown execution");
+});
+
 it("recovers a persisted dispatch as unknown instead of repeating an effect", async () => {
   const f = await fixture();
   await f.communication.send(

@@ -2,6 +2,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { SecretValueStore } from "../../../secrets/secret-store";
 import { discover } from "./discovery";
+import { oauthPage, type OAuthPageKind } from "./page";
 import type { OAuthFetch } from "./net";
 import { credentialId, DEFAULT_ACCOUNT, OAuthStore, type OAuthIndexEntry } from "./store";
 import {
@@ -41,9 +42,6 @@ type Pending = {
   timer: NodeJS.Timeout;
   expiresAt: number;
 };
-
-const PAGE = (message: string) =>
-  `<!doctype html><meta charset="utf-8"><title>bycoda</title><body style="font:16px system-ui;padding:2rem">${message}</body>`;
 
 /** Host-held OAuth for HTTP MCP servers. Sign-in only ever starts from an owner RPC. */
 export class McpOAuth {
@@ -109,6 +107,7 @@ export class McpOAuth {
           request.url ?? "",
           request.headers.host,
           request.method,
+          request.headers["accept-language"],
           response,
         ).catch(() => undefined);
       });
@@ -153,28 +152,29 @@ export class McpOAuth {
     path: string,
     host: string | undefined,
     method: string | undefined,
+    acceptLanguage: string | undefined,
     response: import("node:http").ServerResponse,
   ) {
-    const reply = (status: number, message: string) =>
+    const reply = (status: number, kind: OAuthPageKind) =>
       response
         .writeHead(status, {
           "Content-Type": "text/html; charset=utf-8",
           "Cache-Control": "no-store",
           Connection: "close",
         })
-        .end(PAGE(message));
+        .end(oauthPage(kind, acceptLanguage));
     // Anything but the exact loopback callback (DNS rebinding, stray requests) is ignored.
-    if (method !== "GET" || host !== `127.0.0.1:${port}`) return reply(400, "Invalid request.");
+    if (method !== "GET" || host !== `127.0.0.1:${port}`) return reply(400, "invalid");
     const url = new URL(path, flow.redirectUri);
-    if (url.pathname !== "/callback") return reply(404, "Not found.");
-    if (url.searchParams.get("state") !== flow.state) return reply(400, "Invalid sign-in state.");
+    if (url.pathname !== "/callback") return reply(404, "invalid");
+    if (url.searchParams.get("state") !== flow.state) return reply(400, "invalid");
     // The state matched: this request is the one answer; the listener is spent either way.
     this.cancel(flow.id, true);
     const code = url.searchParams.get("code");
     const denied = url.searchParams.get("error");
     if (denied || !code) {
       await this.fail(flow.server, CALLBACK_ERRORS.has(denied ?? "") ? denied! : "denied");
-      return reply(400, "Sign-in was not completed. You can close this tab.");
+      return reply(400, denied === "access_denied" ? "cancelled" : "failure");
     }
     try {
       const tokens = await exchangeCode(this.doFetch, {
@@ -205,10 +205,10 @@ export class McpOAuth {
         },
       );
       this.options.onChange?.();
-      return reply(200, "Signed in. You can close this tab and return to bycoda.");
+      return reply(200, "success");
     } catch {
       await this.fail(flow.server, "exchange_failed");
-      return reply(400, "Sign-in failed. You can close this tab.");
+      return reply(400, "failure");
     }
   }
 

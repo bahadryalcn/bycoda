@@ -44,7 +44,7 @@ describe("tool workflow delivery", () => {
     expect(hint).not.toContain("servers.ssh.execute");
     expect(hint).not.toContain("devices.control.claim");
     expect(hint.split("\n").length).toBeLessThanOrEqual(6);
-    expect(hint.length).toBeLessThan(1_550);
+    expect(hint.length).toBeLessThan(1_650);
   });
 
   it("teaches on-demand MCP in one short line without server names, only with Conversation Tools", () => {
@@ -58,6 +58,6 @@ describe("tool workflow delivery", () => {
   });
 
   it("changes the delivery fingerprint with the version", () => {
-    expect(TOOL_WORKFLOW_GUIDANCE_VERSION).toBe("2026-11-14.1");
+    expect(TOOL_WORKFLOW_GUIDANCE_VERSION).toBe("2026-11-16.1");
   });
 });

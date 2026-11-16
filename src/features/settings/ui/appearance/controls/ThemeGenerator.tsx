@@ -6,7 +6,9 @@ import { t, useLocale } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
 import { Spinner } from "../../../../../shared/ui/Spinner";
 import { ImageLightbox } from "../../../../../shared/ui/ImageLightbox";
-import { Dices } from "../../../../../shared/ui/icons";
+import { Dices, Maximize2 } from "../../../../../shared/ui/icons";
+import { randomThemePrompt } from "../../../model/themePromptIdeas";
+import { Text } from "../../../../../shared/ui/Text";
 import { TextField } from "../../../../../shared/ui/TextField";
 import { canRunHarnessTextPrompt } from "../../../../../integrations/harness";
 import { HARNESSES } from "../../../../sessions";
@@ -78,18 +80,6 @@ const areaLabel = (area: ThemeSuggestionArea) => {
       return t("Motion");
   }
 };
-
-/** Evocative starting points for the dice button; each is its own catalog entry. */
-const promptIdeas = () => [
-  t("midnight ocean"),
-  t("warm kiln at dusk"),
-  t("foggy pine forest"),
-  t("neon Tokyo rain"),
-  t("quiet desert sunrise"),
-  t("soft paper and ink"),
-  t("deep space nebula"),
-  t("autumn café window"),
-];
 
 /**
  * One compact toolbar: describe a theme (or roll a prompt), or roll colors at random; choosing a
@@ -206,6 +196,11 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
       });
       if (owner !== session.batch()) return;
       mark({ status: "done", image });
+      // The chosen look waits for its drawing; a chip drawn in the background only keeps it.
+      if (session.selected() === index)
+        await applyImage(image, suggestion).catch((error: unknown) =>
+          setImageFailure(themeSuggestionFailureDetail(error)),
+        );
     } catch (error) {
       if (owner !== session.batch()) return;
       mark({ status: "error", detail: themeSuggestionFailureDetail(error) });
@@ -225,7 +220,10 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
     );
   };
 
-  /** Apply a theme without starting an image request. */
+  /**
+   * Applies the whole look. Its image follows: a finished drawing is used, one in flight is used
+   * when it lands, image mode draws one, and otherwise the previous look's image is removed.
+   */
   const choose = (suggestion: ThemeSuggestion, index: number) => {
     session.invalidateImageIntent();
     applyThemeSuggestion(appearance, suggestion);
@@ -234,6 +232,19 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
     setSelectedIndex(index);
     setImageFailure(null);
     setRetryTarget(undefined);
+    const image = chipImages[index];
+    const action = chipImageAction(image);
+    if (action === "apply" && image?.status === "done") {
+      applyImage(image.image, suggestion).catch((error: unknown) =>
+        setImageFailure(themeSuggestionFailureDetail(error)),
+      );
+    } else if (action === "draw" && withImage) {
+      startImage(suggestion, index);
+    } else if (action === "draw" && appearance.chatBackgroundPath) {
+      appearance
+        .onClearChatBackground()
+        .catch((error: unknown) => setImageFailure(themeSuggestionFailureDetail(error)));
+    }
   };
 
   const random = () => {
@@ -250,10 +261,7 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
     generate().catch((error: unknown) => setFailure(themeSuggestionFailureDetail(error)));
   };
 
-  const rollPrompt = () => {
-    const ideas = promptIdeas().filter((idea) => idea !== prompt);
-    setPrompt(ideas[Math.floor(Math.random() * ideas.length)] ?? "");
-  };
+  const rollPrompt = () => setPrompt(randomThemePrompt(prompt));
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Enter" && !isImeComposition(event.nativeEvent)) startGenerate();
@@ -302,17 +310,17 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
   return (
     <div className="theme-generator">
       <div className="theme-generator-bar">
-        <TextField
-          fieldClassName="theme-generator-prompt"
-          fieldVariant="compact"
-          label={t("Describe a theme")}
-          hideLabel
-          value={prompt}
-          placeholder={t("For example “midnight ocean” or “warm kiln”")}
-          onChange={(event) => setPrompt(event.target.value)}
-          onKeyDown={onKeyDown}
-        />
-        <div className="theme-generator-tools" role="group" aria-label={t("Theme prompt tools")}>
+        <div className="theme-generator-prompt">
+          <TextField
+            fieldClassName="theme-generator-input"
+            fieldVariant="compact"
+            label={t("Describe a theme")}
+            hideLabel
+            value={prompt}
+            placeholder={t("For example “midnight ocean” or “warm kiln”")}
+            onChange={(event) => setPrompt(event.target.value)}
+            onKeyDown={onKeyDown}
+          />
           <Button
             iconOnly
             label={t("Random prompt")}
@@ -322,15 +330,6 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
           >
             <Dices />
           </Button>
-          <ImageProviderButton
-            value={withImage ? imageProvider : "none"}
-            onChange={(value) => {
-              if (value === "none") session.invalidateImageIntent();
-              setWithImage(value !== "none");
-              if (value !== "none") setImageProvider(value);
-            }}
-          />
-          <SaveLookButton appearance={appearance} iconOnly />
         </div>
         <Suspense fallback={<LoadingText />}>
           <ModelPicker
@@ -359,13 +358,17 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
           />
         </Suspense>
         <div className="theme-generator-actions">
-          <Button
-            size="sm"
-            startIcon={<Dices />}
-            tooltip={t("Roll a random palette without a model")}
-            onClick={random}
-          >
-            {t("Random")}
+          <ImageProviderButton
+            value={withImage ? imageProvider : "none"}
+            onChange={(value) => {
+              if (value === "none") session.invalidateImageIntent();
+              setWithImage(value !== "none");
+              if (value !== "none") setImageProvider(value);
+            }}
+          />
+          <SaveLookButton appearance={appearance} iconOnly />
+          <Button size="sm" tooltip={t("Roll a random palette without a model")} onClick={random}>
+            {t("Random look")}
           </Button>
           <Button
             variant="primary"
@@ -393,12 +396,13 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
             const areas = suggestionAreas(suggestion).map(areaLabel);
 
             return (
-              <div key={`${suggestion.name}-${index}`}>
+              <div key={`${suggestion.name}-${index}`} className="theme-suggestion-card">
                 <Button
                   size="sm"
                   variant="item"
                   className="theme-suggestion"
                   pressed={selectedIndex === index}
+                  aria-label={t("Apply {p1}", { p1: suggestion.name })}
                   tooltip={t("Changes: {p1}", { p1: areas.join(", ") })}
                   onClick={() => choose(suggestion, index)}
                 >
@@ -425,56 +429,26 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
                       {image.status === "loading" ? (
                         <Spinner size="xs" />
                       ) : (
-                        <img src={libraryImageSrc(image.image)} alt="" draggable={false} />
+                        <img
+                          src={libraryImageSrc(image.image)}
+                          alt=""
+                          decoding="async"
+                          draggable={false}
+                        />
                       )}
                     </span>
                   ) : null}
-                  <span>{t("Apply {p1}", { p1: suggestion.name })}</span>
+                  <Text truncate>{suggestion.name}</Text>
                 </Button>
                 {image?.status === "done" ? (
                   <Button
+                    iconOnly
                     size="sm"
+                    variant="ghost"
                     label={t("Preview {p0}", { p0: suggestion.name })}
                     onClick={() => setPreview({ image: image.image, name: suggestion.name })}
                   >
-                    {t("Preview")}
-                  </Button>
-                ) : null}
-                {withImage && image?.status === "error" ? (
-                  <span>
-                    {t("Image generation failed.")} {image.detail}
-                  </span>
-                ) : null}
-                {withImage ? (
-                  <Button
-                    size="sm"
-                    aria-label={t("Image for {p1}: {p2}", {
-                      p1: suggestion.name,
-                      p2:
-                        image?.status === "loading"
-                          ? t("Generating image…")
-                          : image?.status === "done"
-                            ? t("Use image")
-                            : image?.status === "error"
-                              ? t("Retry image")
-                              : t("Generate image"),
-                    })}
-                    disabled={image?.status === "loading"}
-                    onClick={() => {
-                      if (image?.status === "done") {
-                        applyImage(image.image, suggestion).catch((error: unknown) =>
-                          setImageFailure(themeSuggestionFailureDetail(error)),
-                        );
-                      } else startImage(suggestion, index);
-                    }}
-                  >
-                    {image?.status === "loading"
-                      ? t("Generating image…")
-                      : image?.status === "done"
-                        ? t("Use image")
-                        : image?.status === "error"
-                          ? t("Retry image")
-                          : t("Generate image")}
+                    <Maximize2 />
                   </Button>
                 ) : null}
               </div>

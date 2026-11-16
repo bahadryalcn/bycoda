@@ -113,8 +113,9 @@ export function applyDrawnImageTuning(appearance: AppearanceSettings, suggestion
 
 /**
  * Applies a suggestion through the existing setters: tint and accent always (the accent always
- * passes contrast), every optional field only when the model chose it. Preference fields share one
- * `onPreferences` write.
+ * passes contrast), every optional field only when the model chose it, and a missing gradient
+ * switches the old one off. Preference fields share one `onPreferences` write. The background
+ * image is the generator's call (it knows whether this suggestion has a drawing).
  */
 export function applyThemeSuggestion(appearance: AppearanceSettings, suggestion: ThemeSuggestion) {
   if (suggestion.scheme) appearance.onThemePreference(suggestion.scheme);
@@ -124,8 +125,16 @@ export function applyThemeSuggestion(appearance: AppearanceSettings, suggestion:
   const preferences = preferenceChanges(suggestion, appearance.preferences.codeSize);
   if (Object.keys(preferences).length > 0)
     appearance.onPreferences({ ...appearance.preferences, ...preferences });
+  // A suggestion is a whole new look: without its own gradient, the previous look's gradient
+  // (tinted for other colours) is switched off instead of left behind.
+  const background = loadWorkspaceBackground();
+  if (!suggestion.gradient && background.enabled) {
+    saveWorkspaceBackground(
+      { ...background, enabled: false },
+      { base: background, fields: ["enabled"] },
+    );
+  }
   if (suggestion.gradient) {
-    const background = loadWorkspaceBackground();
     const change = backgroundGradientChange(suggestion.gradient);
     saveWorkspaceBackground(
       { ...background, ...change },

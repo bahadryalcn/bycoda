@@ -12,10 +12,18 @@ import {
   inboxOperationWrites,
   parseRemoteInboxOperation,
 } from "../../src/features/inbox/model/remoteInbox";
+import { isRemoteJiraOperation } from "../../src/features/inbox/model/jiraBoardProtocol";
 import type { ConversationTool } from "./conversation-tools";
 
 export const isWorkspaceConversationTool = (action: string) =>
   /^(notes|automations|inbox)\./.test(action);
+const JIRA_ACTIONS: Partial<Record<string, string>> = {
+  "inbox.jira.boards": "jira-boards",
+  "inbox.jira.board": "jira-board-read",
+  "inbox.jira.transitions": "jira-issue-transitions",
+  "inbox.jira.transition": "jira-board-transition",
+  "inbox.jira.move": "jira-board-move",
+};
 const page = <T>(items: T[], input: Record<string, unknown>, total = items.length) => {
   const offset = Number(input.offset ?? 0),
     limit = Number(input.limit ?? 30);
@@ -198,24 +206,35 @@ export class ConversationWorkspaceTools {
       )
       .digest("hex");
     if (action === "inbox.result") return await this.inbox.result(owner, input.requestId);
+    const jiraAction = JIRA_ACTIONS[action];
     const operation = parseRemoteInboxOperation(
-      {
-        ...input,
-        projectId: project.id,
-        action:
-          action === "inbox.providers.list"
-            ? "list"
-            : action === "inbox.prAction"
-              ? "pr-action"
-              : action === "inbox.reviewContext"
-                ? "review-context"
-                : action.slice("inbox.".length),
-        ...(action === "inbox.providers.list"
-          ? {
-              query: { assignedToMe: input.assignedToMe, state: input.state, search: input.search },
-            }
-          : { item: { ...(input.item as Record<string, unknown>), projectPath: project.cwd } }),
-      },
+      jiraAction
+        ? { ...input, projectId: project.id, action: jiraAction }
+        : action === "inbox.providers.connections"
+          ? { action: "providers" }
+          : action === "inbox.providers.list"
+            ? {
+                projectId: project.id,
+                action: "list",
+                query: {
+                  assignedToMe: input.assignedToMe,
+                  state: input.state,
+                  search: input.search,
+                  githubKinds: input.githubKinds,
+                  providers: input.provider === undefined ? undefined : [input.provider],
+                },
+              }
+            : {
+                ...input,
+                projectId: project.id,
+                action:
+                  action === "inbox.prAction"
+                    ? "pr-action"
+                    : action === "inbox.reviewContext"
+                      ? "review-context"
+                      : action.slice("inbox.".length),
+                item: { ...(input.item as Record<string, unknown>), projectPath: project.cwd },
+              },
       [project],
     );
     const receipt = await this.inbox.existingRequest(owner, input.requestId, operation);
@@ -226,6 +245,9 @@ export class ConversationWorkspaceTools {
       return await this.inbox.request(owner, input.requestId, operation);
     if (principal.kind !== "session")
       throw new Error("Inbox writes require a real focused session for owner approval.");
+    // The desktop's native Jira prepare step shows the owner the exact issue and change.
+    if (isRemoteJiraOperation(operation))
+      return await this.inbox.request(owner, input.requestId, operation);
     const key = `${owner}:${input.requestId}`;
     const signature = JSON.stringify(operation);
     const pending = this.pendingWrites.get(key);

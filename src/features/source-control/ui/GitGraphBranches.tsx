@@ -177,9 +177,7 @@ export function GitGraphBranches({
       </div>
       <div className="min-h-0 overflow-y-auto pb-3">
         {error ? (
-          <InlineError className="px-3" retry={{ onRetry: refresh }}>
-            {error}
-          </InlineError>
+          <InlineError className="px-3" details={error} retry={{ onRetry: refresh }} />
         ) : null}
         {loading && !data ? (
           <LoadingText className="px-3 py-1">{t("Loading branches…")}</LoadingText>

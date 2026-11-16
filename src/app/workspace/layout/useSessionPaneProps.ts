@@ -73,6 +73,7 @@ export interface SessionPaneDeps {
   onBtwModelChange: P["onBtwModelChange"];
   onNewTerminalInSession: P["onNewTerminal"];
   onRunSessionProjectAction: P["onRunProjectAction"];
+  onRunSessionCode: P["onRunCode"];
 }
 
 export function useSessionPaneProps({
@@ -138,6 +139,7 @@ export function useSessionPaneProps({
   onBtwModelChange,
   onNewTerminalInSession,
   onRunSessionProjectAction,
+  onRunSessionCode,
 }: SessionPaneDeps) {
   const windowMovingSessionIds = useMemo(
     () =>
@@ -211,6 +213,7 @@ export function useSessionPaneProps({
     onBtwModelChange: useKeepSessionAction(onBtwModelChange, onKeepSession),
     onNewTerminal: onNewTerminalInSession,
     onRunProjectAction: onRunSessionProjectAction,
+    onRunCode: onRunSessionCode,
   };
 
   // One object while its values hold: the main area and inbox-ask panes are memoized on it.

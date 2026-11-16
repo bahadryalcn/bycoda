@@ -12,6 +12,7 @@ import { checkoutOptionLabel, sessionCheckout } from "../model/checkoutSelection
 import type { Worktree } from "../model/worktrees";
 import { Button } from "../../../shared/ui/Button";
 import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
+import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 
 type Props = {
   repositoryPaths?: readonly string[];
@@ -48,8 +49,9 @@ export function SourceControl({
     enabled && !repositoryPaths?.length && !!onOpenRepository,
   );
   // A plain folder has no worktrees to list; the panel below says so once.
+  const connectionShownCentrally = useConnectionErrorShownCentrally(error);
   const discoveryNotice =
-    error && !/not a git repository/i.test(error) ? (
+    error && !connectionShownCentrally && !/not a git repository/i.test(error) ? (
       <Text
         as="div"
         size="caption"

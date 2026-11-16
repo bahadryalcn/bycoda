@@ -13,11 +13,12 @@ import {
   type Draft,
   draftInputOwner,
 } from "../noteDrafts";
-import { NOTES_CHANGED_EVENT, noteTitle, upsertNote } from "../notes";
+import { getNote, NOTES_CHANGED_EVENT, noteTitle, upsertNote } from "../notes";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { Toast, ToastCard, ToastSlot } from "../../../shared/ui/ToastRegion";
 import {
   getNotePrivateRecoveries,
+  discardNotePrivateRecovery,
   notePrivateInputCapacityUnavailable,
   subscribeNotePrivateRecoveries,
   type NotePrivateRecovery,
@@ -115,8 +116,8 @@ export function NoteDraftRecoveryNotice() {
       {visibleFailed.map(([id, draft]) => (
         <Toast
           key={id}
-          tone={retryingDrafts.has(id) ? "info" : "danger"}
-          title={t(retryingDrafts.has(id) ? "Retrying save…" : "Could not save note")}
+          tone="danger"
+          title={t("Could not save note")}
           action={{
             label: t("Retry save"),
             pending: retryingDrafts.has(id),
@@ -147,7 +148,12 @@ function PrivateInputRecovery({ input }: { input: NotePrivateRecovery }) {
   return (
     <ToastSlot>
       <div data-note-private-recovery={input.id}>
-        <ToastCard tone="info" title={t("Retained note input")}>
+        <ToastCard
+          tone="info"
+          title={t("Retained note input")}
+          durationMs={null}
+          onDismiss={() => discardNotePrivateRecovery(input.id)}
+        >
           <Text as="p" size="inherit" tone="inherit" weight="medium" className="wrap-anywhere">
             {input.title || t("Untitled")}
           </Text>
@@ -191,7 +197,23 @@ function PrivateInputRecovery({ input }: { input: NotePrivateRecovery }) {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => requestOpenNoteLibrary({ id: input.noteId })}
+              onClick={() => {
+                requestOpenNoteLibrary({ id: input.noteId });
+                void getNote(input.noteId)
+                  .then((note) => {
+                    const field = input.field === "source" ? "body" : input.field;
+                    if (
+                      note &&
+                      input.text !== null &&
+                      (field === "title" || field === "body") &&
+                      note[field] === input.text
+                    )
+                      discardNotePrivateRecovery(input.id);
+                  })
+                  .catch(() => {
+                    // Navigation still works; a failed read leaves exact input available.
+                  });
+              }}
             >
               {t("Open note")}
             </Button>

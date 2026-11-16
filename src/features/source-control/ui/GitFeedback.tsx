@@ -3,6 +3,7 @@ import { Text } from "../../../shared/ui/Text";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { t, useLocale } from "../../../shared/i18n/git";
+import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
@@ -47,6 +48,8 @@ function GitFeedbackContent({
   cwd,
 }: GitFeedbackProps) {
   useLocale();
+  // A machine connection failure is explained once by the central connection notice.
+  const shownCentrally = useConnectionErrorShownCentrally(kind === "error" ? detail : undefined);
   const [copying, setCopying] = useState(false);
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState<string>();
@@ -77,6 +80,7 @@ function GitFeedbackContent({
     retry: onRetry ? { onRetry, label: t("Retry") } : undefined,
     secondaryAction: onDismiss ? { label: t("Dismiss"), onClick: onDismiss } : undefined,
   };
+  if (shownCentrally) return null;
   return (
     <>
       {kind === "error" ? (

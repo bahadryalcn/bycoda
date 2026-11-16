@@ -24,6 +24,9 @@ import {
 import { WorkspaceDirectoryRemoval } from "./WorkspaceDirectoryRemoval";
 import { WorkspaceReview } from "./WorkspaceReview";
 
+/** Delay before reloading a workspace read that failed only because the Host was busy. */
+export const TEMPORARY_RELOAD_MS = 3_000;
+
 /** Kept local until S1 adds the optional managed identity fields to Session. */
 type ManagedIdentity = { workspaceId?: string; workspaceRevision?: number };
 
@@ -68,6 +71,7 @@ export function SessionWorkspaceActions({
     setError(null);
     if (!managedCandidate) return;
     let live = true;
+    let again: ReturnType<typeof setTimeout> | undefined;
     setPending("load");
     void (async () => {
       const advertised = await getWorkspaceCapabilities({ cwd });
@@ -91,13 +95,20 @@ export function SessionWorkspaceActions({
       }
     })()
       .catch((reason) => {
-        if (live) setError(reason instanceof Error ? reason.message : String(reason));
+        if (!live) return;
+        const message = presentRemoteError(reason);
+        if (message) setError(message);
+        // A busy Host or a read cancelled before sending is safe to ask again; a lost
+        // link is reloaded by the recovery subscription above instead.
+        else if (classifyRemoteError(reason).kind === "temporary")
+          again = setTimeout(() => setRetry((value) => value + 1), TEMPORARY_RELOAD_MS);
       })
       .finally(() => {
         if (live) setPending(null);
       });
     return () => {
       live = false;
+      clearTimeout(again);
     };
   }, [cwd, sessionId, workspaceId, managedCandidate, retry]);
 

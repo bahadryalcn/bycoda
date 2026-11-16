@@ -70,24 +70,21 @@ React, inline Rust test modules over 500 lines.
 
 ## File size
 
-Line counts are a hint to ask the questions above, not a rule to obey.
+Line counts are a hint to ask the questions above, not a rule to obey. There is no
+hard limit: file size never fails a check.
 
-| File kind              | Target (advisory) | Hard ceiling (gated) | Rule name in the check |
-| ---------------------- | ----------------- | -------------------- | ---------------------- |
-| `.tsx` component file  | 600 lines         | 1,200 lines          | `tsx-file`             |
-| `.ts`, `.mts`, `.mjs`  | 800 lines         | 1,600 lines          | `ts-file`              |
-| TypeScript test file   | 1,500 lines       | 3,000 lines          | `ts-test-file`         |
-| Rust production module | 1,500 lines       | 3,000 lines          | `rust-file`            |
-| Rust `*_tests.rs`      | 3,000 lines       | 6,000 lines          | `rust-test-file`       |
+| File kind              | Target (advisory) | Name in the note |
+| ---------------------- | ----------------- | ---------------- |
+| `.tsx` component file  | 600 lines         | `tsx-file`       |
+| `.ts`, `.mts`, `.mjs`  | 800 lines         | `ts-file`        |
+| TypeScript test file   | 1,500 lines       | `ts-test-file`   |
+| Rust production module | 1,500 lines       | `rust-file`      |
+| Rust `*_tests.rs`      | 3,000 lines       | `rust-test-file` |
 
-- Over a target: the check prints a note for changed files and never fails. Split if a
-  separable responsibility exists; otherwise continue. A line count is never a reason
-  to refuse, shrink or delay requested work.
-- Over a hard ceiling (twice the target): gated. No new file may cross it. Files already
-  over it are listed in the baseline with their line count and may grow by up to 50
-  lines past that count, so a fix or a small needed addition goes in place without a
-  detour. A new responsibility goes into the owning feature folder instead. The room is
-  not renewed by `--ratchet`; moving a part out lowers the count and frees it again.
+Over a target the check prints a note for changed files and never fails. Split if a
+separable responsibility exists; otherwise write the code where it belongs, however
+long the file becomes. A line count is never a reason to refuse, shrink, delay or
+detour requested work.
 
 ## Import boundaries
 
@@ -126,7 +123,7 @@ Cross-feature imports may use feature root paths or exact `public/<contract>.ts`
 | Command                                     | Effect                                                                                                                                                    |
 | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pnpm check:structure`                      | Gate against the baseline (part of `check:web` and CI)                                                                                                    |
-| `pnpm check:structure -- --report`          | Totals per rule and owner, the 25 largest files over the hard ceiling, count of files over target                                                         |
+| `pnpm check:structure -- --report`          | Totals per rule and owner, the 25 largest files over their line target, count of files over target                                                        |
 | `pnpm check:structure -- --files a.ts b.rs` | Only the given files (what `check-local` runs for changed files)                                                                                          |
 | `pnpm check:structure -- --ratchet`         | Lower baseline buckets after a cleanup; never raises                                                                                                      |
 | `pnpm check:structure -- --update-baseline` | Rewrite the baseline. Only for an owner-approved exception or a new rule; review the diff and record any rise in `scripts/checks/baseline-approvals.json` |

@@ -23,6 +23,8 @@ export type ProviderDefaultsChange = {
   extras?: Record<string, DraftValue>;
   /** Project and group targets: keep the provider out of the picker there. */
   hidden?: boolean;
+  /** Project and group targets: the account new conversations start on (`null` follows the provider's default). */
+  account?: DraftValue;
 };
 
 export type DefaultsDraft = {
@@ -85,7 +87,10 @@ export function accountDraftKey(harness: HarnessId, accountId: string): string {
   return `${harness}\n${accountId}`;
 }
 
-export function parseAccountDraftKey(key: string): { harness: HarnessId; accountId: string } {
+export function parseAccountDraftKey(key: string): {
+  harness: HarnessId;
+  accountId: string;
+} {
   const split = key.indexOf("\n");
   return { harness: key.slice(0, split) as HarnessId, accountId: key.slice(split + 1) };
 }
@@ -158,6 +163,7 @@ export function recordSessionDefaults(
   const change: ProviderDefaultsChange = {};
   if (previous?.model !== undefined) change.model = previous.model;
   if (previous?.hidden !== undefined) change.hidden = previous.hidden;
+  if (previous?.account !== undefined) change.account = previous.account;
   if (!same(base.effort, next.effort)) change.effort = next.effort ?? null;
   if (!same(base.runtimeMode, next.runtimeMode)) change.runtimeMode = next.runtimeMode ?? null;
   const extras: Record<string, DraftValue> = {};
@@ -172,7 +178,7 @@ export function recordSessionDefaults(
 }
 
 /** Sets or clears one non-session field; a value equal to the stored one leaves the set. */
-export function recordField<K extends "model" | "hidden">(
+export function recordField<K extends "model" | "hidden" | "account">(
   previous: ProviderDefaultsChange | undefined,
   field: K,
   value: ProviderDefaultsChange[K],
@@ -191,6 +197,7 @@ export function changeSize(change: ProviderDefaultsChange | undefined): number {
     Number(change.effort !== undefined) +
     Number(change.runtimeMode !== undefined) +
     Number(change.hidden !== undefined) +
+    Number(change.account !== undefined) +
     Object.keys(change.extras ?? {}).length
   );
 }

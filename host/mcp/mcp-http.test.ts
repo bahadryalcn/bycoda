@@ -523,6 +523,9 @@ describe("MCP tool deadline chain", () => {
   it("keeps logs.wait < Host relay < Rust/proxy 250 s < provider 300 s", () => {
     expect(sessionRpcTimeoutMs("logs.wait")).toBe(245_000);
     expect(sessionRpcTimeoutMs("logs.read")).toBe(120_000);
+    // Regression: the owner secret dialog lives 240 s; a 120 s relay aborted the call mid-typing.
+    expect(sessionRpcTimeoutMs("secrets.request")).toBeGreaterThan(240_000);
+    expect(sessionRpcTimeoutMs("secrets.request")).toBeLessThan(250_000);
     expect(240_000).toBeLessThan(sessionRpcTimeoutMs("logs.wait"));
     expect(sessionRpcTimeoutMs("logs.wait")).toBeLessThan(250_000);
     expect(250_000).toBeLessThan(300_000);

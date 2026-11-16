@@ -3,6 +3,7 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 /** Different job: Folder navigation opens directories; its separate membership checkbox selects folders without navigating. */
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
+import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { TextField } from "../../../shared/ui/TextField";
@@ -64,6 +65,8 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
   const [loadFailed, setLoadFailed] = useState(false);
+  // A machine connection failure while listing is explained once by the central notice.
+  const loadShownCentrally = useConnectionErrorShownCentrally(loadFailed ? error : undefined);
   const [active, setActive] = useState(0);
   const [selected, setSelected] = useState<string[]>([]);
   const [newName, setNewName] = useState<string | null>(null);
@@ -427,7 +430,7 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
               </Button>
             </form>
           ) : null}
-          {error ? (
+          {error && !loadShownCentrally ? (
             <div className="flex shrink-0 flex-wrap items-center gap-2 px-3 py-2">
               <Alert tone="danger" className="min-w-0 flex-[1_1_12rem]">
                 {error}

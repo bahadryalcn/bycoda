@@ -889,7 +889,7 @@ export function InboxView({
             stateKey={`inbox:${listScope}`}
             itemKey={inboxItemKey}
             requiredKey={selected ? inboxItemKey(selected) : null}
-            estimateSize={32}
+            estimateSize={48}
             renderItem={(item) => {
               const key = inboxItemKey(item);
               const relatedSessionCount = sessionCounts.get(key) ?? 0;

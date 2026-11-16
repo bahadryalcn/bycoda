@@ -5,6 +5,8 @@ import {
   voiceNameKey,
 } from "../../../features/voice/model/voiceProjectNames";
 import {
+  VOICE_REJECTED_NEXT,
+  VoiceActionRefusal,
   voiceWorkspaceTools,
   type VoiceWorkspaceActionsDeps,
   type VoiceWorkspaceResult,
@@ -297,12 +299,19 @@ export function createVoiceWorkspaceActions(read: () => VoiceWorkspaceActionsDep
         );
       const result = perform(action, { ...args }, workspaceRequestId);
       receipts.set(requestId, { signature, result });
+      // A definitive refusal changed nothing, so the owner's corrected retry may reuse the ID.
+      result.catch((error: unknown) => {
+        if (error instanceof VoiceActionRefusal && receipts.get(requestId)?.result === result)
+          receipts.delete(requestId);
+      });
       return await result;
     } catch (error) {
       return {
         action,
         status: "rejected",
         error: error instanceof Error ? error.message : "Workspace action failed.",
+        next: VOICE_REJECTED_NEXT,
+        ...(error instanceof VoiceActionRefusal ? error.details : {}),
       };
     }
   };

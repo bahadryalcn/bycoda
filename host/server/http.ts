@@ -778,6 +778,10 @@ export function createHttpRuntime(
         .finally(() => requests.delete(accepted));
     },
   );
+  // Node's 5 s default equals the desktop's idle heartbeat, so the desktop reused sockets
+  // the Host was just closing and reported a healthy Host as unreachable. Clients poll
+  // far more often than this; an idle socket costs nothing on loopback.
+  server.keepAliveTimeout = 65_000;
   return {
     get closing() {
       return closing;

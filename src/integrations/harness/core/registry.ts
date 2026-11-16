@@ -57,6 +57,7 @@ import {
   preserveProviderFailure,
 } from "./providerRetirement";
 import { beginHandoffPhase } from "./handoffPhase";
+import { requestWriterHandoff, serveWriterHandoff } from "./writerHandoff";
 import { formatDuration } from "../../../shared/i18n/format";
 import { t } from "../../../shared/i18n/core";
 import { TurnNotReadyError } from "./types";
@@ -287,16 +288,36 @@ function captureNativeSessionClaim(
   if (!(typeof isTauri === "function" && isTauri()) || hasHeadlessChildBackend()) return undefined;
   const existing = nativeSessionClaims.get(sessionId);
   if (existing) return existing;
+  serveWriterHandoff(releaseWriterForHandoff);
   let acquisitionStarted = false;
+  let refused = false;
   const claim: Promise<import("./controlTurn").NativeSessionCapability | null> = (async () => {
     await flushHostSessionBindings(sessionId);
     acquisitionStarted = true;
-    const capability = await acquireNativeSessionClaim(sessionId);
+    let capability: Awaited<ReturnType<typeof acquireNativeSessionClaim>>;
+    try {
+      capability = await acquireNativeSessionClaim(sessionId);
+    } catch (error) {
+      if (!isClaimHeld(error)) throw error;
+      // Another desktop window holds this conversation's writer; take it over
+      // the way a Host takeover does once that window confirms retirement.
+      refused = true;
+      if (!(await requestWriterHandoff(sessionId)))
+        throw new Error("Another window still holds this conversation. Retry after it finishes.");
+      try {
+        capability = await acquireNativeSessionClaim(sessionId);
+      } catch (retry) {
+        if (!isClaimHeld(retry)) refused = false;
+        throw retry;
+      }
+    }
+    refused = false;
     if (capability) await markNativeSessionClaim(capability);
     return capability;
   })().catch((error: unknown) => {
-    // A failure before native admission is known unstarted and can be retried.
-    if (!acquisitionStarted && nativeSessionClaims.get(sessionId) === claim)
+    // A failure before native admission, or a held-claim refusal (rolled back
+    // before commit), is known unstarted and can be retried.
+    if ((!acquisitionStarted || refused) && nativeSessionClaims.get(sessionId) === claim)
       nativeSessionClaims.delete(sessionId);
     throw error;
   });
@@ -304,6 +325,19 @@ function captureNativeSessionClaim(
   void claim.catch(() => undefined);
   nativeSessionClaims.set(sessionId, claim);
   return claim;
+}
+function isClaimHeld(error: unknown): boolean {
+  return (error instanceof Error ? error.message : String(error)) === "CANONICAL_CLAIM_HELD";
+}
+/** Another window asked for this window's writer; only an idle one is handed over. */
+async function releaseWriterForHandoff(sessionId: string): Promise<boolean> {
+  if (!nativeSessionClaims.has(sessionId)) return false;
+  if (activeTurnSessions.has(sessionId) || adapterOperations.has(sessionId))
+    throw new Error(
+      "This conversation is still running in another window. Retry after it finishes.",
+    );
+  await retireHarnessWriter(sessionId);
+  return true;
 }
 async function confirmCapturedNativeClaim(
   sessionId: string,

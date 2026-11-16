@@ -1,6 +1,7 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Tooltip } from "../../../shared/ui/Tooltip";
+import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { Text } from "../../../shared/ui/Text";
 import { useEffect, useId, useRef, useState } from "react";
 import {
@@ -93,6 +94,7 @@ export function WorkspaceSourceControl({
   useEffect(() => subscribeProjectPathsChanged(() => setSavedLabels(loadTabGroupLabels())), []);
   const discoveryRoots = checkouts ? paths : selected === cwd ? [...paths, cwd] : paths;
   const { modules, error, refresh } = useGitSubmodules(discoveryRoots, enabled, true);
+  const connectionShownCentrally = useConnectionErrorShownCentrally(error);
   const repositories = checkoutRepositoryPaths(paths, modules);
   const childNames = new Map(
     Object.entries(modules).flatMap(([parent, children]) =>
@@ -291,7 +293,7 @@ export function WorkspaceSourceControl({
           </Button>
         </div>
       ) : null}
-      {error ? (
+      {error && !connectionShownCentrally ? (
         <Text
           as="div"
           size="caption"

@@ -887,13 +887,13 @@ describe("model panel settings column", () => {
     expect(block.firstElementChild?.textContent).toContain("high");
   });
 
-  it("separates automatic subagent effort from real levels and preserves manual choice", async () => {
+  it("offers only the effort levels the subagent models support and preserves manual choice", async () => {
     const change = vi.fn();
     await openOrdered({ crossSubagentMaxEffort: "high" }, change);
     let block = await settingBlock("crossSubagentMaxEffort");
     expect(
       [...block.querySelectorAll('[role="radio"]')].map((el) => el.getAttribute("aria-label")),
-    ).toEqual(["Low", "Medium", "High", "Xhigh", "Max", "Ultra"]);
+    ).toEqual(["Low", "Medium", "High", "Xhigh"]);
     const automatic = () => block.querySelector<HTMLButtonElement>('[role="switch"]')!;
     expect(automatic().getAttribute("aria-checked")).toBe("false");
     await click(automatic());

@@ -47,6 +47,16 @@ export const QueuedMessageSchema = z.strictObject({
     })
     .optional(),
   intent: z.enum(["default", "plan", "build", "orchestrate"]).optional(),
+  /** Stamped by the Host on a subagent notice it queues for the parent; an owner client
+   * can never author a row (the Host refuses it on change). */
+  author: z
+    .strictObject({
+      kind: z.literal("delegation"),
+      runId: text,
+      title: text,
+      reason: z.enum(["completion", "message"]),
+    })
+    .optional(),
 });
 const queue = {
   // Existing saved queues may exceed the new-enqueue budget; keep them editable.

@@ -50,7 +50,6 @@ const SETTINGS_PRESENTATION: Record<SettingsSectionId, SettingsPresentation> = {
   integrations: "bounded",
   account: "bounded",
   secrets: "bounded",
-  crews: "wide",
   keybindings: "wide",
   skills: "workspace",
   archive: "bounded",

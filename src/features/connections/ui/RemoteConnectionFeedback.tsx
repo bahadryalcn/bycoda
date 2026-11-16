@@ -10,9 +10,15 @@ import {
   type ReactNode,
 } from "react";
 import { connectionOutcome, RECONNECT_GRACE_MS } from "../model/remoteConnection";
-import { isConnectionFailure, type RemoteFailure } from "../model/remoteFailure";
+import {
+  classifyRemoteError,
+  isConnectionFailure,
+  remoteErrorText,
+  type RemoteFailure,
+} from "../model/remoteFailure";
+import { setConnectionErrorGate } from "../../../shared/ui/connectionErrorGate";
 import { parseRemotePath } from "../model/remoteProjects";
-import { useRemoteOutages } from "../model/remoteHealth";
+import { readRemoteDownSince, useRemoteOutages } from "../model/remoteHealth";
 import { useRemoteConnection } from "../model/useRemoteConnection";
 import {
   loadRemoteAutoReconnect,
@@ -88,7 +94,8 @@ export function useRemoteConnectionFeedback(
   return !!feedback?.owners.size && !!environmentId && (!failure || isConnectionFailure(failure));
 }
 
-/** Place once in the workspace shell; mounted consumers determine the relevant machines. */
+/** Place once in the workspace shell; each affected machine gets one notice in the shared
+ * top-center toast stack. Mounted consumers determine the relevant machines. */
 export function RemoteConnectionNotices() {
   const feedback = useContext(FeedbackContext);
   const [ownerKey] = useState(() => Symbol("remote-connection-notices"));
@@ -120,6 +127,33 @@ export function RemoteConnectionNotices() {
   ));
 }
 
+/** An unreachable failure must name the remote link, not a bare socket error of a local command. */
+const REMOTE_LINK =
+  /RPC_|Host|Machine|machine|SSH|OpenSSH|Connect this project|Connection changed|os error 10(053|054|060)/;
+const isCentralConnectionError = (error: unknown) => {
+  const failure = classifyRemoteError(error);
+  if (!isConnectionFailure(failure)) return false;
+  return failure.kind !== "unreachable" || REMOTE_LINK.test(remoteErrorText(error));
+};
+let visibleNotices = 0;
+
+/**
+ * While at least one machine notice is on screen, shared failure components leave its connection
+ * errors to it. A quiet or dismissed notice installs nothing, so panes keep explaining themselves.
+ */
+function useConnectionGateWhileVisible(visible: boolean) {
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- counts visible notices into the module-level shared UI error gate, released on hide or unmount
+  useLayoutEffect(() => {
+    if (!visible) return;
+    visibleNotices += 1;
+    if (visibleNotices === 1) setConnectionErrorGate(isCentralConnectionError);
+    return () => {
+      visibleNotices -= 1;
+      if (visibleNotices === 0) setConnectionErrorGate(null);
+    };
+  }, [visible]);
+}
+
 function MachineConnectionNotice({
   environmentId,
   failure,
@@ -133,8 +167,16 @@ function MachineConnectionNotice({
     loadRemoteAutoReconnect,
     () => true,
   );
-  const active = !!failure || (status !== "connected" && status !== "connecting");
   const statusFromFailure = failure ? connectionOutcome(failure.message).status : undefined;
+  // The machine's own status decides whether there is an outage; a pane's registered failure
+  // only chooses the wording, and a stale `unreachable` one is ignored once the machine answers.
+  const hardFromFailure =
+    !!statusFromFailure &&
+    !["unreachable", "host-not-running", "connected"].includes(statusFromFailure);
+  const staleFailure =
+    !!failure && failure.kind === "unreachable" && status === "connected" && !hardFromFailure;
+  const active =
+    (!!failure && !staleFailure) || (status !== "connected" && status !== "connecting");
   const transient =
     (!failure || failure.kind === "unreachable") &&
     (status === "unreachable" ||
@@ -145,9 +187,12 @@ function MachineConnectionNotice({
       statusFromFailure === "unreachable" ||
       statusFromFailure === "host-not-running" ||
       statusFromFailure === "connected");
-  const [firstFailureAt, setFirstFailureAt] = useState<number | undefined>(() =>
+  const downSince = readRemoteDownSince(environmentId);
+  const [seenFailureAt, setFirstFailureAt] = useState<number | undefined>(() =>
     active ? Date.now() : undefined,
   );
+  // The outage began when the machine first stopped answering, not when this notice mounted.
+  const firstFailureAt = downSince ?? seenFailureAt;
   const [now, setNow] = useState(Date.now);
   const [dismissed, setDismissed] = useState(false);
   // Start one outage clock per mounted machine, retaining it across pane failures.
@@ -171,13 +216,14 @@ function MachineConnectionNotice({
     const timer = setTimeout(() => setNow(Date.now()), next);
     return () => clearTimeout(timer);
   }, [active, transient, autoReconnect, reconnecting, firstFailureAt, now]);
-  if (!active || (dismissed && transient)) return null;
   const quiet =
     transient &&
     autoReconnect &&
     !reconnecting &&
     (firstFailureAt === undefined || now < firstFailureAt + TRANSIENT_NOTICE_DELAY_MS);
-  if (quiet) return null;
+  const visible = active && !(dismissed && transient) && !quiet;
+  useConnectionGateWhileVisible(visible);
+  if (!visible) return null;
   const recovering =
     transient &&
     autoReconnect &&
@@ -198,15 +244,13 @@ function MachineConnectionNotice({
   };
   const displayedFailure = hardState ? currentFailure : (failure ?? currentFailure);
   return (
-    <div className="shrink-0 px-2 py-1" data-remote-connection-notice={environmentId}>
-      <RemoteLoadError
-        cwd={environmentId}
-        failure={displayedFailure}
-        compact
-        coordinated={false}
-        recovering={recovering}
-        onDismiss={transient && !recovering ? () => setDismissed(true) : undefined}
-      />
-    </div>
+    <RemoteLoadError
+      cwd={environmentId}
+      failure={displayedFailure}
+      toast
+      coordinated={false}
+      recovering={recovering}
+      onDismiss={transient && !recovering ? () => setDismissed(true) : undefined}
+    />
   );
 }

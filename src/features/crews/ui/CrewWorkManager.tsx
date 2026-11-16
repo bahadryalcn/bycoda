@@ -5,6 +5,7 @@ import { Heading } from "../../../shared/ui/Heading";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
+import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { FailureState } from "../../../shared/ui/FailureState";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
@@ -101,6 +102,7 @@ export function CrewWorkManager({
   // The filter belongs to the dialog, so polling and the edit/start pages never reset it.
   const [query, setQuery] = useState("");
   const data = state.data;
+  const refreshShownCentrally = useConnectionErrorShownCentrally(state.error);
   // Another machine has its own crews and work; nothing selected here applies there.
   if (scopedCwd !== cwd) {
     setScopedCwd(cwd);
@@ -294,7 +296,7 @@ export function CrewWorkManager({
           </div>
         ) : noWork ? (
           <div className="px-4 pb-4">
-            {data.catalogError || state.error ? (
+            {data.catalogError || (state.error && !refreshShownCentrally) ? (
               <div className="pb-3">
                 <Alert
                   tone="warning"
@@ -359,7 +361,7 @@ export function CrewWorkManager({
                 />
               </div>
             ) : null}
-            {selected || data.catalogError || state.error || error ? (
+            {selected || data.catalogError || (state.error && !refreshShownCentrally) || error ? (
               <div
                 className={`min-w-0 p-4 @min-[640px]/crew-management:min-h-64 ${hideDetailNarrow ? "hidden @min-[640px]/crew-management:block" : ""}`}
               >
@@ -384,7 +386,7 @@ export function CrewWorkManager({
                     {data.catalogError}
                   </Alert>
                 ) : null}
-                {state.error ? (
+                {state.error && !refreshShownCentrally ? (
                   <Alert
                     tone="warning"
                     action={{ label: t("Retry"), onClick: () => void state.refetch() }}

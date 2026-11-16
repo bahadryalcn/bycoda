@@ -45,12 +45,14 @@ The language selector applies immediately. Reopen the flow from Settings → Gen
   or a custom color with an adjustable strength. Preview in app turns Settings
   into a side panel without dimming, so live backgrounds, the crew and glass can
   be judged on the real workspace; Escape returns to the full dialog.
-  The image button in the theme generator opens a menu for None, Codex or Gemini;
-  its icon reflects the selected image provider. Generate themes returns suggestions;
-  applying a suggestion or using Random never requests an image. Choose Generate image
-  on a result to request one. Preview opens the finished image in the shared viewer
-  with zoom and pan without applying it or making another generation request;
-  close the preview and choose Use image to apply it. Failed images can be
+  The theme generator's dice fills the prompt with a new combination of scene, light
+  and finish. Generate themes and Random look show three suggestion cards; choosing a
+  card applies the whole look: a suggestion without its own gradient switches the
+  previous gradient off. Its image follows the image button (None, Codex or Gemini):
+  with a provider, choosing a card draws that card's image once and applies it when it
+  lands, unless another look was chosen meanwhile; with None, the previous background
+  image is removed. A finished image stays on its card, choosing the card again reuses
+  it, and the card's preview button opens it in the shared viewer. Failed images can be
   retried, and a failed theme refresh keeps the previous suggestions. A saved look is
   a snapshot of the current appearance, so it does not include a pending image.
   Gradient generation uses the theme generator model and applies when ready unless a
@@ -110,10 +112,10 @@ optional action and remains available in Settings.
 
 ## Manage providers after setup
 
-**Settings > Providers** has four tabs: **Accounts**, **CLI**, **Catalog**
-and **Decision models**. Settings search opens the relevant tab.
+**Settings > Models > Providers** shows the provider list and detail, then the CLI
+table and **Decision models**. Settings search opens the relevant part.
 
-- **Accounts** shows a provider rail with a **Default** badge and an account
+- **Provider detail** shows a provider rail with a **Default** badge and an account
   summary. Choose a provider to manage its accounts. **Edit account** changes the
   name, color and Personal or Work kind; **Automatic** restores the derived kind.
   Changes save together when you save the editor. The Host stores kind alongside
@@ -121,25 +123,25 @@ and **Decision models**. Settings search opens the relevant tab.
   `providers.desktop.accountKind.v1` capability alongside metadata editing support.
   Claude Code hooks remain a
   provider option here.
-- **CLI** lists every provider CLI in a table with **Installed version** and
+- The **CLI table** lists every provider CLI in a table with **Installed version** and
   **Status** columns. The checked time appears above the table; row tooltips give
   individual check times. Installed CLIs without an update feed show a neutral
   status rather than an available update.
   Check or update one provider, or use **Check all** and **Update all**. Open a
   provider's path control to configure its executable; missing providers offer
   **Set up**. Custom ACP providers use **Add provider**.
-- **Settings > Models** sets the provider, model, effort and permissions
-  for new conversations. **Subagents** holds advisor, subagent and image model defaults. Effort uses a stepped scale with the selected label beside it.
+- **Settings > Models > Chats** sets the provider, model, effort and permissions
+  for new conversations. **Settings > Models > Subagents** holds advisor, subagent and image model defaults. Effort uses a stepped scale with the selected label beside it.
   Use the apply bar to choose provider scope and several save
   destinations, then save. See [provider defaults](agent-tools.md#cross-provider-advisor-and-subagents)
   for inheritance, skipped fields and retrying failed destinations.
-- **Catalog** controls which models appear in pickers. The header and search stay
+- The provider's **model catalog** controls which models appear in pickers. The header and search stay
   in place while the list scrolls; search appears for longer lists. Changes save
   immediately, and at least one model must remain enabled per provider. The header
   refresh button checks the catalog. Successful checks stay quiet, including when
   nothing changed; failures show a notice. Built-in lists and unavailable CLIs
   retain their provenance or setup guidance.
-- **Decision models** manages connected sources, local discovery, privacy and
+- **Decision models** (below the CLI table) manages connected sources, local discovery, privacy and
   task routing. See [Manage decision models](decision-models.md).
 
 ## Guide

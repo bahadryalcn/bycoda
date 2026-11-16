@@ -27,6 +27,7 @@ export function EffortScale({
   showValue = true,
   showLabel = true,
   keepFocus,
+  inheritedValue,
   onValueChange,
 }: {
   options: readonly EffortScaleOption[];
@@ -38,11 +39,18 @@ export function EffortScale({
   /** Hide the visible label when a surrounding row already names the scale; it stays the accessible name. */
   showLabel?: boolean;
   keepFocus?: boolean;
+  /** Level an icon choice (such as an inherited default) resolves to; its bars fill muted while that choice is selected. */
+  inheritedValue?: string;
   onValueChange: (value: string) => void;
 }) {
   const t = useT();
   const levels = options.filter((option) => !option.icon);
-  const selected = levels.findIndex((option) => option.value === value);
+  const chosen = levels.findIndex((option) => option.value === value);
+  const inherited =
+    chosen < 0 && options.some((option) => option.icon && option.value === value)
+      ? levels.findIndex((option) => option.value === inheritedValue)
+      : -1;
+  const selected = chosen >= 0 ? chosen : inherited;
   return (
     <div className={styles.scale} data-disabled={disabled || undefined}>
       {showValue ? (
@@ -75,6 +83,7 @@ export function EffortScale({
             tooltip: option.label,
             data: {
               "data-filled": index >= 0 && index <= selected ? "" : undefined,
+              "data-inherited": index >= 0 && index <= inherited ? "" : undefined,
               "data-ultra": /^ultra/i.test(option.value) ? "" : undefined,
             },
             content: option.icon ?? (

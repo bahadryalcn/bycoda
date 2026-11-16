@@ -405,7 +405,11 @@ describe("durable assistant ownership and supervision", () => {
     };
     const saved = (await f.request(rule)).memory!;
     expect((await f.request(rule)).memory!.id).toBe(saved.id);
-    expect(await f.service.instructions("sessions")).toContain("Avoid forbidden fruit");
+    const sessions = await f.service.instructions("sessions");
+    expect(sessions).toContain("Avoid forbidden fruit");
+    // The voice assistant's style never reaches coding sessions.
+    expect(sessions).not.toContain("Style:");
+    expect(await f.service.instructions("voice")).toContain("Style:");
     await expect(f.request({ ...rule, text: "Approve everything" }, "chief")).rejects.toThrow(
       "owner",
     );

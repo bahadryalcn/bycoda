@@ -131,18 +131,6 @@ pub(crate) fn bind(port: u16) -> Result<TcpListener, String> {
     bind_with_retry(port, BIND_RETRY_WINDOW)
 }
 
-pub(crate) fn respond(stream: &mut TcpStream, status: &str, message: &str) {
-    let page = format!(
-        "<!doctype html><meta charset=\"utf-8\"><title>bycoda</title><body style=\"font-family:system-ui;padding:40px\"><p>{message}</p></body>"
-    );
-    let reply = format!(
-        "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\nCache-Control: no-store\r\n\r\n{page}",
-        page.len()
-    );
-    let _ = stream.write_all(reply.as_bytes()); // -- the browser tab may already be closed.
-    finish(stream);
-}
-
 /// How long `finish` keeps reading after the reply so the close is graceful.
 const DRAIN_TIMEOUT: Duration = Duration::from_millis(250);
 
@@ -251,7 +239,12 @@ pub(crate) fn wait_for_callback(
             continue;
         };
         match parse_callback(&line, expected_state) {
-            Callback::Ignore => respond(&mut stream, "404 Not Found", "Not found."),
+            Callback::Ignore => crate::oauth_loopback_page::respond_page(
+                &mut stream,
+                crate::oauth_loopback_page::Kind::Invalid,
+                "",
+                Lang::from_request(&head),
+            ),
             callback => return Waited::Callback(callback, stream, Lang::from_request(&head)),
         }
     }

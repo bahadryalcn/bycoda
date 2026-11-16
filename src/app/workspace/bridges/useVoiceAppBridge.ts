@@ -46,6 +46,7 @@ import {
   newProjectParent,
   projectFolderName,
 } from "../../../features/projects/model/newProjectFolder";
+import { projectNameTaken } from "../../../features/voice/model/voiceProjectConflict";
 
 type Deps = {
   projects: readonly VoiceWorkspaceProject[];
@@ -233,7 +234,17 @@ export function useVoiceAppBridge(deps: Deps) {
       );
     if (isRemoteProjectPath(parent)) throw new Error("New projects are created on this computer.");
     // The native command refuses an existing folder and asks for file access when needed.
-    const path = await createPath(parent, folder, true);
+    let path: string;
+    try {
+      path = await createPath(parent, folder, true);
+    } catch (error) {
+      if (!/already exists/i.test(String(error))) throw error;
+      throw projectNameTaken(
+        request.name,
+        `${parent}/${folder}`,
+        latest.current.projects.map((entry) => entry.path),
+      );
+    }
     await select(path, request.workspaceRequestId);
     return path;
   };

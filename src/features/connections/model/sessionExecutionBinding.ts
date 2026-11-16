@@ -240,6 +240,10 @@ function drain(): Promise<void> {
         await writeBindingEvidence(previous, next);
         writes.shift();
       } catch (error) {
+        if (await rebaseOnSameOwner(previous, next)) {
+          writes.shift();
+          continue;
+        }
         failure ??= { error };
         await resetAfterFailedWrite(next.shellId);
       }
@@ -249,6 +253,62 @@ function drain(): Promise<void> {
     saving = undefined;
   });
   return saving;
+}
+
+/** Another window (or this window's stale cache) moved the stored row but kept its owner:
+ * only display fields differ, so this window's newer record is written over it. An owner,
+ * authority or deletion change still fails the save. */
+async function rebaseOnSameOwner(
+  previous: StoredBindingEvidence | undefined,
+  next: StoredBindingEvidence,
+): Promise<boolean> {
+  let expected = previous;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    let stored: StoredBindingEvidence | undefined;
+    try {
+      stored = await readBindingEvidence(next.shellId);
+    } catch {
+      return false;
+    }
+    if (
+      !stored ||
+      (stored.raw === expected?.raw &&
+        stored.legacyRaw === expected?.legacyRaw &&
+        stored.version === expected?.version) ||
+      !sameOwner(stored.raw, next.raw)
+    )
+      return false;
+    if (canonicalEpoch) next.legacyRaw = stored.legacyRaw;
+    try {
+      await writeBindingEvidence(stored, next);
+      return true;
+    } catch {
+      expected = stored;
+    }
+  }
+  return false;
+}
+
+function sameOwner(storedRaw: string, nextRaw: string): boolean {
+  let stored: StoredHostShell;
+  let next: StoredHostShell;
+  try {
+    stored = JSON.parse(storedRaw);
+    next = JSON.parse(nextRaw);
+  } catch {
+    return false;
+  }
+  const a = stored?.binding;
+  const b = next?.binding;
+  if (!a || !b || (stored.deleted && !next.deleted) || (a.created && !b.created)) return false;
+  if (
+    a.authorityGeneration !== null &&
+    (b.authorityGeneration === null || b.authorityGeneration < a.authorityGeneration)
+  )
+    return false;
+  return (["kind", "environmentId", "machineId", "projectId", "sessionId"] as const).every(
+    (key) => a[key] === b[key],
+  );
 }
 
 /** Every queued write for this owner was based on the failed one, and the

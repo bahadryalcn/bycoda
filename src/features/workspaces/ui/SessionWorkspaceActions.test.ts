@@ -7,7 +7,7 @@ import { getSessions, setSessions } from "../../sessions/model/sessionsStore";
 import { newSession } from "../../sessions/model/session";
 import type { ManagedWorkspace } from "../model/contracts";
 import { getWorkspaceCapabilities, workspaceRequest } from "../model/workspaceClient";
-import { SessionWorkspaceActions } from "./SessionWorkspaceActions";
+import { SessionWorkspaceActions, TEMPORARY_RELOAD_MS } from "./SessionWorkspaceActions";
 import { notifyRemoteRecovered } from "../../connections/model/remoteHealth";
 import { remotePath } from "../../connections/model/remoteProjects";
 
@@ -124,6 +124,29 @@ it("shows one workspace retry after a scoped load failure and recovers from it",
   await act(async () => retries[0].click());
   expect(container.textContent).not.toContain("Retry workspace");
   expect(container.textContent).toContain("Resume");
+});
+
+it("reloads quietly after a read cancelled before dispatch instead of showing an error", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  try {
+    // This once stuck as "RPC_WS_CANCELLED: … Retry workspace" during a reconnect.
+    vi.mocked(workspaceRequest).mockRejectedValueOnce(
+      Object.assign(new Error("Host request was cancelled before dispatch"), {
+        code: "RPC_WS_CANCELLED",
+      }),
+    );
+    await act(async () =>
+      root.render(
+        createElement(SessionWorkspaceActions, { sessionId: "session", cwd: "/project" }),
+      ),
+    );
+    expect(container.textContent).not.toContain("cancelled");
+    expect(container.textContent).not.toContain("Retry workspace");
+    await act(async () => vi.advanceTimersByTime(TEMPORARY_RELOAD_MS));
+    expect(container.textContent).toContain("Resume");
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it("leaves shared connection recovery to the conversation and reloads only for its machine", async () => {

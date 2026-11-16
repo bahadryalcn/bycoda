@@ -3,9 +3,10 @@
 //! authorize URL, polls a handle and attaches the handle when it saves the account.
 use super::types::{now_ms, Secret};
 use crate::oauth_loopback::{
-    bind, code_challenge, random_token, respond, sanitize, wait_for_callback, Callback, Waited,
+    bind, code_challenge, random_token, sanitize, wait_for_callback, Callback, Waited,
     CALLBACK_PATH,
 };
+use crate::oauth_loopback_page::{respond_page, Kind};
 use serde::Serialize;
 use serde_json::{json, Map, Value};
 use std::collections::HashMap;
@@ -481,9 +482,9 @@ struct Flow {
 }
 
 fn listen(listener: TcpListener, flow: Flow) {
-    let (callback, mut stream) =
+    let (callback, mut stream, lang) =
         match wait_for_callback(&listener, &flow.state, &flow.cancel, flow.deadline) {
-            Waited::Callback(callback, stream, _) => (callback, stream),
+            Waited::Callback(callback, stream, lang) => (callback, stream, lang),
             Waited::Failed => {
                 set_state(
                     &flow.handle,
@@ -497,20 +498,12 @@ fn listen(listener: TcpListener, flow: Flow) {
         Callback::Ignore => {}
         Callback::Denied => {
             set_state(&flow.handle, State::Denied);
-            respond(
-                &mut stream,
-                "200 OK",
-                "Sign-in was cancelled. You can close this tab.",
-            );
+            respond_page(&mut stream, Kind::Cancelled, "", lang);
         }
         Callback::Error(code, _) => {
             let message = format!("{} sign-in failed: {code}", flow.purpose.label());
+            respond_page(&mut stream, Kind::Failure, &message, lang);
             set_state(&flow.handle, State::Failed(message));
-            respond(
-                &mut stream,
-                "200 OK",
-                "Sign-in failed. Return to bycoda for details.",
-            );
         }
         Callback::Code(code) => {
             let result = exchange(
@@ -524,19 +517,11 @@ fn listen(listener: TcpListener, flow: Flow) {
             match result {
                 Ok(record) => {
                     set_state(&flow.handle, State::Done(record));
-                    respond(
-                        &mut stream,
-                        "200 OK",
-                        "Signed in. You can close this tab and return to bycoda.",
-                    );
+                    respond_page(&mut stream, Kind::Success, "", lang);
                 }
                 Err(message) => {
+                    respond_page(&mut stream, Kind::Failure, &message, lang);
                     set_state(&flow.handle, State::Failed(message));
-                    respond(
-                        &mut stream,
-                        "200 OK",
-                        "Sign-in failed. Return to bycoda for details.",
-                    );
                 }
             }
         }

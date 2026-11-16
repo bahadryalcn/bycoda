@@ -516,6 +516,42 @@ describe("environment logical runtime", () => {
     expect(seen).toEqual([1]);
     expect(calls("subscriptions.ack")).toHaveLength(1);
   });
+  it("takes a fresh snapshot when a stream payload reference is no longer fetchable", async () => {
+    const { runtime, port, emit, calls } = fixture();
+    const seen: unknown[] = [];
+    const errors = vi.fn();
+    runtime.retain(
+      { kind: "project", projectId: "p" },
+      { parse: (value) => value, commit: (value) => void seen.push(value), onError: errors },
+    );
+    await flush();
+    // A late or reused reference once surfaced as "Data has not been verified" for good.
+    vi.mocked(port.bulk).mockRejectedValueOnce(
+      Object.assign(new Error("Host bulk reference is no longer owned by this window"), {
+        code: "RPC_WS_BULK_GRANT",
+      }),
+    );
+    emit({
+      $bulk: {
+        kind: "bulk",
+        transferId: "t",
+        environmentId: "env",
+        totalBytes: 11,
+        chunkBytes: 11,
+        sha256: "a".repeat(64),
+        expiresAt: 100,
+      },
+    });
+    await flush();
+    expect(calls("subscriptions.close")).toHaveLength(1);
+    expect(calls("subscriptions.open")).toHaveLength(2);
+    expect(calls("subscriptions.open")[1]?.[1]).not.toHaveProperty("cursor");
+    emit({ count: 2 }, 1);
+    await flush();
+    expect(seen).toEqual([{ count: 2 }]);
+    expect(calls("subscriptions.ack")).toHaveLength(1);
+    expect(errors).not.toHaveBeenCalled();
+  });
   it("does not ACK malformed bulk descriptors, wrong environments, or failed domain application", async () => {
     const { runtime, port, emit, calls } = fixture();
     const commit = vi.fn();

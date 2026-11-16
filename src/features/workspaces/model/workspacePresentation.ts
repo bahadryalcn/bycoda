@@ -136,12 +136,10 @@ export function workspaceRemovalAction(
   const closeFirst = facts.missing && workspace.state !== "merged";
   const disabledReason = !lifecycleAvailable
     ? t("Update the execution Host to remove managed directories.")
-    : workspace.directoryState === "removed"
-      ? t("This directory is already removed.")
-      : workspace.directoryState === "removing" || workspace.directoryState === "pendingRemoval"
-        ? t("Removal is in progress.")
-        : workspace.state === "active" && !facts.missing
-          ? t("Stop the session using this workspace first.")
-          : undefined;
+    : workspace.directoryState === "removing" || workspace.directoryState === "pendingRemoval"
+      ? t("Removal is in progress.")
+      : workspace.state === "active" && !facts.missing
+        ? t("Stop the session using this workspace first.")
+        : undefined;
   return { label, disabledReason, closeFirst };
 }

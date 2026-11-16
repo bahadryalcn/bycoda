@@ -6535,41 +6535,7 @@ pub(crate) fn git_output(root: &Path, args: &[&str]) -> Option<Vec<u8>> {
 /// a reader parked in `send`. A reader parked in `read` instead is a different
 /// case, and `stop` explains why that one is left detached.
 const GIT_OUTPUT_QUEUE_CHUNKS: usize = 16;
-const MAX_GIT_STREAMS: usize = 4;
-static ACTIVE_GIT_STREAMS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-static ACTIVE_NESTED_GIT_STREAMS: std::sync::atomic::AtomicUsize =
-    std::sync::atomic::AtomicUsize::new(0);
-
-struct GitStreamLease(&'static std::sync::atomic::AtomicUsize);
-impl GitStreamLease {
-    fn acquire(nested: bool) -> Result<Arc<Self>, String> {
-        let counter = if nested {
-            &ACTIVE_NESTED_GIT_STREAMS
-        } else {
-            &ACTIVE_GIT_STREAMS
-        };
-        let mut active = counter.load(Ordering::Acquire);
-        loop {
-            if active >= MAX_GIT_STREAMS {
-                return Err("Git stream capacity is unavailable".into());
-            }
-            match counter.compare_exchange_weak(
-                active,
-                active + 1,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            ) {
-                Ok(_) => return Ok(Arc::new(Self(counter))),
-                Err(actual) => active = actual,
-            }
-        }
-    }
-}
-impl Drop for GitStreamLease {
-    fn drop(&mut self) {
-        self.0.fetch_sub(1, Ordering::AcqRel);
-    }
-}
+use git_stream_capacity::{GitStreamLease, ACTIVE_GIT_STREAMS, ACTIVE_NESTED_GIT_STREAMS};
 
 /// Stream a local Git command without retaining its output. A separate owner
 /// enforces the deadline even while the consumer validates a streamed record.
@@ -6591,19 +6557,25 @@ pub(crate) fn git_stream_output(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
-    git_stream_command(command, deadline, nested, consume)
+    let streams = if nested {
+        &ACTIVE_NESTED_GIT_STREAMS
+    } else {
+        &ACTIVE_GIT_STREAMS
+    };
+    git_stream_command(streams, command, deadline, consume)
 }
 
+/// `streams` is the capacity pool this command's lease is counted in.
 fn git_stream_command(
+    streams: &'static std::sync::atomic::AtomicUsize,
     mut command: Command,
     deadline: Instant,
-    nested: bool,
     mut consume: impl FnMut(&[u8]) -> Result<(), String>,
 ) -> Result<(), String> {
     if Instant::now() >= deadline {
         return Err("Git output timed out".into());
     }
-    let lease = GitStreamLease::acquire(nested)?;
+    let lease = GitStreamLease::acquire(streams, deadline)?;
     let turn = GIT_SPAWN_GATE
         .enter_until(None, deadline)
         .ok_or("Git output timed out")?;
@@ -6804,12 +6776,12 @@ mod git_stream_process_tests {
     #[test]
     fn deadline_retires_silent_child_and_releases_capacity() {
         let _test = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
-        let before = ACTIVE_GIT_STREAMS.load(Ordering::Acquire);
+        let before = TEST_STREAMS.load(Ordering::Acquire);
         let mut observed = Vec::new();
         let result = git_stream_command(
+            &TEST_STREAMS,
             child("fs::git_stream_process_tests::silent_child"),
             Instant::now() + Duration::from_secs(5),
-            false,
             |chunk| {
                 observed.extend_from_slice(chunk);
                 Ok(())
@@ -6821,45 +6793,48 @@ mod git_stream_process_tests {
             .windows(b"SILENT_CHILD_READY".len())
             .any(|window| window == b"SILENT_CHILD_READY"));
         let deadline = Instant::now() + Duration::from_secs(2);
-        while ACTIVE_GIT_STREAMS.load(Ordering::Acquire) > before && Instant::now() < deadline {
+        while TEST_STREAMS.load(Ordering::Acquire) > before && Instant::now() < deadline {
             std::thread::yield_now();
         }
-        assert_eq!(ACTIVE_GIT_STREAMS.load(Ordering::Acquire), before);
+        assert_eq!(TEST_STREAMS.load(Ordering::Acquire), before);
     }
+
+    /// Process tests count their own leases; concurrent Git tests share the real pools.
+    static TEST_STREAMS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
     #[test]
     fn callback_failure_stops_owned_child() {
         let _test = TEST_LOCK.lock().unwrap();
-        let before = ACTIVE_GIT_STREAMS.load(Ordering::Acquire);
+        let before = TEST_STREAMS.load(Ordering::Acquire);
         let started = Instant::now();
         let result = git_stream_command(
+            &TEST_STREAMS,
             child("fs::git_stream_process_tests::silent_child"),
             started + Duration::from_secs(3),
-            false,
             |_| Err("synthetic callback failure".into()),
         );
         assert_eq!(result.unwrap_err(), "synthetic callback failure");
         assert!(started.elapsed() < Duration::from_secs(3));
         let deadline = Instant::now() + Duration::from_secs(2);
-        while ACTIVE_GIT_STREAMS.load(Ordering::Acquire) > before && Instant::now() < deadline {
+        while TEST_STREAMS.load(Ordering::Acquire) > before && Instant::now() < deadline {
             std::thread::yield_now();
         }
-        assert_eq!(ACTIVE_GIT_STREAMS.load(Ordering::Acquire), before);
+        assert_eq!(TEST_STREAMS.load(Ordering::Acquire), before);
     }
 
     #[test]
     fn inherited_pipe_retains_capacity_until_reader_retires() {
         let _test = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
-        let before = ACTIVE_GIT_STREAMS.load(Ordering::Acquire);
+        let before = TEST_STREAMS.load(Ordering::Acquire);
         let release =
             std::env::temp_dir().join(format!("bycoda-git-stream-release-{}", Uuid::new_v4()));
         let mut process = child("fs::git_stream_process_tests::inherited_pipe_parent");
         process.env("BYCODA_STREAM_FIXTURE_RELEASE", &release);
         let mut observed = Vec::new();
         let result = git_stream_command(
+            &TEST_STREAMS,
             process,
             Instant::now() + Duration::from_secs(3),
-            false,
             |chunk| {
                 observed.extend_from_slice(chunk);
                 Ok(())
@@ -6869,13 +6844,13 @@ mod git_stream_process_tests {
         assert!(observed
             .windows(b"PIPE_HOLDER_READY".len())
             .any(|window| window == b"PIPE_HOLDER_READY"));
-        assert!(ACTIVE_GIT_STREAMS.load(Ordering::Acquire) > before);
+        assert!(TEST_STREAMS.load(Ordering::Acquire) > before);
         std::fs::write(&release, b"release").unwrap();
         let deadline = Instant::now() + Duration::from_secs(4);
-        while ACTIVE_GIT_STREAMS.load(Ordering::Acquire) > before && Instant::now() < deadline {
+        while TEST_STREAMS.load(Ordering::Acquire) > before && Instant::now() < deadline {
             std::thread::yield_now();
         }
-        assert_eq!(ACTIVE_GIT_STREAMS.load(Ordering::Acquire), before);
+        assert_eq!(TEST_STREAMS.load(Ordering::Acquire), before);
         std::fs::remove_file(release).unwrap();
     }
 }
@@ -6927,6 +6902,7 @@ fn git_output_capped_with_timeout(
 
 #[path = "fs/git_bounded_output.rs"]
 mod git_bounded_output;
+mod git_stream_capacity;
 
 fn git_status_ok(status: &std::process::ExitStatus, args: &[&str]) -> bool {
     status.success()

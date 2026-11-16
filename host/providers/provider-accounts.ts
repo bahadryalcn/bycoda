@@ -36,7 +36,7 @@ const PROFILES = {
 type ProfileProvider = keyof typeof PROFILES;
 const PROFILE_PROVIDERS = Object.keys(PROFILES) as ProfileProvider[];
 
-function isProfileProvider(provider: unknown): provider is ProfileProvider {
+export function isProfileProvider(provider: unknown): provider is ProfileProvider {
   return typeof provider === "string" && Object.hasOwn(PROFILES, provider);
 }
 

@@ -5,6 +5,7 @@ import { buildGlobalRecentSessions } from "../../../src/features/sessions/model/
 import { pathKey } from "../../../src/shared/lib/paths";
 import { LastSessionsRows } from "../../../src/app/shell/LastSessionsSection";
 import { Sidebar } from "../../../src/app/shell/Sidebar";
+import { rememberRemoteProject } from "../../../src/features/connections/model/remoteProjects";
 import { saveSessionFolders } from "../../../src/features/sessions/model/sessionFolders";
 import { setSessionLifecycleList } from "../../../src/features/sessions/model/sessionLifecycleClient";
 import type { SessionSummary } from "../../../src/features/sessions/data/sessionStore";
@@ -27,7 +28,13 @@ import "./session-row-layout.css";
 
 // Isolated browser-local history and preferences. No native writes or provider calls.
 const params = new URLSearchParams(location.search);
-const cwd = "/fixture/bycoda";
+const cwd = params.has("remote-header")
+  ? rememberRemoteProject("fixture-office", {
+      id: "fixture-project",
+      cwd: "/fixture/bycoda",
+      name: "bycoda",
+    }).key
+  : "/fixture/bycoda";
 const now = Date.now();
 if (params.has("virtual-folders")) {
   saveSessionFolders(cwd, [
@@ -48,7 +55,7 @@ const demoWorktree = "/fixture/demo-repo-worktree";
 saveTabGroupLabel(demoCwd, "demo-repo");
 saveTabGroupColor(demoCwd, 5);
 saveRailBackgrounds(demoCwd, { header: { color: "#774466", opacity: 22 } });
-saveTabGroupLabel(cwd, "bycoda");
+saveTabGroupLabel(cwd, params.has("remote-header") ? "bycoda-cloud" : "bycoda");
 saveTabGroupColor(cwd, 7);
 saveTabGroupMascot(cwd, "cat");
 saveRailBackgrounds(cwd, { header: { color: "#336677", opacity: 25 } });
@@ -270,7 +277,7 @@ function Fixture() {
           }}
           open
           projectRailOpen={params.has("wide")}
-          compactProjectRail
+          compactProjectRail={!params.has("no-rail")}
           titleBarAbove
           sessions={history.filter((row) => row.cwd === projectCwd)}
           busySessionIds={new Set(params.has("statuses") ? ["status-working"] : ["row-working"])}

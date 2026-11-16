@@ -3,6 +3,7 @@ import { optionalTextAttributes, type TextRoles } from "./Text";
 import { useT } from "../i18n";
 import { ErrorDetails, errorHeadline, fitsOneLine } from "./ErrorDetails";
 import { NoticeGlyph, NoticeLink, type NoticeAction, type NoticeTone } from "./Notice";
+import { useConnectionErrorShownCentrally } from "./connectionErrorGate";
 
 export type InlineMessageTone = NoticeTone;
 
@@ -129,6 +130,8 @@ export type InlineErrorProps = Omit<InlineMessageProps, "tone" | "children"> & {
  * `live="polite"` or `"off"` for an error already present on open). Structured `retry`, `action` and
  * `secondaryAction` render as text links after the copy. `details` takes raw command or transport
  * output: it shows as written when short, otherwise behind a Details link, so a row never grows or clips.
+ * A machine connection failure (in `details`, or a plain-text message) renders nothing while the
+ * central connection notice explains it, so rows never repeat it with their own Retry.
  * @group feedback
  * @use A failure under a field, in a row or in a form; raw Host, command or remote text via `details`.
  * @avoid Non-error tones: InlineMessage. Boxed notice with a title: Alert (with `extra` ErrorDetails). Region that failed to load: FailureState. Never a bare `<p role="alert">`.
@@ -140,6 +143,10 @@ export type InlineErrorProps = Omit<InlineMessageProps, "tone" | "children"> & {
  */
 export function InlineError({ details, children, extra, ...props }: InlineErrorProps) {
   const hasSummary = children !== undefined && children !== null && children !== false;
+  const shownCentrally = useConnectionErrorShownCentrally(
+    details ?? (typeof children === "string" ? children : undefined),
+  );
+  if (shownCentrally) return null;
   if (details === undefined || (!hasSummary && fitsOneLine(details))) {
     return (
       <InlineMessage {...props} tone="danger" extra={extra}>

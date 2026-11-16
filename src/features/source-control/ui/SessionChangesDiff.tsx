@@ -1,6 +1,7 @@
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { useReloadOnReconnect } from "../../connections/public/useReloadOnReconnect";
 import { FailureState } from "../../../shared/ui/FailureState";
+import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -49,6 +50,7 @@ export function SessionChangesDiff({ cwd, sessionId, focusPath }: Props) {
   const [files, setFiles] = useState<CheckpointFile[] | null>(null);
   const [diffs, setDiffs] = useState<Map<string, LoadedDiff>>(new Map());
   const [error, setError] = useState<string | null>(null);
+  const shownCentrally = useConnectionErrorShownCentrally(error);
   const [retry, setRetry] = useState(0);
   const focusPathRef = useRef(focusPath);
   focusPathRef.current = focusPath;
@@ -234,6 +236,7 @@ export function SessionChangesDiff({ cwd, sessionId, focusPath }: Props) {
     );
   }
   if (error) {
+    if (shownCentrally) return null;
     return (
       <div className="grid h-full place-items-center p-6">
         <FailureState

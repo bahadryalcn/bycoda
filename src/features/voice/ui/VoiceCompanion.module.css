@@ -1,6 +1,6 @@
 .launcher {
   position: fixed;
-  right: 20px;
+  left: 20px;
   bottom: 36px;
   z-index: var(--layer-pane-sheet);
 }

@@ -9,7 +9,6 @@ import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
-import { CrewsSettings } from "../../crews/ui/CrewsSettings";
 import { t, useLocale } from "../../../shared/i18n";
 import { ConnectionsSettings } from "../../connections/public/ConnectionsSettings";
 import { ArrowLeft, Maximize2, Minimize2 } from "../../../shared/ui/icons";
@@ -67,7 +66,6 @@ import { AppearanceSaveFeedback, useAppearanceSettings } from "./useAppearanceSe
 import { AppearancePage } from "./AppearanceSettings";
 import { KeybindingsPage } from "./ShortcutSettings";
 import { TerminalPage } from "./TerminalSettings";
-import { WorkPage } from "./work/WorkPage";
 import { ProvidersSection } from "./ProvidersSection";
 import { ArchivePage } from "./ArchiveSettings";
 import { ToolSettingsPage } from "./ToolSettings";
@@ -156,7 +154,9 @@ export function SettingsView({
     requestedAnchor ??
     (requestedSection === "models"
       ? "models-chat"
-      : toolSettingsAnchorForSection(requestedSection));
+      : requestedSection === "work"
+        ? "models-order"
+        : toolSettingsAnchorForSection(requestedSection));
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const panelId = useId();
   const categoryRefs = useRef(new Map<SettingsSectionId, HTMLButtonElement>());
@@ -537,11 +537,6 @@ export function SettingsView({
                             revealRequest={revealRequest + notificationSettingsRequest}
                           />
                         ) : null}
-                        {section === "crews" ? (
-                          <div className="settings-topics">
-                            <CrewsSettings />
-                          </div>
-                        ) : null}
                         {section === "connections" ? <ConnectionsSettings /> : null}
                         {section === "appearance" ? (
                           <AppearancePage appearance={appearance} revealRequest={revealRequest} />
@@ -596,7 +591,6 @@ export function SettingsView({
                         {section === "providers" || section === "usage" ? (
                           <ProvidersSection activePage={section} cwd={cwd} recents={recents} />
                         ) : null}
-                        {section === "work" ? <WorkPage cwd={cwd} recents={recents} /> : null}
                         {section === "worktrees" ? (
                           <div className="settings-topics">
                             <SourceControlSettings />

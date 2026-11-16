@@ -16,7 +16,7 @@ export function OnboardingConnections({
   return (
     <>
       <OnboardingHeading
-        title={t("Machines")}
+        title={t("Connections")}
         info={t("Remote agents stay on their own computer. Add machines later in Settings.")}
       />
       <div className="onboarding-scroll">

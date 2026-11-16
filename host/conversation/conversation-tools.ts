@@ -419,13 +419,14 @@ export const CONVERSATION_TOOLS = {
   "automations.stopRun": object({ automationId: string, runId: string }, ["automationId", "runId"]),
   "inbox.list": object(pagination),
   "inbox.providers.status": object({}),
+  "inbox.providers.connections": object({ requestId: string }, ["requestId"]),
   "inbox.providers.list": object(
     {
       requestId: string,
       provider: {
-        enum: ["github", "jira"],
+        enum: ["github", "gitlab", "azuredevops", "linear", "jira"],
         description:
-          "Required for Room provider discovery; Native credentials and saved visibility determine the account and records.",
+          "Limit discovery to one provider (Room accepts github or jira and requires it). Omit to read every connected provider. Native credentials and saved visibility determine the account and records.",
       },
       githubKinds: { type: "array", maxItems: 2, items: { enum: ["issue", "pr"] } },
       assignedToMe: { type: "boolean" },
@@ -498,6 +499,38 @@ export const CONVERSATION_TOOLS = {
     ["requestId", "item", "prAction"],
   ),
   "inbox.result": object({ requestId: string }, ["requestId"]),
+  "inbox.jira.boards": object({ requestId: string }, ["requestId"]),
+  "inbox.jira.board": object(
+    {
+      requestId: string,
+      boardId: { type: "integer", minimum: 1 },
+      scope: { enum: ["board", "backlog", "sprint"] },
+      sprintId: { type: "integer", minimum: 1 },
+      pageToken: { type: "string", minLength: 1, maxLength: 4000 },
+    },
+    ["requestId", "boardId", "scope"],
+  ),
+  "inbox.jira.transitions": object({ requestId: string, snapshotId: string, key: string }, [
+    "requestId",
+    "snapshotId",
+    "key",
+  ]),
+  "inbox.jira.transition": object(
+    { requestId: string, snapshotId: string, key: string, transitionId: string },
+    ["requestId", "snapshotId", "key", "transitionId"],
+  ),
+  "inbox.jira.move": object(
+    {
+      requestId: string,
+      snapshotId: string,
+      key: string,
+      target: { enum: ["board", "backlog", "sprint", "rank"] },
+      sprintId: { type: "integer", minimum: 1 },
+      beforeKey: string,
+      afterKey: string,
+    },
+    ["requestId", "snapshotId", "key", "target"],
+  ),
   "machines.list": object(pagination),
   "devices.status": object(target),
   "devices.preflight": object(device),
@@ -821,8 +854,20 @@ function conversationToolDescription(action: string) {
     return "Manage notes linked to this project. Choose a unique id for creation. Read before update/delete and pass the returned expectedUpdatedAt. Omitted update fields are preserved. No /operator or computer use required.";
   if (action.startsWith("automations."))
     return "Manage this project's scheduled agents through existing host APIs. Create inherits this session's permission mode/provider/model; schedule uses the host's local timezone. Choose a unique automationId. Read before update/pause/resume/delete and pass expectedUpdatedAt. Pausing stops future launches; an active run keeps going. An agent cannot manage its own automation.";
+  if (action === "inbox.providers.connections")
+    return "Ask the desktop which Inbox provider accounts (github, gitlab, azuredevops, linear, jira) are connected. Poll inbox.result with the same requestId; the result lists connected=true/false per provider. Use this first whenever the owner asks about Jira, GitHub, GitLab, Azure DevOps or Linear work: a connected provider is reachable through inbox.* tools, so never ask for a token, a separate MCP/Atlassian connection or a reconnect for it.";
+  if (action === "inbox.providers.list")
+    return "Discover provider work items (issues, PRs, Jira and Linear issues) for this project. Optional provider limits the read to one provider; assignedToMe, state, search and githubKinds filter it. Poll inbox.result with the same requestId and copy only provider/kind/number/repo/id/identifier of a returned item into later item inputs. Per-provider errors are in result.errors.";
+  if (action === "inbox.jira.boards")
+    return "List the Jira boards the owner enabled in desktop Inbox visibility. Poll inbox.result with the same requestId. Use a returned board id with inbox.jira.board.";
+  if (action === "inbox.jira.board")
+    return "Read one enabled Jira board: scope board (columns), backlog, or sprint with sprintId. Poll inbox.result with the same requestId. The result carries a snapshotId plus columns/issues; pass that snapshotId and an issue key to inbox.jira.transitions, inbox.jira.transition or inbox.jira.move. Continue a partial read with pageToken set to the continuation token in result.page.";
+  if (action === "inbox.jira.transitions")
+    return "Read the workflow transitions available for one issue on a board snapshot from inbox.jira.board. Poll inbox.result. Choose a transitionId from this list; never guess one.";
+  if (action === "inbox.jira.transition" || action === "inbox.jira.move")
+    return "Change a Jira issue on a board snapshot: transition applies a transitionId from inbox.jira.transitions; move sends the issue to board, backlog or sprint (with sprintId), or ranks it (target rank with exactly one of beforeKey/afterKey from the same snapshot). The desktop shows the owner a native approval of the exact issue and change; tool input cannot grant it. Poll inbox.result with the same requestId: outcome not-submitted means nothing changed; queued is not done. Never resend an uncertain change under a new requestId; reread the board first.";
   if (action.startsWith("inbox."))
-    return "Host attention Inbox plus connected GitHub/GitLab/Azure DevOps/Linear/Jira APIs. Provider operations return durable queued/running/completed/failed/uncertain receipts: poll inbox.result with the SAME requestId, never report queued as done. Copy only provider/kind/number/repo/id/identifier into item. Comment/PR mutations require in-app owner approval of the exact target/content; tool input cannot grant approval. Reuse requestId for the exact payload after uncertain replies. Provider credentials remain in the desktop. Social Media Inbox uses bycoda-social and its own policy.";
+    return "Host attention Inbox plus connected GitHub/GitLab/Azure DevOps/Linear/Jira APIs. Check inbox.providers.connections before claiming a provider is unreachable; never ask for separate credentials for a connected provider. Provider operations return durable queued/running/completed/failed/uncertain receipts: poll inbox.result with the SAME requestId, never report queued as done. Copy only provider/kind/number/repo/id/identifier into item. Comment/PR mutations require in-app owner approval of the exact target/content; tool input cannot grant approval. Reuse requestId for the exact payload after uncertain replies. Provider credentials remain in the desktop. Social Media Inbox uses bycoda-social and its own policy.";
   if (action.startsWith("devices."))
     return "Use machines.list and an explicit machineId for a connected Mac/iOS target; omitted machineId means this host. Capture returns an image.";
   if (action.startsWith("agents.")) return describeAgentTool(action);

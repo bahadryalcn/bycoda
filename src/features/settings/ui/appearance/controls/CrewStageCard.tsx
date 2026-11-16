@@ -1,5 +1,4 @@
 /** Different job: Crew-stage preview renders a scene; its controls retain shared presentation. */
-import { Text } from "../../../../../shared/ui/Text";
 import { useSyncExternalStore } from "react";
 import { CrewScene } from "../../../../sessions/public/CrewScene";
 import { useStoredPreferenceState } from "../../../../../shared/hooks/useStoredPreferenceState";
@@ -86,59 +85,6 @@ export function CrewStageCard() {
         resetLabel={t("Reset crew")}
         onReset={resetCrew}
       >
-        {/* The stage renders in the row's feedback slot; CrewStageCard.css places it above the
-            theme picker so the group opens with the hero and its caption. */}
-        <Row
-          id="crew-theme"
-          label={t("Crew theme")}
-          disabled={!visible}
-          disabledReason={t("Turn on the agent crew first")}
-          feedback={
-            <div className="crew-stage-card">
-              <CrewScene
-                workingCount={3}
-                crew={
-                  theme === "classic" && !growth
-                    ? Array.from({ length: 6 }, (_, id) => ({
-                        role: id === 2 ? "lead" : id === 3 ? "advisor" : "subagent",
-                        working: id === 0 || id === 2 || id === 3,
-                        context: [0.15, 0.35, 0.5, 0.7, 0.9, 1][id],
-                      }))
-                    : undefined
-                }
-              />
-              <Text
-                as="p"
-                size="caption"
-                tone="secondary"
-                leading="normal"
-                className="settings-help-text crew-stage-hint"
-              >
-                {crewThemeHint(theme)}
-              </Text>
-            </div>
-          }
-        >
-          <SegmentedControl
-            label={t("Crew theme")}
-            value={theme}
-            options={[
-              {
-                value: "classic",
-                label: t("Classic crew"),
-                disabled: !visible,
-              },
-              { value: "star-wars", label: "Star Wars", disabled: !visible },
-              {
-                value: "lotr",
-                label: t("The Lord of the Rings"),
-                disabled: !visible,
-              },
-              { value: "matrix", label: t("The Matrix"), disabled: !visible },
-            ]}
-            onValueChange={(value) => saveCrewTheme(value as CrewTheme)}
-          />
-        </Row>
         <Row
           id="crew-scene"
           label={t("Show agent crew")}
@@ -155,11 +101,48 @@ export function CrewStageCard() {
             }}
           />
         </Row>
+        {/* The stage renders in the theme row's feedback slot while the crew is on; CrewStageCard.css
+            places it above the picker so the group opens with the hero. Off, it is not rendered. */}
+        <Row
+          id="crew-theme"
+          label={t("Crew theme")}
+          info={crewThemeHint(theme)}
+          dependsOn={visible}
+          feedback={
+            visible ? (
+              <div className="crew-stage-card">
+                <CrewScene
+                  workingCount={3}
+                  crew={
+                    theme === "classic" && !growth
+                      ? Array.from({ length: 6 }, (_, id) => ({
+                          role: id === 2 ? "lead" : id === 3 ? "advisor" : "subagent",
+                          working: id === 0 || id === 2 || id === 3,
+                          context: [0.15, 0.35, 0.5, 0.7, 0.9, 1][id],
+                        }))
+                      : undefined
+                  }
+                />
+              </div>
+            ) : undefined
+          }
+        >
+          <SegmentedControl
+            label={t("Crew theme")}
+            value={theme}
+            options={[
+              { value: "classic", label: t("Classic crew"), disabled: !visible },
+              { value: "star-wars", label: "Star Wars", disabled: !visible },
+              { value: "lotr", label: t("The Lord of the Rings"), disabled: !visible },
+              { value: "matrix", label: t("The Matrix"), disabled: !visible },
+            ]}
+            onValueChange={(value) => saveCrewTheme(value as CrewTheme)}
+          />
+        </Row>
         <Row
           id="crew-growth"
           label={growthLabel}
-          disabled={!visible}
-          disabledReason={t("Turn on the agent crew first")}
+          dependsOn={visible}
           description={
             theme === "classic"
               ? t(
@@ -173,7 +156,6 @@ export function CrewStageCard() {
           <Toggle
             label={growthLabel}
             on={growth}
-            disabled={!visible}
             onChange={(next) => {
               saveCrewGrowthEnabled(next);
               setGrowth(next);

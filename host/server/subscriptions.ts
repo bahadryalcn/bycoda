@@ -15,6 +15,8 @@ import {
 import { StreamDeltaEncoder, tailStreamKey, tailStreamSessionId } from "../sync/stream-delta";
 import { HostSubscriptionHub } from "../transport/ws/subscriptions";
 import type { ServerBindings } from "./bindings";
+/** Well inside DESKTOP_BEAT_STALE_MS so a lapsed desktop snapshot reaches phones promptly. */
+const DIRECTORY_AGING_CHECK_MS = 5_000;
 export function createSubscriptionsRuntime(
   dependencies: Pick<
     ServerBindings,
@@ -115,7 +117,15 @@ export function createSubscriptionsRuntime(
           let sourceEpoch: string | undefined;
           let kind: "snapshot" | "delta" = "snapshot";
           if (target.kind === "environment")
-            value = { projects: await dependencies.projectsService.list() };
+            // `projects` stays the legacy list; `directory` is the authoritative groups,
+            // privacy proof and desktop-only entries (capability projects.directory.stream.v1).
+            value = {
+              projects: await dependencies.projectsService.list(),
+              directory: dependencies.desktop.live.projectDirectory(
+                await dependencies.engine.store.projects(),
+                dependencies.engine.store.environmentId,
+              ),
+            };
           else if (target.kind === "project") {
             streamProjectVersions.set(
               target.projectId,
@@ -230,7 +240,7 @@ export function createSubscriptionsRuntime(
       if (!projects.has(id)) streamProjectScopes.delete(id);
   };
   let unattributedVersion = dependencies.engine.store.unattributedChangeVersion;
-  const unsubscribeChanges = dependencies.engine.store.subscribeChanges(() => {
+  const unsubscribeStoreChanges = dependencies.engine.store.subscribeChanges(() => {
     const globalChange =
       unattributedVersion !== dependencies.engine.store.unattributedChangeVersion;
     unattributedVersion = dependencies.engine.store.unattributedChangeVersion;
@@ -262,6 +272,24 @@ export function createSubscriptionsRuntime(
     if (globalChange || !attributed) subscriptionHub.invalidate();
     else subscriptionHub.invalidate({ kind: "environment" });
   });
+  // The desktop project directory lives outside the store: a rail change arrives in a
+  // heartbeat and a stale heartbeat only ages out, so neither is a store commit.
+  const refreshDirectoryStreams = () => subscriptionHub.invalidate({ kind: "environment" });
+  const previousDirectoryChange = dependencies.desktop.live.onDirectoryChange;
+  dependencies.desktop.live.onDirectoryChange = () => {
+    previousDirectoryChange?.();
+    refreshDirectoryStreams();
+  };
+  const directoryAging = setInterval(() => {
+    if (subscriptionHub.targets().some((target) => target.kind === "environment"))
+      refreshDirectoryStreams();
+  }, DIRECTORY_AGING_CHECK_MS);
+  directoryAging.unref();
+  const unsubscribeChanges = () => {
+    unsubscribeStoreChanges();
+    clearInterval(directoryAging);
+    dependencies.desktop.live.onDirectoryChange = previousDirectoryChange;
+  };
   const httpTokenHashes = new WeakMap<object, { token: string; hash: string }>();
   const heldPolls = new Map<{ revoked: boolean }, string>();
   const unsubscribeAuthorization = dependencies.engine.store.subscribeAuthorizationChanges(() => {

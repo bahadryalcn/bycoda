@@ -48,9 +48,11 @@ const suggestions = [
 let host: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
 const chooseBackground = vi.fn();
+const clearBackground = vi.fn();
+let chatBackgroundPath: string | null = null;
 function button(label: string) {
-  const found = [...host.querySelectorAll("button")].find((item) =>
-    item.textContent?.includes(label),
+  const found = [...host.querySelectorAll("button")].find(
+    (item) => item.getAttribute("aria-label") === label || item.textContent?.includes(label),
   );
   if (!found) throw new Error(`Missing button ${label}: ${host.textContent}`);
   return found;
@@ -80,83 +82,93 @@ beforeEach(async () => {
     prompt: null,
   });
   chooseBackground.mockResolvedValue(true);
+  clearBackground.mockResolvedValue(undefined);
+  chatBackgroundPath = null;
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
+  await render();
+});
+async function render() {
   await act(async () =>
     root.render(
       createElement(ThemeGenerator, {
-        appearance: { onChooseChatBackground: chooseBackground } as never,
+        appearance: {
+          onChooseChatBackground: chooseBackground,
+          onClearChatBackground: clearBackground,
+          chatBackgroundPath,
+        } as never,
       }),
     ),
   );
-});
+}
 afterEach(() => {
   act(() => root.unmount());
   host.remove();
   vi.unstubAllGlobals();
 });
-it("previews the generated image without applying it or requesting another image", async () => {
-  mocks.image.mockResolvedValue("/source.png");
-  await act(async () => button("Generate image").click());
-  await act(async () => button("Preview").click());
+it("draws the chosen look's image once and applies it when it lands", async () => {
+  const pending = deferred<string>();
+  mocks.image.mockReturnValue(pending.promise);
+  await act(async () => {
+    button("Apply Ocean").click();
+    button("Apply Ocean").click();
+  });
+  expect(mocks.apply).toHaveBeenCalledTimes(2);
+  expect(mocks.image).toHaveBeenCalledOnce();
+  expect(clearBackground).not.toHaveBeenCalled();
+  await act(async () => {
+    pending.resolve("/source.png");
+    await pending.promise;
+  });
+  expect(chooseBackground).toHaveBeenCalledOnce();
+  await act(async () => button("Preview Ocean").click());
   const preview = host.querySelector("[data-image-preview]");
   expect(preview?.getAttribute("data-image-preview")).toBe("/image.png");
   expect(preview?.getAttribute("aria-label")).toBe("Ocean");
-  expect(chooseBackground).not.toHaveBeenCalled();
-  expect(mocks.image).toHaveBeenCalledOnce();
   await act(async () => button("Close preview").click());
   expect(host.querySelector("[data-image-preview]")).toBeNull();
-  await act(async () => button("Use image").click());
-  expect(chooseBackground).toHaveBeenCalledOnce();
   expect(mocks.image).toHaveBeenCalledOnce();
 });
-it("only requests an image on explicit command, once while pending, and caches it", async () => {
+it("does not apply a drawing after the owner moved to another look", async () => {
   const pending = deferred<string>();
-  mocks.image.mockReturnValue(pending.promise);
+  mocks.image.mockReturnValueOnce(pending.promise).mockReturnValueOnce(new Promise(() => {}));
   await act(async () => button("Apply Ocean").click());
-  expect(mocks.apply).toHaveBeenCalledOnce();
-  expect(mocks.image).not.toHaveBeenCalled();
   await act(async () => {
-    const action = button("Generate image");
-    action.click();
-    action.click();
-  });
-  expect(mocks.image).toHaveBeenCalledOnce();
-  await act(async () => {
-    button("None").click();
-    generatorSession.invalidateImageIntent();
+    button("Apply Forest").click();
     pending.resolve("/source.png");
     await pending.promise;
   });
   expect(chooseBackground).not.toHaveBeenCalled();
-  await act(async () => writeGeneratorValue("withImage", true, false));
-  await act(async () => button("Use image").click());
-  expect(chooseBackground).toHaveBeenCalledOnce();
-  expect(mocks.image).toHaveBeenCalledOnce();
+  expect(mocks.image).toHaveBeenCalledTimes(2);
+});
+it("removes the previous look's image when the new look has none", async () => {
+  writeGeneratorValue("withImage", false, false);
+  chatBackgroundPath = "/old.png";
+  await render();
+  await act(async () => button("Apply Ocean").click());
+  expect(mocks.apply).toHaveBeenCalledOnce();
+  expect(clearBackground).toHaveBeenCalledOnce();
+  expect(mocks.image).not.toHaveBeenCalled();
 });
 it("retains previous suggestions when refresh fails", async () => {
   mocks.themes.mockRejectedValue(new Error("offline"));
   await act(async () => button("Generate themes").click());
-  expect(host.textContent).toContain("Apply Ocean");
+  expect(host.textContent).toContain("Ocean");
   expect(host.textContent).toContain("offline");
 });
-it("shows failure on the originating result and permits explicit retry", async () => {
+it("shows the chosen look's image failure and permits retry", async () => {
   const pending = deferred<string>();
   mocks.image.mockReturnValueOnce(pending.promise).mockReturnValueOnce(new Promise(() => {}));
+  await act(async () => button("Apply Ocean").click());
   await act(async () => {
-    button("Apply Ocean").click();
-    button("Generate image").click();
-  });
-  await act(async () => {
-    button("Apply Forest").click();
     pending.reject(new Error("provider unavailable"));
     try {
       await pending.promise;
     } catch {}
   });
   expect(host.textContent).toContain("provider unavailable");
-  await act(async () => button("Retry image").click());
+  await act(async () => button("Retry").click());
   expect(mocks.image).toHaveBeenCalledTimes(2);
 });
 
@@ -188,7 +200,8 @@ it("revokes an explicit image use while its copy is pending", async () => {
       {},
     ),
   );
-  await act(async () => button("Use image").click());
+  await act(async () => button("Apply Ocean").click());
+  expect(mocks.image).not.toHaveBeenCalled();
   expect(typeof chooseBackground.mock.calls.at(-1)?.[1]?.isCurrent).toBe("function");
   generatorSession.invalidateImageIntent();
   await act(async () => {
@@ -197,5 +210,5 @@ it("revokes an explicit image use while its copy is pending", async () => {
   });
   expect(applied).toBe(false);
   expect(host.textContent).not.toContain("Could not use the generated image");
-  expect(button("Use image")).toBeTruthy();
+  expect(button("Preview Ocean")).toBeTruthy();
 });

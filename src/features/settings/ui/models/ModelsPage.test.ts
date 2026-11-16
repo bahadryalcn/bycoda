@@ -10,8 +10,10 @@ import {
   accountSessionDefaults,
 } from "../../../sessions/public/providerSessionDefaults";
 import { expectedProductExtras as productExtras } from "../settingsDefaultsFixture";
-import { ModelsPage, resetRetainedModelsPage } from "./ModelsPage";
-import { WorkPage } from "../work/WorkPage";
+import { ModelsPage, resetRetainedModelsPage, type ModelsView } from "./ModelsPage";
+import { saveProviderAccount } from "../../../providers/model/providerAccounts";
+import { saveAccountSessionDefaults } from "../../../sessions/model/accountSessionDefaults";
+import { loadProjectProviderSettings } from "../../../sessions/model/projectProviders";
 import { machineCapabilities } from "../../../automations/model/machineSnapshot";
 import { remoteRequest } from "../../../connections/public/connections";
 import {
@@ -68,13 +70,13 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function render(work = false) {
+async function render(view: ModelsView = "chat") {
   await act(async () =>
     root.render(
       createElement(
         QueryClientProvider,
         { client: queryClient },
-        createElement(work ? WorkPage : ModelsPage, { cwd: "/repo" }),
+        createElement(ModelsPage, { cwd: "/repo", view }),
       ),
     ),
   );
@@ -101,29 +103,21 @@ describe("model defaults scope inheritance", () => {
     );
   });
 
-  it("keeps work routing and chat defaults in their respective sections", async () => {
-    await render(true);
-    const tab = (label: string) =>
-      [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
-        (node) => node.textContent === label,
-      );
-    expect(tab("Model order")).toBeTruthy();
-    expect(tab("Assignments")).toBeTruthy();
-    expect(tab("Chat")).toBeUndefined();
+  it("keeps work routing and chat defaults in their respective views", async () => {
+    const visible = (id: string) =>
+      container.querySelector(`[data-testid="${id}"]`)?.closest("[hidden]") === null;
+    await render("work");
+    await vi.waitFor(() => expect(visible("model-order")).toBe(true));
+    expect(visible("model-assignments")).toBe(true);
     expect(container.querySelector(".provider-defaults-save-bar")).toBeNull();
-    await vi.waitFor(() =>
-      expect(container.querySelector('[data-testid="model-order"]')).not.toBeNull(),
-    );
-    expect(container.querySelector('[data-testid="model-order"]')?.closest("[hidden]")).toBeNull();
-    await act(async () => tab("Assignments")!.click());
-    expect(
-      container.querySelector('[data-testid="model-assignments"]')?.closest("[hidden]"),
-    ).toBeNull();
-    await act(async () => tab("Subagents")!.click());
+    await render("delegation");
+    expect(visible("model-order")).not.toBe(true);
+    expect(visible("model-assignments")).not.toBe(true);
     expect(container.querySelector(".provider-defaults-save-bar")).not.toBeNull();
-    await render();
-    expect(tab("Chat")).toBeTruthy();
-    expect(tab("Model order")).toBeUndefined();
+    await render("chat");
+    expect(visible("model-order")).not.toBe(true);
+    expect(visible("model-assignments")).not.toBe(true);
+    expect(container.querySelector(".provider-defaults-save-bar")).not.toBeNull();
   });
 
   it("saves default effort and permissions through the provider controls", async () => {
@@ -220,10 +214,6 @@ describe("model defaults scope inheritance", () => {
         .click(),
     );
   async function openDefaults(provider: string) {
-    const tab = Array.from(container.querySelectorAll<HTMLElement>('[role="tab"]')).find((node) =>
-      node.textContent?.trim().startsWith("Chat"),
-    )!;
-    await act(async () => tab.click());
     await pick("Provider defaults", provider);
   }
   async function selectScope(label: string) {
@@ -247,19 +237,32 @@ describe("model defaults scope inheritance", () => {
     await act(async () => done!.click());
   }
 
+  it("lets a project pick the account a provider starts on and inherit its defaults", async () => {
+    saveProviderAccount({ id: "account-home", provider: "claude", label: "Home" });
+    saveProviderAccount({ id: "account-work", provider: "claude", label: "Work" });
+    saveAccountSessionDefaults("claude", "account-work", { runtimeMode: "supervised" });
+    await render();
+    await openDefaults("Claude Code");
+    // Global keeps its scope switch; a project saves which account its chats start on.
+    expect(
+      container.querySelector('[aria-label="Claude Code account for this project"]'),
+    ).toBeNull();
+    await selectScope("repo");
+    const permissions = () =>
+      container.querySelector('[aria-label^="Claude Code default permissions"]')?.textContent;
+    expect(permissions()).not.toContain("Supervised");
+    await pick("Claude Code account for this project", "Work");
+    expect(permissions()).toContain("Bycoda defaults (Supervised)");
+    await clickButton("Save");
+    expect(loadProjectProviderSettings("/repo").accounts).toEqual({ claude: "account-work" });
+  });
+
   it("keeps pending defaults across tabs until Save or Discard", async () => {
     await render();
     await openDefaults("Claude Code");
     await pick("Claude Code default permissions", "Full access");
-    const tab = (name: string) =>
-      Array.from(container.querySelectorAll<HTMLElement>('[role="tab"]')).find((node) =>
-        node.textContent?.trim().startsWith(name),
-      )!;
-    await render(true);
-    await act(async () => tab("Subagents").click());
-    expect(tab("Subagents").querySelector('[aria-label="Unsaved changes"]')).not.toBeNull();
+    await render("delegation");
     await render();
-    expect(tab("Chat").querySelector('[aria-label="Unsaved changes"]')).not.toBeNull();
     expect(container.querySelector(".provider-defaults-save-bar")?.textContent).toContain(
       "1 unsaved change",
     );
@@ -304,20 +307,14 @@ describe("model defaults scope inheritance", () => {
       "Hidden globally",
     );
   });
-  it("splits chat and delegation rows and saves one draft across both tabs", async () => {
+  it("keeps subagent rows out of Chats, shows them in Subagents and saves one draft across both", async () => {
     await render();
     await openDefaults("Claude Code");
     expect(container.querySelector(".provider-cli-selector")).toBeNull();
-    expect(
-      [...container.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent?.trim()),
-    ).toEqual(["Chat"]);
     expect(container.querySelector('[aria-label^="Claude Code default Advisor"]')).toBeNull();
+    expect(container.querySelector('[role="radiogroup"][aria-label="Subagents"]')).toBeNull();
     await pick("Claude Code default permissions", "Full access");
-    await render(true);
-    const tab = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find((tab) =>
-      tab.textContent?.startsWith("Subagents"),
-    )!;
-    await act(async () => tab.click());
+    await render("delegation");
     expect(container.querySelector('[aria-label^="Default provider"]')).toBeNull();
     expect(container.querySelector('[aria-label^="Claude Code default permissions"]')).toBeNull();
     const subagents = container.querySelector('[role="radiogroup"][aria-label="Subagents"]')!;
@@ -333,7 +330,7 @@ describe("model defaults scope inheritance", () => {
     });
   });
 
-  it("keeps account selection and drafts between Models and Work", async () => {
+  it("keeps account selection and drafts between Chats and Subagents", async () => {
     localStorage.setItem(
       "bycoda.providerAccounts.v1",
       JSON.stringify({ claude: [{ id: "account-work", label: "Work" }] }),
@@ -342,11 +339,7 @@ describe("model defaults scope inheritance", () => {
     await openDefaults("Claude Code");
     await pick("Account", "Work");
     await pick("Claude Code default permissions", "Full access");
-    await render(true);
-    const tab = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find((tab) =>
-      tab.textContent?.startsWith("Subagents"),
-    )!;
-    await act(async () => tab.click());
+    await render("delegation");
     expect(container.querySelector('[aria-label^="Account"]')?.textContent).toContain("Work");
     const subagents = container.querySelector('[role="radiogroup"][aria-label="Subagents"]')!;
     const off = [...subagents.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(
@@ -377,7 +370,10 @@ describe("model defaults scope inheritance", () => {
     vi.mocked(remoteRequest).mockImplementation(async (_id, method, params) => {
       if (method === "modelRouting.save") {
         if (rejectSave) throw new Error("Version conflict");
-        const input = params as { expectedVersion: number; draft: typeof EMPTY_MODEL_ROUTING };
+        const input = params as {
+          expectedVersion: number;
+          draft: typeof EMPTY_MODEL_ROUTING;
+        };
         expect(input.expectedVersion).toBe(5);
         expect(input.draft.defaultMaxRunMinutes).toBe(75);
         hostState = { ...input.draft, version: 6, updatedAt: 2 };
@@ -386,11 +382,7 @@ describe("model defaults scope inheritance", () => {
     });
     await render();
     await openDefaults("Claude Code");
-    await render(true);
-    const tab = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find((node) =>
-      node.textContent?.startsWith("Subagents"),
-    )!;
-    await act(async () => tab.click());
+    await render("delegation");
     expect(container.textContent).not.toContain("Global settings apply to chats");
     expect(container.querySelector('button[aria-label="Help"]')).not.toBeNull();
     const subagents = container.querySelector('[role="radiogroup"][aria-label="Subagents"]')!;
@@ -431,11 +423,7 @@ describe("model defaults scope inheritance", () => {
     );
     await render();
     await openDefaults("Claude Code");
-    await render(true);
-    const tab = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find((node) =>
-      node.textContent?.startsWith("Subagents"),
-    )!;
-    await act(async () => tab.click());
+    await render("delegation");
     const group = container.querySelector('[role="radiogroup"][aria-label="Subagents"]')!;
     await act(async () =>
       [...group.querySelectorAll<HTMLButtonElement>('[role="radio"]')]
@@ -451,11 +439,7 @@ describe("model defaults scope inheritance", () => {
     await act(async () =>
       root.render(createElement(QueryClientProvider, { client: queryClient }, null)),
     );
-    await render(true);
-    const again = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find((node) =>
-      node.textContent?.startsWith("Subagents"),
-    )!;
-    await act(async () => again.click());
+    await render("delegation");
     expect(
       vi.mocked(remoteRequest).mock.calls.filter((call) => call[1] === "modelRouting.save"),
     ).toHaveLength(1);
@@ -500,11 +484,7 @@ describe("model defaults scope inheritance", () => {
     await render();
     await openDefaults("Claude Code");
     if (account) await pick("Account", "Work");
-    await render(true);
-    const tab = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find((node) =>
-      node.textContent?.startsWith("Subagents"),
-    )!;
-    await act(async () => tab.click());
+    await render("delegation");
     const group = container.querySelector('[role="radiogroup"][aria-label="Subagents"]')!;
     await act(async () =>
       [...group.querySelectorAll<HTMLButtonElement>('[role="radio"]')]
@@ -530,7 +510,7 @@ describe("model defaults scope inheritance", () => {
     await act(async () =>
       root.render(createElement(QueryClientProvider, { client: queryClient }, null)),
     );
-    await render(true);
+    await render("delegation");
     await act(async () => pending.reject(new Error("deferred failure")));
     await vi.waitFor(() =>
       expect(container.querySelector(".provider-defaults-save-bar")?.textContent).toContain(
@@ -620,7 +600,7 @@ describe("model defaults scope inheritance", () => {
           finish = resolve;
         }),
     );
-    await render(true);
+    await render("delegation");
     await vi.waitFor(() => expect(finish).toBeDefined());
     await vi.waitFor(() => expect(container.textContent).toContain("Loading"));
     expect(container.textContent).not.toContain("unavailable on this Host");

@@ -137,7 +137,7 @@ it("leaves text fields and rows with their own menus alone", async () => {
   expect(document.querySelector('[role="menu"]')).toBeNull();
 });
 
-it("offers the repository selector only for an overview and while a section is shown", async () => {
+it("offers a standalone repository selector only when Stashes is shown without Graph", async () => {
   await act(async () => root.render(createElement(Panel)));
   expect(host.querySelector("select")).toBeNull();
   const onChange = vi.fn();
@@ -150,8 +150,10 @@ it("offers the repository selector only for an overview and while a section is s
     ],
   };
   await act(async () => root.render(createElement(Panel, { repositories })));
+  expect(host.querySelector("select")).toBeNull();
+  await act(async () => saveGitPanelSection("graph", false));
   const select = host.querySelector("select")!;
-  expect(host.querySelector('[data-section="graph"]')!.getAttribute("aria-expanded")).toBe("true");
+  expect(select).not.toBeNull();
   await act(async () => {
     select.value = "/mobile";
     select.dispatchEvent(new Event("change", { bubbles: true }));

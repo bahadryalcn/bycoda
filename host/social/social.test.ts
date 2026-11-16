@@ -23,6 +23,22 @@ import type {
 import { REMOTE_PROVIDERS } from "../../src/features/connections/model/protocol";
 import { activate, cleanups, createPlan, fixture, owner, runCleanups } from "./social-test-support";
 afterEach(runCleanups);
+it("runs a tick rescheduled from inside a write after that write's scope closed", async () => {
+  const s = await fixture();
+  const tick = vi.spyOn(s.social, "tick");
+  await s.social.start();
+  try {
+    await vi.waitFor(() => expect(tick).toHaveBeenCalledTimes(1));
+    await tick.mock.results[0]!.value;
+    // A social write wakes the scheduler from inside its own database scope.
+    const scheduler = s.social as unknown as { scheduleTick(delay: number): void };
+    await s.store.db.scope(async () => scheduler.scheduleTick(1));
+    await vi.waitFor(() => expect(tick).toHaveBeenCalledTimes(2));
+    await expect(tick.mock.results[1]!.value).resolves.toBeUndefined();
+  } finally {
+    await s.social.stop();
+  }
+});
 it("pages owned publications by indexed identity without loading full account history", async () => {
   const s = await fixture();
   const account = await s.account("facebook");

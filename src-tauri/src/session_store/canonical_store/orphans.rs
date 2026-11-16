@@ -3,8 +3,10 @@
 //! (`CANONICAL_CLAIM_HELD`). Release a claim only when its issuing process is
 //! proven gone through its unheld recovery lease. Its managed job object then
 //! killed every provider writer it started, so a submitted session-writer claim
-//! has no live effect left. Submitted claims of other scopes stay held; their
-//! domain reconciles the outcome through receipts.
+//! has no live effect left. A reloaded page of this process is gone the same
+//! way once Native confirms its retirement stopped every writer it spawned.
+//! Submitted claims of other scopes stay held; their domain reconciles the
+//! outcome through receipts.
 use rusqlite::{params, Connection, OptionalExtension};
 
 use super::super::cohort::{LeaseState, RegisteredConnection};
@@ -31,9 +33,15 @@ pub(super) fn record_process(
 
 /// Claims written before process tracking have no process row; they can only
 /// come from an earlier process and are gone once no other lease is live.
-fn issuer_gone(db: &RegisteredConnection, own: &str, process: Option<&str>) -> bool {
+/// An own-process claim is gone only when its page is confirmed retired.
+fn issuer_gone(
+    db: &RegisteredConnection,
+    own: &str,
+    process: Option<&str>,
+    page_retired: bool,
+) -> bool {
     match process {
-        Some(process) if process == own => false,
+        Some(process) if process == own => page_retired,
         Some(process) => matches!(db.recovery_lease_state(process), Ok(LeaseState::Unleased)),
         None => matches!(db.other_recovery_lease_live(own), Ok(false)),
     }
@@ -41,6 +49,8 @@ fn issuer_gone(db: &RegisteredConnection, own: &str, process: Option<&str>) -> b
 
 /// Settle the current claim on `key` when its issuing process is gone, so the
 /// caller's acquisition can proceed. Returns whether a claim was released.
+/// `page_retired` answers whether an own-process owner page is confirmed retired
+/// with no admitted canonical operation left.
 pub(super) fn release_if_orphaned(
     db: &RegisteredConnection,
     tx: &Connection,
@@ -48,6 +58,7 @@ pub(super) fn release_if_orphaned(
     recovered_by: &str,
     scope: &str,
     key: &str,
+    page_retired: impl Fn(&str) -> bool,
 ) -> Result<bool, String> {
     #[allow(clippy::type_complexity)] // shortcut: one-off row tuple, name it when a second query reads these columns
     let row: Option<(String, String, String, Option<String>, Option<String>)> = tx.query_row(
@@ -62,7 +73,7 @@ pub(super) fn release_if_orphaned(
         Some("submitted") => scope == BINDING_SCOPE,
         _ => false,
     };
-    if !releasable || !issuer_gone(db, own_process, process.as_deref()) {
+    if !releasable || !issuer_gone(db, own_process, process.as_deref(), page_retired(&page)) {
         return Ok(false);
     }
     tx.execute(

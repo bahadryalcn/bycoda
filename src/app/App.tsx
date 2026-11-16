@@ -1053,6 +1053,7 @@ function Workspace({
     onShowProjectTerminal,
     onNewTerminalInSession,
     onRunSessionProjectAction,
+    onRunSessionCode,
   } = useProjectTerminalOpen({
     dock: projectTerminalDock,
     activeTab,
@@ -2823,6 +2824,7 @@ function Workspace({
     onBtwModelChange,
     onNewTerminalInSession,
     onRunSessionProjectAction,
+    onRunSessionCode,
   });
 
   // Settings is a dialog over the visible work context: the shared Modal makes the background

@@ -41,6 +41,9 @@ it("shows a source request inside its chat and moves it into the shared dialog w
       });
     });
     expect(element.querySelector("section")?.textContent).toContain("Command: pwd");
+    const column = element.querySelector("[data-chat-column]");
+    expect(column?.className).toContain("max-w-4xl");
+    expect(column?.querySelector('[data-variant="card"]')).not.toBeNull();
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     await act(async () => root.render(render(false)));
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Command: pwd");

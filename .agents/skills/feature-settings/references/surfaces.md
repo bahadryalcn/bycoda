@@ -2,7 +2,7 @@
 
 All code paths below are repository-relative. This is a starting map; follow current imports and dispatcher registrations rather than treating a listed path or type as a delivered capability.
 
-Model order, pools, roles and delegation use [model routing](../../feature-model-routing/SKILL.md).
+Model order, groups, roles and delegation use [model routing](../../feature-model-routing/SKILL.md).
 
 ## Route page work
 

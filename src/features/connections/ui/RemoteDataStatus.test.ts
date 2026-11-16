@@ -51,6 +51,34 @@ it("puts routine verification in one named refresh action without a banner", asy
 });
 
 it.each(["ready", "empty", "loading", "refreshing", "stale", "error"] as const)(
+  "keeps machine identity visible for %s without a success checkmark",
+  async (phase) => {
+    const onRefresh = vi.fn();
+    act(() =>
+      root.render(
+        createElement(RemoteDataStatus, {
+          state: { phase, error: phase === "error" ? "Machine is unreachable" : undefined },
+          presentation: "indicator",
+          machineName: "Office Mac",
+          connectionIssueHandled: phase === "error",
+          onRefresh,
+        }),
+      ),
+    );
+    const button = container.querySelector("button");
+    expect(button).not.toBeNull();
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(await tooltipText(button!)).toContain("Office Mac");
+    if (phase === "ready") {
+      expect(button!.querySelector(".lucide-server")).not.toBeNull();
+      expect(button!.querySelector(".lucide-check")).toBeNull();
+      act(() => button!.click());
+      expect(onRefresh).toHaveBeenCalledOnce();
+    }
+  },
+);
+
+it.each(["ready", "empty", "loading", "refreshing", "stale", "error"] as const)(
   "shows %s in exactly one of the toolbar and notice locations",
   (phase) => {
     const state: RemoteDataState = {
@@ -99,6 +127,24 @@ it("defers to the common connection warning instead of duplicating it", () => {
     ),
   );
   expect(container.textContent).toBe("");
+});
+
+it("does not call retained data current while the owning connection is unavailable", async () => {
+  act(() =>
+    root.render(
+      createElement(RemoteDataStatus, {
+        state: { phase: "ready", updatedAt: 1000 },
+        presentation: "indicator",
+        machineName: "Office Mac",
+        connectionIssueHandled: true,
+        onRefresh: vi.fn(),
+      }),
+    ),
+  );
+  const detail = await tooltipText(container.querySelector("button")!);
+  expect(detail).toContain("Office Mac");
+  expect(detail).toContain("Updates have not been verified");
+  expect(detail).not.toContain("Up to date");
 });
 
 it("keeps an independent data error actionable beside a shared connection warning", () => {
@@ -156,4 +202,21 @@ it("retries a busy machine in the toolbar instead of showing an error", async ()
   } finally {
     vi.useRealTimers();
   }
+});
+
+it("shows the classified reason after quiet retries and keeps the raw text behind Details", () => {
+  const raw = "Host rejected request: [RPC_TIMEOUT] request timed out";
+  act(() =>
+    root.render(
+      createElement(RemoteDataStatus, {
+        state: { phase: "error", error: raw },
+        onRefresh: vi.fn(),
+        disabled: true,
+      }),
+    ),
+  );
+  const alert = container.querySelector('[role="alert"]');
+  expect(alert?.textContent).toContain("This computer is busy right now. Try again in a moment.");
+  expect(alert?.textContent).not.toContain("RPC_TIMEOUT");
+  expect(alert?.textContent).toContain("Details");
 });

@@ -66,7 +66,7 @@ export function GitPanelSections({
 
   return (
     <>
-      {repositories && (shown.stashes || shown.graph) ? (
+      {repositories && shown.stashes && !shown.graph ? (
         <div className="shrink-0 px-1">
           <Divider decorative />
           <SearchableSelect

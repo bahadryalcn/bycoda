@@ -1,6 +1,42 @@
 import { test, expect } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 
+for (const theme of ["light", "dark"])
+  for (const width of [1280, 800])
+    test(`Graph header owns the active repository picker ${theme} ${width}`, async ({ page }) => {
+      await page.addInitScript(() => localStorage.setItem("bycoda.language.git", "en"));
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto("/tests/browser/source-control/git-workspace.html?submodules");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const toggle = page.getByRole("button", { name: "Graph", exact: true });
+      const header = page.getByRole("heading", { name: "Graph", exact: true }).locator("..");
+      const picker = header.getByRole("button", { name: /^Repository:/ });
+      await expect(picker).toBeVisible();
+      // The other picker scopes the changes overview at the top of the panel.
+      await expect(page.getByRole("button", { name: /^Repository:/ })).toHaveCount(2);
+      await picker.click();
+      await page.getByRole("option", { name: "core-pack /fixture/core-pack", exact: true }).click();
+      await expect(picker).toContainText("core-pack");
+      const evidence = "temp/verification/2026-11-16-graph-repository";
+      mkdirSync(evidence, { recursive: true });
+      for (const expanded of [false, true]) {
+        if ((await toggle.getAttribute("aria-expanded")) !== String(expanded)) await toggle.click();
+        await expect(picker).toBeVisible();
+        const labelBox = (await toggle.boundingBox())!;
+        const pickerBox = (await picker.boundingBox())!;
+        expect(
+          Math.abs(labelBox.y + labelBox.height / 2 - pickerBox.y - pickerBox.height / 2),
+        ).toBeLessThan(2);
+        await page.screenshot({
+          path: `${evidence}/${theme}-${width}-${expanded ? "expanded" : "collapsed"}.png`,
+        });
+      }
+    });
+
 for (const theme of ["light", "dark"] as const)
   for (const width of [800, 1280])
     test(`change row indentation follows root font ${theme} ${width}`, async ({ page }) => {

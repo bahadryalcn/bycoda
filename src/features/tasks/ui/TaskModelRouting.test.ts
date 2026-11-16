@@ -273,7 +273,7 @@ it.each<[ModelRoutingItemChoice | undefined, string]>([
   [undefined, "Fixed"],
   [{ kind: "fixed" }, "Fixed"],
   [{ kind: "default" }, "Default"],
-  [{ kind: "order" }, "Model order"],
+  [{ kind: "order" }, "Any model, in order"],
   [{ kind: "pool", poolId: "pool" }, "Night work"],
 ])("labels the choice beside the concrete model", async (choice, label) => {
   await act(async () => render(createElement(TaskModelChoiceLabel, { machineId: "host", choice })));
