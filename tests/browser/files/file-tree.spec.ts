@@ -96,11 +96,16 @@ for (const theme of ["light", "dark"])
       const preview = page.getByRole("group", { name: "Image preview: preview.png" });
       await expect(preview).toBeVisible();
       await expect(preview.locator("img")).toBeVisible();
-      await expect(preview).toHaveCSS("background-size", "16px 16px, 16px 16px");
+      // WebKit collapses a repeated size list ("16px 16px, 16px 16px") to one entry, so assert
+      // the layer count on the image and that every size entry is the 16px tile.
+      const style = await preview.evaluate((node) => {
+        const computed = getComputedStyle(node);
+        return { image: computed.backgroundImage, size: computed.backgroundSize };
+      });
+      expect(style.image.match(/gradient\(/g)).toHaveLength(2);
+      expect(new Set(style.size.split(", "))).toEqual(new Set(["16px 16px"]));
       await expect(preview).toHaveCSS("background-position", "0px 0px, 8px 8px");
-      expect(await preview.evaluate((node) => getComputedStyle(node).backgroundImage)).toContain(
-        "gradient",
-      );
+      expect(style.image).toContain("gradient");
       await page.screenshot({
         path: `temp/verification/files-shared/${process.env.FILES_FRAME_PHASE ?? "after"}-binary-${theme}-${width}.png`,
       });

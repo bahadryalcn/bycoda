@@ -784,5 +784,10 @@ it("never revives a queued supervisor request when a job is paused then resumed 
   await blocked;
   expect((await first).recovery?.state).toBe("unknown");
   expect(await secondResult).toContain("newer owner job hold");
-  expect(f.provider.cancel).toHaveBeenCalledOnce();
+  // The cancel runs on the released operation queue, which a slow CI runner may reach after
+  // both nudges settle; it must still happen exactly once.
+  await vi.waitFor(() => expect(f.provider.cancel).toHaveBeenCalledOnce(), {
+    timeout: 10_000,
+    interval: 25,
+  });
 });

@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   changes:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       web: ${{ steps.detect.outputs.web }}
       host: ${{ steps.detect.outputs.host }}
@@ -58,7 +58,7 @@ jobs:
         run: node scripts/checks/windows-runner-policy.mjs --scope ci
 
   repository-hygiene:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -91,7 +91,7 @@ jobs:
     # Deterministic contract/format failures stop expensive VM builds and browser
     # matrices before they start, without replacing their test evidence.
     needs: changes
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -139,7 +139,7 @@ jobs:
           - { os: windows-latest, scope: integration, shard: 6, shard-count: 6 }
     env:
       BYCODA_HOST_TEST_SCOPE: ${{ matrix.scope }}
-    runs-on: ${{ matrix.os == 'windows-latest' && fromJSON(needs.changes.outputs.windows_runs_on) || matrix.os }}
+    runs-on: ${{ matrix.os == 'windows-latest' && fromJSON(needs.changes.outputs.windows_runs_on) || (matrix.os == 'ubuntu-latest' && 'ubuntu-24.04' || matrix.os) }}
     concurrency:
       group: ${{ matrix.os == 'windows-latest' && needs.changes.outputs.windows_self_hosted == 'true' && 'bycoda-windows-heavy' || format('ci-host-{0}-{1}-{2}-{3}', github.run_id, github.run_attempt, matrix.os, matrix.shard) }}
       cancel-in-progress: false
@@ -204,7 +204,7 @@ jobs:
   web:
     needs: [changes, preflight]
     if: needs.changes.outputs.web == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -261,7 +261,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [macos-latest, ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os == 'windows-latest' && fromJSON(needs.changes.outputs.windows_runs_on) || matrix.os }}
+    runs-on: ${{ matrix.os == 'windows-latest' && fromJSON(needs.changes.outputs.windows_runs_on) || (matrix.os == 'ubuntu-latest' && 'ubuntu-24.04' || matrix.os) }}
     concurrency:
       group: ${{ matrix.os == 'windows-latest' && needs.changes.outputs.windows_self_hosted == 'true' && 'bycoda-windows-heavy' || format('ci-native-{0}-{1}-{2}', github.run_id, github.run_attempt, matrix.os) }}
       cancel-in-progress: false
@@ -310,7 +310,7 @@ jobs:
     needs: [changes, preflight]
     if: needs.changes.outputs.rpm == 'true'
     name: RPM build (${{ matrix.image }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     container: ${{ matrix.image }}
     strategy:
       fail-fast: false
@@ -394,7 +394,7 @@ jobs:
   rpm-clean-install:
     name: Clean rpm install
     needs: rpm
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Deliberately no setup script: this is the only job that can catch an rpm
     # whose Requires are missing, since everywhere else the -devel packages are
     # already installed. It mirrors the README instructions for an EL 10 user.
@@ -460,7 +460,7 @@ jobs:
   scripts:
     needs: changes
     if: needs.changes.outputs.scripts == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -526,7 +526,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.os == 'ubuntu-latest' && 'ubuntu-24.04' || matrix.os }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -565,7 +565,7 @@ jobs:
   browser:
     needs: [changes, preflight]
     if: github.event_name == 'pull_request' && needs.changes.outputs.browser == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       BYCODA_BROWSER_ARTIFACT_DIR: temp/test-results/browser-ci
     steps:
@@ -612,10 +612,10 @@ jobs:
     name: Browser full (${{ matrix.project }} ${{ matrix.shard }}/${{ matrix.count }})
     needs: [changes, preflight]
     if: github.event_name != 'pull_request' && needs.changes.outputs.browser == 'true'
-    # ubuntu-latest is Ubuntu 26.04 (libicu78), but Playwright 1.64's WebKit build targets Ubuntu 24.04
-    # and fails at launch with "libicudata.so.74: cannot open shared object file" (the kill ESRCH).
-    # WebKit stays on 24.04 until a Playwright release ships a 26.04 build; Chromium bundles its own libs.
-    runs-on: ${{ matrix.project == 'webkit' && 'ubuntu-24.04' || 'ubuntu-latest' }}
+    # Linux runners are pinned to Ubuntu 24.04: ubuntu-latest moved to 26.04 (libicu78), where
+    # Playwright 1.64's WebKit fails at launch ("libicudata.so.74: cannot open shared object file").
+    # Upgrade the image deliberately, together with a Playwright release that supports it.
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -693,7 +693,7 @@ jobs:
         browser,
         browser-full,
       ]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:

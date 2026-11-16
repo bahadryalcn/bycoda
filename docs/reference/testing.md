@@ -69,6 +69,19 @@ evaluation harness types when application TypeScript changed, and the browser
 manifest/type checks when `tests/browser/` changed, because CI runs them for the
 whole repository.
 
+When a change reaches browser fixtures, `check:changed` also runs the owning browser
+suites on Chromium (at most three, on a random port so parallel sessions do not
+collide), selected by `scripts/checks/browser-impact.mjs`: a changed spec or fixture
+file selects its suite, a feature file selects the suites in `tests/browser/<feature>/`
+whose fixture imports it. Suites reached only through shared imports run when there are
+at most three; a broad shared change (for example `src/shared/ui/`) runs none locally
+and the report names how many CI owns. A UI change then fails here instead of on `main`.
+`--no-browser` skips this step.
+
+CI pins its compiler and Linux image (`rust-toolchain.toml`, `ubuntu-24.04`), so a new
+Rust stable release or runner image cannot fail `main` for unchanged code; upgrade them
+deliberately in one commit.
+
 Before pushing `main` or a release tag, run `pnpm check:preflight`. It mirrors the
 cheap whole-repository CI gates (repository hygiene, formatting, lint/structure/UI
 ratchets, UI catalog, baseline guard, test-file types,
