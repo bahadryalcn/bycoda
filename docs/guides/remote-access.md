@@ -95,8 +95,8 @@ platform and a six-digit code to compare, with Allow and Deny. On Allow, that co
 issues a device credential, seals it to the requester's one-time key and the account
 only relays the sealed box. The requester verifies the Host identity on the published
 HTTPS route with a possession proof derived from the sealed ticket before sending
-the one-time ticket, then saves and connects the machine. Phone pairing and its
-redemption protocol remain unchanged; the proof endpoint is additive.
+the one-time ticket, then saves and connects the machine. Existing pairing and
+redemption protocols remain unchanged; the proof endpoint is additive.
 Turning a machine off blocks SSH, direct HTTP and WebSocket admission on this
 desktop and skips its background polls. Turning it on keeps its saved credential.
 Requests prefer the route used by the latest successful probe. A failed account

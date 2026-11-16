@@ -603,11 +603,9 @@ Items that wait for the owner reach the owner through the existing notification 
 
 **Desktop.** The lead workspace window reads `accounts.requests.list`, `browser.needsHuman.list` and the accounts snapshot from the Social authority Host (this computer when none is set) about once a minute, announces each item id once and remembers announced ids on this computer (`bycoda.notifications.social.announced.v1`, newest 300), so a poll or a restart never repeats one. An announcement follows the "Needs your input" event setting, the master switch, the per-project "Agent approvals and questions" mute and the unfocused-window rule: it adds a Notifications history entry (muted projects excepted), sends one desktop banner per poll (a summary when several are new) and adds to the taskbar and Dock count while the item waits. A waiting browser task or an account belongs to every project it is granted to; it is muted only when all of them are muted. A locked project is logged with the masked wording and never bannered or counted. Clicking opens Social on Command, or on Accounts focused on that account for a sign-in.
 
-**Phone.** While the desktop is away, the Host reads the same three kinds straight from the Social service and sends one push per item id and phone (ledger table `push_social_sent`, written before sending, so a failed send is not replayed). It follows the phone's "needs your input" choice; there is no separate Social setting. Items older than a day are not sent, and at most three per phone per read. The push uses `kind: "input"` with no session, so the current phone app opens without a deep link into Social.
+**Privacy.** Text names the platform and the reason only, never the project, the account name or the AI's request text.
 
-**Privacy.** Text names the platform and the reason only, never the project, the account name or the AI's request text; the phone body is its own "needs your input" text.
-
-**Not covered.** Signup workflows awaiting the owner, Telegram (its delivery sends only Assistant notifications through a Native-authorized effect), and a deep link into Social on the phone (needs a mobile app change). Real OS and phone delivery are not verified by automated tests.
+**Not covered.** Signup workflows awaiting the owner and Telegram (its delivery sends only Assistant notifications through a Native-authorized effect). Real OS delivery is not verified by automated tests.
 
 ## Session tools
 
