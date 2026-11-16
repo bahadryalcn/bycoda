@@ -18,6 +18,16 @@ export { ChatBackgroundCard } from "./appearance/sections/BackgroundSection";
 type Section = "theme" | "background" | "interface" | "typography" | "motion";
 let selectedSection: Section = "theme";
 
+/** The appearance tab whose panel holds the revealed setting, once that row is in the DOM. */
+function sectionHolding(revealed: string, root: HTMLElement | null): Section | undefined {
+  const target = document.getElementById(settingDomId(revealed));
+  const panel =
+    target && root?.contains(target)
+      ? target.closest<HTMLElement>("[data-appearance-section]")
+      : null;
+  return panel?.dataset.appearanceSection as Section | undefined;
+}
+
 export function AppearancePage({
   appearance,
   revealRequest = 0,
@@ -64,19 +74,30 @@ export function AppearancePage({
     selectedSection = value;
     setSection(value);
   };
+  // Hidden tabs pre-render at idle priority, so a revealed setting may not be in the DOM yet.
+  // Rendering every tab for one pass lets the lookup below find it whichever tab holds it.
+  const [renderAll, setRenderAll] = useState(false);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- reads the rendered DOM to show the tab holding the revealed setting
   useLayoutEffect(() => {
     if (!revealed) return;
-    const target = document.getElementById(settingDomId(revealed));
-    const panel =
-      target && root.current?.contains(target)
-        ? target.closest<HTMLElement>("[data-appearance-section]")
-        : null;
-    const value = panel?.dataset.appearanceSection as Section | undefined;
+    const value = sectionHolding(revealed, root.current);
+    if (!value) {
+      setRenderAll(true);
+      return;
+    }
+    selectedSection = value;
+    setSection(value);
+  }, [revealed, revealRequest]);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- repeats that DOM lookup after every tab rendered once
+  useLayoutEffect(() => {
+    if (!renderAll) return;
+    const value = revealed ? sectionHolding(revealed, root.current) : undefined;
     if (value) {
       selectedSection = value;
       setSection(value);
     }
-  }, [revealed, revealRequest]);
+    setRenderAll(false);
+  }, [renderAll, revealed]);
   const sections = [
     { id: "theme", label: t("Theme"), content: <ThemeSection appearance={appearance} /> },
     {
@@ -148,7 +169,7 @@ export function AppearancePage({
           <TabPanel key={id} value={id} keepMounted data-appearance-section={id}>
             {/* Hidden tabs keep their DOM for search reveal, but their renders wait and their
                 canvases and effects pause, so a change re-renders only the visible tab. */}
-            <Activity mode={section === id ? "visible" : "hidden"}>{content}</Activity>
+            <Activity mode={section === id || renderAll ? "visible" : "hidden"}>{content}</Activity>
           </TabPanel>
         ))}
       </Tabs>

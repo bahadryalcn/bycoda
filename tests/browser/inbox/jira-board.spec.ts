@@ -560,7 +560,9 @@ for (const theme of ["light", "dark"])
       );
       await expect(page.getByText("expect(first).toBe(2);")).toBeVisible();
       const marked = page.getByText("expect(first).toBe(2);").locator("..");
-      await expect(marked).toHaveCSS("border-left-width", "2px");
+      // The failing line is marked by the danger tone fill, not a left rule.
+      await expect(marked).toHaveAttribute("data-surface-tone", "danger");
+      await expect(marked).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
       const title = page.getByText("Update sidebar activity", { exact: true });
       await expect(title).toHaveCSS("text-decoration-line", "none");
       await title.hover();
@@ -590,7 +592,7 @@ for (const theme of ["light", "dark"])
       await expect(panel).toHaveCSS("position", "absolute");
       const colors = await panel.evaluate((node) => [
         getComputedStyle(node).backgroundColor,
-        getComputedStyle(node).getPropertyValue("--color-background-base").trim(),
+        getComputedStyle(node).getPropertyValue("--ui-workspace-canvas").trim(),
       ]);
       console.log("DISCUSSION_GROUND", JSON.stringify(colors));
       await page.screenshot({
@@ -601,8 +603,18 @@ for (const theme of ["light", "dark"])
         (node as HTMLElement).style.width = "900px";
       });
       await expect(panel).toHaveCSS("position", "relative");
-      const wideColor = await panel.evaluate((node) => getComputedStyle(node).backgroundColor);
-      expect(wideColor === "rgba(0, 0, 0, 0)" || wideColor.includes("/ 0)")).toBe(true);
+      // The panel is the opaque workspace canvas in both layouts, so nothing shows through
+      // when it covers the detail pane or sits beside it.
+      const canvas = await panel.evaluate((node) => {
+        const probe = document.createElement("div");
+        probe.style.backgroundColor = "var(--ui-workspace-canvas)";
+        node.append(probe);
+        const value = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return value;
+      });
+      expect(colors[0]).toBe(canvas);
+      await expect(panel).toHaveCSS("background-color", canvas);
     });
   }
 

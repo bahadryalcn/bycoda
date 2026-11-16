@@ -401,7 +401,6 @@ export function ServersView({
       size="inherit"
       tone="primary"
       aria-label={t("Servers")}
-      data-app-servers
       className="@container/servers flex min-h-0 min-w-0 flex-1 flex-col"
     >
       <PaneHeader

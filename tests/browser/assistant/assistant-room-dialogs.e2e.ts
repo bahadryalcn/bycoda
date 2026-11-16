@@ -19,8 +19,7 @@ for (const theme of ["light", "dark"])
           path: join(output, `${theme}-${width}-${slug}.png`),
         });
       };
-      await page.getByRole("tab", { name: /^Work(?:\s|$)/ }).click();
-      await page.getByRole("tab", { name: "Jobs", exact: true }).click();
+      await page.getByRole("tab", { name: /^Jobs(?:\s|$)/ }).click();
       await page.getByRole("button", { name: "Job actions", exact: true }).first().click();
       await capture("job-actions");
       await page.getByRole("menuitem", { name: "Priority", exact: true }).click();
@@ -46,7 +45,7 @@ for (const theme of ["light", "dark"])
       await page.getByRole("button", { name: "Conversation actions", exact: true }).click();
       await page.getByRole("menuitem", { name: "Clear conversation...", exact: true }).click();
       const clear = page.getByRole("dialog", { name: "Clear this conversation?", exact: true });
-      await expect(clear).toContainText("saved summary");
+      await expect(clear).toContainText("The summary and unsent draft stay.");
       await capture("conversation-clear");
       await clear.getByRole("button", { name: "Cancel", exact: true }).click();
 

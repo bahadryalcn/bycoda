@@ -125,7 +125,7 @@ test("selection, middle truncation, action groups and actual activity header sup
   await absent(page, page.getByRole("button", { name: "Copy expanded fixture", exact: true }));
   const phase = page
     .getByRole("region", { name: "Production consumer" })
-    .getByRole("button")
+    .locator("summary")
     .first();
   await expect(phase).toContainText("Searched");
   await absent(page, phase);
@@ -225,7 +225,7 @@ for (const light of [true, false])
         (theme) => document.documentElement.classList.toggle("theme-light", theme),
         light,
       );
-      await page.getByRole("button", { name: /Show the steps for/ }).click();
+      await page.locator('summary[aria-label^="Show the steps for"]').click();
       const row = page.locator('[data-control-min-height="compact"]').first();
       await expect(row).toBeVisible();
       const heights: number[] = [];

@@ -26,7 +26,7 @@
 .surface[data-surface-focus-ring="preview-inset"]:focus-visible,
 .appearance[data-surface-focus-ring="preview-inset"]:focus-visible {
   outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
-  outline-offset: calc(var(--ui-focus-offset) * -1);
+  outline-offset: var(--ui-focus-offset);
 }
 .surface[data-surface-focus-ring="outer"]:focus-visible,
 .appearance[data-surface-focus-ring="outer"]:focus-visible {

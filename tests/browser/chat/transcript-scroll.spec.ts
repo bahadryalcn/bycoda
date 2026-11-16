@@ -9,6 +9,11 @@ test("scrolling settled history keeps the scroll range fixed", async ({ page }) 
     .poll(() => scroller.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop))
     .toBeLessThanOrEqual(1);
 
+  // Leaving the bottom reveals the Jump to latest pill, which reserves 4rem under the last row
+  // (a one-time step at the end of the range). Settle that before sampling.
+  await scroller.hover();
+  await page.mouse.wheel(0, -160);
+  await expect(page.locator("[data-jump-pill]")).toHaveCount(1);
   // Sample actual browser layout every frame. Checking only the final height
   // could miss a correction that settles before the gesture ends.
   const initial = await scroller.evaluate((el) => {

@@ -97,7 +97,10 @@ test("empty state, persisted preferences and clearing history", async ({ page })
   await page.goto("/tests/browser/notifications/notifications.html?empty");
   await page.getByRole("button", { name: "Notifications", exact: true }).click();
   // Nothing waits and nothing is new, but the log still lists what was announced.
-  await expect(page.getByText("You're all caught up", { exact: true })).toBeVisible();
+  await expect(page.getByText("waiting for your answer")).toHaveCount(0);
+  await expect(
+    page.getByRole("region", { name: "Notifications", exact: true }).getByRole("article").first(),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Notification options", exact: true }).click();
   await page.getByRole("switch", { name: "Show request popups", exact: true }).click();
   await page.keyboard.press("Escape");

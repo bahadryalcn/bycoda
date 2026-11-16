@@ -47,7 +47,7 @@ for (const theme of ["light", "dark"])
       await expect(details).toBeVisible();
       await page.screenshot({ path: `${folder}/list-${theme}-${width}.png` });
       if (width === 800)
-        expect(await first.evaluate((row) => getComputedStyle(row).display)).toBe("grid");
+        expect(await first.evaluate((row) => getComputedStyle(row).display)).toBe("flex");
       await second.click();
       await expect(details.getByRole("heading", { name: "Server 01", exact: true })).toBeVisible();
       await details.getByRole("button", { name: "Close server details", exact: true }).click();
@@ -82,7 +82,10 @@ test.describe("touch selection", () => {
     const first = page.locator('[data-server-row="fixture-0"]');
     const bounds = await first.boundingBox();
     expect(bounds).not.toBeNull();
-    const touch = { x: bounds!.x + bounds!.width / 2, y: bounds!.y + bounds!.height / 2 };
+    // Selecting adds a bulk-action header that moves the rows down. Chromium's CDP tap clicks whatever
+    // is under the finger after the release, so press at the row's title, which sits under the
+    // non-interactive header heading once the header has appeared.
+    const touch = { x: bounds!.x + 40, y: bounds!.y + bounds!.height / 2 };
     if (browserName === "chromium") {
       const client = await page.context().newCDPSession(page);
       await client.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [touch] });

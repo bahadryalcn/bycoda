@@ -5,10 +5,14 @@ async function openAppearanceTab(page: Page, name: string) {
   await page.getByRole("tab", { name, exact: true }).click();
 }
 
-/** Background layers are cards whose editors stay hidden until the card is opened. */
-async function openBackgroundLayer(page: Page, description: RegExp) {
+/** Background layers are rows whose editors stay hidden until the row is opened. */
+async function openBackgroundLayer(page: Page, layer: "Color" | "Glass") {
   await openAppearanceTab(page, "Background");
-  const disclosure = page.getByRole("button", { name: description });
+  const disclosure = page
+    .getByRole("listitem")
+    .filter({ has: page.getByRole("switch", { name: layer, exact: true }) })
+    .getByRole("button")
+    .first();
   if ((await disclosure.getAttribute("aria-expanded")) !== "true") await disclosure.click();
 }
 
@@ -27,7 +31,7 @@ for (const theme of ["dark", "light"])
       const group = page.locator('[data-setting-id="workspace-background"]');
       // The Color layer's editor stays closed until its row is opened.
       const openColorLayer = async () => {
-        await openBackgroundLayer(page, /Gradient or solid color behind the workspace/);
+        await openBackgroundLayer(page, "Color");
         await expect(group).toBeVisible();
       };
       await openColorLayer();
@@ -369,7 +373,7 @@ test("elastic appearance adjustments retain bounds, persistence and light-mode g
   });
   await page.goto("/tests/browser/settings/settings.html?section=appearance&theme=dark&lang=en");
   await page.getByRole("radio", { name: /^Olive/ }).click();
-  await openBackgroundLayer(page, /Transparency of the sidebar and main pane/);
+  await openBackgroundLayer(page, "Glass");
   // Glass is off by default off Linux; the sliders only act while it is on.
   const glass = page.getByRole("switch", { name: "Glass", exact: true });
   if (!(await glass.isChecked())) await glass.click();
@@ -389,7 +393,7 @@ test("elastic appearance adjustments retain bounds, persistence and light-mode g
     path: "temp/verification/2026-10-16-ui-system/W5a-SETTINGS-elastic-custom-dark.png",
   });
   await page.reload();
-  await openBackgroundLayer(page, /Transparency of the sidebar and main pane/);
+  await openBackgroundLayer(page, "Glass");
   await expect(page.locator("details.settings-advanced")).toHaveCount(0);
   await expect(opacity).toHaveAttribute("aria-valuenow", "99");
   const blur = page
@@ -401,7 +405,7 @@ test("elastic appearance adjustments retain bounds, persistence and light-mode g
     (await blur.getAttribute("aria-valuemin")) ?? "",
   );
   await page.goto("/tests/browser/settings/settings.html?section=appearance&theme=light&lang=en");
-  await openBackgroundLayer(page, /Transparency of the sidebar and main pane/);
+  await openBackgroundLayer(page, "Glass");
   await expect(page.locator("details.settings-advanced")).toHaveCount(0);
   await expect(opacity).toHaveAttribute("aria-disabled", "true");
   await expect(blur).toHaveAttribute("aria-disabled", "true");
@@ -465,14 +469,10 @@ for (const theme of ["light", "dark"])
         .locator(".settings-row")
         .filter({ has: recorder })
         .getByRole("status")
-        .filter({ has: page.getByRole("button", { name: "Saved", exact: true }) });
-      await expect(feedback).toContainText("Saved");
-      const savedDetails = feedback.getByRole("button", { name: "Saved", exact: true });
-      await expect(savedDetails).toBeVisible();
-      await savedDetails.click();
-      await expect(page.getByRole("dialog", { name: "Saved", exact: true })).toContainText("Saved");
-      await page.keyboard.press("Escape");
-      await expect(savedDetails).toBeFocused();
+        .filter({ hasText: "Saved" });
+      // Saved confirmation is a quiet status with no redundant details disclosure.
+      await expect(feedback).toHaveText("Saved");
+      await expect(feedback.getByRole("button")).toHaveCount(0);
       await page.reload();
       await search.fill("Open Inbox");
       await expect(recorder).toContainText("Q");
@@ -512,7 +512,7 @@ for (const theme of ["light", "dark"])
       await page
         .getByRole("button", { name: "Reset App: Open Inbox shortcut", exact: true })
         .click();
-      await expect(page.getByText("No matching bindings", { exact: true })).toBeVisible();
+      await expect(page.getByText("No matching bindings")).toBeVisible();
       await page.getByRole("button", { name: "Reset filters", exact: true }).click();
       await expect(recorder).toBeVisible();
       await expect(recorder).toContainText("I");
@@ -532,9 +532,7 @@ for (const theme of ["light", "dark"])
       const firstRow = page.locator(".settings-row").first();
       expect((await firstRow.boundingBox())!.height).toBeLessThan(120);
       await expect(firstRow).not.toContainText("When: Always");
-      await page
-        .getByRole("heading", { name: "Keybindings", exact: true })
-        .scrollIntoViewIfNeeded();
+      await page.getByRole("heading", { name: "Shortcuts", exact: true }).scrollIntoViewIfNeeded();
       await layoutRecorder.click();
       await page.keyboard.press("Control+Alt+g");
       await expect(layoutRecorder).toHaveCount(0);

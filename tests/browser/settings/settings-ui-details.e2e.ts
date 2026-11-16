@@ -1,4 +1,18 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+
+/** Models is tabbed; provider accounts and the provider picker live under its Providers tab. */
+async function openProvidersTab(page: Page, name = "Providers") {
+  await page.getByRole("tab", { name, exact: true }).click();
+}
+
+/** A Background layer row (its disclosure button) is found through its on/off switch. */
+function layerRow(page: Page, layer: "Image" | "Color" | "Glass" | "Live") {
+  return page
+    .getByRole("listitem")
+    .filter({ has: page.getByRole("switch", { name: layer, exact: true }) })
+    .getByRole("button")
+    .first();
+}
 
 test.describe("provider identity touch access", () => {
   test.use({ hasTouch: true });
@@ -9,6 +23,7 @@ test.describe("provider identity touch access", () => {
         await page.goto(
           `/tests/browser/settings/settings.html?section=providers&providersFixture=1&providerIdentityStress=1&theme=${theme}&lang=en`,
         );
+        await openProvidersTab(page);
         const row = page.locator(".provider-account-row:visible").first();
         const name = row.locator(".provider-account-name");
         await expect(name).toContainText("Aleksandra Wiśniewska-Kowalczyk");
@@ -68,9 +83,10 @@ for (const theme of ["light", "dark"]) {
         `/tests/browser/settings/settings.html?section=mcp&mcp=1&theme=${theme}&lang=en`,
       );
       const connections = page.locator("#setting-mcp-servers");
-      // Enable/disable is the row switch; the actions menu keeps config and removal only.
-      const toggle = connections.getByRole("switch", {
-        name: "server-01 · Codex · Global",
+      // A row opens its server; enable and disable is the per-provider switch in that detail sheet.
+      await connections.getByRole("button", { name: "Open server-01", exact: true }).click();
+      const toggle = page.getByRole("switch", {
+        name: "Enable server-01 in Codex · Global",
         exact: true,
       });
       await expect(toggle).not.toBeChecked();
@@ -118,6 +134,7 @@ for (const theme of ["light", "dark"]) {
       await page.goto(
         `/tests/browser/settings/settings.html?section=providers&theme=${theme}&lang=${lang}`,
       );
+      await openProvidersTab(page, lang === "tr" ? "Sağlayıcılar" : "Providers");
       const picker = page.locator(".provider-cli-select").getByRole("button");
       await expect(picker).toBeVisible();
       await expect(page.locator(".provider-cli-selector")).toBeHidden();
@@ -200,7 +217,7 @@ for (const theme of ["light", "dark"]) {
       await page.screenshot({
         path: `temp/verification/2026-11-10-mcp/project-${theme}-${width}.png`,
       });
-      await connections.getByRole("button", { name: "Add MCP server", exact: true }).click();
+      await connections.getByRole("button", { name: "Add server", exact: true }).click();
       const modal = page.getByRole("dialog", { name: "Add MCP server", exact: true });
       await expect(modal).toBeVisible();
       await expect(modal.getByText(/Advanced/)).toHaveCount(0);
@@ -228,10 +245,12 @@ test("MCP rows keep scroll, filtered first edge and actions", async ({ page }) =
   await expect(row).toHaveCount(1);
   await expect(row).not.toHaveAttribute("data-row-divider", "");
   await expect(row).toHaveCSS("border-block-start-width", "0px");
-  await row.getByRole("button", { name: "Actions for server-24" }).click();
-  const menu = page.getByRole("menu", { name: "Actions for server-24" });
-  await expect(menu.getByRole("menuitem", { name: "Show config" })).toBeEnabled();
+  // Opening a row shows its configuration in the detail sheet.
+  await row.getByRole("button", { name: "Open server-24", exact: true }).click();
+  const detail = page.getByRole("dialog", { name: "server-24", exact: true });
+  await expect(detail.getByText("Configuration", { exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
+  await expect(detail).toHaveCount(0);
 });
 
 for (const theme of ["light", "dark"]) {
@@ -265,6 +284,7 @@ for (const theme of ["light", "dark"]) {
       await page.goto(
         `/tests/browser/settings/settings.html?section=providers&providersFixture=1&theme=${theme}&lang=en`,
       );
+      await openProvidersTab(page);
       const row = page.locator(".provider-account-row[data-action-host]:visible").first();
       await expect(row).toBeVisible();
       await row.hover();
@@ -368,7 +388,7 @@ for (const theme of ["light", "dark"]) {
       const edgeValues = (node: Element) => {
         const style = getComputedStyle(node);
         const probe = document.createElement("span");
-        probe.style.color = "var(--color-stroke)";
+        probe.style.color = "var(--ui-pane-border)";
         node.appendChild(probe);
         const expected = getComputedStyle(probe).color;
         probe.remove();
@@ -471,7 +491,7 @@ for (const theme of ["light", "dark"])
       await expect(palette.getByRole("radio").nth(1)).toBeChecked();
       await expect(palette.getByRole("radio").nth(1)).toBeFocused();
       await page.getByRole("tab", { name: "Background", exact: true }).click();
-      await page.getByRole("button", { name: /Image Picture behind chat panes/ }).click();
+      await layerRow(page, "Image").click();
       const tile = page.getByRole("button", { name: "Added image", exact: true });
       await expect(tile).toBeVisible();
       const tileStyle = await tile.evaluate((element) => ({
@@ -527,7 +547,7 @@ test("appearance selection controls respond to touch", async ({ browser }) => {
   await expect(option).toBeChecked();
   await expect(option).toHaveCSS("box-shadow", /2px/);
   await page.getByRole("tab", { name: "Background", exact: true }).tap();
-  await page.getByRole("button", { name: /Image Picture behind chat panes/ }).tap();
+  await layerRow(page, "Image").tap();
   const image = page.getByRole("button", { name: "Added image", exact: true });
   const remove = page.getByRole("button", { name: "Delete image" });
   await expect(remove).toHaveCSS("opacity", "0");
@@ -608,7 +628,8 @@ test("settings email advanced surface computed baseline", async ({ page }, info)
     };
   });
   expect(styles.border).toBe("1px");
-  expect(styles.radius).toBe("0px");
+  // Outside a settings group the disclosure draws its own thin frame with the standard control radius.
+  expect(styles.radius).toBe("8px");
   console.log("EMAIL_ADVANCED_BASELINE", JSON.stringify(styles));
   await advanced.screenshot({ path: info.outputPath("email-advanced-baseline.png") });
 });
@@ -779,7 +800,8 @@ test("settings heading responsive visibility baseline", async ({ page }) => {
         clip: s.clipPath,
       };
     });
-    expect(await title.evaluate((el) => el.tagName)).toBe("H1");
+    // The one h1 is the route title; a settings page title is an h2 (Heading default for page).
+    expect(await title.evaluate((el) => el.tagName)).toBe("H2");
     if (width === 390)
       expect(style).toEqual({
         position: "absolute",
@@ -796,7 +818,7 @@ test("settings heading responsive visibility baseline", async ({ page }) => {
 test("background layer row interaction baseline", async ({ page }) => {
   await page.goto("/tests/browser/settings/settings.html?section=appearance&theme=light&lang=en");
   await page.getByRole("tab", { name: "Background", exact: true }).click();
-  await page.getByRole("button", { name: /Image Picture behind chat panes/ }).click();
+  await layerRow(page, "Image").click();
   const toggle = page.getByRole("switch", { name: "Chat background layer" });
   const row = toggle.locator("xpath=ancestor::*[@data-settings-part='row'][1]");
   const read = () =>
@@ -843,6 +865,7 @@ for (const theme of ["light", "dark"])
         await page.goto(
           `/tests/browser/settings/settings.html?section=providers&providersFixture=1${empty ? "&emptyProvider" : ""}&theme=${theme}&lang=en`,
         );
+        await openProvidersTab(page);
         const group = page.locator("#setting-provider-accounts");
         const body = group.locator(".provider-accounts-body:visible");
         if (empty) await expect(body.locator(".provider-account-empty")).toBeVisible();
@@ -889,21 +912,21 @@ for (const theme of ["light", "dark"])
       expect(empty).toMatchObject({
         border: "1px",
         style: "dashed",
-        radius: "10px",
+        radius: "8px",
         width: 176,
         height: 110,
       });
       expect(filled).toMatchObject({
         border: "1px",
         style: "solid",
-        radius: "10px",
+        radius: "8px",
         width: 176,
         height: 110,
       });
       expect(disabled).toMatchObject({
         border: "1px",
         style: "dashed",
-        radius: "10px",
+        radius: "8px",
         width: 176,
         height: 110,
         color: "rgba(0, 0, 0, 0)",
@@ -917,7 +940,7 @@ for (const theme of ["light", "dark"])
       expect(await read(0)).toMatchObject({
         border: "1px",
         style: "dashed",
-        radius: "10px",
+        radius: "8px",
         width: 176,
         height: 110,
       });
@@ -935,7 +958,7 @@ for (const theme of ["light", "dark"])
         `/tests/browser/settings/settings.html?section=appearance&theme=${theme}&lang=en`,
       );
       await page.getByRole("tab", { name: "Background", exact: true }).click();
-      await page.getByRole("button", { name: /^Color Gradient/ }).click();
+      await layerRow(page, "Color").click();
       const button = page.getByRole("button", { name: "Color 1", exact: true });
       const swatch = button.locator("span[aria-hidden]");
       await expect(swatch).toHaveCSS("border-top-width", "2px");
@@ -946,7 +969,7 @@ for (const theme of ["light", "dark"])
       await page.keyboard.press("Tab");
       await dial.focus();
       expect(await dial.evaluate((el) => el.matches(":focus-visible"))).toBe(true);
-      await expect(dial).toHaveCSS("outline-width", "1px");
+      await expect(dial).toHaveCSS("outline-width", "2px");
       await expect(dial).toHaveCSS("outline-offset", "2px");
       const value = Number(await dial.getAttribute("aria-valuenow"));
       await dial.press("ArrowRight");
@@ -966,7 +989,7 @@ test("library tile surface baseline", async ({ page }) => {
     "/tests/browser/settings/settings.html?section=appearance&theme=light&lang=en&libraryProbe",
   );
   await page.getByRole("tab", { name: "Background", exact: true }).click();
-  await page.getByRole("button", { name: /Image Picture behind chat panes/ }).click();
+  await layerRow(page, "Image").click();
   const tile = page.getByRole("button", { name: "Added image", exact: true });
   const read = () =>
     tile.evaluate((el) => {
@@ -987,7 +1010,7 @@ test("library remove surface baseline", async ({ page }) => {
     "/tests/browser/settings/settings.html?section=appearance&theme=light&lang=en&libraryProbe",
   );
   await page.getByRole("tab", { name: "Background", exact: true }).click();
-  await page.getByRole("button", { name: /Image Picture behind chat panes/ }).click();
+  await layerRow(page, "Image").click();
   const remove = page.getByRole("button", { name: "Delete image" });
   const read = () =>
     remove.evaluate((el) => {
@@ -1072,6 +1095,7 @@ for (const theme of ["light", "dark"])
       await page.goto(
         `/tests/browser/settings/settings.html?section=providers&providersFixture=1&theme=${theme}&lang=en`,
       );
+      await openProvidersTab(page);
       const selectProvider = async (name: string) => {
         const picker = page.locator(".provider-cli-select").getByRole("button");
         if (await picker.isVisible()) {
@@ -1132,6 +1156,8 @@ for (const theme of ["light", "dark"])
       await search.press("Enter");
       const group = page.locator('[data-setting-id="interface-font"]');
       await expect(group).toHaveAttribute("data-revealed", "true");
+      // The reveal switches Appearance to the tab that holds the group; wait for it to be shown.
+      await expect(group).toBeVisible();
       const content = group.locator('[data-surface-reveal="group"]');
       expect(await content.evaluate((el) => getComputedStyle(el).animationName)).not.toBe("none");
       await content.screenshot({ path: info.outputPath(`group-reveal-${theme}-${width}.png`) });

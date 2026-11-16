@@ -216,7 +216,10 @@ for (const theme of ["light", "dark"]) {
       await expect(group).not.toContainText("faster-whisper");
       await expect(group).not.toContainText("pip install");
       await expect(group).not.toContainText("Missing:");
-      await expect(group.getByRole("textbox")).toHaveCount(0);
+      // Existing-file paths live in the Locate dialog; the setup group itself has no text fields.
+      await expect(
+        group.getByRole("group", { name: "Voice setup", exact: true }).getByRole("textbox"),
+      ).toHaveCount(0);
       await group.scrollIntoViewIfNeeded();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
@@ -276,7 +279,11 @@ test("voice install finishes in place using a simulated job", async ({ page }) =
 });
 
 test("stalled detection keeps Install available and ends with a retry", async ({ page }) => {
-  const group = await openVoice(page, "stalled", "dark", 390);
+  // The Voice page also has an unrelated model-list retry; the setup retry lives in the Voice setup group.
+  const group = (await openVoice(page, "stalled", "dark", 390)).getByRole("group", {
+    name: "Voice setup",
+    exact: true,
+  });
   await expect(group.getByText("Checking voice setup…", { exact: true })).toBeVisible();
   await expect(group.getByRole("button", { name: "Install", exact: true })).toBeVisible();
   await expect(group.getByRole("button", { name: "Try again", exact: true })).toBeVisible({

@@ -261,7 +261,7 @@ mod mac {
             let Some(window) = app.get_webview_window(LABEL) else {
                 return;
             };
-            if tick % 2 == 0 && entry(id).state == PermissionState::Granted {
+            if tick.is_multiple_of(2) && entry(id).state == PermissionState::Granted {
                 finish(&app);
                 return;
             }

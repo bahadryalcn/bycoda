@@ -31,7 +31,7 @@ async function expectReadableTextError(page: Page) {
   const message =
     "This device input supports printable ASCII only and cannot send %s. Enter this text on the device; your draft is kept.";
   const error = page
-    .getByRole("dialog", { name: "Text to type on device", exact: true })
+    .getByRole("dialog", { name: "Type text", exact: true })
     .getByRole("alert")
     .filter({ hasText: message });
   await expect(error).toBeVisible();

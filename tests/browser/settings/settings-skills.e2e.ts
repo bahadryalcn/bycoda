@@ -9,15 +9,14 @@ for (const theme of ["dark", "light"]) {
       await page.goto(
         `/tests/browser/settings/settings.html?section=skills&skills=1&theme=${theme}&lang=en`,
       );
+      // Grouping tools belong to the Groups view; creating a group is a New menu action.
+      await page.getByRole("radio", { name: "Groups", exact: true }).click();
       const grouping = page.getByRole("button", { name: "Group with AI", exact: true });
-      const create = page.getByRole("button", { name: "New group", exact: true });
-      const settings = page.getByRole("button", { name: "Manage in Models", exact: true });
+      const settings = page.getByRole("button", { name: "Manage models", exact: true });
       await expect(grouping).toBeVisible();
       await expect(settings).toBeVisible();
       await expect(page.getByText(/Model set in Settings/)).toHaveCount(0);
-      const boxes = await Promise.all(
-        [create, grouping, settings].map((button) => button.boundingBox()),
-      );
+      const boxes = await Promise.all([grouping, settings].map((button) => button.boundingBox()));
       expect(new Set(boxes.map((box) => Math.round(box!.y))).size).toBe(1);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
@@ -200,12 +199,14 @@ for (const theme of ["dark", "light"]) {
       await page.screenshot({ path: `${dir}/machines-${theme}-${width}.png` });
       await page.getByRole("button", { name: "Close skill preview" }).click();
 
-      await page.getByRole("button", { name: "Discover skills", exact: true }).click();
+      await page.getByRole("button", { name: "New", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Discover skills", exact: true }).click();
       await expect(page.getByRole("dialog")).toBeVisible();
       await page.screenshot({ path: `${dir}/discover-${theme}-${width}.png` });
       await page.keyboard.press("Escape");
 
-      await page.getByRole("button", { name: "New skill", exact: true }).click();
+      await page.getByRole("button", { name: "New", exact: true }).click();
+      await page.getByRole("menuitem", { name: "New skill", exact: true }).click();
       await expect(page.getByRole("textbox", { name: "Skill name" })).toHaveValue("");
       await page.screenshot({ path: `${dir}/new-skill-${theme}-${width}.png` });
       await page.keyboard.press("Escape");
@@ -251,7 +252,10 @@ for (const theme of ["light", "dark"])
       await page.keyboard.press("Tab");
       await page.keyboard.press("Shift+Tab");
       await expect(skill).toBeFocused();
-      expect(await skill.evaluate((el) => getComputedStyle(el).outlineWidth)).not.toBe("0px");
+      // Keyboard focus is shown as the row highlight (same cue as hover), not an outline.
+      expect(await row.evaluate((el) => getComputedStyle(el).backgroundImage)).toContain(
+        "linear-gradient",
+      );
       const action = row.getByRole("button", { name: "Actions for remote-notes", exact: true });
       await expect(action).toHaveCSS("opacity", "1");
       await row.hover();

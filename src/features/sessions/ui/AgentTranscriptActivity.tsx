@@ -287,6 +287,8 @@ const ActivityPhaseGroup = memo(function ActivityPhaseGroup({
     </span>
   );
 
+  const titledLabel = <OverflowTooltip label={title}>{label}</OverflowTooltip>;
+
   // A line the agent wrote with nothing under it is just that line.
   if (inert) {
     return (
@@ -327,7 +329,7 @@ const ActivityPhaseGroup = memo(function ActivityPhaseGroup({
                 <ActivityPhaseIcon kind={phase.kind} />
               )}
             </span>
-            {label}
+            {titledLabel}
           </>
         }
       >

@@ -7,6 +7,8 @@ import { useState } from "react";
 import { VoiceAssistantFixture } from "./voice-assistant-fixture";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { initAppearancePreferences } from "../../../src/features/settings/model/appearancePreferences";
+import { initWorkspaceBackground } from "../../../src/features/settings/model/workspaceBackground";
+import { installInputModality } from "../../../src/shared/ui/inputModality";
 import { createRoot } from "react-dom/client";
 import { ModelOrderLimits } from "../../../src/features/model-routing/ui/order/ModelOrderLimits";
 import { workSettingsFixture } from "./settings-work-fixture";
@@ -754,6 +756,10 @@ const theme = params.get("theme") === "light" ? "light" : "dark";
 saveThemePreference(theme);
 applyThemePreference(theme);
 initAppearancePreferences();
+// The app applies the stored workspace background at startup, before any settings card mounts.
+initWorkspaceBackground();
+// The app tracks keyboard versus pointer input at startup; keyboard-only focus cues depend on it.
+installInputModality();
 const language = params.get("lang");
 const initial = params.get("section");
 function ModelLimitsFixture() {
@@ -791,7 +797,9 @@ function Fixture() {
       className="flex h-screen min-w-0 flex-col bg-background-base text-content"
       data-fixture-deletions={deletions}
       data-fixture-labels={JSON.stringify({
-        mcp: t("Add MCP server"),
+        mcp: t("Add server"),
+        newMenu: t("New"),
+        providersTab: t("Providers"),
         worktrees: gitText("Create worktree"),
         password: t("Set lock password…"),
         account: t("Add account"),

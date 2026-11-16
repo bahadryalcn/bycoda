@@ -134,7 +134,7 @@ for (const state of ["error", "loading", "working"]) {
           ? "Could not load local models."
           : state === "loading"
             ? "Loading models…"
-            : "Working…",
+            : "Whisper large-v3-turbo: Downloading…",
         { exact: true },
       ),
     ).toBeVisible();
@@ -323,6 +323,26 @@ for (const platform of ["macOS", "Windows", "Linux"])
                   if (command === "open_privacy_settings")
                     throw new Error("Synthetic settings launch failure");
                   if (command === "plugin:event|listen") return 1;
+                  if (command === "system_permissions_status")
+                    return {
+                      version: 1,
+                      platform:
+                        platform === "macOS"
+                          ? "macos"
+                          : platform === "Windows"
+                            ? "windows"
+                            : "linux",
+                      entries: [
+                        {
+                          id: "microphone",
+                          state: "denied",
+                          canRequest: false,
+                          canOpenSettings: platform !== "Linux",
+                        },
+                      ],
+                      signing: "stable",
+                      elevated: null,
+                    };
                 },
               };
             },
@@ -337,27 +357,30 @@ for (const platform of ["macOS", "Windows", "Linux"])
             platform === "macOS"
               ? "Privacy & Security > Microphone"
               : platform === "Windows"
-                ? "allow microphone access and desktop apps"
+                ? "Windows Settings > Privacy & security > Microphone"
                 : "app or sandbox microphone permissions",
           );
           await page.getByRole("button", { name: "Dictate", exact: true }).click();
           const composer = page.getByRole("region", { name: "Message box fixture" });
           await expect(composer).toContainText("Microphone access is blocked.");
           const recovery = composer.getByRole("button", {
-            name: "Open Privacy Settings",
+            name: "Review access",
             exact: true,
           });
           if (platform === "Linux") {
             await expect(recovery).toHaveCount(0);
             await expect(
-              permission.getByRole("button", { name: "Open Privacy Settings", exact: true }),
+              permission.getByRole("button", { name: "Review access", exact: true }),
             ).toHaveCount(0);
           } else {
             await expect(recovery).toBeVisible();
             await recovery.click();
-            await expect(composer).toContainText(
-              "Could not open microphone settings. Open your system settings manually.",
+            const guide = page.getByRole("dialog", { name: "Microphone", exact: true });
+            await guide.getByRole("button", { name: "Open Settings", exact: true }).click();
+            await expect(guide).toContainText(
+              "Could not open the permission prompt or settings. Follow the steps above, then check again.",
             );
+            await guide.getByRole("button", { name: "Close", exact: true }).click();
             expect(
               await page.evaluate(() =>
                 (window as any).fixtureNativeCalls.filter(
@@ -410,7 +433,7 @@ for (const platform of ["macOS", "Windows", "Linux"])
                 : errorSurface.getByText(/Microphone access is blocked\./);
             await expect(visibleError).toBeVisible();
             const action = errorSurface.getByRole("button", {
-              name: "Open Privacy Settings",
+              name: "Review access",
               exact: true,
             });
             if (platform === "Linux") await expect(action).toHaveCount(0);
@@ -469,7 +492,7 @@ test("Turkish dictation controls and permission recovery are localized", async (
   await expect(page.getByText("Dikte hazır", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Mikrofon erişimini kontrol et", exact: true }).click();
   await expect(page.locator('[data-setting-id="speech-microphone"]')).toContainText(
-    "Mikrofon erişimi engellendi.",
+    "Mikrofon engellendi;",
   );
   await page.screenshot({
     path: join(captures, "tr-light-800-permission-blocked.png"),

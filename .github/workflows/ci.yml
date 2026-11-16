@@ -612,7 +612,10 @@ jobs:
     name: Browser full (${{ matrix.project }} ${{ matrix.shard }}/${{ matrix.count }})
     needs: [changes, preflight]
     if: github.event_name != 'pull_request' && needs.changes.outputs.browser == 'true'
-    runs-on: ubuntu-latest
+    # ubuntu-latest is Ubuntu 26.04 (libicu78), but Playwright 1.64's WebKit build targets Ubuntu 24.04
+    # and fails at launch with "libicudata.so.74: cannot open shared object file" (the kill ESRCH).
+    # WebKit stays on 24.04 until a Playwright release ships a 26.04 build; Chromium bundles its own libs.
+    runs-on: ${{ matrix.project == 'webkit' && 'ubuntu-24.04' || 'ubuntu-latest' }}
     timeout-minutes: 45
     strategy:
       fail-fast: false

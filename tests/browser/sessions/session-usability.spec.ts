@@ -52,7 +52,7 @@ for (const light of [true, false])
       await expect(page.getByRole("textbox", { name: "Find in conversation" })).toBeVisible();
       await page.screenshot({ path: `${folder}/find-${theme}-${width}.png` });
       await page.keyboard.press("Escape");
-      const composer = page.getByRole("textbox", { name: /Ask, build/ });
+      const composer = page.getByRole("textbox", { name: "Message", exact: true });
       await composer.fill("@report");
       await expect(page.getByRole("listbox")).toBeVisible();
       await page.screenshot({ path: `${folder}/file-mention-${theme}-${width}.png` });
@@ -243,6 +243,8 @@ for (const light of [false, true]) {
     await expect(page.getByText("draft-context.txt", { exact: true })).toBeVisible();
     await page.evaluate(() => window.sessionUsability.mode("approval"));
     const allow = page.getByRole("button", { name: "Allow", exact: true });
+    // The dock copy hides once the transcript card is observed on screen: one decision, one place.
+    await expect(allow).toHaveCount(1);
     await expect(allow).toBeVisible();
     await page.screenshot({
       path: info.outputPath("integrated-approval-320.png"),
@@ -327,7 +329,7 @@ for (const theme of ["light", "dark"])
       );
       await page.getByRole("button", { name: "Import 1" }).click();
       await expect(page.getByText("Fixture transcript unavailable")).toBeVisible();
-      await expect(page.getByText("1 conversation could not be imported")).toBeVisible();
+      await expect(page.getByText("Conversations that could not be imported: 1")).toBeVisible();
       await page.screenshot({
         animations: "disabled",
         path: `temp/verification/feature-controls/import-failure-${theme}-${width}.png`,
@@ -370,7 +372,7 @@ for (const light of [true, false])
 
 test("provider sign in logo actual surface geometry", async ({ page }) => {
   await page.goto("/tests/browser/sessions/session-usability.html?providerSignIn&light");
-  const well = page.getByRole("status").locator('[data-surface-ring="stroke"]');
+  const well = page.getByRole("status").locator('[data-surface-ring="pane"]');
   await expect(well).toBeVisible();
   const geometry = await well.evaluate((node) => {
     const style = getComputedStyle(node);
@@ -391,7 +393,7 @@ for (const light of [true, false])
       await page.goto(
         `/tests/browser/sessions/session-usability.html?providerSignIn${light ? "&light" : ""}`,
       );
-      const well = page.getByRole("status").locator('[data-surface-ring="stroke"]');
+      const well = page.getByRole("status").locator('[data-surface-ring="pane"]');
       await expect(well).toHaveCSS("border-radius", "16px");
       expect(await well.evaluate((node) => getComputedStyle(node).boxShadow)).toContain("inset");
       await page.screenshot({
@@ -417,7 +419,7 @@ for (const light of [true, false])
         `/tests/browser/sessions/session-usability.html?resumeFixture${light ? "&light" : ""}`,
       );
       const row = page.locator("[data-resume-turn]");
-      await row.getByRole("button").click();
+      await row.locator("summary").click();
       const text = row.getByText("Continue the retained draft.");
       await expect(text).toBeVisible();
       await expect(text).toHaveCSS("padding-inline-start", "28px");

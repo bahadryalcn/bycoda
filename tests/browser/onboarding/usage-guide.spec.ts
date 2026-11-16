@@ -51,7 +51,7 @@ test("keeps actions visible in Turkish on narrow, short and wide screens", async
     await page.setViewportSize(viewport);
     await page.goto(`${fixture}&lang=tr`);
     const guide = page.getByRole("alertdialog");
-    await expect(guide.getByRole("heading", { name: "Chat başlat" })).toBeVisible();
+    await expect(guide.getByRole("heading", { name: "Oturum başlat" })).toBeVisible();
     await expect(guide.getByRole("button", { name: "Devam →" })).toBeInViewport();
     await expect(guide.getByRole("button", { name: "Rehberi kapat" })).toBeInViewport();
     const bounds = await guide.boundingBox();

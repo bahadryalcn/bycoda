@@ -22,7 +22,9 @@ for (const theme of ["light", "dark"]) {
       const dialog = page.getByRole("dialog", { name: "SSH settings", exact: true });
       const search = dialog.getByRole("searchbox", { name: "Search SSH keys…" });
       await search.fill("no-such-key");
-      await expect(dialog.getByText("No matching SSH keys.", { exact: true })).toBeVisible();
+      await expect(
+        dialog.getByRole("status").filter({ hasText: "No matching SSH keys" }),
+      ).toBeVisible();
       await search.fill("id_ed25519_work");
       await expect(
         dialog.getByRole("button", { name: /Assign key:.*a-long-descriptive/ }),

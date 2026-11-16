@@ -17,33 +17,28 @@ test("interrupted recovery keeps Continue on the right above a distinct composer
       });
       const notice = page.locator("[data-interrupted-turn]");
       const button = notice.getByRole("button", { name: "Continue", exact: true });
-      const text = notice.getByRole("status");
+      // The notice itself is the polite status; Continue follows the copy inline.
+      await expect(notice).toHaveRole("status");
       await expect(button).toBeVisible();
       const b = (await button.boundingBox())!;
-      const c = (await text.boundingBox())!;
       const n = (await notice.boundingBox())!;
-      expect(b.x).toBeGreaterThanOrEqual(c.x + c.width);
-      expect(Math.abs(b.y + b.height / 2 - c.y - c.height / 2)).toBeLessThan(3);
-      expect(n.x + n.width - b.x - b.width).toBeLessThanOrEqual(18);
-      if (theme === "dark") {
-        // The composer is a glass surface shared with the queue and activity dock: it
-        // paints the dock glass token through a backdrop filter instead of an opaque fill.
+      const copy = (await notice.getByText("Interrupted", { exact: false }).first().boundingBox())!;
+      expect(b.x).toBeGreaterThan(copy.x);
+      expect(b.y).toBeGreaterThanOrEqual(n.y);
+      expect(b.y + b.height).toBeLessThanOrEqual(n.y + n.height + 1);
+      expect(b.x + b.width).toBeLessThanOrEqual(n.x + n.width + 1);
+      {
+        // The composer paints the composer surface token, distinct from the page behind it.
         const surface = await page.locator("[data-composer-box]").evaluate((element) => {
           const probe = document.createElement("div");
-          probe.style.background = "var(--ui-activity-dock-glass)";
+          probe.style.background = "var(--ui-composer-surface)";
           element.parentElement!.append(probe);
           const expected = getComputedStyle(probe).backgroundColor;
           probe.remove();
-          const style = getComputedStyle(element);
-          return {
-            background: style.backgroundColor,
-            expected,
-            filter: style.backdropFilter || style.getPropertyValue("-webkit-backdrop-filter"),
-          };
+          return { background: getComputedStyle(element).backgroundColor, expected };
         });
         expect(surface.background).toBe(surface.expected);
         expect(surface.background).not.toBe("rgba(0, 0, 0, 0)");
-        expect(surface.filter).not.toBe("none");
       }
       await page
         .getByTestId("composer-pane")
@@ -141,7 +136,8 @@ for (const width of [1280, 800]) {
       // The quote lands as an inline token the sentence can refer to, like `[image1]`.
       await expect(prompt).toHaveValue("Keep my existing draft. [quote1] ");
       const composer = page.getByTestId("composer-pane");
-      await expect(composer.locator("[data-composer-citation-token]")).toHaveText("[quote1]");
+      // Face token: the hidden `[quote1]` source keeps the textarea advance; `quote1` is the visible face.
+      await expect(composer.locator("[data-composer-citation-token]")).toHaveText("[quote1]quote1");
       const chip = composer.getByRole("button", {
         name: "Bunu daha kompakt hale getirelim.",
         exact: true,

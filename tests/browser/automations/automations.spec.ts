@@ -477,8 +477,12 @@ for (const theme of ["light", "dark"])
         );
         const card = page.getByRole("button", { name: "Open Daily review", exact: true });
         await expect(card).toBeVisible();
-        const trigger = card.locator(":scope > span").first();
-        await expect(trigger).toHaveCSS("padding-inline-end", multiple ? "96px" : "56px");
+        // The enable switch is a sibling control before the row button, never overlapping it.
+        const toggle = page.getByRole("switch", { name: "Pause Daily review" });
+        await expect(toggle).toBeVisible();
+        const toggleBox = (await toggle.boundingBox())!;
+        const cardBox = (await card.boundingBox())!;
+        expect(toggleBox.x + toggleBox.width).toBeLessThanOrEqual(cardBox.x + 0.5);
         const list = page.locator(".automation-list");
         await expect(list).toHaveCSS("border-inline-end-width", "1px");
         await page.screenshot({

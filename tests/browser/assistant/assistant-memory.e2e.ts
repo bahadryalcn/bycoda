@@ -25,7 +25,6 @@ for (const theme of ["light", "dark"])
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(`/tests/browser/assistant/assistant-room.html?theme=${theme}&real-controls`);
-      await page.getByRole("tab", { name: "Records", exact: true }).click();
       await page.getByRole("tab", { name: "Memory", exact: true }).click();
       await expect(page.getByText(original, { exact: true })).toBeVisible();
       await capture(page, `memory-${theme}-${width}`);

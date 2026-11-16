@@ -699,23 +699,43 @@ test("shared tone specimen preserves contrast, independent info and narrow layou
   }
 });
 
-/** Normal fields focus through their neutral border, with no halo or inset outline. */
-async function expectFieldFocus(owner: Locator, resting?: string) {
+/** The resting border once any running colour transition (a theme switch) has finished. */
+async function settledBorder(owner: Locator) {
+  return owner.evaluate(async (node) => {
+    await Promise.all(node.getAnimations().map((animation) => animation.finished.catch(() => {})));
+    return getComputedStyle(node).borderTopColor;
+  });
+}
+
+/**
+ * Normal fields never draw a halo or outline. A pointer click keeps the resting border (the caret is
+ * the only cue); keyboard modality steps the border up (src/styles/arc.css field focus contract).
+ */
+async function expectFieldFocus(owner: Locator, resting?: string, keyboard = false, label = "") {
   await expect
-    .poll(() =>
-      owner.evaluate((node, before) => {
-        const css = getComputedStyle(node);
-        // Browsers serialize the zero-size shadow as either `none` or a color
-        // followed by zero offsets, blur and spread. Both draw no halo.
-        const lengths = css.boxShadow.match(/-?(?:\d*\.)?\d+px/g) ?? [];
-        return {
-          outline: css.outlineStyle,
-          noHalo:
-            css.boxShadow === "none" ||
-            (lengths.length >= 3 && lengths.every((length) => Number.parseFloat(length) === 0)),
-          border: before === undefined || css.borderTopColor !== before,
-        };
-      }, resting),
+    .poll(
+      () =>
+        owner.evaluate(
+          (node, [before, keyboard]) => {
+            const css = getComputedStyle(node);
+            // Browsers serialize the zero-size shadow as either `none` or a color
+            // followed by zero offsets, blur and spread. Both draw no halo.
+            // Keyboard modality adds the documented 1px inset line (--ui-focus-ring), which is not a halo.
+            const lengths = css.boxShadow.match(/-?(?:\d*\.)?\d+px/g) ?? [];
+            return {
+              outline: css.outlineStyle,
+              noHalo:
+                css.boxShadow === "none" ||
+                (keyboard && css.boxShadow.includes("inset")) ||
+                (lengths.length >= 3 && lengths.every((length) => Number.parseFloat(length) === 0)),
+              border:
+                before === undefined ||
+                (keyboard ? css.borderTopColor !== before : css.borderTopColor === before),
+            };
+          },
+          [resting, keyboard] as const,
+        ),
+      { message: label },
     )
     .toEqual({ outline: "none", noHalo: true, border: true });
 }
@@ -741,7 +761,9 @@ test("search focus has one owner across shared fields and host tool overrides", 
             ? field.locator("xpath=ancestor::*[@data-field-control][1]")
             : field.locator("..");
         const before = await owner.boundingBox();
-        const resting = await owner.evaluate((node) => getComputedStyle(node).borderTopColor);
+        // Rest off the field: a hovered frame already shows the hover border.
+        await page.mouse.move(0, 0);
+        const resting = await settledBorder(owner);
         await field.click();
         for (const keyboard of [false, true]) {
           if (keyboard) {
@@ -751,7 +773,7 @@ test("search focus has one owner across shared fields and host tool overrides", 
           await expect(field).toBeFocused();
           // Field focus contract (src/styles/arc.css): the frame's neutral border
           // changes without a halo, inset outline or second ring on the editor.
-          await expectFieldFocus(owner, resting);
+          await expectFieldFocus(owner, resting, keyboard, `${name} ${width} ${light} ${keyboard}`);
           await expect(field).toHaveCSS("outline-style", "none");
           await expect(field).toHaveCSS("box-shadow", "none");
         }
@@ -815,10 +837,11 @@ test("text fields keep focus on one border with pointer and keyboard", async ({
       ]) {
         const field = region.getByRole("textbox", { name, exact: true });
         const before = await field.boundingBox();
+        await page.mouse.move(0, 0);
         // Text areas render inside a FieldControl frame, which owns focus presentation.
         const framed = await field.evaluate((node) => !!node.closest("[data-field-control]"));
         const owner = framed ? field.locator("xpath=ancestor::*[@data-field-control][1]") : field;
-        const resting = await owner.evaluate((node) => getComputedStyle(node).borderTopColor);
+        const resting = await settledBorder(owner);
         await field.click();
         await expect(field).toBeFocused();
         for (const keyboard of [false, true]) {
@@ -828,22 +851,30 @@ test("text fields keep focus on one border with pointer and keyboard", async ({
             await expect(field).toBeFocused();
           }
           if (name.startsWith("Invalid")) {
-            // Invalid fields keep their danger border and show the invalid ring.
+            // Invalid fields keep their danger border; the soft invalid ring is keyboard-only (arc.css).
             await expect
               .poll(() =>
-                owner.evaluate((node, before) => {
-                  const css = getComputedStyle(node);
-                  return {
-                    outline: css.outlineStyle,
-                    ring: /0px 0px 0px 2px/.test(css.boxShadow),
-                    border: css.borderTopColor === before,
-                  };
-                }, resting),
+                owner.evaluate(
+                  (node, [before, keyboard]) => {
+                    const css = getComputedStyle(node);
+                    return {
+                      outline: css.outlineStyle,
+                      ring: /0px 0px 0px 2px/.test(css.boxShadow) === keyboard,
+                      border: css.borderTopColor === before,
+                    };
+                  },
+                  [resting, keyboard] as const,
+                ),
               )
               .toEqual({ outline: "none", ring: true, border: true });
           } else {
             // Reduced-motion transitions still finish on a subsequent browser frame.
-            await expectFieldFocus(owner, resting);
+            await expectFieldFocus(
+              owner,
+              resting,
+              keyboard,
+              `${name} ${width} ${light} ${keyboard}`,
+            );
           }
           if (framed) {
             await expect(field).toHaveCSS("outline-style", "none");
@@ -857,7 +888,7 @@ test("text fields keep focus on one border with pointer and keyboard", async ({
       await expect(region.getByLabel("Disabled focus textarea", { exact: true })).toBeDisabled();
       const button = region.getByRole("button", { name: "After focus fields" });
       await button.focus();
-      await expect(button).toHaveCSS("outline-offset", "2px");
+      await expect(button).toHaveCSS("outline-offset", "-2px");
       await region.getByLabel("Commit message", { exact: true }).click();
       await region.screenshot({
         path: testInfo.outputPath(`field-focus-${width}-${light ? "light" : "dark"}.png`),
@@ -1361,9 +1392,14 @@ async function focusChain(control: Locator) {
     for (let depth = 0; current && depth < 5; depth++, current = current.parentElement) {
       const css = getComputedStyle(current);
       chain.push(
-        [css.outlineStyle, css.outlineWidth, css.outlineColor, css.boxShadow, css.borderColor].join(
-          "|",
-        ),
+        [
+          css.outlineStyle,
+          css.outlineWidth,
+          css.outlineColor,
+          css.boxShadow,
+          css.borderColor,
+          css.backgroundColor,
+        ].join("|"),
       );
       // A visually hidden native input (opacity 0 or 1px) can carry an outline nobody sees.
       const box = current.getBoundingClientRect();
@@ -1445,7 +1481,7 @@ test.describe("shared control state matrix", () => {
       await expect(page.getByTestId(id), id).toHaveCount(1);
     }
     // Every variant is present at each public size.
-    for (const variant of ["Primary", "Secondary", "Ghost", "Danger", "Link"]) {
+    for (const variant of ["Primary", "Secondary", "Ghost", "Link"]) {
       for (const size of ["sm", "md", "lg"]) {
         await expect(
           page.getByRole("button", { name: `${variant} ${size}`, exact: true }),
@@ -1551,7 +1587,8 @@ test.describe("shared control state matrix", () => {
         ["Radio", page.getByRole("radio", { name: /^Review first/ })],
         ["Segmented", page.getByRole("radio", { name: "A long first segment label" }).first()],
         ["Tab", page.getByRole("tab", { name: "Selected tab" }).first()],
-        ["TreeRow", page.getByTestId("matrix-tree-selected")],
+        // A selected row keeps its selected fill on focus by design; an idle row shows the keyboard cue.
+        ["TreeRow", page.getByTestId("matrix-tree-depth3")],
       ];
       for (const [family, control] of families) {
         await control.scrollIntoViewIfNeeded();

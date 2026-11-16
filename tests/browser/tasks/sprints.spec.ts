@@ -7,7 +7,16 @@ type HostCall = {
   command: string;
   args: { method?: string; machineId?: string; params?: Record<string, unknown> };
 };
+// Project and Server scope live in the toolbar's Scope popover; open it when it is closed.
+async function openScope(page: Page) {
+  if (await page.getByRole("dialog", { name: "Scope", exact: true }).count()) return;
+  await page
+    .locator("header.task-board-toolbar")
+    .getByRole("button", { name: "Scope", exact: true })
+    .click();
+}
 async function choose(page: Page, label: string, option: string | RegExp, scope?: Locator) {
+  if (label === "Project" || label === "Server") await openScope(page);
   await (scope ?? page).getByRole("button", { name: new RegExp(`^${label}:`) }).click();
   await page.getByRole("option", { name: option, exact: typeof option === "string" }).click();
 }
@@ -73,7 +82,8 @@ async function createSprint(
 }
 async function assignTasks(page: Page) {
   await page.getByRole("tab", { name: "Backlog", exact: true }).click();
-  await page.getByRole("button", { name: "Select tasks", exact: true }).click();
+  await page.getByRole("button", { name: "More actions", exact: true }).first().click();
+  await page.getByRole("menuitemcheckbox", { name: "Select tasks", exact: true }).click();
   await page.getByRole("checkbox", { name: "Select task: PC onboarding", exact: true }).check();
   await page.getByRole("checkbox", { name: "Select task: MacBook checkout", exact: true }).check();
   const planning = page.getByRole("region", { name: "Planning", exact: true });
@@ -95,6 +105,9 @@ async function calls(page: Page): Promise<HostCall[]> {
 
 test("current project is isolated and all-project overview remains explicit", async ({ page }) => {
   await open(page);
+  // The board opens on every project; the Scope popover narrows it to one.
+  await expect(page.getByRole("button", { name: "PC onboarding", exact: true })).toBeVisible();
+  await choose(page, "Project", /^remote-project · Demo MacBook/);
   await expect(page.getByRole("button", { name: "PC onboarding", exact: true })).not.toBeVisible();
   await expect(page.getByRole("button", { name: "API stability", exact: true })).not.toBeVisible();
   await allProjects(page);
@@ -177,6 +190,7 @@ test("cross-machine sprint supports planning, inheritance, completion and frozen
   await assignTasks(page);
   await page.getByRole("tab", { name: "Sprints", exact: true }).click();
   await filterSprint(page, "Release confidence");
+  await openScope(page);
   await page.getByRole("button", { name: /^Project:/ }).click();
   await expect(page.getByRole("option", { name: /^remote-api / })).toHaveCount(0);
   await expect(page.getByRole("option", { name: /^local-docs / })).toHaveCount(0);

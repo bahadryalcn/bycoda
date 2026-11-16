@@ -23,6 +23,7 @@ import { SearchableSelect } from "../../../src/shared/ui/SearchableSelect";
 import { SearchInput, SearchInputGroup } from "../../../src/shared/ui/SearchInput";
 import { Combobox } from "../../../src/shared/ui/arc/combobox/combobox";
 import { Search, Copy, Plus } from "../../../src/shared/ui/icons";
+import { installInputModality } from "../../../src/shared/ui/inputModality";
 import { ButtonGroup } from "../../../src/shared/ui/ButtonGroup";
 import { Timeline } from "../../../src/shared/ui/Timeline";
 import { JsonViewer } from "../../../src/shared/ui/JsonViewer";
@@ -158,9 +159,7 @@ function FeedbackFixture() {
       <EmptyState
         title="No matching records"
         description="Change the collection filters or retry the request. The current draft is retained."
-        action={
-          <Button onClick={() => setRetries((value) => value + 1)}>Retry fixture request</Button>
-        }
+        action={{ label: "Retry fixture request", onClick: () => setRetries((value) => value + 1) }}
       />
       <output aria-label="Feedback retry count">{retries}</output>
       <Progress aria-label="Quota limit used" value={100} tone="danger" compact />
@@ -493,6 +492,8 @@ const params = new URLSearchParams(location.search);
 if (params.get("theme")) {
   document.documentElement.classList.toggle("theme-light", params.get("theme") === "light");
 }
+// The app bootstrap does this; keyboard-only focus cues depend on it.
+installInputModality();
 const layoutParam = params.get("layout");
 createRoot(document.getElementById("root")!).render(
   params.get("view") === "coherence" ? (

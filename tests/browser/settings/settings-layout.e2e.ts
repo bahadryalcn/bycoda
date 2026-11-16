@@ -25,7 +25,7 @@ for (const [theme, width] of [
       "keybindings",
       "worktrees",
       "archive",
-      "limits",
+      "usage",
     ]) {
       await page.goto(
         `/tests/browser/settings/settings.html?section=${section}&theme=${theme}&lang=en&terminal=normal`,
@@ -113,31 +113,20 @@ for (const [theme, width] of [
           path: `temp/verification/2026-10-18-settings-layout/${section}-${theme}-${width}.png`,
         });
     }
+    // "Usage & limits" is one page: budgets live under its Limits view.
+    const limits = page.getByRole("tab", { name: "Limits", exact: true });
+    await limits.click();
+    await expect(limits).toHaveAttribute("aria-selected", "true");
     await expect(page.getByRole("heading", { name: "Usage budgets", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Add budget", exact: true })).toBeVisible();
     await page.screenshot({
       path: `temp/verification/2026-10-18-settings-layout/limits-${theme}-${width}.png`,
     });
-    await expect(page.getByRole("radiogroup", { name: "Usage views" })).toHaveCount(0);
-    const categoryPicker = page.locator(".bycoda-settings-category-picker");
-    if (await categoryPicker.isVisible()) {
-      await categoryPicker.getByRole("button").click();
-      await page.getByRole("option", { name: "Provider usage", exact: true }).click();
-    } else {
-      await page
-        .locator(".bycoda-settings-categories")
-        .getByRole("tab", { name: "Provider usage", exact: true })
-        .click();
-    }
-    const limits = page.getByRole("tab", { name: "Limits", exact: true });
-    await limits.click();
-    await expect(limits).toHaveAttribute("aria-selected", "true");
-    await expect(page.getByRole("button", { name: "Add budget", exact: true })).toBeVisible();
     expect(errors).toEqual([]);
   });
 }
 
-test("Turkish policies and limits remain usable at intermediate widths", async ({ page }) => {
+test("Turkish policies and usage limits remain usable at intermediate widths", async ({ page }) => {
   for (const width of [1280, 768]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto("/tests/browser/settings/settings.html?section=policies&theme=dark&lang=tr");
@@ -149,13 +138,14 @@ test("Turkish policies and limits remain usable at intermediate widths", async (
     const categoryPicker = page.locator(".bycoda-settings-category-picker");
     if (await categoryPicker.isVisible()) {
       await categoryPicker.getByRole("button").click();
-      await page.getByRole("option", { name: "Sınırlar ve bütçeler", exact: true }).click();
+      await page.getByRole("option", { name: "Kullanım ve sınırlar", exact: true }).click();
     } else {
       await page
         .locator(".bycoda-settings-categories")
-        .getByRole("tab", { name: "Sınırlar ve bütçeler", exact: true })
+        .getByRole("tab", { name: "Kullanım ve sınırlar", exact: true })
         .click();
     }
+    await page.getByRole("tab", { name: "Sınırlar", exact: true }).click();
     await expect(page.getByRole("button", { name: "Bütçe ekle", exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,

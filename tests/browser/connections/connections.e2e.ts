@@ -13,8 +13,11 @@ for (const theme of ["light", "dark"]) {
       await expect(root.getByText("Studio Mac", { exact: true })).toBeVisible();
       await expect(root.getByRole("button", { name: "Start tunnel", exact: true })).toHaveCount(0);
       await expect(root.getByText("Unsaved changes", { exact: true })).toHaveCount(0);
-      // Adding by hand sits behind the collapsed "Advanced: add manually" disclosure.
-      await root.getByText("Advanced: add manually", { exact: true }).click();
+      // Adding by hand sits behind the collapsed "Add manually" button.
+      const addManually = root.getByRole("button", { name: "Add manually", exact: true });
+      await expect(addManually).toHaveAttribute("aria-expanded", "false");
+      await addManually.click();
+      await expect(addManually).toHaveAttribute("aria-expanded", "true");
       await expect(root.getByText("Connect to an existing host by URL")).toHaveCount(0);
       await root
         .getByRole("radio", { name: "Host URL", exact: true })
@@ -36,7 +39,7 @@ for (const theme of ["light", "dark"]) {
       await expect(root.locator(".connection-details").last()).toContainText(
         "owner@studio-tailnet",
       );
-      await root.getByText("Advanced: add manually", { exact: true }).click();
+      await addManually.click();
       await expect(root.getByRole("radio", { name: "SSH", exact: true })).toBeChecked();
       const address = root.getByRole("textbox", { name: "SSH address", exact: true });
       await address.fill("owner@new-machine");
@@ -63,7 +66,7 @@ for (const theme of ["light", "dark"]) {
       await expect(helpDialog).toContainText("A hostname works too");
       await page.keyboard.press("Escape");
       await expect(helpDialog).toHaveCount(0);
-      const machines = root.getByRole("tab", { name: "Machines", exact: true });
+      const machines = root.getByRole("tab", { name: "Computers", exact: true });
       await machines.focus();
       await page.keyboard.press("ArrowRight");
       const phone = root.getByRole("region", { name: "Connect your phone", exact: true });
@@ -94,7 +97,7 @@ for (const theme of ["light", "dark"]) {
       );
       expect(gap).toBeLessThan(40);
       await tunnels.getByRole("textbox", { name: "Local URL or port" }).fill("4567");
-      await root.getByRole("tab", { name: "Machines", exact: true }).click();
+      await root.getByRole("tab", { name: "Computers", exact: true }).click();
       await expect(address).toHaveValue("owner@new-machine");
       await root.getByRole("tab", { name: "Sharing", exact: true }).click();
       await expect(tunnels.getByRole("textbox", { name: "Local URL or port" })).toHaveValue("4567");
@@ -102,7 +105,7 @@ for (const theme of ["light", "dark"]) {
       await page.screenshot({
         path: `${evidence}/${theme}-${width}-tunnels.png`,
       });
-      await root.getByRole("tab", { name: "Machines", exact: true }).click();
+      await root.getByRole("tab", { name: "Computers", exact: true }).click();
       await root.getByRole("button", { name: "Cancel", exact: true }).click();
       await page.screenshot({
         path: `${evidence}/${theme}-${width}-machines.png`,

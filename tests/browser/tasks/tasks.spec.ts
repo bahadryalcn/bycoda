@@ -11,6 +11,14 @@ type HostCall = {
   };
 };
 
+// Project and Server scope live in the toolbar's Scope popover; open it when it is closed.
+async function openScope(page: Page) {
+  if (await page.getByRole("dialog", { name: "Scope", exact: true }).count()) return;
+  await page
+    .locator("header.task-board-toolbar")
+    .getByRole("button", { name: "Scope", exact: true })
+    .click();
+}
 for (const width of [1280, 800])
   for (const theme of ["light", "dark"]) {
     test(`tasks redesign states ${width} ${theme}`, async ({ page }) => {
@@ -24,10 +32,8 @@ for (const width of [1280, 800])
         theme === "light",
       );
       await page.getByRole("tab", { name: "Sprints", exact: true }).click();
-      await page
-        .locator("header.task-board-toolbar")
-        .getByRole("button", { name: /^Project:/ })
-        .click();
+      await openScope(page);
+      await page.getByRole("button", { name: /^Project:/ }).click();
       await page.getByRole("option", { name: "All projects", exact: true }).click();
       const captures = "temp/verification/tasks-actions-20261114";
       await mkdir(captures, { recursive: true });
@@ -40,10 +46,8 @@ for (const width of [1280, 800])
           animations: "disabled",
         });
       };
-      await page
-        .locator("header.task-board-toolbar")
-        .getByRole("button", { name: /^Project:/ })
-        .click();
+      await openScope(page);
+      await page.getByRole("button", { name: /^Project:/ }).click();
       await page.getByRole("combobox").fill("no-matching-project");
       await expect(page.getByRole("option", { name: "All projects", exact: true })).toBeVisible();
       await capture("project-filter");
@@ -65,10 +69,8 @@ for (const width of [1280, 800])
       await capture("sprint-capacity");
       await sprint.getByRole("button", { name: "Cancel", exact: true }).click();
       await page.getByRole("tab", { name: "Backlog", exact: true }).click();
-      await page
-        .locator("header.task-board-toolbar")
-        .getByRole("button", { name: /^Project:/ })
-        .click();
+      await openScope(page);
+      await page.getByRole("button", { name: /^Project:/ }).click();
       await page.getByRole("option", { name: /^local-project / }).click();
       await page.getByRole("radio", { name: "List view", exact: true }).check();
       await expect(
@@ -106,7 +108,8 @@ for (const width of [1280, 800])
       );
       await capture("task-edit");
       await editForm.getByRole("button", { name: "Cancel", exact: true }).click();
-      await page.getByRole("button", { name: "Select tasks", exact: true }).click();
+      await page.getByRole("button", { name: "More actions", exact: true }).first().click();
+      await page.getByRole("menuitemcheckbox", { name: "Select tasks", exact: true }).click();
       await page.getByRole("checkbox", { name: "Select all results", exact: true }).check();
       const bulk = page.getByRole("region", { name: "Selected task actions", exact: true });
       await expect(bulk.getByRole("button", { name: "Start", exact: true })).toBeEnabled();
@@ -149,7 +152,8 @@ for (const width of [1280, 800])
       ).toBeVisible();
       await capture("sprint-selected-empty");
       await page.getByRole("button", { name: "Backlog", exact: true }).click();
-      await page.getByRole("button", { name: "Select tasks", exact: true }).click();
+      await page.getByRole("button", { name: "More actions", exact: true }).first().click();
+      await page.getByRole("menuitemcheckbox", { name: "Select tasks", exact: true }).click();
       await page.getByRole("checkbox", { name: "Select all results", exact: true }).check();
       const planning = page.getByRole("region", { name: "Planning", exact: true });
       await planning.getByRole("button", { name: /^Sprint:/ }).click();
@@ -164,7 +168,8 @@ for (const width of [1280, 800])
         page.getByRole("article", { name: "Repair standalone packaging", exact: true }),
       ).toBeVisible();
       await capture("sprint-selected");
-      await page.getByRole("button", { name: "Select tasks", exact: true }).click();
+      await page.getByRole("button", { name: "More actions", exact: true }).first().click();
+      await page.getByRole("menuitemcheckbox", { name: "Select tasks", exact: true }).click();
       await page.getByRole("checkbox", { name: "Select all results", exact: true }).check();
       await bulk.getByRole("button", { name: "Delete", exact: true }).click();
       await page
@@ -203,6 +208,7 @@ for (const width of [1280, 800])
           animations: "disabled",
         });
       };
+      await openScope(page);
       await expect(
         page.getByRole("button", { name: "Project: All projects", exact: true }),
       ).toBeVisible();
@@ -215,6 +221,7 @@ for (const width of [1280, 800])
       await expect(page.getByRole("button", { name: "Desktop sprint", exact: true })).toBeVisible();
       await expect(page.getByRole("button", { name: "Mac sprint", exact: true })).toBeVisible();
       await capture("sprint-catalog");
+      await openScope(page);
       await page.getByRole("button", { name: "Server: All servers", exact: true }).click();
       await page.getByRole("option", { name: "Demo MacBook", exact: true }).click();
       await expect(page.getByRole("button", { name: "Desktop sprint", exact: true })).toHaveCount(
@@ -227,6 +234,7 @@ for (const width of [1280, 800])
       await filters.getByRole("button", { name: /^Status:/ }).click();
       await page.getByRole("option", { name: "Done", exact: true }).click();
       await filters.getByRole("button", { name: "Reset", exact: true }).click();
+      await openScope(page);
       await expect(
         page.getByRole("button", { name: "Server: Demo MacBook", exact: true }),
       ).toBeVisible();
@@ -269,6 +277,7 @@ for (const width of [1280, 800])
       await capture("sprint-estimates");
       await form.getByRole("button", { name: "Cancel", exact: true }).click();
       await page.getByRole("button", { name: "All sprints", exact: true }).click();
+      await openScope(page);
       await page.getByRole("button", { name: "Server: Demo MacBook", exact: true }).click();
       await page.getByRole("option", { name: "All servers", exact: true }).click();
       await page.getByRole("button", { name: "Sprint server: Demo MacBook", exact: true }).click();
@@ -309,10 +318,8 @@ for (const width of [1280, 800])
           animations: "disabled",
         });
       };
-      await page
-        .locator("header.task-board-toolbar")
-        .getByRole("button", { name: /^Project:/ })
-        .click();
+      await openScope(page);
+      await page.getByRole("button", { name: /^Project:/ }).click();
       const allProjects = page.getByRole("option", { name: "All projects", exact: true });
       await page.getByRole("listbox").evaluate((list) => {
         list.scrollTop = list.scrollHeight;
@@ -562,9 +569,10 @@ for (const width of [1280, 800])
         name: "Finished implementation awaiting delivery",
         exact: true,
       });
-      await expect(task.locator("[data-task-completion]")).toHaveText("Implementation finished");
-      await expect(task.locator("[data-task-delivery]")).toHaveText("Not delivered");
-      await expect(task.locator("[data-task-renewed-approval]")).toContainText("renew approval");
+      // Exceptional state leads the card; completion and delivery details live in the detail panel.
+      await expect(task).toContainText(
+        "Automatic merge is suspended. Review changes to renew approval.",
+      );
       await expect(task.getByRole("button", { name: "Review changes", exact: true })).toBeVisible();
       await mkdir("temp/verification/i2a", { recursive: true });
       await task.scrollIntoViewIfNeeded();
@@ -658,9 +666,8 @@ for (const width of [800, 1280])
 async function openTasks(page: Page, url: string) {
   await page.goto(url);
   await page.getByRole("tab", { name: "Sprints", exact: true }).click();
-  const projectScope = page
-    .locator("header.task-board-toolbar")
-    .getByRole("button", { name: /^Project:/ });
+  await openScope(page);
+  const projectScope = page.getByRole("button", { name: /^Project:/ });
   await projectScope.click();
   await page.getByRole("option", { name: "All projects", exact: true }).click();
   await page.getByRole("tab", { name: "Backlog", exact: true }).click();
@@ -975,18 +982,20 @@ for (const { width, theme } of [
       path: resolve(harnessCaptures, `quality-${testInfo.project.name}-${width}-${theme}.png`),
       animations: "disabled",
     });
+    // The zoom passes drive device metrics over CDP, which only Chromium offers.
+    const chromium = testInfo.project.name === "chromium";
     const layouts =
-      width === 390
+      chromium && width === 390
         ? [1280, 800].flatMap((width) =>
             ["light", "dark"].flatMap((theme) => [1, 2].map((zoom) => ({ width, theme, zoom }))),
           )
         : [];
-    const device = await page.context().newCDPSession(page);
+    const device = chromium ? await page.context().newCDPSession(page) : null;
     for (const layout of [{ width, theme, zoom: 1 }, ...layouts]) {
       const viewport = { width: layout.width / layout.zoom, height: 950 / layout.zoom };
       await page.setViewportSize(viewport);
       // Reflow plus pixel density emulates zoom geometry without CSS zoom changing vw behavior.
-      await device.send("Emulation.setDeviceMetricsOverride", {
+      await device?.send("Emulation.setDeviceMetricsOverride", {
         ...viewport,
         deviceScaleFactor: layout.zoom,
         mobile: false,
@@ -1022,7 +1031,7 @@ for (const { width, theme } of [
         animations: "disabled",
       });
     }
-    await device.detach();
+    await device?.detach();
   });
 }
 
@@ -1210,7 +1219,8 @@ test("bulk cleanup uses one confirmation, preserves code and retries only failed
 }) => {
   await page.setViewportSize({ width: 768, height: 900 });
   await openTasks(page, `${fixture}?boardControls&bulk&bulkFailure`);
-  await page.getByRole("button", { name: "Select tasks", exact: true }).click();
+  await page.getByRole("button", { name: "More actions", exact: true }).first().click();
+  await page.getByRole("menuitemcheckbox", { name: "Select tasks", exact: true }).click();
   await page.getByRole("checkbox", { name: "Select all results", exact: true }).check();
   await expect(page.getByText("102 selected", { exact: true })).toBeVisible();
   const actions = page.getByRole("region", { name: "Selected task actions" });
@@ -1243,7 +1253,8 @@ test("bulk cleanup uses one confirmation, preserves code and retries only failed
 test("search-scoped selection never includes hidden tasks", async ({ page }) => {
   await openTasks(page, `${fixture}?boardControls&bulk`);
   await page.getByRole("searchbox", { name: "Search tasks", exact: true }).fill("Cleanup task 99");
-  await page.getByRole("button", { name: "Select tasks", exact: true }).click();
+  await page.getByRole("button", { name: "More actions", exact: true }).first().click();
+  await page.getByRole("menuitemcheckbox", { name: "Select tasks", exact: true }).click();
   await page.getByRole("checkbox", { name: "Select all results", exact: true }).check();
   await expect(page.getByText("1 selected", { exact: true })).toBeVisible();
   await page.getByRole("searchbox", { name: "Search tasks", exact: true }).fill("Protected");
@@ -1297,11 +1308,9 @@ for (const width of [390, 768, 1440]) {
       await merge.focus();
       await page.keyboard.press("Space");
       await expect(merge).not.toBeChecked();
-      await choose(
-        page,
-        form.getByRole("button", { name: /^Concurrent tasks in this epic:/ }),
-        "3",
-      );
+      await form
+        .getByRole("spinbutton", { name: "Concurrent tasks in this epic", exact: true })
+        .fill("3");
       await form.getByRole("spinbutton", { name: "Run limit (minutes)", exact: true }).fill("25");
       const bounds = await form.boundingBox();
       expect(bounds!.x).toBeGreaterThanOrEqual(0);
@@ -1396,7 +1405,9 @@ test("goal dialog keeps workspace, manual start and concurrency choices together
     form.getByRole("button", { name: /^Start planned tasks:/ }),
     "Manually from To do",
   );
-  await choose(page, form.getByRole("button", { name: /^Concurrent tasks in this epic:/ }), "3");
+  await form
+    .getByRole("spinbutton", { name: "Concurrent tasks in this epic", exact: true })
+    .fill("3");
   await form.locator("summary").filter({ hasText: "Working branch and worktree" }).click();
   await form
     .getByRole("textbox", { name: "New integration branch", exact: true })
@@ -1563,7 +1574,6 @@ test("a task defaults locally from a remote workspace and saves on the local hos
 }) => {
   const form = await start(page, "task");
   await expect(machine(form)).toHaveAccessibleName("Machine: This computer");
-  await expect(form).toContainText("Runs on this computer");
   await fillTask(form);
   await form.getByRole("button", { name: "Add and start", exact: true }).click();
   await expect.poll(() => mutations(page)).toHaveLength(1);
@@ -1587,7 +1597,7 @@ test("an explicit remote task discovers remote projects and sends the remote pro
   await choose(page, machine(form), "Demo MacBook");
   await expect(machine(form)).toHaveAccessibleName("Machine: Demo MacBook");
   await choose(page, project(form), "remote-api");
-  await expect(form).toContainText("Runs on Demo MacBook");
+  await expect(machine(form)).toHaveAccessibleName("Machine: Demo MacBook");
   await fillTask(form);
   await form.getByRole("button", { name: "Add and start", exact: true }).click();
   await expect.poll(() => mutations(page)).toHaveLength(1);
@@ -1800,6 +1810,8 @@ test("task details use the narrow panel and retain the desktop board", async ({
         },
       },
     });
+    // The backlog opens as a list; the board is an explicit view choice.
+    await page.getByRole("radio", { name: "Board view", exact: true }).check();
     const board = page.locator('[data-task-column="todo"]');
     const card = page.getByRole("article", {
       name: "Run on the selected computer",

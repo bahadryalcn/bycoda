@@ -104,7 +104,7 @@ async function fixture(page: Page, browser: Browser, language = "en", delayMs = 
   const toolName = language === "tr" ? "Tarayıcı" : "Host browser";
   const toolTab = page.getByRole("tab", { name: toolName, exact: true });
   const toolMenu = page.getByRole("button", {
-    name: language === "tr" ? "Konuşma aracı seçimi" : "Conversation tool selection",
+    name: language === "tr" ? "Oturum aracı seçimi" : "Conversation tool selection",
     exact: true,
   });
   await expect(toolTab.or(toolMenu)).toBeVisible();
@@ -208,7 +208,9 @@ test("real DOM hit-test blocks button/link actions and binds a reviewable draft 
     const composer = page.getByRole("region", { name: "Target composer" });
     await composer.getByText("Inspect browser element", { exact: true }).click();
     await expect(composer.getByText("Please reduce the padding.")).toBeVisible();
-    await expect(composer.locator("textarea")).toHaveValue("Please adjust this [image1]");
+    await expect(composer.locator("textarea")).toHaveValue(
+      /^Please adjust this \[Image\s1\s·\s[\d.]+\sKB\]$/,
+    );
     expect(
       await page.evaluate(
         () => (window as unknown as { annotationFixture: { sent: number } }).annotationFixture.sent,
@@ -965,8 +967,8 @@ test("failed frame refresh retains visible image and offers recovery", async ({
   try {
     const image = page.locator("img.host-browser-frame");
     const before = await image.getAttribute("src");
-    const live = page.getByRole("switch", { name: "Live view" });
-    if (await live.isChecked()) await live.click();
+    const live = page.getByRole("button", { name: "Live view", exact: true });
+    if ((await live.getAttribute("aria-pressed")) === "true") await live.click();
     f.failNextFrame();
     await page.getByRole("button", { name: "Refresh frame", exact: true }).click();
     await expect(page.getByRole("alert")).toContainText("Fixture frame unavailable");

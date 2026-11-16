@@ -41,7 +41,9 @@ for (const light of [true, false])
         `/tests/browser/sessions/session-row-layout.html?${light ? "light" : "dark"}`,
       );
       await page.getByRole("button", { name: "Search sessions", exact: true }).click();
-      await page.getByPlaceholder("Search sessions...").fill("no matching fixture conversation");
+      await page
+        .getByRole("combobox", { name: "Search sessions", exact: true })
+        .fill("no matching fixture conversation");
       await expect(page.getByText("No matching sessions", { exact: true })).toBeVisible();
       await page.screenshot({
         path: `temp/verification/sessions-callers/no-match-${light ? "light" : "dark"}-${width}.png`,

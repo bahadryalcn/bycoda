@@ -74,8 +74,8 @@ for (const theme of ["light", "dark"])
       const actual = await avatar.evaluate((node) => {
         const s = getComputedStyle(node);
         const probe = document.createElement("span");
-        probe.style.border = "1px solid var(--ui-tone-neutral-border)";
-        probe.style.background = "var(--ui-surface-raised)";
+        probe.style.border = "1px solid var(--ui-card-border)";
+        probe.style.background = "var(--ui-card-surface)";
         node.parentElement!.appendChild(probe);
         const p = getComputedStyle(probe);
         const result = {
@@ -97,8 +97,7 @@ for (const theme of ["light", "dark"])
       const footer = card.getByText("Click the chip to open on GitHub");
       const paints = await branch.evaluate((node) => {
         const probe = document.createElement("span");
-        probe.style.background =
-          "color-mix(in oklab, var(--ui-tone-neutral-solid) 4.5%, transparent)";
+        probe.style.background = "var(--ui-surface-inset, var(--ui-surface-muted))";
         node.appendChild(probe);
         const expected = getComputedStyle(probe).backgroundColor;
         probe.remove();
@@ -107,8 +106,7 @@ for (const theme of ["light", "dark"])
       expect(paints.actual).toBe(paints.expected);
       const footerPaint = await footer.evaluate((node) => {
         const probe = document.createElement("span");
-        probe.style.borderTop =
-          "1px solid color-mix(in oklab, var(--ui-tone-neutral-border) 7%, transparent)";
+        probe.style.borderTop = "1px solid var(--ui-pane-border)";
         node.appendChild(probe);
         const expected = getComputedStyle(probe).borderTopColor;
         probe.remove();

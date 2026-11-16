@@ -48,7 +48,7 @@ export function SessionBulkDeletionNotice({
       {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "shrink-0 px-3 py-2")}
     >
       <span className="flex min-w-0 items-center gap-2">
-        <Text size="inherit" tone="inherit" wrap="anywhere" className="min-w-0 flex-1">
+        <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
           {text}
         </Text>
         {progress ? (

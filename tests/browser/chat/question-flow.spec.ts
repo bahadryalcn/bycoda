@@ -719,9 +719,9 @@ test("question note actual field geometry", async ({ page }) => {
     };
   });
   console.log("QUESTION_GEOMETRY", JSON.stringify(geometry));
-  expect(geometry.minHeight).toBe("110px");
+  expect(geometry.minHeight).toBe("112px");
   expect(geometry.maxHeight).toBe("none");
-  expect(geometry.height).toBe(110);
+  expect(geometry.height).toBe(112);
   await expect(note).toHaveValue("Draft text retained");
 });
 

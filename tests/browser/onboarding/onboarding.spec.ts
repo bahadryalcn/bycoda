@@ -9,13 +9,13 @@ test("saves workspace and appearance choices, finishes directly and can reopen",
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(fixture);
   const dialog = page.getByRole("dialog");
-  await expect(dialog.getByRole("heading", { name: "A workspace that fits you" })).toBeVisible();
+  await expect(dialog.getByRole("heading", { name: "Workspace", level: 3 })).toBeVisible();
   await dialog
     .locator(".onboarding-feature")
     .filter({ hasText: "Social Media" })
     .getByRole("checkbox")
     .uncheck();
-  await expect(dialog.getByRole("heading", { name: "A workspace that fits you" })).toBeInViewport();
+  await expect(dialog.getByRole("heading", { name: "Workspace", level: 3 })).toBeInViewport();
   await page.screenshot({ path: `${captures}/workspace-dark.png` });
   await dialog.getByRole("button", { name: /2\s*Appearance/ }).click();
   await expect(dialog.locator(".onboarding-crew-preview canvas")).toHaveCount(4);
@@ -33,12 +33,12 @@ test("saves workspace and appearance choices, finishes directly and can reopen",
   await expect(dialog.getByRole("switch", { name: "Decorative animations" })).toBeInViewport();
   await page.screenshot({ path: `${captures}/appearance-light.png` });
   await dialog.getByRole("button", { name: /3\s*Agents/ }).click();
-  await expect(dialog.getByRole("heading", { name: "Connect your agents" })).toBeVisible();
+  await expect(dialog.getByRole("heading", { name: "Agents", level: 3 })).toBeVisible();
   await expect(dialog.locator(".onboarding-agent")).toHaveCount(0);
   await expect(dialog.getByText("No providers found", { exact: true })).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Add provider", exact: true })).toBeVisible();
   await page.screenshot({ path: `${captures}/providers-light.png` });
-  await dialog.getByRole("button", { name: /4\s*Connections/ }).click();
+  await dialog.getByRole("button", { name: /4\s*Machines/ }).click();
   await expect(dialog.getByRole("button", { name: /Manage connections/ })).toBeVisible();
   await dialog.getByRole("button", { name: /5\s*Projects/ }).click();
   await dialog.getByRole("button", { name: "Finish setup" }).click();
@@ -125,9 +125,7 @@ test("keeps navigation and footer accessible at narrow and short viewports", asy
     await page.setViewportSize(viewport);
     await page.goto(`${fixture}?lang=tr`);
     const dialog = page.getByRole("dialog");
-    await expect(
-      dialog.getByRole("heading", { name: "Sana uygun bir çalışma alanı" }),
-    ).toBeVisible();
+    await expect(dialog.getByRole("heading", { name: "Çalışma alanı", level: 3 })).toBeVisible();
     await expect(dialog.getByRole("button", { name: "Devam et", exact: true })).toBeInViewport();
     await dialog.getByRole("button", { name: /3\s*Ajanlar/ }).click();
     await expect(dialog.locator(".onboarding-agent")).toHaveCount(0);

@@ -91,7 +91,7 @@ for (const theme of ["light", "dark"]) {
       await settings
         .getByRole("textbox", { name: "Search known hosts", exact: true })
         .fill("missing-host");
-      await expect(settings.getByText("No results", { exact: true })).toBeVisible();
+      await expect(settings.getByRole("status").filter({ hasText: "No results" })).toBeVisible();
       await capture("known-hosts-filtered");
       await settings.getByRole("button", { name: "Reset filters", exact: true }).click();
       await expect(settings.getByText("deploy.example.invalid", { exact: true })).toBeVisible();

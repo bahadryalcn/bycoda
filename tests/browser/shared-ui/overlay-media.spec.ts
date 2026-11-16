@@ -193,7 +193,7 @@ test.describe("lightbox", () => {
     await page.getByTestId("open-lightbox-broken").click();
     const alert = page.getByRole("dialog").getByRole("alert");
     await expect(alert).toContainText("Preview unavailable");
-    const retry = alert.getByRole("button", { name: "Retry" });
+    const retry = page.getByRole("dialog").getByRole("button", { name: "Retry" });
     await expect(retry).toBeFocused();
     await retry.click();
     await expect(alert).toContainText("Preview unavailable");

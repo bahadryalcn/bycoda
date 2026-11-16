@@ -4,7 +4,10 @@ import { SessionHostTools } from "../../../src/features/host-tools/SessionHostTo
 import { Composer } from "../../../src/features/sessions/ui/Composer";
 import { setLanguagePreference, setDomainLanguagePreference } from "../../../src/shared/i18n";
 import type { Attachment } from "../../../src/features/sessions/model/session";
+import { installInputModality } from "../../../src/shared/ui/inputModality";
 import "../../../src/styles/index.css";
+
+installInputModality();
 
 const language = new URLSearchParams(location.search).get("lang") === "tr" ? "tr" : "en";
 await setLanguagePreference(language);

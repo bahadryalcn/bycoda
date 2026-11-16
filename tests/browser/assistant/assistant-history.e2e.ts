@@ -10,10 +10,11 @@ for (const theme of ["light", "dark"])
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(`/tests/browser/assistant/assistant-room.html?theme=${theme}&redesign`);
-      await page.getByRole("tab", { name: "Records", exact: true }).click();
       await page.getByRole("tab", { name: "History", exact: true }).click();
       const history = page.getByRole("region", { name: "History", exact: true });
-      await expect(history.getByRole("heading", { name: "History", exact: true })).toBeVisible();
+      await expect(
+        history.getByRole("heading", { name: /^History(?:\s|$)/, level: 2 }),
+      ).toBeVisible();
       const events = history.getByRole("listitem");
       await expect(events).toHaveCount(2);
       await expect(events.first()).toContainText("Started checking session recovery");

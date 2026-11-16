@@ -96,19 +96,18 @@ for (const theme of ["light", "dark"])
             exact: true,
           }),
         ).toBeVisible();
-        await expect(
-          page.getByText("Weekly usage limit reached. Choose another account.", { exact: true }),
-        ).toBeVisible();
+        await expect(page.getByText("Usage limit reached", { exact: true })).toBeVisible();
+        await expect(page.getByText("Choose another account.", { exact: true })).toBeVisible();
         await expect(page.getByText("API Error: HTTP 429", { exact: false })).toHaveCount(0);
         const trigger = page.getByRole("button", {
-          name: "Technical details: Weekly usage limit reached. Choose another account.",
+          name: "Technical details: Usage limit reached",
           exact: true,
         });
         await trigger.focus();
         await expect(trigger).toBeFocused();
         await trigger.press("Enter");
         const dialog = page.getByRole("dialog", {
-          name: "Technical details: Weekly usage limit reached. Choose another account.",
+          name: "Technical details: Usage limit reached",
           exact: true,
         });
         await expect(dialog).toBeVisible();

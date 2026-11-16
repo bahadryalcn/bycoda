@@ -1,7 +1,13 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 
 const folder = "temp/verification/2026-11-04-skill-marketplace";
+
+// Discovery lives in the library toolbar's "New" menu, next to New skill and New group.
+async function discover(page: Page, label = "Discover skills", menu = "New") {
+  await page.getByRole("button", { name: menu, exact: true }).click();
+  await page.getByRole("menuitem", { name: label, exact: true }).click();
+}
 test.beforeEach(async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
 });
@@ -12,9 +18,9 @@ for (const theme of ["light", "dark"])
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(`/tests/browser/skills/skill-catalog.html?theme=${theme}`);
       mkdirSync(folder, { recursive: true });
-      await expect(page.getByRole("button", { name: "Discover skills" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "New", exact: true })).toBeVisible();
       await page.screenshot({ path: `${folder}/library-${theme}-${width}.png` });
-      await page.getByRole("button", { name: "Discover skills" }).click();
+      await discover(page);
       const catalog = page.getByRole("dialog", { name: "Recommended skills" });
       await expect(catalog).toBeVisible();
       await expect(catalog.getByRole("heading", { name: "impeccable", exact: true })).toBeVisible();
@@ -45,7 +51,7 @@ for (const theme of ["light", "dark"])
   }
 test("unknown completion checks status without resending", async ({ page }) => {
   await page.goto("/tests/browser/skills/skill-catalog.html?result=unknown");
-  await page.getByRole("button", { name: "Discover skills" }).click();
+  await discover(page);
   await page.getByRole("button", { name: "Install impeccable", exact: true }).click();
   await page.screenshot({ path: `${folder}/unknown-dark-1280.png` });
   await page.getByRole("button", { name: "Check installation of impeccable" }).click();
@@ -66,7 +72,7 @@ test("unknown completion checks status without resending", async ({ page }) => {
 test("selected scope and provider reach installation boundary", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto("/tests/browser/skills/skill-catalog.html");
-  await page.getByRole("button", { name: "Discover skills" }).click();
+  await discover(page);
   await page.getByRole("button", { name: /^Installation scope:/ }).click();
   await page.getByRole("option", { name: "This project", exact: true }).click();
   await page.getByRole("button", { name: /^Provider:/ }).click();
@@ -89,7 +95,7 @@ for (const theme of ["light", "dark"])
     test(`download failure ${theme} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`/tests/browser/skills/skill-catalog.html?result=failed&theme=${theme}`);
-      await page.getByRole("button", { name: "Discover skills" }).click();
+      await discover(page);
       await page.getByRole("button", { name: "Install impeccable", exact: true }).click();
       await expect(
         page.getByText("Could not download skill source (HTTP 503).", { exact: true }),
@@ -105,7 +111,7 @@ for (const theme of ["light", "dark"])
 test("Turkish catalog searches translated purposes", async ({ page }) => {
   await page.setViewportSize({ width: 800, height: 900 });
   await page.goto("/tests/browser/skills/skill-catalog.html?lang=tr&theme=light");
-  await page.getByRole("button", { name: "Skill keşfet", exact: true }).click();
+  await discover(page, "Skill keşfet", "Yeni");
   await page.getByRole("searchbox", { name: "Önerilen skill’lerde ara" }).fill("tasarım");
   await expect(page.getByRole("heading", { name: "impeccable", exact: true })).toBeVisible();
   await page.screenshot({ path: `${folder}/turkish-light-800.png` });

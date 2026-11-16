@@ -5,6 +5,7 @@ import { DocumentMessage } from "../../../src/features/files/ui/DocumentMessage"
 import { FileActionError } from "../../../src/features/files/ui/FileActionError";
 import { TaskReviewNotes } from "../../../src/features/tasks/ui/TaskReviewNotes";
 import { Alert } from "../../../src/shared/ui/Alert";
+import { InlineMessage } from "../../../src/shared/ui/InlineError";
 import { Badge } from "../../../src/shared/ui/Badge";
 import { Button } from "../../../src/shared/ui/Button";
 import { EmptyState } from "../../../src/shared/ui/EmptyState";
@@ -159,7 +160,7 @@ function StatusSection() {
         <Alert
           tone="warning"
           title="Provider needs attention"
-          action={<Button size="sm">Open provider</Button>}
+          action={{ label: "Open provider", onClick: () => count("alert-open") }}
         >
           {LONG_COPY}
         </Alert>
@@ -167,11 +168,7 @@ function StatusSection() {
           <Alert
             tone="danger"
             title="Could not reach the host"
-            action={
-              <Button size="sm" onClick={() => count("alert-retry")}>
-                Retry
-              </Button>
-            }
+            action={{ label: "Retry", onClick: () => count("alert-retry") }}
             onDismiss={() => setShown(false)}
           >
             The connection was refused.
@@ -181,18 +178,12 @@ function StatusSection() {
         )}
         <Alert tone="warning">Title-less alert reads as a single line of copy.</Alert>
         <div className="grid gap-1.5 rounded-md border border-stroke p-3">
-          <Alert inline tone="info">
-            Inline info
-          </Alert>
-          <Alert inline tone="success">
-            Inline success
-          </Alert>
-          <Alert inline tone="warning">
-            Inline warning
-          </Alert>
-          <Alert inline tone="danger">
+          <InlineMessage tone="info">Inline info</InlineMessage>
+          <InlineMessage tone="success">Inline success</InlineMessage>
+          <InlineMessage tone="warning">Inline warning</InlineMessage>
+          <InlineMessage tone="danger">
             Inline danger with a longer sentence that wraps inside a narrow row
-          </Alert>
+          </InlineMessage>
         </div>
       </div>
 
@@ -210,9 +201,9 @@ function StatusSection() {
         <Button onClick={() => setAnnounce("success")}>Announce success</Button>
         <Button onClick={() => setAnnounce("danger")}>Announce failure</Button>
         {announce ? (
-          <Alert inline tone={announce} data-testid="live-result">
+          <InlineMessage tone={announce} data-testid="live-result">
             {announce === "success" ? "Copied to clipboard" : "Copy failed. Try again."}
-          </Alert>
+          </InlineMessage>
         ) : null}
       </div>
     </Section>
@@ -247,9 +238,14 @@ const addToast = () =>
     onDismiss: () => count("stack-dismiss"),
   });
 
+/** Notices are toasts in the shared stack now, so each one opens on demand (or from the query). */
+const noticeParams = new URLSearchParams(location.search);
+const autoDanger = noticeParams.has("notice") || noticeParams.has("persistent-notice");
+
 function NoticesSection() {
   const [pending, setPending] = useState(false);
   const [showFileError, setShowFileError] = useState(false);
+  const [open, setOpen] = useState<Record<string, boolean>>({ danger: autoDanger });
   const busy = useRef(false);
   const retry = async () => {
     if (busy.current) return;
@@ -260,54 +256,56 @@ function NoticesSection() {
     setPending(false);
     busy.current = false;
   };
-  const dismiss = (name: string) => () => count(`dismiss-${name}`);
+  const show = (name: string) => () => setOpen((value) => ({ ...value, [name]: true }));
+  const dismiss = (name: string) => () => {
+    count(`dismiss-${name}`);
+    setOpen((value) => ({ ...value, [name]: false }));
+  };
   return (
     <Section id="notices" title="Transient notices">
-      <div className="fx-two">
-        <Frame name="notice-undo" height={150}>
-          <TransientNotice
-            anchor="container"
-            message="Archived 3 sessions"
-            action={{ label: "Undo", onClick: () => count("notice-undo") }}
-            durationMs={null}
-            onDismiss={dismiss("undo")}
-          />
-        </Frame>
-        <Frame name="notice-danger" height={230}>
-          <TransientNotice
-            anchor="container"
-            tone="danger"
-            title="Update failed"
-            message="The release feed returned 503. Nothing was changed."
-            action={{ label: "Retry", onClick: () => void retry(), pending }}
-            durationMs={
-              new URLSearchParams(location.search).has("persistent-notice") ? null : undefined
-            }
-            onDismiss={dismiss("danger")}
-          />
-        </Frame>
-        <Frame name="notice-progress" height={170}>
-          <TransientNotice
-            anchor="container"
-            tone="success"
-            title="Exporting transcript"
-            message="Preparing files"
-            progress={{ value: 0.62, label: "Export progress" }}
-            durationMs={null}
-            onDismiss={dismiss("progress")}
-          />
-        </Frame>
-        <Frame name="notice-long" height={210}>
-          <TransientNotice
-            anchor="container"
-            tone="warning"
-            title={LONG_LABEL}
-            message={LONG_COPY}
-            durationMs={null}
-            onDismiss={dismiss("long")}
-          />
-        </Frame>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button onClick={show("undo")}>Show undo notice</Button>
+        <Button onClick={show("danger")}>Show danger notice</Button>
+        <Button onClick={show("progress")}>Show progress notice</Button>
+        <Button onClick={show("long")}>Show long notice</Button>
       </div>
+      {open.undo ? (
+        <TransientNotice
+          message="Archived 3 sessions"
+          action={{ label: "Undo", onClick: () => count("notice-undo") }}
+          durationMs={null}
+          onDismiss={dismiss("undo")}
+        />
+      ) : null}
+      {open.danger ? (
+        <TransientNotice
+          tone="danger"
+          title="Update failed"
+          message="The release feed returned 503. Nothing was changed."
+          action={{ label: "Retry", onClick: () => void retry(), pending }}
+          durationMs={noticeParams.has("persistent-notice") ? null : undefined}
+          onDismiss={dismiss("danger")}
+        />
+      ) : null}
+      {open.progress ? (
+        <TransientNotice
+          tone="success"
+          title="Exporting transcript"
+          message="Preparing files"
+          progress={{ value: 0.62, label: "Export progress" }}
+          durationMs={null}
+          onDismiss={dismiss("progress")}
+        />
+      ) : null}
+      {open.long ? (
+        <TransientNotice
+          tone="warning"
+          title={LONG_LABEL}
+          message={LONG_COPY}
+          durationMs={null}
+          onDismiss={dismiss("long")}
+        />
+      ) : null}
       <div className="flex items-center gap-2">
         <Button onClick={() => setShowFileError(true)}>Show file action error</Button>
         <Button onClick={addToast}>Add toast</Button>
@@ -319,11 +317,10 @@ function NoticesSection() {
                 "Düzeltmemize yardımcı olmak için tanılama günlükleri gönderilsin mi? Günlükler bu bilgisayarda temizlenir ve konuşmalarınızı asla içermez.",
               durationMs: null,
               actionsPlacement: "footer",
-              actions: ["Gönder", "Her zaman gönder", "Gönderme"].map((label) => (
-                <Button key={label} variant="secondary" onClick={() => count(label)}>
-                  {label}
-                </Button>
-              )),
+              actions: ["Gönder", "Her zaman gönder", "Gönderme"].map((label) => ({
+                label,
+                onClick: () => count(label),
+              })),
             })
           }
         >
@@ -349,7 +346,7 @@ function EmptySection() {
           <EmptyState
             title="No projects yet"
             description="Open a folder to start your first session."
-            action={<Button variant="primary">Open folder</Button>}
+            action={{ label: "Open folder", onClick: () => count("empty-open") }}
           />
         </Frame>
         <Frame name="empty-panel">
@@ -357,7 +354,7 @@ function EmptySection() {
             context="panel"
             title="No sessions match"
             description="Clear the filters to see every session."
-            action={<Button size="sm">Clear filters</Button>}
+            action={{ label: "Clear filters", onClick: () => count("empty-clear") }}
           />
         </Frame>
         <Frame name="empty-list">
@@ -544,13 +541,12 @@ function Fixture() {
           {(["info", "warning", "danger", "success"] as const).map((tone) => (
             <Alert
               key={tone}
-              inline
               tone={tone}
               onDismiss={() => count(`dismiss-${tone}`)}
               action={
-                tone === "warning" ? (
-                  <Button onClick={() => count("retry-layout")}>Retry</Button>
-                ) : undefined
+                tone === "warning"
+                  ? { label: "Retry", onClick: () => count("retry-layout") }
+                  : undefined
               }
             >
               <span>

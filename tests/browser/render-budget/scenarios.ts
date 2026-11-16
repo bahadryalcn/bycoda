@@ -149,12 +149,14 @@ export const scenarios: Record<string, Scenario> = {
   tasksBoard: {
     url: "/tests/browser/render-budget/tasks.html?sprintSeed",
     prepare: async (page) => {
-      // Same navigation tasks.spec.ts uses to reach the populated board.
-      await page.getByRole("tab", { name: "Sprints", exact: true }).click({ timeout: 120_000 });
+      // The populated board is the Backlog tab across all projects; the toolbar New task lives there only.
+      await page.getByRole("tab", { name: "Backlog", exact: true }).click({ timeout: 120_000 });
+      // Project scope lives in the toolbar's Scope popover.
       await page
         .locator("header.task-board-toolbar")
-        .getByRole("button", { name: /^Project:/ })
+        .getByRole("button", { name: "Scope", exact: true })
         .click();
+      await page.getByRole("button", { name: /^Project:/ }).click();
       await page.getByRole("option", { name: "All projects", exact: true }).click();
       await page
         .getByRole("button", { name: "New task", exact: true })

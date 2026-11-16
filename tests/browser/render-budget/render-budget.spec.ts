@@ -161,9 +161,17 @@ test("native Goal states preserve drafts and long objectives remain readable", a
       await expect(box).toHaveValue(draft);
       const headerBox = await goal.boundingBox();
       const paneBox = await page.locator("[data-session-body]").boundingBox();
+      const composerBox = await box.boundingBox();
       expect(headerBox).not.toBeNull();
       expect(paneBox).not.toBeNull();
-      expect(headerBox!.y + headerBox!.height).toBeLessThanOrEqual(paneBox!.y + 1);
+      expect(composerBox).not.toBeNull();
+      // The Goal docks in the composer notice stack: it stays inside the pane, above the
+      // draft, and a long objective is clamped instead of taking over the transcript.
+      expect(headerBox!.y).toBeGreaterThanOrEqual(paneBox!.y);
+      expect(headerBox!.y + headerBox!.height).toBeLessThanOrEqual(composerBox!.y + 1);
+      expect(headerBox!.x).toBeGreaterThanOrEqual(paneBox!.x);
+      expect(headerBox!.x + headerBox!.width).toBeLessThanOrEqual(paneBox!.x + paneBox!.width + 1);
+      expect(headerBox!.height).toBeLessThan(paneBox!.height / 2);
       await page.screenshot({ path: testInfo.outputPath(`native-goal-${theme}-${width}.png`) });
     }
   await page.evaluate(() => window.__shell.appearance("dark", "tr", true));
@@ -200,10 +208,12 @@ test("native Goal states preserve drafts and long objectives remain readable", a
     const zoomBox = zoomPage.locator("textarea").first();
     await zoomBox.fill(draft);
     const zoomGoal = zoomPage.locator("[data-provider-goal]");
-    await zoomGoal.getByRole("button").focus();
-    await zoomGoal.getByRole("button").press("Enter");
-    await expect(zoomGoal.getByRole("button")).toHaveAttribute("aria-expanded", "true");
-    await zoomGoal.getByRole("button").press("Enter");
+    // A blocked Goal also offers Continue and Clear; the expander is the one with aria-expanded.
+    const zoomExpand = zoomGoal.locator("button[aria-expanded]");
+    await zoomExpand.focus();
+    await zoomExpand.press("Enter");
+    await expect(zoomExpand).toHaveAttribute("aria-expanded", "true");
+    await zoomExpand.press("Enter");
     await expect(zoomBox).toHaveValue(draft);
     const send = zoomPage.getByRole("button", { name: /^Gönder/ });
     await send.focus();
@@ -218,6 +228,8 @@ test("native Goal states preserve drafts and long objectives remain readable", a
     expect(await zoomPage.locator("[data-session-body]").evaluate((node) => node.scrollTop)).toBe(
       0,
     );
+    // The Goal lives in the scrolling composer stack: at this size focus moves it away, so it must stay reachable by scrolling.
+    await zoomPage.locator("[data-provider-goal]").scrollIntoViewIfNeeded();
     await expect(zoomPage.locator("[data-provider-goal]")).toBeInViewport();
     await zoomPage.screenshot({
       path: testInfo.outputPath("native-goal-dark-800-rtl-200pct-equivalent.png"),

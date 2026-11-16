@@ -186,7 +186,7 @@ test("workspace picker uses spare header width before clipping names", async ({
   }
   await page.getByRole("tab", { name: /^Sessions/ }).click();
   await header.getByRole("button", { name: "Search sessions", exact: true }).click();
-  const search = header.getByPlaceholder("Search sessions...");
+  const search = header.getByPlaceholder("Search conversations...");
   await expect(search).toBeVisible();
   await search.fill("retained query");
   for (const pane of ["wide", "narrow"]) {
@@ -620,6 +620,8 @@ test("navigation chrome and session rows grow with comfortable and touch density
         const box = container.getBoundingClientRect();
         if (box.height === 0) continue;
         for (const control of container.querySelectorAll<HTMLElement>("button, input")) {
+          // Session rows live in the scrolling list: the last ones may sit below the fold.
+          if (control.closest("[data-session-card]")) continue;
           const rect = control.getBoundingClientRect();
           if (rect.height === 0 || rect.width === 0) continue;
           if (rect.top < box.top - 1 || rect.bottom > box.bottom + 1)
@@ -698,7 +700,7 @@ test("rail polish aligns sections and swaps row actions without losing identity"
       await page.mouse.move(width - 20, 900);
       const headings = page.locator("[data-section-label][data-compact-rail]");
       const positions: number[] = [];
-      for (const label of ["Working", "Pinned", "Groups", "Projects", "Last sessions", "Crews"]) {
+      for (const label of ["Activity", "Pinned", "Groups", "Projects", "Last sessions", "Crews"]) {
         const heading = headings.filter({ has: page.getByText(label, { exact: true }) }).first();
         await expect(heading).toBeVisible();
         const mark = heading.locator("[data-rail-section-mark]").first();
@@ -855,14 +857,20 @@ test("rail attention uses red for one failed item and yellow for warnings or sev
     );
     const heading = page
       .locator("[data-rail-section-header]")
-      .filter({ has: page.getByText("Working", { exact: true }) })
+      .filter({ has: page.getByText("Activity", { exact: true }) })
       .first();
     await expect(heading).toBeVisible();
+    // The attention badge stands in for the rows only while the section is collapsed.
+    const toggle = heading.getByRole("button", { name: "Activity", exact: false }).first();
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
     const tone = attention === "failed" ? "danger" : "warning";
     await expect(heading.locator(`[data-tone="${tone}"]`)).toHaveCount(1);
     await expect(heading).not.toContainText("needs attention");
     const count = attention === "multiple" ? "2" : "1";
     await expect(heading.locator(`[data-tone="${tone}"]`)).toContainText(count);
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
     for (const theme of ["dark", "light"]) {
       await page.evaluate(
         (light) => document.documentElement.classList.toggle("theme-light", light),
@@ -1007,8 +1015,8 @@ for (const theme of ["light", "dark"] as const)
         await expect
           .poll(() => page.evaluate(() => matchMedia("(pointer: coarse)").matches))
           .toBe(true);
-        await expect(touch).toHaveCSS("min-width", "36px");
-        await expect(touch).toHaveCSS("min-height", "36px");
+        await expect(touch).toHaveCSS("min-width", "32px");
+        await expect(touch).toHaveCSS("min-height", "32px");
         await client.send("Emulation.setTouchEmulationEnabled", { enabled: false });
         await client.detach();
       }

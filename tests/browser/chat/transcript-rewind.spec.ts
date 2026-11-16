@@ -244,10 +244,10 @@ for (const width of [1280, 800])
       await expect(apply).toBeDisabled();
       // Warning notices announce politely (role="status"); only danger uses role="alert".
       await expect(
-        dialog
-          .getByRole("status")
-          .filter({ hasText: "This rewind preview is blocked or expired. Refresh the preview." }),
-      ).toHaveText("This rewind preview is blocked or expired. Refresh the preview.");
+        dialog.getByRole("status").filter({
+          hasText: "This rewind preview is blocked or expired. Cancel and open a new preview.",
+        }),
+      ).toHaveText("This rewind preview is blocked or expired. Cancel and open a new preview.");
       if (testInfo.project.name === "chromium") {
         await mkdir("temp/verification/i3", { recursive: true });
         await page.screenshot({

@@ -84,23 +84,21 @@ for (const theme of themes) {
       if (width === 800) await capture(page, `g-messages-list-${suffix}`, false);
       await list.getByRole("button", { name: /Q4 roadmap review/ }).click();
       const thread = page.getByRole("region", { name: "Q4 roadmap review — action items" });
-      // Direct items only; attachment chips are nested list items.
-      await expect(
-        thread.getByRole("list", { name: "Messages" }).locator(":scope > li"),
-      ).toHaveCount(5);
+      // Direct items only (attachment chips are nested list items): five messages plus the
+      // day separators ("Yesterday", "Today") the shared timeline renders as list items.
+      const items = thread.getByRole("list", { name: "Messages" }).locator(":scope > li");
+      await expect(items.filter({ has: page.locator('div[dir="auto"]') })).toHaveCount(5);
+      await expect(items).toHaveCount(7);
       await expect(page.getByRole("textbox", { name: "Reply" })).toHaveValue(/timeline works/);
       const bubbles = thread.locator('li > div[dir="auto"]');
       await expect(bubbles).toHaveCount(5);
+      // Both directions wear the shared transcript bubble skin; ownership is alignment.
       for (const index of [0, 1]) {
-        const appearance = await bubbles.nth(index).evaluate((element, outbound) => {
+        const appearance = await bubbles.nth(index).evaluate((element) => {
           const actual = getComputedStyle(element);
           const probe = document.createElement("div");
-          probe.style.background = outbound
-            ? "var(--ui-tone-accent-subtle)"
-            : "var(--ui-fill-subtle)";
-          probe.style.borderRadius = "var(--ui-radius-card)";
-          if (outbound) probe.style.borderEndEndRadius = "var(--ui-radius-control)";
-          else probe.style.borderEndStartRadius = "var(--ui-radius-control)";
+          probe.style.background = "var(--ui-message-bubble)";
+          probe.style.borderRadius = "var(--ui-radius-popup)";
           element.append(probe);
           const expected = getComputedStyle(probe);
           const result = {
@@ -117,7 +115,10 @@ for (const theme of themes) {
           };
           probe.remove();
           return result;
-        }, index === 1);
+        });
+        const message = bubbles.nth(index).locator("xpath=..");
+        if (index === 1) await expect(message).toHaveAttribute("data-own", "true");
+        else await expect(message).not.toHaveAttribute("data-own", /.*/);
         expect(appearance.actual).toEqual(appearance.expected);
       }
       await page.screenshot({

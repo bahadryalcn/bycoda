@@ -172,10 +172,9 @@ test("measures the hover, pressed, highlight and danger roles on the raised menu
     await page.mouse.move(600, 500);
     await page.mouse.up();
 
-    // Keyboard highlight and an expanded branch use the shared selected role; they never invent a tint.
-    const selected = await roleColor(page, "--ui-surface-selected");
-    expect(await background(rows.getByTestId("row-highlight"))).toBe(selected);
-    expect(await background(rows.getByTestId("row-expanded"))).toBe(selected);
+    // ListRow spec: keyboard highlight and an expanded branch read like hover; they never invent a tint.
+    expect(await background(rows.getByTestId("row-highlight"))).toBe(hover);
+    expect(await background(rows.getByTestId("row-expanded"))).toBe(hover);
 
     await danger.hover();
     await settle(page);
@@ -234,11 +233,11 @@ test("dropdown keyboard: roving focus, disabled rows skipped, Escape returns foc
   await expect(menu.getByRole("menuitem", { name: "Rename", exact: true })).toBeFocused();
   await page.keyboard.press("ArrowDown");
   await expect(menu.getByRole("menuitem", { name: "Copy path" })).toBeFocused();
-  // Menu keyboard focus uses the selected fill, distinct from pointer hover.
+  // ListRow spec: menu keyboard focus reads like hover, never like a committed selection.
   const focused = menu.getByRole("menuitem", { name: "Copy path" });
   await settle(page);
-  expect(await background(focused)).toBe(await roleColor(page, "--ui-surface-selected"));
-  expect(await background(focused)).not.toBe(await roleColor(page, "--ui-surface-hover"));
+  expect(await background(focused)).toBe(await roleColor(page, "--ui-surface-hover"));
+  expect(await background(focused)).not.toBe(await roleColor(page, "--ui-surface-selected"));
   await page.keyboard.press("ArrowDown"); // Archive is disabled and skipped.
   await expect(menu.getByRole("menuitem", { name: /Rename the current checkout/ })).toBeFocused();
   await page.keyboard.press("End");
@@ -318,7 +317,7 @@ test("row metric follows density, with a 44px floor for coarse pointers", async 
       ),
     ).toBe(heights[density]);
   }
-  expect(heights).toEqual({ compact: 32, comfortable: 36, touch: 48 });
+  expect(heights).toEqual({ compact: 32, comfortable: 36, touch: 44 });
 });
 
 test("coarse pointers get a 44px target on every menu path", async ({ browser }) => {
@@ -368,10 +367,10 @@ test("context menu: point placement, edge flip, keyboard submenu and Escape", as
   await page.keyboard.press("ArrowDown");
   const more = menu.getByRole("menuitem", { name: "Open with" });
   await expect(more).toHaveAttribute("data-highlighted", "true");
-  // The keyboard highlight uses selected fill without requiring pointer hover.
+  // The keyboard highlight reads like hover (ListRow spec) without requiring pointer hover.
   await settle(page);
-  expect(await background(more)).toBe(await roleColor(page, "--ui-surface-selected"));
-  expect(await background(more)).not.toBe(await roleColor(page, "--ui-surface-hover"));
+  expect(await background(more)).toBe(await roleColor(page, "--ui-surface-hover"));
+  expect(await background(more)).not.toBe(await roleColor(page, "--ui-surface-selected"));
   await page.keyboard.press("ArrowRight");
   const sub = page.getByRole("menu", { name: "Open with" });
   await expect(sub).toBeVisible();
@@ -452,9 +451,10 @@ test("narrow viewport keeps menus inside 390px and wraps described rows", async 
     expect(await menu.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0);
     if (id === "dropdown") {
       // The same complete label wraps when the viewport bounds the menu width.
+      const single = await height(menu.getByRole("menuitem", { name: "Rename", exact: true }));
       expect(
         await height(menu.getByRole("menuitem", { name: /Rename the current checkout/ })),
-      ).toBeGreaterThan(40);
+      ).toBeGreaterThan(single);
     }
     await page.keyboard.press("Escape");
   }
@@ -560,7 +560,7 @@ test("standalone Arc context menu: keyboard, danger highlight roles and focus re
   await expect(menu.getByRole("menuitem", { name: "Delete project" })).toBeFocused();
   await settle(page);
   const destructive = menu.getByRole("menuitem", { name: "Delete project" });
-  expect(await background(destructive)).toBe(await roleColor(page, "--ui-surface-selected"));
+  expect(await background(destructive)).toBe(await roleColor(page, "--ui-surface-hover"));
   expect(await destructive.evaluate((el) => getComputedStyle(el).color)).toBe(
     await destructive.evaluate((el) => {
       const probe = document.createElement("span");

@@ -3,13 +3,7 @@ import { join } from "node:path";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 async function openRoomSection(page: Page, section: string) {
-  const group = ["Jobs", "Sessions"].includes(section)
-    ? "Work"
-    : ["Notes", "History", "Memory"].includes(section)
-      ? "Records"
-      : section;
-  await page.getByRole("tab", { name: new RegExp(`^${group}(?:\\s|$)`) }).click();
-  if (group !== section) await page.getByRole("tab", { name: section, exact: true }).click();
+  await page.getByRole("tab", { name: new RegExp(`^${section}(?:\\s|$)`) }).click();
 }
 
 async function openWrittenBrief(page: Page) {
@@ -34,9 +28,7 @@ for (const theme of ["light", "dark"])
       await page.setViewportSize({ width, height: 1000 });
       await page.goto(`/tests/browser/assistant/assistant-room.html?theme=${theme}&chat-redesign`);
       await page.getByRole("tab", { name: "Conversations", exact: true }).click();
-      const answer = page
-        .locator('article[data-author="assistant"]')
-        .filter({ hasText: "Recovery status" });
+      const answer = page.locator("li[data-message-id]").filter({ hasText: "Recovery status" });
       await expect(answer.getByRole("heading", { name: "Recovery status" })).toBeVisible();
       await expect(answer.getByRole("table")).toContainText("Draft recovery");
       await expect
@@ -55,7 +47,10 @@ for (const theme of ["light", "dark"])
         .poll(() => page.evaluate(() => navigator.clipboard.readText()))
         .toContain("## Recovery status");
       await answer.getByText("Recorded actions", { exact: true }).click();
-      await expect(answer).toContainText("files.read");
+      await expect(answer).toContainText("Read files");
+      await answer.getByText("Read files", { exact: true }).hover();
+      await expect(page.getByRole("tooltip")).toContainText("conversation.files.read");
+      await page.mouse.move(0, 0);
       const input = page.getByRole("textbox", { name: /^Message / });
       await input.fill("Keep this draft");
       await input.press("Shift+Enter");
@@ -162,7 +157,7 @@ async function expectModelsNavigation(page: Page, group: Locator) {
       { once: true },
     );
   });
-  await group.getByRole("button", { name: "Manage in Models", exact: true }).click();
+  await group.getByRole("button", { name: "Manage models", exact: true }).click();
   expect(await page.evaluate(() => (window as any).__modelsNavigation)).toBe("roles");
 }
 for (const theme of ["light", "dark"])
@@ -538,11 +533,13 @@ for (const theme of ["light", "dark"])
       ).toHaveCount(0);
       await capture("today");
       await room.getByRole("button", { name: "Assistant status", exact: true }).click();
+      const health = page.getByRole("dialog", { name: "Assistant status", exact: true });
       await capture("health");
-      await page.keyboard.press("Escape");
-      await room.getByRole("button", { name: "Presence", exact: true }).click();
+      await health.getByRole("button", { name: /^Presence:/ }).click();
       await capture("presence");
       await page.keyboard.press("Escape");
+      await page.keyboard.press("Escape");
+      await expect(health).toHaveCount(0);
       for (const tab of ["Conversations", "Jobs", "Sessions", "Notes", "History", "Memory"]) {
         await openRoomSection(page, tab);
         await capture(tab.toLowerCase());
@@ -1341,9 +1338,11 @@ for (const theme of ["light", "dark"])
       await page.goto(
         `/tests/browser/assistant/assistant-room.html?theme=${theme}&briefing=1&presence=unreadable`,
       );
+      await page.getByRole("button", { name: "Assistant status", exact: true }).click();
       await expect(
         page.getByRole("status", { name: "Current availability: Away", exact: true }),
       ).toBeVisible();
+      await page.keyboard.press("Escape");
       const card = page.getByRole("region", { name: "While you were away", exact: true });
       await card.getByRole("button", { name: "Listen", exact: true }).click();
       await expect(
@@ -1625,8 +1624,12 @@ for (const theme of ["light", "dark"] as const)
         path: join(output, `${theme}-${width}-settings.png`),
       });
       await openSettingsGroup(page, "Presence and hours");
-      await page.getByText("Sleep prevention is off", { exact: true }).scrollIntoViewIfNeeded();
-      await expect(page.getByText("Sleep prevention is off", { exact: true })).toBeVisible();
+      await page
+        .getByText("Will keep this computer awake once you are away", { exact: true })
+        .scrollIntoViewIfNeeded();
+      await expect(
+        page.getByText("Will keep this computer awake once you are away", { exact: true }),
+      ).toBeVisible();
       await page.screenshot({
         animations: "disabled",
         path: join(output, `${theme}-${width}-keep-awake.png`),

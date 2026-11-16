@@ -735,9 +735,11 @@ function Fixture() {
               keepEffects={params.has("terminalWorkspace")}
             >
               {params.has("terminalWorkspace") ? (
-                <ServersTerminalWorkspace visible={visible && active === "servers"}>
-                  <ServersView besideRail />
-                </ServersTerminalWorkspace>
+                <div data-app-servers className="flex min-h-0 min-w-0 flex-1 flex-col">
+                  <ServersTerminalWorkspace visible={visible && active === "servers"}>
+                    <ServersView besideRail />
+                  </ServersTerminalWorkspace>
+                </div>
               ) : (
                 <ServersView besideRail />
               )}

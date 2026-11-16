@@ -231,8 +231,8 @@ test("browser URL and preview stay local while view-only mode prevents input", a
   await selectTool(page, "Host browser");
   await openBrowser(page);
   // The labelled control toggle releases and reclaims in one click, without a popover.
-  await page.getByRole("switch", { name: "Allow device control" }).click();
-  await expect(page.getByRole("switch", { name: "Allow device control" })).not.toBeChecked();
+  await page.getByRole("button", { name: "Control active", exact: true }).click();
+  await expect(page.getByRole("button", { name: "View only", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Claim control", exact: true })).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "Select element and add to composer", exact: true }),

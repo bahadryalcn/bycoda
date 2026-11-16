@@ -347,9 +347,9 @@ for (const theme of ["light", "dark"])
       ).toBeVisible();
       const helperModels = chat.locator("#setting-helper-models");
       await expect(helperModels).toContainText("Translation, reprompt and title models");
-      await expect(helperModels).toContainText("Chosen in Models > Assignments.");
+      await expect(helperModels).toContainText("Model set in Work > Assignments.");
       await expect(
-        helperModels.getByRole("button", { name: "Manage in Models", exact: true }),
+        helperModels.getByRole("button", { name: "Manage models", exact: true }),
       ).toBeVisible();
       await expect(chat.locator("#setting-git-generation-default")).toHaveCount(0);
       await expect(chat.locator("#setting-chat-width button").first()).toBeVisible();
@@ -422,6 +422,8 @@ for (const lang of ["en", "tr", "de", "fr", "es", "pt", "zh-CN", "ja"]) {
           });
         }
         const labels = await open("providers");
+        // Models is tabbed; accounts and CLI choices live under the Providers tab.
+        await page.getByRole("tab", { name: labels.providersTab, exact: true }).click();
         const accounts = page.locator('[data-setting-id="provider-accounts"]');
         const add = accounts.getByRole("button", { name: labels.account, exact: true });
         for (const [index, provider] of ["Claude Code", "Codex"].entries()) {
@@ -445,8 +447,10 @@ for (const lang of ["en", "tr", "de", "fr", "es", "pt", "zh-CN", "ja"]) {
           await expect(form).toHaveCount(0);
         }
         const skillLabels = await open("skills");
-        const addSkill = page.getByRole("button", { name: skillLabels.skill, exact: true });
+        // Creation actions live in the toolbar's New menu.
+        const addSkill = page.getByRole("button", { name: skillLabels.newMenu, exact: true });
         await addSkill.click();
+        await page.getByRole("menuitem", { name: skillLabels.skill, exact: true }).click();
         const name = page.getByRole("textbox", { name: skillLabels.skillName, exact: true });
         await expect(name).toBeFocused();
         await name.fill("review-settings");
@@ -505,9 +509,9 @@ for (const theme of ["light", "dark"])
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(`/tests/browser/settings/settings.html?section=mcp&mcp=1&theme=${theme}`);
       const connections = page.locator("#setting-mcp-servers");
-      const list = connections.getByRole("region", { name: "MCP connections", exact: true });
-      // One row per connection; each row owns exactly one actions menu button.
-      const details = list.locator("[data-collection-key]:has(button[aria-haspopup='menu'])");
+      const list = connections.getByRole("region", { name: "MCP servers", exact: true });
+      // One row per connection; each row opens its detail sheet through exactly one button.
+      const details = list.locator("[data-collection-key]:has(button[aria-label^='Open '])");
       // The continuous list renders every loaded connection below its window threshold,
       // without a "Show more connections" continuation or a range status.
       await expect(details).toHaveCount(25);
@@ -515,30 +519,30 @@ for (const theme of ["light", "dark"])
         connections.getByRole("button", { name: "Show more connections", exact: true }),
       ).toHaveCount(0);
       for (const row of await details.all())
-        await expect(row.locator("button[aria-haspopup='menu']")).toHaveCount(1);
+        await expect(row.locator("button[aria-label^='Open ']")).toHaveCount(1);
       await page.screenshot({
         path: `temp/verification/2026-10-16-ui-system/W5a-SETTINGS-mcp-${theme}-${width}.png`,
       });
       const scroller = page.locator("[data-settings-scroller]");
       await connections.getByRole("searchbox", { name: "Search MCP servers" }).fill("server-24");
       await expect(details).toHaveCount(1);
-      // Rows no longer expand inline: the config path stays searchable and is reached from the
-      // row's actions menu (Show config / Copy config path).
+      // Rows do not expand inline: the config path stays searchable and the row opens a detail
+      // sheet with its configuration (Show in folder / Copy config path).
       await connections
         .getByRole("searchbox", { name: "Search MCP servers" })
         .fill("config-24.json");
       await expect(details).toHaveCount(1);
       await expect(details).toContainText("server-24");
-      await details.getByRole("button", { name: "Actions for server-24", exact: true }).click();
-      const actions = page.getByRole("menu", { name: "Actions for server-24", exact: true });
+      await details.getByRole("button", { name: "Open server-24", exact: true }).click();
+      const detail = page.getByRole("dialog", { name: "server-24", exact: true });
       await expect(
-        actions.getByRole("menuitem", { name: "Show config", exact: true }),
+        detail.getByRole("button", { name: "Show in folder", exact: true }),
       ).toBeEnabled();
       await expect(
-        actions.getByRole("menuitem", { name: "Copy config path", exact: true }),
+        detail.getByRole("button", { name: "Copy config path", exact: true }),
       ).toBeEnabled();
       await page.keyboard.press("Escape");
-      await expect(actions).toHaveCount(0);
+      await expect(detail).toHaveCount(0);
       expect(await scroller.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(
         true,
       );
@@ -547,7 +551,7 @@ for (const theme of ["light", "dark"])
       await connections.getByRole("searchbox").fill("");
       const filters = connections.getByRole("button", { name: "Filters", exact: true });
       await filters.click();
-      const filterDialog = page.getByRole("dialog", { name: "Filter MCP servers by provider" });
+      const filterDialog = page.getByRole("dialog", { name: "Filter MCP servers", exact: true });
       await filterDialog.getByRole("button", { name: /^Codex/ }).click();
       await page.keyboard.press("Escape");
       await expect(filters).toBeFocused();

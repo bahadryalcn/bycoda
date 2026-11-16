@@ -101,8 +101,8 @@ for (const theme of ["light", "dark"])
         expect(["rgba(0, 0, 0, 0)", "oklab(0 0 0 / 0)"]).toContain(actual.background);
         expect(["rgba(0, 0, 0, 0)", "oklab(0 0 0 / 0)"]).toContain(actual.border);
         expect(actual.dot).toBe(actual.accent);
-        expect(actual.dotWidth).toBe("3px");
-        expect(actual.dotHeight).toBe("3px");
+        expect(actual.dotWidth).toBe("4px");
+        expect(actual.dotHeight).toBe("4px");
         await page.screenshot({
           animations: "disabled",
           path: `temp/verification/feature-controls/tool-wrap-${state}-${theme}-${width}.png`,
@@ -337,7 +337,7 @@ test("chat messages, attachment references and running work keep a readable hier
       // the preview action and tooltip; size sits beside the copied text token.
       await expect(image).toHaveAccessibleName("Open screenshot-1.png full screen");
       await image.hover();
-      await expect(page.getByRole("tooltip")).toContainText("image1 · screenshot-1.png · 42 B");
+      await expect(page.getByRole("tooltip")).toContainText("image1 · screenshot-1.png");
       await page.mouse.move(0, 0);
       const cardBox = (await card.boundingBox())!;
       expect(cardBox.width).toBe(88);

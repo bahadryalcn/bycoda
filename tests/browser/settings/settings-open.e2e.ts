@@ -23,9 +23,11 @@ for (const theme of ["light", "dark"]) {
       await expect(appearance.locator('[data-setting-id="code-font-size"]')).toBeVisible();
       // Sidebar opacity lives in the Glass background layer, whose editor opens from its row.
       await openTopic("Arka plan");
-      const glass = appearance.getByRole("button", {
-        name: /Kenar çubuğu ve ana panel saydamlığı/,
-      });
+      const glass = appearance
+        .getByRole("listitem")
+        .filter({ has: page.getByRole("switch", { name: "Cam", exact: true }) })
+        .getByRole("button")
+        .first();
       await expect(glass).toHaveAttribute("aria-expanded", "false");
       await glass.click();
       await expect(glass).toHaveAttribute("aria-expanded", "true");
@@ -121,7 +123,7 @@ test("settings expose advanced controls without opening a menu", async ({ page }
       const recovery = form.locator('[data-setting-id="remote-auto-reconnect"]');
       await expect(
         recovery.getByRole("switch", {
-          name: "Automatically reconnect to remote machines",
+          name: "Automatically reconnect to machines",
           exact: true,
         }),
       ).toBeVisible();
@@ -133,8 +135,8 @@ test("settings expose advanced controls without opening a menu", async ({ page }
       ).toBeVisible();
       await page.keyboard.press("Escape");
       // Manual URL setup shares the inline Add machine form instead of a separate disclosure.
-      // The empty list repeats this action; both buttons open the same inline form.
-      await form.getByRole("button", { name: "Add machine", exact: true }).first().click();
+      // Add manually opens the inline form.
+      await form.getByRole("button", { name: "Add manually", exact: true }).click();
       const machineForm = form.getByRole("form", { name: "Add a new machine", exact: true });
       const hostUrl = machineForm.getByRole("radio", { name: "Host URL", exact: true });
       await hostUrl.focus();

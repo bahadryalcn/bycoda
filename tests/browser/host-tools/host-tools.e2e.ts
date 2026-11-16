@@ -74,7 +74,7 @@ async function selectTool(page: Page, name: string, scope: Page | Locator = page
     return;
   }
   const menu = scope.getByRole("button", {
-    name: /^(Conversation tool selection|Konuşma aracı seçimi)$/,
+    name: /^(Conversation tool selection|Oturum aracı seçimi)$/,
   });
   if (await menu.isVisible()) {
     await menu.click();
@@ -117,7 +117,7 @@ for (const theme of ["light", "dark"])
       await expect(window).toBeVisible();
       const windowColors = await window.evaluate((node) => {
         const probe = document.createElement("span");
-        probe.style.background = "var(--ui-workspace-canvas-surface)";
+        probe.style.background = "var(--ui-workspace-canvas)";
         node.appendChild(probe);
         const expected = getComputedStyle(probe).backgroundColor;
         probe.remove();
@@ -288,9 +288,14 @@ for (const action of ["Process details", "Stop", "Restart"]) {
     await page.setViewportSize({ width: 726, height: 660 });
     await page.goto(fixture);
     await selectTool(page, "Development servers");
-    // The selected server's process controls are always visible (no disclosure).
+    // Restart stays a toolbar button; Process details and Stop live in the Actions menu.
     const server = page.getByRole("complementary", { name: "Demo dev server", exact: true });
-    await server.getByRole("button", { name: action, exact: true }).click();
+    if (action === "Restart")
+      await server.getByRole("button", { name: action, exact: true }).click();
+    else {
+      await server.getByRole("button", { name: "Actions", exact: true }).click();
+      await page.getByRole("menuitem", { name: action, exact: true }).click();
+    }
     const details = page.getByRole("region", { name: "Selected process details" });
     await expect(details).toBeFocused();
     await expect(details).toBeInViewport();
@@ -619,7 +624,8 @@ test("selects local and remote tool machines while clearing the previous browser
       name: "Shared host browser screenshot; click to interact when controlling",
     }),
   ).toBeVisible();
-  await page.getByRole("switch", { name: "Live view", exact: true }).check();
+  const liveView = page.getByRole("button", { name: "Live view", exact: true });
+  if ((await liveView.getAttribute("aria-pressed")) !== "true") await liveView.click();
   await selectOption(page, page, "Tool machine", "Fixture MacBook");
   await expect(page.getByRole("button", { name: "Open website", exact: true })).toBeEnabled();
   await expect(
@@ -627,7 +633,10 @@ test("selects local and remote tool machines while clearing the previous browser
       name: "Shared host browser screenshot; click to interact when controlling",
     }),
   ).toHaveCount(0);
-  await expect(page.getByRole("switch", { name: "Live view", exact: true })).toBeChecked();
+  await expect(page.getByRole("button", { name: "Live view", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
   await expect(
     page.getByRole("heading", { name: "Shared host browser · Fixture MacBook", exact: true }),
   ).toBeVisible();
@@ -687,7 +696,8 @@ test("shows grouped server ports, reviews impact and offers force after graceful
   await expect(selection.getByRole("button", { name: /^Address:/ })).toContainText(
     "http://[::1]:5173",
   );
-  await selection.getByRole("button", { name: "Stop", exact: true }).click();
+  await selection.getByRole("button", { name: "Actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Stop", exact: true }).click();
   const details = page.getByRole("region", { name: "Selected process details" });
   await expect(details.getByText("5173, 5174", { exact: true })).toBeVisible();
   expect(
@@ -782,8 +792,8 @@ test("opens the browser and sends input using its control lease", async ({ page 
   ]);
   await page.keyboard.press("Escape");
   // The labelled control toggle releases the lease in one click.
-  await page.getByRole("switch", { name: "Allow device control" }).click();
-  await expect(page.getByRole("switch", { name: "Allow device control" })).not.toBeChecked();
+  await page.getByRole("button", { name: "Control active", exact: true }).click();
+  await expect(page.getByRole("button", { name: "View only", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Browser controls and setup", exact: true }).click();
   await expect(page.getByRole("button", { name: "Type text" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Refresh frame" })).toBeEnabled();
@@ -831,7 +841,10 @@ test("starts, boots and captures a device and stops live viewing on tab change",
   await expect(page.getByRole("button", { name: "Capture", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "Start emulator", exact: true }).click();
   await expect(page.getByRole("img", { name: "Current device screen" })).toBeVisible();
-  await expect(page.getByRole("switch", { name: "Live view" })).toBeChecked();
+  await expect(page.getByRole("button", { name: "Live view", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
   // Control turns on only after the Host grants a lease, so wait for the claim.
   await page.getByRole("switch", { name: "Allow device control", exact: true }).click();
   await expect(
@@ -873,7 +886,7 @@ for (const locale of ["en", "tr"]) {
           ? ["Devices", "Host browser", "Development servers", "Logs", "Resource usage"]
           : ["Cihazlar", "Tarayıcı", "Geliştirme sunucuları", "Loglar", "Kaynak kullanımı"];
       const toolTabs = page.getByRole("tablist", {
-        name: locale === "en" ? "Conversation tool selection" : "Konuşma aracı seçimi",
+        name: locale === "en" ? "Conversation tool selection" : "Oturum aracı seçimi",
         exact: true,
       });
       const wideTools = width >= NARROW_TOOLS_WIDTH;
@@ -885,7 +898,7 @@ for (const locale of ["en", "tr"]) {
         await expect(toolTabs.getByRole("tab")).toHaveCount(0);
         await expect(
           page.getByRole("button", {
-            name: locale === "en" ? "Conversation tool selection" : "Konuşma aracı seçimi",
+            name: locale === "en" ? "Conversation tool selection" : "Oturum aracı seçimi",
             exact: true,
           }),
         ).toBeVisible();
@@ -1138,7 +1151,7 @@ test("compact browser keeps preview and keyboard controls usable at all panel wi
       await expect(
         panel.getByRole("button", { name: "Select element and add to composer", exact: true }),
       ).toBeVisible();
-      await expect(panel.getByRole("switch", { name: "Live view" })).toBeEnabled();
+      await expect(panel.getByRole("button", { name: "Live view", exact: true })).toBeEnabled();
       expect(await panel.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
       const canvasBox = await panel.locator(".host-browser-preview").boundingBox();
       expect(canvasBox!.height).toBeGreaterThan((await panel.boundingBox())!.height * 0.75);

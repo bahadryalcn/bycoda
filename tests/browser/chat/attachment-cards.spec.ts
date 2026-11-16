@@ -19,7 +19,12 @@ test("reference token icons preserve editable text in both themes and widths", a
       expect(raw).toContain("[Image\u00a01\u00a0·");
       expect(raw).toContain("@jira:PFDEV-1196");
       const overlay = section.locator("[data-reference-overlay]");
-      await expect(overlay.locator("[data-composer-skill-token] svg")).toHaveCount(2);
+      // Skill chips are the source text at body size (no icon); the textarea keeps the raw token.
+      await expect(overlay.locator("[data-composer-skill-token]")).toHaveText([
+        "/frontend-design",
+        "$frontend-design",
+      ]);
+      await expect(overlay.locator("[data-composer-skill-token] svg")).toHaveCount(0);
       await expect(overlay.locator("[data-composer-attachment-kind] svg")).toHaveCount(3);
       await expect(overlay.locator("[data-mcp-tag] svg")).toHaveCount(1);
       await expect(overlay.locator("[data-work-item-mention] svg")).toHaveCount(3);

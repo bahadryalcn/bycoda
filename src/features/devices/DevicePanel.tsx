@@ -203,8 +203,11 @@ function DevicePanelSurface({
   }
   const [connectionUnavailable, setConnectionUnavailable] = useState(false);
   const [discoveryUnavailable, setDiscoveryUnavailable] = useState(false);
-  const [live, setLive] = useState(false);
   const [autoLive] = useState(() => toolPreferences.deviceAutoLive.load());
+  // A panel restored from a retained draft (for example after moving the dock) keeps viewing that
+  // device like a freshly opened one; a frozen annotation frame stays paused. An unbooted device
+  // is corrected to paused when the device list loads.
+  const [live, setLive] = useState(() => autoLive && !!saved?.selected && !saved.annotating);
   // The surface starts by reading the Host status in the effect below.
   const [busy, setBusy] = useState(true);
   const [operation, setOperation] = useState<DeviceOperation>();
@@ -273,6 +276,9 @@ function DevicePanelSurface({
     return subscribeToolsDraftTransfer(transferScope, ({ device }) => {
       if (!device) return;
       setSelected(device.selected);
+      // A moved panel keeps viewing the retained device like a freshly opened one; a frozen
+      // annotation frame stays paused.
+      setLive(autoLive && !!device.selected && !device.annotating);
       setApp(device.app);
       setText(device.text);
       inputDrafts.current = device.inputs ?? {};

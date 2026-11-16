@@ -99,6 +99,12 @@ test("fills the note workspace and exposes each pane's remaining content", async
   });
 });
 
+// Session notes open in Document mode; the Markdown text lives in the Source tab.
+async function sourceEditor(page: Page) {
+  await page.getByRole("tab", { name: "Source", exact: true }).click();
+  return page.getByRole("textbox", { name: "Note body", exact: true });
+}
+
 async function choose(page: Page, label: string, option: string | RegExp) {
   await page.getByRole("button", { name: new RegExp(`^${label}(?::|$)`) }).click();
   await page.getByRole("option", { name: option }).click();
@@ -109,8 +115,8 @@ test("session note picker overlays the editor, restores keyboard focus and opens
 }, testInfo) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/notes/notes.html?panel");
-  const editor = page.getByRole("textbox", { name: "Note", exact: true });
-  await expect(editor).toHaveValue(/Release checklist/);
+  const editor = await sourceEditor(page);
+  await expect(editor).toContainText("Release checklist");
   const before = await editor.boundingBox();
   const switcher = page.getByRole("button", { name: "Switch note", exact: true });
   await switcher.click();
@@ -149,9 +155,7 @@ test("opening an empty session creates no document and browsing project notes re
     .getByRole("dialog", { name: "Switch note" })
     .getByRole("button", { name: /Note 03/ })
     .click();
-  await expect(page.getByRole("textbox", { name: "Note", exact: true })).toHaveValue(
-    "Project notes and ideas for item 3.",
-  );
+  await expect(await sourceEditor(page)).toContainText("Project notes and ideas for item 3.");
   await page.getByRole("button", { name: "Delete note", exact: true }).click();
   await expect(page.getByRole("group", { name: "Delete note permanently?" })).toBeVisible();
   expect(
@@ -160,7 +164,7 @@ test("opening an empty session creates no document and browsing project notes re
     ),
   ).toBe(42);
   await page.keyboard.press("Escape");
-  await expect(page.getByRole("textbox", { name: "Note", exact: true })).toBeVisible();
+  await expect(await sourceEditor(page)).toBeVisible();
 });
 
 test("bulk selection spans pages, confirms explicitly and deletes only selected notes", async ({
@@ -776,8 +780,8 @@ for (const theme of ["light", "dark"])
     test(`session notes caller states ${theme} ${width}`, async ({ page }, info) => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`/tests/browser/notes/notes.html?panel&theme=${theme}`);
-      const editor = page.getByRole("textbox", { name: "Note", exact: true });
-      await expect(editor).toHaveValue(/Release checklist/);
+      const editor = await sourceEditor(page);
+      await expect(editor).toContainText("Release checklist");
       await page.getByRole("button", { name: "Switch note", exact: true }).click();
       const picker = page.getByRole("dialog", { name: "Switch note", exact: true });
       await expect(picker).toBeVisible();

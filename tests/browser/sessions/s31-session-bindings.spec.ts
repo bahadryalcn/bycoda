@@ -145,10 +145,12 @@ test("reserved owner persists before admission and deletion retains routing fenc
   ).toEqual({ fenced: true, deleted: true, created: true, summaries: 0 });
 });
 
-test("binding quota retains compatibility owner and retries original evidence", async ({
+test("binding quota retains compatibility owner and a later load migrates original evidence", async ({
   page,
 }) => {
   await page.goto("/tests/browser/sessions/s31-outbox-storage.html");
+  // A failed owner write is dropped (not retried forever); the compatibility owner it
+  // left in localStorage stays, and no evidence row claims the shell meanwhile.
   expect(
     await page.evaluate(async () => {
       const { bindings, bindingDatabase } = (window as any).outboxRegression;
@@ -177,17 +179,22 @@ test("binding quota retains compatibility owner and retries original evidence", 
       const retained = localStorage.getItem("bycoda.host-session-binding.v1:shell");
       const before = (await bindingDatabase.readBindingEvidencePage()).length;
       IDBObjectStore.prototype.put = put;
+      return { held, before, retained: JSON.parse(retained!).binding.sessionId };
+    }),
+  ).toEqual({ held: true, before: 0, retained: "exact-host" });
+  await page.reload();
+  expect(
+    await page.evaluate(async () => {
+      const { bindings, bindingDatabase } = (window as any).outboxRegression;
       await bindings.flushHostSessionBindings();
+      const retained = localStorage.getItem("bycoda.host-session-binding.v1:shell");
       const after = await bindingDatabase.readBindingEvidencePage();
       return {
-        held,
-        before,
-        retained: !!retained,
-        exact: after[0].raw === retained,
+        exact: after[0]?.raw === retained,
         sessionId: JSON.parse(after[0].raw).binding.sessionId,
       };
     }),
-  ).toEqual({ held: true, before: 0, retained: true, exact: true, sessionId: "exact-host" });
+  ).toEqual({ exact: true, sessionId: "exact-host" });
 });
 
 test("unavailable owner storage never proves a shell unowned", async ({ page }) => {

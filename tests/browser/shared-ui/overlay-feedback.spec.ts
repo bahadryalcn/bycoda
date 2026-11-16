@@ -393,8 +393,8 @@ test.describe("feedback behavior", () => {
   test("ordinary danger notices expire after ten focused seconds", async ({ page }) => {
     await page.clock.install({ time: new Date("2026-01-01T00:00:00Z") });
     await page.clock.pauseAt(new Date("2026-01-01T00:00:01Z"));
-    await open(page);
-    await expect(page.locator('[data-frame="notice-danger"]').getByRole("alert")).toContainText(
+    await open(page, "?notice");
+    await expect(page.locator("[data-toast-stack]").getByRole("alert")).toContainText(
       "The release feed returned 503",
     );
     await page.clock.fastForward(9_999);
@@ -408,7 +408,7 @@ test.describe("feedback behavior", () => {
   }) => {
     await page.clock.install();
     await open(page, "?persistent-notice");
-    const notice = page.locator('[data-frame="notice-danger"]').getByRole("alert");
+    const notice = page.locator("[data-toast-stack]").getByRole("alert");
     await expect(notice).toContainText("The release feed returned 503");
     await page.clock.fastForward(120_000);
     expect(await counter(page, "dismiss-danger")).toBe(0);
@@ -494,7 +494,11 @@ test.describe("feedback behavior", () => {
       "aria-label",
       "Unavailable",
     );
-    await expect(page.locator('[data-frame="empty-page"] button')).toBeVisible();
+    await expect(
+      page
+        .locator('[data-frame="empty-page"]')
+        .getByRole("button", { name: "Open folder", exact: true }),
+    ).toBeVisible();
     // Existing callers with no context keep the page presentation.
     await expect(
       page.locator('[data-frame="empty-consumer-document"] [data-context]'),

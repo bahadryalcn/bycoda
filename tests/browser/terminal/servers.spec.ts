@@ -241,12 +241,16 @@ for (const theme of ["light", "dark"]) {
           ),
         );
       const row = inventory.getByRole("button", { name: /^Server 01/ });
-      const before = (await row.boundingBox())!;
+      // The row swaps its trailing status for the actions on selection, so the identity button
+      // may narrow; the row itself must not move or resize.
+      const frame = row.locator("xpath=ancestor::*[@data-action-host][1]");
+      const before = (await frame.boundingBox())!;
       await row.click();
-      const after = (await row.boundingBox())!;
+      const after = (await frame.boundingBox())!;
       expect(Math.abs(after.x - before.x)).toBeLessThan(1);
       expect(Math.abs(after.y - before.y)).toBeLessThan(1);
       expect(Math.abs(after.width - before.width)).toBeLessThan(1);
+      expect(Math.abs(after.height - before.height)).toBeLessThan(1);
       expect(await requests()).toHaveLength(0);
       await page.getByRole("button", { name: "Close server details", exact: true }).click();
       await expect(row).toBeFocused();
@@ -1034,7 +1038,7 @@ for (const theme of ["light", "dark"]) {
     await dialog.getByRole("button", { name: "Connect", exact: true }).click();
     await page.getByRole("button", { name: "Terminal pane actions", exact: true }).click();
     await page.getByRole("button", { name: "About shell suggestions", exact: true }).click();
-    await expect(page.getByText(/A new session starts with -NoProfile/)).toBeVisible();
+    await expect(page.getByText(/Custom profile bindings are not loaded/)).toBeVisible();
     await page.keyboard.press("Escape");
     if (!(await page.getByRole("button", { name: "Shell suggestions", exact: true }).isVisible())) {
       await page.getByRole("button", { name: "Terminal pane actions", exact: true }).click();
@@ -1479,7 +1483,7 @@ for (const theme of ["light", "dark"]) {
     await page.getByRole("button", { name: "Forward SSH agent", exact: true }).click();
     const modal = page.getByRole("dialog", { name: "Forward SSH agent", exact: true });
     await expect(modal).toContainText("fixture@duplicate.example.invalid:22");
-    await expect(modal).toContainText("remote target can use identities");
+    await expect(modal).toContainText("remote target can use your SSH agent identities");
     const approve = modal.getByRole("button", { name: "Approve and connect", exact: true });
     await expect(approve).toBeEnabled();
     expect((await nativeRequests()).some((r) => r.command === "ssh_terminal_spawn")).toBe(false);
