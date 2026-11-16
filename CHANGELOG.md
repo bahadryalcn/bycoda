@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.11]
+
+### Improved
+
+- Discover machines on your account, pair desktops through the account or a published Quick Tunnel, and show each machine as a summary row with routes and an on/off switch.
+- Keep remote links alive across short outages: one reconnecting notice per machine, page session streams and retry interrupted reads.
+- Unify the interface on one component system with shared surfaces, settings rows, disclosure triggers and a single message timeline.
+- Centralize model order, nested pools and roles in Settings, with smart model setup, multi-target provider defaults and Automatic subagents.
+- Add Assistant authority, Room automations, Work settings and agent messaging between sessions.
+- Track session attention and owner notifications across devices.
+- Add Social owner requests, account signup and browser workflows.
+- Add Run in terminal for PowerShell and POSIX code in chat, tracker mentions, project replace and skill groups.
+- Support named Grok accounts and shared CLI account settings.
+- Generate Git commit text through the repository's Host.
+- Tell agent sessions to use bykit when it is installed, with a switch in Settings > Tools.
+- Reduce transcript streaming work for remote sessions and parse long Markdown in a worker.
+
+### Fixed
+
+- Fix machine discovery authentication, routing and cancellation, and preserve healthy SSH tunnels during recovery.
+- Keep deferred stream deltas and slow Host probes from marking machines offline.
+- Reload failed first loads on reconnect and ask to repeat actions once the link is back.
+- Restore committed conflicts and hold uncertain crew dispatch instead of repeating it.
+- Rebase owner binding saves on the stored version after a failed write.
+- Finish workspace close without waiting for retention and restore standard compact rail and footer sizes.
+- Pin macOS cloudflared archives to their verified SHA-256 digests.
+
 ## [0.7.9]
 
 ### Improved

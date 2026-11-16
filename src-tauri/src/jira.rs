@@ -536,7 +536,10 @@ fn parse_jira_issue(node: &Value, site: &str) -> Option<JiraIssue> {
         state: status
             .and_then(|value| string_field(value, "name"))
             .unwrap_or_else(|| "Open".into()),
-        priority: fields.get("priority").and_then(|value| string_field(value, "name")).filter(|name| !name.is_empty()),
+        priority: fields
+            .get("priority")
+            .and_then(|value| string_field(value, "name"))
+            .filter(|name| !name.is_empty()),
         state_type: status
             .and_then(|value| value.pointer("/statusCategory/key"))
             .and_then(Value::as_str)

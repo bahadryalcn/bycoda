@@ -1,4 +1,4 @@
-import { createContext, useContext, type ReactNode } from "react";
+import { createContext, useContext, useState, type ReactNode } from "react";
 import { Badge } from "../../../shared/ui/Badge";
 import { SkillGroupIcon, SkillIcon } from "../../../shared/ui/icons";
 import { Tooltip } from "../../../shared/ui/Tooltip";
@@ -40,7 +40,10 @@ export function TranscriptSkills({
   const names = new Set(
     skills.filter((skill) => skill.kind !== "template").map((skill) => skill.invocation),
   );
-  const groups = skillGroupPickerItems(useSkillGroups(), skills, cachedSkillPolicy());
+  // Storage is read once on mount, not during render; the badges are display only and
+  // sending re-checks the authoritative policy.
+  const [policy] = useState(cachedSkillPolicy);
+  const groups = skillGroupPickerItems(useSkillGroups(), skills, policy);
   return (
     <TranscriptSkillNames value={names}>
       <TranscriptSkillGroups value={groups}>{children}</TranscriptSkillGroups>

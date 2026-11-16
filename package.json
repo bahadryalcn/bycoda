@@ -1,7 +1,7 @@
 {
   "name": "bycoda-desktop",
   "private": true,
-  "version": "0.7.9",
+  "version": "0.7.11",
   "type": "module",
   "packageManager": "pnpm@12.15.0",
   "engines": {
