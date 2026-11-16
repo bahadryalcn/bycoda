@@ -11866,5 +11866,8 @@
   "bycoda Host status unavailable. Check the local host connection, then refresh.": "État de l'hôte bycoda indisponible. Vérifiez la connexion locale à l'hôte, puis actualisez.",
   "Enter secret: {p0}": "Saisir le secret : {p0}",
   "Tell agents to use bykit": "Demander aux agents d'utiliser bykit",
-  "When bykit is installed, agents are told to use it for large files, diffs, long command output and bulk edits. Applies to the next agent turn.": "Si bykit est installé, les agents sont invités à l'utiliser pour les gros fichiers, les diffs, les longues sorties de commande et les modifications en masse. S'applique au prochain tour de l'agent."
+  "When bykit is installed, agents are told to use it for large files, diffs, long command output and bulk edits. Applies to the next agent turn.": "Si bykit est installé, les agents sont invités à l'utiliser pour les gros fichiers, les diffs, les longues sorties de commande et les modifications en masse. S'applique au prochain tour de l'agent.",
+  "Images, videos and HTML scenes stay on this device. Ask in chat to create or revise a scene, then apply it.": "Les images, vidéos et scènes HTML restent sur cet appareil. Demandez dans le chat de créer ou modifier une scène, puis appliquez-la.",
+  "This background overrides the global background for this project.": "Cet arrière-plan remplace celui par défaut pour ce projet.",
+  "Background could not be loaded. Choose another file.": "Impossible de charger cet arrière-plan. Choisissez un autre fichier."
 }

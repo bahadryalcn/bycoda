@@ -1,4 +1,10 @@
 import { writeGeneratorValue } from "../../../src/features/settings/ui/appearance/controls/themeGeneratorSession";
+import { ChatBackgroundMedia } from "../../../src/features/settings/ui/ChatBackgroundMedia";
+import { ProjectBackgroundDialog } from "../../../src/features/projects/ui/ProjectBackgroundDialog";
+import {
+  loadChatBackgroundPath,
+  applyChatBackground,
+} from "../../../src/features/settings/model/appearance";
 import { ImageDropZone } from "../../../src/features/settings/ui/appearance/controls/ImageDropZone";
 import { AdvancedSettings, Row } from "../../../src/shared/ui/settings";
 import { AntigravityAccountSettings } from "../../../src/features/settings/ui/AntigravityAccountSettings";
@@ -143,6 +149,43 @@ const consentFixture = new Map<
 >();
 mockIPC(
   (command, args) => {
+    if (new URLSearchParams(location.search).has("backgroundProbe")) {
+      if (command === "read_chat_background_html")
+        return "<!doctype html><style>html,body{margin:0;height:100%;background:linear-gradient(135deg,#142a36,#2d615c)}.orb{position:absolute;width:45vmin;height:45vmin;left:30%;top:20%;border:1px solid #bce9dd;border-radius:50%;animation:float 10s infinite alternate}@keyframes float{to{transform:translateY(25px)}}</style><div class=orb></div>";
+      if (command === "create_html_preview") {
+        const scenes = ((window as any).__backgroundScenes ??= {});
+        scenes[String(args.token)] = args.content;
+        return args.token;
+      }
+      if (
+        command === "close_html_preview" ||
+        command === "remove_chat_background" ||
+        command === "remove_project_chat_background"
+      )
+        return;
+      if (command === "save_chat_background" || command === "save_project_chat_background")
+        return args.sourcePath;
+      if (command === "list_background_library")
+        return [
+          {
+            id: "fixture-scene",
+            path: "/fixture/scene.html",
+            createdMs: 1,
+            bytes: 400,
+            source: "added",
+            prompt: null,
+          },
+        ];
+      if (command === "add_background_library_image")
+        return {
+          id: "fixture-scene",
+          path: args.sourcePath,
+          createdMs: 1,
+          bytes: 400,
+          source: "added",
+          prompt: null,
+        };
+    }
     if (command === "assistant_consent_get")
       return structuredClone(consentFixture.get(String(args.environmentId)) ?? null);
     if (command === "assistant_consent_set") {
@@ -752,6 +795,15 @@ if (new URLSearchParams(location.search).has("generatorSuggestions")) {
   );
 }
 const params = new URLSearchParams(location.search);
+if (params.has("backgroundProbe")) {
+  if (params.has("backgroundVideo"))
+    localStorage.setItem("bycoda.chatBackgroundPath", "/fixture/video.webm");
+  (window as any).__TAURI_INTERNALS__.convertFileSrc = (path: string, protocol: string) =>
+    protocol === "html-preview"
+      ? `http://background-preview.test/${path}`
+      : `http://background-asset.test/${encodeURIComponent(path)}`;
+  applyChatBackground(loadChatBackgroundPath());
+}
 const theme = params.get("theme") === "light" ? "light" : "dark";
 saveThemePreference(theme);
 applyThemePreference(theme);
@@ -989,6 +1041,19 @@ void Promise.all([
             noMatchLabel="No matches"
           />
         </main>
+      ) : params.has("backgroundChat") ? (
+        <main
+          className="chat-pane-background fixed inset-0 isolate"
+          data-project-chat-background="false"
+          data-session-empty="true"
+        >
+          <ChatBackgroundMedia path={loadChatBackgroundPath()} />
+          <div className="relative grid h-full place-items-center">
+            <span>What would you like to build?</span>
+          </div>
+        </main>
+      ) : params.has("backgroundProject") ? (
+        <ProjectBackgroundDialog project="/fixture/project" name="Workspace" onClose={() => {}} />
       ) : params.has("modelLimits") ? (
         <ModelLimitsFixture />
       ) : params.get("dialog") === "1" ? (

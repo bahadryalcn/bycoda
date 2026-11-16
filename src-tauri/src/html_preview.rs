@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 struct Preview {
     content: String,
     root: Option<PathBuf>,
+    background: bool,
 }
 
 enum PreviewState {
@@ -210,6 +211,16 @@ fn make_preview(path: String, content: String) -> Result<Preview, String> {
     if content.len() > 16 * 1024 * 1024 {
         return Err("HTML preview is limited to 16 MiB.".into());
     }
+    if path.starts_with("background://") {
+        if content.trim().is_empty() || content.len() > 512_000 {
+            return Err("HTML background must contain 1 to 512000 UTF-8 bytes".into());
+        }
+        return Ok(Preview {
+            content: background_document(&content),
+            root: None,
+            background: true,
+        });
+    }
     let root = if path.starts_with("remote://") {
         None // Remote HTML is already read by the owning host; never read its assets locally.
     } else {
@@ -223,7 +234,53 @@ fn make_preview(path: String, content: String) -> Result<Preview, String> {
                 .to_path_buf(),
         )
     };
-    Ok(Preview { content, root })
+    Ok(Preview {
+        content,
+        root,
+        background: false,
+    })
+}
+
+/// The trusted outer document owns frame-src. Authored code only runs in its opaque
+/// srcdoc child: attempts to navigate that child are governed by this parent policy.
+/// Neither document has local assets, network, forms, popups or a native bridge.
+fn background_document(content: &str) -> String {
+    // CSP covers resource fetches. WebRTC has no reliable connect-src enforcement;
+    // retire its constructors before authored code. Opaque origin, frame/worker and
+    // popup denial prevent acquiring a fresh same-origin realm to recover them.
+    let guard = r#"for(const key of ['RTCPeerConnection','webkitRTCPeerConnection','mozRTCPeerConnection','WebTransport','WebSocket','Worker','SharedWorker','__TAURI_INTERNALS__','__TAURI__','__TAURI_IPC__']){Object.defineProperty(globalThis,key,{value:undefined,writable:false,configurable:false})}"#;
+    let inner = format!(
+        r#"<!doctype html><meta http-equiv="Content-Security-Policy" content="frame-src 'none'"><script>{guard}</script>{content}"#
+    );
+    let escaped = inner
+        .replace('&', "&amp;")
+        .replace('"', "&quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;");
+    format!(
+        r#"<!doctype html><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; media-src 'none'; connect-src 'none'; frame-src about:; child-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"><style>html,body,iframe{{margin:0;width:100%;height:100%;border:0;overflow:hidden}}</style><iframe title="Background" sandbox="allow-scripts" referrerpolicy="no-referrer" srcdoc="{escaped}"></iframe>"#
+    )
+}
+
+#[cfg(test)]
+mod background_tests {
+    use super::*;
+
+    #[test]
+    fn offline_scene_has_no_file_root_and_cannot_escape_srcdoc() {
+        let authored =
+            r#"</iframe><script>fetch('https://example.com')</script><img src="file:///secret">"#;
+        let preview = make_preview("background://scene.html".into(), authored.into()).unwrap();
+        assert!(preview.root.is_none());
+        assert!(preview
+            .content
+            .contains("frame-src about:; child-src 'none'; worker-src 'none'"));
+        assert!(preview.content.contains("connect-src 'none'"));
+        assert!(preview.content.contains("sandbox=\"allow-scripts\""));
+        assert!(!preview.content.contains("<script>"));
+        assert!(preview.content.contains("&lt;/iframe&gt;"));
+        assert!(preview.content.contains("RTCPeerConnection"));
+    }
 }
 
 #[tauri::command]
@@ -415,6 +472,18 @@ pub fn respond_async(request: tauri::http::Request<Vec<u8>>, responder: tauri::U
 }
 
 pub fn respond(request: tauri::http::Request<Vec<u8>>) -> tauri::http::Response<Vec<u8>> {
+    let token = request
+        .uri()
+        .path()
+        .trim_start_matches('/')
+        .split('/')
+        .next()
+        .unwrap_or("");
+    let background = previews().lock().ok().is_some_and(|registry| {
+        registry.entries.get(token).is_some_and(
+            |record| matches!(&record.state, PreviewState::Ready(preview) if preview.background),
+        )
+    });
     let result = if request.method() == tauri::http::Method::GET {
         preview_content(request.uri().path())
     } else {
@@ -424,7 +493,17 @@ pub fn respond(request: tauri::http::Request<Vec<u8>>) -> tauri::http::Response<
         Ok((body, content_type)) => (200, body, content_type),
         Err(error) => (404, error.into_bytes(), "text/plain; charset=utf-8"),
     };
-    preview_response(status, body, content_type)
+    let mut response = preview_response(status, body, content_type);
+    if background {
+        response.headers_mut().insert(
+            "X-DNS-Prefetch-Control",
+            tauri::http::HeaderValue::from_static("off"),
+        );
+        response.headers_mut().insert("Content-Security-Policy", tauri::http::HeaderValue::from_static(
+            "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; media-src 'none'; connect-src 'none'; frame-src about:; child-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; sandbox allow-scripts"
+        ));
+    }
+    response
 }
 
 fn preview_response(

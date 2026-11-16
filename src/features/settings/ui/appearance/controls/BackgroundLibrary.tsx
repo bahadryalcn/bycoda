@@ -3,6 +3,7 @@ import {
   actionContentScopeAttributes,
 } from "../../../../../shared/ui/ActionHost";
 import { surfaceAttributes } from "../../../../../shared/ui/Surface";
+import { chatBackgroundKind } from "../../../../../shared/lib/chatBackgroundKind";
 import { Text } from "../../../../../shared/ui/Text";
 import { useEffect, useRef, useState } from "react";
 import { t, useLocale } from "../../../../../shared/i18n";
@@ -114,17 +115,27 @@ export function BackgroundLibrary({ appearance }: { appearance: AppearanceSettin
                   loading={applyingId === image.id}
                   loadingLabel={t("Applying…")}
                   selectionIndicator="accent-ring"
-                  aria-label={generated ? t("Generated image") : t("Added image")}
+                  aria-label={
+                    chatBackgroundKind(image.path) !== "image"
+                      ? `${t("Chat background")} · ${chatBackgroundKind(image.path).toUpperCase()}`
+                      : generated
+                        ? t("Generated image")
+                        : t("Added image")
+                  }
                   tooltip={image.prompt ?? undefined}
                   onClick={() => apply(image)}
                 >
-                  <img
-                    src={libraryImageSrc(image)}
-                    alt=""
-                    draggable={false}
-                    loading="lazy"
-                    decoding="async"
-                  />
+                  {chatBackgroundKind(image.path) === "image" ? (
+                    <img
+                      src={libraryImageSrc(image)}
+                      alt=""
+                      draggable={false}
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  ) : (
+                    <Text size="caption">{chatBackgroundKind(image.path).toUpperCase()}</Text>
+                  )}
                   {generated ? (
                     <Text
                       size="inherit"

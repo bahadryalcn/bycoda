@@ -1,4 +1,8 @@
 import { Text } from "../../../shared/ui/Text";
+import { validateChatBackgroundMedia } from "../runtime/backgroundMedia";
+import { chatBackgroundKind } from "../../../shared/lib/chatBackgroundKind";
+import { ChatBackgroundMedia } from "../../settings/public/ChatBackgroundMedia";
+import { BackgroundHistory, rememberBackground } from "../../settings/public/BackgroundHistory";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Alert } from "../../../shared/ui/Alert";
@@ -29,6 +33,7 @@ import {
 
 import {
   clearProjectChatBackground,
+  saveChatBackgroundFrom,
   pickAndSaveProjectChatBackground,
   projectChatBackgroundSrc,
 } from "../model/chatBackground";
@@ -91,27 +96,42 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
     nextEffect: NewThreadBackgroundEffect,
     imageChanged = false,
   ) => {
-    saveProjectChatBackgroundSettings(
-      project,
-      {
-        path: nextPath,
-        emptyOpacity: nextEmptyOpacity,
-        sessionOpacity: nextSessionOpacity,
-        scope: nextScope,
-        effect: nextEffect,
-      },
-      imageChanged,
-    );
-    setRevision(projectChatBackgroundImageRevision());
+    try {
+      if (!imageChanged && loadProjectChatBackgroundSettings(project)?.path !== path)
+        throw new Error(t("Could not save changes. Your previous appearance remains active."));
+      saveProjectChatBackgroundSettings(
+        project,
+        {
+          path: nextPath,
+          emptyOpacity: nextEmptyOpacity,
+          sessionOpacity: nextSessionOpacity,
+          scope: nextScope,
+          effect: nextEffect,
+        },
+        imageChanged,
+      );
+      setRevision(projectChatBackgroundImageRevision());
+      return true;
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+      return false;
+    }
   };
 
-  const choose = async () => {
+  const choose = async (previousPath?: string) => {
     setBusy(true);
     setError(null);
     try {
-      const nextPath = await pickAndSaveProjectChatBackground(project);
+      const previous = loadProjectChatBackgroundSettings(project);
+      const nextPath = previousPath
+        ? await saveChatBackgroundFrom(previousPath)
+        : await pickAndSaveProjectChatBackground(project);
       if (!nextPath) return;
-      save(nextPath, emptyOpacity, sessionOpacity, scope, effect, true);
+      await validateChatBackgroundMedia(nextPath);
+      if (JSON.stringify(loadProjectChatBackgroundSettings(project)) !== JSON.stringify(previous))
+        throw new Error(t("Could not save changes. Your previous appearance remains active."));
+      rememberBackground([nextPath, previous?.path ?? null], project);
+      if (!save(nextPath, emptyOpacity, sessionOpacity, scope, effect, true)) return;
       setPath(nextPath);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -125,6 +145,7 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
     setError(null);
     try {
       const previous = loadProjectChatBackgroundSettings(project);
+      rememberBackground([previous?.path ?? null], project);
       clearProjectChatBackgroundSetting(project);
       try {
         await clearProjectChatBackground(project);
@@ -169,8 +190,8 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
 
   return (
     <Modal
-      title={t("Background Image")}
-      description={t("Choose a background image for {p0}", { p0: name })}
+      title={t("Chat background")}
+      description={name}
       size="sm"
       fitViewport
       closeDisabled={busy}
@@ -181,7 +202,11 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
           <div
             className={`overflow-hidden rounded-(--ui-radius-card) border border-(--ui-card-border) ${previewEffect === "gradient-blur" ? "bg-background-base" : "bg-[var(--ui-surface-hover)]"}`}
           >
-            {previewSrc ? (
+            {chatBackgroundKind(path ?? globalPath) !== "image" ? (
+              <div className="relative h-40">
+                <ChatBackgroundMedia path={path ?? globalPath} />
+              </div>
+            ) : previewSrc ? (
               previewEffect === "gradient-blur" ? (
                 <div className="relative h-40">
                   <GradientBlurBackground
@@ -219,17 +244,25 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
               disabled={busy}
               className="flex min-w-0 flex-1 items-center justify-center gap-1.5"
             >
-              {path ? t("Change image") : t("Choose image")}
+              {t("Choose background")}
             </Button>
             <InfoPopover>
               <Text as="p" size="caption" tone="secondary" leading="relaxed">
                 {path
-                  ? t("This image overrides the global background for this project.")
+                  ? t("This background overrides the global background for this project.")
                   : t("This project currently follows the global Appearance setting.")}
               </Text>
             </InfoPopover>
           </div>
           {error ? <Alert tone="danger">{error}</Alert> : null}
+          <BackgroundHistory
+            target={project}
+            path={path}
+            disabled={busy}
+            onChoose={(next) => {
+              void choose(next);
+            }}
+          />
         </div>
 
         {path ? (
@@ -249,7 +282,7 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
               </div>
               <div className="w-36 shrink-0">
                 <SearchableSelect
-                  disabled={busy}
+                  disabled={busy || chatBackgroundKind(path) !== "image"}
                   hideLabel
                   label={t("Project background effect")}
                   variant="transparent"
@@ -326,7 +359,7 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
             disabled={busy}
             className="w-full"
           >
-            {t("Remove background image")}
+            {t("Remove")}
           </Button>
         ) : null}
       </div>

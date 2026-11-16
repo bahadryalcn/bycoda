@@ -132,7 +132,7 @@ export function saveProjectChatBackgroundSettings(
     scope: validScope(value.scope) ? value.scope : CHAT_BACKGROUND_SCOPE_DEFAULT,
     effect: validEffect(value.effect) ? value.effect : NEW_THREAD_BACKGROUND_EFFECT_DEFAULT,
   };
-  write(next);
+  if (!write(next)) throw new Error("Could not save project background settings.");
   notifyProjectChatBackgroundChanged(imageChanged);
 }
 

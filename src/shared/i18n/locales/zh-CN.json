@@ -11866,5 +11866,8 @@
   "bycoda Host status unavailable. Check the local host connection, then refresh.": "bycoda Host 状态不可用。请检查本地 Host 连接，然后刷新。",
   "Enter secret: {p0}": "输入机密：{p0}",
   "Tell agents to use bykit": "让代理使用 bykit",
-  "When bykit is installed, agents are told to use it for large files, diffs, long command output and bulk edits. Applies to the next agent turn.": "安装 bykit 后，代理会被要求在处理大文件、差异、较长的命令输出和批量编辑时使用它。从下一个代理回合开始生效。"
+  "When bykit is installed, agents are told to use it for large files, diffs, long command output and bulk edits. Applies to the next agent turn.": "安装 bykit 后，代理会被要求在处理大文件、差异、较长的命令输出和批量编辑时使用它。从下一个代理回合开始生效。",
+  "Images, videos and HTML scenes stay on this device. Ask in chat to create or revise a scene, then apply it.": "图片、视频和 HTML 场景保存在此设备上。在聊天中请求创建或修改场景，然后应用。",
+  "This background overrides the global background for this project.": "此背景将替代该项目的全局背景。",
+  "Background could not be loaded. Choose another file.": "无法加载背景。请选择其他文件。"
 }

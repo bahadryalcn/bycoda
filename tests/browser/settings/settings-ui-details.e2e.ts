@@ -6,7 +6,7 @@ async function openProvidersTab(page: Page, name = "Providers") {
 }
 
 /** A Background layer row (its disclosure button) is found through its on/off switch. */
-function layerRow(page: Page, layer: "Image" | "Color" | "Glass" | "Live") {
+function layerRow(page: Page, layer: "Chat background" | "Color" | "Glass" | "Live") {
   return page
     .getByRole("listitem")
     .filter({ has: page.getByRole("switch", { name: layer, exact: true }) })
@@ -491,7 +491,7 @@ for (const theme of ["light", "dark"])
       await expect(palette.getByRole("radio").nth(1)).toBeChecked();
       await expect(palette.getByRole("radio").nth(1)).toBeFocused();
       await page.getByRole("tab", { name: "Background", exact: true }).click();
-      await layerRow(page, "Image").click();
+      await layerRow(page, "Chat background").click();
       const tile = page.getByRole("button", { name: "Added image", exact: true });
       await expect(tile).toBeVisible();
       const tileStyle = await tile.evaluate((element) => ({
@@ -547,7 +547,7 @@ test("appearance selection controls respond to touch", async ({ browser }) => {
   await expect(option).toBeChecked();
   await expect(option).toHaveCSS("box-shadow", /2px/);
   await page.getByRole("tab", { name: "Background", exact: true }).tap();
-  await layerRow(page, "Image").tap();
+  await layerRow(page, "Chat background").tap();
   const image = page.getByRole("button", { name: "Added image", exact: true });
   const remove = page.getByRole("button", { name: "Delete image" });
   await expect(remove).toHaveCSS("opacity", "0");
@@ -725,7 +725,7 @@ for (const theme of ["light", "dark"])
         `/tests/browser/settings/settings.html?section=appearance&theme=${theme}&lang=en`,
       );
       await page.getByRole("tab", { name: "Background", exact: true }).click();
-      for (const name of ["Glass", "Color", "Image", "Live"]) {
+      for (const name of ["Glass", "Color", "Chat background", "Live"]) {
         const toggle = page.getByRole("button", { name: new RegExp(`^${name} `) });
         const id = await toggle.getAttribute("aria-controls");
         await toggle.click();
@@ -818,7 +818,7 @@ test("settings heading responsive visibility baseline", async ({ page }) => {
 test("background layer row interaction baseline", async ({ page }) => {
   await page.goto("/tests/browser/settings/settings.html?section=appearance&theme=light&lang=en");
   await page.getByRole("tab", { name: "Background", exact: true }).click();
-  await layerRow(page, "Image").click();
+  await layerRow(page, "Chat background").click();
   const toggle = page.getByRole("switch", { name: "Chat background layer" });
   const row = toggle.locator("xpath=ancestor::*[@data-settings-part='row'][1]");
   const read = () =>
@@ -989,7 +989,7 @@ test("library tile surface baseline", async ({ page }) => {
     "/tests/browser/settings/settings.html?section=appearance&theme=light&lang=en&libraryProbe",
   );
   await page.getByRole("tab", { name: "Background", exact: true }).click();
-  await layerRow(page, "Image").click();
+  await layerRow(page, "Chat background").click();
   const tile = page.getByRole("button", { name: "Added image", exact: true });
   const read = () =>
     tile.evaluate((el) => {
@@ -1010,7 +1010,7 @@ test("library remove surface baseline", async ({ page }) => {
     "/tests/browser/settings/settings.html?section=appearance&theme=light&lang=en&libraryProbe",
   );
   await page.getByRole("tab", { name: "Background", exact: true }).click();
-  await layerRow(page, "Image").click();
+  await layerRow(page, "Chat background").click();
   const remove = page.getByRole("button", { name: "Delete image" });
   const read = () =>
     remove.evaluate((el) => {

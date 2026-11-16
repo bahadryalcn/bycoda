@@ -12,6 +12,7 @@ import {
   WORKSPACE_BACKGROUND_DEFAULT,
 } from "../model/workspaceBackground";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { rememberBackground } from "../model/backgroundHistory";
 import {
   readAppearanceSaveIssues,
   retryAppearanceSave,
@@ -121,6 +122,7 @@ import {
   pickAndSaveChatBackground,
   saveChatBackgroundFrom,
   removeChatBackground,
+  validateChatBackgroundMedia,
 } from "../../projects/public/chatBackground";
 import {
   applyUiScale,
@@ -361,12 +363,19 @@ export function useAppearanceSettings(
       setChatBackgroundOperation("choose");
       setChatBackgroundError(null);
       try {
+        const previous = loadChatBackgroundPath();
         const path = droppedPath
           ? await saveChatBackgroundFrom(droppedPath)
           : await pickAndSaveChatBackground();
         if (!path) return null;
         if (meta?.isCurrent && !meta.isCurrent()) return null;
-        saveChatBackgroundPath(path);
+        await validateChatBackgroundMedia(path);
+        if (meta?.isCurrent && !meta.isCurrent()) return null;
+        if (loadChatBackgroundPath() !== previous)
+          throw new Error(t("Could not save changes. Your previous appearance remains active."));
+        rememberBackground([path, loadChatBackgroundPath()]);
+        if (saveChatBackgroundPath(path) === false)
+          throw new Error(t("Could not save changes. Your previous appearance remains active."));
         applyChatBackground(path);
         setChatBackgroundPath(path);
         if (meta?.libraryId) saveCurrentLibraryImageId(meta.libraryId);
@@ -398,8 +407,13 @@ export function useAppearanceSettings(
     setChatBackgroundOperation("remove");
     setChatBackgroundError(null);
     try {
+      const previous = loadChatBackgroundPath();
+      rememberBackground([previous]);
       await removeChatBackground();
-      saveChatBackgroundPath(null);
+      if (loadChatBackgroundPath() !== previous)
+        throw new Error(t("Could not save changes. Your previous appearance remains active."));
+      if (saveChatBackgroundPath(null) === false)
+        throw new Error(t("Could not save changes. Your previous appearance remains active."));
       saveCurrentLibraryImageId(null);
       applyChatBackground(null);
       setChatBackgroundPath(null);

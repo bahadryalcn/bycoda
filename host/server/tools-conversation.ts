@@ -327,6 +327,22 @@ export async function dispatchConversationTools(
           : await callVisualConversationTool(root, action, args, scopedDeviceAuthorized, {
               browser: dependencies.browserRuntime,
               dataDir,
+              readBackground: (input) =>
+                dependencies.conversationDesktop.call(
+                  "ui.background.read",
+                  input,
+                  project.cwd,
+                  boundPrincipal,
+                  scopedDeviceAuthorized,
+                ),
+              applyBackground: (input) =>
+                dependencies.conversationDesktop.call(
+                  "ui.background.apply",
+                  input,
+                  project.cwd,
+                  boundPrincipal,
+                  scopedDeviceAuthorized,
+                ),
             });
       } else if (isFileConversationTool(action)) {
         const own = await dependencies.featureMeta(boundPrincipal.sessionId);

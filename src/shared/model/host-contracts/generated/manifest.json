@@ -36196,6 +36196,8 @@
               "workspace.operation.execute",
               "ui.tools.open",
               "ui.tools.status",
+              "ui.background.apply",
+              "ui.background.read",
               "assistant.notification.deliver",
               "assistant.notification.status",
               "assistant.background.effect",
@@ -64754,6 +64756,8 @@
                     "workspace.operation.execute",
                     "ui.tools.open",
                     "ui.tools.status",
+                    "ui.background.apply",
+                    "ui.background.read",
                     "assistant.notification.deliver",
                     "assistant.notification.status",
                     "assistant.background.effect",
@@ -79318,5 +79322,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "9db605839c7e7e29fef440fc4adc253fc84fc00c528ee88943cc07e6a605beec"
+  "schemaHash": "1d2dc247f171835c51d18049646bf85fbd030d97e75d354c5f277f4106731569"
 }

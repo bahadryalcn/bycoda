@@ -1,4 +1,5 @@
 import { subscribePreferenceChanges } from "../../../shared/lib/storedSetting";
+import { chatBackgroundKind } from "../../../shared/lib/chatBackgroundKind";
 import { themePalette } from "../../../shared/theme/palette";
 import {
   APPEARANCE_CHOICES,
@@ -917,6 +918,10 @@ export function saveNewThreadBackgroundEffect(effect: NewThreadBackgroundEffect)
 }
 
 function renderChatBackground(path: string, effect = loadNewThreadBackgroundEffect()) {
+  if (chatBackgroundKind(path) !== "image") {
+    clearPreparedNewThreadBackground();
+    return;
+  }
   const src = chatBackgroundSrc(path);
   if (!src) return;
   void applyPreparedNewThreadBackground(

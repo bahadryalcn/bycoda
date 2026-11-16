@@ -1,5 +1,36 @@
 # Workbench navigation
 
+## Custom chat backgrounds
+
+Settings > Appearance > Backgrounds > Chat background accepts local PNG, JPEG,
+GIF and WebP images, muted looping MP4/WebM videos, and self-contained UTF-8 HTML
+scenes with inline CSS and JavaScript. Image limit: 25 MiB; video: 100 MiB; HTML:
+512,000 bytes. Media codec support follows the desktop WebView. Files stay on this
+device. Project menu > Background selects an override; removing it restores the
+global choice. Empty/all conversation scope and opacity still apply. Image effects
+apply only to images. Workspace procedural artwork remains a separate setting.
+
+Previously selected designs remain in the Backgrounds picker after changing or
+removing the active selection. Failed imports and saves keep the last selection.
+Imported assets have immutable paths and a bounded 400 MiB asset store; when full,
+new imports fail without deleting previous designs. The image library remains
+separate and supports the new media types with type labels instead of thumbnails.
+
+Ask the ordinary conversation model to create a background scene or revise an
+existing one. `visuals.background` reads the current global/project choice and
+bounded HTML source chunks; the returned path fences revision changes. This also
+works in a new conversation and for imported HTML. It keeps a workspace HTML file, previews it with `visuals.preview`
+and shows the same revision with `visuals.render`. Ask explicitly to apply that
+design globally or to the current project; `visuals.applyBackground` applies only
+that source through the authenticated desktop relay. No separate AI screen or
+video-generation provider is needed. A connected updated desktop is required;
+offline/error replies do not prove an apply. Generated code stays self-contained:
+no network assets, local file reads, Host/native APIs, credentials, forms, popups
+or navigation. The renderer uses the existing HTML preview token lifecycle with
+an opaque nested sandbox and no local asset root. It never enables canvas workers.
+Video and HTML unmount in hidden panes, background windows and reduced motion;
+the base workspace artwork remains available if media cannot run.
+
 Remote workspace headers show the project's saved name and icon, like local projects.
 The machine icon beside the name shows the owning machine and data freshness on hover
 or keyboard focus. Click it to refresh conversations. Loading and connection failures

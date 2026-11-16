@@ -15,6 +15,68 @@ const root = () => {
 };
 const allow = () => true;
 
+it("reads current background through authenticated desktop without requiring workspace HTML", async () => {
+  const input = { target: "project", offset: 32000, expectedPath: "/assets/scene.html" };
+  const requests: Record<string, unknown>[] = [];
+  const options = {
+    readBackground: async (request: Record<string, unknown>) => {
+      requests.push(request);
+      return { kind: "html", html: "part" };
+    },
+  };
+  expect(validateConversationTool("visuals.background", input)).toBeUndefined();
+  expect(
+    await callVisualConversationTool(root(), "visuals.background", input, allow, options),
+  ).toEqual({ kind: "html", html: "part" });
+  expect(requests).toEqual([input]);
+  await expect(
+    callVisualConversationTool(root(), "visuals.background", input, () => false, options),
+  ).rejects.toThrow("revoked");
+  expect(requests).toHaveLength(1);
+});
+
+it("applies only an owner-directed validated confined source through the desktop", async () => {
+  const cwd = root();
+  writeFileSync(join(cwd, "scene.html"), "<b>Quiet scene</b>");
+  const input = { title: "Quiet", path: "scene.html", target: "project", confirmed: true };
+  const calls: Record<string, unknown>[] = [];
+  const options = {
+    applyBackground: async (request: Record<string, unknown>) => {
+      calls.push(request);
+      return { applied: true };
+    },
+  };
+  expect(validateConversationTool("visuals.applyBackground", input)).toBeUndefined();
+  await expect(
+    callVisualConversationTool(
+      cwd,
+      "visuals.applyBackground",
+      { ...input, confirmed: false },
+      allow,
+      options,
+    ),
+  ).rejects.toThrow("Explicit");
+  await expect(
+    callVisualConversationTool(
+      cwd,
+      "visuals.applyBackground",
+      { ...input, path: "../outside.html" },
+      allow,
+      options,
+    ),
+  ).rejects.toThrow();
+  expect(calls).toHaveLength(0);
+  expect(
+    await callVisualConversationTool(cwd, "visuals.applyBackground", input, allow, options),
+  ).toEqual({ applied: true });
+  expect(calls).toEqual([
+    { html: "<b>Quiet scene</b>", title: "Quiet", target: "project", confirmed: true },
+  ]);
+  await expect(
+    callVisualConversationTool(cwd, "visuals.applyBackground", input, () => false, options),
+  ).rejects.toThrow("revoked");
+});
+
 it("publishes an immutable workspace snapshot and preview does not publish", async () => {
   const cwd = root();
   writeFileSync(join(cwd, "chart.html"), "<h1>Original</h1>");

@@ -11866,5 +11866,8 @@
   "bycoda Host status unavailable. Check the local host connection, then refresh.": "bycoda Host status unavailable. Check the local host connection, then refresh.",
   "Enter secret: {p0}": "Enter secret: {p0}",
   "Tell agents to use bykit": "Tell agents to use bykit",
-  "When bykit is installed, agents are told to use it for large files, diffs, long command output and bulk edits. Applies to the next agent turn.": "When bykit is installed, agents are told to use it for large files, diffs, long command output and bulk edits. Applies to the next agent turn."
+  "When bykit is installed, agents are told to use it for large files, diffs, long command output and bulk edits. Applies to the next agent turn.": "When bykit is installed, agents are told to use it for large files, diffs, long command output and bulk edits. Applies to the next agent turn.",
+  "Images, videos and HTML scenes stay on this device. Ask in chat to create or revise a scene, then apply it.": "Images, videos and HTML scenes stay on this device. Ask in chat to create or revise a scene, then apply it.",
+  "This background overrides the global background for this project.": "This background overrides the global background for this project.",
+  "Background could not be loaded. Choose another file.": "Background could not be loaded. Choose another file."
 }

@@ -1,4 +1,6 @@
 import { PRODUCT_IDENTITY } from "../../../../../shared/lib/productIdentity";
+import { chatBackgroundKind } from "../../../../../shared/lib/chatBackgroundKind";
+import { ChatBackgroundMedia } from "../../ChatBackgroundMedia";
 import { t, useLocale } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
 import { chatBackgroundSrc } from "../../../model/appearance";
@@ -33,7 +35,21 @@ export function ThemePreview({ appearance }: { appearance: AppearanceSettings })
         ))}
       </div>
       <div className="theme-preview-main" data-image={Boolean(image) || undefined} inert>
-        {image ? (
+        {image && chatBackgroundKind(appearance.chatBackgroundPath) !== "image" ? (
+          <ChatBackgroundMedia
+            path={appearance.chatBackgroundPath}
+            className="theme-preview-background"
+            style={
+              {
+                "--chat-media-opacity":
+                  appearance.preferences?.chatBackgroundLayer === false
+                    ? 1
+                    : appearance.chatBackgroundSessionOpacity,
+                "--chat-media-blur": `${appearance.chatBackgroundBlur}px`,
+              } as React.CSSProperties
+            }
+          />
+        ) : image ? (
           <img
             className="theme-preview-background"
             src={image}

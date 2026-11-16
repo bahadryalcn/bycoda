@@ -11866,5 +11866,8 @@
   "bycoda Host status unavailable. Check the local host connection, then refresh.": "bycoda Host の状態を取得できません。ローカルの Host 接続を確認してから更新してください。",
   "Enter secret: {p0}": "シークレットを入力: {p0}",
   "Tell agents to use bykit": "エージェントに bykit を使わせる",
-  "When bykit is installed, agents are told to use it for large files, diffs, long command output and bulk edits. Applies to the next agent turn.": "bykit がインストールされている場合、大きなファイル、差分、長いコマンド出力、一括編集に bykit を使うようエージェントに指示します。次のエージェントのターンから適用されます。"
+  "When bykit is installed, agents are told to use it for large files, diffs, long command output and bulk edits. Applies to the next agent turn.": "bykit がインストールされている場合、大きなファイル、差分、長いコマンド出力、一括編集に bykit を使うようエージェントに指示します。次のエージェントのターンから適用されます。",
+  "Images, videos and HTML scenes stay on this device. Ask in chat to create or revise a scene, then apply it.": "画像、動画、HTMLシーンはこのデバイスに保存されます。チャットでシーンの作成や修正を依頼してから適用できます。",
+  "This background overrides the global background for this project.": "この背景は、このプロジェクトで全体設定の背景より優先されます。",
+  "Background could not be loaded. Choose another file.": "背景を読み込めませんでした。別のファイルを選択してください。"
 }

@@ -3,6 +3,7 @@ import {
   actionContentScopeAttributes,
 } from "../../../../../shared/ui/ActionHost";
 import { surfaceAttributes } from "../../../../../shared/ui/Surface";
+import { chatBackgroundKind } from "../../../../../shared/lib/chatBackgroundKind";
 import { useState } from "react";
 import { t, useLocale } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
@@ -129,7 +130,7 @@ export function SavedThemes({ appearance }: { appearance: AppearanceSettings }) 
                       style={{ "--surface-user-color": color } as React.CSSProperties}
                     />
                   ))}
-                  {image ? (
+                  {image && chatBackgroundKind(image.path) === "image" ? (
                     <img
                       src={libraryImageSrc(image)}
                       alt=""

@@ -1,5 +1,159 @@
 import { test, expect, type Page } from "@playwright/test";
 
+// Browser fixture for the native nested sandbox contract; this does not establish native WebView acceptance.
+function offlineBackground(source: string) {
+  const guard =
+    "for(const key of ['RTCPeerConnection','webkitRTCPeerConnection','mozRTCPeerConnection','WebTransport','WebSocket','Worker','SharedWorker','__TAURI_INTERNALS__','__TAURI__','__TAURI_IPC__']){Object.defineProperty(globalThis,key,{value:undefined,writable:false,configurable:false})}";
+  const inner = `<!doctype html><meta http-equiv="Content-Security-Policy" content="frame-src 'none'"><script>${guard}</script>${source}`;
+  const escaped = inner
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+  return `<!doctype html><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; media-src 'none'; connect-src 'none'; frame-src about:; child-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"><style>html,body,iframe{margin:0;width:100%;height:100%;border:0;overflow:hidden}</style><iframe title="Background" sandbox="allow-scripts" referrerpolicy="no-referrer" srcdoc="${escaped}"></iframe>`;
+}
+
+for (const theme of ["dark", "light"])
+  for (const width of [1280, 800]) {
+    test(`custom backgrounds retain choices and render scoped controls: ${theme} ${width}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.emulateMedia({ reducedMotion: "no-preference" });
+      await page.addInitScript(() => {
+        localStorage.setItem("bycoda.chatBackgroundPath", "/fixture/scene.html");
+        localStorage.setItem("bycoda.decorativeMotion.v1", "1");
+        localStorage.setItem(
+          "bycoda.chatBackgroundHistory.v1",
+          JSON.stringify({ global: ["/fixture/scene.html", "/fixture/video.mp4"] }),
+        );
+        localStorage.setItem(
+          "bycoda:project-chat-backgrounds",
+          JSON.stringify({
+            "/fixture/project": {
+              path: "/fixture/scene.html",
+              emptyOpacity: 0.3,
+              sessionOpacity: 0.2,
+              scope: "all",
+              effect: "none",
+            },
+          }),
+        );
+      });
+      await page.route("http://background-preview.test/**", async (route) => {
+        const token = new URL(route.request().url()).pathname.split("/")[1];
+        const source = await page
+          .evaluate((id) => (window as any).__backgroundScenes?.[id] ?? "", token)
+          .catch(() => null);
+        if (source === null) {
+          await route.abort();
+          return;
+        }
+        await route.fulfill({ contentType: "text/html", body: offlineBackground(source) });
+      });
+      const base = `/tests/browser/settings/settings.html?backgroundProbe&theme=${theme}&lang=en`;
+      await page.goto(`${base}&section=appearance`);
+      await page.getByRole("tab", { name: "Background", exact: true }).click();
+      await page
+        .getByRole("listitem")
+        .filter({ has: page.getByText("Chat background", { exact: true }) })
+        .getByRole("button")
+        .first()
+        .click();
+      const group = page.locator('[data-setting-id="chat-background"]');
+      await expect(group).toBeVisible();
+      await expect(
+        group.getByRole("button", { name: "Choose background", exact: true }).last(),
+      ).toBeVisible();
+      await expect(group.locator("iframe")).toHaveCount(1);
+      await group.screenshot({
+        path: `temp/verification/custom-backgrounds/appearance-${theme}-${width}.png`,
+      });
+      await group.getByRole("button", { name: "Remove", exact: true }).click();
+      await expect(group.locator("iframe")).toHaveCount(0);
+      await group.getByRole("button", { name: /^Backgrounds:/ }).click();
+      await page.getByRole("option").filter({ hasText: "HTML" }).click();
+      await expect(group.locator("iframe")).toHaveCount(1);
+      await page.goto(`${base}&backgroundProject`);
+      await expect(page.getByRole("dialog")).toBeVisible();
+      await expect(page.locator("iframe")).toHaveCount(1);
+      await page.screenshot({
+        path: `temp/verification/custom-backgrounds/project-${theme}-${width}.png`,
+      });
+      await page.goto(`${base}&backgroundChat`);
+      await expect(page.locator("iframe")).toHaveCount(1);
+      await page.screenshot({
+        path: `temp/verification/custom-backgrounds/chat-${theme}-${width}.png`,
+      });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await expect(page.locator("iframe")).toHaveCount(0);
+      const video = await page.evaluate(async () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = 320;
+        canvas.height = 180;
+        const context = canvas.getContext("2d")!;
+        context.fillStyle = "#28534f";
+        context.fillRect(0, 0, 320, 180);
+        const stream = canvas.captureStream(10);
+        const chunks: Blob[] = [];
+        const recorder = new MediaRecorder(stream, { mimeType: "video/webm" });
+        recorder.ondataavailable = (event) => chunks.push(event.data);
+        const stopped = new Promise<void>((resolve) => {
+          recorder.onstop = () => resolve();
+        });
+        recorder.start();
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        recorder.stop();
+        await stopped;
+        stream.getTracks().forEach((track) => track.stop());
+        return [...new Uint8Array(await new Blob(chunks, { type: "video/webm" }).arrayBuffer())];
+      });
+      await page.route("http://background-asset.test/**", (route) =>
+        route.fulfill({ contentType: "video/webm", body: Buffer.from(video) }),
+      );
+      await page.emulateMedia({ reducedMotion: "no-preference" });
+      await page.goto(`${base}&backgroundChat&backgroundVideo`);
+      await expect(page.locator("video")).toHaveJSProperty("readyState", 4);
+      await expect(page.locator("video")).toHaveJSProperty("muted", true);
+      await expect(page.locator("video")).toHaveJSProperty("loop", true);
+      await page.screenshot({
+        path: `temp/verification/custom-backgrounds/video-${theme}-${width}.png`,
+      });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await expect(page.locator("video")).toHaveCount(0);
+    });
+  }
+
+test("custom background sandbox denies network, self navigation, bridge and parent DOM", async ({
+  page,
+}) => {
+  const attempted: string[] = [];
+  const observations: string[] = [];
+  page.on("console", (message) => observations.push(message.text()));
+  await page.route("https://background-escape.test/**", async (route) => {
+    attempted.push(route.request().url());
+    await route.abort();
+  });
+  const payload = `<script>document.addEventListener('DOMContentLoaded',()=>{let denied=0;for(const run of [()=>parent.document.body,()=>localStorage.getItem('token'),()=>top.__TAURI_INTERNALS__.invoke('x')]){try{run()}catch{denied++}}let fresh='blocked';try{const frame=document.createElement('iframe');document.body.append(frame);if(frame.contentWindow.RTCPeerConnection)fresh='escaped'}catch{}console.log('background-security:'+denied+':'+typeof RTCPeerConnection+':'+fresh);fetch('https://background-escape.test/fetch').catch(()=>{});try{new WebSocket('wss://background-escape.test/socket')}catch{};setTimeout(()=>{console.log('background-navigation-attempted');location.href='https://background-escape.test/navigate'},50)});</script><img src='https://background-escape.test/image'>`;
+  await page.route("http://background-preview.test/security", (route) =>
+    route.fulfill({ contentType: "text/html", body: offlineBackground(payload) }),
+  );
+  await page.setContent(
+    '<iframe title="Scene" sandbox="allow-scripts" src="http://background-preview.test/security"></iframe>',
+  );
+  await expect(
+    page.frameLocator('iframe[title="Scene"]').frameLocator("iframe").locator("body"),
+  ).toBeAttached();
+  await expect
+    .poll(() => observations.includes("background-security:3:undefined:blocked"))
+    .toBe(true);
+  await expect.poll(() => observations.includes("background-navigation-attempted")).toBe(true);
+  expect(
+    page.frames().some((frame) => frame.url().startsWith("https://background-escape.test")),
+  ).toBe(false);
+  expect(attempted).toEqual([]);
+});
+
 /** Appearance is tabbed; every tab stays mounted but only the selected one is visible. */
 async function openAppearanceTab(page: Page, name: string) {
   await page.getByRole("tab", { name, exact: true }).click();

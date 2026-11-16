@@ -59,6 +59,7 @@ const mocks = vi.hoisted(() => ({
   background: vi.fn().mockResolvedValue(undefined),
   clear: vi.fn(),
   copy: vi.fn(),
+  validate: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: () => ({ setZoom: mocks.zoom }) }));
 vi.mock("@tauri-apps/api/core", () => ({
@@ -78,6 +79,9 @@ vi.mock("../../projects/model/chatBackground", () => ({
   pickAndSaveChatBackground: vi.fn(),
   saveChatBackgroundFrom: mocks.copy,
   removeChatBackground: vi.fn(),
+}));
+vi.mock("../../projects/runtime/backgroundMedia", () => ({
+  validateChatBackgroundMedia: mocks.validate,
 }));
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -160,6 +164,7 @@ describe("mounted shared appearance preferences", () => {
         ).toBe("/copied.png");
       });
       expect(loadChatBackgroundPath()).toBe("/copied.png");
+      expect(mocks.validate).toHaveBeenCalledWith("/copied.png");
       expect(states[0].chatBackgroundBusy).toBe(false);
     },
   );
@@ -167,6 +172,17 @@ describe("mounted shared appearance preferences", () => {
     generatorSession.select(1);
     await act(async () => states[0].restoreDefaults());
     expect(generatorSession.selected()).toBeNull();
+  });
+  it("keeps the usable selection when the WebView rejects a copied media file", async () => {
+    await act(async () => saveChatBackgroundPath("/current.png"));
+    mocks.copy.mockResolvedValueOnce("/unsupported.mp4");
+    mocks.validate.mockRejectedValueOnce(new Error("Unsupported codec"));
+    await act(async () => {
+      expect(await states[0].onChooseChatBackground("/source.mp4")).toBeNull();
+    });
+    expect(loadChatBackgroundPath()).toBe("/current.png");
+    expect(states[0].chatBackgroundError).toBe("Unsupported codec");
+    expect(states[0].chatBackgroundBusy).toBe(false);
   });
   it("applies sibling native scale, consecutive shortcuts, removal and reset without writing back", async () => {
     const writes = vi.spyOn(localStorage, "setItem");

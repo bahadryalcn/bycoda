@@ -1244,6 +1244,8 @@ pub fn run() {
             window_transfer::preview_window_tab_drag,
             window_transfer::clear_window_tab_drag,
             chat_background::save_chat_background,
+            chat_background::preview::read_chat_background_html,
+            chat_background::preview::save_chat_background_html,
             chat_background::remove_chat_background,
             chat_background::save_project_chat_background,
             chat_background::remove_project_chat_background,

@@ -75,7 +75,7 @@ describe("project background dialog", () => {
       ),
     );
     const choose = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
-      (node) => node.textContent === "Choose image",
+      (node) => node.textContent === "Choose background",
     )!;
     await act(async () => choose.click());
     try {
@@ -136,14 +136,12 @@ describe("project background dialog", () => {
           }
         });
       const remove = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
-        (button) => button.textContent === "Remove background image",
+        (button) => button.textContent === "Remove",
       )!;
       await act(async () => remove.click());
       expect(loadProjectChatBackgroundSettings("/work/alpha")?.path).toBe("/backgrounds/alpha.png");
       expect(document.querySelector('[role="alert"]')?.textContent).toContain(
-        failure === "storage"
-          ? "Could not save project background settings"
-          : "Native removal failed",
+        failure === "storage" ? "Quota" : "Native removal failed",
       );
       if (failure === "storage")
         expect(

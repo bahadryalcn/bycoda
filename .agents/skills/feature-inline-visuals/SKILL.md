@@ -13,6 +13,7 @@ Own the typed inline snapshot and its isolated renderer. Ordinary HTML attachmen
 - `src/features/sessions/model/inlineVisual.ts`
 - `src/features/sessions/ui/InlineVisual.tsx` and `src/features/sessions/hooks/useInlineVisualSource.ts`
 - `src-tauri/src/inline_visual.rs`
+- `visuals.applyBackground` reuses the visual source validator and authenticated desktop relay; `src/features/settings/model/backgroundControl.ts` owns the selection mutation. Custom background previews use the existing native registry with an opaque nested offline frame; they never receive a local asset root.
 - `src/features/files/ui/HtmlPreview.tsx` and `src-tauri/src/html_preview.rs`
 
 ## Workflow
