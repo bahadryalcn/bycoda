@@ -17,7 +17,8 @@ const output = await build({
 });
 const license = await readFile(join(root, "node_modules/three/LICENSE"), "utf8");
 // Portable scenes retain the complete license even without the application repository.
-const runtime = `/* ${license} */\n${output.outputFiles[0].text}`;
+// GLSL template strings retain upstream padding; omit that padding in the portable bundle.
+const runtime = `/* ${license} */\n${output.outputFiles[0].text.replace(/[\t ]+\n/g, "\n")}`;
 await mkdir(join(root, "vendor/three"), { recursive: true });
 await writeFile(join(root, "vendor/three/LICENSE"), license);
 await writeFile(
