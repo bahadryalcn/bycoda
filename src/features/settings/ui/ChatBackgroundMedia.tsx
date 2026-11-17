@@ -9,8 +9,8 @@ type BackgroundMediaProps = {
   /** The layer is wanted here at all; false renders nothing. */
   active?: boolean;
   /**
-   * Only one pane runs a live video or scene. A video elsewhere (or under reduced motion) shows its
-   * first frame; a scene has no still and renders nothing until it is live.
+   * Only one pane runs a live video or scene. Elsewhere (or under reduced motion or with decorative
+   * motion off) a video shows its first frame and a scene renders one still frame and stops.
    */
   live?: boolean;
   className?: string;
@@ -40,6 +40,8 @@ function BackgroundMedia({
   const kind = chatBackgroundKind(path);
   const running = active && live && motion && !reduced && visible && pageVisible;
   const stillVideo = active && !running && visible && pageVisible && kind === "video";
+  const stillScene = active && !running && visible && pageVisible && kind === "html";
+  const sceneMode = running ? "live" : stillScene ? "still" : null;
 
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Observe DOM intersection and document visibility while this decorative layer is mounted.
   useEffect(() => {
@@ -66,9 +68,9 @@ function BackgroundMedia({
     };
   }, [running, stillVideo, path, failed]);
 
-  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Hold one native preview token while this visible scene is active; fence late replies and close on teardown.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Hold one native preview token while this visible scene is live or still; fence late replies and close on teardown.
   useEffect(() => {
-    if (!running || !path || kind !== "html" || failed === path) return;
+    if (!sceneMode || !path || kind !== "html" || failed === path) return;
     let disposed = false;
     const token = crypto.randomUUID();
     const close = () => {
@@ -86,6 +88,7 @@ function BackgroundMedia({
           token,
           path: "background://scene.html",
           content,
+          still: sceneMode === "still",
         });
       })
       .then((id) => {
@@ -107,7 +110,19 @@ function BackgroundMedia({
       setFrame(null);
       close();
     };
-  }, [path, kind, running, failed]);
+  }, [path, kind, sceneMode, failed]);
+
+  const sceneFrame =
+    path && failed !== path && kind === "html" && frame?.path === path ? (
+      <iframe
+        title={t("Chat background")}
+        src={frame.url}
+        sandbox="allow-scripts"
+        allow="microphone 'none'; camera 'none'; display-capture 'none'; geolocation 'none'"
+        referrerPolicy="no-referrer"
+        tabIndex={-1}
+      />
+    ) : null;
 
   return (
     <div
@@ -142,17 +157,12 @@ function BackgroundMedia({
             onError={() => setFailed(path)}
             tabIndex={-1}
           />
-        ) : kind === "html" && frame?.path === path ? (
-          <iframe
-            title={t("Chat background")}
-            src={frame.url}
-            sandbox="allow-scripts"
-            allow="microphone 'none'; camera 'none'; display-capture 'none'; geolocation 'none'"
-            referrerPolicy="no-referrer"
-            tabIndex={-1}
-          />
-        ) : null
-      ) : null}
+        ) : (
+          sceneFrame
+        )
+      ) : (
+        sceneMode === "still" && sceneFrame
+      )}
     </div>
   );
 }

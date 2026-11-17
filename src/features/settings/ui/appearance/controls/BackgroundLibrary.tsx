@@ -28,6 +28,7 @@ import { Row, SettingsFeedback } from "../../../../../shared/ui/settings";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
 import styles from "./BackgroundLibrary.module.css";
 import { generatorSession } from "./themeGeneratorSession";
+import { reclaimUnreferencedBackgrounds } from "../../../runtime/reclaimBackgrounds";
 import { backgroundDisplayName, backgroundKindLabel } from "../../../model/backgroundNames";
 import { SaveBackgroundButton } from "./SaveBackgroundButton";
 import { OverflowTooltip } from "../../../../../shared/ui/Tooltip";
@@ -82,6 +83,8 @@ export function BackgroundLibrary({ appearance }: { appearance: AppearanceSettin
           !saveSavedThemes(dropImageReference(currentThemes, image.id))
         )
           throw new Error(t("Could not save the theme."));
+        // Reclaim files the deleted design left behind; failures are logged inside.
+        void reclaimUnreferencedBackgrounds();
       },
     }).catch((error: unknown) => console.error(error));
   };

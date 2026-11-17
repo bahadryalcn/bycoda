@@ -14,6 +14,20 @@ export function loadBackgroundHistory(target = "global"): string[] {
   }
 }
 
+/** Every remembered path for every target; throws when the stored history is unreadable. */
+export function listAllBackgroundHistoryPaths(): string[] {
+  const raw = localStorage.getItem(KEY);
+  if (!raw) return [];
+  const history: unknown = JSON.parse(raw);
+  if (!history || typeof history !== "object" || Array.isArray(history))
+    throw new Error("Background history is unreadable");
+  return Object.values(history).flatMap((paths) =>
+    Array.isArray(paths)
+      ? paths.filter((path): path is string => typeof path === "string" && !!path)
+      : [],
+  );
+}
+
 /** History must be durable before replacing or disabling the current selection. */
 export function rememberBackground(paths: (string | null)[], target = "global") {
   const raw = localStorage.getItem(KEY);

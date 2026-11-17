@@ -1246,6 +1246,7 @@ pub fn run() {
             chat_background::save_chat_background,
             chat_background::preview::read_chat_background_html,
             chat_background::preview::save_chat_background_html,
+            chat_background::reclaim::chat_background_reclaim,
             chat_background::design::export_appearance_design,
             chat_background::design::import_appearance_design,
             chat_background::remove_chat_background,

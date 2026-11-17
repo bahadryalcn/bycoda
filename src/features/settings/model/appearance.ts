@@ -871,6 +871,11 @@ export function loadChatBackgroundPath(): string | null {
   }
 }
 
+/** Like `loadChatBackgroundPath`, but an unreadable store throws instead of reading as "none". */
+export function readChatBackgroundPathStrict(): string | null {
+  return readAppearanceValue(CHAT_BACKGROUND_PATH_KEY)?.trim() || null;
+}
+
 export function saveChatBackgroundPath(value: string | null) {
   const saved = saveAppearanceValue(CHAT_BACKGROUND_PATH_KEY, value);
   if (typeof window === "undefined") return;

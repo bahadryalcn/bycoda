@@ -5,6 +5,7 @@ use tauri::{AppHandle, Manager};
 use crate::fs::expand_home;
 pub mod design;
 pub mod preview;
+pub mod reclaim;
 
 const MAX_BACKGROUND_BYTES: u64 = 25 * 1024 * 1024;
 const ALLOWED_EXT: [&str; 9] = [
@@ -104,20 +105,26 @@ fn validate_background_bytes(bytes: &[u8], ext: &str) -> Result<(), String> {
     }
 }
 
+/// Serializes saves into the store with the reference sweep.
+pub(crate) fn store_lock() -> &'static std::sync::Mutex<()> {
+    static STORE: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+    STORE.get_or_init(|| std::sync::Mutex::new(()))
+}
+
 fn store_background_bytes(app: &AppHandle, bytes: &[u8], ext: &str) -> Result<String, String> {
     use sha2::{Digest, Sha256};
-    use std::sync::{Mutex, OnceLock};
-    static STORE: OnceLock<Mutex<()>> = OnceLock::new();
-    let _guard = STORE
-        .get_or_init(|| Mutex::new(()))
-        .lock()
-        .map_err(|e| e.to_string())?;
+    let _guard = store_lock().lock().map_err(|e| e.to_string())?;
     let id = format!("{:x}", Sha256::digest(bytes));
     let dest = backgrounds_dir(app)?.join(format!("asset-{id}.{ext}"));
     // A torn or truncated earlier write must not be trusted just because the name exists.
     let intact =
         std::fs::metadata(&dest).is_ok_and(|m| m.is_file() && m.len() == bytes.len() as u64);
-    if !intact {
+    if intact {
+        // Reuse counts as fresh so the reference sweep spares it until the caller records it.
+        if let Ok(file) = std::fs::OpenOptions::new().write(true).open(&dest) {
+            let _ = file.set_modified(std::time::SystemTime::now());
+        }
+    } else {
         let mut total = bytes.len() as u64;
         for entry in std::fs::read_dir(backgrounds_dir(app)?).map_err(|e| e.to_string())? {
             let entry = entry.map_err(|e| e.to_string())?;

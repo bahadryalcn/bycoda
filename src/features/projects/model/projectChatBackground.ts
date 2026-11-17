@@ -117,6 +117,18 @@ export function loadProjectChatBackgroundSettings(
   };
 }
 
+/** The image path of every project override; throws when the stored map is unreadable. */
+export function listProjectChatBackgroundPaths(): string[] {
+  const raw = localStorage.getItem(KEY);
+  if (!raw) return [];
+  const value: unknown = JSON.parse(raw);
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error("Project backgrounds are unreadable");
+  return Object.values(value as Record<string, StoredProjectChatBackground>).flatMap((stored) =>
+    typeof stored?.path === "string" && stored.path.trim() ? [stored.path.trim()] : [],
+  );
+}
+
 export function saveProjectChatBackgroundSettings(
   project: string,
   value: ProjectChatBackgroundSettings,

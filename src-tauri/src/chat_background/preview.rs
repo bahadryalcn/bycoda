@@ -7,7 +7,7 @@ pub async fn save_chat_background_html(app: AppHandle, content: String) -> Resul
         return Err("HTML background must contain 1 to 2097152 UTF-8 bytes".into());
     }
     // Stored by content hash (store_background_bytes), so identical previews dedupe.
-    // shortcut: no orphan GC for previews, add when library exposes a reference set
+    // Unreferenced previews are reclaimed by chat_background_reclaim.
     tauri::async_runtime::spawn_blocking(move || {
         super::store_background_bytes(&app, content.as_bytes(), "html")
     })

@@ -94,6 +94,26 @@ export const generatorSession = {
   appearance: () => state.appearance,
 };
 
+/**
+ * Every string held in the session (drafts, chips, in-flight drawings), found by a bounded walk.
+ * Callers use it to learn which stored files the open generator may still point at.
+ */
+export function generatorSessionStrings(): string[] {
+  const found: string[] = [];
+  const seen = new Set<unknown>();
+  const stack: unknown[] = [...values.values()];
+  while (stack.length > 0 && seen.size < 10_000) {
+    const value = stack.pop();
+    if (typeof value === "string") found.push(value);
+    else if (value && typeof value === "object" && !seen.has(value)) {
+      seen.add(value);
+      stack.push(...Object.values(value));
+    }
+  }
+  if (stack.length > 0) throw new Error("Generator session is too large to scan");
+  return found;
+}
+
 /** Test helper: forget everything, as a fresh app start would. */
 export function resetGeneratorSession() {
   values.clear();

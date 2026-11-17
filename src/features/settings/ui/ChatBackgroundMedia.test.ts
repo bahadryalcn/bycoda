@@ -113,16 +113,42 @@ it("unmounts muted looping video offscreen and honors reduced motion even with p
   expect(still.getAttribute("src")).toContain("#t=0.001");
 });
 
-it("shows a paused first frame in a pane that is not live and keeps scenes unmounted", async () => {
+const createCalls = () =>
+  vi.mocked(invoke).mock.calls.filter(([command]) => command === "create_html_preview");
+
+it("shows a paused first frame for a video in a pane that is not live", async () => {
   await act(() =>
     root.render(createElement(ChatBackgroundMedia, { path: "/asset.mp4", live: false })),
   );
   expect(container.querySelector("video")?.autoplay).toBe(false);
+});
+
+it("mounts a still scene in a pane that is not live, then goes live with a new token", async () => {
   await act(() =>
     root.render(createElement(ChatBackgroundMedia, { path: "/asset.html", live: false })),
   );
+  expect(container.querySelector("iframe")).not.toBeNull();
+  expect(createCalls()[0][1]).toMatchObject({ still: true });
+  const stillToken = (createCalls()[0][1] as { token: string }).token;
+  await act(() =>
+    root.render(createElement(ChatBackgroundMedia, { path: "/asset.html", live: true })),
+  );
+  expect(createCalls()).toHaveLength(2);
+  expect(createCalls()[1][1]).toMatchObject({ still: false });
+  expect((createCalls()[1][1] as { token: string }).token).not.toBe(stillToken);
+  expect(invoke).toHaveBeenCalledWith("close_html_preview", { token: stillToken });
+  expect(container.querySelector("iframe")).not.toBeNull();
+});
+
+it("renders a still scene under reduced motion and renders nothing when inactive", async () => {
+  motion.reduced = true;
+  await act(() => root.render(createElement(ChatBackgroundMedia, { path: "/asset.html" })));
+  expect(container.querySelector("iframe")).not.toBeNull();
+  expect(createCalls()[0][1]).toMatchObject({ still: true });
+  await act(() =>
+    root.render(createElement(ChatBackgroundMedia, { path: "/asset.html", active: false })),
+  );
   expect(container.querySelector("iframe")).toBeNull();
-  expect(invoke).not.toHaveBeenCalledWith("read_chat_background_html", expect.anything());
 });
 
 it("uses the offline native route, excludes same-origin/forms, and closes exact creation token", async () => {
