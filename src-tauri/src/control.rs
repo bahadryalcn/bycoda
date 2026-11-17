@@ -12,6 +12,7 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 
+mod background;
 pub(crate) mod owner_approval;
 #[path = "control_receipts.rs"]
 pub(crate) mod receipts;
@@ -114,6 +115,10 @@ pub(crate) fn desktop_effect_action(action: &str) -> bool {
             | "workspace.sessions.stop"
             | "ui.tools.open"
             | "ui.tools.status"
+            // Reads also require the original live relay admission before exposing source.
+            | "ui.background.read"
+            | "ui.background.save"
+            | "ui.background.apply"
             | "voice.generation.retire"
             | "voice.generation.status"
             | "voice.generation.source"
@@ -1641,34 +1646,16 @@ pub(crate) fn conversation_ui_request_device_pinned(
     )
 }
 
-fn conversation_ui_request_inner(
-    app: &AppHandle,
-    session: &str,
-    cwd: &str,
-    environment: &str,
-    action: &str,
-    input: Value,
-    authority: Option<DesktopAuthority>,
-    source: &crate::remote::NativeServiceReply,
-    target: Option<&crate::remote::NativeDeviceReply>,
-) -> Result<Value, String> {
-    if let Some(authority) = authority.as_ref() {
-        if authority.action != action
-            || !desktop_effect_action(action)
-            || uuid::Uuid::parse_str(&authority.relay_id).is_err()
-            || authority.deadline <= clock_millis()?
-            || authority.issuer.environment_id() != environment
-            || !authority.issuer.is_current()
-        {
-            return Err("Invalid desktop effect authority".into());
-        }
-    }
+fn validate_conversation_ui_action(action: &str, input: &Value) -> Result<(), String> {
     if !matches!(
         action,
         "ui.tools.status"
             | "ui.tools.open"
             | "ui.tools.place"
             | "ui.tools.close"
+            | "ui.background.read"
+            | "ui.background.save"
+            | "ui.background.apply"
             | "ui.workspace.list"
             | "ui.workspace.status"
             | "ui.workspace.open"
@@ -1683,12 +1670,12 @@ fn conversation_ui_request_inner(
             | "historyImport.status"
             | "historyImport.cancel"
             | "organization.read"
+            | "organization.patch"
+            | "organization.status"
             | "providerManagement.read"
             | "providerManagement.patch"
             | "providerManagement.status"
             | "providerManagement.quotaRefresh"
-            | "organization.patch"
-            | "organization.status"
             | "preferences.read"
             | "preferences.templateRead"
             | "preferences.patch"
@@ -1714,6 +1701,38 @@ fn conversation_ui_request_inner(
     ) || !input.is_object()
     {
         return Err("Unsupported Conversation UI action".into());
+    }
+    if action.starts_with("ui.background.") {
+        background::validate_input(action, input)?;
+    }
+    Ok(())
+}
+
+fn conversation_ui_request_inner(
+    app: &AppHandle,
+    session: &str,
+    cwd: &str,
+    environment: &str,
+    action: &str,
+    input: Value,
+    authority: Option<DesktopAuthority>,
+    source: &crate::remote::NativeServiceReply,
+    target: Option<&crate::remote::NativeDeviceReply>,
+) -> Result<Value, String> {
+    if let Some(authority) = authority.as_ref() {
+        if authority.action != action
+            || !desktop_effect_action(action)
+            || uuid::Uuid::parse_str(&authority.relay_id).is_err()
+            || authority.deadline <= clock_millis()?
+            || authority.issuer.environment_id() != environment
+            || !authority.issuer.is_current()
+        {
+            return Err("Invalid desktop effect authority".into());
+        }
+    }
+    validate_conversation_ui_action(action, &input)?;
+    if action.starts_with("ui.background.") && authority.is_none() {
+        return Err("Background relay authority required".into());
     }
     let history = action.starts_with("ptyMobile.")
         || action.starts_with("ssh.workspace.")
@@ -1746,6 +1765,17 @@ fn conversation_ui_request_inner(
         } else {
             conversation_ui_window(&host, session, cwd, environment)?
         };
+        let window_issuer = if action.starts_with("ui.background.") {
+            Some(
+                host.active
+                    .get(session)
+                    .ok_or("Background source turn unavailable")?
+                    .issuer
+                    .clone(),
+            )
+        } else {
+            None
+        };
         if host.pending.len() >= 24 {
             return Err("Too many pending control requests".into());
         }
@@ -1756,7 +1786,7 @@ fn conversation_ui_request_inner(
                 reply: tx,
                 authority,
                 assistant_source: None,
-                window_issuer: None,
+                window_issuer,
                 effect_started: false,
             },
         );
@@ -2341,6 +2371,7 @@ pub fn control_reply(
                 Some(
                     "workspace.sessions.submit.status"
                         | "ui.tools.status"
+                        | "ui.background.read"
                         | "voice.generation.status"
                         | "voice.generation.source"
                         | "inbox.room.scope"
@@ -2528,6 +2559,7 @@ pub fn control_desktop_authorize_effect(
             | "voice.generation.source"
             | "inbox.room.scope"
     ) || action.starts_with("workspace.")
+        || action.starts_with("ui.background.")
         || matches!(
             action.as_str(),
             "organization.patch" | "ui.tools.open" | "ui.tools.status"
@@ -2673,6 +2705,31 @@ mod admission_tests;
 #[cfg(test)]
 mod tests {
     #[test]
+    fn background_native_dispatch_admits_exact_actions_with_live_authority() {
+        use super::*;
+        for action in [
+            "ui.background.read",
+            "ui.background.apply",
+            "ui.background.save",
+        ] {
+            let input = if action.ends_with("read") {
+                json!({"target":"global"})
+            } else {
+                json!({"title":"Robotun adası","html":"<b>island</b>","target":"global","confirmed":true})
+            };
+            assert_eq!(
+                validate_conversation_ui_action(action, &input),
+                Ok(()),
+                "{action}"
+            );
+            assert!(
+                desktop_effect_action(action),
+                "{action} needs original relay authority"
+            );
+        }
+        assert!(validate_conversation_ui_action("ui.background.delete", &json!({})).is_err());
+    }
+    #[test]
     fn captured_grant_cannot_disable_replacement_or_other_page() {
         use super::*;
         let mut inner = Inner::default();
@@ -2726,6 +2783,75 @@ mod tests {
             },
         );
         std::sync::Mutex::new(inner)
+    }
+
+    #[test]
+    fn background_effects_keep_original_relay_owner_action_and_deadline() {
+        for action in [
+            "ui.background.read",
+            "ui.background.save",
+            "ui.background.apply",
+        ] {
+            let inner = effect_fixture();
+            inner
+                .lock()
+                .unwrap()
+                .pending
+                .get_mut("native-request")
+                .unwrap()
+                .authority
+                .as_mut()
+                .unwrap()
+                .action = action.into();
+            assert!(super::authorize_desktop_effect_with(
+                &inner,
+                "source-window",
+                "native-request",
+                action,
+                || Ok(100),
+                |authority| {
+                    assert_eq!(authority.relay_id, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+                    Ok(true)
+                }
+            )
+            .unwrap());
+            assert!(!super::authorize_desktop_effect_with(
+                &inner,
+                "source-window",
+                "native-request",
+                action,
+                || Ok(100),
+                |_| Ok(false)
+            )
+            .unwrap());
+            for (window, requested, now) in [
+                ("foreign", action, 100),
+                ("source-window", "ui.background.unknown", 100),
+                ("source-window", action, 201),
+            ] {
+                assert!(super::authorize_desktop_effect_with(
+                    &inner,
+                    window,
+                    "native-request",
+                    requested,
+                    || Ok(now),
+                    |_| panic!("invalid authority reached Host")
+                )
+                .is_err());
+            }
+            assert!(super::authorize_desktop_effect_with(
+                &inner,
+                "source-window",
+                "native-request",
+                action,
+                || Ok(100),
+                |_| {
+                    inner.lock().unwrap().pending.remove("native-request");
+                    Ok(true)
+                }
+            )
+            .is_err());
+        }
     }
 
     #[test]

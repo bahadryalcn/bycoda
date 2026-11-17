@@ -36371,6 +36371,7 @@
               "ui.tools.open",
               "ui.tools.status",
               "ui.background.apply",
+              "ui.background.save",
               "ui.background.read",
               "assistant.notification.deliver",
               "assistant.notification.status",
@@ -64931,6 +64932,7 @@
                     "ui.tools.open",
                     "ui.tools.status",
                     "ui.background.apply",
+                    "ui.background.save",
                     "ui.background.read",
                     "assistant.notification.deliver",
                     "assistant.notification.status",
@@ -79563,5 +79565,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "f6d6e1f75aeadfe7e91e6e5701a35fc9604b05077b9867b7ca786787e493c567"
+  "schemaHash": "7562c084f5ae35f410a622bcb3cb9cbb0d245d137b2fc75c91ea5c89b0267806"
 }

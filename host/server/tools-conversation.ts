@@ -343,6 +343,14 @@ export async function dispatchConversationTools(
                   boundPrincipal,
                   scopedDeviceAuthorized,
                 ),
+              saveBackground: (input) =>
+                dependencies.conversationDesktop.call(
+                  "ui.background.save",
+                  input,
+                  project.cwd,
+                  boundPrincipal,
+                  scopedDeviceAuthorized,
+                ),
             });
       } else if (isFileConversationTool(action)) {
         const own = await dependencies.featureMeta(boundPrincipal.sessionId);

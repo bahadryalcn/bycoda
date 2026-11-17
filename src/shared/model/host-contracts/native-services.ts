@@ -269,6 +269,7 @@ export const NATIVE_SERVICES_RPC_SCHEMAS = {
         "ui.tools.open",
         "ui.tools.status",
         "ui.background.apply",
+        "ui.background.save",
         "ui.background.read",
         "assistant.notification.deliver",
         "assistant.notification.status",

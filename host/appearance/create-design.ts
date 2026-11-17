@@ -18,6 +18,7 @@ import { packOfflineScene } from "../../src/features/settings/model/designSource
 import { extractThemeJson, generateThemeSuggestions } from "./theme-suggestions";
 import { generateAppearanceBackgroundImage } from "./background-image";
 import { truncateGraphemes } from "../../src/shared/lib/text/truncate";
+import { THREE_RUNTIME_DESCRIPTION } from "../../src/features/settings/data/backgrounds/three-capabilities.generated";
 
 type Params = z.infer<typeof AppearanceCreateDesignParamsSchema>;
 type Runner = typeof runHarnessTextPrompt;
@@ -42,7 +43,7 @@ export function sceneCreationPrompt(prompt: string, previousSource?: string) {
   return [
     "Create one self-contained background scene, not application UI. Return JSON only: {name, html}.",
     "Name is at most 40 characters. HTML contains all authored HTML/CSS/JS, at most 120000 characters.",
-    "Three.js r180 is already provided as global THREE, including Reflector. Do not include/import a library or use a CDN.",
+    THREE_RUNTIME_DESCRIPTION,
     "Use real Three.js when the requested scene is 3D. Otherwise CSS/Canvas is allowed. Never claim a 2D scene is 3D.",
     "No network, filesystem, native/parent/top APIs, navigation, forms, workers or external assets. There is no native bridge.",
     "Use a responsive canvas, pixel ratio <=1.5, at most 30fps, bounded geometry and instancing. Render once under reduced motion.",

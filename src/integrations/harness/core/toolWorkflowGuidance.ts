@@ -22,7 +22,7 @@ export const MCP_ON_DEMAND_GUIDANCE =
 
 const CONVERSATION_GUIDANCE =
   "Need a password, token or API key? Never ask in chat: call secrets.request. Discover narrowly: conversation_tools_search (CLI tools.search) by task or family, then conversation_tools_describe and conversation_tools_status for the tools you will use; avoid full catalog dumps. For browser work prefer the integrated browser.preview/browser.status route over an external browser. Show visuals via visuals.preview then visuals.render when asked to see something or a chart/diagram beats text; keep simple answers as text. " +
-  "Background scenes: read visuals.background, revise one HTML file, preview/render; visuals.applyBackground needs explicit owner scope. " +
+  "Background scenes: visuals.background lists saved names and opens designId; preserve runtime, revise one HTML file, preview/render. Render is only a conversation snapshot. Explicit save uses visuals.saveBackground without apply; explicit apply uses visuals.applyBackground. Revisions include designId/expectedUpdatedAt. Use only advertised THREE exports; reduced motion renders once. " +
   MCP_ON_DEMAND_GUIDANCE;
 
 export function toolWorkflowGuidance(availability: ToolWorkflowAvailability): string {

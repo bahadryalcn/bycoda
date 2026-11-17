@@ -60,7 +60,7 @@ export async function saveBackgroundName(input: {
     saved = {
       ...current,
       name,
-      updatedAt: Date.now(),
+      updatedAt: Math.max(Date.now(), current.updatedAt + 1),
       ...(!backgroundMediaId(input.path)
         ? {
             backgroundPaths: [...new Set([input.path, ...(current.backgroundPaths ?? [])])].slice(

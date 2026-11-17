@@ -55,7 +55,11 @@ export async function openSavedDesign(theme: SavedTheme): Promise<DesignDraft> {
 }
 
 /** Merge independent sibling saves; hold a conflicting edit instead of overwriting it. */
-export async function saveDesign(draft: DesignDraft, replace = false): Promise<SavedTheme> {
+export async function saveDesign(
+  draft: DesignDraft,
+  replace = false,
+  authorized: () => Promise<boolean> = async () => true,
+): Promise<SavedTheme> {
   const name = normalizeThemeName(draft.name);
   if (!name) throw new Error(t("Enter a design name."));
   if (draft.kind !== "motion" && !draft.path)
@@ -64,6 +68,7 @@ export async function saveDesign(draft: DesignDraft, replace = false): Promise<S
   const image = draft.path
     ? await addBackgroundLibraryImage(draft.path, { source: "generated", prompt: draft.prompt })
     : undefined;
+  if (!(await authorized())) throw new Error("Background authority changed");
   const themes = loadSavedThemes();
   const look = designLook(draft.kind, draft.look);
   let result: SavedTheme;
@@ -78,7 +83,7 @@ export async function saveDesign(draft: DesignDraft, replace = false): Promise<S
       imageId: image?.id,
       backgroundPaths: image?.id === current.imageId ? current.backgroundPaths : undefined,
       creation: { kind: draft.kind, prompt: draft.prompt },
-      updatedAt: Date.now(),
+      updatedAt: Math.max(Date.now(), current.updatedAt + 1),
     };
     next = themes.map((entry) => (entry.id === result.id ? result : entry));
   } else {

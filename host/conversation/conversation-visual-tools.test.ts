@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { callVisualConversationTool } from "./conversation-visual-tools";
 import { validateConversationTool } from "./conversation-tools";
 
@@ -14,6 +14,49 @@ const root = () => {
   return path;
 };
 const allow = () => true;
+
+it("saves only on explicit instruction through its own relay without applying or rendering", async () => {
+  const saveBackground = vi.fn(async () => ({
+    saved: true,
+    applied: false,
+    designId: "saved-one",
+  }));
+  const applyBackground = vi.fn();
+  const input = {
+    title: "Robotun adası",
+    html: "<b>island</b>",
+    target: "global",
+    confirmed: true,
+  };
+  expect(validateConversationTool("visuals.saveBackground", input)).toBeUndefined();
+  await expect(
+    callVisualConversationTool(
+      root(),
+      "visuals.saveBackground",
+      { ...input, confirmed: false },
+      allow,
+      { saveBackground },
+    ),
+  ).rejects.toThrow("Explicit owner");
+  await expect(
+    callVisualConversationTool(
+      root(),
+      "visuals.saveBackground",
+      { ...input, designId: "one" },
+      allow,
+      { saveBackground },
+    ),
+  ).rejects.toThrow("version");
+  expect(saveBackground).not.toHaveBeenCalled();
+  expect(
+    await callVisualConversationTool(root(), "visuals.saveBackground", input, allow, {
+      saveBackground,
+      applyBackground,
+    }),
+  ).toMatchObject({ saved: true, applied: false });
+  expect(saveBackground).toHaveBeenCalledExactlyOnceWith(input);
+  expect(applyBackground).not.toHaveBeenCalled();
+});
 
 it("reads current background through authenticated desktop without requiring workspace HTML", async () => {
   const input = { target: "project", offset: 32000, expectedPath: "/assets/scene.html" };
@@ -27,7 +70,11 @@ it("reads current background through authenticated desktop without requiring wor
   expect(validateConversationTool("visuals.background", input)).toBeUndefined();
   expect(
     await callVisualConversationTool(root(), "visuals.background", input, allow, options),
-  ).toEqual({ kind: "html", html: "part" });
+  ).toMatchObject({
+    kind: "html",
+    html: "part",
+    threeCapabilities: expect.arrayContaining(["CircleGeometry", "PointLight"]),
+  });
   expect(requests).toEqual([input]);
   await expect(
     callVisualConversationTool(root(), "visuals.background", input, () => false, options),

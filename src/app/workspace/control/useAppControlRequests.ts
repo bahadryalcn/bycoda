@@ -416,9 +416,16 @@ export function useAppControlRequests({
           if (!source) throw new Error("Conversation is not open in this window.");
           if (isProjectLockedIn(getGroupLockView().lock, source.cwd))
             throw new Error("Conversation project is locked.");
-          if (payload.action === "ui.background.apply" || payload.action === "ui.background.read") {
-            const { applyConversationBackground, readConversationBackground } =
-              await import("../../../features/settings/public/backgroundControl");
+          if (
+            ["ui.background.apply", "ui.background.read", "ui.background.save"].includes(
+              payload.action,
+            )
+          ) {
+            const {
+              applyConversationBackground,
+              readConversationBackground,
+              saveConversationBackground,
+            } = await import("../../../features/settings/public/backgroundControl");
             const valid = () =>
               !disposed &&
               sessionsRef.current.some(
@@ -428,7 +435,9 @@ export function useAppControlRequests({
             return (
               payload.action === "ui.background.read"
                 ? readConversationBackground
-                : applyConversationBackground
+                : payload.action === "ui.background.save"
+                  ? saveConversationBackground
+                  : applyConversationBackground
             )(
               payload.input,
               source.cwd,

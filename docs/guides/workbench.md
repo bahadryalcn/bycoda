@@ -31,6 +31,24 @@ an opaque nested sandbox and no local asset root. It never enables canvas worker
 Video and HTML unmount in hidden panes, background windows and reduced motion;
 the base workspace artwork remains available if media cannot run.
 
+Ask explicitly to **save** a design for later: `visuals.saveBackground` stores its
+name, source/media and background preferences in the same **Saved designs** library
+used by Appearance, without applying it or adding selection history. Preview titles
+and `visuals.render` snapshots alone do not save reusable backgrounds. Read
+`visuals.background` to list saved names; pass a returned `designId` to reopen its
+source even while another background is selected. Preserve the returned `runtime`.
+Edits send `designId` and `expectedUpdatedAt`; stale edits fail without replacing a
+newer save. Explicit application retains an existing saved media name and saves new
+media under its title. Saved designs remain available for portable export/import
+from Appearance. These operations need the original live coding session and unlocked
+project; expired, mismatched or revoked desktop authority is rejected.
+
+The offline Three.js runtime exposes a bounded set of real Three.js r180 exports,
+including `CircleGeometry`, `PointLight` and `Reflector`. Tool descriptions and
+background status report the exact shipped list; unavailable addons/loaders must not
+be guessed or fetched from a CDN. Generated scenes render once under reduced motion,
+pause while hidden, cap pixel ratio/frame rate and dispose GPU resources on pagehide.
+
 ### Create, save and reuse a design
 
 Use **Create background**, **Create scene** beside Live background, or **Create

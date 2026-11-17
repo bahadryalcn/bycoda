@@ -1,7 +1,13 @@
 // @vitest-environment happy-dom
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { applyConversationBackground, readConversationBackground } from "./backgroundControl";
+import {
+  applyConversationBackground,
+  readConversationBackground,
+  saveConversationBackground,
+} from "./backgroundControl";
+import { loadSavedThemes, saveSavedThemes } from "./savedThemes";
+import { loadBackgroundHistory } from "./backgroundHistory";
 import { loadChatBackgroundPath, saveChatBackgroundPath } from "./appearance";
 import { loadProjectChatBackgroundSettings } from "../../projects/public/projectChatBackground";
 
@@ -9,6 +15,30 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(async () => "/assets/new.html"),
   convertFileSrc: (path: string) => path,
 }));
+vi.mock("../../projects/public/chatBackground", () => ({
+  validateChatBackgroundMedia: vi.fn(async () => undefined),
+}));
+vi.mock("./savedThemes", async (original) => {
+  const actual = await original<typeof import("./savedThemes")>();
+  return { ...actual, saveSavedThemes: vi.fn(actual.saveSavedThemes) };
+});
+const assetPath = `/assets/asset-${"a".repeat(64)}.html`;
+const library = {
+  id: "a".repeat(24),
+  path: `/library/${"a".repeat(24)}.html`,
+  source: "generated",
+  prompt: null,
+  bytes: 20,
+  createdMs: 1,
+};
+beforeEach(() => {
+  vi.mocked(invoke).mockImplementation(async (command) => {
+    if (command === "list_background_library") return [library];
+    if (command === "add_background_library_image") return library;
+    if (command === "read_chat_background_html") return "<b>island</b>";
+    return assetPath;
+  });
+});
 const input = {
   title: "Quiet scene",
   html: "<style>body{margin:0}</style>",
@@ -72,7 +102,7 @@ it("refuses caller-named files and revoked authority when reading a scene", asyn
   const authorized = vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false);
   await expect(
     readConversationBackground({ target: "global" }, "/project", authorized),
-  ).rejects.toThrow("authority or selection changed");
+  ).rejects.toThrow("authority changed");
 });
 
 it("rechecks authority after asset copy and retains previous selection", async () => {
@@ -93,7 +123,7 @@ it("applies project HTML without changing global selection and preserves scope",
   );
   expect(result).toMatchObject({ applied: true, target: "project" });
   expect(loadChatBackgroundPath()).toBe("/old.png");
-  expect(loadProjectChatBackgroundSettings("/project")).toMatchObject({ path: "/assets/new.html" });
+  expect(loadProjectChatBackgroundSettings("/project")).toMatchObject({ path: assetPath });
 });
 
 it("failed import leaves current choice usable", async () => {
@@ -115,4 +145,99 @@ it("does not overwrite a newer manual selection while native import is pending",
     "selection changed",
   );
   expect(loadChatBackgroundPath()).toBe("/manual.png");
+});
+
+it.each(["global", "project"])(
+  "saves a named %s design without applying, reopens and applies with its saved name",
+  async (target) => {
+    saveChatBackgroundPath("/old.png");
+    const saved = await saveConversationBackground(
+      { ...input, title: "Robotun adası", target },
+      "/project",
+      async () => true,
+    );
+    expect(saved).toMatchObject({ saved: true, applied: false, title: "Robotun adası" });
+    expect(loadChatBackgroundPath()).toBe("/old.png");
+    expect(loadProjectChatBackgroundSettings("/project")).toBeNull();
+    expect(loadBackgroundHistory()).toEqual([]);
+    expect(loadBackgroundHistory("/project")).toEqual([]);
+    // Reopen by durable catalog id, independent of the active choice or 30-entry history.
+    const reopened = await readConversationBackground(
+      { target, designId: saved.designId },
+      "/project",
+      async () => true,
+    );
+    expect(reopened).toMatchObject({
+      title: "Robotun adası",
+      html: "<b>island</b>",
+      designId: saved.designId,
+    });
+    const applied = await applyConversationBackground(
+      { ...input, title: "Ignored preview title", target },
+      "/project",
+      async () => true,
+    );
+    expect(applied).toMatchObject({
+      applied: true,
+      title: "Robotun adası",
+      designId: saved.designId,
+    });
+    expect(loadSavedThemes()).toHaveLength(1);
+    expect(loadSavedThemes()[0].imageId).toBe(library.id);
+  },
+);
+
+it("failed catalog save retains selection and rejects stale saved-design edits", async () => {
+  saveChatBackgroundPath("/old.png");
+  vi.mocked(saveSavedThemes).mockReturnValueOnce(false);
+  await expect(applyConversationBackground(input, "/project", async () => true)).rejects.toThrow(
+    "save",
+  );
+  expect(loadChatBackgroundPath()).toBe("/old.png");
+  expect(loadBackgroundHistory()).toEqual([]);
+  const saved = await saveConversationBackground(input, "/project", async () => true);
+  await expect(
+    saveConversationBackground(
+      { ...input, designId: saved.designId, expectedUpdatedAt: saved.updatedAt! - 1 },
+      "/project",
+      async () => true,
+    ),
+  ).rejects.toThrow("changed");
+  expect(loadSavedThemes()[0].name).toBe("Quiet scene");
+  expect(loadChatBackgroundPath()).toBe("/old.png");
+});
+
+it("updates the same saved design only with its current version and rechecks authority before saving", async () => {
+  vi.spyOn(Date, "now").mockReturnValue(42);
+  const saved = await saveConversationBackground(input, "/project", async () => true);
+  const revised = await saveConversationBackground(
+    {
+      ...input,
+      title: "Island dawn",
+      designId: saved.designId,
+      expectedUpdatedAt: saved.updatedAt,
+    },
+    "/project",
+    async () => true,
+  );
+  expect(revised.designId).toBe(saved.designId);
+  expect(revised.updatedAt).toBe(43);
+  await expect(
+    saveConversationBackground(
+      { ...input, designId: saved.designId, expectedUpdatedAt: saved.updatedAt },
+      "/project",
+      async () => true,
+    ),
+  ).rejects.toThrow("changed");
+  expect(loadSavedThemes()).toHaveLength(1);
+  expect(loadSavedThemes()[0].name).toBe("Island dawn");
+  const authorized = vi
+    .fn()
+    .mockResolvedValueOnce(true)
+    .mockResolvedValueOnce(true)
+    .mockResolvedValueOnce(false);
+  await expect(
+    saveConversationBackground({ ...input, title: "Revoked" }, "/project", authorized),
+  ).rejects.toThrow("authority changed");
+  expect(loadSavedThemes()[0].name).toBe("Island dawn");
 });
