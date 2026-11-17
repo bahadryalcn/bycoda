@@ -1425,12 +1425,14 @@ for (const theme of ["light", "dark"] as const) {
   }
 }
 
-test("settings only hold the sidebar toggle and a link to the Crews page", async ({ page }) => {
+test("crews are managed on the Crews page; settings no longer hold a sidebar toggle", async ({
+  page,
+}) => {
   await page.goto("/tests/browser/crews/crews.html");
-  await page.getByRole("button", { name: "Crew settings page", exact: true }).click();
-  await expect(page.getByRole("switch", { name: "Show crews", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Open Crews", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: /^Edit /, exact: false })).toHaveCount(0);
+  await page.getByRole("button", { name: "Crews page", exact: true }).click();
+  const content = page.locator("[data-app-crews]");
+  await expect(content.getByRole("tab")).toHaveText(["Teams", "Members", "Work"]);
+  await expect(page.getByRole("switch", { name: "Show crews", exact: true })).toHaveCount(0);
 });
 
 test("the Members tab changes a member's teams from its Teams menu", async ({ page }) => {

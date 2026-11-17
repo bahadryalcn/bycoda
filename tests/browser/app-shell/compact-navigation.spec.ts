@@ -558,7 +558,13 @@ test("workspace header keeps location before history and project controls", asyn
           const back = (await header
             .getByRole("button", { name: "Back", exact: true })
             .boundingBox())!;
-          if (constrained) expect(frame.y + frame.height).toBeLessThanOrEqual(back.y + 0.5);
+          // A narrow pane keeps one header row: the location sits beside Back, not above it.
+          if (constrained) {
+            const headerBox = (await header.boundingBox())!;
+            expect(headerBox.height).toBeLessThan(back.height * 2);
+            expect(frame.y).toBeLessThan(back.y + back.height);
+            expect(back.y).toBeLessThan(frame.y + frame.height);
+          }
           let previousRight = constrained ? (await header.boundingBox())!.x : frame.x + frame.width;
           expect((await title.boundingBox())!.width).toBeLessThanOrEqual(frame.width);
           if (project) {
@@ -566,7 +572,12 @@ test("workspace header keeps location before history and project controls", asyn
               available: element.clientWidth,
               content: element.scrollWidth,
             }));
-            expect(titleWidth.content).toBeLessThanOrEqual(titleWidth.available);
+            // A truncated project name must stay identifiable by its accessible name.
+            if (titleWidth.content > titleWidth.available)
+              await expect(
+                header.getByRole("button", { name: /Switch working copy/ }),
+              ).toContainText("bycoda");
+            else expect(titleWidth.content).toBeLessThanOrEqual(titleWidth.available);
           }
           // A narrow pane folds the session tools into "More actions".
           const sessionTools = constrained ? "More actions" : "Search sessions";

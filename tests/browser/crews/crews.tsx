@@ -5,7 +5,6 @@ import { createRoot } from "react-dom/client";
 import { useEffect, useState } from "react";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { QueryProvider } from "../../../src/app/QueryProvider";
-import { CrewsSettings } from "../../../src/features/crews/ui/CrewsSettings";
 import { CrewsPage } from "../../../src/features/crews/ui/page/CrewsPage";
 import { CrewSidebar } from "../../../src/features/crews/ui/CrewSessions";
 import { CrewRailSection } from "../../../src/features/crews/ui/CrewRailSection";
@@ -875,9 +874,6 @@ function Fixture() {
           <CrewSidebar cwd={cwd} onOpen={openSession} onManagedChange={() => {}} />
         </aside>
         <div className="min-w-0 flex-1 p-4" style={{ flexBasis: "24rem" }}>
-          <Button variant="ghost" onClick={() => setView("settings")}>
-            Crew settings page
-          </Button>
           <Button variant="ghost" onClick={() => setView("page")}>
             Crews page
           </Button>
@@ -910,10 +906,6 @@ function Fixture() {
                     : undefined
                 }
               />
-            </div>
-          ) : view === "settings" ? (
-            <div className="bycoda-settings-content bycoda-settings-form">
-              <CrewsSettings />
             </div>
           ) : null}
         </div>

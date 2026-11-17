@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
-  GitGenerationSettings,
+  GitGenerationModelControl,
   useGitGenerationChoice,
 } from "../../../src/features/source-control/ui/GitGenerationSettings";
 import { ModelSourceContext } from "../../../src/features/sessions/ui/modelSource";
@@ -47,7 +47,7 @@ const source = {
   refresh: () => {},
 };
 function Fixture() {
-  const [choice, update, hasOverride] = useGitGenerationChoice("/fixture");
+  const [choice, update] = useGitGenerationChoice("/fixture");
   const [draft, setDraft] = useState("Keep this commit draft");
   return (
     <ModelSourceContext.Provider value={source}>
@@ -70,15 +70,16 @@ function Fixture() {
             >
               <WandSparkles className="size-3.5" strokeWidth={1.75} />
             </Button>
-            <GitGenerationSettings
-              cwd="/fixture"
-              preferred="claude"
-              choice={choice}
-              hasOverride={hasOverride}
-              onChange={update}
-              disabled={false}
-            />
           </div>
+        </div>
+        <div className="mt-1">
+          <GitGenerationModelControl
+            cwd="/fixture"
+            preferred="claude"
+            choice={choice}
+            onChange={update}
+            disabled={false}
+          />
         </div>
         <div className="mt-1 flex items-center gap-1.5">
           <button className="h-7 flex-1 rounded bg-content text-[12px] text-background-base">
