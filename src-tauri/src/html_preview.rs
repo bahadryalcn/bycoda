@@ -248,7 +248,7 @@ fn background_document(content: &str) -> String {
     // CSP covers resource fetches. WebRTC has no reliable connect-src enforcement;
     // retire its constructors before authored code. Opaque origin, frame/worker and
     // popup denial prevent acquiring a fresh same-origin realm to recover them.
-    let guard = r#"for(const key of ['RTCPeerConnection','webkitRTCPeerConnection','mozRTCPeerConnection','WebTransport','WebSocket','Worker','SharedWorker','__TAURI_INTERNALS__','__TAURI__','__TAURI_IPC__']){Object.defineProperty(globalThis,key,{value:undefined,writable:false,configurable:false})}"#;
+    let guard = include_str!("html_preview/background_guard.js");
     let inner = format!(
         r#"<!doctype html><meta http-equiv="Content-Security-Policy" content="frame-src 'none'"><script>{guard}</script>{content}"#
     );

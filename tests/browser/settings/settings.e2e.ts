@@ -1,9 +1,12 @@
 import { test, expect, type Page } from "@playwright/test";
+import { readFileSync } from "node:fs";
 
 // Browser fixture for the native nested sandbox contract; this does not establish native WebView acceptance.
 function offlineBackground(source: string) {
-  const guard =
-    "for(const key of ['RTCPeerConnection','webkitRTCPeerConnection','mozRTCPeerConnection','WebTransport','WebSocket','Worker','SharedWorker','__TAURI_INTERNALS__','__TAURI__','__TAURI_IPC__']){Object.defineProperty(globalThis,key,{value:undefined,writable:false,configurable:false})}";
+  const guard = readFileSync(
+    new URL("../../../src-tauri/src/html_preview/background_guard.js", import.meta.url),
+    "utf8",
+  );
   const inner = `<!doctype html><meta http-equiv="Content-Security-Policy" content="frame-src 'none'"><script>${guard}</script>${source}`;
   const escaped = inner
     .replaceAll("&", "&amp;")
