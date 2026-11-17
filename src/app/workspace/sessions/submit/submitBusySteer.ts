@@ -299,7 +299,8 @@ export function steerBusySubmit(
       return false;
     }
     // Background work may never end (a dev server), so ordinary Send steers.
-    // Explicit Queue still waits for the current turn to finish.
+    // Explicit Queue goes to the queue; the queue steers it in once only
+    // background commands keep the turn open.
     const followUpRoute = resolveFollowUpRoute({
       busy: true,
       worktreePreparing: current.worktreePreparing,

@@ -105,7 +105,11 @@ describe("automatic archive selection", () => {
 });
 describe("archive capability gating", () => {
   it("advertises archive separately and never without draft authority", () => {
-    expect(agentDefaultsCapabilities()).toEqual(["host.settings.behavior.v1"]);
+    expect(agentDefaultsCapabilities(false)).toEqual(["host.settings.behavior.v1"]);
+    expect(agentDefaultsCapabilities()).toEqual([
+      "host.settings.behavior.v1",
+      "host.settings.autoArchive.v1",
+    ]);
     expect(agentDefaultsCapabilities(true)).toEqual([
       "host.settings.behavior.v1",
       "host.settings.autoArchive.v1",

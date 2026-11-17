@@ -150,8 +150,13 @@ A subagent (depth 1) inherits the owner's subagent selection and effort ceiling 
 `agents.delegate`, `wait`, `reply` and `cancel` for its own children; it never consults an advisor.
 Grandchildren and advisors only message their group (`agents.list`, `agents.send`). A grandchild
 gets an explicit Off selection, so its native subagents are off too. A subagent runs at most
-`runningNestedSubagents` children at once. Grandchildren report to their own parent and have no
-card or panel of their own yet.
+`runningNestedSubagents` children at once. Grandchildren report to their own parent.
+
+Owner, same day: "approvals must reach the parent and it shows them to us, or we show them
+through the parent directly; inside a subagent I must see how many run in it, as a list"
+(translated from Turkish). Discovery also reads each subagent's own children
+(`discoverDelegatedRuns`); a waiting grandchild marks its parent's dock row (`needsInput`), and
+the parent's sheet lists them (`NestedSubagentList`) and answers their requests in place.
 
 ## Claude's built-in advisor for Claude advisors
 
@@ -164,4 +169,6 @@ never runs `agents.consult` (the Host refuses it and the guidance names the buil
 account label of the pick is ignored because the tool runs on the conversation's account.
 Other providers keep Host advisor sessions; only Claude Code has a built-in advisor today (Codex
 0.169 has none). The advisor's server-tool call renders as its own transcript row (`AdvisorRow`)
-and never folds into the activity trail.
+and never folds into the activity trail. In a Claude conversation the Advisor menu lists each
+Claude model once (`builtInAdvisorChoices`). A Host advisor needs the bridge, so an unready
+bridge tells model and owner (`needsHostDelegation`); its notice is headed "Advisor completion".

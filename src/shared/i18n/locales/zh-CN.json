@@ -5473,7 +5473,8 @@
   "Finish selection": "结束选择",
   "Select tasks": "选择任务",
   "No tasks match your search or filters.": "没有与搜索或筛选条件匹配的任务。",
-  "Two versions of this conversation were found. Your messages were kept. Sync to compare them again.": "发现此对话有两个版本。您的消息已保留。同步可再次比较它们。",
+  "This conversation has not finished syncing with the other computer. Your messages are kept.": "此对话尚未与另一台电脑完成同步。您的消息已保留。",
+  "Syncing with the other computer…": "正在与另一台电脑同步…",
   "This conversation was changed on two computers. Choose the version to keep.": "此对话在两台电脑上都被修改过。请选择要保留的版本。",
   "Keep this": "保留这个",
   "Keep other": "保留另一个",
@@ -11870,5 +11871,6 @@
   "Enter secret: {p0}": "输入机密：{p0}",
   "Tell agents to use bykit": "让代理使用 bykit",
   "When bykit is installed, agents are told to use it for large files, diffs, long command output and bulk edits. Applies to the next agent turn.": "安装 bykit 后，代理会被要求在处理大文件、差异、较长的命令输出和批量编辑时使用它。从下一个代理回合开始生效。",
-  "Subagents: {p0}": "子代理：{p0}"
+  "Subagents: {p0}": "子代理：{p0}",
+  "The advisor is unavailable this turn because the Host connection is not ready.": "Host 连接尚未就绪，本轮无法使用顾问。"
 }

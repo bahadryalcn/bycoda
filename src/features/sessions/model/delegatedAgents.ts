@@ -123,7 +123,9 @@ export function isDelegatedDescendantOf(
 ): boolean {
   return (
     isDelegatedChildOf(session, root) ||
-    sessions.some((middle) => isDelegatedChildOf(session, middle) && isDelegatedChildOf(middle, root))
+    sessions.some(
+      (middle) => isDelegatedChildOf(session, middle) && isDelegatedChildOf(middle, root),
+    )
   );
 }
 

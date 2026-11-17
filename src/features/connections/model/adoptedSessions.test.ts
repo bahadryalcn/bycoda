@@ -11,11 +11,16 @@ import {
   mirrorAdoptedSessions,
   refreshAdoptedSession,
   planAdoptedFetches,
+  registerStoredBlockForm,
   supportsAdoptedSessions,
   type AdoptedEntry,
   type AdoptedMirrorDeps,
 } from "./adoptedSessions";
 import type { HostSession } from "./protocol";
+import { storedBlockForm } from "../../sessions/public/sessionStore";
+
+// The desktop registers the session store's stored form at startup (connections/public/storedBlockForm).
+registerStoredBlockForm(storedBlockForm);
 
 const block = (id: string) => ({ id, role: "user", text: id }) as never;
 const local = (over: Partial<Session> = {}): Session =>
@@ -1107,7 +1112,8 @@ describe("mirrorAdoptedSessions", () => {
     });
     expect(current.blocks).toEqual([block("new local")]);
     expect(mirrored.get("s1")).toBe(6);
-    expect(conflict).toHaveBeenCalledTimes(1);
+    // A copy that moved mid-fetch has no verdict yet: no warning, compared next pass.
+    expect(conflict).not.toHaveBeenCalled();
   });
 
   it("records a closed conflicting session's divergence instead of marking it caught up, and not a failed adoption", async () => {

@@ -18,6 +18,7 @@ import {
   delegatedChildren,
   delegatedDockAgents,
   delegationParentOf,
+  isDelegatedChildOf,
   nestedDelegatedChildren,
 } from "./delegatedAgents";
 import { cardedChildren, createCardPlacer } from "./delegatedCards";
@@ -198,6 +199,18 @@ export function useDelegatedDockAgents(parentId: string, blocks: Block[]): DockA
       agent.sessionId && carded.has(agent.sessionId) ? { ...agent, inline: true } : agent,
     );
   }, [blocks, children, nested, turnStartedAt, catalog]);
+}
+
+/** The subagent that started a delegated child, when that one is itself a subagent. */
+export function useNestedDelegationOwner(childId: string | undefined): Session | undefined {
+  return useSessionsSelector((sessions) => {
+    const child = childId ? sessions.find((session) => session.id === childId) : undefined;
+    return child
+      ? sessions.find(
+          (session) => !!delegationParentOf(session) && isDelegatedChildOf(child, session),
+        )
+      : undefined;
+  });
 }
 
 export function useDockCountLabel(dock: ActivityDock): string {

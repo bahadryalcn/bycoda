@@ -3,8 +3,8 @@
   "numPassedTestSuites": 1,
   "numFailedTestSuites": 0,
   "numPendingTestSuites": 0,
-  "numTotalTests": 17,
-  "numPassedTests": 17,
+  "numTotalTests": 1,
+  "numPassedTests": 1,
   "numFailedTests": 0,
   "numPendingTests": 0,
   "numTodoTests": 0,
@@ -24,204 +24,28 @@
     "updated": 0,
     "didUpdate": false
   },
-  "startTime": 1794876939371,
+  "startTime": 1794904999606,
   "success": true,
   "testResults": [
     {
       "assertionResults": [
         {
           "ancestorTitles": [],
-          "fullName": "highlights a link after a mode without changing the draft",
+          "fullName": "sends initial empty snapshot and changes, ignores order and duplicates",
           "status": "passed",
-          "title": "highlights a link after a mode without changing the draft",
-          "duration": 62.763200000000325,
-          "failureMessages": [],
-          "meta": {},
-          "tags": [],
-          "benchmarks": []
-        },
-        {
-          "ancestorTitles": [],
-          "fullName": "uses Control+Enter to start and open a Windows session",
-          "status": "passed",
-          "title": "uses Control+Enter to start and open a Windows session",
-          "duration": 49.84310000000005,
-          "failureMessages": [],
-          "meta": {},
-          "tags": [],
-          "benchmarks": []
-        },
-        {
-          "ancestorTitles": [],
-          "fullName": "opens the Windows picker with Control+p without changing the draft",
-          "status": "passed",
-          "title": "opens the Windows picker with Control+p without changing the draft",
-          "duration": 22.588600000000042,
-          "failureMessages": [],
-          "meta": {},
-          "tags": [],
-          "benchmarks": []
-        },
-        {
-          "ancestorTitles": [],
-          "fullName": "opens the Windows picker with Control+. without changing the draft",
-          "status": "passed",
-          "title": "opens the Windows picker with Control+. without changing the draft",
-          "duration": 17.728799999999865,
-          "failureMessages": [],
-          "meta": {},
-          "tags": [],
-          "benchmarks": []
-        },
-        {
-          "ancestorTitles": [],
-          "fullName": "deletes skill /break-ui as one token",
-          "status": "passed",
-          "title": "deletes skill /break-ui as one token",
-          "duration": 18.124700000000303,
-          "failureMessages": [],
-          "meta": {},
-          "tags": [],
-          "benchmarks": []
-        },
-        {
-          "ancestorTitles": [],
-          "fullName": "deletes skill $break-ui as one token",
-          "status": "passed",
-          "title": "deletes skill $break-ui as one token",
-          "duration": 16.081900000000132,
-          "failureMessages": [],
-          "meta": {},
-          "tags": [],
-          "benchmarks": []
-        },
-        {
-          "ancestorTitles": [],
-          "fullName": "shows launch progress once and preserves a newer draft after completion",
-          "status": "passed",
-          "title": "shows launch progress once and preserves a newer draft after completion",
-          "duration": 31.020000000000437,
-          "failureMessages": [],
-          "meta": {},
-          "tags": [],
-          "benchmarks": []
-        },
-        {
-          "ancestorTitles": [],
-          "fullName": "keeps a failed launch draft and exposes the complete error for recovery",
-          "status": "passed",
-          "title": "keeps a failed launch draft and exposes the complete error for recovery",
-          "duration": 28.732199999999466,
-          "failureMessages": [],
-          "meta": {},
-          "tags": [],
-          "benchmarks": []
-        },
-        {
-          "ancestorTitles": [],
-          "fullName": "hides Operator, completes Plan with Enter and preserves typed /operator",
-          "status": "passed",
-          "title": "hides Operator, completes Plan with Enter and preserves typed /operator",
-          "duration": 59.15009999999984,
-          "failureMessages": [],
-          "meta": {},
-          "tags": [],
-          "benchmarks": []
-        },
-        {
-          "ancestorTitles": [],
-          "fullName": "hides Operator, completes Plan with Tab and preserves typed /operator",
-          "status": "passed",
-          "title": "hides Operator, completes Plan with Tab and preserves typed /operator",
-          "duration": 70.54790000000048,
-          "failureMessages": [],
-          "meta": {},
-          "tags": [],
-          "benchmarks": []
-        },
-        {
-          "ancestorTitles": [],
-          "fullName": "completes a command by mouse while preserving the rest of the prompt and caret",
-          "status": "passed",
-          "title": "completes a command by mouse while preserving the rest of the prompt and caret",
-          "duration": 19.07970000000023,
-          "failureMessages": [],
-          "meta": {},
-          "tags": [],
-          "benchmarks": []
-        },
-        {
-          "ancestorTitles": [],
-          "fullName": "closes command suggestions with Escape before dismissing the composer",
-          "status": "passed",
-          "title": "closes command suggestions with Escape before dismissing the composer",
-          "duration": 17.526199999999335,
-          "failureMessages": [],
-          "meta": {},
-          "tags": [],
-          "benchmarks": []
-        },
-        {
-          "ancestorTitles": [],
-          "fullName": "does not suggest Operator inside normal text or paths and filters unknown commands",
-          "status": "passed",
-          "title": "does not suggest Operator inside normal text or paths and filters unknown commands",
-          "duration": 31.55500000000029,
-          "failureMessages": [],
-          "meta": {},
-          "tags": [],
-          "benchmarks": []
-        },
-        {
-          "ancestorTitles": [],
-          "fullName": "preserves typed /operator for start-and-open and retains it after a failed launch",
-          "status": "passed",
-          "title": "preserves typed /operator for start-and-open and retains it after a failed launch",
-          "duration": 45.65389999999934,
-          "failureMessages": [],
-          "meta": {},
-          "tags": [],
-          "benchmarks": []
-        },
-        {
-          "ancestorTitles": [],
-          "fullName": "does not consume command selection keys during IME composition",
-          "status": "passed",
-          "title": "does not consume command selection keys during IME composition",
-          "duration": 11.747699999999895,
-          "failureMessages": [],
-          "meta": {},
-          "tags": [],
-          "benchmarks": []
-        },
-        {
-          "ancestorTitles": [],
-          "fullName": "lists every mode command and launches each in its mode",
-          "status": "passed",
-          "title": "lists every mode command and launches each in its mode",
-          "duration": 42.7529999999997,
-          "failureMessages": [],
-          "meta": {},
-          "tags": [],
-          "benchmarks": []
-        },
-        {
-          "ancestorTitles": [],
-          "fullName": "keeps /plan in the prompt and sends the plan intent",
-          "status": "passed",
-          "title": "keeps /plan in the prompt and sends the plan intent",
-          "duration": 18.930499999999483,
+          "title": "sends initial empty snapshot and changes, ignores order and duplicates",
+          "duration": 1.273699999999991,
           "failureMessages": [],
           "meta": {},
           "tags": [],
           "benchmarks": []
         }
       ],
-      "startTime": 1794876943796,
-      "endTime": 1794876944359.9304,
+      "startTime": 1794904999939,
+      "endTime": 1794904999940.2737,
       "status": "passed",
       "message": "",
-      "name": "G:/Projects/my_projects/monocode/src/features/quick-composer/ui/QuickComposer.commands.test.ts"
+      "name": "G:/Projects/my_projects/monocode/src/features/sessions/hooks/useDraftPresenceReporter.test.ts"
     }
   ]
 }

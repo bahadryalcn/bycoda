@@ -13,6 +13,7 @@ export type { RefreshAdoptedSession } from "./model/useAdoptedSessions";
 export type { HostSessionBinding } from "./model/sessionExecutionBinding";
 export type * as modelBundledHostStatusApi from "./public/bundledHostStatus";
 export type * as modelConnectionsApi from "./public/connections";
+export type * as storedBlockFormApi from "./public/storedBlockForm";
 export type * as modelHostFeatureClientApi from "./public/hostFeatureClient";
 export type * as modelLocalHostServiceApi from "./public/localHostService";
 export type * as modelLocalSyncApi from "./public/localSync";

@@ -3,11 +3,8 @@ import {
   HOST_BEHAVIOR_DEFAULTS,
 } from "../../src/features/tasks/model/hostSettings";
 
-/** Whether the Host has authoritative clearance for unsent client drafts. Until a synchronized
- * client draft authority exists this stays false: auto archive never runs, its settings cannot
- * be enabled and its capability is not advertised. Flip it only together with a real
- * `hasUnsentDraft` port in account-platform. */
-export const AUTO_ARCHIVE_DRAFT_AUTHORITY = false;
+/** Account-platform binds persisted, authenticated client draft presence to the archive guard. */
+export const AUTO_ARCHIVE_DRAFT_AUTHORITY = true;
 
 /** Capabilities of the agent-defaults record; archive is separate from plain behavior defaults. */
 export function agentDefaultsCapabilities(authority = AUTO_ARCHIVE_DRAFT_AUTHORITY): string[] {

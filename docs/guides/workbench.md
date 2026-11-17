@@ -203,6 +203,10 @@ While a queued message is being delivered, its queue header shows a compact prog
 Shift+Tab adds the message to the active queue; it does not switch the composer
 into a queue mode. The queue sends it when the conversation is free, including
 when the previous turn finishes during submission or a provider handoff completes.
+When only background commands (such as a dev server) keep the turn open, the queue
+does not wait for them: it hands its next message to the running turn as a Steer,
+whichever computer queued it. A message for another model, a plan, an orchestration
+or a slash command still waits for its own turn.
 An explicit Queue action retains that choice through preparation. Providers without
 safe mid-turn delivery offer Queue while busy instead of Steer. Claude takes a
 Steer at its next tool step, or right after the current reply; the turn stays open

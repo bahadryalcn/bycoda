@@ -26,6 +26,7 @@ import { type ToolWindow } from "./model/toolWindows";
 import { focusSessionWindow, useWindowNavigation } from "./model/windowNavigation";
 import { useTraySessions } from "./model/useTraySessions";
 import { useInitializeSessions } from "./hooks/useInitializeSessions";
+import { useDraftPresenceReporter } from "../features/sessions/hooks/useDraftPresenceReporter";
 import { useNativeSkillWarmup } from "../features/sessions/ui/useNativeSkillWarmup";
 import { useOwnedTimeout } from "../shared/hooks/useOwnedTimeout";
 import { t, useLocale } from "../shared/i18n";
@@ -347,6 +348,7 @@ type AppProps = {
 };
 
 export default function App(props: AppProps) {
+  useDraftPresenceReporter();
   useLocale();
   return (
     <Suspense fallback={null}>

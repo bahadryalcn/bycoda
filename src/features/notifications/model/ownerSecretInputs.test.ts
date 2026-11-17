@@ -32,6 +32,14 @@ afterEach(() => {
 });
 
 describe("owner secret inputs", () => {
+  it("enforces UTF-8 bytes before sending a desktop secret", async () => {
+    const request = payload();
+    const promise = requestOwnerSecretInput(request);
+    expect(submitOwnerSecretInput(request.id, "é".repeat(4097))).toBe(false);
+    expect(ownerSecretInputsSnapshot()).toHaveLength(1);
+    expect(submitOwnerSecretInput(request.id, "é".repeat(4096))).toBe(true);
+    await expect(promise).resolves.toBe("é".repeat(4096));
+  });
   it("keeps how each request ended, never its value", async () => {
     vi.useFakeTimers();
     const sent = payload();

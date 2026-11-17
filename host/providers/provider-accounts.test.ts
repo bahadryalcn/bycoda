@@ -18,6 +18,12 @@ function temp() {
   dirs.push(dir);
   return dir;
 }
+/** Creates a profile directory with the sign-in file that marks it as signed in. */
+function signedIn(dir: string, file = "auth.json") {
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, file), "{}");
+  return dir;
+}
 
 const stripColors = (catalog: Awaited<ReturnType<typeof hostProviderAccounts>>) =>
   Object.fromEntries(
@@ -95,16 +101,13 @@ it("exposes only safe metadata for real Host profiles and validates the exact la
     terminal = temp();
   const codex = join(root, "provider-accounts", "codex", "account-work");
   mkdirSync(codex, { recursive: true });
-  mkdirSync(join(root, "provider-accounts", "claude", "account-other"), {
-    recursive: true,
-  });
-  mkdirSync(join(root, "provider-accounts", "codex", "email@example.test"), {
-    recursive: true,
-  });
+  signedIn(join(root, "provider-accounts", "claude", "account-other"), ".credentials.json");
+  signedIn(join(root, "provider-accounts", "codex", "email@example.test"));
   writeFileSync(
     join(codex, "auth.json"),
     '{"email":"private@example.test","token":"DO_NOT_READ_OR_EXPOSE"}',
   );
+  signedIn(terminal);
   writeFileSync(
     join(root, "terminal-profiles.json"),
     JSON.stringify({
@@ -151,7 +154,10 @@ it("exposes only safe metadata for real Host profiles and validates the exact la
 it("publishes an account catalog every client accepts in models.list", async () => {
   const root = temp();
   for (const provider of ["codex", "claude", "grok"])
-    mkdirSync(join(root, "provider-accounts", provider, "account-work"), { recursive: true });
+    signedIn(
+      join(root, "provider-accounts", provider, "account-work"),
+      provider === "claude" ? ".credentials.json" : "auth.json",
+    );
   const catalog = await hostProviderAccounts([root]);
   // A Host-only provider here once failed every WS models.list with "Host read failed".
   const result = ModelsListResultSchema.safeParse({ models: {}, errors: {}, accounts: catalog });
@@ -161,10 +167,7 @@ it("publishes an account catalog every client accepts in models.list", async () 
 it("bounds named Host account inventory and ignores malformed terminal metadata", async () => {
   const root = temp();
   for (let index = 0; index < 130; index++)
-    mkdirSync(
-      join(root, "provider-accounts", "codex", `account-${String(index).padStart(3, "0")}`),
-      { recursive: true },
-    );
+    signedIn(join(root, "provider-accounts", "codex", `account-${String(index).padStart(3, "0")}`));
   writeFileSync(join(root, "terminal-profiles.json"), "malformed metadata");
   const catalog = await hostProviderAccounts([root]);
   expect(catalog.codex).toHaveLength(129);
@@ -176,6 +179,75 @@ it("bounds named Host account inventory and ignores malformed terminal metadata"
     },
   ]);
   expect(await assertHostProviderAccount("codex", "account-129", [root])).toBe("account-129");
+});
+
+describe("hostProviderAccounts sign-in evidence", () => {
+  it("excludes a leftover Claude folder with projects but no sign-in", async () => {
+    const root = temp();
+    const dir = join(root, "provider-accounts", "claude", "account-leftover");
+    mkdirSync(join(dir, "projects"), { recursive: true });
+    writeFileSync(join(dir, ".claude.json"), JSON.stringify({ numStartups: 3 }));
+    expect((await hostProviderAccounts([root])).claude).toEqual([
+      expect.objectContaining({ id: "default" }),
+    ]);
+  });
+
+  it("includes Claude folders with .credentials.json or an oauthAccount email", async () => {
+    const root = temp();
+    signedIn(join(root, "provider-accounts", "claude", "account-creds"), ".credentials.json");
+    const oauth = join(root, "provider-accounts", "claude", "account-oauth");
+    mkdirSync(oauth, { recursive: true });
+    writeFileSync(
+      join(oauth, ".claude.json"),
+      JSON.stringify({ oauthAccount: { emailAddress: "owner@example.test" } }),
+    );
+    const claude = (await hostProviderAccounts([root])).claude?.map((account) => account.id);
+    expect(claude).toEqual(["default", "account-creds", "account-oauth"]);
+  });
+
+  it("excludes Claude config without a non-empty oauth email, malformed or oversized", async () => {
+    const root = temp();
+    const cases = {
+      "account-empty": JSON.stringify({ oauthAccount: { emailAddress: "  " } }),
+      "account-no-object": JSON.stringify({ oauthAccount: "x" }),
+      "account-malformed": "{not json",
+      "account-oversized": JSON.stringify({
+        oauthAccount: { emailAddress: "owner@example.test" },
+        pad: "x".repeat(1024 * 1024),
+      }),
+    };
+    for (const [id, content] of Object.entries(cases)) {
+      const dir = join(root, "provider-accounts", "claude", id);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, ".claude.json"), content);
+    }
+    expect((await hostProviderAccounts([root])).claude).toEqual([
+      expect.objectContaining({ id: "default" }),
+    ]);
+  });
+
+  it("includes Grok folders with auth.json and excludes Grok folders without it", async () => {
+    const root = temp();
+    signedIn(join(root, "provider-accounts", "grok", "account-signed"));
+    mkdirSync(join(root, "provider-accounts", "grok", "account-bare"), { recursive: true });
+    expect((await hostProviderAccounts([root])).grok?.map((account) => account.id)).toEqual([
+      "default",
+      "account-signed",
+    ]);
+  });
+
+  it("excludes terminal registry paths without sign-in evidence", async () => {
+    const root = temp();
+    const bare = join(root, "bare-home");
+    mkdirSync(bare, { recursive: true });
+    writeFileSync(
+      join(root, "terminal-profiles.json"),
+      JSON.stringify({ "codex:terminal-bare": bare }),
+    );
+    expect((await hostProviderAccounts([root])).codex?.map((account) => account.id)).toEqual([
+      "default",
+    ]);
+  });
 });
 
 describe("provider account styles", () => {

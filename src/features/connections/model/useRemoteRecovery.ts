@@ -4,10 +4,10 @@ import {
   isAutoContinueDue,
   markAutoContinueDue,
 } from "../../sessions/public/autoContinue";
-import {
-  initializeAgentDefaults,
-  loadAutoContinueInterrupted,
-} from "../../settings/public/settings";
+import { loadAutoContinueInterrupted } from "../../settings/public/settings";
+// The desktop sync of agent defaults; kept out of `public/settings` so the headless Host,
+// which reads settings through connections, never loads Tauri transport or toasts.
+import { initializeAgentDefaults } from "../../settings/public/agentDefaultsSync";
 import type { HostSession } from "./protocol";
 import { shouldAutoContinueRemote } from "./remoteRecovery";
 import { unwatchRun, watchKey, watchRun, watchedRun } from "./remoteTurnWatch";

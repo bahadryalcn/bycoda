@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
-import { t } from "../../../shared/i18n";
+import { t, useT } from "../../../shared/i18n";
+import { Text } from "../../../shared/ui/Text";
 import type { DockAgent } from "../model/activityDock";
 import {
   delegatedAgentBlock,
   delegationParentOf,
-  isDelegatedChildOf,
   isDelegatedDescendantOf,
 } from "../model/delegatedAgents";
-import { useDelegatedDockAgents } from "../model/reactiveReads";
+import { useDelegatedDockAgents, useNestedDelegationOwner } from "../model/reactiveReads";
 import type { Block, ComposerTurnOptions } from "../model/session";
 import { getSessions, useSession, useSessionsSelector } from "../model/sessionsStore";
 import { DelegatedSessionRequests } from "../../connections/public/DelegatedSessionRequests";
@@ -29,6 +29,9 @@ import {
 import { requestViewSubagent } from "./subagentFocus";
 import { useDelegatedMessage } from "./useDelegatedMessage";
 import { SubagentSheet, type SubagentRelay } from "./SubagentSheet";
+import { NestedSubagentList } from "./NestedSubagentList";
+
+const NO_BLOCKS: Block[] = [];
 
 function isHostChild(session: NonNullable<ReturnType<typeof useSession>>): boolean {
   try {
@@ -316,6 +319,7 @@ export function SessionSubagentSheet({
   onOpenFile?: (path: string) => void;
   onOpenDiff?: (path: string) => void;
 }) {
+  const translate = useT();
   const child = useSession(delegated.childId);
   const selected = !native.block && !!child && delegated.isOpen !== false;
   // A child's Host owner connects only while its panel is open or a Stop needs it;
@@ -353,12 +357,7 @@ export function SessionSubagentSheet({
     (sessions) => sessions.filter((session) => waitingIds.includes(session.id)),
     (a, b) => a.length === b.length && a.every((entry, index) => entry === b[index]),
   );
-  // The subagent that started this one, when it is itself a subagent.
-  const owner = useSessionsSelector((sessions) =>
-    child
-      ? sessions.find((session) => delegationParentOf(session) && isDelegatedChildOf(child, session))
-      : undefined,
-  );
+  const owner = useNestedDelegationOwner(delegated.childId);
   const message = useDelegatedMessage({
     childSessionId: child?.id,
     blocked: !child,
@@ -398,6 +397,30 @@ export function SessionSubagentSheet({
   }
   if (!child || !childBlock) return <>{owners}</>;
   const running = !!child.busy || !!child.continuingElsewhere;
+  const nestedRequests = selected
+    ? waiting.filter(canOwn).map((session) => (
+        <section key={session.id} data-nested-requests={session.id}>
+          <Text as="p" size="caption" tone="secondary" className="px-4 pt-2">
+            {translate("Subagent: {p0}", { p0: delegatedAgentBlock(session).text })}
+          </Text>
+          <DelegatedSessionRequests
+            child={session}
+            visible={visible}
+            onOpenFile={onOpenFile}
+            onOpenDiff={onOpenDiff}
+          />
+        </section>
+      ))
+    : [];
+  const ownRequests =
+    selected && canOwn(child) ? (
+      <DelegatedSessionRequests
+        child={child}
+        visible={visible}
+        onOpenFile={onOpenFile}
+        onOpenDiff={onOpenDiff}
+      />
+    ) : null;
   return (
     <>
       {owners}
@@ -406,24 +429,35 @@ export function SessionSubagentSheet({
         busy={running}
         visible={visible && (delegated.isOpen ?? true)}
         agentRole={delegationParentOf(child)?.kind}
+        nested={<NestedSubagentList agents={nestedAgents} onOpen={delegated.open} />}
+        back={
+          owner
+            ? { name: delegatedAgentBlock(owner).text, open: () => delegated.open(owner.id) }
+            : undefined
+        }
         requests={
-          selected && canOwn(child) ? (
-            <DelegatedSessionRequests
-              child={child}
-              visible={visible}
-              onOpenFile={onOpenFile}
-              onOpenDiff={onOpenDiff}
-            />
-          ) : undefined
+          nestedRequests.length ? (
+            <>
+              {nestedRequests}
+              {ownRequests}
+            </>
+          ) : (
+            (ownRequests ?? undefined)
+          )
         }
         cwd={child.cwd}
         onClose={delegated.close}
-        onShowInTranscript={(blockId) => {
-          delegated.close();
-          const shown = native.showInTranscript(blockId);
-          if (!shown) delegated.open(child.id);
-          return shown;
-        }}
+        onShowInTranscript={
+          // A subagent's own subagent has no row in this transcript.
+          owner
+            ? undefined
+            : (blockId) => {
+                delegated.close();
+                const shown = native.showInTranscript(blockId);
+                if (!shown) delegated.open(child.id);
+                return shown;
+              }
+        }
         onStop={
           running
             ? async () => {

@@ -74,7 +74,7 @@ it("retains merged links independently of watches and removes only explicitly un
   await forgetArchivePullRequest(store, "other");
   expect(await hasMergedArchivePullRequest(store, "other")).toBe(false);
 });
-it("saves behavior defaults but never enables automatic archive without draft authority", async () => {
+it("saves behavior defaults and accepts owner-enabled automatic archive with draft authority", async () => {
   const { limits } = setup();
   const saved = await limits.save({
     agentDefaults: { resumeAtReset: false },
@@ -85,18 +85,25 @@ it("saves behavior defaults but never enables automatic archive without draft au
     archiveMergedSessions: false,
     archiveInactiveDays: 0,
   });
-  await expect(
-    limits.save({
-      agentDefaults: { archiveMergedSessions: true },
-      expectedAgentDefaultsVersion: 1,
-    }),
-  ).rejects.toThrow("not available");
-  await expect(
-    limits.save({ agentDefaults: { archiveInactiveDays: 7 }, expectedAgentDefaultsVersion: 1 }),
-  ).rejects.toThrow("not available");
+  expect(
+    (
+      await limits.save({
+        agentDefaults: { archiveMergedSessions: true },
+        expectedAgentDefaultsVersion: 1,
+      })
+    ).agentDefaults?.archiveMergedSessions,
+  ).toBe(true);
+  expect(
+    (
+      await limits.save({
+        agentDefaults: { archiveInactiveDays: 7 },
+        expectedAgentDefaultsVersion: 2,
+      })
+    ).agentDefaults?.archiveInactiveDays,
+  ).toBe(7);
   // Turning archive off or leaving it unchanged stays allowed.
   await limits.save({
     agentDefaults: { archiveMergedSessions: false, archiveInactiveDays: 0 },
-    expectedAgentDefaultsVersion: 1,
+    expectedAgentDefaultsVersion: 3,
   });
 });

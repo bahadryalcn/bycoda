@@ -29,7 +29,7 @@ export function NestedSubagentList({
     interrupted: t("Interrupted"),
   };
   return (
-    <section className="shrink-0 px-2 pt-2" data-nested-subagents>
+    <section className="shrink-0 px-4 pt-2" data-nested-subagents>
       <SectionLabel count={agents.length}>{t("Subagents")}</SectionLabel>
       <ul className="flex flex-col">
         {agents.map((agent) => (

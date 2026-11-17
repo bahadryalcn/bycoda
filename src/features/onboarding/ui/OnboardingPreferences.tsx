@@ -35,7 +35,7 @@ import {
   subscribeKeepAwakeEnabled,
   type CrewTheme,
 } from "../../settings/model/settings";
-import { saveAgentDefaultConfirmed } from "../../settings/public/settings";
+import { saveAgentDefaultConfirmed } from "../../settings/public/agentDefaultsSync";
 import { SettingsFeedback } from "../../../shared/ui/settings";
 import {
   useWorkspaceFeatures,

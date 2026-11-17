@@ -18,6 +18,7 @@ import type {
   HostProjectDirectory,
 } from "../../src/features/connections/model/protocol";
 import { canonicalHostPath, hostProjectId } from "../../src/features/sync/model/syncProjectId";
+import { RUN_LEASE_TTL_MS } from "../../src/features/sync/model/runLease";
 import { createDedupedWarn } from "../diagnostics/log-dedupe";
 import { createLogger } from "../diagnostics/logger";
 
@@ -39,6 +40,8 @@ export const DESKTOP_WRITER_STALE_MS = 60_000;
  * an end the host would never send a queued message of that conversation.
  */
 export const DESKTOP_STORED_RUNNING_MS = 75_000;
+/** A window silent after reporting a session busy still runs it this long: its run lease's life. */
+export const DESKTOP_SILENT_BUSY_MS = RUN_LEASE_TTL_MS;
 
 export type { DesktopCommand };
 
@@ -181,6 +184,8 @@ export class DesktopLive {
   onIdle?: (sessionId: string, clientId: string, reason?: "idle" | "gone") => void;
   /** When the in-flight mark of a session was first seen while no app had beat. */
   private storedSince = new Map<string, number>();
+  /** The window that last reported each session busy, and when; cleared only by its idle report. */
+  private lastBusyBeat = new Map<string, { clientId: string; at: number }>();
   /**
    * One line per session for the life of this Host process. The stale mark stays in the
    * desktop database, so every later read finds it again and a new belief window expires.
@@ -318,8 +323,13 @@ export class DesktopLive {
           : {};
       const fingerprint = JSON.stringify([pending, patch]);
       const previous = this.sessions.get(entry.id);
-      if (entry.busy === true) this.onBusy?.(entry.id, clientId);
-      else if (previous?.busy && previous.clientId === clientId) this.onIdle?.(entry.id, clientId);
+      if (entry.busy === true) {
+        this.noteBusyBeat(entry.id, clientId);
+        this.onBusy?.(entry.id, clientId);
+      } else {
+        this.clearBusyBeat(entry.id, clientId);
+        if (previous?.busy && previous.clientId === clientId) this.onIdle?.(entry.id, clientId);
+      }
       next.set(entry.id, {
         clientId,
         sourceEpoch:
@@ -350,6 +360,7 @@ export class DesktopLive {
         !reported.has(id) &&
         (previous.busy || previous.fingerprint !== "[[],{}]")
       ) {
+        this.clearBusyBeat(id, clientId);
         if (previous.busy) this.onIdle?.(id, clientId);
         next.set(id, {
           clientId,
@@ -539,6 +550,34 @@ export class DesktopLive {
     return session?.busy && this.clientAlive(session.clientId) ? session.clientId : undefined;
   }
 
+  /**
+   * The window still running `id` as far as anyone knows: alive and busy, or
+   * busy at its last beat and silent since, for as long as its run lease would
+   * last. A hidden or stalled window keeps running its provider, so a Host turn
+   * started over that silence forks the conversation.
+   */
+  runningClient(id: string): string | undefined {
+    const live = this.busyClient(id);
+    if (live) return live;
+    const last = this.lastBusyBeat.get(id);
+    if (!last || this.clientAlive(last.clientId)) return undefined;
+    if (this.now() - last.at <= DESKTOP_SILENT_BUSY_MS) return last.clientId;
+    this.lastBusyBeat.delete(id);
+    return undefined;
+  }
+
+  private noteBusyBeat(id: string, clientId: string): void {
+    this.lastBusyBeat.delete(id);
+    this.lastBusyBeat.set(id, { clientId, at: this.now() });
+    while (this.lastBusyBeat.size > 1024)
+      this.lastBusyBeat.delete(this.lastBusyBeat.keys().next().value!);
+  }
+
+  /** Only the window that ran the turn can report it over. */
+  private clearBusyBeat(id: string, clientId: string): void {
+    if (this.lastBusyBeat.get(id)?.clientId === clientId) this.lastBusyBeat.delete(id);
+  }
+
   /** A client silent past the stale window cannot hold a writer any more. */
   private pruneWriterClients(): void {
     for (const [clientId, known] of this.writerClients)
@@ -559,7 +598,7 @@ export class DesktopLive {
     const live = clients.filter(
       ([clientId, known]) => this.clientAlive(clientId) && known.sessions.has(sessionId),
     );
-    if (this.busyClient(sessionId))
+    if (this.runningClient(sessionId))
       throw new Error("The desktop session is still running. Retry after it finishes.");
     await Promise.all(
       live.map(

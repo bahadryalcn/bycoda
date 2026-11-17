@@ -5473,7 +5473,8 @@
   "Finish selection": "Terminer la sélection",
   "Select tasks": "Sélectionner des tâches",
   "No tasks match your search or filters.": "Aucune tâche ne correspond à votre recherche ou à vos filtres.",
-  "Two versions of this conversation were found. Your messages were kept. Sync to compare them again.": "Deux versions de cette conversation ont été trouvées. Vos messages ont été conservés. Synchronisez pour les comparer à nouveau.",
+  "This conversation has not finished syncing with the other computer. Your messages are kept.": "Cette conversation n’est pas encore entièrement synchronisée avec l’autre ordinateur. Vos messages sont conservés.",
+  "Syncing with the other computer…": "Synchronisation avec l’autre ordinateur…",
   "This conversation was changed on two computers. Choose the version to keep.": "Cette conversation a été modifiée sur deux ordinateurs. Choisissez la version à conserver.",
   "Keep this": "Garder celle-ci",
   "Keep other": "Garder l’autre",
@@ -11870,5 +11871,6 @@
   "Enter secret: {p0}": "Saisir le secret : {p0}",
   "Tell agents to use bykit": "Demander aux agents d'utiliser bykit",
   "When bykit is installed, agents are told to use it for large files, diffs, long command output and bulk edits. Applies to the next agent turn.": "Si bykit est installé, les agents sont invités à l'utiliser pour les gros fichiers, les diffs, les longues sorties de commande et les modifications en masse. S'applique au prochain tour de l'agent.",
-  "Subagents: {p0}": "Sous-agents : {p0}"
+  "Subagents: {p0}": "Sous-agents : {p0}",
+  "The advisor is unavailable this turn because the Host connection is not ready.": "Le conseiller est indisponible pour ce tour, car la connexion à l’Host n’est pas prête."
 }

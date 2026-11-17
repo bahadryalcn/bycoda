@@ -3666,7 +3666,7 @@ it("shows host activity alongside a preserved local conversation conflict", asyn
     Array.from(container.querySelectorAll('[role="status"]'))
       .map((node) => node.textContent)
       .join(" "),
-  ).toContain("Your messages were kept");
+  ).toContain("Your messages are kept");
   expect(container.textContent).toContain("local edit");
   expect(byLabel("Stop")).not.toBeNull();
   await render({ ...session, continuingElsewhere: undefined });
@@ -3676,7 +3676,7 @@ it("shows host activity alongside a preserved local conversation conflict", asyn
     Array.from(container.querySelectorAll('[role="status"]'))
       .map((node) => node.textContent)
       .join(" "),
-  ).toContain("Your messages were kept");
+  ).toContain("Your messages are kept");
 });
 
 it("refreshes an adopted conversation without remounting or clearing its unsent composer", async () => {

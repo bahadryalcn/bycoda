@@ -4,6 +4,7 @@ import { t } from "../../../shared/i18n/core";
 import { moveItem, orderByIds } from "../../../shared/lib/reorder";
 import { mergeModelSettings, modelEffortLabel, resolveModel } from "./models";
 import { hasMissingAttachment } from "./queuePersistence";
+import { isBackgroundOnly } from "./activityDock";
 import type { ModelTarget, QueuedMessage, Session, TurnIntent } from "./session";
 
 export function queuedModelTarget(
@@ -283,6 +284,31 @@ export function sentQueuedMessage(session: Session, messageId: string): Session 
  */
 export function canDispatchQueuedHead(session: Session): boolean {
   if (session.busy) return false;
+  return queuedHeadSendable(session);
+}
+
+/**
+ * True when the open turn is held only by background commands and the queued
+ * head can join it as a steer, as a Send would. Commands such as a dev server
+ * may never end, so a queued message (from any device) does not wait for them.
+ * Plan, orchestrate, notes, handoffs and slash commands start their own turn.
+ */
+export function canSteerQueuedHeadIntoBackground(session: Session): boolean {
+  if (!isBackgroundOnly(!!session.busy, session.backgroundTasks, session.backgroundAgents))
+    return false;
+  if (!queuedHeadSendable(session)) return false;
+  const head = queuedHead(session)!;
+  return (
+    head.intent !== "plan" &&
+    head.intent !== "orchestrate" &&
+    !head.noteCard &&
+    !head.handoffCard &&
+    !head.text.trimStart().startsWith("/")
+  );
+}
+
+/** Everything but the turn being open that lets the queued head be sent now. */
+function queuedHeadSendable(session: Session): boolean {
   // The host is running this conversation, or its finished turn has not been
   // applied here yet: a local turn now would fork the transcript.
   if (session.continuingElsewhere || session.adoptedSyncConflict) return false;
@@ -331,9 +357,9 @@ export type FollowUpRoute = "dispatch" | "queue" | "steer";
  * queued message would be parked behind them), and otherwise follows
  * `requested` (an explicit per-send choice), defaulting to steer.
  *
- * An explicit "queue" always waits for the turn to finish, including when
- * only background commands remain. The user can steer a queued row instead
- * if a long-running command keeps the turn open.
+ * An explicit "queue" waits in the queue rather than steering at once. Once
+ * only background commands keep the turn open, the queue itself steers its
+ * head into the turn (`canSteerQueuedHeadIntoBackground`).
  */
 export function resolveFollowUpRoute(input: {
   busy: boolean;

@@ -373,3 +373,42 @@ for (const theme of ["light", "dark"])
         path: `temp/verification/subagent-audit/audit-${theme}-${width}.png`,
       });
     });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`a subagent's own subagents ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/chat/subagent-relay.html?nested&theme=${theme}`);
+      const dock = page.getByRole("region", { name: "Turn activity" });
+      await dock.locator("button[data-dock-toggle]").click();
+      // Only the direct child is a dock row; its own runs are counted and their wait shows.
+      await expect(dock.locator("[data-dock-agent]")).toHaveCount(1);
+      const row = dock.getByRole("button", { name: /^Open Release audit,/ });
+      await expect(row).toContainText("Subagents: 2");
+      await expect(row).toContainText("Needs input");
+      await page.screenshot({
+        path: `temp/verification/nested-subagents/dock-${theme}-${width}.png`,
+      });
+      await row.click();
+      const panel = page.getByRole("dialog");
+      const list = panel.locator("[data-nested-subagents]");
+      await expect(list.locator("[data-nested-subagent]")).toHaveCount(2);
+      await expect(list.getByRole("button", { name: /^Open Migration dry run,/ })).toContainText(
+        "Needs input",
+      );
+      // The finished one survives the idle detach through its parent.
+      await expect(list.getByRole("button", { name: /^Open Changelog check,/ })).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/nested-subagents/sheet-${theme}-${width}.png`,
+      });
+      await list.getByRole("button", { name: /^Open Migration dry run,/ }).click();
+      await expect(panel).toContainText("Migration dry run: working through it.");
+      await expect(panel.locator("[data-nested-subagents]")).toHaveCount(0);
+      await page.screenshot({
+        path: `temp/verification/nested-subagents/grandchild-${theme}-${width}.png`,
+      });
+      await panel.getByRole("button", { name: "Back", exact: true }).click();
+      await expect(panel).toContainText("Release audit: working through it.");
+      await expect(panel.locator("[data-nested-subagent]")).toHaveCount(2);
+    });

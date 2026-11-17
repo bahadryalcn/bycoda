@@ -9,7 +9,7 @@ import {
 } from "../../features/sessions/model/turnRecovery";
 import type { TurnSteps } from "../../features/sessions/model/turnSteps";
 import { loadAutoContinueInterrupted } from "../../features/settings/model/settings";
-import { initializeAgentDefaults } from "../../features/settings/public/settings";
+import { initializeAgentDefaults } from "../../features/settings/public/agentDefaultsSync";
 
 /**
  * Local CLIs cannot outlive Bycoda: on Windows every harness child is in a

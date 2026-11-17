@@ -14,6 +14,7 @@ import {
 } from "../../../features/sessions/model/session";
 import {
   canDispatchQueuedHead,
+  canSteerQueuedHeadIntoBackground,
   dequeueQueuedMessage,
   queuedMessageForSubmit,
   queuedSteerRoute,
@@ -87,6 +88,24 @@ const RETIRE_POLL_MS = 400;
 const MAX_REFUSED_DRAINS = 4;
 /** How long a shared queue may wait for the Host before the wait is explained. */
 const HOST_WAIT_NOTICE_MS = 8_000;
+
+/**
+ * How the queue may send its head now: as a new turn, as a steer into a turn
+ * only background commands keep open, or not yet. A head queued for another
+ * model waits for the turn to end, since joining it cannot change the model.
+ */
+function autoSendMode(session: Session): "dispatch" | "steer" | undefined {
+  if (canDispatchQueuedHead(session)) return "dispatch";
+  const head = session.queuedMessages?.[0];
+  if (
+    head &&
+    canSteerQueuedHeadIntoBackground(session) &&
+    queuedSteerRoute(session, head, steerAppliesModelSettings(runningTargetOf(session).harness)) !==
+      "restart"
+  )
+    return "steer";
+  return undefined;
+}
 
 /** Resume cannot decide an unconfirmed delivery: the inline choice takes focus instead. */
 function reviewDelivery(sessionId: string): QueueActionResult {
@@ -181,7 +200,8 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
       if (
         windowTransferPending ||
         movingSessionIds.current.has(session.id) ||
-        session.busy ||
+        // A turn held open only by background commands takes the head as a steer.
+        (session.busy && !canSteerQueuedHeadIntoBackground(session)) ||
         queued.length === 0
       )
         continue;
@@ -208,11 +228,11 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
       // A handoff no running submit owns would hold the queue forever; the
       // repair changes the sessions, which runs this effect again.
       if (isPreparingHandoff(session) && repairStaleHandoff(session.id)) continue;
-      if (canDispatchQueuedHead(session) && retiringTurns.current.has(session.id)) {
+      if (autoSendMode(session) && retiringTurns.current.has(session.id)) {
         waitingForCleanup = true;
         continue;
       }
-      if (canDispatchQueuedHead(session) && !sharedLocalQueueReady(session.id)) {
+      if (autoSendMode(session) && !sharedLocalQueueReady(session.id)) {
         // The Host that coordinates this queue is not answering. Sending stays
         // refused (two windows could send the same row), but say why.
         if (!sharedLocalQueueLeaseHeld(session.id) && !lateSettlementPossible(session.id)) {
@@ -243,7 +263,7 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
       }
       hostWaitSince.current.delete(session.id);
       if (
-        !canDispatchQueuedHead(session) ||
+        !autoSendMode(session) ||
         !sharedLocalQueueReady(session.id) ||
         retiringTurns.current.has(session.id) ||
         queueDispatchingRef.current.has(session.id) ||
@@ -272,6 +292,7 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
           }
           const latest = sessionsRef.current.find((entry) => entry.id === session.id);
           const head = latest?.queuedMessages?.[0];
+          const mode = latest ? autoSendMode(latest) : undefined;
           if (
             !latest ||
             !head ||
@@ -279,7 +300,7 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
             windowTransferPendingRef.current ||
             movingSessionIds.current.has(session.id) ||
             retiringTurns.current.has(session.id) ||
-            !canDispatchQueuedHead(latest)
+            !mode
           ) {
             return;
           }
@@ -287,6 +308,7 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
           void new Promise<boolean>((resolve) =>
             resolve(
               onSubmit(session.id, head.text, head.attachments, {
+                ...(mode === "steer" ? { followUpBehavior: "steer" as const } : {}),
                 queuedMessageId: head.id,
                 noteCard: head.noteCard,
                 handoffCard: head.handoffCard,

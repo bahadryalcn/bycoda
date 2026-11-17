@@ -3,8 +3,11 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { TerminalProfileDiscovery } from "./TerminalProfileDiscovery";
-import { providerAccounts } from "../../providers/model/providerAccounts";
+import { TerminalProfileDiscovery, dedupeTerminalProfiles } from "./TerminalProfileDiscovery";
+import {
+  providerAccounts,
+  saveTerminalProviderAccount,
+} from "../../providers/model/providerAccounts";
 import {
   defaultProviderAccountId,
   setDefaultProviderAccount,
@@ -221,6 +224,53 @@ it.each(["success", "failure"])(
     expect(document.body.textContent).not.toContain("Stale failure");
   },
 );
+
+const found = (id: string, email?: string, organization?: string) => ({
+  id,
+  provider: "claude" as const,
+  label: id,
+  path: `C:/${id}`,
+  identity: email || organization ? { email, organization } : undefined,
+});
+
+it("groups profiles by identity and prefers connected, then default, then managed ids", () => {
+  const ids = (list: { id: string }[], connected: string[] = []) =>
+    dedupeTerminalProfiles(list, new Set(connected)).map((profile) => profile.id);
+  const same = [
+    found("terminal-a", "Me@X.com", " Org "),
+    found("account-1", "me@x.com", "org"),
+    found("default", "me@x.com ", "ORG"),
+  ];
+  expect(ids(same)).toEqual(["default"]);
+  expect(ids(same.slice(0, 2))).toEqual(["account-1"]);
+  expect(ids(same, ["terminal-a"])).toEqual(["terminal-a"]);
+  expect(ids([found("terminal-a", "me@x.com"), found("terminal-b", "me@x.com", "org")])).toEqual([
+    "terminal-a",
+    "terminal-b",
+  ]);
+  expect(ids([found("terminal-a"), found("terminal-b"), found("terminal-c", "")])).toEqual([
+    "terminal-a",
+    "terminal-b",
+    "terminal-c",
+  ]);
+});
+
+it("shows the stored label, the identity email and Connected for a managed account id", async () => {
+  saveTerminalProviderAccount({
+    id: "account-7",
+    provider: "claude",
+    label: "Stored name",
+  });
+  vi.mocked(invoke).mockResolvedValueOnce([
+    { ...found("account-7", "me@x.com"), label: "folder-name" },
+  ]);
+  await click("Find terminal profiles");
+  const text = document.body.textContent ?? "";
+  expect(text).toContain("Stored name");
+  expect(text).not.toContain("folder-name");
+  expect(text).toContain("me@x.com");
+  expect(text).toContain("Connected");
+});
 
 it("keeps Find label while connecting another profile", async () => {
   vi.mocked(invoke).mockResolvedValueOnce([

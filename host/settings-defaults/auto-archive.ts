@@ -73,7 +73,7 @@ export function createDefaultsAutoArchive(dependencies: {
   queued(id: string): Promise<boolean>;
   running(id: string): Promise<boolean>;
   /** False requires authoritative client draft clearance; unknown/missing protects the session. */
-  hasUnsentDraft?(id: string): Promise<boolean | undefined>;
+  hasUnsentDraft?(id: string, windowMs: number): Promise<boolean | undefined>;
   now?: () => number;
   deadlineMs?: number;
 }) {
@@ -98,7 +98,9 @@ export function createDefaultsAutoArchive(dependencies: {
           const value = await store.session(row.id, signal);
           const queued = await dependencies.queued(row.id);
           const running = await dependencies.running(row.id);
-          const clientDraft = await dependencies.hasUnsentDraft?.(row.id);
+          // Merged-only archiving requires a report within the hourly archive window.
+          const windowMs = (settings.archiveInactiveDays || 1 / 24) * 86_400_000;
+          const clientDraft = await dependencies.hasUnsentDraft?.(row.id, windowMs);
           const merged =
             settings.archiveMergedSessions && (await hasMergedArchivePullRequest(store, row.id));
           if (

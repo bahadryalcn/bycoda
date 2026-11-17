@@ -882,3 +882,35 @@ describe("project directory change notification", () => {
     expect(changes).toHaveBeenCalledTimes(3);
   });
 });
+
+describe("silent busy window", () => {
+  const id = "silent-session";
+  it("keeps a silent busy window as running until the silent busy window lapses", () => {
+    let now = 0;
+    const live = new DesktopLive(() => now);
+    live.beat({ clientId: "a", sessions: [{ id, busy: true }] });
+    now = 30_000;
+    expect(live.busyClient(id)).toBeUndefined();
+    expect(live.runningClient(id)).toBe("a");
+    now = 89_000;
+    expect(live.runningClient(id)).toBe("a");
+    now = 91_000;
+    expect(live.runningClient(id)).toBeUndefined();
+  });
+
+  it("clears the silent busy window when the same client reports the session not busy", () => {
+    let now = 0;
+    const live = new DesktopLive(() => now);
+    live.beat({ clientId: "a", sessions: [{ id, busy: true }] });
+    live.beat({ clientId: "a", sessions: [] });
+    expect(live.runningClient(id)).toBeUndefined();
+  });
+
+  it("refuses to retire writers while the silent window is open", async () => {
+    let now = 0;
+    const live = new DesktopLive(() => now);
+    live.beat({ clientId: "a", sessions: [{ id, busy: true }] });
+    now = 30_000;
+    await expect(live.retireWriters(id)).rejects.toThrow("still running");
+  });
+});

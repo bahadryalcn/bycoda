@@ -28,7 +28,16 @@ pub async fn provider_account_identity(
     provider: String,
     account_id: Option<String>,
 ) -> Result<Option<ProviderAccountIdentity>, String> {
-    let dir = crate::harness::provider_account_dir(&app, &provider, account_id.as_deref())?;
+    // Read-only: a missing managed folder means "no identity", never the default home.
+    let dir = match crate::harness::provider_account_dir_existing(
+        &app,
+        &provider,
+        account_id.as_deref(),
+    )? {
+        None => None,
+        Some(Some(dir)) => Some(dir),
+        Some(None) => return Ok(None),
+    };
     tauri::async_runtime::spawn_blocking(move || match provider.as_str() {
         "claude" => Ok(claude_identity(dir)),
         "codex" => Ok(codex_identity(dir)),
@@ -37,6 +46,22 @@ pub async fn provider_account_identity(
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// Offline identity of a profile folder, read only from files the CLI wrote
+/// (never the network): `(email, organization)`. `None` when neither is known.
+pub(crate) fn cached_identity(
+    provider: &str,
+    dir: &Path,
+) -> Option<(Option<String>, Option<String>)> {
+    let identity = match provider {
+        "claude" => read_json(&dir.join(".claude.json")).and_then(|c| parse_claude_identity(&c)),
+        "codex" => read_json(&dir.join("auth.json")).and_then(|a| parse_codex_identity(&a)),
+        "grok" => read_json(&dir.join("auth.json")).and_then(|a| parse_grok_identity(&a)),
+        _ => None,
+    }?;
+    (identity.email.is_some() || identity.organization.is_some())
+        .then_some((identity.email, identity.organization))
 }
 
 fn home() -> Option<PathBuf> {
@@ -309,6 +334,24 @@ mod tests {
             parse_claude_identity(&config),
             identity(None, Some("Ada Lovelace"), Some("Max"), None)
         );
+    }
+
+    #[test]
+    fn cached_identity_reads_files_offline() {
+        let dir = std::env::temp_dir().join(format!("bycoda-identity-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        assert_eq!(cached_identity("claude", &dir), None);
+        std::fs::write(
+            dir.join(".claude.json"),
+            r#"{"oauthAccount":{"emailAddress":"ada@example.com","organizationName":"Acme"}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            cached_identity("claude", &dir),
+            Some((Some("ada@example.com".into()), Some("Acme".into())))
+        );
+        assert_eq!(cached_identity("other", &dir), None);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

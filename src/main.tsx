@@ -4,6 +4,7 @@ import "./app/model/legacyStorageMigration";
 import "./app/model/fileUiAdapters";
 import "./features/model-routing/public/rendererBootstrap";
 import "./features/settings/public/agentDefaultsSync";
+import "./features/connections/public/storedBlockForm";
 import { readToolWindow } from "./app/model/toolWindows";
 import { loadWindowSurface, readHostToolsWindow } from "./app/model/hostToolsWindow";
 import { t, languageReady } from "./shared/i18n";

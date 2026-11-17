@@ -5473,7 +5473,8 @@
   "Finish selection": "選択を終了",
   "Select tasks": "タスクを選択",
   "No tasks match your search or filters.": "検索またはフィルターに一致するタスクはありません。",
-  "Two versions of this conversation were found. Your messages were kept. Sync to compare them again.": "この会話に2つの異なるバージョンが見つかりました。メッセージは保持されています。同期すると再度比較します。",
+  "This conversation has not finished syncing with the other computer. Your messages are kept.": "この会話はもう一方のコンピューターとの同期がまだ完了していません。メッセージは保持されています。",
+  "Syncing with the other computer…": "もう一方のコンピューターと同期しています…",
   "This conversation was changed on two computers. Choose the version to keep.": "この会話は2台のコンピューターで変更されました。保持するバージョンを選んでください。",
   "Keep this": "こちらを維持",
   "Keep other": "相手を維持",
@@ -11870,5 +11871,6 @@
   "Enter secret: {p0}": "シークレットを入力: {p0}",
   "Tell agents to use bykit": "エージェントに bykit を使わせる",
   "When bykit is installed, agents are told to use it for large files, diffs, long command output and bulk edits. Applies to the next agent turn.": "bykit がインストールされている場合、大きなファイル、差分、長いコマンド出力、一括編集に bykit を使うようエージェントに指示します。次のエージェントのターンから適用されます。",
-  "Subagents: {p0}": "サブエージェント: {p0}"
+  "Subagents: {p0}": "サブエージェント: {p0}",
+  "The advisor is unavailable this turn because the Host connection is not ready.": "Host との接続の準備ができていないため、このターンではアドバイザーを使用できません。"
 }

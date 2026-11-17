@@ -23,10 +23,13 @@ import { clientMessageCommand } from "../sessions/client-message-id";
 import { assertDomainAuthority } from "../domains/context";
 import { SIDE_CHAT_RPC } from "../../src/shared/model/host-contracts/side-chat";
 import { askSideQuestion } from "../side-chat/side-question";
+import { reportDraftPresence } from "../drafts/rpc";
+import { SecretInputListParamsSchema } from "../../src/shared/model/host-contracts/secrets-input";
 export function createRegistryRuntime(
   dependencies: Pick<
     ServerBindings,
     | "engine"
+    | "accountPlatform"
     | "models"
     | "environmentService"
     | "projectsService"
@@ -55,6 +58,7 @@ export function createRegistryRuntime(
     | "gitService"
     | "terminalService"
     | "persistenceService"
+    | "conversationDesktop"
   >,
 ) {
   const modelRouting = createHostModelRoutingService({
@@ -171,6 +175,24 @@ export function createRegistryRuntime(
           },
           context.signal,
         );
+      },
+      "secrets.input.list": async (params, context) => {
+        await assertDomainAuthority(context);
+        return dependencies.conversationDesktop.secretInputs(
+          SecretInputListParamsSchema.parse(params).sessionId,
+          context.authorized,
+        );
+      },
+      "drafts.presence.report": (params, context) =>
+        reportDraftPresence(
+          dependencies.engine.store,
+          dependencies.accountPlatform.drafts,
+          params,
+          context,
+        ),
+      "secrets.input.answer": async (params, context) => {
+        await assertDomainAuthority(context);
+        return dependencies.conversationDesktop.answerSecretInput(params, context.authorized);
       },
       "sessions.queue.get": dependencies.queueOperation("get"),
       "sessions.queue.change": dependencies.queueOperation("change"),

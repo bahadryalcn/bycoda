@@ -321,3 +321,12 @@ it("leaves a completion undecided when its result cannot be read, and reports no
     ),
   ).toMatchObject({ delivery: "failed" });
 });
+
+it("heads an advisor's completion as the advisor's, not a subagent's", async () => {
+  const f = await fixture();
+  await f.records.patch("a", { kind: "advisor", notifyOnCompletion: true, childRunId: "turn-a" });
+  await f.communication.tick();
+  expect(f.deliver).toHaveBeenCalledWith(
+    expect.objectContaining({ text: expect.stringMatching(/^Advisor completion: a \(a\)/) }),
+  );
+});

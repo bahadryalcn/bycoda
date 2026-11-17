@@ -23,6 +23,7 @@ vi.mock("../../../../features/sessions/model/sessionsStore", () => ({
   sessionsRef: { current: [] },
   getSessions: () => [],
   setSessions: vi.fn(),
+  subscribeSessionCommits: () => () => undefined,
 }));
 vi.mock("./submitClearConversation", () => ({ submitClearConversation: vi.fn() }));
 

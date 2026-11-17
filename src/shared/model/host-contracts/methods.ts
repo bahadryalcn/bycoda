@@ -1,5 +1,11 @@
 import { nativeRuntimeLogMethods } from "./native-runtime-log-methods";
 import { SIDE_CHAT_RPC } from "./side-chat";
+import {
+  SecretInputListParamsSchema,
+  SecretInputListResultSchema,
+  SecretInputAnswerParamsSchema,
+  SecretInputAnswerResultSchema,
+} from "./secrets-input";
 import * as modelRoutingDto from "./model-routing";
 import { desktopStatusMethods } from "./desktop-status-methods";
 import {
@@ -942,6 +948,28 @@ export const HOST_RPC_METHODS = Object.freeze({
     cost: "read",
     responseTimeoutMs: 150_000,
   } satisfies HostRpcMethodDefinition,
+  "secrets.input.list": {
+    ...read(SecretInputListParamsSchema, SecretInputListResultSchema),
+    requiredCapability: "secrets.remoteAnswer.v1",
+  },
+  "secrets.input.answer": {
+    ...control(SecretInputAnswerParamsSchema, SecretInputAnswerResultSchema),
+    requiredCapability: "secrets.remoteAnswer.v1",
+  },
+  // Each client reports which sessions hold an unsent draft; automatic archive skips them.
+  "drafts.presence.report": {
+    ...control(
+      z
+        .object({
+          clientId: z.string().min(1).max(128),
+          sessionIds: z.array(z.string().min(1).max(200)).max(10_000),
+          complete: z.literal(true),
+        })
+        .strict(),
+      z.object({ accepted: z.literal(true) }).strict(),
+    ),
+    requiredCapability: "host.settings.autoArchive.v1",
+  },
   "git.fileDiff": gitOperation(gitDto.GitFileDiffParamsSchema, gitDto.GitFileDiffSchema),
   "git.switch": gitOperation(gitDto.GitSwitchParamsSchema, gitDto.GitBranchesSchema, true),
   "git.createBranch": gitOperation(

@@ -1,7 +1,12 @@
 import { afterEach, expect, it, vi } from "vitest";
 const invoke = vi.hoisted(() => vi.fn());
 vi.mock("./child", () => ({ invokeProviderCommand: invoke }));
-import { conversationDelegationReady, delegationFallback } from "./delegationReadiness";
+import {
+  conversationDelegationReady,
+  delegationFallback,
+  delegationNotice,
+  needsHostDelegation,
+} from "./delegationReadiness";
 import { providerTurnInput } from "./providerInput";
 import { codexThreadConfig } from "../providers/codex/codexSubagentLimits";
 
@@ -88,4 +93,27 @@ it("enforces a ceiling even without a saved subagent list", () => {
       "off",
     );
   }
+});
+
+it("tells model and owner when a Host advisor is unreachable, never for Claude's own advisor", () => {
+  const codexAdvisor = { crossAdvisor: '{"harness":"codex","model":"codex:astra"}' };
+  const claudeAdvisor = { crossAdvisor: '{"harness":"claude","model":"claude:fable-5-2"}' };
+  expect(needsHostDelegation("claude", codexAdvisor)).toBe(true);
+  expect(needsHostDelegation("claude", claudeAdvisor)).toBe(false);
+  // A Claude advisor is a Host child for any other main harness.
+  expect(needsHostDelegation("codex", claudeAdvisor)).toBe(true);
+  expect(needsHostDelegation("claude", {})).toBe(false);
+  const lost = delegationFallback(codexAdvisor, false, "claude");
+  expect(lost).toBe("Your advisor is unavailable this turn; do not call agents.consult.");
+  expect(delegationNotice(lost)).toContain("advisor is unavailable");
+  expect(delegationFallback(codexAdvisor, true, "claude")).toBe("");
+  expect(delegationFallback(claudeAdvisor, false, "claude")).toBe("");
+  const both = delegationFallback(
+    { ...codexAdvisor, crossSubagents: '[{"harness":"codex","model":"codex:test"}]' },
+    false,
+    "claude",
+  );
+  expect(both).toContain("Do not use unrestricted");
+  expect(both).toContain("do not call agents.consult");
+  expect(delegationNotice(both)).toContain("Host subagents are unavailable");
 });

@@ -1,5 +1,4 @@
 /** Public settings contract; exports stay explicit to preserve load isolation. */
-export { initializeAgentDefaults, saveAgentDefaultConfirmed } from "../model/agentDefaults";
 export { useShowRemainingUsage } from "../model/displayPrefs";
 export {
   DIFF_LAYOUT_CHANGE_EVENT,

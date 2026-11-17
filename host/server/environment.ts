@@ -179,6 +179,7 @@ export function createEnvironmentRuntime(
         "crews.member.ask.v1",
         "crews.tools.v1",
         "approvals",
+        "secrets.remoteAnswer.v1",
         "questions",
         "diff",
         "git.branches",

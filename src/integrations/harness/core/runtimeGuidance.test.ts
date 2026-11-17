@@ -230,6 +230,23 @@ it("keeps the delegated child hint within its size budget", async () => {
   });
   expect(nested).toContain("agents.delegate");
   expect(nested.length).toBeLessThanOrEqual(CHILD_HINT_BUDGET);
+  // An advisor writes only to its parent and never delegates.
+  forgetRuntimeHint("child-budget-advisor");
+  const advisor = await harnessRuntimeHints("child-budget-advisor", {
+    delegationParent: JSON.stringify({
+      parentSessionId: "p",
+      runId: "r",
+      kind: "advisor",
+      model: "codex:astra",
+      startedAt: 1,
+    }),
+    crossSubagents: "auto",
+  });
+  expect(advisor).toContain("message your parent (runId: parent) only");
+  expect(advisor).not.toContain("sibling");
+  expect(advisor).not.toContain("agents.delegate");
+  expect(advisor.length).toBeLessThanOrEqual(CHILD_HINT_BUDGET);
+  expect(child).toContain("sibling agents");
   expect(child).toContain("conversation_mcp_servers_list");
   forgetRuntimeHint("child-nobridge");
   bridges.conversation.mockResolvedValue(null);

@@ -6022,7 +6022,8 @@
   "Finish selection": "Seçimi bitir",
   "Select tasks": "Görevleri seç",
   "No tasks match your search or filters.": "Aramanızla veya filtrelerinizle eşleşen görev yok.",
-  "Two versions of this conversation were found. Your messages were kept. Sync to compare them again.": "Bu oturumun iki farklı sürümü bulundu. Mesajlarınız korundu. Yeniden karşılaştırmak için eşitleyin.",
+  "This conversation has not finished syncing with the other computer. Your messages are kept.": "Bu oturum diğer bilgisayarla henüz tam eşitlenmedi. Mesajlarınız korunuyor.",
+  "Syncing with the other computer…": "Diğer bilgisayarla eşitleniyor…",
   "This conversation was changed on two computers. Choose the version to keep.": "Bu oturum iki bilgisayarda değiştirildi. Korunacak sürümü seçin.",
   "Keep this": "Bunu koru",
   "Keep other": "Diğerini koru",
@@ -11870,5 +11871,6 @@
   "Enter secret: {p0}": "Gizli anahtarı girin: {p0}",
   "Tell agents to use bykit": "Ajanlara bykit kullanmalarını söyle",
   "When bykit is installed, agents are told to use it for large files, diffs, long command output and bulk edits. Applies to the next agent turn.": "bykit kuruluysa ajanlara büyük dosyalar, farklar, uzun komut çıktısı ve toplu düzenlemeler için onu kullanmaları söylenir. Bir sonraki ajan turunda geçerli olur.",
-  "Subagents: {p0}": "Alt ajanlar: {p0}"
+  "Subagents: {p0}": "Alt ajanlar: {p0}",
+  "The advisor is unavailable this turn because the Host connection is not ready.": "Host bağlantısı hazır olmadığı için danışman bu turda kullanılamıyor."
 }

@@ -1,4 +1,4 @@
-import { t } from "../../../shared/i18n";
+import { t } from "../../../shared/i18n/core";
 import type { CrewMemberChild } from "../../../shared/model/host-contracts/delegation";
 import { hasPendingApproval, type Block, type HarnessId } from "./session";
 import { executionUserIndex } from "./executionTurn";

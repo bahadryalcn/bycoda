@@ -483,3 +483,30 @@ it.each(["advisor", "subagent"])(
     await act(async () => root.unmount());
   },
 );
+
+it("opens a subagent's own subagent in the conversation that owns its parent", async () => {
+  const root = request();
+  const sub = request();
+  const grand = request();
+  const link = (parentSessionId: string) =>
+    JSON.stringify({ parentSessionId, runId: "run", kind: "subagent", model: "m", startedAt: 1 });
+  sub.modelSettings.delegationParent = link(root.id);
+  grand.modelSettings.delegationParent = link(sub.id);
+  const focus = vi.fn((id: string) => id === root.id);
+  const host = createRoot(document.createElement("div"));
+  let actions!: ReturnType<typeof useApprovalActions>;
+  function Fixture() {
+    actions = useApprovalActions({
+      sessionsRef: { current: [root, sub, grand] },
+      focusOpenSession: focus,
+      onSelectHistorySession: vi.fn(async () => {}),
+      setInspectedWorkerId: vi.fn(),
+    });
+    return null;
+  }
+  await act(async () => host.render(createElement(Fixture)));
+  act(() => actions.onFocusOwnedApprovalSession(grand.id));
+  expect(focus).toHaveBeenCalledWith(root.id);
+  expect(consumeViewDelegated(root.id)).toBe(grand.id);
+  await act(async () => host.unmount());
+});

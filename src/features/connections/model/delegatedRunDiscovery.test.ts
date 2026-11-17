@@ -143,11 +143,7 @@ it("reads a subagent's own subagents while it runs, and once more after it finis
   const known = new Map<string, HostSession>();
   const listed = new Set<string>();
   const found = await discoverDelegatedRuns(parent, port, known, () => true, listed);
-  expect(found.map((session) => remoteSessionFor(session.id))).toEqual([
-    "sub",
-    "adv",
-    "grand",
-  ]);
+  expect(found.map((session) => remoteSessionFor(session.id))).toEqual(["sub", "adv", "grand"]);
   // An advisor never owns subagents, so it is never listed as a parent.
   expect(listedFor).toEqual(["parent", "sub"]);
   const poll = async () => {

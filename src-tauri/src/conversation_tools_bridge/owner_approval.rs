@@ -270,6 +270,7 @@ pub(super) fn call(
             taken.check()
         };
         check()?;
+        let last_check = std::cell::Cell::new(std::time::Instant::now());
         let value = crate::control::owner_approval::ask_conversation_secret(
             app,
             request,
@@ -280,7 +281,15 @@ pub(super) fn call(
                 cancel: "Cancel",
             },
             &name,
-            || taken.check(),
+            || {
+                taken.check()?;
+                // The phone can settle the relay while this native prompt is open.
+                if last_check.get().elapsed() >= std::time::Duration::from_secs(1) {
+                    check()?;
+                    last_check.set(std::time::Instant::now());
+                }
+                Ok(())
+            },
         )?;
         // A request revoked while the owner typed drops the value here instead of returning it.
         check()?;

@@ -100,7 +100,12 @@ export function requestOwnerSecretInput(
 
 /** Settles with the owner's text. Returns false, and keeps nothing, when the request is no longer open. */
 export function submitOwnerSecretInput(id: string, value: string): boolean {
-  if (typeof value !== "string" || !value || value.length > MAX_OWNER_SECRET_LENGTH) return false;
+  if (
+    typeof value !== "string" ||
+    !value ||
+    new TextEncoder().encode(value).length > MAX_OWNER_SECRET_LENGTH
+  )
+    return false;
   return finishOwnerSecretInput(id, value);
 }
 

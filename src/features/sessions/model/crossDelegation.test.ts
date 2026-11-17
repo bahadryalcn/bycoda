@@ -3,6 +3,7 @@ import {
   CROSS_ADVISOR_KEY,
   CROSS_SUBAGENTS_KEY,
   DELEGATION_LIMITS,
+  decodeAdvisor,
   decodeSubagents,
   encodeAdvisor,
   encodeSubagents,
@@ -117,7 +118,12 @@ describe("crossDelegationSettings", () => {
           delegationOptionSelected(setting, values, option.value),
         );
         expect(selected).toHaveLength(1);
-        expect(selected[0].label).toContain("Default");
+        // Claude's built-in advisor runs on the conversation's account: no account row.
+        expect(selected[0].label).toEqual(
+          setting === advisor && model.harness === "claude"
+            ? "Claude Code · Opus 5.5"
+            : expect.stringContaining("Default"),
+        );
       }
       // Native selects compare serialized values; retain the saved wire reference.
       expect(advisor.options.some((option) => option.value === values.crossAdvisor)).toBe(true);
@@ -144,6 +150,53 @@ describe("crossDelegationSettings", () => {
       expect(crossDelegationSummary(advisor, values)).toContain("Unavailable");
     },
   );
+
+  it("offers each Claude advisor once in a Claude conversation, per account elsewhere", () => {
+    const accounts = {
+      claude: [
+        { id: "work", label: "Work" },
+        { id: "home", label: "Home" },
+      ],
+      codex: [
+        { id: "work", label: "Work" },
+        { id: "home", label: "Home" },
+      ],
+    };
+    const saved = { ...ref("claude", CLAUDE_SONNET.id), providerAccountId: "home" };
+    const values = { crossAdvisor: encodeAdvisor(saved)! };
+    const { advisor, subagents } = settingsFor({
+      currentAccountId: "work",
+      harnesses: ["claude", "codex"],
+      accountChoices: true,
+      source: { ...source, accounts },
+      values,
+    });
+    const labels = advisor.options.map((option) => option.label);
+    expect(labels.filter((label) => label.startsWith("Claude"))).toEqual([
+      "Claude Code · Opus 5.5",
+      "Claude Code · Sonnet 5",
+    ]);
+    expect(labels.filter((label) => label.startsWith("Codex"))).toHaveLength(4);
+    // A saved ref on another account still selects its model's row.
+    const selected = advisor.options.filter((option) =>
+      delegationOptionSelected(advisor, values, option.value),
+    );
+    expect(selected.map((option) => option.label)).toEqual(["Claude Code · Sonnet 5"]);
+    expect(
+      decodeAdvisor(advisor.options.find((o) => o.label === "Claude Code · Opus 5.5")!.value),
+    ).toMatchObject({ providerAccountId: "work" });
+    // Subagents are Host children on their own accounts.
+    expect(subagents.options.filter((option) => option.label.startsWith("Claude"))).toHaveLength(4);
+    const codexConversation = settingsFor({
+      current: CODEX_A,
+      harnesses: ["claude", "codex"],
+      accountChoices: true,
+      source: { ...source, accounts },
+    }).advisor;
+    expect(
+      codexConversation.options.filter((option) => option.label.startsWith("Claude")),
+    ).toHaveLength(4);
+  });
 
   it("returns the subagent and advisor rows keyed by the reserved keys", () => {
     const { subagents, advisor } = settingsFor();
@@ -504,10 +557,8 @@ describe("saved delegation against a Host account list", () => {
   it("keeps the saved ref neutral and offers Host models without local accounts while the list is unknown", () => {
     const { advisor, subagents } = run(remote({}, false));
     const hostModels = source.modelsFor("claude").map((m) => `Claude Code · ${m.name}`);
-    expect(labelsOf(advisor)).toEqual([
-      ...hostModels,
-      "Claude Code · Claude Opus 5.5 · Saved account",
-    ]);
+    // In a Claude conversation the saved advisor is Claude Code's own: its model's row.
+    expect(labelsOf(advisor)).toEqual(hostModels);
     expect(labelsOf(subagents).filter((l) => !l.startsWith("Automatic"))).toEqual([
       ...hostModels,
       "Claude Code · Claude Opus 5.5 · Saved account",
@@ -516,13 +567,20 @@ describe("saved delegation against a Host account list", () => {
   });
 
   it("says Unavailable only when a known list lacks the saved account", () => {
-    const { advisor } = run(remote({ claude: [{ id: "default", label: "Host main" }] }, true));
-    expect(labelsOf(advisor)).toContain("Unavailable · Claude Code · Claude Opus 5.5");
+    const { advisor, subagents } = run(
+      remote({ claude: [{ id: "default", label: "Host main" }] }, true),
+    );
+    expect(labelsOf(subagents)).toContain("Unavailable · Claude Code · Claude Opus 5.5");
+    // Claude Code's own advisor runs on the conversation's account, whichever was saved.
+    expect(labelsOf(advisor).join()).not.toContain("Unavailable");
   });
 
   it("labels the saved ref with its account when the known list has it", () => {
-    const { advisor } = run(remote({ claude: [{ id: "account-win", label: "Windows" }] }, true));
-    expect(labelsOf(advisor)).toContain("Claude Code · Opus 5.5 · Windows");
+    const { advisor, subagents } = run(
+      remote({ claude: [{ id: "account-win", label: "Windows" }] }, true),
+    );
+    expect(labelsOf(subagents)).toContain("Claude Code · Opus 5.5 · Windows");
+    expect(labelsOf(advisor)).toContain("Claude Code · Opus 5.5");
     expect(labelsOf(advisor).join()).not.toContain("Unavailable");
   });
 });
