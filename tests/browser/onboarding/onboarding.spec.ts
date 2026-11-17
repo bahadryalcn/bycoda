@@ -2,6 +2,43 @@ import { expect, test } from "@playwright/test";
 const fixture = "/tests/browser/onboarding/onboarding.html";
 const captures = "temp/verification/2026-10-22-provider-add-ux/browser";
 
+for (const theme of ["light", "dark"]) {
+  for (const width of [1280, 800]) {
+    test(`setup illustrations follow motion preferences ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "no-preference" });
+      await page.addInitScript(() => {
+        localStorage.setItem("bycoda.decorativeMotion.v1", "true");
+      });
+      await page.goto(`${fixture}?account=1&theme=${theme}`);
+      const dialog = page.getByRole("dialog");
+      const illustration = dialog.locator(".onboarding-illustrated-step img");
+      const checkScene = async (asset: string) => {
+        await expect(illustration).toHaveAttribute("src", new RegExp(`${asset}[.-]`));
+        await expect(illustration).not.toHaveAttribute("src", /-still/);
+        await expect
+          .poll(() => illustration.evaluate((node: HTMLImageElement) => node.naturalWidth))
+          .toBeGreaterThan(0);
+        await page.emulateMedia({ reducedMotion: "reduce" });
+        await expect(illustration).toHaveAttribute("src", new RegExp(`${asset}-still[.-]`));
+        await expect
+          .poll(() => illustration.evaluate((node: HTMLImageElement) => node.naturalWidth))
+          .toBeGreaterThan(0);
+        await expect(illustration).toBeInViewport();
+        await dialog.screenshot({
+          path: `temp/verification/settings-setup-polish/${asset}-${theme}-${width}.png`,
+        });
+        await page.emulateMedia({ reducedMotion: "no-preference" });
+      };
+      await expect(dialog.getByRole("heading", { name: "Sign in", level: 3 })).toBeVisible();
+      await checkScene("guide-tip");
+      await dialog.getByRole("button", { name: /\d\s*Machines/ }).click();
+      await expect(dialog.getByRole("button", { name: /Manage connections/ })).toBeVisible();
+      await checkScene("connect-computer");
+    });
+  }
+}
+
 test("saves workspace and appearance choices, finishes directly and can reopen", async ({
   page,
 }) => {
@@ -303,10 +340,43 @@ for (const theme of ["light", "dark"])
       );
       const ring = page.locator(".guide-hub-ring").first();
       await expect(ring).toHaveCSS("border-top-width", "1px");
+      await expect(page.getByRole("button", { name: "Show me" }).first()).toBeVisible();
       await page.screenshot({
         animations: "disabled",
-        path: `temp/verification/feature-controls/guide-hub-${theme}-${width}.png`,
+        path: `temp/verification/guide-wiki/steps-${theme}-${width}.png`,
       });
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`guide wiki search and article ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`${fixture}?guideHub&theme=${theme}`);
+      await page.getByRole("button", { name: "Wiki", exact: true }).click();
+      const wiki = page.getByRole("tab", { name: "Wiki" });
+      await expect(wiki).toBeFocused();
+      await expect(page.getByRole("heading", { name: "Projects and workbench" })).toBeVisible();
+      const search = page.getByRole("searchbox", { name: "Search" });
+      await search.fill("coordinator specialist");
+      await expect(page.getByRole("heading", { name: "Crews and delegation" })).toBeVisible();
+      await expect(page.getByRole("article").getByRole("list")).toHaveCSS(
+        "list-style-type",
+        "decimal",
+      );
+      await expect(page.getByRole("link", { name: "Open in browser" })).toHaveAttribute(
+        "href",
+        "https://bycoda.codes/guide/crews",
+      );
+      await page.screenshot({
+        animations: "disabled",
+        path: `temp/verification/guide-wiki/wiki-${theme}-${width}.png`,
+      });
+      await search.fill("no article matches this sentence");
+      await expect(page.getByText("No results", { exact: true })).toBeVisible();
+      await page.getByRole("button", { name: "Clear search", exact: true }).last().click();
+      await expect(page.getByRole("heading", { name: "Projects and workbench" })).toBeVisible();
+      await page.getByRole("tab", { name: "Steps" }).click();
+      await expect(page.getByRole("heading", { name: "Projects", exact: true })).toBeVisible();
     });
 
 for (const theme of ["light", "dark"])

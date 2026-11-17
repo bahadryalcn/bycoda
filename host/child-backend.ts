@@ -257,6 +257,10 @@ export class HostChildBackend implements ChildBackend {
     }
     const toolGroup = bridgeToolGroup(command);
     if (toolGroup) {
+      // Host-run children get their tools from this process, so a Host outage never
+      // leaves one running without them.
+      if (toolGroup === "conversation" && args.checkRespawn === true)
+        return { respawn: false } as T;
       if (toolGroup === "conversation" && args.checkReady === true) {
         const active = this.activeTools.get(id);
         const tools = active ?? (args.prepareSpawn === true ? this.preparation(id) : undefined);

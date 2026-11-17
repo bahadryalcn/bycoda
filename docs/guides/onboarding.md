@@ -1,5 +1,8 @@
 # Getting started
 
+The Account and Connections steps play a short illustration when opened. They use still
+images when decorative animations are off or the app follows your system's reduced-motion setting.
+
 Fresh desktop workspaces open a compact setup dialog: Account, Statistics, Workspace,
 Appearance, Agents, Connections, Projects. Every step is directly accessible and
 optional. Navigation and completion actions stay visible while the content scrolls.
@@ -146,8 +149,15 @@ update actions in the detail header. Settings search opens the relevant part.
 
 ## Guide
 
-The Guide (View → Usage guide, or Settings → General) is a topic-by-topic walkthrough
-that works with the app instead of only describing it.
+Open the Guide from View → Usage guide or Settings → General. **Steps** contains
+the interactive walkthrough. **Wiki** contains the searchable product reference,
+including remote access, permissions, background work and troubleshooting.
+Open Wiki from a topic to read its matching article. The bundled reference works
+offline. Each article links to its browser edition at [bycoda.codes/guide](https://bycoda.codes/guide).
+
+Maintain the wiki in `src/features/onboarding/model/wiki.json`. Publish that same
+file with the website and the account portal. Keep article IDs stable because they
+are used as permanent URLs and as links from the interactive Guide.
 
 - **Steps.** Every topic lists a few short steps (Chat with agents has four, including
   choosing the access mode). A step shows ✓ when it is finished:

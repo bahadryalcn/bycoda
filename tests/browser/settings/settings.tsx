@@ -764,6 +764,25 @@ mockIPC(
     }
     if (command.startsWith("plugin:event|")) return null;
     if (command === "plugin:app|version") return "0.5.70-fixture";
+    if (new URLSearchParams(location.search).has("buildDetails")) {
+      if (command === "plugin:app|identifier") return "com.bycoda.desktop";
+      if (command === "build_identity")
+        return {
+          schemaVersion: 1,
+          buildId: "4b9e2169b0bd3864cebb-local",
+          version: "0.5.70-fixture",
+          channel: "local",
+          mode: "debug",
+          repositoryId: "fixture",
+          branch: "main",
+          head: "266df5262".padEnd(40, "0"),
+          sourceFingerprint: "fixture",
+          dirtyPaths: [],
+          capturedAt: 1,
+          components: { web: "fixture", native: "fixture", host: "fixture" },
+          includedSources: [],
+        };
+    }
     if (
       [
         "remote_machines",

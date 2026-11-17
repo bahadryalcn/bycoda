@@ -10,14 +10,14 @@ import {
 import { t, useFormat, useLocale, useT, type BoundFormat } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import {
-  CircleDashed,
-  Minus,
-  PenLine,
-  Bot,
-  Search,
-  Terminal,
-  Wrench,
-  X,
+  ChatPending,
+  ChatNote,
+  ChatEdit,
+  ChatAgent,
+  ChatExplore,
+  ChatRun,
+  ChatTool,
+  ChatFailed,
 } from "../../../shared/ui/icons";
 import {
   memo,
@@ -519,13 +519,13 @@ export function ActivityPhaseIcon({
     className: `size-3.5 shrink-0 text-(--ui-text-secondary) ${className}`,
     strokeWidth: 1.75,
   };
-  if (kind === "edit") return <PenLine {...props} />;
-  if (kind === "research") return <Search {...props} />;
-  if (kind === "run") return <Terminal {...props} />;
-  if (kind === "agent") return <Bot {...props} />;
+  if (kind === "edit") return <ChatEdit {...props} />;
+  if (kind === "research") return <ChatExplore {...props} />;
+  if (kind === "run") return <ChatRun {...props} />;
+  if (kind === "agent") return <ChatAgent {...props} />;
   if (kind === "think") return null;
-  if (kind === "other") return <Wrench {...props} />;
-  return <Minus {...props} />;
+  if (kind === "other") return <ChatTool {...props} />;
+  return <ChatNote {...props} />;
 }
 
 /**
@@ -699,7 +699,7 @@ export function ActivityThinkingRow({
   const text = open ? t("Thinking…") : proseSummary(block.text) || t("Thinking…");
   // While reasoning streams in, the line itself carries the shared sweep.
   const icon = bare ? null : (
-    <Minus className="icon-sm shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
+    <ChatNote className="icon-sm shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
   );
   const label = block.streaming ? (
     <WorkingIndicator
@@ -777,7 +777,7 @@ function ActivityNoteRow({
   const [open, setOpen] = useRetainedDisclosure<boolean>(`ActivityNoteRow:${block.id}`, false);
   const text = proseSummary(block.text);
   const icon = bare ? null : (
-    <Minus className="icon-sm shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
+    <ChatNote className="icon-sm shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
   );
 
   if (!expandable) {
@@ -869,7 +869,7 @@ function ActivityToolRow({
   // Every row shares one height and inset, so the trail keeps a single rhythm
   // whether or not a row can open.
   return (
-    <div className="flex min-w-0 flex-col">
+    <div className="transcript-tool-row flex min-w-0 flex-col">
       {hasResult ? (
         <ActionHost
           aria-label={
@@ -1045,11 +1045,11 @@ function ActivityToolIcon({ state, live = false }: { state: ToolCallState; live?
     return live ? (
       <Spinner size="sm" tone="secondary" />
     ) : (
-      <CircleDashed className="icon-sm shrink-0" tone="secondary" strokeWidth={1.75} />
+      <ChatPending className="icon-sm shrink-0" tone="secondary" strokeWidth={1.75} />
     );
   }
 
-  return <Minus className="icon-sm shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />;
+  return <ChatNote className="icon-sm shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />;
 }
 
 /** Failure stays marked. Running and success do not get a trailing icon. */
@@ -1070,7 +1070,7 @@ function ToolCallStatusIcon({
     );
   }
   if (state === "rejected") {
-    return <X className="icon-sm shrink-0 text-(--ui-tone-danger-fg)" strokeWidth={2} />;
+    return <ChatFailed className="icon-sm shrink-0 text-(--ui-tone-danger-fg)" strokeWidth={2} />;
   }
   return null;
 }
@@ -1209,7 +1209,7 @@ function ToolCallSummary({
       <OverflowTooltip label={label}>
         <span
           className={`min-w-0 flex-1 truncate font-mono text-ui-secondary ${
-            failed ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"
+            failed ? "text-(--ui-tone-danger-fg)" : "text-(--transcript-tool-ink)"
           }`}
         >
           {label}
@@ -1226,7 +1226,8 @@ function ToolCallSummary({
     previewMatchesFile &&
     (preview.contentOnly || preview.lines?.some((line) => line.kind !== "context"));
   const actionTone = failed ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)";
-  const targetTone = failed ? "text-(--ui-tone-danger-fg)" : "text-(--color-content)";
+  // Settled work rests dim and brightens with its row (see .transcript-tool-row).
+  const targetTone = failed ? "text-(--ui-tone-danger-fg)" : "text-(--transcript-tool-ink)";
 
   return (
     <span className="flex min-w-0 flex-1 items-center gap-1.5 font-mono text-ui-secondary">
@@ -1416,7 +1417,7 @@ export function HandoffDivider({ block }: { block: Block }) {
             </>
           ) : terminal ? (
             <>
-              <X aria-hidden="true" className="icon-sm shrink-0" />
+              <ChatFailed aria-hidden="true" className="icon-sm shrink-0" />
               <span>{label}</span>
             </>
           ) : (

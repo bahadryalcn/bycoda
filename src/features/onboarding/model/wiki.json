@@ -1,0 +1,675 @@
+{
+  "version": 1,
+  "groups": [
+    {
+      "id": "start",
+      "title": "Getting started",
+      "articles": [
+        {
+          "id": "quick-start",
+          "title": "Set up Bycoda",
+          "summary": "Set up a provider, open a project, and send your first message.",
+          "sections": [
+            {
+              "title": "First session",
+              "body": [
+                "Use the desktop app on a computer that can access your project folder. A Bycoda account is optional for local work. Agent availability depends on the provider, its account and the machine that executes the session."
+              ],
+              "steps": [
+                "Open Quick setup from Settings → General if setup did not open automatically.",
+                "Set up at least one agent provider. Complete the provider's sign-in or credential setup and confirm Bycoda reports it ready.",
+                "Open a project with + in the project rail or File → Open Project.",
+                "Start a session, pick the provider and model, then send a small task. Watch for approval requests in that conversation."
+              ]
+            },
+            {
+              "title": "Get help inside the app",
+              "body": [
+                "Open Guide for the interactive checklist and tours. Show me highlights the relevant control and returns to the topic. If a control is hidden or needs a project, Guide shows what to open first. What's new highlights changes for the running version."
+              ],
+              "links": [{ "label": "Download Bycoda", "href": "https://bycoda.codes/" }]
+            }
+          ]
+        },
+        {
+          "id": "projects",
+          "title": "Projects and workbench",
+          "summary": "Open and organize project folders, then arrange the tools you use.",
+          "sections": [
+            {
+              "title": "Open and organize folders",
+              "body": [
+                "A project is a folder on this computer or a connected machine. Selecting the project switches the workspace context for sessions and tools."
+              ],
+              "steps": [
+                "Use + in the project rail to open a folder. For a connected machine, choose Open folder on a machine.",
+                "Select an existing project in the project rail to switch to it.",
+                "Pin frequently used projects. Use the project row’s … menu → Move to group to organize related projects."
+              ]
+            },
+            {
+              "title": "Arrange the workspace",
+              "body": [
+                "Use the command palette to find commands, split a conversation pane to keep two views open, and use Settings → Workspace to control which tools appear. Check Settings → Keybindings for the shortcuts active on your machine."
+              ]
+            }
+          ]
+        },
+        {
+          "id": "chat",
+          "title": "Sessions, messages and approvals",
+          "summary": "Start an agent session, attach context, and control follow-ups while work runs.",
+          "sections": [
+            {
+              "title": "Start and steer a conversation",
+              "body": [
+                "A session keeps the project, provider and conversation together. Pick the model and approval mode in the composer. Capabilities can vary by provider and session."
+              ],
+              "steps": [
+                "Open the project and choose New session.",
+                "Select an available provider and model. Review the approval mode before asking for edits or commands.",
+                "Add relevant files or images and state the result you want. Send the message.",
+                "During a turn, use Queue to send a follow-up after the turn, or Steer when the provider exposes steering. Use Stop to interrupt the active work."
+              ]
+            },
+            {
+              "title": "Review prompts and output",
+              "body": [
+                "Check the action and target before accepting an approval. Inspect file links, command output and changes directly in the conversation. When switching providers, review the context carried into the new provider before continuing."
+              ]
+            },
+            {
+              "title": "Find and recover conversations",
+              "body": [
+                "Use the session list and workspace Search to return to earlier work. Archive removes a conversation from the active list and supports restoration through Archive. Use Recovery when the app surfaces a recoverable session. A local conversation link requires access to its owning machine and project."
+              ]
+            }
+          ]
+        },
+        {
+          "id": "session-references",
+          "title": "Share and reopen conversation references",
+          "summary": "Cite a saved conversation or a specific turn without changing its access.",
+          "sections": [
+            {
+              "title": "Copy and open a reference",
+              "body": [
+                "A saved conversation reference identifies its owner and persistent conversation. Renaming the conversation preserves the link. New sessions need to be saved before a persistent reference is available."
+              ],
+              "steps": [
+                "In the session menu, open Copy and choose Copy session link or Copy Markdown reference.",
+                "Paste the reference into a conversation or note. Open the link to focus an already open session or navigate to its saved conversation.",
+                "Open the reference details and choose Open beside when you need to keep both conversations visible."
+              ]
+            },
+            {
+              "title": "Resolve an unavailable link",
+              "body": [
+                "Restore access to the owning machine, profile and project before retrying. A copied link grants no access to conversation content. Agents should use the exact reference returned by session tools and read the conversation before describing it."
+              ]
+            }
+          ]
+        },
+        {
+          "id": "models",
+          "title": "Providers, models and usage",
+          "summary": "Configure agent accounts, select models, and understand routing and budgets.",
+          "sections": [
+            {
+              "title": "Choose a provider and model",
+              "body": [
+                "Settings → Providers manages provider setup, available accounts and defaults. A session's picker reflects the provider and machine available to that conversation. Check provider readiness before relying on a model for unattended work."
+              ],
+              "steps": [
+                "Open Settings → Providers and select the provider.",
+                "Complete account or CLI setup on the execution machine.",
+                "Choose defaults for new sessions, then confirm the actual selection in the composer."
+              ]
+            },
+            {
+              "title": "Manage routing and limits",
+              "body": [
+                "Model routing settings manage the Host's ordered choices, limits, pools and role defaults. Decision models are configured independently for supported app decisions. Check Usage for available quota and cost estimates, and inspect the local budget before a long run. Providers supply quota and usage detail at different levels."
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "code",
+      "title": "Files and code",
+      "articles": [
+        {
+          "id": "files",
+          "title": "Explorer, editor and search",
+          "summary": "Find files and text, inspect changes, and keep editor drafts recoverable.",
+          "sections": [
+            {
+              "title": "Navigate a project",
+              "body": [
+                "Explorer opens files and folders in the selected workspace. Go to File searches file names quickly. Find in Files searches content. Find in File narrows to the active editor."
+              ],
+              "steps": [
+                "Select the project and open Explorer.",
+                "Open a file or use Go to File. Open Search or Find in Files to look across the project.",
+                "Select a match to open its source context. Save your edits and check the file state before closing."
+              ]
+            },
+            {
+              "title": "Inspect and recover",
+              "body": [
+                "Use Markdown Preview to read a Markdown document and Source to edit it. Inspect a diff before choosing which changes to keep. Check editor draft copies when the editor offers recovery. Connected-machine files depend on the active connection and the owning Host's file access."
+              ]
+            }
+          ]
+        },
+        {
+          "id": "changes",
+          "title": "Changes and Git",
+          "summary": "Review diffs, work with branches, and control what goes into a commit.",
+          "sections": [
+            {
+              "title": "Review a change",
+              "body": [
+                "Open a project with a Git working tree. Review the diff against the intended branch before staging, committing or pushing."
+              ],
+              "steps": [
+                "Open Changes and select a file to inspect its diff.",
+                "Stage the intended files or supported hunks. Confirm the staged diff and current branch.",
+                "Enter a commit message and commit when ready. Push only after checking the destination and permissions."
+              ]
+            },
+            {
+              "title": "Review and deliver managed work",
+              "body": [
+                "When a task runs in a managed worktree, inspect that task's review result and delivery target. Review results, delivery and publishing are separate milestones. Keep open findings visible until resolved."
+              ]
+            }
+          ]
+        },
+        {
+          "id": "worktrees",
+          "title": "Managed workspaces and delivery",
+          "summary": "Choose where work runs, inspect the result, and deliver it to the intended checkout.",
+          "sections": [
+            {
+              "title": "Plan the working directory",
+              "body": [
+                "Bycoda can use the current checkout or a managed worktree depending on the project policy and the work's selected workspace. Check branch, folder and ownership before starting. A worktree has its own working directory and Git state."
+              ],
+              "steps": [
+                "Pick the project and inspect the workspace option when starting work.",
+                "Keep concurrent work in separate assigned workspaces where isolation is planned.",
+                "Open the review and verify the exact revision and target before approving delivery."
+              ]
+            },
+            {
+              "title": "Recovery and build identity",
+              "body": [
+                "Use Rewind and Undo from supported checkpoints after reviewing the scope. Keep active or dirty worktrees until their changes are accounted for. When validating an installed app, check the running build and whether it includes the source change you are testing."
+              ]
+            }
+          ]
+        },
+        {
+          "id": "terminal",
+          "title": "Terminal, SSH and development servers",
+          "summary": "Run commands in the right working directory and open supported remote previews.",
+          "sections": [
+            {
+              "title": "Use a shell",
+              "body": [
+                "The desktop terminal dock uses a local shell. Saved SSH server tabs are a separate way to open a remote shell. Verify the machine and folder before running commands."
+              ],
+              "steps": [
+                "Open a local project and choose Terminal from the bottom bar or command palette.",
+                "Open a tab for a separate process. Inspect or copy output before closing a tab running work.",
+                "For SSH, configure a saved server and open its terminal tab."
+              ]
+            },
+            {
+              "title": "Open a development preview",
+              "body": [
+                "For a site on a connected machine, open the supported development-server preview or tunnel for that project and port. Check access and the intended audience before changing any sharing setting."
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "work",
+      "title": "Planning and background work",
+      "articles": [
+        {
+          "id": "tasks",
+          "title": "Tasks, epics and goals",
+          "summary": "Plan work, choose an executor, follow verification, and recover interrupted runs.",
+          "sections": [
+            {
+              "title": "Create and run work",
+              "body": [
+                "Use Tasks for work you want to queue, schedule or verify separately from chat. A task may use an Agent or a Crew where available. An epic groups planned work. Codex /goal has its own lifecycle."
+              ],
+              "steps": [
+                "Open Tasks from the project or command palette. Enable Tasks in Settings → Workspace if the surface is hidden.",
+                "Create a task, describe the outcome and verification, then choose the worker and workspace.",
+                "Review and approve an epic plan when required. Start the task and follow its status and conversation."
+              ]
+            },
+            {
+              "title": "Interpret status",
+              "body": [
+                "Queued means the task is recorded. Verifying means checks or review are still running. Completed with open findings requires follow-up before the result can be treated as passing. Delivery requires the applicable workspace permissions and approval. After interruption, inspect the task state before retrying."
+              ]
+            }
+          ]
+        },
+        {
+          "id": "automations",
+          "title": "Automations and schedules",
+          "summary": "Run recurring or one-time jobs and inspect missed or failed runs.",
+          "sections": [
+            {
+              "title": "Set a schedule",
+              "body": [
+                "An automation runs on its selected Host. Confirm the project's availability, time zone, provider access and expected output. Keep the Host available when the job will run."
+              ],
+              "steps": [
+                "Open Automations. Enable it in Settings → Workspace if hidden.",
+                "Create a schedule or draft one with /automation. Review the Host, project, time, time zone, model and output before saving.",
+                "Review run history and open the resulting conversation. Pause the schedule from its controls when needed."
+              ]
+            },
+            {
+              "title": "Recover a missed run",
+              "body": [
+                "After an outage, check whether the run was missed, already executed or waiting for attention before replaying it. Review the eventual result in run history. Windows Hosts generally need an active signed-in session."
+              ]
+            }
+          ]
+        },
+        {
+          "id": "assistant",
+          "title": "Assistant and jobs",
+          "summary": "Give the personal assistant work, follow jobs, and control optional desktop access.",
+          "sections": [
+            {
+              "title": "Work in Assistant Room",
+              "body": [
+                "Open Assistant to talk to the personal assistant and inspect jobs and their output. Choose the appropriate Host and project. Ask the assistant to draft a schedule or reminder, then review its scope before saving it."
+              ],
+              "steps": [
+                "Open Assistant and choose the relevant context.",
+                "Describe the requested result and any timing constraints.",
+                "Follow the job from Assistant and inspect its linked conversation or result. Review an approval on the owning surface when requested."
+              ]
+            },
+            {
+              "title": "Desktop and clipboard access",
+              "body": [
+                "Desktop control starts disabled. Configure allowed applications and complete local approvals before using it. Clipboard actions require separate approval. A signed-out or sleeping Windows Host cannot carry out those jobs."
+              ]
+            }
+          ]
+        },
+        {
+          "id": "crews",
+          "title": "Crews and delegation",
+          "summary": "Assign work to a team with coordinator, specialist and reviewer roles.",
+          "sections": [
+            {
+              "title": "Configure and run a Crew",
+              "body": [
+                "A Crew has one coordinator, one reviewer and at least one specialist, up to 20 members. Active work keeps the member and model choices captured at its start."
+              ],
+              "steps": [
+                "Open Crews from the rail or command palette.",
+                "Use Teams and Members to configure roles and provider/model choices. Check that each member is ready.",
+                "Select Crew in the task's Worker field or start it from Crews. Follow the run in Work and inspect review findings."
+              ]
+            },
+            {
+              "title": "Delegation boundaries",
+              "body": [
+                "Check delegation readiness for the selected provider and choose approved tools and runtime modes. Supervised is the default Crew authority. Publishing, production changes and external communication require their corresponding permission."
+              ]
+            }
+          ]
+        },
+        {
+          "id": "notes",
+          "title": "Notes and session context",
+          "summary": "Save project knowledge and bring selected notes into an agent conversation.",
+          "sections": [
+            {
+              "title": "Capture and reuse knowledge",
+              "body": [
+                "Notes gives you a library for project knowledge and a session panel for context. Keep secrets out of notes that you intend to share or send to a provider."
+              ],
+              "steps": [
+                "Open Notes or enable it in Settings → Workspace.",
+                "Create or find a note, then edit and save it.",
+                "Open the session Notes panel or attach only the notes relevant to the task. Confirm what will be sent before submitting the message."
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tools",
+      "title": "Agent tools and integrations",
+      "articles": [
+        {
+          "id": "agent-tools",
+          "title": "Browser, Devices and Logs",
+          "summary": "Let the active conversation use an approved browser tab, device or log source.",
+          "sections": [
+            {
+              "title": "Choose the target and permissions",
+              "body": [
+                "Browser, Devices and Logs are conversation tools. Availability depends on the provider, the execution machine and the selected target. Inspect tool readiness and the target before assigning work."
+              ],
+              "steps": [
+                "Open the conversation and select the relevant tool panel.",
+                "Choose the tab, simulator, emulator or log source when available.",
+                "Read the access request and approve the intended action. Revoke control when you are finished."
+              ]
+            },
+            {
+              "title": "Review evidence",
+              "body": [
+                "Use screenshots and recordings for visual behavior, command output and log captures for diagnosis, and previews for generated documents or media. A fixture, simulator and physical device each confirm different behavior. Use the session's secret-request flow for credentials."
+              ]
+            }
+          ]
+        },
+        {
+          "id": "artifacts",
+          "title": "Read files, visuals and generated output",
+          "summary": "Inspect an agent's work in context and find the file or preview it produced.",
+          "sections": [
+            {
+              "title": "Inspect output",
+              "body": [
+                "A conversation may include file links, screenshots, tables, documents or interactive explanations. Open the preview or generated file from its message to inspect the actual output."
+              ],
+              "steps": [
+                "Open the conversation containing the result.",
+                "Select the generated file or preview. Check whether the file belongs to the local project, a worktree or a connected machine.",
+                "Review the content and choose the proper action for that file. Check the output path before sharing or moving anything."
+              ]
+            },
+            {
+              "title": "Work with a connected machine",
+              "body": [
+                "A linked file on a remote Host depends on the connection and current access. If the file is unavailable, reconnect to its owning machine and return to the original conversation."
+              ]
+            }
+          ]
+        },
+        {
+          "id": "mcp",
+          "title": "MCP connections and Skills",
+          "summary": "Configure tool servers and reusable instructions for supported agents.",
+          "sections": [
+            {
+              "title": "Connect a tool server",
+              "body": [
+                "MCP exposes external tools to a compatible agent. Check where the server runs, how it authenticates, which clients can reach it and what data it can access."
+              ],
+              "steps": [
+                "Find MCP in Settings and review the existing server list.",
+                "Add the server with the documented transport, credentials and scope for that server.",
+                "Verify readiness on the execution Host before calling tools in a conversation."
+              ]
+            },
+            {
+              "title": "Organize Skills",
+              "body": [
+                "Use Skills to browse and organize installed instructions. Review the source and what the instructions grant before installing or sharing a skill. In chat, select the skill or skill group appropriate to the task."
+              ]
+            }
+          ]
+        },
+        {
+          "id": "inbox",
+          "title": "Inbox, GitHub and Jira",
+          "summary": "Connect work trackers, review items and bring them into a project conversation.",
+          "sections": [
+            {
+              "title": "Set up and use Inbox",
+              "body": [
+                "Inbox collects configured work items for a project. The available actions depend on the connected account and provider permission."
+              ],
+              "steps": [
+                "Open Inbox for the project. If hidden, enable it in Settings → Workspace.",
+                "Connect GitHub or Jira from Inbox settings and select the repository or project scope.",
+                "Browse and filter items. Open a pull request, issue or Jira item and verify its destination before taking an action or referencing it in chat."
+              ]
+            }
+          ]
+        },
+        {
+          "id": "messaging",
+          "title": "Email and team messaging",
+          "summary": "Connect available messaging providers and review outgoing messages.",
+          "sections": [
+            {
+              "title": "Connect and verify accounts",
+              "body": [
+                "Open the messaging or integration settings and check which providers the current build offers. Email and Slack have setup flows. Discord, Microsoft Teams and Outlook may be unavailable in the current build."
+              ],
+              "steps": [
+                "Set up the supported account and select the intended mailbox or workspace.",
+                "Open the message or thread and inspect its recipients and attachments.",
+                "Review a reply or draft in context before authorizing the send."
+              ]
+            }
+          ]
+        },
+        {
+          "id": "social",
+          "title": "Social media and outreach",
+          "summary": "Manage connected social accounts, audiences, campaigns and draft replies.",
+          "sections": [
+            {
+              "title": "Prepare work for review",
+              "body": [
+                "Social Media groups provider connections and work such as audience research, outreach and inbox replies. Browser and account availability vary by provider."
+              ],
+              "steps": [
+                "Open Social Media and connect the intended account using the available setup.",
+                "Choose the account and campaign or inbox context. Inspect any draft and its audience.",
+                "Confirm the account, target and content before authorizing an external action."
+              ]
+            }
+          ]
+        },
+        {
+          "id": "voice",
+          "title": "Voice, dictation and commands",
+          "summary": "Set up microphone access and use voice for input or supported app commands.",
+          "sections": [
+            {
+              "title": "Set up voice",
+              "body": [
+                "Voice availability depends on the app, machine and operating-system permission. Dictation produces text for review. Voice commands act on supported app targets and follow the same permissions as other controls."
+              ],
+              "steps": [
+                "Open voice settings and select the available input and playback options.",
+                "Grant microphone permission in the operating system if requested.",
+                "Try dictation in the composer and review the transcript. For a voice command, verify the selected project or conversation before confirming any action."
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "connections",
+      "title": "Machines and mobile",
+      "articles": [
+        {
+          "id": "machines",
+          "title": "Connect computers and remote projects",
+          "summary": "Connect to a Bycoda Host or SSH server and understand where work runs.",
+          "sections": [
+            {
+              "title": "Choose a connection",
+              "body": [
+                "Remote access is experimental. A connected Bycoda Host owns its provider processes and session data. SSH requires a reachable machine with an SSH server and a working client configuration."
+              ],
+              "steps": [
+                "Open Settings → Connections → Computers → Add a computer.",
+                "Choose an available connection method and confirm the machine identity.",
+                "Use Projects + → Open folder on a machine. Select the remote folder and verify the execution machine in the new session."
+              ]
+            },
+            {
+              "title": "Connection recovery and removal",
+              "body": [
+                "During a short interruption, wait for reconnection and check the owning Host before resubmitting work. Removing a computer from the list and revoking device access are separate actions. Use Revoke access and remove when both are intended."
+              ]
+            }
+          ]
+        },
+        {
+          "id": "mobile",
+          "title": "Pair mobile and work from your phone",
+          "summary": "Connect the mobile app to a computer and follow projects and conversations.",
+          "sections": [
+            {
+              "title": "Pair a computer",
+              "body": [
+                "Mobile connects to a running Bycoda Host. Pair on the same Wi-Fi or LAN, use a configured Tailscale route, or enable discovery for phones signed in to your Bycoda account."
+              ],
+              "steps": [
+                "Keep the computer awake with Bycoda and its Host available.",
+                "On the computer, open Settings → Connections → Devices → Phone access. Set up Same Wi-Fi or Tailscale, then scan the QR code or paste the pairing code on your phone.",
+                "For account discovery, enable Let my signed-in phones find this computer. Compare the six-digit code on both screens and choose Allow on the computer.",
+                "Confirm the computer name. Open a project and conversation to test access."
+              ]
+            },
+            {
+              "title": "Use and revoke access",
+              "body": [
+                "Follow conversations, inspect available work and respond to prompts the mobile app exposes. When a tool is unavailable on mobile, use the owning desktop or Host. Open Settings → Connections → Devices on the desktop to revoke a device credential. A revoked phone needs to pair again."
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "manage",
+      "title": "Account, settings and support",
+      "articles": [
+        {
+          "id": "account",
+          "title": "Account, devices and activity",
+          "summary": "Manage sign-in, profile, device access and activity preferences.",
+          "sections": [
+            {
+              "title": "Open the account center",
+              "body": [
+                "Open Settings → Account → Sign in with browser and finish the browser flow. The account center offers profile, devices, activity, notifications, support, security and privacy controls. Agent-provider sign-in is managed in the provider settings."
+              ],
+              "steps": [
+                "Open Account from the app or visit the account center.",
+                "Check the signed-in identity, then open the relevant account section.",
+                "Review connected devices, activity preferences and optional statistics using their own controls."
+              ],
+              "links": [
+                {
+                  "label": "Open the Bycoda account center",
+                  "href": "https://account.bycoda.codes/"
+                }
+              ]
+            },
+            {
+              "title": "Read activity",
+              "body": [
+                "Today summarizes current activity and available provider usage. The account center can display activity from signed-in devices when the relevant sharing settings are enabled. Anonymous statistics are optional and start off."
+              ]
+            },
+            {
+              "title": "Export or delete account data",
+              "body": [
+                "Use Privacy and data in the account center to review export and deletion. Account deletion has a 14-day undo period. Local projects, files and conversations stay on their owning computers."
+              ]
+            }
+          ]
+        },
+        {
+          "id": "settings",
+          "title": "Appearance, shortcuts and notifications",
+          "summary": "Find preferences for the workbench, chat, editor and operating system.",
+          "sections": [
+            {
+              "title": "Find a preference",
+              "body": [
+                "Settings search finds preferences by name. Appearance controls the theme, accent and background. Workspace controls tool visibility and editor behavior. Chat controls prompt and conversation preferences."
+              ],
+              "steps": [
+                "Open Settings and search for the relevant setting or category.",
+                "Use Keybindings to see and change the keys actually assigned in this installation.",
+                "Use Notifications to choose which events reach you. Review operating-system permissions if alerts or native tools are unavailable."
+              ]
+            }
+          ]
+        },
+        {
+          "id": "privacy",
+          "title": "Project privacy and access",
+          "summary": "Lock project groups, review connected access and understand data boundaries.",
+          "sections": [
+            {
+              "title": "Control visibility and access",
+              "body": [
+                "Project group privacy supports locking and hiding groups. These controls govern visibility in Bycoda. File access on the device, connection permissions and provider access are managed independently."
+              ],
+              "steps": [
+                "Open Settings → Privacy → Start in privacy mode to require the privacy screen on the next launch.",
+                "Right-click the project group and choose Hide group. Use Settings → Group privacy → Hidden groups to show it temporarily or make it visible again.",
+                "Review connection permissions and revoke any device that should lose access."
+              ],
+              "links": [
+                { "label": "Bycoda privacy policy", "href": "https://bycoda.codes/privacy" }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "troubleshooting",
+          "title": "Troubleshooting and support",
+          "summary": "Identify the affected machine, check readiness, and collect evidence safely.",
+          "sections": [
+            {
+              "title": "Narrow down the issue",
+              "body": [
+                "Record the app version, affected project, execution machine and visible error. Check whether the problem is in the desktop app, the Host, the provider, a remote connection or a mobile client."
+              ],
+              "steps": [
+                "Check Settings → About and which machine owns the work.",
+                "Check connection and provider readiness. Open command output or run history and note the precise failure.",
+                "If a request is interrupted, verify whether it performed any work before retrying."
+              ]
+            },
+            {
+              "title": "Report with consent",
+              "body": [
+                "Use account Support or the bycoda support entry point. Include short reproduction steps, expected and observed behavior, and only the diagnostic output that relates to the issue. Redact tokens, private paths and message contents before sharing."
+              ],
+              "links": [
+                { "label": "Open account Support", "href": "https://account.bycoda.codes/" }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

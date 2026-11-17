@@ -58,6 +58,13 @@ it("shows failed quota refresh beside retained data and retries to valid unknown
         ),
       ),
     );
+    // Quotas live on the model list tab; Jobs opens first.
+    await vi.waitFor(() => expect(element.querySelector('[role="tab"]')).not.toBeNull());
+    await act(async () =>
+      [...element.querySelectorAll<HTMLElement>('[role="tab"]')]
+        .find((tab) => tab.textContent === "Models & order")!
+        .click(),
+    );
     await vi.waitFor(() => expect(element.textContent).toContain("42% left"));
     await act(async () => {
       await client.refetchQueries({ queryKey: ["models.routing.v1", "host", "status"] });

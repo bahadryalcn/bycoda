@@ -46,14 +46,15 @@ import { SessionErrorNotice } from "./SessionErrorNotice";
 import { useFormat, useLocale, useT } from "../../../shared/i18n";
 import {
   Check,
-  Copy,
+  ChatCopy,
+  ChatEditMessage,
+  ChatRun,
+  ChatWork,
   FilePlusCorner,
   MessageMultiple,
   Replace,
   MoreHorizontal,
-  Pencil,
   ChartBreakoutSquare,
-  Terminal,
   X,
   MessageSquare,
 } from "../../../shared/ui/icons";
@@ -163,9 +164,7 @@ import {
   isProseBlock,
   hasTurnCopyText,
   turnCopyText,
-  workKind,
   workSummaryLine,
-  type ActivityPhaseKind,
   type TurnItem,
 } from "../model/transcriptActivity";
 import { lastUserTurnBlock } from "../model/editLastTurn";
@@ -178,7 +177,6 @@ import { CodeExecutionProvider, type CodeExecutionScope } from "./CodeExecutionC
 import { useRetainedDisclosure } from "./useRetainedDisclosure";
 import {
   ActivityPhases,
-  ActivityPhaseIcon,
   formatWorkingDuration,
   ToolCall,
   HandoffDivider,
@@ -1101,25 +1099,27 @@ const Turn = memo(function Turn({
   // The fold line speaks for the main agent only. A delegated run has
   // its own row, which says who is working and how it went, so saying
   // it again here would be two lines telling the same story.
-  const foldTitle: ReactNode =
-    live && liveStatusInDock && !waitingForApproval ? (
-      (turnModelName ?? workSummaryLine(folded))
-    ) : live ? (
-      <LiveFoldTitle
-        startedAt={clockStart}
-        paused={waitingForApproval}
-        waitingFor={
-          managed && waitingForApproval ? "orchestrator" : pendingQuestion ? "answers" : undefined
-        }
-        background={backgroundTasks}
-        backgroundAgents={backgroundAgents}
-        modelName={turnModelName}
-      />
-    ) : durationMs != null ? (
-      formatWorkingDuration(t, format, durationMs, turnModelName, true)
-    ) : (
-      workSummaryLine(folded)
-    );
+  // With the clock in the dock, the line says what the work was; the model
+  // that did it trails as a quiet tag rather than standing in for a title.
+  const foldInDock = live && liveStatusInDock && !waitingForApproval;
+  const foldTitle: ReactNode = foldInDock ? (
+    workSummaryLine(folded)
+  ) : live ? (
+    <LiveFoldTitle
+      startedAt={clockStart}
+      paused={waitingForApproval}
+      waitingFor={
+        managed && waitingForApproval ? "orchestrator" : pendingQuestion ? "answers" : undefined
+      }
+      background={backgroundTasks}
+      backgroundAgents={backgroundAgents}
+      modelName={turnModelName}
+    />
+  ) : durationMs != null ? (
+    formatWorkingDuration(t, format, durationMs, turnModelName, true)
+  ) : (
+    workSummaryLine(folded)
+  );
   const showFoldLine =
     (live && (!liveStatusInDock || waitingForApproval)) || durationMs != null || !!fold;
   // It sits where the work starts, from before there is any: the row
@@ -1228,7 +1228,7 @@ const Turn = memo(function Turn({
     <TurnRow key="work-fold" folded={!showFoldLine}>
       <WorkFoldLine
         title={foldTitle}
-        kind={workKind(folded)}
+        meta={foldInDock ? turnModelName : undefined}
         harness={turnHarness}
         live={live}
         expandable={!!fold}
@@ -1826,7 +1826,7 @@ function CopyTurnButton({
       motion="none"
       variant="ghost"
       type="button"
-      icon={<Copy className={showLabel ? "icon-sm" : "icon-md"} strokeWidth={1.75} />}
+      icon={<ChatCopy className={showLabel ? "icon-sm" : "icon-md"} strokeWidth={1.75} />}
       resetKeys={[text, getText, attachments]}
       errorDetail
       onClick={(event) => event.stopPropagation()}
@@ -1922,7 +1922,7 @@ function MessageEditMenu({
           kind: "item",
           id: "resend",
           label: editing ? t("Cancel edit") : t("Edit and resend"),
-          icon: <Pencil />,
+          icon: <ChatEditMessage />,
         } satisfies DropdownMenuItem,
       ]
     : [];
@@ -2230,7 +2230,7 @@ function ShellRunCard({ run, embedded }: { run: ShellRun; embedded?: boolean }) 
         className="overflow-hidden font-mono text-ui-caption leading-5"
       >
         <div className="flex min-w-0 items-start gap-2 px-3 py-1.5">
-          <Terminal
+          <ChatRun
             className="mt-1 icon-xs shrink-0 text-(--ui-text-secondary)"
             strokeWidth={1.75}
             aria-hidden
@@ -2375,7 +2375,7 @@ function UserMessageBlock({
           variant="ghost"
           type="button"
           disabled={!canRewind}
-          startIcon={<Pencil className={showLabels ? undefined : "icon-md"} />}
+          startIcon={<ChatEditMessage className={showLabels ? undefined : "icon-md"} />}
           onClick={(event) => {
             event.stopPropagation();
             dismiss?.();
@@ -2389,7 +2389,7 @@ function UserMessageBlock({
       {block.startedAt != null ? (
         <Timestamp
           value={block.startedAt}
-          className="ms-1 whitespace-nowrap font-sans text-ui-body text-(--ui-text-secondary)"
+          className="ms-1 whitespace-nowrap font-sans text-ui-caption tabular-nums text-(--ui-text-muted)"
         />
       ) : null}
     </>
@@ -2399,7 +2399,7 @@ function UserMessageBlock({
     <div
       data-prompt-anchor={block.id}
       data-editing-last-turn={editing ? "true" : undefined}
-      className={`user-message-row group/usermsg flex min-w-0 flex-col items-end overflow-visible ${questionAnswer ? "" : "pbs-1.5 pe-4 pbe-5 ps-14"}`}
+      className={`user-message-row group/usermsg flex min-w-0 flex-col items-end overflow-visible ${questionAnswer ? "" : "pbs-1.5 pe-4 pbe-10 ps-14"}`}
     >
       <SessionMessageAuthor
         author={block.author}
@@ -2631,7 +2631,7 @@ function turnItemKey(item: TurnItem): string {
  */
 function WorkFoldLine({
   title,
-  kind,
+  meta,
   harness,
   live = false,
   expandable,
@@ -2639,7 +2639,8 @@ function WorkFoldLine({
   onToggle,
 }: {
   title: ReactNode;
-  kind: ActivityPhaseKind;
+  /** The model that did the work, when the title does not already name it. */
+  meta?: string;
   harness?: HarnessId;
   live?: boolean;
   expandable: boolean;
@@ -2652,49 +2653,59 @@ function WorkFoldLine({
       {harness ? (
         <HarnessIcon harness={harness} className="size-3.5 shrink-0" />
       ) : (
-        <ActivityPhaseIcon kind={kind} />
+        <ChatWork className="size-3.5 shrink-0 text-(--ui-text-secondary)" />
       )}
     </span>
   );
   // While the agent runs, the clock shimmers here rather than at the bottom,
   // which is now bare. Same face as the settled line, so settling never
-  // swaps the font under the reader.
-  const label = live ? (
-    <span className="flex min-w-0 flex-1 font-sans text-ui-body">{title}</span>
-  ) : (
-    <span className="min-w-0 flex-1 truncate font-sans text-ui-body text-(--ui-text-secondary) transition-colors duration-200 group-hover:text-(--ui-text-secondary)">
-      {title}
+  // swaps the font under the reader. The model rides along as a quiet tag.
+  const label = (
+    <span className="flex min-w-0 flex-1 items-baseline gap-2">
+      {live ? (
+        <span className="flex min-w-0 font-sans text-ui-body">{title}</span>
+      ) : (
+        <span className="min-w-0 truncate font-sans text-ui-body text-(--ui-text-secondary)">
+          {title}
+        </span>
+      )}
+      {meta ? (
+        <span className="shrink-0 font-sans text-ui-caption text-(--ui-text-muted)">{meta}</span>
+      ) : null}
     </span>
   );
-  const row = `flex w-full min-w-0 items-center gap-1.5 px-4 py-1 text-left${
-    open ? " zen-fold-drop" : ""
-  }`;
 
-  if (!expandable) {
-    return (
-      <div className={`group ${row}`} role={live ? "status" : undefined}>
-        {icon}
-        {label}
-      </div>
-    );
-  }
+  // The same full-width line as an activity group header, so the whole row is
+  // the target and nothing draws a selected box around a status line.
   return (
-    <Button
-      motion="none"
-      variant="ghost"
-      type="button"
-      selected={open}
-      // Open, the chevron leads in the icon's place: it is the way back, and hunting for it
-      // under the cursor is no way to close what you opened.
-      expanded={open}
-      chevron={open ? "start" : "end"}
-      aria-label={open ? t("Hide the work") : t("Show the work")}
-      aria-live={live ? "polite" : undefined}
-      onClick={onToggle}
-    >
-      {open ? null : icon}
-      {label}
-    </Button>
+    <div className={`transcript-fold-line min-w-0 px-2.5${open ? " zen-fold-drop" : ""}`}>
+      {expandable ? (
+        <Button
+          motion="none"
+          variant="ghost"
+          type="button"
+          fullWidth
+          align="start"
+          weight="regular"
+          expanded={open}
+          chevron="end"
+          aria-label={open ? t("Hide the work") : t("Show the work")}
+          aria-live={live ? "polite" : undefined}
+          onClick={onToggle}
+        >
+          {icon}
+          {label}
+        </Button>
+      ) : (
+        <div
+          className="flex min-h-7 w-full min-w-0 items-center gap-1.5 px-1.5"
+          role={live ? "status" : undefined}
+        >
+          {icon}
+          {label}
+        </div>
+      )}
+    </div>
   );
 }
 

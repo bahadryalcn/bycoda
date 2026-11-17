@@ -2,6 +2,8 @@ import { join } from "node:path";
 import { costParams } from "../usage/cost-report";
 import { readUsageCost } from "../usage/cost-read";
 import { readUsageLimits } from "../usage/limits-report";
+import { readPlanShare } from "../usage/plan-share-read";
+import { HOST_USAGE_PLAN_SHARE_METHOD } from "../../src/shared/model/host-contracts/usage-plan-share";
 import {
   applyProviderAccountStyles,
   readProviderAccountStyles,
@@ -28,6 +30,31 @@ export async function handleUsageRpc(
             await readProviderAccountStyles(dependencies.engine.store),
           ),
       });
+      break;
+    case HOST_USAGE_PLAN_SHARE_METHOD:
+      request.result = await readPlanShare(
+        {
+          environmentId,
+          accountRoots: async () => {
+            const catalog = await hostProviderAccounts();
+            const roots: Record<string, { provider: "claude" | "codex"; roots: string[] }> = {};
+            for (const provider of ["claude", "codex"] as const)
+              for (const account of catalog[provider] ?? []) {
+                const dir = await accountDir(provider, account.id);
+                if (!dir) continue;
+                roots[`${provider}:${account.id}`] = {
+                  provider,
+                  roots:
+                    provider === "claude"
+                      ? [join(dir, "projects")]
+                      : [join(dir, "sessions"), join(dir, "archived_sessions")],
+                };
+              }
+            return roots;
+          },
+        },
+        request.params,
+      );
       break;
     case "usage.cost.read":
       request.result = await readUsageCost(

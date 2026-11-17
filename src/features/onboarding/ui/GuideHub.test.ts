@@ -4,6 +4,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import GuideHub from "./GuideHub";
 import { GUIDE_ACTION_EVENT, guideActionBlocker, loadSeenGuideTopics } from "../model/guide";
+import { guideTopics } from "../model/guideTopics";
+import wiki from "../model/wiki.json";
 
 let root: Root;
 let container: HTMLDivElement;
@@ -74,4 +76,12 @@ it("mirrors the openers' gates", () => {
   expect(guideActionBlocker("inbox", { ...local, cwd: "~" })).toBe("project");
   expect(guideActionBlocker("notes", remote)).toBe("notes-disabled");
   expect(guideActionBlocker("open-project", { ...local, cwd: "" })).toBeNull();
+});
+
+it("keeps durable Wiki links for all interactive topics", () => {
+  const articles = wiki.groups.flatMap((group) => group.articles);
+  const ids = new Set(articles.map((article) => article.id));
+  expect(ids.size).toBe(articles.length);
+  for (const topic of guideTopics()) expect(ids.has(topic.id)).toBe(true);
+  for (const article of articles) expect(article.id).toMatch(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
 });

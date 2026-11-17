@@ -1263,6 +1263,11 @@ impl HarnessHost {
         (epoch, kill_all, prev)
     }
 
+    /// A provider child is running for this session.
+    pub(crate) fn has_child(&self, session_id: &str) -> bool {
+        self.lock_inner().children.contains_key(session_id)
+    }
+
     pub(crate) fn upcoming_tool_spawn(&self, session_id: &str) -> Option<(u64, u64)> {
         let inner = self.lock_inner();
         if inner.children.contains_key(session_id) || inner.receipts.has_pending(session_id) {

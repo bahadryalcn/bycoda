@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore } from "react";
 import {
   getHarnessAvailabilitySnapshot,
   isHarnessAvailable,
@@ -7,7 +7,9 @@ import {
 import { useT } from "../../../../shared/i18n";
 import { HARNESS_TITLE } from "../../../../shared/model/harnessIdentity";
 import { SessionProviderSchema } from "../../../../shared/model/host-contracts/session-commands";
+import { Button } from "../../../../shared/ui/Button";
 import { NumberField } from "../../../../shared/ui/NumberField";
+import { TokenAmountField } from "./TokenAmountField";
 import { TextField } from "../../../../shared/ui/TextField";
 import { Text } from "../../../../shared/ui/Text";
 import { Badge } from "../../../../shared/ui/Badge";
@@ -21,14 +23,21 @@ import type { CapDraft, OrderDraft } from "../../model/modelRoutingDraft";
 
 const EMPTY_CAPS: CapDraft = {
   daily: { tokens: "", costUsd: "" },
+  weekly: { tokens: "", costUsd: "" },
   monthly: { tokens: "", costUsd: "" },
 };
-const CAP_COLUMNS = [
+const TOKEN_COLUMNS = [
   { key: "daily-tokens", period: "daily", metric: "tokens" },
-  { key: "daily-costUsd", period: "daily", metric: "costUsd" },
+  { key: "weekly-tokens", period: "weekly", metric: "tokens" },
   { key: "monthly-tokens", period: "monthly", metric: "tokens" },
+] as const;
+const COST_COLUMNS = [
+  { key: "daily-costUsd", period: "daily", metric: "costUsd" },
+  { key: "weekly-costUsd", period: "weekly", metric: "costUsd" },
   { key: "monthly-costUsd", period: "monthly", metric: "costUsd" },
 ] as const;
+/** Providers whose account quota the selector can read, so a "keep free" share means something. */
+const PLAN_QUOTA_PROVIDERS: readonly string[] = ["claude", "codex", "opencode"];
 
 type CapScope = "total" | (typeof SessionProviderSchema.options)[number];
 
@@ -36,11 +45,11 @@ function capsFor(draft: OrderDraft, scope: CapScope): CapDraft | undefined {
   return scope === "total" ? draft.workCaps.total : draft.workCaps.providers[scope];
 }
 
-function hasCap(caps: CapDraft | undefined): boolean {
+function hasCap(caps: CapDraft | undefined, metrics: ("tokens" | "costUsd")[]): boolean {
   return Boolean(
     caps &&
-    [caps.daily.tokens, caps.daily.costUsd, caps.monthly.tokens, caps.monthly.costUsd].some(
-      (value) => value.trim() !== "",
+    [caps.daily, caps.weekly, caps.monthly].some((period) =>
+      metrics.some((metric) => period[metric].trim() !== ""),
     ),
   );
 }
@@ -60,9 +69,12 @@ export function ModelOrderLimits({
     getHarnessAvailabilitySnapshot,
     getHarnessAvailabilitySnapshot,
   );
+  const [costOverride, setCostOverride] = useState<boolean | null>(null);
   const headers = {
     "daily-tokens": t("Daily tokens"),
     "daily-costUsd": t("Daily cost (USD)"),
+    "weekly-tokens": t("Weekly tokens"),
+    "weekly-costUsd": t("Weekly cost (USD)"),
     "monthly-tokens": t("Monthly tokens"),
     "monthly-costUsd": t("Monthly cost (USD)"),
   } as const;
@@ -71,9 +83,24 @@ export function ModelOrderLimits({
     ...SessionProviderSchema.options.filter(
       (provider) =>
         isHarnessAvailable(provider as Parameters<typeof isHarnessAvailable>[0]) ||
-        hasCap(draft.workCaps.providers[provider]),
+        hasCap(draft.workCaps.providers[provider], ["tokens", "costUsd"]) ||
+        Boolean(draft.workCaps.reserve[provider]),
     ),
   ];
+  // Subscription plans have no real dollar cost, so cost columns stay hidden until one is set.
+  const anyCost =
+    hasCap(draft.workCaps.total, ["costUsd"]) ||
+    Object.values(draft.workCaps.providers).some((caps) => hasCap(caps, ["costUsd"]));
+  const showCost = costOverride ?? anyCost;
+  const columns = showCost ? [...TOKEN_COLUMNS, ...COST_COLUMNS] : TOKEN_COLUMNS;
+  const setCaps = (scope: CapScope, next: CapDraft) =>
+    onChange({
+      ...draft,
+      workCaps:
+        scope === "total"
+          ? { ...draft.workCaps, total: next }
+          : { ...draft.workCaps, providers: { ...draft.workCaps.providers, [scope]: next } },
+    });
   const used = `${usage.stale ? `${t("Out of date")} · ` : ""}${formatAgentMinutes(usage.usedMinutes)}${
     usage.dailyAgentMinutes > 0
       ? t(" of {p0}", { p0: formatAgentMinutes(usage.dailyAgentMinutes) })
@@ -182,12 +209,23 @@ export function ModelOrderLimits({
               )}
             </p>
           </InfoPopover>
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-pressed={showCost}
+            // A set cost value keeps the columns visible; the toggle only matters while all are empty.
+            disabled={anyCost}
+            onClick={() => setCostOverride(!showCost)}
+          >
+            {t("Cost limits")}
+          </Button>
         </div>
         <DataTable
           caption={t("Token and cost limits")}
           headers={[
             { label: t("Provider") },
-            ...CAP_COLUMNS.map((column) => ({ label: headers[column.key] })),
+            ...columns.map((column) => ({ label: headers[column.key] })),
+            { label: t("Keep free (%)") },
           ]}
         >
           {scopes.map((scope) => {
@@ -200,38 +238,64 @@ export function ModelOrderLimits({
                   <Text key="provider" size="secondary" wrap="normal">
                     {name}
                   </Text>,
-                  ...CAP_COLUMNS.map(({ key, period, metric }) => (
-                    <TextField
-                      key={key}
-                      numeric
-                      type="number"
-                      inputMode="decimal"
+                  ...columns.map(({ key, period, metric }) => {
+                    const update = (value: string) =>
+                      setCaps(scope, {
+                        ...current,
+                        [period]: { ...current[period], [metric]: value },
+                      });
+                    return metric === "tokens" ? (
+                      <TokenAmountField
+                        key={key}
+                        label={`${name}: ${headers[key]}`}
+                        hideLabel
+                        value={current[period][metric]}
+                        onChange={update}
+                      />
+                    ) : (
+                      <TextField
+                        key={key}
+                        numeric
+                        type="number"
+                        inputMode="decimal"
+                        fieldSize="sm"
+                        label={`${name}: ${headers[key]}`}
+                        hideLabel
+                        min={0}
+                        step="any"
+                        placeholder={t("No limit")}
+                        startAdornment="$"
+                        value={current[period][metric]}
+                        onChange={(event) => update(event.currentTarget.value)}
+                      />
+                    );
+                  }),
+                  scope !== "total" && PLAN_QUOTA_PROVIDERS.includes(scope) ? (
+                    <NumberField
+                      key="reserve"
                       fieldSize="sm"
-                      label={`${name}: ${headers[key]}`}
+                      steppers={false}
+                      label={`${name}: ${t("Keep free (%)")}`}
                       hideLabel
                       min={0}
-                      step={metric === "tokens" ? 1 : "any"}
-                      placeholder={t("No limit")}
-                      startAdornment={metric === "costUsd" ? "$" : undefined}
-                      value={current[period][metric]}
-                      onChange={(event) => {
-                        const next = {
-                          ...current,
-                          [period]: { ...current[period], [metric]: event.currentTarget.value },
-                        };
+                      max={100}
+                      step={1}
+                      placeholder="0"
+                      value={draft.workCaps.reserve[scope] ?? ""}
+                      onChange={(event) =>
                         onChange({
                           ...draft,
-                          workCaps:
-                            scope === "total"
-                              ? { ...draft.workCaps, total: next }
-                              : {
-                                  ...draft.workCaps,
-                                  providers: { ...draft.workCaps.providers, [scope]: next },
-                                },
-                        });
-                      }}
+                          workCaps: {
+                            ...draft.workCaps,
+                            reserve: {
+                              ...draft.workCaps.reserve,
+                              [scope]: event.currentTarget.value,
+                            },
+                          },
+                        })
+                      }
                     />
-                  )),
+                  ) : null,
                 ]}
               />
             );

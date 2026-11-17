@@ -63,9 +63,7 @@ it("lists stored overrides and the targets an order offers", () => {
     unknownLimit: "use" as const,
     ...(providerAccountId ? { providerAccountId } : {}),
   });
-  expect(overrideTargets([entry("claude", "work"), entry("claude", "work"), entry("codex")])).toEqual([
-    { kind: "provider", harness: "claude" },
-    work,
-    codex,
-  ]);
+  expect(
+    overrideTargets([entry("claude", "work"), entry("claude", "work"), entry("codex")]),
+  ).toEqual([{ kind: "provider", harness: "claude" }, work, codex]);
 });

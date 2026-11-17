@@ -2,6 +2,7 @@ import { Text } from "../../../shared/ui/Text";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { OnboardingHeading } from "./OnboardingHeading";
+import { OnboardingIllustratedStep } from "./OnboardingIllustratedStep";
 import { AppWindow, Globe } from "../../../shared/ui/icons";
 import { Surface } from "../../../shared/ui/Surface";
 
@@ -19,7 +20,7 @@ export function OnboardingConnections({
         title={t("Connections")}
         info={t("Remote agents stay on their own computer. Add machines later in Settings.")}
       />
-      <div className="onboarding-scroll">
+      <OnboardingIllustratedStep scene="connections">
         <Surface variant="card" padding="md" className="onboarding-card">
           <AppWindow aria-hidden className="icon-lg" />
           <div>
@@ -56,7 +57,7 @@ export function OnboardingConnections({
             {t("Manage connections…")}
           </Button>
         </div>
-      </div>
+      </OnboardingIllustratedStep>
     </>
   );
 }

@@ -1,5 +1,12 @@
 # Workbench navigation
 
+The title-bar application menu keeps session creation, search, Inbox and Notes
+in the main list. Tab closing, view and zoom controls, and terminal actions have
+their own submenus. Use Settings > General for updates, the guide and the tour,
+or Settings > Workspace for Autosave. Inbox opens with Ctrl+Shift+I (⌘⇧I on
+Mac) and Notes with Ctrl+Shift+L (⌘⇧L on Mac). The menu shows the active
+shortcuts from Settings > Keybindings.
+
 ## Transient notifications
 
 Information, success and progress notices appear at the top right. Warnings and

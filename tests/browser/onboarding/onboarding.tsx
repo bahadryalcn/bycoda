@@ -25,6 +25,10 @@ if (!new URLSearchParams(location.search).has("providers"))
 mockWindows("main");
 mockIPC(
   (command, args) => {
+    if (command === "plugin:window|is_visible") return true;
+    if (command === "account_status" && new URLSearchParams(location.search).has("account")) {
+      return { configured: true, signedIn: false, apiBaseUrl: null, environment: null };
+    }
     const agentDefaults = agentDefaultsFixtureCommand(command, args);
     if (agentDefaults !== undefined) return agentDefaults;
     if (command === "provider_terminal_profiles") {
@@ -119,7 +123,9 @@ registerBuiltinHarnesses();
 // The optional account and statistics steps lead a real first run; these fixtures cover the
 // workspace steps, so both are recorded as already answered.
 try {
-  localStorage.setItem("bycoda.onboarding.account.v1", "seen");
+  if (!new URLSearchParams(location.search).has("account")) {
+    localStorage.setItem("bycoda.onboarding.account.v1", "seen");
+  }
   localStorage.setItem(
     "bycoda.account.anonymousStats.consent.v2",
     JSON.stringify({ choice: "off", decidedAt: "2026-01-01T00:00:00.000Z" }),
@@ -161,7 +167,12 @@ function Fixture() {
   if (new URLSearchParams(location.search).has("guideHub")) {
     return (
       <main>
-        <GuideHub projectCwd="/fixture" onClose={() => {}} onStartTour={() => {}} />
+        <GuideHub
+          projectCwd="/fixture"
+          onClose={() => {}}
+          onStartTour={() => {}}
+          onShowStep={() => {}}
+        />
       </main>
     );
   }

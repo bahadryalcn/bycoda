@@ -204,9 +204,26 @@ describe("Work calendar cap drafts", () => {
     edit.workCaps.total.monthly.costUsd = "2.75";
     edit.workCaps.providers.codex = {
       daily: { tokens: "0", costUsd: "" },
+      weekly: { tokens: "5000000", costUsd: "" },
       monthly: { tokens: "", costUsd: "3" },
     };
+    edit.workCaps.reserve.codex = "20";
     const caps = prepareOrderSave(edit).routing.workCaps!;
+    expect(caps.providers?.codex?.weekly?.tokens).toBe(5_000_000);
+    expect(caps.reservePercent).toEqual({ codex: 20 });
+    const state = {
+      ...edit.routing,
+      workCaps: caps,
+      version: 1,
+      updatedAt: 1,
+    };
+    const back = orderDraft(state, { maxRunningTasks: 2, dailyAgentMinutes: 0 });
+    expect(back.workCaps.providers.codex!.weekly.tokens).toBe("5000000");
+    expect(back.workCaps.reserve).toEqual({ codex: "20" });
+    edit.workCaps.reserve.codex = "120";
+    expect(() => prepareOrderSave(edit)).toThrow("Keep free");
+    edit.workCaps.reserve.codex = "";
+    expect(prepareOrderSave(edit).routing.workCaps?.reservePercent).toBeUndefined();
     expect(caps.total?.daily?.tokens).toBe(123);
     expect(caps.total?.monthly?.costUsd).toBe(2.75);
     expect(caps.providers?.codex?.daily?.tokens).toBe(0);

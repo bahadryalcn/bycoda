@@ -8,14 +8,6 @@
 #setting-update .settings-row-control {
   max-inline-size: 26rem;
 }
-.general-update-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 8px;
-}
-
 .general-version {
   font-family: var(--font-mono);
 }

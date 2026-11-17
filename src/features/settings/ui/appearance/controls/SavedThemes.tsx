@@ -116,7 +116,6 @@ export function SavedThemes({ appearance }: { appearance: AppearanceSettings }) 
                 variant="item"
                 className="theme-saved-apply"
                 disabled={busy || appearance.chatBackgroundBusy}
-                tooltip={t("Apply this look")}
                 onClick={() => {
                   apply(theme).catch((error: unknown) => console.error(error));
                 }}
@@ -162,6 +161,7 @@ export function SavedThemes({ appearance }: { appearance: AppearanceSettings }) 
                   size="sm"
                   variant="ghost"
                   label={t("Rename")}
+                  title=""
                   onClick={() => setRenaming(theme)}
                 >
                   <Pencil />
@@ -171,6 +171,7 @@ export function SavedThemes({ appearance }: { appearance: AppearanceSettings }) 
                   size="sm"
                   variant="ghost"
                   label={t("Overwrite with current look")}
+                  title=""
                   onClick={() => overwrite(theme)}
                 >
                   <RefreshCw />
@@ -180,6 +181,7 @@ export function SavedThemes({ appearance }: { appearance: AppearanceSettings }) 
                   size="sm"
                   variant="ghost"
                   label={t("Delete")}
+                  title=""
                   onClick={() => remove(theme)}
                 >
                   <Trash2 />

@@ -60,42 +60,72 @@ export async function handleInboxRpc(
     case "inbox.list": {
       const projectId =
         request.params.projectId === undefined ? undefined : String(request.params.projectId);
-      const projects = projectId
-        ? [await dependencies.engine.store.project(projectId)]
-        : await dependencies.engine.store.projects();
-      // Bounded fan-out: with 100+ projects an unbounded Promise.all queues every
-      // list job (and its desktop read) at once and starves the point reads.
-      const lists: Awaited<ReturnType<typeof dependencies.projectSessionList>>[] = [];
-      let nextProject = 0;
-      await Promise.all(
-        Array.from({ length: Math.min(4, projects.length) }, async () => {
-          for (;;) {
-            const index = nextProject++;
-            if (index >= projects.length) return;
-            lists[index] = await dependencies.projectSessionList(projects[index].id);
-          }
-        }),
-      );
-      const sessions = lists.flatMap((entry) => entry.list);
+      const sources = await sharedInboxSources(dependencies, projectId);
       if (!(await dependencies.engine.store.authenticated(request.token)))
         throw new Error("Session authority revoked.");
-      request.result = hostInbox(
-        {
-          sessions,
-          tasks: await dependencies.tasks.list(),
-          goals: await dependencies.goals.list(),
-          automations: await dependencies.automations.list(),
-          threads: (
-            await dependencies.social.snapshot({
-              kind: "owner",
-              actorId: "device",
-              provider: "owner",
-            })
-          ).threads,
-        },
-        projectId,
-      );
+      request.result = hostInbox(sources, projectId);
       break;
     }
   }
+}
+
+type InboxDependencies = Pick<
+  ServerBindings,
+  "engine" | "projectSessionList" | "tasks" | "goals" | "automations" | "social"
+>;
+type InboxSources = Parameters<typeof hostInbox>[0];
+
+/** Reads in flight per Host and scope. Every client asks at once after a Host restart, and one
+ * read lists every project's sessions, so concurrent callers share it; none outlives its read. */
+const inboxReads = new WeakMap<object, Map<string, Promise<InboxSources>>>();
+
+function sharedInboxSources(
+  dependencies: InboxDependencies,
+  projectId: string | undefined,
+): Promise<InboxSources> {
+  let reads = inboxReads.get(dependencies.engine);
+  if (!reads) inboxReads.set(dependencies.engine, (reads = new Map()));
+  const key = projectId ?? "";
+  const pending = reads.get(key);
+  if (pending) return pending;
+  const read = readInboxSources(dependencies, projectId).finally(() => {
+    if (reads.get(key) === read) reads.delete(key);
+  });
+  reads.set(key, read);
+  return read;
+}
+
+async function readInboxSources(
+  dependencies: InboxDependencies,
+  projectId: string | undefined,
+): Promise<InboxSources> {
+  const projects = projectId
+    ? [await dependencies.engine.store.project(projectId)]
+    : await dependencies.engine.store.projects();
+  // Bounded fan-out: with 100+ projects an unbounded Promise.all queues every
+  // list job (and its desktop read) at once and starves the point reads.
+  const lists: Awaited<ReturnType<typeof dependencies.projectSessionList>>[] = [];
+  let nextProject = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(4, projects.length) }, async () => {
+      for (;;) {
+        const index = nextProject++;
+        if (index >= projects.length) return;
+        lists[index] = await dependencies.projectSessionList(projects[index].id);
+      }
+    }),
+  );
+  return {
+    sessions: lists.flatMap((entry) => entry.list),
+    tasks: await dependencies.tasks.list(),
+    goals: await dependencies.goals.list(),
+    automations: await dependencies.automations.list(),
+    threads: (
+      await dependencies.social.snapshot({
+        kind: "owner",
+        actorId: "device",
+        provider: "owner",
+      })
+    ).threads,
+  };
 }

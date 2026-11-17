@@ -238,6 +238,10 @@ function ChatLayoutFixture() {
         detail: `Command result ${index}: readable-output-marker`,
       },
     })),
+    // An answer after the work folds it behind the turn's work line.
+    ...(new URLSearchParams(location.search).has("answered")
+      ? [{ id: "layout-answer", role: "assistant" as const, text: "Komutlar tamamlandı." }]
+      : []),
   ];
   return (
     <div

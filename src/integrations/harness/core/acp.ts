@@ -134,7 +134,13 @@ export class AcpClient {
     if (typeof tilde === "string" && isHomeRelative(tilde)) {
       return homeDir().then((home) => {
         const cwd = tilde === "~" ? home : `${home.replace(/[\\/]+$/, "")}/${tilde.slice(2)}`;
-        return this.requestOwned(rpc, method, { ...(params as Record<string, unknown>), cwd }, timeoutMs, consume);
+        return this.requestOwned(
+          rpc,
+          method,
+          { ...(params as Record<string, unknown>), cwd },
+          timeoutMs,
+          consume,
+        );
       });
     }
     if (

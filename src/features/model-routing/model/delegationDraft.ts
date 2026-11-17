@@ -50,7 +50,8 @@ export function writeLayer(
   values: Settings,
 ): ModelRoutingDelegation {
   const next: Settings = {};
-  for (const key of MODEL_ROUTING_DELEGATION_KEYS) if (values[key] !== undefined) next[key] = values[key];
+  for (const key of MODEL_ROUTING_DELEGATION_KEYS)
+    if (values[key] !== undefined) next[key] = values[key];
   if (layer.kind === "global") return { ...delegation, global: next };
   const empty = Object.keys(next).length === 0;
   if (layer.kind === "provider") {
@@ -100,9 +101,10 @@ export function inheritedValues(
 
 /** Provider and account overrides that exist, providers first. */
 export function storedOverrides(delegation: ModelRoutingDelegation): DelegationLayer[] {
-  const providers = Object.keys(delegation.providers).map(
-    (harness): DelegationLayer => ({ kind: "provider", harness: harness as Harness }),
-  );
+  const providers = Object.keys(delegation.providers).map((harness): DelegationLayer => ({
+    kind: "provider",
+    harness: harness as Harness,
+  }));
   const accounts = Object.keys(delegation.accounts).flatMap((key): DelegationLayer[] => {
     const split = key.indexOf("\n");
     return split > 0

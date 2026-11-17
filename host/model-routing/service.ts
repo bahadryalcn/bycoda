@@ -42,7 +42,14 @@ export function createModelRoutingService(ports: ModelRoutingPorts): ModelRoutin
     async status() {
       const state = await readModelRouting(ports.store);
       const signals = await ports.signals(state, { awaitQuota: true });
-      return state.entries.map((entry) => modelRoutingEntryStatus(entry, signals));
+      return state.entries.map((entry) =>
+        modelRoutingEntryStatus(
+          entry,
+          signals,
+          undefined,
+          state.workCaps?.reservePercent?.[entry.harness],
+        ),
+      );
     },
     async resolve(input) {
       const state = await readModelRouting(ports.store);

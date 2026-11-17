@@ -31819,6 +31819,7 @@
                 "items": {
                   "additionalProperties": false,
                   "properties": {
+                    "effort": { "enum": ["low", "medium", "high"], "type": "string" },
                     "entryIds": {
                       "items": { "maxLength": 200, "minLength": 1, "type": "string" },
                       "maxItems": 500,
@@ -31963,10 +31964,42 @@
                             }
                           },
                           "type": "object"
+                        },
+                        "weekly": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "costUsd": { "minimum": 0, "type": "number" },
+                            "tokens": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            }
+                          },
+                          "type": "object"
                         }
                       },
                       "type": "object"
                     },
+                    "propertyNames": {
+                      "enum": [
+                        "codex",
+                        "claude",
+                        "cursor",
+                        "grok",
+                        "opencode",
+                        "pi",
+                        "omp",
+                        "fx",
+                        "hermes",
+                        "antigravity",
+                        "acp"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "reservePercent": {
+                    "additionalProperties": { "maximum": 100, "minimum": 0, "type": "integer" },
                     "propertyNames": {
                       "enum": [
                         "codex",
@@ -31997,6 +32030,14 @@
                         "type": "object"
                       },
                       "monthly": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "costUsd": { "minimum": 0, "type": "number" },
+                          "tokens": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+                        },
+                        "type": "object"
+                      },
+                      "weekly": {
                         "additionalProperties": false,
                         "properties": {
                           "costUsd": { "minimum": 0, "type": "number" },
@@ -32359,6 +32400,7 @@
                 "items": {
                   "additionalProperties": false,
                   "properties": {
+                    "effort": { "enum": ["low", "medium", "high"], "type": "string" },
                     "entryIds": {
                       "items": { "maxLength": 200, "minLength": 1, "type": "string" },
                       "maxItems": 500,
@@ -32501,10 +32543,42 @@
                             }
                           },
                           "type": "object"
+                        },
+                        "weekly": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "costUsd": { "minimum": 0, "type": "number" },
+                            "tokens": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            }
+                          },
+                          "type": "object"
                         }
                       },
                       "type": "object"
                     },
+                    "propertyNames": {
+                      "enum": [
+                        "codex",
+                        "claude",
+                        "cursor",
+                        "grok",
+                        "opencode",
+                        "pi",
+                        "omp",
+                        "fx",
+                        "hermes",
+                        "antigravity",
+                        "acp"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "reservePercent": {
+                    "additionalProperties": { "maximum": 100, "minimum": 0, "type": "integer" },
                     "propertyNames": {
                       "enum": [
                         "codex",
@@ -32535,6 +32609,14 @@
                         "type": "object"
                       },
                       "monthly": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "costUsd": { "minimum": 0, "type": "number" },
+                          "tokens": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+                        },
+                        "type": "object"
+                      },
+                      "weekly": {
                         "additionalProperties": false,
                         "properties": {
                           "costUsd": { "minimum": 0, "type": "number" },
@@ -32653,6 +32735,7 @@
                 "items": {
                   "additionalProperties": false,
                   "properties": {
+                    "effort": { "enum": ["low", "medium", "high"], "type": "string" },
                     "entryIds": {
                       "items": { "maxLength": 200, "minLength": 1, "type": "string" },
                       "maxItems": 500,
@@ -32797,10 +32880,42 @@
                             }
                           },
                           "type": "object"
+                        },
+                        "weekly": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "costUsd": { "minimum": 0, "type": "number" },
+                            "tokens": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            }
+                          },
+                          "type": "object"
                         }
                       },
                       "type": "object"
                     },
+                    "propertyNames": {
+                      "enum": [
+                        "codex",
+                        "claude",
+                        "cursor",
+                        "grok",
+                        "opencode",
+                        "pi",
+                        "omp",
+                        "fx",
+                        "hermes",
+                        "antigravity",
+                        "acp"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "reservePercent": {
+                    "additionalProperties": { "maximum": 100, "minimum": 0, "type": "integer" },
                     "propertyNames": {
                       "enum": [
                         "codex",
@@ -32831,6 +32946,14 @@
                         "type": "object"
                       },
                       "monthly": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "costUsd": { "minimum": 0, "type": "number" },
+                          "tokens": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+                        },
+                        "type": "object"
+                      },
+                      "weekly": {
                         "additionalProperties": false,
                         "properties": {
                           "costUsd": { "minimum": 0, "type": "number" },
@@ -32879,6 +33002,7 @@
               "properties": {
                 "entryId": { "maxLength": 200, "minLength": 1, "type": "string" },
                 "leftPercent": { "maximum": 100, "minimum": 0, "type": "number" },
+                "limitState": { "enum": ["reading", "noQuota", "unavailable"], "type": "string" },
                 "resetsAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                 "skip": {
                   "enum": [
@@ -68607,6 +68731,7 @@
                       "items": {
                         "additionalProperties": false,
                         "properties": {
+                          "effort": { "enum": ["low", "medium", "high"], "type": "string" },
                           "entryIds": {
                             "items": { "maxLength": 200, "minLength": 1, "type": "string" },
                             "maxItems": 500,
@@ -68749,9 +68874,45 @@
                                   }
                                 },
                                 "type": "object"
+                              },
+                              "weekly": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "costUsd": { "minimum": 0, "type": "number" },
+                                  "tokens": {
+                                    "maximum": 9007199254740991,
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  }
+                                },
+                                "type": "object"
                               }
                             },
                             "type": "object"
+                          },
+                          "propertyNames": {
+                            "enum": [
+                              "codex",
+                              "claude",
+                              "cursor",
+                              "grok",
+                              "opencode",
+                              "pi",
+                              "omp",
+                              "fx",
+                              "hermes",
+                              "antigravity",
+                              "acp"
+                            ],
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        "reservePercent": {
+                          "additionalProperties": {
+                            "maximum": 100,
+                            "minimum": 0,
+                            "type": "integer"
                           },
                           "propertyNames": {
                             "enum": [
@@ -68787,6 +68948,18 @@
                               "type": "object"
                             },
                             "monthly": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "costUsd": { "minimum": 0, "type": "number" },
+                                "tokens": {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                }
+                              },
+                              "type": "object"
+                            },
+                            "weekly": {
                               "additionalProperties": false,
                               "properties": {
                                 "costUsd": { "minimum": 0, "type": "number" },
@@ -80411,5 +80584,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "c3c60582485adf57b40c4151cacbc9829073a9506fb68dd794bffe73f3684577"
+  "schemaHash": "756ddbcee1e616cc2790852c2242ac1157cf1174152a1f1923803cf8ac44981b"
 }

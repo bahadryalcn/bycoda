@@ -107,6 +107,26 @@
 .onboarding-body p {
   margin-block-end: 14px;
 }
+.onboarding-illustrated-step {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 30%);
+  align-items: start;
+  gap: clamp(12px, 4cqi, 32px);
+}
+.onboarding-illustrated-step > img {
+  justify-self: center;
+  max-inline-size: 100%;
+  block-size: auto;
+}
+@container onboarding-scroll (max-width: 440px) {
+  .onboarding-illustrated-step {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .onboarding-illustrated-step > img {
+    max-block-size: 120px;
+    inline-size: auto;
+  }
+}
 .onboarding-heading p {
   margin: 0;
 }

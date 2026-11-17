@@ -119,18 +119,17 @@ function listJobs(
         input.sessionIds?.includes(job.sessionId) === true ||
         (job.taskId !== undefined && input.taskIds?.includes(job.taskId) === true),
     )
-    .map(
-      (job): PlanShareJob => ({
-        sessionId: job.sessionId,
-        ...(job.taskId === undefined ? {} : { taskId: job.taskId }),
-        ...(job.label === undefined ? {} : { label: job.label }),
-        // A job whose every turn lacked an estimate is unknown, not zero.
-        estimatedPercent: attributable && !(job.partial && job.percent === 0) ? round(job.percent) : null,
-        partial: job.partial,
-        tokens: job.tokens,
-        costUsd: job.costUsd === null ? null : Math.round(job.costUsd * 1e6) / 1e6,
-      }),
-    )
+    .map((job): PlanShareJob => ({
+      sessionId: job.sessionId,
+      ...(job.taskId === undefined ? {} : { taskId: job.taskId }),
+      ...(job.label === undefined ? {} : { label: job.label }),
+      // A job whose every turn lacked an estimate is unknown, not zero.
+      estimatedPercent:
+        attributable && !(job.partial && job.percent === 0) ? round(job.percent) : null,
+      partial: job.partial,
+      tokens: job.tokens,
+      costUsd: job.costUsd === null ? null : Math.round(job.costUsd * 1e6) / 1e6,
+    }))
     .sort(
       (a, b) =>
         (b.estimatedPercent ?? -1) - (a.estimatedPercent ?? -1) ||

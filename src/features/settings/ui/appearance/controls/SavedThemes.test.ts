@@ -57,6 +57,24 @@ afterEach(() => {
   state.rename.mockClear();
 });
 
+it("keeps the theme and action labels without tooltip triggers", () => {
+  act(() =>
+    root.render(
+      createElement(SavedThemes, {
+        appearance: { themeHue: 220, themeSaturation: 12 } as AppearanceSettings,
+      }),
+    ),
+  );
+
+  expect(container.querySelector(".theme-saved-apply")?.textContent).toBe("Siyah Ufuk");
+  expect(
+    Array.from(container.querySelectorAll(".theme-saved-actions button"), (button) =>
+      button.getAttribute("aria-label"),
+    ),
+  ).toEqual(["Rename", "Overwrite with current look", "Delete"]);
+  expect(container.querySelector("[data-tooltip-owner]")).toBeNull();
+});
+
 it.each([
   ["Siyah Ufuk", "Gece"],
   ["Other look", "Other look"],

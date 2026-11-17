@@ -17,6 +17,7 @@ import { providerInput, providerInputCopy, providerTurnInput } from "./providerI
 import {
   conversationDelegationReady,
   delegationFallback,
+  delegationNeedsRespawn,
   needsHostDelegation,
   delegationNotice,
 } from "./delegationReadiness";
@@ -729,6 +730,13 @@ export function sendHarnessTurn(
       const adapter = requireHarness(input.harness);
       if (!adapter.live) throw new Error(`${input.harness} is not connected yet`);
       assertAdapterOperationReady(input.sessionId);
+      // Before this turn claims a writer: the stop below releases the old one.
+      if (
+        needsHostDelegation(input.harness, input.modelSettings) &&
+        (await delegationNeedsRespawn(input.sessionId))
+      )
+        // A failed stop leaves the turn on the running process, without Host tools.
+        await stopHarnessSession(input.harness, input.sessionId).catch(() => undefined);
       if (lightweightWorktree || input.harness === "codex")
         retainedWriters.set(input.sessionId, input.harness);
       cancelIdlePark(input.sessionId);

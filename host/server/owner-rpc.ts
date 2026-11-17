@@ -364,6 +364,7 @@ const handlers: Record<
   "usage.sessions.read": handleSessionsRpc,
   "usage.limits.read": handleUsageRpc,
   "usage.cost.read": handleUsageRpc,
+  "usage.planShare.read": handleUsageRpc,
   "pullRequests.link": handlePullRequestsRpc,
   "pullRequests.unlink": handlePullRequestsRpc,
   "pullRequests.linked": handlePullRequestsRpc,

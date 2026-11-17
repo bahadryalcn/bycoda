@@ -269,6 +269,7 @@ export function createEnvironmentRuntime(
         "usage.sessions.read",
         "usage.limits.read",
         "usage.cost.read",
+        "usage.planShare.v1",
         "pullRequests.link.v1",
         "providers.center.read",
         "providers.desktop.v1",

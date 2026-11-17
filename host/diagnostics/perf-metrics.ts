@@ -310,6 +310,7 @@ const RPC_METHOD_NAMES: readonly string[] = [
   "terminals.pty.desktop.status",
   "terminals.pty.desktop.write",
   "usage.cost.read",
+  "usage.planShare.read",
   "usage.limits.read",
   "usage.sessions.read",
   "worktrees.removal.approve",

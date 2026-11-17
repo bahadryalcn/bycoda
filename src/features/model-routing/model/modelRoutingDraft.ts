@@ -18,11 +18,17 @@ import type { SetupCatalog } from "./smartSetupCatalog";
 
 export type CapDraft = {
   daily: { tokens: string; costUsd: string };
+  weekly: { tokens: string; costUsd: string };
   monthly: { tokens: string; costUsd: string };
 };
 
 export type OrderDraft = {
-  workCaps: { total: CapDraft; providers: Record<string, CapDraft> };
+  workCaps: {
+    total: CapDraft;
+    providers: Record<string, CapDraft>;
+    /** Provider default "keep free" percent as typed; "" means none. */
+    reserve: Record<string, string>;
+  };
   routing: ModelRoutingDraft;
   percentages: Record<string, string>;
   maxRunMinutes: string;
@@ -54,6 +60,10 @@ function capDraft(caps?: WorkCalendarCaps): CapDraft {
       tokens: String(caps?.daily?.tokens ?? ""),
       costUsd: String(caps?.daily?.costUsd ?? ""),
     },
+    weekly: {
+      tokens: String(caps?.weekly?.tokens ?? ""),
+      costUsd: String(caps?.weekly?.costUsd ?? ""),
+    },
     monthly: {
       tokens: String(caps?.monthly?.tokens ?? ""),
       costUsd: String(caps?.monthly?.costUsd ?? ""),
@@ -77,8 +87,9 @@ function parseCaps(caps: CapDraft): WorkCalendarCaps | undefined {
     return tokens === undefined && costUsd === undefined ? undefined : { tokens, costUsd };
   };
   const daily = period(caps.daily);
+  const weekly = period(caps.weekly);
   const monthly = period(caps.monthly);
-  return daily || monthly ? { daily, monthly } : undefined;
+  return daily || weekly || monthly ? { daily, weekly, monthly } : undefined;
 }
 
 /** Delegation belongs to its own layers, including when picker defaults contain it. */
@@ -100,6 +111,12 @@ export function orderDraft(state: ModelRoutingState, limits: HostSettings): Orde
         Object.entries(state.workCaps?.providers ?? {}).map(([provider, caps]) => [
           provider,
           capDraft(caps),
+        ]),
+      ),
+      reserve: Object.fromEntries(
+        Object.entries(state.workCaps?.reservePercent ?? {}).map(([provider, percent]) => [
+          provider,
+          String(percent),
         ]),
       ),
     },
@@ -132,7 +149,19 @@ export function prepareOrderSave(draft: OrderDraft): {
       .map(([provider, caps]) => [provider, parseCaps(caps)])
       .filter(([, caps]) => caps !== undefined),
   );
-  const workCaps = total || Object.keys(providers).length ? { total, providers } : undefined;
+  const reservePercent = Object.fromEntries(
+    Object.entries(draft.workCaps.reserve)
+      .filter(([, text]) => text.trim() !== "")
+      .map(([provider, text]) => [
+        provider,
+        integer(text, 0, 100, "Keep free must be a whole percentage from 0 to 100."),
+      ]),
+  );
+  const hasReserve = Object.keys(reservePercent).length > 0;
+  const workCaps =
+    total || Object.keys(providers).length || hasReserve
+      ? { total, providers, ...(hasReserve ? { reservePercent } : {}) }
+      : undefined;
   const { workCaps: _previousCaps, ...otherRouting } = draft.routing;
   const routing: ModelRoutingDraft = {
     ...otherRouting,
@@ -249,7 +278,7 @@ export function removeOrderPool(draft: OrderDraft, id: string): OrderDraft {
       (choice) => choice?.kind === "pool" && choice.poolId === id,
     )
   )
-    throw new Error("A job uses this group. Change it in Who uses what before deleting the group.");
+    throw new Error("A job uses this group. Change it in Jobs before deleting the group.");
   if (draft.routing.pools.some((pool) => pool.poolIds?.includes(id)))
     throw new Error("Another group includes this group. Remove it from that group first.");
   return {

@@ -1,5 +1,10 @@
 import { useT } from "../../../../shared/i18n";
-import { MODEL_ROUTING_MAX_POOLS } from "../../../../shared/model/host-contracts/model-routing";
+import {
+  MODEL_ROUTING_MAX_POOLS,
+  type ModelRoutingPool,
+} from "../../../../shared/model/host-contracts/model-routing";
+import { InfoPopover } from "../../../../shared/ui/InfoPopover";
+import { SegmentedControl } from "../../../../shared/ui/SegmentedControl";
 import { Button } from "../../../../shared/ui/Button";
 import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { TextField } from "../../../../shared/ui/TextField";
@@ -85,6 +90,38 @@ export function ModelOrderPools({
                     })
                   }
                 />
+              </div>
+              <div className="flex shrink-0 items-center gap-1">
+                <SegmentedControl
+                  label={t("Effort of {p0}", { p0: pool.name || t("Unnamed group") })}
+                  value={pool.effort ?? "default"}
+                  onValueChange={(effort) =>
+                    onChange({
+                      ...draft,
+                      routing: {
+                        ...draft.routing,
+                        pools: pools.map((candidate) => {
+                          if (candidate.id !== pool.id) return candidate;
+                          const { effort: _previous, ...rest } = candidate;
+                          return effort === "default"
+                            ? rest
+                            : { ...rest, effort: effort as ModelRoutingPool["effort"] };
+                        }),
+                      },
+                    })
+                  }
+                  options={[
+                    { value: "default", label: t("Default") },
+                    { value: "low", label: t("Low") },
+                    { value: "medium", label: t("Medium") },
+                    { value: "high", label: t("High") },
+                  ]}
+                />
+                <InfoPopover label={t("Group effort")}>
+                  {t(
+                    "Work that runs on this group uses this effort on every model that supports it, including models of included groups. Default keeps each model's own setting.",
+                  )}
+                </InfoPopover>
               </div>
               <Button
                 iconOnly

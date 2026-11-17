@@ -189,6 +189,27 @@ describe("model routing selection", () => {
     ).toEqual({ entryId: "a", skip: "belowLimit", leftPercent: 20, resetsAt: 100 });
     expect(quota).toHaveBeenCalledTimes(1);
   });
+  it("applies the provider reserve only to entries without their own", () => {
+    const draft = state([
+      entry("default"),
+      entry("own", { minRemainingPercent: 10 }),
+      entry("other", { harness: "claude" }),
+    ]);
+    draft.workCaps = { reservePercent: { codex: 30 } };
+    const quota = () => ({ leftPercent: 20 });
+    expect(selectModelRouting(draft, input, signals({ quota }))).toMatchObject({
+      ok: true,
+      source: { entryId: "own" },
+      skipped: [{ entryId: "default", reason: "belowLimit" }],
+    });
+    draft.entries.splice(1, 1);
+    expect(selectModelRouting(draft, input, signals({ quota }))).toMatchObject({
+      source: { entryId: "other" },
+    });
+    expect(modelRoutingEntryStatus(entry("default"), signals({ quota }), undefined, 30).skip).toBe(
+      "belowLimit",
+    );
+  });
   it("says why a limit is unknown", () => {
     const state = (reason?: string) =>
       modelRoutingEntryStatus(

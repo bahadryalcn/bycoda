@@ -1,5 +1,58 @@
 import { expect, test, type Page } from "@playwright/test";
 
+test("application menu keeps navigation in reach and groups secondary actions", async ({
+  page,
+}, info) => {
+  await installNavigationFixture(page);
+  for (const theme of ["light", "dark"]) {
+    for (const width of [1280, 800]) {
+      await page.setViewportSize({ width, height: 720 });
+      await page.goto("/tests/browser/app-shell/compact-navigation.html?applicationMenu");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const trigger = page.getByRole("button", { name: "Application menu" });
+      await trigger.click();
+      const menu = page.getByRole("menu", { name: "Application menu" });
+      await menu.screenshot({ path: info.outputPath(`application-menu-${theme}-${width}.png`) });
+      await expect(menu.getByText("Check for Updates…")).toHaveCount(0);
+      await expect(menu.getByText("Usage guide")).toHaveCount(0);
+      await expect(menu.getByText("Take the tour")).toHaveCount(0);
+      await expect(menu.getByText("New Terminal", { exact: true })).toHaveCount(0);
+      await expect(menu.getByRole("menuitem", { name: /^Inbox/ })).toContainText(
+        /Ctrl\+Shift\+I|⌘⇧I/,
+      );
+      await expect(menu.getByRole("menuitem", { name: /^Notes/ })).toContainText(
+        /Ctrl\+Shift\+L|⌘⇧L/,
+      );
+      await expect(menu.getByRole("menuitem", { name: "Layout", exact: true })).toBeVisible();
+      await menu.getByRole("menuitem", { name: /^Notes/ }).click();
+      await expect(page.getByLabel("Selected action")).toHaveText("Notes");
+      await trigger.click();
+      await page.keyboard.press("End");
+      await page.keyboard.press("ArrowRight");
+      await page.getByRole("menuitem", { name: /^New Terminal/ }).click();
+      await expect(page.getByLabel("Selected action")).toHaveText("New Terminal");
+    }
+  }
+  await page.getByRole("button", { name: "Application menu" }).click();
+  await page.evaluate(() => {
+    const key = "bycoda.keybindingOverrides";
+    localStorage.setItem(
+      key,
+      JSON.stringify({
+        "App: Open Inbox": { shortcut: "Option+KeyQ" },
+        "App: Open Notes": { disabled: true },
+      }),
+    );
+    window.dispatchEvent(new StorageEvent("storage", { key }));
+  });
+  const menu = page.getByRole("menu", { name: "Application menu" });
+  await expect(menu.getByRole("menuitem", { name: /^Inbox/ })).toContainText(/Alt\+Q|⌥Q/);
+  await expect(menu.getByRole("menuitem", { name: /^Notes/ })).toHaveText("Notes");
+});
+
 async function installNavigationFixture(page: Page) {
   await page.addInitScript(() => {
     localStorage.clear();

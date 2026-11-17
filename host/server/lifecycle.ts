@@ -1,6 +1,7 @@
 import { installAssistantObservationProducers } from "../assistant/observations/assistant-observation-producers";
 import { perfMetrics } from "../diagnostics/perf-metrics";
 import type { ServerBindings } from "./bindings";
+import { bootPhase } from "./boot-phases";
 import {
   markSessionWorkCoverage,
   startSessionWork,
@@ -324,21 +325,32 @@ export async function createLifecycleRuntime(
     void closeResources().catch(() => console.warn("Host resources did not all close cleanly."));
   });
   try {
-    await dependencies.managed.recover((id) => dependencies.tasks.reconcileDelivery(id));
-    await Promise.all([
-      dependencies.attachmentOwnership.ready,
-      dependencies.providerInbox.ready,
-      dependencies.crews.ready,
-      dependencies.social.ready,
-      dependencies.socialPeers.ready,
-      dependencies.mcpHttp.tokens.ready,
-      dependencies.queueDrainer.ready,
-      dependencies.tasks.ready,
-      dependencies.goals.ready,
-    ]);
-    dependencies.observationCoverage = await installAssistantObservationProducers(
-      dependencies.engine.store,
-      dependencies.observationJournal,
+    // Each step logs its own time: this phase alone holds the Host's listen back.
+    await bootPhase("recovery-managed", () =>
+      dependencies.managed.recover((id) => dependencies.tasks.reconcileDelivery(id)),
+    );
+    await bootPhase("recovery-services", () =>
+      Promise.all(
+        (
+          [
+            ["attachment-ownership", dependencies.attachmentOwnership.ready],
+            ["provider-inbox", dependencies.providerInbox.ready],
+            ["crews", dependencies.crews.ready],
+            ["social", dependencies.social.ready],
+            ["social-peers", dependencies.socialPeers.ready],
+            ["mcp-tokens", dependencies.mcpHttp.tokens.ready],
+            ["queue-drainer", dependencies.queueDrainer.ready],
+            ["tasks", dependencies.tasks.ready],
+            ["goals", dependencies.goals.ready],
+          ] as const
+        ).map(([name, ready]) => bootPhase(`recovery-service-${name}`, () => ready)),
+      ),
+    );
+    dependencies.observationCoverage = await bootPhase("recovery-observations", () =>
+      installAssistantObservationProducers(
+        dependencies.engine.store,
+        dependencies.observationJournal,
+      ),
     );
   } catch (error) {
     await closeResources().catch(() => {});

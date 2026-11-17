@@ -124,12 +124,16 @@ function draftWith(routing: Partial<OrderDraft["routing"]>): OrderDraft {
 
 function render(draft: OrderDraft, disabled = false) {
   const onChange = vi.fn();
-  act(() => root.render(<DelegationSettings draft={draft} disabled={disabled} onChange={onChange} />));
+  act(() =>
+    root.render(<DelegationSettings draft={draft} disabled={disabled} onChange={onChange} />),
+  );
   return onChange;
 }
 
 const click = (text: string) => {
-  const button = [...container.querySelectorAll("button")].find((item) => item.textContent === text);
+  const button = [...container.querySelectorAll("button")].find(
+    (item) => item.textContent === text,
+  );
   if (!button) throw new Error(`No button "${text}"`);
   act(() => button.click());
 };
@@ -175,7 +179,9 @@ it("lists only the keys an override sets and removes it", () => {
   const overrides = container.querySelector("section[aria-label=Overrides]")!;
   expect(overrides.textContent).toContain("Claude Code · Work");
   expect(overrides.querySelectorAll("[role=group]")).toHaveLength(1);
-  const remove = overrides.querySelector("button[aria-label='Remove override']") as HTMLButtonElement;
+  const remove = overrides.querySelector(
+    "button[aria-label='Remove override']",
+  ) as HTMLButtonElement;
   act(() => remove.click());
   expect(onChange.mock.calls[0]![0].routing.delegation.accounts).toEqual({});
   expect(onChange.mock.calls[0]![0].routing.delegation.global).toEqual({

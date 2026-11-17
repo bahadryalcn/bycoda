@@ -19,7 +19,10 @@ export const PlanShareObservationSchema = z.strictObject({
   account: z.string().min(1).max(256),
   at: z.number().int().nonnegative(),
   usedPercent: z.number().min(0).max(100),
-  windowMinutes: z.number().positive().max(60 * 24 * 31),
+  windowMinutes: z
+    .number()
+    .positive()
+    .max(60 * 24 * 31),
   resetsAt: z.number().int().nonnegative().nullable(),
 });
 export type PlanShareObservation = z.infer<typeof PlanShareObservationSchema>;

@@ -38,7 +38,11 @@ export function DelegationKeyMenu({
         <DropdownMenu
           anchor={anchor}
           label={t("Add setting")}
-          items={choices.map((choice) => ({ kind: "item" as const, id: choice.key, label: choice.label }))}
+          items={choices.map((choice) => ({
+            kind: "item" as const,
+            id: choice.key,
+            label: choice.label,
+          }))}
           onPick={(id) => {
             const choice = choices.find((item) => item.key === id);
             if (choice) onPick(choice);

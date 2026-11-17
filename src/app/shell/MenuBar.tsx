@@ -6,9 +6,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { ContextMenu, type ContextMenuItem } from "../../shared/ui/ContextMenu";
 import { ALT, MOD, SHIFT } from "../../platform/tauri/platform";
-import { runUpdateFlow } from "../model/updater";
-import { openUsageGuide } from "../../features/onboarding/model/usageGuide";
-import { startTour } from "../../features/onboarding/model/tourState";
 import type { TitleBarLayout } from "./TitleBar";
 import {
   SPLIT_DOWN_ID,
@@ -17,6 +14,7 @@ import {
   layoutPresetFromMenuId,
 } from "./layoutMenu";
 import {
+  KEYBINDINGS,
   loadAutosave,
   loadKeybindingOverrides,
   saveAutosave,
@@ -97,10 +95,12 @@ const MemoMenuBar = memo(function MenuBar({
   useEffect(() => subscribeAutosave(() => setAutosave(loadAutosave())), []);
 
   // Same rule as `keybindingShortcutLabel`, read from the state this component re-renders on.
-  const shortcut = (command: string, keys: string) => {
+  const shortcut = (command: string, keys?: string) => {
     const override = keybindingOverrides[command];
     if (override?.disabled) return undefined;
-    return override?.shortcut ? quickComposerShortcutLabel(override.shortcut) : keys;
+    return override?.shortcut
+      ? quickComposerShortcutLabel(override.shortcut)
+      : (keys ?? KEYBINDINGS.find((binding) => binding.command === command)?.keys);
   };
 
   // Toggle with a standalone Alt tap or F10 (outside terminals, where F10 belongs to the program).
@@ -169,8 +169,7 @@ const MemoMenuBar = memo(function MenuBar({
     setMenuAnchor(null);
   }, []);
 
-  // The title bar's compact menu button opens File, View and Terminal as one popover
-  // under the button (no extra band); with no anchor it falls back to the Alt menubar.
+  // Open the compact menu at its trigger, or the Alt menubar when no anchor is supplied.
   useEffect(() => {
     const onToggle = (event: Event) => {
       if (open || activeMenu || popover) {
@@ -218,12 +217,6 @@ const MemoMenuBar = memo(function MenuBar({
         case "open_notes":
           onOpenNotes?.();
           break;
-        case "usage_guide":
-          openUsageGuide();
-          break;
-        case "product_tour":
-          startTour("first-run");
-          break;
         case "go_to_file":
           onGoToFile?.();
           break;
@@ -258,9 +251,6 @@ const MemoMenuBar = memo(function MenuBar({
           break;
         case "toggle_diff":
           onShowSourceControl?.();
-          break;
-        case "check_for_updates":
-          void runUpdateFlow(true);
           break;
         case "zoom_in":
           onZoomIn?.();
@@ -310,7 +300,79 @@ const MemoMenuBar = memo(function MenuBar({
     ],
   );
 
-  const getMenuItems = (key: MenuKey): ContextMenuItem[] => {
+  if (!popover && !open && !activeMenu) return null;
+
+  const destinations: ContextMenuItem[] = [
+    ...(onOpenInbox
+      ? [
+          {
+            kind: "item" as const,
+            id: "open_inbox",
+            label: t("Inbox"),
+            shortcut: shortcut("App: Open Inbox"),
+          },
+        ]
+      : []),
+    ...(onOpenNotes
+      ? [
+          {
+            kind: "item" as const,
+            id: "open_notes",
+            label: t("Notes"),
+            shortcut: shortcut("App: Open Notes"),
+          },
+        ]
+      : []),
+  ];
+
+  const tabActions: ContextMenuItem[] = [
+    {
+      kind: "item",
+      id: "close_tab",
+      label: t("Close Pane"),
+      shortcut: shortcut("Pane: Close", `${MOD}W`),
+    },
+    {
+      kind: "item",
+      id: "close_other_tabs",
+      label: t("Close Other Tabs"),
+      shortcut: shortcut("Tab: Close Others", `${MOD}${ALT}T`),
+    },
+    ...(onCloseIdleTabs
+      ? [
+          {
+            kind: "item" as const,
+            id: "close_idle_tabs",
+            label: t("Close Idle Tabs"),
+            disabled: !idleTabCount,
+          },
+        ]
+      : []),
+    {
+      kind: "item",
+      id: "close_all_tabs",
+      label: t("Close All Tabs"),
+      shortcut: shortcut("Tab: Close All", `${MOD}${SHIFT}W`),
+    },
+  ];
+
+  const layoutItem: ContextMenuItem[] = layout
+    ? [
+        {
+          kind: "item",
+          id: "layout_menu",
+          label: t("Layout"),
+          submenu: buildLayoutMenuItems({
+            current: layout.current,
+            canArrange: layout.canArrange,
+            splitRightShortcut: shortcut("Pane: Split Right", `${MOD}D`),
+            splitDownShortcut: shortcut("Pane: Split Down", `${MOD}${SHIFT}D`),
+          }),
+        },
+      ]
+    : [];
+
+  const getMenuItems = (key: MenuKey, compact = false): ContextMenuItem[] => {
     switch (key) {
       case "file":
         return [
@@ -322,23 +384,21 @@ const MemoMenuBar = memo(function MenuBar({
           },
           {
             kind: "item",
-            id: "new_terminal",
-            label: t("New Terminal"),
-            shortcut: shortcut("Terminal: New", `${MOD}\``),
-          },
-          {
-            kind: "item",
             id: "new_window",
             label: t("New Window"),
             shortcut: shortcut("App: New Window", `${MOD}${SHIFT}N`),
           },
-          { kind: "sep" },
-          {
-            kind: "item",
-            id: "toggle_autosave",
-            label: t("Autosave"),
-            checked: autosave,
-          },
+          ...(!compact
+            ? [
+                { kind: "sep" as const },
+                {
+                  kind: "item" as const,
+                  id: "toggle_autosave",
+                  label: t("Autosave"),
+                  checked: autosave,
+                },
+              ]
+            : []),
           { kind: "sep" },
           {
             kind: "item",
@@ -364,55 +424,10 @@ const MemoMenuBar = memo(function MenuBar({
             label: t("Find in Files…"),
             shortcut: shortcut("App: Find in Files", `${MOD}${SHIFT}F`),
           },
-          { kind: "sep" },
-          {
-            kind: "item",
-            id: "close_tab",
-            label: t("Close Pane"),
-            shortcut: shortcut("Pane: Close", `${MOD}W`),
-          },
-          {
-            kind: "item",
-            id: "close_other_tabs",
-            label: t("Close Other Tabs"),
-            shortcut: shortcut("Tab: Close Others", `${MOD}${ALT}T`),
-          },
-          ...(onCloseIdleTabs
-            ? [
-                {
-                  kind: "item" as const,
-                  id: "close_idle_tabs",
-                  label: t("Close Idle Tabs"),
-                  disabled: !idleTabCount,
-                },
-              ]
-            : []),
-          {
-            kind: "item",
-            id: "close_all_tabs",
-            label: t("Close All Tabs"),
-            shortcut: shortcut("Tab: Close All", `${MOD}${SHIFT}W`),
-          },
-          { kind: "sep" },
-          {
-            kind: "item",
-            id: "check_for_updates",
-            label: t("Check for Updates…"),
-          },
+          ...(!compact ? [{ kind: "sep" as const }, ...tabActions] : []),
         ];
       case "view":
         return [
-          {
-            kind: "item",
-            id: "usage_guide",
-            label: t("Usage guide"),
-          },
-          {
-            kind: "item",
-            id: "product_tour",
-            label: t("Take the tour"),
-          },
-          { kind: "sep" },
           {
             kind: "item",
             id: "toggle_sidebar",
@@ -425,26 +440,7 @@ const MemoMenuBar = memo(function MenuBar({
             label: t("Toggle Session Sidebar"),
             shortcut: shortcut("App: Toggle Session Sidebar", `${MOD}${SHIFT}B`),
           },
-          {
-            kind: "item",
-            id: "open_inbox",
-            label: t("Inbox"),
-          },
-          ...(onOpenNotes
-            ? [
-                {
-                  kind: "item" as const,
-                  id: "open_notes",
-                  label: t("Notes"),
-                },
-              ]
-            : []),
-          {
-            kind: "item",
-            id: "toggle_terminal",
-            label: t("Toggle Terminal"),
-            shortcut: shortcut("Terminal: Toggle Dock", `${MOD}J`),
-          },
+          ...(!compact ? destinations : []),
           {
             kind: "item",
             id: "open_model_picker",
@@ -456,21 +452,7 @@ const MemoMenuBar = memo(function MenuBar({
             id: "toggle_diff",
             label: t("Toggle Source Control"),
           },
-          ...(layout
-            ? [
-                {
-                  kind: "item" as const,
-                  id: "layout_menu",
-                  label: t("Layout"),
-                  submenu: buildLayoutMenuItems({
-                    current: layout.current,
-                    canArrange: layout.canArrange,
-                    splitRightShortcut: shortcut("Pane: Split Right", `${MOD}D`),
-                    splitDownShortcut: shortcut("Pane: Split Down", `${MOD}${SHIFT}D`),
-                  }),
-                },
-              ]
-            : []),
+          ...(!compact ? layoutItem : []),
           { kind: "sep" },
           {
             kind: "item",
@@ -515,21 +497,24 @@ const MemoMenuBar = memo(function MenuBar({
         x={popover.x}
         y={popover.y}
         items={[
-          ...getMenuItems("file"),
+          ...getMenuItems("file", true),
+          ...destinations,
           { kind: "sep" },
-          ...getMenuItems("view"),
-          { kind: "sep" },
-          ...getMenuItems("terminal"),
+          { kind: "item", id: "tabs_menu", label: t("Tabs"), submenu: tabActions },
+          ...layoutItem,
+          { kind: "item", id: "view_menu", label: t("View"), submenu: getMenuItems("view", true) },
+          {
+            kind: "item",
+            id: "terminal_menu",
+            label: t("Terminal"),
+            submenu: getMenuItems("terminal"),
+          },
         ]}
         ariaLabel={t("Application menu")}
         onPick={handlePick}
         onClose={() => setPopover(null)}
       />
     );
-  }
-
-  if (!open && !activeMenu) {
-    return null;
   }
 
   const MENUS: { key: MenuKey; label: string }[] = [

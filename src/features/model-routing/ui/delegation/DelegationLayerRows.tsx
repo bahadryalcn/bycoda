@@ -58,7 +58,10 @@ export function DelegationLayerRows({
   const settings = useDelegationSettings(harness, values);
   const byId = new Map(settings.map((setting) => [setting.id, setting]));
   const shown = ORDER.filter(
-    (key) => byId.has(key) && MODEL_ROUTING_DELEGATION_KEYS.includes(key as never) && (!override || values[key] !== undefined),
+    (key) =>
+      byId.has(key) &&
+      MODEL_ROUTING_DELEGATION_KEYS.includes(key as never) &&
+      (!override || values[key] !== undefined),
   );
   const addable = override
     ? ORDER.flatMap((key) => {
@@ -151,7 +154,12 @@ function DelegationControl({
     return (
       <div className="provider-effort provider-effort-ceiling">
         {override ? null : (
-          <SubagentEffortSwitch value={value ?? ""} levels={levels} disabled={disabled} onChange={onSet} />
+          <SubagentEffortSwitch
+            value={value ?? ""}
+            levels={levels}
+            disabled={disabled}
+            onChange={onSet}
+          />
         )}
         <EffortScale
           label={label}
@@ -183,4 +191,3 @@ function DelegationControl({
     />
   );
 }
-

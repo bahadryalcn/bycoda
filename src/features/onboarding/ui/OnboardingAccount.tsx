@@ -2,6 +2,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { OnboardingHeading } from "./OnboardingHeading";
+import { OnboardingIllustratedStep } from "./OnboardingIllustratedStep";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Text } from "../../../shared/ui/Text";
 import { useAccount } from "../../account";
@@ -23,7 +24,7 @@ export function OnboardingAccount() {
           "An account is optional and only syncs your stats across devices. Your sessions, projects and settings stay on this computer either way. You can sign in later in Settings → Account.",
         )}
       />
-      <div className="onboarding-scroll">
+      <OnboardingIllustratedStep scene="account">
         {state.phase === "starting" ? <LoadingText>{t("Loading account…")}</LoadingText> : null}
         {state.phase === "signed-in" ? (
           <Alert tone="success">
@@ -62,7 +63,7 @@ export function OnboardingAccount() {
             </div>
           </>
         ) : null}
-      </div>
+      </OnboardingIllustratedStep>
     </>
   );
 }

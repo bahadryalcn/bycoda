@@ -14,23 +14,38 @@ While a save is committing, wait for it to finish before leaving or discarding.
 
 **Plan with AI** appears beside **Smart setup**. The first asks a model to plan;
 the second applies the built-in rules. Both update the draft for review before Save.
-With an empty model list, **Who uses what** starts collapsed. Expand it to configure
-fixed models without building a model order.
+With an empty model list, Background work opens on **Models & order**; **Jobs** can
+still bind fixed models without building a model order.
 
-- **Background work** is one draft with one Save, read top-down. The model list is
-  tried from the top: new work starts on the first model with quota left. Models on
-  work accounts, personal accounts and shared accounts are shown as separate lists; a
-  work project uses only work and shared models, a personal project only personal and
-  shared ones. Each model holds its account, options, how much quota to keep for your own
-  use and what happens when a quota is unknown; the first model new work would start on
-  carries a **Next** badge and skipped models show why. **Smart setup** and **Add model**
-  are actions here. **Groups** are named, ordered subsets of the list; a group can include
-  other groups (its own models first, then each included group, repeats dropped). **Who uses
-  what** binds task workers and reviewers, goal planners and final reviews, stewards,
-  automations, crew members, assistant and voice roles and text helpers to any model in
-  order, a group (also one not saved yet) or a fixed model; saved jobs show "Now uses".
-  **Work limits** holds concurrent tasks, daily agent minutes, the default maximum run time
-  and a token and cost table for all providers and each installed provider.
+- **Background work** has five tabs over one draft with one Save: **Jobs**, **Models &
+  order**, **Groups**, **Agents** and **Limits**. A dot on a tab marks unsaved changes in
+  it. When Save is refused for one model, the save bar's **Show** link opens **Models &
+  order** and highlights that row.
+  - **Jobs** binds task workers and reviewers, goal planners and final reviews, stewards,
+    automations, crew members, assistant and voice roles and text helpers to any model in
+    order, a group (also one not saved yet) or a fixed model; saved jobs show "Now uses".
+  - **Models & order** is the model list, tried from the top: new work starts on the first
+    model with quota left. A line above it counts the jobs that follow the order (plus chat
+    fallback when Settings > Chat continues on the model order). Models on work accounts,
+    personal accounts and shared accounts are separate lists; a work project uses only work
+    and shared models, a personal project only personal and shared ones. **By account**
+    (default) groups a list under each account with its colour, provider and live quota;
+    an account's **...** menu removes or adds all of its models. **Priority** shows the flat
+    list, the only view where a grip reorders rows. Numbers always show the real priority.
+    Each model holds its options, how much quota to keep for your own use and what happens
+    when a quota is unknown; the first model new work would start on carries a **Next**
+    badge and skipped models show why. Tick rows to **Remove**, **Set effort...** or **Add
+    to group...** in bulk; Escape clears the selection. **Smart setup**, **Sort** and **Add
+    model** are actions here.
+  - **Groups** are named, ordered subsets of the list; a group can include other groups
+    (its own models first, then each included group, repeats dropped). A group's **Effort**
+    (Default, Low, Medium, High) applies at run start to every model that supports it.
+  - **Agents** holds the subagent, advisor, effort ceiling and image-model defaults for
+    unattended work, with provider and account overrides.
+  - **Limits** holds concurrent tasks, daily agent minutes, the default maximum run time and
+    a token and cost table for all providers and each installed provider. When the Host can
+    attribute it, **Plan share by job** estimates how much of each account's 5-hour or
+    weekly window the biggest jobs used.
 - **Defaults** manages what new conversations start with (provider, account, model,
   effort, permissions and provider extras) and, in its **Subagents** section, delegation
   defaults: subagents, advisor, subagent effort ceiling and image models. Global
@@ -118,7 +133,7 @@ Account profiles lists only signed-in Claude, Codex and Grok profiles: the defau
 
 Decision models keep connection status on each model row. Open Details for full connection paths, and expand Scan settings to change discovery locations. Collapsing these settings keeps unsaved values.
 
-In **Settings > Models > Background work > Work limits**, token and cost limits can be set for all providers and for each provider, per local calendar day or month. Empty values and zero mean unlimited. Limits prevent new unattended turns after a threshold is reached; a turn already running can exceed it.
+In **Settings > Models > Background work > Limits**, token and cost limits can be set for all providers and for each provider, per local calendar day, week (Monday to Sunday) or month. The table shows token limits; **Cost limits** reveals the USD columns, which stay open while any cost is set (subscription plans have no real dollar cost, so USD is the API list-price equivalent). Token cells accept shorthand such as 500K or 5M. Empty values and zero mean unlimited. Limits prevent new unattended turns after a threshold is reached; a turn already running can exceed it. For Claude, Codex and OpenCode, **Keep free (%)** is a provider default for models without their own reserve: those models are skipped while less than that share of the account's plan quota is left.
 
 ## Automatic compaction
 
@@ -142,10 +157,10 @@ advertised by their own catalog. Unsupported settings are not copied across prov
 
 ## Routing and decision model settings
 
-Who uses what and All models are edited on the selected Host, each with its own Save bar. Changes remain drafts until Save; a version conflict requires loading the latest settings before saving again. A save in one no longer conflicts with the other unless it touched the same part. Quota read failures show a retry action; an unknown quota is a separate valid state.
+Background work is edited on the selected Host with one Save bar. Changes remain drafts until Save; a version conflict requires loading the latest settings before saving again. Quota read failures show a retry action; an unknown quota is a separate valid state.
 
 Decision models show the Host used for scanning, local installation and saved keys. The app prefers this computer’s Host, then the first connected Host. Adding a model and testing it are separate steps: a failed connection test leaves the added source available to edit or retry.
 
-In **Settings > Models > Background work**, **Smart setup** fills the whole draft at once. It adds every active provider account and enabled model that is missing, orders them, fills the groups, binds every job in Who uses what and sets subagents and the advisor. Strong models at a moderate price (such as Opus and Sol) come first, cheaper capable models (Sonnet, Terra) next, top-priced models (Fable, Astra) after them and light models last; reviews and planning use a group led by the strongest models, quick replies and helper text such as titles, commit messages and translation go to cheap fast models, and Work and Personal groups are created when an account has a kind. The advisor is the strongest model; each provider's best standard and light model become subagents, capped at Medium effort, replacing provider and account overrides of those settings in the draft. Prices come from OpenRouter and capability scores from Artificial Analysis (through OpenRouter), fetched by the Host and cached for six hours; the built-in table keeps the owner-reviewed ordering of known families and is used when the feed is unavailable. **Plan with AI**, beside Smart setup, asks the model bound to **Routing setup** (otherwise the cheapest strong model you can use) to plan from the same data. Effort follows the job: the main order runs at Medium, groups used only by simple jobs at Low, and groups used by reviews or planning at High; a model without a level gets its closest one, so the same model can appear once per effort. Smart setup never picks an effort above High: set higher levels on an entry yourself, and an entry you set above High is kept for the High groups. Groups with the same name are refilled; other groups, entries, ids, limits and settings stay unchanged. A notice names the model that planned it; when no model can plan, or the planner times out, fails or returns an unreadable answer, the researched ranking and built-in rules are used and the notice names the planner and the reason. Invalid parts of an answer are dropped instead of discarding the whole plan. Review the draft and press **Save** to apply through the existing Host-owner and version checks. If the model-order or group limit would be exceeded, nothing is added; reduce unused choices or groups and retry.
+In **Settings > Models > Background work**, **Smart setup** fills the whole draft at once. It adds every active provider account and enabled model that is missing, orders them, fills the groups, binds every job in Jobs and sets subagents and the advisor. Strong models at a moderate price (such as Opus and Sol) come first, cheaper capable models (Sonnet, Terra) next, top-priced models (Fable, Astra) after them and light models last; reviews and planning use a group led by the strongest models, quick replies and helper text such as titles, commit messages and translation go to cheap fast models, and Work and Personal groups are created when an account has a kind. The advisor is the strongest model; each provider's best standard and light model become subagents, capped at Medium effort, replacing provider and account overrides of those settings in the draft. Prices come from OpenRouter and capability scores from Artificial Analysis (through OpenRouter), fetched by the Host and cached for six hours; the built-in table keeps the owner-reviewed ordering of known families and is used when the feed is unavailable. **Plan with AI**, beside Smart setup, asks the model bound to **Routing setup** (otherwise the cheapest strong model you can use) to plan from the same data. Effort follows the job: the main order runs at Medium, groups used only by simple jobs at Low, and groups used by reviews or planning at High; a model without a level gets its closest one, so the same model can appear once per effort. Smart setup never picks an effort above High: set higher levels on an entry yourself, and an entry you set above High is kept for the High groups. Groups with the same name are refilled; other groups, entries, ids, limits and settings stay unchanged. A notice names the model that planned it; when no model can plan, or the planner times out, fails or returns an unreadable answer, the researched ranking and built-in rules are used and the notice names the planner and the reason. Invalid parts of an answer are dropped instead of discarding the whole plan. Review the draft and press **Save** to apply through the existing Host-owner and version checks. If the model-order or group limit would be exceeded, nothing is added; reduce unused choices or groups and retry.
 
 Accounts, projects and project groups can be tagged **Personal** or **Work**. An account without a tag, or whose name does not say work or personal, is shared. A run in a tagged project skips accounts tagged for the other kind and moves on to the next entry; if every entry is skipped, the work waits. Fixed models are never filtered, and runs without a project (such as the assistant) are unaffected. Tagging a project overrides its group's tag.

@@ -9,10 +9,7 @@ import {
 } from "../../../shared/model/host-contracts/delegation";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { SubagentModeControl } from "./SubagentModeControl";
-import {
-  DelegationOptionIcon,
-  delegationSelectChoice,
-} from "./DelegationSettings";
+import { DelegationOptionIcon, delegationSelectChoice } from "./DelegationSettings";
 import type { ModelSetting } from "../model/models";
 
 /** Subagent mode (Automatic, Custom, Off) with the custom model list, in the conversation panel's wire values. */

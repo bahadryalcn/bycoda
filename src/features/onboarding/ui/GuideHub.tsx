@@ -1,12 +1,13 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Modal } from "../../../shared/ui/Modal";
 import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { Heading } from "../../../shared/ui/Heading";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
+import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import {
   Check,
@@ -48,6 +49,7 @@ import {
   type GuideTopic,
 } from "../model/guideTopics";
 import { GuideShortcuts } from "./GuideShortcuts";
+import { GuideWiki } from "./GuideWiki";
 import "./guideHub.css";
 
 const ICONS: Record<string, IconComponent> = {
@@ -98,6 +100,9 @@ export default function GuideHub({
     topics.some((entry) => entry.id === initialTopic) ? (initialTopic as string) : topics[0].id,
   );
   const [doneSteps, setDoneSteps] = useState(loadDoneGuideSteps);
+  const [view, setView] = useState<"steps" | "wiki">("steps");
+  const [wikiArticle, setWikiArticle] = useState("quick-start");
+  const wikiTab = useRef<HTMLButtonElement>(null);
   const index = Math.max(
     0,
     topics.findIndex((topic) => topic.id === activeId),
@@ -134,250 +139,285 @@ export default function GuideHub({
   const upNext = firstSteps.find((item) => !item.done);
 
   return (
-    <Modal
-      padding="none"
-      title={t("Guide")}
-      description={t("{p0} of {p1} steps done", { p0: finished, p1: allSteps.length })}
-      size="lg"
-      onClose={onClose}
-    >
-      <Text
-        as="div"
-        size="body"
-        tone="primary"
-        leading="normal"
-        {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "bycoda-arc guide-hub")}
-      >
-        <Text
-          as="div"
-          size="caption"
-          tone="inherit"
-          leading="normal"
-          {...surfaceAttributes({ frame: "pane", edge: "block-end" }, "guide-hub-start")}
-          role="group"
-          aria-label={t("First steps")}
-        >
-          <Text
-            as="span"
-            size="inherit"
-            tone="muted"
-            weight="medium"
-            className="guide-hub-start-title"
-          >
-            {t("First steps")}
-          </Text>
-          <ol className="guide-hub-start-list">
-            {firstSteps.map((item) => (
-              <li key={item.stepId}>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  selected={item === upNext}
-                  aria-current={item === upNext ? "step" : undefined}
-                  startIcon={
-                    item.done ? (
-                      <Check className="icon-sm" aria-hidden="true" />
-                    ) : (
-                      <span
-                        {...surfaceAttributes({ radius: "pill", frame: "muted" }, "guide-hub-ring")}
-                        aria-hidden="true"
-                      />
-                    )
-                  }
-                  onClick={() => setActiveId(item.topicId)}
-                >
-                  {item.label}
-                </Button>
-              </li>
-            ))}
-          </ol>
-          <div className="guide-hub-start-tour">
-            {hasNews ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  onClose();
-                  startTour("whats-new");
-                }}
-              >
-                {t("What's new")}
-              </Button>
-            ) : null}
-            <Button
-              variant="ghost"
-              size="sm"
-              startIcon={<Play className="icon-sm" aria-hidden="true" />}
-              onClick={() => {
-                onClose();
-                startTour("first-run");
-              }}
-            >
-              {tourState.startsWith("paused:") ? t("Resume tour") : t("Tour")}
-            </Button>
-          </div>
-        </Text>
-        <nav
-          {...surfaceAttributes({ frame: "pane", edge: "responsive-end" }, "guide-hub-nav")}
-          aria-label={t("Guide topics")}
-        >
-          {groups.map((group) => (
-            <div key={group.name} className="guide-hub-group">
-              <SectionLabel as="h3" className="guide-hub-group-title">
-                {group.name}
-              </SectionLabel>
-              {group.items.map((item) => {
-                const Icon = ICONS[item.id];
-                const complete = item.steps.every(stepDone);
-                return (
-                  <Button
-                    key={item.id}
-                    variant="item"
-                    selected={item.id === topic.id}
-                    aria-current={item.id === topic.id ? "true" : undefined}
-                    startIcon={<Icon className="icon-md" />}
-                    onClick={() => setActiveId(item.id)}
-                  >
-                    <Text size="inherit" tone="inherit" truncate className="guide-hub-nav-label">
-                      {item.title}
-                    </Text>
-                    {complete ? (
-                      <Check
-                        tone="primary"
-                        className="icon-sm guide-hub-complete"
-                        aria-label={t("Done")}
-                      />
-                    ) : null}
-                  </Button>
-                );
-              })}
-            </div>
-          ))}
-        </nav>
-        <article key={topic.id} className="guide-hub-content" aria-labelledby="guide-hub-title">
-          <header className="guide-hub-heading">
-            <Heading size="page" level={2} id="guide-hub-title">
-              {topic.title}
-            </Heading>
-          </header>
-          <Text as="p" size="inherit" tone="secondary" className="guide-hub-summary">
-            {topic.summary}
-          </Text>
-          <div className="guide-hub-actions">
-            <Button
-              variant="primary"
-              disabled={!!blocker}
-              endIcon={<ChevronRight className="icon-sm" />}
-              onClick={tryIt}
-            >
-              {topic.action.label}
-            </Button>
-            {topic.tour ? (
-              <Button
-                variant="secondary"
-                startIcon={<Play className="icon-sm" />}
-                onClick={() => onStartTour(topic.id)}
-              >
-                {t("Tour")}
-              </Button>
-            ) : null}
-          </div>
-          {blocker ? (
-            <Text
-              as="p"
-              size="caption"
-              tone="secondary"
-              leading="normal"
-              className="guide-hub-blocker"
-              role="status"
-            >
-              <span>{blocker.reason}</span>
-              <Button variant="link" onClick={() => run(blocker.action)}>
-                {blocker.label}
-              </Button>
+    <Modal padding="none" title={t("Guide")} size="lg" onClose={onClose}>
+      <Tabs value={view} onValueChange={setView} panels="shared">
+        <div {...surfaceAttributes({ frame: "pane", edge: "block-end" }, "guide-hub-toolbar")}>
+          <TabList label={t("Guide")}>
+            <Tab value="steps">{t("Steps")}</Tab>
+            <Tab value="wiki" ref={wikiTab}>
+              {t("Wiki")}
+            </Tab>
+          </TabList>
+          {view === "steps" ? (
+            <Text as="span" size="caption" tone="secondary">
+              {t("{p0} of {p1} steps done", { p0: finished, p1: allSteps.length })}
             </Text>
           ) : null}
-          <section className="guide-hub-section">
-            <SectionLabel as="h3" className="guide-hub-section-title">
-              {t("Steps")}
-            </SectionLabel>
-            <ol className="guide-hub-steps">
-              {topic.steps.map((step, position) => {
-                const done = stepDone(step);
-                const automatic = !!step.done && signals.has(step.done);
-                return (
-                  <li key={step.id} data-done={done ? "true" : undefined}>
-                    {/* aria-disabled (not disabled) keeps the pointer and focus events the tooltip needs. */}
-                    <Tooltip label={automatic ? t("Done") : undefined}>
+        </div>
+        <TabPanel className="bycoda-arc guide-hub">
+          {view === "wiki" ? (
+            <GuideWiki articleId={wikiArticle} onSelectArticle={setWikiArticle} />
+          ) : (
+            <>
+              <Text
+                as="div"
+                size="caption"
+                tone="inherit"
+                leading="normal"
+                {...surfaceAttributes({ frame: "pane", edge: "block-end" }, "guide-hub-start")}
+                role="group"
+                aria-label={t("First steps")}
+              >
+                <Text
+                  as="span"
+                  size="inherit"
+                  tone="muted"
+                  weight="medium"
+                  className="guide-hub-start-title"
+                >
+                  {t("First steps")}
+                </Text>
+                <ol className="guide-hub-start-list">
+                  {firstSteps.map((item) => (
+                    <li key={item.stepId}>
                       <Button
                         variant="ghost"
                         size="sm"
-                        iconOnly
-                        title=""
-                        pressed={done}
-                        label={done ? t("Mark as not done") : t("Mark as done")}
-                        aria-disabled={automatic || undefined}
-                        onClick={() => {
-                          if (!automatic) setDoneSteps(setGuideStepDone(step.id, !done));
-                        }}
+                        selected={item === upNext}
+                        aria-current={item === upNext ? "step" : undefined}
+                        startIcon={
+                          item.done ? (
+                            <Check className="icon-sm" aria-hidden="true" />
+                          ) : (
+                            <span
+                              {...surfaceAttributes(
+                                { radius: "pill", frame: "muted" },
+                                "guide-hub-ring",
+                              )}
+                              aria-hidden="true"
+                            />
+                          )
+                        }
+                        onClick={() => setActiveId(item.topicId)}
                       >
-                        {done ? <Check className="icon-xs" aria-hidden="true" /> : position + 1}
+                        {item.label}
                       </Button>
-                    </Tooltip>
-                    <div className="guide-hub-step-body">
-                      <Text
-                        as="span"
-                        size="inherit"
-                        tone={done ? "secondary" : "inherit"}
-                        weight="medium"
-                        className="guide-hub-step-title"
-                      >
-                        {step.title}
-                      </Text>
-                      <Text
-                        size="inherit"
-                        tone="secondary"
-                        id={`guide-step-${step.id}`}
-                        className="guide-hub-step-text"
-                      >
-                        {step.text}
-                      </Text>
-                    </div>
-                    {step.show && onShowStep ? (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        startIcon={<Eye className="icon-sm" aria-hidden="true" />}
-                        aria-describedby={`guide-step-${step.id}`}
-                        onClick={() => onShowStep(topic.id, step.id)}
-                      >
-                        {t("Show me")}
-                      </Button>
-                    ) : null}
-                  </li>
-                );
-              })}
-            </ol>
-          </section>
-          {topic.tips.length > 0 ? (
-            <Disclosure className="guide-hub-tips" size="sm" summary={t("Tips")}>
-              <Text as="ul" size="inherit" tone="secondary">
-                {topic.tips.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
+                    </li>
+                  ))}
+                </ol>
+                <div className="guide-hub-start-tour">
+                  {hasNews ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        onClose();
+                        startTour("whats-new");
+                      }}
+                    >
+                      {t("What's new")}
+                    </Button>
+                  ) : null}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    startIcon={<Play className="icon-sm" aria-hidden="true" />}
+                    onClick={() => {
+                      onClose();
+                      startTour("first-run");
+                    }}
+                  >
+                    {tourState.startsWith("paused:") ? t("Resume tour") : t("Tour")}
+                  </Button>
+                </div>
               </Text>
-            </Disclosure>
-          ) : null}
-          {topic.shortcuts.length > 0 ? (
-            <section className="guide-hub-section">
-              <SectionLabel as="h3" className="guide-hub-section-title">
-                {t("Shortcuts")}
-              </SectionLabel>
-              <GuideShortcuts items={topic.shortcuts} />
-            </section>
-          ) : null}
-        </article>
-      </Text>
+              <nav
+                {...surfaceAttributes({ frame: "pane", edge: "responsive-end" }, "guide-hub-nav")}
+                aria-label={t("Guide topics")}
+              >
+                {groups.map((group) => (
+                  <div key={group.name} className="guide-hub-group">
+                    <SectionLabel as="h3" className="guide-hub-group-title">
+                      {group.name}
+                    </SectionLabel>
+                    {group.items.map((item) => {
+                      const Icon = ICONS[item.id];
+                      const complete = item.steps.every(stepDone);
+                      return (
+                        <Button
+                          key={item.id}
+                          variant="item"
+                          selected={item.id === topic.id}
+                          aria-current={item.id === topic.id ? "true" : undefined}
+                          startIcon={<Icon className="icon-md" />}
+                          onClick={() => setActiveId(item.id)}
+                        >
+                          <Text
+                            size="inherit"
+                            tone="inherit"
+                            truncate
+                            className="guide-hub-nav-label"
+                          >
+                            {item.title}
+                          </Text>
+                          {complete ? (
+                            <Check
+                              tone="primary"
+                              className="icon-sm guide-hub-complete"
+                              aria-label={t("Done")}
+                            />
+                          ) : null}
+                        </Button>
+                      );
+                    })}
+                  </div>
+                ))}
+              </nav>
+              <article
+                key={topic.id}
+                className="guide-hub-content"
+                aria-labelledby="guide-hub-title"
+              >
+                <header className="guide-hub-heading">
+                  <Heading size="page" level={2} id="guide-hub-title">
+                    {topic.title}
+                  </Heading>
+                </header>
+                <Text as="p" size="inherit" tone="secondary" className="guide-hub-summary">
+                  {topic.summary}
+                </Text>
+                <div className="guide-hub-actions">
+                  <Button
+                    variant="primary"
+                    disabled={!!blocker}
+                    endIcon={<ChevronRight className="icon-sm" />}
+                    onClick={tryIt}
+                  >
+                    {topic.action.label}
+                  </Button>
+                  {topic.tour ? (
+                    <Button
+                      variant="secondary"
+                      startIcon={<Play className="icon-sm" />}
+                      onClick={() => onStartTour(topic.id)}
+                    >
+                      {t("Tour")}
+                    </Button>
+                  ) : null}
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      setWikiArticle(topic.id);
+                      setView("wiki");
+                      wikiTab.current?.focus();
+                    }}
+                  >
+                    {t("Wiki")}
+                  </Button>
+                </div>
+                {blocker ? (
+                  <Text
+                    as="p"
+                    size="caption"
+                    tone="secondary"
+                    leading="normal"
+                    className="guide-hub-blocker"
+                    role="status"
+                  >
+                    <span>{blocker.reason}</span>
+                    <Button variant="link" onClick={() => run(blocker.action)}>
+                      {blocker.label}
+                    </Button>
+                  </Text>
+                ) : null}
+                <section className="guide-hub-section">
+                  <SectionLabel as="h3" className="guide-hub-section-title">
+                    {t("Steps")}
+                  </SectionLabel>
+                  <ol className="guide-hub-steps">
+                    {topic.steps.map((step, position) => {
+                      const done = stepDone(step);
+                      const automatic = !!step.done && signals.has(step.done);
+                      return (
+                        <li key={step.id} data-done={done ? "true" : undefined}>
+                          {/* aria-disabled (not disabled) keeps the pointer and focus events the tooltip needs. */}
+                          <Tooltip label={automatic ? t("Done") : undefined}>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              iconOnly
+                              title=""
+                              pressed={done}
+                              label={done ? t("Mark as not done") : t("Mark as done")}
+                              aria-disabled={automatic || undefined}
+                              onClick={() => {
+                                if (!automatic) setDoneSteps(setGuideStepDone(step.id, !done));
+                              }}
+                            >
+                              {done ? (
+                                <Check className="icon-xs" aria-hidden="true" />
+                              ) : (
+                                position + 1
+                              )}
+                            </Button>
+                          </Tooltip>
+                          <div className="guide-hub-step-body">
+                            <Text
+                              as="span"
+                              size="inherit"
+                              tone={done ? "secondary" : "inherit"}
+                              weight="medium"
+                              className="guide-hub-step-title"
+                            >
+                              {step.title}
+                            </Text>
+                            <Text
+                              size="inherit"
+                              tone="secondary"
+                              id={`guide-step-${step.id}`}
+                              className="guide-hub-step-text"
+                            >
+                              {step.text}
+                            </Text>
+                          </div>
+                          {step.show && onShowStep ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              startIcon={<Eye className="icon-sm" aria-hidden="true" />}
+                              aria-describedby={`guide-step-${step.id}`}
+                              onClick={() => onShowStep(topic.id, step.id)}
+                            >
+                              {t("Show me")}
+                            </Button>
+                          ) : null}
+                        </li>
+                      );
+                    })}
+                  </ol>
+                </section>
+                {topic.tips.length > 0 ? (
+                  <Disclosure className="guide-hub-tips" size="sm" summary={t("Tips")}>
+                    <Text as="ul" size="inherit" tone="secondary">
+                      {topic.tips.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </Text>
+                  </Disclosure>
+                ) : null}
+                {topic.shortcuts.length > 0 ? (
+                  <section className="guide-hub-section">
+                    <SectionLabel as="h3" className="guide-hub-section-title">
+                      {t("Shortcuts")}
+                    </SectionLabel>
+                    <GuideShortcuts items={topic.shortcuts} />
+                  </section>
+                ) : null}
+              </article>
+            </>
+          )}
+        </TabPanel>
+      </Tabs>
     </Modal>
   );
 }

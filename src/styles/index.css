@@ -4145,6 +4145,24 @@ html:not(.theme-light) .markdown-code-token {
 }
 
 /*
+ * Settled tool calls are chrome around the answer: their commands and paths
+ * rest dim and come up to full ink while the row is hovered or focused.
+ * Outside a tool row the summary keeps full ink.
+ */
+:root {
+  --transcript-tool-ink: var(--color-content);
+}
+
+.transcript-tool-row {
+  --transcript-tool-ink: var(--ui-text-muted);
+}
+
+.transcript-tool-row:hover,
+.transcript-tool-row:focus-within {
+  --transcript-tool-ink: var(--color-content);
+}
+
+/*
  * The connector: a line dropping out of the chevron and curving into the first
  * thing the fold holds, so opened work reads as hanging off that line rather
  * than running on from the answer below it. Same geometry as the phase rail —

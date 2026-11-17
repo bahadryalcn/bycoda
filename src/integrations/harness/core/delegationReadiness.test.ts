@@ -105,7 +105,7 @@ it("tells model and owner when a Host advisor is unreachable, never for Claude's
   expect(needsHostDelegation("claude", {})).toBe(false);
   const lost = delegationFallback(codexAdvisor, false, "claude");
   expect(lost).toBe("Your advisor is unavailable this turn; do not call agents.consult.");
-  expect(delegationNotice(lost)).toContain("advisor is unavailable");
+  expect(delegationNotice(lost)).toContain("advisor is off");
   expect(delegationFallback(codexAdvisor, true, "claude")).toBe("");
   expect(delegationFallback(claudeAdvisor, false, "claude")).toBe("");
   const both = delegationFallback(
@@ -115,5 +115,5 @@ it("tells model and owner when a Host advisor is unreachable, never for Claude's
   );
   expect(both).toContain("Do not use unrestricted");
   expect(both).toContain("do not call agents.consult");
-  expect(delegationNotice(both)).toContain("Host subagents are unavailable");
+  expect(delegationNotice(both)).toContain("Subagents are off");
 });

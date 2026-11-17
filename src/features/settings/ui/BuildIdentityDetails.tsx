@@ -45,8 +45,17 @@ export function BuildIdentityDetails() {
       size="sm"
       className="min-w-0"
       data-testid="build-identity-details"
+      summaryActions={
+        <CopyButton
+          iconOnly
+          size="sm"
+          label={t("Copy build details")}
+          text={() => JSON.stringify({ renderer: buildIdentity, native }, null, 2)}
+          resetKeys={[native]}
+        />
+      }
     >
-      <DescriptionList size="sm" className="py-2">
+      <DescriptionList size="sm">
         {comparison === "exact" && readState !== "failed" ? (
           /* Both stamps are the same: say so once and show the identity once. */
           <DescriptionItem term={t("Source")}>
@@ -82,17 +91,13 @@ export function BuildIdentityDetails() {
           </>
         )}
       </DescriptionList>
-      <div className="flex flex-wrap items-center gap-2">
-        <CopyButton
-          iconOnly
-          size="sm"
-          label={t("Copy build details")}
-          text={() => JSON.stringify({ renderer: buildIdentity, native }, null, 2)}
-        />
-        {readState === "failed" ? (
-          <Button onClick={() => setAttempt((value) => value + 1)}>{t("Retry native read")}</Button>
-        ) : null}
-      </div>
+      {readState === "failed" ? (
+        <div className="mt-2">
+          <Button size="sm" onClick={() => setAttempt((value) => value + 1)}>
+            {t("Retry native read")}
+          </Button>
+        </div>
+      ) : null}
     </Disclosure>
   );
 }

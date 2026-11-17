@@ -5,6 +5,9 @@ import type {
 } from "../../../../shared/model/host-contracts/model-routing";
 import { Badge } from "../../../../shared/ui/Badge";
 import { Button } from "../../../../shared/ui/Button";
+import { Checkbox } from "../../../../shared/ui/Checkbox";
+import { InlineMessage } from "../../../../shared/ui/InlineError";
+import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { Text } from "../../../../shared/ui/Text";
 import { OverflowTooltip } from "../../../../shared/ui/Tooltip";
 import { GripVertical } from "../../../../shared/ui/icons";
@@ -16,6 +19,7 @@ import type { useAnimatedReorder } from "../../../../shared/hooks/useAnimatedReo
 import { ModelOrderRowMore } from "./ModelOrderRowMore";
 import { ModelProfileBadge } from "./ModelProfileBadge";
 import { useEntryAccount } from "./useEntryAccount";
+import { useQuotaLabel } from "./useQuotaLabel";
 
 const skipLabels = {
   unavailable: "Model unavailable or disabled",
@@ -37,11 +41,15 @@ export function ModelOrderRow({
   statusError = false,
   next = false,
   sortable,
+  selected = false,
+  onSelect,
+  invalidMessage,
   onChange,
   onPercent,
   onRemove,
 }: {
   entry: ModelRoutingEntry;
+  /** Position in the list it sits in; this is the real priority, shown as the number. */
   index: number;
   count: number;
   percent: string;
@@ -50,7 +58,13 @@ export function ModelOrderRow({
   statusError?: boolean;
   /** New work starts on this model now. */
   next?: boolean;
-  sortable: ReturnType<typeof useAnimatedReorder<string>>;
+  /** Drag and keyboard reordering; without it the row has no grip (grouped views). */
+  sortable?: ReturnType<typeof useAnimatedReorder<string>>;
+  selected?: boolean;
+  /** Adds the selection checkbox. */
+  onSelect?: (selected: boolean) => void;
+  /** The Host refused this row; shown under it in warning tone. */
+  invalidMessage?: string;
   onChange: (entry: ModelRoutingEntry) => void;
   onPercent: (text: string) => void;
   onRemove: () => void;
@@ -58,41 +72,41 @@ export function ModelOrderRow({
   const t = useT();
   const format = useFormat();
   const account = useEntryAccount(entry);
-  const accountLabel = account.account?.label ?? t("Unavailable account");
-  // The badge adds the scope; it is dropped when the account name already says it.
-  const kindLabel = account.kind === "work" ? t("Work") : t("Personal");
-  const left =
-    status?.leftPercent == null
-      ? t(
-          statusLoading || status?.limitState === "reading"
-            ? "Reading limit…"
-            : statusError || status?.limitState === "unavailable"
-              ? "Limit unavailable"
-              : status?.limitState === "noQuota"
-                ? "No plan quota"
-                : "Limit unknown",
-        )
-      : t("{p0}% left", { p0: format.formatNumber(status.leftPercent) });
+  const quotaLabel = useQuotaLabel();
+  const left = quotaLabel(status, statusLoading, statusError);
   return (
     <div
-      ref={(node) => sortable.setItemRef(entry.id, node)}
-      className="reorder-item flex flex-wrap items-center gap-x-2 gap-y-1 px-4 py-2"
-      data-dragging={sortable.draggingId === entry.id ? "" : undefined}
+      ref={(node) => sortable?.setItemRef(entry.id, node)}
+      {...surfaceAttributes(
+        invalidMessage ? { tone: "warning" } : {},
+        "reorder-item flex flex-wrap items-center gap-x-2 gap-y-1 px-4 py-2",
+      )}
+      data-entry-id={entry.id}
+      data-dragging={sortable?.draggingId === entry.id ? "" : undefined}
       aria-label={t("Model {p0}", { p0: index + 1 })}
     >
-      <Button
-        iconOnly
-        variant="ghost"
-        size="sm"
-        label={t("Reorder model {p0}", { p0: index + 1 })}
-        tooltip={t("Drag to reorder")}
-        shortcut="Alt+↑ / Alt+↓"
-        disabled={count < 2}
-        onPointerDown={(event) => sortable.onItemPointerDown(entry.id, event)}
-        onKeyDown={(event) => sortable.onItemKeyDown(entry.id, event)}
-      >
-        <GripVertical className="icon-sm" />
-      </Button>
+      {onSelect ? (
+        <Checkbox
+          checked={selected}
+          aria-label={t("Select model {p0}", { p0: index + 1 })}
+          onChange={(event) => onSelect(event.currentTarget.checked)}
+        />
+      ) : null}
+      {sortable ? (
+        <Button
+          iconOnly
+          variant="ghost"
+          size="sm"
+          label={t("Reorder model {p0}", { p0: index + 1 })}
+          tooltip={t("Drag to reorder")}
+          shortcut="Alt+↑ / Alt+↓"
+          disabled={count < 2}
+          onPointerDown={(event) => sortable.onItemPointerDown(entry.id, event)}
+          onKeyDown={(event) => sortable.onItemKeyDown(entry.id, event)}
+        >
+          <GripVertical className="icon-sm" />
+        </Button>
+      ) : null}
       <Text size="secondary" tone="secondary" aria-hidden="true" className="w-4 text-center">
         {format.formatNumber(index + 1)}
       </Text>
@@ -104,6 +118,7 @@ export function ModelOrderRow({
           allowedHarnesses={REMOTE_PROVIDERS}
           presentation="field"
           showExtras
+          hideAgentSettings
           accountId={entry.providerAccountId}
           onChange={(harness, model, accountId) => {
             if (!isRemoteProvider(harness)) return;
@@ -130,26 +145,6 @@ export function ModelOrderRow({
           }
         />
       </div>
-      {account.supported ? (
-        <div className="flex w-40 shrink-0 items-center gap-1">
-          <OverflowTooltip label={accountLabel}>
-            <Text size="caption" tone="secondary" truncate>
-              {accountLabel}
-            </Text>
-          </OverflowTooltip>
-          {account.kind && kindLabel.toLowerCase() !== accountLabel.trim().toLowerCase() ? (
-            <Badge
-              size="xs"
-              tone={account.kind === "work" ? "info" : "neutral"}
-              className="shrink-0"
-            >
-              {kindLabel}
-            </Badge>
-          ) : null}
-        </div>
-      ) : (
-        <div className="w-40 shrink-0" />
-      )}
       <div className="flex w-16 shrink-0">
         <ModelProfileBadge harness={entry.harness} model={entry.model} />
       </div>
@@ -181,6 +176,11 @@ export function ModelOrderRow({
         onPercent={onPercent}
         onRemove={onRemove}
       />
+      {invalidMessage ? (
+        <InlineMessage tone="warning" className="w-full ps-6">
+          {invalidMessage}
+        </InlineMessage>
+      ) : null}
     </div>
   );
 }

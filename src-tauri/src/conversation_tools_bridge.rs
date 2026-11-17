@@ -1272,8 +1272,14 @@ pub async fn harness_conversation_tools_bridge(
     session_id: String,
     check_ready: Option<bool>,
     prepare_spawn: Option<bool>,
+    check_respawn: Option<bool>,
 ) -> Result<Option<Value>, String> {
     crate::harness::run_blocking("harness_conversation_tools_bridge", move || {
+        if check_respawn == Some(true) {
+            return Ok(Some(json!({
+                "respawn": delegation_readiness::respawn_restores_tools(&app, &session_id)
+            })));
+        }
         if check_ready == Some(true) {
             if prepare_spawn == Some(true) {
                 crate::harness::tool_grants::prepare_conversation_spawn(&app, &session_id);

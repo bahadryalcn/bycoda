@@ -3,6 +3,7 @@ import { useState, type ComponentProps } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Sidebar } from "../../../src/app/shell/Sidebar";
+import { APP_MENU_TOGGLE_EVENT, MenuBar } from "../../../src/app/shell/MenuBar";
 import { SessionRecoveryControl } from "../../../src/app/shell/SessionRecoveryControl";
 import { Badge } from "../../../src/shared/ui/Badge";
 import { SearchView } from "../../../src/features/search/ui/SearchView";
@@ -117,6 +118,35 @@ const badgeCount = Number(new URLSearchParams(location.search).get("badgeCount")
 const expandedRail = new URLSearchParams(location.search).has("expandedRail");
 const headerNavigation = new URLSearchParams(location.search).has("headerNavigation");
 const projectHeader = new URLSearchParams(location.search).has("projectHeader");
+
+function ApplicationMenuFixture() {
+  const [selected, setSelected] = useState("");
+  return (
+    <>
+      <Button
+        onClick={({ currentTarget }) => {
+          const { left, bottom } = currentTarget.getBoundingClientRect();
+          window.dispatchEvent(
+            new CustomEvent(APP_MENU_TOGGLE_EVENT, { detail: { x: left, y: bottom } }),
+          );
+        }}
+      >
+        Application menu
+      </Button>
+      <MenuBar
+        onNew={() => setSelected("New Session")}
+        onOpenInbox={() => setSelected("Inbox")}
+        onOpenNotes={() => setSelected("Notes")}
+        onToggleSidebar={() => setSelected("Toggle Sidebar")}
+        onToggleSessionSidebar={() => setSelected("Toggle Session Sidebar")}
+        onNewTerminal={() => setSelected("New Terminal")}
+        onCloseIdleTabs={() => setSelected("Close Idle Tabs")}
+        layout={{ current: null, canArrange: true, onArrange: setSelected, onSplit: setSelected }}
+      />
+      <output aria-label="Selected action">{selected}</output>
+    </>
+  );
+}
 
 function Fixture() {
   const [cwd, setCwd] = useState(projects[0]);
@@ -282,7 +312,9 @@ function Fixture() {
 }
 await languageReady;
 createRoot(document.getElementById("root")!).render(
-  new URLSearchParams(location.search).has("controlLayout") ? (
+  new URLSearchParams(location.search).has("applicationMenu") ? (
+    <ApplicationMenuFixture />
+  ) : new URLSearchParams(location.search).has("controlLayout") ? (
     <ControlLayoutFixture />
   ) : (
     <Fixture />

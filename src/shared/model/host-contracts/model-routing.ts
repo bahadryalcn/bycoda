@@ -131,24 +131,27 @@ export const ModelRoutingDelegationSchema = z.strictObject({
 export type ModelRoutingDelegation = z.infer<typeof ModelRoutingDelegationSchema>;
 
 /** Calendar thresholds for unattended Work; omitted or zero means unlimited. */
+const WorkCapPeriodSchema = z.strictObject({
+  tokens: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
+  costUsd: z.number().finite().nonnegative().optional(),
+});
 export const WorkCalendarCapsSchema = z.strictObject({
-  daily: z
-    .strictObject({
-      tokens: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
-      costUsd: z.number().finite().nonnegative().optional(),
-    })
-    .optional(),
-  monthly: z
-    .strictObject({
-      tokens: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
-      costUsd: z.number().finite().nonnegative().optional(),
-    })
-    .optional(),
+  daily: WorkCapPeriodSchema.optional(),
+  /** Host-local ISO week, Monday 00:00 to the next Monday 00:00. */
+  weekly: WorkCapPeriodSchema.optional(),
+  monthly: WorkCapPeriodSchema.optional(),
 });
 export type WorkCalendarCaps = z.infer<typeof WorkCalendarCapsSchema>;
 export const WorkCapsSchema = z.strictObject({
   total: WorkCalendarCapsSchema.optional(),
   providers: z.partialRecord(SessionProviderSchema, WorkCalendarCapsSchema).optional(),
+  /**
+   * Provider default for `minRemainingPercent`: the selector skips that provider's entries
+   * with no own value when less than this share of their account quota is left (0-100).
+   */
+  reservePercent: z
+    .partialRecord(SessionProviderSchema, z.number().int().min(0).max(100))
+    .optional(),
 });
 
 const routingFields = {

@@ -2,7 +2,7 @@
 import { act, createElement, createRef } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
-import { Search, Settings } from "./icons";
+import { ChatEdit, Search, Settings } from "./icons";
 
 it("forwards SVG refs and consumer sizing/stroke without losing the accessible title", () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -57,14 +57,25 @@ it("keeps the 24px grid and the 1.75 token stroke as attribute defaults so style
   const { ChevronsDownUp, Link2 } = await import("./icons");
   try {
     act(() =>
-      root.render(createElement("div", null, createElement(ChevronsDownUp), createElement(Link2))),
+      root.render(
+        createElement(
+          "div",
+          null,
+          createElement(ChevronsDownUp),
+          createElement(Link2),
+          createElement(ChatEdit),
+        ),
+      ),
     );
     const glyphs = [...host.querySelectorAll("svg")];
-    expect(glyphs).toHaveLength(2);
+    expect(glyphs).toHaveLength(3);
     for (const svg of glyphs) {
       expect(svg.getAttribute("width")).toBe("24");
       expect(svg.getAttribute("height")).toBe("24");
       expect(svg.getAttribute("stroke-width")).toBe("1.75");
+      expect(svg.getAttribute("viewBox")).toBe("0 0 24 24");
+      expect(svg.getAttribute("fill")).toBe("none");
+      expect(svg.getAttribute("stroke")).toBe("currentColor");
       expect(svg.getAttribute("aria-hidden")).toBe("true");
       expect(svg.getAttribute("style")).toBeNull();
     }

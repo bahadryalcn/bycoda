@@ -453,7 +453,7 @@ export function UpdateRow({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string
         }
         description={snapshot.phase === "idle" && updatesEnabled !== false ? status : undefined}
         feedback={
-          <>
+          <div className="grid min-w-0 gap-2">
             {metadataError ? (
               <SettingsFeedback
                 state="error"
@@ -480,48 +480,45 @@ export function UpdateRow({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string
                 {status}
               </SettingsFeedback>
             ) : null}
+            {snapshot.phase === "downloading" ? (
+              <Progress
+                compact
+                label={t("Downloading…")}
+                value={snapshot.progress ?? undefined}
+                max={100}
+              />
+            ) : null}
             <BuildIdentityDetails />
-          </>
+          </div>
         }
       >
-        <div className="general-update-actions">
+        <Button
+          className="shrink-0"
+          onClick={() => onOpenWhatsNew(snapshot.currentVersion)}
+          disabled={snapshot.currentVersion === "…"}
+        >
+          {t("What's new")}
+        </Button>
+        {updatesEnabled === false ? null : (
           <Button
             className="shrink-0"
-            onClick={() => onOpenWhatsNew(snapshot.currentVersion)}
-            disabled={snapshot.currentVersion === "…"}
+            stableWidth
+            onClick={() => void onClick()}
+            disabled={
+              busy || metadataError || snapshot.currentVersion === "…" || updatesEnabled !== true
+            }
+            loading={busy}
+            startIcon={
+              hasUpdate ? (
+                <ArrowDownCircle strokeWidth={1.75} aria-hidden />
+              ) : (
+                <RefreshCw strokeWidth={1.75} aria-hidden />
+              )
+            }
           >
-            {t("What's new")}
+            {hasUpdate ? t("Install and restart") : t("Check for updates")}
           </Button>
-          {updatesEnabled === false ? null : (
-            <Button
-              className="shrink-0"
-              stableWidth
-              onClick={() => void onClick()}
-              disabled={
-                busy || metadataError || snapshot.currentVersion === "…" || updatesEnabled !== true
-              }
-              loading={busy}
-              startIcon={
-                hasUpdate ? (
-                  <ArrowDownCircle strokeWidth={1.75} aria-hidden />
-                ) : (
-                  <RefreshCw strokeWidth={1.75} aria-hidden />
-                )
-              }
-            >
-              {hasUpdate ? t("Install and restart") : t("Check for updates")}
-            </Button>
-          )}
-          {snapshot.phase === "downloading" ? (
-            <Progress
-              compact
-              label={t("Downloading…")}
-              value={snapshot.progress ?? undefined}
-              max={100}
-              className="w-32"
-            />
-          ) : null}
-        </div>
+        )}
       </Row>
       {updatesEnabled ? <UpdateChannelRow /> : null}
     </>

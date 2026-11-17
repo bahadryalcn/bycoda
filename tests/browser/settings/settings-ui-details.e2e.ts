@@ -1,5 +1,39 @@
 import { expect, test, type Page } from "@playwright/test";
 
+for (const theme of ["light", "dark"]) {
+  for (const width of [1280, 800]) {
+    test(`build details keep Copy in the header ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/settings/settings.html?section=general&theme=${theme}&lang=en&buildDetails=1`,
+      );
+      const details = page.getByTestId("build-identity-details");
+      const header = details.locator("summary");
+      const copy = details.getByRole("button", { name: "Copy build details", exact: true });
+      await header.click();
+      await expect(details).toHaveAttribute("open", "");
+      await expect(details.getByText(/4b9e2169b0bd3864cebb-local/)).toBeVisible();
+      const group = page.getByRole("region", { name: "Updates", exact: true });
+      await page.mouse.move(0, 0);
+      await group.screenshot({
+        path: `temp/verification/settings-setup-polish/updates-${theme}-${width}.png`,
+      });
+      await expect(
+        header.getByRole("button", { name: "Copy build details", exact: true }),
+      ).toBeVisible({ timeout: 1500 });
+      await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+      await copy.click();
+      await expect(details).toHaveAttribute("open", "");
+      await expect
+        .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+        .toContain("4b9e2169b0bd3864cebb-local");
+      await header.click();
+      await expect(details).not.toHaveAttribute("open", "");
+    });
+  }
+}
+
 /** Models is tabbed; provider accounts and the provider picker live under its Providers tab. */
 async function openProvidersTab(page: Page, name = "Providers") {
   await page.getByRole("tab", { name, exact: true }).click();

@@ -292,6 +292,81 @@ export const SkillGroupIcon = custom(
   </>,
 );
 
+/** Marks files edited during a turn. */
+export const ChatEdit = custom(
+  "ChatEdit",
+  <path d="M12.5 4H7a3 3 0 0 0-3 3v10a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-5.5M13.5 10.5 20 4" />,
+);
+
+/** Marks a search, read, or project exploration step. */
+export const ChatExplore = custom(
+  "ChatExplore",
+  <path d="M15 8a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0ZM14 11l3 3M5 17.5h14M7 21h7" />,
+);
+
+/** Marks shell commands run during a turn. */
+export const ChatRun = custom(
+  "ChatRun",
+  <path d="M6 4.5h12a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-9a3 3 0 0 1 3-3ZM3 9h18m-14 3 2.5 2.5L7 17m6-.5h4" />,
+);
+
+/** Marks work delegated to a subagent. */
+export const ChatAgent = custom(
+  "ChatAgent",
+  <path d="M3 12h3c4 0 3-5 8-5m-8 5c4 0 3 5 8 5M16 4h3a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-3a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm0 10h3a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-3a2 2 0 0 1-2-2v-2a2 2 0 0 1 2-2Z" />,
+);
+
+/** Marks a tool call without a dedicated activity glyph. */
+export const ChatTool = custom(
+  "ChatTool",
+  <path d="m4.5 15.5 4-4a2 2 0 0 1 2.8 0l1.2 1.2a2 2 0 0 1 0 2.8l-4 4a2.83 2.83 0 0 1-4-4Zm7-4 4-4 1-2.5L19 3.5 20.5 5 19 7.5l-2.5 1-4 4" />,
+);
+
+/** Marks a narrated step in the activity list. */
+export const ChatNote = custom("ChatNote", <path d="M14 12a2 2 0 1 1-4 0 2 2 0 0 1 4 0Z" />);
+
+/** Marks a queued call that has yet to start. */
+export const ChatPending = custom(
+  "ChatPending",
+  <path d="M4 10a8.25 8.25 0 0 1 6-6m4 0a8.25 8.25 0 0 1 6 6m0 4a8.25 8.25 0 0 1-6 6m-4 0a8.25 8.25 0 0 1-6-6" />,
+);
+
+/** Marks a failed or rejected call. */
+export const ChatFailed = custom(
+  "ChatFailed",
+  <path d="M20.5 12a8.5 8.5 0 1 1-17 0 8.5 8.5 0 0 1 17 0ZM9.5 9.5l5 5m0-5-5 5" />,
+);
+
+/** Marks the fold containing the turn’s collected work. */
+export const ChatWork = custom(
+  "ChatWork",
+  <path d="M4.5 7.5 11 4.25a2.24 2.24 0 0 1 2 0l6.5 3.25a1.12 1.12 0 0 1 0 2L13 12.75a2.24 2.24 0 0 1-2 0L4.5 9.5a1.12 1.12 0 0 1 0-2ZM4 13l7 3.5a2.24 2.24 0 0 0 2 0l7-3.5M4 17l7 3.5a2.24 2.24 0 0 0 2 0l7-3.5" />,
+);
+
+/** Copies a chat message. */
+export const ChatCopy = custom(
+  "ChatCopy",
+  <path d="M7 16.5a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h6.5a3 3 0 0 1 3 3v1M10 8h7a3 3 0 0 1 3 3v6a3 3 0 0 1-3 3h-7a3 3 0 0 1-3-3v-6a3 3 0 0 1 3-3Z" />,
+);
+
+/** Confirms that a chat message was copied. */
+export const ChatCopied = custom(
+  "ChatCopied",
+  <path d="M7 16.5a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h6.5a3 3 0 0 1 3 3v1M10 8h7a3 3 0 0 1 3 3v6a3 3 0 0 1-3 3h-7a3 3 0 0 1-3-3v-6a3 3 0 0 1 3-3ZM10.25 14l2.25 2.25 4.5-4.5" />,
+);
+
+/** Retries a chat turn. */
+export const ChatRetry = custom(
+  "ChatRetry",
+  <path d="M4.5 8.5a8.5 8.5 0 1 1 1.25 9m-1.25-14v5h5" />,
+);
+
+/** Edits the user’s chat message. */
+export const ChatEditMessage = custom(
+  "ChatEditMessage",
+  <path d="M12 5H7a3 3 0 0 0-3 3v6a3 3 0 0 0 2 2.83V21l5-4h6a3 3 0 0 0 3-3v-2.5M13.5 10.5 20 4" />,
+);
+
 export const AlertCircle = wrap(LucideAlertCircle, "AlertCircle");
 export const AppWindow = wrap(LucideAppWindow, "AppWindow");
 export const Archive = wrap(LucideArchive, "Archive");

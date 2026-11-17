@@ -6,7 +6,10 @@ import { DropdownMenu } from "../../../../shared/ui/DropdownMenu";
 import { Plus, X } from "../../../../shared/ui/icons";
 import { Group } from "../../../../shared/ui/settings";
 import { Text } from "../../../../shared/ui/Text";
-import { providerAccounts, supportsProviderAccounts } from "../../../providers/public/providerAccounts";
+import {
+  providerAccounts,
+  supportsProviderAccounts,
+} from "../../../providers/public/providerAccounts";
 import {
   inheritedValues,
   layerId,
@@ -44,7 +47,10 @@ export function DelegationSettings({
   // An override without keys is not stored, so a freshly added one lives here until it has a key.
   const [pending, setPending] = useState<DelegationLayer[]>([]);
   const stored = storedOverrides(delegation);
-  const layers = [...stored, ...pending.filter((layer) => !stored.some((s) => sameLayer(s, layer)))];
+  const layers = [
+    ...stored,
+    ...pending.filter((layer) => !stored.some((s) => sameLayer(s, layer))),
+  ];
   const free = overrideTargets(draft.routing.entries).filter(
     (target) => !layers.some((layer) => sameLayer(layer, target)),
   );
@@ -114,7 +120,9 @@ function layerLabel(layer: DelegationLayer): string {
   if (layer.kind === "global") return "";
   const provider = HARNESS_TITLE[layer.harness];
   if (layer.kind === "provider") return provider;
-  const account = (supportsProviderAccounts(layer.harness) ? providerAccounts(layer.harness) : []).find((item) => item.id === layer.accountId);
+  const account = (
+    supportsProviderAccounts(layer.harness) ? providerAccounts(layer.harness) : []
+  ).find((item) => item.id === layer.accountId);
   return `${provider} · ${account?.label || layer.accountId}`;
 }
 

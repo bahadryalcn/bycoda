@@ -38,6 +38,8 @@ export function modelRoutingEntryStatus(
   signals: ModelRoutingSignals,
   /** The run's project scope; settings status has no project and passes none. */
   scope?: ModelRoutingScope,
+  /** The provider-level default reserve; the entry's own `minRemainingPercent` wins. */
+  reservePercent?: number,
 ): ModelRoutingEntryStatus {
   const quota = signals.quota(entry);
   const kind = scope ? signals.accountKind(entry) : undefined;
@@ -51,7 +53,7 @@ export function modelRoutingEntryStatus(
           ? entry.unknownLimit === "skip"
             ? "unknownLimit"
             : undefined
-          : quota.leftPercent < (entry.minRemainingPercent ?? 0)
+          : quota.leftPercent < (entry.minRemainingPercent ?? reservePercent ?? 0)
             ? "belowLimit"
             : undefined;
   return {
@@ -150,7 +152,12 @@ export function selectModelRouting(
   const skipped: ModelRoutingResolution["skipped"] = [];
   let nextResetAt: number | undefined;
   for (const entry of entries) {
-    const status = modelRoutingEntryStatus(entry, signals, scope);
+    const status = modelRoutingEntryStatus(
+      entry,
+      signals,
+      scope,
+      state.workCaps?.reservePercent?.[entry.harness],
+    );
     if (!status.skip) {
       const { harness, model, providerAccountId } = entry;
       const modelSettings = poolModelSettings(entry, effort, catalog);
