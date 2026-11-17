@@ -15,7 +15,7 @@ import { rememberBackground } from "./backgroundHistory";
 import { projectKey } from "../../../shared/lib/paths";
 import { chatBackgroundKind } from "../../../shared/lib/chatBackgroundKind";
 import { authoredSceneSource } from "./designSource";
-import { backgroundDesign } from "./backgroundNames";
+import { backgroundDesign, backgroundMediaId } from "./backgroundNames";
 import { loadSavedThemes } from "./savedThemes";
 import { listBackgroundLibrary } from "./backgroundLibrary";
 import { captureAppearanceSnapshot } from "./appearanceSnapshot";
@@ -74,6 +74,18 @@ export async function readConversationBackground(
     };
   };
   const current = selection();
+  const selected = () => {
+    if (!current.path) return false;
+    const override =
+      input.target === "project" ? loadProjectChatBackgroundSettings(projectKey(project)) : null;
+    const active = override?.path ?? loadChatBackgroundPath();
+    return (
+      current.path === active ||
+      (!!active &&
+        !!backgroundMediaId(current.path) &&
+        backgroundMediaId(current.path) === backgroundMediaId(active))
+    );
+  };
   const design = saved ?? (current.path ? backgroundDesign(current.path, themes) : undefined);
   const metadata = {
     designId: design?.id,
@@ -88,14 +100,14 @@ export async function readConversationBackground(
     throw new Error("Background selection changed; restart the source read");
   if (!current.path) return { selected: false, ...current, ...metadata };
   const kind = chatBackgroundKind(current.path);
-  if (kind !== "html") return { selected: true, ...current, kind, ...metadata };
+  if (kind !== "html") return { selected: selected(), ...current, kind, ...metadata };
   const html = await invoke<string>("read_chat_background_html", { path: current.path });
   if (!(await authorized()) || JSON.stringify(selection()) !== JSON.stringify(current))
     throw new Error("Background authority or selection changed");
   const source = authoredSceneSource(html);
   const end = Number(offset) + Number(limit);
   return {
-    selected: true,
+    selected: selected(),
     ...current,
     ...metadata,
     kind,

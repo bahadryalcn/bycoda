@@ -169,6 +169,7 @@ it.each(["global", "project"])(
     );
     expect(reopened).toMatchObject({
       title: "Robotun adası",
+      selected: false,
       html: "<b>island</b>",
       designId: saved.designId,
     });
