@@ -30,6 +30,7 @@ it("does not refresh sibling session streams when another session of the project
     crews: { definitions: noop, agents: noop, runs: noop },
     desktop: { live: noop },
     signal: { notify: () => undefined },
+    catalogs: noop,
   } as never);
   const invalidate = vi.spyOn(runtime.subscriptionHub, "invalidate");
   runtime.streamProjects.set("a", "p");
@@ -103,6 +104,7 @@ function environmentRuntime() {
     },
     desktop: { live },
     signal: { notify: () => undefined },
+    catalogs: noop,
   } as never);
   const events: { kind: string; data?: any; cursor: { epoch: string; sequence: number } }[] = [];
   const owner = {

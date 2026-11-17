@@ -1153,7 +1153,12 @@ for (const width of [390, 1440]) {
           document.documentElement.classList.toggle("theme-light", selected === "light"),
         theme,
       );
-      await page.getByRole("article", { name: "Completed task", exact: true }).click();
+      // Click the title: the card's centre can land on its status button, which opens the
+      // failure dialog instead of the detail panel when the text wraps differently.
+      await page
+        .getByRole("article", { name: "Completed task", exact: true })
+        .getByRole("heading", { name: "Completed task", exact: true })
+        .click();
       const details = page.getByRole("complementary", { name: "Task details", exact: true });
       await expect(details).toBeVisible();
       const summary = details.locator("summary").filter({ hasText: "Acceptance evidence" });

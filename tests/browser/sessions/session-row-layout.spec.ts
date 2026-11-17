@@ -98,7 +98,9 @@ for (const light of [true, false])
       await page.goto(
         `/tests/browser/sessions/session-row-layout.html?${light ? "light" : "dark"}`,
       );
-      await page.getByRole("button", { name: "Search sessions", exact: true }).click();
+      // The default pane is narrow, so the session tools live in "More actions".
+      await page.getByRole("button", { name: "More actions", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Search sessions", exact: true }).click();
       await page
         .getByRole("combobox", { name: "Search sessions", exact: true })
         .fill("no matching fixture conversation");
@@ -610,8 +612,13 @@ for (const light of [false, true]) {
         `/tests/browser/sessions/session-row-layout.html?global&${width === 1280 ? "wide" : "compact"}&${light ? "light" : "dark"}`,
         { waitUntil: "domcontentloaded" },
       );
-      const create = page.getByRole("button", { name: "New session", exact: true });
-      await create.click();
+      // The default pane is narrow, so "New session" lives in the "More actions" menu.
+      const create = page.getByRole("button", { name: "More actions", exact: true });
+      const openProjectPicker = async () => {
+        await create.click();
+        await page.getByRole("menuitem", { name: "New session", exact: true }).click();
+      };
+      await openProjectPicker();
       const dialog = page.getByRole("dialog", { name: "Choose a project for the new session" });
       const search = dialog.getByRole("combobox", { name: "Search projects" });
       await expect(search).toBeFocused();
@@ -627,7 +634,7 @@ for (const light of [false, true]) {
       await expect(dialog).toHaveCount(0);
       await expect(create).toBeFocused();
       await expect(page.getByRole("status", { name: "Created sessions" })).toHaveText("0");
-      await create.click();
+      await openProjectPicker();
       await search.fill("no-such-project");
       await expect(dialog.getByRole("option")).toHaveCount(0);
       await search.press("Enter");
@@ -651,14 +658,16 @@ test("new session accepts explicit current project and preserves project-local d
   await page.goto("/tests/browser/sessions/session-row-layout.html?global", {
     waitUntil: "domcontentloaded",
   });
-  await page.getByRole("button", { name: "New session", exact: true }).click();
+  await page.getByRole("button", { name: "More actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: "New session", exact: true }).click();
   await page.getByRole("option", { name: /^bycoda / }).click();
   await expect(page.getByRole("status", { name: "Created sessions" })).toHaveText("1");
   await expect(page.getByRole("status", { name: "Created project" })).toHaveText("/fixture/bycoda");
   await page.goto("/tests/browser/sessions/session-row-layout.html", {
     waitUntil: "domcontentloaded",
   });
-  await page.getByRole("button", { name: "New session", exact: true }).click();
+  await page.getByRole("button", { name: "More actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: "New session", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.getByRole("status", { name: "Created sessions" })).toHaveText("1");
 });
@@ -669,7 +678,8 @@ test("new session retains selector and error when selected project becomes unava
   await page.goto("/tests/browser/sessions/session-row-layout.html?global&create-error", {
     waitUntil: "domcontentloaded",
   });
-  await page.getByRole("button", { name: "New session", exact: true }).click();
+  await page.getByRole("button", { name: "More actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: "New session", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Choose a project for the new session" });
   await dialog.getByRole("option", { name: /demo-repo / }).click();
   await expect(

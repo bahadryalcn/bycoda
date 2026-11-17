@@ -75,10 +75,11 @@ pub(crate) fn init(app: &AppHandle) -> tauri::Result<()> {
                             ));
                         }
                     });
-                    return;
+                } else {
+                    // Only macOS and Windows have the quick composer; elsewhere nothing remains.
+                    #[cfg(any(target_os = "macos", target_os = "windows"))]
+                    crate::quick_composer::handle_global_shortcut(app, shortcut, event);
                 }
-                #[cfg(any(target_os = "macos", target_os = "windows"))]
-                crate::quick_composer::handle_global_shortcut(app, shortcut, event);
             })
             .build(),
     )?;

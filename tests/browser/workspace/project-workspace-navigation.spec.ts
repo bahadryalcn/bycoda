@@ -791,21 +791,34 @@ async function choose(panel: Locator, label: string, option: string | RegExp) {
     .click();
 }
 
+// With one checkout selected, the checkout choice is merged into the branch control, which
+// opens a picker with a Worktrees tab; "All checkouts" is its first row.
+async function chooseMergedCheckout(panel: Locator, option: string | RegExp) {
+  const page = panel.page();
+  await panel.getByRole("button", { name: /^Working copy [^:]/ }).click();
+  const picker = page.getByRole("dialog", { name: "Working copy", exact: true });
+  await picker.getByRole("tab", { name: /^Worktrees/ }).click();
+  await picker
+    .getByRole(
+      "option",
+      typeof option === "string" ? { name: option, exact: true } : { name: option },
+    )
+    .click();
+}
+
 test("main and worktrees remain separate and usable in narrow and wide Changes panels", async ({
   page,
 }, testInfo) => {
   await page.goto("/tests/browser/workspace/project-workspace-navigation.html?worktrees=1");
   const panel = page.locator('[data-workspace-source-control="G:/wallet/api"]');
   await expect(panel).toBeVisible();
-  // The picker opens on the session's own checkout, named by its folder (the branch control
-  // below already names the branch); the overview lists every checkout.
+  // The control opens on the session's own checkout, named by its folder and branch; the
+  // overview lists every checkout.
   await expect(
-    panel.getByRole("button", {
-      name: /^Working copy: api · This session/,
-    }),
+    panel.getByRole("button", { name: "Working copy api · main", exact: true }),
   ).toBeVisible();
   await expect(panel.locator("[data-checkout-overview]")).toHaveCount(0);
-  await choose(panel, "Working copy", "All checkouts");
+  await chooseMergedCheckout(panel, "All checkouts");
   const checkouts = panel.locator("[data-checkout-overview] [data-git-repository]");
   await expect(checkouts).toHaveCount(2);
   for (const width of [390, 768, 1024, 1440]) {
@@ -832,8 +845,8 @@ test("main and worktrees remain separate and usable in narrow and wide Changes p
   ).toBeVisible();
   await choose(panel, "Working copy", /^task\b/);
   await expect(panel.locator("[data-checkout-overview]")).toHaveCount(0);
-  await expect(panel.getByRole("button", { name: /^Working copy: task\b/ })).toBeVisible();
-  await choose(panel, "Working copy", "All checkouts");
+  await expect(panel.getByRole("button", { name: /^Working copy task\b/ })).toBeVisible();
+  await chooseMergedCheckout(panel, "All checkouts");
   await expect(checkouts).toHaveCount(2);
   await expect(taskToggle).toHaveAttribute("aria-expanded", "true");
   await expect(task.getByText("same.ts", { exact: true })).toBeVisible();

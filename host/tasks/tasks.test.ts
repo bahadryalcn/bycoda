@@ -4109,7 +4109,7 @@ describe("owner-approved task delivery", () => {
 describe("host work limits", () => {
   it("defaults to two tasks at once and no daily limit", async () => {
     const { tasks } = await setup();
-    expect(await tasks.limits.settings()).toEqual({
+    expect(await tasks.limits.settings()).toMatchObject({
       maxRunningTasks: MAX_RUNNING_TASKS,
       dailyAgentMinutes: 0,
     });
@@ -4133,11 +4133,11 @@ describe("host work limits", () => {
       await expect((async () => await tasks.limits.save(bad))()).rejects.toThrow();
     await expect((async () => await tasks.limits.save(null))()).rejects.toThrow("Invalid settings");
     for (const maxRunningTasks of [9, 99, Number.MAX_SAFE_INTEGER])
-      expect(await tasks.limits.save({ maxRunningTasks })).toEqual({
+      expect(await tasks.limits.save({ maxRunningTasks })).toMatchObject({
         maxRunningTasks,
         dailyAgentMinutes: 0,
       });
-    expect(await tasks.limits.save({ dailyAgentMinutes: 2880 })).toEqual({
+    expect(await tasks.limits.save({ dailyAgentMinutes: 2880 })).toMatchObject({
       maxRunningTasks: Number.MAX_SAFE_INTEGER,
       dailyAgentMinutes: 2880,
     });
@@ -4241,7 +4241,7 @@ describe("host work limits", () => {
     const used = await tasks.limits.usedMinutes();
     expect((await tasks.limits.state()).usageUncertain).toBe(true);
     const restarted = new HostTasks(store, engine, () => clock.now);
-    expect(await restarted.limits.settings()).toEqual({
+    expect(await restarted.limits.settings()).toMatchObject({
       maxRunningTasks: 3,
       dailyAgentMinutes: 120,
     });

@@ -218,8 +218,8 @@ pub fn quick_git_fit(
 #[cfg(target_os = "macos")]
 fn fit_popup(parent: &WebviewWindow, window: &WebviewWindow, anchor: &Anchor, height: f64) {
     let (Some(parent_ns), Some(popup_ns)) = (
-        crate::macos::ns_window(&parent),
-        crate::macos::ns_window(&window),
+        crate::macos::ns_window(parent),
+        crate::macos::ns_window(window),
     ) else {
         return;
     };

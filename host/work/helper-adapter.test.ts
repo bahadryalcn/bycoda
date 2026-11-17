@@ -62,7 +62,7 @@ it("retains ambiguous helper dispatch and never invokes its provider again", asy
 it("honors shared capacity before invoking a helper provider", async () => {
   const { store, engine } = await setup();
   const limits = new HostLimits(store);
-  await limits.save({ ...(await limits.settings()), maxRunningTasks: 1 });
+  await limits.save({ maxRunningTasks: 1 });
   const runtime = bindSessionWork(store, engine, limits);
   const occupied = await runtime.work.submit({
     source: { kind: "automation", id: "other", occurrence: "one" },
@@ -102,7 +102,7 @@ it("honors shared capacity before invoking a helper provider", async () => {
 it("cancels a queued helper before capacity returns and never sends it", async () => {
   const { store, engine } = await setup();
   const limits = new HostLimits(store);
-  await limits.save({ ...(await limits.settings()), maxRunningTasks: 1 });
+  await limits.save({ maxRunningTasks: 1 });
   const runtime = bindSessionWork(store, engine, limits);
   const occupied = await runtime.work.submit({
     source: { kind: "automation", id: "other", occurrence: "one" },

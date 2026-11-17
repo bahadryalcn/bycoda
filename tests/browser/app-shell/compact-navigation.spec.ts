@@ -192,6 +192,13 @@ test("workspace picker uses spare header width before clipping names", async ({
   for (const pane of ["wide", "narrow"]) {
     if (pane === "narrow") await resize.press("Enter");
     await resize.blur();
+    if (pane === "narrow") {
+      // A narrow pane folds the filter into "More actions"; the query stays applied and reopens.
+      await expect(search).toBeHidden();
+      await header.getByRole("button", { name: "More actions", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Search sessions", exact: true }).click();
+      await expect(search).toBeVisible();
+    }
     const bounds = (await header.boundingBox())!;
     const queryBounds = (await search.boundingBox())!;
     expect(queryBounds.x + queryBounds.width).toBeLessThanOrEqual(bounds.x + bounds.width + 1);
@@ -462,7 +469,9 @@ test("compact navigation keeps workspace tabs in place and stacks app tool short
   await expect(page.getByRole("radio", { name: "All", exact: true })).toBeChecked();
   await page.keyboard.press("Escape");
   // "Search sessions" is an inline filter of the session list now, not the shared dialog.
-  await page.getByRole("button", { name: "Search sessions", exact: true }).click();
+  // At this pane width the session tools fold into the "More actions" menu.
+  await page.getByRole("button", { name: "More actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Search sessions", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.getByRole("combobox", { name: "Search sessions" })).toBeFocused();
   await page.keyboard.type("zzz-no-such-conversation");
@@ -559,7 +568,9 @@ test("workspace header keeps location before history and project controls", asyn
             }));
             expect(titleWidth.content).toBeLessThanOrEqual(titleWidth.available);
           }
-          for (const name of ["Back", "Forward", "Expand projects", "Search sessions"]) {
+          // A narrow pane folds the session tools into "More actions".
+          const sessionTools = constrained ? "More actions" : "Search sessions";
+          for (const name of ["Back", "Forward", "Expand projects", sessionTools]) {
             const control = header.getByRole("button", { name, exact: true });
             await expect(control).toBeInViewport();
             const bounds = (await control.boundingBox())!;
