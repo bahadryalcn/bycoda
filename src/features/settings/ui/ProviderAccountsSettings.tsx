@@ -373,13 +373,11 @@ export function ProviderAccountsSettings({
                     },
                   }}
                 />
-                {accountProvider === "grok" ? null : (
-                  <TerminalProfileDiscovery
-                    key={accountProvider}
-                    provider={accountProvider}
-                    disabled={Boolean(working)}
-                  />
-                )}
+                <TerminalProfileDiscovery
+                  key={accountProvider}
+                  provider={accountProvider}
+                  disabled={Boolean(working)}
+                />
               </div>
             ) : undefined
           }

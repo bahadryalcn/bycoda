@@ -665,6 +665,10 @@ function DevicePanelSurface({
           throw new Error(t("Claim device control before sending input."));
         setInspection(undefined);
         setSelectedNode("");
+        if (command.type === "fold") {
+          setFrameStale(true);
+          setImageSize({ width: 0, height: 0 });
+        }
         const output = await api.action(selected, command, controlLease.leaseId);
         // The video stream already shows the result; a still capture would only delay input.
         if (!isCurrent() || streaming) return { output, frame: undefined, error: undefined };
@@ -1918,6 +1922,16 @@ function DevicePanelSurface({
           />
           {surface === "menu" && (
             <DeviceOptionsMenu
+              fold={
+                device?.supportsFold && device.platform === "ios" && !device.physical
+                  ? {
+                      loading: operation === "fold",
+                      disabled: !canControl || annotating,
+                      disabledReason: controlReason,
+                      onFold: (posture) => action({ type: "fold", posture }),
+                    }
+                  : undefined
+              }
               inspect={{
                 loading: operation === "inspect",
                 disabled: unavailable("inspect", canControlDevice && !annotating && !!api.inspect),

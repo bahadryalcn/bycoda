@@ -35,6 +35,27 @@ const blocks: Block[] = [
 const chat = () => ({ ...newSession("codex", "/tmp"), blocks });
 
 it.each([
+  "Message not sent: the previous Host writer's retirement is still unconfirmed. Your message is retained. Check the task or Host connection before continuing.",
+  "Message not sent: Host ownership discovery is still pending. Your message is retained; check the Host connection before continuing.",
+  "Message not sent: Host writer ownership could not be confirmed. Your message is retained. Check the task repair state or Host connection.",
+])("does not replay the previous prompt for an unstarted send: %s", (text) => {
+  const session = {
+    ...chat(),
+    blocks: [
+      blocks[0],
+      { id: "answer", role: "assistant" as const, text: "Which language?" },
+      { ...blocks[1], text },
+    ],
+  };
+  expect(sessionIssue(session)).toBe("failed");
+  expect(failedTurnRetry(session)).toBeNull();
+  const onSubmit = vi.fn();
+  act(() => root.render(createElement(RetryFailedTurn, { session, onSubmit })));
+  expect(host.querySelector("button")).toBeNull();
+  expect(onSubmit).not.toHaveBeenCalled();
+});
+
+it.each([
   "You've hit your weekly limit · resets 8am (Europe/Istanbul)",
   "You've hit your weekly limit · resets 8am (Europe/Istanbul) (HTTP 429)",
   'HTTP 429 {"error":{"message":"Weekly usage limit reached. Choose another account."}}',

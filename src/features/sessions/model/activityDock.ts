@@ -1,4 +1,4 @@
-import { t } from "../../../shared/i18n";
+import { t } from "../../../shared/i18n/core";
 import type { CrewMemberChild } from "../../../shared/model/host-contracts/delegation";
 import { hasPendingApproval, type Block, type HarnessId } from "./session";
 import { executionUserIndex } from "./executionTurn";
@@ -46,6 +46,18 @@ export function isBackgroundOnly(
 }
 
 /**
+ * The turn the dock describes is open: running here, or run by another
+ * computer's Host and held open there by background work it reported.
+ */
+export function dockTurnOpen(session: {
+  busy?: boolean;
+  continuingElsewhere?: boolean;
+  backgroundTasks?: string[];
+}): boolean {
+  return !!session.busy || (!!session.continuingElsewhere && !!session.backgroundTasks?.length);
+}
+
+/**
  * `stopped` is the user's doing, so it counts as neither done nor failed.
  * `interrupted` is a call still marked in flight after the session went idle:
  * its real outcome was never reported, so it is neither done nor running.
@@ -82,8 +94,10 @@ export type DockAgent = {
   /** Actual child provider; native runs inherit their owning session's provider. */
   harness?: HarnessId;
   providerAccountId?: string;
-  /** A delegated child waits for approval or an answer in its own session. */
+  /** A delegated child, or one of its own subagents, waits for approval or an answer. */
   needsInput?: boolean;
+  /** How many subagents a delegated child started itself; listed in its sheet. */
+  nested?: number;
   status: DockAgentStatus;
   model?: string;
   /** "46 steps, 1 failed", worded exactly as on the transcript row. */

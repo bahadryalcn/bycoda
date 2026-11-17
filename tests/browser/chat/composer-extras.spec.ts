@@ -18,14 +18,25 @@ for (const theme of ["light", "dark"]) {
         `/tests/browser/chat/composer-extras.html?footer&workspace-footer-bar&accounts&theme=${theme}`,
       );
       const bar = page.locator("[data-workspace-footer]");
+      await expect(bar.getByRole("button", { name: "Refresh usage", exact: true })).toHaveCount(0);
       await expect(
         bar.getByRole("button", { name: "Refresh current view", exact: true }),
-      ).toBeVisible();
-      await expect(bar.getByRole("button", { name: "Refresh usage", exact: true })).toHaveCount(0);
+      ).toHaveCount(0);
+      await page.evaluate(() => {
+        (window as unknown as { refreshEvents: number }).refreshEvents = 0;
+        window.addEventListener("bycoda:refresh-workspace-view", () => {
+          (window as unknown as { refreshEvents: number }).refreshEvents += 1;
+        });
+      });
+      await bar.getByRole("button", { name: "Workspace controls", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Refresh current view", exact: true }).click();
+      expect(
+        await page.evaluate(() => (window as unknown as { refreshEvents: number }).refreshEvents),
+      ).toBe(1);
       const actions = bar.locator(
         'nav button, [data-usage-guide="terminal-toggle"], button[aria-label="Conversation tools"], button[aria-label="Notifications"]',
       );
-      await expect(actions).toHaveCount(9);
+      await expect(actions).toHaveCount(6);
       const boxes = await actions.evaluateAll((buttons) =>
         buttons
           .map((button) => {
@@ -79,12 +90,12 @@ for (const theme of ["light", "dark"] as const) {
       const panel = page.locator("[data-model-panel]");
       const slider = panel.getByRole("slider", { name: "Auto-compact window", exact: true });
       await slider.press("Home");
-      await expect(slider).toHaveAttribute("aria-valuetext", "Default");
+      await expect(slider).toHaveAttribute("aria-valuetext", "Default: 200K");
       await slider.press("ArrowRight");
-      await expect(slider).toHaveAttribute("aria-valuetext", "100K");
+      await expect(slider).toHaveAttribute("aria-valuetext", "250K");
       await slider.press("ArrowRight");
-      await expect(slider).toHaveAttribute("aria-valuetext", "150K");
-      await expect(page.getByTestId("choice")).toContainText('"autoCompactWindow":"150000"');
+      await expect(slider).toHaveAttribute("aria-valuetext", "300K");
+      await expect(page.getByTestId("choice")).toContainText('"autoCompactWindow":"300000"');
       await slider.blur();
       await page.mouse.move(0, 0);
       await page.screenshot({

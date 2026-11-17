@@ -1,4 +1,7 @@
 {
+  "Fold device": "Cihazı katla",
+  "Half-open device": "Cihazı yarı aç",
+  "Unfold device": "Cihazı aç",
   "Remove missing": "Eksikleri kaldır",
   "Select a group": "Bir grup seçin",
   "Choose a group to add or remove its skills.": "Becerilerini eklemek veya kaldırmak için bir grup seçin.",
@@ -2653,7 +2656,7 @@
   "Beside chat": "Sohbetin yanında",
   "Top bar": "Üst çubuk",
   "Animate tabs as they open and close. Turn this off for instant tab changes.": "Sekmeleri açılıp kapanırken canlandırın. Anında sekme değişiklikleri için bunu kapatın.",
-  "Press {p0} in any app to float a prompt over it and start a session without switching to {p1}. Change the shortcut in Keybindings. Return starts it in the background; ⌘Return starts it and brings the session forward.": "Her uygulamada {p0} ile hızlı mesaj penceresini açıp {p1}’a geçmeden oturum başlatın.",
+  "Press {p0} in any app to float a prompt over it and start a session without switching to {p1}. Change the shortcut in Keybindings. Enter starts it in the background; {p2}Enter starts it and brings the session forward.": "Her uygulamada {p0} ile {p1}’a geçmeden oturum başlatın. Enter arka planda başlatır; {p2}Enter oturumu da açar. Kısayolu Tuş Atamaları’ndan değiştirin.",
   "Sleep": "Uyku",
   "Keep this computer awake while an agent is working.": "Ajan çalışırken bu bilgisayarı uyanık tut.",
   "Prevent idle sleep during agent work, and optionally after the last agent finishes. Closing the lid or choosing Sleep still works. On battery-powered Modern Standby PCs, Windows may stop the request five minutes after the sleep timeout.": "Ajanlar çalışırken (isterseniz sonra da) otomatik uykuyu engeller; Modern Standby’da Windows bunu bırakabilir.",
@@ -6019,7 +6022,8 @@
   "Finish selection": "Seçimi bitir",
   "Select tasks": "Görevleri seç",
   "No tasks match your search or filters.": "Aramanızla veya filtrelerinizle eşleşen görev yok.",
-  "Two versions of this conversation were found. Your messages were kept. Sync to compare them again.": "Bu oturumun iki farklı sürümü bulundu. Mesajlarınız korundu. Yeniden karşılaştırmak için eşitleyin.",
+  "This conversation has not finished syncing with the other computer. Your messages are kept.": "Bu oturum diğer bilgisayarla henüz tam eşitlenmedi. Mesajlarınız korunuyor.",
+  "Syncing with the other computer…": "Diğer bilgisayarla eşitleniyor…",
   "This conversation was changed on two computers. Choose the version to keep.": "Bu oturum iki bilgisayarda değiştirildi. Korunacak sürümü seçin.",
   "Keep this": "Bunu koru",
   "Keep other": "Diğerini koru",
@@ -6946,7 +6950,6 @@
   "Narrow": "Dar",
   "This account is not available on the owning Host.": "Bu hesap, sahibi olan Sunucu'da kullanılamıyor.",
   "Update the Host to load its available accounts.": "Kullanılabilir hesapları yüklemek için Sunucu'yu güncelleyin.",
-  "Current Host account": "Geçerli Sunucu hesabı",
   "Unavailable Host account": "Kullanılamayan Sunucu hesabı",
   "Couldn’t save SSH tabs.": "SSH sekmeleri kaydedilemedi.",
   "Limit reached": "Sınıra ulaşıldı",
@@ -7397,6 +7400,7 @@
   "Show me": "Göster",
   "Tips": "İpuçları",
   "Not signed in": "Giriş yapılmadı",
+  "Saved account": "Kayıtlı hesap",
   "Sign-in not checked": "Oturum açma denetlenmedi",
   "More options for {p0}": "{p0} için diğer seçenekler",
   "About existing accounts": "Mevcut hesaplar hakkında",
@@ -11926,5 +11930,7 @@
   "Invalid design metadata": "Geçersiz tasarım üst verisi",
   "Replace the current draft?": "Mevcut taslak değiştirilsin mi?",
   "Unsaved changes to {p0} will be lost.": "{p0} için kaydedilmemiş değişiklikler kaybolacak.",
-  "Finish the current action before closing.": "Kapatmadan önce geçerli işlemin bitmesini bekleyin."
+  "Finish the current action before closing.": "Kapatmadan önce geçerli işlemin bitmesini bekleyin.",
+  "Subagents: {p0}": "Alt ajanlar: {p0}",
+  "The advisor is unavailable this turn because the Host connection is not ready.": "Host bağlantısı hazır olmadığı için danışman bu turda kullanılamıyor."
 }

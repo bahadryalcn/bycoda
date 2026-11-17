@@ -8,6 +8,8 @@ import { parseRemoteAttachments, resolveAttachments } from "../attachments/attac
 import { browseHostDirectories, createHostDirectory } from "../browser/browse";
 import { initializeEmptyProjectRepository } from "../git/git-init";
 import { DesktopCommandDelivery } from "../desktop/desktop-command-delivery";
+import { spawn } from "node:child_process";
+import { stat } from "node:fs/promises";
 import { createProjectsService } from "../domains/projects/service";
 import {
   createSessionQueueService,
@@ -24,6 +26,8 @@ import {
 } from "../sessions/transcriptPage";
 import type { ServerBindings } from "./bindings";
 import { DESKTOP_RUN_ID } from "./support";
+import { clientMessageQueue } from "../sessions/client-message-queue";
+import { assertDomainAuthority } from "../domains/context";
 export function createSessionServicesRuntime(
   dependencies: Pick<
     ServerBindings,
@@ -49,6 +53,14 @@ export function createSessionServicesRuntime(
 ) {
   const projectsService = createProjectsService({
     list: dependencies.namedProjects,
+    clonePorts: {
+      spawn: (command, args, options) => spawn(command, args, options),
+      exists: (path) =>
+        stat(path).then(
+          () => true,
+          () => false,
+        ),
+    },
     directoryPorts: {
       directory: async () =>
         dependencies.desktop.live.projectDirectory(
@@ -132,7 +144,12 @@ export function createSessionServicesRuntime(
       const exposeAttachments = context.exposeQueueAttachments;
       if (!exposeAttachments)
         throw new Error("Authenticated queue attachment grant is unavailable.");
-      return sessionQueueService[action](params, { ...context, exposeAttachments });
+      const execute = () => sessionQueueService[action](params, { ...context, exposeAttachments });
+      return action === "change"
+        ? clientMessageQueue(dependencies.engine.store, params, execute, () =>
+            assertDomainAuthority(context),
+          )
+        : execute();
     };
   const desktopCommandDelivery = new DesktopCommandDelivery(
     dependencies.desktop.live,

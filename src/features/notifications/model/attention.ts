@@ -7,7 +7,7 @@ import {
 } from "../../sessions/model/session";
 import { t } from "../../../shared/i18n";
 import { truncateGraphemes } from "../../../shared/lib/text/truncate";
-import { deriveActivityDock } from "../../sessions/model/activityDock";
+import { deriveActivityDock, dockTurnOpen } from "../../sessions/model/activityDock";
 import { isProviderFailureText } from "../../sessions/model/plan";
 import type { NotificationPermission } from "./notifications";
 
@@ -106,7 +106,7 @@ export type SessionPhase = "idle" | "working" | "waiting" | "background" | "need
 export function sessionPhase(session: Session): SessionPhase {
   const { state } = deriveActivityDock({
     blocks: session.blocks,
-    busy: !!session.busy,
+    busy: dockTurnOpen(session),
     pendingQuestion: session.pendingQuestion != null,
     pendingOwnerApproval: session.pendingOwnerApproval,
     backgroundTasks: session.backgroundTasks,

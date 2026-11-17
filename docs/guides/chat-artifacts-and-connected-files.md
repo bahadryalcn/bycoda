@@ -137,6 +137,11 @@ Previous attachment names, file references and owning computers are retained in 
 
 If a provider switch fails or is cancelled, its divider shows that result instead of remaining on Preparing. You can select another provider and use Retry with the preserved request and attachments. A retry still waits for the original provider to close safely; an unresolved cleanup error does not send a duplicate request to the new provider.
 
+If **Message not sent** appears before a new turn starts, its input remains in
+the composer or paused queue. Retry is hidden for that admission error so it
+cannot resend an earlier conversation message. Recover the retained input after
+the Host connection and ownership transfer are confirmed.
+
 When a usage limit stops a conversation, use **Switch account**, **Switch model**
 or the reset controls in its usage-limit notice. The generic failed-turn Retry
 stays hidden while this notice is active. Repeated reports of the same Claude

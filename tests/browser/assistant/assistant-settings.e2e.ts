@@ -275,7 +275,7 @@ for (const theme of ["light", "dark"])
       await page.keyboard.press("ArrowRight");
       await expect(tab("Work")).toHaveAttribute("aria-selected", "true");
       await expect(
-        dialog.getByRole("button", { name: tr("Manage in Models"), exact: true }),
+        dialog.getByRole("button", { name: tr("Manage models"), exact: true }),
       ).toBeVisible();
       await capture("work");
 
@@ -343,7 +343,7 @@ for (const theme of ["light", "dark"])
 
       await tab("Work").click();
       await expect(
-        dialog.getByRole("button", { name: tr("Manage in Models"), exact: true }),
+        dialog.getByRole("button", { name: tr("Manage models"), exact: true }),
       ).toBeVisible();
       await tab("Personal").click();
       await expect(
@@ -472,7 +472,7 @@ for (const theme of ["light", "dark"])
           (window as any).__openedModelsTab = (event as CustomEvent).detail;
         });
       });
-      await models.getByRole("button", { name: "Manage in Models", exact: true }).click();
+      await models.getByRole("button", { name: "Manage models", exact: true }).click();
       expect(await page.evaluate(() => (window as any).__openedModelsTab)).toBe("roles");
       await models.scrollIntoViewIfNeeded();
       await models.screenshot({

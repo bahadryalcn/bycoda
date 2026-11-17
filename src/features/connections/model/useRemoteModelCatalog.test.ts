@@ -3,7 +3,43 @@ import { act, createElement, useLayoutEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HostModelCatalog } from "./protocol";
+import { reloadRemoteModelCatalogStoreForTests } from "./remoteModelCatalogStore";
+
+const host = vi.hoisted(() => ({
+  capabilities: undefined as string[] | undefined,
+  runtimeAvailable: true,
+  released: 0,
+  retains: [] as {
+    target: unknown;
+    consumer: {
+      parse(data: unknown): unknown;
+      commit(value: unknown, input: { isCurrent(): boolean }): void;
+      closed?(): void;
+      onError?(error: unknown): void;
+    };
+  }[],
+}));
+
+vi.mock("./connections", () => ({
+  cachedRemoteCapabilities: () => host.capabilities,
+  subscribeRemoteCapabilities: () => () => {},
+}));
+vi.mock("./remoteMachineChannel", () => ({
+  acquireRemoteHostRuntime: () =>
+    host.runtimeAvailable
+      ? {
+          runtime: {
+            retain: (target: unknown, consumer: (typeof host.retains)[number]["consumer"]) => {
+              host.retains.push({ target, consumer });
+              return () => void host.released++;
+            },
+          },
+          release: () => {},
+        }
+      : undefined,
+}));
 import {
+  forgetRemoteModelCatalogMemoryForTests,
   remoteModelCatalogScopeKey,
   resetRemoteModelCatalogCacheForTests,
   useRemoteModelCatalog,
@@ -97,6 +133,10 @@ const ids = (value: HostModelCatalog | undefined) => value?.models.codex?.map((m
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   resetRemoteModelCatalogCacheForTests();
+  host.capabilities = undefined;
+  host.runtimeAvailable = true;
+  host.released = 0;
+  host.retains = [];
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -383,6 +423,118 @@ describe("useRemoteModelCatalog", () => {
       expect(second).toHaveBeenCalledTimes(1);
       expect(ids(latest.catalog)).toEqual(["second"]);
     });
+  });
+
+  describe("persisted seed and stale flag", () => {
+    it("seeds from the persisted catalog after a restart and is stale until a response", async () => {
+      const first = vi.fn(async () => catalog("saved"));
+      await render({ scope: scopeA, enabled: true, request: asRequest(first) });
+      await flush();
+      expect(latest.stale).toBe(false);
+      await act(async () => root.unmount());
+      // Simulate a restart: memory caches are gone, storage remains.
+      reloadRemoteModelCatalogStoreForTests();
+      forgetRemoteModelCatalogMemoryForTests();
+      root = createRoot(container);
+      const never = deferred<HostModelCatalog>();
+      await render({ scope: scopeA, enabled: true, request: asRequest(() => never.promise) });
+      expect(ids(latest.catalog)).toEqual(["saved"]);
+      expect(latest.stale).toBe(true);
+      never.resolve(catalog("live"));
+      await flush();
+      expect(ids(latest.catalog)).toEqual(["live"]);
+      expect(latest.stale).toBe(false);
+    });
+
+    it("is stale again after a read error and not stale without a catalog", async () => {
+      let fail = false;
+      const request = vi.fn(async () => {
+        if (fail) throw new Error("down");
+        return catalog("a1");
+      });
+      await render({ scope: scopeA, enabled: true, request: asRequest(request) });
+      expect(latest.stale).toBe(false);
+      await flush();
+      fail = true;
+      await act(async () => latest.refresh());
+      await flush();
+      expect(latest.error).toContain("down");
+      expect(latest.stale).toBe(true);
+    });
+  });
+
+  describe("stream mode", () => {
+    beforeEach(() => {
+      host.capabilities = ["models.catalog.stream.v1"];
+    });
+
+    it("retains a models target, applies snapshots and does not poll", async () => {
+      const request = vi.fn(async () => catalog("polled"));
+      await render({ scope: scopeA, enabled: true, request: asRequest(request) });
+      expect(request).not.toHaveBeenCalled();
+      expect(host.retains).toHaveLength(1);
+      expect(host.retains[0]!.target).toEqual({ kind: "models", projectId: "project-a" });
+      const { consumer } = host.retains[0]!;
+      await act(async () =>
+        consumer.commit(consumer.parse(catalog("pushed")), { isCurrent: () => true }),
+      );
+      expect(ids(latest.catalog)).toEqual(["pushed"]);
+      expect(latest.stale).toBe(false);
+      await act(async () =>
+        consumer.commit(consumer.parse(catalog("pushed2")), { isCurrent: () => true }),
+      );
+      expect(ids(latest.catalog)).toEqual(["pushed2"]);
+      expect(request).not.toHaveBeenCalled();
+    });
+
+    it("rejects a malformed snapshot at the parse boundary", async () => {
+      await render({ scope: scopeA, enabled: true, request: asRequest(vi.fn()) });
+      const { consumer } = host.retains[0]!;
+      expect(() => consumer.parse({ models: "nope", errors: {} })).toThrow();
+      expect(() => consumer.parse(null)).toThrow();
+    });
+
+    it("releases the stream when disabled", async () => {
+      await render({ scope: scopeA, enabled: true, request: asRequest(vi.fn()) });
+      await render({ scope: scopeA, enabled: false, request: asRequest(vi.fn()) });
+      expect(host.released).toBe(1);
+    });
+
+    it("falls back to polling when the stream errors or closes", async () => {
+      const request = vi.fn(async () => catalog("polled"));
+      await render({ scope: scopeA, enabled: true, request: asRequest(request) });
+      await act(async () => host.retains[0]!.consumer.onError?.(new Error("ws down")));
+      await flush();
+      expect(request).toHaveBeenCalledWith("models.list", {
+        projectId: "project-a",
+        progressive: true,
+      });
+      expect(ids(latest.catalog)).toEqual(["polled"]);
+      expect(latest.error).toBe("");
+      expect(host.retains).toHaveLength(1);
+
+      // A refresh tries the stream again.
+      await act(async () => latest.refresh());
+      expect(host.retains).toHaveLength(2);
+    });
+
+    it("polls when no WS runtime is available", async () => {
+      host.runtimeAvailable = false;
+      const request = vi.fn(async () => catalog("polled"));
+      await render({ scope: scopeA, enabled: true, request: asRequest(request) });
+      await flush();
+      expect(host.retains).toHaveLength(0);
+      expect(ids(latest.catalog)).toEqual(["polled"]);
+    });
+  });
+
+  it("polls when the Host lacks the stream capability", async () => {
+    host.capabilities = ["transport.ws.sessions.v2"];
+    const request = vi.fn(async () => catalog("polled"));
+    await render({ scope: scopeA, enabled: true, request: asRequest(request) });
+    await flush();
+    expect(host.retains).toHaveLength(0);
+    expect(request).toHaveBeenCalledTimes(1);
   });
 
   it("bounds the cache and evicts the least recently used scope", async () => {

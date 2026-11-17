@@ -279,3 +279,56 @@ it("clears a legacy advisor and records explicit Off", async () => {
     expect.objectContaining({ crossAdvisor: "null", advisor: "off" }),
   );
 });
+it("writes no Claude advisor setting into another provider's conversation", () => {
+  setHarnessModels("codex", [{ id: "codex:gpt-a", harness: "codex", name: "GPT A" }]);
+  const onChange = vi.fn();
+  act(() =>
+    root.render(
+      createElement(ModelExtras, {
+        harness: "codex",
+        model: "codex:gpt-a",
+        values: {
+          crossAdvisor: encodeAdvisor({ harness: "codex", model: "codex:gpt-a" })!,
+        },
+        onSettingsChange: onChange,
+      }),
+    ),
+  );
+  act(() => container.querySelector<HTMLButtonElement>('[aria-label="Extras"]')!.click());
+  act(() => container.querySelector<HTMLButtonElement>('[aria-label="Advisor"]')!.click());
+  const off = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((option) =>
+    /^\s*Off/.test(option.textContent ?? ""),
+  )!;
+  act(() => off.click());
+  const written = onChange.mock.lastCall![0] as Record<string, string>;
+  expect(written.crossAdvisor).toBe("null");
+  expect(written).not.toHaveProperty("advisor");
+});
+it("never writes on render and keeps a saved advisor when another row changes", () => {
+  const onChange = vi.fn();
+  const advisor = encodeAdvisor({
+    harness: "claude",
+    model: "claude:fable",
+    providerAccountId: "account-host",
+  })!;
+  act(() =>
+    root.render(
+      createElement(ModelExtras, {
+        harness: "claude",
+        model: "claude:sonnet-5",
+        values: { crossAdvisor: advisor },
+        onSettingsChange: onChange,
+      }),
+    ),
+  );
+  act(() => container.querySelector<HTMLButtonElement>('[aria-label="Extras"]')!.click());
+  expect(onChange).not.toHaveBeenCalled();
+  const mode = container.querySelector<HTMLSelectElement>('[aria-label="Auto-compact"]')!;
+  act(() => {
+    mode.value = "off";
+    mode.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(onChange).toHaveBeenLastCalledWith(
+    expect.objectContaining({ autoCompact: "off", crossAdvisor: advisor }),
+  );
+});

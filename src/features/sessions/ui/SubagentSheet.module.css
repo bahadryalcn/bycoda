@@ -3,10 +3,11 @@
 }
 
 /* A resized input or long delivery status must not push actions out of the pane.
-   Keep room for the trail; the composer can scroll on short split panes. */
+   Keep room for the trail; the composer can scroll on short split panes. Whole
+   pixels: a fractional height leaves the last row clipped at the deepest scroll. */
 .composer {
   min-block-size: 0;
-  max-block-size: 55%;
+  max-block-size: round(down, 55%, 1px);
   overflow-y: auto;
   overscroll-behavior: contain;
   overflow-wrap: anywhere;
@@ -24,7 +25,7 @@
 /* Request forms and the message draft share one bounded scroll owner. */
 .requests {
   min-block-size: 0;
-  max-block-size: 55%;
+  max-block-size: round(down, 55%, 1px);
   flex-shrink: 0;
   overflow-y: auto;
   overscroll-behavior: contain;

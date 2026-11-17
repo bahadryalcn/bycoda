@@ -19,13 +19,25 @@ pub struct TerminalProfile {
     pub provider: String,
     pub label: String,
     pub path: PathBuf,
+    /// Read offline from files the CLI wrote; lets the UI dedupe the same account.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity: Option<ProfileIdentity>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileIdentity {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub organization: Option<String>,
 }
 
 fn validate_provider(provider: &str) -> Result<(), String> {
-    if matches!(provider, "claude" | "codex") {
+    if matches!(provider, "claude" | "codex" | "grok") {
         Ok(())
     } else {
-        Err("Terminal profiles are supported for Claude and Codex".into())
+        Err("Terminal profiles are supported for Claude, Codex and Grok".into())
     }
 }
 
@@ -99,25 +111,47 @@ fn profile_id(provider: &str, path: &Path) -> String {
     format!("{PREFIX}{:x}", digest)[..PREFIX.len() + 24].to_owned()
 }
 
+/// Signed-in evidence only: leftover settings, projects or sessions do not make a profile.
+/// Claude on macOS keeps credentials in the Keychain, so a cached `oauthAccount` also counts.
 fn has_profile(provider: &str, path: &Path) -> bool {
-    let markers: &[&str] = if provider == "claude" {
-        &[
-            ".claude.json",
-            ".credentials.json",
-            "settings.json",
-            "projects",
-        ]
-    } else {
-        &["auth.json", "config.toml", "sessions"]
-    };
-    path.is_dir() && markers.iter().any(|name| path.join(name).exists())
+    if !path.is_dir() {
+        return false;
+    }
+    match provider {
+        "claude" => {
+            path.join(".credentials.json").exists()
+                || std::fs::read_to_string(path.join(".claude.json"))
+                    .ok()
+                    .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+                    .and_then(|json| {
+                        json.get("oauthAccount")?
+                            .as_object()?
+                            .get("emailAddress")?
+                            .as_str()
+                            .map(|email| !email.trim().is_empty())
+                    })
+                    .unwrap_or(false)
+        }
+        _ => path.join("auth.json").exists(),
+    }
+}
+
+/// Same shape the account contract accepts (see `provider_account_path`).
+fn is_managed_account_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 80
+        && id != "default"
+        && !is_terminal_id(id)
+        && id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
 }
 
 fn default_dir(provider: &str) -> Result<PathBuf, String> {
-    let (env, folder) = if provider == "claude" {
-        ("CLAUDE_CONFIG_DIR", ".claude")
-    } else {
-        ("CODEX_HOME", ".codex")
+    let (env, folder) = match provider {
+        "claude" => ("CLAUDE_CONFIG_DIR", ".claude"),
+        "grok" => ("GROK_HOME", ".grok"),
+        _ => ("CODEX_HOME", ".codex"),
     };
     std::env::var_os(env)
         .filter(|value| !value.is_empty())
@@ -126,13 +160,24 @@ fn default_dir(provider: &str) -> Result<PathBuf, String> {
         .ok_or_else(|| "Home directory is unavailable".into())
 }
 
-fn candidate(provider: &str, path: PathBuf) -> Result<TerminalProfile, String> {
+/// `managed_root` is this app's `provider-accounts/<provider>`; folders directly inside
+/// it keep their own account id instead of getting a `terminal-` id.
+fn candidate(
+    provider: &str,
+    path: PathBuf,
+    managed_root: Option<&Path>,
+) -> Result<TerminalProfile, String> {
     if !path.is_absolute() || !has_profile(provider, &path) {
-        return Err("Select an existing Claude or Codex profile directory".into());
+        return Err("Select an existing signed-in Claude, Codex or Grok profile directory".into());
     }
     let path = std::fs::canonicalize(path).map_err(|e| e.to_string())?;
     let default = std::fs::canonicalize(default_dir(provider)?).ok();
     let is_default = default.as_ref() == Some(&path);
+    let managed_id = managed_root
+        .and_then(|root| std::fs::canonicalize(root).ok())
+        .filter(|root| path.parent() == Some(root.as_path()))
+        .and_then(|_| path.file_name()?.to_str().map(str::to_owned))
+        .filter(|name| is_managed_account_id(name));
     let label = if is_default {
         "Terminal account".to_owned()
     } else {
@@ -140,16 +185,30 @@ fn candidate(provider: &str, path: PathBuf) -> Result<TerminalProfile, String> {
             .map(|name| name.to_string_lossy().trim_start_matches('.').to_owned())
             .unwrap_or_else(|| "Terminal profile".into())
     };
+    let identity =
+        crate::account_identity::cached_identity(provider, &path).map(|(email, organization)| {
+            ProfileIdentity {
+                email,
+                organization,
+            }
+        });
     Ok(TerminalProfile {
         id: if is_default {
             "default".into()
+        } else if let Some(id) = managed_id {
+            id
         } else {
             profile_id(provider, &path)
         },
         provider: provider.into(),
         label,
         path,
+        identity,
     })
+}
+
+fn managed_root(app_data: &Path, provider: &str) -> PathBuf {
+    app_data.join("provider-accounts").join(provider)
 }
 
 #[tauri::command(async)]
@@ -158,36 +217,57 @@ pub fn provider_terminal_profiles(
     provider: String,
 ) -> Result<Vec<TerminalProfile>, String> {
     validate_provider(&provider)?;
+    let app_data = app.path().app_data_dir().map_err(|e| e.to_string())?;
     let mut paths = vec![default_dir(&provider)?];
-    paths.extend(saved_profile_paths(
-        &app.path().app_data_dir().map_err(|e| e.to_string())?,
-        &provider,
-    )?);
+    paths.extend(saved_profile_paths(&app_data, &provider)?);
+    paths.extend(sibling_managed_paths(&app_data, &provider));
     // Bounded, shallow discovery: standard homes and sibling named profiles.
     // Shell aliases/functions are never executed. Other locations can be selected manually.
     if let Some(home) = crate::dirs_home() {
-        let prefix = format!(".{provider}");
-        for entry in std::fs::read_dir(home)
-            .map_err(|e| e.to_string())?
-            .take(2048)
-            .flatten()
-        {
-            let name = entry.file_name().to_string_lossy().into_owned();
-            if name == prefix
-                || name.starts_with(&format!("{prefix}-"))
-                || name.starts_with(&format!("{prefix}_"))
-            {
-                paths.push(entry.path());
-            }
-        }
+        paths.extend(home_profile_paths(Path::new(&home), &provider)?);
     }
+    let root = managed_root(&app_data, &provider);
     let mut profiles = BTreeMap::new();
     for path in paths {
-        if let Ok(profile) = candidate(&provider, path) {
+        if let Ok(profile) = candidate(&provider, path, Some(&root)) {
             profiles.insert(profile.id.clone(), profile);
         }
     }
     Ok(profiles.into_values().collect())
+}
+
+/// Directories in home named `.<provider>` plus any suffix (`.claude2`, `.claude-f`).
+/// The signed-in evidence check later drops look-alikes such as `.claude-server-commander`.
+fn home_profile_paths(home: &Path, provider: &str) -> Result<Vec<PathBuf>, String> {
+    let prefix = format!(".{provider}");
+    Ok(std::fs::read_dir(home)
+        .map_err(|e| e.to_string())?
+        .take(2048)
+        .flatten()
+        .filter(|entry| entry.file_name().to_string_lossy().starts_with(&prefix))
+        .map(|entry| entry.path())
+        .filter(|path| path.is_dir())
+        .collect())
+}
+
+/// Managed folders of sibling bycoda installs (release and dev). They are linked by
+/// path, so they get normal `terminal-` ids.
+fn sibling_managed_paths(app_data: &Path, provider: &str) -> Vec<PathBuf> {
+    let Some(parent) = app_data.parent() else {
+        return Vec::new();
+    };
+    let own = std::fs::canonicalize(managed_root(app_data, provider)).ok();
+    let mut paths = Vec::new();
+    for identifier in ["com.bycoda.desktop", "com.bycoda.desktop.dev"] {
+        let root = managed_root(&parent.join(identifier), provider);
+        if own.is_some() && std::fs::canonicalize(&root).ok() == own {
+            continue;
+        }
+        if let Ok(entries) = std::fs::read_dir(root) {
+            paths.extend(entries.take(256).flatten().map(|entry| entry.path()));
+        }
+    }
+    paths
 }
 
 fn saved_profile_paths(root: &Path, provider: &str) -> Result<Vec<PathBuf>, String> {
@@ -202,7 +282,7 @@ fn saved_profile_paths(root: &Path, provider: &str) -> Result<Vec<PathBuf>, Stri
             paths.push(path);
         }
     }
-    let managed = root.join("provider-accounts").join(provider);
+    let managed = managed_root(root, provider);
     match std::fs::read_dir(managed) {
         Ok(entries) => paths.extend(entries.take(256).flatten().map(|entry| entry.path())),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
@@ -222,8 +302,10 @@ pub fn provider_terminal_profile_connect(
     path: PathBuf,
 ) -> Result<TerminalProfile, String> {
     validate_provider(&provider)?;
-    let profile = candidate(&provider, path)?;
-    if profile.id != "default" {
+    let app_data = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let profile = candidate(&provider, path, Some(&managed_root(&app_data, &provider)))?;
+    // The default home and managed folders are already addressable by their own id.
+    if is_terminal_id(&profile.id) {
         let _lock = REGISTRY_LOCK.lock().map_err(|e| e.to_string())?;
         let path = registry_path(&app)?;
         let mut registry = read_registry(&path)?;
@@ -294,8 +376,8 @@ mod tests {
         let linked = root.join("elsewhere/claude-work");
         std::fs::create_dir_all(&managed).unwrap();
         std::fs::create_dir_all(&linked).unwrap();
-        std::fs::write(managed.join("settings.json"), "{}").unwrap();
-        std::fs::write(linked.join("settings.json"), "{}").unwrap();
+        std::fs::write(managed.join(".credentials.json"), "{}").unwrap();
+        std::fs::write(linked.join(".credentials.json"), "{}").unwrap();
         let registry = root.join("terminal-profiles.json");
         write_registry(
             &registry,
@@ -310,9 +392,9 @@ mod tests {
         assert!(found.contains(&managed) && found.contains(&linked));
         assert!(found
             .into_iter()
-            .all(|path| candidate("claude", path).is_ok()));
+            .all(|path| candidate("claude", path, None).is_ok()));
         assert_eq!(
-            std::fs::read_to_string(managed.join("settings.json")).unwrap(),
+            std::fs::read_to_string(managed.join(".credentials.json")).unwrap(),
             "{}"
         );
         // A broken registry is an explicit discovery failure, not "no accounts".
@@ -358,11 +440,11 @@ mod tests {
         ));
         let profile_dir = root.join(".claude-work");
         std::fs::create_dir_all(&profile_dir).unwrap();
-        std::fs::write(profile_dir.join("settings.json"), "{}").unwrap();
-        let profile = candidate("claude", profile_dir.clone()).unwrap();
+        std::fs::write(profile_dir.join(".credentials.json"), "{}").unwrap();
+        let profile = candidate("claude", profile_dir.clone(), None).unwrap();
         assert!(profile.id.starts_with(PREFIX));
-        assert!(candidate("codex", profile_dir.clone()).is_err());
-        assert!(candidate("claude", PathBuf::from("relative-profile")).is_err());
+        assert!(candidate("codex", profile_dir.clone(), None).is_err());
+        assert!(candidate("claude", PathBuf::from("relative-profile"), None).is_err());
         let path = root.join("registry.json");
         let registry = Registry::from([(format!("claude:{}", profile.id), profile.path)]);
         write_registry(&path, &registry).unwrap();
@@ -370,9 +452,116 @@ mod tests {
         write_registry(&path, &Registry::new()).unwrap();
         assert!(read_registry(&path).unwrap().is_empty());
         assert_eq!(
-            std::fs::read_to_string(profile_dir.join("settings.json")).unwrap(),
+            std::fs::read_to_string(profile_dir.join(".credentials.json")).unwrap(),
             "{}"
         );
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    fn temp_root(name: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!("bycoda-{name}-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        root
+    }
+
+    #[test]
+    fn managed_folder_keeps_its_own_id_with_offline_identity() {
+        let root = temp_root("profile-managed");
+        let managed = managed_root(&root, "claude");
+        let dir = managed.join("account-abc");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join(".claude.json"),
+            r#"{"oauthAccount":{"emailAddress":"ada@example.com","organizationName":"Acme"}}"#,
+        )
+        .unwrap();
+        let profile = candidate("claude", dir.clone(), Some(&managed)).unwrap();
+        assert_eq!(profile.id, "account-abc");
+        assert_eq!(
+            profile.identity,
+            Some(ProfileIdentity {
+                email: Some("ada@example.com".into()),
+                organization: Some("Acme".into())
+            })
+        );
+        // Outside the managed root the same folder is linked by path.
+        let other = candidate("claude", dir, None).unwrap();
+        assert!(is_terminal_id(&other.id));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn leftover_folders_are_not_profiles() {
+        let root = temp_root("profile-leftover");
+        std::fs::create_dir_all(root.join("projects")).unwrap();
+        std::fs::create_dir_all(root.join("sessions")).unwrap();
+        std::fs::write(root.join("settings.json"), "{}").unwrap();
+        std::fs::write(root.join("config.toml"), "").unwrap();
+        std::fs::write(root.join(".claude.json"), r#"{"numStartups":2}"#).unwrap();
+        assert!(!has_profile("claude", &root));
+        assert!(!has_profile("codex", &root));
+        std::fs::write(
+            root.join(".claude.json"),
+            r#"{"oauthAccount":{"emailAddress":" "}}"#,
+        )
+        .unwrap();
+        assert!(!has_profile("claude", &root));
+        std::fs::write(
+            root.join(".claude.json"),
+            r#"{"oauthAccount":{"emailAddress":"a@b.c"}}"#,
+        )
+        .unwrap();
+        assert!(has_profile("claude", &root));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn grok_and_codex_need_auth_json() {
+        let root = temp_root("profile-grok");
+        assert!(validate_provider("grok").is_ok());
+        assert!(!has_profile("grok", &root));
+        std::fs::write(root.join("auth.json"), "{}").unwrap();
+        assert!(has_profile("grok", &root));
+        assert!(has_profile("codex", &root));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn home_scan_accepts_any_suffix_but_only_directories() {
+        let home = temp_root("profile-home");
+        for name in [
+            ".claude",
+            ".claude2",
+            ".claude-f",
+            ".codex_work",
+            ".claudeX",
+        ] {
+            std::fs::create_dir_all(home.join(name)).unwrap();
+        }
+        std::fs::write(home.join(".claude.json"), "{}").unwrap();
+        let mut found: Vec<String> = home_profile_paths(&home, "claude")
+            .unwrap()
+            .into_iter()
+            .map(|path| path.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        found.sort();
+        assert_eq!(found, [".claude", ".claude-f", ".claude2", ".claudeX"]);
+        std::fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn sibling_roots_are_scanned_and_get_terminal_ids() {
+        let base = temp_root("profile-sibling");
+        let own = base.join("com.bycoda.desktop.dev");
+        let sibling = managed_root(&base.join("com.bycoda.desktop"), "claude");
+        std::fs::create_dir_all(managed_root(&own, "claude")).unwrap();
+        let foreign = sibling.join("account-foreign");
+        std::fs::create_dir_all(&foreign).unwrap();
+        std::fs::write(foreign.join(".credentials.json"), "{}").unwrap();
+        let found = sibling_managed_paths(&own, "claude");
+        assert_eq!(found, vec![foreign.clone()]);
+        let profile = candidate("claude", foreign, Some(&managed_root(&own, "claude"))).unwrap();
+        assert!(is_terminal_id(&profile.id));
+        std::fs::remove_dir_all(base).unwrap();
     }
 }

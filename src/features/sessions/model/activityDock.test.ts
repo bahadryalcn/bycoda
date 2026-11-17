@@ -4,6 +4,7 @@ import {
   blockLifecycle,
   deriveActivityDock,
   dockCountLabel,
+  dockTurnOpen,
   dockStateLabel,
   isBackgroundOnly,
   nextUnseenDone,
@@ -13,6 +14,15 @@ import type { Block, Session } from "./session";
 import { newSession } from "./session";
 import { delegatedAgentBlock } from "./delegatedAgents";
 import { appendSteerUser, applyHarnessEvent } from "../../../integrations/harness/core/apply";
+
+describe("dockTurnOpen", () => {
+  it("is open while busy, or held open elsewhere only by background tasks", () => {
+    expect(dockTurnOpen({ busy: true })).toBe(true);
+    expect(dockTurnOpen({ continuingElsewhere: true, backgroundTasks: ["dev"] })).toBe(true);
+    expect(dockTurnOpen({ continuingElsewhere: true })).toBe(false);
+    expect(dockTurnOpen({})).toBe(false);
+  });
+});
 
 const user: Block = { id: "u1", role: "user", text: "go", startedAt: 1_000 };
 

@@ -129,6 +129,7 @@ export function useClosePaneActions({
         closingTabId: id,
         scope: tabCloseScope,
         worktreeOf: tabWorktreeOf,
+        activeCwd: sidebarCwd,
       });
       if (closePlan.action === "keep" && id === activeTabIdRef.current) {
         onClosePane();
@@ -140,6 +141,7 @@ export function useClosePaneActions({
       onClosePane,
       onCloseTab,
       tabCloseScope,
+      sidebarCwd,
       movingTabIds,
       tabsRef,
       sessionsRef,

@@ -26,6 +26,7 @@ import {
   type AdoptedResolution,
 } from "./adoptedSessions";
 import { createHostMetadataMirror } from "./adoptedSessionMetadata";
+import { adoptedSyncingIds, setAdoptedSyncing } from "./adoptedSyncing";
 import { loadRemoteCapabilities, loadRemoteSession, remoteRequest } from "./connections";
 import { isLocalSyncMachine } from "./localSync";
 import type { HostProject, RemoteMachine } from "./protocol";
@@ -108,6 +109,11 @@ export function useAdoptedSessions(
     const declined = new Map<string, number>();
     let known: RemoteMachine | undefined;
     let knownAt = 0;
+    /** Open conversations still waiting for their first comparison with the host copy. */
+    const showSyncing = () =>
+      setAdoptedSyncing(
+        adoptedSyncingIds(listed, sessionsRef.current.filter(desktopOwned), mirrored),
+      );
 
     const perform = async (
       sessionId?: string,
@@ -146,6 +152,7 @@ export function useAdoptedSessions(
           list: async () => {
             const entries = await remoteRequest<AdoptedEntry[]>(machine.id, "sessions.adopted", {});
             listed = entries;
+            if (!sessionId) showSyncing();
             metadata.start(entries.map((entry) => entry.id));
             for (const id of declined.keys())
               if (!entries.some((entry) => entry.id === id)) declined.delete(id);
@@ -187,7 +194,16 @@ export function useAdoptedSessions(
                 const continuingElsewhere = running.has(session.id) || undefined;
                 if (session.continuingElsewhere === continuingElsewhere) return session;
                 changed = true;
-                return { ...session, continuingElsewhere };
+                // A finished host turn leaves no background wait behind.
+                return continuingElsewhere
+                  ? { ...session, continuingElsewhere }
+                  : {
+                      ...session,
+                      continuingElsewhere,
+                      backgroundTasks: undefined,
+                      backgroundAgents: undefined,
+                      backgroundSince: undefined,
+                    };
               });
               return changed ? next : list;
             };
@@ -278,6 +294,7 @@ export function useAdoptedSessions(
         };
         if (sessionId) return await refreshAdoptedSession(deps, sessionId, resolution);
         await mirrorAdoptedSessions(deps);
+        if (!stopped) showSyncing();
         lastFailure = undefined;
         outstanding = listed.some(
           (entry) =>
@@ -285,6 +302,8 @@ export function useAdoptedSessions(
         );
       } catch (error) {
         setReachable(false);
+        // An unreachable host is the connection notice's to explain, not a sync in progress.
+        if (!sessionId) setAdoptedSyncing(new Set());
         outstanding = true;
         known = undefined;
         if (sessionId) throw error;
@@ -385,6 +404,7 @@ export function useAdoptedSessions(
     void pass().finally(schedule);
     return () => {
       stopped = true;
+      setAdoptedSyncing(new Set());
       if (refreshRef?.current === refresh) refreshRef.current = undefined;
       if (timer !== undefined) clearTimeout(timer);
       setAdoptedWaker(undefined);

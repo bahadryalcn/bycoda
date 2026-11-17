@@ -39,9 +39,14 @@ describe("continuous task execution contract", () => {
       expect(() => parseHostTask({ ...input, providerAccountId })).toThrow(
         "Invalid provider account ID",
       );
-    expect(() => parseHostTask({ ...input, harness: "grok", providerAccountId: "work" })).toThrow(
-      "Invalid provider account ID",
-    );
+    expect(() =>
+      parseHostTask({ ...input, harness: "opencode", providerAccountId: "work" }),
+    ).toThrow("Invalid provider account ID");
+  });
+  it("accepts a named profile for Grok, which supports account profiles", () => {
+    expect(
+      parseHostTask({ ...input, harness: "grok", providerAccountId: "work" }).providerAccountId,
+    ).toBe("work");
   });
   it("preserves an enabled option and removes a disabled one", () => {
     expect(parseHostTask({ ...input, continueUntilDone: true }).continueUntilDone).toBe(true);

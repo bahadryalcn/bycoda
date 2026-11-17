@@ -24,11 +24,11 @@ for (const dark of [false, true]) {
         path: `temp/verification/codex-goal-row/${dark ? "dark" : "light"}-${width}.png`,
       });
       await page.getByRole("button", { name: "Hedefe devam et", exact: true }).click();
-      await expect(row).toContainText("Hedef belirlendi");
+      await expect(row).toContainText("Hedef üzerinde çalışılıyor");
       await expect(page.getByRole("textbox", { name: "Message" })).toHaveValue(
         "Taslağım burada kalmalı.",
       );
-      await page.getByRole("button", { name: "Hedefi kaldır", exact: true }).click();
+      await page.getByRole("button", { name: "Hedefi temizle", exact: true }).click();
       await expect(row).toHaveCount(0);
       await expect(page.getByRole("textbox", { name: "Message" })).toHaveValue(
         "Taslağım burada kalmalı.",

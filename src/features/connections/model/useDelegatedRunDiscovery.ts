@@ -64,6 +64,7 @@ export function useDelegatedRunDiscovery(parentId: string, visible: boolean) {
     let current = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const known = new Map<string, HostSession>();
+    const nestedListed = new Set<string>();
     const report = (error: unknown) => {
       const message = delegatedDiscoveryFailure(error);
       if (current && message !== undefined) setFailure({ parentId, message });
@@ -73,7 +74,13 @@ export function useDelegatedRunDiscovery(parentId: string, visible: boolean) {
         const before = new Map(getSessions().map((session) => [session.id, session]));
         const snapshot = before.get(parentId);
         if (!snapshot) return;
-        const children = await discoverDelegatedRuns(snapshot, port, known, () => current);
+        const children = await discoverDelegatedRuns(
+          snapshot,
+          port,
+          known,
+          () => current,
+          nestedListed,
+        );
         if (!current) return;
         setSessions((sessions) => {
           const present = new Map(sessions.map((session) => [session.id, session]));

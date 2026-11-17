@@ -28,8 +28,10 @@ offline/error replies do not prove an apply. Generated code stays self-contained
 no network assets, local file reads, Host/native APIs, credentials, forms, popups
 or navigation. The renderer uses the existing HTML preview token lifecycle with
 an opaque nested sandbox and no local asset root. It never enables canvas workers.
-Video and HTML unmount in hidden panes, background windows and reduced motion;
-the base workspace artwork remains available if media cannot run.
+Video and HTML unmount in hidden panes and background windows. Under reduced motion
+and in unfocused split panes they show a still frame; only the focused pane plays.
+The base workspace artwork remains available if media cannot run. Unreferenced
+imported assets are reclaimed after a while; saved, selected and history designs are kept.
 
 Ask explicitly to **save** a design for later: `visuals.saveBackground` stores its
 name, source/media and background preferences in the same **Saved designs** library
@@ -96,6 +98,10 @@ renders a still frame for reduced motion, and disposes GPU resources on removal.
 All generated/imported code retains the existing isolated, offline HTML sandbox.
 In ordinary chat, `runtime: "three"` on visual tools supplies this same offline
 runtime; background reads return the authored source and runtime for revisions.
+
+Closing the last conversation tab in the current project keeps a blank conversation
+in that project. Hidden tabs from other projects are not selected, including when
+the closing tab has no project of its own and uses the project on screen.
 
 Remote workspace headers show the project's saved name and icon, like local projects.
 The machine icon beside the name shows the owning machine and data freshness on hover
@@ -176,8 +182,8 @@ small-size vector mark. Expanded sections share label and count columns; Last
 sessions keeps separate collapse and open actions. The workspace header emphasizes
 the current location. Its Back, Forward and Expand projects controls sit after the
 title, before conversation search; Expand projects is no longer repeated in the
-compact rail. Narrow workspace panes keep the location on its own row and the
-same controls immediately below, so every action stays inside the pane. Crews, Servers, Notes,
+compact rail. Narrow workspace panes keep the header on one row; More actions
+contains conversation search, selection, filters and New session. Crews, Servers, Notes,
 Automations, Social Media, Tasks and Room appear directly as stacked rail icons.
 Hover or focus an icon for its name and shortcut. The rail scrolls in short windows
 while Account and Settings remain at the bottom. Recovered work uses a restore
@@ -296,6 +302,10 @@ While a queued message is being delivered, its queue header shows a compact prog
 Shift+Tab adds the message to the active queue; it does not switch the composer
 into a queue mode. The queue sends it when the conversation is free, including
 when the previous turn finishes during submission or a provider handoff completes.
+When only background commands (such as a dev server) keep the turn open, the queue
+does not wait for them: it hands its next message to the running turn as a Steer,
+whichever computer queued it. A message for another model, a plan, an orchestration
+or a slash command still waits for its own turn.
 An explicit Queue action retains that choice through preparation. Providers without
 safe mid-turn delivery offer Queue while busy instead of Steer. Claude takes a
 Steer at its next tool step, or right after the current reply; the turn stays open

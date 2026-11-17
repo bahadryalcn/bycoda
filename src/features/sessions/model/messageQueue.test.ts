@@ -3,9 +3,11 @@ import { appendPreparingHandoff } from "./handoff";
 import {
   appendQueuedMessage,
   canDispatchQueuedHead,
+  canSteerQueuedHeadIntoBackground,
   dequeueQueuedMessage,
   isEditingQueuedHead,
   moveQueuedMessage,
+  ownerQueueRows,
   queuedHead,
   queuedMessageForSubmit,
   queuedModelTarget,
@@ -254,6 +256,51 @@ describe("canDispatchQueuedHead", () => {
 
   it("does not dispatch an empty queue", () => {
     expect(canDispatchQueuedHead(chat({ queuedMessages: undefined }))).toBe(false);
+  });
+});
+
+describe("canSteerQueuedHeadIntoBackground", () => {
+  const backgroundOnly = (patch: Partial<Session> = {}) =>
+    chat({
+      busy: true,
+      backgroundTasks: ["npm run dev"],
+      backgroundAgents: 0,
+      queuedMessages: [queued("head", "Plain task")],
+      ...patch,
+    });
+
+  it("steers a plain queued head into a turn held only by background commands", () => {
+    expect(canSteerQueuedHeadIntoBackground(backgroundOnly())).toBe(true);
+  });
+
+  it("does not steer while a background agent still holds the turn", () => {
+    expect(canSteerQueuedHeadIntoBackground(backgroundOnly({ backgroundAgents: 1 }))).toBe(false);
+    expect(canSteerQueuedHeadIntoBackground(backgroundOnly({ backgroundAgents: undefined }))).toBe(
+      false,
+    );
+  });
+
+  it("does not steer an idle session", () => {
+    expect(canSteerQueuedHeadIntoBackground(backgroundOnly({ busy: false }))).toBe(false);
+  });
+
+  it("keeps plan heads for their own turn", () => {
+    const plan = { ...queued("head", "Plan it"), intent: "plan" as const };
+    expect(canSteerQueuedHeadIntoBackground(backgroundOnly({ queuedMessages: [plan] }))).toBe(
+      false,
+    );
+  });
+
+  it("keeps slash commands for their own turn", () => {
+    expect(
+      canSteerQueuedHeadIntoBackground(
+        backgroundOnly({ queuedMessages: [queued("head", "/compact")] }),
+      ),
+    ).toBe(false);
+  });
+
+  it("does not steer a paused queue", () => {
+    expect(canSteerQueuedHeadIntoBackground(backgroundOnly({ queueStatus: "paused" }))).toBe(false);
   });
 });
 
@@ -553,5 +600,29 @@ describe("restoring a removed queue row", () => {
     expect(
       restoreQueuedMessage([], queued("r"), ["a", "b", "c"], "b").map((row) => row.id),
     ).toEqual(["r"]);
+  });
+});
+
+describe("ownerQueueRows", () => {
+  const author = { kind: "delegation", runId: "r", title: "Child", reason: "completion" } as const;
+  const notice = { id: "n", text: "Done", attachments: [], author };
+  const owner = { id: "o", text: "Next", attachments: [] };
+
+  it("leaves subagent results out: the activity dock already shows them waiting", () => {
+    expect(ownerQueueRows([notice, owner], { status: "active" })).toEqual([owner]);
+    expect(ownerQueueRows([notice], { status: undefined })).toEqual([]);
+  });
+
+  it("shows them while the queue needs the owner, so a held result is never stuck unseen", () => {
+    for (const status of ["paused", "resuming", "restored"] as const)
+      expect(ownerQueueRows([notice, owner], { status })).toEqual([notice, owner]);
+    expect(ownerQueueRows([notice, owner], { status: "active", deliveryProblem: "n" })).toEqual([
+      notice,
+      owner,
+    ]);
+    expect(ownerQueueRows([notice, owner], { status: "active", held: true })).toEqual([
+      notice,
+      owner,
+    ]);
   });
 });

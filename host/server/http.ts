@@ -139,6 +139,7 @@ export function createHttpRuntime(
     | "desktopDelete"
     | "remoteActivity"
     | "invalidateSessionCopies"
+    | "invalidateModelCatalog"
     | "sessionQueues"
     | "commandService"
     | "withinBeat"

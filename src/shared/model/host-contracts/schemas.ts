@@ -22,6 +22,8 @@ export const WIRE_METHOD_PATTERN = /^[A-Za-z][A-Za-z0-9]*(?:\.[A-Za-z][A-Za-z0-9
 export const WIRE_CAPABILITY_PATTERN = /^[A-Za-z][A-Za-z0-9]*(?:\.[A-Za-z0-9]+){1,7}(?![\s\S])/;
 export const WIRE_UUID_V4_PATTERN =
   /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}(?![\s\S])/;
+export const WIRE_CLIENT_MESSAGE_ID_PATTERN =
+  /^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\s\S])/;
 export const IdentifierSchema = z.string().regex(WIRE_IDENTIFIER_PATTERN);
 export const MethodNameSchema = z.string().regex(WIRE_METHOD_PATTERN);
 export const CapabilityNameSchema = z.string().regex(WIRE_CAPABILITY_PATTERN);
@@ -70,6 +72,8 @@ export const ConnectionProbeResultSchema = z.strictObject({
 export const SubscriptionTargetSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("environment") }),
   z.strictObject({ kind: z.literal("project"), projectId: IdentifierSchema }),
+  /** Model catalog as `models.list` returns it (capability `models.catalog.stream.v1`). */
+  z.strictObject({ kind: z.literal("models"), projectId: IdentifierSchema.optional() }),
   z.strictObject({
     kind: z.literal("session"),
     sessionId: IdentifierSchema,

@@ -1,4 +1,7 @@
 import { join } from "node:path";
+import { DraftPresenceRegistry } from "../drafts/presence";
+import { createDefaultsAutoArchive } from "../settings-defaults/auto-archive";
+import { forgetArchivePullRequest } from "../settings-defaults/pull-request-links";
 import { ActivityService } from "../activity/activity-store";
 import { SessionLifecycleStore } from "../sessions/lifecycle-store";
 import {
@@ -80,6 +83,20 @@ export async function createAccountPlatformRuntime(dependencies: Dependencies) {
     now: Date.now,
   };
   const lifecycle = createSessionLifecycleService(store, ports);
+  const drafts = new DraftPresenceRegistry(
+    join(dependencies.featureDirectory, "drafts"),
+    async () =>
+      (await dependencies.engine.store.db.prepare("SELECT id FROM devices").all()).map((row) =>
+        String(row.id),
+      ),
+  );
+  const defaultsAutoArchive = createDefaultsAutoArchive({
+    engine: dependencies.engine,
+    limits: dependencies.tasks.limits,
+    queued: async (id) => (await dependencies.sessionQueues.get(id)).messages.length > 0,
+    running: dependencies.hostRuns,
+    hasUnsentDraft: (id, windowMs) => drafts.hasUnsentDraft(id, windowMs),
+  });
 
   // New work wakes a settled session once the Host accepted it; Stop and answers never do.
   const commands = dependencies.commandService;
@@ -110,6 +127,7 @@ export async function createAccountPlatformRuntime(dependencies: Dependencies) {
   const deleteQueue = dependencies.sessionQueues.delete.bind(dependencies.sessionQueues);
   dependencies.sessionQueues.delete = async (id) => {
     await deleteQueue(id);
+    await forgetArchivePullRequest(dependencies.engine.store, id);
     await store.update(id, () => ({ result: undefined })).catch(warn);
     await links.unlink(id).catch(warn);
   };
@@ -131,11 +149,12 @@ export async function createAccountPlatformRuntime(dependencies: Dependencies) {
     void lifecycle
       .autoSettle()
       .then(() => lifecycle.autoArchive())
+      .then(() => defaultsAutoArchive.tick())
       .catch(warn);
   autoSettle();
   const timer = setInterval(autoSettle, AUTO_SETTLE_INTERVAL_MS);
   timer.unref?.();
-  return { activity, lifecycle, links, autoSettle, stop: () => clearInterval(timer) };
+  return { activity, lifecycle, links, drafts, autoSettle, stop: () => clearInterval(timer) };
 }
 
 export type AccountPlatformRuntime = Awaited<ReturnType<typeof createAccountPlatformRuntime>>;

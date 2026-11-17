@@ -974,7 +974,7 @@ for (const locale of ["en", "tr"]) {
         }));
         expect(overflow.scrollWidth <= overflow.width + 1, JSON.stringify(overflow)).toBe(true);
         if ([0, 1, 3, 4].includes(index)) {
-          const selectors = [page.locator(".host-tools-machine-field").getByRole("button")];
+          const selectors = [page.locator(".host-tools-machine").getByRole("button")];
           if (index === 0) selectors.push(page.locator(".device-panel-choice").getByRole("button"));
           if (index === 3) {
             selectors.push(
@@ -1163,7 +1163,9 @@ test("compact browser keeps preview and keyboard controls usable at all panel wi
         path: `temp/verification/2026-10-15-browser-workbench/${theme}-${width}.png`,
         animations: "disabled",
       });
-      await panel.getByRole("button", { name: "Actual size", exact: true }).click();
+      await panel.getByRole("button", { name: "Browser viewport", exact: true }).click();
+      await page.getByRole("radio", { name: "Actual size", exact: true }).click();
+      await page.keyboard.press("Escape");
       const actualFrame = await panel.locator(".host-browser-frame").boundingBox();
       expect(actualFrame!.width).toBeGreaterThanOrEqual(1279);
       const scrollablePreview = panel.locator(".host-browser-preview");
@@ -1177,7 +1179,9 @@ test("compact browser keeps preview and keyboard controls usable at all panel wi
         expect(await scrollablePreview.evaluate((node) => node.scrollLeft)).toBeGreaterThan(0);
       }
       expect(await panel.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
-      await panel.getByRole("button", { name: "Fit preview", exact: true }).click();
+      await panel.getByRole("button", { name: "Browser viewport", exact: true }).click();
+      await page.getByRole("radio", { name: "Fit preview", exact: true }).click();
+      await page.keyboard.press("Escape");
       await panel.getByRole("button", { name: "Browser controls and setup", exact: true }).click();
       const controls = page.getByRole("dialog", {
         name: "Browser controls and setup",

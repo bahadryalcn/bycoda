@@ -45,6 +45,7 @@ export async function handleDevicesRpc(
     | "desktopWatch"
     | "desktopSigningSecret"
     | "scopedDesktopCall"
+    | "invalidateModelCatalog"
   >,
   request: OwnerRpcRequest,
 ): Promise<void> {
@@ -92,6 +93,11 @@ export async function handleDevicesRpc(
         );
       if (request.params.disabledModels !== undefined)
         await saveDisabledModels(dependencies.engine.store, request.params.disabledModels);
+      if (
+        request.params.providerAccountStyles !== undefined ||
+        request.params.disabledModels !== undefined
+      )
+        dependencies.invalidateModelCatalog();
       if (request.params.bykitInstructions !== undefined)
         await saveBykitEnabled(dependencies.engine.store, request.params.bykitInstructions);
       if (request.params.settings !== undefined)

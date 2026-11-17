@@ -1,0 +1,9 @@
+# Pinned so CI, release packaging and local builds use the same compiler and clippy lints.
+# A new stable release otherwise adds lints to CI first, failing main for code no one changed.
+# Upgrade deliberately: bump this, run `cargo clippy --workspace --all-targets -- -D warnings`.
+[toolchain]
+channel = "1.99.0"
+components = ["clippy", "rustfmt"]
+# Cross targets the release packaging builds (desktop-package.yml); a workflow installing them
+# for "stable" does not reach this pinned toolchain, so they are listed here.
+targets = ["x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc", "aarch64-apple-darwin"]

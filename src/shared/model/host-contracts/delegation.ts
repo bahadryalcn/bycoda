@@ -47,6 +47,8 @@ export const DELEGATION_LIMITS = {
   /** Room for every model of several accounts per provider; refs stay far below valueBytes. */
   subagentModels: 24,
   runningSubagents: 16,
+  /** A subagent's own subagents (grandchildren, the deepest level) running at once. */
+  runningNestedSubagents: 4,
   runningAdvisors: 1,
   promptChars: 16_000,
   titleChars: 120,
@@ -183,6 +185,20 @@ export function encodeSubagents(
 export function decodeAdvisor(value: unknown): DelegateModelRef | undefined {
   const result = DelegateModelRefSchema.safeParse(parseJson(value));
   return result.success ? result.data : undefined;
+}
+
+/**
+ * The advisor a conversation's own provider runs inside its turn. Owner decision 2026-11-17:
+ * a Claude conversation with a Claude advisor uses Claude Code's advisor tool, never a Host
+ * advisor session. No other provider has a built-in advisor, so theirs run through the Host.
+ */
+export function nativeAdvisor(
+  harness: string | undefined,
+  settings: Readonly<Record<string, string>> | undefined,
+): DelegateModelRef | undefined {
+  if (harness !== "claude") return undefined;
+  const advisor = decodeAdvisor(settings?.[CROSS_ADVISOR_KEY]);
+  return advisor?.harness === "claude" ? advisor : undefined;
 }
 
 export function encodeAdvisor(ref: DelegateModelRef | undefined): string | undefined {

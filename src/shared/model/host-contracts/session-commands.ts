@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { IdentifierSchema, SafeCounterSchema, WIRE_UUID_V4_PATTERN } from "./schemas";
+import {
+  IdentifierSchema,
+  SafeCounterSchema,
+  WIRE_UUID_V4_PATTERN,
+  WIRE_CLIENT_MESSAGE_ID_PATTERN,
+} from "./schemas";
 
 /** Provider identifiers on the existing Host wire, independent of UI harness state. */
 export const SessionProviderSchema = z.enum([
@@ -87,7 +92,12 @@ export const UserQuestionReplySchema = z.discriminatedUnion("kind", [
   }),
 ]);
 const authority = { authorityGeneration: SafeCounterSchema.min(1).optional() };
-const commandBase = { commandId: IdentifierSchema, sessionId: IdentifierSchema, ...authority };
+const commandBase = {
+  commandId: IdentifierSchema,
+  sessionId: IdentifierSchema,
+  clientMessageId: z.string().regex(WIRE_CLIENT_MESSAGE_ID_PATTERN).optional(),
+  ...authority,
+};
 export const QueuedCommandReferenceSchema = z.strictObject({
   id: IdentifierSchema,
   clientId: IdentifierSchema,

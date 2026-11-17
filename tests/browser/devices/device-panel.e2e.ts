@@ -4,6 +4,33 @@ import { expect, test, type Page } from "@playwright/test";
 const fixture = "/tests/browser/host-tools/host-tools.html";
 const captures = "temp/verification/2026-10-26-device-panel";
 
+for (const width of [1280, 800])
+  for (const theme of ["light", "dark"]) {
+    test(`Duo fold controls ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 980 });
+      await page.goto(`${fixture}?detached=1&devicesReady=1&duo=1&theme=${theme}`);
+      await page.getByRole("button", { name: "Connect devices", exact: true }).click();
+      await page.getByRole("button", { name: "Device options", exact: true }).click();
+      const fold = page.getByRole("button", { name: "Fold device", exact: true });
+      await expect(fold).toBeDisabled();
+      await page.keyboard.press("Escape");
+      await page.getByRole("switch", { name: "Allow device control", exact: true }).click();
+      await page.getByRole("button", { name: "Device options", exact: true }).click();
+      await expect(fold).toBeEnabled();
+      await expect(
+        page.getByRole("button", { name: "Half-open device", exact: true }),
+      ).toBeVisible();
+      await expect(page.getByRole("button", { name: "Unfold device", exact: true })).toBeVisible();
+      await mkdir("temp/verification/iphone-duo", { recursive: true });
+      await page.screenshot({ path: `temp/verification/iphone-duo/${theme}-${width}.png` });
+      for (const label of ["Fold device", "Half-open device", "Unfold device"])
+        await page.getByRole("button", { name: label, exact: true }).click();
+      expect(
+        await page.locator(".device-panel").evaluate((el) => el.scrollWidth <= el.clientWidth + 1),
+      ).toBe(true);
+    });
+  }
+
 for (const width of [800, 1280])
   for (const theme of ["light", "dark"]) {
     test(`device shared frames ${theme} ${width}`, async ({ page }, testInfo) => {

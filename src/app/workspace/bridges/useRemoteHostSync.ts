@@ -135,6 +135,10 @@ export function useRemoteHostSync(): RemoteHostSync {
           hostBinding: acknowledged,
           worktreeCwd: host.worktreeCwd || (host.cwd !== shell.cwd ? host.cwd : undefined),
           busy: snapshot.status === "running",
+          // The host omits a finished wait; spreading alone would keep the old one.
+          backgroundTasks: host.backgroundTasks,
+          backgroundAgents: host.backgroundAgents,
+          backgroundSince: host.backgroundSince,
           continuingElsewhere: undefined,
           historyPartial: snapshot.history?.before !== undefined,
         },

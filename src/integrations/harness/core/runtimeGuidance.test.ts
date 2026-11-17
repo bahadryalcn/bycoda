@@ -202,6 +202,15 @@ it("gives a delegated child only its message channel, approval rule and untruste
   expect(child).toContain("agents.send");
   expect(child).toContain("approval");
   expect(child).toContain("untrusted data");
+  // A subagent holding the owner's selection may split its own task one level down.
+  expect(child).toContain("agents.delegate");
+  forgetRuntimeHint("grandchild-hint");
+  const grandchild = await harnessRuntimeHints("grandchild-hint", {
+    delegationParent: "{}",
+    crossSubagents: "[]",
+  });
+  expect(grandchild).toContain("agents.send");
+  expect(grandchild).not.toContain("agents.delegate");
   // Only the conversation bridge is looked up for a child.
   expect(bridges.social).not.toHaveBeenCalledWith("child-hint");
   expect(bridges.logs).not.toHaveBeenCalledWith("child-hint");
@@ -213,6 +222,31 @@ it("keeps the delegated child hint within its size budget", async () => {
   const child = await harnessRuntimeHints("child-budget", { delegationParent: "{}" });
   expect(child.length).toBeGreaterThan(0);
   expect(child.length).toBeLessThanOrEqual(CHILD_HINT_BUDGET);
+  expect(child).not.toContain("agents.delegate");
+  forgetRuntimeHint("child-budget-nested");
+  const nested = await harnessRuntimeHints("child-budget-nested", {
+    delegationParent: "{}",
+    crossSubagents: "auto",
+  });
+  expect(nested).toContain("agents.delegate");
+  expect(nested.length).toBeLessThanOrEqual(CHILD_HINT_BUDGET);
+  // An advisor writes only to its parent and never delegates.
+  forgetRuntimeHint("child-budget-advisor");
+  const advisor = await harnessRuntimeHints("child-budget-advisor", {
+    delegationParent: JSON.stringify({
+      parentSessionId: "p",
+      runId: "r",
+      kind: "advisor",
+      model: "codex:astra",
+      startedAt: 1,
+    }),
+    crossSubagents: "auto",
+  });
+  expect(advisor).toContain("message your parent (runId: parent) only");
+  expect(advisor).not.toContain("sibling");
+  expect(advisor).not.toContain("agents.delegate");
+  expect(advisor.length).toBeLessThanOrEqual(CHILD_HINT_BUDGET);
+  expect(child).toContain("sibling agents");
   expect(child).toContain("conversation_mcp_servers_list");
   forgetRuntimeHint("child-nobridge");
   bridges.conversation.mockResolvedValue(null);

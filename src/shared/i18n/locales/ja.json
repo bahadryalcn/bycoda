@@ -1,4 +1,7 @@
 {
+  "Fold device": "デバイスを閉じる",
+  "Half-open device": "デバイスを半開きにする",
+  "Unfold device": "デバイスを開く",
   "Remove missing": "見つからないものを削除",
   "Select a group": "グループを選択",
   "Choose a group to add or remove its skills.": "グループを選んで、そのスキルを追加または削除します。",
@@ -2476,7 +2479,7 @@
   "Beside chat": "チャットの横で",
   "Top bar": "トップバー",
   "Animate tabs as they open and close. Turn this off for instant tab changes.": "タブを開いたり閉じたりするときにアニメーションを付けます。タブを即座に変更するには、これをオフにします。",
-  "Press {p0} in any app to float a prompt over it and start a session without switching to {p1}. Change the shortcut in Keybindings. Return starts it in the background; ⌘Return starts it and brings the session forward.": "任意のアプリで {p0} を押すと、プロンプトが表示され、{p1} に切り替えることなくセッションが開始されます。キーバインドのショートカットを変更します。 Return はバックグラウンドで開始します。 ⌘Return はセッションを開始し、セッションを進めます。",
+  "Press {p0} in any app to float a prompt over it and start a session without switching to {p1}. Change the shortcut in Keybindings. Enter starts it in the background; {p2}Enter starts it and brings the session forward.": "任意のアプリで {p0} を押すと、プロンプトが表示され、{p1} に切り替えることなくセッションが開始されます。キーバインドのショートカットを変更します。 Return はバックグラウンドで開始します。 {p2}Return はセッションを開始し、セッションを進めます。",
   "Sleep": "睡眠",
   "Keep this computer awake while an agent is working.": "エージェントが動作している間は、このコンピュータを起動したままにしてください。",
   "Prevent idle sleep during agent work, and optionally after the last agent finishes. Closing the lid or choosing Sleep still works. On battery-powered Modern Standby PCs, Windows may stop the request five minutes after the sleep timeout.": "エージェントの作業中、および必要に応じて最後のエージェントが終了した後のアイドル スリープを防止します。蓋を閉めたり、スリープを選択したりしても機能します。バッテリー駆動のモダン スタンバイ PC では、Windows はスリープ タイムアウトの 5 分後に要求を停止することがあります。",
@@ -5470,7 +5473,8 @@
   "Finish selection": "選択を終了",
   "Select tasks": "タスクを選択",
   "No tasks match your search or filters.": "検索またはフィルターに一致するタスクはありません。",
-  "Two versions of this conversation were found. Your messages were kept. Sync to compare them again.": "この会話に2つの異なるバージョンが見つかりました。メッセージは保持されています。同期すると再度比較します。",
+  "This conversation has not finished syncing with the other computer. Your messages are kept.": "この会話はもう一方のコンピューターとの同期がまだ完了していません。メッセージは保持されています。",
+  "Syncing with the other computer…": "もう一方のコンピューターと同期しています…",
   "This conversation was changed on two computers. Choose the version to keep.": "この会話は2台のコンピューターで変更されました。保持するバージョンを選んでください。",
   "Keep this": "こちらを維持",
   "Keep other": "相手を維持",
@@ -6263,7 +6267,6 @@
   "Narrow": "狭い",
   "This account is not available on the owning Host.": "このアカウントは所有ホストで利用できません。",
   "Update the Host to load its available accounts.": "利用可能なアカウントを読み込むにはホストを更新してください。",
-  "Current Host account": "現在のホストアカウント",
   "Unavailable Host account": "利用できないホストアカウント",
   "Couldn’t save SSH tabs.": "SSH タブを保存できませんでした。",
   "Limit reached": "上限に達しました",
@@ -7394,6 +7397,7 @@
   "Show me": "見せて",
   "Tips": "ヒント",
   "Not signed in": "未サインイン",
+  "Saved account": "保存済みアカウント",
   "Sign-in not checked": "サインイン未確認",
   "More options for {p0}": "{p0}のその他のオプション",
   "About existing accounts": "既存のアカウントについて",
@@ -11926,5 +11930,7 @@
   "Invalid design metadata": "デザインのメタデータが無効です",
   "Replace the current draft?": "現在の下書きを置き換えますか？",
   "Unsaved changes to {p0} will be lost.": "{p0} の未保存の変更は失われます。",
-  "Finish the current action before closing.": "閉じる前に、実行中の操作が終わるのをお待ちください。"
+  "Finish the current action before closing.": "閉じる前に、実行中の操作が終わるのをお待ちください。",
+  "Subagents: {p0}": "サブエージェント: {p0}",
+  "The advisor is unavailable this turn because the Host connection is not ready.": "Host との接続の準備ができていないため、このターンではアドバイザーを使用できません。"
 }

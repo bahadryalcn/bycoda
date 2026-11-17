@@ -571,6 +571,10 @@ export const CONVERSATION_TOOLS = {
             "nodeId",
           ]),
           object({ type: { const: "home" } }, ["type"]),
+          object({ type: { const: "fold" }, posture: { enum: ["closed", "half-open", "open"] } }, [
+            "type",
+            "posture",
+          ]),
           object({ type: { const: "snapshot" } }, ["type"]),
           object(
             {

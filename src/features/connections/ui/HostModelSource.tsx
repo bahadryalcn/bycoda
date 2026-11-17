@@ -33,6 +33,7 @@ export function hostModelSource(
     id,
     // Missing account metadata on older Hosts must not select desktop credentials.
     accounts: catalog?.accounts ?? {},
+    accountsKnown: (harness) => !!catalog?.accounts?.[harness as "claude" | "codex" | "grok"],
     modelsFor,
     resolve: (harness, model = "") => {
       const controls = remoteModelControls(

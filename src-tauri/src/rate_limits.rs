@@ -408,6 +408,30 @@ fn usage_result(
     }
 }
 
+/// Read-only profile lookup: `Ok(None)` when a managed folder no longer exists,
+/// so a deleted profile is never recreated or answered from the default home.
+fn existing_claude_dir(
+    app: &AppHandle,
+    account_id: Option<&str>,
+) -> Result<Option<Option<PathBuf>>, String> {
+    Ok(
+        match crate::harness::provider_account_dir_existing(app, "claude", account_id)? {
+            None => Some(None),
+            Some(Some(dir)) => Some(Some(dir)),
+            Some(None) => None,
+        },
+    )
+}
+
+fn claude_not_signed_in() -> ClaudeUsageFetch {
+    usage_result(
+        "unavailable",
+        None,
+        None,
+        Some("Claude not signed in".into()),
+    )
+}
+
 /// Fetch Claude Code 5-hour / weekly usage via the local OAuth token.
 /// The token never leaves the host process.
 #[tauri::command]
@@ -415,7 +439,9 @@ pub async fn fetch_claude_usage(
     app: AppHandle,
     account_id: Option<String>,
 ) -> Result<ClaudeUsageFetch, String> {
-    let config_dir = crate::harness::provider_account_dir(&app, "claude", account_id.as_deref())?;
+    let Some(config_dir) = existing_claude_dir(&app, account_id.as_deref())? else {
+        return Ok(claude_not_signed_in());
+    };
     tauri::async_runtime::spawn_blocking(move || fetch_claude_usage_sync(config_dir))
         .await
         .map_err(|e| e.to_string())?
@@ -428,7 +454,9 @@ pub async fn fetch_claude_usage_once(
     app: AppHandle,
     account_id: String,
 ) -> Result<ClaudeUsageFetch, String> {
-    let config_dir = crate::harness::provider_account_dir(&app, "claude", Some(&account_id))?;
+    let Some(config_dir) = existing_claude_dir(&app, Some(&account_id))? else {
+        return Ok(claude_not_signed_in());
+    };
     let key = config_dir
         .as_ref()
         .map(|path| {
@@ -617,7 +645,9 @@ pub async fn consume_claude_limit_reset(
     if !valid_reset_grant_id(&grant_id) || !valid_reset_request_id(&request_id) {
         return Err("Malformed reset request".into());
     }
-    let config_dir = crate::harness::provider_account_dir(&app, "claude", account_id.as_deref())?;
+    let Some(config_dir) = existing_claude_dir(&app, account_id.as_deref())? else {
+        return Ok(claude_not_signed_in());
+    };
     tauri::async_runtime::spawn_blocking(move || {
         consume_claude_limit_reset_sync(config_dir, &grant_id, &request_id)
     })

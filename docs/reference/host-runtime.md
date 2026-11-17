@@ -575,7 +575,11 @@ for migration, owner retirement and the recorded compatibility decisions.
 
 Host sessions obtain models and optional Codex/Claude account choices from their
 Host. Owner-only `models.list.accounts` contains bounded safe IDs/labels, never
-Native desktop account IDs or credential contents. Canonical configure accepts
+Native desktop account IDs or credential contents. Until a Host reports a
+provider's accounts, the account is unknown rather than missing; only a Host
+list that lacks the selected account marks it unavailable, and the Host validates
+on send. Clients may receive these lists through the `models` stream when
+advertised, with polling as fallback. Canonical configure accepts
 an omitted account to preserve it, null to clear it, or a validated Host account
 ID. Changing accounts clears the old provider thread and preserves transcript
 handoff. Scoped Conversation Tools do not receive the account catalog.

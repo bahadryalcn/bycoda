@@ -1,4 +1,14 @@
-import { test, expect, type Locator } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
+
+/** Layer rows are located through their on/off switch; the row button opens the editor. */
+async function openLiveLayer(page: Page) {
+  await page
+    .getByRole("listitem")
+    .filter({ has: page.getByRole("switch", { name: "Live", exact: true }) })
+    .getByRole("button")
+    .first()
+    .click();
+}
 
 const effects = [
   "neural-tree",
@@ -165,9 +175,7 @@ test("the scene picker persists canonical scenes and supports keyboard selection
       .getByRole("tablist", { name: "Appearance", exact: true })
       .getByRole("tab", { name: "Background", exact: true })
       .click();
-    await page
-      .getByRole("button", { name: /Animated scene that moves behind the workspace/ })
-      .click();
+    await openLiveLayer(page);
   };
   await openPicker();
   const picker = page.getByRole("radiogroup", { name: "Live background scene", exact: true });
@@ -235,9 +243,7 @@ for (const theme of ["light", "dark"])
         .getByRole("tablist", { name: "Appearance", exact: true })
         .getByRole("tab", { name: "Background", exact: true })
         .click();
-      await page
-        .getByRole("button", { name: /Animated scene that moves behind the workspace/ })
-        .click();
+      await openLiveLayer(page);
       const picker = page.getByRole("radiogroup", { name: "Live background scene", exact: true });
       await expect(picker).toBeVisible();
       await expect(picker.getByRole("radio")).toHaveCount(sceneChoices.length);

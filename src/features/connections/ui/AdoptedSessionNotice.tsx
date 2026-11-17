@@ -9,12 +9,14 @@ import { getSessions, setSessions } from "../../sessions/public/sessionsStore";
 import {
   ADOPTED_CHOICE_CONSEQUENCES,
   ADOPTED_CHOICE_MESSAGE,
-  ADOPTED_CONFLICT_MESSAGE,
   ADOPTED_DISCARD_QUESTION,
+  ADOPTED_UNSYNCED_MESSAGE,
   keepAdoptedDivergence,
   type AdoptedResolution,
 } from "../model/adoptedSessions";
 import type { RefreshAdoptedSession } from "../model/useAdoptedSessions";
+import { useAdoptedSyncing } from "../model/adoptedSyncing";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 
 /** Keeps the composer mounted (and its draft/attachments intact) during refresh. */
 export function AdoptedSessionNotice({
@@ -25,6 +27,7 @@ export function AdoptedSessionNotice({
   onRefresh?: RefreshAdoptedSession;
 }) {
   useLocale();
+  const syncing = useAdoptedSyncing(session.id);
   const pending = useRef<{ sessionId: string } | undefined>(undefined);
   const [refreshingId, setRefreshingId] = useState<string>();
   const refreshing = refreshingId === session.id;
@@ -105,8 +108,15 @@ export function AdoptedSessionNotice({
     !session.busy &&
     isUserConversation(session) &&
     !!session.queuedMessages?.length;
-  if (!session.adoptedSyncConflict && !feedback && !refreshing && !queueWaiting) return null;
-  const attention = !!session.adoptedSyncConflict || !!feedback?.error;
+  if (!session.adoptedSyncConflict && !feedback && !refreshing && !queueWaiting)
+    // The first comparison with the other computer's copy; a quick one shows nothing.
+    return syncing ? (
+      <div className="shrink-0 px-4 py-2">
+        <LoadingText>{t("Syncing with the other computer…")}</LoadingText>
+      </div>
+    ) : null;
+  // Only two versions that both moved on need attention; an unfinished sync is information.
+  const attention = choosing || !!feedback?.error;
   const showSync =
     !!onRefresh && !choosing && (!!session.adoptedSyncConflict || !!feedback?.error || refreshing);
   const syncBlocked = refreshing || session.busy;
@@ -193,7 +203,7 @@ export function AdoptedSessionNotice({
             <div>{t("Queue is waiting for the current turn to finish.")}</div>
           ) : null}
           {session.adoptedSyncConflict ? (
-            <div>{t(choosing ? ADOPTED_CHOICE_MESSAGE : ADOPTED_CONFLICT_MESSAGE)}</div>
+            <div>{t(choosing ? ADOPTED_CHOICE_MESSAGE : ADOPTED_UNSYNCED_MESSAGE)}</div>
           ) : null}
           {choosing ? (
             <Text as="div" size="inherit">

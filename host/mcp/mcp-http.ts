@@ -1,5 +1,5 @@
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
-import { agentToolAllowedForChild } from "../delegation/tools";
+import { agentToolAllowed, type AgentRole } from "../delegation/tools";
 import { createHash } from "node:crypto";
 import { Readable, Writable } from "node:stream";
 import {
@@ -58,7 +58,7 @@ type Options = {
   store: HostStore;
   social: SocialService;
   conversationAccess: RuntimeLogAccess;
-  isDelegationChild: (sessionId: string) => Promise<boolean>;
+  agentRole: (sessionId: string) => Promise<AgentRole>;
   runtimeLogAccess: RuntimeLogAccess;
   runtimeLogs: RuntimeLogsService;
   refreshLogSources: () => void;
@@ -500,17 +500,17 @@ export class McpHttp {
       else if (message.method === "ping") result = {};
       else if (message.method === "tools/list") {
         const principal = identities.get("conversation")?.principal;
-        const child =
-          principal?.sessionId &&
-          principal.kind !== "assistant-thread" &&
-          (await this.options.isDelegationChild(principal.sessionId));
+        const role: AgentRole =
+          principal?.sessionId && principal.kind !== "assistant-thread"
+            ? await this.options.agentRole(principal.sessionId)
+            : "owner";
         result = {
           tools: current.flatMap((group) =>
             (identities.get(group)!.grant
               ? externalMcpCatalog(group, identities.get(group)!.grant!)
               : mcpCatalog(group)
             )
-              .filter((tool) => !child || agentToolAllowedForChild(tool.action))
+              .filter((tool) => agentToolAllowed(tool.action, role))
               .map(({ action: _action, ...tool }) => tool),
           ),
         };

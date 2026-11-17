@@ -20,7 +20,7 @@ import {
   type GitFileDiffKind,
   type GitHistoryCommit,
 } from "../../../platform/tauri/fs";
-import { FolderTree, RefreshCw } from "../../../shared/ui/icons";
+import { FolderTree, LayoutGrid, RefreshCw } from "../../../shared/ui/icons";
 import { GitChangesPanel } from "./GitChangesPanel";
 import { GitPanelSections } from "./GitPanelSections";
 import { useProjectDiffStats } from "../hooks/useProjectDiffStats";
@@ -34,7 +34,7 @@ import { loadRepositorySelection, saveRepositorySelection } from "../model/repos
 import { subscribeProjectPathsChanged } from "../../projects/public/recents";
 import type { Worktree } from "../model/worktrees";
 import { Button } from "../../../shared/ui/Button";
-import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
+import { SearchableSelect, type SearchableSelectOption } from "../../../shared/ui/SearchableSelect";
 import { useGitSubmodules } from "../hooks/useGitSubmodules";
 import { requestWorktreeManagement } from "../model/worktreeManagement";
 import type { SubmodulePointers } from "../model/submodulePointers";
@@ -209,12 +209,62 @@ export function WorkspaceSourceControl({
     : `${checkouts ? t("Working copy") : t("Repository")} · ${
         checkouts ? t("All checkouts") : t("All repositories")
       }`;
+  const targetOptions: SearchableSelectOption[] = [
+    {
+      value: "",
+      label: checkouts ? t("All checkouts") : t("All repositories"),
+    },
+    ...repositories.map((path) => {
+      const branch = worktrees[path] ? checkoutTitle(worktrees[path]) : undefined;
+      return {
+        value: path,
+        label: optionName(path),
+        keywords: branch ? `${path} ${branch}` : path,
+        // The branch leads the second line; a side column squeezed long paths.
+        description: branch ? `${branch} · ${path}` : path,
+      };
+    }),
+    ...(pendingSelection &&
+    !repositories.some((path) => projectKey(path) === projectKey(pendingSelection))
+      ? [
+          {
+            value: pendingSelection,
+            label: name(pendingSelection),
+            keywords: pendingSelection,
+          },
+        ]
+      : []),
+    ...(!checkouts && !repositories.includes(cwd)
+      ? [{ value: cwd, label: `${name(cwd)} · ${t("Workspace")}` }]
+      : []),
+  ];
+  // One checkout: its choice joins the branch control, so target, branch and actions
+  // share the panel's single header row.
+  const merged = checkouts && !!target;
+  const checkoutChoice = merged
+    ? {
+        label: name(target),
+        value: target,
+        options: targetOptions.map((option) => ({
+          value: option.value,
+          title: option.label,
+          description: option.description,
+          icon: option.value ? (
+            <FolderTree aria-hidden className="icon-sm" />
+          ) : (
+            <LayoutGrid aria-hidden className="icon-sm" />
+          ),
+        })),
+        onChange: choose,
+        onRefresh: refreshAll,
+      }
+    : undefined;
   return (
     <div
       className="flex h-full min-h-0 flex-1 flex-col overflow-hidden"
       data-workspace-source-control={cwd}
     >
-      {showHeader ? (
+      {showHeader && !merged ? (
         <div className="flex shrink-0 items-center gap-1 px-1.5 pt-1 pb-0.5">
           {!checkouts ? (
             <Button
@@ -237,35 +287,7 @@ export function WorkspaceSourceControl({
                 value={target}
                 onChange={choose}
                 variant="row"
-                options={[
-                  {
-                    value: "",
-                    label: checkouts ? t("All checkouts") : t("All repositories"),
-                  },
-                  ...repositories.map((path) => {
-                    const branch = worktrees[path] ? checkoutTitle(worktrees[path]) : undefined;
-                    return {
-                      value: path,
-                      label: optionName(path),
-                      keywords: branch ? `${path} ${branch}` : path,
-                      // The branch leads the second line; a side column squeezed long paths.
-                      description: branch ? `${branch} · ${path}` : path,
-                    };
-                  }),
-                  ...(pendingSelection &&
-                  !repositories.some((path) => projectKey(path) === projectKey(pendingSelection))
-                    ? [
-                        {
-                          value: pendingSelection,
-                          label: name(pendingSelection),
-                          keywords: pendingSelection,
-                        },
-                      ]
-                    : []),
-                  ...(!checkouts && !repositories.includes(cwd)
-                    ? [{ value: cwd, label: `${name(cwd)} · ${t("Workspace")}` }]
-                    : []),
-                ]}
+                options={targetOptions}
               />
             </div>
           </Tooltip>
@@ -324,8 +346,9 @@ export function WorkspaceSourceControl({
             selectedPath={own(target || cwd) ? selectedPath : undefined}
             selectedKind={own(target || cwd) ? selectedKind : undefined}
             selectedSha={own(target || cwd) ? selectedSha : undefined}
-            refreshInTarget={showHeader}
-            worktreesInTarget={checkouts && showHeader}
+            refreshInTarget={showHeader && !merged}
+            worktreesInTarget={checkouts && showHeader && !merged}
+            checkout={checkoutChoice}
             {...callbacks(target || cwd)}
           />
         ) : (

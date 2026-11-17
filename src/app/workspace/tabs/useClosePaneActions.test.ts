@@ -37,6 +37,17 @@ function setup() {
 }
 
 describe("explicit voice pane closure", () => {
+  it("keeps the visible project when closing its final projectless title tab", () => {
+    const { deps, active } = setup();
+    deps.tabCloseScope = "project";
+    deps.sessionsRef.current[0].cwd = "~";
+    for (const session of deps.sessionsRef.current.slice(1)) session.cwd = "/old-project";
+    const { onCloseTitleTab } = useClosePaneActions(deps);
+    onCloseTitleTab(active.id);
+    expect(deps.onCloseTab).not.toHaveBeenCalled();
+    expect(deps.onClearTabSession).toHaveBeenCalledExactlyOnceWith(active.id);
+  });
+
   it("closes the requested background session while retaining its sibling and active tab", () => {
     const { deps, active, background, onClosePane } = setup();
     onClosePane("target", background.id);

@@ -15,6 +15,15 @@ full payload. Older hosts omit the acknowledgement, so clients continue sending
 full snapshots at the existing cadence. Client expiry and fail-closed multiwindow
 privacy rules still apply; a revision is not new authority to disclose a project.
 
+## Models subscription
+
+A desktop may subscribe with target `{ kind: "models", projectId? }` when the
+Host advertises `models.catalog.stream.v1`. Each snapshot equals the `models.list`
+result (models, errors, pending, accounts). The Host re-sends after provider
+discovery changes the catalog, after settings change provider account styles or
+disabled models, and after an account's sign-in status changes. Without the
+capability, or when the stream closes or errors, the client polls `models.list`.
+
 ## Identity and authority
 
 A session reference is `(environmentId, sessionId)`. The connection record's local

@@ -116,6 +116,9 @@ export async function createSessionQueueRuntime(
    * lease, or an app that reports it busy without having asked for one. */
   const desktopRunHolder = async (id: string): Promise<Awaited<string | undefined>> =>
     dependencies.runLeases.holder(id)?.holder ??
+    // A window that reported this conversation busy holds it, even through a
+    // beat gap and even when the Host also stores it: silence is not idle.
+    (dependencies.desktop.live.runningClient(id) ? "desktop" : undefined) ??
     ((await desktopWatch(id))?.running ? "desktop" : undefined);
   const hostRuns = async (id: string) => {
     try {

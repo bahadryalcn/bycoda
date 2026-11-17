@@ -58,11 +58,7 @@ export function useQuickSessionLaunch({
         deliveryId,
         {
           getSessions: () => sessionsRef.current,
-          updateSessions: (update) => {
-            sessionsRef.current = update(sessionsRef.current);
-            // Compose with submission's queued transcript updates.
-            setSessions(update);
-          },
+          updateSessions: setSessions,
           appendTab,
           placeSession: (sessionId, target, cwd) => {
             const anchor = sessionsRef.current.find(

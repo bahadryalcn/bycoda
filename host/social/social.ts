@@ -4964,9 +4964,14 @@ export class SocialService implements SocialServiceApi {
       void this.tick()
         .catch((error) => console.error("Social scheduling failed:", error))
         .then(async () => {
-          if (token !== this.tickToken || this.disposing || epoch !== this.backgroundEpoch) return;
+          const stale = () =>
+            token !== this.tickToken || this.disposing || epoch !== this.backgroundEpoch;
+          if (stale()) return;
           this.idleTicks = this.tickActive ? 0 : this.idleTicks + 1;
-          this.scheduleTick(await this.nextDelay());
+          const next = await this.nextDelay();
+          // A write may have rescheduled while the delay was read; that newer, sooner tick wins.
+          if (stale()) return;
+          this.scheduleTick(next);
         });
     };
     // `this.timer` stays set while a tick runs: it also tells snapshots the scheduler is online.

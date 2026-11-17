@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { IdentifierSchema, SafeCounterSchema } from "./schemas";
+import { IdentifierSchema, SafeCounterSchema, WIRE_CLIENT_MESSAGE_ID_PATTERN } from "./schemas";
 import {
   BrowserAnnotationAttachmentSchema,
   ModelSettingsSchema,
@@ -32,6 +32,7 @@ export const QueueAttachmentSchema = z.strictObject({
 export const QueuedMessageSchema = z.strictObject({
   authorityGeneration: SafeCounterSchema.min(1).optional(),
   id: IdentifierSchema,
+  clientMessageId: z.string().regex(WIRE_CLIENT_MESSAGE_ID_PATTERN).optional(),
   text,
   attachments: z.array(QueueAttachmentSchema).max(20),
   deliveryUnknown: z.literal(true).optional(),

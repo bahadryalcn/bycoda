@@ -310,7 +310,12 @@ for (const theme of ["light", "dark"]) {
         path: `temp/verification/2026-11-06-worktrees/workspace-policy-${theme}-${width}.png`,
       });
       const retention = surface.locator('[data-setting-id="workspace-retention"]');
-      await expect(retention).toContainText("Active and pinned workspaces are excluded");
+      // The exclusion rule lives behind the section's info icon, not inline.
+      await retention.getByRole("button", { name: "Help", exact: true }).click();
+      await expect(page.getByRole("dialog", { name: "Help", exact: true })).toContainText(
+        "Active and pinned workspaces are excluded",
+      );
+      await page.keyboard.press("Escape");
       await retention.getByRole("button", { name: /^Idle retention:/ }).click();
       await page.getByRole("option", { name: "Never", exact: true }).click();
       await surface.getByRole("switch", { name: "Pin workspaces", exact: true }).click();
@@ -384,7 +389,10 @@ for (const theme of ["light", "dark"]) {
       expect(before).toBe(0);
       await dialog.getByRole("button", { name: "Delete directory", exact: true }).click();
       await expect(dialog).not.toBeVisible();
-      await expect(surface.getByText("Directory removed", { exact: true })).toBeVisible();
+      // A removed directory is no longer a worktree, so its roster row leaves the list.
+      await expect(
+        surface.getByRole("listitem").filter({ hasText: "Cleanup blocked" }),
+      ).toHaveCount(0);
       const after = await page.evaluate(() =>
         (
           window as unknown as {
@@ -495,14 +503,13 @@ for (const theme of ["light", "dark"])
       await page.screenshot({ path: `${removalDirectory}/rows-${theme}-${width}.png` });
       await row.getByRole("button", { name: "Remove record", exact: true }).click();
       const dialog = page.getByRole("dialog", { name: "Remove workspace record", exact: true });
-      await expect(dialog).toContainText("still marked active");
+      await expect(dialog).toContainText("workspace is still active");
       await page.screenshot({ path: `${removalDirectory}/dialog-${theme}-${width}.png` });
       await dialog.getByRole("button", { name: "Remove record", exact: true }).click();
       await expect(dialog).not.toBeVisible();
-      await expect(row.getByText("Directory removed", { exact: true })).toBeVisible();
-      await expect(
-        page.getByText("Deleted wt-populated-1-deep-folder-end", { exact: true }),
-      ).toBeVisible();
+      await expect(row).toHaveCount(0);
+      // Success is silent: only a failed removal raises a toast.
+      await expect(page.getByText("Couldn't delete", { exact: false })).toHaveCount(0);
       await page.screenshot({ path: `${removalDirectory}/done-${theme}-${width}.png` });
       const methods = await page.evaluate(() =>
         (window as unknown as { workspaceFixtureCalls: { method: string }[] }).workspaceFixtureCalls
@@ -678,7 +685,7 @@ for (const theme of ["light", "dark"])
       const boundaryHeading = repo.getByRole("heading", {
         name: "Worktrees",
         exact: true,
-        level: 2,
+        level: 3,
       });
       await expect(boundaryHeading).toHaveCount(1);
 

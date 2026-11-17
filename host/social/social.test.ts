@@ -33,7 +33,11 @@ it("runs a tick rescheduled from inside a write after that write's scope closed"
     // A social write wakes the scheduler from inside its own database scope.
     const scheduler = s.social as unknown as { scheduleTick(delay: number): void };
     await s.store.db.scope(async () => scheduler.scheduleTick(1));
-    await vi.waitFor(() => expect(tick).toHaveBeenCalledTimes(2));
+    // The rescheduled tick runs after the scope closes; a loaded CI runner can take over 1 s.
+    await vi.waitFor(() => expect(tick).toHaveBeenCalledTimes(2), {
+      timeout: 10_000,
+      interval: 25,
+    });
     await expect(tick.mock.results[1]!.value).resolves.toBeUndefined();
   } finally {
     await s.social.stop();

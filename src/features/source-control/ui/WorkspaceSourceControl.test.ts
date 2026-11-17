@@ -86,10 +86,35 @@ vi.mock("./GitChangesPanel", () => ({
     onOpenInEditor: (path: string, pin: boolean) => void;
     onOpenAllChanges: (kind: string) => void;
     onOpenCommit: (commit: { sha: string }) => void;
+    checkout?: {
+      label: string;
+      value: string;
+      options: { value: string; title: string }[];
+      onChange: (value: string) => void;
+    };
   }) =>
     createElement(
       "section",
-      { "data-cwd": props.cwd, "data-compact": !!props.repository },
+      {
+        "data-cwd": props.cwd,
+        "data-compact": !!props.repository,
+        "data-checkout-label": props.checkout?.label,
+      },
+      // The real panel hosts this choice inside its branch picker.
+      props.checkout
+        ? createElement(
+            "select",
+            {
+              "aria-label": "Working copy",
+              value: props.checkout.value,
+              onChange: (event: { target: { value: string } }) =>
+                props.checkout!.onChange(event.target.value),
+            },
+            props.checkout.options.map((option) =>
+              createElement("option", { key: option.value, value: option.value }, option.title),
+            ),
+          )
+        : null,
       createElement(
         "button",
         {
@@ -508,4 +533,25 @@ it("retains a selected child repository while discovery is pending and falls bac
   discovery.modules = { "/repo": [] };
   await renderCheckouts();
   expect(host.querySelector("section")!.dataset.cwd).toBe("/t/mine");
+});
+
+it("merges the checkout choice into the panel for one checkout and keeps the top selector in the overview", async () => {
+  await renderCheckouts();
+  const panel = host.querySelector<HTMLElement>("section")!;
+  expect(panel.dataset.checkoutLabel).toBe("mine");
+  // The only selector is the one the panel hosts; no separate top header row.
+  expect(host.querySelectorAll("select")).toHaveLength(1);
+  expect(panel.contains(host.querySelector("select"))).toBe(true);
+  expect(host.querySelector('[aria-label="Manage worktrees…"]')).toBeNull();
+  expect(host.querySelector('[aria-label="Refresh source control"]')).toBeNull();
+  await choose("/t/idle");
+  expect(host.querySelector("section")!.dataset.cwd).toBe("/t/idle");
+  expect(host.querySelector("section")!.dataset.checkoutLabel).toBe("idle");
+
+  await choose("");
+  const top = host.querySelector("select")!;
+  expect(host.querySelector("[data-checkout-overview]")!.contains(top)).toBe(false);
+  expect(top.getAttribute("aria-label")).toBe("Working copy");
+  expect(host.querySelector('[aria-label="Manage worktrees…"]')).not.toBeNull();
+  expect(host.querySelector("[data-checkout-label]")).toBeNull();
 });

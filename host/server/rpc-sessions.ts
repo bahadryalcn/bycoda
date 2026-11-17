@@ -22,6 +22,10 @@ import type { OwnerRpcRequest } from "./owner-rpc-context";
 import { assertNotCrewManaged } from "../crews/crew-managed-session";
 import { requestingDeviceName } from "../desktop/remoteActivity";
 import { recordRemoteActivity } from "./remote-activity-record";
+import { clientMessageCommand } from "../sessions/client-message-id";
+import { clientMessageQueue } from "../sessions/client-message-queue";
+import { SIDE_CHAT_RPC } from "../../src/shared/model/host-contracts/side-chat";
+import { askSideQuestion } from "../side-chat/side-question";
 export async function handleSessionsRpc(
   dependencies: Pick<
     ServerBindings,
@@ -65,6 +69,17 @@ export async function handleSessionsRpc(
   request: OwnerRpcRequest,
 ): Promise<void> {
   switch (request.input.method) {
+    case "sessions.sideQuestion":
+      await assertDomainAuthority(request.domainContext);
+      request.result = await askSideQuestion(
+        SIDE_CHAT_RPC["sessions.sideQuestion"].params.parse(request.params),
+        {
+          session: (id) => dependencies.engine.store.session(id),
+          authorize: () => assertDomainAuthority(request.domainContext),
+        },
+        request.domainContext.signal,
+      );
+      break;
     case "sessions.managedTurn.begin":
     case "sessions.managedTurn.end":
     case "sessions.managedTurn.status": {
@@ -682,15 +697,22 @@ export async function handleSessionsRpc(
     case "sessions.queue.release":
     case "sessions.queue.lease": {
       const action = request.input.method.slice("sessions.queue.".length) as SessionQueueAction;
-      request.result = await dependencies.sessionQueueService[action](
-        request.params,
-        {
-          ...request.domainContext,
-          exposeAttachments: (ids, exposureParams) =>
-            dependencies.attachmentOwnership.expose(request.token, ids, exposureParams),
-        },
-        { legacy: true },
-      );
+      const execute = () =>
+        dependencies.sessionQueueService[action](
+          request.params,
+          {
+            ...request.domainContext,
+            exposeAttachments: (ids, exposureParams) =>
+              dependencies.attachmentOwnership.expose(request.token, ids, exposureParams),
+          },
+          { legacy: true },
+        );
+      request.result =
+        action === "change"
+          ? await clientMessageQueue(dependencies.engine.store, request.params, execute, () =>
+              assertDomainAuthority(request.domainContext),
+            )
+          : await execute();
       break;
     }
     case "sessions.syncChunk":
@@ -723,7 +745,7 @@ export async function handleSessionsRpc(
     }
     case "commands.dispatch":
       request.result = await dependencies.commandService.dispatch(
-        request.params,
+        clientMessageCommand(request.params),
         request.domainContext,
         { legacy: true },
       );

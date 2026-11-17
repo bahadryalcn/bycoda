@@ -168,6 +168,8 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "projects.browse"
             | "projects.createDirectory"
             | "projects.open"
+            | "projects.clone"
+            | "projects.clone.progress"
             | "models.list"
             | "appearance.themeSuggestions"
             | "appearance.backgroundSuggestions"
@@ -185,6 +187,7 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "sessions.delete"
             | "sessions.sync"
             | "sessions.page"
+            | "sessions.sideQuestion"
             | "sessions.block"
             | "sessions.workedTime"
             | "sessions.syncChunk"
@@ -323,6 +326,9 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "activity.days"
             | "activity.summary"
             | "secrets.owner.list"
+            | "secrets.input.list"
+            | "secrets.input.answer"
+            | "drafts.presence.report"
             | "secrets.owner.revoke"
             | "sessions.lifecycle.get"
             | "sessions.lifecycle.list"
@@ -375,6 +381,13 @@ mod tests {
         for name in appearance {
             assert!(supported_remote_method(name), "{name}");
         }
+    }
+
+    #[test]
+    fn secret_inputs_use_exact_owner_method_names() {
+        assert!(supported_remote_method("secrets.input.list"));
+        assert!(supported_remote_method("secrets.input.answer"));
+        assert!(!supported_remote_method("secrets.input.anything"));
     }
 
     #[test]

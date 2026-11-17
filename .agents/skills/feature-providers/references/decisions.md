@@ -36,6 +36,10 @@ native-agent policy changes; warm turns do not apply thread config again.
 On resume, Codex can retain historical tool declarations and send a namespace
 removal update instead of deleting the old declarations from history.
 
+Update 2026-11-17: Host-run turns (delegated children, tasks, remote and phone conversations)
+apply the same derived adapter settings through `host/providers/subagent-selection.ts`; before,
+only desktop turns did, so Host-run native subagents ignored the selection.
+
 Update 2026-11-08, owner: "please fix these too" (translated). Grok starts with `--no-subagents`; OpenCode sessions deny the `task` (v1) and `subagent` (v2, verified on 2.2.5) permissions. Antigravity, Cursor, Fx, Hermes, Pi, OMP and generic ACP have no verified switch yet and remain unenforced.
 
 ## Defaults save explicitly to a chosen target
@@ -135,3 +139,36 @@ Date: 2026-11-16
 Owner: "plan and arrange this screen so providers with several accounts can be managed more easily for each project, one project at a time ... I can't select subagents and advisors." (translated from Turkish)
 
 A project, group or workspace target stores the account each provider's new chats start on (`accounts` in project provider settings); a picker pin of the same provider stays the latest choice and moves with it. New-conversation defaults resolve through that account unless an explicit account is given. Account defaults themselves stay machine-wide; per-project-per-account overrides are not built. Providers > Defaults lists subagent, advisor, subagent policy and ceiling rows after the conversation rows; Background work > Subagents keeps them too, with the same draft and save rules.
+
+## Subagents may start subagents, one level deep
+
+Date: 2026-11-17
+
+Owner: "at most a grandchild; I don't want the grandchild to have a child" (translated from Turkish)
+
+A subagent (depth 1) inherits the owner's subagent selection and effort ceiling and may run
+`agents.delegate`, `wait`, `reply` and `cancel` for its own children; it never consults an advisor.
+Grandchildren and advisors only message their group (`agents.list`, `agents.send`). A grandchild
+gets an explicit Off selection, so its native subagents are off too. A subagent runs at most
+`runningNestedSubagents` children at once. Grandchildren report to their own parent.
+
+Owner, same day: "approvals must reach the parent and it shows them to us, or we show them
+through the parent directly; inside a subagent I must see how many run in it, as a list"
+(translated from Turkish). Discovery also reads each subagent's own children
+(`discoverDelegatedRuns`); a waiting grandchild marks its parent's dock row (`needsInput`), and
+the parent's sheet lists them (`NestedSubagentList`) and answers their requests in place.
+
+## Claude's built-in advisor for Claude advisors
+
+Date: 2026-11-17
+
+Owner: "with Claude the advisor must work like Claude Code's own feature: main agent Opus, advisor Fable, and no separate session ... it must show meaningfully like subagents; if Codex has no advisor, keep how it works now" (translated from Turkish)
+
+`nativeAdvisor` decides: a Claude conversation with a Claude advisor pick passes `--advisor` and
+never runs `agents.consult` (the Host refuses it and the guidance names the built-in tool); the
+account label of the pick is ignored because the tool runs on the conversation's account.
+Other providers keep Host advisor sessions; only Claude Code has a built-in advisor today (Codex
+0.169 has none). The advisor's server-tool call renders as its own transcript row (`AdvisorRow`)
+and never folds into the activity trail. In a Claude conversation the Advisor menu lists each
+Claude model once (`builtInAdvisorChoices`). A Host advisor needs the bridge, so an unready
+bridge tells model and owner (`needsHostDelegation`); its notice is headed "Advisor completion".

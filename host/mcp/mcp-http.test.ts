@@ -108,54 +108,73 @@ async function setup(providers: Parameters<typeof createHostServer>[1] = []) {
   return { store, engine, project, foreign, server, tokens, grant, rpc, send, url, desktopPath };
 }
 
-it.each(["parent", "store child", "settings child"])(
+it.each(["parent", "store child", "settings child", "settings grandchild", "advisor"])(
   "filters Host agents tools for %s across catalog, discovery and MCP",
   async (kind) => {
     const s = await setup();
-    const created = await s.engine.command({
-      type: "create",
-      workspaceMode: "current",
-      commandId: "delegation-catalog",
-      projectId: s.project.id,
-      harness: "codex",
-      model: "fixture",
-      runtimeMode: "supervised",
-      modelSettings:
-        kind === "settings child"
-          ? {
-              delegationParent: JSON.stringify({
-                parentSessionId: "parent",
-                runId: "run",
-                kind: "subagent",
-                model: "fixture",
-                startedAt: 1,
-              }),
-            }
-          : {},
+    const link = (parentSessionId: string, linkKind = "subagent") => ({
+      delegationParent: JSON.stringify({
+        parentSessionId,
+        runId: `run-${parentSessionId}`,
+        kind: linkKind,
+        model: "fixture",
+        startedAt: 1,
+      }),
     });
+    const create = (commandId: string, modelSettings: Record<string, string>) =>
+      s.engine.command({
+        type: "create",
+        workspaceMode: "current",
+        commandId,
+        projectId: s.project.id,
+        harness: "codex",
+        model: "fixture",
+        runtimeMode: "supervised",
+        modelSettings,
+      });
+    // A grandchild's parent is itself a child: the depth comes from the chain of links.
+    const middle =
+      kind === "settings grandchild"
+        ? await create("delegation-middle", link("parent"))
+        : undefined;
+    const created = await create(
+      "delegation-catalog",
+      kind === "settings child"
+        ? link("parent")
+        : kind === "advisor"
+          ? link("parent", "advisor")
+          : middle
+            ? link(middle.sessionId)
+            : {},
+    );
     if (kind === "store child")
-      vi.spyOn(DelegationStore.prototype, "isChild").mockImplementation(
-        async (id) => id === created.sessionId,
-      );
+      vi.spyOn(DelegationStore.prototype, "list").mockResolvedValue([
+        { childSessionId: created.sessionId, parentSessionId: "parent", kind: "subagent" },
+      ] as never);
     const token = (await s.server.conversationAccess.issueSessionGrant(created.sessionId)).token;
     const call = async (action: string, input: object = {}) => {
       const response = await s.rpc("conversation.tools.call", { action, input }, token);
       expect(response.body.error).toBeUndefined();
       return response.body.result;
     };
-    const expected =
+    const all = [
+      "agents.list",
+      "agents.send",
+      "agents.options",
+      "agents.delegate",
+      "agents.consult",
+      "agents.reply",
+      "agents.wait",
+      "agents.cancel",
+    ];
+    // A subagent runs its own subagents but never an advisor; advisors and grandchildren only talk.
+    const expected = (
       kind === "parent"
-        ? [
-            "agents.list",
-            "agents.send",
-            "agents.options",
-            "agents.delegate",
-            "agents.consult",
-            "agents.reply",
-            "agents.wait",
-            "agents.cancel",
-          ].sort()
-        : ["agents.list", "agents.send"].sort();
+        ? all
+        : kind === "store child" || kind === "settings child"
+          ? all.filter((action) => action !== "agents.consult")
+          : ["agents.list", "agents.send"]
+    ).sort();
     const catalog = await call("tools.list");
     expect(
       catalog.tools
@@ -177,12 +196,12 @@ it.each(["parent", "store child", "settings child"])(
       const described = JSON.parse(
         (await call("tools.describe", { ids: [`conversation:${action}`] })).content,
       ).tools[0];
-      if (kind === "parent") expect(described.action).toBe(action);
+      const offered = expected.includes(action);
+      if (offered) expect(described.action).toBe(action);
       else
         expect(described).toMatchObject({ supported: false, capability: { state: "unsupported" } });
       const status = (await call("tools.status", { ids: [`conversation:${action}`] })).tools[0];
-      if (kind === "parent")
-        expect(status).toMatchObject({ id: `conversation:${action}`, supported: true });
+      if (offered) expect(status).toMatchObject({ id: `conversation:${action}`, supported: true });
       else expect(status).toMatchObject({ supported: false, capability: { state: "unsupported" } });
     }
     const listed = await s.send(token, "tools/list", {}, "/mcp/conversation");

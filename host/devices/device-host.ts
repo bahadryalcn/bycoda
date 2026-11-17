@@ -14,6 +14,7 @@ import {
 import { DeviceStreams } from "./device-stream";
 import { androidDeviceControl, quoteAndroidShell } from "./android-device-control";
 import { DeviceControlLeases } from "./device-control-leases";
+import { iosCaptureDisplay } from "./ios-display";
 import { inspectionFingerprint, inspectionNodes, type InspectionNode } from "./device-inspection";
 import { cachedExpoGo, expoPreviewUrl } from "./expo-go";
 import type {
@@ -119,6 +120,10 @@ export function deviceActionArgs(action: DeviceAction): string[] {
       return ["type", action.text];
     case "home":
       return ["home"];
+    case "fold":
+      if (!["closed", "half-open", "open"].includes(action.posture))
+        throw new Error("Invalid device fold posture");
+      return ["fold", action.posture];
     case "snapshot":
       return ["snapshot", "-i"];
     case "pressElement":
@@ -752,7 +757,13 @@ export class DeviceHost {
     ) as {
       devices?: Record<
         string,
-        { udid: string; name: string; state: string; isAvailable?: boolean }[]
+        {
+          udid: string;
+          name: string;
+          state: string;
+          isAvailable?: boolean;
+          deviceTypeIdentifier?: string;
+        }[]
       >;
     };
     return Object.entries(result.devices ?? {})
@@ -772,6 +783,10 @@ export class DeviceHost {
                 version: `iOS ${runtime.split(".iOS-")[1].replaceAll("-", ".")}`,
                 booted: device.state === "Booted",
                 physical: false,
+                ...(device.deviceTypeIdentifier ===
+                "com.apple.CoreSimulator.SimDeviceType.iPhone-Duo"
+                  ? { supportsFold: true }
+                  : {}),
               }))
           : [],
       )
@@ -1110,11 +1125,35 @@ export class DeviceHost {
       const directory = join(this.baseDir, "devices", "captures");
       await mkdir(directory, { recursive: true, mode: 0o700 });
       const file = join(directory, `${randomUUID()}.png`);
+      const displayFile = `${file}.json`;
       try {
+        let displayArgs: string[] = [];
+        if (device.supportsFold) {
+          await this.command(
+            effect,
+            "/usr/bin/xcrun",
+            [
+              "devicectl",
+              "device",
+              "info",
+              "displays",
+              "--device",
+              device.id,
+              "--json-output",
+              displayFile,
+            ],
+            { env: this.env, timeoutMs: 5000 },
+          );
+          if ((await stat(displayFile)).size > 256 * 1024)
+            throw new Error("DEVICE_DISPLAY_UNAVAILABLE: Display inventory exceeds 256 KiB");
+          displayArgs = [
+            `--display=${iosCaptureDisplay(JSON.parse(await readFile(displayFile, "utf8")))}`,
+          ];
+        }
         await this.command(
           effect,
           "/usr/bin/xcrun",
-          ["simctl", "io", device.id, "screenshot", "--type=png", file],
+          ["simctl", "io", device.id, "screenshot", "--type=png", ...displayArgs, file],
           { env: this.env, timeoutMs: 20_000 },
         );
         if ((await stat(file)).size > 4 * 1024 * 1024)
@@ -1130,6 +1169,7 @@ export class DeviceHost {
         };
       } finally {
         await unlink(file).catch(() => {});
+        await unlink(displayFile).catch(() => {});
       }
     }
     if (["win32", "darwin"].includes(this.platform) && device.platform === "android") {
@@ -1286,6 +1326,14 @@ export class DeviceHost {
     let args = deviceActionArgs(action);
     const device = await this.device(id);
     if (!device.booted) throw new Error("Boot the device before interacting");
+    if (
+      action.type === "fold" &&
+      (this.platform !== "darwin" ||
+        device.platform !== "ios" ||
+        device.physical ||
+        !device.supportsFold)
+    )
+      throw new Error("Folding requires an iPhone Duo simulator on a Mac with Xcode 27.1 or later");
     if (!(await this.installed("agent"))) await this.installTools(["agent"], effect);
     await assertDeviceAuthority(effect);
     if (this.platform === "win32" && device.platform === "android") {
@@ -1406,7 +1454,9 @@ export class DeviceHost {
       [this.entry("agent"), ...args, ...selector],
       action.type === "waitForText"
         ? { ...options, timeoutMs: (action.timeoutMs ?? 30_000) + 5000 }
-        : options,
+        : action.type === "fold"
+          ? { ...options, timeoutMs: 120_000 }
+          : options,
     );
     this.verifyAgentResult(output);
     return output;

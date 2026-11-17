@@ -5,7 +5,6 @@ import { createRoot } from "react-dom/client";
 import { useEffect, useState } from "react";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { QueryProvider } from "../../../src/app/QueryProvider";
-import { CrewsSettings } from "../../../src/features/crews/ui/CrewsSettings";
 import { CrewsPage } from "../../../src/features/crews/ui/page/CrewsPage";
 import { CrewSidebar } from "../../../src/features/crews/ui/CrewSessions";
 import { CrewRailSection } from "../../../src/features/crews/ui/CrewRailSection";
@@ -287,6 +286,10 @@ if (params.has("rich")) {
 // Realistic recent times for the work list (fixture data; ordering is unchanged).
 const baseTime = Date.now() - 3 * 60 * 60_000;
 const at = (minutes: number) => baseTime + minutes * 60_000;
+// Task creation fixtures: the work model, or the start dialog alone.
+const taskModel = params.has("work-model") || params.has("taskStart");
+let savedTasks: Record<string, unknown>[] = [];
+const taskSaveIds: string[] = [];
 let starts = 0;
 let groupFailure = false;
 let copyFailure = false;
@@ -522,9 +525,7 @@ mockIPC(async (command, args) => {
           capabilities: [
             "crews.v1",
             "crews.tasks.v1",
-            ...(params.has("work-model")
-              ? ["tasks", "tasks.todo", "tasks.workspaces", "models.routing.v1"]
-              : []),
+            ...(taskModel ? ["tasks", "tasks.todo", "tasks.workspaces", "models.routing.v1"] : []),
             "crews.delete.v1",
             ...(params.has("noAccess") ? [] : ["crews.access.v1"]),
             ...(params.has("noTools") ? [] : ["crews.tools.v1"]),
@@ -628,19 +629,37 @@ mockIPC(async (command, args) => {
           errors: {},
         };
       case "tasks.list":
-        if (!params.has("work-model")) throw new Error("Task fixtures require work-model");
-        return [];
+        if (!taskModel) throw new Error("Task fixtures require work-model or taskStart");
+        return savedTasks;
+      case "tasks.save": {
+        const task = p.task as Record<string, unknown>;
+        taskSaveIds.push(String(task.id));
+        const now = Date.now();
+        const saved = { createdAt: now, updatedAt: now, ...task };
+        savedTasks = [...savedTasks.filter((entry) => entry.id !== saved.id), saved];
+        if (params.has("startUnknownOnce") && taskSaveIds.length === 1)
+          throw new Error("Start response unavailable. Delivery unknown.");
+        return saved;
+      }
+      case "tasks.start": {
+        starts += 1;
+        document.querySelector("[aria-label='Started work']")!.textContent = String(starts);
+        savedTasks = savedTasks.map((entry) =>
+          entry.id === p.taskId ? { ...entry, status: "running" } : entry,
+        );
+        return savedTasks.find((entry) => entry.id === p.taskId);
+      }
       case "host.settings.get":
-        if (!params.has("work-model")) throw new Error("Task fixtures require work-model");
+        if (!taskModel) throw new Error("Task fixtures require work-model or taskStart");
         return { maxRunningTasks: 2, dailyAgentMinutes: 120, usedMinutes: 20, limitReached: false };
       case "git.branches":
-        if (!params.has("work-model")) throw new Error("Task fixtures require work-model");
+        if (!taskModel) throw new Error("Task fixtures require work-model or taskStart");
         return { current: "main", branches: ["main"], remotes: [] };
       case "git.worktrees":
-        if (!params.has("work-model")) throw new Error("Task fixtures require work-model");
+        if (!taskModel) throw new Error("Task fixtures require work-model or taskStart");
         return { worktrees: [{ path: cwd, branch: "main" }] };
       case "modelRouting.get":
-        if (!params.has("work-model")) throw new Error("Task fixtures require work-model");
+        if (!taskModel) throw new Error("Task fixtures require work-model or taskStart");
         return {
           state: {
             version: 1,
@@ -787,7 +806,8 @@ mockIPC(async (command, args) => {
 if (params.has("defaults")) runs = [];
 // Another session saving the same crew while it is open here.
 Object.assign(window, {
-  crewFixtureStartRequestIds: startRequestIds,
+  crewFixtureTaskSaveIds: taskSaveIds,
+  crewFixtureSavedTasks: () => structuredClone(savedTasks),
   crewFixtureStoredMembers: () =>
     structuredClone(definitions.find((crew) => crew.id === "crew")?.agents ?? []),
   simulateRunFinish: (id: string) => {
@@ -875,9 +895,6 @@ function Fixture() {
           <CrewSidebar cwd={cwd} onOpen={openSession} onManagedChange={() => {}} />
         </aside>
         <div className="min-w-0 flex-1 p-4" style={{ flexBasis: "24rem" }}>
-          <Button variant="ghost" onClick={() => setView("settings")}>
-            Crew settings page
-          </Button>
           <Button variant="ghost" onClick={() => setView("page")}>
             Crews page
           </Button>
@@ -910,10 +927,6 @@ function Fixture() {
                     : undefined
                 }
               />
-            </div>
-          ) : view === "settings" ? (
-            <div className="bycoda-settings-content bycoda-settings-form">
-              <CrewsSettings />
             </div>
           ) : null}
         </div>

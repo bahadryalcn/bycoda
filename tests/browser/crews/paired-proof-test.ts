@@ -1,4 +1,26 @@
+import { writeFile } from "node:fs/promises";
 import { expect, type Page, type TestInfo } from "@playwright/test";
+
+/**
+ * Attaches evidence as a file next to the test output. Inline bodies are embedded in the JSON
+ * report, and these frames and metrics (megabytes per test) would overflow the bounded CI
+ * evidence; a path attachment keeps only a reference while the file ships with the artifacts.
+ */
+export async function attachFile(
+  testInfo: TestInfo,
+  name: string,
+  options: { body: string | Buffer; contentType: string },
+) {
+  const extension =
+    options.contentType === "image/png"
+      ? ".png"
+      : options.contentType.includes("json")
+        ? ".json"
+        : ".txt";
+  const path = testInfo.outputPath(`${name.replace(/[^\w.-]+/g, "-")}${extension}`);
+  await writeFile(path, options.body);
+  await testInfo.attach(name, { path, contentType: options.contentType });
+}
 import type { ProofOptions } from "./canvas-paired";
 import { CLASSIC_SIGN_PIXEL_CAP, CLASSIC_SIGN_DELTA_CAP } from "./classic-sign-parity";
 
@@ -7,13 +29,13 @@ export async function expectPairedProof(page: Page, testInfo: TestInfo, options:
   const result = await page.evaluate((input) => window.runPairedProof(input), options);
   if (result.firstFailure) {
     for (const name of ["reference", "candidate", "diff"] as const) {
-      await testInfo.attach(`${name}-frame-${result.firstFailure.sequence}`, {
+      await attachFile(testInfo, `${name}-frame-${result.firstFailure.sequence}`, {
         body: Buffer.from(result.firstFailure[name].split(",")[1], "base64"),
         contentType: "image/png",
       });
     }
   }
-  await testInfo.attach("paired-metrics", {
+  await attachFile(testInfo, "paired-metrics", {
     body: JSON.stringify({ options, ...result }),
     contentType: "application/json",
   });

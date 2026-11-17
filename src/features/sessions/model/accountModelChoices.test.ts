@@ -44,9 +44,10 @@ it("uses only Host IDs and labels when an explicit Host account catalog is suppl
   expect(providerAccounts).not.toHaveBeenCalled();
 });
 
-it("treats an explicitly empty Host catalog as empty and preserves Native account behavior when omitted", () => {
+it("keeps a model whose Host accounts are unknown, drops one whose Host has none, and preserves Native behavior when omitted", () => {
   vi.mocked(providerAccounts).mockClear();
-  expect(accountModelChoices([model], true, {})).toEqual([]);
+  expect(accountModelChoices([model], true, {})).toEqual([model]);
+  expect(accountModelChoices([model], true, { codex: [] })).toEqual([]);
   expect(providerAccounts).not.toHaveBeenCalled();
   expect(accountModelChoices([model], true)[0]).toMatchObject({ accountId: "native-secret" });
 });

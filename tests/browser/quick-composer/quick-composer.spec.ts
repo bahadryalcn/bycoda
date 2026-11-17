@@ -1,5 +1,41 @@
 import { test, expect } from "@playwright/test";
 import { dropAnnouncer, dropBadge, dropMarks, fileDrag, files } from "../support/external-drop";
+
+for (const theme of ["light", "dark"] as const) {
+  for (const width of [1280, 800]) {
+    test(`Windows quick composer start and open ${theme} ${width}`, async ({ page }, info) => {
+      await page.addInitScript(() => {
+        Object.defineProperty(navigator, "platform", { get: () => "Win32" });
+      });
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/quick-composer/quick-composer.html?theme=${theme}`);
+      const prompt = page.getByRole("textbox", { name: "Prompt", exact: true });
+      await prompt.fill("Start this Windows session and keep its model choice");
+      await expect(page.getByRole("button", { name: "Start", exact: true })).toBeEnabled();
+      await expect(page.getByText("Ctrl+↵", { exact: true })).toBeVisible();
+      await page.screenshot({
+        path: info.outputPath(`windows-quick-${theme}-${width}.png`),
+        animations: "disabled",
+      });
+      await prompt.press("Control+Enter");
+      await expect(prompt).toHaveValue("");
+      const requests = await page.evaluate(() =>
+        (window as any).quickFixtureCalls.filter(
+          (call: any) => call.command === "quick_composer_submit_intent",
+        ),
+      );
+      expect(requests).toHaveLength(1);
+      expect(requests[0].args.submission.request).toMatchObject({
+        prompt: "Start this Windows session and keep its model choice",
+        harness: "codex",
+        model: "fixture-0",
+        reveal: true,
+      });
+    });
+  }
+}
+
 for (const [theme, width] of [
   ["light", 390],
   ["dark", 1000],

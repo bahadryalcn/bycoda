@@ -70,6 +70,14 @@ so the screen moves as it does on the phone and input shows its result at once.
 iOS simulators, older Hosts and any stream failure use still captures instead,
 about one per second. Pausing keeps the picture that was on screen.
 
+On a Mac with Xcode 27.1 or later, an available iPhone Duo simulator also exposes
+**Fold device**, **Half-open device** and **Unfold device** in **Device options**.
+Enable device control first. Agents use `devices.action` with
+`action: { type: "fold", posture: "closed" | "half-open" | "open" }` under the same
+device lease. Folding clears inspection targets and refreshes the still frame;
+capture each pose to check layouts. Physical phones and ordinary simulators do not
+offer these controls. The selected Xcode must include the Duo simulator runtime.
+
 Devices opens in view-only mode. The header has an **Allow device control** switch
 and a visible state: **View only**, **Control active**, or **Control in use**.
 A competing controller disables the switch and exposes its ownership reason.
@@ -389,9 +397,16 @@ which accept only selected models. Antigravity, Cursor, Fx, Hermes, Pi, OMP and 
 ACP agents have no verified switch yet; their native subagents are not held to the
 selection.
 
-A Host advisor is read-only, works in plan mode and sees only the question and context
-the main model sends it. Claude's native advisor receives its native
-conversation context.
+In a Claude conversation, a Claude advisor (for example Fable with an Opus main agent) is
+Claude Code's own advisor tool: it answers inside the main agent's turn, sees the native
+conversation context and starts no separate session. It runs on the conversation's account
+whichever account label you picked, so the Advisor menu lists each Claude model once. Its
+advice shows in the transcript as an Advisor row with the model and its state; open the row
+to read it. Codex and the other providers have no built-in advisor, so their advisor is a
+Host advisor: read-only, in plan mode, seeing only the question and context the main model
+sends it, writing only to the main agent. Its answer arrives as an Advisor completion. When
+the Host connection is not ready for a turn, the conversation says the advisor is
+unavailable instead of failing silently.
 
 A delegated child starts only bycoda's own tools (Claude with strict MCP config, Codex with
 the owner's other MCP servers disabled for that thread; no config file is changed) and gets
@@ -438,6 +453,14 @@ Codex and Grok, or 50 seconds for other providers.
 
 Child cards and the activity dock follow each child's own execution status after
 the parent turn ends. A finished parent can still have running background children.
+
+A subagent may split its own task: it starts its own subagents with
+`agents.delegate`, using only your selected models and effort ceiling, up to four at
+once. Those grandchildren cannot start more agents, and their built-in subagents are
+off. Subagents never consult an advisor, and advisors start no agents. Grandchildren
+report to the subagent that started them. Its dock row counts them ("Subagents: 2") and
+says Needs input while one waits on you; its panel lists them at the top, answers their
+approvals and questions, and opens each one in the same panel (Back returns).
 
 Subagents can discover their parent and siblings with `agents.list` and contact
 them directly with `agents.send`. Messages keep the same child conversation and

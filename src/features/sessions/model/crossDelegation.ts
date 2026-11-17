@@ -49,11 +49,17 @@ export function subagentModeValue(mode: "auto" | "off"): string {
 export type DelegationInput = {
   current: AgentModel;
   harnesses: readonly HarnessId[];
-  source: { modelsFor(harness: HarnessId): AgentModel[]; accounts?: ModelAccountCatalog };
+  source: {
+    modelsFor(harness: HarnessId): AgentModel[];
+    accounts?: ModelAccountCatalog;
+    accountsKnown?(harness: HarnessId): boolean;
+  };
   accountChoices?: boolean;
   currentAccountId?: string;
   signedOutAccounts?: ReadonlySet<string>;
   signedOutLabel?: string;
+  /** Account part of a saved selection whose Host account list has not arrived. */
+  savedAccountLabel?: string;
   values: Record<string, string>;
   /** Label for a saved model that is no longer offered; the caller translates it. */
   unavailable(name: string): string;
@@ -116,6 +122,51 @@ export function imageModelsSetting(input: Pick<DelegationInput, "harnesses">): M
   };
 }
 
+type DelegationChoice = {
+  ref: DelegateModelRef;
+  label: string;
+  accountColor?: string;
+  /** Provider and model, without the account. */
+  name: string;
+};
+
+/**
+ * In a Claude conversation a Claude advisor is Claude Code's built-in advisor
+ * tool, which runs on the conversation's own account (`nativeAdvisor`): one row
+ * per Claude model, not one per account. It keeps the saved ref, else the
+ * conversation's account. Other providers' advisors stay per account.
+ */
+function builtInAdvisorChoices(
+  choices: readonly DelegationChoice[],
+  input: DelegationInput,
+  saved: DelegateModelRef | undefined,
+): DelegationChoice[] {
+  if (input.current.harness !== "claude") return [...choices];
+  const rank = (choice: DelegationChoice) =>
+    saved?.harness === "claude" && saved.model === choice.ref.model
+      ? choiceKey(saved) === choiceKey(choice.ref)
+        ? 0
+        : 1
+      : choice.ref.providerAccountId === input.currentAccountId
+        ? 2
+        : 3;
+  const best = new Map<string, DelegationChoice>();
+  for (const choice of choices) {
+    if (choice.ref.harness !== "claude") continue;
+    const kept = best.get(choice.ref.model);
+    if (!kept || rank(choice) < rank(kept)) best.set(choice.ref.model, choice);
+  }
+  return choices.flatMap((choice) => {
+    if (choice.ref.harness !== "claude") return [choice];
+    const kept = best.get(choice.ref.model);
+    if (kept !== choice) return [];
+    // A saved ref on another account still selects this row.
+    const ref =
+      saved?.harness === "claude" && saved.model === choice.ref.model ? saved : choice.ref;
+    return [{ ...choice, ref, label: choice.name, accountColor: undefined }];
+  });
+}
+
 /**
  * The two any-provider rows, appended to every model's menu. Their ids are the
  * reserved keys, so the picker writes them like any other setting.
@@ -134,6 +185,7 @@ export function crossDelegationSettings(input: DelegationInput): ModelSetting[] 
       } satisfies DelegateModelRef,
       label: `${HARNESS_TITLE[harness]} · ${modelChoiceBaseName(model)}${model.accountLabel ? ` · ${model.accountLabel}` : ""}${model.accountId && input.signedOutAccounts?.has(`${harness}:${model.accountId}`) ? ` · ${input.signedOutLabel ?? "Not signed in"}` : ""}`,
       accountColor: model.accountColor,
+      name: `${HARNESS_TITLE[harness]} · ${modelChoiceBaseName(model)}`,
     })),
   );
   const known = new Set(choices.map((choice) => choiceKey(choice.ref)));
@@ -172,6 +224,12 @@ export function crossDelegationSettings(input: DelegationInput): ModelSetting[] 
       ref.harness === "claude" && ref.model !== "default"
         ? CLAUDE_SUBAGENT_SETTINGS[0].options.find((item) => item.value === ref.model)
         : undefined;
+    // An unknown list never condemns a saved ref; the owning Host validates on send.
+    if (input.source.accountsKnown?.(ref.harness) === false)
+      return {
+        value: refValue(ref),
+        label: `${HARNESS_TITLE[ref.harness]} · ${option?.label ?? modelDisplayName(ref.model, ref.harness)} · ${input.savedAccountLabel ?? "Saved account"}`,
+      };
     const account = ref.providerAccountId
       ? accountModelChoices(
           [
@@ -195,7 +253,7 @@ export function crossDelegationSettings(input: DelegationInput): ModelSetting[] 
       : unavailable(ref);
   };
   if (legacySubagent) savedSubagents.push(legacySubagent);
-  const option = (choice: (typeof choices)[number], saved: DelegateModelRef[]) => ({
+  const option = (choice: DelegationChoice, saved: DelegateModelRef[]) => ({
     // Keep the saved wire value for native selects; normalization is presentation only.
     value: refValue(saved.find((ref) => choiceKey(ref) === choiceKey(choice.ref)) ?? choice.ref),
     label: choice.label,
@@ -213,6 +271,8 @@ export function crossDelegationSettings(input: DelegationInput): ModelSetting[] 
       ...savedSubagents.filter((ref) => !known.has(choiceKey(ref))).map((ref) => legacyOption(ref)),
     ],
   };
+  const chosenAdvisor = savedAdvisor ?? legacyAdvisor;
+  const advisorChoices = builtInAdvisorChoices(choices, input, chosenAdvisor);
   const advisor: ModelSetting = {
     id: CROSS_ADVISOR_KEY,
     label: "Advisor",
@@ -220,11 +280,11 @@ export function crossDelegationSettings(input: DelegationInput): ModelSetting[] 
     value: encodeAdvisor(legacyAdvisor) ?? "",
     options: [
       OFF,
-      ...choices.map((choice) =>
-        option(choice, (savedAdvisor ?? legacyAdvisor) ? [(savedAdvisor ?? legacyAdvisor)!] : []),
-      ),
-      ...((savedAdvisor ?? legacyAdvisor) && !known.has(choiceKey((savedAdvisor ?? legacyAdvisor)!))
-        ? [legacyOption((savedAdvisor ?? legacyAdvisor)!)]
+      ...advisorChoices.map((choice) => option(choice, chosenAdvisor ? [chosenAdvisor] : [])),
+      ...(chosenAdvisor &&
+      !known.has(choiceKey(chosenAdvisor)) &&
+      !advisorChoices.some((choice) => choice.ref === chosenAdvisor)
+        ? [legacyOption(chosenAdvisor)]
         : []),
     ],
   };

@@ -39,6 +39,7 @@ import { PI_FLAVOR, OMP_FLAVOR } from "../../src/integrations/harness/providers/
 import { respondQuestion as respondPiQuestion } from "../../src/integrations/harness/providers/pi/piFamily";
 import { readSkillPolicy } from "../skills/skill-policy";
 import { crewDeniedSkills, crewNativeInput } from "../crews/crew-native-tools";
+import { withSubagentSelection } from "./subagent-selection";
 import { withSkillPolicy } from "../../src/integrations/harness/core/skillPolicy";
 import {
   getReportedCommands,
@@ -337,7 +338,10 @@ export function withCrewNativeTools(id: string, provider: HostProvider): HostPro
 export const hostProviders = Object.fromEntries(
   Object.entries(providers).map(([id, provider]) => [
     id,
-    withMachineSkillPolicy(id as RemoteProvider, withCrewNativeTools(id, provider)),
+    withMachineSkillPolicy(
+      id as RemoteProvider,
+      withCrewNativeTools(id, withSubagentSelection(id, provider)),
+    ),
   ]),
 ) as Record<RemoteProvider, HostProvider>;
 

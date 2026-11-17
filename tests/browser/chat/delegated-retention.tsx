@@ -62,6 +62,46 @@ export function seedDelegatedRetention() {
   ]);
 }
 
+/** One subagent that started two of its own: one waits on the owner, one finished. */
+export function seedNestedDelegation() {
+  const startedAt = Date.now() - 5_000;
+  const link = (owner: string, runId: string) =>
+    JSON.stringify({
+      parentSessionId: owner,
+      runId,
+      kind: "subagent",
+      model: "claude:haiku",
+      startedAt: startedAt + 1,
+    });
+  const run = (id: string, title: string, owner: string, patch: Partial<Session>): Session => ({
+    ...newSession("claude", "/fixture"),
+    id,
+    title,
+    model: "claude:haiku",
+    modelSettings: { delegationParent: link(owner, `run-${id}`) },
+    blocks: [
+      { id: `${id}-brief`, role: "user", text: `Task:\n${title}`, startedAt: startedAt + 1 },
+      { id: `${id}-reply`, role: "assistant", text: `${title}: working through it.` },
+    ],
+    ...patch,
+  });
+  setSessions([
+    {
+      ...newSession("codex", "/fixture"),
+      id: parentId,
+      busy: false,
+      blocks: [{ id: "ask", role: "user", text: "Audit the release", startedAt }],
+    },
+    // Yielded while its own subagents run; only its parent keeps it attached.
+    run("nested-child", "Release audit", parentId, {}),
+    run("nested-waiting", "Migration dry run", "nested-child", {
+      busy: true,
+      pendingOwnerApproval: true,
+    }),
+    run("nested-done", "Changelog check", "nested-child", {}),
+  ]);
+}
+
 /** Actual detach hook, store selectors, cards, history menu and sheet; no Host RPC. */
 export function DelegatedRetentionFixture() {
   const sessions = useSessionsSelector((entries) => entries);

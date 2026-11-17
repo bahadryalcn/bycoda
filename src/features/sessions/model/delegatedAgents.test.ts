@@ -13,6 +13,9 @@ import {
   delegatedDockAgents,
   crewMemberOf,
   delegationParentOf,
+  isDelegatedChildOf,
+  isDelegatedDescendantOf,
+  nestedDelegatedChildren,
 } from "./delegatedAgents";
 import { deriveActivityDock } from "./activityDock";
 import type { Block, Session } from "./session";
@@ -457,5 +460,43 @@ describe("rounds of a child conversation", () => {
     const hosted = child("rh", { blocks: [brief] }, { round: 3 });
     expect(delegatedAgentBlock(hosted).agentRun?.round).toBe(3);
     expect(delegatedAgentBlock(child("r1", { blocks: [brief] })).agentRun?.round).toBeUndefined();
+  });
+});
+
+describe("a subagent's own subagents", () => {
+  const root = { ...newSession("codex", "/repo"), id: PARENT };
+  const sub = child("sub", { busy: true });
+  const grand = child("grand", { busy: true, pendingOwnerApproval: true } as Partial<Session>, {
+    parentSessionId: "sub",
+    runId: "run-g",
+  });
+  const advisor = child("adv", {}, { kind: "advisor", runId: "run-a" });
+  const underAdvisor = child("under", {}, { parentSessionId: "adv", runId: "run-u" });
+  const sessions = [root, sub, grand, advisor, underAdvisor];
+
+  it("belong to the subagent that started them, never to an advisor", () => {
+    expect(isDelegatedChildOf(grand, sub)).toBe(true);
+    expect(isDelegatedChildOf(grand, root)).toBe(false);
+    expect(isDelegatedChildOf(underAdvisor, advisor)).toBe(false);
+    expect(nestedDelegatedChildren(sessions, delegatedChildren(sessions, PARENT))).toEqual([grand]);
+    expect(isDelegatedDescendantOf(grand, root, sessions)).toBe(true);
+    expect(isDelegatedDescendantOf(underAdvisor, root, sessions)).toBe(false);
+  });
+
+  it("mark their parent's row while one waits on the user, and are counted there", () => {
+    const children = delegatedChildren(sessions, PARENT);
+    const rows = delegatedDockAgents(children, 1_000, nestedDelegatedChildren(sessions, children));
+    expect(rows.find((row) => row.sessionId === "sub")).toMatchObject({
+      needsInput: true,
+      nested: 1,
+      status: "running",
+    });
+    expect(rows.find((row) => row.sessionId === "adv")).not.toHaveProperty("nested");
+    // A parent that already yielded is still in progress while its subagent waits.
+    const idle = { ...sub, busy: false };
+    const [row] = delegatedDockAgents([idle], 1_000, [grand]);
+    expect(row).toMatchObject({ needsInput: true, status: "running" });
+    const answered = { ...grand, pendingOwnerApproval: false };
+    expect(delegatedDockAgents([idle], 1_000, [answered])[0]).not.toHaveProperty("needsInput");
   });
 });

@@ -109,7 +109,7 @@ describe("harness registry: reserved delegation keys", () => {
       ).toHaveLength(ready ? 0 : 1);
     },
   );
-  it("maps only same-account Claude choices to native settings", () => {
+  it("runs any Claude advisor as Claude Code's own advisor, and native subagents per account", () => {
     const input = {
       harness: "claude",
       providerAccountId: "work",
@@ -126,12 +126,22 @@ describe("harness registry: reserved delegation keys", () => {
         }),
       },
     };
+    // The advisor tool runs inside this turn on this conversation's account, whichever
+    // account label the picker showed; it never starts a Host advisor session.
     expect(providerTurnInput(input, nativeModelId).modelSettings).toEqual({
       subagentModel: "claude-sonnet-5",
       subagentPolicy: "force",
-      advisor: "off",
+      advisor: "claude-opus-5",
     });
     expect(input.modelSettings.advisor).toBe("old");
+    const codexAdvisor = {
+      ...input,
+      modelSettings: {
+        ...input.modelSettings,
+        crossAdvisor: '{"harness":"codex","model":"codex:gpt"}',
+      },
+    };
+    expect(providerTurnInput(codexAdvisor, nativeModelId).modelSettings.advisor).toBe("off");
   });
   it("keeps native subagents inside the owner's selection", () => {
     const modelSettings = {

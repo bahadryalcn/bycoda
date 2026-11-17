@@ -1,4 +1,5 @@
 //! One approved review, including all inline comments, is submitted in one POST.
+pub mod management;
 use crate::fs::{
     expand_home, gh_checked, git_github_pr_diff_for, split_github_repo, with_temp_markdown,
     GitHubPrDiff,

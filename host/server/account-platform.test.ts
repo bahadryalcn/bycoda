@@ -4,6 +4,13 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createAccountPlatformRuntime } from "./account-platform";
 import type { ServerBindings } from "./bindings";
+import { forgetArchivePullRequest } from "../settings-defaults/pull-request-links";
+vi.mock("../settings-defaults/auto-archive", () => ({
+  createDefaultsAutoArchive: () => ({ tick: async () => {} }),
+}));
+vi.mock("../settings-defaults/pull-request-links", () => ({
+  forgetArchivePullRequest: vi.fn(async () => {}),
+}));
 
 let directory: string;
 beforeEach(() => {
@@ -86,6 +93,7 @@ describe("account platform wiring", () => {
     runtime.stop();
     await runtime.lifecycle.settle("s1", context);
     await dependencies.sessionQueues.delete("s1");
+    expect(forgetArchivePullRequest).toHaveBeenCalledWith(dependencies.engine.store, "s1");
     expect((await runtime.lifecycle.get("s1")).state).toBe("active");
   });
 });

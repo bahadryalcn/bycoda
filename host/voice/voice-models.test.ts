@@ -81,3 +81,32 @@ it("cancels a running download and leaves other actions blocked until it stops",
     await rm(home, { recursive: true, force: true });
   }
 });
+
+it("reports model size and download progress", async () => {
+  const home = await mkdtemp(join(tmpdir(), "voice-models-"));
+  let finish!: () => void;
+  const run = vi.fn(async (_python: string, args: string[]) => {
+    const folder = args[3];
+    await mkdir(folder, { recursive: true });
+    await writeFile(join(folder, "model.bin"), "x".repeat(1000));
+    await new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    await Promise.all(
+      ["config.json", "tokenizer.json"].map((file) => writeFile(join(folder, file), "y")),
+    );
+  });
+  const inspect = vi.fn(async () => ({ ready: false, missing: [], python: "python" }));
+  const service = new VoiceModelsService(home, run, inspect);
+  try {
+    expect((await service.list())[0]).toMatchObject({ installed: false, sizeBytes: 484_000_000 });
+    service.start("download", "small", false, {});
+    expect(service.status()).toMatchObject({ bytesDone: 0, bytesTotal: 484_000_000 });
+    await vi.waitFor(() => expect(service.status().bytesDone).toBe(1000), { timeout: 3000 });
+    finish();
+    await vi.waitFor(() => expect(service.status().state).toBe("ready"));
+    expect((await service.list())[0]).toMatchObject({ installed: true, sizeBytes: 1002 });
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});

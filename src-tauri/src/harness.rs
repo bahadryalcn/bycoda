@@ -3247,6 +3247,21 @@ pub(crate) fn provider_account_dir(
     Ok(Some(dir))
 }
 
+/// Read-only variant of `provider_account_dir`: never creates the folder.
+/// `Ok(None)` is the default profile, `Ok(Some(None))` a profile whose folder
+/// is gone (callers must report "no data", never fall back to the default).
+pub(crate) fn provider_account_dir_existing(
+    app: &AppHandle,
+    provider: &str,
+    account_id: Option<&str>,
+) -> Result<Option<Option<PathBuf>>, String> {
+    let Some(account_id) = account_id.filter(|id| *id != DEFAULT_PROVIDER_ACCOUNT_ID) else {
+        return Ok(None);
+    };
+    let dir = provider_account_path(app, provider, account_id)?;
+    Ok(Some(dir.is_dir().then_some(dir)))
+}
+
 pub(crate) fn provider_account_path(
     app: &AppHandle,
     provider: &str,

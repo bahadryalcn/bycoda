@@ -17,7 +17,14 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { ArrowDown, Check, Copy, CornerDownRight, Square } from "../../../shared/ui/icons";
+import {
+  ArrowDown,
+  ArrowLeft,
+  Check,
+  Copy,
+  CornerDownRight,
+  Square,
+} from "../../../shared/ui/icons";
 import { copyText } from "../../../platform/tauri/clipboard";
 import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
 import { InlineMessage } from "../../../shared/ui/InlineError";
@@ -137,6 +144,8 @@ export function SubagentSheet({
   relay,
   requests,
   agentRole,
+  nested,
+  back,
 }: {
   block: Block;
   busy: boolean;
@@ -154,6 +163,10 @@ export function SubagentSheet({
   relay?: SubagentRelay;
   requests?: ReactNode;
   agentRole?: DelegationKind;
+  /** The subagents this run started itself, above its trail. */
+  nested?: ReactNode;
+  /** This run was started by another subagent: return to that one's sheet. */
+  back?: { name: string; open: () => void };
 }) {
   const t = useT();
   const command = !isSubagentBlock(block);
@@ -193,6 +206,20 @@ export function SubagentSheet({
       onClose={onClose}
       headerActions={
         <>
+          {back ? (
+            <Button
+              iconOnly
+              label={t("Back")}
+              variant="ghost"
+              type="button"
+              tooltip={back.name}
+              className="shrink-0"
+              data-subagent-back
+              onClick={back.open}
+            >
+              <ArrowLeft className="icon-sm" aria-hidden />
+            </Button>
+          ) : null}
           <CopyTranscriptButton block={block} busy={busy} status={runLabelWith(block, busy, t)} />
           {onStop && running ? (
             <Button
@@ -249,6 +276,7 @@ export function SubagentSheet({
           </InlineMessage>
         </div>
       ) : null}
+      {!command ? nested : null}
       {command ? (
         <CommandDetails
           key={block.id}

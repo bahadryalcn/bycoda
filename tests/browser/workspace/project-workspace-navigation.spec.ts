@@ -137,7 +137,7 @@ test("working sessions and usage meters stay contained in narrow and short works
     }
   }
   const firstCard = rail.locator("[data-live-agent-card]").first();
-  const more = rail.getByRole("button", { name: "6 more", exact: true });
+  const more = rail.getByRole("button", { name: "5 more", exact: true });
   await more.click();
   await expect(rail.locator("[data-live-agent-card]")).toHaveCount(8);
   // The expanded list must scroll, never squeeze record rows until their text overlaps.
@@ -175,22 +175,22 @@ test("working sessions and usage meters stay contained in narrow and short works
   const less = rail.getByRole("button", { name: "Show less", exact: true });
   await expect(less).toBeInViewport();
   await less.click();
-  await expect(rail.locator("[data-live-agent-card]")).toHaveCount(2);
+  // The attention row leads the list and sits outside the two-row cap.
+  await expect(rail.locator("[data-live-agent-card]")).toHaveCount(3);
   await firstCard.focus();
   await firstCard.press("Enter");
-  await expect(page.getByLabel("Selected live session")).toHaveText("live-0");
-  // The headline count and attention badge remain separate from the disclosure.
-  const working = rail.getByRole("region", { name: "Working agents", exact: true });
-  await expect(working.getByLabel("1 needs attention", { exact: true })).toHaveText("1");
-  const workingToggle = working.getByRole("button", {
-    name: "Working 5 1 needs attention",
-    exact: true,
-  });
-  await workingToggle.click();
-  await expect(workingToggle).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByLabel("Selected live session")).toHaveText("live-1");
+  // The total stays in the header; the attention badge joins it only while the section is collapsed.
+  const activity = rail.getByRole("region", { name: "Activity", exact: true });
+  const activityToggle = activity.getByRole("button", { name: /^Activity/ });
+  await expect(activityToggle).toHaveAttribute("aria-expanded", "true");
+  await expect(activity.getByLabel("1 needs attention", { exact: true })).toHaveCount(0);
+  await activityToggle.click();
+  await expect(activityToggle).toHaveAttribute("aria-expanded", "false");
+  await expect(activity.getByLabel("1 needs attention", { exact: true })).toHaveText("1");
   await expect(firstCard).toBeHidden();
-  await workingToggle.click();
-  await expect(workingToggle).toHaveAttribute("aria-expanded", "true");
+  await activityToggle.click();
+  await expect(activityToggle).toHaveAttribute("aria-expanded", "true");
   await expect(firstCard).toBeVisible();
   const details = page.getByRole("button", {
     name: "Codex usage details",
@@ -222,9 +222,11 @@ test("Inbox keeps long issue titles readable and list actions available", async 
       await page.setViewportSize({ width, height: 800 });
       expect(await card.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
       const title = card.getByText(/^Preserve readable shared interface/);
-      expect(await title.evaluate((node) => node.getBoundingClientRect().height)).toBeGreaterThan(
-        25,
-      );
+      // A row is one compact line: the long title is cut with an ellipsis inside the card
+      // (the hover card carries the full title) and never wraps or widens it.
+      expect(await title.evaluate((node) => node.getBoundingClientRect().height)).toBeLessThan(25);
+      if (width === 390)
+        expect(await title.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
@@ -329,6 +331,8 @@ test("Inbox review separates unread, draft, review and pending checks and restor
   await page.screenshot({
     path: testInfo.outputPath("inbox-review-checks.png"),
   });
+  // Rows are compact, so a short window keeps the filtered list taller than its viewport.
+  await page.setViewportSize({ width: 1440, height: 400 });
   const search = page.getByRole("textbox", {
     name: "Filter loaded items",
     exact: true,
@@ -787,21 +791,34 @@ async function choose(panel: Locator, label: string, option: string | RegExp) {
     .click();
 }
 
+// With one checkout selected, the checkout choice is merged into the branch control, which
+// opens a picker with a Worktrees tab; "All checkouts" is its first row.
+async function chooseMergedCheckout(panel: Locator, option: string | RegExp) {
+  const page = panel.page();
+  await panel.getByRole("button", { name: /^Working copy [^:]/ }).click();
+  const picker = page.getByRole("dialog", { name: "Working copy", exact: true });
+  await picker.getByRole("tab", { name: /^Worktrees/ }).click();
+  await picker
+    .getByRole(
+      "option",
+      typeof option === "string" ? { name: option, exact: true } : { name: option },
+    )
+    .click();
+}
+
 test("main and worktrees remain separate and usable in narrow and wide Changes panels", async ({
   page,
 }, testInfo) => {
   await page.goto("/tests/browser/workspace/project-workspace-navigation.html?worktrees=1");
   const panel = page.locator('[data-workspace-source-control="G:/wallet/api"]');
   await expect(panel).toBeVisible();
-  // The picker opens on the session's own checkout, named by its folder (the branch control
-  // below already names the branch); the overview lists every checkout.
+  // The control opens on the session's own checkout, named by its folder and branch; the
+  // overview lists every checkout.
   await expect(
-    panel.getByRole("button", {
-      name: /^Working copy: api · This session/,
-    }),
+    panel.getByRole("button", { name: "Working copy api · main", exact: true }),
   ).toBeVisible();
   await expect(panel.locator("[data-checkout-overview]")).toHaveCount(0);
-  await choose(panel, "Working copy", "All checkouts");
+  await chooseMergedCheckout(panel, "All checkouts");
   const checkouts = panel.locator("[data-checkout-overview] [data-git-repository]");
   await expect(checkouts).toHaveCount(2);
   for (const width of [390, 768, 1024, 1440]) {
@@ -828,8 +845,8 @@ test("main and worktrees remain separate and usable in narrow and wide Changes p
   ).toBeVisible();
   await choose(panel, "Working copy", /^task\b/);
   await expect(panel.locator("[data-checkout-overview]")).toHaveCount(0);
-  await expect(panel.getByRole("button", { name: /^Working copy: task\b/ })).toBeVisible();
-  await choose(panel, "Working copy", "All checkouts");
+  await expect(panel.getByRole("button", { name: /^Working copy task\b/ })).toBeVisible();
+  await chooseMergedCheckout(panel, "All checkouts");
   await expect(checkouts).toHaveCount(2);
   await expect(taskToggle).toHaveAttribute("aria-expanded", "true");
   await expect(task.getByText("same.ts", { exact: true })).toBeVisible();

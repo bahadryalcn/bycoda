@@ -1,4 +1,3 @@
-import { t } from "../../../shared/i18n";
 import type { ModelSource } from "../../sessions/public/modelSource";
 import type { AgentModel } from "../../sessions/public/models";
 import type { HarnessId, Session } from "../../sessions";
@@ -29,27 +28,9 @@ export function buildRemoteModelSource({
   const savedSettings = hostSession?.modelSettings ?? {};
   return {
     id: `remote:${environmentId}`,
-    accounts: {
-      codex: catalog?.accounts?.codex ?? [
-        {
-          id:
-            hostSession?.harness === "codex"
-              ? (hostSession.providerAccountId ?? "default")
-              : "default",
-          label: t("Current Host account"),
-        },
-      ],
-      claude: catalog?.accounts?.claude ?? [
-        {
-          id:
-            hostSession?.harness === "claude"
-              ? (hostSession.providerAccountId ?? "default")
-              : "default",
-          label: t("Current Host account"),
-        },
-      ],
-      ...(catalog?.accounts?.grok ? { grok: catalog.accounts.grok } : {}),
-    },
+    // Only the Host's own lists; a provider it has not reported yet stays absent (unknown).
+    accounts: catalog?.accounts ?? {},
+    accountsKnown: (harness) => !!catalog?.accounts?.[harness as "claude" | "codex" | "grok"],
     modelsFor: models,
     resolve: (harness, id = "") => {
       const provider = harness as RemoteProvider;

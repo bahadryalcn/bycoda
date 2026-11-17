@@ -67,6 +67,19 @@ export async function handleProjectsRpc(
         { legacy: true },
       );
       break;
+    case "projects.clone":
+      request.result = await dependencies.projectsService.clone(
+        request.params,
+        request.domainContext,
+        { legacy: true },
+      );
+      break;
+    case "projects.clone.progress":
+      request.result = await dependencies.projectsService.cloneProgress(
+        request.params,
+        request.domainContext,
+      );
+      break;
     case "projects.organization.read":
     case "projects.organization.patch":
     case "projects.organization.status": {

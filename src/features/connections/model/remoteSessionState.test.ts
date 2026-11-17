@@ -35,6 +35,30 @@ it("keeps every non-block field's object across a text-only remote delta", () =>
   expect(isTextOnlyChange([second], [renamed])).toBe(false);
 });
 
+it("drops a background wait the host no longer sends", () => {
+  const shell = newSession("claude", "remote://env/repo");
+  const project = { key: shell.cwd, environmentId: "env", projectId: "p", cwd: "/repo" };
+  const host = (background: Partial<HostSession["session"]>) =>
+    ({
+      projectId: "p",
+      revision: 1,
+      status: "running",
+      updatedAt: 1,
+      session: { ...shell, id: "host-session", cwd: "/repo", blocks: [], ...background },
+    }) as HostSession;
+  const waiting = remoteSessionState(
+    shell,
+    host({ backgroundTasks: ["npm run dev"], backgroundAgents: 0, backgroundSince: 5 }),
+    project,
+  );
+  expect(waiting).toMatchObject({ backgroundTasks: ["npm run dev"], backgroundAgents: 0 });
+  // A finished wait is omitted from the host's JSON, not sent as undefined.
+  const resumed = remoteSessionState(waiting, host({}), project);
+  expect(resumed.backgroundTasks).toBeUndefined();
+  expect(resumed.backgroundAgents).toBeUndefined();
+  expect(resumed.backgroundSince).toBeUndefined();
+});
+
 it("preserves managed execution identity separately from the remote project checkout", () => {
   const shell = newSession("codex", "remote://env/repo");
   const project = { key: shell.cwd, environmentId: "env", projectId: "p", cwd: "/repo" };

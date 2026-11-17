@@ -14,12 +14,19 @@ import {
 } from "../../../src/features/settings/model/appearance";
 import { setLanguagePreference, t } from "../../../src/shared/i18n";
 import { registerBuiltinHarnesses } from "../../../src/integrations/harness/core/register";
+import { agentDefaultsFixtureCommand } from "../settings/agent-defaults-fixture";
 import "../../../src/styles/index.css";
 
 // Isolated browser storage and memory-only IPC. Never connects to the owner's host.
+// The Host-owned agent defaults sync only runs inside the desktop shell; the provider pickers
+// keep their browser file chooser, so those scenarios stay outside it.
+if (!new URLSearchParams(location.search).has("providers"))
+  Object.assign(globalThis, { isTauri: true });
 mockWindows("main");
 mockIPC(
   (command, args) => {
+    const agentDefaults = agentDefaultsFixtureCommand(command, args);
+    if (agentDefaults !== undefined) return agentDefaults;
     if (command === "provider_terminal_profiles") {
       return [
         {

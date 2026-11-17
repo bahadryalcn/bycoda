@@ -205,9 +205,13 @@ export function useApprovalActions(deps: ApprovalActionDeps) {
     (sessionId: string) => {
       const child = sessionsRef.current.find((session) => session.id === sessionId);
       if (child && delegationParentOf(child)) {
-        const parents = sessionsRef.current.filter(
-          (parent) => !parent.inboxAsk && isDelegatedChildOf(child, parent),
-        );
+        const parentsOf = (session: Session) =>
+          sessionsRef.current.filter(
+            (parent) => !parent.inboxAsk && isDelegatedChildOf(session, parent),
+          );
+        let parents = parentsOf(child);
+        // A subagent's own subagent opens in the conversation that owns its parent.
+        if (parents.length === 1 && delegationParentOf(parents[0])) parents = parentsOf(parents[0]);
         if (child.inboxAsk || parents.length !== 1 || !focusOpenSession(parents[0].id)) return;
         requestViewDelegated(parents[0].id, child.id);
         return;

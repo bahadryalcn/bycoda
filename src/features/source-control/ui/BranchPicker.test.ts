@@ -298,3 +298,40 @@ it("checks out the highlighted matching branch when Enter is pressed", async () 
   expect(gitCheckout).toHaveBeenCalledWith("/repo-enter-existing", "feature/picker", null);
   expect(gitCreateBranch).not.toHaveBeenCalledWith("/repo-enter-existing", "picker");
 });
+
+it("combines the working copy and branch in one trigger with Worktrees and Branches tabs", async () => {
+  const onChange = vi.fn();
+  const checkouts = {
+    label: "task",
+    value: "/t/task",
+    options: [
+      { value: "/t/task", title: "task" },
+      { value: "/t/other", title: "other" },
+    ],
+    onChange,
+  };
+  await act(async () =>
+    root.render(createElement(BranchPicker, { cwd: "/t/task", branch: "main", checkouts })),
+  );
+  const trigger = container.querySelector("button")!;
+  expect(trigger.textContent).toContain("task · main");
+  expect(trigger.getAttribute("aria-label")).toBe("Working copy task · main");
+  await act(async () => trigger.click());
+  const picker = document.querySelector<HTMLElement>("[data-branch-picker]")!;
+  const tabs = [...picker.querySelectorAll<HTMLElement>('[role="tab"]')].map(
+    (tab) => tab.textContent,
+  );
+  expect(tabs).toEqual(["Worktrees2", "Branches1"]);
+  // A known branch opens on Branches; switch to Worktrees and pick another checkout.
+  await act(async () =>
+    [...picker.querySelectorAll<HTMLElement>('[role="tab"]')]
+      .find((tab) => tab.textContent?.startsWith("Worktrees"))!
+      .click(),
+  );
+  const other = [...picker.querySelectorAll<HTMLElement>('[role="option"]')].find((option) =>
+    option.textContent?.includes("other"),
+  )!;
+  await act(async () => other.click());
+  expect(onChange).toHaveBeenCalledWith("/t/other");
+  expect(document.querySelector("[data-branch-picker]")).toBeNull();
+});

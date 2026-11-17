@@ -3,6 +3,8 @@ import { Text } from "../../../shared/ui/Text";
 import { formatNumber } from "../../../shared/i18n";
 import { t } from "../../../shared/i18n/technical";
 import { Button } from "../../../shared/ui/Button";
+import type { DeviceAction } from "../types";
+import { useState } from "react";
 import {
   Accessibility,
   Crosshair,
@@ -29,6 +31,7 @@ export function DeviceOptionsMenu({
   zoom,
   onZoom,
   onSetup,
+  fold,
 }: {
   inspect: Action;
   coordinates: Action;
@@ -37,10 +40,53 @@ export function DeviceOptionsMenu({
   zoom: number;
   onZoom: (zoom: number) => void;
   onSetup: () => void;
+  fold?: {
+    loading: boolean;
+    disabled: boolean;
+    disabledReason?: string;
+    onFold: (posture: Extract<DeviceAction, { type: "fold" }>["posture"]) => void;
+  };
 }) {
+  const [foldPosture, setFoldPosture] =
+    useState<Extract<DeviceAction, { type: "fold" }>["posture"]>();
+  const foldDevice = (posture: Extract<DeviceAction, { type: "fold" }>["posture"]) => {
+    setFoldPosture(posture);
+    fold?.onFold(posture);
+  };
   return (
     <>
       <div className="device-panel-menu-actions">
+        {fold && (
+          <>
+            <Button
+              variant="item"
+              loading={fold.loading && foldPosture === "closed"}
+              disabled={fold.disabled}
+              disabledReason={fold.disabledReason}
+              onClick={() => foldDevice("closed")}
+            >
+              {t("Fold device")}
+            </Button>
+            <Button
+              variant="item"
+              loading={fold.loading && foldPosture === "half-open"}
+              disabled={fold.disabled || fold.loading}
+              disabledReason={fold.disabledReason}
+              onClick={() => foldDevice("half-open")}
+            >
+              {t("Half-open device")}
+            </Button>
+            <Button
+              variant="item"
+              loading={fold.loading && foldPosture === "open"}
+              disabled={fold.disabled || fold.loading}
+              disabledReason={fold.disabledReason}
+              onClick={() => foldDevice("open")}
+            >
+              {t("Unfold device")}
+            </Button>
+          </>
+        )}
         <Button
           variant="item"
           disabled={inspect.disabled}

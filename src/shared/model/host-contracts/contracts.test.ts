@@ -13,6 +13,7 @@ import {
   SafeCounterSchema,
   StreamCursorSchema,
   SubscriptionEventSchema,
+  SubscriptionTargetSchema,
   WS_LIMITS,
   WS_SUBPROTOCOL,
   exportHostContractManifest,
@@ -281,5 +282,20 @@ describe("native contract export", () => {
     expect(
       exportWireSchema(z.strictObject({ text: z.string(), count: SafeCounterSchema })),
     ).toMatchObject({ type: "object", additionalProperties: false });
+  });
+});
+
+describe("models subscription target", () => {
+  it("accepts an optional project and rejects extra keys", () => {
+    expect(SubscriptionTargetSchema.safeParse({ kind: "models" }).success).toBe(true);
+    expect(SubscriptionTargetSchema.safeParse({ kind: "models", projectId: "p1" }).success).toBe(
+      true,
+    );
+    expect(SubscriptionTargetSchema.safeParse({ kind: "models", projectId: "" }).success).toBe(
+      false,
+    );
+    expect(SubscriptionTargetSchema.safeParse({ kind: "models", refresh: true }).success).toBe(
+      false,
+    );
   });
 });

@@ -1,7 +1,11 @@
 import { useEffect, useState } from "react";
 import { flushHostSessionBindings } from "../../../src/features/connections/public/sessionExecutionBinding";
 import { createRoot } from "react-dom/client";
-import { DelegatedRetentionFixture, seedDelegatedRetention } from "./delegated-retention";
+import {
+  DelegatedRetentionFixture,
+  seedDelegatedRetention,
+  seedNestedDelegation,
+} from "./delegated-retention";
 import { SubagentAuditFixture, seedSubagentAudit } from "./subagent-audit";
 import { SubagentSheet, useSubagentSheet } from "../../../src/features/sessions/ui/SubagentSheet";
 import { useSubagentRelay } from "../../../src/features/sessions/ui/useSubagentRelay";
@@ -244,9 +248,11 @@ function Fixture() {
 // The app resolves durable session owners at boot before any pane renders;
 // the fixture mounts it directly, so it hydrates the same store first.
 await flushHostSessionBindings();
-const retention = new URLSearchParams(location.search).has("retention");
+const nested = new URLSearchParams(location.search).has("nested");
+const retention = nested || new URLSearchParams(location.search).has("retention");
 const audit = new URLSearchParams(location.search).has("audit");
-if (retention) seedDelegatedRetention();
+if (nested) seedNestedDelegation();
+else if (retention) seedDelegatedRetention();
 if (audit) seedSubagentAudit();
 createRoot(document.getElementById("root")!).render(
   audit ? <SubagentAuditFixture /> : retention ? <DelegatedRetentionFixture /> : <Fixture />,

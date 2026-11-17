@@ -1,13 +1,19 @@
 import { execFile } from "node:child_process";
-import { access, lstat, mkdir, rm } from "node:fs/promises";
+import { access, lstat, mkdir, readdir, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { inspectVoiceRuntime } from "./voice-runtime";
 
 const MODELS = {
-  small: { label: "Whisper small", folder: "whisper-small", repo: "Systran/faster-whisper-small" },
+  small: {
+    label: "Whisper small",
+    folder: "whisper-small",
+    repo: "Systran/faster-whisper-small",
+    expectedBytes: 484_000_000,
+  },
   turbo: {
     label: "Whisper large v3 turbo",
+    expectedBytes: 1_620_000_000,
     folder: "whisper-large-v3-turbo",
     repo: "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
   },
@@ -18,6 +24,9 @@ type Job = {
   id?: Id;
   action?: "download" | "test" | "delete";
   detail?: string;
+  /** Download progress: bytes on disk so far and the expected total (optional for old clients). */
+  bytesDone?: number;
+  bytesTotal?: number;
 };
 type Run = (python: string, args: string[], signal: AbortSignal, timeout: number) => Promise<void>;
 
@@ -28,11 +37,28 @@ const run: Run = (python, args, signal, timeout) =>
     );
   });
 
+/** Bytes of every regular file below `path`; a missing folder counts as zero. */
+async function folderBytes(path: string): Promise<number> {
+  const entries = await readdir(path, { recursive: true, withFileTypes: true }).catch(() => []);
+  const sizes = await Promise.all(
+    entries
+      .filter((entry) => entry.isFile())
+      .map((entry) =>
+        lstat(join(entry.parentPath, entry.name)).then(
+          (stat) => stat.size,
+          () => 0,
+        ),
+      ),
+  );
+  return sizes.reduce((total, size) => total + size, 0);
+}
+
 /** Only fixed installer-owned folders can be downloaded, tested or removed. */
 export class VoiceModelsService {
   private job: Job = { state: "idle" };
   private controller?: AbortController;
   private closed = false;
+  private progress?: ReturnType<typeof setInterval>;
   constructor(
     private readonly home = homedir(),
     private readonly execute: Run = run,
@@ -82,7 +108,10 @@ export class VoiceModelsService {
     return Promise.all(
       (Object.keys(MODELS) as Id[]).map(async (id) => {
         const path = join(this.root(), MODELS[id].folder);
-        return { id, label: MODELS[id].label, path, installed: await this.installed(path) };
+        const installed = await this.installed(path);
+        // Installed models report their real size; missing ones the expected download size.
+        const sizeBytes = installed ? await folderBytes(path) : MODELS[id].expectedBytes;
+        return { id, label: MODELS[id].label, path, installed, sizeBytes };
       }),
     );
   }
@@ -95,6 +124,7 @@ export class VoiceModelsService {
   }
   close() {
     this.closed = true;
+    this.stopProgress();
     this.controller?.abort();
   }
   start(action: unknown, value: unknown, active: boolean, config: unknown) {
@@ -108,6 +138,7 @@ export class VoiceModelsService {
     const controller = new AbortController();
     this.controller = controller;
     this.job = { state: "working", id, action };
+    if (action === "download") this.trackProgress(id);
     void this.perform(action, id, config, controller.signal)
       .then(
         () => {
@@ -127,9 +158,36 @@ export class VoiceModelsService {
         },
       )
       .finally(() => {
+        this.stopProgress();
         this.controller = undefined;
       });
     return this.status();
+  }
+  /** Poll the model folder so status() can report bytes downloaded while the job runs. */
+  private trackProgress(id: Id) {
+    const path = join(this.root(), MODELS[id].folder);
+    const bytesTotal = MODELS[id].expectedBytes;
+    this.job = { ...this.job, bytesDone: 0, bytesTotal };
+    let reading = false;
+    this.progress = setInterval(() => {
+      if (reading) return;
+      reading = true;
+      void folderBytes(path)
+        .then((bytesDone) => {
+          if (this.job.state === "working" && this.job.id === id)
+            this.job = { ...this.job, bytesDone: Math.min(bytesDone, bytesTotal) };
+        })
+        // A folder that is mid-write or missing only skips one progress sample.
+        .catch(() => undefined)
+        .finally(() => {
+          reading = false;
+        });
+    }, 1000);
+    this.progress.unref();
+  }
+  private stopProgress() {
+    if (this.progress) clearInterval(this.progress);
+    this.progress = undefined;
   }
   private async perform(
     action: "download" | "test" | "delete",

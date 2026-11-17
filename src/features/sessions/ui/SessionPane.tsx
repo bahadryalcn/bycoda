@@ -116,7 +116,7 @@ import { CONTINUE_PROMPT } from "../model/inFlight";
 import { useSubagentSheet } from "./SubagentSheet";
 import { SessionSubagentSheet, useDockActions } from "./SessionSubagentSheet";
 import { useSubagentRelay } from "./useSubagentRelay";
-import { isBackgroundOnly } from "../model/activityDock";
+import { dockTurnOpen, isBackgroundOnly } from "../model/activityDock";
 import { requestOpenSubagent } from "./subagentFocus";
 import { AgentTranscript } from "./AgentTranscript";
 import type { CodeExecutionScope } from "./CodeExecutionContext";
@@ -1159,6 +1159,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
     onSubmit(session.id, CONTINUE_PROMPT, []),
   );
   const sessionBusy = !!session.busy;
+  const turnOpen = dockTurnOpen(session);
   const hasPendingQuestion = !!session.pendingQuestion;
   const dockAtEnd = !showJumpToBottom;
   const rewindableMessageIds = useStableValue(
@@ -1266,7 +1267,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
           sessionId={session.id}
           harness={session.harness}
           blocks={stableBlocks}
-          busy={sessionBusy}
+          busy={turnOpen}
           pendingQuestion={hasPendingQuestion}
           pendingOwnerApproval={session.pendingOwnerApproval}
           questionPresented={hasPendingQuestion}
@@ -1469,11 +1470,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       }
       onOpenFile={onOpenFile}
       busy={!!session.busy || !!session.continuingElsewhere}
-      backgroundOnly={isBackgroundOnly(
-        !!session.busy,
-        session.backgroundTasks,
-        session.backgroundAgents,
-      )}
+      backgroundOnly={isBackgroundOnly(turnOpen, session.backgroundTasks, session.backgroundAgents)}
       backgroundTaskCount={session.backgroundTasks?.length ?? 0}
       worktreePreparing={session.worktreePreparing}
       editLastTurnSupported={editLastTurnSupported}
@@ -1858,6 +1855,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                       }
                       approvalContext={approvalContext}
                       sessionId={session.id}
+                      delegatedRunOwner={session.id}
                       blocks={
                         projectedDraft
                           ? liveBlocks.filter((block) => block.id !== draftBlock?.id)

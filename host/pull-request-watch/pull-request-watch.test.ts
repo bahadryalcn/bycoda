@@ -45,9 +45,11 @@ describe("PullRequestWatches", () => {
   let engine: { command: ReturnType<typeof vi.fn>; withMessageAuthor: ReturnType<typeof vi.fn> };
   let store: PullRequestWatchStore;
   let branchPr: string | null;
+  const archiveLink = { record: vi.fn(async () => {}), forget: vi.fn(async () => {}) };
 
   const service = (path = file) =>
     new PullRequestWatches({
+      archiveLink,
       file: path,
       store,
       engine: engine as unknown as PullRequestWatchEngine,
@@ -58,6 +60,8 @@ describe("PullRequestWatches", () => {
   const scope = (sessionId = "s1") => ({ sessionId, projectId: "project" });
 
   beforeEach(async () => {
+    archiveLink.record.mockClear();
+    archiveLink.forget.mockClear();
     dir = await mkdtemp(join(tmpdir(), "pr-watch-"));
     file = join(dir, "pull-request-watches.json");
     prs = new Map();
@@ -102,9 +106,28 @@ describe("PullRequestWatches", () => {
     const watches = service();
     const watched = await watches.watch(scope(), { url });
     expect(watched).toEqual({ watchId: expect.any(String), number: 12, url, state: "OPEN" });
+    expect(archiveLink.record).toHaveBeenCalledWith("s1", url, "OPEN");
     await watches.poll();
     expect(sent()).toEqual([]);
     expect(gh).toHaveBeenCalledWith("/repo", ["pr", "view", url, "--json", expect.any(String)]);
+  });
+
+  it("retains merged evidence after automatic retirement and forgets only an explicit unlink", async () => {
+    const url = "https://github.com/acme/app/pull/12";
+    prs.set(url, pr(url));
+    const watches = service();
+    const watched = await watches.watch(scope(), { url });
+    prs.set(url, pr(url, { state: "MERGED" }));
+    await watches.poll();
+    expect(archiveLink.record).toHaveBeenLastCalledWith("s1", url, "MERGED");
+    expect(archiveLink.forget).not.toHaveBeenCalled();
+    expect(await watches.unwatch("s1", watched.watchId)).toBe(false);
+    prs.set(url, pr(url));
+    const next = await watches.watch(scope(), { url });
+    expect(await watches.unwatch("s2", next.watchId)).toBe(false);
+    expect(archiveLink.forget).not.toHaveBeenCalled();
+    expect(await watches.unwatch("s1", next.watchId)).toBe(true);
+    expect(archiveLink.forget).toHaveBeenCalledExactlyOnceWith("s1", url);
   });
 
   it("wakes the session once when pending checks finish, and not again without change", async () => {

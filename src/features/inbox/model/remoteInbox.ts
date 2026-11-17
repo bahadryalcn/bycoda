@@ -33,6 +33,7 @@ export type RemoteInboxItem = {
   state: string;
   priority?: string;
   updatedAt: string;
+  createdAt?: string;
   repo: string;
   projectPath: string;
   id?: string;
@@ -114,9 +115,31 @@ export type RemoteInboxOperation =
   | RemoteJiraOperation
   | { action: "providers" }
   | { action: "list"; projects: { path: string }[]; query: RemoteInboxQuery }
-  | { action: "details" | "thread"; item: RemoteInboxTarget; cwd: string }
+  | { action: "details" | "thread" | "checks"; item: RemoteInboxTarget; cwd: string }
   | { action: "comment"; item: RemoteInboxTarget; cwd: string; body: string; inReplyTo?: string }
   | { action: "review-context"; item: RemoteInboxTarget; cwd: string }
+  | {
+      action: "reviewers";
+      item: RemoteInboxTarget;
+      cwd: string;
+      mode: "list" | "request" | "remove";
+      logins: string[];
+    }
+  | {
+      action: "labels";
+      item: RemoteInboxTarget;
+      cwd: string;
+      mode: "list" | "add" | "remove";
+      names: string[];
+    }
+  | {
+      action: "reaction";
+      item: RemoteInboxTarget;
+      cwd: string;
+      mode: "add" | "remove";
+      subjectId: string;
+      content: string;
+    }
   | ({ action: "review"; item: RemoteInboxTarget; cwd: string } & RemoteInboxReview)
   | {
       action: "pr-action";
@@ -172,6 +195,9 @@ export function inboxOperationWrites(operation: RemoteInboxOperation): boolean {
     operation.action === "comment" ||
     operation.action === "pr-action" ||
     operation.action === "review" ||
+    operation.action === "reaction" ||
+    ((operation.action === "reviewers" || operation.action === "labels") &&
+      operation.mode !== "list") ||
     operation.action === "jira-board-transition" ||
     operation.action === "jira-board-move"
   );
@@ -232,9 +258,18 @@ export function parseRemoteInboxOperation(
     };
   }
   if (
-    !["details", "thread", "comment", "pr-action", "review", "review-context"].includes(
-      String(action),
-    )
+    ![
+      "details",
+      "thread",
+      "checks",
+      "reviewers",
+      "labels",
+      "reaction",
+      "comment",
+      "pr-action",
+      "review",
+      "review-context",
+    ].includes(String(action))
   )
     throw new Error("Unsupported inbox operation.");
   const target = record(input.item);
@@ -281,6 +316,73 @@ export function parseRemoteInboxOperation(
   if (provider === "github" && !project)
     throw new Error("Add this repository as a project on the computer first.");
   const cwd = project?.cwd ?? "";
+  if (action === "reviewers" || action === "labels" || action === "reaction") {
+    if (provider !== "github" || kind !== "pr")
+      throw new Error("Only GitHub pull requests support this operation.");
+    if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(item.repo))
+      throw new Error("Invalid GitHub repository.");
+    if (action === "reaction") {
+      if (input.mode !== "add" && input.mode !== "remove")
+        throw new Error("Invalid reaction mode.");
+      const subjectId = text(input.subjectId, "reaction subject", 200);
+      if (
+        !/^[A-Za-z0-9_=-]+$/.test(subjectId) ||
+        ![
+          "THUMBS_UP",
+          "THUMBS_DOWN",
+          "LAUGH",
+          "HOORAY",
+          "CONFUSED",
+          "HEART",
+          "ROCKET",
+          "EYES",
+        ].includes(String(input.content))
+      )
+        throw new Error("Invalid reaction.");
+      return { action, item, cwd, mode: input.mode, subjectId, content: String(input.content) };
+    }
+    const modes =
+      action === "reviewers" ? ["list", "request", "remove"] : ["list", "add", "remove"];
+    if (!modes.includes(String(input.mode))) throw new Error("Invalid pull request metadata mode.");
+    const values = input[action === "reviewers" ? "logins" : "names"] ?? [];
+    if (
+      !Array.isArray(values) ||
+      values.length > 20 ||
+      (input.mode !== "list" && values.length === 0) ||
+      (input.mode === "list" && values.length !== 0)
+    )
+      throw new Error("Invalid pull request metadata values.");
+    const checked = values.map((value) => {
+      const name = text(value, "metadata value", action === "reviewers" ? 100 : 100);
+      if (
+        [...name].some((char) => char.charCodeAt(0) < 0x20) ||
+        name !== name.trim() ||
+        (action === "reviewers" && !/^[A-Za-z0-9][A-Za-z0-9-]*$/.test(name))
+      )
+        throw new Error("Invalid pull request metadata value.");
+      return name;
+    });
+    return action === "reviewers"
+      ? {
+          action,
+          item,
+          cwd,
+          mode: input.mode as "list" | "request" | "remove",
+          logins: [...new Set(checked)],
+        }
+      : {
+          action,
+          item,
+          cwd,
+          mode: input.mode as "list" | "add" | "remove",
+          names: [...new Set(checked)],
+        };
+  }
+  if (action === "checks") {
+    if (provider !== "github" || kind !== "pr")
+      throw new Error("Only GitHub pull requests support checks.");
+    return { action, item, cwd };
+  }
   if (action === "review" || action === "review-context") {
     if (provider !== "github" || kind !== "pr")
       throw new Error("Only GitHub pull requests support reviews.");
@@ -380,6 +482,27 @@ export function nativeInboxCommand(
   if (isRemoteJiraOperation(operation))
     throw new Error("Jira board operations require the scoped desktop board owner");
   const { item } = operation;
+  if (
+    operation.action === "reviewers" ||
+    operation.action === "labels" ||
+    operation.action === "reaction"
+  ) {
+    if (item.provider !== "github" || item.kind !== "pr")
+      throw new Error("Unsupported GitHub operation.");
+    const { action, item: _item, cwd, ...payload } = operation;
+    return {
+      command: `git_github_pr_${action}`,
+      args: { cwd, repo: item.repo, number: item.number, ...payload },
+    };
+  }
+  if (operation.action === "checks") {
+    if (item.provider !== "github" || item.kind !== "pr")
+      throw new Error("Unsupported inbox checks.");
+    return {
+      command: "git_github_pr_checks",
+      args: { cwd: operation.cwd, repo: item.repo, number: item.number },
+    };
+  }
   if (operation.action === "review" || operation.action === "review-context") {
     if (item.provider !== "github" || item.kind !== "pr")
       throw new Error("Unsupported inbox review.");

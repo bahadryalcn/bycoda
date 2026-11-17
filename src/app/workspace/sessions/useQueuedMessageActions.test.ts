@@ -350,6 +350,71 @@ it("holds a budget-rejected head exactly once until an explicit queue resume", a
   }
 });
 
+/** Consumes the head the way an accepted dispatch does, so the dispatcher does not resend it. */
+const consumeHead: Submit = (sessionId, _text, _attachments, options) => {
+  setSessions((all) =>
+    all.map((session) =>
+      session.id === sessionId ? sentQueuedMessage(session, options!.queuedMessageId!) : session,
+    ),
+  );
+  return true;
+};
+
+it("auto-dispatches the queued head of an idle session without a follow-up behavior", async () => {
+  const submit = vi.fn<Submit>(consumeHead);
+  const harness = await queueHarness("active", false, submit);
+  try {
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 20));
+    });
+    expect(submit).toHaveBeenCalledExactlyOnceWith(
+      harness.id,
+      "Saved task",
+      [],
+      expect.objectContaining({ queuedMessageId: "head" }),
+    );
+    expect(submit.mock.calls[0][3]?.followUpBehavior).toBeUndefined();
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+it("steers the queued head into a turn held only by background commands", async () => {
+  const submit = vi.fn<Submit>(consumeHead);
+  const harness = await queueHarness("active", true, submit, {
+    runningModelTarget: { harness: "codex" as const, model: "running", modelSettings: {} },
+    backgroundTasks: ["npm run dev"],
+    backgroundAgents: 0,
+  });
+  try {
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 20));
+    });
+    expect(submit).toHaveBeenCalledExactlyOnceWith(
+      harness.id,
+      "Saved task",
+      [],
+      expect.objectContaining({ followUpBehavior: "steer", queuedMessageId: "head" }),
+    );
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+it("does not dispatch the queued head while a busy session has no background tasks", async () => {
+  const submit = vi.fn<Submit>(consumeHead);
+  const harness = await queueHarness("active", true, submit);
+  try {
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 20));
+    });
+    expect(submit).not.toHaveBeenCalled();
+    expect(getSessions()[0].queuedMessages?.map((message) => message.id)).toEqual(["head"]);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
 it.each([QueueNotReadyError, QueueDeferredError])(
   "keeps an active queue running and offers its head again after %s",
   async (WaitError) => {

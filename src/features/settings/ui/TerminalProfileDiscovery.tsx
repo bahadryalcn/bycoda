@@ -7,6 +7,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { UserRound } from "../../../shared/ui/icons";
 import { Popover } from "../../../shared/ui/Popover";
+import { PrivateEmail } from "../../../shared/ui/PrivateEmail";
 import { RevealedSetting } from "../../../shared/ui/settings";
 import {
   providerAccounts,
@@ -20,7 +21,43 @@ type TerminalProfile = {
   provider: ProviderAccountProvider;
   label: string;
   path: string;
+  identity?: { email?: string; organization?: string };
 };
+
+const profilePriority = (profile: { id: string }, connectedIds: ReadonlySet<string>) =>
+  connectedIds.has(profile.id)
+    ? 0
+    : profile.id === "default"
+      ? 1
+      : profile.id.startsWith("account-")
+        ? 2
+        : 3;
+
+/** One row per signed-in identity (email + organization); profiles without an email stay separate. */
+export function dedupeTerminalProfiles<T extends Pick<TerminalProfile, "id" | "identity">>(
+  profiles: readonly T[],
+  connectedIds: ReadonlySet<string> = new Set(),
+): T[] {
+  const best = new Map<string, T>();
+  const order: (string | T)[] = [];
+  for (const profile of profiles) {
+    const email = profile.identity?.email?.trim().toLowerCase();
+    if (!email) {
+      order.push(profile);
+      continue;
+    }
+    const key = `${email}\n${profile.identity?.organization?.trim().toLowerCase() ?? ""}`;
+    const current = best.get(key);
+    if (!current) order.push(key);
+    if (
+      !current ||
+      profilePriority(profile, connectedIds) < profilePriority(current, connectedIds)
+    ) {
+      best.set(key, profile);
+    }
+  }
+  return order.map((entry) => (typeof entry === "string" ? best.get(entry)! : entry));
+}
 
 /** Discovery only reads local homes. Connecting stores a path, never credentials. */
 export function TerminalProfileDiscovery({
@@ -152,7 +189,14 @@ export function TerminalProfileDiscovery({
     if (restoreFocus) queueMicrotask(() => trigger.current?.focus());
   };
 
-  const providerProfiles = profiles?.filter((profile) => profile.provider === provider);
+  const storedAccounts = providerAccounts(provider);
+  const connectedIds = new Set(storedAccounts.map((account) => account.id));
+  const providerProfiles = profiles
+    ? dedupeTerminalProfiles(
+        profiles.filter((profile) => profile.provider === provider),
+        connectedIds,
+      )
+    : undefined;
 
   return (
     <span className="inline-flex">
@@ -249,15 +293,22 @@ export function TerminalProfileDiscovery({
             ) : null}
             <ul className="min-w-0 list-none p-0">
               {providerProfiles?.map((profile) => {
-                const connected = providerAccounts(provider).some(
-                  (account) => account.id === profile.id,
-                );
+                const connected = connectedIds.has(profile.id);
+                const label =
+                  storedAccounts.find((account) => account.id === profile.id)?.label ||
+                  profile.label;
+                const email = profile.identity?.email?.trim();
                 return (
                   <li key={profile.id} className="flex min-w-0 items-center gap-3 py-3">
                     <div className="min-w-0 flex-1">
                       <Text as="p" size="secondary" weight="medium" wrap="anywhere">
-                        {profile.label}
+                        {label}
                       </Text>
+                      {email ? (
+                        <Text as="p" size="caption" tone="secondary" wrap="anywhere">
+                          <PrivateEmail email={email} wrap />
+                        </Text>
+                      ) : null}
                       <Text as="p" size="caption" tone="secondary" wrap="anywhere">
                         {profile.path}
                       </Text>

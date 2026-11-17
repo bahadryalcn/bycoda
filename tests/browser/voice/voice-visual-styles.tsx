@@ -23,7 +23,7 @@ import "../../../src/styles/index.css";
 const params = new URLSearchParams(location.search);
 if (params.has("high-refresh")) noteDisplayRefreshRate(240);
 if (params.has("push-to-talk"))
-  saveKeybindingOverride("Voice: Push to Talk", { shortcut: "Control+Shift+KeyM" });
+  saveKeybindingOverride("Voice: Push to Talk", { shortcut: "Control+Shift+KeyJ" });
 document.documentElement.classList.toggle("theme-light", params.get("theme") === "light");
 await setLanguagePreference(params.get("lang") === "tr" ? "tr" : "en");
 saveVoiceSettings({

@@ -125,6 +125,8 @@ export async function createCrewFrameHarness(
   measureSign?: (timing: SignLayerTiming) => void,
 ) {
   if (path === "main") {
+    // Rasterize glyph tiles after fonts settle, exactly as the worker path's asset prep does.
+    await document.fonts.ready;
     const draw = createCodeArtPainter(canvas, { renderer, ...(signFailed ? { sign: null } : {}) });
     let backend = draw.backend;
     return {

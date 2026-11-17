@@ -11,6 +11,16 @@ import { PersistenceDrainRegistry } from "../../sessions/data/persistenceDrain";
 
 const native = vi.hoisted(() => ({
   shown: () => {},
+  mac: true,
+}));
+vi.mock("../../../platform/tauri/platform", async (original) => ({
+  ...(await original<typeof import("../../../platform/tauri/platform")>()),
+  get IS_MAC() {
+    return native.mac;
+  },
+  get MOD() {
+    return native.mac ? "⌘" : "Ctrl+";
+  },
 }));
 vi.mock("../../workspaces/model/workspaceCreation", () => ({
   shortWorkspaceRef: (value: string) => value,
@@ -89,6 +99,7 @@ async function key(key: string, options: KeyboardEventInit = {}) {
 }
 
 beforeEach(async () => {
+  native.mac = true;
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("requestAnimationFrame", (callback: () => void) => {
     callback();
@@ -127,6 +138,38 @@ it("highlights a link after a mode without changing the draft", () => {
   expect(prompt.value).toBe("/plan Review https://example.com/path");
   expect(container.querySelector("[data-composer-link-token]")).not.toBeNull();
 });
+
+it("uses Control+Enter to start and open a Windows session", async () => {
+  native.mac = false;
+  input("Windows quick launch");
+  await key("Enter", { ctrlKey: true });
+  expect(invoke).toHaveBeenCalledWith(
+    "quick_composer_submit_intent",
+    expect.objectContaining({
+      submission: expect.objectContaining({
+        request: expect.objectContaining({ prompt: "Windows quick launch", reveal: true }),
+      }),
+    }),
+  );
+  expect(prompt.value).toBe("");
+});
+
+it.each([
+  { key: "p", label: "project" },
+  { key: ".", label: "Test model" },
+])(
+  "opens the Windows picker with Control+$key without changing the draft",
+  async ({ key: chord, label }) => {
+    native.mac = false;
+    input("Retain this Windows draft");
+    await key(chord, { ctrlKey: true });
+    const trigger = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === label,
+    );
+    expect(trigger?.getAttribute("aria-expanded")).toBe("true");
+    expect(prompt.value).toBe("Retain this Windows draft");
+  },
+);
 
 it.each(["/break-ui", "$break-ui"])("deletes skill %s as one token", async (token) => {
   input(`use ${token}`);

@@ -22,7 +22,7 @@ test("device controls show pending only at the initiating action and recover fro
 }) => {
   await page.goto("/tests/browser/host-tools/operational-tools.html");
   await expect(page.getByRole("img", { name: "Current device screen" })).toBeVisible();
-  await page.getByRole("switch", { name: "Live view", exact: true }).click();
+  await page.getByRole("button", { name: "Live view", exact: true }).click();
   await fixture(page, "hold", "add");
   // Adding the device is a secondary action in the device options menu.
   await page.getByRole("button", { name: "Device options", exact: true }).click();
@@ -55,15 +55,18 @@ test("server details, logs and startup retain local pending feedback and clear f
   page,
 }) => {
   await page.goto("/tests/browser/host-tools/operational-tools.html?tool=servers");
-  const details = page.getByRole("button", { name: "Process details", exact: true });
-  await expect(details).toBeVisible();
+  // Process details is an item of the selected server's Actions menu; that trigger shows the pending state.
+  const actions = page.getByRole("button", { name: "Actions", exact: true });
+  await expect(actions).toBeVisible();
   await fixture(page, "hold", "devServers.details");
-  await details.click();
-  await expect(details).toHaveAttribute("aria-busy", "true");
-  await expect(details).toBeFocused();
+  await actions.click();
+  await page.getByRole("menuitem", { name: "Process details", exact: true }).click();
+  await expect(actions).toHaveAttribute("aria-busy", "true");
+  await expect(actions).toBeFocused();
   await expect(page.getByRole("button", { name: "Open in preview", exact: true })).toBeEnabled();
   await fixture(page, "finish", "devServers.details");
-  await expect(details).not.toHaveAttribute("aria-busy", "true");
+  await expect(actions).not.toHaveAttribute("aria-busy", "true");
+  await expect(page.getByRole("region", { name: "Selected process details" })).toBeVisible();
   await fixture(page, "hold", "devServers.logs");
   const logs = page.getByRole("button", { name: "Show logs", exact: true });
   await logs.click();
@@ -157,9 +160,7 @@ for (const theme of ["light", "dark"]) {
           await page.getByRole("button", { name: "Choose app to open", exact: true }).click();
           await expect(page.getByRole("button", { name: "Open app", exact: true })).toBeVisible();
         } else {
-          await expect(
-            page.getByRole("button", { name: "Process details", exact: true }),
-          ).toBeVisible();
+          await expect(page.getByRole("button", { name: "Actions", exact: true })).toBeVisible();
         }
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
           true,

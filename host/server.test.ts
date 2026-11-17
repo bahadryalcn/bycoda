@@ -150,6 +150,8 @@ it("exposes safe Host account catalog only to owner model discovery, preserving 
   const s = await setup();
   roots = [s.directory];
   mkdirSync(join(s.directory, "provider-accounts", "codex", "account-host"), { recursive: true });
+  // Only a signed-in profile is listed: Codex marks it with auth.json.
+  writeFileSync(join(s.directory, "provider-accounts", "codex", "account-host", "auth.json"), "{}");
   mkdirSync(join(s.directory, "provider-accounts", "claude", "not-configured"), {
     recursive: true,
   });
@@ -179,6 +181,12 @@ it("exposes safe Host account catalog only to owner model discovery, preserving 
     expect(capabilities).toContain("sessions.configure.providerAccount.v1");
     expect(capabilities).toContain("sessions.questionAttachments");
     expect(capabilities).toContain("models.providerAccounts.v1");
+    expect(capabilities).toContain("models.catalog.stream.v1");
+    expect(capabilities).toContain("host.settings.behavior.v1");
+    expect(capabilities).toContain("host.settings.autoArchive.v1");
+    expect((await s.call("environment.describe")).value.result.methods).toContain(
+      "drafts.presence.report",
+    );
     const created = await s.engine.command({
       type: "create",
       workspaceMode: "current",
@@ -5852,7 +5860,7 @@ describe("host settings commands", () => {
     expect((await s.call("environment.describe")).value.result.capabilities).toContain(
       "host.settings",
     );
-    expect((await s.call("host.settings.get")).value.result).toEqual({
+    expect((await s.call("host.settings.get")).value.result).toMatchObject({
       providerAccountStyles: {},
       maxRunningTasks: 2,
       dailyAgentMinutes: 0,

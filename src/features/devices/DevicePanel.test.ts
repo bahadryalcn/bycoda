@@ -44,6 +44,30 @@ const makeApi = (): DevicePanelApi => ({
 });
 let root: Root;
 let container: HTMLDivElement;
+it("requires control for Duo fold presets and sends each under the current lease", async () => {
+  const api = makeApi();
+  vi.mocked(api.list).mockResolvedValue({
+    devices: [{ ...device, platform: "ios", supportsFold: true }],
+    errors: [],
+  });
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  await openOptions();
+  expect(button("Fold device").matches(':disabled, [aria-disabled="true"]')).toBe(true);
+  expect(api.claimControl).not.toHaveBeenCalled();
+  await act(async () => button("Allow device control").click());
+  for (const [label, posture] of [
+    ["Fold device", "closed"],
+    ["Half-open device", "half-open"],
+    ["Unfold device", "open"],
+  ]) {
+    await act(async () => button(label).click());
+    expect(api.action).toHaveBeenLastCalledWith(
+      "emulator",
+      { type: "fold", posture },
+      "test-lease",
+    );
+  }
+});
 it("restores device draft without claiming control", async () => {
   const scope = { cwd: "/repo", sessionId: "device-transfer", targetValue: "project" };
   restoreToolsDraftTransfer(scope.cwd, scope.sessionId, scope.targetValue, {

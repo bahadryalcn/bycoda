@@ -573,6 +573,9 @@ test("bounds a thousand large notes while fetching selected details and moving k
   // The list uses a deferred query. Wait until its full-library result has
   // painted before navigating within that result, including on WebKit.
   await expect(page.getByText("1000 notes", { exact: true })).toBeVisible();
+  // The count can paint before the deferred list result commits (slower on WebKit), and
+  // keyboard navigation only walks the rows of the committed result.
+  await expect.poll(() => cards.count()).toBeGreaterThan(1);
   await bounded();
   await expect(page.locator('[data-note-library] [aria-current="true"]')).toBeInViewport();
   await page.locator('[data-note-id="note-999"]').focus();

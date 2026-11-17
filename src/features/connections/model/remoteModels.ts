@@ -5,7 +5,13 @@ import {
   type ModelSettingChoice,
 } from "../../sessions/public/models";
 import { CLAUDE_MODEL_CATALOG } from "../../../integrations/harness/providers/claude/claudeCatalog";
+import { isReservedDelegationKey } from "../../../shared/model/host-contracts/delegation";
 import type { HostModelCatalog, RemoteProvider } from "./protocol";
+
+/** Saved provider settings the catalog does not describe. bycoda's own keys (subagents,
+ * advisor, image models, lineage) have dedicated rows and are never provider selects. */
+const unlistedSavedIds = (saved: Record<string, string>) =>
+  Object.keys(saved).filter((id) => !isReservedDelegationKey(id));
 
 export type RemoteModelControls = {
   /** The host's current catalog entry, when it lists this model. */
@@ -111,7 +117,7 @@ function fallbackSettings(
   )?.settings;
   const ids = [
     ...(provider === "codex" ? ["reasoningEffort"] : provider === "claude" ? ["effort"] : []),
-    ...Object.keys(saved),
+    ...unlistedSavedIds(saved),
   ];
   const settings = [...(known ?? [])];
   for (const id of ids) {
@@ -164,7 +170,7 @@ export function remoteModelControls(
     fallback = listed ? "unlisted" : "no-catalog";
   }
   // Saved settings the current catalog entry no longer describes stay visible.
-  for (const id of Object.keys(saved)) {
+  for (const id of unlistedSavedIds(saved)) {
     if (settings.some((setting) => setting.id === id)) continue;
     const setting = knownSetting(provider, id) ?? {
       id,

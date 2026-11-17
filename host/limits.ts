@@ -3,8 +3,11 @@ import {
   parseHostSettings,
   type HostSettings,
   type HostSettingsState,
+  DEFAULT_AGENT_DEFAULTS,
+  parseAgentDefaults,
 } from "../src/features/tasks/model/hostSettings";
 import type { HostStore } from "./store";
+import { AUTO_ARCHIVE_DRAFT_AUTHORITY } from "./settings-defaults/archive-capability";
 import { confirmedRunElapsed } from "./execution/run-duration";
 
 const MINUTE_MS = 60_000;
@@ -85,11 +88,15 @@ export class HostLimits {
       const row = await this.store.db
         .prepare("SELECT value FROM host_settings WHERE key='settings'")
         .get();
-      if (!row) return DEFAULT_HOST_SETTINGS;
+      if (!row) return { ...DEFAULT_HOST_SETTINGS, agentDefaults: { ...DEFAULT_AGENT_DEFAULTS } };
       try {
-        return parseHostSettings(JSON.parse(String(row.value)));
+        const settings = parseHostSettings(JSON.parse(String(row.value)));
+        return {
+          ...settings,
+          agentDefaults: settings.agentDefaults ?? { ...DEFAULT_AGENT_DEFAULTS },
+        };
       } catch {
-        return DEFAULT_HOST_SETTINGS;
+        throw new Error("Stored Host settings are invalid; refusing to replace them");
       }
     });
   }
@@ -99,7 +106,24 @@ export class HostLimits {
     await this.ready;
 
     return await this.store.db.scope(async () => {
-      const next = parseHostSettings(raw, await this.settings());
+      const current = await this.settings();
+      const next = parseHostSettings(raw, current);
+      const patch = raw as Record<string, unknown>;
+      if (patch.agentDefaults !== undefined) {
+        const previous = current.agentDefaults ?? DEFAULT_AGENT_DEFAULTS;
+        if (patch.migrateAgentDefaults === true && previous.version > 0) return current;
+        if (patch.expectedAgentDefaultsVersion !== previous.version)
+          throw new Error("Agent defaults changed; reload before saving");
+        const parsed = parseAgentDefaults(patch.agentDefaults, previous);
+        // Fail closed: archive can only be enabled where the Host has client draft clearance.
+        if (
+          !AUTO_ARCHIVE_DRAFT_AUTHORITY &&
+          ((parsed.archiveMergedSessions && !previous.archiveMergedSessions) ||
+            parsed.archiveInactiveDays > previous.archiveInactiveDays)
+        )
+          throw new Error("Automatic archive is not available on this computer");
+        next.agentDefaults = { ...parsed, version: previous.version + 1 };
+      }
       await this.store.db
         .prepare(
           "INSERT INTO host_settings VALUES ('settings', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",

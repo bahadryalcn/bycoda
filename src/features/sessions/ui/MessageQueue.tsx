@@ -59,7 +59,7 @@ import {
 } from "../../providers/public/providerAccounts";
 import { hasMissingAttachment } from "../model/queuePersistence";
 import { useQueuedSteerRoute, useQueuedTargetSummary } from "../model/reactiveReads";
-import { moveQueuedMessage, runningTargetOf } from "../model/messageQueue";
+import { moveQueuedMessage, ownerQueueRows, runningTargetOf } from "../model/messageQueue";
 import { HarnessIcon } from "./HarnessIcon";
 import { useAnimatedReorder } from "../../../shared/hooks/useAnimatedReorder";
 import { announceDrag } from "../../../shared/lib/drag";
@@ -108,7 +108,7 @@ type AccountList = { id: string; label: string }[];
 export function MessageQueue({
   sessionId,
   parentSessionId,
-  messages,
+  messages: queued,
   status,
   onDelete,
   canAttach,
@@ -132,10 +132,18 @@ export function MessageQueue({
   const accountLists: Partial<Record<string, AccountList>> = JSON.parse(accountListsJson);
   const delivery = useDeliveryProgress(sessionId);
   const pendingDelivery = deliveryIsPending(delivery?.stage);
-  const departing = useAcceptedQueueDeparture(messages, delivery);
   const heldByOtherWindow = useSharedQueueLeaseHeld(sessionId ?? "");
   const holdReason = useQueueHoldReason(sessionId ?? "");
   const holdDetail = holdReason && holdReason !== "stopped" ? holdReason : undefined;
+  const messages = ownerQueueRows(queued, {
+    status,
+    held: heldByOtherWindow || !!holdDetail,
+    deliveryProblem:
+      delivery?.stage === "rejected" || delivery?.stage === "unknown"
+        ? delivery.messageId
+        : undefined,
+  });
+  const departing = useAcceptedQueueDeparture(messages, delivery);
   const actionRef = useRef(false);
   const [pendingAction, setPendingAction] = useState<string>();
   const dragAdmission = useRef<{
@@ -359,7 +367,7 @@ export function MessageQueue({
       ) : null}
       <div
         {...surfaceAttributes(
-          { radius: "dock-top", variant: "floating" },
+          { radius: "dock-top", variant: "floating", material: "glass" },
           "relative z-0 px-2 py-1",
         )}
         data-message-queue-card

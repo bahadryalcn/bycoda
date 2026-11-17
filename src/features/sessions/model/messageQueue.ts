@@ -4,6 +4,7 @@ import { t } from "../../../shared/i18n/core";
 import { moveItem, orderByIds } from "../../../shared/lib/reorder";
 import { mergeModelSettings, modelEffortLabel, resolveModel } from "./models";
 import { hasMissingAttachment } from "./queuePersistence";
+import { isBackgroundOnly } from "./activityDock";
 import type { ModelTarget, QueuedMessage, Session, TurnIntent } from "./session";
 
 export function queuedModelTarget(
@@ -237,6 +238,28 @@ export function reorderQueuedMessages(queue: QueuedMessage[], ids: string[]): Qu
   return next.every((message, index) => message === queue[index]) ? queue : next;
 }
 
+/**
+ * The rows the queue panel lists. A subagent result waiting for the parent is not the owner's
+ * message and the activity dock already shows it, so it is left out, and it still delivers.
+ * While the queue needs the owner (paused, restored, held, or a row whose delivery failed or
+ * is unconfirmed) every row shows, so a held result can never be stuck out of sight.
+ */
+export function ownerQueueRows<T extends Pick<QueuedMessage, "id" | "author">>(
+  messages: T[],
+  state: { status?: Session["queueStatus"]; deliveryProblem?: string; held?: boolean },
+): T[] {
+  const needsOwner =
+    state.held ||
+    state.status === "paused" ||
+    state.status === "resuming" ||
+    state.status === "restored" ||
+    (state.deliveryProblem !== undefined &&
+      messages.some((message) => message.id === state.deliveryProblem));
+  if (needsOwner) return messages;
+  const shown = messages.filter((message) => message.author?.kind !== "delegation");
+  return shown.length === messages.length ? messages : shown;
+}
+
 /** Reorder a session's queue. Status and the edited row are left alone: order is all that changes. */
 export function reorderSessionQueue(session: Session, ids: string[]): Session {
   const queue = session.queuedMessages;
@@ -261,6 +284,31 @@ export function sentQueuedMessage(session: Session, messageId: string): Session 
  */
 export function canDispatchQueuedHead(session: Session): boolean {
   if (session.busy) return false;
+  return queuedHeadSendable(session);
+}
+
+/**
+ * True when the open turn is held only by background commands and the queued
+ * head can join it as a steer, as a Send would. Commands such as a dev server
+ * may never end, so a queued message (from any device) does not wait for them.
+ * Plan, orchestrate, notes, handoffs and slash commands start their own turn.
+ */
+export function canSteerQueuedHeadIntoBackground(session: Session): boolean {
+  if (!isBackgroundOnly(!!session.busy, session.backgroundTasks, session.backgroundAgents))
+    return false;
+  if (!queuedHeadSendable(session)) return false;
+  const head = queuedHead(session)!;
+  return (
+    head.intent !== "plan" &&
+    head.intent !== "orchestrate" &&
+    !head.noteCard &&
+    !head.handoffCard &&
+    !head.text.trimStart().startsWith("/")
+  );
+}
+
+/** Everything but the turn being open that lets the queued head be sent now. */
+function queuedHeadSendable(session: Session): boolean {
   // The host is running this conversation, or its finished turn has not been
   // applied here yet: a local turn now would fork the transcript.
   if (session.continuingElsewhere || session.adoptedSyncConflict) return false;
@@ -309,9 +357,9 @@ export type FollowUpRoute = "dispatch" | "queue" | "steer";
  * queued message would be parked behind them), and otherwise follows
  * `requested` (an explicit per-send choice), defaulting to steer.
  *
- * An explicit "queue" always waits for the turn to finish, including when
- * only background commands remain. The user can steer a queued row instead
- * if a long-running command keeps the turn open.
+ * An explicit "queue" waits in the queue rather than steering at once. Once
+ * only background commands keep the turn open, the queue itself steers its
+ * head into the turn (`canSteerQueuedHeadIntoBackground`).
  */
 export function resolveFollowUpRoute(input: {
   busy: boolean;

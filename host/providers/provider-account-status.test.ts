@@ -87,3 +87,33 @@ describe("provider account status", () => {
     expect(peak).toBe(3);
   });
 });
+
+const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+describe("provider account status onChange", () => {
+  it("fires only when a definitive status changes", async () => {
+    let clock = 0;
+    let next: "signedIn" | "signedOut" | "unknown" = "signedIn";
+    const onChange = vi.fn();
+    const one = { claude: [{ id: "work", label: "work", color: "#b" }] };
+    const cache = createProviderAccountStatusCache({
+      probe: async () => next,
+      now: () => clock,
+      onChange,
+    });
+    await cache.read(one);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    clock += 6 * 60_000;
+    await cache.read(one);
+    await flush();
+    expect(onChange).toHaveBeenCalledTimes(1);
+    next = "unknown";
+    clock += 6 * 60_000;
+    await cache.read(one);
+    await flush();
+    expect(onChange).toHaveBeenCalledTimes(1);
+    next = "signedOut";
+    clock += 6 * 60_000;
+    await cache.read(one);
+    await vi.waitFor(() => expect(onChange).toHaveBeenCalledTimes(2));
+  });
+});

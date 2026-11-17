@@ -430,7 +430,7 @@ it("supports token-based inset focus for interactive previews", () => {
     "preview-inset",
   );
   expect(css).toMatch(
-    /\[data-surface-focus-ring="preview-inset"\]:focus-visible[^{}]*\{[^}]*outline: var\(--ui-focus-width\) solid var\(--ui-focus-ring-color\);[^}]*outline-offset: calc\(var\(--ui-focus-offset\) \* -1\)/s,
+    /\[data-surface-focus-ring="preview-inset"\]:focus-visible[^{}]*\{[^}]*outline: var\(--ui-focus-width\) solid var\(--ui-focus-ring-color\);[^}]*outline-offset: var\(--ui-focus-offset\);/s,
   );
 });
 

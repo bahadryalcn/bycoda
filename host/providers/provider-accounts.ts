@@ -64,8 +64,9 @@ function accountColor(provider: ProfileProvider, id: string): string {
   return providerAccountColorValue({ provider, id });
 }
 
-/** Safe Host-machine inventory only. No credential contents, auth output, email,
- * external profile path or renderer-side account metadata is read or returned. */
+/** Safe Host-machine inventory only. An account is listed only with signed-in
+ * evidence, checked as a boolean. No credential contents, auth output, email,
+ * external profile path or renderer-side account metadata is returned or logged. */
 export async function hostProviderAccounts(
   roots: string[] = desktopDatabasePaths().map(dirname),
 ): Promise<HostProviderAccountCatalog> {
@@ -82,7 +83,10 @@ export async function hostProviderAccounts(
           entry.name !== DEFAULT_ACCOUNT_ID &&
           !entry.name.startsWith(TERMINAL_PREFIX) &&
           ACCOUNT_ID.test(entry.name) &&
-          (await isDirectory(join(root, "provider-accounts", provider, entry.name)))
+          (await hasSignedInEvidence(
+            provider,
+            join(root, "provider-accounts", provider, entry.name),
+          ))
         )
           ids.add(entry.name);
       }
@@ -101,7 +105,7 @@ export async function hostProviderAccounts(
                 id.startsWith(TERMINAL_PREFIX) &&
                 ACCOUNT_ID.test(id) &&
                 typeof path === "string" &&
-                (await isDirectory(path))
+                (await hasSignedInEvidence(provider, path))
               )
                 ids.add(id);
             }
@@ -146,6 +150,39 @@ export async function assertHostProviderAccount(
 
 async function isDirectory(path: string): Promise<boolean> {
   return (await stat(path).catch(() => null))?.isDirectory() ?? false;
+}
+
+async function isFile(path: string): Promise<boolean> {
+  return (await stat(path).catch(() => null))?.isFile() ?? false;
+}
+
+/** Claude keeps its macOS credential in Keychain, so its `.claude.json` identity is the evidence there. */
+const MAX_CLAUDE_CONFIG_BYTES = 1024 * 1024;
+
+/** Whether a profile directory holds a sign-in. Returns a boolean only; contents are never returned. */
+async function hasSignedInEvidence(provider: ProfileProvider, dir: string): Promise<boolean> {
+  if (!(await isDirectory(dir))) return false;
+  if (provider === "claude") {
+    if (await isFile(join(dir, ".credentials.json"))) return true;
+    const config = join(dir, ".claude.json");
+    const size = (await stat(config).catch(() => null))?.size;
+    if (size === undefined || size > MAX_CLAUDE_CONFIG_BYTES) return false;
+    const raw = await readFile(config, "utf8").catch(() => null);
+    if (!raw) return false;
+    try {
+      const value: unknown = JSON.parse(raw);
+      const account =
+        value && typeof value === "object"
+          ? (value as Record<string, unknown>).oauthAccount
+          : undefined;
+      if (!account || typeof account !== "object") return false;
+      const email = (account as Record<string, unknown>).emailAddress;
+      return typeof email === "string" && email.trim() !== "";
+    } catch {
+      return false;
+    }
+  }
+  return isFile(join(dir, "auth.json"));
 }
 
 async function terminalProfile(root: string, provider: string, id: string) {

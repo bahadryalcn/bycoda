@@ -29,6 +29,7 @@ vi.mock("./SubagentSheet", () => ({
 vi.mock("../model/sessionsStore", () => ({
   useSession: (id: string | undefined) => (id ? fake.sessions.get(id) : undefined),
   getSessions: () => [...fake.sessions.values()],
+  subscribeSessionCommits: () => () => undefined,
   useSessionsSelector: (select: (sessions: unknown[]) => unknown) =>
     select([...fake.sessions.values()]),
 }));

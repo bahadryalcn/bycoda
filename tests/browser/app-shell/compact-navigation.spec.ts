@@ -192,6 +192,13 @@ test("workspace picker uses spare header width before clipping names", async ({
   for (const pane of ["wide", "narrow"]) {
     if (pane === "narrow") await resize.press("Enter");
     await resize.blur();
+    if (pane === "narrow") {
+      // A narrow pane folds the filter into "More actions"; the query stays applied and reopens.
+      await expect(search).toBeHidden();
+      await header.getByRole("button", { name: "More actions", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Search sessions", exact: true }).click();
+      await expect(search).toBeVisible();
+    }
     const bounds = (await header.boundingBox())!;
     const queryBounds = (await search.boundingBox())!;
     expect(queryBounds.x + queryBounds.width).toBeLessThanOrEqual(bounds.x + bounds.width + 1);
@@ -462,7 +469,9 @@ test("compact navigation keeps workspace tabs in place and stacks app tool short
   await expect(page.getByRole("radio", { name: "All", exact: true })).toBeChecked();
   await page.keyboard.press("Escape");
   // "Search sessions" is an inline filter of the session list now, not the shared dialog.
-  await page.getByRole("button", { name: "Search sessions", exact: true }).click();
+  // At this pane width the session tools fold into the "More actions" menu.
+  await page.getByRole("button", { name: "More actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Search sessions", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.getByRole("combobox", { name: "Search sessions" })).toBeFocused();
   await page.keyboard.type("zzz-no-such-conversation");
@@ -549,17 +558,36 @@ test("workspace header keeps location before history and project controls", asyn
           const back = (await header
             .getByRole("button", { name: "Back", exact: true })
             .boundingBox())!;
-          if (constrained) expect(frame.y + frame.height).toBeLessThanOrEqual(back.y + 0.5);
+          // A narrow pane keeps one header row: the location sits beside Back, not above it.
+          if (constrained) {
+            const headerBox = (await header.boundingBox())!;
+            expect(headerBox.height).toBeLessThan(back.height * 2);
+            expect(frame.y).toBeLessThan(back.y + back.height);
+            expect(back.y).toBeLessThan(frame.y + frame.height);
+          }
           let previousRight = constrained ? (await header.boundingBox())!.x : frame.x + frame.width;
-          expect((await title.boundingBox())!.width).toBeLessThanOrEqual(frame.width);
+          // Measure the element that clips the title: an inline text span inside a truncating
+          // heading always reports its full text width, even while the heading shows "…".
+          const shownWidth = await title.evaluate(
+            (element) =>
+              (element.closest("[data-truncate]") ?? element).getBoundingClientRect().width,
+          );
+          expect(shownWidth).toBeLessThanOrEqual(frame.width);
           if (project) {
             const titleWidth = await title.evaluate((element) => ({
               available: element.clientWidth,
               content: element.scrollWidth,
             }));
-            expect(titleWidth.content).toBeLessThanOrEqual(titleWidth.available);
+            // A truncated project name must stay identifiable by its accessible name.
+            if (titleWidth.content > titleWidth.available)
+              await expect(
+                header.getByRole("button", { name: /Switch working copy/ }),
+              ).toContainText("bycoda");
+            else expect(titleWidth.content).toBeLessThanOrEqual(titleWidth.available);
           }
-          for (const name of ["Back", "Forward", "Expand projects", "Search sessions"]) {
+          // A narrow pane folds the session tools into "More actions".
+          const sessionTools = constrained ? "More actions" : "Search sessions";
+          for (const name of ["Back", "Forward", "Expand projects", sessionTools]) {
             const control = header.getByRole("button", { name, exact: true });
             await expect(control).toBeInViewport();
             const bounds = (await control.boundingBox())!;

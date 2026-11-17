@@ -46,15 +46,21 @@ if (typeof document !== "undefined") {
 function returnTarget(): HTMLElement | null {
   if (typeof document === "undefined") return null;
   const active = document.activeElement;
+  const pressed =
+    pointerTrigger?.isConnected && performance.now() - pointerTriggerAt < TRIGGER_WINDOW_MS
+      ? pointerTrigger
+      : null;
   if (
     active instanceof HTMLElement &&
     active !== document.body &&
     active !== document.documentElement
-  )
+  ) {
+    // WebKit does not focus a clicked button, so focus lands on the focusable row around it;
+    // the button the press activated is where the user expects focus back.
+    if (pressed && pressed !== active && active.contains(pressed)) return pressed;
     return active;
-  return pointerTrigger?.isConnected && performance.now() - pointerTriggerAt < TRIGGER_WINDOW_MS
-    ? pointerTrigger
-    : null;
+  }
+  return pressed;
 }
 /** How far above a removed opener a safe target is searched; farther is another context. */
 const SCOPE_DEPTH = 3;

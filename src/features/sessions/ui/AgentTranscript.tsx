@@ -158,6 +158,7 @@ import {
   foldedBlocks,
   initialThinkingIndex,
   lastActivityIndex,
+  isAdvisorBlock,
   isProseBlock,
   hasTurnCopyText,
   turnCopyText,
@@ -182,7 +183,8 @@ import {
   HandoffDivider,
   InterjectionDivider,
 } from "./AgentTranscriptActivity";
-import { SubagentStack } from "./SubagentCards";
+import { DelegatedRunOwner, SubagentStack } from "./SubagentCards";
+import { AdvisorRow } from "./AdvisorRow";
 import { OutputBlock } from "../../../shared/ui/OutputBlock";
 export { ActivityRow, agentStepBlock } from "./AgentTranscriptActivity";
 type Props = {
@@ -194,6 +196,9 @@ type Props = {
     dispatch: ApprovalDispatch;
   };
   sessionId?: string;
+  /** The session whose delegated runs show as cards. Travels with the element like
+   * `approvalContext`: a pooled transcript renders outside the pane's providers. */
+  delegatedRunOwner?: string;
   blocks: Block[];
   busy?: boolean;
   historyLoading?: boolean;
@@ -926,13 +931,15 @@ export const AgentTranscript = memo(function AgentTranscript(props: Props) {
       >
         <Activity mode={props.visible === false ? "hidden" : "visible"}>
           <WorkItemMentionCwd value={props.cwd}>
-            {props.approvalContext ? (
-              <ApprovalDecisionProvider {...props.approvalContext}>
-                {transcript}
-              </ApprovalDecisionProvider>
-            ) : (
-              transcript
-            )}
+            <DelegatedRunOwner.Provider value={props.delegatedRunOwner}>
+              {props.approvalContext ? (
+                <ApprovalDecisionProvider {...props.approvalContext}>
+                  {transcript}
+                </ApprovalDecisionProvider>
+              ) : (
+                transcript
+              )}
+            </DelegatedRunOwner.Provider>
           </WorkItemMentionCwd>
         </Activity>
       </CodeExecutionProvider>
@@ -2123,6 +2130,8 @@ const TranscriptBlock = memo(function TranscriptBlock({
 
   if (block.role === "tool") {
     if (block.inlineVisual) return <InlineVisual snapshot={block.inlineVisual} />;
+    if (isAdvisorBlock(block))
+      return <AdvisorRow block={block} modelSettings={planModelSettings} />;
     return (
       <ToolCall
         block={block}

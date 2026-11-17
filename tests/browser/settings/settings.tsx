@@ -9,6 +9,7 @@ import { ImageDropZone } from "../../../src/features/settings/ui/appearance/cont
 import { AdvancedSettings, Row } from "../../../src/shared/ui/settings";
 import { AntigravityAccountSettings } from "../../../src/features/settings/ui/AntigravityAccountSettings";
 import { seedProvidersFixture, providersFixtureCommand } from "./settings-providers-fixture";
+import { agentDefaultsFixtureCommand } from "./agent-defaults-fixture";
 import { useState } from "react";
 import { VoiceAssistantFixture } from "./voice-assistant-fixture";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -49,6 +50,8 @@ import "../../../src/styles/index.css";
 
 // Memory-only desktop transport. Unknown commands fail closed; no owner host,
 // accounts, filesystem, credential store or native deletion can be reached.
+// The Host-owned agent defaults sync only runs inside the desktop shell.
+Object.assign(globalThis, { isTauri: true });
 mockWindows("main");
 // Synthetic canonical authority for this UI fixture only. No Native durability or
 // cross-process retirement is claimed. Keep CAS, receipts and page identity real.
@@ -299,6 +302,10 @@ mockIPC(
     if (command.startsWith("canonical_store_")) return canonicalFixture(command, args);
     const activity = activityFixture(command, args);
     if (activity !== undefined) return activity;
+    if (!new URLSearchParams(location.search).has("voice")) {
+      const agentDefaults = agentDefaultsFixtureCommand(command, args);
+      if (agentDefaults !== undefined) return agentDefaults;
+    }
     // Voice setup is entirely synthetic. It never reaches the owner's host or installs files.
     const voiceFixture = new URLSearchParams(location.search).get("voice");
     if (voiceFixture) {

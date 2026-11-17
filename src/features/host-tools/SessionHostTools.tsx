@@ -28,6 +28,7 @@ import {
   AppWindow,
   Terminal,
   Server,
+  Laptop,
   PanelRight,
   RefreshCw,
   Folder,
@@ -393,59 +394,73 @@ function ConversationHostTools({
           >
             {hostScoped ? (
               <div className="host-tools-machine" aria-busy={machinesLoading}>
-                <div className="host-tool-toolbar host-tools-machine-toolbar">
-                  <Text
-                    size="caption"
-                    tone="inherit"
-                    leading="inherit"
-                    as="div"
-                    className="host-tool-field host-tools-machine-field"
-                  >
-                    <SearchableSelect
-                      hideLabel
-                      label={t("Tool machine")}
-                      variant="row"
-                      triggerProps={{ title: `${hostLabel}\n${title}\n${cwd}` }}
-                      value={targetValue}
-                      onChange={selectTarget}
-                      searchable={machines.length > 5}
-                      options={[
-                        { value: "project", label: ownerLabel, description: t("Project host") },
-                        {
-                          value: "local",
-                          label: t("This computer"),
-                          description: remote ? undefined : t("Local app"),
-                        },
-                        ...machines
-                          .filter((machine) => !isLocalSyncMachine(machine))
-                          .map((machine) => ({
-                            value: `machine:${machine.id}`,
-                            label: machine.name,
-                          })),
-                        ...(target.kind === "machine" && !selectedMachine
-                          ? [
-                              {
-                                value: targetValue,
-                                label: `${t("Selected machine unavailable")} · ${target.machineId}`,
-                              },
-                            ]
-                          : []),
-                      ]}
-                    />
-                  </Text>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    iconOnly
-                    label={machinesError && !machinesShownCentrally ? t("Retry") : t("Refresh")}
-                    className="host-tools-machine-refresh"
-                    loading={machinesLoading}
-                    disabled={machinesLoading}
-                    onClick={() => setMachinesRefresh((value) => value + 1)}
-                  >
-                    <RefreshCw className="icon-sm" aria-hidden />
-                  </Button>
-                </div>
+                {/* A ghost trigger like the tool tabs beside it; refreshing the machine list
+                    lives in the menu instead of a second loose icon in the row. */}
+                <SearchableSelect
+                  hideLabel
+                  label={t("Tool machine")}
+                  tooltip={{ label: hostLabel, details: [title, cwd], wide: true }}
+                  value={targetValue}
+                  onChange={selectTarget}
+                  searchable={machines.length > 5}
+                  align="end"
+                  renderTrigger={({ props, open, selectedLabel }) => (
+                    <Button
+                      {...props}
+                      variant="ghost"
+                      size="sm"
+                      className="host-tools-machine-trigger"
+                      expanded={open}
+                      startIcon={
+                        target.kind === "local" || (target.kind === "project" && !remote) ? (
+                          <Laptop className="icon-sm" aria-hidden />
+                        ) : (
+                          <Server className="icon-sm" aria-hidden />
+                        )
+                      }
+                    >
+                      <Text size="inherit" tone="inherit" leading="inherit" truncate>
+                        {selectedLabel ?? hostLabel}
+                      </Text>
+                    </Button>
+                  )}
+                  footer={
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      startIcon={<RefreshCw className="icon-sm" aria-hidden />}
+                      loading={machinesLoading}
+                      disabled={machinesLoading}
+                      onClick={() => setMachinesRefresh((value) => value + 1)}
+                    >
+                      {machinesError && !machinesShownCentrally
+                        ? t("Retry")
+                        : t("Refresh machines")}
+                    </Button>
+                  }
+                  options={[
+                    { value: "project", label: ownerLabel, description: t("Project host") },
+                    {
+                      value: "local",
+                      label: t("This computer"),
+                      description: remote ? undefined : t("Local app"),
+                    },
+                    ...machines
+                      .filter((machine) => !isLocalSyncMachine(machine))
+                      .map((machine) => ({
+                        value: `machine:${machine.id}`,
+                        label: machine.name,
+                      })),
+                    ...(target.kind === "machine" && !selectedMachine
+                      ? [
+                          {
+                            value: targetValue,
+                            label: `${t("Selected machine unavailable")} · ${target.machineId}`,
+                          },
+                        ]
+                      : []),
+                  ]}
+                />
               </div>
             ) : (
               <Tooltip label={`${ownerLabel}\n${cwd}`} asChild>

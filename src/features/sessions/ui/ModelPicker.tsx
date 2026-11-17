@@ -241,13 +241,19 @@ export function ModelPicker({
     ...current,
     accountId: accountChoices ? currentAccountId : undefined,
   });
+  // Whether the Host has reported this provider's accounts yet (unknown until it does).
+  const accountsKnown = source.accountsKnown?.(harness) !== false;
   // Local account names live in browser storage, so React reads the label through their store.
   const currentLabel = useSyncExternalStore(
     subscribeProviderAccounts,
     () =>
-      accountChoices ? modelAccountLabel(current, currentAccountId, source.accounts) : current.name,
+      accountChoices && accountsKnown
+        ? modelAccountLabel(current, currentAccountId, source.accounts)
+        : current.name,
     () =>
-      accountChoices ? modelAccountLabel(current, currentAccountId, source.accounts) : current.name,
+      accountChoices && accountsKnown
+        ? modelAccountLabel(current, currentAccountId, source.accounts)
+        : current.name,
   );
   // The account is part of the identity only while there is a choice between
   // accounts; a lone default account stays out of the trigger.
@@ -256,6 +262,8 @@ export function ModelPicker({
       return undefined;
     // A saved account that no longer exists is shown honestly instead of a blank label.
     if (source.accounts !== undefined) {
+      // Not yet reported by the Host: keep the saved account unlabeled rather than "Unavailable".
+      if (!accountsKnown) return undefined;
       const accounts = source.accounts[harness] ?? [];
       const saved = accounts.find((account) => account.id === currentAccountId);
       if (!saved) return currentAccountId === "default" ? undefined : t("Unavailable Host account");
@@ -274,7 +282,15 @@ export function ModelPicker({
     return saved
       ? accountDisplayLabel(accounts, saved)
       : providerAccountLabel(harness, currentAccountId);
-  }, [accountChoices, accountsSnapshot, currentAccountId, harness, source.accounts, t]);
+  }, [
+    accountChoices,
+    accountsKnown,
+    accountsSnapshot,
+    currentAccountId,
+    harness,
+    source.accounts,
+    t,
+  ]);
   useLayoutEffect(() => {
     onCloseRef.current = onClose;
     currentRef.current = current;
@@ -311,6 +327,7 @@ export function ModelPicker({
         currentAccountId,
         signedOutAccounts: source.accounts === undefined ? signedOutAccountKeys(usage) : undefined,
         signedOutLabel: t("Not signed in"),
+        savedAccountLabel: t("Saved account"),
         values,
         unavailable: (name) => t("Unavailable: {p0}", { p0: name }),
       },

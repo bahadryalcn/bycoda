@@ -4,6 +4,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { classifyChanges, detectChanges, repositoryRoot } from "./ci-changes.mjs";
 import { scopeOf } from "./check-ui-drift.mjs";
+import { browserImpact } from "./browser-impact.mjs";
 
 export function scriptTestFiles(root = repositoryRoot) {
   const walk = (directory) =>
@@ -40,6 +41,7 @@ export function localOptions(args) {
   for (let index = 0; index < args.length; index++) {
     const argument = args[index];
     if (["--run", "--scripts", "--full"].includes(argument)) options[argument.slice(2)] = true;
+    else if (argument === "--no-browser") options.browser = false;
     else if (["--base", "--max-tests", "--timeout-ms", "--report"].includes(argument)) {
       const value = args[++index];
       if (!value || value.startsWith("--")) throw new Error(`Missing value for ${argument}`);
@@ -59,7 +61,13 @@ export function localOptions(args) {
   return options;
 }
 
-export function localPlan({ decision, root = repositoryRoot, limit = 12, scripts = false }) {
+export function localPlan({
+  decision,
+  root = repositoryRoot,
+  limit = 12,
+  scripts = false,
+  browser = true,
+}) {
   const node = (name, args) => ({ name, command: process.execPath, args });
   if (scripts)
     return {
@@ -212,6 +220,28 @@ export function localPlan({ decision, root = repositoryRoot, limit = 12, scripts
     );
   if (scriptsTests.length)
     steps.push(node("Adjacent script fixture tests", ["--test", ...scriptsTests]));
+  // The browser suites that own the changed feature, so a UI change cannot break its e2e
+  // fixtures unnoticed until CI. A random port keeps parallel sessions from colliding.
+  const manifestFile = path.join(root, "tests/browser/suites.json");
+  const impact =
+    browser && existsSync(manifestFile)
+      ? browserImpact(files, {
+          root,
+          manifest: JSON.parse(readFileSync(manifestFile, "utf8")),
+        })
+      : { run: [], deferred: [] };
+  if (impact.run.length)
+    steps.push({
+      ...node(`Browser suites for changed features: ${impact.run.join(", ")} (chromium)`, [
+        path.join(root, "scripts/checks/browser-tests.mjs"),
+        "--suite",
+        impact.run.join(","),
+        "--project",
+        "chromium",
+      ]),
+      env: { BYCODA_BROWSER_PORT: String(20000 + Math.floor(Math.random() * 20000)) },
+      timeoutMs: 900000,
+    });
   const deferred = [
     `Full CI gates: ${
       Object.entries(decision.gates)
@@ -222,11 +252,16 @@ export function localPlan({ decision, root = repositoryRoot, limit = 12, scripts
     "Full TypeScript suites, production builds, browser fixtures, three-OS checks, mobile and installed/live acceptance are not executed by this bounded runner",
     "Adjacent-file selection is a local iteration aid; the shared classifier keeps broader CI dependents selected",
   ];
+  if (impact.deferred.length)
+    deferred.push(
+      `${impact.deferred.length} more browser suites reach the changed files through shared imports; CI runs them`,
+    );
+  if (!browser) deferred.push("Browser suites skipped by --no-browser");
   if (tests.size > selected.length)
     deferred.push(
       `${tests.size - selected.length} adjacent test files exceed --max-tests=${limit}; CI still owns complete suites`,
     );
-  return { steps, deferred, selectedTests: selected };
+  return { steps, deferred, selectedTests: selected, browserSuites: impact.run };
 }
 
 async function execute(step, { root, timeoutMs }) {
@@ -234,6 +269,7 @@ async function execute(step, { root, timeoutMs }) {
   let timedOut = false;
   const child = spawn(step.command, step.args, {
     cwd: root,
+    env: step.env ? { ...process.env, ...step.env } : process.env,
     stdio: "inherit",
     windowsHide: true,
     detached: process.platform !== "win32",
@@ -252,7 +288,7 @@ async function execute(step, { root, timeoutMs }) {
     } catch {
       /* The owned child may already have exited. */
     }
-  }, timeoutMs);
+  }, step.timeoutMs ?? timeoutMs);
   const exitCode = await new Promise((resolve) => {
     child.once("error", () => resolve(1));
     child.once("exit", (code) => resolve(code ?? 1));

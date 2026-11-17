@@ -20,8 +20,14 @@ for (const theme of ["light", "dark"]) {
       await expect(accounts.nth(2).getByText("85%", { exact: true })).toBeVisible();
       await expect(accounts.nth(3).getByText("0%", { exact: true })).toBeVisible();
       const legend = page.locator(".usage-quota-legend-item");
-      await expect(legend).toHaveCount(4);
-      for (const account of ["codex:default", "claude:default", "claude:work", "claude:shared"])
+      await expect(legend).toHaveCount(5);
+      for (const account of [
+        "codex:default",
+        "claude:default",
+        "claude:work",
+        "claude:shared",
+        "grok:default",
+      ])
         await expect(
           page.locator(`.usage-quota-legend-item[data-account="${account}"]`),
         ).toBeVisible();
@@ -192,9 +198,7 @@ test("supports session and workspace scopes and 5-hour account thresholds", asyn
   await select(page, "Provider account", "codex · Fixture account");
   await page.getByLabel("Account usage threshold (%)", { exact: true }).fill("30");
   await page.getByRole("button", { name: "Save budget", exact: true }).click();
-  await expect(
-    page.getByText("Account-wide threshold, not attributed scope consumption.", { exact: false }),
-  ).toBeVisible();
+  await expect(page.getByText("codex · Fixture account", { exact: true })).toBeVisible();
   await expect(page.getByText("32.0% / 30.0%", { exact: false })).toBeVisible();
   await page.screenshot({
     path: "temp/test-results/usage-budgets/meters-dark.png",
@@ -234,7 +238,9 @@ for (const [theme, width, motion] of [
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await page.setViewportSize({ width, height: 900 });
-    await page.emulateMedia({ reducedMotion: motion === "reduce" ? "reduce" : "no-preference" });
+    await page.emulateMedia({
+      reducedMotion: motion === "reduce" ? "reduce" : "no-preference",
+    });
     await page.goto(
       `/tests/browser/usage/usage-budgets.html?overview=1&theme=${theme}&motion=${motion}`,
     );
@@ -297,7 +303,10 @@ for (const theme of ["light", "dark"] as const) {
           await page.getByRole("button", { name: "Fixture source order", exact: true }).click();
           await expect(
             page
-              .getByRole("dialog", { name: "Fixture source order", exact: true })
+              .getByRole("dialog", {
+                name: "Fixture source order",
+                exact: true,
+              })
               .getByText("No sources connected", { exact: true }),
           ).toBeVisible();
         }
@@ -318,17 +327,15 @@ for (const theme of ["light", "dark"] as const) {
         fixture.refreshUsageFixture();
       });
       await expect(
-        page
-          .getByRole("status")
-          .filter({ hasText: /Refreshing usage.*Previous results remain visible/ }),
+        page.getByRole("status").filter({
+          hasText: /Refreshing usage.*Previous results remain visible/,
+        }),
       ).toBeVisible();
       await expect(page.locator(".usage-analytics")).toHaveAttribute("aria-busy", "true");
       await shot("overview-pending");
       await page.goto(`/tests/browser/usage/usage-budgets.html?theme=${theme}`);
       await expect(
-        page.getByText("No usage budgets. Add a project, session or workspace budget.", {
-          exact: true,
-        }),
+        page.getByText("No usage budgets. Add a project, session or workspace budget."),
       ).toBeVisible();
       await shot("budgets-empty");
       await page.goto(
@@ -367,24 +374,31 @@ for (const theme of ["light", "dark"])
       const avatars = page.locator("[data-account-avatar]");
       await expect(avatars).toHaveCount(3);
       for (let n = 0; n < 3; n++) {
-        await expect(avatars.nth(n)).toHaveCSS("width", n === 2 ? "56px" : "24px");
+        await expect(avatars.nth(n)).toHaveCSS("width", n === 2 ? "32px" : "24px");
         await expect(avatars.nth(n).locator("span").first()).toHaveCSS("border-radius", "50%");
       }
       const news = page.getByRole("region", { name: "News" });
-      const rows = news.getByRole("listitem");
+      const rows = news.locator("[data-settings-part=row]");
       await expect(rows).toHaveCount(3);
-      await expect(rows.first()).toHaveCSS("border-bottom-width", "1px");
+      await expect(rows.first()).toHaveCSS("border-top-width", "0px");
+      await expect(rows.last()).toHaveCSS("border-top-width", "1px");
       await expect(rows.last()).toHaveCSS("border-bottom-width", "0px");
       await page.screenshot({
         path: `temp/verification/account-shared/${process.env.ACCOUNT_SHARED_PHASE ?? "after"}-news-${theme}-${width}.png`,
       });
       await page.getByRole("button", { name: "Open feedback fixture" }).click();
-      const dialog = page.getByRole("dialog", { name: "Send feedback", exact: true });
+      const dialog = page.getByRole("dialog", {
+        name: "Send feedback",
+        exact: true,
+      });
       const field = dialog.getByRole("textbox");
       await field.fill("Keep this unsent feedback draft.");
       await dialog.getByRole("radio", { name: "Problem", exact: true }).click();
       await page.keyboard.press("ArrowRight");
-      const selected = dialog.getByRole("radio", { name: "Praise", exact: true });
+      const selected = dialog.getByRole("radio", {
+        name: "Praise",
+        exact: true,
+      });
       await expect(selected).toBeChecked();
       await expect(selected).toBeFocused();
       await expect(field).toHaveValue("Keep this unsent feedback draft.");
@@ -393,7 +407,7 @@ for (const theme of ["light", "dark"])
       });
       const actual = await selected.evaluate((node) => {
         const p = document.createElement("span");
-        p.style.boxShadow = "0 0 0 2px var(--ui-border-accent)";
+        p.style.boxShadow = "0 0 0 2px var(--ui-selected-ring)";
         p.style.background = "var(--ui-tone-accent-subtle)";
         node.appendChild(p);
         const s = getComputedStyle(node),

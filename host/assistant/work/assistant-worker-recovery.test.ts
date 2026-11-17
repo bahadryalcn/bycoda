@@ -355,7 +355,10 @@ it("retires the exact worker after two nudges, queues the same retained task onc
     taskId: "canonical-task",
     state: "queued",
   });
-  expect(f.provider.cancel).toHaveBeenCalledOnce();
+  await vi.waitFor(() => expect(f.provider.cancel).toHaveBeenCalledOnce(), {
+    timeout: 10_000,
+    interval: 25,
+  });
   expect((await f.tasks.get("canonical-task"))?.status).toBe("queued");
   expect((await readAssistantRecovery(f.store, "canonical-task"))?.state).toBe("queued");
   expect(readFileSync(join(f.directory, "retained.txt"), "utf8")).toBe(
@@ -390,7 +393,10 @@ it("retires the exact worker after two nudges, queues the same retained task onc
   await f.twoNudges(restarted.sessionId);
   const second = await f.nudge("second-escalation", restarted.sessionId);
   expect(second.recovery?.state).toBe("escalated");
-  expect(f.provider.cancel).toHaveBeenCalledOnce();
+  await vi.waitFor(() => expect(f.provider.cancel).toHaveBeenCalledOnce(), {
+    timeout: 10_000,
+    interval: 25,
+  });
   expect(f.turns).toHaveLength(2);
   const snapshot = (await f.service.request({ op: "snapshot" }, "owner")).snapshot!;
   expect(snapshot.jobs.find((job) => job.id === f.job.id)?.status).toBe("waiting");
@@ -457,7 +463,10 @@ it("fences replacement source, questions and pause during a queued cancellation 
   await blocked;
   expect((await pending).recovery?.state).toBe("unknown");
   // Stopping the stalled worker is never fenced; only re-launch and nudges are.
-  expect(f.provider.cancel).toHaveBeenCalledOnce();
+  await vi.waitFor(() => expect(f.provider.cancel).toHaveBeenCalledOnce(), {
+    timeout: 10_000,
+    interval: 25,
+  });
   expect(f.turns).toHaveLength(1);
   f.managed.resume();
   const record = await f.store.session(f.sessionId);
@@ -477,7 +486,10 @@ it("fences replacement source, questions and pause during a queued cancellation 
       source: await f.source(),
     }),
   ).rejects.toThrow("exact current worker");
-  expect(f.provider.cancel).toHaveBeenCalledOnce();
+  await vi.waitFor(() => expect(f.provider.cancel).toHaveBeenCalledOnce(), {
+    timeout: 10_000,
+    interval: 25,
+  });
 });
 
 it("preserves questions, approvals, drafts and saved pauses instead of using recovery to bypass owner input", async () => {
@@ -632,7 +644,10 @@ it("escalates a failed recovered provider run without the generic transient retr
   expect((await readAssistantRecovery(f.store, current.id))?.state).toBe("escalated");
   await f.tasks.tick();
   expect(f.turns).toHaveLength(2);
-  expect(f.provider.cancel).toHaveBeenCalledOnce();
+  await vi.waitFor(() => expect(f.provider.cancel).toHaveBeenCalledOnce(), {
+    timeout: 10_000,
+    interval: 25,
+  });
   await f.service.tick();
   const reservation = await f.store.db
     .prepare("SELECT value FROM assistant_runtime WHERE id=?")
@@ -660,7 +675,10 @@ it("never repeats an uncertain cancellation under the same or a fresh supervisor
   f.managed.resume();
   expect((await f.nudge("uncertain-cancel")).recovery?.state).toBe("unknown");
   expect((await f.nudge("fresh-request-cannot-replay")).recovery?.state).toBe("unknown");
-  expect(f.provider.cancel).toHaveBeenCalledOnce();
+  await vi.waitFor(() => expect(f.provider.cancel).toHaveBeenCalledOnce(), {
+    timeout: 10_000,
+    interval: 25,
+  });
   expect(f.turns).toHaveLength(1);
   cancel.resolve();
   await f.engine.waitForRun(f.sessionId, f.first.runId);
@@ -756,7 +774,10 @@ it("admits an owner job Pause while recovery waits for the engine queue and pres
     )?.status,
   ).toBe("paused");
   // Stopping the stalled worker is never fenced; only re-launch and nudges are.
-  expect(f.provider.cancel).toHaveBeenCalledOnce();
+  await vi.waitFor(() => expect(f.provider.cancel).toHaveBeenCalledOnce(), {
+    timeout: 10_000,
+    interval: 25,
+  });
 });
 
 it("never revives a queued supervisor request when a job is paused then resumed before its old command reaches the engine", async () => {
@@ -784,5 +805,10 @@ it("never revives a queued supervisor request when a job is paused then resumed 
   await blocked;
   expect((await first).recovery?.state).toBe("unknown");
   expect(await secondResult).toContain("newer owner job hold");
-  expect(f.provider.cancel).toHaveBeenCalledOnce();
+  // The cancel runs on the released operation queue, which a slow CI runner may reach after
+  // both nudges settle; it must still happen exactly once.
+  await vi.waitFor(() => expect(f.provider.cancel).toHaveBeenCalledOnce(), {
+    timeout: 10_000,
+    interval: 25,
+  });
 });

@@ -1391,6 +1391,18 @@ describe("GitChangesPanel navigation", () => {
 });
 
 describe("GitChangesPanel loading and publication recovery", () => {
+  it("centers the clean working tree with an icon above its message", async () => {
+    vi.mocked(gitDiffIndex).mockResolvedValue(index());
+    await renderPanel("/repo-clean-empty-state");
+    const message = [...container.querySelectorAll("p")].find(
+      (element) => element.textContent === "No uncommitted changes",
+    );
+    const state = message?.closest("section");
+    expect(state?.getAttribute("data-context")).toBe("page");
+    expect(state?.classList.contains("h-full")).toBe(true);
+    expect(state?.querySelector('[aria-hidden="true"] svg')).not.toBeNull();
+  });
+
   it("does not repeat a manual refresh when the retained panel becomes visible again", async () => {
     vi.mocked(gitDiffIndex).mockResolvedValue(index());
     const render = (mode: "visible" | "hidden") =>

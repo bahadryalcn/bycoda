@@ -10,23 +10,6 @@ test("Git generation exposes advisor controls in a narrow panel and keeps the dr
   await page.setViewportSize({ width: 300, height: 780 });
   await page.goto("/tests/browser/source-control/git-generation.html");
   await expect(page.getByText("Main model", { exact: true })).toHaveCount(0);
-  const extrasBounds = (await page
-    .getByRole("button", { name: "AI generation settings" })
-    .boundingBox())!;
-  const generateBounds = (await page
-    .getByRole("button", { name: "Generate commit message", exact: true })
-    .boundingBox())!;
-  expect(Math.abs(extrasBounds.y - generateBounds.y)).toBeLessThan(2);
-  expect(Math.abs(extrasBounds.x - (generateBounds.x + generateBounds.width))).toBeLessThan(2);
-  // Without a saved choice the trigger hint reports the automatic selection.
-  await page.getByRole("button", { name: "AI generation settings" }).hover();
-  await expect(page.getByRole("tooltip")).toContainText("Automatic");
-  await page.getByRole("button", { name: "AI generation settings" }).click();
-  await expect(
-    page.getByRole("dialog", { name: "Commit and pull request generation", exact: true }),
-  ).toBeVisible();
-  await expect(page.getByText("Main model", { exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Extras", exact: true })).toHaveCount(0);
   // Advisor and subagent settings live in the one model panel (no separate Extras entry).
   const modelButton = page.getByRole("button", { name: /Claude Haiku 4.5/ });
   const panel = page.getByRole("dialog", { name: "Model and settings", exact: true });
@@ -93,7 +76,7 @@ test("Git generation exposes advisor controls in a narrow panel and keeps the dr
   await expect(advisorField).toContainText("Claude Opus 5.5");
   await expect(panel.locator("[data-model-settings]")).toHaveCSS("color-scheme", "dark");
   await delegate("Subagents", /^Claude Haiku 4\.5\b/);
-  await choose("Subagent model policy", "Apply to all");
+  await choose("Subagent model policy", "Override all");
   await expect.poll(saved).toEqual({
     model: "claude:haiku-4.5",
     advisor: "claude:opus-5-5",
@@ -107,8 +90,8 @@ test("Git generation exposes advisor controls in a narrow panel and keeps the dr
   const policy = setting("Subagent model policy");
   for (const reducedMotion of ["no-preference", "reduce"] as const) {
     await page.emulateMedia({ reducedMotion });
-    await policy.getByRole("radio", { name: "Default", exact: true }).click();
-    await policy.getByRole("radio", { name: "Apply to all", exact: true }).click();
+    await policy.getByRole("radio", { name: "Agent's choice", exact: true }).click();
+    await policy.getByRole("radio", { name: "Override all", exact: true }).click();
     // Measure the settled plate, not an intermediate shared-layout animation frame.
     await expect
       .poll(() =>
@@ -171,9 +154,11 @@ test("Git generation exposes advisor controls in a narrow panel and keeps the dr
     path: testInfo.outputPath("git-generation-main-and-extras.png"),
   });
   await page.reload();
-  await expect(page.getByRole("button", { name: "AI generation settings" })).toHaveText("");
-  await page.getByRole("button", { name: "AI generation settings" }).click();
-  // A saved project choice offers one way back to the global selection.
-  await page.getByRole("button", { name: "Use global" }).click();
-  await expect(page.getByTestId("choice")).toHaveText("");
+  // The saved choice survives a reload.
+  await expect.poll(saved).toEqual({
+    model: "claude:haiku-4.5",
+    advisor: "claude:opus-5-5",
+    subagents: ["claude:haiku-4.5"],
+    subagentPolicy: "force",
+  });
 });

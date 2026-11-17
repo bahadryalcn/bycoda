@@ -1,4 +1,7 @@
 {
+  "Fold device": "Plier l’appareil",
+  "Half-open device": "Ouvrir l’appareil à moitié",
+  "Unfold device": "Déplier l’appareil",
   "Remove missing": "Retirer les manquantes",
   "Select a group": "Sélectionner un groupe",
   "Choose a group to add or remove its skills.": "Choisissez un groupe pour ajouter ou retirer ses compétences.",
@@ -2476,7 +2479,7 @@
   "Beside chat": "À côté du chat",
   "Top bar": "Barre supérieure",
   "Animate tabs as they open and close. Turn this off for instant tab changes.": "Animez les onglets lorsqu’ils s’ouvrent et se ferment. Désactivez cette option pour des changements d'onglet instantanés.",
-  "Press {p0} in any app to float a prompt over it and start a session without switching to {p1}. Change the shortcut in Keybindings. Return starts it in the background; ⌘Return starts it and brings the session forward.": "Appuyez sur {p0} dans n'importe quelle application pour faire flotter une invite dessus et démarrer une session sans passer à {p1}. Modifiez le raccourci dans les raccourcis clavier. Return le démarre en arrière-plan ; ⌘Return le démarre et fait avancer la session.",
+  "Press {p0} in any app to float a prompt over it and start a session without switching to {p1}. Change the shortcut in Keybindings. Enter starts it in the background; {p2}Enter starts it and brings the session forward.": "Appuyez sur {p0} dans n'importe quelle application pour faire flotter une invite dessus et démarrer une session sans passer à {p1}. Modifiez le raccourci dans les raccourcis clavier. Return le démarre en arrière-plan ; {p2}Return le démarre et fait avancer la session.",
   "Sleep": "Dormir",
   "Keep this computer awake while an agent is working.": "Gardez cet ordinateur éveillé pendant qu'un agent travaille.",
   "Prevent idle sleep during agent work, and optionally after the last agent finishes. Closing the lid or choosing Sleep still works. On battery-powered Modern Standby PCs, Windows may stop the request five minutes after the sleep timeout.": "Empêchez la mise en veille pendant le travail de l'agent et éventuellement après la fin du dernier agent. Fermer le couvercle ou choisir Veille fonctionne toujours. Sur les PC de veille moderne alimentés par batterie, Windows peut arrêter la demande cinq minutes après l'expiration du délai de mise en veille.",
@@ -5470,7 +5473,8 @@
   "Finish selection": "Terminer la sélection",
   "Select tasks": "Sélectionner des tâches",
   "No tasks match your search or filters.": "Aucune tâche ne correspond à votre recherche ou à vos filtres.",
-  "Two versions of this conversation were found. Your messages were kept. Sync to compare them again.": "Deux versions de cette conversation ont été trouvées. Vos messages ont été conservés. Synchronisez pour les comparer à nouveau.",
+  "This conversation has not finished syncing with the other computer. Your messages are kept.": "Cette conversation n’est pas encore entièrement synchronisée avec l’autre ordinateur. Vos messages sont conservés.",
+  "Syncing with the other computer…": "Synchronisation avec l’autre ordinateur…",
   "This conversation was changed on two computers. Choose the version to keep.": "Cette conversation a été modifiée sur deux ordinateurs. Choisissez la version à conserver.",
   "Keep this": "Garder celle-ci",
   "Keep other": "Garder l’autre",
@@ -6263,7 +6267,6 @@
   "Narrow": "Étroit",
   "This account is not available on the owning Host.": "Ce compte n’est pas disponible sur l’hôte propriétaire.",
   "Update the Host to load its available accounts.": "Mettez à jour l’hôte pour charger ses comptes disponibles.",
-  "Current Host account": "Compte actuel de l’hôte",
   "Unavailable Host account": "Compte d’hôte indisponible",
   "Couldn’t save SSH tabs.": "Impossible d’enregistrer les onglets SSH.",
   "Limit reached": "Limite atteinte",
@@ -7394,6 +7397,7 @@
   "Show me": "Me montrer",
   "Tips": "Astuces",
   "Not signed in": "Non connecté",
+  "Saved account": "Compte enregistré",
   "Sign-in not checked": "Connexion non vérifiée",
   "More options for {p0}": "Plus d'options pour {p0}",
   "About existing accounts": "À propos des comptes existants",
@@ -11926,5 +11930,7 @@
   "Invalid design metadata": "Métadonnées de design non valides",
   "Replace the current draft?": "Remplacer le brouillon actuel ?",
   "Unsaved changes to {p0} will be lost.": "Les modifications non enregistrées de {p0} seront perdues.",
-  "Finish the current action before closing.": "Terminez l’action en cours avant de fermer."
+  "Finish the current action before closing.": "Terminez l’action en cours avant de fermer.",
+  "Subagents: {p0}": "Sous-agents : {p0}",
+  "The advisor is unavailable this turn because the Host connection is not ready.": "Le conseiller est indisponible pour ce tour, car la connexion à l’Host n’est pas prête."
 }

@@ -15,7 +15,7 @@ type DelegationAuthor = Extract<SessionMessageAuthor, { kind: "delegation" }>;
 
 /** The Host joins the sections of a batched notice with this separator. */
 const SECTION_SEPARATOR = "\n\n---\n\n";
-const COMPLETION = /^Subagent completion: (.+) \(([^()\s]+)\), status (\w+)\./;
+const COMPLETION = /^(?:Subagent|Advisor) completion: (.+) \(([^()\s]+)\), status (\w+)\./;
 const MESSAGE = /^Collaboration message from (.+) \(([^()\s]+)\)\./;
 
 /** Splits a delegation-authored text into one section per child; an unreadable section keeps the author's identity. */

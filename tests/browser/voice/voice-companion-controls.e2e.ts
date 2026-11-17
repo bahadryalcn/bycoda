@@ -159,16 +159,16 @@ for (const theme of ["light", "dark"])
       await panel.getByRole("button", { name: "Pause mic", exact: true }).click();
       await expect(panel.getByText(/Hold .* to talk/)).toBeVisible();
       await expect(panel.getByText(/Hold .* to talk/)).not.toContainText("{");
-      await expect(panel.getByText(/Hold .* to talk/)).toContainText("M");
+      await expect(panel.getByText(/Hold .* to talk/)).toContainText("J");
       await capture("push-to-talk-ready");
       await page.keyboard.down("Control");
       await page.keyboard.down("Shift");
-      await page.keyboard.down("m");
+      await page.keyboard.down("j");
       await expect
         .poll(() => page.evaluate(() => (window as any).fixtureVoice.pushToTalkStarts))
         .toBe(1);
       await capture("push-to-talk-held");
-      await page.keyboard.up("m");
+      await page.keyboard.up("j");
       await page.keyboard.up("Shift");
       await page.keyboard.up("Control");
       expect(await page.evaluate(() => (window as any).fixtureVoice.pushToTalkEnds)).toBe(1);

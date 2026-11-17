@@ -70,6 +70,7 @@ function extraSettingsJson(
       accountChoices: true,
       signedOutAccounts: source.accounts === undefined ? signedOutAccountKeys(usage) : undefined,
       signedOutLabel: t("Not signed in"),
+      savedAccountLabel: t("Saved account"),
       values: merged,
       unavailable: (name) => t("Unavailable: {p0}", { p0: name }),
     }),
@@ -174,8 +175,9 @@ export function ModelExtrasPanel({
           (setting.id === "crossSubagents" ? "[]" : setting.id === "crossAdvisor" ? "null" : next),
       };
       if (setting.id === "crossSubagents") delete settings.subagentModel;
+      // `advisor` is Claude Code's own setting; Off there also turns its built-in advisor off.
       if (setting.id === "crossAdvisor") {
-        if (next) delete settings.advisor;
+        if (next || harness !== "claude") delete settings.advisor;
         else settings.advisor = "off";
       }
       for (const [key, entry] of Object.entries(settings))

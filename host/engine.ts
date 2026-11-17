@@ -40,6 +40,7 @@ import type { ConversationRewindAdapter } from "./sessions/session-rewind";
 import { durableWrite, refComponent } from "./git/turn-git-history";
 import { previewContextualSession } from "./sessions/contextual-session";
 import { modelSettings } from "./sessions/command-model-settings";
+import { clientMessageCommand } from "./sessions/client-message-id";
 import {
   composeNoteContext,
   noteContextMeta,
@@ -207,6 +208,7 @@ function contextualInput(v: Record<string, unknown>): ContextualSessionInput {
 }
 
 export function parseCommand(input: unknown): HostCommand {
+  input = clientMessageCommand(input);
   const command = parseCommandBody(input);
   const value = (input as Record<string, unknown>).authorityGeneration;
   if (value === undefined) return command;
@@ -2411,6 +2413,7 @@ export class HostEngine {
     raw: unknown,
     validateQuestionAttachments?: () => Promise<void>,
   ): Promise<CommandReceipt> {
+    raw = clientMessageCommand(raw);
     const admission = this.commandAdmissions.getStore();
     await this.ready;
     // Admission precedes workspace preparation and all provider side effects.
@@ -2489,6 +2492,13 @@ export class HostEngine {
         const signature = createHash("sha256").update(JSON.stringify(command)).digest("hex");
         const previous = await this.store.receipt(command.commandId, signature);
         if (previous) return previous;
+        const resumeAtReset =
+          command.type === "send" || command.type === "compact"
+            ? (command.resumeAtReset ??
+              (await readHostAgentDefaults(this.store).then(
+                (defaults) => defaults.version > 0 && defaults.resumeAtReset,
+              )))
+            : undefined;
         if (command.type === "contextual") return await this.contextualCommand(command, signature);
         if (command.type === "regenerateTitle")
           return this.regenerateTitleCommand(command, signature);
@@ -2570,6 +2580,8 @@ export class HostEngine {
             };
           } else {
             value = await this.store.session(command.sessionId);
+            if (value.archived && ["send", "steer", "draft", "compact"].includes(command.type))
+              throw new Error("Session is archived");
             if (
               (command.type === "configure" || command.type === "draft") &&
               command.expectedRevision !== undefined &&
@@ -3076,7 +3088,7 @@ export class HostEngine {
                               : withShellContext(shellRuns, `${handoffBlock}${turnText}`),
                         turnIntent,
                         attachments,
-                        command.resumeAtReset,
+                        resumeAtReset,
                         handoffFrom,
                         rewindReplay,
                         codexGoal
@@ -5077,3 +5089,4 @@ export class HostEngine {
     if (failures.length) throw new AggregateError(failures, "Host session shutdown failed.");
   }
 }
+import { readHostAgentDefaults } from "./settings-defaults/read-defaults";

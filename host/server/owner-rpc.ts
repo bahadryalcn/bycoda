@@ -22,13 +22,14 @@ import { handleProvidersRpc } from "./rpc-providers";
 import { handleResourcesRpc } from "./rpc-resources";
 import { handleRuntimeLogsRpc } from "./rpc-runtime-logs";
 import { handleSessionsRpc } from "./rpc-sessions";
+import { handleDraftPresenceRpc } from "../drafts/rpc";
 import { handleTasksRpc } from "./rpc-tasks";
 import { handleTerminalsRpc } from "./rpc-terminals";
 import { handlePullRequestsRpc } from "./rpc-pull-requests";
 import { handleUsageRpc } from "./rpc-usage";
 import { handleActivityOwnerRpc, handleSessionLifecycleRpc } from "./rpc-account-platform";
 import { handleDecisionModelsRpc } from "./rpc-decision-models";
-import { handleSecretsOwnerRpc } from "./rpc-secrets";
+import { handleSecretsOwnerRpc, handleSecretInputRpc } from "./rpc-secrets";
 import { handleVoiceRpc } from "./rpc-voice";
 import { handlePushRpc } from "./rpc-push";
 import { handleWorkspacesRpc } from "./rpc-workspaces";
@@ -131,6 +132,7 @@ type Dependencies = Pick<
   | "desktopDelete"
   | "remoteActivity"
   | "invalidateSessionCopies"
+  | "invalidateModelCatalog"
   | "sessionQueues"
   | "commandService"
   | "withinBeat"
@@ -176,6 +178,7 @@ type Dependencies = Pick<
   | "pushDevices"
   | "pushNotifications"
   | "approvals"
+  | "conversationDesktop"
   | "providers"
   | "genericAcp"
   | "catalogs"
@@ -336,6 +339,7 @@ const handlers: Record<
   "sessions.update": handleSessionsRpc,
   "sessions.delete": handleSessionsRpc,
   "sessions.page": handleSessionsRpc,
+  "sessions.sideQuestion": handleSessionsRpc,
   "sessions.sync": handleSessionsRpc,
   "commands.status": handleSessionsRpc,
   "sessions.desktopLive": handleSessionsRpc,
@@ -374,6 +378,8 @@ const handlers: Record<
   "projects.browse": handleProjectsRpc,
   "projects.createDirectory": handleProjectsRpc,
   "projects.open": handleProjectsRpc,
+  "projects.clone": handleProjectsRpc,
+  "projects.clone.progress": handleProjectsRpc,
   "projects.organization.read": handleProjectsRpc,
   "projects.organization.patch": handleProjectsRpc,
   "projects.organization.status": handleProjectsRpc,
@@ -475,6 +481,9 @@ const handlers: Record<
   "voice.local.start": handleVoiceRpc,
   "voice.local.transcribe": handleVoiceRpc,
   "secrets.owner.list": handleSecretsOwnerRpc,
+  "secrets.input.list": handleSecretInputRpc,
+  "secrets.input.answer": handleSecretInputRpc,
+  "drafts.presence.report": handleDraftPresenceRpc,
   "secrets.owner.revoke": handleSecretsOwnerRpc,
   "activity.record": handleActivityOwnerRpc,
   "activity.days": handleActivityOwnerRpc,

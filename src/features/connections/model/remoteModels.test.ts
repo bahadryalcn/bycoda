@@ -81,3 +81,23 @@ it("carries compatible choices to another model and compares settings by value",
   expect(sameModelSettings({ a: "1", b: "2" }, { b: "2", a: "1" })).toBe(true);
   expect(sameModelSettings({ a: "1" }, { a: "1", b: "2" })).toBe(false);
 });
+
+it("leaves bycoda's own delegation settings to their dedicated rows", () => {
+  const catalog = { models: { claude: [opus] }, errors: {} };
+  const saved = {
+    effort: "high",
+    crossSubagents: '[{"harness":"claude","model":"claude:sonnet"}]',
+    crossAdvisor: '{"harness":"claude","model":"claude:opus"}',
+    imageModels: '["codex:imagegen"]',
+    delegationParent: "{}",
+  };
+  for (const savedModel of [opus.id, "claude:gone"]) {
+    const ids = remoteModelControls(catalog, "claude", savedModel, saved, savedModel).settings.map(
+      (setting) => setting.id,
+    );
+    expect(ids).not.toContain("crossSubagents");
+    expect(ids).not.toContain("crossAdvisor");
+    expect(ids).not.toContain("imageModels");
+    expect(ids).not.toContain("delegationParent");
+  }
+});

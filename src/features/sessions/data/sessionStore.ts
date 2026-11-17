@@ -366,15 +366,20 @@ export function sanitizeSessionForPersist(session: Session): SessionUpsertPayloa
  */
 const persistenceBaselines = new PersistenceBaselines();
 const sanitizedBlocks = new WeakMap<Block, Block | null>();
+/** The block as storage keeps it, or `null` when storage drops it. */
+export function storedBlockForm(block: Block): Block | null {
+  let value = sanitizedBlocks.get(block);
+  if (value === undefined) {
+    value = sanitizeBlock(block);
+    sanitizedBlocks.set(block, value);
+  }
+  return value;
+}
 function incrementalBlocks(session: Session): PersistedBlock[] {
   const firstUser = session.blocks.findIndex((block) => block.role === "user");
   const result: PersistedBlock[] = [];
   session.blocks.forEach((source, index) => {
-    let value = sanitizedBlocks.get(source);
-    if (value === undefined) {
-      value = sanitizeBlock(source);
-      sanitizedBlocks.set(source, value);
-    }
+    let value = storedBlockForm(source);
     if (!value) return;
     if (
       index === firstUser &&

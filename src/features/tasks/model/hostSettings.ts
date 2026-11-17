@@ -2,6 +2,72 @@
  * how many tasks run at once and how much agent time a day may use. The host
  * advertises this capability when it has it. */
 export const HOST_SETTINGS = "host.settings";
+export const HOST_BEHAVIOR_DEFAULTS = "host.settings.behavior.v1";
+/** Advertised only once the Host has authoritative client draft clearance; gates the archive fields. */
+export const HOST_AUTO_ARCHIVE = "host.settings.autoArchive.v1";
+
+export type AgentDefaults = {
+  keepAwakeWhileAgentsWork: boolean;
+  keepAwakeHoldAfter: "0" | "15m" | "30m" | "1h" | "4h" | "forever";
+  autoContinueInterrupted: boolean;
+  resumeAtReset: boolean;
+  streamingTextMode: "paced" | "adaptive";
+  archiveMergedSessions: boolean;
+  archiveInactiveDays: number;
+};
+export type AgentDefaultsRecord = AgentDefaults & { schemaVersion: 1; version: number };
+export const DEFAULT_AGENT_DEFAULTS: AgentDefaultsRecord = {
+  schemaVersion: 1,
+  version: 0,
+  keepAwakeWhileAgentsWork: false,
+  keepAwakeHoldAfter: "0",
+  autoContinueInterrupted: true,
+  resumeAtReset: true,
+  streamingTextMode: "paced",
+  archiveMergedSessions: false,
+  archiveInactiveDays: 0,
+};
+
+/** Strict patch validation; missing fields retain the Host's current value. */
+export function parseAgentDefaults(
+  input: unknown,
+  current = DEFAULT_AGENT_DEFAULTS,
+): AgentDefaultsRecord {
+  if (!input || typeof input !== "object" || Array.isArray(input))
+    throw new Error("Invalid agent defaults");
+  const v = input as Record<string, unknown>;
+  if (v.schemaVersion !== undefined && v.schemaVersion !== 1)
+    throw new Error("Unsupported agent defaults schema");
+  const next = { ...current };
+  for (const key of [
+    "keepAwakeWhileAgentsWork",
+    "autoContinueInterrupted",
+    "resumeAtReset",
+    "archiveMergedSessions",
+  ] as const) {
+    if (v[key] === undefined) continue;
+    if (typeof v[key] !== "boolean") throw new Error(`Invalid ${key}`);
+    next[key] = v[key];
+  }
+  if (v.keepAwakeHoldAfter !== undefined) {
+    if (
+      typeof v.keepAwakeHoldAfter !== "string" ||
+      !["0", "15m", "30m", "1h", "4h", "forever"].includes(v.keepAwakeHoldAfter)
+    )
+      throw new Error("Invalid keep awake hold");
+    next.keepAwakeHoldAfter = v.keepAwakeHoldAfter as AgentDefaults["keepAwakeHoldAfter"];
+  }
+  if (v.streamingTextMode !== undefined) {
+    if (v.streamingTextMode !== "paced" && v.streamingTextMode !== "adaptive")
+      throw new Error("Invalid streaming mode");
+    next.streamingTextMode = v.streamingTextMode;
+  }
+  if (v.archiveInactiveDays !== undefined)
+    next.archiveInactiveDays = whole(v.archiveInactiveDays, 0, 3650, "inactive days");
+  if (v.version !== undefined)
+    next.version = whole(v.version, 0, Number.MAX_SAFE_INTEGER, "agent defaults version");
+  return next;
+}
 
 export const DEFAULT_MAX_RUNNING_TASKS = 2;
 // Concurrent agents accumulate time independently, so a day's total can exceed 24h.
@@ -12,6 +78,7 @@ export type HostSettings = {
   maxRunningTasks: number;
   /** Agent minutes the host may start work for per day; zero means no limit. */
   dailyAgentMinutes: number;
+  agentDefaults?: AgentDefaultsRecord;
 };
 
 export const DEFAULT_HOST_SETTINGS: HostSettings = {
@@ -50,6 +117,11 @@ export function parseHostSettings(
     throw new Error("Invalid settings");
   const v = input as Record<string, unknown>;
   return {
+    ...(v.agentDefaults === undefined
+      ? current.agentDefaults
+        ? { agentDefaults: current.agentDefaults }
+        : {}
+      : { agentDefaults: parseAgentDefaults(v.agentDefaults, current.agentDefaults) }),
     maxRunningTasks:
       v.maxRunningTasks === undefined
         ? current.maxRunningTasks

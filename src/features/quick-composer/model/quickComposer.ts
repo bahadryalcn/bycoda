@@ -3,7 +3,7 @@ import { parseQuickAttachments } from "./quickAttachments";
 import { isHarnessAvailable } from "../../../integrations/harness/core/availability";
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
-import { IS_MAC } from "../../../platform/tauri/platform";
+import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
 import { loadQuickComposerShortcut } from "../../settings/model/settings";
 import { visibleProjects } from "../../group-lock/model/groupLock";
 import { pathKey, prettyParent } from "../../../shared/lib/paths";
@@ -137,9 +137,9 @@ export type QuickLaunch = {
   reveal: boolean;
 };
 
-/** The panel exists on macOS only; elsewhere the shortcut is never claimed. */
+/** Native quick-composer windows are available on macOS and Windows. */
 export function quickComposerSupported(): boolean {
-  return IS_MAC;
+  return IS_MAC || IS_WIN;
 }
 
 export async function setQuickComposerShortcut(
@@ -182,7 +182,12 @@ export function parseQuickLaunch(value: unknown): QuickLaunch | null {
     return null;
   if (raw.workspaceMode === "worktree" && raw.worktreeCwd !== undefined) return null;
   if (raw.worktreeBase !== undefined && raw.workspaceMode !== "worktree") return null;
+  if (raw.draft !== undefined && typeof raw.draft !== "boolean") return null;
+  if (raw.intent !== undefined && raw.intent !== "plan" && raw.intent !== "orchestrate")
+    return null;
   return {
+    ...(raw.draft === true ? { draft: true } : {}),
+    ...(raw.intent ? { intent: raw.intent as "plan" | "orchestrate" } : {}),
     ...(raw.workspaceMode ? { workspaceMode: raw.workspaceMode as WorkspaceMode } : {}),
     ...(typeof raw.worktreeBase === "string" ? { worktreeBase: raw.worktreeBase } : {}),
     ...(typeof raw.worktreeCwd === "string" ? { worktreeCwd: raw.worktreeCwd } : {}),

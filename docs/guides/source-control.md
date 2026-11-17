@@ -1,5 +1,8 @@
 # Source control review
 
+A clean working tree shows a centered check icon above its empty-state message.
+If the branch has diverged, the panel keeps the divergence message and uses a branch icon.
+
 The sidebar's **Changes** tab opens source control. **Generate commit message**
 and pull request text generation run on the Host that owns the selected remote
 repository, using that Host's Git model routing and provider accounts. They never
@@ -31,6 +34,11 @@ repository shows its full panel, named in the picker, instead of a single row. T
 session's checkout starts expanded; each panel keeps its own expanded state and
 commit draft when collapsed or when you review another target. Selecting a review
 target does not change where the agent executes.
+
+With one checkout selected, its header is a single row: the `folder · branch` picker
+leads, with refresh, worktree management and the Git menu at the end. The picker has
+**Worktrees** and **Branches** tabs, so switching checkout (or back to All checkouts)
+and switching branch happen in one place.
 
 Each panel's staging, unstaging, commit and sync actions apply only to that exact
 repository. A file with the same relative name in another checkout is a separate

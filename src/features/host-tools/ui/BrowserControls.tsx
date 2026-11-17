@@ -13,7 +13,7 @@ import {
   CircleDot,
   CornerDownRight,
   Eye,
-  Globe,
+  ArrowRight,
   Keyboard,
   Pause,
   Play,
@@ -117,7 +117,7 @@ export function BrowserAddressInput({
                   : t("Use an HTTP or HTTPS address.")
         }
       >
-        <Globe className="icon-sm" aria-hidden />
+        <ArrowRight className="icon-sm" aria-hidden />
       </Button>
     </>
   );

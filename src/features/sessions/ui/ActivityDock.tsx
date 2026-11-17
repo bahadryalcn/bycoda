@@ -264,7 +264,7 @@ function DockBody({
       data-activity-dock={dock.state}
       data-dock-subagents={dock.agents.some((agent) => agent.kind === "agent") ? "" : undefined}
       {...surfaceAttributes(
-        { radius: "card", variant: "floating" },
+        { radius: "card", variant: "floating", material: "glass" },
         `activity-dock overflow-hidden font-sans ${
           dock.state === "done" ? "activity-dock-done" : ""
         }`,
@@ -488,6 +488,16 @@ function DockAgentRow({
                 <Text size="inherit" tone="inherit" truncate>
                   {accountLabel}
                 </Text>
+              ) : null}
+              {agent.nested ? (
+                <Text size="inherit" tone="inherit" className="shrink-0" data-dock-agent-nested>
+                  {t("Subagents: {p0}", { p0: agent.nested })}
+                </Text>
+              ) : null}
+              {agent.needsInput ? (
+                <Badge size="xs" tone="warning" appearance="subtle" className="shrink-0">
+                  {t("Needs input")}
+                </Badge>
               ) : null}
             </Text>
           ) : null}

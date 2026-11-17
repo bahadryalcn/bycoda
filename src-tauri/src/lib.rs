@@ -98,9 +98,9 @@ mod provider_terminal_profiles;
 mod provider_usage;
 mod pty;
 mod pty_runtime_logs;
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 mod quick_composer;
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(target_os = "macos", target_os = "windows", test))]
 mod quick_native;
 mod rate_limits;
 mod reminders;
@@ -529,9 +529,10 @@ pub fn run() {
                 desktop_control_window::init(app.handle()).map_err(std::io::Error::other)?;
                 assistant_presence::init(app.handle()).map_err(std::io::Error::other)?;
             }
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
+            quick_composer::init(app.handle())?;
             #[cfg(target_os = "macos")]
             {
-                quick_composer::init(app.handle())?;
                 macos::install_dock_menu(app.handle());
                 if let Some(window) = app.get_webview_window("main") {
                     macos::install(&window);
@@ -815,6 +816,9 @@ pub fn run() {
             fs::git_github_work_item_thread,
             fs::git_github_work_item_comment,
             github_review::git_github_pr_review_context,
+            github_review::management::git_github_pr_reviewers,
+            github_review::management::git_github_pr_labels,
+            github_review::management::git_github_pr_reaction,
             github_mentions::github_mention_prefix,
             github_review::git_github_pr_review,
             desktop_inbox_review::desktop_inbox_review,
@@ -1202,37 +1206,37 @@ pub fn run() {
             voice_overlay::voice_overlay_room,
             voice_overlay::voice_overlay_close,
             voice_overlay::voice_overlay_show_owner,
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
             quick_composer::quick_composer_set_enabled,
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
             quick_composer::quick_composer_prepare,
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
             quick_composer::quick_composer_fit,
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
             quick_composer::quick_composer_submit,
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
             quick_composer::quick_composer_launch_scope,
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
             quick_composer::quick_composer_submit_intent,
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
             quick_composer::quick_composer_submit_status,
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
             quick_composer::quick_composer_take,
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
             quick_composer::quick_composer_ack,
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
             quick_composer::screenshots::quick_composer_release_capture,
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
             quick_composer::quick_composer_capture,
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
             quick_composer::git_popup::quick_git_open,
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
             quick_composer::git_popup::quick_git_state,
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
             quick_composer::git_popup::quick_git_fit,
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
             quick_composer::git_popup::quick_git_complete,
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
             quick_composer::git_popup::quick_composer_dismiss,
             window_transfer::take_window_transfer,
             window_transfer::window_transfer_ready,

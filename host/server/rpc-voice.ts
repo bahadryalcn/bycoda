@@ -7,6 +7,8 @@ import { openRouterTranscriptionModels } from "../voice/voice-transcription-cata
 import type { ServerBindings } from "./bindings";
 import type { OwnerRpcRequest } from "./owner-rpc-context";
 const dictationCleanupRuns = new DictationCleanupRuns();
+const isLoopback = (request: OwnerRpcRequest) =>
+  ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(request.request.socket.remoteAddress ?? "");
 export async function handleVoiceRpc(
   dependencies: Pick<ServerBindings, "engine" | "voiceCloud" | "localVoice" | "voiceSetup">,
   request: OwnerRpcRequest,
@@ -34,11 +36,15 @@ export async function handleVoiceRpc(
     case "voice.dictation.process":
     case "voice.cloud.transcribe":
     case "voice.cloud.models":
-      // Sign-ins and keys stay on this computer: no browser or remote caller.
+      // Sign-ins and keys stay on this computer: no browser or remote caller. Cloud
+      // transcription and status alone also serve a paired owner device (the phone).
       if (
         request.request.headers.origin ||
-        !["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(
-          request.request.socket.remoteAddress ?? "",
+        !(
+          isLoopback(request) ||
+          ((request.input.method === "voice.cloud.transcribe" ||
+            request.input.method === "voice.cloud.status") &&
+            (await request.domainContext.authorized()))
         )
       )
         throw new Error("Cloud voice is available only on this computer.");
@@ -111,11 +117,10 @@ export async function handleVoiceRpc(
     case "voice.local.modelAction":
     case "voice.local.modelStatus":
     case "voice.local.modelCancel":
+      // The paired owner phone manages the same models from Settings → Voice.
       if (
         request.request.headers.origin ||
-        !["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(
-          request.request.socket.remoteAddress ?? "",
-        )
+        !(isLoopback(request) || (await request.domainContext.authorized()))
       )
         throw new Error("Voice model management is available only on this computer.");
       if (request.input.method === "voice.local.models") request.result = await voiceModels.list();

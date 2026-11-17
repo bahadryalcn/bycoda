@@ -189,6 +189,11 @@ export function createProjectsRuntime(
     dependencies.featureSession,
   );
   const pullRequestWatch = new PullRequestWatches({
+    archiveLink: {
+      record: (id, url, state) =>
+        recordArchivePullRequest(dependencies.engine.store, id, url, state),
+      forget: (id, url) => forgetArchivePullRequest(dependencies.engine.store, id, url),
+    },
     file: join(dirname(dependencies.engine.store.attachmentDir), "pull-request-watches.json"),
     store: dependencies.engine.store,
     engine: dependencies.engine,
@@ -274,3 +279,7 @@ export function createProjectsRuntime(
     conversationRuntimeReads,
   };
 }
+import {
+  recordArchivePullRequest,
+  forgetArchivePullRequest,
+} from "../settings-defaults/pull-request-links";

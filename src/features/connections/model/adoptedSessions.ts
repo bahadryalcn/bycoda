@@ -4,6 +4,16 @@ import { sessionActivityAt } from "../../sessions/public/sessionActivity";
 import { persistableAttachment } from "../../sessions/public/attachments";
 import { buildConversationReplay } from "../../sessions/public/conversationRewind";
 import type { HostSession } from "./protocol";
+
+/**
+ * A block as this computer's storage keeps it. The desktop registers the session store's form
+ * (`connections/public/storedBlockForm`); the headless Host keeps the identity, because its
+ * blocks already come from its store, and so never loads the desktop session store.
+ */
+let storedBlockForm: (block: Block) => Block | null = (block) => block;
+export function registerStoredBlockForm(form: (block: Block) => Block | null): void {
+  storedBlockForm = form;
+}
 import { isSessionGoal } from "../../../shared/model/providerGoal";
 import { canonicalJson } from "../../sync/model/canonicalJson";
 import { keepFullTranscript, restoreLocalFiles, sameRemoteBlock } from "./remotePreview";
@@ -109,6 +119,7 @@ export function desktopCopyOf(
     historyLoadError: undefined,
     continuingElsewhere: host.status === "running" || undefined,
     adoptedRunId: host.status === "running" ? host.runId : undefined,
+    ...backgroundWaitOf(host),
     adoptedAuthorityGeneration: appliedAuthorityGeneration(host),
     // The copy is the host's transcript, so that is where both last agreed.
     adoptedBase: hostHead(host),
@@ -116,8 +127,9 @@ export function desktopCopyOf(
 }
 export const ADOPTED_RUNNING_REASON =
   "This conversation is running in the background on this computer. New messages appear automatically.";
-export const ADOPTED_CONFLICT_MESSAGE =
-  "Two versions of this conversation were found. Your messages were kept. Sync to compare them again.";
+/** Flagged without a proven divergence: the other computer's latest turn has not arrived yet. */
+export const ADOPTED_UNSYNCED_MESSAGE =
+  "This conversation has not finished syncing with the other computer. Your messages are kept.";
 /** A proven divergence: both computers added to the conversation after the version they last shared. */
 export const ADOPTED_CHOICE_MESSAGE =
   "This conversation was changed on two computers. Choose the version to keep.";
@@ -275,6 +287,20 @@ function hostHead(host: HostSession): ConversationHead | undefined {
   return digests && headOfDigests(digests);
 }
 
+/** This desktop's digests against the host's. An open tab's block can carry
+ * live-only fields its storage drops, while the host holds the stored form of
+ * turns run here: a block whose stored form is the host's counts as the same. */
+function localDigests(blocks: readonly Block[], theirs?: readonly string[]): string[] | undefined {
+  const raw = transcriptDigests(blocks);
+  if (!raw || !theirs) return raw;
+  if (raw.every((digest, i) => i >= theirs.length || digest === theirs[i])) return raw;
+  const stored = transcriptDigests(blocks.map((block) => storedBlockForm(block) ?? block));
+  if (!stored || stored.length !== raw.length) return raw;
+  return raw.map((digest, i) =>
+    digest !== theirs[i] && stored[i] === theirs[i] ? stored[i] : digest,
+  );
+}
+
 /** Which side changed since the last agreement (the saved `adoptedBase`), from
  * digests alone; `undefined` when either transcript carries content that cannot
  * be compared. The baseline of this run only says the local copy is unchanged
@@ -285,8 +311,8 @@ function transcriptVerdict(
   host: HostSession,
   baseline?: Session,
 ): Reconciled | undefined {
-  const mine = transcriptDigests(local.blocks);
   const theirs = hostDigests(host);
+  const mine = localDigests(local.blocks, theirs);
   if (!mine || !theirs) return undefined;
   let base = local.adoptedBase;
   if (!base && baseline) {
@@ -484,8 +510,23 @@ export function mergeAdoptedSession(
     adoptedRunId: host.status === "running" ? host.runId : undefined,
     adoptedAuthorityGeneration: appliedAuthorityGeneration(host, local),
     retryMessage: host.status === "running" ? remote.retryMessage : undefined,
+    // A yielded host turn still waiting on background work: without these the
+    // copy reads as a turn still thinking instead of background-only.
+    ...backgroundWaitOf(host),
     adoptedSyncConflict: undefined,
     adoptedDivergence: undefined,
+  };
+}
+
+/** The host turn's background wait, kept only while that turn runs. */
+export function backgroundWaitOf(
+  host: HostSession,
+): Pick<Session, "backgroundTasks" | "backgroundAgents" | "backgroundSince"> {
+  const running = host.status === "running";
+  return {
+    backgroundTasks: running ? host.session.backgroundTasks : undefined,
+    backgroundAgents: running ? host.session.backgroundAgents : undefined,
+    backgroundSince: running ? host.session.backgroundSince : undefined,
   };
 }
 
@@ -511,8 +552,8 @@ function hashText(text: string): string {
 /** Names a divergence by the content that differs, so the same one is the same
  * key on every pass and after a restart, while a newer one is a different key. */
 export function adoptedDivergenceKey(local: Session, remote: Session): string {
-  const mine = transcriptDigests(local.blocks);
   const theirs = transcriptDigests(remote.blocks);
+  const mine = localDigests(local.blocks, theirs);
   if (mine && theirs) {
     const base = local.adoptedBase;
     if (reconcile(mine, theirs, base) === "conflict") {
@@ -825,7 +866,8 @@ export async function mirrorAdoptedSessions(deps: AdoptedMirrorDeps): Promise<Se
       }
       if (since === undefined) awaiting.set(id, Date.now());
       else if (Date.now() - since > ADOPTED_ARRIVAL_LIMIT_MS) {
-        // Still unreadable: nothing is replaced; the Sync banner takes over.
+        // Still unreadable: nothing is replaced; the Sync row takes over. It is
+        // not a conflict, so it reads as an unfinished sync (no divergence).
         const current = deps.local().find((session) => session.id === id);
         if (current) deps.conflict?.(current);
         awaiting.delete(id);
@@ -855,10 +897,9 @@ export async function mirrorAdoptedSessions(deps: AdoptedMirrorDeps): Promise<Se
       // A local turn may have started while the snapshot was in flight.
       const current = deps.local().find((session) => session.id === entry.id);
       if (!comparable(current)) continue;
-      if (before && transcript(before) !== transcript(current)) {
-        deps.conflict?.(current);
-        continue;
-      }
+      // The copy changed while the snapshot was in flight (a page of history
+      // arrived, a local edit): no verdict yet, the next pass compares again.
+      if (before && transcript(before) !== transcript(current)) continue;
       const merged = mergeAdoptedSession(current, host, base.get(entry.id));
       if (!merged) {
         // Not mirrored, but the host copy itself arrived: the next pass only
@@ -978,7 +1019,14 @@ export async function mirrorAdoptedSessions(deps: AdoptedMirrorDeps): Promise<Se
           // Another window may have written since: the save then refuses and
           // the next pass starts over from the newer stored copy.
           const saved = await deps.save(
-            { ...merged, continuingElsewhere: undefined, adoptedRunId: undefined },
+            {
+              ...merged,
+              continuingElsewhere: undefined,
+              adoptedRunId: undefined,
+              backgroundTasks: undefined,
+              backgroundAgents: undefined,
+              backgroundSince: undefined,
+            },
             stamp,
           );
           if (saved === false) continue;

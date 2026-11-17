@@ -415,12 +415,18 @@ it("offers local and saved machines only for host tools while keeping conversati
   );
   await chooseMachine("machine:linux");
   await clickToolTab("Host browser");
-  expect(hostToolRequest).toHaveBeenCalledWith(
-    cwd,
-    "browser.ownerPresentationScopes.v1",
-    "browser.status",
-    { leaseId: undefined, sessionId: "session", ownerPresentationScope: expect.any(String) },
-    { kind: "machine", machineId: "linux" },
+  // The browser panel loads on first open and asks for status from its effect; a slow runner
+  // reaches this line before that request.
+  await vi.waitFor(
+    () =>
+      expect(hostToolRequest).toHaveBeenCalledWith(
+        cwd,
+        "browser.ownerPresentationScopes.v1",
+        "browser.status",
+        { leaseId: undefined, sessionId: "session", ownerPresentationScope: expect.any(String) },
+        { kind: "machine", machineId: "linux" },
+      ),
+    { timeout: 10_000, interval: 25 },
   );
   await toolAct(() =>
     container
@@ -469,8 +475,11 @@ it("clears machine selection on a conversation switch and retains a removed expl
   await clickToolTab("Devices");
   await chooseMachine("machine:linux");
   vi.mocked(listHostToolMachines).mockResolvedValue([]);
+  await openMachineOptions();
   await toolAct(async () =>
-    container.querySelector<HTMLButtonElement>(".host-tools-machine-refresh")!.click(),
+    [...document.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "Refresh machines")!
+      .click(),
   );
   expect(machineTrigger().getAttribute("aria-label")).toContain(
     "Selected machine unavailable · linux",

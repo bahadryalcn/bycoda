@@ -19,10 +19,17 @@ import { createModelRoutingDomainService } from "../domains/model-routing/servic
 import { readUsageLimits } from "../usage/limits-report";
 import { hostUsageLimitsDeps } from "./usage-limits-deps";
 import { resolveBinary } from "./support";
+import { clientMessageCommand } from "../sessions/client-message-id";
+import { assertDomainAuthority } from "../domains/context";
+import { SIDE_CHAT_RPC } from "../../src/shared/model/host-contracts/side-chat";
+import { askSideQuestion } from "../side-chat/side-question";
+import { reportDraftPresence } from "../drafts/rpc";
+import { SecretInputListParamsSchema } from "../../src/shared/model/host-contracts/secrets-input";
 export function createRegistryRuntime(
   dependencies: Pick<
     ServerBindings,
     | "engine"
+    | "accountPlatform"
     | "models"
     | "environmentService"
     | "projectsService"
@@ -51,6 +58,7 @@ export function createRegistryRuntime(
     | "gitService"
     | "terminalService"
     | "persistenceService"
+    | "conversationDesktop"
   >,
 ) {
   const modelRouting = createHostModelRoutingService({
@@ -155,7 +163,37 @@ export function createRegistryRuntime(
       "sessions.workedTime": dependencies.sessionService.workedTime,
       "sessions.syncChunk": dependencies.sessionService.syncChunk,
       "commands.status": dependencies.commandService.status,
-      "commands.dispatch": dependencies.commandService.dispatch,
+      "commands.dispatch": (params, context) =>
+        dependencies.commandService.dispatch(clientMessageCommand(params), context),
+      "sessions.sideQuestion": async (params, context) => {
+        await assertDomainAuthority(context);
+        return askSideQuestion(
+          SIDE_CHAT_RPC["sessions.sideQuestion"].params.parse(params),
+          {
+            session: (id) => dependencies.engine.store.session(id),
+            authorize: () => assertDomainAuthority(context),
+          },
+          context.signal,
+        );
+      },
+      "secrets.input.list": async (params, context) => {
+        await assertDomainAuthority(context);
+        return dependencies.conversationDesktop.secretInputs(
+          SecretInputListParamsSchema.parse(params).sessionId,
+          context.authorized,
+        );
+      },
+      "drafts.presence.report": (params, context) =>
+        reportDraftPresence(
+          dependencies.engine.store,
+          dependencies.accountPlatform.drafts,
+          params,
+          context,
+        ),
+      "secrets.input.answer": async (params, context) => {
+        await assertDomainAuthority(context);
+        return dependencies.conversationDesktop.answerSecretInput(params, context.authorized);
+      },
       "sessions.queue.get": dependencies.queueOperation("get"),
       "sessions.queue.change": dependencies.queueOperation("change"),
       "sessions.queue.claim": dependencies.queueOperation("claim"),
@@ -232,6 +270,8 @@ export function createRegistryRuntime(
       "projects.browse": dependencies.projectsService.browse,
       "projects.createDirectory": dependencies.projectsService.createDirectory,
       "projects.open": dependencies.projectsService.open,
+      "projects.clone": dependencies.projectsService.clone,
+      "projects.clone.progress": dependencies.projectsService.cloneProgress,
       "notes.list": dependencies.notesService.list,
       "notes.get": dependencies.notesService.get,
       "notes.upsert": dependencies.notesService.upsert,

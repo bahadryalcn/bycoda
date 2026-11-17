@@ -1,0 +1,104 @@
+import { useEffect, useRef, useState } from "react";
+import { invoke, isTauri } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import type { RemoteMachine } from "../../connections";
+import { useReloadOnMachineReconnect } from "../../connections/public/useReloadOnReconnect";
+import {
+  composerDraftsLoaded,
+  flushComposerDrafts,
+  subscribeComposerDraftLoadState,
+} from "../data/composerDraftStore";
+import { hasUnsentComposerDraft, subscribeComposerDrafts } from "../model/draftCache";
+
+export function draftPresenceChanged(
+  previous: readonly string[] | undefined,
+  next: readonly string[],
+): boolean {
+  return (
+    previous === undefined ||
+    JSON.stringify([...new Set(previous)].sort()) !== JSON.stringify([...new Set(next)].sort())
+  );
+}
+
+/** Full snapshots only after successful hydration; failures retain Host's last conservative state. */
+export function useDraftPresenceReporter(): void {
+  const [environmentId, setEnvironmentId] = useState<string>();
+  const reconnect = useRef<() => void>(() => {});
+  useReloadOnMachineReconnect(environmentId, () => reconnect.current(), { active: true });
+  // App lifetime subscription: capture live edits before child composers mount.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- keeps the composer draft cache subscription and the Host draft-presence report timer in step while the app is open
+  useEffect(() => {
+    if (!isTauri()) return;
+    const known = new Set<string>();
+    let loaded = false,
+      stopped = false,
+      flight = false;
+    let previous: string[] | undefined,
+      lastReport = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const run = async () => {
+      if (stopped || flight || !composerDraftsLoaded()) return;
+      flight = true;
+      try {
+        if (!loaded) {
+          await flushComposerDrafts();
+          const rows = await invoke<Array<{ sessionId: string }>>("session_list_drafts");
+          if (!Array.isArray(rows) || rows.some((row) => typeof row?.sessionId !== "string"))
+            return;
+          for (const row of rows) known.add(row.sessionId);
+          loaded = true;
+        }
+        const sessionIds = [...known].filter(hasUnsentComposerDraft).sort();
+        if (!draftPresenceChanged(previous, sessionIds) && Date.now() - lastReport < 30_000) return;
+        const target = await invoke<RemoteMachine | null>("local_host_connect");
+        if (!target || stopped) return;
+        setEnvironmentId(target.environmentId);
+        const { remoteRequest } = await import("../../connections/public/connections");
+        await remoteRequest(
+          target.id,
+          "drafts.presence.report",
+          {
+            clientId: `desktop:${getCurrentWindow().label}`,
+            sessionIds,
+            complete: true,
+          },
+          false,
+          false,
+          target.environmentId,
+        );
+        previous = sessionIds;
+        lastReport = Date.now();
+      } finally {
+        flight = false;
+      }
+    };
+    const schedule = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        void run().catch(() => {});
+      }, 400);
+    };
+    reconnect.current = () => {
+      previous = undefined;
+      schedule();
+    };
+    const unsubscribe = subscribeComposerDrafts((id) => {
+      known.add(id);
+      schedule();
+    });
+    const unsubscribeLoaded = subscribeComposerDraftLoadState(schedule);
+    schedule();
+    // Heartbeats refresh unchanged snapshots and retry after Host reconnect/restart.
+    const heartbeat = setInterval(() => {
+      void run().catch(() => {});
+    }, 1000);
+    return () => {
+      stopped = true;
+      reconnect.current = () => {};
+      clearTimeout(timer);
+      clearInterval(heartbeat);
+      unsubscribe();
+      unsubscribeLoaded();
+    };
+  }, []);
+}

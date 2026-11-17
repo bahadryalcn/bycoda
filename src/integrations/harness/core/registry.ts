@@ -17,6 +17,7 @@ import { providerInput, providerInputCopy, providerTurnInput } from "./providerI
 import {
   conversationDelegationReady,
   delegationFallback,
+  needsHostDelegation,
   delegationNotice,
 } from "./delegationReadiness";
 import type { GeneratedSessionTitle } from "../../../features/sessions/model/sessionTitle";
@@ -733,7 +734,7 @@ export function sendHarnessTurn(
       cancelIdlePark(input.sessionId);
       await drainRetirementsBestEffort(input.sessionId, input.harness);
       const guidance = Promise.allSettled([
-        input.modelSettings?.crossSubagents || input.modelSettings?.crossSubagentMaxEffort
+        needsHostDelegation(input.harness, input.modelSettings)
           ? conversationDelegationReady(input.sessionId)
           : Promise.resolve(true),
         operationSkillPolicy(input.cwd, input.harness),
@@ -745,7 +746,7 @@ export function sendHarnessTurn(
         if (policy.status === "rejected") throw policy.reason;
         const thread = { harness: input.harness, providerAccountId: input.providerAccountId };
         const delegationReady = readiness.status === "fulfilled" && readiness.value;
-        const fallback = delegationFallback(input.modelSettings, delegationReady);
+        const fallback = delegationFallback(input.modelSettings, delegationReady, input.harness);
         const runtime = await harnessRuntimeHints(
           input.sessionId,
           input.modelSettings,

@@ -112,7 +112,7 @@ export function createMobileRuntime(
     store: dependencies.engine.store,
     social: dependencies.social,
     conversationAccess: dependencies.conversationAccess,
-    isDelegationChild: (sessionId) => dependencies.conversationDelegation.isChild(sessionId),
+    agentRole: (sessionId) => dependencies.conversationDelegation.agentRole(sessionId),
     runtimeLogAccess: dependencies.runtimeLogAccess,
     runtimeLogs: dependencies.runtimeLogs,
     refreshLogSources: dependencies.refreshLogSources,

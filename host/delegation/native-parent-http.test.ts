@@ -20,6 +20,10 @@ vi.mock("../../src/integrations/harness/providers/codex/codexCatalog", () => ({
   refreshCodexCatalog: async () => {},
 }));
 
+// A completion crosses the child's finish, a store wake, the notice queue and the parent's
+// turn start: about 0.6–0.9 s here, past vi.waitFor's 1 s default on a loaded machine.
+const COMPLETION_WAIT = { timeout: 10_000 };
+
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
   for (const close of cleanups.splice(0).reverse()) await close();
@@ -173,7 +177,7 @@ it("delegates through an authenticated Native parent absent from the Host sessio
       .prepare("SELECT payload FROM session_queues WHERE session_id=?")
       .get(id);
     expect(row?.payload).toContain("Subagent completion:");
-  });
+  }, COMPLETION_WAIT);
   await expect(store.session(id)).rejects.toThrow("Session not found on this machine");
   native.status = "idle";
   native.session.busy = false;
@@ -204,7 +208,7 @@ it("delegates through an authenticated Native parent absent from the Host sessio
         (block) => block.role === "user" && block.text.includes("Subagent completion:"),
       ),
     ).toBe(true);
-  });
+  }, COMPLETION_WAIT);
   // Even idle Native parents stay with the desktop execution owner.
   await expect(store.session(id)).rejects.toThrow("Session not found on this machine");
 });

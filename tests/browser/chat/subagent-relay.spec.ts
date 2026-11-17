@@ -71,7 +71,7 @@ for (const theme of ["light", "dark"])
       await expect(output).toContainText("command output fixture");
       const fill = await command.evaluate((node) => {
         const probe = document.createElement("span");
-        probe.style.background = "var(--ui-card-surface)";
+        probe.style.background = "var(--ui-surface-muted)";
         node.appendChild(probe);
         const expected = getComputedStyle(probe).backgroundColor;
         probe.remove();
@@ -331,9 +331,16 @@ for (const theme of ["light", "dark"])
       await page.setViewportSize({ width, height: 1100 });
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(`/tests/browser/chat/subagent-relay.html?audit&theme=${theme}`);
-      // Queue: one batched row for three children, not owner input.
-      await expect(page.getByText(/^3 subagent results waiting/)).toBeVisible();
-      await expect(page.getByRole("button", { name: "Remove queued message" })).toBeVisible();
+      // Queue: results waiting for the main agent are not owner messages; the activity dock
+      // shows those runs, so the queue lists nothing while it drains normally.
+      await expect(page.getByText(/subagent results? waiting/)).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Remove queued message" })).toHaveCount(0);
+      // Claude Code's built-in advisor: its own row with the model, the advice behind it.
+      const advisor = page.locator("[data-advisor-row]");
+      await expect(advisor).toContainText("Advisor · Fable 5.2");
+      await expect(advisor).toContainText("Done");
+      await advisor.locator("summary").click();
+      await expect(advisor).toContainText("Re-run the failed migration check");
       // Transcript: a completion folds into its card; a notice without a card stays a disclosure.
       const benchmark = page.getByRole("button", { name: /^(Show|Hide) Benchmark review's work$/ });
       await expect(async () => {
@@ -365,4 +372,43 @@ for (const theme of ["light", "dark"])
       await page.screenshot({
         path: `temp/verification/subagent-audit/audit-${theme}-${width}.png`,
       });
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`a subagent's own subagents ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/chat/subagent-relay.html?nested&theme=${theme}`);
+      const dock = page.getByRole("region", { name: "Turn activity" });
+      await dock.locator("button[data-dock-toggle]").click();
+      // Only the direct child is a dock row; its own runs are counted and their wait shows.
+      await expect(dock.locator("[data-dock-agent]")).toHaveCount(1);
+      const row = dock.getByRole("button", { name: /^Open Release audit,/ });
+      await expect(row).toContainText("Subagents: 2");
+      await expect(row).toContainText("Needs input");
+      await page.screenshot({
+        path: `temp/verification/nested-subagents/dock-${theme}-${width}.png`,
+      });
+      await row.click();
+      const panel = page.getByRole("dialog");
+      const list = panel.locator("[data-nested-subagents]");
+      await expect(list.locator("[data-nested-subagent]")).toHaveCount(2);
+      await expect(list.getByRole("button", { name: /^Open Migration dry run,/ })).toContainText(
+        "Needs input",
+      );
+      // The finished one survives the idle detach through its parent.
+      await expect(list.getByRole("button", { name: /^Open Changelog check,/ })).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/nested-subagents/sheet-${theme}-${width}.png`,
+      });
+      await list.getByRole("button", { name: /^Open Migration dry run,/ }).click();
+      await expect(panel).toContainText("Migration dry run: working through it.");
+      await expect(panel.locator("[data-nested-subagents]")).toHaveCount(0);
+      await page.screenshot({
+        path: `temp/verification/nested-subagents/grandchild-${theme}-${width}.png`,
+      });
+      await panel.getByRole("button", { name: "Back", exact: true }).click();
+      await expect(panel).toContainText("Release audit: working through it.");
+      await expect(panel.locator("[data-nested-subagent]")).toHaveCount(2);
     });

@@ -6867,6 +6867,10 @@
                 "minimum": 1,
                 "type": "integer"
               },
+              "clientMessageId": {
+                "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                "type": "string"
+              },
               "commandId": {
                 "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                 "type": "string"
@@ -7028,6 +7032,10 @@
                 "maximum": 9007199254740991,
                 "minimum": 1,
                 "type": "integer"
+              },
+              "clientMessageId": {
+                "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                "type": "string"
               },
               "commandId": {
                 "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
@@ -7257,6 +7265,10 @@
                 "minimum": 1,
                 "type": "integer"
               },
+              "clientMessageId": {
+                "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                "type": "string"
+              },
               "commandId": {
                 "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                 "type": "string"
@@ -7419,6 +7431,10 @@
                 "maximum": 9007199254740991,
                 "minimum": 1,
                 "type": "integer"
+              },
+              "clientMessageId": {
+                "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                "type": "string"
               },
               "commandId": {
                 "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
@@ -7600,6 +7616,10 @@
                         "maximum": 9007199254740991,
                         "minimum": 1,
                         "type": "integer"
+                      },
+                      "clientMessageId": {
+                        "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                        "type": "string"
                       },
                       "commandId": {
                         "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
@@ -7838,6 +7858,10 @@
                         "minimum": 1,
                         "type": "integer"
                       },
+                      "clientMessageId": {
+                        "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                        "type": "string"
+                      },
                       "commandId": {
                         "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                         "type": "string"
@@ -7968,6 +7992,10 @@
                 "minimum": 1,
                 "type": "integer"
               },
+              "clientMessageId": {
+                "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                "type": "string"
+              },
               "commandId": {
                 "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                 "type": "string"
@@ -8039,6 +8067,10 @@
                 "maximum": 9007199254740991,
                 "minimum": 1,
                 "type": "integer"
+              },
+              "clientMessageId": {
+                "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                "type": "string"
               },
               "commandId": {
                 "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
@@ -8124,6 +8156,10 @@
                 "minimum": 1,
                 "type": "integer"
               },
+              "clientMessageId": {
+                "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                "type": "string"
+              },
               "commandId": {
                 "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                 "type": "string"
@@ -8168,6 +8204,10 @@
                 "maximum": 9007199254740991,
                 "minimum": 1,
                 "type": "integer"
+              },
+              "clientMessageId": {
+                "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                "type": "string"
               },
               "commandId": {
                 "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
@@ -8221,6 +8261,10 @@
                 "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                 "type": "string"
               },
+              "clientMessageId": {
+                "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                "type": "string"
+              },
               "commandId": {
                 "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                 "type": "string"
@@ -8265,6 +8309,10 @@
                 "maximum": 9007199254740991,
                 "minimum": 1,
                 "type": "integer"
+              },
+              "clientMessageId": {
+                "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                "type": "string"
               },
               "commandId": {
                 "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
@@ -8312,6 +8360,10 @@
                 "minimum": 1,
                 "type": "integer"
               },
+              "clientMessageId": {
+                "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                "type": "string"
+              },
               "commandId": {
                 "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                 "type": "string"
@@ -8355,6 +8407,10 @@
                 "maximum": 9007199254740991,
                 "minimum": 1,
                 "type": "integer"
+              },
+              "clientMessageId": {
+                "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                "type": "string"
               },
               "commandId": {
                 "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
@@ -8412,6 +8468,10 @@
                 "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                 "type": "string"
               },
+              "clientMessageId": {
+                "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                "type": "string"
+              },
               "commandId": {
                 "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                 "type": "string"
@@ -8464,6 +8524,10 @@
                 "minimum": 1,
                 "type": "integer"
               },
+              "clientMessageId": {
+                "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                "type": "string"
+              },
               "commandId": {
                 "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                 "type": "string"
@@ -8513,6 +8577,10 @@
                 "maximum": 9007199254740991,
                 "minimum": 1,
                 "type": "integer"
+              },
+              "clientMessageId": {
+                "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                "type": "string"
               },
               "commandId": {
                 "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
@@ -26289,6 +26357,15 @@
               },
               {
                 "additionalProperties": false,
+                "properties": {
+                  "posture": { "enum": ["closed", "half-open", "open"], "type": "string" },
+                  "type": { "const": "fold", "type": "string" }
+                },
+                "required": ["type", "posture"],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
                 "properties": { "type": { "const": "snapshot", "type": "string" } },
                 "required": ["type"],
                 "type": "object"
@@ -26362,6 +26439,7 @@
           "name": { "type": "string" },
           "physical": { "type": "boolean" },
           "platform": { "enum": ["ios", "android"], "type": "string" },
+          "supportsFold": { "type": "boolean" },
           "version": { "type": "string" }
         },
         "required": ["id", "name", "platform", "version", "booted", "physical"],
@@ -26635,6 +26713,7 @@
                 "name": { "type": "string" },
                 "physical": { "type": "boolean" },
                 "platform": { "enum": ["ios", "android"], "type": "string" },
+                "supportsFold": { "type": "boolean" },
                 "version": { "type": "string" }
               },
               "required": ["id", "name", "platform", "version", "booted", "physical"],
@@ -26687,6 +26766,7 @@
               "name": { "type": "string" },
               "physical": { "type": "boolean" },
               "platform": { "enum": ["ios", "android"], "type": "string" },
+              "supportsFold": { "type": "boolean" },
               "version": { "type": "string" }
             },
             "required": ["id", "name", "platform", "version", "booted", "physical"],
@@ -26701,6 +26781,7 @@
                 "name": { "type": "string" },
                 "physical": { "type": "boolean" },
                 "platform": { "enum": ["ios", "android"], "type": "string" },
+                "supportsFold": { "type": "boolean" },
                 "version": { "type": "string" }
               },
               "required": ["id", "name", "platform", "version", "booted", "physical"],
@@ -27313,6 +27394,39 @@
         "type": "object"
       },
       "retry": "safe-query",
+      "scope": "device"
+    },
+    "drafts.presence.report": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "control",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "clientId": { "maxLength": 128, "minLength": 1, "type": "string" },
+          "complete": { "const": true, "type": "boolean" },
+          "sessionIds": {
+            "items": { "maxLength": 200, "minLength": 1, "type": "string" },
+            "maxItems": 10000,
+            "type": "array"
+          }
+        },
+        "required": ["clientId", "sessionIds", "complete"],
+        "type": "object"
+      },
+      "requiredCapability": "host.settings.autoArchive.v1",
+      "responseTimeoutMs": 12000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "accepted": { "const": true, "type": "boolean" } },
+        "required": ["accepted"],
+        "type": "object"
+      },
+      "retry": "never",
       "scope": "device"
     },
     "environment.describe": {
@@ -38939,6 +39053,77 @@
       "retry": "safe-query",
       "scope": "device"
     },
+    "projects.clone": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "operationId": { "maxLength": 80, "minLength": 1, "type": "string" },
+          "parentPath": { "type": "string" },
+          "url": { "type": "string" }
+        },
+        "required": ["url", "parentPath"],
+        "type": "object"
+      },
+      "requiredCapability": "transport.ws.read.v2",
+      "responseTimeoutMs": 630000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "path": { "type": "string" } },
+        "required": ["path"],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "projects.clone.progress": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "query",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "query",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "operationId": { "maxLength": 80, "minLength": 1, "type": "string" } },
+        "required": ["operationId"],
+        "type": "object"
+      },
+      "requiredCapability": "transport.ws.read.v2",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "progress": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "percent": { "type": ["number", "null"] },
+                  "phase": { "type": "string" },
+                  "state": { "enum": ["running", "done", "failed"], "type": "string" }
+                },
+                "required": ["state", "phase", "percent"],
+                "type": "object"
+              },
+              { "type": "null" }
+            ]
+          }
+        },
+        "required": ["progress"],
+        "type": "object"
+      },
+      "retry": "safe-query",
+      "scope": "device"
+    },
     "projects.createDirectory": {
       "admissionTimeoutMs": 5000,
       "cancellation": "wait-only",
@@ -39225,6 +39410,109 @@
         "type": "object"
       },
       "retry": "never",
+      "scope": "device"
+    },
+    "secrets.input.answer": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "control",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "id": { "maxLength": 200, "minLength": 1, "type": "string" },
+              "signature": { "maxLength": 64, "minLength": 64, "type": "string" },
+              "value": { "maxLength": 8192, "minLength": 1, "type": "string" }
+            },
+            "required": ["id", "signature", "value"],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "cancelled": { "const": true, "type": "boolean" },
+              "id": { "maxLength": 200, "minLength": 1, "type": "string" },
+              "signature": { "maxLength": 64, "minLength": 64, "type": "string" }
+            },
+            "required": ["id", "signature", "cancelled"],
+            "type": "object"
+          }
+        ]
+      },
+      "requiredCapability": "secrets.remoteAnswer.v1",
+      "responseTimeoutMs": 12000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "accepted": { "const": true, "type": "boolean" } },
+        "required": ["accepted"],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "secrets.input.list": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "query",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "query",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "sessionId": { "maxLength": 200, "minLength": 1, "type": "string" } },
+        "required": ["sessionId"],
+        "type": "object"
+      },
+      "requiredCapability": "secrets.remoteAnswer.v1",
+      "responseTimeoutMs": 12000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "requests": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "cancelLabel": { "maxLength": 200, "type": "string" },
+                "confirmLabel": { "maxLength": 200, "type": "string" },
+                "deadline": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                "fieldLabel": { "maxLength": 200, "type": "string" },
+                "id": { "maxLength": 200, "minLength": 1, "type": "string" },
+                "kind": { "const": "secret", "type": "string" },
+                "message": { "maxLength": 20000, "type": "string" },
+                "remote": { "const": true, "type": "boolean" },
+                "sessionId": { "maxLength": 200, "minLength": 1, "type": "string" },
+                "signature": { "maxLength": 64, "minLength": 64, "type": "string" },
+                "title": { "maxLength": 200, "type": "string" }
+              },
+              "required": [
+                "id",
+                "signature",
+                "sessionId",
+                "kind",
+                "remote",
+                "title",
+                "message",
+                "fieldLabel",
+                "confirmLabel",
+                "cancelLabel",
+                "deadline"
+              ],
+              "type": "object"
+            },
+            "maxItems": 24,
+            "type": "array"
+          }
+        },
+        "required": ["requests"],
+        "type": "object"
+      },
+      "retry": "safe-query",
       "scope": "device"
     },
     "secrets.owner.list": {
@@ -41247,6 +41535,10 @@
                       "minimum": 1,
                       "type": "integer"
                     },
+                    "clientMessageId": {
+                      "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                      "type": "string"
+                    },
                     "deliveryUnknown": { "const": true, "type": "boolean" },
                     "handoffCard": {
                       "additionalProperties": false,
@@ -41570,6 +41862,10 @@
                       "maximum": 9007199254740991,
                       "minimum": 1,
                       "type": "integer"
+                    },
+                    "clientMessageId": {
+                      "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                      "type": "string"
                     },
                     "deliveryUnknown": { "const": true, "type": "boolean" },
                     "handoffCard": {
@@ -41914,6 +42210,10 @@
                   "maximum": 9007199254740991,
                   "minimum": 1,
                   "type": "integer"
+                },
+                "clientMessageId": {
+                  "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                  "type": "string"
                 },
                 "deliveryUnknown": { "const": true, "type": "boolean" },
                 "handoffCard": {
@@ -42270,6 +42570,10 @@
                   "maximum": 9007199254740991,
                   "minimum": 1,
                   "type": "integer"
+                },
+                "clientMessageId": {
+                  "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                  "type": "string"
                 },
                 "deliveryUnknown": { "const": true, "type": "boolean" },
                 "handoffCard": {
@@ -42630,6 +42934,10 @@
                   "minimum": 1,
                   "type": "integer"
                 },
+                "clientMessageId": {
+                  "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                  "type": "string"
+                },
                 "deliveryUnknown": { "const": true, "type": "boolean" },
                 "handoffCard": {
                   "additionalProperties": false,
@@ -42982,6 +43290,10 @@
                   "maximum": 9007199254740991,
                   "minimum": 1,
                   "type": "integer"
+                },
+                "clientMessageId": {
+                  "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                  "type": "string"
                 },
                 "deliveryUnknown": { "const": true, "type": "boolean" },
                 "handoffCard": {
@@ -43337,6 +43649,10 @@
                   "minimum": 1,
                   "type": "integer"
                 },
+                "clientMessageId": {
+                  "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                  "type": "string"
+                },
                 "deliveryUnknown": { "const": true, "type": "boolean" },
                 "handoffCard": {
                   "additionalProperties": false,
@@ -43690,6 +44006,10 @@
                   "minimum": 1,
                   "type": "integer"
                 },
+                "clientMessageId": {
+                  "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                  "type": "string"
+                },
                 "deliveryUnknown": { "const": true, "type": "boolean" },
                 "handoffCard": {
                   "additionalProperties": false,
@@ -43813,6 +44133,47 @@
           "status": { "enum": ["active", "paused", "resuming", "restored"], "type": "string" }
         },
         "required": ["messages", "revision"],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "sessions.sideQuestion": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "history": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "role": { "enum": ["user", "assistant"], "type": "string" },
+                "text": { "maxLength": 16000, "minLength": 1, "type": "string" }
+              },
+              "required": ["role", "text"],
+              "type": "object"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
+          "question": { "maxLength": 4000, "minLength": 1, "type": "string" },
+          "sessionId": { "maxLength": 200, "minLength": 1, "type": "string" }
+        },
+        "required": ["sessionId", "question"],
+        "type": "object"
+      },
+      "requiredCapability": null,
+      "responseTimeoutMs": 150000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "answer": { "maxLength": 64000, "type": "string" } },
+        "required": ["answer"],
         "type": "object"
       },
       "retry": "never",
@@ -46498,6 +46859,18 @@
                   }
                 },
                 "required": ["kind", "projectId"],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": { "const": "models", "type": "string" },
+                  "projectId": {
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                    "type": "string"
+                  }
+                },
+                "required": ["kind"],
                 "type": "object"
               },
               {
@@ -57874,6 +58247,10 @@
           "additionalProperties": false,
           "properties": {
             "authorityGeneration": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
+            "clientMessageId": {
+              "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+              "type": "string"
+            },
             "commandId": {
               "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
               "type": "string"
@@ -58029,6 +58406,10 @@
               "type": "array"
             },
             "authorityGeneration": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
+            "clientMessageId": {
+              "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+              "type": "string"
+            },
             "commandId": {
               "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
               "type": "string"
@@ -58250,6 +58631,10 @@
               "type": "array"
             },
             "authorityGeneration": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
+            "clientMessageId": {
+              "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+              "type": "string"
+            },
             "commandId": {
               "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
               "type": "string"
@@ -58406,6 +58791,10 @@
               "type": "array"
             },
             "authorityGeneration": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
+            "clientMessageId": {
+              "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+              "type": "string"
+            },
             "commandId": {
               "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
               "type": "string"
@@ -58582,6 +58971,10 @@
                       "maximum": 9007199254740991,
                       "minimum": 1,
                       "type": "integer"
+                    },
+                    "clientMessageId": {
+                      "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                      "type": "string"
                     },
                     "commandId": {
                       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
@@ -58820,6 +59213,10 @@
                       "minimum": 1,
                       "type": "integer"
                     },
+                    "clientMessageId": {
+                      "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                      "type": "string"
+                    },
                     "commandId": {
                       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                       "type": "string"
@@ -58946,6 +59343,10 @@
           "additionalProperties": false,
           "properties": {
             "authorityGeneration": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
+            "clientMessageId": {
+              "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+              "type": "string"
+            },
             "commandId": {
               "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
               "type": "string"
@@ -59014,6 +59415,10 @@
           "additionalProperties": false,
           "properties": {
             "authorityGeneration": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
+            "clientMessageId": {
+              "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+              "type": "string"
+            },
             "commandId": {
               "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
               "type": "string"
@@ -59094,6 +59499,10 @@
           "additionalProperties": false,
           "properties": {
             "authorityGeneration": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
+            "clientMessageId": {
+              "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+              "type": "string"
+            },
             "commandId": {
               "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
               "type": "string"
@@ -59135,6 +59544,10 @@
           "additionalProperties": false,
           "properties": {
             "authorityGeneration": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
+            "clientMessageId": {
+              "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+              "type": "string"
+            },
             "commandId": {
               "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
               "type": "string"
@@ -59183,6 +59596,10 @@
               "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
               "type": "string"
             },
+            "clientMessageId": {
+              "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+              "type": "string"
+            },
             "commandId": {
               "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
               "type": "string"
@@ -59224,6 +59641,10 @@
           "additionalProperties": false,
           "properties": {
             "authorityGeneration": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
+            "clientMessageId": {
+              "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+              "type": "string"
+            },
             "commandId": {
               "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
               "type": "string"
@@ -59266,6 +59687,10 @@
           "properties": {
             "action": { "enum": ["arm", "disarm", "dismiss"], "type": "string" },
             "authorityGeneration": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
+            "clientMessageId": {
+              "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+              "type": "string"
+            },
             "commandId": {
               "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
               "type": "string"
@@ -59306,6 +59731,10 @@
           "additionalProperties": false,
           "properties": {
             "authorityGeneration": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
+            "clientMessageId": {
+              "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+              "type": "string"
+            },
             "commandId": {
               "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
               "type": "string"
@@ -59358,6 +59787,10 @@
               "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
               "type": "string"
             },
+            "clientMessageId": {
+              "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+              "type": "string"
+            },
             "commandId": {
               "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
               "type": "string"
@@ -59406,6 +59839,10 @@
               "type": "string"
             },
             "authorityGeneration": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
+            "clientMessageId": {
+              "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+              "type": "string"
+            },
             "commandId": {
               "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
               "type": "string"
@@ -59452,6 +59889,10 @@
           "additionalProperties": false,
           "properties": {
             "authorityGeneration": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
+            "clientMessageId": {
+              "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+              "type": "string"
+            },
             "commandId": {
               "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
               "type": "string"
@@ -63961,6 +64402,15 @@
                       "additionalProperties": false,
                       "properties": { "type": { "const": "home", "type": "string" } },
                       "required": ["type"],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "posture": { "enum": ["closed", "half-open", "open"], "type": "string" },
+                        "type": { "const": "fold", "type": "string" }
+                      },
+                      "required": ["type", "posture"],
                       "type": "object"
                     },
                     {
@@ -68858,6 +69308,18 @@
                     {
                       "additionalProperties": false,
                       "properties": {
+                        "kind": { "const": "models", "type": "string" },
+                        "projectId": {
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                          "type": "string"
+                        }
+                      },
+                      "required": ["kind"],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
                         "kind": { "const": "session", "type": "string" },
                         "sessionId": {
                           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
@@ -69067,6 +69529,51 @@
               "additionalProperties": false,
               "properties": { "cwd": { "type": "string" } },
               "required": ["cwd"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "projects.clone", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "name": { "type": "string" },
+                "operationId": { "maxLength": 80, "minLength": 1, "type": "string" },
+                "parentPath": { "type": "string" },
+                "url": { "type": "string" }
+              },
+              "required": ["url", "parentPath"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "projects.clone.progress", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "operationId": { "maxLength": 80, "minLength": 1, "type": "string" }
+              },
+              "required": ["operationId"],
               "type": "object"
             }
           },
@@ -75081,6 +75588,124 @@
               "type": "string"
             },
             "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "sessions.sideQuestion", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "history": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "role": { "enum": ["user", "assistant"], "type": "string" },
+                      "text": { "maxLength": 16000, "minLength": 1, "type": "string" }
+                    },
+                    "required": ["role", "text"],
+                    "type": "object"
+                  },
+                  "maxItems": 20,
+                  "type": "array"
+                },
+                "question": { "maxLength": 4000, "minLength": 1, "type": "string" },
+                "sessionId": { "maxLength": 200, "minLength": 1, "type": "string" }
+              },
+              "required": ["sessionId", "question"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "secrets.input.list", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": { "sessionId": { "maxLength": 200, "minLength": 1, "type": "string" } },
+              "required": ["sessionId"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "secrets.input.answer", "type": "string" },
+            "params": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": { "maxLength": 200, "minLength": 1, "type": "string" },
+                    "signature": { "maxLength": 64, "minLength": 64, "type": "string" },
+                    "value": { "maxLength": 8192, "minLength": 1, "type": "string" }
+                  },
+                  "required": ["id", "signature", "value"],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "cancelled": { "const": true, "type": "boolean" },
+                    "id": { "maxLength": 200, "minLength": 1, "type": "string" },
+                    "signature": { "maxLength": 64, "minLength": 64, "type": "string" }
+                  },
+                  "required": ["id", "signature", "cancelled"],
+                  "type": "object"
+                }
+              ]
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "drafts.presence.report", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "clientId": { "maxLength": 128, "minLength": 1, "type": "string" },
+                "complete": { "const": true, "type": "boolean" },
+                "sessionIds": {
+                  "items": { "maxLength": 200, "minLength": 1, "type": "string" },
+                  "maxItems": 10000,
+                  "type": "array"
+                }
+              },
+              "required": ["clientId", "sessionIds", "complete"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
             "method": { "const": "git.fileDiff", "type": "string" },
             "params": {
               "additionalProperties": false,
@@ -75919,6 +76544,10 @@
                             "minimum": 1,
                             "type": "integer"
                           },
+                          "clientMessageId": {
+                            "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                            "type": "string"
+                          },
                           "deliveryUnknown": { "const": true, "type": "boolean" },
                           "handoffCard": {
                             "additionalProperties": false,
@@ -76261,6 +76890,10 @@
                             "minimum": 1,
                             "type": "integer"
                           },
+                          "clientMessageId": {
+                            "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                            "type": "string"
+                          },
                           "deliveryUnknown": { "const": true, "type": "boolean" },
                           "handoffCard": {
                             "additionalProperties": false,
@@ -76577,6 +77210,10 @@
                       "minimum": 1,
                       "type": "integer"
                     },
+                    "clientMessageId": {
+                      "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                      "type": "string"
+                    },
                     "commandId": {
                       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                       "type": "string"
@@ -76745,6 +77382,10 @@
                       "maximum": 9007199254740991,
                       "minimum": 1,
                       "type": "integer"
+                    },
+                    "clientMessageId": {
+                      "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                      "type": "string"
                     },
                     "commandId": {
                       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
@@ -76978,6 +77619,10 @@
                       "minimum": 1,
                       "type": "integer"
                     },
+                    "clientMessageId": {
+                      "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                      "type": "string"
+                    },
                     "commandId": {
                       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                       "type": "string"
@@ -77148,6 +77793,10 @@
                       "maximum": 9007199254740991,
                       "minimum": 1,
                       "type": "integer"
+                    },
+                    "clientMessageId": {
+                      "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                      "type": "string"
                     },
                     "commandId": {
                       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
@@ -77340,6 +77989,10 @@
                               "maximum": 9007199254740991,
                               "minimum": 1,
                               "type": "integer"
+                            },
+                            "clientMessageId": {
+                              "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                              "type": "string"
                             },
                             "commandId": {
                               "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
@@ -77589,6 +78242,10 @@
                               "minimum": 1,
                               "type": "integer"
                             },
+                            "clientMessageId": {
+                              "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                              "type": "string"
+                            },
                             "commandId": {
                               "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                               "type": "string"
@@ -77727,6 +78384,10 @@
                       "minimum": 1,
                       "type": "integer"
                     },
+                    "clientMessageId": {
+                      "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                      "type": "string"
+                    },
                     "commandId": {
                       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                       "type": "string"
@@ -77813,6 +78474,10 @@
                       "maximum": 9007199254740991,
                       "minimum": 1,
                       "type": "integer"
+                    },
+                    "clientMessageId": {
+                      "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                      "type": "string"
                     },
                     "commandId": {
                       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
@@ -77906,6 +78571,10 @@
                       "minimum": 1,
                       "type": "integer"
                     },
+                    "clientMessageId": {
+                      "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                      "type": "string"
+                    },
                     "commandId": {
                       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                       "type": "string"
@@ -77954,6 +78623,10 @@
                       "maximum": 9007199254740991,
                       "minimum": 1,
                       "type": "integer"
+                    },
+                    "clientMessageId": {
+                      "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                      "type": "string"
                     },
                     "commandId": {
                       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
@@ -78011,6 +78684,10 @@
                       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                       "type": "string"
                     },
+                    "clientMessageId": {
+                      "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                      "type": "string"
+                    },
                     "commandId": {
                       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                       "type": "string"
@@ -78064,6 +78741,10 @@
                       "minimum": 1,
                       "type": "integer"
                     },
+                    "clientMessageId": {
+                      "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                      "type": "string"
+                    },
                     "commandId": {
                       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                       "type": "string"
@@ -78114,6 +78795,10 @@
                       "minimum": 1,
                       "type": "integer"
                     },
+                    "clientMessageId": {
+                      "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                      "type": "string"
+                    },
                     "commandId": {
                       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                       "type": "string"
@@ -78161,6 +78846,10 @@
                       "maximum": 9007199254740991,
                       "minimum": 1,
                       "type": "integer"
+                    },
+                    "clientMessageId": {
+                      "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                      "type": "string"
                     },
                     "commandId": {
                       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
@@ -78222,6 +78911,10 @@
                       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                       "type": "string"
                     },
+                    "clientMessageId": {
+                      "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                      "type": "string"
+                    },
                     "commandId": {
                       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                       "type": "string"
@@ -78278,6 +78971,10 @@
                       "minimum": 1,
                       "type": "integer"
                     },
+                    "clientMessageId": {
+                      "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                      "type": "string"
+                    },
                     "commandId": {
                       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                       "type": "string"
@@ -78331,6 +79028,10 @@
                       "maximum": 9007199254740991,
                       "minimum": 1,
                       "type": "integer"
+                    },
+                    "clientMessageId": {
+                      "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}(?![\\s\\S])",
+                      "type": "string"
                     },
                     "commandId": {
                       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
@@ -79565,5 +80266,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "7562c084f5ae35f410a622bcb3cb9cbb0d245d137b2fc75c91ea5c89b0267806"
+  "schemaHash": "617d20f9bd5f90908dbd8c6cd0f2d10d02f8923ad1085004234c2e63a4e864ad"
 }

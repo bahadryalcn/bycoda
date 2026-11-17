@@ -124,7 +124,9 @@
 }
 @media (prefers-reduced-motion: no-preference) {
   .unknown {
-    animation: progress-wait var(--duration-slower, 1.6s) var(--ease-standard) 12;
+    /* A loading loop, not a state change: one sweep per pulse period (the 160ms transition
+       duration made the segment flicker across the track). */
+    animation: progress-wait var(--motion-pulse-duration, 1.8s) ease-in-out 12;
   }
   :global(html[data-decorative-motion="off"]) .unknown {
     animation: none;

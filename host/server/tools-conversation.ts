@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { agentToolAllowedForChild } from "../delegation/tools";
+import { agentToolAllowed } from "../delegation/tools";
 import { dirname } from "node:path";
 import { sessionConversationPage } from "../../src/features/agent-app/model/sessionConversation";
 import type { DeviceAction } from "../../src/features/devices/types";
@@ -378,22 +378,22 @@ export async function dispatchConversationTools(
           async () => !!(await dependencies.conversationAccess.principalForToken(request.token)),
         );
       else if (action === "tools.list") {
-        const child = await dependencies.conversationDelegation.isChild(boundPrincipal.sessionId);
+        const role = await dependencies.conversationDelegation.agentRole(boundPrincipal.sessionId);
         request.result = {
           environmentId: dependencies.engine.store.environmentId,
           projectId,
           tools: sessionConversationToolCatalog()
             .filter(crewAllows)
-            .filter((tool) => !child || agentToolAllowedForChild(tool.action)),
+            .filter((tool) => agentToolAllowed(tool.action, role)),
         };
       } else if (["tools.search", "tools.describe", "tools.status"].includes(action)) {
-        const child = await dependencies.conversationDelegation.isChild(boundPrincipal.sessionId);
+        const role = await dependencies.conversationDelegation.agentRole(boundPrincipal.sessionId);
         request.result = managedDiscoveryResult(
           action,
           args,
           managedMcpCatalog()
             .filter(crewAllows)
-            .filter((tool) => !child || agentToolAllowedForChild(tool.action)),
+            .filter((tool) => agentToolAllowed(tool.action, role)),
         );
       } else if (
         action.startsWith("ui.") ||

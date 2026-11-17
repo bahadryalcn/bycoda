@@ -1,22 +1,22 @@
 use super::QuickAttachment;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(target_os = "macos", target_os = "windows", test))]
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 use tauri::{AppHandle, Manager, State, WebviewWindow};
 
 #[derive(Default)]
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 pub struct Captures(pub Mutex<HashSet<PathBuf>>);
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn root() -> PathBuf {
     std::env::temp_dir().join("bycoda-captures")
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 pub fn new_path() -> Result<PathBuf, String> {
     let dir = root().join(format!("{}-{}", std::process::id(), uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
@@ -30,7 +30,7 @@ fn remove(path: &Path) {
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 pub fn register(app: &AppHandle, path: &str) -> Result<(), String> {
     app.state::<Captures>()
         .0
@@ -50,7 +50,7 @@ fn release(owned: &mut HashSet<PathBuf>, paths: &[String]) {
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 pub(crate) fn discard(app: &AppHandle, path: &str) {
     if let Ok(mut owned) = app.state::<Captures>().0.lock() {
         release(&mut owned, &[path.to_owned()]);
@@ -58,7 +58,7 @@ pub(crate) fn discard(app: &AppHandle, path: &str) {
 }
 
 #[tauri::command]
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 pub fn quick_composer_release_capture(
     window: WebviewWindow,
     state: State<'_, Captures>,
@@ -111,7 +111,7 @@ fn persist_to(
     Ok(())
 }
 
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(target_os = "macos", target_os = "windows", test))]
 fn persist_snapshot(
     owned: &Mutex<HashSet<PathBuf>>,
     files: &mut [QuickAttachment],
@@ -133,7 +133,7 @@ fn persist_snapshot(
     persist(&snapshot, files, destination)
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 pub(crate) fn persist(app: &AppHandle, files: &mut [QuickAttachment]) -> Result<(), String> {
     let destination = app
         .path()
@@ -143,7 +143,7 @@ pub(crate) fn persist(app: &AppHandle, files: &mut [QuickAttachment]) -> Result<
     persist_snapshot(&app.state::<Captures>().0, files, &destination, persist_to)
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 pub fn cleanup_abandoned() {
     // Limited legacy orphan policy only: known-absent original processes and
     // old temp files, never live/unknown owners. PID/age is NOT proof that a
@@ -166,6 +166,7 @@ fn checked_pid(pid: u32) -> Option<i32> {
 /// Only a failed kill(positive_pid, 0) with ESRCH establishes absence.
 /// EPERM and every other/unknown error preserve the temp capture. Invalid
 /// unsigned IDs must never wrap into process-group/all-process probes.
+#[cfg(any(target_os = "macos", test))]
 fn classify_process_probe(
     pid: u32,
     result: i32,
@@ -195,6 +196,27 @@ fn probe_process(pid: u32) -> ProcessState {
         None
     };
     classify_process_probe(pid, result, error, libc::ESRCH)
+}
+
+#[cfg(target_os = "windows")]
+fn probe_process(pid: u32) -> ProcessState {
+    use windows_sys::Win32::Foundation::{CloseHandle, ERROR_INVALID_PARAMETER};
+    use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+    if checked_pid(pid).is_none() {
+        return ProcessState::Unknown;
+    }
+    let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+    if !process.is_null() {
+        unsafe {
+            CloseHandle(process);
+        }
+        ProcessState::Alive
+    } else if std::io::Error::last_os_error().raw_os_error() == Some(ERROR_INVALID_PARAMETER as i32)
+    {
+        ProcessState::Absent
+    } else {
+        ProcessState::Unknown
+    }
 }
 
 fn sweep(root: &Path, now: SystemTime, process: impl Fn(u32) -> ProcessState) {
@@ -256,6 +278,14 @@ mod tests {
             path: path.to_string_lossy().into_owned(),
         }
     }
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn windows_cleanup_preserves_live_and_unknown_processes() {
+        assert_eq!(probe_process(std::process::id()), ProcessState::Alive);
+        assert_eq!(probe_process(0), ProcessState::Unknown);
+        assert_eq!(probe_process(u32::MAX), ProcessState::Unknown);
+    }
+
     #[test]
     fn persistence_releases_capture_mutex_before_blocking_copy_and_keeps_exact_bytes() {
         let root = temp();

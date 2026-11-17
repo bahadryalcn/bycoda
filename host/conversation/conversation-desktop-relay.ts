@@ -1,4 +1,5 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID, randomBytes } from "node:crypto";
+import { SecretInputAnswerParamsSchema } from "../../src/shared/model/host-contracts/secrets-input";
 import { AsyncResource } from "node:async_hooks";
 import type { RuntimeLogSubjectPrincipal } from "../execution/runtime-log-tools";
 import { isRoomWorkspaceAction } from "../assistant/room/assistant-room-workspace";
@@ -28,6 +29,7 @@ export class ConversationDesktopRelay {
       resolve: (value: unknown, owner: string) => void;
       reject: (error: Error) => void;
       timer: ReturnType<typeof setTimeout>;
+      secretSignature?: string;
     }
   >();
   call(
@@ -319,9 +321,77 @@ export class ConversationDesktopRelay {
           ),
         reject,
         timer,
+        ...(action === "secrets.input.authorize"
+          ? { secretSignature: randomBytes(32).toString("hex") }
+          : {}),
       });
     });
   }
+  /** Metadata only, scoped to the open session. Values never enter this registry. */
+  async secretInputs(
+    sessionId: string,
+    ownerAuthorized: () => boolean | Promise<boolean> = () => true,
+  ) {
+    const requests = [];
+    for (const [id, entry] of this.pending) {
+      if (!entry.secretSignature || entry.request.sessionId !== sessionId) continue;
+      if (
+        !(await entry.authorized()) ||
+        this.pending.get(id) !== entry ||
+        Number(entry.request.deadline) <= Date.now()
+      )
+        continue;
+      const input = entry.request.input as { name: string; purpose: string };
+      requests.push({
+        id,
+        signature: entry.secretSignature,
+        sessionId,
+        kind: "secret" as const,
+        remote: true as const,
+        title: "Secret request",
+        message: input.purpose,
+        fieldLabel: input.name,
+        confirmLabel: "Save secret",
+        cancelLabel: "Cancel",
+        deadline: Number(entry.request.deadline),
+      });
+      if (requests.length === 24) break;
+    }
+    if (!(await ownerAuthorized())) throw new Error("Device authorization was revoked");
+    return { requests };
+  }
+
+  /** Owner transport admits callers; consume once after rechecking original session authority. */
+  async answerSecretInput(
+    raw: unknown,
+    ownerAuthorized: () => boolean | Promise<boolean> = () => true,
+  ) {
+    const parsed = SecretInputAnswerParamsSchema.safeParse(raw);
+    if (!parsed.success) throw new Error("Invalid secret answer.");
+    const answer = parsed.data;
+    if ("value" in answer && Buffer.byteLength(answer.value, "utf8") > 8192)
+      throw new Error("Invalid secret answer.");
+    const entry = this.pending.get(answer.id);
+    const current = () =>
+      entry &&
+      this.pending.get(answer.id) === entry &&
+      entry.secretSignature === answer.signature &&
+      Number(entry.request.deadline) > Date.now();
+    if (
+      !current() ||
+      !entry ||
+      !(await entry.authorized()) ||
+      !(await ownerAuthorized()) ||
+      !(await entry.authorized()) ||
+      !current()
+    )
+      throw new Error("Secret request expired, unknown or already answered.");
+    clearTimeout(entry.timer);
+    this.pending.delete(answer.id);
+    entry.resolve("value" in answer ? { value: answer.value } : { cancelled: true }, "phone");
+    return { accepted: true as const };
+  }
+
   async take(owner = "desktop") {
     this.lastSeen = Date.now();
     const requests: Record<string, unknown>[] = [];
@@ -423,7 +493,7 @@ export class ConversationDesktopRelay {
     if (!entry || entry.claimed !== owner)
       throw new Error("Desktop request expired, unknown or owned by another device.");
     const authorized = await entry.authorized();
-    if (this.pending.get(id) !== entry)
+    if (this.pending.get(id) !== entry || Number(entry.request.deadline) <= Date.now())
       throw new Error("Desktop request expired, unknown or owned by another device.");
     clearTimeout(entry.timer);
     this.pending.delete(id);

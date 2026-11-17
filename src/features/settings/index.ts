@@ -24,6 +24,7 @@ export type * as modelNewThreadBackgroundEffectsApi from "./public/newThreadBack
 export type * as modelProjectSidebarTabApi from "./public/projectSidebarTab";
 export type * as modelSettingsLinkApi from "./public/settingsLink";
 export type * as modelSettingsApi from "./public/settings";
+export type * as agentDefaultsSyncApi from "./public/agentDefaultsSync";
 export type * as modelSoundsApi from "./public/sounds";
 export type * as modelUseKeybindingShortcutApi from "./public/useKeybindingShortcut";
 export type * as uiConnectionRecoverySettingsApi from "./public/ConnectionRecoverySettings";

@@ -3,7 +3,6 @@ import { LiveBackgroundLayer } from "../../settings/public/LiveBackgroundCanvas"
 import { useDelegatedCardBlocks } from "../model/reactiveReads";
 import type { Block, Session } from "../model/session";
 import { usePaneSession, usePaneSessionBlocks } from "../model/sessionsStore";
-import { DelegatedRunOwner } from "./SubagentCards";
 
 /**
  * The live blocks of a session, for the parts of a pane that follow streamed
@@ -29,11 +28,7 @@ export function LiveSessionBlocks({
 }) {
   const live = usePaneSessionBlocks(sessionId, visible, enabled) ?? fallback;
   const blocks = useDelegatedCardBlocks(sessionId, live, delegatedCards);
-  return delegatedCards ? (
-    <DelegatedRunOwner.Provider value={sessionId}>{children(blocks)}</DelegatedRunOwner.Provider>
-  ) : (
-    <>{children(blocks)}</>
-  );
+  return <>{children(blocks)}</>;
 }
 
 /** The animated chat background, driven by the streamed text of the live session. */

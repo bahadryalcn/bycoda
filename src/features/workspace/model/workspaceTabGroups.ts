@@ -262,10 +262,9 @@ export function planWorkspaceTabClose({
     }
   }
 
-  // Deck mode is one project (and worktree) at a time. Closing the last tab
-  // there must not jump to another one's tab; the caller keeps this one.
-  // A tab without a project of its own has nothing to keep, so it still closes.
-  return ownCwd ? { action: "keep" } : { action: "close", nextActiveTabId: globalTarget?.id };
+  // The last tab also stays when it inherits the project on screen, rather
+  // than revealing a hidden tab from another project.
+  return { action: "keep" };
 }
 
 /**

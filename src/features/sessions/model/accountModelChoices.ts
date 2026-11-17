@@ -52,6 +52,9 @@ export function accountModelChoices(
 ): AccountModelChoice[] {
   return models.flatMap((model) => {
     if (!enabled || !supportsProviderAccounts(model.harness)) return [model];
+    // A Host that has not reported this provider's accounts leaves the account unknown: the
+    // model stays one row and the owning Host picks its account, never this device's profiles.
+    if (catalog !== undefined && catalog[model.harness] === undefined) return [model];
     const accounts: readonly { id: string; label: string; accountColor?: string }[] =
       catalog === undefined
         ? providerAccounts(model.harness).map((account) => ({

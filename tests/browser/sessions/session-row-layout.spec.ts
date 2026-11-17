@@ -6,6 +6,64 @@ const evidence = path.resolve("temp/verification/2026-11-04-last-sessions-worksp
 const titleEvidence = path.resolve("temp/verification/2026-11-04-session-titles");
 for (const light of [false, true])
   for (const width of [1280, 800])
+    test(`workspace toolbar overflow ${light ? "light" : "dark"} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(
+        `/tests/browser/sessions/session-row-layout.html?${light ? "light" : "dark"}`,
+      );
+      const pane = page.locator('[data-side-pane="workspace"]');
+      const header = pane.locator("[data-workspace-header]");
+      await pane.evaluate((element) => element.style.setProperty("width", "400px", "important"));
+      const expectedHeight = await header.evaluate(
+        (element) => element.getBoundingClientRect().height,
+      );
+      await pane.evaluate((element) => element.style.setProperty("width", "270px", "important"));
+      const directory = path.resolve("temp/verification/2026-11-17-workspace-overflow");
+      await mkdir(directory, { recursive: true });
+      await header.screenshot({
+        path: path.join(directory, `${light ? "light" : "dark"}-${width}.png`),
+      });
+      expect(await header.evaluate((element) => element.getBoundingClientRect().height)).toBe(
+        expectedHeight,
+      );
+      await header.getByRole("button", { name: "More actions", exact: true }).click();
+      await expect(
+        page.getByRole("menuitem", { name: "Search sessions", exact: true }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("menuitemcheckbox", { name: "Select conversations", exact: true }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("menuitemcheckbox", { name: "Filter sessions", exact: true }),
+      ).toBeVisible();
+      await page.getByRole("menu").screenshot({
+        path: path.join(directory, `${light ? "light" : "dark"}-${width}-menu.png`),
+      });
+      await page.getByRole("menuitem", { name: "Search sessions", exact: true }).click();
+      await expect(
+        header.getByRole("combobox", { name: "Search sessions", exact: true }),
+      ).toBeFocused();
+      await page.keyboard.press("Escape");
+      await header.getByRole("button", { name: "More actions", exact: true }).click();
+      await page
+        .getByRole("menuitemcheckbox", { name: "Select conversations", exact: true })
+        .click();
+      await expect(pane.getByRole("toolbar", { name: "Selected conversations" })).toBeVisible();
+      await header.getByRole("button", { name: "More actions", exact: true }).click();
+      await page.getByRole("menuitemcheckbox", { name: "Filter sessions", exact: true }).click();
+      await expect(page.getByRole("menu", { name: "Filter sessions", exact: true })).toBeVisible();
+      await page.keyboard.press("Escape");
+      await header.getByRole("button", { name: "More actions", exact: true }).click();
+      await page.getByRole("menuitem", { name: "New session", exact: true }).click();
+      await expect(page.getByLabel("Created sessions", { exact: true })).toHaveText("1");
+      await pane.evaluate((element) => element.style.setProperty("width", "400px", "important"));
+      await expect(header.getByRole("button", { name: "More actions", exact: true })).toBeHidden();
+      await expect(
+        header.getByRole("button", { name: "Filter sessions", exact: true }),
+      ).toBeVisible();
+    });
+for (const light of [false, true])
+  for (const width of [1280, 800])
     for (const rail of ["compact", "wide", "hidden"])
       test(`remote project header ${light ? "light" : "dark"} ${width} ${rail}`, async ({
         page,
@@ -40,7 +98,9 @@ for (const light of [true, false])
       await page.goto(
         `/tests/browser/sessions/session-row-layout.html?${light ? "light" : "dark"}`,
       );
-      await page.getByRole("button", { name: "Search sessions", exact: true }).click();
+      // The default pane is narrow, so the session tools live in "More actions".
+      await page.getByRole("button", { name: "More actions", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Search sessions", exact: true }).click();
       await page
         .getByRole("combobox", { name: "Search sessions", exact: true })
         .fill("no matching fixture conversation");
@@ -552,8 +612,13 @@ for (const light of [false, true]) {
         `/tests/browser/sessions/session-row-layout.html?global&${width === 1280 ? "wide" : "compact"}&${light ? "light" : "dark"}`,
         { waitUntil: "domcontentloaded" },
       );
-      const create = page.getByRole("button", { name: "New session", exact: true });
-      await create.click();
+      // The default pane is narrow, so "New session" lives in the "More actions" menu.
+      const create = page.getByRole("button", { name: "More actions", exact: true });
+      const openProjectPicker = async () => {
+        await create.click();
+        await page.getByRole("menuitem", { name: "New session", exact: true }).click();
+      };
+      await openProjectPicker();
       const dialog = page.getByRole("dialog", { name: "Choose a project for the new session" });
       const search = dialog.getByRole("combobox", { name: "Search projects" });
       await expect(search).toBeFocused();
@@ -569,7 +634,7 @@ for (const light of [false, true]) {
       await expect(dialog).toHaveCount(0);
       await expect(create).toBeFocused();
       await expect(page.getByRole("status", { name: "Created sessions" })).toHaveText("0");
-      await create.click();
+      await openProjectPicker();
       await search.fill("no-such-project");
       await expect(dialog.getByRole("option")).toHaveCount(0);
       await search.press("Enter");
@@ -593,14 +658,16 @@ test("new session accepts explicit current project and preserves project-local d
   await page.goto("/tests/browser/sessions/session-row-layout.html?global", {
     waitUntil: "domcontentloaded",
   });
-  await page.getByRole("button", { name: "New session", exact: true }).click();
+  await page.getByRole("button", { name: "More actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: "New session", exact: true }).click();
   await page.getByRole("option", { name: /^bycoda / }).click();
   await expect(page.getByRole("status", { name: "Created sessions" })).toHaveText("1");
   await expect(page.getByRole("status", { name: "Created project" })).toHaveText("/fixture/bycoda");
   await page.goto("/tests/browser/sessions/session-row-layout.html", {
     waitUntil: "domcontentloaded",
   });
-  await page.getByRole("button", { name: "New session", exact: true }).click();
+  await page.getByRole("button", { name: "More actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: "New session", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.getByRole("status", { name: "Created sessions" })).toHaveText("1");
 });
@@ -611,7 +678,8 @@ test("new session retains selector and error when selected project becomes unava
   await page.goto("/tests/browser/sessions/session-row-layout.html?global&create-error", {
     waitUntil: "domcontentloaded",
   });
-  await page.getByRole("button", { name: "New session", exact: true }).click();
+  await page.getByRole("button", { name: "More actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: "New session", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Choose a project for the new session" });
   await dialog.getByRole("option", { name: /demo-repo / }).click();
   await expect(

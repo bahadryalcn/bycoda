@@ -80,7 +80,7 @@ for (const theme of ["light", "dark"])
         profile: { name: "Arif", language: "Turkish", tone: "friendly" },
       });
       await expect(
-        page.getByText("The proposal matches your current settings. Nothing to change."),
+        page.getByText("Your assistant already matches this. Nothing to change."),
       ).toBeVisible();
       await expect(page.getByRole("button", { name: "Apply to settings" })).toBeDisabled();
       await capture("unchanged");

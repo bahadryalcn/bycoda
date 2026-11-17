@@ -282,6 +282,7 @@ export async function createHostServer(
       desktopDelete: () => sessionsRuntime.current.desktopDelete,
       remoteActivity: () => sessionsRuntime.current.remoteActivity,
       invalidateSessionCopies: () => subscriptionsRuntime.invalidateSessionCopies,
+      invalidateModelCatalog: () => subscriptionsRuntime.invalidateModelCatalog,
       withinBeat: () => sessionLeasesRuntime.withinBeat,
       desktopCommandDelivery: () => sessionServicesRuntime.desktopCommandDelivery,
       renewRunLeases: () => sessionLeasesRuntime.renewRunLeases,

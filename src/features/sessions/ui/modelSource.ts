@@ -14,6 +14,11 @@ import { refreshHarnessCatalogs } from "../../../integrations/harness/core/regis
 export type ModelSource = {
   /** Explicit Host catalogs never fall back to this device's credential profiles. */
   accounts?: ModelAccountCatalog;
+  /**
+   * False while a remote source has not received the Host's account list for a provider; a
+   * saved account is then kept as-is instead of judged missing. Absent means known.
+   */
+  accountsKnown?(harness: HarnessId): boolean;
   /** Present only for non-local sources; local sources use global stores. */
   id?: string;
   modelsFor(harness: HarnessId): AgentModel[];

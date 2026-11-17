@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { newSession, type Session } from "../../sessions/model/session";
 import { createKeepAwakeController, isWorkingSession, useKeepAwake } from "./keepAwake";
-import { saveKeepAwakeEnabled } from "./settings";
+import { DEFAULT_AGENT_DEFAULTS } from "../../tasks/public/agentDefaults";
+import { acceptAgentDefaults } from "./agentDefaultsStore";
 
 vi.mock("@tauri-apps/api/core", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@tauri-apps/api/core")>()),
@@ -147,7 +148,7 @@ describe("keep awake", () => {
 
   it("does not invoke native IPC in a browser preview", async () => {
     vi.mocked(isTauri).mockReturnValue(false);
-    saveKeepAwakeEnabled(true);
+    enableKeepAwake();
     const container = document.createElement("div");
     const root = createRoot(container);
     const Harness = ({ sessions }: { sessions: Session[] }) => {
@@ -163,7 +164,7 @@ describe("keep awake", () => {
 
   it("retries a rejected native invoke while work remains active", async () => {
     vi.mocked(invoke).mockRejectedValueOnce(new Error("power request failed"));
-    saveKeepAwakeEnabled(true);
+    enableKeepAwake();
     const container = document.createElement("div");
     const root = createRoot(container);
     const Harness = ({ sessions }: { sessions: Session[] }) => {
@@ -253,7 +254,7 @@ describe("keep awake", () => {
   });
 
   it("reports this window's activity and releases it on pagehide", async () => {
-    saveKeepAwakeEnabled(true);
+    enableKeepAwake();
     const container = document.createElement("div");
     const root = createRoot(container);
     const Harness = ({ sessions }: { sessions: Session[] }) => {
@@ -279,3 +280,10 @@ describe("keep awake", () => {
     await act(async () => root.unmount());
   });
 });
+
+/** The Host owns this preference; a test turns it on the way an acknowledged Host record does. */
+function enableKeepAwake() {
+  acceptAgentDefaults({
+    agentDefaults: { ...DEFAULT_AGENT_DEFAULTS, version: 1, keepAwakeWhileAgentsWork: true },
+  });
+}

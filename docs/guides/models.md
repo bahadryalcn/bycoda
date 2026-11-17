@@ -105,7 +105,7 @@ account setup opens its setup steps.
 
 Provider account rows separate identity from usage status. The check beside an account marks its provider default. Account management shows complete names and plan details, and terminal profiles wrap their full paths. Email masking stays in effect until you choose Reveal email. CLI updates show model-refresh errors only when discovery fails; an unchanged model list needs no warning.
 
-If automatic terminal profile discovery fails, open Account profiles to see the error and select Find terminal profiles to retry.
+Account profiles lists only signed-in Claude, Codex and Grok profiles: the default CLI home, home folders such as `.claude2`, and accounts saved by the release or dev app. Each signed-in identity appears once, and an account you already added shows as Connected. If automatic terminal profile discovery fails, open Account profiles to see the error and select Find terminal profiles to retry.
 
 **Settings > Models > Chats** sets what new conversations start with; subagents, the advisor and the subagent effort ceiling are set only in **Subagents**. With Global selected and a provider that has several accounts, **Account** picks whose own defaults the rows edit. With a project, group or workspace selected, **Account** picks which account that provider's new chats start on there; the rows then show that account's defaults as Bycoda defaults, and anything you change is saved for the project. A row that follows a default shows the value it resolves to, such as the effort level it fills in.
 
