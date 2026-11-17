@@ -115,7 +115,7 @@ export function AppearancePage({
       label: t("Typography"),
       content: <TypographySection appearance={appearance} />,
     },
-    { id: "motion", label: t("Motion"), content: <MotionSection /> },
+    { id: "motion", label: t("Motion"), content: <MotionSection appearance={appearance} /> },
   ] as const;
   return (
     <div className="appearance-settings" ref={root}>

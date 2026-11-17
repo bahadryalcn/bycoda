@@ -1,0 +1,32 @@
+/* Creation layout stays intrinsic; controls and type retain shared semantic roles. */
+.design-studio-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+.design-studio-preview {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 16 / 10;
+  min-inline-size: 0;
+  overflow: clip;
+  isolation: isolate;
+}
+.design-studio-preview-image {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+.design-studio-motion {
+  position: relative;
+  display: grid;
+  place-items: center;
+  inline-size: 100%;
+  block-size: 100%;
+  min-block-size: 12rem;
+}
+.design-studio-motion .crew-scene {
+  inline-size: 100%;
+}

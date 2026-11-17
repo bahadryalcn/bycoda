@@ -41,4 +41,5 @@ Check write failure/retry/sibling races, scoped reset, image decode/worker failu
 
 - Every applied chat background image is also kept in the library (`model/backgroundLibrary.ts`, `controls/BackgroundLibrary.tsx`). Saved themes (`model/savedThemes.ts`, `model/appearanceSnapshot.ts`, `controls/savedThemeActions.ts`, `SavedThemes.tsx`, `SaveLookButton.tsx`) store a snapshot of every setting plus a library image id.
 - A new Appearance setting must join `captureAppearanceSnapshot`, `normalizeAppearanceSnapshot` and `applyAppearanceSnapshot`, or saved themes will not restore it.
-- Library images referenced by saved themes are never evicted; deleting one asks first and leaves those themes without the picture.
+- Library media referenced by saved themes/designs are never evicted or deleted by the media picker; delete the named design first.
+- Creation entry points use `controls/DesignStudio.tsx`, `runtime/createDesign.ts` and `runtime/savedDesigns.ts`. Named designs extend the existing saved-theme store with creation metadata; do not add another preference store. Portable artifacts cross the native `chat_background/design.rs` boundary and never apply on import. See the workbench guide for the user flow and limits.

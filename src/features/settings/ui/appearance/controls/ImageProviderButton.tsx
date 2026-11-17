@@ -27,17 +27,17 @@ export function ImageProviderButton({
   return (
     <>
       <Button
-        iconOnly
         ref={anchor}
         label={`${t("Background image")}: ${selected.label}`}
         size="sm"
         variant="ghost"
+        startIcon={selected.icon}
         pressed={value !== "none"}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
-        {selected.icon}
+        {t("Image")}: {selected.label}
       </Button>
       {open ? (
         <DropdownMenu

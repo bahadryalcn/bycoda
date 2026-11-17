@@ -2,6 +2,7 @@ import { Text } from "../../../shared/ui/Text";
 import { validateChatBackgroundMedia } from "../runtime/backgroundMedia";
 import { chatBackgroundKind } from "../../../shared/lib/chatBackgroundKind";
 import { ChatBackgroundMedia } from "../../settings/public/ChatBackgroundMedia";
+import { DesignStudioButton } from "../../settings/public/DesignStudio";
 import { BackgroundHistory, rememberBackground } from "../../settings/public/BackgroundHistory";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
@@ -246,6 +247,19 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
             >
               {t("Choose background")}
             </Button>
+            <DesignStudioButton
+              project={project}
+              label={t("Create background")}
+              onApplied={() => {
+                const next = loadProjectChatBackgroundSettings(project);
+                setPath(next?.path ?? null);
+                setEmptyOpacity(next?.emptyOpacity ?? loadChatBackgroundEmptyOpacity());
+                setSessionOpacity(next?.sessionOpacity ?? loadChatBackgroundSessionOpacity());
+                setScope(next?.scope ?? loadChatBackgroundScope());
+                setEffect(next?.effect ?? NEW_THREAD_BACKGROUND_EFFECT_DEFAULT);
+                setRevision(projectChatBackgroundImageRevision());
+              }}
+            />
             <InfoPopover>
               <Text as="p" size="caption" tone="secondary" leading="relaxed">
                 {path

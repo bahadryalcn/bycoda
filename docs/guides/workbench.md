@@ -5,7 +5,7 @@
 Settings > Appearance > Backgrounds > Chat background accepts local PNG, JPEG,
 GIF and WebP images, muted looping MP4/WebM videos, and self-contained UTF-8 HTML
 scenes with inline CSS and JavaScript. Image limit: 25 MiB; video: 100 MiB; HTML:
-512,000 bytes. Media codec support follows the desktop WebView. Files stay on this
+2 MiB. Media codec support follows the desktop WebView. Files stay on this
 device. Project menu > Background selects an override; removing it restores the
 global choice. Empty/all conversation scope and opacity still apply. Image effects
 apply only to images. Workspace procedural artwork remains a separate setting.
@@ -30,6 +30,41 @@ or navigation. The renderer uses the existing HTML preview token lifecycle with
 an opaque nested sandbox and no local asset root. It never enables canvas workers.
 Video and HTML unmount in hidden panes, background windows and reduced motion;
 the base workspace artwork remains available if media cannot run.
+
+### Create, save and reuse a design
+
+Use **Create background**, **Create scene** beside Live background, or **Create
+motion preset** in Motion. Describe the result in a short prompt, choose the
+provider/model, then **Create**. Images use the selected image provider; scenes
+use the ordinary conversation model to write HTML/CSS/JavaScript. Motion presets
+change existing motion settings. This does not synthesize video. Cancel or retry
+keeps the prompt, previous preview and active design.
+
+The creation sheet shows a real preview before **Apply**. Give it a name and
+**Save** to keep it in **Saved designs**; saving does not apply it. Open a saved
+design to revise its prompt or source, save changes or save a copy, and explicitly
+apply to the app or project. Motion presets apply to the app. Current and saved
+draft badges describe separate states. Unsaved source edits must update the
+preview before saving or applying.
+
+**Saved designs** supports rename, deliberate delete, and **Export**. Export writes
+a `.bycoda-design.json` file containing the media, prompt and relevant preferences,
+with no machine-specific asset path. **Import design** validates size, format,
+media signature and checksum, then adds a named design without applying it. Keep
+an export outside the application data folder to restore after reinstallation.
+Missing media, unsupported codecs, failed writes and conflicting sibling edits
+leave the usable selection intact. Named records share the existing saved-theme
+store and protected media library; the recent-selection history is not their
+storage. Deleting a design does not delete its imported media or active selection.
+
+**Try mountain lake** opens an offline Three.js landscape with layered mountains,
+pine forest and reflective water. Save it through the same named-design flow.
+Its bundled MIT-licensed Three.js runtime needs no CDN. The example caps rendering
+at 30 FPS and pixel ratio 1.5, limits reflection resolution, pauses when hidden,
+renders a still frame for reduced motion, and disposes GPU resources on removal.
+All generated/imported code retains the existing isolated, offline HTML sandbox.
+In ordinary chat, `runtime: "three"` on visual tools supplies this same offline
+runtime; background reads return the authored source and runtime for revisions.
 
 Remote workspace headers show the project's saved name and icon, like local projects.
 The machine icon beside the name shows the owning machine and data freshness on hover

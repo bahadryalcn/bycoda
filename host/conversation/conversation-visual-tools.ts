@@ -3,6 +3,10 @@ import { previewInlineVisual } from "./inline-visual-preview";
 import { storeInlineVisual } from "./inline-visual-store";
 import type { BrowserLoader } from "../browser/shared-browser";
 import {
+  authoredSceneSource,
+  packOfflineScene,
+} from "../../src/features/settings/model/designSource";
+import {
   inlineVisualSource,
   MAX_INLINE_VISUAL_HEIGHT,
   MAX_INLINE_VISUAL_HTML_CHARS,
@@ -10,6 +14,12 @@ import {
 } from "../../src/features/sessions/model/inlineVisual";
 
 const source = {
+  runtime: {
+    type: "string",
+    enum: ["html", "three"],
+    description:
+      "three preloads the bundled offline Three.js r180 as global THREE. Supply authored HTML only, with no library or CDN imports.",
+  },
   title: {
     type: "string",
     minLength: 1,
@@ -21,7 +31,8 @@ const source = {
     type: "string",
     minLength: 1,
     maxLength: MAX_INLINE_VISUAL_HTML_CHARS,
-    description: "A complete, self-contained HTML document with inline <style> and <script>.",
+    description:
+      "A complete, self-contained HTML document with inline <style> and <script>. Preserve runtime returned by visuals.background when revising: three supplies the offline THREE library; send only authored source.",
   },
   path: { type: "string", minLength: 1, maxLength: 4096 },
 };
@@ -68,7 +79,7 @@ export const CONVERSATION_VISUAL_TOOLS = {
     type: "object",
     properties: {
       target: { type: "string", enum: ["global", "project"] },
-      offset: { type: "integer", minimum: 0, maximum: 512000 },
+      offset: { type: "integer", minimum: 0, maximum: 2097152 },
       limit: { type: "integer", minimum: 1, maximum: 32000 },
       expectedPath: { type: "string", minLength: 1, maxLength: 4096 },
     },
@@ -143,7 +154,9 @@ export async function callVisualConversationTool(
   if (input.path && !/\.html?$/i.test(String(input.path)))
     throw new Error("Visual source must be an HTML file.");
   const html = typeof input.html === "string" ? input.html : await readHostFile(root, input.path);
-  const visual = inlineVisualSource({
+  if (input.runtime !== undefined && input.runtime !== "html" && input.runtime !== "three")
+    throw new Error("Unsupported visual runtime");
+  let visual = inlineVisualSource({
     title: input.title,
     html,
     height: input.height ?? 360,
@@ -152,6 +165,11 @@ export async function callVisualConversationTool(
     throw new Error(
       `Visual is invalid: title 1-160 characters, HTML up to ${MAX_INLINE_VISUAL_HTML_CHARS} characters, height ${MIN_INLINE_VISUAL_HEIGHT}-${MAX_INLINE_VISUAL_HEIGHT}.`,
     );
+  if (input.runtime === "three") {
+    const { THREE_RUNTIME } =
+      await import("../../src/features/settings/data/backgrounds/three-runtime.generated");
+    visual = { ...visual, html: packOfflineScene(authoredSceneSource(visual.html), THREE_RUNTIME) };
+  }
   await check();
   if (action === "visuals.applyBackground") {
     if (!options.applyBackground) throw new Error("Desktop background relay is unavailable.");

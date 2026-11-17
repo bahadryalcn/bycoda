@@ -18,7 +18,7 @@ export type InlineVisual = InlineVisualSnapshot | InlineVisualRef;
 
 // Legacy v1 snapshots had to fit the retained 8,000 character tool output.
 export const MAX_INLINE_VISUAL_CHARS = 4000;
-export const MAX_INLINE_VISUAL_HTML_CHARS = 512_000;
+export const MAX_INLINE_VISUAL_HTML_CHARS = 2_097_152;
 export const MIN_INLINE_VISUAL_HEIGHT = 80;
 export const MAX_INLINE_VISUAL_HEIGHT = 2000;
 export const INLINE_VISUAL_ID = /^[0-9a-f]{64}$/;

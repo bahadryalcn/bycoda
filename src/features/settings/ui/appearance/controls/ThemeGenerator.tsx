@@ -1,7 +1,6 @@
 import { surfaceAttributes } from "../../../../../shared/ui/Surface";
 import { useThemeGeneratorModel } from "./useThemeGeneratorModel";
-import { LoadingText } from "../../../../../shared/ui/LoadingText";
-import { lazy, Suspense, useEffect, useState, type KeyboardEvent } from "react";
+import { useEffect, useState, type KeyboardEvent } from "react";
 import { t, useLocale } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
 import { Spinner } from "../../../../../shared/ui/Spinner";
@@ -11,12 +10,8 @@ import { randomThemePrompt } from "../../../model/themePromptIdeas";
 import { Text } from "../../../../../shared/ui/Text";
 import { TextField } from "../../../../../shared/ui/TextField";
 import { canRunHarnessTextPrompt } from "../../../../../integrations/harness";
-import { HARNESSES } from "../../../../sessions";
-import { defaultModelSettings, resolveModel } from "../../../../sessions/public/models";
-import {
-  defaultProviderAccountId,
-  supportsProviderAccounts,
-} from "../../../../providers/public/providerAccounts";
+import { AppearanceModelPicker } from "./AppearanceModelPicker";
+import { DesignStudioButton } from "./DesignStudioButton";
 import {
   addBackgroundLibraryImage,
   libraryImageSrc,
@@ -43,12 +38,6 @@ import {
 import { generatorSession, readGeneratorValue, useGeneratorState } from "./themeGeneratorSession";
 import "./ThemeControls.css";
 import { isImeComposition } from "../../../../../shared/lib/keyboard";
-
-const ModelPicker = lazy(() =>
-  import("../../../../sessions")
-    .then((entry) => entry.loadModelPicker())
-    .then((module) => ({ default: module.ModelPicker })),
-);
 
 /** The image state of one suggestion chip: drawing, ready (with the stored file) or failed. */
 export type ChipImage =
@@ -92,7 +81,7 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
   );
   // Everything below survives closing Settings (see themeGeneratorSession.ts).
   const [prompt, setPrompt] = useGeneratorState("prompt", "");
-  const [choice, setChoice] = useThemeGeneratorModel();
+  const [choice] = useThemeGeneratorModel();
   const [suggestions, setSuggestions] = useGeneratorState<ThemeSuggestion[]>("suggestions", []);
   const [busy, setBusy] = useGeneratorState("busy", false);
   /** `null` while nothing failed; otherwise the Host's reason, or "" when it gave none. */
@@ -315,7 +304,6 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
             fieldClassName="theme-generator-input"
             fieldVariant="compact"
             label={t("Describe a theme")}
-            hideLabel
             value={prompt}
             placeholder={t("For example “midnight ocean” or “warm kiln”")}
             onChange={(event) => setPrompt(event.target.value)}
@@ -331,32 +319,7 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
             <Dices />
           </Button>
         </div>
-        <Suspense fallback={<LoadingText />}>
-          <ModelPicker
-            harness={choice.harness}
-            model={choice.model}
-            values={choice.modelSettings ?? {}}
-            accountId={choice.providerAccountId}
-            accountChoices
-            allowedHarnesses={HARNESSES.filter(canRunHarnessTextPrompt)}
-            onChange={(harness, model, accountId) => {
-              setChoice({
-                ...choice,
-                harness,
-                model,
-                modelSettings: defaultModelSettings(resolveModel(harness, model)),
-                // The Host runs the prompt under this bycoda account; without one it would use
-                // the provider's own default login, which may be signed out.
-                providerAccountId: supportsProviderAccounts(harness)
-                  ? (accountId ?? defaultProviderAccountId(harness))
-                  : undefined,
-              });
-            }}
-            onSettingsChange={(modelSettings) => {
-              setChoice({ ...choice, modelSettings });
-            }}
-          />
-        </Suspense>
+        <AppearanceModelPicker />
         <div className="theme-generator-actions">
           <ImageProviderButton
             value={withImage ? imageProvider : "none"}
@@ -366,7 +329,9 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
               if (value !== "none") setImageProvider(value);
             }}
           />
-          <SaveLookButton appearance={appearance} iconOnly />
+          <SaveLookButton appearance={appearance} />
+          <DesignStudioButton appearance={appearance} kind="image" label={t("Create background")} />
+          <DesignStudioButton appearance={appearance} label={t("Saved designs")} />
           <Button size="sm" tooltip={t("Roll a random palette without a model")} onClick={random}>
             {t("Random look")}
           </Button>

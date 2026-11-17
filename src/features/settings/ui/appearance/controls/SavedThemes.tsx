@@ -34,7 +34,7 @@ import { writeGeneratorValue } from "./themeGeneratorSession";
  */
 export function SavedThemes({ appearance }: { appearance: AppearanceSettings }) {
   useLocale();
-  const themes = useSavedThemes();
+  const themes = useSavedThemes().filter((theme) => !theme.creation);
   const { images } = useBackgroundLibrary();
   const { confirm, dialog } = useConfirm();
   const [renaming, setRenaming] = useState<SavedTheme | null>(null);
@@ -49,9 +49,7 @@ export function SavedThemes({ appearance }: { appearance: AppearanceSettings }) 
       const outcome = await applySavedTheme(appearance, theme);
       writeGeneratorValue("selectedLookName", theme.name, "");
       if (outcome === "image-missing")
-        setNotice(
-          t("This theme's image is no longer in the library. The rest of the look was applied."),
-        );
+        setNotice(t("Saved media is missing. Your current design is unchanged."));
     } catch (error) {
       setNotice(error instanceof Error ? error.message : String(error));
     } finally {

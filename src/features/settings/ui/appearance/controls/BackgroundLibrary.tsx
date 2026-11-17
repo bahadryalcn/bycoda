@@ -157,7 +157,17 @@ export function BackgroundLibrary({ appearance }: { appearance: AppearanceSettin
                     styles.remove,
                   )}
                   label={t("Delete image")}
-                  disabled={appearance.chatBackgroundBusy || applyingId !== null || loading}
+                  disabled={
+                    appearance.chatBackgroundBusy ||
+                    applyingId !== null ||
+                    loading ||
+                    themes.some((theme) => theme.imageId === image.id)
+                  }
+                  disabledReason={
+                    themes.some((theme) => theme.imageId === image.id)
+                      ? t("This media is used by a saved design. Delete the design first.")
+                      : undefined
+                  }
                   onClick={() => remove(image)}
                 >
                   <Trash2 />

@@ -77,3 +77,22 @@ export const AppearanceBackgroundImageParamsSchema = z.strictObject({
 export const AppearanceBackgroundImageResultSchema = z.strictObject({
   path: z.string().min(1).max(4096),
 });
+
+export const AppearanceCreateDesignParamsSchema = AppearanceThemeSuggestionsParamsSchema.extend({
+  requestId: z.string().min(36).max(36),
+  kind: z.enum(["image", "scene", "motion"]),
+  prompt: z.string().min(1).max(2000),
+  previousSource: z.string().max(120_000).optional(),
+  imageProvider: z.enum(["codex", "gemini"]).optional(),
+});
+export const AppearanceCreateDesignResultSchema = z.strictObject({
+  kind: z.enum(["image", "scene", "motion"]),
+  name: z.string().min(1).max(160),
+  path: z.string().min(1).max(4096).optional(),
+  html: z.string().max(2_097_152).optional(),
+  motion: AppearanceThemeSuggestionSchema.optional(),
+});
+export const AppearanceCancelDesignParamsSchema = z.strictObject({
+  requestId: z.string().min(36).max(36),
+});
+export const AppearanceCancelDesignResultSchema = z.strictObject({ cancelled: z.boolean() });

@@ -14,6 +14,7 @@ import {
 import { rememberBackground } from "./backgroundHistory";
 import { projectKey } from "../../../shared/lib/paths";
 import { chatBackgroundKind } from "../../../shared/lib/chatBackgroundKind";
+import { authoredSceneSource } from "./designSource";
 
 /** Read only the effective choice for this authenticated project, never a caller-named file. */
 export async function readConversationBackground(
@@ -30,7 +31,7 @@ export async function readConversationBackground(
     !["global", "project"].includes(String(input.target)) ||
     !Number.isSafeInteger(offset) ||
     Number(offset) < 0 ||
-    Number(offset) > 512000 ||
+    Number(offset) > 2097152 ||
     !Number.isSafeInteger(limit) ||
     Number(limit) < 1 ||
     Number(limit) > 32000 ||
@@ -57,15 +58,17 @@ export async function readConversationBackground(
   const html = await invoke<string>("read_chat_background_html", { path: current.path });
   if (!(await authorized()) || JSON.stringify(selection()) !== JSON.stringify(current))
     throw new Error("Background authority or selection changed");
+  const source = authoredSceneSource(html);
   const end = Number(offset) + Number(limit);
   return {
     selected: true,
     ...current,
     kind,
-    html: html.slice(Number(offset), end),
+    html: source.slice(Number(offset), end),
+    runtime: source === html ? "html" : "three",
     offset,
-    nextOffset: end < html.length ? end : null,
-    totalCharacters: html.length,
+    nextOffset: end < source.length ? end : null,
+    totalCharacters: source.length,
   };
 }
 
@@ -82,7 +85,7 @@ export async function applyConversationBackground(
     !["global", "project"].includes(String(input.target)) ||
     typeof input.html !== "string" ||
     !input.html.trim() ||
-    input.html.length > 512_000 ||
+    input.html.length > 2097152 ||
     typeof input.title !== "string" ||
     !input.title.trim() ||
     input.title.length > 160

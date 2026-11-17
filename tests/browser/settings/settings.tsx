@@ -150,6 +150,14 @@ const consentFixture = new Map<
 mockIPC(
   (command, args) => {
     if (new URLSearchParams(location.search).has("backgroundProbe")) {
+      const assets = ((window as any).__designAssets ??= {});
+      if (command === "save_chat_background_html") {
+        const path = `/fixture/asset-${crypto.randomUUID()}.html`;
+        assets[path] = args.content;
+        return path;
+      }
+      if (command === "read_chat_background_html" && assets[String(args.path)])
+        return assets[String(args.path)];
       if (command === "read_chat_background_html")
         return "<!doctype html><style>html,body{margin:0;height:100%;background:linear-gradient(135deg,#142a36,#2d615c)}.orb{position:absolute;width:45vmin;height:45vmin;left:30%;top:20%;border:1px solid #bce9dd;border-radius:50%;animation:float 10s infinite alternate}@keyframes float{to{transform:translateY(25px)}}</style><div class=orb></div>";
       if (command === "create_html_preview") {
@@ -167,6 +175,7 @@ mockIPC(
         return args.sourcePath;
       if (command === "list_background_library")
         return [
+          ...Object.values((window as any).__designLibrary ?? {}),
           {
             id: "fixture-scene",
             path: "/fixture/scene.html",
@@ -176,15 +185,18 @@ mockIPC(
             prompt: null,
           },
         ];
-      if (command === "add_background_library_image")
-        return {
-          id: "fixture-scene",
+      if (command === "add_background_library_image") {
+        const entry = {
+          id: "a".repeat(24),
           path: args.sourcePath,
           createdMs: 1,
           bytes: 400,
           source: "added",
           prompt: null,
         };
+        ((window as any).__designLibrary ??= {})[entry.id] = entry;
+        return entry;
+      }
     }
     if (command === "assistant_consent_get")
       return structuredClone(consentFixture.get(String(args.environmentId)) ?? null);

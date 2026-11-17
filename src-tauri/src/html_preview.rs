@@ -212,8 +212,8 @@ fn make_preview(path: String, content: String) -> Result<Preview, String> {
         return Err("HTML preview is limited to 16 MiB.".into());
     }
     if path.starts_with("background://") {
-        if content.trim().is_empty() || content.len() > 512_000 {
-            return Err("HTML background must contain 1 to 512000 UTF-8 bytes".into());
+        if content.trim().is_empty() || content.len() > 2 * 1024 * 1024 {
+            return Err("HTML background must contain 1 to 2097152 UTF-8 bytes".into());
         }
         return Ok(Preview {
             content: background_document(&content),

@@ -31,6 +31,16 @@ it("requires explicit instruction and rejects invalid source before native work"
   expect(invoke).not.toHaveBeenCalled();
 });
 
+it("returns authored Three.js source and runtime without sending the offline bundle", async () => {
+  saveChatBackgroundPath("/scene.html");
+  vi.mocked(invoke).mockResolvedValueOnce(
+    "<script>large offline library</script><!--bycoda:scene-source--><script>THREE.Scene</script>",
+  );
+  expect(
+    await readConversationBackground({ target: "global" }, "/project", async () => true),
+  ).toMatchObject({ runtime: "three", html: "<script>THREE.Scene</script>", nextOffset: null });
+});
+
 it("reads bounded current HTML chunks after reopening, with an immutable path fence", async () => {
   saveChatBackgroundPath("/imported.html");
   vi.mocked(invoke).mockResolvedValueOnce("<b>old scene</b>");

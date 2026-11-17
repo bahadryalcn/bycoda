@@ -1,6 +1,10 @@
 import type { z } from "zod";
 import type { HostRpcMethodDefinition } from "./methods";
 import {
+  AppearanceCreateDesignParamsSchema,
+  AppearanceCreateDesignResultSchema,
+  AppearanceCancelDesignParamsSchema,
+  AppearanceCancelDesignResultSchema,
   AppearanceBackgroundImageParamsSchema,
   AppearanceBackgroundImageResultSchema,
   AppearanceBackgroundSuggestionsParamsSchema,
@@ -17,6 +21,14 @@ export function appearanceMethods(
   control: (paramsSchema: z.ZodType, resultSchema: z.ZodType) => HostRpcMethodDefinition,
 ) {
   return {
+    "appearance.createDesign": {
+      ...control(AppearanceCreateDesignParamsSchema, AppearanceCreateDesignResultSchema),
+      responseTimeoutMs: 240_000,
+    },
+    "appearance.cancelDesign": control(
+      AppearanceCancelDesignParamsSchema,
+      AppearanceCancelDesignResultSchema,
+    ),
     "appearance.themeSuggestions": {
       ...control(AppearanceThemeSuggestionsParamsSchema, AppearanceThemeSuggestionsResultSchema),
       responseTimeoutMs: 100_000,

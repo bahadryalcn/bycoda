@@ -3,8 +3,8 @@ use tauri::{AppHandle, Manager};
 
 #[tauri::command]
 pub async fn save_chat_background_html(app: AppHandle, content: String) -> Result<String, String> {
-    if content.trim().is_empty() || content.len() > 512_000 {
-        return Err("HTML background must contain 1 to 512000 UTF-8 bytes".into());
+    if content.trim().is_empty() || content.len() > 2 * 1024 * 1024 {
+        return Err("HTML background must contain 1 to 2097152 UTF-8 bytes".into());
     }
     tauri::async_runtime::spawn_blocking(move || {
         super::store_background_bytes(&app, content.as_bytes(), "html")
@@ -37,10 +37,10 @@ pub async fn read_chat_background_html(app: AppHandle, path: String) -> Result<S
         let mut bytes = Vec::new();
         std::fs::File::open(file)
             .map_err(|e| e.to_string())?
-            .take(512_001)
+            .take(2 * 1024 * 1024 + 1)
             .read_to_end(&mut bytes)
             .map_err(|e| e.to_string())?;
-        if bytes.len() > 512_000 {
+        if bytes.len() > 2 * 1024 * 1024 {
             return Err("HTML background is too large".into());
         }
         String::from_utf8(bytes).map_err(|_| "HTML background must be UTF-8 text".into())

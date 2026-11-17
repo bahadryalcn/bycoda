@@ -43,6 +43,7 @@ async function pruneOldImages(keep: string) {
 export async function generateAppearanceBackgroundImage(
   params: Params,
   adapters: SocialImageAdapters = createSocialImageAdapters(IMAGE_DIRECTORY),
+  signal?: AbortSignal,
 ): Promise<{ path: string }> {
   const adapter = adapters[params.provider];
   if (!adapter)
@@ -59,7 +60,9 @@ export async function generateAppearanceBackgroundImage(
   const result = await adapter.generate({
     prompt: backgroundImagePrompt(params.prompt),
     aspectRatio: "16:9",
-    signal: AbortSignal.timeout(TIMEOUT_MS),
+    signal: signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(TIMEOUT_MS)])
+      : AbortSignal.timeout(TIMEOUT_MS),
     checkpoint: () => undefined,
     id,
   });

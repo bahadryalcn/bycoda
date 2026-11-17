@@ -1,6 +1,7 @@
 import { surfaceAttributes } from "../../../../../shared/ui/Surface";
 import { chatBackgroundKind } from "../../../../../shared/lib/chatBackgroundKind";
 import { ChatBackgroundMedia } from "../../ChatBackgroundMedia";
+import { DesignStudioButton } from "../controls/DesignStudioButton";
 import { BackgroundHistory } from "../../BackgroundHistory";
 import { Text } from "../../../../../shared/ui/Text";
 import { useEffect, useState, useSyncExternalStore } from "react";
@@ -205,6 +206,13 @@ export function BackgroundSection({ appearance }: { appearance: AppearanceSettin
               <Group
                 id="live-background"
                 title={t("Live background")}
+                action={
+                  <DesignStudioButton
+                    appearance={appearance}
+                    kind="scene"
+                    label={t("Create scene")}
+                  />
+                }
                 modified={
                   effect !== LIVE_BACKGROUND_DEFAULT ||
                   intensity !== LIVE_BACKGROUND_INTENSITY_DEFAULT
@@ -298,6 +306,9 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
     <Group
       id="chat-background"
       title={t("Chat background")}
+      action={
+        <DesignStudioButton appearance={appearance} kind="image" label={t("Create background")} />
+      }
       description={t(
         "Images, videos and HTML scenes stay on this device. Ask in chat to create or revise a scene, then apply it.",
       )}

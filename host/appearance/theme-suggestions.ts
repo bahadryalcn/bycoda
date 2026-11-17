@@ -106,6 +106,7 @@ async function defaultRunner(request: Parameters<typeof runHarnessTextPrompt>[0]
 export async function generateThemeSuggestions(
   params: Params,
   run: ThemeSuggestionRunner = defaultRunner,
+  signal?: AbortSignal,
 ): Promise<{ suggestions: ThemeSuggestion[] }> {
   const harness = params.harness as HarnessId;
   // The Host registers no adapter at startup, so the capability check must come after registration.
@@ -125,6 +126,7 @@ export async function generateThemeSuggestions(
     intent: "plan" as const,
     ephemeral: true,
     timeoutMs: TIMEOUT_MS,
+    signal,
   };
   // Models occasionally answer with prose or a cut-off array; one more attempt usually lands.
   let last = "";

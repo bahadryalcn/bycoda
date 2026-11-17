@@ -17,6 +17,8 @@ export type SavedTheme = {
   look: AppearanceSnapshot;
   /** Library image id; absent when the look has no chat background. */
   imageId?: string;
+  /** Background/motion creations share the named look catalog and protected media. */
+  creation?: { kind: "image" | "scene" | "motion"; prompt: string };
 };
 
 export const SAVED_THEME_NAME_MAX = 40;
@@ -25,6 +27,19 @@ const KEY = "bycoda.savedThemes.v1";
 const IMAGE_ID = /^[0-9a-f]{24}$/;
 const listeners = createStore();
 let cache: { raw: string | null; themes: SavedTheme[] } | undefined;
+
+function normalizeCreation(value: unknown): { creation?: SavedTheme["creation"] } {
+  if (!value || typeof value !== "object") return {};
+  const raw = value as Record<string, unknown>;
+  if (!["image", "scene", "motion"].includes(String(raw.kind)) || typeof raw.prompt !== "string")
+    return {};
+  return {
+    creation: {
+      kind: raw.kind as "image" | "scene" | "motion",
+      prompt: truncateGraphemes(raw.prompt, 2000),
+    },
+  };
+}
 
 export function normalizeThemeName(value: unknown): string {
   const text = typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
@@ -58,6 +73,7 @@ export function normalizeSavedThemes(input: unknown): SavedTheme[] {
       ...(typeof raw.imageId === "string" && IMAGE_ID.test(raw.imageId)
         ? { imageId: raw.imageId }
         : {}),
+      ...normalizeCreation(raw.creation),
     });
     if (themes.length >= SAVED_THEMES_MAX) break;
   }
@@ -124,6 +140,7 @@ export type SavedThemeInput = {
   name: string;
   look: AppearanceSnapshot;
   imageId?: string;
+  creation?: SavedTheme["creation"];
 };
 
 export function addSavedTheme(
@@ -141,6 +158,7 @@ export function addSavedTheme(
     updatedAt: now,
     look: input.look,
     ...(input.imageId ? { imageId: input.imageId } : {}),
+    ...normalizeCreation(input.creation),
   };
   return [...themes, theme];
 }

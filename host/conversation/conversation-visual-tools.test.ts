@@ -168,10 +168,10 @@ it("rejects ambiguous source and oversized JSON before a provider can truncate i
     callVisualConversationTool(
       cwd,
       "visuals.render",
-      { title: "Chart", html: "x".repeat(512_001) },
+      { title: "Chart", html: "x".repeat(2_097_153) },
       allow,
     ),
-  ).rejects.toThrow("512000");
+  ).rejects.toThrow("2097152");
   await expect(
     callVisualConversationTool(cwd, "visuals.render", { title: "Chart", html: "<b>x</b>" }, allow),
   ).rejects.toThrow("storage is unavailable");

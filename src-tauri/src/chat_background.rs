@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
 
 use crate::fs::expand_home;
+pub mod design;
 pub mod preview;
 
 const MAX_BACKGROUND_BYTES: u64 = 25 * 1024 * 1024;
@@ -42,7 +43,7 @@ pub(crate) fn validate_background_file(source: &Path) -> Result<String, String> 
     let ext = background_extension(source)?;
     let limit = match ext.as_str() {
         "mp4" | "webm" => 100 * 1024 * 1024,
-        "html" | "htm" => 512_000,
+        "html" | "htm" => 2 * 1024 * 1024,
         _ => MAX_BACKGROUND_BYTES,
     };
     if meta.len() == 0 || meta.len() > limit {
@@ -69,7 +70,7 @@ pub(crate) fn read_background_bytes(source: &Path, ext: &str) -> Result<Vec<u8>,
     use std::io::Read;
     let limit = match ext {
         "mp4" | "webm" => 100 * 1024 * 1024,
-        "html" | "htm" => 512_000,
+        "html" | "htm" => 2 * 1024 * 1024,
         _ => MAX_BACKGROUND_BYTES,
     };
     let mut bytes = Vec::new();

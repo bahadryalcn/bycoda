@@ -4,8 +4,8 @@
 use sha2::{Digest, Sha256};
 use std::path::Path;
 
-// 512,000 HTML characters can take about 3 bytes each once UTF-8 and JSON escaped.
-const MAX_BYTES: u64 = 4 * 1024 * 1024;
+// Bounded offline Three.js scenes may include two MiB of HTML; JSON escaping can expand it.
+const MAX_BYTES: u64 = 16 * 1024 * 1024;
 
 fn valid_id(id: &str) -> bool {
     id.len() == 64

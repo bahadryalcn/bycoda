@@ -105,13 +105,13 @@
 .theme-generator-bar {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: end;
   gap: 0.375rem 0.5rem;
 }
 .theme-generator-prompt {
   display: flex;
-  flex: 1 1 18rem;
-  align-items: center;
+  flex: 1 0 100%;
+  align-items: end;
   gap: 0.125rem;
   min-inline-size: 12rem;
 }
@@ -122,7 +122,8 @@
 }
 .theme-generator-actions {
   display: flex;
-  flex: none;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.25rem;
   margin-inline-start: auto;

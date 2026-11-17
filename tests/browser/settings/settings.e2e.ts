@@ -127,6 +127,80 @@ for (const theme of ["dark", "light"])
     });
   }
 
+for (const theme of ["light", "dark"])
+  for (const width of [1280, 800]) {
+    test(`design creation previews saves and reapplies: ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.emulateMedia({ reducedMotion: "no-preference" });
+      await page.route("http://background-preview.test/**", async (route) => {
+        const token = new URL(route.request().url()).pathname.split("/")[1];
+        const source = await page.evaluate(
+          (id) => (window as any).__backgroundScenes?.[id] ?? "",
+          token,
+        );
+        await route.fulfill({ contentType: "text/html", body: offlineBackground(source) });
+      });
+      await page.goto(
+        `/tests/browser/settings/settings.html?backgroundProbe&section=appearance&theme=${theme}&lang=en`,
+      );
+      const output = `temp/verification/appearance-create`;
+      await expect(page.getByRole("button", { name: /Composer 2\.5/ }).first()).toBeVisible();
+      await page.screenshot({ path: `${output}/generator-${theme}-${width}.png` });
+      await page.getByRole("tab", { name: "Background", exact: true }).click();
+      await page
+        .getByRole("listitem")
+        .filter({ has: page.getByText("Live", { exact: true }) })
+        .getByRole("button")
+        .first()
+        .click();
+      await page.getByRole("button", { name: "Create scene", exact: true }).click();
+      const studio = page.getByRole("dialog", { name: "Create a design" });
+      await expect(studio.getByLabel("Describe the result")).toBeVisible();
+      await studio.getByRole("button", { name: "Try mountain lake", exact: true }).click();
+      await expect(studio.locator("iframe")).toHaveCount(1);
+      await expect(studio.getByText("Unsaved draft", { exact: true })).toBeVisible();
+      expect(
+        await page.evaluate(() => localStorage.getItem("bycoda.chatBackgroundPath")),
+      ).toBeNull();
+      await studio.getByLabel("Design name", { exact: true }).fill("My dusk lake");
+      await studio.getByRole("button", { name: "Save", exact: true }).click();
+      await expect(studio.getByText("Saved", { exact: true })).toBeVisible();
+      await page.screenshot({ path: `${output}/studio-saved-${theme}-${width}.png` });
+      await studio.getByRole("button", { name: "Apply", exact: true }).first().click();
+      await expect(studio.getByText("Current", { exact: true })).toBeVisible();
+      const active = await page.evaluate(() => localStorage.getItem("bycoda.chatBackgroundPath"));
+      expect(active).toContain("asset-");
+      await studio.getByRole("button", { name: "Edit source", exact: true }).click();
+      await studio.getByLabel("HTML, CSS and JavaScript").fill("<b>Changed draft</b>");
+      await expect(
+        studio.getByRole("button", { name: "Save changes", exact: true }),
+      ).toBeDisabled();
+      await expect(
+        studio.getByRole("button", { name: "Apply", exact: true }).first(),
+      ).toBeDisabled();
+      await studio.getByRole("button", { name: "Discard source changes", exact: true }).click();
+      await page.keyboard.press("Escape");
+      await expect(studio).toHaveCount(0);
+      await page.screenshot({ path: `${output}/background-${theme}-${width}.png` });
+      await page.getByRole("tab", { name: "Motion", exact: true }).click();
+      await page.screenshot({ path: `${output}/motion-${theme}-${width}.png` });
+      await page.getByRole("button", { name: "Create motion preset", exact: true }).click();
+      await expect(studio.getByLabel("Describe the result")).toHaveValue(/mountain lake/);
+      await expect(studio.getByText("Current", { exact: true })).toBeVisible();
+      await studio.getByRole("button", { name: "Open", exact: true }).click();
+      await expect(studio.getByLabel("Design name", { exact: true })).toHaveValue("My dusk lake");
+      await page.screenshot({ path: `${output}/studio-current-${theme}-${width}.png` });
+      expect(await studio.evaluate((node) => node.scrollWidth <= node.clientWidth + 2)).toBe(true);
+      await page.keyboard.press("Escape");
+      await page.goto(
+        `/tests/browser/settings/settings.html?backgroundProbe&backgroundProject&theme=${theme}&lang=en`,
+      );
+      await expect(page.getByRole("dialog")).toBeVisible();
+      await page.frameLocator("iframe").frameLocator("iframe").locator(".orb").waitFor();
+      await page.screenshot({ path: `${output}/project-${theme}-${width}.png` });
+    });
+  }
+
 test("custom background sandbox denies network, self navigation, bridge and parent DOM", async ({
   page,
 }) => {
