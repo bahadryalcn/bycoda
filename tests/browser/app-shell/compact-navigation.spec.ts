@@ -566,7 +566,13 @@ test("workspace header keeps location before history and project controls", asyn
             expect(back.y).toBeLessThan(frame.y + frame.height);
           }
           let previousRight = constrained ? (await header.boundingBox())!.x : frame.x + frame.width;
-          expect((await title.boundingBox())!.width).toBeLessThanOrEqual(frame.width);
+          // Measure the element that clips the title: an inline text span inside a truncating
+          // heading always reports its full text width, even while the heading shows "…".
+          const shownWidth = await title.evaluate(
+            (element) =>
+              (element.closest("[data-truncate]") ?? element).getBoundingClientRect().width,
+          );
+          expect(shownWidth).toBeLessThanOrEqual(frame.width);
           if (project) {
             const titleWidth = await title.evaluate((element) => ({
               available: element.clientWidth,
