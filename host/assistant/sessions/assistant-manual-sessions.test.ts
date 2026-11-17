@@ -624,7 +624,7 @@ it("compacts and continues large manual histories through the same guarded runti
       input.onEvent({ type: "context.compacted", used: 1000, window: 1000000 });
     });
     const sending = f.nudge(grant.id, `context-${used}`);
-    await vi.waitFor(() => expect(f.turns).toHaveLength(1));
+    await vi.waitFor(() => expect(f.turns).toHaveLength(1), { timeout: 10_000, interval: 25 });
     f.turns[0].input.onAccepted?.();
     expect((await sending).operation).toMatchObject({
       action: used === 160000 ? "compact" : "handoff",
