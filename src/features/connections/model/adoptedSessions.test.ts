@@ -81,6 +81,17 @@ it("refreshes applied authority at an unchanged transcript revision without upgr
   expect(planAdoptedFetches([entry({ authorityGeneration: 3 })], [current], mirrored)).toEqual([]);
 });
 
+it("takes the host's later turn when this desktop's copy differs only in fields its storage drops", () => {
+  // The open tab still carries a live-only field on a turn run here; storage,
+  // and so the host's copy of that turn, never had it. No shared base yet.
+  const live = { id: "a", role: "user", text: "a", followUpDelivery: "pending" } as Block;
+  const current = local({ blocks: [live] });
+  const remote = host({ blocks: [block("a"), block("b")] });
+  const merged = mergeAdoptedSession(current, remote);
+  expect(merged?.blocks.map((item) => item.id)).toEqual(["a", "b"]);
+  expect(merged?.adoptedBase?.count).toBe(2);
+});
+
 it("projects validated generation into a desktop copy and refuses an invalid or regressed mirror floor", () => {
   const remote = { ...host({}), authorityGeneration: 3 };
   expect(desktopCopyOf(remote, "C:/proj", (a, b) => a === b).adoptedAuthorityGeneration).toBe(3);

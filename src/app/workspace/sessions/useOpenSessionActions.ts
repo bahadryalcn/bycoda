@@ -189,6 +189,8 @@ export function useOpenSessionActions({
           !isCurrent() ||
           !parent ||
           parent.inboxAsk ||
+          // A subagent's own subagent is reached through its parent's sheet.
+          delegationParentOf(parent) ||
           !isDelegatedChildOf(child, parent)
         )
           return false;

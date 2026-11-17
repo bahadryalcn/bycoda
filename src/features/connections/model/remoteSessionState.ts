@@ -17,6 +17,10 @@ export function remoteSessionState(
     id: shell.id,
     cwd: shell.cwd,
     busy: snapshot.status === "running",
+    // The host omits a finished wait; spreading alone would keep the old one.
+    backgroundTasks: host.backgroundTasks,
+    backgroundAgents: host.backgroundAgents,
+    backgroundSince: host.backgroundSince,
     historyPartial:
       snapshot.history?.before !== undefined || host.blocks.some((block) => !!block.remoteContent),
     worktreeCwd: executionCwd

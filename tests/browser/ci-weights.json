@@ -243,6 +243,9 @@
     },
     "title-settings": {
       "chromium": 4
+    },
+    "canvas-paired": {
+      "chromium": 71
     }
   },
   "durationMs": {
@@ -478,6 +481,9 @@
     "worktrees": {
       "chromium": 72000,
       "webkit": 26800
+    },
+    "canvas-paired": {
+      "chromium": 840000
     }
   }
 }

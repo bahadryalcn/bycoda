@@ -3,6 +3,7 @@ import { isTurnInterruptMessage } from "../../sessions/public/inFlight";
 import { sessionActivityAt } from "../../sessions/public/sessionActivity";
 import { persistableAttachment } from "../../sessions/public/attachments";
 import { buildConversationReplay } from "../../sessions/public/conversationRewind";
+import { storedBlockForm } from "../../sessions/public/sessionStore";
 import type { HostSession } from "./protocol";
 import { isSessionGoal } from "../../../shared/model/providerGoal";
 import { canonicalJson } from "../../sync/model/canonicalJson";
@@ -276,6 +277,18 @@ function hostHead(host: HostSession): ConversationHead | undefined {
   return digests && headOfDigests(digests);
 }
 
+/** This desktop's digests against the host's. An open tab's block can carry
+ * live-only fields its storage drops, while the host holds the stored form of
+ * turns run here: a block whose stored form is the host's counts as the same. */
+function localDigests(blocks: readonly Block[], theirs?: readonly string[]): string[] | undefined {
+  const raw = transcriptDigests(blocks);
+  if (!raw || !theirs) return raw;
+  if (raw.every((digest, i) => i >= theirs.length || digest === theirs[i])) return raw;
+  const stored = transcriptDigests(blocks.map((block) => storedBlockForm(block) ?? block));
+  if (!stored || stored.length !== raw.length) return raw;
+  return raw.map((digest, i) => (digest !== theirs[i] && stored[i] === theirs[i] ? stored[i] : digest));
+}
+
 /** Which side changed since the last agreement (the saved `adoptedBase`), from
  * digests alone; `undefined` when either transcript carries content that cannot
  * be compared. The baseline of this run only says the local copy is unchanged
@@ -286,8 +299,8 @@ function transcriptVerdict(
   host: HostSession,
   baseline?: Session,
 ): Reconciled | undefined {
-  const mine = transcriptDigests(local.blocks);
   const theirs = hostDigests(host);
+  const mine = localDigests(local.blocks, theirs);
   if (!mine || !theirs) return undefined;
   let base = local.adoptedBase;
   if (!base && baseline) {
@@ -527,8 +540,8 @@ function hashText(text: string): string {
 /** Names a divergence by the content that differs, so the same one is the same
  * key on every pass and after a restart, while a newer one is a different key. */
 export function adoptedDivergenceKey(local: Session, remote: Session): string {
-  const mine = transcriptDigests(local.blocks);
   const theirs = transcriptDigests(remote.blocks);
+  const mine = localDigests(local.blocks, theirs);
   if (mine && theirs) {
     const base = local.adoptedBase;
     if (reconcile(mine, theirs, base) === "conflict") {

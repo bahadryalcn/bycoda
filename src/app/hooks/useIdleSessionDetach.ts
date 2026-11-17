@@ -105,10 +105,13 @@ export function useIdleSessionDetach({
       skipForgetSessionIds.current.has(session.id);
     // Resolve worker retention first: an idle worker can itself own delegated
     // children. Their cards and open sheets must survive between discovery polls.
-    const attachedParents = sessions.filter(isAttached);
-    for (const session of sessions) {
-      if (attachedParents.some((parent) => isDelegatedChildOf(session, parent)))
-        visibleIds.add(session.id);
+    // Twice: a kept child keeps its own subagents (one level, the Host's limit).
+    for (let depth = 0; depth < 2; depth++) {
+      const attachedParents = sessions.filter(isAttached);
+      for (const session of sessions) {
+        if (attachedParents.some((parent) => isDelegatedChildOf(session, parent)))
+          visibleIds.add(session.id);
+      }
     }
     for (const sessionId of visibleIds) {
       openingSessionIds.current.delete(sessionId);

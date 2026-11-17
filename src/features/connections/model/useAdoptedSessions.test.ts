@@ -33,6 +33,7 @@ vi.mock("./connections", () => ({
 }));
 vi.mock("../../sessions/data/sessionStore", () => ({
   getSession: vi.fn(),
+  storedBlockForm: (block: unknown) => block,
   storedSessionUpdatedAt: vi.fn(),
   upsertSession: vi.fn(),
   upsertSessionIfUnchanged: vi.fn(),

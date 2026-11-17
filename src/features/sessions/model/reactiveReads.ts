@@ -14,7 +14,12 @@ import {
   type DockAgent,
 } from "./activityDock";
 import { stopAllControl } from "./backgroundStop";
-import { delegatedChildren, delegatedDockAgents, delegationParentOf } from "./delegatedAgents";
+import {
+  delegatedChildren,
+  delegatedDockAgents,
+  delegationParentOf,
+  nestedDelegatedChildren,
+} from "./delegatedAgents";
 import { cardedChildren, createCardPlacer } from "./delegatedCards";
 import { executionUserIndex } from "./executionTurn";
 import { queuedSteerRoute, queuedTargetSummary } from "./messageQueue";
@@ -180,14 +185,19 @@ export function useDelegatedDockAgents(parentId: string, blocks: Block[]): DockA
     (sessions) => delegatedChildren(sessions, parentId),
     sameSessionList,
   );
+  // The children's own subagents: their requests surface on their parent's row.
+  const nested = useSessionsSelector(
+    (sessions) => nestedDelegatedChildren(sessions, delegatedChildren(sessions, parentId)),
+    sameSessionList,
+  );
   const turnStartedAt = blocks[executionUserIndex(blocks)]?.startedAt;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   return useMemo(() => {
     const carded = cardedChildren(blocks, children);
-    return delegatedDockAgents(children, turnStartedAt).map((agent) =>
+    return delegatedDockAgents(children, turnStartedAt, nested).map((agent) =>
       agent.sessionId && carded.has(agent.sessionId) ? { ...agent, inline: true } : agent,
     );
-  }, [blocks, children, turnStartedAt, catalog]);
+  }, [blocks, children, nested, turnStartedAt, catalog]);
 }
 
 export function useDockCountLabel(dock: ActivityDock): string {

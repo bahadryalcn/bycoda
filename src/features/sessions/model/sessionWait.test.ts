@@ -130,6 +130,19 @@ describe("Host wake sources", () => {
     expect(sessionWait(session({ continuingElsewhere: true }), [], { waiting })).toEqual(waiting);
   });
 
+  it("falls back to the background commands of a session continued elsewhere without a Host wait", () => {
+    expect(
+      sessionWait(
+        session({
+          continuingElsewhere: true,
+          backgroundTasks: ["npm run dev"],
+          backgroundAgents: 0,
+          backgroundSince: 7,
+        }),
+      ),
+    ).toEqual({ kind: "commands", count: 1, since: 7 });
+  });
+
   it("names the pull request in the reason and compares labels", () => {
     expect(sessionWaitReason({ kind: "pull-request", count: 1, label: "acme/app#7" })).toContain(
       "acme/app#7",

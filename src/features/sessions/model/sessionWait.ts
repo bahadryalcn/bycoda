@@ -31,8 +31,9 @@ export function sessionWait(
 ): SessionWait | null {
   if (session.worktreeRemoved || sessionNeedsInput(session)) return null;
   if (session.busy) return backgroundWait(session);
-  // A Host-owned turn: only the Host knows whether it is held open by background work.
-  if (session.continuingElsewhere) return host?.waiting ?? null;
+  // A Host-owned turn: only the Host knows whether it is held open by background
+  // work, through its listed row or the wait the adopted copy carries.
+  if (session.continuingElsewhere) return host?.waiting ?? backgroundWait(session);
   return (
     delegatedWait(
       children.map((child) => ({

@@ -96,3 +96,72 @@ it("remembers a listed session that is not this parent's child, so the next poll
   expect(await discoverDelegatedRuns(parent, port, known, () => true)).toEqual([]);
   expect(reads).toEqual([undefined, unrelated]);
 });
+
+it("reads a subagent's own subagents while it runs, and once more after it finishes", async () => {
+  const parent = { id: "parent", cwd: "/project" } as Session;
+  const hosted = (id: string, owner: string, kind: string, status: string) =>
+    ({
+      projectId: "project",
+      revision: 1,
+      status,
+      updatedAt: 1,
+      session: {
+        id,
+        cwd: "/project",
+        title: id,
+        blocks: [],
+        modelSettings: {
+          delegationParent: JSON.stringify({
+            parentSessionId: owner,
+            runId: `run-${id}`,
+            kind,
+            model: "m",
+            startedAt: 1,
+          }),
+        },
+      },
+    }) as unknown as HostSession;
+  const sessions: Record<string, HostSession> = {
+    sub: hosted("sub", "parent", "subagent", "running"),
+    adv: hosted("adv", "parent", "advisor", "running"),
+    grand: hosted("grand", "sub", "subagent", "running"),
+  };
+  const listedFor: string[] = [];
+  const port: DelegatedDiscoveryPort = {
+    host: async () => ({
+      machine: { id: "machine", environmentId: "env" } as RemoteMachine,
+      projectId: "project",
+    }),
+    list: async (_machine, _project, owner) => {
+      listedFor.push(owner);
+      return Object.values(sessions)
+        .filter((host) => host.session.modelSettings?.delegationParent?.includes(`"${owner}"`))
+        .map((host) => ({ id: host.session.id }) as HostSessionSummary);
+    },
+    read: async (_machine, id) => sessions[id],
+  };
+  const known = new Map<string, HostSession>();
+  const listed = new Set<string>();
+  const found = await discoverDelegatedRuns(parent, port, known, () => true, listed);
+  expect(found.map((session) => remoteSessionFor(session.id))).toEqual([
+    "sub",
+    "adv",
+    "grand",
+  ]);
+  // An advisor never owns subagents, so it is never listed as a parent.
+  expect(listedFor).toEqual(["parent", "sub"]);
+  const poll = async () => {
+    listedFor.length = 0;
+    await discoverDelegatedRuns(parent, port, known, () => true, listed);
+    return [...listedFor];
+  };
+  // The subagent yielded, but its own subagent still runs: keep reading it.
+  sessions.sub = hosted("sub", "parent", "subagent", "idle");
+  expect(await poll()).toEqual(["parent", "sub"]);
+  expect(await poll()).toEqual(["parent", "sub"]);
+  sessions.grand = hosted("grand", "sub", "subagent", "idle");
+  // One read sees the finish, one more confirms it settled; then it stops.
+  expect(await poll()).toEqual(["parent", "sub"]);
+  expect(await poll()).toEqual(["parent", "sub"]);
+  expect(await poll()).toEqual(["parent"]);
+});

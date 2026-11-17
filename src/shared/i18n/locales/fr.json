@@ -11869,5 +11869,6 @@
   "bycoda Host status unavailable. Check the local host connection, then refresh.": "État de l'hôte bycoda indisponible. Vérifiez la connexion locale à l'hôte, puis actualisez.",
   "Enter secret: {p0}": "Saisir le secret : {p0}",
   "Tell agents to use bykit": "Demander aux agents d'utiliser bykit",
-  "When bykit is installed, agents are told to use it for large files, diffs, long command output and bulk edits. Applies to the next agent turn.": "Si bykit est installé, les agents sont invités à l'utiliser pour les gros fichiers, les diffs, les longues sorties de commande et les modifications en masse. S'applique au prochain tour de l'agent."
+  "When bykit is installed, agents are told to use it for large files, diffs, long command output and bulk edits. Applies to the next agent turn.": "Si bykit est installé, les agents sont invités à l'utiliser pour les gros fichiers, les diffs, les longues sorties de commande et les modifications en masse. S'applique au prochain tour de l'agent.",
+  "Subagents: {p0}": "Sous-agents : {p0}"
 }

@@ -6,6 +6,7 @@ import {
   delegatedAgentBlock,
   delegationParentOf,
   isDelegatedChildOf,
+  isDelegatedDescendantOf,
 } from "../model/delegatedAgents";
 import { useDelegatedDockAgents } from "../model/reactiveReads";
 import type { Block, ComposerTurnOptions } from "../model/session";
@@ -172,7 +173,7 @@ export function useDelegatedSheet({
       const sessions = getSessions();
       const child = id && sessions.find((session) => session.id === id);
       const parent = sessions.find((session) => session.id === sessionId);
-      if (child && parent && isDelegatedChildOf(child, parent)) open(child.id);
+      if (child && parent && isDelegatedDescendantOf(child, parent, sessions)) open(child.id);
     };
     window.addEventListener(VIEW_DELEGATED_EVENT, consume);
     consume();
@@ -342,6 +343,22 @@ export function SessionSubagentSheet({
       />
     ));
   const childBlock = useMemo(() => (child ? delegatedAgentBlock(child) : undefined), [child]);
+  // A subagent's own subagents: listed at the top of its sheet, and their
+  // requests answered here, so nothing waits unseen one level down.
+  const nestedAgents = useDelegatedDockAgents(delegated.childId ?? "", child?.blocks ?? NO_BLOCKS);
+  const waitingIds = nestedAgents.flatMap((agent) =>
+    agent.needsInput && agent.sessionId ? [agent.sessionId] : [],
+  );
+  const waiting = useSessionsSelector(
+    (sessions) => sessions.filter((session) => waitingIds.includes(session.id)),
+    (a, b) => a.length === b.length && a.every((entry, index) => entry === b[index]),
+  );
+  // The subagent that started this one, when it is itself a subagent.
+  const owner = useSessionsSelector((sessions) =>
+    child
+      ? sessions.find((session) => delegationParentOf(session) && isDelegatedChildOf(child, session))
+      : undefined,
+  );
   const message = useDelegatedMessage({
     childSessionId: child?.id,
     blocked: !child,

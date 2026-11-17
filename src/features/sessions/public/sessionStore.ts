@@ -8,6 +8,7 @@ export {
   setSessionArchived,
   setSessionPinned,
   setSessionQueue,
+  storedBlockForm,
   storedSessionUpdatedAt,
   upsertSession,
   upsertSessionIfUnchanged,

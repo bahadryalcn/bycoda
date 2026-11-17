@@ -45,10 +45,15 @@ export function crewMemberOf(session: Pick<Session, "modelSettings">): CrewMembe
   return decodeCrewMemberChild(session.modelSettings?.[CREW_MEMBER_KEY]);
 }
 
-/** Both sides must prove the same owner when a Host identity is involved. */
+/**
+ * Both sides must prove the same owner when a Host identity is involved. A
+ * subagent may own subagents of its own (one level, the Host's limit); an
+ * advisor never does.
+ */
 export function isDelegatedChildOf(child: Session, parent: Session): boolean {
   const link = delegationParentOf(child);
-  if (!link || child.id === parent.id || delegationParentOf(parent)) return false;
+  if (!link || child.id === parent.id || delegationParentOf(parent)?.kind === "advisor")
+    return false;
   try {
     const childBinding = hostSessionBinding(child);
     const parentBinding = hostSessionBinding(parent);
@@ -100,12 +105,52 @@ export function delegatedChildren(sessions: readonly Session[], parentId: string
     );
 }
 
-/** Dock rows include earlier children so their panels remain accessible. */
+/** A subagent's own subagents (`delegatedChildren` one level down), oldest first. */
+export function nestedDelegatedChildren(
+  sessions: readonly Session[],
+  children: readonly Session[],
+): Session[] {
+  return children.flatMap((child) =>
+    delegationParentOf(child)?.kind === "subagent" ? delegatedChildren(sessions, child.id) : [],
+  );
+}
+
+/** Whether `session` is `root`'s child, or the child of one of `root`'s children. */
+export function isDelegatedDescendantOf(
+  session: Session,
+  root: Session,
+  sessions: readonly Session[],
+): boolean {
+  return (
+    isDelegatedChildOf(session, root) ||
+    sessions.some((middle) => isDelegatedChildOf(session, middle) && isDelegatedChildOf(middle, root))
+  );
+}
+
+/**
+ * Dock rows include earlier children so their panels remain accessible. `nested`
+ * are the children's own subagents: one waiting on the user marks its parent's
+ * row, since the parent's sheet is where its request is answered.
+ */
 export function delegatedDockAgents(
   children: readonly Session[],
   _turnStartedAt: number | undefined,
+  nested: readonly Session[] = [],
 ): DockAgent[] {
-  return children.map(delegatedDockAgent);
+  return children.map((child) => {
+    const agent = delegatedDockAgent(child);
+    const own = nested.filter((grandchild) => isDelegatedChildOf(grandchild, child));
+    // A child whose subagent waits on the user is still in progress, even when
+    // its own turn has yielded.
+    const nestedNeedsInput = own.some(
+      (grandchild) => delegatedStatus(grandchild) === "running" && sessionNeedsInput(grandchild),
+    );
+    return {
+      ...agent,
+      ...(nestedNeedsInput ? { needsInput: true, status: "running" as const } : {}),
+      ...(own.length ? { nested: own.length } : {}),
+    };
+  });
 }
 
 export function delegatedStatus(child: Session): DockAgentStatus {

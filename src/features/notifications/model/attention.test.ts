@@ -189,6 +189,17 @@ describe("state transitions", () => {
     expect(phase([reply("x")], { busy: false })).toBe("idle");
   });
 
+  it("treats a session continued elsewhere on background commands as background", () => {
+    expect(
+      phase([tool(true)], {
+        busy: false,
+        continuingElsewhere: true,
+        backgroundTasks: ["dev"],
+        backgroundAgents: 0,
+      }),
+    ).toBe("background");
+  });
+
   it("counts only entering background-only as a finish", () => {
     expect(enteredBackgroundFinish("working", "background")).toBe(true);
     expect(enteredBackgroundFinish("waiting", "background")).toBe(true);

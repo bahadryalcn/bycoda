@@ -489,6 +489,16 @@ function DockAgentRow({
                   {accountLabel}
                 </Text>
               ) : null}
+              {agent.nested ? (
+                <Text size="inherit" tone="inherit" className="shrink-0" data-dock-agent-nested>
+                  {t("Subagents: {p0}", { p0: agent.nested })}
+                </Text>
+              ) : null}
+              {agent.needsInput ? (
+                <Badge size="xs" tone="warning" appearance="subtle" className="shrink-0">
+                  {t("Needs input")}
+                </Badge>
+              ) : null}
             </Text>
           ) : null}
         </span>
