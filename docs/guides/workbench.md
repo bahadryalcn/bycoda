@@ -57,6 +57,19 @@ leave the usable selection intact. Named records share the existing saved-theme
 store and protected media library; the recent-selection history is not their
 storage. Deleting a design does not delete its imported media or active selection.
 
+Ordinary Background settings also provide **Save background** beside the current
+selection and on every unnamed Library tile. Enter a name there, without opening
+the creation sheet. Named tiles show the name and media type; **Rename** edits the
+same saved-design record without applying or generating anything. Global/project
+history and current-selection captions use that same name, with a translated
+media-type fallback for unnamed files instead of internal hash filenames. When
+multiple saved variants share identical media, the oldest background design is
+the stable Library name; the variants keep their own names in Saved designs.
+Legacy non-hashed selections use bounded label aliases in that record. Aliases
+are not file authority and are excluded from portable exports. A failed name save
+keeps the published name and edited form value; conflicting sibling edits require
+reopening the name form.
+
 **Try mountain lake** opens an offline Three.js landscape with layered mountains,
 pine forest and reflective water. Save it through the same named-design flow.
 Its bundled MIT-licensed Three.js runtime needs no CDN. The example caps rendering

@@ -176,8 +176,28 @@ mockIPC(
       if (command === "list_background_library")
         return [
           ...Object.values((window as any).__designLibrary ?? {}),
+          ...(new URLSearchParams(location.search).has("backgroundNaming")
+            ? [
+                {
+                  id: "a".repeat(24),
+                  path: `/library/${"a".repeat(24)}.html`,
+                  createdMs: 1,
+                  bytes: 400,
+                  source: "generated",
+                  prompt: "Generated lake",
+                },
+                {
+                  id: "b".repeat(24),
+                  path: `/library/${"b".repeat(24)}.webm`,
+                  createdMs: 2,
+                  bytes: 400,
+                  source: "added",
+                  prompt: null,
+                },
+              ].filter((entry) => !(window as any).__designLibrary?.[entry.id])
+            : []),
           {
-            id: "fixture-scene",
+            id: "c".repeat(24),
             path: "/fixture/scene.html",
             createdMs: 1,
             bytes: 400,

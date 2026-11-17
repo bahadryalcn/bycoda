@@ -28,6 +28,9 @@ import { Row, SettingsFeedback } from "../../../../../shared/ui/settings";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
 import styles from "./BackgroundLibrary.module.css";
 import { generatorSession } from "./themeGeneratorSession";
+import { backgroundDisplayName, backgroundKindLabel } from "../../../model/backgroundNames";
+import { SaveBackgroundButton } from "./SaveBackgroundButton";
+import { OverflowTooltip } from "../../../../../shared/ui/Tooltip";
 
 /**
  * Every image applied before, generated or added, as thumbnails: click to apply it again, delete
@@ -105,6 +108,8 @@ export function BackgroundLibrary({ appearance }: { appearance: AppearanceSettin
         <ul className={styles.grid} aria-label={t("Library")}>
           {images.map((image) => {
             const generated = image.source === "generated";
+            const name = backgroundDisplayName(image.path, themes, image.id);
+            const kind = backgroundKindLabel(image.path);
             return (
               <li key={image.id} {...actionContentScopeAttributes(styles.item)}>
                 <Button
@@ -115,13 +120,7 @@ export function BackgroundLibrary({ appearance }: { appearance: AppearanceSettin
                   loading={applyingId === image.id}
                   loadingLabel={t("Applying…")}
                   selectionIndicator="accent-ring"
-                  aria-label={
-                    chatBackgroundKind(image.path) !== "image"
-                      ? `${t("Chat background")} · ${chatBackgroundKind(image.path).toUpperCase()}`
-                      : generated
-                        ? t("Generated image")
-                        : t("Added image")
-                  }
+                  aria-label={name === kind ? name : `${name} · ${kind}`}
                   tooltip={image.prompt ?? undefined}
                   onClick={() => apply(image)}
                 >
@@ -134,7 +133,9 @@ export function BackgroundLibrary({ appearance }: { appearance: AppearanceSettin
                       decoding="async"
                     />
                   ) : (
-                    <Text size="caption">{chatBackgroundKind(image.path).toUpperCase()}</Text>
+                    <Text size="caption" tone="muted">
+                      {kind}
+                    </Text>
                   )}
                   {generated ? (
                     <Text
@@ -148,6 +149,16 @@ export function BackgroundLibrary({ appearance }: { appearance: AppearanceSettin
                     </Text>
                   ) : null}
                 </Button>
+                <OverflowTooltip label={name}>
+                  <Text as="div" size="caption" weight="medium" truncate className="max-w-full">
+                    {name}
+                  </Text>
+                </OverflowTooltip>
+                <SaveBackgroundButton
+                  path={image.path}
+                  image={image}
+                  disabled={appearance.chatBackgroundBusy || applyingId !== null || loading}
+                />
                 <Button
                   iconOnly
                   size="sm"

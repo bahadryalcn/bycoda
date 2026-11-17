@@ -11913,5 +11913,6 @@
   "Import design": "Import design",
   "Save a design to use it again or export it.": "Save a design to use it again or export it.",
   "Delete design": "Delete design",
-  "Delete {p0}? Imported media stays on this device.": "Delete {p0}? Imported media stays on this device."
+  "Delete {p0}? Imported media stays on this device.": "Delete {p0}? Imported media stays on this device.",
+  "Save background": "Save background"
 }

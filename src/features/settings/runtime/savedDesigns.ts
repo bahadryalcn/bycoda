@@ -76,6 +76,7 @@ export async function saveDesign(draft: DesignDraft, replace = false): Promise<S
       name,
       look,
       imageId: image?.id,
+      backgroundPaths: image?.id === current.imageId ? current.backgroundPaths : undefined,
       creation: { kind: draft.kind, prompt: draft.prompt },
       updatedAt: Date.now(),
     };

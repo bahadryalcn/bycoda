@@ -3,6 +3,7 @@ import { chatBackgroundKind } from "../../../../../shared/lib/chatBackgroundKind
 import { ChatBackgroundMedia } from "../../ChatBackgroundMedia";
 import { DesignStudioButton } from "../controls/DesignStudioButton";
 import { BackgroundHistory } from "../../BackgroundHistory";
+import { BackgroundName } from "../../BackgroundName";
 import { Text } from "../../../../../shared/ui/Text";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../../../shared/i18n";
@@ -376,6 +377,7 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
           ) : undefined}
         </ImageDropZone>
         <div className={imageStyles.side}>
+          <BackgroundName path={appearance.chatBackgroundPath} />
           <div className={imageStyles.actions}>
             {hasImage ? (
               <>

@@ -11913,5 +11913,6 @@
   "Update the preview before saving or applying source changes.": "ソースの変更を保存または適用する前にプレビューを更新してください。",
   "Use current design": "現在のデザインを使う",
   "Waiting for creation to stop…": "作成の停止を待っています…",
-  "Your preview appears here": "ここにプレビューが表示されます"
+  "Your preview appears here": "ここにプレビューが表示されます",
+  "Save background": "背景を保存"
 }

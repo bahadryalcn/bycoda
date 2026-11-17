@@ -3,7 +3,11 @@ import { validateChatBackgroundMedia } from "../runtime/backgroundMedia";
 import { chatBackgroundKind } from "../../../shared/lib/chatBackgroundKind";
 import { ChatBackgroundMedia } from "../../settings/public/ChatBackgroundMedia";
 import { DesignStudioButton } from "../../settings/public/DesignStudio";
-import { BackgroundHistory, rememberBackground } from "../../settings/public/BackgroundHistory";
+import {
+  BackgroundHistory,
+  BackgroundName,
+  rememberBackground,
+} from "../../settings/public/BackgroundHistory";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Alert } from "../../../shared/ui/Alert";
@@ -268,10 +272,14 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
               </Text>
             </InfoPopover>
           </div>
+          <BackgroundName path={path ?? globalPath} />
           {error ? <Alert tone="danger">{error}</Alert> : null}
           <BackgroundHistory
             target={project}
-            path={path}
+            path={path ?? globalPath}
+            look={
+              path ? { image: { scope, emptyOpacity, sessionOpacity, effect, blur: 0 } } : undefined
+            }
             disabled={busy}
             onChoose={(next) => {
               void choose(next);

@@ -157,6 +157,17 @@ it("imports a reusable artifact into the shared named library without applying i
   expect(saveProjectChatBackgroundSettings).not.toHaveBeenCalled();
 });
 
+it("does not export local legacy naming aliases as portable dependencies", async () => {
+  vi.mocked(save).mockResolvedValue("/portable.json");
+  await exportDesign({ ...theme(), backgroundPaths: ["C:/legacy/private.html"] });
+  const args = vi
+    .mocked(invoke)
+    .mock.calls.find(([command]) => command === "export_appearance_design")?.[1] as {
+    design: unknown;
+  };
+  expect(JSON.stringify(args.design)).not.toContain("legacy");
+});
+
 it("retains the saved record when durable saving fails", async () => {
   const original = theme();
   saveSavedThemes([original]);

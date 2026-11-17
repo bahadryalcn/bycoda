@@ -75,7 +75,7 @@ for (const theme of ["dark", "light"])
       await group.getByRole("button", { name: "Remove", exact: true }).click();
       await expect(group.locator("iframe")).toHaveCount(0);
       await group.getByRole("button", { name: /^Backgrounds:/ }).click();
-      await page.getByRole("option").filter({ hasText: "HTML" }).click();
+      await page.getByRole("option").filter({ hasText: "Live scene" }).click();
       await expect(group.locator("iframe")).toHaveCount(1);
       await page.goto(`${base}&backgroundProject`);
       await expect(page.getByRole("dialog")).toBeVisible();
@@ -198,6 +198,150 @@ for (const theme of ["light", "dark"])
       await expect(page.getByRole("dialog")).toBeVisible();
       await page.frameLocator("iframe").frameLocator("iframe").locator(".orb").waitFor();
       await page.screenshot({ path: `${output}/project-${theme}-${width}.png` });
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  for (const width of [1280, 800]) {
+    test(`background naming stays coherent in library global and project history: ${theme} ${width}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.emulateMedia({ reducedMotion: "no-preference" });
+      await page.addInitScript(() => {
+        if (localStorage.getItem("backgroundNamingSeed")) return;
+        const id = "a".repeat(24),
+          path = `/fixture/asset-${"a".repeat(64)}.html`;
+        localStorage.setItem("bycoda.chatBackgroundPath", path);
+        localStorage.setItem("bycoda.decorativeMotion.v1", "1");
+        localStorage.setItem(
+          "bycoda.savedThemes.v1",
+          JSON.stringify([
+            {
+              id: "original",
+              name: "Original lake",
+              imageId: id,
+              look: {},
+              createdAt: 1,
+              updatedAt: 1,
+              creation: { kind: "scene", prompt: "Generated lake" },
+            },
+          ]),
+        );
+        localStorage.setItem(
+          "bycoda.chatBackgroundHistory.v1",
+          JSON.stringify({ global: [path], "/fixture/project": [path] }),
+        );
+        localStorage.setItem(
+          "bycoda:project-chat-backgrounds",
+          JSON.stringify({
+            "/fixture/project": {
+              path,
+              scope: "all",
+              effect: "none",
+              emptyOpacity: 0.3,
+              sessionOpacity: 0.2,
+            },
+          }),
+        );
+        localStorage.setItem("backgroundNamingSeed", "1");
+      });
+      await page.route("http://background-preview.test/**", async (route) => {
+        const token = new URL(route.request().url()).pathname.split("/")[1];
+        const source = await page.evaluate(
+          (id) => (window as any).__backgroundScenes?.[id] ?? "",
+          token,
+        );
+        await route.fulfill({ contentType: "text/html", body: offlineBackground(source) });
+      });
+      const base = `/tests/browser/settings/settings.html?backgroundProbe&backgroundNaming&theme=${theme}&lang=en`;
+      await page.goto(`${base}&section=appearance`);
+      await page.getByRole("tab", { name: "Background", exact: true }).click();
+      await page
+        .getByRole("listitem")
+        .filter({ has: page.getByText("Chat background", { exact: true }) })
+        .getByRole("button")
+        .first()
+        .click();
+      const group = page.locator('[data-setting-id="chat-background"]');
+      const library = group.getByRole("list", { name: "Library", exact: true });
+      await expect(
+        library.getByRole("button", { name: "Original lake · Live scene", exact: true }),
+      ).toBeVisible();
+      const before = await page.evaluate(() => localStorage.getItem("bycoda.chatBackgroundPath"));
+      await library.getByRole("button", { name: "Rename: Original lake", exact: true }).click();
+      let dialog = page.getByRole("dialog", { name: "Rename", exact: true });
+      await dialog.getByLabel("Design name", { exact: true }).fill("Night lake");
+      await dialog.getByRole("button", { name: "Save", exact: true }).click();
+      await expect(
+        library.getByRole("button", { name: "Night lake · Live scene", exact: true }),
+      ).toBeVisible();
+      await expect(group.getByRole("button", { name: /^Backgrounds:/ })).toContainText(
+        "Night lake",
+      );
+      const video = library
+        .getByRole("listitem")
+        .filter({ has: page.getByRole("button", { name: "Video", exact: true }) });
+      await video.getByRole("button", { name: "Save background", exact: true }).click();
+      dialog = page.getByRole("dialog", { name: "Save background", exact: true });
+      await expect(dialog.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
+      await dialog.getByLabel("Design name", { exact: true }).fill("Quiet video");
+      await dialog.getByRole("button", { name: "Save", exact: true }).click();
+      await expect(
+        library.getByRole("button", { name: "Quiet video · Video", exact: true }),
+      ).toBeVisible();
+      await library.getByRole("button", { name: "Rename: Night lake", exact: true }).click();
+      dialog = page.getByRole("dialog", { name: "Rename", exact: true });
+      await dialog.getByLabel("Design name", { exact: true }).fill("Moon lake");
+      await page.evaluate(() => {
+        const original = Storage.prototype.setItem;
+        (window as any).__restoreNameStorage = () => (Storage.prototype.setItem = original);
+        Storage.prototype.setItem = function (key, value) {
+          if (key === "bycoda.savedThemes.v1") throw new Error("fixture quota");
+          return original.call(this, key, value);
+        };
+      });
+      await dialog.getByRole("button", { name: "Save", exact: true }).click();
+      await expect(dialog.getByLabel("Design name", { exact: true })).toHaveValue("Moon lake");
+      await expect(dialog).toContainText("Could not save the theme.");
+      await expect(
+        library.getByRole("button", { name: "Night lake · Live scene", exact: true }),
+      ).toBeVisible();
+      await page.evaluate(() => (window as any).__restoreNameStorage());
+      await dialog.getByRole("button", { name: "Save", exact: true }).click();
+      expect(await page.evaluate(() => localStorage.getItem("bycoda.chatBackgroundPath"))).toBe(
+        before,
+      );
+      await expect(group.getByRole("button", { name: /^Backgrounds:/ })).not.toContainText(
+        "asset-",
+      );
+      await group.screenshot({
+        path: `temp/verification/background-names/library-${theme}-${width}.png`,
+      });
+      await page.goto(`${base}&backgroundProject`);
+      const project = page.getByRole("dialog", { name: "Chat background", exact: true });
+      await expect(project.getByRole("button", { name: /^Backgrounds:/ })).toContainText(
+        "Moon lake",
+      );
+      const projectBefore = await page.evaluate(() =>
+        localStorage.getItem("bycoda:project-chat-backgrounds"),
+      );
+      await project.getByRole("button", { name: "Rename: Moon lake", exact: true }).click();
+      dialog = page.getByRole("dialog", { name: "Rename", exact: true });
+      await dialog.getByLabel("Design name", { exact: true }).fill("Project lake");
+      await dialog.getByRole("button", { name: "Save", exact: true }).click();
+      expect(
+        await page.evaluate(() => localStorage.getItem("bycoda:project-chat-backgrounds")),
+      ).toBe(projectBefore);
+      expect(await page.evaluate(() => localStorage.getItem("bycoda.chatBackgroundPath"))).toBe(
+        before,
+      );
+      await expect(project.getByRole("button", { name: /^Backgrounds:/ })).toContainText(
+        "Project lake",
+      );
+      await project.screenshot({
+        path: `temp/verification/background-names/project-${theme}-${width}.png`,
+      });
     });
   }
 

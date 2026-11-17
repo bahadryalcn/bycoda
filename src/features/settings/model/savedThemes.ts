@@ -17,6 +17,8 @@ export type SavedTheme = {
   look: AppearanceSnapshot;
   /** Library image id; absent when the look has no chat background. */
   imageId?: string;
+  /** Label-only aliases for legacy selections; never file authority or portable dependencies. */
+  backgroundPaths?: string[];
   /** Background/motion creations share the named look catalog and protected media. */
   creation?: { kind: "image" | "scene" | "motion"; prompt: string };
 };
@@ -74,6 +76,16 @@ export function normalizeSavedThemes(input: unknown): SavedTheme[] {
         ? { imageId: raw.imageId }
         : {}),
       ...normalizeCreation(raw.creation),
+      ...(Array.isArray(raw.backgroundPaths)
+        ? {
+            backgroundPaths: raw.backgroundPaths
+              .filter(
+                (path): path is string =>
+                  typeof path === "string" && path.length > 0 && path.length <= 4096,
+              )
+              .slice(0, 8),
+          }
+        : {}),
     });
     if (themes.length >= SAVED_THEMES_MAX) break;
   }
@@ -106,6 +118,7 @@ export function saveSavedThemes(themes: readonly SavedTheme[]): boolean {
     kept.length > 0 ? JSON.stringify(kept) : null,
     "saved-themes",
     () => listeners.notify(),
+    false,
   );
 }
 
@@ -185,12 +198,15 @@ export function overwriteSavedTheme(
 ): SavedTheme[] {
   return themes.map((theme) => {
     if (theme.id !== id) return theme;
-    const { imageId: _previous, ...rest } = theme;
+    const { imageId: _previous, backgroundPaths: previousPaths, ...rest } = theme;
     return {
       ...rest,
       look: input.look,
       updatedAt: now,
       ...(input.imageId ? { imageId: input.imageId } : {}),
+      ...(input.imageId === theme.imageId && previousPaths
+        ? { backgroundPaths: previousPaths }
+        : {}),
     };
   });
 }
@@ -203,7 +219,7 @@ export function removeSavedTheme(themes: readonly SavedTheme[], id: string): Sav
 export function dropImageReference(themes: readonly SavedTheme[], imageId: string): SavedTheme[] {
   return themes.map((theme) => {
     if (theme.imageId !== imageId) return theme;
-    const { imageId: _removed, ...rest } = theme;
+    const { imageId: _removed, backgroundPaths: _paths, ...rest } = theme;
     return rest;
   });
 }
