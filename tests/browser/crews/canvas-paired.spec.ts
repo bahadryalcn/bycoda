@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { expect, test } from "@playwright/test";
-import { expectPairedProof } from "./paired-proof-test";
+import { attachFile, expectPairedProof } from "./paired-proof-test";
 import {
   CLASSIC_SIGN_PIXEL_CAP,
   CLASSIC_SIGN_DELTA_CAP,
@@ -68,7 +68,7 @@ test("worker presentation equals main on light and dark backgrounds", async ({
           }, background);
           const main = await page.locator("#main").screenshot();
           const worker = await page.locator("#worker").screenshot();
-          await testInfo.attach(`${theme}-${dpr}-${width}-${background}-worker`, {
+          await attachFile(testInfo, `${theme}-${dpr}-${width}-${background}-worker`, {
             body: worker,
             contentType: "image/png",
           });
@@ -106,7 +106,7 @@ test("worker presentation equals main on light and dark backgrounds", async ({
     expect(asset.type).toContain("javascript");
     expect(asset.bytes).toBeGreaterThan(1000);
   }
-  await testInfo.attach("real-worker-evidence", {
+  await attachFile(testInfo, "real-worker-evidence", {
     body: JSON.stringify(evidence),
     contentType: "application/json",
   });
@@ -149,7 +149,7 @@ test("informative 300-frame DPR 2 width 320 timing", async ({ page }, testInfo) 
   const results = [];
   for (const theme of ["classic", "star-wars", "lotr", "matrix"] as const)
     results.push(await page.evaluate((theme) => window.walkerTiming(theme), theme));
-  await testInfo.attach("walker-timing", {
+  await attachFile(testInfo, "walker-timing", {
     body: JSON.stringify(results),
     contentType: "application/json",
   });
@@ -160,7 +160,7 @@ test("classic main baseline timing", async ({ page }, testInfo) => {
   await page.goto("/tests/browser/crews/canvas-paired.html");
   const results = await page.evaluate(() => window.classicMainTiming());
   console.log("CLASSIC_BASELINE", JSON.stringify(results));
-  await testInfo.attach("classic-baseline", {
+  await attachFile(testInfo, "classic-baseline", {
     body: JSON.stringify(results),
     contentType: "application/json",
   });
@@ -210,8 +210,8 @@ test("classic visible main worker presentation", async ({ page }, testInfo) => {
           const main = await page.locator("#main").screenshot();
           const worker = await page.locator("#worker").screenshot();
           const label = `classic-${renderer}-${variant}-${signFailed ? "failed" : "loaded"}-${color}`;
-          await testInfo.attach(`${label}-main`, { body: main, contentType: "image/png" });
-          await testInfo.attach(`${label}-worker`, { body: worker, contentType: "image/png" });
+          await attachFile(testInfo, `${label}-main`, { body: main, contentType: "image/png" });
+          await attachFile(testInfo, `${label}-worker`, { body: worker, contentType: "image/png" });
           if (signFailed) expect(worker.equals(main), label).toBe(true);
           else {
             const result = await page.evaluate(
@@ -315,7 +315,7 @@ test("classic module worker evidence", async ({ page }, testInfo) => {
     expect(asset.status).toBe(200);
     expect(asset.type).toContain("javascript");
   }
-  await testInfo.attach("classic-module-worker-evidence", {
+  await attachFile(testInfo, "classic-module-worker-evidence", {
     body: JSON.stringify(evidence),
     contentType: "application/json",
   });
@@ -343,7 +343,7 @@ test("classic worker 300 frame timing", async ({ page }, testInfo) => {
   await page.goto("/tests/browser/crews/canvas-paired.html");
   const result = await page.evaluate(() => window.classicWorkerTiming());
   console.log("CLASSIC_WORKER", JSON.stringify(result));
-  await testInfo.attach("classic-worker-timing", {
+  await attachFile(testInfo, "classic-worker-timing", {
     body: JSON.stringify(result),
     contentType: "application/json",
   });
@@ -353,7 +353,7 @@ test("classic worker 30 second animated run per backend", async ({ page }, testI
   await page.goto("/tests/browser/crews/canvas-paired.html");
   const result = await page.evaluate(() => window.classicAnimatedTiming());
   console.log("CLASSIC_ANIMATED", JSON.stringify(result));
-  await testInfo.attach("classic-animated-timing", {
+  await attachFile(testInfo, "classic-animated-timing", {
     body: JSON.stringify(result),
     contentType: "application/json",
   });
