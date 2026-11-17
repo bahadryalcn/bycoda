@@ -12,6 +12,12 @@ vi.mock("../../../runtime/nameBackground", () => ({
   prepareBackgroundName: vi.fn(),
   saveBackgroundName: vi.fn(),
 }));
+vi.mock("../../../model/appearanceSnapshot", async (original) => ({
+  ...(await original<typeof import("../../../model/appearanceSnapshot")>()),
+  captureAppearanceSnapshot: vi.fn(() => {
+    throw new Error("Snapshot unavailable");
+  }),
+}));
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 const host = document.createElement("div");
 document.body.append(host);
@@ -54,4 +60,11 @@ it("keeps the original naming target and edited form when selection changes or s
   expect(dialog.querySelector<HTMLInputElement>("input")!.value).toBe("Original");
   expect(dialog.textContent).toContain("Storage full");
   expect(dialog.querySelector<HTMLInputElement>("input")!.disabled).toBe(false);
+});
+
+it("releases pending ownership when reading the current appearance fails", async () => {
+  act(() => root.render(createElement(SaveBackgroundButton, { path: "/old.html" })));
+  await act(async () => host.querySelector<HTMLButtonElement>("button")!.click());
+  expect(host.textContent).toContain("Snapshot unavailable");
+  expect(host.querySelector<HTMLButtonElement>("button")!.disabled).toBe(false);
 });

@@ -39,8 +39,8 @@ export function SaveBackgroundButton({
     if (disabled || preparing) return;
     setPreparing(true);
     setError(null);
-    const snapshot = look ?? captureAppearanceSnapshot();
     try {
+      const snapshot = look ?? captureAppearanceSnapshot();
       const target = await prepareBackgroundName(path, image);
       setEditing({ path, ...target, look: snapshot });
     } catch (cause) {
