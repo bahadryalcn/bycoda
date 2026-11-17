@@ -18,15 +18,19 @@ import { designLook } from "../model/designs";
 import type { AppearanceSnapshot } from "../model/appearanceSnapshot";
 
 /** Resolve legacy media before opening its name form, without changing the active selection. */
-export async function prepareBackgroundName(path: string, image?: BackgroundLibraryImage) {
-  const known = backgroundDesign(path, loadSavedThemes(), image?.id);
+export async function prepareBackgroundName(
+  path: string,
+  image?: BackgroundLibraryImage,
+  designId?: string,
+) {
+  const known = backgroundDesign(path, loadSavedThemes(), image?.id, designId);
   if (known || image || backgroundMediaId(path)) return { expected: known ?? null, image };
   const resolved =
     (await listBackgroundLibrary()).find((image) => image.path === path) ??
     (await addBackgroundLibraryImage(path));
   return {
     image: resolved,
-    expected: backgroundDesign(path, loadSavedThemes(), resolved.id) ?? null,
+    expected: backgroundDesign(path, loadSavedThemes(), resolved.id, designId) ?? null,
   };
 }
 
@@ -37,6 +41,8 @@ export async function saveBackgroundName(input: {
   look: AppearanceSnapshot;
   expected: SavedTheme | null;
   image?: BackgroundLibraryImage;
+  /** Resolve this exact design when several share the media. */
+  designId?: string;
 }): Promise<SavedTheme> {
   const name = normalizeThemeName(input.name);
   if (!name) throw new Error(t("Enter a design name."));
@@ -49,7 +55,7 @@ export async function saveBackgroundName(input: {
       (await addBackgroundLibraryImage(input.path)));
   const id = input.expected?.imageId ?? image?.id;
   const themes = loadSavedThemes();
-  const current = backgroundDesign(input.path, themes, id);
+  const current = backgroundDesign(input.path, themes, id, input.designId ?? input.expected?.id);
   if (
     JSON.stringify(current ?? null) !==
     JSON.stringify(input.expected ? (normalizeSavedThemes([input.expected])[0] ?? null) : null)

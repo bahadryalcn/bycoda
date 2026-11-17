@@ -60,11 +60,7 @@ export function SavedDesignLibrary({
         </Button>
       </div>
       {themes.length === 0 ? (
-        <EmptyState
-          size="inline"
-          context="list"
-          title={t("Save a design to use it again or export it.")}
-        />
+        <EmptyState size="inline" context="list" title={t("No saved designs")} />
       ) : (
         <ul className="grid min-w-0 gap-2">
           {themes.map((theme) => (

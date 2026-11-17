@@ -1587,6 +1587,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       {chatBackgroundKind(projectBackground?.path ?? globalBackgroundPath) !== "image" ? (
         <ChatBackgroundMedia
           path={projectBackground?.path ?? globalBackgroundPath}
+          live={focused}
           active={
             visible && (isEmpty || (projectBackground?.scope ?? globalBackgroundScope) === "all")
           }

@@ -215,10 +215,10 @@ it("rejects ambiguous source and oversized JSON before a provider can truncate i
     callVisualConversationTool(
       cwd,
       "visuals.render",
-      { title: "Chart", html: "x".repeat(2_097_153) },
+      { title: "Chart", html: "x".repeat(512_001) },
       allow,
     ),
-  ).rejects.toThrow("2097152");
+  ).rejects.toThrow("512000");
   await expect(
     callVisualConversationTool(cwd, "visuals.render", { title: "Chart", html: "<b>x</b>" }, allow),
   ).rejects.toThrow("storage is unavailable");
@@ -257,4 +257,35 @@ it("starts the one-time preview browser setup in the background and answers with
     ),
   ).rejects.toThrow("revoked");
   expect(setups).toBe(1);
+});
+
+it("counts background HTML in UTF-8 bytes, not characters", async () => {
+  const saveBackground = vi.fn(async () => ({ saved: true }));
+  const base = { title: "Wide", target: "global", confirmed: true };
+  // 1,048,577 two-byte characters is 2,097,154 bytes: under the character cap, over the byte cap.
+  await expect(
+    callVisualConversationTool(
+      root(),
+      "visuals.saveBackground",
+      { ...base, html: "é".repeat(1_048_577) },
+      allow,
+      { saveBackground },
+    ),
+  ).rejects.toThrow("limit is 2 MiB");
+  expect(saveBackground).not.toHaveBeenCalled();
+  await callVisualConversationTool(
+    root(),
+    "visuals.saveBackground",
+    { ...base, html: "é".repeat(1_048_576) },
+    allow,
+    { saveBackground },
+  );
+  expect(saveBackground).toHaveBeenCalledTimes(1);
+  expect(() =>
+    validateConversationTool("visuals.saveBackground", {
+      ...base,
+      title: "t".repeat(41),
+      html: "<b>x</b>",
+    }),
+  ).toThrow();
 });

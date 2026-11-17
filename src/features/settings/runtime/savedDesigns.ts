@@ -2,10 +2,15 @@ import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { t } from "../../../shared/i18n";
 import { projectKey } from "../../../shared/lib/paths";
-import { addBackgroundLibraryImage, listBackgroundLibrary } from "../model/backgroundLibrary";
+import {
+  addBackgroundLibraryImage,
+  deleteBackgroundLibraryImage,
+  listBackgroundLibrary,
+} from "../model/backgroundLibrary";
 import {
   addSavedTheme,
   loadSavedThemes,
+  referencedImageIds,
   saveSavedThemes,
   normalizeThemeName,
   type SavedTheme,
@@ -51,6 +56,7 @@ export async function openSavedDesign(theme: SavedTheme): Promise<DesignDraft> {
     path: image?.path,
     source,
     saved: theme,
+    ...(image ? { origin: image.source } : {}),
   };
 }
 
@@ -66,9 +72,12 @@ export async function saveDesign(
     throw new Error(t("Create or import a background first."));
   if (draft.path) await validateChatBackgroundMedia(draft.path);
   const image = draft.path
-    ? await addBackgroundLibraryImage(draft.path, { source: "generated", prompt: draft.prompt })
+    ? await addBackgroundLibraryImage(draft.path, {
+        source: draft.origin ?? "added",
+        prompt: draft.prompt,
+      })
     : undefined;
-  if (!(await authorized())) throw new Error("Background authority changed");
+  if (!(await authorized())) throw new Error(t("Background authority changed"));
   const themes = loadSavedThemes();
   const look = designLook(draft.kind, draft.look);
   let result: SavedTheme;
@@ -130,10 +139,24 @@ export async function applyDesign(
     );
     return;
   }
-  // A transient library copy gives applySavedTheme its existing validated asset path.
+  // A library copy gives applySavedTheme its existing validated asset path. Reuse the entry for
+  // this path; a copy made only for this apply is removed again so an unsaved draft leaves no trace.
   const previous = loadChatBackgroundPath();
-  const image = draft.path ? await addBackgroundLibraryImage(draft.path) : undefined;
-  if (loadChatBackgroundPath() !== previous) throw changed();
+  const before = draft.path ? await listBackgroundLibrary() : [];
+  const image =
+    before.find((entry) => entry.path === draft.path) ??
+    (draft.path
+      ? await addBackgroundLibraryImage(draft.path, { source: draft.origin ?? "added" })
+      : undefined);
+  const dropTransient = async () => {
+    if (!image || before.some((entry) => entry.id === image.id)) return;
+    if (referencedImageIds(loadSavedThemes()).has(image.id)) return;
+    await deleteBackgroundLibraryImage(image.id).catch(() => undefined);
+  };
+  if (loadChatBackgroundPath() !== previous) {
+    await dropTransient();
+    throw changed();
+  }
   const theme: SavedTheme = {
     id: draft.saved?.id ?? "draft",
     name: draft.name,
@@ -143,7 +166,12 @@ export async function applyDesign(
     imageId: image?.id,
     creation: { kind: draft.kind, prompt: draft.prompt },
   };
-  if ((await applySavedTheme(appearance, theme)) !== "applied")
+  const result = await applySavedTheme(appearance, theme).catch(async (error) => {
+    await dropTransient();
+    throw error;
+  });
+  await dropTransient();
+  if (result !== "applied")
     throw new Error(t("Saved media is missing. Your current design is unchanged."));
 }
 

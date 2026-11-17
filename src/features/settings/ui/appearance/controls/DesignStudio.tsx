@@ -8,6 +8,7 @@ import { TextField } from "../../../../../shared/ui/TextField";
 import { TextareaField } from "../../../../../shared/ui/TextareaField";
 import { Select } from "../../../../../shared/ui/Select";
 import { Badge } from "../../../../../shared/ui/Badge";
+import { InfoPopover } from "../../../../../shared/ui/InfoPopover";
 import { SettingsFeedback } from "../../../../../shared/ui/settings";
 import { useConfirm } from "../../../../../shared/ui/ConfirmDialog";
 import { canRunHarnessTextPrompt } from "../../../../../integrations/harness";
@@ -29,8 +30,13 @@ import {
 import { projectKey } from "../../../../../shared/lib/paths";
 import { chatBackgroundKind } from "../../../../../shared/lib/chatBackgroundKind";
 import { authoredSceneSource } from "../../../model/designSource";
-import { SAVED_THEME_NAME_MAX, type SavedTheme } from "../../../model/savedThemes";
-import { designIsCurrent, type DesignDraft, type DesignKind } from "../../../model/designs";
+import { SAVED_THEME_NAME_MAX, useSavedThemes, type SavedTheme } from "../../../model/savedThemes";
+import {
+  designIsCurrent,
+  followSavedLibrary,
+  type DesignDraft,
+  type DesignKind,
+} from "../../../model/designs";
 import {
   createDesign,
   cancelDesignCreation,
@@ -72,16 +78,9 @@ function subscribeSelection(listener: () => void) {
   return () => releases.forEach((release) => release());
 }
 function selection(project?: string) {
-  return JSON.stringify(
-    project
-      ? loadProjectChatBackgroundSettings(projectKey(project))
-      : {
-          path: loadChatBackgroundPath(),
-          image: captureAppearanceSnapshot().image,
-          motion: captureAppearanceSnapshot().motion,
-          live: captureAppearanceSnapshot().live,
-        },
-  );
+  if (project) return JSON.stringify(loadProjectChatBackgroundSettings(projectKey(project)));
+  const { image, motion, live } = captureAppearanceSnapshot();
+  return JSON.stringify({ path: loadChatBackgroundPath(), image, motion, live });
 }
 
 function Studio({
@@ -94,7 +93,9 @@ function Studio({
   useLocale();
   const [kind, setKind] = useGeneratorState<DesignKind>("designKind", initialKind);
   const [prompt, setPrompt] = useGeneratorState("designPrompt", "");
-  const [draft, setDraft] = useGeneratorState<DesignDraft | null>("designDraft", null);
+  const [storedDraft, setDraft] = useGeneratorState<DesignDraft | null>("designDraft", null);
+  const savedThemes = useSavedThemes();
+  const draft = followSavedLibrary(storedDraft, savedThemes);
   const [dirty, setDirty] = useGeneratorState("designDirty", false);
   const [busy, setBusy] = useGeneratorState("designBusy", false);
   const [cancelling, setCancelling] = useGeneratorState("designCancelling", false);
@@ -138,6 +139,20 @@ function Studio({
       operation.current = false;
       setWorking(false);
     }
+  };
+  /** Loading a design replaces the draft; unsaved edits are only discarded after a confirmation. */
+  const replacing = (action: () => Promise<void>) => async () => {
+    if (
+      draft &&
+      dirty &&
+      !(await confirm({
+        title: t("Replace the current draft?"),
+        message: t("Unsaved changes to {p0} will be lost.", { p0: draft.name }),
+        confirmLabel: t("Replace"),
+      }))
+    )
+      return;
+    await action();
   };
   const receive = (next: DesignDraft) => {
     setKind(next.kind);
@@ -302,10 +317,10 @@ function Studio({
   return (
     <Sheet
       title={t("Create a design")}
-      description={t("Preview first. Save with a name, then apply.")}
       size="min(960px, 100vw)"
       onClose={() => {
-        if (!working) onClose();
+        if (working) setError(t("Finish the current action before closing."));
+        else onClose();
       }}
     >
       <div className="flex min-w-0 flex-col gap-4">
@@ -375,28 +390,28 @@ function Studio({
             <div className="flex flex-wrap gap-2">
               <Button
                 disabled={blocked || sourcePending}
-                onClick={() => void perform(importBackground).catch(fail)}
+                onClick={() => void perform(replacing(importBackground))}
               >
                 {t("Import background")}
               </Button>
+              <InfoPopover>{t("Import images, videos or self-contained HTML.")}</InfoPopover>
               <Button
                 disabled={blocked || sourcePending}
-                onClick={() => void perform(captureCurrent).catch(fail)}
+                onClick={() => void perform(replacing(captureCurrent))}
               >
                 {t("Use current design")}
               </Button>
             </div>
-            <Text size="caption" tone="muted">
-              {t("Import images, videos or self-contained HTML.")}
-            </Text>
             <Button
               disabled={blocked || sourcePending}
               onClick={() =>
-                void perform(async () => {
-                  const example = await loadLandscapeExample();
-                  setKind("scene");
-                  receive(example);
-                }).catch(fail)
+                void perform(
+                  replacing(async () => {
+                    const example = await loadLandscapeExample();
+                    setKind("scene");
+                    receive(example);
+                  }),
+                )
               }
             >
               {t("Try mountain lake")}
@@ -474,7 +489,7 @@ function Studio({
                           confirmLabel: t("Save"),
                           onConfirm: () => perform(() => save()),
                         }).catch(fail);
-                      else void perform(() => save()).catch(fail);
+                      else void perform(() => save());
                     }}
                   >
                     {draft.saved ? t("Save changes") : t("Save")}
@@ -482,7 +497,7 @@ function Studio({
                   {draft.saved ? (
                     <Button
                       disabled={blocked || sourcePending || !draft.name.trim()}
-                      onClick={() => void perform(() => save(true)).catch(fail)}
+                      onClick={() => void perform(() => save(true))}
                     >
                       {t("Save a copy")}
                     </Button>
@@ -498,7 +513,7 @@ function Studio({
                         ? t("Motion presets apply to the app.")
                         : undefined
                     }
-                    onClick={() => void perform(() => apply(draft)).catch(fail)}
+                    onClick={() => void perform(() => apply(draft))}
                   >
                     {t("Apply")}
                   </Button>
@@ -544,7 +559,7 @@ function Studio({
                   setDraft(next);
                   setSourcePath(next.path ?? "");
                   setDirty(true);
-                }).catch(fail)
+                })
               }
             >
               {t("Update preview")}
@@ -563,16 +578,18 @@ function Studio({
         <SavedDesignLibrary
           disabled={blocked || sourcePending}
           onError={fail}
-          onOpen={(theme) => perform(() => openTheme(theme))}
+          onOpen={(theme) => perform(replacing(() => openTheme(theme)))}
           onApply={(theme) =>
-            perform(async () => {
-              const next = await openSavedDesign(theme);
-              await apply(next);
-              receive({
-                ...next,
-                ...(next.source ? { source: authoredSceneSource(next.source) } : {}),
-              });
-            })
+            perform(
+              replacing(async () => {
+                const next = await openSavedDesign(theme);
+                await apply(next);
+                receive({
+                  ...next,
+                  ...(next.source ? { source: authoredSceneSource(next.source) } : {}),
+                });
+              }),
+            )
           }
         />
         {dialog}

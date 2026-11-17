@@ -216,7 +216,7 @@ fn make_preview(path: String, content: String) -> Result<Preview, String> {
             return Err("HTML background must contain 1 to 2097152 UTF-8 bytes".into());
         }
         return Ok(Preview {
-            content: background_document(&content),
+            content: background_document(&content)?,
             root: None,
             background: true,
         });
@@ -244,10 +244,11 @@ fn make_preview(path: String, content: String) -> Result<Preview, String> {
 /// The trusted outer document owns frame-src. Authored code only runs in its opaque
 /// srcdoc child: attempts to navigate that child are governed by this parent policy.
 /// Neither document has local assets, network, forms, popups or a native bridge.
-fn background_document(content: &str) -> String {
+fn background_document(content: &str) -> Result<String, String> {
     // CSP covers resource fetches. WebRTC has no reliable connect-src enforcement;
-    // retire its constructors before authored code. Opaque origin, frame/worker and
-    // popup denial prevent acquiring a fresh same-origin realm to recover them.
+    // retire its constructors before authored code. CSP frame-src does not cover
+    // about:blank, so the guard itself refuses frame/object/embed creation to stop a
+    // fresh realm with intact constructors; worker and popup denial cover the rest.
     let guard = include_str!("html_preview/background_guard.js");
     let inner = format!(
         r#"<!doctype html><meta http-equiv="Content-Security-Policy" content="frame-src 'none'"><script>{guard}</script>{content}"#
@@ -257,9 +258,13 @@ fn background_document(content: &str) -> String {
         .replace('"', "&quot;")
         .replace('<', "&lt;")
         .replace('>', "&gt;");
-    format!(
+    // Escaping can expand the 2 MiB source about fivefold; bound the final document.
+    if escaped.len() > 12 * 1024 * 1024 {
+        return Err("HTML background is too large once escaped".into());
+    }
+    Ok(format!(
         r#"<!doctype html><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; media-src 'none'; connect-src 'none'; frame-src about:; child-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"><style>html,body,iframe{{margin:0;width:100%;height:100%;border:0;overflow:hidden}}</style><iframe title="Background" sandbox="allow-scripts" referrerpolicy="no-referrer" srcdoc="{escaped}"></iframe>"#
-    )
+    ))
 }
 
 #[cfg(test)]
@@ -280,6 +285,21 @@ mod background_tests {
         assert!(!preview.content.contains("<script>"));
         assert!(preview.content.contains("&lt;/iframe&gt;"));
         assert!(preview.content.contains("RTCPeerConnection"));
+        for part in [
+            "&quot;webkit&quot;",
+            "MutationObserver",
+            "contentWindow",
+            "createElement",
+        ] {
+            assert!(preview.content.contains(part), "{part}");
+        }
+    }
+
+    #[test]
+    fn escaped_background_document_is_bounded() {
+        let heavy = "\"".repeat(2 * 1024 * 1024);
+        assert!(background_document(&heavy).is_err());
+        assert!(background_document("<b>ok</b>").is_ok());
     }
 }
 

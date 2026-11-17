@@ -107,7 +107,22 @@ it("unmounts muted looping video offscreen and honors reduced motion even with p
   await act(() => intersect([{ isIntersecting: true }]));
   motion.reduced = true;
   await act(() => root.render(createElement(ChatBackgroundMedia, { path: "/asset.mp4" })));
-  expect(container.querySelector("video")).toBeNull();
+  const still = container.querySelector("video")!;
+  expect(still.autoplay).toBe(false);
+  expect(still.loop).toBe(false);
+  expect(still.getAttribute("src")).toContain("#t=0.001");
+});
+
+it("shows a paused first frame in a pane that is not live and keeps scenes unmounted", async () => {
+  await act(() =>
+    root.render(createElement(ChatBackgroundMedia, { path: "/asset.mp4", live: false })),
+  );
+  expect(container.querySelector("video")?.autoplay).toBe(false);
+  await act(() =>
+    root.render(createElement(ChatBackgroundMedia, { path: "/asset.html", live: false })),
+  );
+  expect(container.querySelector("iframe")).toBeNull();
+  expect(invoke).not.toHaveBeenCalledWith("read_chat_background_html", expect.anything());
 });
 
 it("uses the offline native route, excludes same-origin/forms, and closes exact creation token", async () => {

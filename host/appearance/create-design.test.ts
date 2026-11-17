@@ -117,3 +117,13 @@ it("forwards owner revocation to the provider signal", async () => {
   controller.abort();
   await rejected;
 });
+
+it("consumes a pre-start cancellation so a later retry of the same id is not fenced", async () => {
+  const input = params();
+  const run = vi.fn(async () => reply);
+  cancelAppearanceDesign(input.requestId, "owner");
+  await expect(createAppearanceDesign(input, "owner", run)).rejects.toThrow("cancelled");
+  await expect(createAppearanceDesign(input, "owner", run)).resolves.toMatchObject({
+    kind: "scene",
+  });
+});

@@ -13,6 +13,7 @@ import {
 import {
   inlineVisualSource,
   MAX_INLINE_VISUAL_HEIGHT,
+  MAX_BACKGROUND_HTML_BYTES,
   MAX_INLINE_VISUAL_HTML_CHARS,
   MIN_INLINE_VISUAL_HEIGHT,
 } from "../../src/features/sessions/model/inlineVisual";
@@ -79,6 +80,13 @@ const backgroundSchema = {
   type: "object",
   properties: {
     ...source,
+    title: {
+      ...source.title,
+      maxLength: 40,
+      description:
+        "Design name shown in the Saved designs library, at most 40 characters; omit format labels such as 'Interactive HTML'.",
+    },
+    html: { ...source.html, maxLength: MAX_BACKGROUND_HTML_BYTES },
     target: { type: "string", enum: ["global", "project"] },
     confirmed: { type: "boolean", const: true },
     designId: {
@@ -137,6 +145,11 @@ export type VisualPreviewBrowser = {
   setup(): Promise<unknown>;
 };
 
+function tooLargeMessage(bytes: number, three: boolean) {
+  const mib = (bytes / 1_048_576).toFixed(2);
+  return `Background HTML is ${mib} MiB${three ? " after bundling the Three.js runtime" : ""}; the limit is 2 MiB. Simplify the scene.`;
+}
+
 export async function callVisualConversationTool(
   root: string,
   action: string,
@@ -173,22 +186,42 @@ export async function callVisualConversationTool(
   const html = typeof input.html === "string" ? input.html : await readHostFile(root, input.path);
   if (input.runtime !== undefined && input.runtime !== "html" && input.runtime !== "three")
     throw new Error("Unsupported visual runtime");
-  let visual = inlineVisualSource({
-    title: input.title,
-    html,
-    height: input.height ?? 360,
-  });
+  const isBackground = action === "visuals.applyBackground" || action === "visuals.saveBackground";
+  let visual = inlineVisualSource(
+    { title: input.title, html, height: input.height ?? 360 },
+    isBackground ? MAX_BACKGROUND_HTML_BYTES : MAX_INLINE_VISUAL_HTML_CHARS,
+  );
   if (!visual)
     throw new Error(
-      `Visual is invalid: title 1-160 characters, HTML up to ${MAX_INLINE_VISUAL_HTML_CHARS} characters, height ${MIN_INLINE_VISUAL_HEIGHT}-${MAX_INLINE_VISUAL_HEIGHT}.`,
+      isBackground
+        ? `Background is invalid: title 1-40 characters, HTML up to ${MAX_BACKGROUND_HTML_BYTES} bytes.`
+        : `Visual is invalid: title 1-160 characters, HTML up to ${MAX_INLINE_VISUAL_HTML_CHARS} characters, height ${MIN_INLINE_VISUAL_HEIGHT}-${MAX_INLINE_VISUAL_HEIGHT}.`,
     );
+  if (isBackground && [...visual.title].length > 40)
+    throw new Error("Background title must be at most 40 characters.");
   if (input.runtime === "three") {
     const { THREE_RUNTIME } =
       await import("../../src/features/settings/data/backgrounds/three-runtime.generated");
-    visual = { ...visual, html: packOfflineScene(authoredSceneSource(visual.html), THREE_RUNTIME) };
+    const authored = authoredSceneSource(visual.html);
+    try {
+      visual = { ...visual, html: packOfflineScene(authored, THREE_RUNTIME) };
+    } catch (error) {
+      if (error instanceof Error && error.message === "Scene is too large")
+        throw new Error(
+          tooLargeMessage(
+            Buffer.byteLength(authored, "utf8") + Buffer.byteLength(THREE_RUNTIME, "utf8"),
+            true,
+          ),
+          { cause: error },
+        );
+      throw error;
+    }
   }
+  const finalBytes = Buffer.byteLength(visual.html, "utf8");
+  if (isBackground && finalBytes > MAX_BACKGROUND_HTML_BYTES)
+    throw new Error(tooLargeMessage(finalBytes, input.runtime === "three"));
   await check();
-  if (action === "visuals.applyBackground" || action === "visuals.saveBackground") {
+  if (isBackground) {
     const relay =
       action === "visuals.saveBackground" ? options.saveBackground : options.applyBackground;
     if (!relay) throw new Error("Desktop background relay is unavailable.");

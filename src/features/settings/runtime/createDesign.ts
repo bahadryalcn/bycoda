@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { t } from "../../../shared/i18n";
 import { remoteRequest } from "../../connections/public/connections";
 import { isLocalSyncMachine } from "../../connections/public/localSync";
 import type { RemoteMachine } from "../../connections";
@@ -14,7 +15,7 @@ import { AppearanceCreateDesignResultSchema } from "../../../shared/model/host-c
 
 async function localMachine() {
   const machine = (await invoke<RemoteMachine[]>("remote_machines"))?.find(isLocalSyncMachine);
-  if (!machine) throw new Error("Local host unavailable");
+  if (!machine) throw new Error(t("Local host unavailable"));
   return machine;
 }
 
@@ -39,11 +40,11 @@ export async function createDesign(params: {
     await remoteRequest(machine.id, "appearance.createDesign", params),
   );
   const current = captureAppearanceSnapshot();
-  if (result.kind !== params.kind) throw new Error("The model returned a different design type");
+  if (result.kind !== params.kind) throw new Error(t("The model returned a different design type"));
   if (params.kind === "motion") {
     const motion = (result.motion as ThemeSuggestion | undefined)?.motion;
     if (!motion || !Object.keys(motion).length)
-      throw new Error("The model returned no motion preset");
+      throw new Error(t("The model returned no motion preset"));
     return {
       kind: "motion",
       name: result.name,
@@ -56,7 +57,7 @@ export async function createDesign(params: {
     : result.path
       ? await saveChatBackgroundFrom(result.path)
       : null;
-  if (!path) throw new Error("The model returned no usable background");
+  if (!path) throw new Error(t("The model returned no usable background"));
   await validateChatBackgroundMedia(path);
   return {
     kind: params.kind,
@@ -67,6 +68,7 @@ export async function createDesign(params: {
       image: { ...current.image!, blur: 0, effect: "none" },
       live: { scene: "none", intensity: current.live?.intensity ?? 0.3 },
     },
+    origin: "generated",
     ...(result.html ? { source: authoredSceneSource(result.html) } : {}),
   };
 }
@@ -78,7 +80,7 @@ export async function previewEditedSource(
   const { THREE_RUNTIME } = await import("../data/backgrounds/three-runtime.generated");
   const content = source.length <= 120_000 ? packOfflineScene(source, THREE_RUNTIME) : source;
   if (!source.trim() || new TextEncoder().encode(content).byteLength > 2_097_152)
-    throw new Error("Scene source is too large or empty");
+    throw new Error(t("Scene source is too large or empty"));
   const path = await invoke<string>("save_chat_background_html", { content });
   return { ...draft, path, source, kind: "scene" };
 }
@@ -89,8 +91,8 @@ export async function loadLandscapeExample(): Promise<DesignDraft> {
   const current = captureAppearanceSnapshot();
   return {
     kind: "scene",
-    name: "Mountain lake at dusk",
-    prompt: "A mountain lake, pine forests and reflected peaks at dusk.",
+    name: t("Mountain lake at dusk"),
+    prompt: t("A mountain lake, pine forests and reflected peaks at dusk."),
     path,
     source: authoredSceneSource(html),
     look: {

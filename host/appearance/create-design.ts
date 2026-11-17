@@ -63,7 +63,10 @@ export async function createAppearanceDesign(
   ownerSignal?: AbortSignal,
 ) {
   const key = requestKey(params.requestId, owner);
-  if ((cancelled.get(key) ?? 0) > Date.now()) throw new Error("Design creation cancelled");
+  // A pre-start cancellation is consumed here so its key never lingers for the 60s expiry.
+  const cancelledUntil = cancelled.get(key) ?? 0;
+  cancelled.delete(key);
+  if (cancelledUntil > Date.now()) throw new Error("Design creation cancelled");
   if (
     active.has(key) ||
     active.size >= 8 ||

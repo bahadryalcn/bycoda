@@ -12,33 +12,40 @@ export function backgroundMediaId(path: string): string | undefined {
     .toLowerCase();
 }
 
-/** One stable name per media surface. Named variants retain their own design names. */
+/**
+ * One stable name per media surface. Named variants (a "Save a copy" shares its original's media)
+ * keep their own names: pass `designId` to resolve that exact design; otherwise the oldest wins.
+ */
 export function backgroundDesign(
   path: string,
   themes: readonly SavedTheme[],
   libraryId = backgroundMediaId(path),
+  designId?: string,
 ): SavedTheme | undefined {
-  return themes
-    .filter(
-      (theme) =>
-        theme.imageId &&
-        (libraryId ? theme.imageId === libraryId : theme.backgroundPaths?.includes(path)) &&
-        theme.creation?.kind !== "motion",
-    )
-    .sort(
+  const candidates = themes.filter(
+    (theme) =>
+      theme.imageId &&
+      (libraryId ? theme.imageId === libraryId : theme.backgroundPaths?.includes(path)) &&
+      theme.creation?.kind !== "motion",
+  );
+  return (
+    candidates.find((theme) => theme.id === designId) ??
+    candidates.sort(
       (a, b) =>
         Number(!a.creation) - Number(!b.creation) ||
         a.createdAt - b.createdAt ||
         a.id.localeCompare(b.id),
-    )[0];
+    )[0]
+  );
 }
 
 export function backgroundDisplayName(
   path: string,
   themes: readonly SavedTheme[],
   libraryId?: string,
+  designId?: string,
 ): string {
-  return backgroundDesign(path, themes, libraryId)?.name ?? backgroundKindLabel(path);
+  return backgroundDesign(path, themes, libraryId, designId)?.name ?? backgroundKindLabel(path);
 }
 
 export function backgroundKindLabel(path: string): string {

@@ -69,13 +69,27 @@ fn validate_kind(kind: &str, extension: Option<&str>) -> Result<(), String> {
     Ok(())
 }
 
+/// Resolves `source` and requires it to live inside the background library folder.
+fn library_asset(library: &Path, source: &str) -> Result<std::path::PathBuf, String> {
+    let root = library.canonicalize().map_err(|e| e.to_string())?;
+    let source = Path::new(source)
+        .canonicalize()
+        .map_err(|_| "Saved design media is missing")?;
+    if !source.starts_with(root) {
+        return Err("Design media is outside the library".into());
+    }
+    Ok(source)
+}
+
 type DecodedAsset = (String, Vec<u8>);
 
-fn decode_artifact(bytes: &[u8]) -> Result<(DesignMetadata, Option<DecodedAsset>), String> {
+fn decode_artifact(bytes: Vec<u8>) -> Result<(DesignMetadata, Option<DecodedAsset>), String> {
     if bytes.len() as u64 > MAX_ARTIFACT_BYTES {
         return Err("Design file is too large".into());
     }
-    let artifact: Artifact = serde_json::from_slice(bytes).map_err(|_| "Invalid design file")?;
+    let artifact: Artifact = serde_json::from_slice(&bytes).map_err(|_| "Invalid design file")?;
+    // Release the raw file before the base64 payload is decoded to keep peak memory low.
+    drop(bytes);
     if artifact.format != "bycoda-design" || artifact.version != 1 {
         return Err("Unsupported design file".into());
     }
@@ -88,14 +102,19 @@ fn decode_artifact(bytes: &[u8]) -> Result<(DesignMetadata, Option<DecodedAsset>
             if extension != asset.extension {
                 return Err("Invalid design media extension".into());
             }
-            let bytes = STANDARD
-                .decode(asset.base64)
-                .map_err(|_| "Invalid design media encoding")?;
             let limit = match extension.as_str() {
                 "mp4" | "webm" => 100 * 1024 * 1024,
                 "html" | "htm" => 2 * 1024 * 1024,
                 _ => super::MAX_BACKGROUND_BYTES as usize,
             };
+            // Base64 is 4 chars per 3 bytes; refuse before allocating the decoded copy.
+            if asset.base64.len() / 4 * 3 > limit + 3 {
+                return Err("Design media is too large".into());
+            }
+            let bytes = STANDARD
+                .decode(&asset.base64)
+                .map_err(|_| "Invalid design media encoding")?;
+            drop(asset.base64);
             if bytes.len() > limit {
                 return Err("Design media is too large".into());
             }
@@ -125,15 +144,7 @@ pub async fn export_appearance_design(
     let result = tauri::async_runtime::spawn_blocking(move || {
         validate_metadata(&design)?;
         let asset = if let Some(source) = asset_path {
-            let root = super::backgrounds_dir(&app)?
-                .canonicalize()
-                .map_err(|e| e.to_string())?;
-            let source = Path::new(&source)
-                .canonicalize()
-                .map_err(|_| "Saved design media is missing")?;
-            if !source.starts_with(root) {
-                return Err("Design media is outside the library".into());
-            }
+            let source = library_asset(&super::backgrounds_dir(&app)?, &source)?;
             let extension = super::validate_background_file(&source)?;
             let bytes = super::read_background_bytes(&source, &extension)?;
             Some(Asset {
@@ -181,7 +192,7 @@ pub async fn import_appearance_design(
             .take(MAX_ARTIFACT_BYTES + 1)
             .read_to_end(&mut bytes)
             .map_err(|e| e.to_string())?;
-        let (design, asset) = decode_artifact(&bytes)?;
+        let (design, asset) = decode_artifact(bytes)?;
         let asset_path = asset
             .map(|(extension, bytes)| super::store_background_bytes(&app, &bytes, &extension))
             .transpose()?;
@@ -202,7 +213,7 @@ mod tests {
     #[test]
     fn portable_scene_roundtrip_has_exact_source_and_no_path() {
         let bytes = serde_json::to_vec(&artifact()).unwrap();
-        let (design, asset) = decode_artifact(&bytes).unwrap();
+        let (design, asset) = decode_artifact(bytes).unwrap();
         assert_eq!(design.name, "Lake");
         assert_eq!(asset.unwrap().1, b"<html><b>scene</b></html>");
     }
@@ -217,14 +228,78 @@ mod tests {
                 3 => value["version"] = 2.into(),
                 _ => value["asset"]["extension"] = "../html".into(),
             }
-            assert!(decode_artifact(&serde_json::to_vec(&value).unwrap()).is_err());
+            assert!(decode_artifact(serde_json::to_vec(&value).unwrap()).is_err());
         }
+    }
+    #[test]
+    fn kind_must_match_media() {
+        assert!(validate_kind("image", Some("html")).is_err());
+        assert!(validate_kind("image", None).is_err());
+        assert!(validate_kind("image", Some("png")).is_ok());
+        assert!(validate_kind("scene", None).is_err());
+        assert!(validate_kind("scene", Some("png")).is_err());
+        assert!(validate_kind("scene", Some("html")).is_ok());
+        assert!(validate_kind("motion", Some("mp4")).is_err());
+        assert!(validate_kind("motion", None).is_ok());
+    }
+    #[test]
+    fn oversize_media_is_rejected_before_decoding() {
+        let mut value = artifact();
+        value["asset"]["base64"] = "A".repeat(3 * 1024 * 1024).into();
+        let error = decode_artifact(serde_json::to_vec(&value).unwrap())
+            .err()
+            .unwrap();
+        assert_eq!(error, "Design media is too large");
+    }
+    #[test]
+    fn name_and_kind_bounds_are_enforced() {
+        for (key, value) in [
+            ("name", serde_json::json!("")),
+            ("name", serde_json::json!("x".repeat(161))),
+            ("kind", serde_json::json!("video")),
+            ("prompt", serde_json::json!("x".repeat(2001))),
+            ("look", serde_json::json!("not-object")),
+        ] {
+            let mut input = artifact();
+            input["design"][key] = value;
+            assert!(
+                decode_artifact(serde_json::to_vec(&input).unwrap()).is_err(),
+                "{key}"
+            );
+        }
+        let mut edge = artifact();
+        edge["design"]["name"] = "x".repeat(160).into();
+        assert!(decode_artifact(serde_json::to_vec(&edge).unwrap()).is_ok());
+    }
+    #[test]
+    fn artifact_over_the_byte_cap_is_rejected() {
+        let error = decode_artifact(vec![b' '; MAX_ARTIFACT_BYTES as usize + 1])
+            .err()
+            .unwrap();
+        assert_eq!(error, "Design file is too large");
+    }
+    #[test]
+    fn export_asset_outside_library_is_rejected() {
+        let base = std::env::temp_dir().join(format!("bycoda-design-lib-{}", std::process::id()));
+        let library = base.join("backgrounds");
+        std::fs::create_dir_all(&library).unwrap();
+        let inside = library.join("a.png");
+        let outside = base.join("b.png");
+        std::fs::write(&inside, b"x").unwrap();
+        std::fs::write(&outside, b"x").unwrap();
+        assert!(library_asset(&library, inside.to_str().unwrap()).is_ok());
+        assert_eq!(
+            library_asset(&library, outside.to_str().unwrap()).unwrap_err(),
+            "Design media is outside the library"
+        );
+        assert!(library_asset(&library, base.join("missing.png").to_str().unwrap()).is_err());
+        let _ = std::fs::remove_dir_all(&base);
     }
     #[test]
     fn motion_preset_can_travel_without_media() {
         let mut value = artifact();
         value["design"]["kind"] = "motion".into();
         value["asset"] = serde_json::Value::Null;
-        assert!(decode_artifact(&serde_json::to_vec(&value).unwrap()).is_ok());
+        assert!(decode_artifact(serde_json::to_vec(&value).unwrap()).is_ok());
     }
 }

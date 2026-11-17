@@ -172,6 +172,8 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "appearance.themeSuggestions"
             | "appearance.backgroundSuggestions"
             | "appearance.backgroundImage"
+            | "appearance.createDesign"
+            | "appearance.cancelDesign"
             | "assistant.builder.interview"
             | "assistant.builder.avatarGenerate"
             | "assistant.builder.avatarRead"
@@ -357,6 +359,23 @@ pub(super) fn decision_model_key_allowed(
 #[cfg(test)]
 mod tests {
     use super::{decision_model_key_allowed, supported_remote_method};
+
+    #[test]
+    fn every_manifest_appearance_method_is_admitted() {
+        let manifest: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../src/shared/model/host-contracts/generated/manifest.json"
+        ))
+        .unwrap();
+        let methods = manifest["methods"].as_object().unwrap();
+        let appearance: Vec<_> = methods
+            .keys()
+            .filter(|name| name.starts_with("appearance."))
+            .collect();
+        assert!(!appearance.is_empty());
+        for name in appearance {
+            assert!(supported_remote_method(name), "{name}");
+        }
+    }
 
     #[test]
     fn git_generation_forwards_only_the_named_operation() {

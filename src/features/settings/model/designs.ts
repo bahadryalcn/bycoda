@@ -1,3 +1,4 @@
+import { t } from "../../../shared/i18n";
 import { normalizeAppearanceSnapshot, type AppearanceSnapshot } from "./appearanceSnapshot";
 import { normalizeThemeName, type SavedTheme } from "./savedThemes";
 
@@ -11,7 +12,21 @@ export type DesignDraft = {
   /** Authored source, excluding the bundled offline runtime. */
   source?: string;
   saved?: SavedTheme;
+  /** How the media came about; recorded in the library when the draft is saved. Defaults to `added`. */
+  origin?: "generated" | "added";
 };
+
+/** The draft's saved record follows the library: dropped when deleted, refreshed when renamed. */
+export function followSavedLibrary(
+  draft: DesignDraft | null,
+  themes: readonly SavedTheme[],
+): DesignDraft | null {
+  if (!draft?.saved) return draft;
+  const latest = themes.find((theme) => theme.id === draft.saved?.id);
+  if (latest && JSON.stringify(latest) === JSON.stringify(draft.saved)) return draft;
+  const { saved: _gone, ...rest } = draft;
+  return latest ? { ...draft, saved: latest } : rest;
+}
 
 /** Metadata is normalized again after a portable file crosses the native boundary. */
 export function normalizeDesignMetadata(value: unknown): {
@@ -20,7 +35,7 @@ export function normalizeDesignMetadata(value: unknown): {
   prompt: string;
   look: AppearanceSnapshot;
 } {
-  if (!value || typeof value !== "object") throw new Error("Invalid design file");
+  if (!value || typeof value !== "object") throw new Error(t("Invalid design file"));
   const raw = value as Record<string, unknown>;
   const name = normalizeThemeName(raw.name);
   if (
@@ -31,7 +46,7 @@ export function normalizeDesignMetadata(value: unknown): {
     !raw.look ||
     typeof raw.look !== "object"
   )
-    throw new Error("Invalid design metadata");
+    throw new Error(t("Invalid design metadata"));
   return {
     name,
     kind: raw.kind as DesignKind | "theme",

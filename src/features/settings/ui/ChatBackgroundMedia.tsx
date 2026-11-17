@@ -6,7 +6,13 @@ import { t } from "../../../shared/i18n";
 
 type BackgroundMediaProps = {
   path: string | null;
+  /** The layer is wanted here at all; false renders nothing. */
   active?: boolean;
+  /**
+   * Only one pane runs a live video or scene. A video elsewhere (or under reduced motion) shows its
+   * first frame; a scene has no still and renders nothing until it is live.
+   */
+  live?: boolean;
   className?: string;
   style?: CSSProperties;
 };
@@ -16,7 +22,13 @@ export function ChatBackgroundMedia(props: BackgroundMediaProps) {
   return props.path ? <BackgroundMedia key={props.path} {...props} /> : null;
 }
 
-function BackgroundMedia({ path, active = true, className = "", style }: BackgroundMediaProps) {
+function BackgroundMedia({
+  path,
+  active = true,
+  live = true,
+  className = "",
+  style,
+}: BackgroundMediaProps) {
   const motion = useDecorativeMotionEnabled();
   const reduced = useSystemReducedMotion();
   const container = useRef<HTMLDivElement>(null);
@@ -26,7 +38,8 @@ function BackgroundMedia({ path, active = true, className = "", style }: Backgro
   const [frame, setFrame] = useState<{ path: string; url: string } | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const kind = chatBackgroundKind(path);
-  const running = active && motion && !reduced && visible && pageVisible;
+  const running = active && live && motion && !reduced && visible && pageVisible;
+  const stillVideo = active && !running && visible && pageVisible && kind === "video";
 
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Observe DOM intersection and document visibility while this decorative layer is mounted.
   useEffect(() => {
@@ -51,7 +64,7 @@ function BackgroundMedia({ path, active = true, className = "", style }: Backgro
       video.removeAttribute("src");
       video.load();
     };
-  }, [running, path, failed]);
+  }, [running, stillVideo, path, failed]);
 
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Hold one native preview token while this visible scene is active; fence late replies and close on teardown.
   useEffect(() => {
@@ -104,7 +117,18 @@ function BackgroundMedia({ path, active = true, className = "", style }: Backgro
       aria-hidden="true"
       inert
     >
-      {path && failed !== path && running ? (
+      {path && failed !== path && stillVideo ? (
+        <video
+          ref={videoElement}
+          key={`${path}:still`}
+          src={`${convertFileSrc(path)}#t=0.001`}
+          muted
+          playsInline
+          preload="metadata"
+          onError={() => setFailed(path)}
+          tabIndex={-1}
+        />
+      ) : path && failed !== path && running ? (
         kind === "video" ? (
           <video
             ref={videoElement}

@@ -8,8 +8,7 @@ import {
 import { backgroundDesign } from "../../../model/backgroundNames";
 import { useSavedThemes, type SavedTheme } from "../../../model/savedThemes";
 import type { BackgroundLibraryImage } from "../../../model/backgroundLibrary";
-import { saveBackgroundName } from "../../../runtime/nameBackground";
-import { prepareBackgroundName } from "../../../runtime/nameBackground";
+import { saveBackgroundName, prepareBackgroundName } from "../../../runtime/nameBackground";
 import { SettingsFeedback } from "../../../../../shared/ui/settings";
 import { ThemeNameDialog } from "./ThemeNameDialog";
 
@@ -19,14 +18,18 @@ export function SaveBackgroundButton({
   disabled = false,
   image,
   look,
+  designId,
 }: {
   path: string;
   disabled?: boolean;
   image?: BackgroundLibraryImage;
+  /** The look to store; defaults to the item's own saved look, then the current appearance. */
   look?: AppearanceSnapshot;
+  /** Resolve this exact design when several share the media. */
+  designId?: string;
 }) {
   const themes = useSavedThemes();
-  const design = backgroundDesign(path, themes, image?.id);
+  const design = backgroundDesign(path, themes, image?.id, designId);
   const [editing, setEditing] = useState<{
     path: string;
     image?: BackgroundLibraryImage;
@@ -40,8 +43,8 @@ export function SaveBackgroundButton({
     setPreparing(true);
     setError(null);
     try {
-      const snapshot = look ?? captureAppearanceSnapshot();
-      const target = await prepareBackgroundName(path, image);
+      const snapshot = look ?? design?.look ?? captureAppearanceSnapshot();
+      const target = await prepareBackgroundName(path, image, designId);
       setEditing({ path, ...target, look: snapshot });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -58,7 +61,7 @@ export function SaveBackgroundButton({
         loading={preparing}
         loadingLabel={t("Loading…")}
         aria-label={design ? `${t("Rename")}: ${design.name}` : t("Save background")}
-        onClick={() => void open().catch((cause) => setError(String(cause)))}
+        onClick={() => void open()}
       >
         {design ? t("Rename") : t("Save background")}
       </Button>
@@ -71,7 +74,7 @@ export function SaveBackgroundButton({
           initialName={editing.expected?.name ?? ""}
           onClose={() => setEditing(null)}
           onSubmit={async (name) => {
-            await saveBackgroundName({ ...editing, name });
+            await saveBackgroundName({ ...editing, name, designId });
           }}
         />
       ) : null}

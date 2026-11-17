@@ -1,5 +1,11 @@
 import { expect, it } from "vitest";
-import { normalizeDesignMetadata, designLook, designIsCurrent, type DesignDraft } from "./designs";
+import {
+  normalizeDesignMetadata,
+  designLook,
+  designIsCurrent,
+  followSavedLibrary,
+  type DesignDraft,
+} from "./designs";
 import { authoredSceneSource, packOfflineScene } from "./designSource";
 
 it("roundtrips authored source without sending the bundled library back to the model", () => {
@@ -67,4 +73,21 @@ it("derives current from immutable media and preferences after reopening or rena
   expect(
     designIsCurrent({ kind: "motion", name: "Empty", prompt: "", look: {} }, { motion: {} }, false),
   ).toBe(false);
+});
+
+it("lets an open draft follow its saved design through rename and delete", () => {
+  const saved = {
+    id: "one",
+    name: "Lake",
+    createdAt: 1,
+    updatedAt: 1,
+    look: {},
+    creation: { kind: "scene" as const, prompt: "" },
+  };
+  const draft: DesignDraft = { kind: "scene", name: "Lake", prompt: "", look: {}, saved };
+  expect(followSavedLibrary(draft, [saved])).toBe(draft);
+  const renamed = { ...saved, name: "Renamed", updatedAt: 2 };
+  expect(followSavedLibrary(draft, [renamed])?.saved).toEqual(renamed);
+  expect(followSavedLibrary(draft, [])?.saved).toBeUndefined();
+  expect(followSavedLibrary(null, [])).toBeNull();
 });

@@ -2,7 +2,11 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import { addBackgroundLibraryImage, listBackgroundLibrary } from "../model/backgroundLibrary";
+import {
+  addBackgroundLibraryImage,
+  deleteBackgroundLibraryImage,
+  listBackgroundLibrary,
+} from "../model/backgroundLibrary";
 import { loadSavedThemes, saveSavedThemes, type SavedTheme } from "../model/savedThemes";
 import {
   saveDesign,
@@ -30,6 +34,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn(), save: vi.fn() }));
 vi.mock("../model/backgroundLibrary", () => ({
   addBackgroundLibraryImage: vi.fn(),
+  deleteBackgroundLibraryImage: vi.fn(async () => undefined),
   listBackgroundLibrary: vi.fn(),
 }));
 vi.mock("../../projects/public/projectChatBackground", () => ({
@@ -198,4 +203,33 @@ it("rejects unreadable imports and opens before modifying the saved library", as
   await expect(importDesign()).rejects.toThrow("codec");
   expect(addBackgroundLibraryImage).not.toHaveBeenCalled();
   expect(loadSavedThemes()).toEqual([]);
+});
+
+it("records the draft's real origin in the library", async () => {
+  await saveDesign({ ...draft, origin: "generated" });
+  expect(addBackgroundLibraryImage).toHaveBeenLastCalledWith(draft.path, {
+    source: "generated",
+    prompt: "Dusk",
+  });
+  await saveDesign(draft);
+  expect(addBackgroundLibraryImage).toHaveBeenLastCalledWith(draft.path, {
+    source: "added",
+    prompt: "Dusk",
+  });
+});
+
+it("removes the library copy an unsaved apply created, but keeps known and saved entries", async () => {
+  vi.mocked(listBackgroundLibrary).mockResolvedValue([]);
+  await applyDesign({} as AppearanceSettings, draft);
+  expect(deleteBackgroundLibraryImage).toHaveBeenCalledWith(image.id);
+  vi.mocked(deleteBackgroundLibraryImage).mockClear();
+  vi.mocked(addBackgroundLibraryImage).mockClear();
+  vi.mocked(listBackgroundLibrary).mockResolvedValue([{ ...image, path: draft.path! }]);
+  await applyDesign({} as AppearanceSettings, draft);
+  expect(addBackgroundLibraryImage).not.toHaveBeenCalled();
+  expect(deleteBackgroundLibraryImage).not.toHaveBeenCalled();
+  vi.mocked(listBackgroundLibrary).mockResolvedValue([]);
+  saveSavedThemes([theme()]);
+  await applyDesign({} as AppearanceSettings, draft);
+  expect(deleteBackgroundLibraryImage).not.toHaveBeenCalled();
 });

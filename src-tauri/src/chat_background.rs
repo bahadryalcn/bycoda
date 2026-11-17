@@ -114,7 +114,10 @@ fn store_background_bytes(app: &AppHandle, bytes: &[u8], ext: &str) -> Result<St
         .map_err(|e| e.to_string())?;
     let id = format!("{:x}", Sha256::digest(bytes));
     let dest = backgrounds_dir(app)?.join(format!("asset-{id}.{ext}"));
-    if !dest.exists() {
+    // A torn or truncated earlier write must not be trusted just because the name exists.
+    let intact =
+        std::fs::metadata(&dest).is_ok_and(|m| m.is_file() && m.len() == bytes.len() as u64);
+    if !intact {
         let mut total = bytes.len() as u64;
         for entry in std::fs::read_dir(backgrounds_dir(app)?).map_err(|e| e.to_string())? {
             let entry = entry.map_err(|e| e.to_string())?;

@@ -54,3 +54,11 @@ it("bounds legacy label aliases and removes them when their immutable media chan
   expect(backgroundDisplayName("/legacy.html", replaced)).toBe("Live scene");
   expect(dropImageReference(saved, id)[0].backgroundPaths).toBeUndefined();
 });
+
+it("resolves a copy that shares its original's media by its own design id", () => {
+  const first = theme("Original", "one"),
+    copy = theme("Copy", "two", 2);
+  expect(backgroundDesign(path, [first, copy], undefined, "two")?.name).toBe("Copy");
+  expect(backgroundDisplayName(path, [first, copy], undefined, "two")).toBe("Copy");
+  expect(backgroundDesign(path, [first, copy], undefined, "missing")?.name).toBe("Original");
+});
