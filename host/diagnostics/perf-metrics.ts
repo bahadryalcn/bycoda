@@ -191,6 +191,7 @@ const RPC_METHOD_NAMES: readonly string[] = [
   "decisionModels.routing.set",
   "decisionModels.catalog.get",
   "decisionModels.decide",
+  "secrets.input.list",
   "secrets.owner.list",
   "assistant.request",
   "assistant.ownerActive",
