@@ -40,7 +40,8 @@ it.each(["sh", "bash", "python", ""])("keeps a copy action on %s fences", async 
     await act(async () => button.click());
     expect(copy).toHaveBeenLastCalledWith(code);
     expect(button.getAttribute("aria-label")).toBe("Copied");
-    expect(button.classList.contains("is-copied")).toBe(true);
+    expect(button.dataset.copyState).toBe("copied");
+    expect(button.querySelector('[data-tone="success"]')).not.toBeNull();
     expect(shell.dataset.collapsed).toBe("false");
   } finally {
     act(() => root.unmount());

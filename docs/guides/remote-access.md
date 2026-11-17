@@ -78,18 +78,19 @@ Pairing and device permissions still apply. A headless Host does not run the
 desktop account publisher. Quick Tunnels have no uptime guarantee and do not
 support SSE; HTTP RPC remains the fallback transport.
 
-**Settings → Connections** lists **Machines found** above the saved machines. It
-combines computers signed in to your account, Tailscale devices and SSH config
-aliases, each with its OS, online state and sources; **Refresh machines** reloads
-it. Choose **Add** to connect one. A machine with an SSH address is set up as in
-the SSH section below, without a form. Manual entry stays under **Advanced: add
-manually**, collapsed by default.
+**Settings → Connections → Computers** lists your saved computers. **Add a computer**
+opens a dialog: **Found** combines computers signed in to your account, Tailscale
+devices, SSH config aliases and known hosts, each with its sources and online state,
+with a search by name or address. Choose **Add** to connect one. A machine with an
+SSH address is set up as in the SSH section below, without a form; its progress and
+any host key or password prompt show on the Computers tab. **Enter address** holds
+the SSH and Host URL form.
 
 Each saved machine row shows its status and a route count; **N routes ›** opens
 its addresses. The row's switch turns that machine's connection on or off.
 
 A computer that only the account knows (no SSH address) is added with one click
-from Machines found. The requesting desktop sends an end-to-end
+from **Add a computer → Found**. The requesting desktop sends an end-to-end
 encrypted request through the account; the other computer shows the requester's name,
 platform and a six-digit code to compare, with Allow and Deny. On Allow, that computer
 issues a device credential, seals it to the requester's one-time key and the account

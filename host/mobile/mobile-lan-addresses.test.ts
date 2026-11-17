@@ -8,6 +8,12 @@ vi.mock("node:os", async (original) => ({
       { address: "fd7a:115c:a1e0::1", family: "IPv6", internal: false },
     ],
     Ethernet: [{ address: "192.168.2.145", family: "IPv4", internal: false }],
+    "Ethernet 6": [
+      { address: "10.216.60.21", netmask: "255.255.255.255", family: "IPv4", internal: false },
+    ],
+    "Ethernet 5": [
+      { address: "192.168.95.2", netmask: "255.255.255.0", family: "IPv4", internal: false },
+    ],
     Public: [{ address: "203.0.113.7", family: "IPv4", internal: false }],
     "Loopback Pseudo-Interface 1": [{ address: "127.0.0.1", family: "IPv4", internal: true }],
     Cgnat: [{ address: "100.128.0.1", family: "IPv4", internal: false }],
@@ -16,11 +22,39 @@ vi.mock("node:os", async (original) => ({
   }),
 }));
 
-const { reachableAddresses } = await import("./mobile-lan");
+const { reachableAddresses, localMobileAddresses, MobileLanAccess } = await import("./mobile-lan");
+import { networkInterfaces } from "node:os";
 
 describe("reachableAddresses", () => {
   it("reports home-network then Tailscale IPv4 addresses, never public or loopback ones", () => {
-    expect(reachableAddresses()).toEqual(["192.168.2.145", "100.97.82.0"]);
+    expect(reachableAddresses()).toEqual(["192.168.2.145", "192.168.95.2", "100.97.82.0"]);
+  });
+  it("excludes point-to-point VPNs and orders the default-route interface first", () => {
+    expect(localMobileAddresses(networkInterfaces(), "192.168.95.2")).toEqual([
+      "192.168.95.2",
+      "192.168.2.145",
+    ]);
+    expect(reachableAddresses(networkInterfaces(), "192.168.95.2")).toEqual([
+      "192.168.95.2",
+      "192.168.2.145",
+      "100.97.82.0",
+    ]);
+  });
+  it("includes interface labels in status without binding a listener", async () => {
+    const access = new MobileLanAccess(
+      "missing-mobile-address-fixture/state.json",
+      "pc",
+      () => 3776,
+      () => localMobileAddresses(networkInterfaces(), "192.168.2.145"),
+    );
+    try {
+      expect(await access.status()).toMatchObject({
+        state: "setup-required",
+        addressInterfaces: { "192.168.2.145": "Ethernet", "192.168.95.2": "Ethernet 5" },
+      });
+    } finally {
+      await access.close();
+    }
   });
 
   it("leaves out virtual adapters another computer cannot reach", () => {

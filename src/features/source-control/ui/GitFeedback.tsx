@@ -6,10 +6,10 @@ import { t, useLocale } from "../../../shared/i18n/git";
 import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
+import { CopyButton } from "../../../shared/ui/CopyButton";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { createNote } from "../../notes";
 import { requestAddToChat } from "../../sessions/public/quoteDraft";
-import { copyText } from "../../../platform/tauri/clipboard";
 import { requestWorktreeManagement } from "../model/worktreeManagement";
 
 export function GitLoading({ text }: { text: string }) {
@@ -50,14 +50,11 @@ function GitFeedbackContent({
   useLocale();
   // A machine connection failure is explained once by the central connection notice.
   const shownCentrally = useConnectionErrorShownCentrally(kind === "error" ? detail : undefined);
-  const [copying, setCopying] = useState(false);
-  const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState<string>();
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const alive = useRef(true);
-  const copyPending = useRef(false);
   const notePending = useRef(false);
   useEffect(() => {
     alive.current = true;
@@ -97,28 +94,13 @@ function GitFeedbackContent({
           onClose={() => setOpen(false)}
           footer={
             <ModalActions align="start">
-              <Button
+              <CopyButton
                 variant="link"
-                loading={copying}
-                onClick={async () => {
-                  if (copyPending.current) return;
-                  copyPending.current = true;
-                  setCopying(true);
-                  setCopyError(undefined);
-                  try {
-                    await copyText(detail);
-                    if (alive.current) setCopied(true);
-                  } catch (error) {
-                    if (alive.current)
-                      setCopyError(error instanceof Error ? error.message : String(error));
-                  } finally {
-                    copyPending.current = false;
-                    if (alive.current) setCopying(false);
-                  }
-                }}
-              >
-                {t(copied ? "Copied" : "Copy output")}
-              </Button>
+                label={t("Copy output")}
+                text={detail}
+                resetKeys={[detail]}
+                onClick={() => setCopyError(undefined)}
+              />
               <Button
                 loading={saving}
                 disabled={saved}
@@ -173,9 +155,9 @@ function GitFeedbackContent({
             >
               {detail}
             </OutputBlock>
-            {copied || saved ? (
+            {saved ? (
               <Text role="status" as="p" size="inherit" tone="secondary">
-                {t(saved ? "Saved" : "Copied")}
+                {t("Saved")}
               </Text>
             ) : null}
             {copyError ? <InlineError>{copyError}</InlineError> : null}

@@ -33,6 +33,7 @@ import {
   FolderOpen,
   Globe,
   CheckList,
+  MoreHorizontal,
   Play,
   Plus,
   Terminal,
@@ -70,7 +71,10 @@ type ProjectQuickActionsProps = {
   actionsCwd?: string;
   onRun?: (action: ProjectAction) => void;
   shortcutsEnabled?: boolean;
+  /** Frequent actions shown as header buttons, after the run action. */
   additionalItems?: readonly ExpandingButtonGroupItem[];
+  /** Occasional actions listed in the "More actions" menu, above the project menus. Each needs `onSelect`. */
+  overflowItems?: readonly ExpandingButtonGroupItem[];
   /** Structural control kept outside the action group, after a gap. */
   trailing?: ReactNode;
 };
@@ -87,11 +91,12 @@ function ProjectQuickActionsFor({
   onRun,
   shortcutsEnabled = true,
   additionalItems = [],
+  overflowItems = [],
   trailing,
 }: ProjectQuickActionsProps) {
   const t = useT();
   const [menu, setMenu] = useState<{
-    kind: "open" | "actions";
+    kind: "open" | "actions" | "more";
     anchor: HTMLElement;
   } | null>(null);
   const [editors, setEditors] = useState<ExternalEditor[]>([]);
@@ -108,8 +113,7 @@ function ProjectQuickActionsFor({
   const pendingLaunch = useRef(false);
   const launchGeneration = useRef(0);
   const local = isLocalProject(cwd);
-  const actionsTrigger = useRef<HTMLButtonElement>(null);
-  const openTrigger = useRef<HTMLButtonElement>(null);
+  const moreTrigger = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const reload = () => setActions(loadProjectActions(actionsCwd));
@@ -297,54 +301,65 @@ function ProjectQuickActionsFor({
           },
         ]
       : []),
+    ...additionalItems,
     {
-      id: "project-actions",
-      label: t("Project actions"),
-      tooltip: `${t("Project actions")}\n${cwd}`,
-      icon: <CheckList className="icon-sm" />,
+      id: "more-actions",
+      label: t("More actions"),
+      icon: <MoreHorizontal className="icon-sm" strokeWidth={1.75} />,
       render: (renderTrigger) =>
         renderTrigger({
-          ref: actionsTrigger,
+          ref: moreTrigger,
           "aria-haspopup": "menu",
-          "aria-expanded": menu?.kind === "actions",
+          "aria-expanded": menu != null,
           onSelect: () => {
             setError("");
-            if (actionsTrigger.current)
-              setMenu(
-                menu?.kind === "actions"
-                  ? null
-                  : { kind: "actions", anchor: actionsTrigger.current },
-              );
+            if (moreTrigger.current)
+              setMenu(menu ? null : { kind: "more", anchor: moreTrigger.current });
           },
         }),
+    },
+  ];
+  // The project menus open in place of this one, at the same trigger.
+  const moreItems: ExplorerMenuItem[] = [
+    ...overflowItems.map((item) => ({
+      kind: "item" as const,
+      id: `item:${item.id}`,
+      label: item.label,
+      icon: item.icon,
+      shortcut: item.shortcut ?? undefined,
+      disabled: item.disabled,
+      checked: item.active || undefined,
+    })),
+    ...(overflowItems.length ? [{ kind: "sep" as const }] : []),
+    {
+      kind: "item",
+      id: "menu:actions",
+      label: t("Project actions"),
+      icon: <CheckList className="icon-sm" />,
     },
     ...(local
       ? [
           {
-            id: "open-project",
+            kind: "item" as const,
+            id: "menu:open",
             label: t("Open project in"),
-            tooltip: `${t("Open project in")}\n${cwd}`,
             icon: <FolderOpen className="icon-sm" />,
-            render: (
-              renderTrigger: Parameters<NonNullable<ExpandingButtonGroupItem["render"]>>[0],
-            ) =>
-              renderTrigger({
-                ref: openTrigger,
-                "aria-haspopup": "menu",
-                "aria-expanded": menu?.kind === "open",
-                onSelect: () => {
-                  setError("");
-                  if (openTrigger.current)
-                    setMenu(
-                      menu?.kind === "open" ? null : { kind: "open", anchor: openTrigger.current },
-                    );
-                },
-              }),
           },
         ]
       : []),
-    ...additionalItems,
   ];
+  const pickMore = (id: string) => {
+    const anchor = menu?.anchor;
+    if (id === "menu:actions" || id === "menu:open") {
+      if (anchor) setMenu({ kind: id === "menu:open" ? "open" : "actions", anchor });
+      return;
+    }
+    setMenu(null);
+    const item = overflowItems.find((value) => `item:${value.id}` === id);
+    void Promise.resolve()
+      .then(() => item?.onSelect?.())
+      .catch((reason: unknown) => setError(String(reason)));
+  };
   return (
     <div
       className="flex shrink-0 items-center gap-1"
@@ -357,12 +372,21 @@ function ProjectQuickActionsFor({
       {trailing ? <div className="ms-1 flex items-center">{trailing}</div> : null}
       {menu ? (
         <ExplorerMenu
+          key={menu.kind}
           anchor={menu.anchor}
-          ariaLabel={menu.kind === "open" ? t("Open project in") : t("Project actions")}
-          items={menu.kind === "open" ? openItems : actionItems}
+          ariaLabel={
+            menu.kind === "open"
+              ? t("Open project in")
+              : menu.kind === "more"
+                ? t("More actions")
+                : t("Project actions")
+          }
+          items={menu.kind === "open" ? openItems : menu.kind === "more" ? moreItems : actionItems}
           onClose={() => setMenu(null)}
           onPick={(id) => {
-            if (menu.kind === "open") {
+            if (menu.kind === "more") {
+              pickMore(id);
+            } else if (menu.kind === "open") {
               setMenu(null);
               void (id === "folder" ? revealPath(cwd) : openInExternalEditor(id, cwd)).catch(
                 (reason: unknown) => setError(String(reason)),

@@ -1,6 +1,6 @@
 # Manage decision models
 
-Open **Settings > Models > Providers**, section **Decision models**. These models answer small, typed
+Open **Settings > Decision models**. These models answer small, typed
 questions, such as choosing a visible button or classifying a message. They do not
 replace your conversation model or grant permission to send, publish or delete.
 
@@ -34,7 +34,7 @@ model, or connect a local service, API provider or custom endpoint.
 then structured LLM sources. It is a routing policy, not a bundled model. With no
 connected source, decision-model requests are unavailable.
 
-Task routing uses one table, with customized tasks first. Its compact view shows
+Decision routing uses one table, with customized tasks first. Its compact view shows
 existing custom routes; expand it to edit all tasks, their source order and
 confidence thresholds. Existing routes stay in place until you save. Clear a
 task's source selection to return it to Automatic. Selected source names appear

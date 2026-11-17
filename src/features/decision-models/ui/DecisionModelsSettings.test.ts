@@ -577,7 +577,7 @@ describe("DecisionModelsSettings privacy and routing", () => {
   it("hides routing save until a route changes", async () => {
     await renderSettings({ sources: [source()] });
 
-    expect(buttonByText("Save routing")).toBeUndefined();
+    expect(buttonByText("Save routing")?.disabled ?? true).toBe(true);
 
     const thresholds = document.querySelectorAll<HTMLInputElement>('input[inputmode="decimal"]');
 

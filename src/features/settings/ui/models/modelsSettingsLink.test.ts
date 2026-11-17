@@ -15,7 +15,7 @@ import { providersTabForSetting } from "../../model/providerSettingsTabs";
 
 it("routes every Models anchor and retired section to the one Models page", () => {
   expect(MODELS_TABS).toEqual(["order", "roles", "chat", "delegation"]);
-  const tabs = { order: "work", roles: "work", chat: "chat", delegation: "delegation" };
+  const tabs = { order: "work", roles: "work", chat: "defaults", delegation: "defaults" };
   for (const tab of MODELS_TABS) {
     const anchor = modelsTabAnchor(tab);
     expect(providersTabForSetting(anchor)).toBe(tabs[tab]);
@@ -23,10 +23,10 @@ it("routes every Models anchor and retired section to the one Models page", () =
   }
   expect(settingsSectionForAnchor("work")).toBe("providers");
   expect(settingsSectionForAnchor("models")).toBe("providers");
-  expect(providersTabForSetting("agent-clis")).toBe("chat");
-  expect(providersTabForSetting("subagent-max-effort")).toBe("delegation");
+  expect(providersTabForSetting("agent-clis")).toBe("defaults");
+  expect(providersTabForSetting("subagent-max-effort")).toBe("defaults");
   expect(providersTabForSetting("enabled-models")).toBe("providers");
-  expect(providersTabForSetting("decision-models")).toBe("providers");
+  expect(settingsSectionForAnchor("providers", "decision-models")).toBe("decisionModels");
   expect(providersTabForSetting(null)).toBeUndefined();
   expect(settingsSectionPresentation("models")).toBe("wide");
 });

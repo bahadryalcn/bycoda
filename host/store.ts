@@ -60,6 +60,7 @@ import { StoreDatabase, type StoreStatement } from "./store-db";
 import { initializeNativeDeliveryStore } from "./native-delivery/native-delivery-store";
 import { randomUUID, createHash, randomBytes } from "node:crypto";
 import { dirname, join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import type {
   CommandReceipt,
   HostProject,
@@ -312,6 +313,7 @@ export class HostStore {
   private receiptWrites = 0;
   // token -> data_version at the moment its device row was last seen.
   private authCache = new Map<string, { version: number; expires: number }>();
+  private deviceLastSeen = new Map<string, number>();
   private pendingBefore?: Map<string, PendingWrite | undefined>;
   private snapshotPending(id: string): void {
     if (!this.pendingBefore || this.pendingBefore.has(id)) return;
@@ -619,6 +621,14 @@ export class HostStore {
         payload TEXT NOT NULL
       );
     `);
+    const deviceColumns = await this.db.prepare("PRAGMA table_info(devices)").all();
+    if (!deviceColumns.some((column) => column.name === "kind")) {
+      await this.db.exec(`BEGIN;
+        ALTER TABLE devices ADD COLUMN kind TEXT;
+        ALTER TABLE devices ADD COLUMN paired_at INTEGER;
+        ALTER TABLE devices ADD COLUMN last_seen_at INTEGER;
+        COMMIT;`);
+    }
     const columns = await this.db.prepare("PRAGMA table_info(sessions)").all();
     if (!columns.some((column) => column.name === "summary"))
       await this.db.exec("ALTER TABLE sessions ADD COLUMN summary TEXT");
@@ -1955,7 +1965,8 @@ export class HostStore {
                       );
                 if (position === undefined) continue;
                 const block = blocks[position];
-                if (block.author && JSON.stringify(block.author) !== JSON.stringify(author))
+                // By value, not by key order: native storage writes the same author sorted.
+                if (block.author && !isDeepStrictEqual(block.author, author))
                   throw new Error("Host message authorship cannot be replaced.");
                 if (block.author) continue;
                 if (!provenanceChanged) blocks = blocks.slice();
@@ -2780,11 +2791,16 @@ export class HostStore {
       return { events: rows, revision: snapshot.revision };
     });
   }
-  async issueDevice(name: string): Promise<{ id: string; token: string }> {
+  async issueDevice(
+    name: string,
+    kind?: "phone" | "desktop",
+  ): Promise<{ id: string; token: string }> {
     return this.db.storeScope(async () => {
       const id = randomUUID();
       const token = randomBytes(32).toString("base64url");
-      await this.db.prepare("INSERT INTO devices VALUES (?, ?, ?)").run(id, name, this.hash(token));
+      await this.db
+        .prepare("INSERT INTO devices (id, name, hash, kind, paired_at) VALUES (?, ?, ?, ?, ?)")
+        .run(id, name, this.hash(token), kind ?? null, Date.now());
       return { id, token };
     });
   }
@@ -2816,6 +2832,48 @@ export class HostStore {
           isCurrent: Number(row.is_current) === 1,
         })),
         devicesTruncated: rows.length > 256,
+      };
+    });
+  }
+  /** Additive credential inventory; pairedDevices keeps its released mobile shape. */
+  async pairedDeviceDetails(currentToken: string): Promise<{
+    devices: {
+      id: string;
+      name: string;
+      isCurrent: boolean;
+      kind?: "phone" | "desktop";
+      pairedAt?: number;
+      lastSeenAt?: number;
+    }[];
+    devicesTruncated: boolean;
+  }> {
+    return this.db.storeScope(async () => {
+      const paired = await this.pairedDevices(currentToken);
+      const rows = await this.db
+        .prepare(
+          "SELECT id, kind, paired_at, last_seen_at FROM devices ORDER BY (hash=?) DESC, id LIMIT 256",
+        )
+        .all(this.hash(currentToken));
+      const metadata = new Map(rows.map((row) => [String(row.id), row]));
+      return {
+        ...paired,
+        devices: paired.devices.map((device) => {
+          const row = metadata.get(device.id);
+          return {
+            ...device,
+            ...(row?.kind === "phone" || row?.kind === "desktop" ? { kind: row.kind } : {}),
+            ...(typeof row?.paired_at === "number" &&
+            Number.isSafeInteger(row.paired_at) &&
+            row.paired_at >= 0
+              ? { pairedAt: row.paired_at }
+              : {}),
+            ...(typeof row?.last_seen_at === "number" &&
+            Number.isSafeInteger(row.last_seen_at) &&
+            row.last_seen_at >= 0
+              ? { lastSeenAt: row.last_seen_at }
+              : {}),
+          };
+        }),
       };
     });
   }
@@ -2864,10 +2922,21 @@ export class HostStore {
         return true;
       }
       this.authCache.delete(token);
-      const known = !!(await this.db
-        .prepare("SELECT id FROM devices WHERE hash=?")
-        .get(this.hash(token)));
+      const hash = this.hash(token);
+      const known = !!(await this.db.prepare("SELECT id FROM devices WHERE hash=?").get(hash));
       if (known) {
+        const now = Date.now();
+        const previous = this.deviceLastSeen.get(hash);
+        if (previous === undefined || now - previous >= 60_000) {
+          this.deviceLastSeen.set(hash, now);
+          while (this.deviceLastSeen.size > 256)
+            this.deviceLastSeen.delete(this.deviceLastSeen.keys().next().value!);
+          try {
+            await this.db.prepare("UPDATE devices SET last_seen_at=? WHERE hash=?").run(now, hash);
+          } catch {
+            // Activity metadata is best effort; valid credentials still authenticate.
+          }
+        }
         this.authCache.set(token, { version, expires: Date.now() + 1500 });
         while (this.authCache.size > 256)
           this.authCache.delete(this.authCache.keys().next().value!);
@@ -2890,6 +2959,7 @@ export class HostStore {
     this.authorityListeners.clear();
     this.authorizationListeners.clear();
     this.authCache.clear();
+    this.deviceLastSeen.clear();
     void this.sessionReadProcesses.close().catch(() => undefined);
     const closing = this.db.close(() => this.flushAll());
     if (this.db.ownsScope) return closing;

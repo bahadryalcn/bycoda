@@ -71,6 +71,7 @@ export const SETTINGS_SECTION_ORDER: readonly SettingsSectionId[] = [
   "groupLock",
   "archive",
   "providers",
+  "decisionModels",
   "usage",
   "work",
   "skills",

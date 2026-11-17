@@ -48,7 +48,7 @@ it("shows one compact status and an accent update action with version columns", 
       onSetup: vi.fn(),
     }),
   );
-  expect(html).toContain("provider-inventory-row");
+  expect(html).toContain("provider-cli-status");
   expect(html).toContain("0.94.0");
   expect(html).toContain("0.95.0");
   expect(html).toContain("Update available");
@@ -101,7 +101,6 @@ it("omits repeated bulk-check times and explains unavailable release feeds", () 
   expect(html).not.toContain("Unknown");
   expect(html).not.toContain("Check for updates");
   expect(html).not.toContain("now");
-  expect(html).toContain("<td");
 });
 
 it("uses failure glyph with a retained successful version check", () => {

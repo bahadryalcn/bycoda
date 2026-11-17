@@ -187,6 +187,19 @@ function body() {
   };
 }
 
+it("shows save progress and explicitly saves before the autosave delay", async () => {
+  await render();
+  expect(container.querySelector('[data-note-save-state="saved"]')).not.toBeNull();
+  vi.useFakeTimers();
+  await input(body(), "Save this note now");
+  expect(container.querySelector('[data-note-save-state="unsaved"]')).not.toBeNull();
+  await click("Save");
+  expect(stored.find((note) => note.sourceSessionId === sessionId)?.body).toBe(
+    "Save this note now",
+  );
+  expect(container.querySelector('[data-note-save-state="saved"]')).not.toBeNull();
+});
+
 it("keeps autosaving the draft after deletion fails", async () => {
   await render();
   vi.useFakeTimers();
@@ -288,18 +301,24 @@ it("confirms copying the current draft only after clipboard success and permits 
     .spyOn(navigator.clipboard, "writeText")
     .mockRejectedValueOnce(new Error("Clipboard unavailable"))
     .mockImplementationOnce(() => pending);
-  const copyButton = () => container.querySelector<HTMLButtonElement>('[data-id="copy"]')!;
+  const copyButton = () =>
+    container.querySelector<HTMLButtonElement>(
+      'button[data-copy-state], button[aria-label="Copy note"]',
+    )!;
   try {
     await click("Copy note");
-    expect(copyButton().dataset.state).toBe("idle");
-    await click("Copy note");
-    await click("Copy note");
+    expect(copyButton().getAttribute("data-copy-state")).toBe("failed");
+    expect(copyButton().getAttribute("aria-label")).toBe("Copy failed. Try again.");
+    await act(async () => {
+      copyButton().click();
+      copyButton().click();
+    });
     expect(write).toHaveBeenCalledTimes(2);
     expect(write).toHaveBeenLastCalledWith("Current clipboard draft");
     expect(copyButton().getAttribute("aria-busy")).toBe("true");
-    expect(copyButton().dataset.state).toBe("idle");
+    expect(container.querySelector('button[aria-label="Copied"]')).toBeNull();
     await act(async () => finish());
-    expect(copyButton().dataset.state).toBe("done");
+    expect(container.querySelector('button[aria-label="Copied"]')).not.toBeNull();
   } finally {
     write.mockRestore();
   }

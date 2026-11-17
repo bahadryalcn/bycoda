@@ -2286,7 +2286,7 @@ describe("Host writer transfer after settled task review", () => {
     expect(engine.hasRetainedProviderWriter(id)).toBe(true);
   });
 
-  it("uses the latest settled Host turn receipt and refuses unsupported transfer", async () => {
+  it("uses the latest settled Host turn receipt and retires a provider without the exact hook by its stop", async () => {
     const { engine, id, provider, turns, waitForTurnStart } = await setup();
     for (let index = 0; index < 2; index++) {
       const receipt = await engine.command({
@@ -2318,17 +2318,11 @@ describe("Host writer transfer after settled task review", () => {
     const operationContext = retained!.operationContext as { hostRun: object };
     expect(writers.runs.get(operationContext.hostRun)?.source).toBeUndefined();
     expect((retained!.activity as { bookkeepingWork?: unknown }).bookkeepingWork).toBeUndefined();
-    const hook = provider.retireOriginal;
     delete provider.retireOriginal;
     const grant = vi.fn(async () => "lease");
-    await expect(engine.withRetiredProviderWriter(id, grant)).rejects.toThrow(
-      "HOST_WRITER_RETIREMENT_FAILED",
-    );
-    expect(provider.stop).not.toHaveBeenCalled();
-    expect(grant).not.toHaveBeenCalled();
-    provider.retireOriginal = hook;
-    await engine.withRetiredProviderWriter(id, grant);
+    expect(await engine.withRetiredProviderWriter(id, grant)).toBe("lease");
     expect(provider.stop).toHaveBeenCalledExactlyOnceWith(id, turns[1].input.operationContext);
+    expect(grant).toHaveBeenCalledOnce();
     expect(internals.retainedWriterTurns.has(id)).toBe(false);
     expect(internals.retainedProviders.has(id)).toBe(false);
   });

@@ -617,6 +617,14 @@ describe("project filesystem identity", () => {
     expect(notify).not.toHaveBeenCalled();
     expect((await store.addProject(join(directory, "another"), "Another")).id).not.toBe(project.id);
   });
+  it("reuses a project registered with backslashes when added with slashes", async () => {
+    const directory = open();
+    const store = new HostStore(join(directory, "host.db"));
+    cleanups.push(async () => await store.close());
+    const project = await store.addProject(directory.replace(/\//g, "\\"), "Original");
+    expect((await store.addProject(directory.replace(/\\/g, "/"), "Slashed")).id).toBe(project.id);
+    expect(await store.projects()).toHaveLength(1);
+  });
   it("preserves legacy project IDs and their sessions when opening an alias", async () => {
     const directory = open();
     const store = new HostStore(join(directory, "host.db"));
@@ -969,6 +977,59 @@ describe("sparse journal checkpoints", () => {
     }
   });
 });
+it("accepts a mirrored message author whose keys come back in another order", async () => {
+  const store = new HostStore(join(open(), "author-order.db"));
+  cleanups.push(async () => await store.close());
+  const project = await store.addProject("/author-order", "Author order");
+  const author = {
+    kind: "delegation",
+    runId: "run",
+    title: "Translate",
+    reason: "completion",
+  } as const;
+  const notice: Block = { id: "notice", role: "user", text: "Subagent completion", author };
+  await store.save(
+    session("parent", project.id, {
+      session: { ...session("parent", project.id).session, blocks: [notice] },
+    }),
+    {},
+  );
+  // The desktop's native storage writes object keys sorted; the author itself is unchanged.
+  const sorted = { kind: "delegation", reason: "completion", runId: "run", title: "Translate" };
+  const current = await store.session("parent");
+  await store.save(
+    {
+      ...current,
+      revision: current.revision + 1,
+      session: {
+        ...current.session,
+        blocks: [
+          { ...notice, author: sorted } as Block,
+          { id: "reply", role: "assistant", text: "Ok" },
+        ],
+      },
+    },
+    {},
+  );
+  expect((await store.session("parent")).session.blocks.map((block) => block.id)).toEqual([
+    "notice",
+    "reply",
+  ]);
+  const next = await store.session("parent");
+  await expect(
+    store.save(
+      {
+        ...next,
+        revision: next.revision + 1,
+        session: {
+          ...next.session,
+          blocks: [{ ...notice, author: { ...author, title: "Forged" } }],
+        },
+      },
+      {},
+    ),
+  ).rejects.toThrow("authorship");
+});
 it("keeps both session ownership indexes consistent when moving projects", async () => {
   const directory = open();
   const store = new HostStore(join(directory, "ownership.db"));
@@ -1316,6 +1377,113 @@ describe("HostStore.adopted", () => {
   });
 });
 describe("HostStore device credentials", () => {
+  it("caps details at 256, orders current first then id, and persists phone metadata", async () => {
+    const path = join(open(), "device-details.db");
+    let store = new HostStore(path);
+    try {
+      const current = await store.issueDevice("Phone", "phone");
+      const pairedAt = (await store.pairedDeviceDetails(current.token)).devices[0]?.pairedAt;
+      await store.transaction(async () => {
+        for (let index = 0; index < 256; index++)
+          await store.db
+            .prepare("INSERT INTO devices (id, name, hash) VALUES (?, ?, ?)")
+            .run(`other-${String(index).padStart(3, "0")}`, "\n", `hash-${index}`);
+      });
+      await store.close();
+      store = new HostStore(path);
+      const details = await store.pairedDeviceDetails(current.token);
+      expect(details.devicesTruncated).toBe(true);
+      expect(details.devices).toHaveLength(256);
+      expect(details.devices[0]).toEqual({
+        id: current.id,
+        name: "Phone",
+        isCurrent: true,
+        kind: "phone",
+        pairedAt,
+      });
+      expect(details.devices[1]).toEqual({ id: "other-000", name: "other-000", isCurrent: false });
+      expect(details.devices.at(-1)?.id).toBe("other-254");
+      expect(JSON.stringify(details)).not.toContain("hash");
+      expect(JSON.stringify(details)).not.toContain(current.token);
+    } finally {
+      await store.close();
+    }
+  });
+  it("migrates legacy devices without inventing metadata and persists new metadata", async () => {
+    const path = join(open(), "devices.db");
+    const legacy = new DatabaseSync(path);
+    legacy.exec(`CREATE TABLE devices (id TEXT PRIMARY KEY, name TEXT NOT NULL, hash TEXT NOT NULL UNIQUE);
+      INSERT INTO devices VALUES ('legacy', 'Old device', 'old-hash');`);
+    legacy.close();
+    const store = new HostStore(path);
+    const clock = vi.spyOn(Date, "now").mockReturnValue(100_000);
+    try {
+      const current = await store.issueDevice("Desktop\nname", "desktop");
+      expect(await store.pairedDeviceDetails(current.token)).toEqual({
+        devices: [
+          {
+            id: current.id,
+            name: "Desktop name",
+            isCurrent: true,
+            kind: "desktop",
+            pairedAt: 100_000,
+          },
+          { id: "legacy", name: "Old device", isCurrent: false },
+        ],
+        devicesTruncated: false,
+      });
+      expect((await store.pairedDevices(current.token)).devices[0]).toEqual({
+        id: current.id,
+        name: "Desktop name",
+        isCurrent: true,
+      });
+      await store.db
+        .prepare("UPDATE devices SET kind='invalid', paired_at=-1, last_seen_at=1.5 WHERE id=?")
+        .run(current.id);
+      expect((await store.pairedDeviceDetails(current.token)).devices[0]).toEqual({
+        id: current.id,
+        name: "Desktop name",
+        isCurrent: true,
+      });
+      await store.revokeToken(current.token);
+      await expect(store.pairedDeviceDetails(current.token)).rejects.toThrow("revoked");
+    } finally {
+      clock.mockRestore();
+      await store.close();
+    }
+  });
+  it("throttles last-seen writes across DB lookups and ignores write failures", async () => {
+    const store = new HostStore(join(open(), "seen.db"));
+    const clock = vi.spyOn(Date, "now").mockReturnValue(100_000);
+    try {
+      const current = await store.issueDevice("Phone", "phone");
+      expect(await store.authenticated(current.token)).toBe(true);
+      const lastSeen = async () =>
+        (await store.pairedDeviceDetails(current.token)).devices[0]?.lastSeenAt;
+      expect(await lastSeen()).toBe(100_000);
+      clock.mockReturnValue(101_000);
+      expect(await store.authenticated(current.token)).toBe(true);
+      expect(await lastSeen()).toBe(100_000);
+      // Revocation clears the auth cache, forcing a fresh lookup of the surviving token.
+      await store.revokeDevice("missing");
+      expect(await store.authenticated(current.token)).toBe(true);
+      expect(await lastSeen()).toBe(100_000);
+      clock.mockReturnValue(160_000);
+      await store.revokeDevice("missing");
+      expect(await store.authenticated(current.token)).toBe(true);
+      expect(await lastSeen()).toBe(160_000);
+      await store.db.exec(
+        "CREATE TRIGGER reject_seen BEFORE UPDATE OF last_seen_at ON devices BEGIN SELECT RAISE(FAIL, 'read only'); END;",
+      );
+      clock.mockReturnValue(220_000);
+      await store.revokeDevice("missing");
+      expect(await store.authenticated(current.token)).toBe(true);
+      expect(await lastSeen()).toBe(160_000);
+    } finally {
+      clock.mockRestore();
+      await store.close();
+    }
+  });
   it("drops a remembered credential the moment it is revoked", async () => {
     const directory = open();
     const store = new HostStore(join(directory, "host.db"));

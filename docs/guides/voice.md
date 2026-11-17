@@ -43,7 +43,9 @@ translate to English under **Text cleanup options**. Failed cleanup keeps the
 recognized text, and cancelled dictation cannot insert a late result. This uses
 the existing isolated utility runner and its provider restrictions.
 
-Processing options include removing filler words and silence filtering. Filtering
+Processing options include removing filler words and silence filtering. Filler
+removal drops hesitations such as "eee", "ııı", "um" and "hmm", including
+stretched forms, with their trailing comma or ellipsis. Filtering
 is on by default. Turning it off transcribes bounded audio chunks, including quiet
 audio, and does not provide live previews while recording.
 
@@ -187,6 +189,9 @@ windows use a native menu so both choices remain reachable in the compact pill.
 The same choice remains available as **I decide when my turn ends**
 in Voice settings.
 Pause length, barge-in and progress announcements remain separate settings.
+**Remove filler words** in Voice settings applies the same filler removal to the
+assistant: your shown transcript and remembered turn omit hesitations, and a
+hesitation alone ("eee") does not start a turn.
 
 In **Conversation style**, choose **Apply professional preset** to
 wait 2.5 seconds at a turn boundary, allow genuine interruptions, hold spoken

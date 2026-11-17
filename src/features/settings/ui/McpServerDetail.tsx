@@ -7,8 +7,8 @@ import { InlineError } from "../../../shared/ui/InlineError";
 import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
 import { Sheet } from "../../../shared/ui/Sheet";
 import { Group, Row, Toggle } from "../../../shared/ui/settings";
-import { Copy, FolderOpen } from "../../../shared/ui/icons";
-import { copyText } from "../../../platform/tauri/clipboard";
+import { FolderOpen } from "../../../shared/ui/icons";
+import { CopyButton } from "../../../shared/ui/CopyButton";
 import { revealPath } from "../../../platform/tauri/fs";
 import { canSignInMcp, MCP_PROVIDER_LABELS } from "../model/mcp";
 import type { McpCatalogEntry, McpEntryStatus } from "../model/mcpCatalog";
@@ -233,19 +233,14 @@ export function McpServerDetail({
                     >
                       <FolderOpen className="icon-sm" />
                     </Button>
-                    <Button
-                      variant="ghost"
+                    <CopyButton
                       iconOnly
                       size="sm"
                       label={t("Copy config path")}
-                      onClick={() =>
-                        void copyText(server.configPath).catch((cause) =>
-                          setFileError(String(cause)),
-                        )
-                      }
-                    >
-                      <Copy className="icon-sm" />
-                    </Button>
+                      text={server.configPath}
+                      resetKeys={[server.configPath]}
+                      onCopyError={(cause) => setFileError(String(cause))}
+                    />
                   </span>
                 </Row>
               ) : null}

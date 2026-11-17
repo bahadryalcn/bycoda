@@ -7,26 +7,20 @@ import { Heading } from "../../../shared/ui/Heading";
 import { Badge } from "../../../shared/ui/Badge";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
+import { CopyButton } from "../../../shared/ui/CopyButton";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
-import { t, useLocale, useT, useFormat } from "../../../shared/i18n";
+import { t, useT, useFormat } from "../../../shared/i18n";
 import { useGithubPrChecks } from "../hooks/useGithubPrChecks";
 import { useJiraWorkingProject } from "../hooks/useJiraWorkingProject";
 import { summarizePrChecks } from "../model/githubPrChecks";
 import { openUrlSafely } from "../../../shared/lib/openUrlSafely";
-import {
-  Check,
-  Copy,
-  ExternalLink,
-  GitCompare,
-  MessageSquare,
-  MessageMultiple,
-} from "../../../shared/ui/icons";
-import { useEffect, useId, useRef, useState, type ComponentPropsWithRef } from "react";
+import { ExternalLink, GitCompare, MessageSquare, MessageMultiple } from "../../../shared/ui/icons";
+import { useId, useRef, useState, type ComponentPropsWithRef } from "react";
 import { InboxProviderMark } from "./InboxProviderMark";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import {
@@ -792,81 +786,17 @@ export function InboxDetail({
  * is ignored. A failure stays visible next to the control until it is retried.
  */
 export function CopyBranchNameButton({ branch }: { branch: string }) {
-  useLocale();
-  const [outcome, setOutcome] = useState<{
-    branch: string;
-    status: "pending" | "copied" | "failed";
-  } | null>(null);
-  const timer = useRef<number | null>(null);
-  const pending = useRef(false);
-  const generation = useRef(0);
-  const clearTimer = () => {
-    if (timer.current != null) window.clearTimeout(timer.current);
-    timer.current = null;
-  };
-
-  useEffect(() => {
-    generation.current += 1;
-    pending.current = false;
-    clearTimer();
-    return () => {
-      generation.current += 1;
-      clearTimer();
-    };
-  }, [branch]);
-
-  const status = outcome?.branch === branch ? outcome.status : null;
-  const label =
-    status === "copied"
-      ? t("Copied")
-      : status === "failed"
-        ? t("Copy failed. Try again.")
-        : t("Copy branch name");
-
-  const copy = () => {
-    if (pending.current) return;
-    pending.current = true;
-    const requested = generation.current;
-    const target = branch;
-    clearTimer();
-    setOutcome({ branch: target, status: "pending" });
-    const settle = (next: "copied" | "failed") => {
-      if (generation.current !== requested) return;
-      pending.current = false;
-      setOutcome({ branch: target, status: next });
-      if (next === "copied") {
-        playCue("copy");
-        timer.current = window.setTimeout(() => setOutcome(null), 2000);
-      }
-    };
-    void copyText(target).then(
-      () => settle("copied"),
-      () => settle("failed"),
-    );
-  };
-
   return (
-    <>
-      <Button
-        variant="ghost"
-        type="button"
-        iconOnly
-        label={label}
-        className="shrink-0"
-        loading={status === "pending"}
-        onClick={copy}
-      >
-        {status === "copied" ? (
-          <Check className="icon-xs" strokeWidth={1.75} />
-        ) : (
-          <Copy className="icon-xs" strokeWidth={1.75} />
-        )}
-      </Button>
-      {status === "failed" ? (
-        <InlineError live="polite" className="shrink-0">
-          {t("Copy failed. Try again.")}
-        </InlineError>
-      ) : null}
-    </>
+    <CopyButton
+      iconOnly
+      type="button"
+      className="shrink-0"
+      label={t("Copy branch name")}
+      resetKeys={[branch]}
+      onCopy={async () => {
+        await copyText(branch);
+        playCue("copy");
+      }}
+    />
   );
 }

@@ -2,13 +2,20 @@ import { truncateGraphemes } from "../../../shared/lib/text/truncate";
 import {
   MODEL_ROUTING_MAX_ENTRIES,
   MODEL_ROUTING_MAX_POOLS,
+  type ModelRoutingDelegation,
   type ModelRoutingEntry,
   type ModelRoutingPool,
   type ModelRoutingRole,
   type ModelRoutingScope,
   type ModelRoutingTarget,
 } from "../../../shared/model/host-contracts/model-routing";
-import { EFFORT_LEVELS } from "../../../shared/model/host-contracts/delegation";
+import {
+  CROSS_ADVISOR_KEY,
+  CROSS_SUBAGENT_MAX_EFFORT_KEY,
+  CROSS_SUBAGENTS_KEY,
+  EFFORT_LEVELS,
+  encodeSubagents,
+} from "../../../shared/model/host-contracts/delegation";
 import { modelRoutingPoolCycle } from "../../../shared/model/modelRoutingPools";
 import { REMOTE_PROVIDERS } from "../../connections/public/protocol";
 import {
@@ -129,18 +136,39 @@ export function candidateValue(candidate: SetupCandidate): number {
   return valueScore({ score: 40 + intelligence * 11, inputUsd: usd, outputUsd: usd });
 }
 
+/** Researched capability score, else the profile's estimate on the same 0-100 scale. */
+function candidateScore(candidate: SetupCandidate): number {
+  return (
+    catalogModelFacts(candidate.target.model)?.score ?? 40 + candidate.profile.intelligence * 11
+  );
+}
+
 /**
- * The researched baseline: models capable of unattended work (intelligence 3+) first, each
- * group by benefit per cost, then the default account; stable for equal candidates.
+ * Where a model belongs in the main order. Owner decision 2026-11-17: strong models at a
+ * moderate price (Opus, Sol) do most work; cheaper capable models (Sonnet, Terra) come next;
+ * top-priced models (Fable, Astra) are kept for when those run out; light models come last.
+ */
+export type SetupTier = "workhorse" | "standard" | "premium" | "light";
+const TIER_RANK: Record<SetupTier, number> = { workhorse: 0, standard: 1, premium: 2, light: 3 };
+export function candidateTier(candidate: SetupCandidate): SetupTier {
+  const { intelligence, cost } = candidate.profile;
+  if (intelligence <= 2) return "light";
+  if (intelligence === 3) return "standard";
+  return cost >= 4 ? "premium" : "workhorse";
+}
+
+/**
+ * The researched baseline: tier first, then capability within the tier, cheaper on ties,
+ * then the default account; stable for equal candidates.
  */
 export function baselineOrder(candidates: SetupCandidate[]): number[] {
   return candidates
-    .map((candidate, index) => ({ candidate, index, value: candidateValue(candidate) }))
+    .map((candidate, index) => ({ candidate, index }))
     .sort(
       (a, b) =>
-        Number(b.candidate.profile.intelligence >= 3) -
-          Number(a.candidate.profile.intelligence >= 3) ||
-        b.value - a.value ||
+        TIER_RANK[candidateTier(a.candidate)] - TIER_RANK[candidateTier(b.candidate)] ||
+        candidateScore(b.candidate) - candidateScore(a.candidate) ||
+        a.candidate.profile.cost - b.candidate.profile.cost ||
         Number(isDefaultAccount(b.candidate.target)) -
           Number(isDefaultAccount(a.candidate.target)) ||
         a.index - b.index,
@@ -235,11 +263,10 @@ export function rulePlan(candidates: SetupCandidate[], names: SetupPoolNames): S
     order.filter((index) => include(candidates[index]!));
   const smartest = pick((c) => c.profile.intelligence >= 4).sort(
     (a, b) =>
-      candidates[b]!.profile.intelligence - candidates[a]!.profile.intelligence ||
+      candidateScore(candidates[b]!) - candidateScore(candidates[a]!) ||
       order.indexOf(a) - order.indexOf(b),
   );
-  let balanced = pick((c) => c.profile.intelligence >= 3 && c.profile.cost <= 2);
-  if (!balanced.length) balanced = pick((c) => c.profile.intelligence === 3);
+  const balanced = pick((c) => ["workhorse", "standard"].includes(candidateTier(c)));
   let fast = pick((c) => c.profile.intelligence <= 2).sort(
     (a, b) => candidates[a]!.profile.cost - candidates[b]!.profile.cost,
   );
@@ -458,7 +485,63 @@ export function applySmartSetup(
   return {
     ...draft,
     percentages,
-    routing: { ...draft.routing, entries: sorted, pools, roles },
+    routing: {
+      ...draft.routing,
+      entries: sorted,
+      pools,
+      roles,
+      delegation: planDelegation(draft.routing.delegation, candidates),
+    },
+  };
+}
+
+/**
+ * Subagents and advisor for every run: the strongest model advises; each provider's best
+ * standard and light model are the subagents, on its default account; subagents are capped at
+ * medium effort. Provider and account overrides of these keys are cleared so the plan applies.
+ * Without candidates for a part, that part keeps its current value.
+ */
+export function planDelegation(
+  current: ModelRoutingDelegation,
+  candidates: SetupCandidate[],
+): ModelRoutingDelegation {
+  const order = baselineOrder(candidates).map((index) => candidates[index]!);
+  const ref = (candidate: SetupCandidate) => ({
+    harness: candidate.target.harness,
+    model: candidate.target.model,
+  });
+  const advisor = order
+    .filter((candidate) => candidate.profile.intelligence >= 4)
+    .sort((a, b) => candidateScore(b) - candidateScore(a))[0];
+  const subagents = new Map<string, ReturnType<typeof ref>>();
+  for (const tier of ["standard", "light"] as const)
+    for (const candidate of order.filter((item) => candidateTier(item) === tier)) {
+      const key = `${candidate.target.harness}:${tier}`;
+      if (!subagents.has(key)) subagents.set(key, ref(candidate));
+    }
+  const refs = [
+    ...new Map([...subagents.values()].map((item) => [JSON.stringify(item), item])).values(),
+  ];
+  const planned: Record<string, string> = {
+    [CROSS_SUBAGENT_MAX_EFFORT_KEY]: "medium",
+    ...(advisor ? { [CROSS_ADVISOR_KEY]: JSON.stringify(ref(advisor)) } : {}),
+    ...(refs.length ? { [CROSS_SUBAGENTS_KEY]: encodeSubagents(refs)! } : {}),
+  };
+  const clear = (settings: Record<string, string>) => {
+    const next = { ...settings };
+    for (const key of Object.keys(planned)) delete next[key];
+    return next;
+  };
+  const layer = <K extends string>(values: Partial<Record<K, Record<string, string>>>) =>
+    Object.fromEntries(
+      Object.entries(values)
+        .map(([id, settings]) => [id, clear(settings as Record<string, string>)] as const)
+        .filter(([, settings]) => Object.keys(settings).length),
+    ) as Partial<Record<K, Record<string, string>>>;
+  return {
+    global: { ...current.global, ...planned },
+    providers: layer(current.providers),
+    accounts: layer(current.accounts) as Record<string, Record<string, string>>,
   };
 }
 

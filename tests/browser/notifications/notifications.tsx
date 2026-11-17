@@ -9,6 +9,9 @@ import { rememberNotificationProjects } from "../../../src/features/notification
 import { applyThemePreference } from "../../../src/features/settings/model/appearance";
 import { setLanguagePreference } from "../../../src/shared/i18n";
 import { createApprovalOccurrenceId } from "../../../src/shared/model/approvalOccurrence";
+import { Toast, ToastRegion } from "../../../src/shared/ui/ToastRegion";
+import { logToastAnnouncement } from "../../../src/features/notifications/model/notificationLog";
+import { Text } from "../../../src/shared/ui/Text";
 import "../../../src/styles/index.css";
 
 // Synthetic requests only; native actions cannot reach the owner's host.
@@ -56,7 +59,7 @@ const notices: Notice[] = titles.map((title, index) => ({
         : [],
   },
 }));
-if (!localStorage.getItem(NOTIFICATION_HISTORY_KEY)) {
+if (!params.has("toasts") && !localStorage.getItem(NOTIFICATION_HISTORY_KEY)) {
   localStorage.setItem(
     NOTIFICATION_HISTORY_KEY,
     JSON.stringify(
@@ -84,7 +87,7 @@ if (!localStorage.getItem(NOTIFICATION_HISTORY_KEY)) {
   );
 }
 // A live owner approval: the pending card lists its title and time left, never its message.
-if (!params.has("empty")) {
+if (!params.has("empty") && !params.has("toasts")) {
   requestOwnerApproval({
     id: "fixture-owner",
     sessionId: "fixture-0",
@@ -98,10 +101,13 @@ if (!params.has("empty")) {
   }).catch(() => undefined);
 }
 function Fixture() {
-  const [pending, setPending] = useState(params.has("empty") ? [] : notices);
+  const [pending, setPending] = useState(
+    params.has("empty") || params.has("toasts") ? [] : notices,
+  );
   const [result, setResult] = useState("");
   return (
     <>
+      {params.has("toasts") ? <ToastScenario /> : null}
       <ApprovalToasts
         notices={pending}
         popupNotices={params.has("popup") ? pending : []}
@@ -117,6 +123,54 @@ function Fixture() {
         }}
       />
       <output aria-label="Fixture result">{result}</output>
+    </>
+  );
+}
+function ToastScenario() {
+  const [visible, setVisible] = useState(["update", "success", "warning", "error"]);
+  const dismiss = (id: string) => setVisible((current) => current.filter((item) => item !== id));
+  return (
+    <>
+      {visible.includes("update") ? (
+        <Toast
+          title="Harness updates available"
+          tone="info"
+          durationMs={null}
+          historyMessage="Claude Code: 2.1.325 → 2.1.326; Grok Build: 1.0.77 → 1.0.88"
+          onDismiss={() => dismiss("update")}
+        >
+          <Text as="p">Claude Code · Updated to 2.1.326</Text>
+          <Text as="p">Grok Build · Updating 1.0.77 → 1.0.88</Text>
+        </Toast>
+      ) : null}
+      {visible.includes("success") ? (
+        <Toast
+          title="Update complete"
+          message="Claude Code updated to 2.1.326"
+          tone="success"
+          durationMs={null}
+          onDismiss={() => dismiss("success")}
+        />
+      ) : null}
+      {visible.includes("warning") ? (
+        <Toast
+          title="Connection interrupted"
+          message="Check the connection before retrying."
+          tone="warning"
+          durationMs={null}
+          onDismiss={() => dismiss("warning")}
+        />
+      ) : null}
+      {visible.includes("error") ? (
+        <Toast
+          title="Update failed"
+          message="Grok Build: access denied. Retry in Providers."
+          tone="danger"
+          durationMs={null}
+          onDismiss={() => dismiss("error")}
+        />
+      ) : null}
+      <ToastRegion onRecord={logToastAnnouncement} insets={{ "top-center": 48, "top-end": 48 }} />
     </>
   );
 }

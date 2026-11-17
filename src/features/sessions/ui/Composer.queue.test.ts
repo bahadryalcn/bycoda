@@ -597,29 +597,32 @@ describe("a queue restored after a restart", () => {
   });
 });
 
-it("shows the queued model, saved account and effort in order", async () => {
-  saveProviderAccount({ id: "personal", provider: "claude", label: "Personal" });
-  await renderComposer(
-    {
-      queuedMessages: [
-        {
-          id: "q1",
-          text: "queued",
-          attachments: [],
-          modelTarget: {
-            harness: "claude",
-            model: "claude:test",
-            providerAccountId: "personal",
-            modelSettings: {},
-          },
-        },
-      ],
+it("shows the queued model, the account it will run on and effort in order", async () => {
+  saveProviderAccount({ id: "personal", provider: "codex", label: "Personal" });
+  saveProviderAccount({ id: "work", provider: "claude", label: "Work" });
+  const row = (id: string, harness: "claude" | "codex") => ({
+    id,
+    text: id,
+    attachments: [],
+    modelTarget: {
+      harness,
+      model: `${harness}:test`,
+      providerAccountId: "personal",
+      modelSettings: {},
     },
+  });
+  await renderComposer(
+    // The owner switched this Claude conversation to "work" after queueing.
+    { providerAccountId: "work", queuedMessages: [row("q1", "claude"), row("q2", "codex")] },
     vi.fn(),
   );
-  const label = container.querySelector("[data-queue-target]")!.textContent!;
-  expect(label).toContain(" · Personal");
-  expect(label).not.toContain("Claude Code");
+  const [same, other] = [...container.querySelectorAll("[data-queue-target]")].map(
+    (node) => node.textContent!,
+  );
+  expect(same).toContain(" · Work");
+  expect(same).not.toContain("Claude Code");
+  // A row for another provider starts on the account it was queued with.
+  expect(other).toContain(" · Personal");
   const remove = container.querySelector<HTMLButtonElement>(
     'button[aria-label="Remove queued message"]',
   )!;

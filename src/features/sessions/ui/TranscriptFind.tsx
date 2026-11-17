@@ -85,6 +85,7 @@ export const TranscriptFind = memo(function TranscriptFind({
             label: findLabel,
             shortcut: findShortcut,
             icon: <Search className="icon-sm" strokeWidth={1.75} />,
+            onSelect: openFind,
             render: (renderTrigger) =>
               renderTrigger({
                 "aria-expanded": open,

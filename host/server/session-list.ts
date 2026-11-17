@@ -170,6 +170,14 @@ export async function createSessionListRuntime(
     HostSessionSummary,
     { key: string; value: HostSessionSummary }
   >();
+  /** Other registered ids of the same folder (legacy path spellings), in a stable order. */
+  const siblingProjectIds = async (project: { id: string; cwd: string }) =>
+    (await dependencies.engine.store.projects())
+      .filter(
+        (other) => other.id !== project.id && dependencies.desktop.samePath(other.cwd, project.cwd),
+      )
+      .map((other) => other.id)
+      .sort();
   const buildProjectSessionList = async (
     projectId: string,
     local: HostSessionSummary[],
@@ -193,7 +201,16 @@ export async function createSessionListRuntime(
           running: false,
         });
     }
-    const own = (await dependencies.engine.store.summaries(projectId)).map((session) =>
+    // The Host directory lists one entry per folder, so sessions stored under a
+    // legacy duplicate id of the same folder stay visible through the listed id.
+    const folderSessions = (
+      await Promise.all(
+        [projectId, ...(await siblingProjectIds(project))].map((id) =>
+          dependencies.engine.store.summaries(id),
+        ),
+      )
+    ).flat();
+    const own = folderSessions.map((session) =>
       session.status !== "running" && stamps.get(session.id)?.status === "running"
         ? { ...session, status: "running" as const }
         : session,
@@ -290,6 +307,9 @@ export async function createSessionListRuntime(
     const wakeSources = dependencies.pullRequestWatch.wakeSources(projectId);
     const prefix = [
       dependencies.engine.store.projectVersion(projectId),
+      (await siblingProjectIds(project))
+        .map((id) => `${id}:${dependencies.engine.store.projectVersion(id)}`)
+        .join(","),
       project.cwd,
       project.name,
       local.fingerprint,

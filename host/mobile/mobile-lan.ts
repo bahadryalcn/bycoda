@@ -13,23 +13,19 @@ import type { MobileAccessStatus } from "../../src/integrations/mobile-access";
 import { createLanIdentity, openLanRequest } from "./mobile-lan-crypto";
 import { createMobileWssGateway } from "../security/mobile-wss";
 import type { MobileTlsAuthority, MobileTlsMaterial } from "../security/mobile-tls";
+import {
+  defaultRouteAddress,
+  knownDefaultRouteAddress,
+  windowsNetworkHint,
+} from "./mobile-network";
 
 /** Adapters that only reach this computer's own VMs, containers or a VPN. */
 const VIRTUAL_INTERFACE = /virtual|vethernet|docker|wsl|vpn|vmware|vbox|hyper-v/i;
-export function localMobileAddresses(): string[] {
-  return [
-    ...new Set(
-      Object.entries(networkInterfaces())
-        .sort(([a], [b]) => Number(VIRTUAL_INTERFACE.test(a)) - Number(VIRTUAL_INTERFACE.test(b)))
-        .flatMap(([, entries]) =>
-          (entries ?? [])
-            .filter(
-              (entry) => !entry.internal && entry.family === "IPv4" && isLanAddress(entry.address),
-            )
-            .map((entry) => entry.address),
-        ),
-    ),
-  ];
+export function localMobileAddresses(
+  interfaces = networkInterfaces(),
+  preferred = knownDefaultRouteAddress(),
+): string[] {
+  return reachableAddresses(interfaces, preferred).filter(isLanAddress);
 }
 /** This machine's home-network and Tailscale (100.64.0.0/10) IPv4 addresses, which
  * a client may learn as other ways to reach it. Hints only: a client proves each
@@ -37,17 +33,20 @@ export function localMobileAddresses(): string[] {
  * another computer cannot reach them. */
 export function reachableAddresses(
   interfaces: ReturnType<typeof networkInterfaces> = networkInterfaces(),
+  preferred = knownDefaultRouteAddress(),
 ): string[] {
   const lan: string[] = [];
   const tailnet: string[] = [];
   for (const [name, entries] of Object.entries(interfaces)) {
     for (const entry of entries ?? []) {
-      if (entry.internal || entry.family !== "IPv4") continue;
+      if (entry.internal || entry.family !== "IPv4" || entry.netmask === "255.255.255.255")
+        continue;
       if (isTailnetAddress(entry.address)) tailnet.push(entry.address);
       else if (isLanAddress(entry.address) && !VIRTUAL_INTERFACE.test(name))
         lan.push(entry.address);
     }
   }
+  lan.sort((a, b) => Number(b === preferred) - Number(a === preferred));
   return [...new Set([...lan, ...tailnet])];
 }
 function isTailnetAddress(address: string): boolean {
@@ -284,7 +283,17 @@ export class MobileLanAccess {
   }
   async status(): Promise<MobileAccessStatus> {
     await this.load();
-    const addresses = this.addresses();
+    if (this.addresses === localMobileAddresses) await defaultRouteAddress();
+    const addresses = this.orderedAddresses();
+    const addressInterfaces = Object.fromEntries(
+      addresses.flatMap((address) => {
+        const name = interfaceForAddress(address);
+        return name ? [[address, name]] : [];
+      }),
+    );
+    const networkHint = await windowsNetworkHint(
+      addressInterfaces[this.saved?.address ?? addresses[0]],
+    );
     const active = this.gateway?.address();
     const ready = active && typeof active !== "string" && addresses.includes(active.address);
     const tlsActive = this.wssGateway?.address();
@@ -308,6 +317,8 @@ export class MobileLanAccess {
             ? "setup-required"
             : "unavailable",
       addresses,
+      addressInterfaces,
+      ...(networkHint ? { networkHint } : {}),
       ...(this.notice ? { reason: this.notice } : {}),
       machineName: hostname().slice(0, 120),
       ...(ready
@@ -315,6 +326,13 @@ export class MobileLanAccess {
         : {}),
       ...(tls ? { tls } : {}),
     };
+  }
+  private orderedAddresses(): string[] {
+    const addresses = [...this.addresses()];
+    const saved = this.saved;
+    if (saved?.enabled && saved.address)
+      addresses.sort((a, b) => Number(b === saved.address) - Number(a === saved.address));
+    return addresses;
   }
   async start(): Promise<void> {
     await this.load();
@@ -359,7 +377,8 @@ export class MobileLanAccess {
     const operation = (async (): Promise<MobileAccessStatus> => {
       await this.load();
       if (this.disposed) throw new Error("Host is closing");
-      const addresses = this.addresses();
+      if (this.addresses === localMobileAddresses) await defaultRouteAddress();
+      const addresses = this.orderedAddresses();
       const selected = address === undefined ? addresses[0] : address;
       if (typeof selected !== "string" || !isLanAddress(selected) || !addresses.includes(selected))
         return this.status();
@@ -385,6 +404,16 @@ export class MobileLanAccess {
       let wss: ReturnType<typeof createMobileWssGateway> | undefined;
       gateway.maxConnections = 32;
       try {
+        let portChanged = false;
+        const listenSaved = async (listen: (port: number) => Promise<void>, savedPort?: number) => {
+          try {
+            await listen(savedPort ?? 0);
+          } catch (error) {
+            if (!savedPort || (error as NodeJS.ErrnoException).code !== "EACCES") throw error;
+            await listen(0);
+            portChanged = true;
+          }
+        };
         const listenGateway = (port: number) =>
           new Promise<void>((resolve, reject) => {
             gateway.once("error", reject);
@@ -395,7 +424,7 @@ export class MobileLanAccess {
           });
         // A paired device holds this endpoint. Never silently replace a saved
         // port when another process owns it; surface unavailable instead.
-        await listenGateway(this.saved?.port ?? 0);
+        await listenSaved(listenGateway, this.saved?.port);
         if (this.disposed) throw new Error("Host is closing");
         const active = gateway.address();
         if (!active || typeof active === "string") throw new Error("LAN access unavailable");
@@ -416,7 +445,7 @@ export class MobileLanAccess {
                 resolve();
               });
             });
-          await listen(this.saved?.tlsPort ?? 0);
+          await listenSaved(listen, this.saved?.tlsPort);
           const address = wss.address();
           if (!address || typeof address === "string")
             throw new Error("Mobile TLS access unavailable");
@@ -439,7 +468,7 @@ export class MobileLanAccess {
         this.tlsBootstrap = tls;
         this.tlsExpiresAt = material?.expiresAt;
         this.notice =
-          previousAddress && previousAddress !== selected
+          portChanged || (previousAddress && previousAddress !== selected)
             ? "Mobile address changed. Reconnect paired devices using the new endpoint."
             : undefined;
         this.watchAddress();
@@ -458,7 +487,11 @@ export class MobileLanAccess {
         this.notice =
           (error as NodeJS.ErrnoException).code === "EADDRINUSE"
             ? "The saved mobile port is in use. Free it and retry."
-            : "Mobile LAN access could not start. Check the selected network and retry.";
+            : (error as NodeJS.ErrnoException).code === "EACCES"
+              ? "The mobile port is blocked by Windows or system policy. Choose another port or check network permissions."
+              : (error as NodeJS.ErrnoException).code === "EADDRNOTAVAIL"
+                ? "The selected mobile address is no longer available. Choose an active network and retry."
+                : "Mobile LAN access could not start. Check the selected network and retry.";
         if (this.gateway === gateway || (wss && this.wssGateway === wss)) {
           await this.closeGateway();
         } else {

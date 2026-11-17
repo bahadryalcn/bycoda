@@ -47,7 +47,6 @@ type ChangeDir = {
 type ChangeRowProps = {
   onOpenInEditor?: (path: string, pin?: boolean) => void;
   files: GitChangedFile[];
-  collisionNames?: ReadonlySet<string>;
   view: ChangesView;
   kind: GitFileDiffKind;
   selected?: string;
@@ -225,7 +224,6 @@ export function ChangeList({ files, view, ...rest }: ChangeRowProps) {
       <ChangeRow
         key={`${rest.kind}:${row.file.path}`}
         file={row.file}
-        collision={rest.collisionNames?.has(basename(row.file.relative))}
         active={isActive(row.file, rest.selected, rest.selectedKind, rest.kind)}
         busy={rest.busy === row.file.relative || !!rest.busy?.startsWith("folder:")}
         kind={rest.kind}

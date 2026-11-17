@@ -859,6 +859,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     const options = {
       turnEndSilence: settings.turnEndSilence,
       allowBargeIn: settings.allowBargeIn,
+      removeFillers: settings.removeFillers,
       manualTurnEnd: settings.manualTurnEnd,
     };
     if (client.current instanceof RealtimeVoice) {
@@ -877,6 +878,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   }, [
     settings.turnEndSilence,
     settings.allowBargeIn,
+    settings.removeFillers,
     settings.manualTurnEnd,
     settings.mode,
     settings.experimentalSemanticVad,
@@ -2502,6 +2504,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       {
         turnEndSilence: settings.turnEndSilence,
         allowBargeIn: settings.allowBargeIn,
+        removeFillers: settings.removeFillers,
         manualTurnEnd: settings.manualTurnEnd,
         experimentalSemanticVad:
           provider === "openai" &&
@@ -2782,6 +2785,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       {
         turnEndSilence: settings.turnEndSilence,
         allowBargeIn: settings.allowBargeIn,
+        removeFillers: settings.removeFillers,
         manualTurnEnd: settings.manualTurnEnd,
         languageLock: voiceLanguageCode(languageLock),
         deviceId: settings.microphoneId,
@@ -2883,6 +2887,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       client.current?.configureConversation({
         turnEndSilence: next.turnEndSilence,
         allowBargeIn: next.allowBargeIn,
+        removeFillers: next.removeFillers,
         manualTurnEnd: manual,
       });
       setError((current) => (current === t(VOICE_TURN_CHOICE_FAILED) ? "" : current));

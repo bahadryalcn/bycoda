@@ -84,6 +84,7 @@ export function DropdownMenu({
   width = 228,
   gap,
   maxHeight,
+  density,
   closeOnSelect,
   search,
   initialActiveId,
@@ -123,6 +124,7 @@ export function DropdownMenu({
   return (
     <MenuSurface
       {...dataAttributes}
+      data-menu-density={density}
       depth={0}
       controller={controller}
       closed={closed}

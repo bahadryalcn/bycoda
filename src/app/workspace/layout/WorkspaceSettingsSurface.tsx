@@ -4,6 +4,7 @@ import type { ComponentProps, Dispatch, SetStateAction } from "react";
 import { QuickDeleteWorktreeDialog } from "../../../features/source-control/ui/QuickDeleteWorktreeDialog";
 import { WorktreesPage } from "../../../features/source-control/ui/WorktreesPage";
 import { Modal } from "../../../shared/ui/Modal";
+import { useLeaveGuard } from "../../../shared/ui/settings";
 import { Button } from "../../../shared/ui/Button";
 import { Eye } from "../../../shared/ui/icons";
 import { t, useLocale } from "../../../shared/i18n/git";
@@ -109,6 +110,9 @@ function WorkspaceSettingsSurfaceComponent({
     document.querySelector<HTMLButtonElement>("[data-appearance-peek]")?.focus();
   }, []);
   const toggleMaximize = useCallback(() => setMaximized((value) => !value), []);
+  // Every way out of Settings asks first while an editor holds unsaved changes.
+  const leave = useLeaveGuard();
+  const closeSettings = () => leave.guard(onCloseSettings);
   const settingsView = (embedded: boolean) => (
     <SettingsView
       section={settingsSection}
@@ -142,7 +146,7 @@ function WorkspaceSettingsSurfaceComponent({
           </Button>
         ) : undefined
       }
-      onClose={onCloseSettings}
+      onClose={closeSettings}
       onSelectSection={onSelectSettingsSection}
       onOpenSession={onOpenArchivedSession}
       onOpenBackgroundSession={onOpenBackgroundSession}
@@ -204,7 +208,7 @@ function WorkspaceSettingsSurfaceComponent({
           panelStyle={peeking ? { inlineSize: "min(380px, 100vw)" } : undefined}
           backdrop={!peeking}
           onEscape={peeking ? exitPeek : undefined}
-          onClose={onCloseSettings}
+          onClose={closeSettings}
         >
           <div
             className="bycoda-settings-dialog-body"
@@ -224,6 +228,7 @@ function WorkspaceSettingsSurfaceComponent({
           {settingsView(false)}
         </NavigationBoundary>
       ) : null}
+      {leave.dialog}
     </>
   );
 }

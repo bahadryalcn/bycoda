@@ -1,10 +1,11 @@
 import type { ServerBindings } from "./bindings";
 import type { OwnerRpcRequest } from "./owner-rpc-context";
 import { hostModelRoutingService } from "../model-routing/runtime";
+import { catalogFactsDomain } from "../model-routing/catalog-facts";
 import { createModelRoutingDomainService } from "../domains/model-routing/service";
 
 export async function handleModelRoutingRpc(
-  dependencies: Pick<ServerBindings, "engine">,
+  dependencies: Pick<ServerBindings, "engine" | "featureDirectory">,
   request: OwnerRpcRequest,
 ): Promise<void> {
   const service = createModelRoutingDomainService(
@@ -22,6 +23,12 @@ export async function handleModelRoutingRpc(
       break;
     case "modelRouting.resolve":
       request.result = await service.resolve(request.params, request.domainContext);
+      break;
+    case "modelRouting.catalogFacts":
+      request.result = await catalogFactsDomain(dependencies.featureDirectory).catalogFacts(
+        request.params,
+        request.domainContext,
+      );
       break;
   }
 }

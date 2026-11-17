@@ -2,11 +2,13 @@ import { hostname } from "node:os";
 import { HOST_PROTOCOL_VERSION } from "../../src/features/connections/model/protocol";
 import { createEnvironmentService } from "../domains/environment/service";
 import { reachableAddresses } from "../mobile/mobile-lan";
+import { defaultRouteAddress } from "../mobile/mobile-network";
 import { createMobileRoutes } from "../mobile/mobile-routes";
 import { HOST_WS_READ_CAPABILITY } from "../transport/ws/server";
 import { agentDefaultsCapabilities } from "../settings-defaults/archive-capability";
 import { WORKSPACE_CAPABILITIES } from "../workspaces/workspace-contracts";
 import type { ServerBindings } from "./bindings";
+import { GROUP_LOCK_REMOTE_CAPABILITY } from "../../src/shared/model/host-contracts/group-lock";
 export function createEnvironmentRuntime(
   dependencies: Pick<
     ServerBindings,
@@ -20,6 +22,7 @@ export function createEnvironmentRuntime(
     | "providers"
     | "genericAcp"
     | "managed"
+    | "desktop"
   >,
 ) {
   // The service reads this only after composition has finished. An explicit
@@ -46,7 +49,7 @@ export function createEnvironmentRuntime(
         : undefined,
       platform: process.platform,
       // Other ways to reach this machine; desktops learn them as SSH routes.
-      addresses: reachableAddresses(),
+      addresses: reachableAddresses(undefined, await defaultRouteAddress()),
       // Phones learn the other ways to this Host from it (route selection).
       mobileRoutes: await mobileRoutes(),
       mobileTls: (await dependencies.mobileLan.status()).tls,
@@ -120,6 +123,8 @@ export function createEnvironmentRuntime(
         "native.delivery.epochs.v2",
         "transport.ws.workspaces.cleanup.v1",
         ...(dependencies.buildIdentity ? ["build.identity.v1"] : []),
+        // Offered only while a desktop window that can verify the password is beating.
+        ...(dependencies.desktop.live.groupLock.ready() ? [GROUP_LOCK_REMOTE_CAPABILITY] : []),
         "terminals.v1",
         "mobile.pairing",
         "mobile.access",
@@ -272,6 +277,7 @@ export function createEnvironmentRuntime(
         "providers.desktop.quotaRefresh.v1",
         "providers.acp.patchMetadata",
         "host.access.read",
+        "devices.paired",
         "devices.revokeOther",
         "dev.servers.reviewed-impact",
         "inbox.attention",

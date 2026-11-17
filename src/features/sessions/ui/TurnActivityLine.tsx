@@ -2,6 +2,7 @@ import { Text } from "../../../shared/ui/Text";
 import { memo, useEffect, useState, type ReactNode } from "react";
 import { useLocale } from "../../../shared/i18n";
 import { Spinner } from "../../../shared/ui/Spinner";
+import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import { Brain, Clock, RefreshCw } from "../../../shared/ui/icons";
 import { claimTurnClock, type TurnActivityPhase } from "../model/turnActivity";
 import { formatElapsed, useElapsedFrom } from "./useElapsedFrom";
@@ -114,16 +115,12 @@ function TurnActivityRow({
       className="turn-activity-line flex min-w-0 items-center gap-1.5 px-4 py-1 font-sans"
     >
       <TurnActivityIcon phase={phase} />
-      {/* One live signal: the label breathes; the icon and the clock stay still. */}
-      <Text
-        role="status"
-        size="inherit"
-        tone="inherit"
-        truncate
-        className="zen-thinking-pulse min-w-0"
-      >
-        {label}
-      </Text>
+      {/* The label carries the live signal (the shared sweep); the clock stays still. */}
+      <span role="status" className="flex min-w-0">
+        <WorkingIndicator className="min-w-0" truncate glyph={false}>
+          {label}
+        </WorkingIndicator>
+      </span>
       {children}
     </Text>
   );

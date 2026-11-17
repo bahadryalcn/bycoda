@@ -4,7 +4,7 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Heading } from "../../../shared/ui/Heading";
 import { Alert } from "../../../shared/ui/Alert";
-import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useId, useState, useSyncExternalStore } from "react";
 import { useModelSource } from "./modelSource";
 import {
   subscribeHarnessAvailability,
@@ -30,6 +30,7 @@ import {
 } from "../../providers/model/providerAccounts";
 import { ModelPicker } from "./ModelPicker";
 import { Button } from "../../../shared/ui/Button";
+import { CopyButton } from "../../../shared/ui/CopyButton";
 import { Spinner } from "../../../shared/ui/Spinner";
 import styles from "./TranslationResultDialog.module.css";
 import {
@@ -85,12 +86,8 @@ export function TranslationResultDialog({
   const [result, setResult] = useState("");
   const [error, setError] = useState<TranslationErrorKind | null>(null);
   // Copy has its own lifecycle so a clipboard failure never invalidates a valid result.
-  const [copyState, setCopyState] = useState<"idle" | "pending" | "copied" | "error">("idle");
-  const copyRun = useRef(0);
-  const resetCopy = () => {
-    copyRun.current += 1;
-    setCopyState("idle");
-  };
+  const [copyFailed, setCopyFailed] = useState(false);
+  const resetCopy = () => setCopyFailed(false);
   const [attempt, setAttempt] = useState(0);
   const [pending, setPending] = useState(() => canTranslate(translator));
   const [applyError, setApplyError] = useState(false);
@@ -103,19 +100,12 @@ export function TranslationResultDialog({
     const timer = setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 1000);
     return () => clearInterval(timer);
   }, [pending, attempt, translator]);
-  useEffect(
-    () => () => {
-      copyRun.current += 1;
-    },
-    [],
-  );
   useEffect(() => {
     if (!routingReady || !requested || !runnable) return;
     const controller = new AbortController();
     setPending(true);
     setError(null);
-    copyRun.current += 1;
-    setCopyState("idle");
+    setCopyFailed(false);
     setApplyError(false);
     setResult("");
     const onOutput = (output: string) => {
@@ -201,28 +191,14 @@ export function TranslationResultDialog({
             </Button>
           ) : null}
           {result && !pending && !error ? (
-            <Button
+            <CopyButton
               variant="secondary"
-              disabled={copyState === "pending"}
-              loading={copyState === "pending"}
-              onClick={async () => {
-                if (copyState === "pending") return;
-                const run = ++copyRun.current;
-                setCopyState("pending");
-                try {
-                  await copyMessage(result);
-                  if (copyRun.current === run) setCopyState("copied");
-                } catch {
-                  if (copyRun.current === run) setCopyState("error");
-                }
-              }}
-            >
-              {copyState === "copied"
-                ? t("Copied")
-                : copyState === "error"
-                  ? t("Retry copy")
-                  : t("Copy")}
-            </Button>
+              label={t("Copy")}
+              resetKeys={[result]}
+              onClick={() => setCopyFailed(false)}
+              onCopy={() => copyMessage(result)}
+              onCopyError={() => setCopyFailed(true)}
+            />
           ) : null}
           <Button
             variant={result && !pending && !error ? "primary" : "secondary"}
@@ -425,7 +401,7 @@ export function TranslationResultDialog({
               : t("The text changed. Select it again to translate.")}
           </Alert>
         ) : null}
-        {copyState === "error" && result && !error ? (
+        {copyFailed && result && !error ? (
           <Alert tone="danger">
             {reprompt
               ? t(

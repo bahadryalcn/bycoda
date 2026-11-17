@@ -384,7 +384,7 @@ Connect another computer using an SSH forward to the loopback port.`);
     throw error;
   }
   if (command === "pair") {
-    const device = await store.issueDevice(option("name", "Desktop"));
+    const device = await store.issueDevice(option("name", "Desktop"), "desktop");
     console.log(
       JSON.stringify(
         { ...device, environmentId: store.environmentId },
@@ -397,7 +397,11 @@ Connect another computer using an SSH forward to the loopback port.`);
   }
   if (command === "devices") {
     console.log(
-      JSON.stringify(await store.db.prepare("SELECT id, name FROM devices").all(), null, 2),
+      JSON.stringify(
+        await store.db.prepare("SELECT id, name, kind, paired_at, last_seen_at FROM devices").all(),
+        null,
+        2,
+      ),
     );
     await store.close();
     return;

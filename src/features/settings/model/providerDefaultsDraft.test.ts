@@ -223,14 +223,14 @@ it("reports unsaved when storage refuses the write", () => {
 });
 
 it("maps searched settings to their Providers tab", () => {
-  expect(providersTabForSetting("agent-clis")).toBe("chat");
+  expect(providersTabForSetting("agent-clis")).toBe("defaults");
   expect(providersTabForSetting("enabled-models")).toBe("providers");
   expect(providersTabForSetting("cli-path-codex")).toBe("providers");
   expect(providersTabForSetting("terminal-account-profiles-codex")).toBe("providers");
   expect(providersTabForSetting("acp-registry")).toBe("providers");
   expect(providersTabForSetting("models-roles")).toBe("work");
-  expect(providersTabForSetting("subagents")).toBe("delegation");
-  expect(providersTabForSetting("decision-models")).toBe("providers");
+  expect(providersTabForSetting("subagents")).toBe("defaults");
+  expect(providersTabForSetting("decision-models")).toBeUndefined();
   expect(providersTabForSetting("show-remaining-usage")).toBeUndefined();
   expect(providersTabForSetting(null)).toBeUndefined();
 });

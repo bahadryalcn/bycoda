@@ -42,7 +42,10 @@ export function providerMetaLine(entry: ProviderListEntry, probed: boolean): str
   if (!probed) return t("Checking CLI…");
   if (!entry.available) return entry.harness === "acp" ? t("Add provider") : t("Not installed");
   if (entry.accountSummary && (entry.auth?.tone === "low" || entry.auth?.tone === "exhausted")) {
-    return `${entry.accountSummary}, ${entry.auth.label}`;
+    // A single account's summary is already its auth label; say each status once.
+    return entry.accountSummary.includes(entry.auth.label)
+      ? entry.accountSummary
+      : `${entry.accountSummary}, ${entry.auth.label}`;
   }
   return entry.accountSummary ?? entry.auth?.label ?? "";
 }

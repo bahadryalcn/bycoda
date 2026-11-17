@@ -25,9 +25,9 @@ export const phonePairingApi: PhonePairingApi = {
       await remoteRequest(machine.id, "mobile.access.disable", { mode: "lan" }, false, true),
     );
   },
-  async create(machine) {
+  async create(machine, kind = "phone") {
     return readPhonePairingCreated(
-      await remoteRequest(machine.id, "mobile.pairing.create", {}, false, true),
+      await remoteRequest(machine.id, "mobile.pairing.create", { kind }, false, true),
       machine,
     );
   },

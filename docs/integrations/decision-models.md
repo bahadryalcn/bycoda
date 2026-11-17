@@ -57,7 +57,7 @@ layouts. Their tests state that they are assumptions.
 
 ## Owner surfaces
 
-- Settings > Providers > Decision models: `ProviderDecisionModels.tsx` in
+- Settings > Decision models: `ProviderDecisionModels.tsx` in
   `src/features/settings/ui/` hosts `src/features/decision-models/ui/`. It runs against the
   local-sync machine, or the first listed machine when none is local. With no
   machine available, it shows guidance to connect this computer's Host.

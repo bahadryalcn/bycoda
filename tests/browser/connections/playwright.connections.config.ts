@@ -3,7 +3,7 @@ import settings from "../settings/playwright.settings.config";
 
 export default defineConfig({
   ...settings,
-  testMatch: ["connections.e2e.ts", "machine-rows.e2e.ts"],
+  testMatch: ["connections.e2e.ts", "machine-rows.e2e.ts", "phone-lan-unavailable.e2e.ts"],
   outputDir: "../../../temp/test-results/connections",
   use: { ...settings.use, baseURL: "http://127.0.0.1:18438" },
   webServer: {

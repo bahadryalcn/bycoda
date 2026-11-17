@@ -53,6 +53,7 @@ import { WS_LIMITS } from "./policy";
 import * as gitDto from "./git";
 import * as notesDto from "./notes";
 import * as projectsDto from "./projects";
+import * as groupLockDto from "./group-lock";
 import * as tasksDto from "./tasks";
 import * as goalsDto from "./goals";
 import * as devDto from "./dev-servers";
@@ -607,6 +608,13 @@ export const HOST_RPC_METHODS = Object.freeze({
     ),
     requiredCapability: modelRoutingDto.HOST_MODEL_ROUTING,
   },
+  "modelRouting.catalogFacts": {
+    ...read(
+      modelRoutingDto.ModelRoutingCatalogFactsParamsSchema,
+      modelRoutingDto.ModelRoutingCatalogFactsResultSchema,
+    ),
+    requiredCapability: modelRoutingDto.HOST_MODEL_ROUTING,
+  },
   "crews.start": crewOperation("crews.start"),
   "crews.get": crewOperation("crews.get"),
   "crews.assign": crewOperation("crews.assign"),
@@ -969,6 +977,29 @@ export const HOST_RPC_METHODS = Object.freeze({
       z.object({ accepted: z.literal(true) }).strict(),
     ),
     requiredCapability: "host.settings.autoArchive.v1",
+  },
+  // A phone unlocks locked groups through the desktop, which alone verifies the password.
+  "projects.groups.unlock": {
+    ...control(groupLockDto.GroupUnlockParamsSchema, groupLockDto.GroupPasswordResultSchema),
+    responseTimeoutMs: 30_000,
+    requiredCapability: groupLockDto.GROUP_LOCK_REMOTE_CAPABILITY,
+  },
+  "projects.groups.authorizeHidden": {
+    ...control(
+      groupLockDto.GroupAuthorizeHiddenParamsSchema,
+      groupLockDto.GroupPasswordResultSchema,
+    ),
+    responseTimeoutMs: 30_000,
+    requiredCapability: groupLockDto.GROUP_LOCK_REMOTE_CAPABILITY,
+  },
+  "projects.groups.lock": {
+    ...control(groupLockDto.GroupLockParamsSchema, groupLockDto.GroupLockResultSchema),
+    requiredCapability: groupLockDto.GROUP_LOCK_REMOTE_CAPABILITY,
+  },
+  "projects.groups.setHidden": {
+    ...control(groupLockDto.GroupSetHiddenParamsSchema, groupLockDto.GroupSetHiddenResultSchema),
+    responseTimeoutMs: 30_000,
+    requiredCapability: groupLockDto.GROUP_LOCK_REMOTE_CAPABILITY,
   },
   "git.fileDiff": gitOperation(gitDto.GitFileDiffParamsSchema, gitDto.GitFileDiffSchema),
   "git.switch": gitOperation(gitDto.GitSwitchParamsSchema, gitDto.GitBranchesSchema, true),

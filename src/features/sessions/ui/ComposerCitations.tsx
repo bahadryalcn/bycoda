@@ -1,47 +1,18 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Popover } from "../../../shared/ui/Popover";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { InlineError } from "../../../shared/ui/InlineError";
-import { LiveText } from "../../../shared/ui/LiveText";
-import { BlockQuote, Copy, Pencil, X } from "../../../shared/ui/icons";
+import { CopyButton } from "../../../shared/ui/CopyButton";
+import { BlockQuote, Pencil, X } from "../../../shared/ui/icons";
 import { copyMessage } from "../../../platform/tauri/clipboard";
 import { chatCitationPreview, chatCitationToken, type ChatCitation } from "../model/chatCitation";
 import { tokenLabel } from "../model/attachmentTokens";
 import { highlightChatCitation } from "../model/chatCitationHighlight";
 import styles from "./ComposerCitations.module.css";
-
-// Module level: React Compiler cannot lower try/finally inside a component.
-async function copyCitation(
-  citation: ChatCitation,
-  {
-    copying,
-    setCopied,
-    setCopyingId,
-    setError,
-    failure,
-  }: {
-    copying: { current: boolean };
-    setCopied: (id: string | null) => void;
-    setCopyingId: (id: string | null) => void;
-    setError: (message: string) => void;
-    failure: string;
-  },
-) {
-  try {
-    await copyMessage(citation.text);
-    setCopied(citation.id);
-    setError("");
-  } catch {
-    setError(failure);
-  } finally {
-    copying.current = false;
-    setCopyingId(null);
-  }
-}
 
 /** Quote chips above the composer; each names the `[quoteN]` token the draft text uses. */
 export function ComposerCitations({
@@ -61,15 +32,7 @@ export function ComposerCitations({
     anchor: HTMLElement;
   } | null>(null);
   const [error, setError] = useState("");
-  const [copied, setCopied] = useState<string | null>(null);
-  const [copyingId, setCopyingId] = useState<string | null>(null);
-  const copying = useRef(false);
   const commentDrafts = useRef(new Map<string, string>());
-  useEffect(() => {
-    if (!copied) return;
-    const timer = window.setTimeout(() => setCopied(null), 2000);
-    return () => window.clearTimeout(timer);
-  }, [copied]);
   const editingCitation = citations.find((c) => c.id === editing?.id);
   if (!citations.length) return null;
   const preview = (citation: ChatCitation, navigate = false) => {
@@ -119,29 +82,14 @@ export function ComposerCitations({
               {chatCitationPreview(citation)}
             </Text>
           </Button>
-          <Button
+          <CopyButton
             iconOnly
             label={t("Copy quote")}
-            variant="ghost"
+            copiedLabel={t("Quote copied")}
             size="sm"
-            loading={copyingId === citation.id}
-            disabled={copyingId !== null && copyingId !== citation.id}
-            onClick={async () => {
-              if (copying.current) return;
-              copying.current = true;
-              setCopied(null);
-              setCopyingId(citation.id);
-              await copyCitation(citation, {
-                copying,
-                setCopied,
-                setCopyingId,
-                setError,
-                failure: t("Could not copy quote. Please try again."),
-              });
-            }}
-          >
-            <Copy />
-          </Button>
+            resetKeys={[citation.id, citation.text]}
+            onCopy={() => copyMessage(citation.text)}
+          />
           <Button
             iconOnly
             label={t("Edit citation comment")}
@@ -175,13 +123,6 @@ export function ComposerCitations({
           </Button>
         </div>
       ))}
-      <LiveText
-        className={styles.feedback}
-        size="micro"
-        tone="secondary"
-        leading="inherit"
-        text={copied ? t("Quote copied") : ""}
-      />
       {error ? <InlineError>{error}</InlineError> : null}
       {editing && editingCitation ? (
         <Popover

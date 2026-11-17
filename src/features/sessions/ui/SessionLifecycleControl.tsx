@@ -1,8 +1,8 @@
 import { presentRemoteError } from "../../connections/public/remoteFailure";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useT } from "../../../shared/i18n";
-import { Button } from "../../../shared/ui/Button";
 import { toast } from "../../../shared/ui/ToastRegion";
+import type { ExpandingButtonGroupItem } from "../../../shared/ui/ButtonGroup";
 import { CheckCheck, Link2, Undo2 } from "../../../shared/ui/icons";
 import { remoteRequest } from "../../connections/public/connections";
 import { useLocalLifecycleMachine } from "../hooks/useLocalLifecycleMachine";
@@ -14,12 +14,21 @@ type LinkDialog = { tasks: LinkableTask[]; linkedTaskId?: string };
 
 const folderName = (cwd: string) => cwd.split(/[/]/).filter(Boolean).pop() ?? "";
 
+export type SessionLifecycleActions = {
+  /** Settle, Un-settle or Cancel settle: a frequent header button. */
+  settle: ExpandingButtonGroupItem | null;
+  /** Link to a task: an occasional action for the overflow menu. */
+  link: ExpandingButtonGroupItem | null;
+  /** The task link dialog while it is open. */
+  dialog: ReactNode;
+};
+
 /**
  * Header actions of a session on this computer's Host: Settle or Un-settle, and Link to a task.
  * Settling only files the session on the sidebar's Settled shelf; it stays writable and its next
- * message makes it active again. Nothing renders for other Hosts or a Host without settle support.
+ * message makes it active again. Both actions are null for other Hosts or a Host without settle support.
  */
-export function SessionLifecycleControl({
+export function useSessionLifecycleActions({
   sessionId,
   cwd,
   local,
@@ -29,13 +38,13 @@ export function SessionLifecycleControl({
   cwd: string;
   local: boolean;
   hasMessages: boolean;
-}) {
+}): SessionLifecycleActions {
   const t = useT();
   const machineId = useLocalLifecycleMachine();
   const view = useSessionLifecycle(sessionId, local);
   const [dialog, setDialog] = useState<LinkDialog>();
   const [busy, setBusy] = useState(false);
-  if (!machineId || !view) return null;
+  if (!machineId || !view) return { settle: null, link: null, dialog: null };
   const report = (cause: unknown) =>
     toast.show({
       tone: "danger",
@@ -49,59 +58,52 @@ export function SessionLifecycleControl({
   const label =
     view.state === "settling" ? t("Cancel settle") : settled ? t("Un-settle") : t("Settle");
   const Icon = settled ? Undo2 : CheckCheck;
-  return (
-    <>
-      <Button
-        variant="ghost"
-        iconOnly
-        label={label}
-        loading={busy}
-        disabled={!hasMessages && !settled}
-        onClick={() => {
-          setBusy(true);
-          (settled
-            ? sessionLifecycleClient(machineId).unsettle(sessionId)
-            : sessionLifecycleClient(machineId).settle(sessionId)
-          )
-            .then(setSessionLifecycle)
-            .catch(report)
-            .finally(() => setBusy(false));
-        }}
-      >
-        <Icon aria-hidden className="icon-sm" strokeWidth={1.75} />
-      </Button>
-      <Button
-        variant="ghost"
-        iconOnly
-        label={t("Link to a task")}
-        onClick={() => {
-          Promise.all([
-            remoteRequest<LinkableTask[]>(machineId, "tasks.list", {}),
-            sessionLifecycleClient(machineId).taskFor(sessionId),
-          ]).then(
-            ([tasks, linkedTaskId]) =>
-              setDialog({
-                tasks: tasks.map(({ id, title }) => ({ id, title })),
-                ...(linkedTaskId ? { linkedTaskId } : {}),
-              }),
-            report,
-          );
-        }}
-      >
-        <Link2 aria-hidden className="icon-sm" strokeWidth={1.75} />
-      </Button>
-      {dialog ? (
-        <SessionTaskLinkDialog
-          sessionTitle={folderName(cwd)}
-          tasks={dialog.tasks}
-          linkedTaskId={dialog.linkedTaskId}
-          onClose={() => setDialog(undefined)}
-          onLink={async (taskId) =>
-            void (await sessionLifecycleClient(machineId).link(sessionId, taskId))
-          }
-          onUnlink={async () => void (await sessionLifecycleClient(machineId).unlink(sessionId))}
-        />
-      ) : null}
-    </>
-  );
+  return {
+    settle: {
+      id: "settle",
+      label,
+      icon: <Icon aria-hidden className="icon-sm" strokeWidth={1.75} />,
+      disabled: busy || (!hasMessages && !settled),
+      onSelect: () => {
+        setBusy(true);
+        (settled
+          ? sessionLifecycleClient(machineId).unsettle(sessionId)
+          : sessionLifecycleClient(machineId).settle(sessionId)
+        )
+          .then(setSessionLifecycle)
+          .catch(report)
+          .finally(() => setBusy(false));
+      },
+    },
+    link: {
+      id: "link-task",
+      label: t("Link to a task"),
+      icon: <Link2 aria-hidden className="icon-sm" strokeWidth={1.75} />,
+      onSelect: () => {
+        Promise.all([
+          remoteRequest<LinkableTask[]>(machineId, "tasks.list", {}),
+          sessionLifecycleClient(machineId).taskFor(sessionId),
+        ]).then(
+          ([tasks, linkedTaskId]) =>
+            setDialog({
+              tasks: tasks.map(({ id, title }) => ({ id, title })),
+              ...(linkedTaskId ? { linkedTaskId } : {}),
+            }),
+          report,
+        );
+      },
+    },
+    dialog: dialog ? (
+      <SessionTaskLinkDialog
+        sessionTitle={folderName(cwd)}
+        tasks={dialog.tasks}
+        linkedTaskId={dialog.linkedTaskId}
+        onClose={() => setDialog(undefined)}
+        onLink={async (taskId) =>
+          void (await sessionLifecycleClient(machineId).link(sessionId, taskId))
+        }
+        onUnlink={async () => void (await sessionLifecycleClient(machineId).unlink(sessionId))}
+      />
+    ) : null,
+  };
 }

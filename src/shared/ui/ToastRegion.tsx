@@ -1,6 +1,14 @@
-import { useLayoutEffect, useState, useSyncExternalStore, type ReactNode } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import { createPortal } from "react-dom";
 import { LAYER } from "../lib/layers";
+import { observeResize } from "../lib/observeResize";
 import {
   layoutStack,
   TOAST_STACK_VISIBLE,
@@ -9,7 +17,7 @@ import {
   type ToastStackTarget,
 } from "./arc/toast-stack/toast-stack";
 import { OverlayMenuLayer } from "./overlay";
-import { ToastCard, type ToastContentProps } from "./ToastCard";
+import { ToastCard, type ToastContentProps, type ToastTone } from "./ToastCard";
 
 /**
  * Toast card re-export for consumers of the shared toast queue.
@@ -28,13 +36,23 @@ export {
 } from "./ToastCard";
 
 /**
- * Where a toast stacks. One stack per placement; `top-center` is the default and the one place
- * every alert, warning and info shows. Corners remain only for explicitly placed legacy cards.
+ * Where a toast stacks. Routine messages use top-end; warnings and errors use top-center.
  */
 export type ToastPlacement = "top-center" | "bottom-end" | "top-end" | "bottom-start" | "top-start";
 
-/** The single shared alert location under the title bar. */
-export const DEFAULT_TOAST_PLACEMENT: ToastPlacement = "top-center";
+/** Routine feedback stays beside the work, under the title bar. */
+export const DEFAULT_TOAST_PLACEMENT: ToastPlacement = "top-end";
+const defaultPlacement = (tone?: ToastTone): ToastPlacement =>
+  tone === "warning" || tone === "danger" ? "top-center" : DEFAULT_TOAST_PLACEMENT;
+
+export type ToastAnnouncement = {
+  id: string;
+  title: string;
+  message: string;
+  tone: ToastTone;
+  occurredAt: number;
+};
+const announcementListeners = new Set<(entry: ToastAnnouncement) => void>();
 const PLACEMENTS: readonly ToastPlacement[] = [
   "top-center",
   "bottom-end",
@@ -78,6 +96,7 @@ type Corner = {
   pile: Pile;
   listeners: Set<() => void>;
   subscribe: (listener: () => void) => () => void;
+  stopResize?: () => void;
 };
 const corners = new Map<ToastPlacement, Corner>();
 const insets: Partial<Record<ToastPlacement, number>> = {};
@@ -94,6 +113,26 @@ function applyInset(placement: ToastPlacement, node: HTMLDivElement) {
   node.style.paddingBlockEnd = `${top ? DEFAULT_INSET : inset}px`;
 }
 
+/** On narrow windows, routine feedback sits below centered alerts instead of covering them. */
+function syncTopCorners() {
+  const routine = corners.get("top-end");
+  if (!routine?.node.isConnected) return;
+  const center = corners.get("top-center");
+  const routineBox = routine.stack.getBoundingClientRect();
+  let inset = insets["top-end"] ?? DEFAULT_INSET;
+  if (center?.node.isConnected) {
+    for (const child of center.node.children) {
+      const box = child.getBoundingClientRect();
+      if (box.height > 0 && box.left < routineBox.right && box.right > routineBox.left) {
+        inset = Math.max(inset, box.bottom + DEFAULT_INSET);
+      }
+    }
+  }
+  const padding = `${inset}px`;
+  if (routine.node.style.paddingBlockStart !== padding)
+    routine.node.style.paddingBlockStart = padding;
+}
+
 /** Recomputes where every toast of the corner sits and tells the toasts. */
 function syncPile(entry: Corner) {
   // An emptied stack gets no leave or blur event, so nothing may keep it open.
@@ -107,6 +146,7 @@ function syncPile(entry: Corner) {
   entry.pile = { keys: [...entry.keys], targets, expanded };
   entry.stack.style.blockSize = `${listHeight}px`;
   entry.stack.toggleAttribute("data-empty", entry.keys.length === 0);
+  syncTopCorners();
   for (const listener of entry.listeners) listener();
 }
 
@@ -207,11 +247,28 @@ function corner(placement: ToastPlacement): Corner {
 function joinCorner(entry: Corner) {
   entry.users += 1;
   if (!entry.node.isConnected) document.body.append(entry.node);
+  if (
+    entry.users === 1 &&
+    (entry === corners.get("top-center") || entry === corners.get("top-end"))
+  ) {
+    const stop = observeResize(entry.node, syncTopCorners);
+    window.addEventListener("resize", syncTopCorners);
+    entry.stopResize = () => {
+      stop();
+      window.removeEventListener("resize", syncTopCorners);
+    };
+  }
+  syncTopCorners();
 }
 
 function leaveCorner(entry: Corner) {
   entry.users -= 1;
-  if (entry.users <= 0) entry.node.remove();
+  if (entry.users <= 0) {
+    entry.stopResize?.();
+    entry.stopResize = undefined;
+    entry.node.remove();
+  }
+  syncTopCorners();
 }
 
 /** Joins the corner column for the lifetime of the caller; the column leaves with its last user. */
@@ -300,11 +357,7 @@ export type ToastSlotProps = {
  * @use Put a feature's own card (reminder panel, approval request) in the shared top-center alert column.
  * @avoid Plain messages: Toast or useToast. Never position a notice with fixed and an offset.
  */
-export function ToastSlot({
-  placement = DEFAULT_TOAST_PLACEMENT,
-  order,
-  children,
-}: ToastSlotProps) {
+export function ToastSlot({ placement = "top-center", order, children }: ToastSlotProps) {
   const entry = useCorner(placement);
   if (!entry) return null;
   return createPortal(
@@ -322,11 +375,13 @@ export function ToastSlot({
 
 export type ToastProps = ToastContentProps & {
   placement?: ToastPlacement;
+  /** Plain-text summary for the notification log. Never include secrets or hidden context. */
+  historyMessage?: string;
 };
 
 /**
  * A declarative toast owned by a component: it shows while rendered and joins the shared
- * top-center stack (or its explicit placement's stack).
+ * top-end stack, or top-center for warnings and errors (unless placement is explicit).
  *
  * ```tsx
  * {saved ? <Toast tone="success" message={t("Saved")} onDismiss={() => setSaved(false)} /> : null}
@@ -341,9 +396,30 @@ export type ToastProps = ToastContentProps & {
  * @avoid Save feedback next to its control: InlineMessage. Page or panel notice: Alert. Code with no component: useToast. A feature's own card: ToastSlot.
  * @arc toast-stack
  */
-export function Toast({ placement = DEFAULT_TOAST_PLACEMENT, ...props }: ToastProps) {
+export function Toast({ placement, historyMessage, ...props }: ToastProps) {
+  const [id] = useState(nextToastKey);
+  const previous = useRef("");
+  const occurrence = useRef(0);
+  const title = props.title ?? "";
+  const message = historyMessage ?? (typeof props.message === "string" ? props.message : "");
+  const tone = props.tone ?? "info";
+  // Record only announced plain text; rendered children and action payloads stay out of history.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- synchronizes the mounted notice's announced text with external notification history
+  useEffect(() => {
+    const signature = JSON.stringify([title, message, tone]);
+    if ((!title && !message) || signature === previous.current) return;
+    previous.current = signature;
+    const entry = {
+      id: `toast:${id}:${++occurrence.current}`,
+      title,
+      message,
+      tone,
+      occurredAt: Date.now(),
+    };
+    for (const listener of announcementListeners) listener(entry);
+  }, [id, title, message, tone]);
   return (
-    <StackedToast placement={placement}>
+    <StackedToast placement={placement ?? defaultPlacement(tone)}>
       <ToastCard {...props} />
     </StackedToast>
   );
@@ -353,7 +429,7 @@ export function Toast({ placement = DEFAULT_TOAST_PLACEMENT, ...props }: ToastPr
  * Imperative queue: useToast() / toast
  * ------------------------------------------------------------------------------------------- */
 
-export type ToastOptions = Omit<ToastContentProps, "onDismiss"> & {
+export type ToastOptions = Omit<ToastProps, "onDismiss"> & {
   /** Reusing an id replaces that toast in place (a retry updates its own failure). */
   id?: string;
   placement?: ToastPlacement;
@@ -402,7 +478,7 @@ function dismiss(id: string) {
 
 function dismissAll(placement?: ToastPlacement) {
   const leaving = queue.filter(
-    (item) => !placement || (item.placement ?? DEFAULT_TOAST_PLACEMENT) === placement,
+    (item) => !placement || (item.placement ?? defaultPlacement(item.tone)) === placement,
   );
   publish(queue.filter((item) => !leaving.includes(item)));
   for (const item of leaving) item.onDismiss?.();
@@ -420,6 +496,8 @@ export function useToast() {
 }
 
 export type ToastRegionProps = {
+  /** Receives plain-text announcements for the application's existing notification history. */
+  onRecord?: (entry: ToastAnnouncement) => void;
   /**
    * Distance from the window edge per corner, in px (default 12). Top corners use it to clear
    * the title bar; bottom corners to clear the status bar.
@@ -435,7 +513,16 @@ export type ToastRegionProps = {
  * @use Mount once per window to render the imperative `toast` queue and set placement insets.
  * @avoid Mounting a second region or a second toast layer. Component-owned messages: Toast.
  */
-export function ToastRegion({ insets: next }: ToastRegionProps) {
+export function ToastRegion({ insets: next, onRecord }: ToastRegionProps) {
+  // Subscribe before declarative toast effects announce their initial content.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- holds the application's history listener while its toast region is mounted
+  useLayoutEffect(() => {
+    if (!onRecord) return;
+    announcementListeners.add(onRecord);
+    return () => {
+      announcementListeners.delete(onRecord);
+    };
+  }, [onRecord]);
   const handleDismiss = (id: string) => dismiss(id);
   const entries = useSyncExternalStore(
     subscribe,

@@ -1,7 +1,8 @@
 import { afterEach, expect, it, vi } from "vitest";
 
-const { start, bindCatalog, models, account } = vi.hoisted(() => ({
+const { start, refreshFacts, bindCatalog, models, account } = vi.hoisted(() => ({
   start: vi.fn(),
+  refreshFacts: vi.fn(async () => undefined),
   bindCatalog: vi.fn(),
   models: vi.fn(() => [{ id: "codex:live" }, { id: "codex:disabled" }]),
   account: vi.fn(() => "work"),
@@ -20,8 +21,13 @@ vi.mock("./delegation", () => ({
   startDelegationProfileSync: start,
 }));
 
+vi.mock("../model/liveCatalogFacts", () => ({
+  refreshLocalLiveCatalogFacts: refreshFacts,
+}));
+
 afterEach(() => {
   vi.unstubAllGlobals();
+  refreshFacts.mockClear();
   vi.resetModules();
   start.mockClear();
   bindCatalog.mockClear();
@@ -33,6 +39,7 @@ it("keeps renderer polling out of a headless runtime", async () => {
   vi.stubGlobal("window", undefined);
   await import("./rendererBootstrap");
   expect(start).not.toHaveBeenCalled();
+  expect(refreshFacts).not.toHaveBeenCalled();
 });
 
 it("leaves a browser fixture without a native bridge alone", async () => {
@@ -45,6 +52,7 @@ it("starts native renderer polling once per module initialization", async () => 
   vi.stubGlobal("window", { __TAURI_INTERNALS__: {} });
   await import("./rendererBootstrap");
   await vi.waitFor(() => expect(start).toHaveBeenCalledOnce());
+  await vi.waitFor(() => expect(refreshFacts).toHaveBeenCalledOnce());
   await import("./rendererBootstrap");
   expect(start).toHaveBeenCalledOnce();
 });

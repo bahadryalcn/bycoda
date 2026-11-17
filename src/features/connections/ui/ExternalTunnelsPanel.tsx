@@ -1,209 +1,62 @@
-import { surfaceAttributes } from "../../../shared/ui/Surface";
-import { Code } from "../../../shared/ui/Code";
-import { Text } from "../../../shared/ui/Text";
-import { Field } from "../../../shared/ui/Field";
-import { Switch } from "../../../shared/ui/Switch";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
-import { Alert } from "../../../shared/ui/Alert";
-import { EmptyState } from "../../../shared/ui/EmptyState";
-import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
-import { LoadingText } from "../../../shared/ui/LoadingText";
-import { Surface } from "../../../shared/ui/Surface";
-import { PasswordField } from "../../../shared/ui/PasswordField";
-import { Button } from "../../../shared/ui/Button";
-import { TextField } from "../../../shared/ui/TextField";
-import { RadioGroup } from "../../../shared/ui/RadioGroup";
-import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
-import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
-import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
-import { QRCodeSVG } from "qrcode.react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
-import { copyText } from "../../../platform/tauri/clipboard";
-import { Modal } from "../../../shared/ui/Modal";
-import { Copy, RefreshCw } from "../../../shared/ui/icons";
-import type {
-  ExternalTunnel,
-  TunnelProvider,
-  TunnelTarget,
-} from "../../../integrations/external-tunnels";
-import {
-  externalTunnelApi,
-  ExternalTunnelController,
-  type TunnelUiIssue,
-} from "../model/externalTunnelController";
+import { Alert } from "../../../shared/ui/Alert";
+import { Button } from "../../../shared/ui/Button";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
+import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
+import { Text } from "../../../shared/ui/Text";
 import { isLocalSyncMachine } from "../model/localSync";
-import { remoteBackoffDelay } from "../model/remotePollingPolicy";
 import type { RemoteMachine } from "../model/protocol";
-import { phonePairingApi } from "../model/phonePairingApi";
-import { usePhonePairing } from "../model/usePhonePairing";
-import { PhonePairingDialog } from "./PhonePairingDialog";
+import { TunnelRows } from "./TunnelRows";
+import { TunnelStartForm, useTunnelDraft, useTunnelStart } from "./TunnelStartForm";
+import { issueCopy } from "./tunnelCopy";
+import { useTunnelSession } from "./useTunnelSession";
 import "./external-tunnels.css";
 
-const issueCopy: Record<TunnelUiIssue, string> = {
-  "cli-missing":
-    "The tunnel CLI is missing on this computer. Install the selected provider and check again.",
-  "credential-missing": "ngrok needs a valid authtoken. Save one for this computer and try again.",
-  "credential-store-unavailable":
-    "The secure credential store is unavailable. Unlock it on this computer and try again.",
-  "invalid-target": "Enter a loopback HTTP or HTTPS URL, or a port from 1 to 65535.",
-  "host-target-required": "This is the bycoda host port. Select bycoda host access to share it.",
-  "origin-unreachable":
-    "The local service is not listening on this computer. Start it or check the URL and port.",
-  "connection-failed":
-    "The tunnel provider could not connect. Check this computer's internet connection and provider account.",
-  "startup-timeout": "The tunnel did not connect in time. Check the network and try again.",
-  "unexpected-exit":
-    "The tunnel process closed unexpectedly. Its public URL is no longer available. Start a new tunnel.",
-  "process-error": "The tunnel process could not start. Check the provider CLI on this computer.",
-  "stop-failed": "The tunnel process did not stop. Retry stopping it on this computer.",
-  "host-restarted":
-    "The host restarted. This previous tunnel is interrupted. Start a new tunnel to get a new URL.",
-  "storage-unavailable":
-    "Tunnel state could not be read or saved. Check the host's data directory permissions.",
-  "host-update": "Update bycoda Host on this computer to manage external tunnels.",
-  connection: "The selected computer could not be reached. Reconnect it and check again.",
-  "invalid-response":
-    "The host returned an invalid tunnel status. Check the selected computer and update its host.",
-};
-const stateCopy = {
-  starting: "Starting",
-  ready: "Connected",
-  stopping: "Stopping",
-  stopped: "Stopped",
-  error: "Error",
-  interrupted: "Interrupted",
-};
-const stateTone: Record<keyof typeof stateCopy, BadgeTone> = {
-  starting: "info",
-  ready: "success",
-  stopping: "warning",
-  stopped: "neutral",
-  error: "danger",
-  interrupted: "warning",
-};
-const providerName = (provider: TunnelProvider) => (provider === "ngrok" ? "ngrok" : "Cloudflare");
+const machineLabel = (machine: RemoteMachine) =>
+  isLocalSyncMachine(machine) ? t("This computer") : machine.name;
 
-function TunnelPairing({
-  machine,
-  url,
-  onClose,
+/** The status and repair notices a machine's tunnel read can raise. */
+function TunnelNotices({
+  session,
+  repair = true,
+  issue = true,
+  retry = true,
 }: {
-  machine: RemoteMachine;
-  url: string;
-  onClose: () => void;
+  session: ReturnType<typeof useTunnelSession>;
+  /** Show the damaged-state repair notice. */
+  repair?: boolean;
+  /** Show the read or start failure. */
+  issue?: boolean;
+  /** Offer "Check again" under the failure; the start form already has its own. */
+  retry?: boolean;
 }) {
-  // Reuse the same short-lived, owner-issued pairing ticket and redemption checks.
-  const api = useRef({
-    ...phonePairingApi,
-    access: async () => ({ state: "ready" as const, endpoint: url }),
-  }).current;
-  const { state, coordinator } = usePhonePairing(api);
-  useEffect(() => {
-    // The owner already chose "Connect your phone" on the tunnel row: go straight to the QR.
-    // create() does nothing unless access is ready.
-    void coordinator.open(machine).then(() => coordinator.create());
-  }, [coordinator, machine]);
-  if (state.stage === "closed") return null;
+  const { state, overview, controller } = session;
+  const [repairNoticeDismissed, setRepairNoticeDismissed] = useState(false);
   return (
-    <PhonePairingDialog
-      fixedEndpoint
-      machines={[machine]}
-      state={state}
-      onSelect={() => {}}
-      onClose={onClose}
-      onRefresh={() => void coordinator.refresh()}
-      onEnable={() => {}}
-      onCreate={() => void coordinator.create()}
-      onRegenerate={() => void coordinator.regenerate()}
-    />
-  );
-}
-
-function TunnelUrl({ tunnel, machine }: { tunnel: ExternalTunnel; machine: RemoteMachine }) {
-  const [qr, setQr] = useState(false);
-  const [pair, setPair] = useState(false);
-  const [copied, setCopied] = useState<"idle" | "pending" | "done" | "error">("idle");
-  const pending = useRef(false);
-  const copy = async () => {
-    if (pending.current || !tunnel.publicUrl) return;
-    pending.current = true;
-    setCopied("pending");
-    try {
-      await copyText(tunnel.publicUrl);
-      setCopied("done");
-    } catch {
-      setCopied("error");
-    } finally {
-      pending.current = false;
-    }
-  };
-  if (!tunnel.publicUrl) return null;
-  return (
-    <Text
-      as="div"
-      size="secondary"
-      tone="primary"
-      leading="inherit"
-      className="external-tunnel-url"
-    >
-      <Text as="span" size="caption" leading="inherit">
-        <Code>{tunnel.publicUrl}</Code>
-      </Text>
-      <div className="external-tunnel-actions">
+    <>
+      {repair && overview?.repair && !repairNoticeDismissed ? (
+        <Alert tone="info" onDismiss={() => setRepairNoticeDismissed(true)}>
+          {t("Tunnel settings were damaged and repaired; {p0} entries could not be recovered.", {
+            p0: String(overview.repair.dropped),
+          })}
+        </Alert>
+      ) : null}
+      {issue && state.issue ? <Alert tone="danger">{t(issueCopy[state.issue])}</Alert> : null}
+      {issue && retry && state.issue && state.phase === "error" ? (
         <Button
-          stableWidth
           type="button"
-          className="shrink-0"
-          disabled={copied === "pending"}
-          onClick={() => void copy()}
+          className="shrink-0 self-start"
+          disabled={state.pending}
+          onClick={() => void controller.refresh(true)}
         >
-          <Copy className="icon-sm" aria-hidden />
-          {t("Copy URL")}
+          {t("Check again")}
         </Button>
-        <Button stableWidth type="button" className="shrink-0" onClick={() => setQr(true)}>
-          {t("Show QR code")}
-        </Button>
-        {tunnel.target === "host" ? (
-          <Button stableWidth type="button" className="shrink-0" onClick={() => setPair(true)}>
-            {t("Connect your phone")}
-          </Button>
-        ) : null}
-      </div>
-      {copied === "done" ? (
-        <InlineMessage tone="success">{t("URL copied")}</InlineMessage>
-      ) : copied === "error" ? (
-        <Alert tone="danger">{t("The URL could not be copied. Try again.")}</Alert>
       ) : null}
-      <Text as="p" tone="muted" leading="normal">
-        {t("Public access has not been verified.")}
-      </Text>
-      {qr ? (
-        <Modal title={t("Tunnel QR code")} size="sm" onClose={() => setQr(false)}>
-          <div className="external-tunnel-qr">
-            <QRCodeSVG
-              {...surfaceAttributes({ radius: "panel" })}
-              value={tunnel.publicUrl}
-              size={240}
-              marginSize={4}
-              title={t("Tunnel URL")}
-            />
-            <Text as="span" size="caption" leading="inherit">
-              <Code>{tunnel.publicUrl}</Code>
-            </Text>
-            {tunnel.target === "host" ? (
-              <p>
-                {t(
-                  "This URL requires a paired device. Use Connect your phone to create a pairing code.",
-                )}
-              </p>
-            ) : null}
-          </div>
-        </Modal>
-      ) : null}
-      {pair ? (
-        <TunnelPairing machine={machine} url={tunnel.publicUrl} onClose={() => setPair(false)} />
-      ) : null}
-    </Text>
+    </>
   );
 }
 
@@ -218,59 +71,11 @@ export function TunnelControls({
   active?: boolean;
 }) {
   useLocale();
-  const id = useId();
-  const controllerRef = useRef<ExternalTunnelController | null>(null);
-  if (!controllerRef.current)
-    controllerRef.current = new ExternalTunnelController(
-      machine.environmentId,
-      externalTunnelApi(machine),
-    );
-  const controller = controllerRef.current;
-  const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
-  const [provider, setProvider] = useState<TunnelProvider>("cloudflare");
-  const [target, setTarget] = useState<TunnelTarget>("dev-server");
-  const [localUrl, setLocalUrl] = useState(initialLocalUrl);
-  const [token, setToken] = useState("");
-  const [action, setAction] = useState<string | null>(null);
-  const activeRef = useRef(active);
-  activeRef.current = active;
-  const run = async (name: string, work: () => Promise<boolean>) => {
-    if (controller.getSnapshot().pending) return false;
-    setAction(name);
-    try {
-      return await work();
-    } finally {
-      setAction(null);
-    }
-  };
-  const [repairNoticeDismissed, setRepairNoticeDismissed] = useState(false);
-  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Holds this machine's tunnel controller and status poll until unmount, then closes the controller and cancels its timer.
-  useEffect(() => {
-    controller.activate();
-    let disposed = false;
-    let timer: ReturnType<typeof setTimeout>;
-    // Consecutive failed reads lengthen the wait, as the other machine pollers do.
-    let failures = 0;
-    const poll = async (fresh = false) => {
-      if (disposed) return;
-      if (activeRef.current && (!document.hidden || fresh)) {
-        await controller.refresh(fresh);
-        failures = controller.getSnapshot().phase === "error" ? failures + 1 : 0;
-      }
-      if (!disposed)
-        timer = setTimeout(() => void poll(), failures ? remoteBackoffDelay(failures) : 3_000);
-    };
-    void poll(true);
-    return () => {
-      disposed = true;
-      clearTimeout(timer);
-      controller.close();
-    };
-  }, [controller]);
-  const overview = state.overview;
-  const selected = overview?.providers.find((entry) => entry.provider === provider);
-  const ready = state.phase === "ready" && !state.pending;
-  const machineLabel = isLocalSyncMachine(machine) ? t("This computer") : machine.name;
+  const formId = useId();
+  const session = useTunnelSession(machine, active);
+  const draft = useTunnelDraft(initialLocalUrl);
+  const { canStart, start } = useTunnelStart(session, draft);
+  const { state, action } = session;
   return (
     <Text
       as="div"
@@ -280,285 +85,107 @@ export function TunnelControls({
       className="external-tunnel-controls"
       aria-busy={state.pending || state.phase === "loading"}
     >
-      {overview?.tunnels.length ? (
-        <Text
-          as="div"
-          size="secondary"
-          tone="primary"
-          leading="inherit"
-          className="external-tunnel-list"
-          aria-label={t("Tunnel status")}
-        >
-          {[...overview.tunnels].reverse().map((tunnel) => (
-            <article key={tunnel.id}>
-              <Text
-                as="div"
-                size="secondary"
-                tone="primary"
-                leading="inherit"
-                className="external-tunnel-item"
-              >
-                <div className="external-tunnel-actions">
-                  <strong>
-                    {providerName(tunnel.provider)} ·{" "}
-                    {t(tunnel.target === "host" ? "bycoda host access" : "Dev server sharing")}
-                  </strong>
-                  <Badge variant="dot" size="sm" tone={stateTone[tunnel.state]} role="status">
-                    {t(stateCopy[tunnel.state])}
-                  </Badge>
-                  {tunnel.canStop ? (
-                    <Button
-                      stableWidth
-                      type="button"
-                      className="shrink-0"
-                      disabled={state.pending || tunnel.state === "stopping"}
-                      loading={state.pending && action === `stop:${tunnel.id}`}
-                      onClick={() =>
-                        void run(`stop:${tunnel.id}`, () => controller.stop(tunnel.id))
-                      }
-                    >
-                      {t("Stop tunnel")}
-                    </Button>
-                  ) : null}
-                </div>
-                <Text as="span" size="caption" leading="inherit">
-                  <Code>{tunnel.localUrl}</Code>
-                </Text>
-                {tunnel.issue ? (
-                  tunnel.state === "error" ? (
-                    <InlineError>{t(issueCopy[tunnel.issue])}</InlineError>
-                  ) : (
-                    <InlineMessage tone="warning">{t(issueCopy[tunnel.issue])}</InlineMessage>
-                  )
-                ) : null}
-                {active && ready && tunnel.state === "ready" ? (
-                  <TunnelUrl
-                    key={`${tunnel.id}:${tunnel.publicUrl}`}
-                    tunnel={tunnel}
-                    machine={machine}
-                  />
-                ) : null}
-              </Text>
-            </article>
-          ))}
-        </Text>
-      ) : null}
-      {overview?.repair && !repairNoticeDismissed ? (
-        <Alert tone="info" onDismiss={() => setRepairNoticeDismissed(true)}>
-          {t("Tunnel settings were damaged and repaired; {p0} entries could not be recovered.", {
-            p0: String(overview.repair.dropped),
-          })}
-        </Alert>
-      ) : null}
-      {state.issue ? <Alert tone="danger">{t(issueCopy[state.issue])}</Alert> : null}
-      <form
-        className="external-tunnel-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (
-            ready &&
-            (provider === "cloudflare" || selected?.installed) &&
-            (provider === "cloudflare" || selected?.credential === "saved")
-          )
-            void run("start", () =>
-              controller.start({
-                provider,
-                target,
-                ...(target === "dev-server" ? { localUrl } : {}),
-              }),
-            );
-        }}
-      >
-        <Field label={t("What to share")}>
-          <RadioGroup
-            variant="inline"
-            label={t("Tunnel target")}
-            disabled={state.pending}
-            value={target}
-            onValueChange={(value) => {
-              if (!state.pending) setTarget(value as TunnelTarget);
-            }}
-            options={[
-              { value: "dev-server", label: t("Dev server") },
-              { value: "host", label: t("bycoda host") },
-            ]}
-          />
-        </Field>
-        <Field label={t("Provider")}>
-          <RadioGroup
-            variant="inline"
-            label={t("Tunnel provider")}
-            disabled={state.pending}
-            value={provider}
-            onValueChange={(value) => {
-              if (!state.pending) setProvider(value as TunnelProvider);
-            }}
-            options={[
-              { value: "cloudflare", label: "Cloudflare" },
-              { value: "ngrok", label: "ngrok" },
-            ]}
-          />
-        </Field>
-        <div className="external-tunnel-actions external-tunnel-wide">
-          {overview?.automaticHostAccess !== undefined &&
-          target === "host" &&
-          provider === "cloudflare" ? (
-            <Switch
-              label={t("Access from outside the network (Cloudflare Quick Tunnel)")}
-              description={t(
-                "Free temporary URL. Restarts automatically and updates your account when it changes.",
-              )}
-              checked={overview.automaticHostAccess === true}
-              disabled={!ready || state.pending}
-              onCheckedChange={(enabled) =>
-                void run("automatic", () => controller.automatic(enabled))
-              }
-            />
-          ) : null}
-          {selected && (selected.installed || provider === "ngrok") ? (
-            <Badge variant="dot" tone={selected.installed ? "success" : "neutral"}>
-              {t(selected.installed ? "{p0} CLI ready" : "{p0} CLI needed", {
-                p0: provider === "cloudflare" ? "Cloudflare" : "ngrok",
-              })}
-            </Badge>
-          ) : null}
+      <TunnelRows machine={machine} session={session} active={active} />
+      <TunnelNotices session={session} retry={false} />
+      <TunnelStartForm
+        session={session}
+        draft={draft}
+        machineLabel={machineLabel(machine)}
+        formId={formId}
+        onStart={start}
+        submit={
           <Button
-            type="button"
-            variant="ghost"
-            iconOnly
-            label={t("Check again")}
-            disabled={state.pending}
-            onClick={() => void controller.refresh(true)}
+            stableWidth
+            type="submit"
+            variant="primary"
+            loading={state.pending && action === "start"}
+            disabled={!canStart}
           >
-            <RefreshCw className="icon-sm" aria-hidden />
+            {t("Start tunnel")}
           </Button>
-          {state.phase === "loading" ? (
-            <LoadingText>{t("Checking tunnel access…")}</LoadingText>
-          ) : null}
-          <InfoPopover label={t("Tunnel setup")}>
-            {provider === "ngrok" ? (
-              <p>
-                {t(
-                  "Provider CLI and authentication must be available on the selected computer. Local URLs and ports refer to that computer.",
-                )}
-              </p>
-            ) : null}
-            {provider === "cloudflare" ? (
-              <p>
-                {t(
-                  "Cloudflare Quick Tunnels need no account. URLs are temporary and SSE is not supported.",
-                )}
-              </p>
-            ) : null}
-          </InfoPopover>
-        </div>
-        <TextField
-          label={t("Local URL or port")}
-          id={`${id}-url`}
-          value={target === "host" ? (overview?.hostLocalUrl ?? "") : localUrl}
-          readOnly={target === "host"}
-          disabled={state.pending}
-          placeholder="http://127.0.0.1:3000"
-          onChange={(event) => setLocalUrl(event.target.value)}
-          autoCapitalize="none"
-          spellCheck={false}
-          fieldClassName="min-w-0 flex-1"
-        />
-        <Text as="p" tone="muted" leading="normal" className="external-tunnel-wide">
-          {target === "host"
-            ? t(
-                "Host access keeps device authentication and pairing. The public URL contains no device credential.",
-              )
-            : t("Anyone with this URL can reach the dev server. Keep access controls enabled.")}
-        </Text>
-        <Button
-          stableWidth
-          type="submit"
-          loading={state.pending && action === "start"}
-          disabled={
-            !ready ||
-            (provider === "ngrok" && (!selected?.installed || selected.credential !== "saved"))
-          }
-          variant="primary"
-        >
-          {t("Start tunnel")}
-        </Button>
-      </form>
-      {provider === "ngrok" && selected && !selected.installed ? (
-        <InlineMessage tone="warning">
-          {t("Install {p0} on {p1}, then check again.", {
-            p0: "ngrok",
-            p1: machineLabel,
-          })}
-        </InlineMessage>
-      ) : null}
-      {provider === "ngrok" ? (
-        <Text
-          as="div"
-          size="secondary"
-          tone="primary"
-          leading="inherit"
-          className="external-tunnel-credentials"
-        >
-          {selected ? (
-            <InlineMessage tone={selected.credential === "saved" ? "success" : "warning"}>
-              {t(
-                selected?.credential === "saved"
-                  ? "ngrok authtoken is saved securely on this computer."
-                  : selected?.credential === "unavailable"
-                    ? issueCopy["credential-store-unavailable"]
-                    : issueCopy["credential-missing"],
-              )}
-            </InlineMessage>
-          ) : null}
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (overview && !state.pending && token) {
-                const value = token;
-                void run("credential", () => controller.credential(value))
-                  .then((saved) => {
-                    if (saved) setToken((current) => (current === value ? "" : current));
-                  })
-                  .catch(() => undefined);
-              }
-            }}
-          >
-            <PasswordField
-              label={t("ngrok authtoken")}
-              id={`${id}-token`}
-
-              value={token}
-              disabled={state.pending}
-              autoComplete="new-password"
-              spellCheck={false}
-              onChange={(event) => setToken(event.target.value)}
-              fieldClassName="min-w-0 flex-1"
-            />
-            <Button
-              stableWidth
-              type="submit"
-              loading={state.pending && action === "credential"}
-              disabled={!overview || state.pending || !token}
-            >
-              {t("Save token securely")}
-            </Button>
-            {selected?.credential === "saved" ? (
-              <Button
-                stableWidth
-                type="button"
-                className="shrink-0"
-                disabled={!ready}
-                loading={state.pending && action === "forget"}
-                onClick={() => void run("forget", () => controller.credential(""))}
-              >
-                {t("Forget saved token")}
-              </Button>
-            ) : null}
-          </form>
-        </Text>
-      ) : null}
+        }
+      />
     </Text>
+  );
+}
+
+type Report = { count: number; phase: "loading" | "ready" | "error" };
+
+/** One computer's shared links, its notices and its share dialog. */
+function MachineSharing({
+  machine,
+  active,
+  grouped,
+  sharing,
+  onShareClose,
+  computerPicker,
+  onReport,
+}: {
+  machine: RemoteMachine;
+  active: boolean;
+  grouped: boolean;
+  sharing: boolean;
+  onShareClose: () => void;
+  computerPicker: ReactNode;
+  onReport: (key: string, report: Report) => void;
+}) {
+  const key = `${machine.id}:${machine.environmentId}`;
+  const formId = useId();
+  // An open share dialog keeps its computer's status current even if the tab hides.
+  const session = useTunnelSession(machine, active || sharing);
+  const draft = useTunnelDraft();
+  const { canStart, start } = useTunnelStart(session, draft, onShareClose);
+  const { state, action, overview } = session;
+  const count = overview?.tunnels.length ?? 0;
+  const phase = state.phase;
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Reports this machine's link count and read phase to the panel header and empty state.
+  useEffect(() => onReport(key, { count, phase }), [key, count, phase, onReport]);
+  const hasContent = count > 0 || !!state.issue || !!overview?.repair;
+  return (
+    <div className="external-tunnel-group" aria-busy={state.pending || state.phase === "loading"}>
+      {grouped && hasContent ? (
+        <SectionLabel as="h3" count={count || null}>
+          {machineLabel(machine)}
+        </SectionLabel>
+      ) : null}
+      <TunnelRows machine={machine} session={session} />
+      <TunnelNotices session={session} issue={!sharing} />
+      {sharing ? (
+        <Modal
+          title={t("Share from {p0}", { p0: machineLabel(machine) })}
+          size="md"
+          onClose={onShareClose}
+          footer={
+            <ModalActions>
+              <Button variant="ghost" type="button" onClick={onShareClose}>
+                {t("Cancel")}
+              </Button>
+              <Button
+                variant="primary"
+                type="submit"
+                form={formId}
+                loading={state.pending && action === "start"}
+                disabled={!canStart}
+              >
+                {t("Start sharing")}
+              </Button>
+            </ModalActions>
+          }
+        >
+          <div className="external-tunnel-controls">
+            {computerPicker}
+            <TunnelNotices session={session} repair={false} retry={false} />
+            <TunnelStartForm
+              session={session}
+              draft={draft}
+              machineLabel={machineLabel(machine)}
+              formId={formId}
+              onStart={start}
+            />
+          </div>
+        </Modal>
+      ) : null}
+    </div>
   );
 }
 
@@ -566,65 +193,88 @@ export function ExternalTunnelsPanel({
   machines,
   loaded,
   loading,
+  active = true,
 }: {
   machines: RemoteMachine[];
   loaded: boolean;
   loading: boolean;
+  /** The Sharing tab is showing; hidden, the panel stays mounted but stops polling Hosts. */
+  active?: boolean;
 }) {
   useLocale();
-  const [selected, setSelected] = useState("");
   const id = useId();
+  const [sharingId, setSharingId] = useState<string | null>(null);
+  const [reports, setReports] = useState<Record<string, Report>>({});
   const ordered = [...machines].sort(
     (a, b) => Number(isLocalSyncMachine(b)) - Number(isLocalSyncMachine(a)),
   );
-  const machine = selected ? ordered.find((entry) => entry.id === selected) : ordered[0];
-  const [visited, setVisited] = useState<string[]>([]);
-  const machineKey = machine ? `${machine.id}:${machine.environmentId}` : "";
-  if (machineKey && !visited.includes(machineKey)) setVisited([...visited, machineKey]);
+  const report = (key: string, next: Report) =>
+    setReports((current) => {
+      const previous = current[key];
+      return previous && previous.count === next.count && previous.phase === next.phase
+        ? current
+        : { ...current, [key]: next };
+    });
+  const keys = ordered.map((entry) => `${entry.id}:${entry.environmentId}`);
+  const total = keys.reduce((sum, key) => sum + (reports[key]?.count ?? 0), 0);
+  const settled = keys.length > 0 && keys.every((key) => reports[key]?.phase === "ready");
+  const checking =
+    !loaded || loading || keys.some((key) => !reports[key] || reports[key].phase === "loading");
+  const sharing = ordered.find((entry) => entry.id === sharingId);
+  const computerPicker =
+    ordered.length > 1 ? (
+      <SearchableSelect
+        label={t("Computer")}
+        triggerProps={{ id: `${id}-machine` }}
+        value={sharing?.id ?? ""}
+        onChange={setSharingId}
+        options={ordered.map((entry) => ({ value: entry.id, label: machineLabel(entry) }))}
+      />
+    ) : null;
+  const share = () => setSharingId(ordered[0]?.id ?? null);
   return (
-    <Surface as="section" variant="card" padding="lg" aria-label={t("External tunnels")}>
-      <Text
-        as="div"
-        size="secondary"
-        tone="primary"
-        leading="inherit"
-        className="external-tunnels-panel"
+    <section className="external-tunnels-panel" aria-label={t("External tunnels")}>
+      <SectionLabel
+        as="h2"
+        count={total || undefined}
+        actions={
+          <Button
+            variant="primary"
+            type="button"
+            disabled={!loaded || loading || !ordered.length}
+            onClick={share}
+          >
+            {t("Share…")}
+          </Button>
+        }
       >
-        <Text as="p" tone="muted" leading="normal">
-          {t(
-            "Share a dev server or this computer's bycoda host through a public Cloudflare or ngrok URL.",
-          )}
-        </Text>
-        {ordered.length > 1 ? (
-          <SearchableSelect
-            label={t("Computer")}
-            triggerProps={{ id: `${id}-machine` }}
-            value={machine?.id ?? ""}
-            disabled={!loaded || loading}
-            onChange={setSelected}
-            options={ordered.map((entry) => ({
-              value: entry.id,
-              label: isLocalSyncMachine(entry) ? t("This computer") : entry.name,
-            }))}
-          />
-        ) : null}
-        {!loaded || loading ? <LoadingText>{t("Checking tunnel access…")}</LoadingText> : null}
-        {machine ? (
-          ordered
-            .filter((entry) => visited.includes(`${entry.id}:${entry.environmentId}`))
-            .map((entry) => (
-              <div key={`${entry.id}:${entry.environmentId}`} hidden={entry !== machine}>
-                <TunnelControls machine={entry} active={entry === machine} />
-              </div>
-            ))
-        ) : loaded && !loading ? (
-          <EmptyState
-            size="inline"
-            kind="empty"
-            description={t("Choose a connected computer to manage its tunnels.")}
-          />
-        ) : null}
-      </Text>
-    </Surface>
+        {t("Shared links")}
+      </SectionLabel>
+      {ordered.map((entry) => (
+        <MachineSharing
+          key={`${entry.id}:${entry.environmentId}`}
+          machine={entry}
+          active={active}
+          grouped={ordered.length > 1}
+          sharing={entry.id === sharing?.id}
+          onShareClose={() => setSharingId(null)}
+          computerPicker={computerPicker}
+          onReport={report}
+        />
+      ))}
+      {total === 0 && checking && ordered.length ? (
+        <LoadingText>{t("Checking tunnel access…")}</LoadingText>
+      ) : null}
+      {loaded && !loading && !ordered.length ? (
+        <EmptyState
+          size="inline"
+          kind="empty"
+          description={t("Choose a connected computer to manage its tunnels.")}
+        />
+      ) : null}
+      {total === 0 && settled && loaded && !loading ? (
+        <EmptyState context="panel" kind="empty" title={t("Nothing is shared")} />
+      ) : null}
+    </section>
   );
 }

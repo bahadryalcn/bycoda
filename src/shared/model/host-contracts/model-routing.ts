@@ -255,3 +255,25 @@ export const ModelRoutingResolveParamsSchema = z.strictObject({
 export const ModelRoutingResolveResultSchema = z.strictObject({
   resolution: ModelRoutingResolutionSchema,
 });
+
+/** One model family priced and rated by the public OpenRouter catalog (Artificial Analysis index). */
+export const ModelCatalogFactSchema = z.strictObject({
+  /** Lowercase id without provider prefix and with dots as dashes, e.g. `claude-opus-5-5`. */
+  family: z.string().min(1).max(200),
+  /** Standard API dollars per million tokens. */
+  inputUsd: z.number().min(0).max(100_000),
+  outputUsd: z.number().min(0).max(100_000),
+  intelligenceIndex: z.number().min(0).max(1000).optional(),
+});
+export type ModelCatalogFact = z.infer<typeof ModelCatalogFactSchema>;
+export const MODEL_CATALOG_FACTS_MAX = 5000;
+export const ModelRoutingCatalogFactsParamsSchema = z.strictObject({});
+/** Read-only: live prices and capability scores for smart setup. Grants no write authority. */
+export const ModelRoutingCatalogFactsResultSchema = z.strictObject({
+  fetchedAt: z.number().int().nonnegative().optional(),
+  source: z.literal("openrouter"),
+  models: z.array(ModelCatalogFactSchema).max(MODEL_CATALOG_FACTS_MAX),
+  /** Set when the refresh failed; `models` then holds the last good (stale) list or is empty. */
+  error: z.string().max(500).optional(),
+});
+export type ModelRoutingCatalogFactsResult = z.infer<typeof ModelRoutingCatalogFactsResultSchema>;

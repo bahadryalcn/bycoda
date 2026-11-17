@@ -37,7 +37,8 @@ vi.mock("../../../../integrations/harness", () => ({
     return transport.steer();
   },
 }));
-vi.mock("../../../../features/sessions/model/attachments", () => ({
+vi.mock("../../../../features/sessions/model/attachments", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../../features/sessions/model/attachments")>()),
   displayAttachments: () => [],
   prepareAttachments: async () => [],
 }));

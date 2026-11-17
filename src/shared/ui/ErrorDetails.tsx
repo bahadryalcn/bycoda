@@ -1,9 +1,8 @@
 import { useId, useRef, useState, type ReactNode } from "react";
-import { useCopyFeedback } from "../hooks/useCopyFeedback";
 import { useT } from "../i18n";
 import { truncateGraphemes } from "../lib/text/truncate";
 import { Button } from "./Button";
-import { InlineMessage } from "./InlineError";
+import { CopyButton } from "./CopyButton";
 import { Popover } from "./Popover";
 
 /**
@@ -45,7 +44,6 @@ export function ErrorDetails({
   const [open, setOpen] = useState(false);
   const anchor = useRef<HTMLButtonElement>(null);
   const contentId = useId();
-  const copy = useCopyFeedback({ resetKeys: [detail] });
   const text = label ?? t("Details");
   const name = title ? `${text}: ${title}` : text;
   const close = () => setOpen(false);
@@ -85,18 +83,16 @@ export function ErrorDetails({
             {detail}
           </pre>
           <div className="flex flex-wrap items-center gap-2">
-            <Button
+            <CopyButton
               type="button"
               variant="secondary"
               size="sm"
-              loading={copy.pending}
-              onClick={() => copy.copy(() => navigator.clipboard.writeText(detail))}
-            >
-              {copy.copied ? t("Copied") : t("Copy details")}
-            </Button>
+              label={t("Copy details")}
+              resetKeys={[detail]}
+              onCopy={() => navigator.clipboard.writeText(detail)}
+            />
             {actions?.(close)}
           </div>
-          {copy.failed ? <InlineMessage tone="danger">{copy.error}</InlineMessage> : null}
         </Popover>
       ) : null}
     </>

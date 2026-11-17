@@ -275,10 +275,14 @@ const ActivityPhaseGroup = memo(function ActivityPhaseGroup({
     );
   }
 
+  // The live title is the group's working signal (the shared sweep); a span
+  // carries the overflow tooltip's handlers, which the indicator does not take.
   const label = active ? (
-    <WorkingIndicator className="min-w-0 flex-1" text={{ size: "body" }} truncate glyph={false}>
-      {title}
-    </WorkingIndicator>
+    <span className="flex min-w-0 flex-1">
+      <WorkingIndicator className="min-w-0 flex-1" text={{ size: "body" }} truncate glyph={false}>
+        {title}
+      </WorkingIndicator>
+    </span>
   ) : (
     // Dimmed to sit with the icons: the work is chrome around the answer, and
     // only the answer reads at full strength.
@@ -693,16 +697,21 @@ export function ActivityThinkingRow({
   const t = useT();
   const [open, setOpen] = useRetainedDisclosure<boolean>(`ActivityThinkingRow:${block.id}`, false);
   const text = open ? t("Thinking…") : proseSummary(block.text) || t("Thinking…");
-  // In a group the rail is the bullet, so there is nothing to breathe while
-  // reasoning streams in — the line itself does.
-  const pulse = block.streaming ? "zen-thinking-pulse" : "";
+  // While reasoning streams in, the line itself carries the shared sweep.
   const icon = bare ? null : (
-    <Minus className={`icon-sm shrink-0 text-(--ui-text-secondary) ${pulse}`} strokeWidth={1.75} />
+    <Minus className="icon-sm shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
   );
-  const label = (
-    <span
-      className={`min-w-0 flex-1 truncate font-sans text-ui-body text-(--ui-text-secondary) ${bare ? pulse : ""}`}
+  const label = block.streaming ? (
+    <WorkingIndicator
+      className="min-w-0 flex-1"
+      text={{ size: "body", weight: "regular" }}
+      truncate
+      glyph={false}
     >
+      {text}
+    </WorkingIndicator>
+  ) : (
+    <span className="min-w-0 flex-1 truncate font-sans text-ui-body font-normal text-(--ui-text-secondary)">
       {text}
     </span>
   );
@@ -729,13 +738,7 @@ export function ActivityThinkingRow({
       summary={
         <>
           {icon}
-          <span
-            className={`min-w-0 flex-1 truncate font-sans text-ui-body font-normal text-(--ui-text-secondary) ${
-              bare ? pulse : ""
-            }`}
-          >
-            {text}
-          </span>
+          {label}
         </>
       }
     >
@@ -840,7 +843,7 @@ function ActivityToolRow({
   );
   const appCall = bycodaToolCall(block);
   if (appCall) {
-    return <BycodaCallRow block={block} call={appCall} onApproval={onApproval} />;
+    return <BycodaCallRow block={block} call={appCall} live={live} onApproval={onApproval} />;
   }
   const label = toolCallLabel(block, cwd);
   const state = toolCallState(block);
@@ -857,6 +860,7 @@ function ActivityToolRow({
       chip={bare}
       failed={state === "rejected"}
       status={state}
+      working={live && state === "pending" && !pending}
       onOpenFile={onOpenFile}
       onOpenDiff={onOpenDiff}
     />
@@ -950,10 +954,12 @@ function BycodaMark({ className = "size-4" }: { className?: string }) {
 function BycodaCallRow({
   block,
   call,
+  live = false,
   onApproval,
 }: {
   block: Block;
   call: BycodaToolCall;
+  live?: boolean;
   onApproval?: (requestId: number, decision: ApprovalDecision) => void;
 }) {
   const t = useT();
@@ -973,11 +979,17 @@ function BycodaCallRow({
       : t("Ran");
   const summary = (
     <>
-      <span
-        className={`shrink-0 font-sans text-ui-body ${state === "rejected" ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"}`}
-      >
-        {verb}
-      </span>
+      {live && state === "pending" && !pendingApproval ? (
+        <WorkingIndicator className="shrink-0 font-sans" text={{ size: "body" }} glyph={false}>
+          {verb}
+        </WorkingIndicator>
+      ) : (
+        <span
+          className={`shrink-0 font-sans text-ui-body ${state === "rejected" ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"}`}
+        >
+          {verb}
+        </span>
+      )}
       <span
         className={`flex min-w-0 max-w-full items-center gap-1 rounded px-1 font-mono text-ui-secondary ${state === "rejected" ? "text-(--ui-tone-danger-fg)" : "text-(--color-content)"}`}
       >
@@ -1147,6 +1159,7 @@ function ToolCallSummary({
   chip = false,
   failed = false,
   status = "accepted",
+  working = false,
 }: {
   label: string;
   preview?: ToolPreview;
@@ -1158,6 +1171,8 @@ function ToolCallSummary({
   chip?: boolean;
   failed?: boolean;
   status?: ToolCallState;
+  /** The call is running in the live turn: its words carry the shared sweep. */
+  working?: boolean;
 }) {
   const t = useT();
   const { action, target, fileName, filePath, isFile, previewMatchesFile } = useToolCallDisplay(
@@ -1165,6 +1180,30 @@ function ToolCallSummary({
     preview,
     cwd,
   );
+  // A running command or search reads as one live line: verb and command sweep together.
+  if (working && (!action || !target || !isFile)) {
+    return (
+      <OverflowTooltip label={label}>
+        <span className="flex min-w-0 flex-1 font-sans">
+          <WorkingIndicator
+            className="min-w-0 flex-1"
+            text={{ size: "body" }}
+            truncate
+            glyph={false}
+          >
+            {action && target ? (
+              <>
+                {t(action)}{" "}
+                <span className="font-mono text-ui-secondary text-(--color-content)">{target}</span>
+              </>
+            ) : (
+              <span className="font-mono text-ui-secondary">{label}</span>
+            )}
+          </WorkingIndicator>
+        </span>
+      </OverflowTooltip>
+    );
+  }
   if (!action || !target) {
     return (
       <OverflowTooltip label={label}>
@@ -1191,7 +1230,13 @@ function ToolCallSummary({
 
   return (
     <span className="flex min-w-0 flex-1 items-center gap-1.5 font-mono text-ui-secondary">
-      <span className={`shrink-0 font-sans text-ui-body ${actionTone}`}>{t(action)}</span>
+      {working ? (
+        <WorkingIndicator className="shrink-0 font-sans" text={{ size: "body" }} glyph={false}>
+          {t(action)}
+        </WorkingIndicator>
+      ) : (
+        <span className={`shrink-0 font-sans text-ui-body ${actionTone}`}>{t(action)}</span>
+      )}
       {isFile ? (
         canPreview ? (
           <ToolDiffPreview

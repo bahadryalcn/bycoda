@@ -30,9 +30,6 @@
 .root > :not(.row) {
   flex-basis: 100%;
 }
-.feedback {
-  display: block;
-}
 .editor {
   display: grid;
   gap: 0.75rem;

@@ -1408,3 +1408,55 @@ describe("desktop live memoization and idle cadence", () => {
     expect(request.mock.calls[3][0].acked).toEqual(["c1"]);
   });
 });
+
+describe("phone group unlock relay", () => {
+  const runner = (run: (job: never) => Promise<never>) => ({
+    results: new Map<
+      string,
+      { id: string; result?: "ok" | "wrong" | "throttled"; error?: "failed" }
+    >(),
+    running: new Set<string>(),
+    epoch: () => "nonce:3",
+    run,
+  });
+  const tick = (groupLock: ReturnType<typeof runner>, request: ReturnType<typeof vi.fn>) =>
+    runDesktopLiveTick({
+      request,
+      sessions: () => [],
+      groupLock,
+      handlers: { stop: vi.fn(), approve: vi.fn(), answer: vi.fn() },
+      unacked: new Set<string>(),
+      handled: new Set<string>(),
+    });
+
+  it("runs a job once, reports only its verdict and the epoch, and drops it when acknowledged", async () => {
+    const job = { id: "g1", kind: "unlock", groupId: "private", password: "pw" };
+    const run = vi.fn(async () => ({ id: "g1", result: "wrong", retryAfterMs: 5 }) as never);
+    const groupLock = runner(run);
+    const request = vi.fn().mockResolvedValue({ groupLock: { jobs: [job], acked: [] } });
+    await tick(groupLock, request);
+    await tick(groupLock, request);
+    expect(run).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(groupLock.results.get("g1")).toMatchObject({ result: "wrong" }));
+    request.mockResolvedValue({ groupLock: { jobs: [], acked: ["g1"] } });
+    await tick(groupLock, request);
+    expect(request.mock.calls.at(-1)?.[0].groupLock).toEqual({
+      version: 1,
+      epoch: "nonce:3",
+      replies: [{ id: "g1", result: "wrong", retryAfterMs: 5 }],
+    });
+    expect(groupLock.results.size).toBe(0);
+    expect(JSON.stringify(request.mock.calls)).not.toContain('"password"');
+  });
+
+  it("answers a crashed job as failed instead of leaving the phone waiting", async () => {
+    const job = { id: "g2", kind: "authorizeHidden", password: "pw" };
+    const groupLock = runner(async () => {
+      throw new Error("storage");
+    });
+    await tick(groupLock, vi.fn().mockResolvedValue({ groupLock: { jobs: [job] } }));
+    await vi.waitFor(() =>
+      expect(groupLock.results.get("g2")).toEqual({ id: "g2", error: "failed" }),
+    );
+  });
+});

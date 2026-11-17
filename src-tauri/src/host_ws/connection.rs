@@ -1126,10 +1126,14 @@ async fn serve(
     let bulk_slots = Arc::new(tokio::sync::Semaphore::new(2));
     let mut heartbeat = Instant::now() + contracts.duration("heartbeatIntervalMs");
     let mut ping: Option<(Vec<u8>, Instant)> = None;
+    // Why the socket stopped serving, for the `host connection ended` log line.
+    let ready_at = Instant::now();
+    let mut cause = String::new();
     let failure = 'serve: loop {
         // Run maintenance before waiting: subscription handling can continue the
         // loop after queuing an open, close or acknowledgement.
         if shared.stopped() {
+            cause = "stopped".into();
             break ("unavailable", false);
         }
         let expired: Vec<_> = pending
@@ -1222,6 +1226,7 @@ async fn serve(
             .await
             .unwrap_or(false)
             {
+                cause = format!("control send failed {}", request.method);
                 settle(
                     request,
                     generation,
@@ -1254,6 +1259,7 @@ async fn serve(
                 "heartbeat",
                 contracts.duration("heartbeatResponseTimeoutMs") + deadline.elapsed(),
             );
+            cause = "pong timeout".into();
             break ("unavailable", false);
         }
         if Instant::now() >= heartbeat && ping.is_none() {
@@ -1268,6 +1274,7 @@ async fn serve(
                 .await,
                 Ok(Ok(()))
             ) {
+                cause = "ping send failed".into();
                 break ("unavailable", false);
             }
             ping = Some((
@@ -1325,8 +1332,9 @@ async fn serve(
                 }
             },
             request = async { match queued.pop_front() { Some(request) => Some(request), None => rx.recv().await } } => {
-                let Some(mut request) = request else { break ("unavailable", false); };
+                let Some(mut request) = request else { cause = "request channel closed".into(); break ("unavailable", false); };
                 if shared.stopped() {
+                    cause = "stopped".into();
                     settle(request, generation, false, "RPC_WS_DETACHED", "Native connection detached before dispatch");
                     break ("unavailable", false);
                 }
@@ -1359,6 +1367,7 @@ async fn serve(
                     settle(request, generation, false, "RPC_WS_DEADLINE", "Native operation deadline elapsed before socket send"); continue;
                 };
                 if !time::timeout(send_budget, send(&mut connection.socket, contracts, value)).await.unwrap_or(false) {
+                    cause = format!("send failed {}", request.method);
                     settle(request, generation, true, "RPC_WS_INTERRUPTED", "Host connection was interrupted while sending a request");
                     break ("unavailable", false);
                 }
@@ -1367,13 +1376,13 @@ async fn serve(
             message = connection.socket.next() => {
                 match message {
                     Some(Ok(Message::Text(text))) => {
-                        let Ok(value) = serde_json::from_str::<Value>(&text) else { break ("schema", true); };
+                        let Ok(value) = serde_json::from_str::<Value>(&text) else { cause = format!("invalid json bytes={}", text.len()); break ("schema", true); };
                         if value.get("method").is_some() {
                             if !contracts.event.is_valid(&value) { break ("schema", true); }
                             if let Err(failure) = subscriptions.event(shared, contracts, generation, &value) { break failure; }
                             continue;
                         }
-                        if !contracts.response.is_valid(&value) { break ("schema", true); }
+                        if !contracts.response.is_valid(&value) { cause = format!("invalid response bytes={}", text.len()); break ("schema", true); }
                         let Some(id) = value["id"].as_str() else { break ("schema", true); };
                         match subscriptions.response(shared, contracts, generation, id, &value) {
                             Ok(true) => continue, Ok(false) => {}, Err(failure) => break failure,
@@ -1450,11 +1459,19 @@ async fn serve(
                         }
                     },
                     Some(Ok(Message::Ping(data))) => {
-                        if !matches!(time::timeout(contracts.duration("heartbeatResponseTimeoutMs"), connection.socket.send(Message::Pong(data))).await, Ok(Ok(()))) { break ("unavailable", false); }
+                        if !matches!(time::timeout(contracts.duration("heartbeatResponseTimeoutMs"), connection.socket.send(Message::Pong(data))).await, Ok(Ok(()))) { cause = "pong send failed".into(); break ("unavailable", false); }
                     },
                     Some(Ok(Message::Pong(data))) => { if ping.as_ref().is_some_and(|(expected, _)| expected.as_slice() == data.as_ref()) { ping = None; } },
-                    Some(Ok(Message::Close(_))) | None | Some(Err(_)) => break ("unavailable", false),
-                    _ => break ("schema", true),
+                    Some(Ok(Message::Close(frame))) => {
+                        cause = match frame {
+                            Some(frame) => format!("host closed code={} reason={}", u16::from(frame.code), frame.reason),
+                            None => "host closed".into(),
+                        };
+                        break ("unavailable", false);
+                    },
+                    None => { cause = "stream ended".into(); break ("unavailable", false); },
+                    Some(Err(error)) => { cause = format!("socket error {error}"); break ("unavailable", false); },
+                    _ => { cause = "unexpected frame".into(); break ("schema", true); },
                 }
             },
         }
@@ -1462,6 +1479,27 @@ async fn serve(
     // Physical retirement invalidates every bulk grant. An inline reply already
     // delivered before the disconnect remains a completed RPC; explicit route,
     // owner and validated resource revocation still fence its retained scope.
+    let now = Instant::now();
+    let abandoned: Vec<_> = pending
+        .values()
+        .map(|request| {
+            let left = request.deadline.saturating_duration_since(now);
+            (request.method.clone(), request.timeout.saturating_sub(left))
+        })
+        .collect();
+    let line = super::diagnostics::serve_ended(
+        &shared.route,
+        generation,
+        if cause.is_empty() { failure.0 } else { &cause },
+        failure.0,
+        ready_at.elapsed(),
+        &abandoned,
+    );
+    if cause == "stopped" && abandoned.is_empty() {
+        log::info!("{line}");
+    } else {
+        log::warn!("{line}");
+    }
     shared.capture_resume_cuts(generation, subscriptions.union.retirement_cut());
     shared.permits.phase(generation, false);
     for (_, request) in pending {

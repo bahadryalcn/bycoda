@@ -1,12 +1,17 @@
+import type { ModelCatalogFact } from "../../../shared/model/host-contracts/model-routing";
+import { liveFactsFor } from "./liveCatalogFacts";
+
 /**
- * Researched benefit and list price of the current catalog families, the baseline that smart
- * setup ranks by and hands to the AI planner. `score` is a 0-100 capability estimate from
- * public coding leaderboards (SWE-bench Pro / Verified); prices are standard API dollars per
- * million input and output tokens.
+ * Benefit and list price of the current catalog families, the baseline that smart setup ranks
+ * by and hands to the AI planner. `score` is a 0-100 capability estimate; prices are standard
+ * API dollars per million input and output tokens. Prices (and scores of families the table
+ * does not know) come live from OpenRouter / Artificial Analysis via the Host
+ * (`liveCatalogFacts.ts`); the hand-kept table below is the ordering of record and the offline
+ * fallback.
  *
- * shortcut: a hand-kept table researched 2026-11-15 from third-party price trackers and
- * leaderboards; update it when a provider ships or reprices a family, or replace it with a
- * live catalog feed once one carries capability and price.
+ * shortcut: the table was researched 2026-11-15 from public coding leaderboards (SWE-bench
+ * Pro / Verified); update it when a provider ships a family, or drop a row once the live index
+ * ranks it as the owner expects.
  */
 export type CatalogModelFacts = { score: number; inputUsd: number; outputUsd: number };
 
@@ -47,9 +52,39 @@ function normalize(modelId: string): string {
     .replace(/^claude-/, "");
 }
 
+/** Live catalog family of a model id: dots become dashes and a dated or `-latest` suffix goes. */
+function liveFamilies(modelId: string): string[] {
+  const id = normalize(modelId)
+    .replace(/\./g, "-")
+    .replace(/-(?:\d{8}|latest)$/, "");
+  return [id, `claude-${id}`];
+}
+
+/** Score on the researched scale for a model only the live catalog rates. */
+const scoreFromIntelligence = (index: number) => Math.min(100, 30 + index);
+
+/**
+ * Prices come from the live catalog when it lists the family. The score is the researched
+ * table's (owner-validated ordering) and, for a family the table does not know, `30 +` the
+ * live Artificial Analysis index. Undefined when neither source can rate the model.
+ */
 export function catalogModelFacts(modelId: string): CatalogModelFacts | undefined {
   const id = normalize(modelId);
-  return TABLE.find(([pattern]) => pattern.test(id))?.[1];
+  const researched = TABLE.find(([pattern]) => pattern.test(id))?.[1];
+  let live: ModelCatalogFact | undefined;
+  for (const family of liveFamilies(modelId)) {
+    live = liveFactsFor(family);
+    if (live) break;
+  }
+  const score =
+    researched?.score ??
+    (live?.intelligenceIndex === undefined
+      ? undefined
+      : scoreFromIntelligence(live.intelligenceIndex));
+  if (score === undefined) return undefined;
+  const prices = live ?? researched;
+  if (!prices) return undefined;
+  return { score, inputUsd: prices.inputUsd, outputUsd: prices.outputUsd };
 }
 
 /** Mean of input and output list price per million tokens. */

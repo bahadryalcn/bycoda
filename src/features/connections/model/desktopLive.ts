@@ -1,6 +1,10 @@
 import type { Block, Session, ApprovalRequestToken, UserQuestionReply } from "../../sessions";
 import { isApprovalOccurrenceId } from "../../../shared/model/approvalOccurrence";
 import type { DesktopProjectDirectory } from "./protocol";
+import type {
+  RemoteGroupLockJob,
+  RemoteGroupLockReply,
+} from "../../group-lock/public/remoteGroupLock";
 import type { NativeControlTurnReceipt } from "../../../integrations/harness/core/controlTurn";
 import {
   REMOTE_INBOX_VERSION,
@@ -45,6 +49,8 @@ export type DesktopLivePayload = {
   /** Omit directory contents only after the host acknowledges this revision. */
   projectDirectoryRevision?: string;
   deletions?: { version: 1; replies: { id: string; error?: string }[] };
+  /** Phone unlock verdicts, and the epoch whose change ends every phone's unlock. */
+  groupLock?: { version: 1; epoch: string; replies: RemoteGroupLockReply[] };
   clientId?: string;
   pageToken?: string;
   sessions: DesktopLiveSession[];
@@ -74,6 +80,7 @@ export type DesktopLiveResult = {
   };
   commands?: DesktopLiveCommand[];
   inbox?: { jobs?: DesktopInboxJob[]; acked?: string[] };
+  groupLock?: { jobs?: RemoteGroupLockJob[]; acked?: string[] };
   notesRevision?: number;
   /** Shared queues changed since `queueSeq`; `reset` when that cannot be told. */
   queues?: { seq: number; ids: string[]; reset?: boolean };
@@ -407,6 +414,13 @@ export async function runDesktopLiveTick(deps: {
     results: Map<string, { id: string; error?: string }>;
     running: Set<string>;
   };
+  /** Phones' unlock requests, run with this window's password check; absent on older hosts. */
+  groupLock?: {
+    results: Map<string, RemoteGroupLockReply>;
+    running: Set<string>;
+    epoch: () => string;
+    run: (job: RemoteGroupLockJob) => Promise<RemoteGroupLockReply>;
+  };
 }): Promise<void> {
   const acked = [...deps.unacked];
   const now = deps.now ?? Date.now;
@@ -465,6 +479,8 @@ export async function runDesktopLiveTick(deps: {
     inboxReplies.length === 0 &&
     !deps.deletions?.results.size &&
     !deps.deletions?.running.size &&
+    !deps.groupLock?.results.size &&
+    !deps.groupLock?.running.size &&
     !deps.inbox?.running.size;
   // Anything busy, waiting or unacknowledged goes out on every tick, so a
   // session that starts running is reported within one DESKTOP_LIVE_MS.
@@ -488,6 +504,15 @@ export async function runDesktopLiveTick(deps: {
           deletions: {
             version: 1 as const,
             replies: [...deps.deletions.results.values()],
+          },
+        }
+      : {}),
+    ...(deps.groupLock
+      ? {
+          groupLock: {
+            version: 1 as const,
+            epoch: deps.groupLock.epoch(),
+            replies: [...deps.groupLock.results.values()].slice(0, 20),
           },
         }
       : {}),
@@ -572,6 +597,21 @@ export async function runDesktopLiveTick(deps: {
             error: safeInboxError(error),
           }),
         )
+        .finally(() => runner.running.delete(job.id));
+    }
+  }
+  if (deps.groupLock) {
+    const runner = deps.groupLock;
+    for (const id of result?.groupLock?.acked ?? []) runner.results.delete(id);
+    for (const job of result?.groupLock?.jobs ?? []) {
+      if (!job || typeof job.id !== "string" || runner.running.has(job.id)) continue;
+      if (runner.results.has(job.id)) continue;
+      runner.running.add(job.id);
+      // Hashing is slow by design; keep beating while it runs. Never run a job twice.
+      void Promise.resolve()
+        .then(() => runner.run(job))
+        .then((reply) => runner.results.set(job.id, reply))
+        .catch(() => runner.results.set(job.id, { id: job.id, error: "failed" }))
         .finally(() => runner.running.delete(job.id));
     }
   }

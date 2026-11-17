@@ -3396,6 +3396,24 @@ it("retries a failed content read when the healthy control channel has no revisi
   expect(composer!.value).toBe("keep the draft while reconnecting");
 });
 
+it("reopens a cached conversation as refreshing, not as an unverified notice", async () => {
+  openExistingChat();
+  await render();
+  await vi.waitFor(() => expect(remoteDataPhase()).toBe("ready"));
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  let release!: () => void;
+  syncDelay = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await render();
+  expect(remoteDataPhase()).toBe("refreshing");
+  expect(container.textContent).not.toContain("Updates have not been verified");
+  syncDelay = undefined;
+  await act(async () => release());
+  await vi.waitFor(() => expect(remoteDataPhase()).toBe("ready"));
+});
+
 it("marks known revision updates refreshing and settles on the new owner snapshot", async () => {
   lazyHistorySupported = true;
   openExistingChat();

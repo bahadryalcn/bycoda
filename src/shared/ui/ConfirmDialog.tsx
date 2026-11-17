@@ -89,6 +89,11 @@ export type ConfirmRequest = {
   /** Further footer actions placed before Cancel, such as "Refresh preview". */
   extraActions?: ReactNode;
   /**
+   * A second way out that also closes the dialog, e.g. "Discard and leave" next to "Save and
+   * leave". It runs `onSelect` and settles as not confirmed; Cancel stays the safe choice.
+   */
+  alternative?: { label: string; onSelect: () => void; danger?: boolean };
+  /**
    * Optional async work run on confirm. The dialog stays open with both buttons
    * disabled until it settles; a rejection keeps the dialog open with the error
    * and the confirming button live so the owner can retry. Escape, the close
@@ -296,6 +301,19 @@ export function ConfirmDialog({
       footer={
         <ModalActions>
           {request.extraActions}
+          {request.alternative ? (
+            <Button
+              variant="ghost"
+              tone={request.alternative.danger ? "danger" : undefined}
+              disabled={pending}
+              onClick={() => {
+                request.alternative!.onSelect();
+                onSettle(false);
+              }}
+            >
+              {request.alternative.label}
+            </Button>
+          ) : null}
           <Button variant="ghost" data-confirm-cancel="" disabled={pending} onClick={dismiss}>
             {request.cancelLabel ?? t("Cancel")}
           </Button>

@@ -625,7 +625,27 @@ describe("sync status", () => {
       state: "error",
       lastError: "Machine is unreachable",
     });
-    expect(warn).toHaveBeenCalledWith("[sync]", "st-err", expect.any(Error));
+    // The warning names the request that failed so an interruption can be traced.
+    expect(warn).toHaveBeenCalledWith(
+      "[sync]",
+      "st-err",
+      expect.stringMatching(/^method=sync\.\w+ requestMs=\d+ cycleMs=\d+ requests=1 pending=\d+$/),
+      expect.any(Error),
+    );
+    warn.mockRestore();
+  });
+
+  it("clears a timeout after a successful retry", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    await expect(
+      runSyncCycle("st-retry", async () => {
+        throw new Error("[RPC_TIMEOUT] timed out");
+      }),
+    ).rejects.toThrow("[RPC_TIMEOUT]");
+    expect(getSyncStatus("st-retry")).toMatchObject({ state: "error" });
+
+    await runSyncCycle("st-retry", async () => ({ rev: 1, records: [] }));
+    expect(getSyncStatus("st-retry")).toMatchObject({ state: "ok", lastError: undefined });
     warn.mockRestore();
   });
 

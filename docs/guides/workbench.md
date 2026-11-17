@@ -1,5 +1,19 @@
 # Workbench navigation
 
+## Transient notifications
+
+Information, success and progress notices appear at the top right. Warnings and
+errors appear at the top center. Notices normally disappear after ten seconds of
+focused window time; hovering or focusing them pauses the timer. Requests that need
+an owner decision retain their existing actions and placement.
+
+Open the bell in the workspace footer to revisit dismissed or expired notice text
+in Notifications. This device keeps the latest 100 entries across restarts. The log
+keeps plain-text summaries, not interactive controls or secret inputs. Provider
+update notices include the offered versions; closing a notice leaves an update
+running. Completion or failure appears separately and enters the same log. Open
+Settings > Providers to inspect progress or retry an update.
+
 Closing the last conversation tab in the current project keeps a blank conversation
 in that project. Hidden tabs from other projects are not selected, including when
 the closing tab has no project of its own and uses the project on screen.
@@ -212,9 +226,12 @@ safe mid-turn delivery offer Queue while busy instead of Steer. Claude takes a
 Steer at its next tool step, or right after the current reply; the turn stays open
 until that message has run. An older Claude Code that cannot report message
 progress keeps the Steer queued instead.
-Each queued message keeps the provider, model and account it was queued with, so
-one queue can mix providers; rows run in order and the queue switches provider
-between them on its own. Steer with a different provider than the running turn
+Each queued message keeps the provider and model it was queued with, so one queue
+can mix providers; rows run in order and the queue switches provider between them
+on its own. A row for the conversation's provider runs on the account the
+conversation uses now, so switching accounts after a usage limit carries the
+queue with it; a row that switches provider starts on the account it was queued
+with. Steer with a different provider than the running turn
 stops that turn and starts the message on the selected provider; the rest of the
 queue then continues in order. Only Stop, a failed turn, a usage limit or an
 unconfirmed delivery pause the queue for Resume.
@@ -544,9 +561,12 @@ If session ownership cannot be loaded, the saved source remains available with R
 
 ## Notes
 
-The note header keeps title, project and tags together. The check icon means saved;
-Save remains available as an icon and with the keyboard shortcut. Failures and recovery
-keep their visible messages.
+The note header keeps title, project and tags together. Session Notes saves automatically
+and shows Saved, Saving or Unsaved changes beside its Save button. Use Save or Ctrl/Cmd+S
+to save immediately. Closing the panel flushes pending changes; reopening resumes the
+last note and preserves a failed draft. Private edits that still need review appear in
+a compact Review changes notice with Open note, Copy exact text and expandable recovery text.
+The library keeps its keyboard Save command and shows failures and recovery messages.
 
 Use the plus beside tags to assign an existing library tag or a ready-made tag. Type
 and press Enter for a custom tag. The library shows tag shortcuts beneath search;
@@ -569,9 +589,9 @@ project without moving or relinking the note. The message remains unsent.
 
 ## Models and providers
 
-**Settings > Models** has four tabs: **Background work** (Who uses what, All models,
-Groups and Work limits), **Chats**, **Subagents** and **Providers** (provider list and
-detail, CLI table and Decision models). The Grok account row
+**Settings > Models** has three tabs: **Background work** (Who uses what, All models,
+Groups and Work limits), **Defaults** (chat and subagent defaults) and **Providers** (provider list and
+detail, with CLI versions in each header). Decision models have their own page. The Grok account row
 reports the local Grok Build CLI sign-in. See [Models](models.md) for selection,
 inheritance and running-session behavior.
 

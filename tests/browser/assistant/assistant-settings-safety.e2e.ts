@@ -98,12 +98,14 @@ test("single save writes the profile and the computer draft together", async ({ 
   await page.evaluate(() => {
     (window as any).__desktopHoldConfigure = true;
   });
-  const save = dialog.locator("button[type=submit][form]");
+  const save = dialog.getByRole("button", { name: tr("Save"), exact: true });
   await save.click();
-  await expect(save).toBeDisabled();
+  await expect(dialog.getByRole("button", { name: tr("Saving…"), exact: true })).toBeDisabled();
   await dialog.getByRole("button", { name: tr("Close"), exact: true }).click();
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByText(tr("Discard unsaved changes?"), { exact: true })).toHaveCount(0);
+  await expect(dialog.getByText(tr("Save changes before leaving?"), { exact: true })).toHaveCount(
+    0,
+  );
   await expect(dialog.getByRole("button", { name: tr("Quick setup"), exact: true })).toBeDisabled();
   await page.evaluate(() => (window as any).__desktopConfigureRelease());
   await expect(toggle).toHaveAttribute("aria-checked", "true");

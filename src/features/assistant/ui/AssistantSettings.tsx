@@ -32,7 +32,6 @@ import {
   Sparkles,
   Shield,
   Lock,
-  Save,
   SlidersHorizontal,
   RotateCcw,
 } from "../../../shared/ui/icons";
@@ -44,7 +43,14 @@ import {
   DesktopControlSettings,
   type DesktopControlDraftState,
 } from "../../host-tools/DesktopControlSettings";
-import { AdvancedSettings, Group, Row } from "../../../shared/ui/settings";
+import {
+  AdvancedSettings,
+  Group,
+  Row,
+  SettingsSaveBar,
+  useLeaveGuard,
+} from "../../../shared/ui/settings";
+import { assistantChanges } from "./settings/assistantChanges";
 import { AssistantBuilderDialog } from "./builder/AssistantBuilderDialog";
 import { ProfileRowsProvider } from "./settings/SettingsProfileRow";
 import { AssistantRetentionField } from "./settings/AssistantUsageSettings";
@@ -164,7 +170,9 @@ export function AssistantSettings({
     foldersState.runWithoutAsking,
     foldersState.allowChangesWithoutAsking,
   );
-  const [leave, setLeave] = useState<"close" | "setup" | null>(null);
+  const { guard, dialog: leaveDialog } = useLeaveGuard();
+  const [formKey, setFormKey] = useState(0);
+  const formRef = useRef<HTMLFormElement>(null);
   const [retention, setRetention] = useState(snapshot.conversationRetentionDays ?? 0);
   const [savedRetention, setSavedRetention] = useState(snapshot.conversationRetentionDays ?? 0);
   const [pending, setPending] = useState(false);
@@ -187,6 +195,22 @@ export function AssistantSettings({
   const anyDirty = profileDirty || projectState.dirty || computerState.dirty || foldersState.dirty;
   const busy = pending || projectState.pending || computerState.pending || foldersState.pending;
   const saved = savedNotice && !anyDirty;
+  const changes = anyDirty
+    ? assistantChanges({
+        draft,
+        saved: JSON.parse(savedDraft) as AssistantProfilePatch,
+        retention,
+        savedRetention,
+        consentDirty,
+        sections: {
+          projects: projectState.dirty,
+          computer: computerState.dirty,
+          folders: foldersState.dirty,
+        },
+        setDraft,
+        setRetention,
+      })
+    : [];
   const changeProjectState = useCallback((state: { dirty: boolean; pending: boolean }) => {
     setProjectState(state);
     if (state.dirty) setSavedNotice(false);
@@ -231,9 +255,17 @@ export function AssistantSettings({
   }
   function requestLeave(target: "close" | "setup") {
     if (busy) return;
-    if (anyDirty) setLeave(target);
-    else if (target === "close") onClose();
-    else onSetup();
+    guard(target === "close" ? onClose : onSetup);
+  }
+  /** Embedded sections reload their drafts from the Host when the form remounts. */
+  function discard() {
+    setDraft(JSON.parse(savedDraft) as AssistantProfilePatch);
+    setRetention(savedRetention);
+    consentChanged.current = false;
+    setConsentDirty(false);
+    setError("");
+    setSavedNotice(false);
+    setFormKey((current) => current + 1);
   }
   async function saveProfile() {
     if (!consentEnvironment || environmentId !== consentEnvironment)
@@ -365,62 +397,37 @@ export function AssistantSettings({
       footer={
         <div className={settingsStyles.footer}>
           {error && <InlineError>{error}</InlineError>}
-          <div className={settingsStyles.footerRow}>
-            {leave ? (
-              <>
-                <InlineError>{t("Discard unsaved changes?")}</InlineError>
-                <div className={settingsStyles.footerActions}>
-                  <Button key="keep-editing" onClick={() => setLeave(null)}>
-                    {t("Keep editing")}
-                  </Button>
-                  <Button
-                    tone="danger"
-                    disabled={busy}
-                    onClick={() => {
-                      const target = leave;
-                      setLeave(null);
-                      if (target === "close") onClose();
-                      else onSetup();
-                    }}
-                  >
-                    {t("Discard")}
-                  </Button>
-                </div>
-              </>
-            ) : (
-              <>
-                <Button
-                  variant="secondary"
-                  startIcon={<RotateCcw className="icon-sm" />}
-                  disabled={busy}
-                  onClick={() => requestLeave("setup")}
-                >
-                  {t("Quick setup")}
-                </Button>
-                <div className={settingsStyles.footerActions}>
-                  <Button
-                    key="save-profile"
-                    type="submit"
-                    form={formId}
-                    variant="primary"
-                    startIcon={<Save className="icon-sm" />}
-                    aria-label={saved ? t("Saved") : t("Save profile settings")}
-                    loading={pending}
-                    loadingLabel={t("Saving…")}
-                    success={saved}
-                    successLabel={t("Saved")}
-                    disabled={busy || !anyDirty || (profileDirty && !draft.name?.trim())}
-                  >
-                    {t("Save")}
-                  </Button>
-                </div>
-              </>
-            )}
-          </div>
+          <SettingsSaveBar
+            id="assistant-settings"
+            title={t("Assistant settings")}
+            changes={changes}
+            pending={busy}
+            saved={saved}
+            canSave={!(profileDirty && !draft.name?.trim())}
+            onDiscard={discard}
+            // Save goes through the form so native validation still reveals the invalid field.
+            onSave={() => {
+              if (formRef.current?.reportValidity()) return save();
+            }}
+            leading={
+              <Button
+                variant="secondary"
+                size="sm"
+                startIcon={<RotateCcw className="icon-sm" />}
+                disabled={busy}
+                onClick={() => requestLeave("setup")}
+              >
+                {t("Quick setup")}
+              </Button>
+            }
+          />
+          {leaveDialog}
         </div>
       }
     >
       <form
+        key={formKey}
+        ref={formRef}
         id={formId}
         className={settingsStyles.form}
         onInvalidCapture={(event) => {

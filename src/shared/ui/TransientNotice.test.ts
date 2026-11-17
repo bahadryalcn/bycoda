@@ -334,7 +334,7 @@ it("places the action after the message and blocks a second activation while pen
   }
 });
 
-it("joins the top-center stack by default and honours an explicit placement", () => {
+it("uses the routine corner by default and honours an explicit placement", () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div");
   document.body.append(container);
@@ -353,16 +353,16 @@ it("joins the top-center stack by default and honours an explicit placement", ()
           createElement(TransientNotice, {
             message: "Corner",
             durationMs: null,
-            placement: "top-end",
+            placement: "top-center",
             onDismiss: () => {},
           }),
         ),
       ),
     );
-    expect(document.querySelector('[data-toast-region="top-center"]')?.textContent).toContain(
+    expect(document.querySelector('[data-toast-region="top-end"]')?.textContent).toContain(
       "Default",
     );
-    expect(document.querySelector('[data-toast-region="top-end"]')?.textContent).toContain(
+    expect(document.querySelector('[data-toast-region="top-center"]')?.textContent).toContain(
       "Corner",
     );
   } finally {

@@ -301,6 +301,40 @@ it("narrows the listed projects by name or group without touching the saved list
   expect(host.textContent).toContain("No projects found");
 });
 
+it("shows a working nested project on its collapsed group headers and drops it once open", async () => {
+  saveProjectGroups([
+    { id: "team", name: "Team", collapsed: true },
+    {
+      id: "wallet",
+      name: "Wallet",
+      collapsed: true,
+      workspaceFile: "G:/wallet/wallet.code-workspace",
+      workspaceFolders: ["G:/wallet", "G:/wallet/api"],
+    },
+  ]);
+  saveProjectGroupAssignments({ "g:/wallet": "team", "g:/wallet/api": "wallet" });
+  const props = {
+    cwd: "G:/other",
+    recents: [{ path: "G:/wallet/api", openedAt: 1 }],
+    onSelectProject: select,
+    onOpenProject: vi.fn(),
+  };
+  const header = (id: string) =>
+    host.querySelector(`[data-project-group="${id}"] > [data-group-row]`)!;
+  await act(async () =>
+    root.render(createElement(ProjectRail, { ...props, busyPaths: ["G:/wallet/api"] })),
+  );
+  expect(header("team").getAttribute("data-project-working")).toBe("true");
+  expect(header("team").querySelector('[role="img"][aria-label="Working"]')).not.toBeNull();
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('button[aria-label="Team, 1 project, working"]')!.click(),
+  );
+  expect(header("team").hasAttribute("data-project-working")).toBe(false);
+  expect(header("wallet").getAttribute("data-project-working")).toBe("true");
+  await act(async () => root.render(createElement(ProjectRail, { ...props, busyPaths: [] })));
+  expect(header("wallet").hasAttribute("data-project-working")).toBe(false);
+});
+
 it("keeps workspace Changes reachable from the row menu when shortcuts cannot fit", async () => {
   await render();
   const opened = vi.fn();

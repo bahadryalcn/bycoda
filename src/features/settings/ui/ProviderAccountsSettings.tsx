@@ -52,6 +52,7 @@ import { exhaustedExplanation } from "../../providers/ui/providerStatus";
 
 import {
   accountStatus,
+  usageRenewalPending,
   accountUsageKey,
   needsProviderLogin,
   providerAccountSignedOut,
@@ -538,7 +539,7 @@ export function ProviderAccountsSettings({
                           <Badge size="sm" tone="warning" className="shrink-0">
                             {t("Signed out")}
                           </Badge>
-                        ) : (
+                        ) : usageRenewalPending(limits) ? null : (
                           <AccountStatusLabel status={status} className="shrink-0" />
                         )}
                       </div>

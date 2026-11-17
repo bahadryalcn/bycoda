@@ -13,6 +13,7 @@ import {
 } from "../../../shared/model/modelRoutingPools";
 import { parseHostSettings, type HostSettings } from "../../tasks/public/hostSettings";
 import { supportsProviderAccounts } from "../../providers/public/providerAccounts";
+import { roleBindingsForSave } from "./modelRoutingRoles";
 
 export type CapDraft = {
   daily: { tokens: string; costUsd: string };
@@ -116,6 +117,7 @@ export function prepareOrderSave(draft: OrderDraft): {
   const routing: ModelRoutingDraft = {
     ...otherRouting,
     ...(workCaps ? { workCaps } : {}),
+    roles: roleBindingsForSave(draft.routing.roles),
     entries: draft.routing.entries.map((entry) => ({
       ...entry,
       modelSettings: entrySettings(entry.modelSettings),
@@ -265,6 +267,40 @@ export function includablePools(draft: OrderDraft, poolId: string): ModelRouting
   return draft.routing.pools.filter(
     (pool) => pool.id !== poolId && !modelRoutingPoolReaches(draft.routing.pools, pool.id, poolId),
   );
+}
+
+export type EntryKind = "work" | "personal" | "shared";
+export const ENTRY_KINDS: readonly EntryKind[] = ["work", "personal", "shared"];
+
+/**
+ * Keep work-account entries, then personal, then shared ones together; each keeps its own
+ * order. A tagged project skips the other kind, so this only fixes how the lists read and
+ * which kind an untagged run tries first.
+ */
+export function groupEntriesByKind(
+  draft: OrderDraft,
+  kindOf: (entry: ModelRoutingEntry) => EntryKind,
+): OrderDraft {
+  const entries = ENTRY_KINDS.flatMap((kind) =>
+    draft.routing.entries.filter((entry) => kindOf(entry) === kind),
+  );
+  if (entries.every((entry, index) => entry === draft.routing.entries[index])) return draft;
+  return { ...draft, routing: { ...draft.routing, entries } };
+}
+
+/** Replace one kind's entries with `ids` in that order; the other kinds keep their places. */
+export function reorderKind(
+  draft: OrderDraft,
+  kindOf: (entry: ModelRoutingEntry) => EntryKind,
+  kind: EntryKind,
+  ids: string[],
+): OrderDraft {
+  const byId = new Map(draft.routing.entries.map((entry) => [entry.id, entry]));
+  const queue = ids.map((id) => byId.get(id)!).filter(Boolean);
+  const entries = draft.routing.entries.map((entry) =>
+    kindOf(entry) === kind ? (queue.shift() ?? entry) : entry,
+  );
+  return { ...draft, routing: { ...draft.routing, entries } };
 }
 
 export const sameOrderDraft = (a: OrderDraft, b: OrderDraft) =>

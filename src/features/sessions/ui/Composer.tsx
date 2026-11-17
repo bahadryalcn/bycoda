@@ -3110,6 +3110,7 @@ export const Composer = memo(function Composer({
         remote={remote && !remoteFeatures?.steer}
         busy={busy}
         runningTarget={remote ? undefined : { harness, model, modelSettings, runningModelTarget }}
+        account={{ harness, providerAccountId }}
         steerSupported={
           remote ? !!remoteFeatures?.steer : canSteerHarness(runningModelTarget?.harness ?? harness)
         }

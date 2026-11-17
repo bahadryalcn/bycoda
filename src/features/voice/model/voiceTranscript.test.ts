@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { speechTranscript } from "./voiceTranscript";
+import { removeSpeechFillers, speechTranscript } from "./voiceTranscript";
 
 it.each([
   "",
@@ -50,4 +50,25 @@ it("drops the recognizer's echoed vocabulary hint but keeps commands using those
   expect(speechTranscript("Projeler")).toBe("Projeler");
   expect(speechTranscript("Proje görev not ekle.")).toBe("Proje görev not ekle.");
   expect(speechTranscript("Ekipleri ve görevleri listele.")).toBe("Ekipleri ve görevleri listele.");
+});
+
+it.each([
+  ["Eee, bunu şöyle yapalım.", "tr", "Bunu şöyle yapalım."],
+  ["Bunu yap, eeee.", "tr", "Bunu yap."],
+  ["Iıı... sonra testleri çalıştır", "tr", "Sonra testleri çalıştır"],
+  ["Tamam. Hmm. Şimdi başla", "tr", "Tamam. Şimdi başla"],
+  ["e, ne yapalım", "tr", "ne yapalım"],
+  ["Ah, um, I think so", "en", "I think so"],
+  ["Eee", "tr", ""],
+])("removes the hesitations in %j", (text, language, expected) => {
+  expect(removeSpeechFillers(text, { language })).toBe(expected);
+});
+
+it.each([
+  ["I need this", "en"],
+  ["Ben de geldim", "tr"],
+  ["Ich bin um acht da", "de"],
+  ["Hemen ekle", "tr"],
+])("keeps real words in %j", (text, language) => {
+  expect(removeSpeechFillers(text, { language })).toBe(text);
 });

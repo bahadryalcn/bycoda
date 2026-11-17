@@ -56,6 +56,7 @@ const rowIds: Partial<Record<keyof VoiceSettings, string>> = {
   visual: "voice-visual-style",
   turnEndSilence: "voice-turn-silence",
   allowBargeIn: "voice-barge-in",
+  removeFillers: "voice-remove-fillers",
   holdAnnouncements: "voice-hold-announcements",
   idleSleepMinutes: "voice-idle-sleep",
   returnCall: "voice-return-call",

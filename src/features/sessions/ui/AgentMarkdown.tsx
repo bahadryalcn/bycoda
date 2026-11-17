@@ -4,12 +4,10 @@ import { MarkdownSource as IncrementalMarkdownSource } from "./markdownSource";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Link } from "../../../shared/ui/Link";
-import { LiveText } from "../../../shared/ui/LiveText";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
-import { useTransientFlag } from "../../../shared/hooks/useTransientFlag";
-import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
+import { CopyButton } from "../../../shared/ui/CopyButton";
 import { useLocale, useT } from "../../../shared/i18n";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { resolveNoteImagePath } from "../../notes/notes";
@@ -71,7 +69,7 @@ import {
   revealPath,
 } from "../../../platform/tauri/fs";
 import { ChatFolderBrowser } from "../../files/public/ChatFolderBrowser";
-import { Check, Copy, FolderOpen } from "../../../shared/ui/icons";
+import { FolderOpen } from "../../../shared/ui/icons";
 import { resolveFileOpenRequest } from "../../files/public/fileIndex";
 import { existingChatPath } from "../../files/public/chatPathChecks";
 import {
@@ -399,31 +397,20 @@ type MarkdownCodeProps = ComponentProps<"code"> & { node?: unknown };
 
 function EmailCopyButton({ text }: { text: string }) {
   const t = useT();
-  const [copied, setCopied] = useTransientFlag(1500);
-  const [failed, setFailed] = useState(false);
-  const label = failed ? t("Copy failed. Try again.") : copied ? t("Copied") : t("Copy");
   return (
-    <Button
+    <CopyButton
       motion="none"
-      variant="ghost"
-      type="button"
-      tooltip={label}
-      aria-label={label}
+      iconOnly
+      label={t("Copy")}
       className="shrink-0"
+      resetKeys={[text]}
+      text={text}
       onClick={(event) => {
+        // The button sits inside an email link: keep the press from following it.
         event.preventDefault();
         event.stopPropagation();
-        setCopied(false);
-        setFailed(false);
-        void copyText(text).then(
-          () => setCopied(true),
-          () => setFailed(true),
-        );
       }}
-    >
-      {copied ? <Check className="icon-sm" /> : <Copy className="icon-sm" />}
-      <LiveText className="sr-only" text={failed || copied ? label : ""} />
-    </Button>
+    />
   );
 }
 
@@ -654,48 +641,22 @@ function CodeCopyButton({
   code,
   getText,
   label: labelProp,
-  copiedMessage: copiedMessageProp,
-  className = "",
 }: {
   code: string;
   /** Read the text at click time, for content that only exists in the DOM. */
   getText?: () => string;
   label?: string;
-  copiedMessage?: string;
-  className?: string;
 }) {
   const t = useT();
-  const label = labelProp ?? t("Copy code");
-  const copiedMessage = copiedMessageProp ?? t("Code copied.");
-  const { copied, failed, copy } = useCopyFeedback({ resetKeys: [code], successMs: 1500 });
-
   return (
-    <Button
+    <CopyButton
       motion="none"
       iconOnly
-      label={label}
-      variant="ghost"
-      className={`markdown-code-copy${copied ? " is-copied" : ""}${failed ? " is-failed" : ""} ${className}`}
-      type="button"
-      tooltip={failed ? t("Copy failed. Try again.") : copied ? t("Copied") : label}
-      aria-label={failed ? t("Copy failed. Try again.") : copied ? t("Copied") : label}
-
-      onClick={() => {
-        copy(() => copyText(getText ? getText() : code.replace(/\r?\n$/, "")));
-      }}
-    >
-      <LiveText
-        className="sr-only"
-        text={failed ? t("Copy failed. Try again.") : copied ? copiedMessage : ""}
-      />
-      <svg viewBox="0 0 20 20" aria-hidden="true">
-        <g className="markdown-code-copy-pages">
-          <path d="M12 4H6a2 2 0 0 0-2 2v6" />
-          <rect x="7" y="7" width="9" height="9" rx="1.5" />
-        </g>
-        <path className="markdown-code-copy-check" d="M4.5 10.5 8.2 14 15.5 6.5" />
-      </svg>
-    </Button>
+      label={labelProp ?? t("Copy code")}
+      className="markdown-code-copy"
+      resetKeys={[code]}
+      text={() => (getText ? getText() : code.replace(/\r?\n$/, ""))}
+    />
   );
 }
 
@@ -810,12 +771,7 @@ function MarkdownTable(props: ComponentProps<typeof defaultComponents.table>) {
   }, []);
   return (
     <div ref={shell} className="markdown-table-shell">
-      <CodeCopyButton
-        code=""
-        getText={getMarkdown}
-        label={t("Copy table as Markdown")}
-        copiedMessage={t("Table copied.")}
-      />
+      <CodeCopyButton code="" getText={getMarkdown} label={t("Copy table as Markdown")} />
       <defaultComponents.table {...props} />
     </div>
   );

@@ -294,10 +294,23 @@ export const PromptOutline = memo(function PromptOutline({
         label={menuLabel}
         width={320}
         maxHeight={360}
-        items={prompts.map((prompt) => ({
+        density="compact"
+        initialActiveId={activeId ?? undefined}
+        // Numbered single-line rows: the list scans like a table of contents, the current turn checked.
+        items={prompts.map((prompt, index) => ({
           kind: "item" as const,
           id: prompt.id,
           label: promptLabel(prompt),
+          icon: (
+            <Text size="caption" tone="muted" className="tabular-nums">
+              {index + 1}
+            </Text>
+          ),
+          content: (
+            <Text size="inherit" truncate className="min-w-0 flex-1">
+              {promptLabel(prompt)}
+            </Text>
+          ),
           selectionRole: "radio" as const,
           checked: prompt.id === activeId,
         }))}

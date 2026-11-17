@@ -172,10 +172,11 @@ export function useSettingsSurfaceActions({
 
   useEffect(() => {
     const openProviders = () => openSettings("providers");
-    window.addEventListener(OPEN_DECISION_MODELS_SETTINGS_EVENT, openProviders);
+    const openDecisionModels = () => openSettings("decisionModels");
+    window.addEventListener(OPEN_DECISION_MODELS_SETTINGS_EVENT, openDecisionModels);
     window.addEventListener(OPEN_PROVIDER_SETTINGS_EVENT, openProviders);
     return () => {
-      window.removeEventListener(OPEN_DECISION_MODELS_SETTINGS_EVENT, openProviders);
+      window.removeEventListener(OPEN_DECISION_MODELS_SETTINGS_EVENT, openDecisionModels);
       window.removeEventListener(OPEN_PROVIDER_SETTINGS_EVENT, openProviders);
     };
   }, [openSettings]);

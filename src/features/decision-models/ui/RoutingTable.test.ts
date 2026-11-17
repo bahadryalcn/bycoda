@@ -184,7 +184,7 @@ it("keeps automatic tasks compact until customization is requested", async () =>
       ),
     );
     expect(container.querySelector('input[inputmode="decimal"]')).toBeNull();
-    expect(container.textContent).not.toContain("Save routing");
+    expect(container.textContent).not.toContain("unsaved change");
     expect(container.textContent).toContain("Automatic: local models first");
     await act(async () =>
       [...container.querySelectorAll("button")].find((b) => b.textContent === "Customize")!.click(),
@@ -220,7 +220,7 @@ it("retains routing edits when privacy returns equivalent saved routing and disc
       root.render(createElement(RoutingTable, { ...props, routing: structuredClone(routing) })),
     );
     expect(input.value).toBe("0.8");
-    expect(container.textContent).toContain("1 unsaved changes");
+    expect(container.textContent).toContain("1 unsaved change");
     await act(async () =>
       [...container.querySelectorAll("button")].find((b) => b.textContent === "Discard")!.click(),
     );

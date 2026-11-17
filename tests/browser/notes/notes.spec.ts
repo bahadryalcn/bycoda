@@ -781,6 +781,7 @@ for (const theme of ["light", "dark"])
 for (const theme of ["light", "dark"])
   for (const width of [800, 1280])
     test(`session notes caller states ${theme} ${width}`, async ({ page }, info) => {
+      await page.emulateMedia({ reducedMotion: "reduce" });
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`/tests/browser/notes/notes.html?panel&theme=${theme}`);
       const editor = await sourceEditor(page);
@@ -793,7 +794,26 @@ for (const theme of ["light", "dark"])
       await page.screenshot({ path: info.outputPath(`notes-picker-${theme}-${width}.png`) });
       await page.keyboard.press("Escape");
       await expect(editor).toBeVisible();
-      await page.screenshot({ path: info.outputPath(`notes-panel-${theme}-${width}.png`) });
+      await expect(page.getByRole("button", { name: "Save", exact: true })).toBeVisible();
+      await expect(page.locator('[data-note-save-state="saved"]')).toHaveText("Saved");
+      await page.screenshot({
+        path: `temp/verification/notes-save-flow/panel-${theme}-${width}.png`,
+      });
+      await page.getByRole("tab", { name: "Document", exact: true }).click();
+      await page.screenshot({
+        path: `temp/verification/notes-save-flow/document-${theme}-${width}.png`,
+      });
+      await page.goto(`/tests/browser/notes/notes.html?panel&recovery&theme=${theme}`);
+      const recovery = page.locator("[data-note-private-recovery]");
+      await expect(recovery).toContainText("Review changes");
+      await page.screenshot({
+        path: `temp/verification/notes-save-flow/recovery-${theme}-${width}.png`,
+      });
+      await page.goto(`/tests/browser/notes/notes.html?panel&empty&theme=${theme}`);
+      await expect(page.getByText("No notes for this session yet.", { exact: true })).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/notes-save-flow/empty-${theme}-${width}.png`,
+      });
       await page.goto(`/tests/browser/notes/notes.html?panel&pendingNotes&theme=${theme}`);
       await expect(page.getByText("Loading notes…")).toBeVisible();
       await page.screenshot({ path: info.outputPath(`notes-loading-${theme}-${width}.png`) });
@@ -802,3 +822,22 @@ for (const theme of ["light", "dark"])
       await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
       await page.screenshot({ path: info.outputPath(`notes-error-${theme}-${width}.png`) });
     });
+
+test("new session note saves explicitly and leaves no false title recovery when closed", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/notes/notes.html?panel&empty");
+  await page.getByRole("button", { name: "New note", exact: true }).last().click();
+  const editor = await sourceEditor(page);
+  await editor.fill("First line becomes title");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.locator('[data-note-save-state="saved"]')).toHaveText("Saved");
+  await expect(
+    page.getByRole("button", { name: "Note title: First line becomes title", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Open note library", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "Note title", exact: true })).toHaveValue(
+    "First line becomes title",
+  );
+  await expect(page.locator("[data-note-private-recovery]")).toHaveCount(0);
+});

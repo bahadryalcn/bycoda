@@ -12,7 +12,7 @@ export type DecisionModelsFirstRunCardProps = {
   client: DecisionModelsClient;
   /** Called on "Not now". The caller persists dismissal on its selected Host. */
   onDismiss: () => void;
-  /** Opens Providers > Decision models, where the user chooses local install or an API provider. */
+  /** Opens Settings > Decision models, where the user chooses local install or an API provider. */
   onOpenSettings: () => void;
 };
 

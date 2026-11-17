@@ -279,6 +279,7 @@ export async function createLifecycleRuntime(
       drain("tunnels", async () => await dependencies.tunnels.close());
       drain("desktop", async () => await dependencies.desktop.closeAsync());
       drain("desktopDelete", () => dependencies.desktopDelete.close());
+      drain("desktopGroupLock", () => dependencies.desktop.live.groupLock.close());
       drain("desktopWriterTransfers", () => dependencies.desktop.live.closeWriterTransfers());
       drain("mobilePairing", () => dependencies.mobilePairing.close());
       drain("mobileLan", async () => await dependencies.mobileLan.close());

@@ -1,10 +1,4 @@
 /* Layout only; controls and typography retain their shared owners. */
-.provider-save-bar-actions {
-  flex: 1 1 auto;
-}
-.provider-save-bar-status {
-  flex: 1 1 12rem;
-}
 .provider-cli-container:has(#setting-agent-clis) .settings-row-control {
   inline-size: min(28rem, 55%);
   min-inline-size: 0;
@@ -18,9 +12,6 @@
 @container provider-page (max-width: 640px) {
   .provider-cli-container:has(#setting-agent-clis) .settings-row-control {
     inline-size: min(24rem, 60%);
-  }
-  .provider-save-bar-actions {
-    justify-content: flex-start;
   }
 }
 
@@ -38,25 +29,6 @@
 
 .provider-cli-container:has(#setting-agent-clis) .settings-row-control > div {
   inline-size: 100%;
-}
-/* The apply row stays in view at the foot of the page while the form scrolls past it. */
-.provider-defaults-save-bar {
-  position: sticky;
-  inset-block-end: 0;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  padding: var(--space-2) 0;
-  margin-block-start: var(--space-4);
-  flex-shrink: 0;
-}
-.provider-defaults-save-bar .provider-save-bar-status {
-  flex: 1 1 auto;
-}
-.provider-defaults-save-bar .provider-save-bar-actions {
-  flex: 0 1 auto;
 }
 .provider-defaults-notes {
   display: flex;
@@ -81,12 +53,6 @@
 #setting-enabled-models .provider-models-list .settings-row {
   padding-block: var(--space-1);
   min-block-size: var(--ui-control-height);
-}
-.provider-defaults-save-bar .provider-save-bar-actions {
-  display: contents;
-}
-.provider-defaults-save-bar .provider-save-bar-status {
-  flex: 0 1 auto;
 }
 .provider-defaults-field,
 .provider-defaults-buttons {

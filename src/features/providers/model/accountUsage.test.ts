@@ -19,6 +19,7 @@ import {
   accountHeadroom,
   accountStatus,
   needsProviderLogin,
+  usageRenewalPending,
   providerAccountSignedOut,
   bestAlternativeAccount,
   useProviderAccountUsage,
@@ -313,5 +314,22 @@ describe("useProviderAccountUsage", () => {
     await first;
     expect((await refreshed).session?.usedPercent).toBe(75);
     expect(fetches.claude).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("usageRenewalPending", () => {
+  it("flags only the idle-account renewal message, not real errors", () => {
+    expect(
+      usageRenewalPending(
+        limits(null, null, {
+          status: "error",
+          error: "Claude usage will update when this account is used again",
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      usageRenewalPending(limits(null, null, { status: "error", error: "Claude sign-in expired" })),
+    ).toBe(false);
+    expect(usageRenewalPending(undefined)).toBe(false);
   });
 });

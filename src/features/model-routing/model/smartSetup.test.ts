@@ -5,12 +5,14 @@ import {
   MODEL_ROUTING_MAX_POOLS,
   ModelRoutingPoolSchema,
 } from "../../../shared/model/host-contracts/model-routing";
+import { decodeAdvisor, decodeSubagents } from "../../../shared/model/host-contracts/delegation";
 import type { ModelSource } from "../../sessions/public/modelSource";
 import { orderDraft, prepareOrderSave } from "./modelRoutingDraft";
 import {
   applySmartSetup,
   baselineOrder,
   enforceRoleNeeds,
+  planDelegation,
   ROLE_NEED,
   rulePlan,
   setupCandidates,
@@ -107,7 +109,7 @@ it("infers the kind from the label and uses explicit Host catalogs only", () => 
   expect(setupCandidates({ ...source(), available: () => false })).toEqual([]);
 });
 
-it("adds missing models, orders capable models by benefit per cost and creates tier pools", () => {
+it("adds missing models, orders strong moderately priced models first and creates tier pools", () => {
   const candidates = [
     candidate("mini", 2, 1),
     candidate("opus", 4, 3),
@@ -128,27 +130,81 @@ it("adds missing models, orders capable models by benefit per cost and creates t
   expect(next.routing.entries.every((e) => !e.modelSettings.crossAdvisor)).toBe(true);
   expect(next.routing.pools.map((p) => [p.name, p.entryIds.length])).toEqual([
     ["Smartest", 3],
-    ["Balanced", 2],
+    ["Balanced", 4],
     ["Fast", 1],
   ]);
   expect(prepareOrderSave(next).routing.entries).toHaveLength(5);
 });
 
-it("ranks researched catalog models by benefit per cost, not by intelligence alone", () => {
-  const real = (model: string) => candidate(model, 3, 2);
-  const list = [
-    "claude:fable-5-2",
-    "codex:gpt-6-astra",
-    "codex:gpt-6.1-sol",
-    "codex:gpt-6-luna",
-  ].map(real);
-  list[3]!.profile = { intelligence: 2, cost: 1, estimated: false };
+it("puts Opus and Sol first, cheaper capable models next and top-priced models after them", () => {
+  const list = (
+    [
+      ["claude:fable-5-2", 5, 4],
+      ["codex:gpt-6-astra", 5, 4],
+      ["codex:gpt-6-luna", 2, 1],
+      ["claude:haiku-5-5", 2, 1],
+      ["codex:gpt-6.1-terra", 3, 1],
+      ["claude:sonnet-5-5", 3, 2],
+      ["codex:gpt-6.1-sol", 4, 2],
+      ["claude:opus-5-5", 4, 3],
+    ] as const
+  ).map(([model, intelligence, cost]) => candidate(model, intelligence, cost));
   expect(baselineOrder(list).map((i) => list[i]!.target.model)).toEqual([
+    "claude:opus-5-5",
     "codex:gpt-6.1-sol",
+    "claude:sonnet-5-5",
+    "codex:gpt-6.1-terra",
     "claude:fable-5-2",
     "codex:gpt-6-astra",
+    "claude:haiku-5-5",
     "codex:gpt-6-luna",
   ]);
+  const plan = rulePlan(list, names);
+  const members = (name: string) =>
+    plan.pools.find((pool) => pool.name === name)!.members.map((i) => list[i]!.target.model);
+  expect(members("Smartest").slice(0, 2)).toEqual(["claude:fable-5-2", "codex:gpt-6-astra"]);
+  expect(members("Balanced")).toEqual([
+    "claude:opus-5-5",
+    "codex:gpt-6.1-sol",
+    "claude:sonnet-5-5",
+    "codex:gpt-6.1-terra",
+  ]);
+});
+
+it("plans the advisor, one standard and one light subagent per provider, and clears overrides", () => {
+  const list = (
+    [
+      ["claude:fable-5-2", 5, 4],
+      ["claude:sonnet-5-5", 3, 2],
+      ["claude:haiku-5-5", 2, 1],
+      ["codex:gpt-6.1-sol", 4, 2],
+      ["codex:gpt-6.1-terra", 3, 1],
+    ] as const
+  ).map(([model, intelligence, cost]) => candidate(model, intelligence, cost));
+  list[1]!.target.harness = "claude";
+  list[2]!.target.harness = "claude";
+  list[0]!.target.harness = "claude";
+  const next = planDelegation(
+    {
+      global: { crossSubagentMaxEffort: "max", imageModels: "keep" },
+      providers: { claude: { crossAdvisor: "old" } },
+      accounts: { "claude\nwork": { crossSubagents: "old", other: "kept" } },
+    },
+    list,
+  );
+  expect(decodeAdvisor(next.global.crossAdvisor)).toEqual({
+    harness: "claude",
+    model: "claude:fable-5-2",
+  });
+  expect(decodeSubagents(next.global.crossSubagents).map((ref) => ref.model)).toEqual([
+    "claude:sonnet-5-5",
+    "codex:gpt-6.1-terra",
+    "claude:haiku-5-5",
+  ]);
+  expect(next.global.crossSubagentMaxEffort).toBe("medium");
+  expect(next.global.imageModels).toBe("keep");
+  expect(next.providers).toEqual({});
+  expect(next.accounts).toEqual({ "claude\nwork": { other: "kept" } });
 });
 
 it("binds every role to a tier pool and replaces earlier fixed bindings", () => {
@@ -196,9 +252,9 @@ it("keeps existing ids, limits and unknown entries, refills same-named pools; is
   expect(second.routing.entries.map((e) => e.model)).toEqual(["opus", "mini", "old"]);
   expect(second.routing.entries[0].unknownLimit).toBe("skip");
   expect(second.percentages[id]).toBe("60");
-  expect(second.routing.pools.map((p) => p.name)).toEqual(["smartest", "Mine", "Fast"]);
+  expect(second.routing.pools.map((p) => p.name)).toEqual(["smartest", "Balanced", "Mine", "Fast"]);
   expect(second.routing.pools[0].id).toBe(poolId);
-  expect(second.routing.pools[1].entryIds).toEqual(["legacy"]);
+  expect(second.routing.pools[2].entryIds).toEqual(["legacy"]);
   expect(setup(second, candidates)).toEqual(second);
 });
 
@@ -244,7 +300,7 @@ it("creates Work and Personal pools only when an account has a kind, sharing unl
   expect(pool("Work")).toEqual(["a", "c", "d"]);
   expect(pool("Personal")).toEqual(["b", "c", "d"]);
   const plain = setup(draft(), [candidate("d", 4, 3)]);
-  expect(plain.routing.pools.map((p) => p.name)).toEqual(["Smartest"]);
+  expect(plain.routing.pools.map((p) => p.name)).toEqual(["Smartest", "Balanced"]);
 });
 
 it("respects entry and pool limits", () => {

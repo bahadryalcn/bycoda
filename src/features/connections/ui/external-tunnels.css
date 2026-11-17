@@ -1,35 +1,42 @@
 .external-tunnels-panel,
+.external-tunnel-group,
 .external-tunnel-controls,
 .external-tunnel-credentials,
-.external-tunnel-url,
-.external-tunnel-list,
-.external-tunnel-item {
+.external-tunnel-form,
+.external-tunnel-main {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
   min-inline-size: 0;
 }
-.external-tunnels-panel p,
-.external-tunnel-controls p {
-  overflow-wrap: anywhere;
+.external-tunnel-main {
+  flex: 1 1 18rem;
+  gap: 0.25rem;
 }
+.external-tunnel-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 0.75rem;
+  padding: 0.625rem 0.75rem;
+  min-inline-size: 0;
+}
+.external-tunnel-head,
 .external-tunnel-actions,
 .external-tunnel-credentials form {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
+  min-inline-size: 0;
 }
-.external-tunnel-form {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  align-items: start;
-  gap: 0.75rem;
+.external-tunnel-head {
+  flex-wrap: nowrap;
 }
-.external-tunnel-wide {
-  grid-column: 1 / -1;
+.external-tunnel-main > .external-tunnel-actions {
+  flex-wrap: nowrap;
 }
-.external-tunnel-item code,
 .external-tunnel-qr code {
   overflow-wrap: anywhere;
 }
@@ -44,7 +51,6 @@
   inline-size: min(240px, 100%);
   block-size: auto;
 }
-
 .external-tunnel-form > button {
   justify-self: start;
 }
@@ -52,8 +58,6 @@
   justify-self: start;
   max-inline-size: 100%;
 }
-
-/* In the wide settings page the form stays one compact column. */
-.external-tunnels-panel > * {
-  max-inline-size: 40rem;
+.external-tunnel-wide {
+  flex-basis: 100%;
 }

@@ -1952,7 +1952,7 @@ for (const theme of ["light", "dark"])
 
 async function saveProfileSettings(page: Page) {
   const dialog = page.getByRole("dialog");
-  const save = dialog.getByRole("button", { name: "Save profile settings", exact: true });
+  const save = dialog.getByRole("button", { name: "Save", exact: true });
   await expect(save).toBeVisible();
   await save.click();
   await expect(dialog.getByRole("button", { name: "Saved", exact: true })).toBeVisible();

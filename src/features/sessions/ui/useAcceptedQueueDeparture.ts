@@ -61,6 +61,8 @@ export type MessageQueueProps = {
     runningModelTarget?: ModelTarget;
   };
   steerSupported?: boolean;
+  /** The conversation's provider and current account: a row for that provider runs on it. */
+  account?: { harness: HarnessId; providerAccountId?: string };
   onDelete?: (messageId: string) => QueueRemoval;
   onEdit?: (messageId: string, text: string, attachments: Attachment[]) => void;
   onEditingChange?: (messageId?: string) => void;

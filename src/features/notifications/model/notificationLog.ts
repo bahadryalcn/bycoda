@@ -1,6 +1,7 @@
 import { t } from "../../../shared/i18n";
 import { truncateGraphemes } from "../../../shared/lib/text/truncate";
 import { LOCKED_NOTIFICATION_TEXT } from "./attention";
+import type { ToastAnnouncement } from "../../../shared/ui/ToastRegion";
 import {
   recordNotificationHistory,
   type NotificationHistoryEntry,
@@ -10,6 +11,19 @@ import {
 /** Recording never blocks or fails the announcement it belongs to. */
 function record(entry: NotificationHistoryEntry) {
   void recordNotificationHistory(entry).catch(() => undefined);
+}
+
+/** Keep expired and dismissed toast text in the existing capped device-local log. */
+export function logToastAnnouncement(entry: ToastAnnouncement) {
+  record({
+    key: entry.id,
+    sessionId: "",
+    cwd: "",
+    title: truncateGraphemes(entry.title || entry.message, 200),
+    label: truncateGraphemes(entry.message, 2000),
+    kind: entry.tone === "danger" ? "failed" : "background",
+    occurredAt: entry.occurredAt,
+  });
 }
 
 export type OwnerRequestOutcome =

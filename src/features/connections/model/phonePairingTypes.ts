@@ -19,7 +19,8 @@ export type PhonePairingApi = {
     address?: string,
   ): Promise<MobileAccessStatus>;
   disable?(machine: RemoteMachine): Promise<MobileAccessStatus>;
-  create(machine: RemoteMachine): Promise<PhonePairingCreated>;
+  /** `kind` labels the credential the Host issues; Hosts that predate it ignore it. */
+  create(machine: RemoteMachine, kind?: "phone" | "desktop"): Promise<PhonePairingCreated>;
   status(machine: RemoteMachine, pairingId: string): Promise<PhonePairingStatus>;
   cancel(machine: RemoteMachine, pairingId: string): Promise<void>;
 };

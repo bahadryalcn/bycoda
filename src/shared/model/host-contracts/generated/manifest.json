@@ -31570,6 +31570,49 @@
       "retry": "never",
       "scope": "device"
     },
+    "modelRouting.catalogFacts": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "query",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "query",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "requiredCapability": "models.routing.v1",
+      "responseTimeoutMs": 12000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "error": { "maxLength": 500, "type": "string" },
+          "fetchedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+          "models": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "family": { "maxLength": 200, "minLength": 1, "type": "string" },
+                "inputUsd": { "maximum": 100000, "minimum": 0, "type": "number" },
+                "intelligenceIndex": { "maximum": 1000, "minimum": 0, "type": "number" },
+                "outputUsd": { "maximum": 100000, "minimum": 0, "type": "number" }
+              },
+              "required": ["family", "inputUsd", "outputUsd"],
+              "type": "object"
+            },
+            "maxItems": 5000,
+            "type": "array"
+          },
+          "source": { "const": "openrouter", "type": "string" }
+        },
+        "required": ["source", "models"],
+        "type": "object"
+      },
+      "retry": "safe-query",
+      "scope": "device"
+    },
     "modelRouting.get": {
       "admissionTimeoutMs": 5000,
       "cancellation": "query",
@@ -39043,11 +39086,55 @@
             },
             "type": "array"
           },
+          "hiddenGroups": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "color": { "type": "string" },
+                "id": { "type": "string" },
+                "name": { "type": "string" }
+              },
+              "required": ["id", "name"],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "lockedGroups": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "appearance": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "color": { "type": "string" },
+                    "icon": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "highlight": { "type": "string" },
+                        "path": { "type": "string" }
+                      },
+                      "required": ["path", "highlight"],
+                      "type": "object"
+                    },
+                    "logo": { "type": "string" }
+                  },
+                  "type": "object"
+                },
+                "color": { "type": "string" },
+                "id": { "type": "string" },
+                "name": { "type": "string" }
+              },
+              "required": ["id", "name"],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "privacyReady": { "type": "boolean" },
           "projects": {
             "items": {
               "additionalProperties": false,
               "properties": {
+                "aliasIds": { "items": { "type": "string" }, "type": "array" },
                 "appearance": {
                   "additionalProperties": false,
                   "properties": {
@@ -39115,6 +39202,117 @@
         "type": "object"
       },
       "retry": "safe-query",
+      "scope": "device"
+    },
+    "projects.groups.authorizeHidden": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "control",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "password": { "maxLength": 1024, "minLength": 1, "type": "string" } },
+        "required": ["password"],
+        "type": "object"
+      },
+      "requiredCapability": "projects.groupLock.remote.v1",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "result": { "enum": ["ok", "wrong", "throttled"], "type": "string" },
+          "retryAfterMs": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+        },
+        "required": ["result"],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "projects.groups.lock": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "control",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "groupId": { "maxLength": 200, "minLength": 1, "type": "string" } },
+        "type": "object"
+      },
+      "requiredCapability": "projects.groupLock.remote.v1",
+      "responseTimeoutMs": 12000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "locked": { "const": true, "type": "boolean" } },
+        "required": ["locked"],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "projects.groups.setHidden": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "control",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "groupId": { "maxLength": 200, "minLength": 1, "type": "string" },
+          "hidden": { "type": "boolean" }
+        },
+        "required": ["groupId", "hidden"],
+        "type": "object"
+      },
+      "requiredCapability": "projects.groupLock.remote.v1",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "updated": { "const": true, "type": "boolean" } },
+        "required": ["updated"],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "projects.groups.unlock": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "control",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "groupId": { "maxLength": 200, "minLength": 1, "type": "string" },
+          "password": { "maxLength": 1024, "minLength": 1, "type": "string" }
+        },
+        "required": ["groupId", "password"],
+        "type": "object"
+      },
+      "requiredCapability": "projects.groupLock.remote.v1",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "result": { "enum": ["ok", "wrong", "throttled"], "type": "string" },
+          "retryAfterMs": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+        },
+        "required": ["result"],
+        "type": "object"
+      },
+      "retry": "never",
       "scope": "device"
     },
     "projects.list": {
@@ -68649,6 +68847,20 @@
               "type": "string"
             },
             "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "modelRouting.catalogFacts", "type": "string" },
+            "params": { "additionalProperties": false, "properties": {}, "type": "object" }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
             "method": { "const": "crews.start", "type": "string" },
             "params": {
               "additionalProperties": false,
@@ -75459,6 +75671,87 @@
               "type": "string"
             },
             "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "projects.groups.unlock", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "groupId": { "maxLength": 200, "minLength": 1, "type": "string" },
+                "password": { "maxLength": 1024, "minLength": 1, "type": "string" }
+              },
+              "required": ["groupId", "password"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "projects.groups.authorizeHidden", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": { "password": { "maxLength": 1024, "minLength": 1, "type": "string" } },
+              "required": ["password"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "projects.groups.lock", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": { "groupId": { "maxLength": 200, "minLength": 1, "type": "string" } },
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "projects.groups.setHidden", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "groupId": { "maxLength": 200, "minLength": 1, "type": "string" },
+                "hidden": { "type": "boolean" }
+              },
+              "required": ["groupId", "hidden"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
             "method": { "const": "git.fileDiff", "type": "string" },
             "params": {
               "additionalProperties": false,
@@ -79085,7 +79378,8 @@
                         "COMMAND_INVALID",
                         "CONTEXT_CHANGED",
                         "NATIVE_ADMISSION_UNENROLLED",
-                        "PROJECT_FOLDER_MISSING"
+                        "PROJECT_FOLDER_MISSING",
+                        "GROUP_LOCK_DESKTOP_UNAVAILABLE"
                       ],
                       "type": "string"
                     },
@@ -80019,5 +80313,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "3e693a7ac016b21c51ee0b6386c6eaa65c5e19920e732bd2da3a90b648ea3fc8"
+  "schemaHash": "ee8bce671e018b668c190e88bd3c26093c345d9eec813dd02ccd344a0ae04853"
 }

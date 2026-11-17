@@ -17,16 +17,8 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import {
-  ArrowDown,
-  ArrowLeft,
-  Check,
-  Copy,
-  CornerDownRight,
-  Square,
-} from "../../../shared/ui/icons";
-import { copyText } from "../../../platform/tauri/clipboard";
-import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
+import { ArrowDown, ArrowLeft, CornerDownRight, Square } from "../../../shared/ui/icons";
+import { CopyButton } from "../../../shared/ui/CopyButton";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { AnsiText } from "../../../shared/ui/AnsiText";
 import { agentRunMarkdown, isReportStep } from "../model/agentRunMarkdown";
@@ -604,40 +596,27 @@ function CopyTranscriptButton({
   status: string;
 }) {
   const t = useT();
-  // A different run invalidates any copy in flight and any shown outcome; streaming
-  // content of the same run does not, because the text is read when the click happens.
-  const feedback = useCopyFeedback({ resetKeys: [block.id], successMs: 2000 });
   const command = !isSubagentBlock(block);
-  const copy = () => {
-    const text = command
-      ? commandDetailsCopyText(block, busy, status, t)
-      : agentRunMarkdown(block, status);
-    if (!text) return;
-    feedback.copy(() => copyText(text));
-  };
-  const label = feedback.copied
-    ? t("Copied")
-    : feedback.failed
-      ? t("Copy failed. Try again.")
-      : command
-        ? t("Copy details")
-        : t("Copy transcript");
+  const label = command ? t("Copy details") : t("Copy transcript");
+  // A different run invalidates any copy in flight and any shown outcome (resetKeys); streaming
+  // content of the same run does not, because the text is read when the click happens.
   return (
-    <Button
+    <CopyButton
+      iconOnly
       className="shrink-0"
-      variant="ghost"
       type="button"
-      loading={feedback.pending}
-      onClick={copy}
+      label={label}
       tooltip={command ? label : t("{p0} (Markdown)", { p0: label })}
-      aria-label={label}
-    >
-      {feedback.copied ? (
-        <Check className="icon-md" strokeWidth={1.75} />
-      ) : (
-        <Copy className="icon-md" strokeWidth={1.75} />
-      )}
-    </Button>
+      resetKeys={[block.id]}
+      text={() => {
+        const text = command
+          ? commandDetailsCopyText(block, busy, status, t)
+          : agentRunMarkdown(block, status);
+        // Nothing to copy: show the failed state instead of a false "Copied".
+        if (!text) throw new Error("Nothing to copy");
+        return text;
+      }}
+    />
   );
 }
 

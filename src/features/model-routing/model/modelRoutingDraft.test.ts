@@ -7,7 +7,9 @@ import {
 } from "../../../shared/model/host-contracts/model-routing";
 import {
   entrySettings,
+  groupEntriesByKind,
   orderDraft,
+  reorderKind,
   prepareOrderSave,
   removeOrderEntry,
   removeOrderPool,
@@ -272,5 +274,23 @@ describe("Work calendar cap drafts", () => {
       expect(() => removeOrderPool(edit, "p")).toThrow("Another group includes");
       expect(removeOrderPool(edit, "outer").routing.pools.map((pool) => pool.id)).toEqual(["p"]);
     });
+  });
+
+  it("keeps work, personal and shared entries together and reorders one kind in place", () => {
+    const base = draft();
+    base.routing.entries = ["s1", "w1", "p1", "w2", "s2"].map(entry);
+    const kindOf = (item: ModelRoutingEntry) =>
+      item.id.startsWith("w") ? "work" : item.id.startsWith("p") ? "personal" : "shared";
+    const grouped = groupEntriesByKind(base, kindOf);
+    expect(grouped.routing.entries.map((item) => item.id)).toEqual(["w1", "w2", "p1", "s1", "s2"]);
+    expect(groupEntriesByKind(grouped, kindOf)).toBe(grouped);
+    const moved = reorderKind(grouped, kindOf, "work", ["w2", "w1"]);
+    expect(moved.routing.entries.map((item) => item.id)).toEqual(["w2", "w1", "p1", "s1", "s2"]);
+  });
+
+  it("saves non-helper order bindings as the default and keeps helper order bindings", () => {
+    const edit = draft();
+    edit.routing.roles = { "task.worker": { kind: "order" }, "text.git": { kind: "order" } };
+    expect(prepareOrderSave(edit).routing.roles).toEqual({ "text.git": { kind: "order" } });
   });
 });

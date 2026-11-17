@@ -122,6 +122,13 @@ export function VoiceConversationStyle({
           onChange={(allowBargeIn) => change({ allowBargeIn })}
         />
       </Row>
+      <Row id="voice-remove-fillers" label={t("Remove filler words")}>
+        <Toggle
+          label={t("Remove filler words")}
+          on={settings.removeFillers === true}
+          onChange={(removeFillers) => change({ removeFillers })}
+        />
+      </Row>
       <Row id="voice-hold-announcements" label={t("Hold spoken progress updates")}>
         <Toggle
           label={t("Hold spoken progress updates")}

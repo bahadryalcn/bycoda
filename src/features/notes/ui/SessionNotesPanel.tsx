@@ -4,6 +4,7 @@ import { Text } from "../../../shared/ui/Text";
 import { NoteSaveStatus } from "./NoteSaveStatus";
 import { Alert } from "../../../shared/ui/Alert";
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { SessionNoteDocument, type SessionNoteSelection } from "./SessionNoteDocument";
 import { NoteTagsEditor, sameTags } from "./NoteTagsEditor";
 import { NoteWordCount } from "./NoteWordCount";
@@ -13,7 +14,7 @@ import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { ContinuousList } from "../../../shared/ui/ContinuousList";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
-import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
+import { CopyButton } from "../../../shared/ui/CopyButton";
 import { InlineEdit } from "../../../shared/ui/InlineEdit";
 import { Button } from "../../../shared/ui/Button";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
@@ -23,11 +24,10 @@ import { hasActiveOverlay } from "../../../shared/ui/overlay";
 import { requestOpenNoteLibrary } from "../noteNavigation";
 import "./notes.css";
 import "./sessionNotes.css";
-import { ButtonGroup } from "../../../shared/ui/ButtonGroup";
 import { SurfaceSelection } from "../../sessions/ui/SurfaceSelection";
 import { errorText } from "../../../shared/lib/errors";
 import { t, useLocale } from "../../../shared/i18n";
-import { Copy, File, Link, Plus, Trash2, X } from "../../../shared/ui/icons";
+import { File, Link, Plus, Save, Trash2, X } from "../../../shared/ui/icons";
 import {
   memo,
   useCallback,
@@ -633,7 +633,6 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
   const setTitle = (value: string, parent?: NoteInputWork) =>
     setTitleState({ value, publication: inputOwner.publishControl("title", value, parent) });
   const [body, setBody] = useState(restored?.body ?? note.body);
-  const { copyAsync } = useCopyFeedback({ resetKeys: [note.id, body] });
   const [saveError, setSaveErrorState] = useState<string | null>(restored.error ?? null);
   const setSaveError = (error: string | null) => {
     restored.error = error;
@@ -873,9 +872,6 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
     };
   }, [saveNow, restored, inputOwner, draftKey]);
 
-  const copy = () =>
-    copyAsync(() => navigator.clipboard.writeText(bodyRef.current), { parallel: true });
-
   const sendToChat = () => {
     const selected = selection.current?.() ?? "";
     if (selected) requestAddToChat(selected, "plain");
@@ -939,7 +935,7 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
         }}
       />
       <div className="session-note-meta">
-        <div className="min-w-0 flex-1">
+        <Disclosure summary={t("Tags")} size="sm" className="min-w-0 flex-1">
           <NoteTagsEditor
             availableTags={availableTags}
             inputObserver={inputOwner.observer("tags")}
@@ -952,7 +948,7 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
               scheduleSave();
             }}
           />
-        </div>
+        </Disclosure>
         <Text size="caption" tone="muted" leading="inherit" className="tabular-nums">
           <NoteWordCount body={body} />
         </Text>
@@ -1083,11 +1079,12 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
           {saveError}
         </Alert>
       ) : null}
-      <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-1 px-2 py-1">
+      <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "session-note-save-bar")}>
         {preparing ? (
           <LoadingText>{t("Preparing checkpoint…")}</LoadingText>
         ) : (
           <NoteSaveStatus
+            showProgress
             className="session-note-status"
             state={
               deleting
@@ -1100,58 +1097,62 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
                       ? "recovering"
                       : saving
                         ? "saving"
-                        : body !== note.body || title !== note.title
+                        : body !== savedRef.current.body ||
+                            (title.trim() || noteTitle(body)) !== savedRef.current.title ||
+                            !sameTags(tags, savedRef.current.tags)
                           ? "unsaved"
                           : "saved"
             }
           />
         )}
-        <ButtonGroup
-          variant="expanding"
-          label={t("Note actions")}
+        <Button
+          variant="primary"
           size="sm"
-          defaultExpanded="chat"
-          confirmDuration={1200}
-          items={[
-            {
-              id: "copy",
-              label: t("Copy note"),
-              icon: <Copy />,
-              disabled: !hasBody,
-              onSelect: copy,
-              doneLabel: t("Copied"),
-            },
-            {
-              id: "chat",
-              label: t("Add to chat"),
-              icon: <Plus />,
-              disabled: !hasBody,
-              onSelect: sendToChat,
-            },
-            ...(note.sourceSessionId !== sessionId
-              ? [
-                  {
-                    id: "link",
-                    label: t("Link to this session"),
-                    icon: <Link />,
-                    disabled: linking,
-                    onSelect: async () => {
-                      const work = inputOwner.operation("session-link");
-                      if (!work) return false;
-                      setLinking(true);
-                      try {
-                        await saveNow(false, work);
-                        return await onLink(note.id, work);
-                      } finally {
-                        setLinking(false);
-                        work();
-                      }
-                    },
-                  },
-                ]
-              : []),
-          ]}
+          loading={saving}
+          disabled={preparing || deleting || recovering || conflict}
+          shortcut={`${MOD}S`}
+          onClick={() => saveNow(true)}
+        >
+          <Save className="icon-sm" />
+          {t("Save")}
+        </Button>
+      </div>
+      <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-1 px-2 py-1">
+        <CopyButton
+          size="sm"
+          iconOnly
+          label={t("Copy note")}
+          resetKeys={[note.id, body]}
+          disabled={!hasBody}
+          onCopy={() => navigator.clipboard.writeText(bodyRef.current)}
         />
+        <Button variant="secondary" size="sm" disabled={!hasBody} onClick={sendToChat}>
+          <Plus className="icon-sm" />
+          {t("Add to chat")}
+        </Button>
+        {note.sourceSessionId !== sessionId ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            iconOnly
+            label={t("Link to this session")}
+            loading={linking}
+            onClick={async () => {
+              const work = inputOwner.operation("session-link");
+              if (!work) return false;
+              setLinking(true);
+              try {
+                await saveNow(false, work);
+                return await onLink(note.id, work);
+              } finally {
+                setLinking(false);
+                work();
+              }
+            }}
+          >
+            <Link className="icon-sm" />
+          </Button>
+        ) : null}
         <span className="min-w-0 flex-1" />
         <ConfirmMorph
           label={t("Delete note")}

@@ -4,11 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import { t, useLocale } from "../../../../shared/i18n";
 import { useStableCallback } from "../../../../shared/hooks/useStableCallback";
 import { elapsedSince, monotonicNow } from "../../../../shared/lib/time/timestamps";
-import { copyText } from "../../../../platform/tauri/clipboard";
 import { openExternal } from "../../../../platform/tauri/openExternal";
 import { Button } from "../../../../shared/ui/Button";
+import { CopyButton } from "../../../../shared/ui/CopyButton";
 import { LoadingText } from "../../../../shared/ui/LoadingText";
-import { Copy, ExternalLink } from "../../../../shared/ui/icons";
+import { ExternalLink } from "../../../../shared/ui/icons";
 import { SettingsFeedback } from "../../../../shared/ui/settings";
 import {
   pollMicrosoftDeviceSignIn,
@@ -48,7 +48,6 @@ export function MicrosoftDeviceSignIn({
 }) {
   useLocale();
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
-  const [copied, setCopied] = useState(false);
   const request = useRef(0);
   const signedInCallback = useStableCallback(onSignedIn);
 
@@ -101,7 +100,6 @@ export function MicrosoftDeviceSignIn({
   const begin = async () => {
     if (phase.kind === "starting" || disabled) return;
     const generation = ++request.current;
-    setCopied(false);
     setPhase({ kind: "starting" });
     try {
       const start = await startMicrosoftDeviceSignIn(purpose, clientId, tenant);
@@ -136,19 +134,7 @@ export function MicrosoftDeviceSignIn({
           </Code>
         </p>
         <div className="integration-actions">
-          <Button
-            stableWidth
-            reserveLabels={[t("Copied")]}
-            startIcon={<Copy className="icon-sm" />}
-            onClick={() => {
-              copyText(start.userCode).then(
-                () => setCopied(true),
-                () => setCopied(false),
-              );
-            }}
-          >
-            {copied ? t("Copied") : t("Copy code")}
-          </Button>
+          <CopyButton label={t("Copy code")} text={start.userCode} resetKeys={[start.userCode]} />
           <Button
             variant="primary"
             startIcon={<ExternalLink className="icon-sm" />}

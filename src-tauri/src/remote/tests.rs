@@ -887,6 +887,9 @@ fn host_tools_methods_are_allowed_but_unknown_methods_are_not() {
         "devices.start",
         "devices.stop",
         "devices.list",
+        "devices.paired",
+        "devices.revokeOther",
+        "host.access.read",
         "devices.boot",
         "devices.capture",
         "devices.action",
@@ -1340,6 +1343,7 @@ fn a_slow_host_does_not_look_like_a_dead_tunnel() {
 #[test]
 fn session_managed_owner_rpc_allowlist_excludes_trusted_native_protocol() {
     for method in [
+        "modelRouting.catalogFacts",
         "modelRouting.get",
         "modelRouting.resolve",
         "modelRouting.save",

@@ -1012,7 +1012,7 @@ it("keeps exact private tags through actual Escape, visible Copy/Open recovery, 
     await act(async () =>
       Promise.allSettled([...noteSaveQueues.values()].map((queue) => queue.pending)),
     );
-    expect(document.body.textContent).toContain("Retained note input");
+    expect(document.body.textContent).toContain("Review changes");
     const recovery = [
       ...document.querySelectorAll<HTMLElement>("[data-note-private-recovery]"),
     ].find((row) => row.querySelector<HTMLTextAreaElement>("textarea")?.value === original)!;
@@ -1103,7 +1103,7 @@ it("retains an empty unsubmitted session title on actual view retirement without
       }),
     ]),
   );
-  expect(document.body.textContent).toContain("Retained note input");
+  expect(document.body.textContent).toContain("Review changes");
   expect(document.body.textContent).toContain("Empty input");
   expect(invoke.mock.calls.some(([command]) => command === "notes_upsert")).toBe(false);
   data.release();

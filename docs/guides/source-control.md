@@ -70,8 +70,9 @@ the parent. The parent's change count and Commit still include the pointer. Choo
 only the parent repository lists the pointer as an ordinary change again.
 
 Changes retain staged and unstaged sections and the saved list/tree presentation.
-File rows expose the exact relative path and emphasize parent directories when
-basenames repeat. A partially staged path can appear in both sections, so filter
+File rows expose the exact relative path. File names keep the same size and weight,
+including repeated basenames; parent directories use smaller, secondary text.
+A partially staged path can appear in both sections, so filter
 results count staged and unstaged **entries**. Filtering changes the displayed list;
 **All** operations still affect the entire repository, including hidden entries.
 Selected-entry actions retain their own narrower scope and existing confirmations.

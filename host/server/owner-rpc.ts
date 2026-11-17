@@ -23,6 +23,7 @@ import { handleResourcesRpc } from "./rpc-resources";
 import { handleRuntimeLogsRpc } from "./rpc-runtime-logs";
 import { handleSessionsRpc } from "./rpc-sessions";
 import { handleDraftPresenceRpc } from "../drafts/rpc";
+import { handleGroupLockRpc } from "../group-lock/rpc";
 import { handleTasksRpc } from "./rpc-tasks";
 import { handleTerminalsRpc } from "./rpc-terminals";
 import { handlePullRequestsRpc } from "./rpc-pull-requests";
@@ -111,6 +112,7 @@ import { handleWorktreesRpc } from "./rpc-worktrees";
 type Dependencies = Pick<
   ServerBindings,
   | "engine"
+  | "featureDirectory"
   | "pullRequestWatch"
   | "managedWorkspaces"
   | "workspaceForOwnerRpc"
@@ -484,6 +486,10 @@ const handlers: Record<
   "secrets.input.list": handleSecretInputRpc,
   "secrets.input.answer": handleSecretInputRpc,
   "drafts.presence.report": handleDraftPresenceRpc,
+  "projects.groups.unlock": handleGroupLockRpc,
+  "projects.groups.authorizeHidden": handleGroupLockRpc,
+  "projects.groups.lock": handleGroupLockRpc,
+  "projects.groups.setHidden": handleGroupLockRpc,
   "secrets.owner.revoke": handleSecretsOwnerRpc,
   "activity.record": handleActivityOwnerRpc,
   "activity.days": handleActivityOwnerRpc,
@@ -531,6 +537,7 @@ const handlers: Record<
   "modelRouting.save": handleModelRoutingRpc,
   "modelRouting.status": handleModelRoutingRpc,
   "modelRouting.resolve": handleModelRoutingRpc,
+  "modelRouting.catalogFacts": handleModelRoutingRpc,
   "appearance.themeSuggestions": handleAppearanceRpc,
   "appearance.backgroundSuggestions": handleAppearanceRpc,
   "appearance.backgroundImage": handleAppearanceRpc,
@@ -576,6 +583,7 @@ const handlers: Record<
   "mobile.pairing.cancel": handleDevicesRpc,
   "host.access.read": handleDevicesRpc,
   "devices.revokeOther": handleDevicesRpc,
+  "devices.paired": handleDevicesRpc,
   "mobile.access.status": handleDevicesRpc,
   "mobile.access.enable": handleDevicesRpc,
   "mobile.access.disable": handleDevicesRpc,

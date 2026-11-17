@@ -24,8 +24,7 @@ import {
   type NotePrivateRecovery,
 } from "../notesInputOwners";
 import { requestOpenNoteLibrary } from "../noteNavigation";
-import { copyText } from "../../../platform/tauri/clipboard";
-import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
+import { CopyButton } from "../../../shared/ui/CopyButton";
 
 const retryingDrafts = new Set<string>();
 
@@ -144,13 +143,12 @@ export function NoteDraftRecoveryNotice() {
 }
 
 function PrivateInputRecovery({ input }: { input: NotePrivateRecovery }) {
-  const copied = useCopyFeedback({ resetKeys: [input.id, input.text] });
   return (
     <ToastSlot>
       <div data-note-private-recovery={input.id}>
         <ToastCard
           tone="info"
-          title={t("Retained note input")}
+          title={t("Review changes")}
           durationMs={null}
           onDismiss={() => discardNotePrivateRecovery(input.id)}
         >
@@ -158,44 +156,37 @@ function PrivateInputRecovery({ input }: { input: NotePrivateRecovery }) {
             {input.title || t("Untitled")}
           </Text>
           <Text as="p" size="caption" tone="inherit">
-            {t(
-              input.field === "tags"
-                ? "Tags input"
-                : input.field === "title"
-                  ? "Title input"
-                  : "Document input",
-            )}
-          </Text>
-          <Text as="p" size="caption" tone="inherit">
-            {t("Check the note before reusing this input.")}
+            {t("Your draft is retained for this app session.")}
           </Text>
           {input.text === null ? (
             <p>{t("The original input could not be read.")}</p>
           ) : (
             <Disclosure size="sm" summary={t("View retained input")}>
+              <Text as="p" size="caption" tone="inherit">
+                {t(
+                  input.field === "tags"
+                    ? "Tags input"
+                    : input.field === "title"
+                      ? "Title input"
+                      : "Document input",
+                )}
+              </Text>
               {input.text === "" ? <p>{t("Empty input")}</p> : null}
               <TextareaField label={t("Retained input")} value={input.text} readOnly rows={2} />
             </Disclosure>
           )}
-          {copied.copied || copied.failed ? (
-            <Text as="p" size="caption" tone="inherit" role="status">
-              {copied.failed ? copied.error : t("Exact text copied")}
-            </Text>
-          ) : null}
           <div className="mt-2 flex items-center justify-end gap-1">
-            <Button
+            <CopyButton
               variant="ghost"
               size="sm"
-              loading={copied.pending}
+              label={t("Copy exact text")}
+              copiedLabel={t("Exact text copied")}
+              resetKeys={[input.id, input.text]}
               disabled={input.text === null}
-              onClick={() => {
-                if (input.text !== null) copied.copy(() => copyText(input.text!));
-              }}
-            >
-              {t("Copy exact text")}
-            </Button>
+              text={() => input.text ?? ""}
+            />
             <Button
-              variant="ghost"
+              variant="secondary"
               size="sm"
               onClick={() => {
                 requestOpenNoteLibrary({ id: input.noteId });

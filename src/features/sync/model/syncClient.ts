@@ -26,6 +26,7 @@ import {
   takeOutbox,
 } from "./syncPeerState";
 import { remoteErrorText } from "../../connections/model/remoteFailure";
+import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
 import { parseSyncRecord, syncPushBatches } from "./syncProtocol";
 import type { SyncPushResult, SyncRecord } from "./syncProtocol";
 
@@ -167,13 +168,27 @@ export async function runSyncCycle(
 ): Promise<void> {
   requireCurrent(current);
   recordSyncStatus(machineId, { state: "syncing" });
+  // The log names the request that failed, how long it ran and how many preceded it.
+  const cycleStartedAt = monotonicNow();
+  let requests = 0;
+  let last = { method: "none", startedAt: cycleStartedAt };
+  const tracked: SyncRequest = (method, params) => {
+    requests += 1;
+    last = { method, startedAt: monotonicNow() };
+    return request(method, params);
+  };
   try {
     if (environmentId && !adoptPeerEnvironment(machineId, environmentId))
       throw new Error("Library sync progress could not be saved. Free storage and retry.");
-    await runSyncCycleInner(machineId, request, current);
+    await runSyncCycleInner(machineId, tracked, current);
   } catch (error) {
     if (!current()) throw error;
-    console.warn("[sync]", machineId, error);
+    console.warn(
+      "[sync]",
+      machineId,
+      `method=${last.method} requestMs=${Math.round(elapsedSince(last.startedAt))} cycleMs=${Math.round(elapsedSince(cycleStartedAt))} requests=${requests} pending=${pendingCount(machineId)}`,
+      error,
+    );
     recordSyncStatus(machineId, {
       state: "error",
       lastError: remoteErrorText(error),

@@ -1,37 +1,44 @@
 # Models and provider settings
 
 Open **Settings > Models** to manage model routing, chat defaults, subagents and providers
-for this computer's Host. Its tabs, in order, are **Background work**, **Chats**,
-**Subagents** and **Providers**.
+for this computer's Host. Its tabs, in order, are **Background work**, **Defaults** and
+**Providers**. Decision models have their own Settings page.
 
-After opening a setting from a shortcut or search result, choose another Settings category
-directly; the previous shortcut no longer pins the page. Unsaved model drafts remain available
-when you return.
+Every explicit-save editor in Settings uses one save bar. Its count opens the list of
+unsaved changes, grouped by provider, account or section, each with its own undo. Switching
+provider or account keeps every edit; a provider with unsaved edits is marked.
+Changing a Models tab or save destination, leaving Settings or changing category
+with unsaved changes asks: **Save and leave**,
+**Discard and leave** or **Keep editing**.
+While a save is committing, wait for it to finish before leaving or discarding.
 
-- **Background work** is one screen read top-down. **Who uses what** binds task
-  workers and reviewers, goal planners and final reviews, stewards, automations,
-  crew members, assistant and voice roles, and text helpers (grouped under
-  Unattended work, Assistant and voice, and Helper models) to any model in order,
-  a group or a fixed model; every job shows "Now uses" its current model. Unbound
-  text helpers keep their own inexpensive automatic selection. **All models** is
-  the main priority order, tried from the top: it holds provider accounts, model
-  options and how much quota to keep for your own use, and you choose what
-  happens when a quota is unknown. The first model new work would start on
-  carries a **Next** badge; skipped models show why. **Smart setup** and **Add
-  model** are actions here. **Groups** are named, ordered subsets of this order;
-  they share its model definitions and limits. A group can also include other
-  groups: its own models come first, then each included group in order, with
-  repeats dropped. **Work limits** holds token and cost limits, plus daily agent
-  minutes and the default maximum run time.
-- **Chats** manages what new conversations start with: provider, account, model,
-  effort, permissions and provider extras. Project, group and workspace overrides
-  apply to chats only.
-- **Subagents** is the only place for delegation defaults: subagents, advisor,
-  subagent effort ceiling and image models. Global defaults apply to chats and
-  unattended work; provider, account and explicit item settings override them in
-  that order.
-- **Providers** holds the provider list and detail, the CLI table and decision
-  models (see below).
+**Plan with AI** appears beside **Smart setup**. The first asks a model to plan;
+the second applies the built-in rules. Both update the draft for review before Save.
+With an empty model list, **Who uses what** starts collapsed. Expand it to configure
+fixed models without building a model order.
+
+- **Background work** is one draft with one Save, read top-down. The model list is
+  tried from the top: new work starts on the first model with quota left. Models on
+  work accounts, personal accounts and shared accounts are shown as separate lists; a
+  work project uses only work and shared models, a personal project only personal and
+  shared ones. Each model holds its account, options, how much quota to keep for your own
+  use and what happens when a quota is unknown; the first model new work would start on
+  carries a **Next** badge and skipped models show why. **Smart setup** and **Add model**
+  are actions here. **Groups** are named, ordered subsets of the list; a group can include
+  other groups (its own models first, then each included group, repeats dropped). **Who uses
+  what** binds task workers and reviewers, goal planners and final reviews, stewards,
+  automations, crew members, assistant and voice roles and text helpers to any model in
+  order, a group (also one not saved yet) or a fixed model; saved jobs show "Now uses".
+  **Work limits** holds concurrent tasks, daily agent minutes, the default maximum run time
+  and a token and cost table for all providers and each installed provider.
+- **Defaults** manages what new conversations start with (provider, account, model,
+  effort, permissions and provider extras) and, in its **Subagents** section, delegation
+  defaults: subagents, advisor, subagent effort ceiling and image models. Global
+  delegation defaults apply to chats and unattended work; provider, account and explicit
+  item settings override them in that order. Project, group and workspace overrides apply
+  to chats only.
+- **Providers** holds the provider list and, for the selected provider, accounts,
+  version and updates, runtime path and its model catalog.
 
 Conversation defaults start with **Bycoda defaults**. New conversations use them
 unless their project has its own settings. Choose **Project overrides** in the
@@ -48,7 +55,7 @@ together while other options scroll. Narrow panels scroll their model and settin
 sections instead of shrinking either list away. Open Help for complete setting
 descriptions with the keyboard or touch; hovering is optional.
 
-The Subagents tab reads Advisor, Image models, Subagents, then Subagent max effort.
+The Defaults tab shows Chat defaults first, then Advisor, Image models, Subagents and Subagent max effort.
 These controls scroll together. Selected image and subagent models remain readable
 alongside their removal actions. Auto-compact window uses a slider in 50K-token steps;
 its first position restores Default. Codex starts at 50K, Claude Code at its native
@@ -85,14 +92,14 @@ changes. Hosts without routing support keep their previous selection behavior.
 
 **Settings > Models > Providers** shows the provider list and, for the selected
 provider, its detail: sign-in and accounts, runtime or CLI path, hooks, ACP and
-that provider's model catalog. Below it are the CLI table (with **Check all** and
-**Update all**) and **Decision models**. Sign-in: Claude Code, Codex and Grok Build
+that provider's model catalog. Its version, update status and check, update and open-folder
+actions sit in that provider's header; **Check all** and **Update all** sit above the list. Sign-in: Claude Code, Codex and Grok Build
 accept several named accounts, each signed in to its own profile; a Grok Build
 account keeps its own sessions, so switching a conversation to another Grok
 account continues from a summary. OpenCode and Antigravity keep one sign-in per
 computer: their account row can be renamed, coloured and tagged Personal or Work,
-and Antigravity's setup steps open below it. The CLI table manages installed agent tools. The
-catalog manages model availability. Decision models configure decision routing. Shared model
+and Antigravity's setup steps open below it. The
+catalog manages model availability. Decision models have their own page, **Settings > Decision models**. Shared model
 order, limits and groups are managed in Settings > Models > Background work.
 
 **Settings > Usage & limits** is a separate page for provider usage, quotas and
@@ -139,6 +146,6 @@ Who uses what and All models are edited on the selected Host, each with its own 
 
 Decision models show the Host used for scanning, local installation and saved keys. The app prefers this computer’s Host, then the first connected Host. Adding a model and testing it are separate steps: a failed connection test leaves the added source available to edit or retry.
 
-In **Settings > Models > Background work > All models**, **Smart setup** plans the whole setup in one step. It adds every active provider account and enabled model that is missing, then asks a model to plan the main order, the groups and the group of every job in Who uses what. The planner is the model bound to **Routing setup**, otherwise the cheapest strong model you can use. It receives each model's researched capability score and list price, a researched benefit-per-cost ranking to start from, every account's work, personal or shared kind, and what each job does. Capable models with the best benefit per cost come first, the most expensive models are kept for reviews and planning, quick replies and helper text such as titles, commit messages and translation go to cheap fast models (a plan that binds such a job, or a review, to an unsuitable group is corrected), and Work and Personal groups are created when an account has a kind (a work project never runs on a personal account and the other way round). Effort follows the job: the main order runs at Medium, groups used only by simple jobs at Low, and groups used by reviews or planning at High; a model without a level gets its closest one, so the same model can appear once per effort. Smart setup never picks an effort above High: set higher levels on an entry yourself, and an entry you set above High is kept for the High groups. Groups with the same name are refilled; other groups, entries, ids, limits and settings stay unchanged. A notice names the model that planned it; when no model can plan, or the planner times out, fails or returns an unreadable answer, the researched ranking and built-in rules are used and the notice names the planner and the reason. Invalid parts of an answer are dropped instead of discarding the whole plan. Review the draft and press **Save** to apply through the existing Host-owner and version checks. If the model-order or group limit would be exceeded, nothing is added; reduce unused choices or groups and retry.
+In **Settings > Models > Background work**, **Smart setup** fills the whole draft at once. It adds every active provider account and enabled model that is missing, orders them, fills the groups, binds every job in Who uses what and sets subagents and the advisor. Strong models at a moderate price (such as Opus and Sol) come first, cheaper capable models (Sonnet, Terra) next, top-priced models (Fable, Astra) after them and light models last; reviews and planning use a group led by the strongest models, quick replies and helper text such as titles, commit messages and translation go to cheap fast models, and Work and Personal groups are created when an account has a kind. The advisor is the strongest model; each provider's best standard and light model become subagents, capped at Medium effort, replacing provider and account overrides of those settings in the draft. Prices come from OpenRouter and capability scores from Artificial Analysis (through OpenRouter), fetched by the Host and cached for six hours; the built-in table keeps the owner-reviewed ordering of known families and is used when the feed is unavailable. **Plan with AI**, beside Smart setup, asks the model bound to **Routing setup** (otherwise the cheapest strong model you can use) to plan from the same data. Effort follows the job: the main order runs at Medium, groups used only by simple jobs at Low, and groups used by reviews or planning at High; a model without a level gets its closest one, so the same model can appear once per effort. Smart setup never picks an effort above High: set higher levels on an entry yourself, and an entry you set above High is kept for the High groups. Groups with the same name are refilled; other groups, entries, ids, limits and settings stay unchanged. A notice names the model that planned it; when no model can plan, or the planner times out, fails or returns an unreadable answer, the researched ranking and built-in rules are used and the notice names the planner and the reason. Invalid parts of an answer are dropped instead of discarding the whole plan. Review the draft and press **Save** to apply through the existing Host-owner and version checks. If the model-order or group limit would be exceeded, nothing is added; reduce unused choices or groups and retry.
 
 Accounts, projects and project groups can be tagged **Personal** or **Work**. An account without a tag, or whose name does not say work or personal, is shared. A run in a tagged project skips accounts tagged for the other kind and moves on to the next entry; if every entry is skipped, the work waits. Fixed models are never filtered, and runs without a project (such as the assistant) are unaffected. Tagging a project overrides its group's tag.

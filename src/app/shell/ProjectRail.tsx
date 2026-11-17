@@ -792,6 +792,19 @@ export function ProjectRail({
       onSearch={onSearch}
     />
   );
+  // A group is working when any project in it, its workspace root or a nested workspace is.
+  const groupWorking = (groupId: string): boolean => {
+    const entry = groupedProjectSections.grouped.find((item) => item.group.id === groupId);
+    if (!entry || entry.locked) return false;
+    const root = projectGroupWorkspaceRoot(entry.group);
+    return (
+      (!!root && isBusyPath(root, busy)) ||
+      [...entry.items, ...entry.workspaceItems].some((item) => isBusyPath(item.path, busy)) ||
+      groupedProjectSections.grouped.some(
+        (child) => child.parentId === groupId && groupWorking(child.group.id),
+      )
+    );
+  };
   const renderProjectGroup = (
     { group, items, workspaceItems, locked }: (typeof groupedProjectSections.grouped)[number],
     sortableGroups: SortableHandle = groupSortable,
@@ -801,6 +814,7 @@ export function ProjectRail({
       group={group}
       items={items}
       workspaceItems={workspaceItems}
+      working={groupWorking(group.id)}
       locked={locked}
       revealed={revealedGroupIds.includes(group.id)}
       sortableGroups={sortableGroups}
@@ -1665,6 +1679,7 @@ function ProjectGroupSection({
   workspaceIds = [],
   items,
   workspaceItems,
+  working,
   muteStatuses,
   nameCollisions,
   focusHint,
@@ -1699,6 +1714,8 @@ function ProjectGroupSection({
   sortableGroups: SortableHandle;
   items: RecentProject[];
   workspaceItems: RecentProject[];
+  /** An agent works somewhere inside; the collapsed header carries the working decoration. */
+  working: boolean;
   muteStatuses: ReadonlyMap<string, string | null>;
   nameCollisions: ReadonlySet<string>;
   /** Rows show their full detail in the shared keyboard-focus hint (not inside the Projects flyout). */
@@ -1739,6 +1756,8 @@ function ProjectGroupSection({
   const countLabel = `${memberCount} ${memberCount === 1 ? "project" : "projects"}`;
   const expanded = (!group.collapsed || revealed) && !locked;
   const collapsed = !expanded;
+  // Open, the working rows show it themselves; collapsed, the header stands in for them.
+  const headerWorking = collapsed && working;
   // While any group is dragged, every group shows only its header: the reorder hook marks the
   // blocks and the stylesheet hides `data-reorder-fold-body`, with no re-render.
   const showBody = expanded;
@@ -1809,6 +1828,7 @@ function ProjectGroupSection({
         hoverReveal
         tone="primary"
         data-group-row
+        data-project-working={headerWorking || undefined}
         data-group-overview-open={overviewOpen || undefined}
         interactionOpen={overviewOpen}
         {...surfaceAttributes(
@@ -1858,14 +1878,17 @@ function ProjectGroupSection({
                 color={projectGroupColor(group)}
                 name={group.mascot ?? null}
                 className="size-3"
+                active={headerWorking}
               />
             ) : undefined
           }
           aria-label={
-            locked ? t("{p0}, locked", { p0: group.name }) : `${group.name}, ${countLabel}`
+            locked
+              ? t("{p0}, locked", { p0: group.name })
+              : `${group.name}, ${countLabel}${headerWorking ? ", working" : ""}`
           }
           tooltip={group.name}
-          tooltipDetails={[locked ? t("Locked") : countLabel]}
+          tooltipDetails={[locked ? t("Locked") : countLabel, headerWorking && t("Working")]}
           onClick={onToggleCollapsed}
           iconTarget="compact"
           className="shrink-0 @max-[140px]/rail:flex-1"
@@ -1919,6 +1942,16 @@ function ProjectGroupSection({
               {group.name}
             </Text>
           )}
+          {headerWorking ? (
+            <span
+              data-project-working-indicator
+              role="img"
+              aria-label={t("Working")}
+              className="shrink-0"
+            >
+              <TerminalSpinner />
+            </span>
+          ) : null}
           {group.workspaceFile && !locked && !linkStatus ? (
             <Tooltip label={t("Linked to {p0}", { p0: group.workspaceFile })}>
               <Text

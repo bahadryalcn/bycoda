@@ -30,7 +30,6 @@ export const ChangeSelectionCtx = createContext<ChangeSelection | null>(null);
 
 export const ChangeRow = memo(function ChangeRow({
   file,
-  collision = false,
   active,
   busy,
   kind,
@@ -43,7 +42,6 @@ export const ChangeRow = memo(function ChangeRow({
   onAction,
 }: {
   file: GitChangedFile;
-  collision?: boolean;
   onOpenInEditor?: (path: string, pin?: boolean) => void;
   active: boolean;
   busy: boolean;
@@ -64,8 +62,6 @@ export const ChangeRow = memo(function ChangeRow({
   const name = basename(file.relative);
   const tree = depth !== undefined;
   const dir = tree ? "" : dirname(file.relative);
-  // A collided name with its folder beside it steps down to the caption role.
-  const dimmed = Boolean(collision && dir);
   const {
     menu,
     openFrom,
@@ -163,9 +159,9 @@ export const ChangeRow = memo(function ChangeRow({
           <FileTypeIcon name={name} isDir={false} />
           <span className="flex min-w-0 flex-1 items-center gap-1.5">
             <Text
-              size={dimmed ? "caption" : "secondary"}
-              tone={dimmed ? "secondary" : "primary"}
-              weight={dimmed ? undefined : "medium"}
+              size="secondary"
+              tone="primary"
+              weight="medium"
               truncate
               className={`max-w-full shrink-0 ${file.status === "deleted" ? "line-through" : ""}`}
             >
@@ -176,14 +172,14 @@ export const ChangeRow = memo(function ChangeRow({
                 as="span"
                 size="inherit"
                 tone="inherit"
-                weight={collision ? "medium" : undefined}
+                weight="regular"
                 className="flex min-w-0 flex-1"
               >
                 <MiddleTruncate
                   mode="path"
                   title={false}
                   size="caption"
-                  tone={collision ? "primary" : "secondary"}
+                  tone="secondary"
                   className="min-w-0 flex-1"
                 >
                   {dir}

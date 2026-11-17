@@ -32,6 +32,7 @@ import {
 } from "../../../src/shared/model/host-contracts";
 import { HostDispatchError, type HostDispatchContext } from "../dispatch";
 import { createLogger } from "../../diagnostics/logger";
+import { elapsedSince, monotonicNow } from "../../../src/shared/lib/time/timestamps";
 import { effectFailureDelivery } from "./effect-failure-delivery";
 import { HostReadWorkBudget } from "../read-budget";
 import { HostBulkError, hostBulkDependencies, type HostBulkTransfers } from "../http/bulk";
@@ -106,6 +107,9 @@ type Peer = {
   initializing: boolean;
   closed: boolean;
   pending: Map<string, AbortController>;
+  /** Request id -> method and start, so a close names what it abandoned. */
+  inflight: Map<string, { method: string; startedAt: number }>;
+  openedAt: number;
   controls: Set<string>;
   helloTimer: ReturnType<typeof setTimeout>;
   pongTimer?: ReturnType<typeof setTimeout>;
@@ -168,6 +172,21 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
   function closePeer(peer: Peer, code = 1008, reason = "Connection no longer authorized."): void {
     if (peer.closed) return;
     peer.closed = true;
+    // Every close names its cause and abandoned work; a normal shutdown or replacement is info.
+    resultLog[code === 1001 && peer.inflight.size === 0 ? "info" : "warn"]("connection closed", {
+      peer: peer.id.slice(0, 8),
+      code,
+      reason,
+      ready: peer.ready,
+      ageMs: Math.round(elapsedSince(peer.openedAt)),
+      bufferedBytes: peer.socket.bufferedAmount,
+      pending: peer.inflight.size,
+      methods: [...peer.inflight.values()]
+        .slice(0, 8)
+        .map(({ method, startedAt }) => `${method}@${Math.round(elapsedSince(startedAt))}ms`)
+        .join(","),
+    });
+    peer.inflight.clear();
     options.subscriptions?.detach(peer.id);
     clearTimeout(peer.helloTimer);
     clearTimeout(peer.pongTimer);
@@ -187,7 +206,7 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
   function send(peer: Peer, value: unknown, normalized?: NormalizedJsonWire): boolean {
     if (peer.closed || peer.socket.readyState !== WebSocket.OPEN) return false;
     let serialized: string;
-    let byteLength: number;
+    let byteLength = -1;
     try {
       const capture = normalized ? readNormalizedJsonWire(normalized) : undefined;
       serialized = capture?.serialized ?? JSON.stringify(value);
@@ -196,16 +215,31 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
       const wire = capture ? capture.wire : JSON.parse(serialized);
       if (wire?.method === "subscription.event") SubscriptionEventSchema.parse(wire);
       else RpcResponseSchema.parse(wire);
-    } catch {
+    } catch (error) {
+      const id = (value as { id?: unknown } | null)?.id;
+      resultLog.warn("response not sendable", {
+        method: typeof id === "string" ? peer.inflight.get(id)?.method : undefined,
+        bytes: byteLength,
+        maxBytes: WS_LIMITS.maxMessageBytes,
+        error: error instanceof Error ? error.message.slice(0, 200) : "unknown",
+      });
       closePeer(peer, 1011, "Response cannot be represented by this transport.");
       return false;
     }
     if (peer.socket.bufferedAmount + byteLength > limits.maxSocketQueuedBytes) {
+      resultLog.warn("slow consumer", {
+        bytes: byteLength,
+        bufferedBytes: peer.socket.bufferedAmount,
+        maxQueuedBytes: limits.maxSocketQueuedBytes,
+      });
       closePeer(peer, 1013, "Slow consumer; reconnect explicitly.");
       return false;
     }
     peer.socket.send(serialized, (error) => {
-      if (error) closePeer(peer, 1011, "Connection write failed.");
+      if (error) {
+        resultLog.warn("connection write failed", { error: error.message.slice(0, 200) });
+        closePeer(peer, 1011, "Connection write failed.");
+      }
     });
     return true;
   }
@@ -332,6 +366,7 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
     }
     const controller = new AbortController();
     peer.pending.set(request.id, controller);
+    peer.inflight.set(request.id, { method: request.method, startedAt: monotonicNow() });
     if (control) peer.controls.add(request.id);
     const definition = getHostRpcMethod(request.method)!;
     const deadline = setTimeout(
@@ -608,6 +643,15 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
         );
     } finally {
       clearTimeout(deadline);
+      const started = peer.inflight.get(request.id);
+      // A slow request explains a later client deadline or interruption. `*.wait`
+      // methods are long polls that hold the request open by design.
+      if (started && !request.method.endsWith(".wait") && elapsedSince(started.startedAt) >= 5_000)
+        resultLog.warn("slow request", {
+          method: request.method,
+          ms: Math.round(elapsedSince(started.startedAt)),
+        });
+      peer.inflight.delete(request.id);
       peer.pending.delete(request.id);
       peer.controls.delete(request.id);
     }
@@ -622,6 +666,8 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
       initializing: false,
       closed: false,
       pending: new Map(),
+      inflight: new Map(),
+      openedAt: monotonicNow(),
       controls: new Set(),
       helloTimer: setTimeout(
         () => closePeer(peer, 1008, "Connection negotiation timed out."),
@@ -634,12 +680,15 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
       clearTimeout(peer.pongTimer);
       peer.pongTimer = undefined;
     });
-    socket.on("close", () => {
-      closePeer(peer);
+    socket.on("close", (code, reason) => {
+      // Closed by the client or the network before the Host chose to close it.
+      closePeer(peer, code, `peer closed: ${reason.toString("utf8").slice(0, 120) || "no reason"}`);
       clearTimeout(peer.closeTimer);
       peers.delete(peer);
     });
-    socket.on("error", () => closePeer(peer, 1011, "Connection failed."));
+    socket.on("error", (error) =>
+      closePeer(peer, 1011, `Connection failed: ${error.message.slice(0, 160)}`),
+    );
     socket.on("message", (data, binary) => {
       if (peer.closed) return;
       if (binary) {

@@ -68,6 +68,13 @@ const file = (relative: string, staged = false) => ({
   unstaged: !staged,
 });
 let files = [file("src/workspace.tsx"), file("src/theme.css"), file("README.md", true)];
+if (new URLSearchParams(location.search).has("file-typography"))
+  files = [
+    file("audio-service/src/routes/clientTp.ts"),
+    file("audio-service/src/utils/clientTp.ts"),
+    file("audio-service/src/routes/getAudioByCaptchaId.ts"),
+    file("docker-compose.yaml"),
+  ];
 if (diffUsability) files = [{ ...file(diffRelative), path: `${diffRepository}/${diffRelative}` }];
 if (large)
   files.push(...Array.from({ length: 597 }, (_, n) => file(`src/features/feature-${n}/index.ts`)));

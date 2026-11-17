@@ -1,5 +1,4 @@
 import { Badge } from "../../../shared/ui/Badge";
-import { surfaceAttributes } from "../../../shared/ui/Surface";
 import "./ProviderDefaults.css";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { DefaultsTargetsPicker } from "./providerDefaultsTargetsPicker";
@@ -10,10 +9,7 @@ import { Text } from "../../../shared/ui/Text";
 import { useMemo, useSyncExternalStore, type ReactNode } from "react";
 import { t, useLocale, getLocale } from "../../../shared/i18n";
 import { pathKey } from "../../../shared/lib/paths";
-import { Button } from "../../../shared/ui/Button";
 import { Folder, Globe, LayoutGrid } from "../../../shared/ui/icons";
-import { LiveText } from "../../../shared/ui/LiveText";
-import { StatusDot } from "../../../shared/ui/StatusDot";
 import {
   loadProjectGroupAssignments,
   loadProjectGroups,
@@ -34,6 +30,8 @@ import {
 import { ProjectScopeIcon } from "./ProjectScopeIcon";
 import { HarnessIcon } from "../../sessions/public/HarnessIcon";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { InlineError } from "../../../shared/ui/InlineError";
+import { SettingsSaveBar, type PendingChange } from "../../../shared/ui/settings";
 
 export type DefaultsSaveState =
   | { state: "idle" }
@@ -147,7 +145,7 @@ export function ProviderDefaultsSaveBar({
   target,
   options,
   onTargetChange,
-  pending,
+  changes,
   saveState,
   saving = false,
   onSave,
@@ -166,22 +164,15 @@ export function ProviderDefaultsSaveBar({
   target: DefaultsTarget;
   options: ReturnType<typeof useDefaultsTargets>["options"];
   onTargetChange: (value: string) => void;
-  pending: number;
+  /** Every unsaved field across providers and accounts. */
+  changes: readonly PendingChange[];
   saveState: DefaultsSaveState;
   saving?: boolean;
-  onSave: () => void;
+  onSave: () => unknown;
   onDiscard: () => void;
 }) {
   useLocale();
-  const tone = pending > 0 ? "warning" : saveState.state === "error" ? "danger" : "secondary";
-  const status =
-    saveState.state === "error"
-      ? t("Not saved. {p0}", { p0: saveState.message })
-      : pending > 0
-        ? pending === 1
-          ? t("1 unsaved change")
-          : t("{p0} unsaved changes", { p0: pending })
-        : "";
+  const pending = changes.length;
   const values = selectedTargetValues(
     selection ?? targetValue(target),
     options.filter((option) => !option.disabled).map((option) => option.value),
@@ -191,22 +182,17 @@ export function ProviderDefaultsSaveBar({
   const skips =
     draft && activeProvider ? prepareDefaultsDraft(draft, activeProvider, providers).skipped : [];
   return (
-    <div
-      {...surfaceAttributes(
-        { variant: "canvas", frame: "pane", edge: "block-start" },
-        "provider-defaults-save-bar",
-      )}
-    >
-      {status || skips.length || groupTarget ? (
-        <div className="provider-save-bar-status">
-          {status ? <StatusDot tone={tone} /> : null}
-          <LiveText
-            text={status}
-            size="secondary"
-            tone="primary"
-            leading="inherit"
-            truncate={saveState.state !== "error"}
-          />
+    <SettingsSaveBar
+      id="models-defaults"
+      title={t("Defaults")}
+      changes={changes}
+      pending={saving}
+      saved={saveState.state === "saved"}
+      saveLabel={saveState.state === "error" && pending > 0 ? t("Retry") : undefined}
+      onSave={onSave}
+      onDiscard={onDiscard}
+      leading={
+        <>
           {skips.length || groupTarget ? (
             <div className="provider-defaults-notes">
               <Badge size="xs" tone={skips.length ? "warning" : "neutral"}>
@@ -248,37 +234,37 @@ export function ProviderDefaultsSaveBar({
               </InfoPopover>
             </div>
           ) : null}
-        </div>
-      ) : null}
-      <div className="provider-save-bar-actions">
-        {draft && onDraftChange && (pending > 0 || draft.providerScope === "all") ? (
-          <div className="provider-defaults-field">
-            <Text size="caption" tone="muted">
-              {t("Apply to")}
-            </Text>
-            <SegmentedControl
-              label={t("Provider scope")}
-              value={draft.providerScope ?? "this"}
-              options={[
-                {
-                  value: "this",
-                  label: activeProvider ? HARNESS_TITLE[activeProvider] : t("This provider"),
-                  icon: activeProvider ? (
-                    <HarnessIcon harness={activeProvider} className="icon-sm" />
-                  ) : undefined,
-                },
-                {
-                  value: "all",
-                  label: t("All providers"),
-                  icon: <LayoutGrid className="icon-sm" />,
-                },
-              ]}
-              onValueChange={(value) =>
-                onDraftChange({ ...draft, providerScope: value === "all" ? "all" : undefined })
-              }
-            />
-          </div>
-        ) : null}
+          {draft && onDraftChange && (pending > 0 || draft.providerScope === "all") ? (
+            <div className="provider-defaults-field">
+              <Text size="caption" tone="muted">
+                {t("Apply to")}
+              </Text>
+              <SegmentedControl
+                label={t("Provider scope")}
+                value={draft.providerScope ?? "this"}
+                options={[
+                  {
+                    value: "this",
+                    label: activeProvider ? HARNESS_TITLE[activeProvider] : t("This provider"),
+                    icon: activeProvider ? (
+                      <HarnessIcon harness={activeProvider} className="icon-sm" />
+                    ) : undefined,
+                  },
+                  {
+                    value: "all",
+                    label: t("All providers"),
+                    icon: <LayoutGrid className="icon-sm" />,
+                  },
+                ]}
+                onValueChange={(value) =>
+                  onDraftChange({ ...draft, providerScope: value === "all" ? "all" : undefined })
+                }
+              />
+            </div>
+          ) : null}
+        </>
+      }
+      trailing={
         <div className="provider-defaults-field">
           <DefaultsTargetsPicker
             values={values}
@@ -286,28 +272,14 @@ export function ProviderDefaultsSaveBar({
             onChange={(next) => onTargetChange(JSON.stringify(next))}
           />
         </div>
-        <div className="provider-defaults-buttons">
-          <Button size="sm" variant="ghost" disabled={saving || pending === 0} onClick={onDiscard}>
-            {t("Discard")}
-          </Button>
-          <Button
-            size="sm"
-            variant="primary"
-            disabled={saving || pending === 0}
-            loading={saving}
-            success={saveState.state === "saved" && pending === 0}
-            successLabel={saveState.state === "saved" && pending === 0 ? t("Saved") : undefined}
-            disabledReason={
-              saveState.state === "saved" && pending === 0
-                ? t("Saved to {p0}", { p0: saveState.target })
-                : undefined
-            }
-            onClick={onSave}
-          >
-            {saveState.state === "error" && pending > 0 ? t("Retry") : t("Save")}
-          </Button>
-        </div>
-      </div>
-    </div>
+      }
+      successLabel={
+        saveState.state === "saved" ? t("Saved to {p0}", { p0: saveState.target }) : undefined
+      }
+    >
+      {saveState.state === "error" ? (
+        <InlineError>{t("Not saved. {p0}", { p0: saveState.message })}</InlineError>
+      ) : null}
+    </SettingsSaveBar>
   );
 }

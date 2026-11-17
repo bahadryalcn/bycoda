@@ -256,7 +256,7 @@ it("retains the queued authority on every command instead of adopting a newer ow
   }
 });
 
-it("configures the queued provider account and keeps the session account for rows without one", () => {
+it("keeps the conversation's current account on the same provider and takes the row's on a switch", () => {
   const session = {
     harness: "codex",
     model: "gpt",
@@ -264,25 +264,30 @@ it("configures the queued provider account and keeps the session account for row
     modelSettings: {},
     providerAccountId: "work",
   };
-  const targeted = (providerAccountId?: string) =>
+  const targeted = (providerAccountId?: string, harness = "codex", model = "gpt") =>
     row("r", {
       modelTarget: {
-        harness: "codex",
-        model: "gpt",
+        harness,
+        model,
         modelSettings: {},
         ...(providerAccountId ? { providerAccountId } : {}),
       },
     }) as never;
-  expect(queueRowCommands("s", targeted("personal"), session)[0]).toMatchObject({
-    type: "configure",
-    providerAccountId: "personal",
-  });
+  // Queued on "personal", then the owner switched to "work" (say after a usage limit).
+  expect(
+    queueRowCommands("s", targeted("personal"), session).map((command) => command.type),
+  ).toEqual(["send"]);
   expect(queueRowCommands("s", targeted(), session).map((command) => command.type)).toEqual([
     "send",
   ]);
-  expect(queueRowCommands("s", targeted("work"), session).map((command) => command.type)).toEqual([
-    "send",
-  ]);
+  const [model] = queueRowCommands("s", targeted("personal", "codex", "gpt-mini"), session);
+  expect(model).toMatchObject({ type: "configure", model: "gpt-mini" });
+  expect(model).not.toHaveProperty("providerAccountId");
+  expect(queueRowCommands("s", targeted("personal", "claude", "opus"), session)[0]).toMatchObject({
+    type: "configure",
+    harness: "claude",
+    providerAccountId: "personal",
+  });
 });
 
 it("drains six distinct targets in insertion order after each successful turn", async () => {

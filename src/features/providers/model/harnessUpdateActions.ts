@@ -4,7 +4,9 @@ import {
   probeHarnessAvailability,
 } from "../../../integrations/harness/core/availability";
 import { inspectHarnessBinary, updateHarnessCli } from "../../../integrations/harness/core/child";
-import { HARNESSES, type HarnessId } from "../../sessions/model/session";
+import { HARNESSES, HARNESS_TITLE, type HarnessId } from "../../sessions/model/session";
+import { t } from "../../../shared/i18n";
+import { toast } from "../../../shared/ui/ToastRegion";
 import { refreshProviderCatalog } from "./catalogReceipts";
 import {
   announceHarnessUpdated,
@@ -117,6 +119,15 @@ export function runHarnessUpdate(update: HarnessUpdate): Promise<HarnessUpdateRu
     setRun(update.harness, result);
     if (result.status === "updated") {
       markCurrent(update, result.version);
+    }
+    // The launch notice may have expired; completion still reaches the owner and notification log.
+    if (result.status === "updated" || result.status === "failed") {
+      toast.show({
+        id: `harness-update:${update.harness}`,
+        title: HARNESS_TITLE[update.harness],
+        tone: result.status === "failed" ? "danger" : "success",
+        message: result.status === "failed" ? result.error : `${t("Updated to ")}${result.version}`,
+      });
     }
     return result;
   });

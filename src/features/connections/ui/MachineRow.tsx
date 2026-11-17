@@ -167,30 +167,28 @@ export function MachineRow({
         <Text
           as="div"
           tone="muted"
-          className="flex min-w-0 flex-wrap items-center gap-x-1.5"
+          className="flex min-w-0 flex-wrap items-center gap-x-3"
           data-machine-summary
           aria-label={machineSummaryText(summary)}
         >
-          {summary.parts.map((part, index) => (
-            <span key={part.id} className="inline-flex items-center gap-x-1.5">
-              {index > 0 ? <span aria-hidden>·</span> : null}
-              {part.id === "status" ? (
+          {summary.parts.map((part) =>
+            part.id === "status" ? (
+              <span key={part.id} className="inline-flex items-center gap-x-1">
                 <Badge variant="dot" size="sm" tone={MACHINE_STATUS_TONE[connection.status]}>
                   {part.text}
                 </Badge>
-              ) : (
-                part.text
-              )}
-            </span>
-          ))}
-          {reason ? (
-            <InfoPopover label={t("About this status")} className="shrink-0">
-              <Text as="p">{reason}</Text>
-            </InfoPopover>
-          ) : null}
+                {reason ? (
+                  <InfoPopover label={t("About this status")} className="shrink-0">
+                    <Text as="p">{reason}</Text>
+                  </InfoPopover>
+                ) : null}
+              </span>
+            ) : (
+              <span key={part.id}>{part.text}</span>
+            ),
+          )}
           {summary.routes && !local ? (
-            <span className="inline-flex items-center gap-x-1.5 whitespace-nowrap">
-              <span aria-hidden>·</span>
+            <span className="inline-flex items-center whitespace-nowrap">
               <Button
                 variant="link"
                 size="sm"

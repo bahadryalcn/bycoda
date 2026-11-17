@@ -21,6 +21,22 @@ async function tooltipText(element: HTMLElement): Promise<string> {
   });
   return text;
 }
+const moreButton = (host: HTMLElement) =>
+  host.querySelector<HTMLButtonElement>('button[aria-label="More actions"]')!;
+const menuRows = () => [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')];
+/** Opens a project menu through the header's "More actions" menu. */
+async function openProjectMenu(host: HTMLElement, label: string) {
+  await act(async () => moreButton(host).click());
+  const row = menuRows().find((item) => item.textContent?.includes(label))!;
+  await act(async () => row.click());
+}
+/** Lists the "More actions" rows, then closes the menu again. */
+async function moreMenuLabels(host: HTMLElement): Promise<string[]> {
+  await act(async () => moreButton(host).click());
+  const labels = menuRows().map((item) => item.textContent ?? "");
+  await act(async () => moreButton(host).click());
+  return labels;
+}
 vi.mock("../../connections/model/hostFeatureClient", () => ({ hostFeatureRequest: vi.fn() }));
 vi.mock("../../../platform/tauri/fs", () => ({
   listExternalEditors: vi.fn(async () => [{ id: "cursor", name: "Cursor" }]),
@@ -61,9 +77,7 @@ it("keeps adding actions in the open dialog and persists each action with a new 
         ),
       ),
     );
-    await act(async () =>
-      host.querySelector<HTMLButtonElement>('button[aria-label="Project actions"]')!.click(),
-    );
+    await openProjectMenu(host, "Project actions");
     await act(async () => document.querySelector<HTMLButtonElement>('[role="menuitem"]')!.click());
     await act(async () => button("test").click());
     await act(async () => button("Save action").click());
@@ -96,9 +110,7 @@ it("keeps adding actions in the open dialog and persists each action with a new 
     }
     await act(async () => button("Close").click());
     expect(document.querySelector('[role="dialog"]')).toBeNull();
-    await act(async () =>
-      host.querySelector<HTMLButtonElement>('button[aria-label="Project actions"]')!.click(),
-    );
+    await openProjectMenu(host, "Project actions");
     expect(document.querySelector('[role="menu"]')?.textContent).toContain("test");
     expect(document.querySelector('[role="menu"]')?.textContent).toContain("build");
   } finally {
@@ -134,9 +146,7 @@ it.each(["web", "native"])(
           ),
         ),
       );
-      await act(async () =>
-        host.querySelector<HTMLButtonElement>('button[aria-label="Project actions"]')!.click(),
-      );
+      await openProjectMenu(host, "Project actions");
       const add = document.querySelector<HTMLButtonElement>('[role="menuitem"]')!;
       expect(add.textContent).toContain("Add action");
       expect(host.contains(add)).toBe(false);
@@ -231,9 +241,7 @@ it("discovers editors on demand and opens the current folder", async () => {
   try {
     await act(async () => root.render(createElement(ProjectQuickActions, { cwd: "C:/project" })));
     expect(listExternalEditors).not.toHaveBeenCalled();
-    await act(async () =>
-      host.querySelector<HTMLButtonElement>('[aria-label="Open project in"]')!.click(),
-    );
+    await openProjectMenu(host, "Open project in");
     const editor = [...document.querySelectorAll("button")].find(
       (button) => button.textContent === "Cursor",
     )!;
@@ -271,9 +279,7 @@ it("runs a saved action and keeps folder controls local while exposing remote pr
       host.querySelector<HTMLButtonElement>('[aria-label="Run Tests"]')!.click(),
     );
     expect(onRun).toHaveBeenCalledWith(action);
-    const openButton = host.querySelector<HTMLButtonElement>('[aria-label="Open project in"]')!;
-    expect(openButton.dataset.expanded).toBeUndefined();
-    expect(await tooltipText(openButton)).toContain("C:/project-worktree");
+    expect(await moreMenuLabels(host)).toEqual(["Project actions", "Open project in"]);
     await act(async () =>
       root.render(
         createElement(ProjectQuickActions, {
@@ -282,8 +288,7 @@ it("runs a saved action and keeps folder controls local while exposing remote pr
         }),
       ),
     );
-    expect(host.querySelector('[aria-label="Open project in"]')).toBeNull();
-    expect(host.querySelector('[aria-label="Project actions"]')).not.toBeNull();
+    expect(await moreMenuLabels(host)).toEqual(["Project actions"]);
   } finally {
     await act(async () => root.unmount());
     host.remove();
@@ -395,5 +400,36 @@ it("keeps header actions icon-only with named shortcut tooltips", async () => {
     expect(onSelect).toHaveBeenCalledOnce();
   } finally {
     await act(async () => root.unmount());
+  }
+});
+
+it("lists occasional actions in the More actions menu and runs the picked one", async () => {
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const onSelect = vi.fn();
+  try {
+    await act(async () =>
+      root.render(
+        createElement(ProjectQuickActions, {
+          cwd: "C:/project",
+          overflowItems: [
+            { id: "link", label: "Link to a task", icon: createElement("i"), onSelect },
+          ],
+        }),
+      ),
+    );
+    expect(host.querySelector('[aria-label="Link to a task"]')).toBeNull();
+    expect(await moreMenuLabels(host)).toEqual([
+      "Link to a task",
+      "Project actions",
+      "Open project in",
+    ]);
+    await openProjectMenu(host, "Link to a task");
+    expect(onSelect).toHaveBeenCalledOnce();
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
   }
 });

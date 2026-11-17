@@ -76,7 +76,9 @@ it("reports a failed copy instead of claiming success", async () => {
   await act(async () => root.render(createElement(ErrorDetails, { detail: "boom" })));
   await act(async () => trigger().click());
   await act(async () => inDialog("Copy details").click());
-  expect(dialog()?.querySelector('[role="alert"]')?.textContent).toContain("Clipboard blocked");
+  expect(dialog()?.querySelector('[data-copy-state="failed"]')?.textContent).toContain(
+    "Copy failed. Try again.",
+  );
 });
 
 it("lets a recovery action close the popover before it opens another surface", async () => {

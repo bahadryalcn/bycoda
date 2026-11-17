@@ -12,14 +12,9 @@ for (const theme of ["light", "dark"])
       );
       await expect(page.locator(".settings-page-title")).toHaveText("Models");
       const tabs = page.locator(".provider-tabs");
-      await expect(tabs.getByRole("tab")).toHaveText([
-        "Background work",
-        "Chats",
-        "Subagents",
-        "Providers",
-      ]);
-      await tabs.getByRole("tab", { name: "Chats", exact: true }).click();
-      await expect(tabs.getByRole("tab", { name: "Chats", exact: true })).toHaveAttribute(
+      await expect(tabs.getByRole("tab")).toHaveText(["Background work", "Defaults", "Providers"]);
+      await tabs.getByRole("tab", { name: "Defaults", exact: true }).click();
+      await expect(tabs.getByRole("tab", { name: "Defaults", exact: true })).toHaveAttribute(
         "aria-selected",
         "true",
       );
@@ -33,7 +28,7 @@ for (const theme of ["light", "dark"])
           .getByRole("tablist", { name: "Settings categories", exact: true })
           .getByRole("tab", { name: "Models", exact: true }),
       ).toHaveCount(1);
-      const saveBar = page.locator(".provider-defaults-save-bar:visible");
+      const saveBar = page.locator('[data-save-bar="models-defaults"]:visible');
       const scope = saveBar.getByRole("button", { name: "Save in", exact: true });
       await expect(scope).toHaveText("Bycoda defaults");
       await expect(scope).toBeInViewport();
@@ -70,7 +65,7 @@ for (const theme of ["light", "dark"])
       await expect(scope).toHaveText("Bycoda defaults");
       await tabs.getByRole("tab", { name: "Providers", exact: true }).click();
       await expect(saveBar).toHaveCount(0);
-      await tabs.getByRole("tab", { name: "Chats", exact: true }).click();
+      await tabs.getByRole("tab", { name: "Defaults", exact: true }).click();
       await expect(scope).toHaveText("Bycoda defaults");
     });
 
@@ -85,7 +80,7 @@ for (const theme of ["light", "dark"])
       );
       const categories = page.getByRole("tablist", { name: "Settings categories", exact: true });
       const providerTabs = page.locator(".provider-tabs");
-      await expect(providerTabs.getByRole("tab")).toHaveCount(4);
+      await expect(providerTabs.getByRole("tab")).toHaveCount(3);
       await providerTabs.getByRole("tab", { name: "Providers", exact: true }).click();
       await expect(
         categories.getByRole("tab", { name: "Usage & limits", exact: true }),
@@ -165,35 +160,14 @@ for (const theme of ["light", "dark"])
       await categories.getByRole("tab", { name: "Models", exact: true }).click();
       await expect(draft).toHaveValue("Retained provider draft");
       await accounts.locator("form").getByRole("button", { name: "Cancel", exact: true }).click();
-      // CLI table, catalog and decision models now share the Providers tab.
+      // Bulk CLI actions and the catalog share the Providers tab; decision models have their own page.
       for (const [tab, surface] of [
         ["CLI", "cli"],
         ["Catalog", "catalog"],
-        ["Decision models", "decision-empty"],
       ]) {
         await page
-          .locator(
-            tab === "CLI"
-              ? "#setting-harness-updates"
-              : tab === "Catalog"
-                ? ".provider-models-list"
-                : "#setting-decision-models",
-          )
+          .locator(tab === "CLI" ? "#setting-harness-updates" : ".provider-models-list")
           .scrollIntoViewIfNeeded();
-        if (tab === "CLI" && width === 800) {
-          const columns = await page.locator(".provider-inventory table").evaluate((table) => ({
-            headers: [...table.querySelectorAll("thead th")].map(
-              (cell) => cell.getBoundingClientRect().x,
-            ),
-            cells: [...table.querySelectorAll("tbody tr:first-child td")].map(
-              (cell) => cell.getBoundingClientRect().x,
-            ),
-          }));
-          expect(columns.cells).toHaveLength(columns.headers.length);
-          columns.cells.forEach((position, index) =>
-            expect(Math.abs(position - columns.headers[index])).toBeLessThan(1),
-          );
-        }
         if (tab === "Catalog") {
           await expect(page.getByRole("textbox", { name: "Search models…" })).toBeVisible();
           await expect(page.getByText("GPT-6.1-Sol", { exact: true })).toBeVisible();

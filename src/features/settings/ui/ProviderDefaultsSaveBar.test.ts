@@ -4,6 +4,9 @@ import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { ProviderDefaultsSaveBar, type DefaultsSaveState } from "./ProviderDefaultsSaveBar";
 
+const changesOf = (count: number) =>
+  Array.from({ length: count }, (_, index) => ({ id: String(index), label: `Field ${index}` }));
+
 it("confirms saved defaults in the action while retaining unsaved counts and save errors", async () => {
   const container = document.createElement("div");
   document.body.append(container);
@@ -15,7 +18,7 @@ it("confirms saved defaults in the action while retaining unsaved counts and sav
           target: { kind: "global" },
           options: [],
           onTargetChange: vi.fn(),
-          pending,
+          changes: changesOf(pending),
           saveState,
           saving,
           onSave: vi.fn(),
@@ -27,20 +30,18 @@ it("confirms saved defaults in the action while retaining unsaved counts and sav
   try {
     await render(0, { state: "saved", target: "Global" });
     expect(
-      [...container.querySelectorAll("button")].some((button) => button.textContent === "Saved"),
+      [...container.querySelectorAll("button")].some((button) =>
+        button.textContent?.startsWith("Saved"),
+      ),
     ).toBe(true);
-    expect(container.querySelector(".provider-save-bar-status")).toBeNull();
+    expect(container.textContent).not.toContain("unsaved");
     await render(2, { state: "saved", target: "Global" });
-    expect(container.querySelector(".provider-save-bar-status")?.textContent).toContain(
-      "2 unsaved changes",
-    );
+    expect(container.textContent).toContain("2 unsaved changes");
     expect(
       [...container.querySelectorAll("button")].some((button) => button.textContent === "Save"),
     ).toBe(true);
     await render(2, { state: "error", message: "Storage unavailable" });
-    expect(container.querySelector(".provider-save-bar-status")?.textContent).toContain(
-      "Storage unavailable",
-    );
+    expect(container.textContent).toContain("Storage unavailable");
     expect(
       [...container.querySelectorAll("button")].some((button) => button.textContent === "Retry"),
     ).toBe(true);
@@ -80,7 +81,7 @@ it("keeps group apply details available when the draft is clean", async () => {
         createElement(ProviderDefaultsSaveBar, {
           target: { kind: "group", id: "team", workspace: false },
           options: [{ value: "group:team", label: "Team" }],
-          pending: 0,
+          changes: [],
           saveState: { state: "idle" },
           onSave: vi.fn(),
           onDiscard: vi.fn(),
@@ -106,7 +107,7 @@ it("shows the provider scope only while changes are pending", async () => {
           target: { kind: "global" },
           options: [],
           onTargetChange: vi.fn(),
-          pending,
+          changes: changesOf(pending),
           saveState: { state: "idle" },
           onSave: vi.fn(),
           onDiscard: vi.fn(),

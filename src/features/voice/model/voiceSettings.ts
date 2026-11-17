@@ -43,6 +43,8 @@ export type VoiceSettings = {
   turnEndSilence?: number;
   holdAnnouncements?: boolean;
   allowBargeIn?: boolean;
+  /** Opt-in: drop hesitations ("eee", "um") from the owner's recognized speech. */
+  removeFillers?: boolean;
   /** Opt-in: speak when the owner returns, then listen for a bounded window. Off by default. */
   returnCall?: boolean;
   /** Seconds the microphone stays open after the return greeting; 5 to 120, default 20. */
@@ -216,6 +218,7 @@ export function normalizeVoiceSettings(value: VoiceSettings): VoiceSettings {
       ? { holdAnnouncements: value.holdAnnouncements }
       : {}),
     ...(typeof value?.allowBargeIn === "boolean" ? { allowBargeIn: value.allowBargeIn } : {}),
+    ...(value?.removeFillers === true ? { removeFillers: true } : {}),
     ...(value?.returnCall === true ? { returnCall: true } : {}),
     ...(value?.wakeEnabled === true ? { wakeEnabled: true } : {}),
     ...wakePhraseField("wakePhrase", value?.wakePhrase),

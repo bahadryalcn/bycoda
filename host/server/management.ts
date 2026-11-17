@@ -90,7 +90,9 @@ export function createManagementRuntime(
         authorized,
       ))
     )
-      throw new Error("The target project became unavailable or locked during review.");
+      throw new Error(
+        "The target project left the desktop's visible project list during review (removed, archived, in a locked group, or the desktop is offline).",
+      );
     return decision;
   };
   const modelPool = assistantModelPoolSource(dependencies.assistant);

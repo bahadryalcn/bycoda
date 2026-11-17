@@ -55,3 +55,13 @@ Owner decision, 2026-11-15:
 (Gloss: smart setup may choose at most High; simple jobs always Low, most work Medium; levels above High are the owner's own choice, noted with a small info.)
 
 Recorded decision: smart setup creates entries per model and effort. The main order runs at medium, pools bound only to light roles at low, pools with any heavy role at high. It never sets an effort above high, and an owner entry above high is reused for high pools. An info popover beside Smart setup states the rule.
+
+## One Background work draft, tiered order, work and personal lists
+
+Owner decision, 2026-11-17:
+
+> fable ve astra pahalı modeller her zaman ihtiyaç yok opus sol daha çok kullanulan fayda fiyat ve yeteneğe göre bakmak gerekiyor
+
+(Gloss: Fable and Astra are expensive and not always needed; Opus and Sol are the everyday models; rank by benefit, price and capability together.) The owner also chose two separate lists for work and personal accounts, one global smart setup that also sets subagents and the advisor, and decision models on their own Settings page.
+
+Recorded decision: smart setup orders by tier (strong at a moderate price, then cheaper capable, then top-priced, then light), capability within a tier. Its primary action applies the researched rules at once; planning with AI is an explicit menu choice. It also sets global subagents, advisor and a medium subagent effort ceiling and clears those keys from provider and account layers in the draft. Models, groups, job bindings and limits are one draft with one Save. Entries are kept grouped work, personal, shared. No new execution or publishing authority.

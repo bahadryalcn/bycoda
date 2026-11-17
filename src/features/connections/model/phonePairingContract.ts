@@ -88,6 +88,21 @@ export function readMobileAccessStatus(value: unknown): MobileAccessStatus {
         }
       : {}),
     ...(endpoint ? { endpoint } : {}),
+    ...(input.addressInterfaces && typeof input.addressInterfaces === "object"
+      ? {
+          addressInterfaces: Object.fromEntries(
+            Object.entries(input.addressInterfaces)
+              .filter(
+                (entry): entry is [string, string] =>
+                  isLanAddress(entry[0]) && typeof entry[1] === "string" && entry[1].length <= 256,
+              )
+              .slice(0, 32),
+          ),
+        }
+      : {}),
+    ...(typeof input.networkHint === "string" && input.networkHint.length <= 500
+      ? { networkHint: input.networkHint }
+      : {}),
     ...(typeof input.reason === "string" && input.reason.length <= 500
       ? { reason: input.reason }
       : {}),

@@ -81,17 +81,17 @@ export function useQueuedSendDrain(input: {
       return;
     }
     const target = next.modelTarget;
+    // A row's account applies only when it switches provider. On the same provider the
+    // conversation's current account wins: the owner may have switched after a usage limit.
+    const switchesProvider = !!target && !!saved && target.harness !== saved.harness;
     if (
       target &&
       saved &&
-      (!sameQueuedModelTarget(target, {
+      !sameQueuedModelTarget(target, {
         harness: saved.harness,
         model: saved.model,
         modelSettings: saved.settings,
-      }) ||
-        (input.ownerBound &&
-          target.providerAccountId !== undefined &&
-          target.providerAccountId !== (saved.providerAccountId ?? "default")))
+      })
     ) {
       if (
         !input.providers.includes(target.harness as RemoteProvider) ||
@@ -106,7 +106,7 @@ export function useQueuedSendDrain(input: {
         model: target.model,
         settings: { ...target.modelSettings },
         mode: saved.mode,
-        ...(input.ownerBound && target.providerAccountId !== undefined
+        ...(input.ownerBound && switchesProvider && target.providerAccountId !== undefined
           ? {
               providerAccountId:
                 target.providerAccountId === "default" ? null : target.providerAccountId,

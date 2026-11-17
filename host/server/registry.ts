@@ -15,6 +15,7 @@ import { type HostDomainContext } from "../domains/context";
 import { createHostDispatcher } from "../transport/dispatch";
 import type { ServerBindings } from "./bindings";
 import { createHostModelRoutingService } from "../model-routing/runtime";
+import { catalogFactsDomain } from "../model-routing/catalog-facts";
 import { createModelRoutingDomainService } from "../domains/model-routing/service";
 import { readUsageLimits } from "../usage/limits-report";
 import { hostUsageLimitsDeps } from "./usage-limits-deps";
@@ -24,11 +25,13 @@ import { assertDomainAuthority } from "../domains/context";
 import { SIDE_CHAT_RPC } from "../../src/shared/model/host-contracts/side-chat";
 import { askSideQuestion } from "../side-chat/side-question";
 import { reportDraftPresence } from "../drafts/rpc";
+import { createGroupLockService } from "../group-lock/rpc";
 import { SecretInputListParamsSchema } from "../../src/shared/model/host-contracts/secrets-input";
 export function createRegistryRuntime(
   dependencies: Pick<
     ServerBindings,
     | "engine"
+    | "featureDirectory"
     | "accountPlatform"
     | "models"
     | "environmentService"
@@ -59,6 +62,7 @@ export function createRegistryRuntime(
     | "terminalService"
     | "persistenceService"
     | "conversationDesktop"
+    | "desktop"
   >,
 ) {
   const modelRouting = createHostModelRoutingService({
@@ -68,6 +72,10 @@ export function createRegistryRuntime(
     command: async (provider) => (await resolveBinary[provider]()).path,
   });
   const modelRoutingService = createModelRoutingDomainService(modelRouting);
+  const groupLockService = createGroupLockService({
+    groupLock: () => dependencies.desktop.live.groupLock,
+  });
+  const catalogFactsService = catalogFactsDomain(dependencies.featureDirectory);
   const domainDispatcher = createHostDispatcher({
     environmentId: dependencies.engine.store.environmentId,
     environment: dependencies.environmentService,
@@ -119,6 +127,7 @@ export function createRegistryRuntime(
       "modelRouting.save": modelRoutingService.save,
       "modelRouting.status": modelRoutingService.status,
       "modelRouting.resolve": modelRoutingService.resolve,
+      "modelRouting.catalogFacts": catalogFactsService.catalogFacts,
       ...Object.fromEntries(
         NATIVE_BUFFER_UPLOAD_METHODS.map((method) => [
           method,
@@ -190,6 +199,10 @@ export function createRegistryRuntime(
           params,
           context,
         ),
+      "projects.groups.unlock": groupLockService.unlock,
+      "projects.groups.authorizeHidden": groupLockService.authorizeHidden,
+      "projects.groups.lock": groupLockService.lock,
+      "projects.groups.setHidden": groupLockService.setHidden,
       "secrets.input.answer": async (params, context) => {
         await assertDomainAuthority(context);
         return dependencies.conversationDesktop.answerSecretInput(params, context.authorized);

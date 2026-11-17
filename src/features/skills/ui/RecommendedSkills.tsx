@@ -22,7 +22,7 @@ import {
   SKILLS_CLI_REFERENCE,
   SKILLS_CLI_REQUIREMENTS,
 } from "../model/skillInstallRecipe";
-import { copyText } from "../../../platform/tauri/clipboard";
+import { CopyButton } from "../../../shared/ui/CopyButton";
 import {
   installRecommendedSkill,
   recommendedSkillInstallStatus,
@@ -311,19 +311,15 @@ export function RecommendedSkills({
                         {officialSkillInstallCommand(skill)}
                       </Code>
                       <div>
-                        <Button
+                        <CopyButton
                           variant="ghost"
-                          onClick={() => {
-                            void copyText(officialSkillInstallCommand(skill)).catch(
-                              (error: unknown) =>
-                                setLinkError(
-                                  error instanceof Error ? error.message : String(error),
-                                ),
-                            );
-                          }}
-                        >
-                          {t("Copy")}
-                        </Button>
+                          label={t("Copy")}
+                          text={() => officialSkillInstallCommand(skill)}
+                          resetKeys={[skill]}
+                          onCopyError={(error) =>
+                            setLinkError(error instanceof Error ? error.message : String(error))
+                          }
+                        />
                         <Button
                           variant="link"
                           onClick={() => {

@@ -1,16 +1,49 @@
+import { useSyncExternalStore } from "react";
+import {
+  getHarnessAvailabilitySnapshot,
+  isHarnessAvailable,
+  subscribeHarnessAvailability,
+} from "../../../../integrations/harness/core/availability";
 import { useT } from "../../../../shared/i18n";
 import { HARNESS_TITLE } from "../../../../shared/model/harnessIdentity";
 import { SessionProviderSchema } from "../../../../shared/model/host-contracts/session-commands";
-import { Disclosure } from "../../../../shared/ui/Disclosure";
 import { NumberField } from "../../../../shared/ui/NumberField";
+import { TextField } from "../../../../shared/ui/TextField";
 import { Text } from "../../../../shared/ui/Text";
 import { Badge } from "../../../../shared/ui/Badge";
 import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { UsageMeter } from "../../../../shared/ui/UsageMeter";
+import { DataTable, DataTableRow } from "../../../../shared/ui/SortableDataTable";
 import { Group, Row } from "../../../../shared/ui/settings";
 import { formatAgentMinutes, type MachineLimits } from "../../../tasks/public/hostSettings";
 import type { CapDraft, OrderDraft } from "../../model/modelRoutingDraft";
+
+const EMPTY_CAPS: CapDraft = {
+  daily: { tokens: "", costUsd: "" },
+  monthly: { tokens: "", costUsd: "" },
+};
+const CAP_COLUMNS = [
+  { key: "daily-tokens", period: "daily", metric: "tokens" },
+  { key: "daily-costUsd", period: "daily", metric: "costUsd" },
+  { key: "monthly-tokens", period: "monthly", metric: "tokens" },
+  { key: "monthly-costUsd", period: "monthly", metric: "costUsd" },
+] as const;
+
+type CapScope = "total" | (typeof SessionProviderSchema.options)[number];
+
+function capsFor(draft: OrderDraft, scope: CapScope): CapDraft | undefined {
+  return scope === "total" ? draft.workCaps.total : draft.workCaps.providers[scope];
+}
+
+function hasCap(caps: CapDraft | undefined): boolean {
+  return Boolean(
+    caps &&
+    [caps.daily.tokens, caps.daily.costUsd, caps.monthly.tokens, caps.monthly.costUsd].some(
+      (value) => value.trim() !== "",
+    ),
+  );
+}
 
 export function ModelOrderLimits({
   draft,
@@ -22,6 +55,25 @@ export function ModelOrderLimits({
   onChange: (draft: OrderDraft) => void;
 }) {
   const t = useT();
+  useSyncExternalStore(
+    subscribeHarnessAvailability,
+    getHarnessAvailabilitySnapshot,
+    getHarnessAvailabilitySnapshot,
+  );
+  const headers = {
+    "daily-tokens": t("Daily tokens"),
+    "daily-costUsd": t("Daily cost (USD)"),
+    "monthly-tokens": t("Monthly tokens"),
+    "monthly-costUsd": t("Monthly cost (USD)"),
+  } as const;
+  const scopes: CapScope[] = [
+    "total",
+    ...SessionProviderSchema.options.filter(
+      (provider) =>
+        isHarnessAvailable(provider as Parameters<typeof isHarnessAvailable>[0]) ||
+        hasCap(draft.workCaps.providers[provider]),
+    ),
+  ];
   const used = `${usage.stale ? `${t("Out of date")} · ` : ""}${formatAgentMinutes(usage.usedMinutes)}${
     usage.dailyAgentMinutes > 0
       ? t(" of {p0}", { p0: formatAgentMinutes(usage.dailyAgentMinutes) })
@@ -118,10 +170,11 @@ export function ModelOrderLimits({
           onChange={(event) => onChange({ ...draft, maxRunMinutes: event.currentTarget.value })}
         />
       </Row>
-      <Disclosure
-        summary={t("Token and cost limits")}
-        variant="row"
-        summaryActions={
+      <div className="flex flex-col gap-2 py-2">
+        <div className="flex items-center gap-1">
+          <Text size="secondary" weight="medium">
+            {t("Token and cost limits")}
+          </Text>
           <InfoPopover>
             <p>
               {t(
@@ -129,64 +182,62 @@ export function ModelOrderLimits({
               )}
             </p>
           </InfoPopover>
-        }
-      >
-        {(["total", ...SessionProviderSchema.options] as const).map((scope) => {
-          const caps = scope === "total" ? draft.workCaps.total : draft.workCaps.providers[scope];
-          const empty: CapDraft = {
-            daily: { tokens: "", costUsd: "" },
-            monthly: { tokens: "", costUsd: "" },
-          };
-          const current = caps ?? empty;
-          return (
-            <Disclosure
-              key={scope}
-              summary={scope === "total" ? t("All providers") : HARNESS_TITLE[scope]}
-              variant="row"
-            >
-              {(["daily", "monthly"] as const).flatMap((period) =>
-                (["tokens", "costUsd"] as const).map((metric) => {
-                  const label =
-                    period === "daily"
-                      ? metric === "tokens"
-                        ? t("Daily tokens")
-                        : t("Daily cost (USD)")
-                      : metric === "tokens"
-                        ? t("Monthly tokens")
-                        : t("Monthly cost (USD)");
-                  return (
-                    <Row key={`${period}-${metric}`} label={label}>
-                      <NumberField
-                        label={label}
-                        hideLabel
-                        min={0}
-                        step={metric === "tokens" ? 1 : "any"}
-                        value={current[period][metric]}
-                        onChange={(event) => {
-                          const next = {
-                            ...current,
-                            [period]: { ...current[period], [metric]: event.currentTarget.value },
-                          };
-                          onChange({
-                            ...draft,
-                            workCaps:
-                              scope === "total"
-                                ? { ...draft.workCaps, total: next }
-                                : {
-                                    ...draft.workCaps,
-                                    providers: { ...draft.workCaps.providers, [scope]: next },
-                                  },
-                          });
-                        }}
-                      />
-                    </Row>
-                  );
-                }),
-              )}
-            </Disclosure>
-          );
-        })}
-      </Disclosure>
+        </div>
+        <DataTable
+          caption={t("Token and cost limits")}
+          headers={[
+            { label: t("Provider") },
+            ...CAP_COLUMNS.map((column) => ({ label: headers[column.key] })),
+          ]}
+        >
+          {scopes.map((scope) => {
+            const current = capsFor(draft, scope) ?? EMPTY_CAPS;
+            const name = scope === "total" ? t("All providers") : HARNESS_TITLE[scope];
+            return (
+              <DataTableRow
+                key={scope}
+                cells={[
+                  <Text key="provider" size="secondary" wrap="normal">
+                    {name}
+                  </Text>,
+                  ...CAP_COLUMNS.map(({ key, period, metric }) => (
+                    <TextField
+                      key={key}
+                      numeric
+                      type="number"
+                      inputMode="decimal"
+                      fieldSize="sm"
+                      label={`${name}: ${headers[key]}`}
+                      hideLabel
+                      min={0}
+                      step={metric === "tokens" ? 1 : "any"}
+                      placeholder={t("No limit")}
+                      startAdornment={metric === "costUsd" ? "$" : undefined}
+                      value={current[period][metric]}
+                      onChange={(event) => {
+                        const next = {
+                          ...current,
+                          [period]: { ...current[period], [metric]: event.currentTarget.value },
+                        };
+                        onChange({
+                          ...draft,
+                          workCaps:
+                            scope === "total"
+                              ? { ...draft.workCaps, total: next }
+                              : {
+                                  ...draft.workCaps,
+                                  providers: { ...draft.workCaps.providers, [scope]: next },
+                                },
+                        });
+                      }}
+                    />
+                  )),
+                ]}
+              />
+            );
+          })}
+        </DataTable>
+      </div>
     </Group>
   );
 }

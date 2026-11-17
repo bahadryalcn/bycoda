@@ -340,15 +340,16 @@ it("shows one global notice per machine in an outage after the grace, with no pa
   resetRemoteHealth();
 });
 
-it("hides shared connection errors only while a machine notice is actually visible", async () => {
+it("hides shared connection errors while a machine notice is visible or about to be", async () => {
   const { isConnectionErrorShownCentrally } =
     await import("../../../shared/ui/connectionErrorGate");
   const remote = "RPC_HOST_UNAVAILABLE: Machine is unreachable";
   state.machines.set("env", { status: "unreachable", error: outage.message });
   await render([{ id: "files", cwd: "remote://env/repo", failure: outage }]);
-  // The quiet window shows no notice, so panes must keep explaining the failure.
+  // The quiet window shows no notice, and panes stay quiet too: a blip while
+  // loading or reconnecting must not flash a pane error the notice would replace.
   expect(notices()).toHaveLength(0);
-  expect(isConnectionErrorShownCentrally(remote)).toBe(false);
+  expect(isConnectionErrorShownCentrally(remote)).toBe(true);
   await advance(2_500);
   expect(notices()).toHaveLength(1);
   expect(isConnectionErrorShownCentrally(remote)).toBe(true);

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { emit } from "@tauri-apps/api/event";
 import { inspectHarnessBinary, updateHarnessCli } from "../../../integrations/harness/core/child";
 import { refreshHarnessCatalogs } from "../../../integrations/harness/core/registry";
+import { toast } from "../../../shared/ui/ToastRegion";
 
 const probe = vi.hoisted(() => {
   const finishers: Array<() => void> = [];
@@ -82,6 +83,7 @@ describe("update failure diagnostics", () => {
   afterEach(() => vi.restoreAllMocks());
 
   it("preserves the version probe error rather than claiming the old version is still installed", async () => {
+    const announce = vi.spyOn(toast, "show");
     vi.mocked(updateHarnessCli).mockResolvedValueOnce(undefined);
     vi.mocked(inspectHarnessBinary).mockResolvedValueOnce({
       path: "/bin/opencode",
@@ -93,6 +95,12 @@ describe("update failure diagnostics", () => {
       error: "opencode version check: Failed to run opencode: access denied",
     });
     expect(updateHarnessCli).toHaveBeenCalledWith("opencode", "2.1.3");
+    expect(announce).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tone: "danger",
+        message: "opencode version check: Failed to run opencode: access denied",
+      }),
+    );
     expect(warning).toHaveBeenCalledWith(
       "[bycoda] Harness update failed: opencode version check: Failed to run opencode: access denied",
     );

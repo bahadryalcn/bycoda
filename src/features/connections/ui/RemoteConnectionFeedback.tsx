@@ -138,8 +138,9 @@ const isCentralConnectionError = (error: unknown) => {
 let visibleNotices = 0;
 
 /**
- * While at least one machine notice is on screen, shared failure components leave its connection
- * errors to it. A quiet or dismissed notice installs nothing, so panes keep explaining themselves.
+ * While at least one machine notice is on screen or in its quiet window, shared failure components
+ * leave its connection errors to it: a blip while loading or reconnecting flashes nothing, and an
+ * outage that lasts gets the notice. A dismissed notice installs nothing, so panes explain again.
  */
 function useConnectionGateWhileVisible(visible: boolean) {
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- counts visible notices into the module-level shared UI error gate, released on hide or unmount
@@ -222,7 +223,7 @@ function MachineConnectionNotice({
     !reconnecting &&
     (firstFailureAt === undefined || now < firstFailureAt + TRANSIENT_NOTICE_DELAY_MS);
   const visible = active && !(dismissed && transient) && !quiet;
-  useConnectionGateWhileVisible(visible);
+  useConnectionGateWhileVisible(active && !(dismissed && transient));
   if (!visible) return null;
   const recovering =
     transient &&

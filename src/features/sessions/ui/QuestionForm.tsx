@@ -492,17 +492,32 @@ function QuestionFormContent({
                 if (mounted.current) parentChanged();
               }}
             />
-            {canAttach && files.length ? (
-              <div className={styles.attachments} aria-label={t("Attachments")}>
-                <QuestionAttachmentList
-                  files={files}
-                  held={held}
-                  questionId={question.id}
-                  update={updateDraft}
-                  busy={setReadingAttachments}
-                  error={setAttachmentError}
-                  flight={attachmentFlight}
-                />
+            {canAttach ? (
+              <div className={styles.attachmentArea}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  type="button"
+                  startIcon={<FilePlus />}
+                  disabled={held || files.length >= MAX_ATTACHMENTS}
+                  loading={readingAttachments}
+                  onClick={() => readAttachments(() => pickAttachments())}
+                >
+                  {t("Attach files")}
+                </Button>
+                {files.length ? (
+                  <div className={styles.attachments} aria-label={t("Attachments")}>
+                    <QuestionAttachmentList
+                      files={files}
+                      held={held}
+                      questionId={question.id}
+                      update={updateDraft}
+                      busy={setReadingAttachments}
+                      error={setAttachmentError}
+                      flight={attachmentFlight}
+                    />
+                  </div>
+                ) : null}
               </div>
             ) : null}
             <QuestionAttachmentError
@@ -515,19 +530,6 @@ function QuestionFormContent({
         <div
           {...surfaceAttributes({ variant: "inset", frame: "pane", edge: "top" }, styles.footer)}
         >
-          {canAttach ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              type="button"
-              iconOnly
-              label={t("Attach files")}
-              startIcon={<FilePlus />}
-              disabled={held || files.length >= MAX_ATTACHMENTS}
-              loading={readingAttachments}
-              onClick={() => readAttachments(() => pickAttachments())}
-            />
-          ) : null}
           <div className={styles.feedback}>
             {parentClosed ? (
               <LiveText text={t("Preparing session checkpoint. Your draft is kept.")} />
@@ -600,8 +602,14 @@ function QuestionFormContent({
               disabled={!ready || held}
               loading={sending && !dismissing}
               loadingLabel={pendingLabel}
-              startIcon={<SubmitIcon />}
-              reserveLabels={[t("Sending answer…"), t("Send again"), t("Connection issue")]}
+              startIcon={last || held ? <SubmitIcon /> : undefined}
+              endIcon={!last && !held ? <SubmitIcon /> : undefined}
+              stableWidth={last || held}
+              reserveLabels={
+                last || held
+                  ? [t("Sending answer…"), t("Send again"), t("Connection issue")]
+                  : undefined
+              }
               aria-describedby={status ? statusId : undefined}
             >
               {submitLabel}

@@ -36,7 +36,7 @@ type Dialog =
   | { kind: "edit"; source: DecisionSource }
   | null;
 /**
- * The "Decision models" section under Providers. Sources, what the scan found, task routing and the
+ * The "Decision models" settings page. Sources, what the scan found, decision routing and the
  * personal-data switch. Each add path opens its own dialog; nothing is connected without an explicit action.
  */
 export function DecisionModelsSettings({
@@ -322,7 +322,7 @@ export function DecisionModelsSettings({
             scanning={model.scanning}
           />
         </Disclosure>
-        <Group title={t("Task routing")}>
+        <Group title={t("Decision routing")}>
           {!model.routingLoaded && model.routingError === null ? (
             <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>
           ) : null}

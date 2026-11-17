@@ -80,7 +80,8 @@ it("keeps the original output when copying fails", async () => {
       .click(),
   );
   expect(document.querySelector("pre")?.textContent).toBe("original output");
-  expect(document.body.textContent).toContain("Clipboard unavailable");
+  expect(document.body.textContent).toContain("Copy failed. Try again.");
+  expect(document.querySelector('[data-copy-state="failed"]')).not.toBeNull();
   expect(document.body.textContent).not.toContain("Copied");
 });
 

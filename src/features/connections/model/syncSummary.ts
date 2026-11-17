@@ -26,8 +26,8 @@ function core(status: SyncSummaryInput, now: number): SyncSummary {
       return { tone: "muted", text: t("Syncing…") };
     case "unsupported":
       return { tone: "warning", text: t("Sync is unavailable. Update the host on this machine.") };
-    case "unlinked":
-      return { tone: "warning", text: t("Sync is not linked yet.") };
+    // "unlinked" (capabilities not read yet: a cold start, a Host still starting) falls to the
+    // quiet default; the machine's own connection status explains a lasting outage.
     case "error": {
       const kind = status.lastError ? classifyRemoteError(status.lastError).kind : "other";
       if (kind === "unreachable" || kind === "temporary") {

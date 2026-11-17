@@ -2,6 +2,51 @@ import { test, expect, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 
 for (const theme of ["light", "dark"])
+  test(`file names share typography and paths stay secondary ${theme}`, async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(
+      "/tests/browser/source-control/git-workspace.html?action-feedback&file-typography",
+    );
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      theme === "light",
+    );
+    const rows = page.locator("[data-git-file]");
+    await expect(rows).toHaveCount(4);
+    const toList = page.getByRole("button", { name: "View as List", exact: true }).first();
+    if (await toList.isVisible()) await toList.click();
+    const typography = await rows.evaluateAll((elements) =>
+      elements.map((row) => {
+        const name = row.querySelector("[data-truncate]")!;
+        const style = getComputedStyle(name);
+        const path = name.nextElementSibling?.querySelector('[data-size="caption"]');
+        return {
+          size: style.fontSize,
+          weight: style.fontWeight,
+          color: style.color,
+          pathColor: path ? getComputedStyle(path).color : null,
+          pathWeight: path ? getComputedStyle(path).fontWeight : null,
+        };
+      }),
+    );
+    expect(
+      new Set(typography.map(({ size, weight, color }) => `${size}/${weight}/${color}`)).size,
+    ).toBe(1);
+    for (const row of typography.filter((entry) => entry.pathColor)) {
+      expect(row.pathColor).not.toBe(row.color);
+      expect(row.pathWeight).toBe("400");
+    }
+    await rows.first().click();
+    await expect(rows.first().locator("[data-truncate]")).toHaveCSS(
+      "font-weight",
+      typography[0].weight,
+    );
+    const evidence = "temp/verification/2026-11-17-file-typography";
+    mkdirSync(evidence, { recursive: true });
+    await page.screenshot({ path: `${evidence}/${theme}-1280.png`, animations: "disabled" });
+  });
+
+for (const theme of ["light", "dark"])
   for (const width of [1280, 800])
     test(`Graph header owns the active repository picker ${theme} ${width}`, async ({ page }) => {
       await page.addInitScript(() => localStorage.setItem("bycoda.language.git", "en"));

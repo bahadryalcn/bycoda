@@ -691,13 +691,15 @@ export class HostEngine {
       const original = this.retainedWriterTurns.get(id);
       if (original) {
         if (!original.cleanup) {
-          const retire = original.provider.retireOriginal;
+          // Providers without an exact hook retire through the same owner-bound stop a
+          // failed or cancelled turn uses; the persisted resume identity is rebound below.
+          const retire = original.provider.retireOriginal ?? original.provider.stop;
           const context = original.operationContext;
-          if (!retire || !context || !original.activity)
+          if (!context || !original.activity)
             throw new Error(
               options?.rebind === false
                 ? "HOST_WRITER_RETIREMENT_FAILED: The original Host writer cannot be safely retired; the session was not deleted."
-                : "HOST_WRITER_RETIREMENT_FAILED: This provider cannot safely retire its previous Host writer. Continue through the task repair workflow; your message was not sent.",
+                : "HOST_WRITER_RETIREMENT_FAILED: The previous Host writer has no owner receipt to retire. Your message was not sent.",
             );
           original.cleanup = this.store.db.outsideScope(() =>
             original.activity!.retire(async () => {

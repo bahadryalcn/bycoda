@@ -39,7 +39,7 @@ export async function createAccountPairingCode(
   }
   if (access?.state !== "ready")
     throw new Error("Phone access is not set up. Open Connect your phone first.");
-  const created = await api.create(machine);
+  const created = await api.create(machine, options.requester ?? "phone");
   return {
     code: phonePairingCode(machine, access, created),
     cancel: () => api.cancel(machine, created.pairingId),

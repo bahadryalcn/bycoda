@@ -202,6 +202,76 @@ export function changeSize(change: ProviderDefaultsChange | undefined): number {
   );
 }
 
+export type DraftChangeField = "model" | "effort" | "runtimeMode" | "hidden" | "account";
+
+/** One field of the draft, across every provider and account it touches. */
+export type DraftChangeItem = {
+  id: string;
+  harness?: HarnessId;
+  accountId?: string;
+  /** `defaultProvider`, a top-level field, or an extras key (`extra`). */
+  field: DraftChangeField | "defaultProvider" | "extra";
+  extraKey?: string;
+  value: DraftValue | boolean | undefined;
+};
+
+/** Every unsaved field, in display order; `draftSize` counts the same items. */
+export function draftChangeItems(draft: DefaultsDraft): DraftChangeItem[] {
+  const items: DraftChangeItem[] = [];
+  if (draft.defaultProvider !== undefined)
+    items.push({ id: "defaultProvider", field: "defaultProvider", value: draft.defaultProvider });
+  const add = (
+    change: ProviderDefaultsChange,
+    harness: HarnessId,
+    accountId: string | undefined,
+  ) => {
+    const base = `${harness}\n${accountId ?? ""}`;
+    for (const field of ["model", "effort", "runtimeMode", "hidden", "account"] as const)
+      if (change[field] !== undefined)
+        items.push({ id: `${base}\n${field}`, harness, accountId, field, value: change[field] });
+    for (const [key, value] of Object.entries(change.extras ?? {}))
+      items.push({
+        id: `${base}\nextra:${key}`,
+        harness,
+        accountId,
+        field: "extra",
+        extraKey: key,
+        value,
+      });
+  };
+  for (const [harness, change] of Object.entries(draft.providers) as [
+    HarnessId,
+    ProviderDefaultsChange,
+  ][])
+    add(change, harness, undefined);
+  for (const [key, change] of Object.entries(draft.accounts)) {
+    const { harness, accountId } = parseAccountDraftKey(key);
+    add(change, harness, accountId);
+  }
+  return items;
+}
+
+/** The draft without one item; empty provider and account entries are dropped. */
+export function withoutDraftItem(draft: DefaultsDraft, item: DraftChangeItem): DefaultsDraft {
+  if (item.field === "defaultProvider") {
+    const { defaultProvider: _drop, ...rest } = draft;
+    return rest;
+  }
+  if (!item.harness) return draft;
+  const slot = { harness: item.harness, accountId: item.accountId };
+  const current = item.accountId
+    ? draft.accounts[accountDraftKey(item.harness, item.accountId)]
+    : draft.providers[item.harness];
+  if (!current) return draft;
+  const next: ProviderDefaultsChange = { ...current };
+  if (item.field === "extra" && item.extraKey) {
+    const { [item.extraKey]: _drop, ...extras } = current.extras ?? {};
+    if (Object.keys(extras).length) next.extras = extras;
+    else delete next.extras;
+  } else if (item.field !== "extra") delete next[item.field];
+  return withChange(draft, slot, changeSize(next) ? next : undefined);
+}
+
 export function draftSize(draft: DefaultsDraft): number {
   return (
     Number(draft.defaultProvider !== undefined) +

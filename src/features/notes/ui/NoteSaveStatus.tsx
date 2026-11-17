@@ -43,10 +43,18 @@ export function noteSaveState(state: {
   return state.dirty ? "unsaved" : "saved";
 }
 
-/** Shows only states that need the user's attention; autosave progress renders nothing. */
-export function NoteSaveStatus({ state, className }: { state: NoteSaveState; className?: string }) {
+/** Library saves stay quiet; the session dock can expose routine progress beside Save. */
+export function NoteSaveStatus({
+  state,
+  className,
+  showProgress = false,
+}: {
+  state: NoteSaveState;
+  className?: string;
+  showProgress?: boolean;
+}) {
   useLocale();
-  if (QUIET.has(state)) return null;
+  if (!showProgress && QUIET.has(state)) return null;
   const attention = state === "failed" || state === "attention" || state === "conflict";
   return (
     <Text

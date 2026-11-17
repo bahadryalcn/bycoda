@@ -16,7 +16,11 @@ const mock = vi.hoisted(() => ({
 
 vi.mock("../../../shared/ui/settings", async () => {
   const { createElement } = await import("react");
+  const { SettingsSaveBar } = await import("../../../shared/ui/settings/SettingsSaveBar");
+  const { useLeaveGuard } = await import("../../../shared/ui/settings/useLeaveGuard");
   return {
+    SettingsSaveBar,
+    useLeaveGuard,
     Row: ({ label, description, info, children }: any) =>
       createElement(
         "div",
@@ -276,15 +280,15 @@ function footerText() {
 
 it("keeps one footer row with a disabled Save until any section is dirty", async () => {
   await render();
-  const save = control("Save profile settings")!;
+  const save = control("Save")!;
   expect(save.disabled).toBe(true);
   expect(save.textContent).toBe("Save");
   expect(footerText()).toContain("Quick setup");
   expect(footerText()).not.toContain("Saved");
   await press("Change project scope");
-  expect(control("Save profile settings")!.disabled).toBe(false);
+  expect(control("Save")!.disabled).toBe(false);
   await press("Change computer controls");
-  expect(control("Save profile settings")!.disabled).toBe(false);
+  expect(control("Save")!.disabled).toBe(false);
 });
 
 it("saves profile, then project scope, then computer use, and shows Saved only after all succeed", async () => {
@@ -292,11 +296,11 @@ it("saves profile, then project scope, then computer use, and shows Saved only a
   await press("Rename assistant");
   await press("Change project scope");
   await press("Change computer controls");
-  await press("Save profile settings");
+  await press("Save");
   expect(mock.calls).toEqual(["profile", "project", "computer"]);
   expect(footerText()).toContain("Saved");
   expect(control("Saved")!.textContent).toBe("Saved");
-  expect(document.querySelector("footer")!.querySelectorAll("button")).toHaveLength(2);
+  expect(document.querySelector("footer")!.querySelectorAll("button")).toHaveLength(3);
   expect(
     document.querySelector("footer")!.querySelectorAll("[role=status]:not(.sr-only)"),
   ).toHaveLength(0);
@@ -310,17 +314,17 @@ it("stops at the first failing section, shows its error and leaves the later sec
   await press("Rename assistant");
   await press("Change project scope");
   await press("Change computer controls");
-  await press("Save profile settings");
+  await press("Save");
   expect(mock.calls).toEqual(["profile", "project"]);
   expect(document.querySelector("footer")!.textContent).toContain("Project scope save failed");
   expect(footerText()).not.toContain("Saved");
-  expect(control("Save profile settings")!.disabled).toBe(false);
+  expect(control("Save")!.disabled).toBe(false);
 });
 
 it("shows a folder save error once, in its section, not again in the footer", async () => {
   await render();
   await press("Add folder");
-  await press("Save profile settings");
+  await press("Save");
   expect(mock.calls).toEqual(["folders"]);
   expect(document.body.textContent!.split("Folder rejected")).toHaveLength(2);
   expect(footerText()).not.toContain("Folder rejected");
@@ -337,40 +341,44 @@ it("keeps the save action busy until the Host confirms and never reports an unco
   );
   await render();
   await press("Rename assistant");
-  await press("Save profile settings");
+  await press("Save");
   expect(control("Saving…")!.getAttribute("aria-busy")).toBe("true");
   expect(footerText()).not.toContain("Saved");
   await act(async () => finish({}));
   expect(footerText()).toContain("The settings save was not confirmed.");
   expect(footerText()).not.toContain("Saved");
-  expect(control("Save profile settings")!.disabled).toBe(false);
+  expect(control("Save")!.disabled).toBe(false);
 });
 
-it("replaces the footer row with the discard confirmation and never shows Save or Saved beside it", async () => {
+it("asks to save, discard or keep editing before Quick setup leaves with unsaved changes", async () => {
   const { onSetup } = await render();
   await press("Change project scope");
+  expect(footerText()).toContain("1 unsaved change");
   await press("Quick setup");
-  expect(footerText()).toContain("Discard unsaved changes?");
-  expect(control("Save profile settings")).toBeUndefined();
-  expect(footerText()).not.toContain("Saved");
-  expect(footerText()).not.toContain("Quick setup");
+  expect(document.body.textContent).toContain("Save changes before leaving?");
+  expect(document.body.textContent).toContain("Manual session supervision");
   await press("Keep editing");
-  expect(footerText()).toContain("Quick setup");
-  expect(control("Save profile settings")).toBeDefined();
   expect(onSetup).not.toHaveBeenCalled();
+  expect(control("Save")).toBeDefined();
   await press("Quick setup");
-  await press("Discard");
+  await press("Discard and leave");
+  expect(onSetup).toHaveBeenCalledTimes(1);
+});
+
+it("leaves at once when nothing is unsaved", async () => {
+  const { onSetup } = await render();
+  await press("Quick setup");
   expect(onSetup).toHaveBeenCalledTimes(1);
 });
 
 it("clears the saved notice as soon as another section becomes dirty", async () => {
   await render();
   await press("Rename assistant");
-  await press("Save profile settings");
+  await press("Save");
   expect(footerText()).toContain("Saved");
   await press("Change computer controls");
   expect(footerText()).not.toContain("Saved");
-  expect(control("Save profile settings")!.disabled).toBe(false);
+  expect(control("Save")!.disabled).toBe(false);
 });
 
 function page(id: string) {
@@ -441,11 +449,11 @@ it("keeps preset grants selected while customizing and preserves the mounted own
   await press("Custom");
   expect(full.getAttribute("aria-checked")).toBe("true");
   expect(sections("access")).toEqual(["jobs", "permissions"]);
-  expect(control("Save profile settings")!.disabled).toBe(true);
+  expect(control("Save")!.disabled).toBe(true);
   await press("Done");
   expect(sections("access")).toEqual([]);
   await press("Add folder");
-  await press("Save profile settings");
+  await press("Save");
   expect(page("access").textContent).toContain("Folder rejected");
   expect(sections("access")).toEqual(["jobs", "permissions"]);
   expect(mock.calls).toEqual(["folders"]);

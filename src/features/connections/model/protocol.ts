@@ -139,23 +139,43 @@ export type HostProjectDirectory = {
     sessionLayout?: HostSessionLayout;
     /** Pinned on the desktop rail; `projects` already lists pinned ones first. */
     pinned?: boolean;
+    /** Other registered ids of the same folder (legacy path spellings) folded into this row. */
+    aliasIds?: string[];
   })[];
   groups: HostProjectGroup[];
+  /** Password-locked groups by name; their contents need a grant on this device. */
+  lockedGroups?: Pick<HostProjectGroup, "id" | "name" | "color" | "appearance">[];
+  /** Hidden groups; sent only to a device that passed the hidden-list password. */
+  hiddenGroups?: Pick<HostProjectGroup, "id" | "name" | "color">[];
+};
+/** A project the desktop publishes in a directory. */
+export type DesktopDirectoryProject = {
+  cwd: string;
+  name: string;
+  groupId?: string;
+  sessionLayout?: HostSessionLayout;
+  appearance?: HostProjectAppearance;
+  pinned?: boolean;
+};
+/**
+ * Concealed groups the desktop shares with its own local Host only. The Host
+ * reveals a locked group to a phone that holds a grant and hidden group names to
+ * one that passed the hidden-list password; it never forwards this object.
+ */
+export type DesktopConcealedGroups = {
+  /** Password-locked groups (not hidden). `parentId` is a concealed group that must be open first. */
+  locked: (HostProjectGroup & { parentId?: string; projects: DesktopDirectoryProject[] })[];
+  /** Hidden groups, names only: unhiding them is the only action, it unlocks nothing. */
+  hidden: Pick<HostProjectGroup, "id" | "name" | "color">[];
 };
 /** Sent only by the local desktop heartbeat; protected paths never reach the phone. */
 export type DesktopProjectDirectory = {
   version: 1;
-  projects: {
-    cwd: string;
-    name: string;
-    groupId?: string;
-    sessionLayout?: HostSessionLayout;
-    appearance?: HostProjectAppearance;
-    pinned?: boolean;
-  }[];
+  projects: DesktopDirectoryProject[];
   groups: HostProjectGroup[];
   excludedPaths: string[];
   excludedGroupIds: string[];
+  concealed?: DesktopConcealedGroups;
 };
 export type HostDirectory = {
   home?: string;

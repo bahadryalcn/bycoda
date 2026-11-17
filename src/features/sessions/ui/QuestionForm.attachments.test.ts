@@ -120,6 +120,14 @@ afterEach(() => {
 });
 
 describe("question attachments", () => {
+  it("places a labeled file action with the answer instead of the delivery controls", () => {
+    render();
+    const attach = button("Attach files");
+    expect(attach.textContent).toContain("Attach files");
+    expect(attach.closest("fieldset")).not.toBeNull();
+    expect(attach.parentElement?.contains(button("Send answer"))).toBe(false);
+  });
+
   it("keeps legacy questions usable for text answers", () => {
     prompt = { ...prompt, occurrenceId: undefined, providerTurnId: undefined };
     const onReply = render();

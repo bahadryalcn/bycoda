@@ -13,19 +13,18 @@ import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { openExternal } from "../../../platform/tauri/openExternal";
 import { QRCodeSVG } from "qrcode.react";
 import { useRef, useState } from "react";
-import { copyText } from "../../../platform/tauri/clipboard";
+import { CopyButton } from "../../../shared/ui/CopyButton";
 import { t, useLocale } from "../../../shared/i18n";
 import { ConfirmDialog } from "../../../shared/ui/ConfirmDialog";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
-import { CheckCircle, Copy, ExternalLink, RefreshCw } from "../../../shared/ui/icons";
+import { CheckCircle, ExternalLink, RefreshCw } from "../../../shared/ui/icons";
 import { isLocalSyncMachine } from "../model/localSync";
 import type {
   PhonePairingFlowProps,
   PhonePairingLinkProps,
   PhonePairingLinkStatus,
   PhonePairingCopyProps,
-  PhonePairingCopyStatus,
 } from "../model/phonePairingTypes";
 
 const accessCopy = {
@@ -78,38 +77,20 @@ function PhonePairingLink({ url, label }: PhonePairingLinkProps) {
 }
 
 function PhonePairingCopy({ code }: PhonePairingCopyProps) {
-  const [status, setStatus] = useState<PhonePairingCopyStatus>("idle");
-  const running = useRef(false);
-  const copy = async () => {
-    if (running.current || Date.parse(code.expiresAt) <= Date.now()) return;
-    running.current = true;
-    setStatus("pending");
-    try {
-      await copyText(JSON.stringify(code));
-      setStatus("success");
-    } catch {
-      setStatus("error");
-    } finally {
-      running.current = false;
-    }
-  };
   return (
     <div className="flex flex-col items-center gap-2">
-      <Button
+      <CopyButton
         stableWidth
         type="button"
         className="shrink-0"
-        disabled={status === "pending"}
-        onClick={() => void copy()}
-      >
-        <Copy className="icon-sm" />
-        {t("Copy pairing code")}
-      </Button>
-      {status === "success" ? (
-        <InlineMessage tone="success">{t("Pairing code copied")}</InlineMessage>
-      ) : status === "error" ? (
-        <Alert tone="danger">{t("The pairing code could not be copied. Try again.")}</Alert>
-      ) : null}
+        label={t("Copy pairing code")}
+        copiedLabel={t("Pairing code copied")}
+        text={() => {
+          // An expired code must not reach the clipboard; the failed state asks for a retry.
+          if (Date.parse(code.expiresAt) <= Date.now()) throw new Error("Pairing code expired");
+          return JSON.stringify(code);
+        }}
+      />
     </div>
   );
 }
@@ -140,6 +121,10 @@ export function PhonePairingFlow({
   const inline = variant === "inline";
   const localNetwork = !fixedEndpoint && state.mode === "lan";
   const busy = ["checking", "enabling", "creating"].includes(state.stage);
+  const interfaces = (state.stage === "access" && state.access.addressInterfaces) || {};
+  const networkHint = state.stage === "access" ? state.access.networkHint : undefined;
+  const addresses = state.stage === "access" ? (state.access.addresses ?? []) : [];
+  const selectedAddress = addresses.includes(address) ? address : (addresses[0] ?? "");
   const machineLabel = isLocalSyncMachine(state.machine) ? t("This computer") : state.machine.name;
   const localToggle =
     localNetwork &&
@@ -214,7 +199,10 @@ export function PhonePairingFlow({
 
       {state.stage === "access" ? (
         <div className="flex flex-col gap-4">
-          {localNetwork && state.access.reason ? (
+          {localNetwork && networkHint ? (
+            <InlineMessage tone="warning">{t(networkHint)}</InlineMessage>
+          ) : null}
+          {localNetwork && state.access.state === "ready" && state.access.reason ? (
             <InlineMessage tone="info">{t(state.access.reason)}</InlineMessage>
           ) : null}
           {state.access.state === "ready" ? (
@@ -231,25 +219,29 @@ export function PhonePairingFlow({
             <>
               <InlineMessage tone="info">
                 {localNetwork
-                  ? state.access.state === "setup-required"
-                    ? t(
-                        "Enable local network access to connect your phone. Pairing and workspace data are encrypted.",
-                      )
-                    : t(
-                        "Local network access is unavailable. Check your computer's network and firewall, then try again.",
-                      )
+                  ? state.access.reason
+                    ? t(state.access.reason)
+                    : state.access.state === "setup-required"
+                      ? t(
+                          "Enable local network access to connect your phone. Pairing and workspace data are encrypted.",
+                        )
+                      : t(
+                          "Local network access is unavailable. Check your computer's network and firewall, then try again.",
+                        )
                   : t(accessCopy[state.access.state])}
               </InlineMessage>
-              {localNetwork && (state.access.addresses?.length ?? 0) > 1 ? (
+              {localNetwork && addresses.length > 1 ? (
                 <SearchableSelect
                   label={t("Local network address")}
-                  value={
-                    state.access.addresses!.includes(address) ? address : state.access.addresses![0]
-                  }
-                  onChange={setAddress}
-                  options={state.access.addresses!.map((value) => ({
+                  value={selectedAddress}
+                  onChange={(value) => {
+                    setAddress(value);
+                    // Picking an address after a failure retries on it so the Host rebinds.
+                    if (state.access.state === "unavailable") onEnable(value);
+                  }}
+                  options={addresses.map((value) => ({
                     value,
-                    label: value,
+                    label: interfaces[value] ? `${value} · ${interfaces[value]}` : value,
                   }))}
                 />
               ) : null}
@@ -257,7 +249,7 @@ export function PhonePairingFlow({
                 <Switch
                   checked={false}
                   onCheckedChange={() =>
-                    onEnable(state.access.addresses?.includes(address) ? address : undefined)
+                    onEnable(addresses.includes(address) ? address : undefined)
                   }
                   label={t("Local network access")}
                 />
@@ -281,7 +273,16 @@ export function PhonePairingFlow({
                     {t("Retry secure connection")}
                   </Button>
                 ) : null}
-                <Button stableWidth type="button" className="shrink-0" onClick={onRefresh}>
+                <Button
+                  stableWidth
+                  type="button"
+                  className="shrink-0"
+                  onClick={
+                    localNetwork && state.access.state === "unavailable" && addresses.length > 0
+                      ? () => onEnable(selectedAddress)
+                      : onRefresh
+                  }
+                >
                   {t("Check again")}
                 </Button>
               </div>

@@ -1,23 +1,28 @@
 /** The Models page tabs, in display order. */
-export const PROVIDERS_TABS = ["work", "chat", "delegation", "providers"] as const;
+export const PROVIDERS_TABS = ["work", "defaults", "providers"] as const;
 export type ProvidersTab = (typeof PROVIDERS_TABS)[number];
 
 /** The tab that holds a searched setting; undefined leaves the current tab. */
 export function providersTabForSetting(id: string | null): ProvidersTab | undefined {
   if (!id) return undefined;
   if (id === "models-order" || id === "models-roles") return "work";
-  if (["models-chat", "default-provider", "agent-clis"].includes(id)) return "chat";
   if (
-    ["models-delegation", "subagents", "advisor", "subagent-max-effort", "image-models"].includes(
-      id,
-    )
+    [
+      "models-chat",
+      "default-provider",
+      "agent-clis",
+      "models-delegation",
+      "subagents",
+      "advisor",
+      "subagent-max-effort",
+      "image-models",
+    ].includes(id)
   )
-    return "delegation";
+    return "defaults";
   if (
     id === "harness-updates" ||
     id.startsWith("cli-path-") ||
     id === "enabled-models" ||
-    id === "decision-models" ||
     id === "claude-hooks" ||
     id === "antigravity-account" ||
     id === "provider-accounts" ||

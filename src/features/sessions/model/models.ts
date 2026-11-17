@@ -516,8 +516,8 @@ export function resetDisabledModels() {
   disabledCache = null;
   emit();
 }
-// Another window (Settings, quick composer) may change the list.
-if (typeof window !== "undefined") {
+// Another window (Settings, quick composer) may change the list. React Native's window has no DOM events.
+if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
   window.addEventListener("storage", (event) => {
     if (event.key !== DISABLED_MODELS_KEY) return;
     disabledCache = null;

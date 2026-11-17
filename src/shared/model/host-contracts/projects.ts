@@ -36,6 +36,8 @@ export const ProjectDirectorySchema = z.strictObject({
       registered: z.boolean(),
       sessionLayout: layout.optional(),
       pinned: z.boolean().optional(),
+      /** Other registered ids of the same folder (legacy path spellings) folded into this row. */
+      aliasIds: z.array(z.string()).optional(),
     }),
   ),
   groups: z.array(
@@ -47,6 +49,21 @@ export const ProjectDirectorySchema = z.strictObject({
       appearance: ProjectAppearanceSchema.optional(),
     }),
   ),
+  /** Password-locked groups, name only. Their projects appear in `groups`/`projects` while this device holds a grant. */
+  lockedGroups: z
+    .array(
+      z.strictObject({
+        id: z.string(),
+        name: z.string(),
+        color: z.string().optional(),
+        appearance: ProjectAppearanceSchema.optional(),
+      }),
+    )
+    .optional(),
+  /** Present only for a device that passed the hidden-list password; absent otherwise. */
+  hiddenGroups: z
+    .array(z.strictObject({ id: z.string(), name: z.string(), color: z.string().optional() }))
+    .optional(),
 });
 export const HostDirectorySchema = z.strictObject({
   path: z.string(),

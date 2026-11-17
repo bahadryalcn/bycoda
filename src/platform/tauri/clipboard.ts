@@ -7,6 +7,7 @@ import {
   MAX_EMBED_BYTES,
 } from "../../features/sessions/model/attachments";
 import type { Attachment } from "../../features/sessions/model/session";
+import { withTimeout } from "../../shared/lib/withTimeout";
 
 type CopiedFile = { name: string; mimeType: string; data: string };
 
@@ -167,15 +168,27 @@ export function messageFilesFromClipboard(clipboard: Pick<DataTransfer, "getData
   }
 }
 
+/** A WebView clipboard write that never settles must not leave a copy action pending forever. */
+const BROWSER_CLIPBOARD_DEADLINE_MS = 1500;
+const NATIVE_CLIPBOARD_DEADLINE_MS = 5000;
+
 export async function copyText(text: string): Promise<void> {
   try {
-    await navigator.clipboard.writeText(text);
+    await withTimeout(
+      navigator.clipboard.writeText(text),
+      BROWSER_CLIPBOARD_DEADLINE_MS,
+      "Clipboard write",
+    );
   } catch {
-    // WebView clipboard permission/focus can fail while the native clipboard
+    // WebView clipboard permission/focus can fail (or hang) while the native clipboard
     // remains available. Keep browser previews independent of the desktop API.
     if ("__TAURI_INTERNALS__" in window) {
       try {
-        await invoke("copy_text_to_clipboard", { text });
+        await withTimeout(
+          invoke("copy_text_to_clipboard", { text }),
+          NATIVE_CLIPBOARD_DEADLINE_MS,
+          "Native clipboard write",
+        );
         return;
       } catch {
         // Older installed backends may not have this command yet.

@@ -42,12 +42,12 @@ it("uses the shared clipboard path, reports failure, and clears it on retry", as
     await act(async () =>
       document.querySelector<HTMLButtonElement>('[aria-label="Copy commit ID"]')!.click(),
     );
-    expect(document.querySelector('[role="alert"]')?.textContent).toBe("Copy unavailable");
-    await act(async () =>
-      document.querySelector<HTMLButtonElement>('[aria-label="Copy commit ID"]')!.click(),
-    );
+    const button = document.querySelector<HTMLButtonElement>("button")!;
+    expect(button.getAttribute("data-copy-state")).toBe("failed");
+    expect(button.getAttribute("aria-label")).toBe("Copy failed. Try again.");
+    await act(async () => button.click());
     expect(copyText).toHaveBeenLastCalledWith("abc123");
-    expect(document.querySelector('[role="alert"]')).toBeNull();
+    expect(button.getAttribute("data-copy-state")).toBe("copied");
   } finally {
     await act(async () => root.unmount());
     container.remove();

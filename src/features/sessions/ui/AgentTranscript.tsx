@@ -38,6 +38,7 @@ import { TranslationResultDialog } from "./TranslationResultDialog";
 import { useTranscriptImageOpen } from "./TranscriptImagePreview";
 import type { TranscriptSelection } from "../model/transcriptSelection";
 import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
+import { CopyButton } from "../../../shared/ui/CopyButton";
 import { INTERRUPT_MESSAGE, isTurnInterruptMessage } from "../model/inFlight";
 import { isSessionErrorBlock } from "../model/sessionIssue";
 import { filterDisplayedBlocks, type DisplayFilterFrame } from "../model/transcriptDisplayFilter";
@@ -330,9 +331,6 @@ function AgentTranscriptComponent({
     Record<string, TranslationHistory & { source: string; translatedVisible: boolean }>
   >({});
   const [activeTranslation, setActiveTranslation] = useState<string | null>(null);
-  const translationCopy = useCopyFeedback({
-    resetKeys: [activeTranslation, translations[activeTranslation ?? ""]?.translatedVisible],
-  });
   const [translationProjection] = useState(() => new FrameMemory<TranslationProjection>());
   const sourceBlocks = useMemo(
     () => projectTranslatedBlocks(persistedBlocks, translations, translationProjection.read()),
@@ -667,25 +665,22 @@ function AgentTranscriptComponent({
                 { value: "translation", label: t("Translation") },
               ]}
             />
-            <Button
+            <CopyButton
               motion="none"
               size="sm"
               variant="ghost"
               iconOnly
-              label={translationCopy.copied ? t("Copied") : t("Copy")}
-              loading={translationCopy.pending}
-              onClick={() =>
-                translationCopy.copy(() =>
-                  copyMessage(
-                    activeVersion.translatedVisible
-                      ? activeVersion.translated
-                      : activeVersion.original,
-                  ),
+              label={t("Copy")}
+              resetKeys={[activeTranslation, activeVersion.translatedVisible]}
+              errorDetail
+              onCopy={() =>
+                copyMessage(
+                  activeVersion.translatedVisible
+                    ? activeVersion.translated
+                    : activeVersion.original,
                 )
               }
-            >
-              {translationCopy.copied ? <Check /> : <Copy />}
-            </Button>
+            />
             <Button
               motion="none"
               size="sm"
@@ -696,12 +691,6 @@ function AgentTranscriptComponent({
             >
               <X />
             </Button>
-            {translationCopy.failed ? (
-              <InlineError>
-                {t("Could not complete this action. ")}
-                {translationCopy.error}
-              </InlineError>
-            ) : null}
           </div>
         ) : null}
         <div
@@ -1830,57 +1819,23 @@ function CopyTurnButton({
 }) {
   const t = useT();
   const label = labelProp ?? t("Copy response");
-  const {
-    pending,
-    copied,
-    error,
-    copy: runCopy,
-  } = useCopyFeedback({ resetKeys: [text, getText, attachments], successMs: 2000 });
-
   return (
-    <>
-      <Button
-        iconOnly={!showLabel}
-        label={copied ? t("Copied") : label}
-        motion="none"
-        variant="ghost"
-        type="button"
-        disabled={pending}
-        aria-label={copied ? t("Copied") : label}
-        loading={pending}
-        startIcon={
-          showLabel ? (
-            copied ? (
-              <Check className="icon-sm" strokeWidth={1.75} />
-            ) : (
-              <Copy className="icon-sm" strokeWidth={1.75} />
-            )
-          ) : undefined
-        }
-        onClick={(event) => {
-          event.stopPropagation();
-          runCopy(async () => {
-            await copyMessage(text ?? getText?.() ?? "", attachments);
-            // The confirmation sound belongs to a copy that actually landed.
-            playCue("copy");
-          });
-        }}
-      >
-        {!showLabel &&
-          (copied ? (
-            <Check className="icon-md" strokeWidth={1.75} />
-          ) : (
-            <Copy className="icon-md" strokeWidth={1.75} />
-          ))}
-        {showLabel ? <span>{copied ? t("Copied") : label}</span> : null}
-      </Button>
-      {error && (
-        <InlineError className="max-w-xs">
-          {t("Copy failed. ")}
-          {error}
-        </InlineError>
-      )}
-    </>
+    <CopyButton
+      iconOnly={!showLabel}
+      label={label}
+      motion="none"
+      variant="ghost"
+      type="button"
+      icon={<Copy className={showLabel ? "icon-sm" : "icon-md"} strokeWidth={1.75} />}
+      resetKeys={[text, getText, attachments]}
+      errorDetail
+      onClick={(event) => event.stopPropagation()}
+      onCopy={async () => {
+        await copyMessage(text ?? getText?.() ?? "", attachments);
+        // The confirmation sound belongs to a copy that actually landed.
+        playCue("copy");
+      }}
+    />
   );
 }
 
@@ -2695,9 +2650,10 @@ function WorkFoldLine({
     </span>
   );
   // While the agent runs, the clock shimmers here rather than at the bottom,
-  // which is now bare.
+  // which is now bare. Same face as the settled line, so settling never
+  // swaps the font under the reader.
   const label = live ? (
-    title
+    <span className="flex min-w-0 flex-1 font-sans text-ui-body">{title}</span>
   ) : (
     <span className="min-w-0 flex-1 truncate font-sans text-ui-body text-(--ui-text-secondary) transition-colors duration-200 group-hover:text-(--ui-text-secondary)">
       {title}

@@ -197,7 +197,7 @@ export function ProviderDefaultsForm({
         })),
       ]
     : [];
-  return (
+  const main = (
     <Group
       id={section === "delegation" ? "models-delegation" : "agent-clis"}
       layout="full"
@@ -349,13 +349,7 @@ export function ProviderDefaultsForm({
         extras={
           section === "delegation"
             ? extras.filter(isDelegationSetting)
-            : section === "chat"
-              ? extras.filter((setting) => !isDelegationSetting(setting))
-              : // Both together: conversation rows first, then who the agent delegates to.
-                [
-                  ...extras.filter((setting) => !isDelegationSetting(setting)),
-                  ...extras.filter(isDelegationSetting),
-                ]
+            : extras.filter((setting) => !isDelegationSetting(setting))
         }
         harness={harness}
         inheritedDefaults={inheritedDefaults}
@@ -365,5 +359,27 @@ export function ProviderDefaultsForm({
         resetLabel={resetLabel}
       />
     </Group>
+  );
+  if (section) return main;
+  // Both together: conversation defaults, then who the agent delegates to, as its own section
+  // for the same provider and account.
+  const delegation = extras.filter(isDelegationSetting);
+  return (
+    <>
+      {main}
+      {delegation.length ? (
+        <Group id="models-delegation" layout="full" title={t("Subagents")}>
+          <ProviderDefaultExtras
+            extras={delegation}
+            harness={harness}
+            inheritedDefaults={inheritedDefaults}
+            scopeDefaults={scopeDefaults}
+            onSessionDefaultsChange={onSessionDefaultsChange}
+            projectScope={inherits}
+            resetLabel={resetLabel}
+          />
+        </Group>
+      ) : null}
+    </>
   );
 }

@@ -91,6 +91,21 @@ function CandidateRow({
 const COLLAPSED_ROWS = 5;
 const GROUP_ORDER = { shared: 1, mobile: 2 } as const;
 
+/** Splits rows into sections by shared/phone group, else by their first source, keeping order. */
+function groupBySource(machines: DiscoveredMachine[]) {
+  const groups = new Map<string, DiscoveredMachine[]>();
+  for (const machine of machines) {
+    const label =
+      machine.group === "shared"
+        ? t("Shared with you")
+        : machine.group === "mobile"
+          ? t("Phones")
+          : t(SOURCE_LABEL[machine.sources[0] ?? "account"]);
+    groups.set(label, [...(groups.get(label) ?? []), machine]);
+  }
+  return [...groups].map(([label, rows]) => ({ label, machines: rows }));
+}
+
 /** Whether a found machine matches the search: name or any of its addresses. */
 function matches(machine: DiscoveredMachine, query: string) {
   const needle = query.trim().toLowerCase();
@@ -141,9 +156,9 @@ export function DiscoveredMachines({
   const found = open.filter((machine) => matches(machine, query));
   const shown = searching || expanded ? found : found.slice(0, COLLAPSED_ROWS);
   const hidden = found.length - shown.length;
+  const showGroupLabels = groupBySource(shown).length > 1;
   return (
     <section aria-label={t("Available to add")} className="flex flex-col gap-2">
-      <SectionLabel count={found.length || undefined}>{t("Available to add")}</SectionLabel>
       {signedOut ? (
         <div className="flex flex-wrap items-center justify-between gap-2">
           <Text tone="muted">{t("Sign in to also find computers on your account.")}</Text>
@@ -152,19 +167,24 @@ export function DiscoveredMachines({
           </Button>
         </div>
       ) : null}
-      {shown.length > 0 ? (
-        <Surface variant="card" padding="none" dividers="card" className="overflow-hidden">
-          {shown.map((machine) => (
-            <CandidateRow
-              key={machine.key}
-              machine={machine}
-              busy={busy}
-              onAdd={onAdd}
-              onPair={setPairing}
-            />
-          ))}
-        </Surface>
-      ) : null}
+      {shown.length > 0
+        ? groupBySource(shown).map(({ label, machines: rows }) => (
+            <div key={label} className="flex flex-col gap-1">
+              {showGroupLabels ? <SectionLabel count={rows.length}>{label}</SectionLabel> : null}
+              <Surface variant="card" padding="none" dividers="card" className="overflow-hidden">
+                {rows.map((machine) => (
+                  <CandidateRow
+                    key={machine.key}
+                    machine={machine}
+                    busy={busy}
+                    onAdd={onAdd}
+                    onPair={setPairing}
+                  />
+                ))}
+              </Surface>
+            </div>
+          ))
+        : null}
       {hidden > 0 ? (
         <Button variant="ghost" className="self-start" onClick={() => setExpanded(true)}>
           {t("Show all ({p0})", { p0: found.length })}

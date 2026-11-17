@@ -124,7 +124,9 @@ it("holds every toast's expiry while the stack is open and resumes the remaining
       toast.show({ message: "Saved", onDismiss });
       toast.show({ message: "Archived", onDismiss });
     });
-    const stack = document.querySelector<HTMLElement>("[data-toast-stack]")!;
+    const stack = document.querySelector<HTMLElement>(
+      '[data-toast-region="top-end"] [data-toast-stack]',
+    )!;
     await act(async () => {
       await vi.advanceTimersByTimeAsync(6_000);
     });
@@ -241,19 +243,27 @@ it("renders structured actions as secondary buttons and puts the glyph in a firs
   }
 });
 
-it("stacks in the top-center column by default and keeps explicit placements working", () => {
+it("keeps routine notices at top-end, warnings and errors centered, and explicit placements working", () => {
   const unmount = mount();
   try {
     act(() => {
       toast.show({ message: "Default", durationMs: null });
+      toast.show({ message: "Saved", tone: "success", durationMs: null });
+      toast.show({ message: "Warning", tone: "warning", durationMs: null });
+      toast.show({ message: "Error", tone: "danger", durationMs: null });
       toast.show({ message: "Corner", durationMs: null, placement: "bottom-end" });
     });
     const center = document.querySelector<HTMLElement>('[data-toast-region="top-center"]')!;
-    expect(DEFAULT_TOAST_PLACEMENT).toBe("top-center");
+    expect(DEFAULT_TOAST_PLACEMENT).toBe("top-end");
     expect(center.className).toContain("inset-x-0");
     expect(center.className).toContain("items-center");
     expect(center.className).toContain("top-0");
-    expect(center.textContent).toContain("Default");
+    expect(center.textContent).toContain("Warning");
+    expect(center.textContent).toContain("Error");
+    expect(center.textContent).not.toContain("Default");
+    const routine = document.querySelector('[data-toast-region="top-end"]')!;
+    expect(routine.textContent).toContain("Default");
+    expect(routine.textContent).toContain("Saved");
     expect(center.textContent).not.toContain("Corner");
     const corner = document.querySelector<HTMLElement>('[data-toast-region="bottom-end"]')!;
     expect(corner.className).toContain("end-0");

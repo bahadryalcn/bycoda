@@ -2,7 +2,15 @@ import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { HelperModelsSettings } from "../../../src/features/settings/ui/HelperModelsSettings";
-import { ModelRolesSettings } from "../../../src/features/model-routing/ui/roles/ModelRolesSettings";
+import { useState } from "react";
+import { useModelRouting } from "../../../src/features/model-routing/model/modelRoutingClient";
+import {
+  orderDraft,
+  prepareOrderSave,
+  type OrderDraft,
+} from "../../../src/features/model-routing/model/modelRoutingDraft";
+import { ModelRolesGroups } from "../../../src/features/model-routing/ui/roles/ModelRolesGroups";
+import { Button } from "../../../src/shared/ui/Button";
 import { OPEN_MODELS_SETTINGS_EVENT } from "../../../src/features/settings/ui/models/modelsSettingsLink";
 import {
   EMPTY_MODEL_ROUTING,
@@ -65,6 +73,43 @@ const client = new QueryClient({
   defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
 });
 const root = createRoot(document.getElementById("root")!);
+const NO_LIMITS = { maxRunningTasks: 1, dailyAgentMinutes: 0 };
+
+/** Presentational groups plus a minimal Save; the real screen owns one Save for the whole draft. */
+function AssignmentsFixture({ machineId, supported }: { machineId: string; supported: boolean }) {
+  const routing = useModelRouting(machineId, supported);
+  const [draft, setDraft] = useState<OrderDraft>();
+  const [failed, setFailed] = useState(false);
+  if (!supported) return <p>Model routing is not available on this Host.</p>;
+  if (!routing.state) return null;
+  const current = draft ?? orderDraft(routing.state, NO_LIMITS);
+  async function save() {
+    try {
+      await routing.save.mutateAsync({
+        expectedVersion: routing.state!.version,
+        draft: prepareOrderSave(current).routing,
+      });
+      setDraft(undefined);
+      setFailed(false);
+    } catch {
+      setFailed(true);
+    }
+  }
+  return (
+    <>
+      <ModelRolesGroups
+        machineId={machineId}
+        draft={current}
+        savedVersion={routing.state.version}
+        live={!draft}
+        disabled={routing.save.isPending}
+        onChange={setDraft}
+      />
+      {failed ? <p>Model roles could not be saved. Try again.</p> : null}
+      <Button onClick={() => void save()}>Save</Button>
+    </>
+  );
+}
 function render(assignments: boolean) {
   root.render(
     <QueryClientProvider client={client}>
@@ -73,7 +118,7 @@ function render(assignments: boolean) {
           <HelperModelsSettings />
           {assignments ? (
             <section aria-label="Fixture Host assignments">
-              <ModelRolesSettings machineId="fixture-host" supported={!params.has("unsupported")} />
+              <AssignmentsFixture machineId="fixture-host" supported={!params.has("unsupported")} />
             </section>
           ) : null}
         </div>

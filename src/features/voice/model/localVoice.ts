@@ -7,7 +7,7 @@ import {
 } from "./localVoiceClient";
 import { VoiceVad, decodePcmBase64, pcmBase64, resamplePcm } from "./voiceVad";
 import { errorText } from "../../../shared/lib/errors";
-import { speechTranscript } from "./voiceTranscript";
+import { removeSpeechFillers, speechTranscript } from "./voiceTranscript";
 import { openMicrophone } from "./microphoneAccess";
 import { t } from "../../../shared/i18n";
 import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
@@ -89,6 +89,7 @@ export class LocalVoice {
       turnEndSilence?: number;
       allowBargeIn?: boolean;
       manualTurnEnd?: boolean;
+      removeFillers?: boolean;
       languageLock?: string;
       deviceId?: string;
     } = {},
@@ -204,6 +205,7 @@ export class LocalVoice {
     turnEndSilence?: number;
     allowBargeIn?: boolean;
     manualTurnEnd?: boolean;
+    removeFillers?: boolean;
   }) {
     this.conversation = { ...this.conversation, ...options };
     const vadOptions = this.vadOptions();
@@ -309,7 +311,11 @@ export class LocalVoice {
   }
 
   private acceptTranscript(result: LocalVoiceTranscript, binding: SpeechBinding, epoch: number) {
-    const text = speechTranscript(result.text);
+    const spoken = speechTranscript(result.text);
+    // A hesitation alone ("eee") is no turn when the owner opted into filler removal.
+    const text = this.conversation.removeFillers
+      ? removeSpeechFillers(spoken, { language: result.language || this.language })
+      : spoken;
     if (!text || epoch <= this.acceptedSpeechEpoch) return;
     if (this.callbacks.interceptTranscript?.({ ...result, text }, binding)) {
       // A consumed spoken turn still supersedes older recognitions. It does not

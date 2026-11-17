@@ -4,7 +4,8 @@ import {
   retainedTransactionValue,
 } from "../../model-routing/public/settings";
 import { useId } from "react";
-import { routingChanges } from "../model/presentation";
+import { routingChangedTasks, routingChanges } from "../model/presentation";
+import { SettingsSaveBar, type PendingChange } from "../../../shared/ui/settings";
 import { Badge } from "../../../shared/ui/Badge";
 import { TextField } from "../../../shared/ui/TextField";
 import { InlineAction } from "../../../shared/ui/ActionHost";
@@ -102,8 +103,25 @@ export function RoutingTable({
   const invalid = DECISION_TASK_TYPES.some(
     (task) => thresholdText[task] !== undefined && parseThreshold(thresholdText[task]) === null,
   );
-  const changes = routingChanges(draft, draftSource);
-  const dirty = changes > 0 || invalid;
+  const changedTasks = routingChangedTasks(draft, draftSource);
+  const dirty = changedTasks.length > 0 || invalid;
+  const pendingChanges: PendingChange[] = changedTasks.map((task) => ({
+    id: task,
+    label: taskTypeLabel(task),
+    detail: draft[task]?.sourceIds.length ? undefined : t("Automatic"),
+    revert: () => {
+      setDraft((current) => ({ ...current, [task]: draftSource[task] }));
+      setThresholdText((current) => {
+        const next = { ...current };
+        delete next[task];
+        return next;
+      });
+      setSaved(false);
+    },
+  }));
+  // An invalid threshold blocks Save but is not a change yet; the count still names it.
+  if (!pendingChanges.length && invalid)
+    pendingChanges.push({ id: "threshold", label: t("Confidence threshold") });
   const taskIcons = {
     screen_state: MonitorSmartphone,
     element_choice: CursorMagicSelection,
@@ -373,46 +391,22 @@ export function RoutingTable({
           <ErrorNotice error={saveError} onRetry={save} />
         </div>
       ) : null}
-      {dirty || saved || busy ? (
-        <div
-          {...surfaceAttributes(
-            { frame: "pane", edge: "block-start" },
-            "flex min-w-0 items-center justify-end gap-3 px-4 py-2.5",
-          )}
-        >
-          {dirty ? (
-            <>
-              <Text size="caption" tone="secondary">
-                {t("{p1} unsaved changes", { p1: formatNumber(changes) })}
-              </Text>
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={busy || retainedPending}
-                onClick={() => {
-                  setDraft(draftSource);
-                  setThresholdText({});
-                  setSaveError(null);
-                  setSaved(false);
-                }}
-              >
-                {t("Discard")}
-              </Button>
-            </>
-          ) : null}
-          <Button
-            variant="primary"
-            size="sm"
-            loading={busy || retainedPending}
-            success={saved && !dirty && saveError === null}
-            successLabel={saved && !dirty && saveError === null ? t("Saved") : undefined}
-            disabled={!dirty || invalid || busy || retainedPending}
-            onClick={save}
-          >
-            {t("Save routing")}
-          </Button>
-        </div>
-      ) : null}
+      <SettingsSaveBar
+        id={`decision-routing:${identity}`}
+        title={t("Routing")}
+        changes={pendingChanges}
+        pending={busy || retainedPending}
+        saved={saved && saveError === null}
+        canSave={!invalid}
+        saveLabel={t("Save routing")}
+        onDiscard={() => {
+          setDraft(draftSource);
+          setThresholdText({});
+          setSaveError(null);
+          setSaved(false);
+        }}
+        onSave={save}
+      />
     </>
   );
 }

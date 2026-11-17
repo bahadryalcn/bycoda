@@ -131,5 +131,10 @@ it("uses one agent-work implementation for labels and compact marks", () => {
   expect(container.textContent).toContain("Thinking…");
   act(() => root.render(createElement(WorkingIndicator, { children: "Running", glyph: false })));
   expect(container.querySelector('[data-size="xs"]')).toBeNull();
-  expect(container.textContent).toBe("Running");
+  // The label is the signal: its sweep copy is decorative, hidden from assistive
+  // technology and from the overflow tooltip's text and clipping checks.
+  const sweep = container.querySelector("[data-tooltip-ignore]")!;
+  expect(sweep.getAttribute("aria-hidden")).toBe("true");
+  expect(sweep.textContent).toBe("Running");
+  expect(container.textContent?.replace(sweep.textContent ?? "", "")).toBe("Running");
 });

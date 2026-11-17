@@ -6,11 +6,11 @@ import { TextField } from "../../../shared/ui/TextField";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { Button } from "../../../shared/ui/Button";
 import { LiveText } from "../../../shared/ui/LiveText";
-import { Badge } from "../../../shared/ui/Badge";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { t, useLocale } from "../../../shared/i18n";
 import { Plus } from "../../../shared/ui/icons";
-import { Group, Row, SettingsFeedback } from "../../../shared/ui/settings";
+import { Group, Row, SettingsFeedback, SettingsSaveBar } from "../../../shared/ui/settings";
+import { templateChanges } from "./templatesChanges";
 import {
   CURSOR_PLACEHOLDER,
   loadPromptTemplates,
@@ -114,6 +114,12 @@ export function TemplatesSettings() {
     setFieldError(null);
     setRows((current) => current.map((row) => (row.id === id ? { ...row, ...patch } : row)));
   };
+  const editRows = (next: PromptTemplate[]) => {
+    setSavedMessage(false);
+    setError(null);
+    setFieldError(null);
+    setRows(next);
+  };
   const reload = () => {
     if (!templateStorageAvailable()) {
       setError(t("Template storage is unavailable. Retry reading before saving."));
@@ -196,6 +202,9 @@ export function TemplatesSettings() {
       {t("Add template")}
     </Button>
   );
+  const listed = dirty ? templateChanges(rows, baseline, editRows) : [];
+  // Anything the list does not name still counts, so Save never hides behind a clean count.
+  const changes = dirty && !listed.length ? [{ id: "other", label: t("Other changes") }] : listed;
   const empty = rows.length === 0;
   const showPanel = !empty || dirty || changedElsewhere || !available || error != null;
   return (
@@ -376,42 +385,31 @@ export function TemplatesSettings() {
               ) : null}
             </div>
           ) : null}
-          <div className="template-manager-actions">
-            <Button
-              variant="primary"
-              disabled={!available || !dirty || changedElsewhere}
-              success={savedMessage && !dirty && !error}
-              successLabel={t("Saved")}
-              onClick={save}
-            >
-              {t("Save templates")}
-            </Button>
-            {dirty || changedElsewhere ? (
-              <Button onClick={reload}>{t("Discard changes and reload")}</Button>
+          <SettingsSaveBar
+            id="prompt-templates"
+            title={t("Prompt templates")}
+            changes={changes}
+            pending={false}
+            saved={savedMessage && !error}
+            canSave={available && !changedElsewhere}
+            saveLabel={t("Save templates")}
+            discardLabel={t("Discard changes and reload")}
+            discardEnabled={dirty || changedElsewhere}
+            onDiscard={reload}
+            onSave={save}
+          >
+            {/* A validation error is already announced on its field; do not announce it twice. */}
+            {error && !(selected && fieldError?.id === selected.id) ? (
+              <SettingsFeedback state="error">{error}</SettingsFeedback>
             ) : null}
-            {dirty && !error ? (
-              <Badge
-                className="template-manager-state"
-                role="status"
-                aria-live="polite"
-                aria-atomic="true"
-                tone="warning"
-              >
-                {t("Unsaved changes")}
-              </Badge>
+            {changedElsewhere && dirty ? (
+              <SettingsFeedback state="warning">
+                {t(
+                  "Templates changed in another window. Reload before saving to avoid overwriting those changes.",
+                )}
+              </SettingsFeedback>
             ) : null}
-          </div>
-          {/* A validation error is already announced on its field; do not announce it twice. */}
-          {error && !(selected && fieldError?.id === selected.id) ? (
-            <SettingsFeedback state="error">{error}</SettingsFeedback>
-          ) : null}
-          {changedElsewhere && dirty ? (
-            <SettingsFeedback state="warning">
-              {t(
-                "Templates changed in another window. Reload before saving to avoid overwriting those changes.",
-              )}
-            </SettingsFeedback>
-          ) : null}
+          </SettingsSaveBar>
         </div>
       ) : null}
     </Group>

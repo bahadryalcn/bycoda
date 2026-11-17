@@ -11,7 +11,8 @@ import { Select } from "../../../shared/ui/Select";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { Heading } from "../../../shared/ui/Heading";
-import { Group, Row, SettingsFeedback } from "../../../shared/ui/settings";
+import { Group, Row, SettingsFeedback, SettingsSaveBar } from "../../../shared/ui/settings";
+import { workspacePolicyChanges } from "./workspacePolicyChanges";
 import type {
   WorkspacePolicy,
   WorkspacePolicyOverride,
@@ -30,6 +31,7 @@ export function WorkspacePolicyEditor({
   draft,
   policy,
   saving,
+  saved,
   dirty,
   loading,
   policyConflict,
@@ -56,6 +58,9 @@ export function WorkspacePolicyEditor({
   const limitsHeadingId = useId();
   const hasProjectOverride = policy.resolved.appliedScopes.includes("project");
   const invalidDisk = Object.keys(diskErrors).length > 0;
+  const listed = dirty ? workspacePolicyChanges(draft, policy.resolved.policy, update) : [];
+  // Anything the list does not name still counts, so Save never hides behind a clean count.
+  const changes = dirty && !listed.length ? [{ id: "other", label: t("Other changes") }] : listed;
   return (
     <Group
       title={
@@ -270,40 +275,17 @@ export function WorkspacePolicyEditor({
           </div>
         </div>
       </section>
-      {dirty && (
-        <Text
-          as="div"
-          size="caption"
-          tone="inherit"
-          leading="inherit"
-          {...surfaceAttributes(
-            { radius: "popup", variant: "floating", frame: "card", elevation: "floating" },
-            styles.saveBar,
-          )}
-        >
-          <span
-            {...surfaceAttributes(
-              { radius: "circle", tone: "warning", toneFill: "solid" },
-              styles.saveDot,
-            )}
-            aria-hidden="true"
-          />
-          <span>{t("Unsaved changes")}</span>
-          <span className={styles.saveSpacer} />
-          <Button variant="ghost" disabled={saving || loading} onClick={discardDraft}>
-            {t("Discard changes")}
-          </Button>
-          <Button
-            variant="primary"
-            loading={saving}
-            loadingLabel={t("Saving…")}
-            disabled={invalidDisk || loading || policyConflict}
-            onClick={async () => await save()}
-          >
-            {t("Save")}
-          </Button>
-        </Text>
-      )}
+      <SettingsSaveBar
+        id="workspace-policy"
+        title={t("Defaults for new workspaces")}
+        changes={changes}
+        pending={saving}
+        saved={saved}
+        canSave={!invalidDisk && !loading && !policyConflict}
+        discardEnabled={dirty && !loading}
+        onDiscard={discardDraft}
+        onSave={() => save()}
+      />
     </Group>
   );
 }

@@ -517,3 +517,30 @@ it("turns Automatic off when a ceiling bar is chosen", () => {
   container.remove();
   vi.unstubAllGlobals();
 });
+
+it("reads the inherited auto-compact segment as Default (On), not a second On", () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  act(() =>
+    root.render(
+      createElement(ProviderDefaultExtras, {
+        extras: CLAUDE_COMPACT_SETTINGS,
+        harness: "claude",
+        inheritedDefaults: { extras: { autoCompact: "on" } },
+        scopeDefaults: {},
+        projectScope: true,
+        resetLabel: "Use global default",
+        onSessionDefaultsChange: vi.fn(),
+      }),
+    ),
+  );
+  const labels = Array.from(container.querySelectorAll('[role="radio"]')).map(
+    (button) => button.textContent,
+  );
+  expect(labels).toEqual(["Default (On)", "Claude default", "On", "Off"]);
+  act(() => root.unmount());
+  container.remove();
+  vi.unstubAllGlobals();
+});

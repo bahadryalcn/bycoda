@@ -52,7 +52,7 @@ it("retains saved data and the draft on storage failure, then reports successful
   expect(container.querySelector('[role="alert"]')).toBeNull();
   expect(statusText()).toContain("Saved");
   expect(button("Saved")).toBeDefined();
-  expect(container.querySelector(".template-manager-state")).toBeNull();
+  expect(container.textContent).not.toContain("unsaved change");
   expect(loadPromptTemplates()[0].name).toBe("Updated draft");
 });
 
@@ -62,7 +62,7 @@ it("updates a clean editor when templates change elsewhere", async () => {
     "Updated elsewhere",
   );
   expect(button("Save templates").disabled).toBe(true);
-  expect(container.textContent).not.toContain("Unsaved changes");
+  expect(container.textContent).not.toContain("unsaved change");
 });
 
 it("preserves a dirty draft and blocks stale writes until the user reloads", async () => {

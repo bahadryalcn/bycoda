@@ -1,6 +1,77 @@
 import { test, expect } from "@playwright/test";
 
 for (const theme of ["dark", "light"]) {
+  for (const width of [800, 1280]) {
+    test(`${theme} at ${width}px: toast placement and retained history`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/notifications/notifications.html?toasts&theme=${theme}`);
+      const routine = page.locator('[data-toast-region="top-end"]');
+      const alerts = page.locator('[data-toast-region="top-center"]');
+      await expect(routine).toContainText("Harness updates available");
+      await expect(routine).toContainText("Update complete");
+      await expect(alerts).toContainText("Connection interrupted");
+      await expect(alerts).toContainText("Update failed");
+      await expect(alerts).not.toContainText("Harness updates available");
+      const routineBox = (await routine.locator("[data-toast-item]").first().boundingBox())!;
+      expect(routineBox.x + routineBox.width).toBeGreaterThan(width - 30);
+      if (width === 800) {
+        await expect
+          .poll(async () => {
+            const alertBox = (await alerts.locator("[data-toast-stack]").boundingBox())!;
+            const box = (await routine.locator("[data-toast-stack]").boundingBox())!;
+            return box.y >= alertBox.y + alertBox.height;
+          })
+          .toBe(true);
+      }
+      for (const [name, region] of [
+        ["routine", routine],
+        ["alerts", alerts],
+      ] as const) {
+        await region.locator("[data-toast-stack]").hover();
+        await expect(region.locator("[data-toast-item]").first()).toHaveAttribute(
+          "data-expanded",
+          "true",
+        );
+        await page.screenshot({
+          path: `temp/verification/notice-routing/${name}-${theme}-${width}.png`,
+        });
+      }
+      for (const region of [alerts, routine]) {
+        for (const remaining of [1, 0]) {
+          await region
+            .locator('[data-toast-item][data-front="true"]:not([data-toast-leaving])')
+            .getByRole("button", { name: "Dismiss notice", exact: true })
+            .click();
+          await expect(region.locator("[data-toast-item]:not([data-toast-leaving])")).toHaveCount(
+            remaining,
+          );
+        }
+      }
+      await page.getByRole("button", { name: "Notifications", exact: true }).click();
+      const panel = page.getByRole("dialog", { name: "Notifications", exact: true });
+      await expect(panel.locator(".notification-history-item")).toHaveCount(4);
+      await expect(panel).toContainText("Grok Build: access denied");
+      await expect(panel).toContainText("Claude Code: 2.1.325");
+      await page.screenshot({
+        path: `temp/verification/notice-routing/history-${theme}-${width}.png`,
+      });
+      // Reopen without producing the same toasts again: only persisted entries can satisfy this check.
+      await page.goto(`/tests/browser/notifications/notifications.html?empty&theme=${theme}`);
+      await page.getByRole("button", { name: "Notifications", exact: true }).click();
+      await expect(
+        page
+          .getByRole("dialog", { name: "Notifications", exact: true })
+          .locator(".notification-history-item"),
+      ).toHaveCount(4);
+      await expect(page.getByRole("dialog", { name: "Notifications", exact: true })).toContainText(
+        "Grok Build: access denied",
+      );
+    });
+  }
+}
+
+for (const theme of ["dark", "light"]) {
   for (const width of [390, 800, 1280]) {
     test(`${theme} at ${width}px: compact requests and expandable history`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });

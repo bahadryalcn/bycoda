@@ -147,3 +147,13 @@ it.each(["low", "exhausted"] as const)("keeps %s visible with several accounts",
     providerMetaLine({ ...entry, accountSummary: "2 accounts", auth: { tone, label } }, true),
   ).toBe(`2 accounts, ${label}`);
 });
+
+it("says a low-limit state once when one account's summary is its own label", () => {
+  const low = { tone: "low", label: "Running low" } as const;
+  expect(providerMetaLine({ ...entry, auth: low, accountSummary: "Running low" }, true)).toBe(
+    "Running low",
+  );
+  expect(providerMetaLine({ ...entry, auth: low, accountSummary: "2 accounts" }, true)).toBe(
+    "2 accounts, Running low",
+  );
+});

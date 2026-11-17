@@ -2,11 +2,9 @@ import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { useState } from "react";
 import { Text } from "../../../../shared/ui/Text";
 import { t, useLocale } from "../../../../shared/i18n";
-import { copyText } from "../../../../platform/tauri/clipboard";
-import { Button } from "../../../../shared/ui/Button";
+import { CopyButton } from "../../../../shared/ui/CopyButton";
 import { PasswordField } from "../../../../shared/ui/PasswordField";
 import { TextField } from "../../../../shared/ui/TextField";
-import { Copy } from "../../../../shared/ui/icons";
 import { AdvancedSettings, Row, Toggle } from "../../../../shared/ui/settings";
 import { BrowserSignIn } from "./BrowserSignIn";
 import { slackSaveInput, slackSignInSaveInput } from "./chatAccountInputs";
@@ -58,7 +56,6 @@ function SlackAccountForm({ account, onSaved, onCancel, onSavingChange }: Accoun
   const [token, setToken] = useState("");
   const [clientId, setClientId] = useState("");
   const [authHandle, setAuthHandle] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
   const { saving, error, save } = useAccountSave(onSaved, onSavingChange);
   const submitToken = () => {
     save(slackSaveInput(token, account?.id)).catch(() => undefined);
@@ -131,19 +128,7 @@ function SlackAccountForm({ account, onSaved, onCancel, onSavingChange }: Accoun
             {SLACK_BOT_SCOPES.join(" ")}
           </Text>
           <div className="integration-actions">
-            <Button
-              stableWidth
-              reserveLabels={[t("Copied")]}
-              startIcon={<Copy className="icon-sm" />}
-              onClick={() => {
-                copyText(SLACK_BOT_SCOPES.join(",")).then(
-                  () => setCopied(true),
-                  () => setCopied(false),
-                );
-              }}
-            >
-              {copied ? t("Copied") : t("Copy scopes")}
-            </Button>
+            <CopyButton label={t("Copy scopes")} text={SLACK_BOT_SCOPES.join(",")} />
           </div>
         </SetupSteps>
       ) : null}

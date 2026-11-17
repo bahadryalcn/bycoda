@@ -31,6 +31,7 @@ export type MobilePairingStore = {
   proofOrigins?: () => Promise<string[]>;
   issueDevice: (
     name: string,
+    kind?: "phone" | "desktop",
   ) => { id: string; token: string } | Promise<{ id: string; token: string }>;
   transaction?<T>(action: () => T | Promise<T>): T | Promise<T>;
 };
@@ -42,6 +43,7 @@ type Pairing = {
   expiresAt: number;
   state: "pending" | "paired" | "cancelled";
   suggestedName: string;
+  kind: "phone" | "desktop";
   claimHash?: string;
   deviceName?: string;
   credential?: MobilePairingCredential;
@@ -126,6 +128,7 @@ export class MobilePairing {
       expiresAt,
       state: "pending",
       suggestedName: name,
+      kind: input.kind === "desktop" ? "desktop" : "phone",
       expiryTimer,
     };
     this.pairings.set(id, entry);
@@ -226,7 +229,7 @@ export class MobilePairing {
     // keeps issuer validation and device creation in one durable operation.
     let issued: { id: string; token: string };
     try {
-      issued = await this.store.issueDevice(name);
+      issued = await this.store.issueDevice(name, entry.kind);
       if (
         this.closed ||
         this.pairings.get(entry.id) !== entry ||

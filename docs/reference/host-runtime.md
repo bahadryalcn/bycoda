@@ -87,7 +87,9 @@ lightweight provider stays warm. Explicit desktop run-lease acquisition waits
 for exact provider retirement; idle/busy flags and blocked task status do not
 prove release. Codex's transfer hook refuses missing, stale or active ownership
 and preserves the provider resume identity. Providers without that exact hook
-refuse transfer and direct the owner to task repair. Heartbeats cannot perform
+retire through their owner-bound stop, the same cleanup a failed or cancelled
+turn uses, and the Host rebinds the persisted resume identity before granting
+the lease; a failed stop still refuses the transfer. Heartbeats cannot perform
 this transfer. The `sessions.host-writer-retirement.v1` capability makes desktop
 clients retain unsent input on refusal, timeout or uncertain transport rather
 than starting a second provider. A late grant is returned by its original epoch;

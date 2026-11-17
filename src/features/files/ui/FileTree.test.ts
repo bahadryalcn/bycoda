@@ -825,7 +825,7 @@ describe("FileTree copies paths", () => {
     });
     try {
       await press(row("first.ts"), { key: "C", metaKey: true, shiftKey: true });
-      expect(container.textContent).toContain("Could not copy. Try again.");
+      expect(container.textContent).toContain("Could not copy text. Please try again.");
       expect(container.textContent).not.toContain("Copied");
       expect(document.querySelector("textarea")).toBeNull();
       const retry = [...container.querySelectorAll<HTMLButtonElement>("button")].find(

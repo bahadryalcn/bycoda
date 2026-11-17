@@ -187,6 +187,17 @@ it("exposes safe Host account catalog only to owner model discovery, preserving 
     expect((await s.call("environment.describe")).value.result.methods).toContain(
       "drafts.presence.report",
     );
+    const described = (await s.call("environment.describe")).value.result;
+    expect(described.methods).toEqual(
+      expect.arrayContaining([
+        "projects.groups.unlock",
+        "projects.groups.authorizeHidden",
+        "projects.groups.lock",
+        "projects.groups.setHidden",
+      ]),
+    );
+    // Offered only while a desktop window that can verify the password is beating.
+    expect(described.capabilities).not.toContain("projects.groupLock.remote.v1");
     const created = await s.engine.command({
       type: "create",
       workspaceMode: "current",
@@ -1535,6 +1546,19 @@ it("scopes access-center device identity and revocation to authenticated paired 
   const descriptor = (await s.call("environment.describe")).value.result;
   expect(descriptor.capabilities).toContain("host.access.read");
   expect(descriptor.capabilities).toContain("devices.revokeOther");
+  expect(descriptor.capabilities).toContain("devices.paired");
+  const paired = await s.call("devices.paired", {});
+  expect(paired.value.error).toBeUndefined();
+  expect(paired.value.result).toEqual(await s.store.pairedDeviceDetails(s.first.token));
+  expect(paired.value.result.devices[0]).toMatchObject({
+    id: s.first.id,
+    isCurrent: true,
+    pairedAt: expect.any(Number),
+  });
+  expect((await s.call("devices.paired", { extra: true })).value.error).toMatch(/parameters/);
+  for (const params of [null, [], "invalid", 1])
+    expect((await s.call("devices.paired", params)).value.error).toMatch(/parameters/);
+  expect((await s.call("devices.paired", {}, "invalid")).status).toBe(401);
   const read = vi
     .spyOn(accessCenter, "readHostAccess")
     .mockImplementation(async (environmentId, dependencies) => ({
@@ -1559,6 +1583,7 @@ it("scopes access-center device identity and revocation to authenticated paired 
       revoked: true,
     });
     expect((await s.call("host.access.read", {}, s.second.token)).status).toBe(401);
+    expect((await s.call("devices.paired", {}, s.second.token)).status).toBe(401);
     expect((await s.call("host.access.read")).value.result.devices).toHaveLength(1);
     expect(s.send).not.toHaveBeenCalled();
   } finally {
@@ -4177,9 +4202,12 @@ describe("project directory endpoint", () => {
     ).toBe(200);
     const result = (await s.call("projects.directory")).value.result;
     expect(result.groups).toEqual([{ id: "work", name: "Work" }]);
-    expect(
-      result.projects.filter((project: { id: string }) => [one.id, two.id].includes(project.id)),
-    ).toHaveLength(2);
+    // One row per folder; the legacy spelling is folded in and named so phones accept its sessions.
+    const folder = result.projects.filter((project: { id: string }) =>
+      [one.id, two.id].includes(project.id),
+    );
+    expect(folder).toHaveLength(1);
+    expect(folder[0].aliasIds).toEqual([folder[0].id === one.id ? two.id : one.id]);
     expect(JSON.stringify(result)).not.toContain("Private client");
   });
 });

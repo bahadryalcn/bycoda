@@ -24,7 +24,7 @@ import { remoteRequest } from "../../connections/public/connections";
 import { isLocalSyncMachine } from "../../connections/public/localSync";
 import type { HostProject, RemoteMachine } from "../../connections";
 import { Select } from "../../../shared/ui/settings";
-import { CopyButton } from "./CopyButton";
+import { CopyButton } from "../../../shared/ui/CopyButton";
 import styles from "./ExternalMcpAccess.module.css";
 import { OutputBlock } from "../../../shared/ui/OutputBlock";
 
@@ -166,7 +166,7 @@ function CreateToken({
       size="sm"
       footer={
         secret ? (
-          <ModalActions start={<CopyButton value={secret} label={t("Copy token")} />}>
+          <ModalActions start={<CopyButton text={secret} label={t("Copy token")} />}>
             <Button
               onClick={() => {
                 setSecret(null);
@@ -637,14 +637,14 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
             <OutputBlock frame="filled" scroll>
               {examples.claude}
             </OutputBlock>
-            <CopyButton value={examples.claude} label={t("Copy Claude Code example")} />
+            <CopyButton text={examples.claude} label={t("Copy Claude Code example")} />
             <Text as="strong" size="inherit" tone="inherit" weight="medium">
               Codex · config.toml
             </Text>
             <OutputBlock frame="filled" scroll>
               {examples.codex}
             </OutputBlock>
-            <CopyButton value={examples.codex} label={t("Copy Codex example")} />
+            <CopyButton text={examples.codex} label={t("Copy Codex example")} />
           </Text>
         </Popover>
       )}

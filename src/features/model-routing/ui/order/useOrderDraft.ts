@@ -208,6 +208,8 @@ export function useOrderDraft(settings: Settings, initial: Baseline, machineId: 
   }
   return {
     draft,
+    /** The acknowledged document as a draft; changes are listed against it. */
+    base: orderDraft(baseline.routing, baseline.limits),
     change,
     edit,
     pending,

@@ -49,7 +49,7 @@ export function createMobileRuntime(
           : [];
       return [...local, ...(await proofRoutes()).map((route) => route.endpoint)];
     },
-    issueDevice: async (name) => await dependencies.engine.store.issueDevice(name),
+    issueDevice: async (name, kind) => await dependencies.engine.store.issueDevice(name, kind),
     transaction: async (action) => await dependencies.engine.store.transaction(action),
   });
   const mobileAccess = createMobileAccessService((): number => {

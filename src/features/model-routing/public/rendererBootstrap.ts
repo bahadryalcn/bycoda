@@ -21,4 +21,8 @@ if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
   void import("./delegation")
     .then(({ startDelegationProfileSync }) => startDelegationProfileSync())
     .catch(() => undefined);
+  // Live prices and scores for smart setup; one Host call, failures keep the researched table.
+  void import("../model/liveCatalogFacts")
+    .then(({ refreshLocalLiveCatalogFacts }) => refreshLocalLiveCatalogFacts(10_000))
+    .catch(() => undefined);
 }

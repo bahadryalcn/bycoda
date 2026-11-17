@@ -34,12 +34,13 @@ it("keeps copy feedback local, prevents duplicates, and preserves retry after fa
     expect(button.getAttribute("aria-busy")).toBe("true");
     expect(document.activeElement).toBe(button);
     await act(async () => reject(new Error("Clipboard unavailable")));
-    expect(container.querySelector('[role="alert"]')?.textContent).toBe("Clipboard unavailable");
+    expect(button.getAttribute("data-copy-state")).toBe("failed");
+    expect(button.textContent).toBe("Copy failed. Try again.");
     expect(button.getAttribute("aria-busy")).not.toBe("true");
     await act(async () => button.click());
     expect(copy).toHaveBeenCalledTimes(2);
+    expect(button.getAttribute("data-copy-state")).toBe("copied");
     expect(container.textContent).toContain("Copied");
-    expect(container.querySelector('[role="alert"]')).toBeNull();
     await act(async () => container.querySelector<HTMLElement>('[role="switch"]')!.click());
   } finally {
     await act(async () => root.unmount());
@@ -47,7 +48,7 @@ it("keeps copy feedback local, prevents duplicates, and preserves retry after fa
   }
 });
 
-it("shows only the latest operation: Clear replaces a still-visible Copied", async () => {
+it("shows Cleared after Clear, and a new Copy hides it", async () => {
   copy.mockReset().mockResolvedValue(undefined);
   const container = document.createElement("div");
   document.body.append(container);
@@ -61,7 +62,8 @@ it("shows only the latest operation: Clear replaces a still-visible Copied", asy
     expect(container.textContent).toContain("Copied");
     await act(async () => named("Clear").click());
     expect(container.textContent).toContain("Cleared");
-    expect(container.textContent).not.toContain("Copied");
+    await act(async () => named("Copied").click());
+    expect(container.textContent).not.toContain("Cleared");
     await act(async () => container.querySelector<HTMLElement>('[role="switch"]')!.click());
   } finally {
     await act(async () => root.unmount());

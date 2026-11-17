@@ -112,8 +112,8 @@ optional action and remains available in Settings.
 
 ## Manage providers after setup
 
-**Settings > Models > Providers** shows the provider list and detail, then the CLI
-table and **Decision models**. Settings search opens the relevant part.
+**Settings > Models > Providers** shows the provider list and detail, with CLI version and
+update actions in the detail header. Settings search opens the relevant part.
 
 - **Provider detail** shows a provider rail with a **Default** badge and an account
   summary. Choose a provider to manage its accounts. **Edit account** changes the
@@ -141,7 +141,7 @@ table and **Decision models**. Settings search opens the relevant part.
   refresh button checks the catalog. Successful checks stay quiet, including when
   nothing changed; failures show a notice. Built-in lists and unavailable CLIs
   retain their provenance or setup guidance.
-- **Decision models** (below the CLI table) manages connected sources, local discovery, privacy and
+- **Settings > Decision models** manages connected sources, local discovery, privacy and
   task routing. See [Manage decision models](decision-models.md).
 
 ## Guide

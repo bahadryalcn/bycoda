@@ -758,12 +758,6 @@ function ChangedFiles({
   const [listed, pointers] = useSubmodulePointers(files, submodules, (...args) => run(...args));
   const staged = useMemo(() => listed.filter((file) => file.staged), [listed]);
   const unstaged = useMemo(() => listed.filter((file) => file.unstaged), [listed]);
-  const collisionNames = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const file of files)
-      counts.set(basename(file.relative), (counts.get(basename(file.relative)) ?? 0) + 1);
-    return new Set([...counts].filter(([, count]) => count > 1).map(([name]) => name));
-  }, [files]);
   const visibleStaged = useMemo(
     () => staged.filter((file) => file.relative.toLowerCase().includes(deferredFileQuery)),
     [staged, deferredFileQuery],
@@ -1545,7 +1539,6 @@ function ChangedFiles({
               >
                 <ChangeList
                   files={visibleStaged}
-                  collisionNames={collisionNames}
                   onOpenInEditor={onOpenInEditor}
                   view={view}
                   kind="staged"
@@ -1604,7 +1597,6 @@ function ChangedFiles({
               >
                 <ChangeList
                   files={visibleUnstaged}
-                  collisionNames={collisionNames}
                   onOpenInEditor={onOpenInEditor}
                   view={view}
                   kind="unstaged"

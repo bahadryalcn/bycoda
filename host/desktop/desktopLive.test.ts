@@ -449,6 +449,32 @@ describe("desktop window ownership", () => {
 });
 
 describe("privacy-filtered project directory", () => {
+  it("lists one entry per folder when legacy rows spell its path differently", () => {
+    const live = new DesktopLive();
+    live.beat({
+      clientId: "a",
+      sessions: [],
+      projectDirectoryRevision: "1",
+      projectDirectory: {
+        version: 1,
+        groups: [],
+        excludedPaths: [],
+        excludedGroupIds: [],
+        projects: [{ cwd: "G:/Projects/app", name: "App" }],
+      },
+    });
+    const row = (id: string, cwd: string) => ({ id, cwd, name: "App" });
+    const listed = (rows: ReturnType<typeof row>[]) =>
+      live.projectDirectory(rows, "host").projects.map((project) => project.id);
+    const backslash = row("b-id", "G:\\Projects\\app");
+    const slash = row("a-id", "G:/Projects/app");
+    expect(listed([backslash, slash])).toEqual(["a-id"]);
+    expect(listed([slash, backslash])).toEqual(["a-id"]);
+    // The row spelled like the desktop wins over a lower id.
+    expect(listed([row("a-id", "G:\\Projects\\app"), row("b-id", "G:/Projects/app")])).toEqual([
+      "b-id",
+    ]);
+  });
   it("renews only an acknowledged client's exact privacy revision and requires content after reset", () => {
     let now = 0;
     const live = new DesktopLive(() => now);
@@ -611,7 +637,7 @@ describe("privacy-filtered project directory", () => {
     excludedPaths: ["G:/Private"],
     excludedGroupIds: ["private"],
   });
-  it("preserves all host IDs and adds desktop-only folders without registering them", () => {
+  it("lists one host ID per folder and adds desktop-only folders without registering them", () => {
     const live = new DesktopLive(() => 0);
     const registered: HostProject[] = Array.from({ length: 80 }, (_, index) => ({
       id: `p${index}`,
@@ -635,11 +661,12 @@ describe("privacy-filtered project directory", () => {
     );
     expect(result.privacyReady).toBe(true);
     expect(result.projects.find((project) => project.id === "p0")?.name).toBe("Shared");
+    expect(result.projects.some((project) => project.id === "p1")).toBe(false);
     expect(result.projects.find((project) => project.id === "p2")?.name).toBe("P2");
-    expect(result.projects.filter((project) => project.registered)).toHaveLength(80);
+    expect(result.projects.filter((project) => project.registered)).toHaveLength(79);
     expect(
       result.projects
-        .filter((project) => project.id === "p0" || project.id === "p1")
+        .filter((project) => project.id === "p0")
         .every((project) => project.groupId === "work"),
     ).toBe(true);
     expect(result.projects.find((project) => project.cwd === "G:/New")).toMatchObject({

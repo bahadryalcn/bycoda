@@ -32,7 +32,12 @@ import {
   providerSessionDefaultsSnapshot,
 } from "../../../sessions/public/providerSessionDefaults";
 import { persistProviderPreference } from "../../../providers/public/providerPreferenceOutcome";
-import { EMPTY_DRAFT, draftSize, selectedTargetValues } from "../../model/providerDefaultsDraft";
+import {
+  EMPTY_DRAFT,
+  parseAccountDraftKey,
+  selectedTargetValues,
+} from "../../model/providerDefaultsDraft";
+import { defaultsDraftChanges } from "./defaultsChanges";
 import { saveDefaultsTargetsWithDelegation } from "../../model/providerDefaultsSave";
 import { useDelegationProfile } from "../../../model-routing/public/delegation";
 import { prepareDefaultsDraft } from "../../model/providerDefaultsSupport";
@@ -47,8 +52,9 @@ import {
   useSettingsPageReset,
   SettingsFeedback,
   settingDomId,
+  useLeaveGuard,
 } from "../../../../shared/ui/settings";
-import { ModelOrderSettings, ModelRolesSettings } from "../../../model-routing/public/settings";
+import { ModelOrderSettings } from "../../../model-routing/public/settings";
 import {
   useRetainedTransaction,
   retainedTransactionValue,
@@ -78,19 +84,16 @@ export function resetRetainedModelsPage() {
 }
 
 /** The Models page views this component owns; the page's tab strip picks one. */
-export type ModelsView = "work" | "chat" | "delegation";
+export type ModelsView = "work" | "defaults";
 
 export function ModelsPage({
   cwd,
   recents,
   view,
-  onOpenOrder,
 }: {
   cwd?: string;
   recents?: RecentProject[];
   view: ModelsView;
-  /** Scrolls to the model list when an assignment needs models first. */
-  onOpenOrder?: () => void;
 }) {
   const tab = view;
   useLocale();
@@ -129,11 +132,13 @@ export function ModelsPage({
   });
   const delegation = useDelegationProfile(host.data?.machineId, host.data?.supported === true);
   const [targetChoice, setTargetChoice] = useState(retained.target);
+  const leave = useLeaveGuard();
   const [accountScope, setAccountScope] = useState(retained.accountScope);
   const [activeProvider, setProvider] = useState<HarnessId>(
     retained.provider ?? loadLastModelChoice()?.harness ?? HARNESSES[0],
   );
-  const transactionKey = `defaults:${JSON.stringify([host.data?.machineId ?? "", cwd ?? "", activeProvider, accountScope[activeProvider] ?? "", [...selectedTargetValues(targetChoice)].sort()])}`;
+  // One draft spans every provider and account, so switching them never hides an edit.
+  const transactionKey = `defaults:${JSON.stringify([host.data?.machineId ?? "", cwd ?? "", [...selectedTargetValues(targetChoice)].sort()])}`;
   const [draft, setDraftState] = useRetainedTransaction(transactionKey + ":draft", EMPTY_DRAFT);
   const [saving, setSaving] = useRetainedTransaction(transactionKey + ":saving", false);
   const [saveState, setSaveState] = useRetainedTransaction<DefaultsSaveState>(
@@ -151,7 +156,12 @@ export function ModelsPage({
   const targets = useDefaultsTargets(cwd, recents);
   const parsedTarget = targets.parse(targetChoice);
   const target = targets.has(parsedTarget) ? parsedTarget : ({ kind: "global" } as const);
-  const pending = draftSize(draft);
+  const changes = defaultsDraftChanges(draft, setDraft);
+  const editedProviders = new Set(
+    Object.keys(draft.providers).concat(
+      Object.keys(draft.accounts).map((key) => parseAccountDraftKey(key).harness),
+    ),
+  );
   const saveDraft = async () => {
     if (retainedTransactionValue<boolean>(`${transactionKey}:saving`)) return;
     if (host.isPending || host.error) {
@@ -206,9 +216,7 @@ export function ModelsPage({
   const project = target.kind === "project" ? target.path : null;
   // The settings shell offers "Restore defaults" for a project; visibility and accounts stay.
   useSettingsPageReset(
-    project &&
-      (tab === "chat" || tab === "delegation") &&
-      hasProjectOverrides(loadProjectProviderSettings(project))
+    project && tab === "defaults" && hasProjectOverrides(loadProjectProviderSettings(project))
       ? () => {
           const outcome = persistProviderPreference(
             () => resetProjectSessionPreferences(project),
@@ -242,34 +250,27 @@ export function ModelsPage({
           {String(host.error ?? delegation.error)}
         </SettingsFeedback>
       ) : null}
-      {/* Background work reads top-down: who uses what, then the models they draw from. */}
+      {/* Background work reads top-down: models, groups, who uses what, limits; one Save. */}
       <div id={settingDomId("models-roles")} data-setting-id="models-roles" hidden={tab !== "work"}>
-        {host.isPending ? (
-          <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>
-        ) : (
-          <ModelRolesSettings
-            machineId={host.data?.machineId}
-            supported={host.data?.supported === true}
-            onOpenOrder={onOpenOrder}
-          />
-        )}
-      </div>
-      <div id={settingDomId("models-order")} data-setting-id="models-order" hidden={tab !== "work"}>
-        {host.isPending ? null : (
-          <ModelOrderSettings
-            machineId={host.data?.machineId}
-            supported={host.data?.supported === true}
-          />
-        )}
+        <div id={settingDomId("models-order")} data-setting-id="models-order">
+          {host.isPending ? (
+            <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>
+          ) : (
+            <ModelOrderSettings
+              machineId={host.data?.machineId}
+              supported={host.data?.supported === true}
+            />
+          )}
+        </div>
       </div>
       {!host.data && host.isPending && tab !== "work" ? (
         <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>
       ) : null}
       {host.data ? (
         <div
-          id={settingDomId(tab === "delegation" ? "models-delegation" : "models-chat")}
-          data-setting-id={tab === "delegation" ? "models-delegation" : "models-chat"}
-          hidden={tab !== "chat" && tab !== "delegation"}
+          id={settingDomId("models-chat")}
+          data-setting-id="models-chat"
+          hidden={tab !== "defaults"}
         >
           <ProviderDefaultsPanel
             harness={activeProvider}
@@ -282,17 +283,21 @@ export function ModelsPage({
             target={target}
             draft={draft}
             onDraftChange={setDraft}
-            // Subagent rows live only on the Subagents tab.
-            section={tab === "delegation" ? "delegation" : "chat"}
             providerControl={{
-              options: orderedHarnesses.map((id) => ({ value: id, label: HARNESS_TITLE[id] })),
+              // A provider with unsaved edits says so in the picker.
+              options: orderedHarnesses.map((id) => ({
+                value: id,
+                label: editedProviders.has(id)
+                  ? `${HARNESS_TITLE[id]} · ${t("Unsaved")}`
+                  : HARNESS_TITLE[id],
+              })),
               onChange: (id) => {
                 updateRetainedModelsPage({ provider: id });
                 setProvider(id);
               },
             }}
           />
-          {tab === "chat" || tab === "delegation" ? (
+          {tab === "defaults" ? (
             <ProviderDefaultsSaveBar
               selection={targetChoice}
               draft={draft}
@@ -311,20 +316,22 @@ export function ModelsPage({
                   : option,
               )}
               onTargetChange={(value) => {
-                updateRetainedModelsPage({ target: value });
-                setTargetChoice(value);
+                if (value === targetChoice) return;
+                leave.guard(() => {
+                  updateRetainedModelsPage({ target: value });
+                  setTargetChoice(value);
+                });
               }}
-              pending={pending}
+              changes={changes}
               saveState={saveState}
               saving={saving}
-              onSave={() => {
-                void saveDraft();
-              }}
+              onSave={saveDraft}
               onDiscard={() => setDraft(EMPTY_DRAFT)}
             />
           ) : null}
         </div>
       ) : null}
+      {leave.dialog}
     </div>
   );
 }

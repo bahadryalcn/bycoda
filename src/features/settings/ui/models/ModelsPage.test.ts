@@ -42,7 +42,6 @@ vi.mock("../../../../integrations/harness/core/availability", () => ({
 vi.mock("../../../model-routing/public/settings", async (original) => ({
   ...(await original<typeof import("../../../model-routing/public/settings")>()),
   ModelOrderSettings: () => createElement("div", { "data-testid": "model-order" }),
-  ModelRolesSettings: () => createElement("div", { "data-testid": "model-assignments" }),
 }));
 
 let container: HTMLDivElement;
@@ -70,7 +69,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function render(view: ModelsView = "chat") {
+async function render(view: ModelsView = "defaults") {
   await act(async () =>
     root.render(
       createElement(
@@ -94,12 +93,12 @@ describe("model defaults scope inheritance", () => {
     );
     vi.mocked(machineCapabilities).mockResolvedValue([]);
     await render();
-    expect(container.querySelector(".provider-defaults-save-bar")).toBeNull();
+    expect(container.querySelector("[data-settings-save-bar]")).toBeNull();
     await act(async () =>
       finish([{ id: "initial-host", localHost: true, endpoint: "http://127.0.0.1:7777" }]),
     );
     await vi.waitFor(() =>
-      expect(container.querySelector(".provider-defaults-save-bar")).not.toBeNull(),
+      expect(container.querySelector("[data-settings-save-bar]")).not.toBeNull(),
     );
   });
 
@@ -108,16 +107,10 @@ describe("model defaults scope inheritance", () => {
       container.querySelector(`[data-testid="${id}"]`)?.closest("[hidden]") === null;
     await render("work");
     await vi.waitFor(() => expect(visible("model-order")).toBe(true));
-    expect(visible("model-assignments")).toBe(true);
-    expect(container.querySelector(".provider-defaults-save-bar")).toBeNull();
-    await render("delegation");
+    expect(container.querySelector("[data-settings-save-bar]")).toBeNull();
+    await render("defaults");
     expect(visible("model-order")).not.toBe(true);
-    expect(visible("model-assignments")).not.toBe(true);
-    expect(container.querySelector(".provider-defaults-save-bar")).not.toBeNull();
-    await render("chat");
-    expect(visible("model-order")).not.toBe(true);
-    expect(visible("model-assignments")).not.toBe(true);
-    expect(container.querySelector(".provider-defaults-save-bar")).not.toBeNull();
+    expect(container.querySelector("[data-settings-save-bar]")).not.toBeNull();
   });
 
   it("saves default effort and permissions through the provider controls", async () => {
@@ -147,7 +140,7 @@ describe("model defaults scope inheritance", () => {
       await pick("Codex default permissions", "Full access");
       // Nothing is written until Save; the bar counts what is pending.
       expect(providerSessionDefaults("codex").effort).toBeUndefined();
-      expect(container.querySelector(".provider-defaults-save-bar")?.textContent).toContain(
+      expect(container.querySelector("[data-settings-save-bar]")?.textContent).toContain(
         "2 unsaved changes",
       );
       await clickButton("Save");
@@ -157,21 +150,11 @@ describe("model defaults scope inheritance", () => {
         extras: productExtras,
       });
       const savedButton = container.querySelector<HTMLButtonElement>(
-        '.provider-defaults-save-bar button[aria-label="Saved"]',
+        '[data-settings-save-bar] button[aria-label^="Saved"]',
       )!;
-      expect(savedButton.textContent).toBe("Saved");
+      expect(savedButton.textContent).toBe("Saved to Bycoda defaults");
       expect(savedButton.getAttribute("aria-disabled")).toBe("true");
       expect(container.querySelector(".provider-save-bar-status")).toBeNull();
-      const matches = savedButton.matches.bind(savedButton);
-      const focusVisible = vi
-        .spyOn(savedButton, "matches")
-        .mockImplementation((selector) => selector === ":focus-visible" || matches(selector));
-      await act(async () => savedButton.focus());
-      expect(document.querySelector('[role="tooltip"]')?.textContent).toContain(
-        "Saved to Bycoda defaults",
-      );
-      await act(async () => savedButton.blur());
-      focusVisible.mockRestore();
       await selectScope("repo");
       await pick("Codex default permissions", "Supervised");
       await clickButton("Save");
@@ -216,7 +199,7 @@ describe("model defaults scope inheritance", () => {
   async function openDefaults(provider: string) {
     await pick("Provider defaults", provider);
   }
-  async function selectScope(label: string) {
+  async function selectScope(label: string, decision?: "Keep editing" | "Discard and leave") {
     const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Save in"]')!;
     await act(async () => trigger.click());
     await act(async () =>
@@ -230,11 +213,19 @@ describe("model defaults scope inheritance", () => {
     );
     expect(option, document.body.textContent ?? "").toBeTruthy();
     await act(async () => option!.click());
-    expect(option!.getAttribute("aria-selected")).toBe("true");
+    if (decision) {
+      expect(document.body.textContent).toContain("Save changes before leaving?");
+      await act(async () =>
+        [...document.querySelectorAll<HTMLButtonElement>("button")]
+          .find((node) => node.textContent === decision)!
+          .click(),
+      );
+    }
+    if (decision !== "Keep editing") expect(option!.getAttribute("aria-selected")).toBe("true");
     const done = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
       (node) => node.textContent === "Done",
     );
-    await act(async () => done!.click());
+    await act(async () => (done?.disabled ? trigger.click() : done?.click()));
   }
 
   it("lets a project pick the account a provider starts on and inherit its defaults", async () => {
@@ -257,22 +248,42 @@ describe("model defaults scope inheritance", () => {
     expect(loadProjectProviderSettings("/repo").accounts).toEqual({ claude: "account-work" });
   });
 
+  it("asks before changing destination and keeps the draft when editing continues", async () => {
+    await render();
+    await openDefaults("Claude Code");
+    await pick("Claude Code default permissions", "Full access");
+    await selectScope("repo", "Keep editing");
+    expect(container.querySelector('[aria-label="Save in"]')?.textContent).toContain(
+      "Bycoda defaults",
+    );
+    expect(container.querySelector("[data-settings-save-bar]")?.textContent).toContain(
+      "1 unsaved change",
+    );
+    await selectScope("repo", "Discard and leave");
+    expect(container.querySelector('[aria-label="Save in"]')?.textContent).not.toContain(
+      "Bycoda defaults",
+    );
+    expect(container.querySelector("[data-settings-save-bar]")?.textContent).not.toContain(
+      "unsaved change",
+    );
+  });
+
   it("keeps pending defaults across tabs until Save or Discard", async () => {
     await render();
     await openDefaults("Claude Code");
     await pick("Claude Code default permissions", "Full access");
-    await render("delegation");
+    await render("work");
     await render();
-    expect(container.querySelector(".provider-defaults-save-bar")?.textContent).toContain(
+    expect(container.querySelector("[data-settings-save-bar]")?.textContent).toContain(
       "1 unsaved change",
     );
     await clickButton("Discard");
     expect(container.querySelector(".provider-save-bar-status")).toBeNull();
     expect(
-      container.querySelector('.provider-defaults-save-bar button[aria-label="Saved"]'),
+      container.querySelector('[data-settings-save-bar] button[aria-label^="Saved"]'),
     ).toBeNull();
     expect(
-      [...container.querySelectorAll<HTMLButtonElement>(".provider-defaults-save-bar button")].find(
+      [...container.querySelectorAll<HTMLButtonElement>("[data-settings-save-bar] button")].find(
         (button) => button.textContent === "Save",
       )?.disabled,
     ).toBe(true);
@@ -307,16 +318,14 @@ describe("model defaults scope inheritance", () => {
       "Hidden globally",
     );
   });
-  it("keeps subagent rows out of Chats, shows them in Subagents and saves one draft across both", async () => {
+  it("shows chat and subagent rows together in Defaults and saves one draft", async () => {
     await render();
     await openDefaults("Claude Code");
-    expect(container.querySelector(".provider-cli-selector")).toBeNull();
-    expect(container.querySelector('[aria-label^="Claude Code default Advisor"]')).toBeNull();
-    expect(container.querySelector('[role="radiogroup"][aria-label="Subagents"]')).toBeNull();
+    expect(
+      container.querySelector('[aria-label^="Claude Code default permissions"]'),
+    ).not.toBeNull();
+    expect(container.querySelector('[role="radiogroup"][aria-label="Subagents"]')).not.toBeNull();
     await pick("Claude Code default permissions", "Full access");
-    await render("delegation");
-    expect(container.querySelector('[aria-label^="Default provider"]')).toBeNull();
-    expect(container.querySelector('[aria-label^="Claude Code default permissions"]')).toBeNull();
     const subagents = container.querySelector('[role="radiogroup"][aria-label="Subagents"]')!;
     const off = [...subagents.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(
       (button) => button.textContent === "Off",
@@ -330,7 +339,7 @@ describe("model defaults scope inheritance", () => {
     });
   });
 
-  it("keeps account selection and drafts between Chats and Subagents", async () => {
+  it("keeps the account selection while chat and subagent rows share one draft", async () => {
     localStorage.setItem(
       "bycoda.providerAccounts.v1",
       JSON.stringify({ claude: [{ id: "account-work", label: "Work" }] }),
@@ -339,7 +348,6 @@ describe("model defaults scope inheritance", () => {
     await openDefaults("Claude Code");
     await pick("Account", "Work");
     await pick("Claude Code default permissions", "Full access");
-    await render("delegation");
     expect(container.querySelector('[aria-label^="Account"]')?.textContent).toContain("Work");
     const subagents = container.querySelector('[role="radiogroup"][aria-label="Subagents"]')!;
     const off = [...subagents.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(
@@ -382,7 +390,6 @@ describe("model defaults scope inheritance", () => {
     });
     await render();
     await openDefaults("Claude Code");
-    await render("delegation");
     expect(container.textContent).not.toContain("Global settings apply to chats");
     expect(container.querySelector('button[aria-label="Help"]')).not.toBeNull();
     const subagents = container.querySelector('[role="radiogroup"][aria-label="Subagents"]')!;
@@ -393,7 +400,7 @@ describe("model defaults scope inheritance", () => {
     await clickButton("Save");
     expect(container.textContent).toContain("Version conflict");
     expect(hostState.delegation.providers.claude).toBeUndefined();
-    expect(container.querySelector(".provider-defaults-save-bar")?.textContent).toContain("Retry");
+    expect(container.querySelector("[data-settings-save-bar]")?.textContent).toContain("Retry");
     rejectSave = false;
     await clickButton("Retry");
     expect(hostState.delegation.providers.claude).toEqual({ crossSubagents: "[]" });
@@ -423,7 +430,6 @@ describe("model defaults scope inheritance", () => {
     );
     await render();
     await openDefaults("Claude Code");
-    await render("delegation");
     const group = container.querySelector('[role="radiogroup"][aria-label="Subagents"]')!;
     await act(async () =>
       [...group.querySelectorAll<HTMLButtonElement>('[role="radio"]')]
@@ -439,7 +445,7 @@ describe("model defaults scope inheritance", () => {
     await act(async () =>
       root.render(createElement(QueryClientProvider, { client: queryClient }, null)),
     );
-    await render("delegation");
+    await render();
     expect(
       vi.mocked(remoteRequest).mock.calls.filter((call) => call[1] === "modelRouting.save"),
     ).toHaveLength(1);
@@ -450,9 +456,7 @@ describe("model defaults scope inheritance", () => {
     };
     await act(async () => finish({ state: hostState }));
     await vi.waitFor(() =>
-      expect(container.querySelector(".provider-defaults-save-bar")?.textContent).toContain(
-        "Saved",
-      ),
+      expect(container.querySelector("[data-settings-save-bar]")?.textContent).toContain("Saved"),
     );
   });
 
@@ -484,7 +488,6 @@ describe("model defaults scope inheritance", () => {
     await render();
     await openDefaults("Claude Code");
     if (account) await pick("Account", "Work");
-    await render("delegation");
     const group = container.querySelector('[role="radiogroup"][aria-label="Subagents"]')!;
     await act(async () =>
       [...group.querySelectorAll<HTMLButtonElement>('[role="radio"]')]
@@ -510,14 +513,12 @@ describe("model defaults scope inheritance", () => {
     await act(async () =>
       root.render(createElement(QueryClientProvider, { client: queryClient }, null)),
     );
-    await render("delegation");
+    await render();
     await act(async () => pending.reject(new Error("deferred failure")));
     await vi.waitFor(() =>
-      expect(container.querySelector(".provider-defaults-save-bar")?.textContent).toContain(
-        "Retry",
-      ),
+      expect(container.querySelector("[data-settings-save-bar]")?.textContent).toContain("Retry"),
     );
-    expect(container.querySelector(".provider-defaults-save-bar")?.textContent).toContain("Retry");
+    expect(container.querySelector("[data-settings-save-bar]")?.textContent).toContain("Retry");
     vi.mocked(remoteRequest).mockImplementation(async (_id, method) => ({
       state: {
         ...structuredClone(EMPTY_MODEL_ROUTING),
@@ -529,9 +530,9 @@ describe("model defaults scope inheritance", () => {
     expect(
       vi.mocked(remoteRequest).mock.calls.filter((call) => call[1] === "modelRouting.save"),
     ).toHaveLength(2);
-    expect(container.querySelector(".provider-defaults-save-bar")?.textContent).toContain("Saved");
+    expect(container.querySelector("[data-settings-save-bar]")?.textContent).toContain("Saved");
   });
-  it("does not apply a pending target outcome to a different target draft", async () => {
+  it("keeps the destination fixed until its pending save finishes", async () => {
     const pending = await pendingDefaults("target-host");
     const request = vi
       .mocked(remoteRequest)
@@ -541,37 +542,19 @@ describe("model defaults scope inheritance", () => {
       expectedVersion: 5,
       draft: { delegation: { providers: { claude: { crossSubagents: "[]" } } } },
     });
-    await selectScope("repo (Chats only)");
-    const group = container.querySelector('[role="radiogroup"][aria-label="Subagents"]')!;
-    await act(async () =>
-      [...group.querySelectorAll<HTMLButtonElement>('[role="radio"]')]
-        .find((node) => node.textContent === "Off")!
-        .click(),
-    );
-    expect(container.querySelector(".provider-defaults-save-bar")?.textContent).toContain(
-      "1 unsaved change",
+    await selectScope("repo (Chats only)", "Keep editing");
+    expect(document.body.textContent).not.toContain("Discard and leave");
+    expect(container.querySelector('[aria-label="Save in"]')?.textContent).toContain(
+      "Bycoda defaults",
     );
     await act(async () => pending.resolve());
-    expect(container.querySelector(".provider-defaults-save-bar")?.textContent).toContain(
-      "1 unsaved change",
+    expect(container.querySelector("[data-settings-save-bar]")?.textContent).toContain("Saved");
+    await selectScope("repo (Chats only)");
+    expect(container.querySelector('[aria-label="Save in"]')?.textContent).not.toContain(
+      "Bycoda defaults",
     );
-    expect(container.querySelector(".provider-defaults-save-bar")?.textContent).not.toContain(
-      "Saved",
-    );
-    const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Save in"]')!;
-    await act(async () => trigger.click());
-    const global = [...document.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(
-      (node) => node.textContent === "Bycoda defaults",
-    )!;
-    await act(async () => global.click());
-    await act(async () =>
-      [...document.querySelectorAll<HTMLButtonElement>("button")]
-        .find((node) => node.textContent === "Done")!
-        .click(),
-    );
-    expect(container.querySelector(".provider-defaults-save-bar")?.textContent).toContain("Saved");
   });
-  it("keeps provider and account drafts separate in one project", async () => {
+  it("keeps one draft across providers and accounts in one project", async () => {
     localStorage.setItem(
       "bycoda.providerAccounts.v1",
       JSON.stringify({ claude: [{ id: "account-work", label: "Work" }] }),
@@ -580,12 +563,13 @@ describe("model defaults scope inheritance", () => {
     await openDefaults("Claude Code");
     await pick("Claude Code default permissions", "Full access");
     await pick("Account", "Work");
-    expect(container.querySelector(".provider-defaults-save-bar")?.textContent).not.toContain(
-      "1 unsaved change",
+    expect(container.querySelector("[data-settings-save-bar]")?.textContent).toContain(
+      "unsaved change",
     );
+    // One draft spans every provider, so switching never hides the edit.
     await pick("Provider defaults", "Codex");
-    expect(container.querySelector(".provider-defaults-save-bar")?.textContent).not.toContain(
-      "1 unsaved change",
+    expect(container.querySelector("[data-settings-save-bar]")?.textContent).toContain(
+      "unsaved change",
     );
   });
 
@@ -600,14 +584,14 @@ describe("model defaults scope inheritance", () => {
           finish = resolve;
         }),
     );
-    await render("delegation");
+    await render();
     await vi.waitFor(() => expect(finish).toBeDefined());
     await vi.waitFor(() => expect(container.textContent).toContain("Loading"));
     expect(container.textContent).not.toContain("unavailable on this Host");
     await act(async () => finish(["models.routing.v1"]));
   });
 
-  it("keeps originating account payload when the provider changes during save", async () => {
+  it("keeps originating account payload and the saved state when the provider changes during save", async () => {
     const pending = await pendingDefaults("account-host", true);
     const request = vi
       .mocked(remoteRequest)
@@ -619,10 +603,8 @@ describe("model defaults scope inheritance", () => {
     });
     await pick("Provider defaults", "Codex");
     await act(async () => pending.resolve());
-    expect(container.querySelector(".provider-defaults-save-bar")?.textContent).not.toContain(
-      "Saved",
-    );
+    expect(container.querySelector("[data-settings-save-bar]")?.textContent).toContain("Saved");
     await pick("Provider defaults", "Claude Code");
-    expect(container.querySelector(".provider-defaults-save-bar")?.textContent).toContain("Saved");
+    expect(container.querySelector("[data-settings-save-bar]")?.textContent).toContain("Saved");
   });
 });

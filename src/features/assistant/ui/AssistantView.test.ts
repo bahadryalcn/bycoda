@@ -1307,10 +1307,10 @@ it("retains the chosen retention draft after failure and retries with the acknow
   await render({ initialTab: "settings" });
   await click("Keep conversation messages: Forever");
   await click("30 days");
-  await click("Save profile settings");
+  await click("Save");
   expect(document.body.textContent).toContain("Retention save unavailable");
   expect(document.body.textContent).toContain("30 days");
-  await click("Save profile settings");
+  await click("Save");
   expect(
     mock.request.mock.calls
       .filter(([input]) => input.op === "profile.update")
@@ -1557,7 +1557,7 @@ it("preserves explicit assistant role providers and nullable inheritance in sett
   await render({ initialTab: "settings" });
   // Save is disabled until the draft changes; this edit leaves the role patch unchanged.
   await click("Allow profanity");
-  await click("Save profile settings");
+  await click("Save");
   expect(mock.request).toHaveBeenCalledWith(
     expect.objectContaining({
       op: "profile.update",
@@ -1588,7 +1588,7 @@ it("submits every existing policy field from Settings without forwarding profile
   expect(mock.request.mock.calls.some(([input]) => input.op === "profile.update")).toBe(false);
   // Save is disabled until the draft changes; this toggle leaves the policy fields under test intact.
   await click("Allow profanity");
-  await click("Save profile settings");
+  await click("Save");
   const [input, environment] = mock.request.mock.calls.find(
     ([input]) => input.op === "profile.update",
   )!;
@@ -1635,7 +1635,7 @@ it("saves edited overnight hours to the bound Host and shows that exact range af
     await act(async () => option.click());
   }
   expect(mock.request.mock.calls.some(([input]) => input.op === "profile.update")).toBe(false);
-  await click("Save profile settings");
+  await click("Save");
   expect(mock.snapshot!.profile).toMatchObject({ activeStart: 22, activeEnd: 6, version: 4 });
   expect(document.querySelector('button[aria-label="Work hours start: 22:00"]')).toBeTruthy();
   expect(document.querySelector('button[aria-label="Work hours end: 06:00"]')).toBeTruthy();
@@ -1766,7 +1766,7 @@ it("keeps the settings source across profile-to-retention awaits while emergency
   await render({ initialTab: "settings" });
   await click("Keep conversation messages: Forever");
   await click("30 days");
-  await click("Save profile settings");
+  await click("Save");
   mock.environmentId = "replacement";
   await render({ initialTab: "settings" });
   await click("Stop everything");

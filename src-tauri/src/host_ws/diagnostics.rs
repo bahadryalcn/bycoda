@@ -38,6 +38,38 @@ fn route_fields(route: &NativeRoute, generation: u64) -> String {
     )
 }
 
+/// Why a ready connection stopped serving, how long it was up and which requests it
+/// abandoned (method names and how long each had been waiting, never params).
+pub(super) fn serve_ended(
+    route: &NativeRoute,
+    generation: u64,
+    cause: &str,
+    category: &str,
+    ready_for: Duration,
+    pending: &[(String, Duration)],
+) -> String {
+    let mut line = format!(
+        "host connection ended {} cause={} category={category} ready_ms={} pending={}",
+        route_fields(route, generation),
+        // Socket errors name the limit they hit; keep more than an identifier's 80 characters.
+        cause
+            .chars()
+            .take(240)
+            .map(|character| if character.is_control() || character == ' ' {
+                '_'
+            } else {
+                character
+            })
+            .collect::<String>(),
+        ready_for.as_millis(),
+        pending.len()
+    );
+    for (method, waited) in pending.iter().take(8) {
+        let _ = write!(line, " {}@{}ms", identifier(method), waited.as_millis());
+    }
+    line
+}
+
 impl Logged {
     /// The line for a state report, or `None` when it repeats the recorded
     /// state. A pipe that keeps failing reports `connecting` and the same
@@ -113,6 +145,32 @@ mod tests {
             "principal-secret",
         )
         .unwrap()
+    }
+
+    #[test]
+    fn an_ended_connection_names_its_cause_and_abandoned_methods_only() {
+        let pending: Vec<_> = (0..10)
+            .map(|index| {
+                (
+                    format!("sync.pull {index}"),
+                    Duration::from_millis(index * 10),
+                )
+            })
+            .collect();
+        let line = serve_ended(
+            &route(),
+            7,
+            "close code=1009 reason=too big",
+            "unavailable",
+            Duration::from_millis(42),
+            &pending,
+        );
+        assert!(line.starts_with(
+            "host connection ended machine=machine.1 environment=host.1 generation=7 cause=close_code=1009_reason=too_big category=unavailable ready_ms=42 pending=10 sync.pull_0@0ms"
+        ));
+        assert!(line.contains("sync.pull_7@70ms"));
+        assert!(!line.contains("sync.pull_8"));
+        assert!(!line.contains("bearer-secret"));
     }
 
     #[test]

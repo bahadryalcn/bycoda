@@ -3,7 +3,7 @@ import { isHarnessAvailable } from "../../../integrations/harness/core/availabil
 import { HARNESS_TITLE, type HarnessId } from "../../../shared/model/harnessIdentity";
 import { Group, Row, Toggle } from "../../../shared/ui/settings";
 
-/** Account-side options; CLI setup belongs to ProviderCliTab. */
+/** Account-side options; CLI setup belongs to ProviderStatusGroup. */
 export function ProviderRuntimeGroup({
   harness,
   claudeHooks,

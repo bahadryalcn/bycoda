@@ -67,6 +67,8 @@ export interface DropdownMenuProps {
   width?: number | "content";
   gap?: number;
   maxHeight?: number;
+  /** "compact" keeps rows at the dense list height, for long scannable lists such as prompt jumps. */
+  density?: "compact";
   /**
    * Whether picking a row closes the menu. Defaults to true, except checkbox rows that stay open
    * for the next toggle. A row's own `closeOnSelect` wins.

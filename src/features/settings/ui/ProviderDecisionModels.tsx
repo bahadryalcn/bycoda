@@ -7,7 +7,7 @@ import { decisionModelsClient, DecisionModelsSettings } from "../../decision-mod
 import { SettingsFeedback, settingDomId } from "../../../shared/ui/settings";
 
 /**
- * Providers > Decision models. Runs on this computer's Host, or the first Host listed. The page
+ * Settings > Decision models. Runs on this computer's Host, or the first Host listed. The page
  * renders its own framed groups, so this wrapper is only the titled section and search anchor.
  */
 export function ProviderDecisionModels() {

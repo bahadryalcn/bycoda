@@ -40,7 +40,8 @@ export async function handleProjectsRpc(
     case "projects.directory":
       request.result = await dependencies.projectsService.directory(
         request.params,
-        request.domainContext,
+        // The grants a device earned are keyed by its token hash, as on the WebSocket.
+        { ...request.domainContext, principalId: request.tokenHash },
         { legacy: true },
       );
       break;

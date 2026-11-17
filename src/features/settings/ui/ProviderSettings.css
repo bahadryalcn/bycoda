@@ -303,11 +303,14 @@
 }
 
 /* Compact inventory: action column never wraps. Hide freshness before versions. */
-.provider-inventory {
+.provider-cli-status {
+  display: grid;
+  gap: 6px;
   min-inline-size: 0;
 }
-.provider-inventory-name {
+.provider-cli-status-line {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   min-inline-size: 0;
@@ -317,12 +320,6 @@
   align-items: center;
   justify-content: flex-end;
   gap: 4px;
-}
-.provider-inventory-inline-version {
-  display: none;
-}
-.provider-inventory-heading {
-  margin: 12px 8px 4px;
 }
 /* Badges wrap under a narrow row instead of squeezing the provider name to nothing. */
 .provider-cli-option-name {

@@ -8,6 +8,7 @@ import type { useSessionReminders } from "../../../features/notifications/hooks/
 import type { SettingsAnchor } from "../../../features/settings/ui/SettingsView";
 import type { SettingsSectionId } from "../../../features/settings/model/settings";
 import { ToastRegion } from "../../../shared/ui/ToastRegion";
+import { logToastAnnouncement } from "../../../features/notifications/model/notificationLog";
 import { WindowTransferNotice } from "../windows/WindowTransferNotice";
 
 export interface WorkspaceNoticesProps {
@@ -35,7 +36,7 @@ export function WorkspaceNotices({ sessionReminders, openSettings }: WorkspaceNo
       <PhoneAccountConnect />
       <ContributePrompt />
       <WindowTransferNotice />
-      <ToastRegion insets={{ "top-center": 48, "top-end": 48 }} />
+      <ToastRegion onRecord={logToastAnnouncement} insets={{ "top-center": 48, "top-end": 48 }} />
     </>
   );
 }

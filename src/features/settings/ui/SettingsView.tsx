@@ -49,6 +49,7 @@ import {
   Row,
   Toggle,
   Select,
+  useLeaveGuard,
 } from "../../../shared/ui/settings";
 import { SettingsSearch } from "./SettingsSearch";
 import { settingsRevealControl } from "./settingsReveal";
@@ -67,6 +68,7 @@ import { AppearancePage } from "./AppearanceSettings";
 import { KeybindingsPage } from "./ShortcutSettings";
 import { TerminalPage } from "./TerminalSettings";
 import { ProvidersSection } from "./ProvidersSection";
+import { ProviderDecisionModels } from "./ProviderDecisionModels";
 import { ArchivePage } from "./ArchiveSettings";
 import { ToolSettingsPage } from "./ToolSettings";
 import { toolSettingsAnchorForSection } from "../model/toolSettingsSections";
@@ -210,6 +212,7 @@ export function SettingsView({
   const pageReset =
     section === "appearance" ? { run: appearance.restoreDefaults } : registeredReset;
   const { confirm: confirmPageReset, dialog: pageResetDialog } = useConfirm();
+  const leave = useLeaveGuard();
 
   useEffect(() => {
     if (!notificationHighlightActive) return;
@@ -287,8 +290,12 @@ export function SettingsView({
   );
 
   const selectCategory = (next: SettingsSectionId) => {
-    setReveal({ id: null, section });
-    onSelectSection?.(next);
+    if (next === section) return;
+    // Another page unmounts this one's editors, so unsaved changes are settled first.
+    leave.guard(() => {
+      setReveal({ id: null, section });
+      onSelectSection?.(next);
+    });
   };
 
   useEffect(() => {
@@ -591,6 +598,7 @@ export function SettingsView({
                         {section === "providers" || section === "usage" ? (
                           <ProvidersSection activePage={section} cwd={cwd} recents={recents} />
                         ) : null}
+                        {section === "decisionModels" ? <ProviderDecisionModels /> : null}
                         {section === "worktrees" ? (
                           <div className="settings-topics">
                             <SourceControlSettings />
@@ -636,6 +644,7 @@ export function SettingsView({
         </Tabs>
       </div>
       {pageResetDialog}
+      {leave.dialog}
     </Text>
   );
 }

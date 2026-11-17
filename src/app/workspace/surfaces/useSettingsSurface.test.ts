@@ -67,7 +67,7 @@ it("returns to Servers after opening and changing settings sections", () => {
   }
 });
 
-it("opens Settings at Providers when Decision models asks for it", () => {
+it("opens Settings at Decision models when Decision models asks for it", () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const deps: SettingsSurfaceActionsDeps = {
     setSettingsOpen: vi.fn(),
@@ -99,7 +99,7 @@ it("opens Settings at Providers when Decision models asks for it", () => {
     act(() => {
       window.dispatchEvent(new Event(OPEN_DECISION_MODELS_SETTINGS_EVENT));
     });
-    expect(deps.setSettingsSection).toHaveBeenLastCalledWith("providers");
+    expect(deps.setSettingsSection).toHaveBeenLastCalledWith("decisionModels");
     for (const tab of ["order", "roles", "chat", "delegation"] as const) {
       act(() => openModelsSettings(tab));
       expect(deps.setSettingsSection).toHaveBeenLastCalledWith("providers");

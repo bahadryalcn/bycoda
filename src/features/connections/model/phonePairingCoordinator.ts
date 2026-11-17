@@ -113,7 +113,11 @@ export class PhonePairingCoordinator {
     const state = this.state;
     if (
       state.stage !== "access" ||
-      !["setup-required", "permission-required"].includes(state.access.state)
+      // A failed local-network bind can be retried on another address.
+      !(
+        ["setup-required", "permission-required"].includes(state.access.state) ||
+        (this.mode === "lan" && state.access.state === "unavailable")
+      )
     )
       return;
     const generation = this.generation;

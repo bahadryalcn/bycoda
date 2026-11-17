@@ -1,4 +1,5 @@
 import type { DictationDictionaryEntry } from "./voiceSettings";
+import { removeSpeechFillers } from "./voiceTranscript";
 
 export type DictationProcessingOptions = {
   dictionary?: readonly DictationDictionaryEntry[];
@@ -40,33 +41,10 @@ export function processDictationText(text: string, options: DictationProcessingO
       (match) => aliases.get(match.toLocaleLowerCase()) ?? match,
     );
   }
-  if (options.removeFillers) {
-    const fillers = [
-      "uh",
-      "uhm",
-      "umm",
-      "uhh",
-      "uhhh",
-      "ehh",
-      "ehm",
-      "ahm",
-      "hmm",
-      "hm",
-      "mmm",
-      "хм",
-      "ммм",
-    ];
-    const language = options.language?.split(/[-_]/)[0]?.toLowerCase();
-    if (language === "en") fillers.push("um", "ah", "eh");
-    if (language === "de") fillers.push("äh", "ähm");
-    if (language === "fr") fillers.push("euh");
-    if (language === "tr") fillers.push("ııı", "eee");
-    const cue = options.correctionCue?.trim().toLocaleLowerCase();
-    result = result.replace(
-      new RegExp(`${boundary(fillers.map(escapePattern).join("|"))}[,.]?`, "giu"),
-      (match) => (match.replace(/[,.]$/, "").toLocaleLowerCase() === cue ? match : ""),
-    );
-    result = result.replace(/\s{2,}/g, " ").trim();
-  }
+  if (options.removeFillers)
+    result = removeSpeechFillers(result, {
+      language: options.language,
+      keep: options.correctionCue,
+    });
   return result;
 }

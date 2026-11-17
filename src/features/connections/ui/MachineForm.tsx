@@ -217,6 +217,7 @@ export function MachineForm({
   saveLabel,
   onSubmit,
   onCancel,
+  framed = true,
 }: {
   editing?: RemoteMachine;
   method: MachineMethod;
@@ -233,6 +234,8 @@ export function MachineForm({
   saveLabel: string;
   onSubmit: () => void;
   onCancel: () => void;
+  /** Inside a dialog the form drops its card and heading; the dialog supplies both. */
+  framed?: boolean;
 }) {
   const ssh = Boolean(editing) || method === "ssh";
   const title = editing ? t("Edit {p0}", { p0: editing.name }) : t("Add a new machine");
@@ -245,18 +248,25 @@ export function MachineForm({
         onSubmit();
       }}
     >
-      <Surface variant="card" padding="lg" className="flex flex-col gap-4">
-        <div className="flex items-center justify-between gap-2">
-          <Heading size="item">{title}</Heading>
-          {ssh ? (
-            <div className="flex items-center gap-1">
-              <Badge size="sm">{"SSH"}</Badge>
-              <SshHelp editing={Boolean(editing)} />
-            </div>
-          ) : null}
-        </div>
+      <Surface
+        variant={framed ? "card" : undefined}
+        padding={framed ? "lg" : "none"}
+        className="flex flex-col gap-4"
+      >
+        {framed ? (
+          <div className="flex items-center justify-between gap-2">
+            <Heading size="item">{title}</Heading>
+            {ssh ? (
+              <div className="flex items-center gap-1">
+                <Badge size="sm">{"SSH"}</Badge>
+                <SshHelp editing={Boolean(editing)} />
+              </div>
+            ) : null}
+          </div>
+        ) : null}
         {!editing ? (
-          <div className="flex">
+          <div className="flex items-center gap-1">
+            {/* In a dialog the method choice already says SSH; its help sits beside it. */}
             <RadioGroup
               variant="inline"
               label={t("Connection method")}
@@ -268,6 +278,7 @@ export function MachineForm({
                 { value: "url", label: t("Host URL") },
               ]}
             />
+            {!framed && ssh ? <SshHelp editing={false} /> : null}
           </div>
         ) : null}
         <Text as="p" tone="muted">

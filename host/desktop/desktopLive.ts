@@ -12,6 +12,7 @@ import {
 } from "../../src/features/connections/model/projectAppearance";
 import type { Block, Session } from "../../src/features/sessions/model/session";
 import type {
+  DesktopConcealedGroups,
   DesktopProjectDirectory,
   HostCommand,
   HostProject,
@@ -21,6 +22,11 @@ import { canonicalHostPath, hostProjectId } from "../../src/features/sync/model/
 import { RUN_LEASE_TTL_MS } from "../../src/features/sync/model/runLease";
 import { createDedupedWarn } from "../diagnostics/log-dedupe";
 import { createLogger } from "../diagnostics/logger";
+import {
+  DesktopGroupLock,
+  NO_GROUP_ACCESS,
+  type GroupAccess,
+} from "../group-lock/desktop-group-lock";
 
 const log = createLogger("host.desktop.live");
 
@@ -140,12 +146,67 @@ export function parseDesktopProjectDirectory(input: unknown): DesktopProjectDire
       ...(project.pinned === true ? { pinned: true } : {}),
     });
   }
+  const concealed = parseConcealedGroups(value.concealed);
   return {
     version: 1,
     groups,
     projects,
     excludedPaths: value.excludedPaths,
     excludedGroupIds: value.excludedGroupIds,
+    ...(concealed ? { concealed } : {}),
+  };
+}
+
+/** Malformed concealed data is dropped whole: nothing is revealed from a doubtful snapshot. */
+function parseConcealedGroups(input: unknown): DesktopConcealedGroups | undefined {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return;
+  const raw = input as { locked?: unknown; hidden?: unknown };
+  if (!Array.isArray(raw.locked) || !Array.isArray(raw.hidden)) return;
+  if (raw.locked.length > 10000 || raw.hidden.length > 10000) return;
+  const parents = new Map<string, string>();
+  const groups: unknown[] = [];
+  const projects: unknown[] = [];
+  for (const entry of raw.locked) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return;
+    const { parentId, projects: rows, ...group } = entry as Record<string, unknown>;
+    if (!Array.isArray(rows) || typeof group.id !== "string") return;
+    if (typeof parentId === "string" && parentId.length <= 200) parents.set(group.id, parentId);
+    groups.push(group);
+    for (const row of rows)
+      projects.push(row && typeof row === "object" ? { ...row, groupId: group.id } : row);
+  }
+  // The same validation as the visible directory: ids, paths, appearance and budgets.
+  const parsed = parseDesktopProjectDirectory({
+    version: 1,
+    projects,
+    groups,
+    excludedPaths: [],
+    excludedGroupIds: [],
+  });
+  if (!parsed) return;
+  const hidden: DesktopConcealedGroups["hidden"] = [];
+  for (const entry of raw.hidden) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return;
+    const group = entry as Record<string, unknown>;
+    if (
+      typeof group.id !== "string" ||
+      !group.id.trim() ||
+      group.id.length > 200 ||
+      typeof group.name !== "string" ||
+      !group.name.trim() ||
+      group.name.length > 1000
+    )
+      return;
+    const color = projectIdentityColor(group.color);
+    hidden.push({ id: group.id, name: group.name, ...(color ? { color } : {}) });
+  }
+  return {
+    locked: parsed.groups.map((group) => ({
+      ...group,
+      ...(parents.has(group.id) ? { parentId: parents.get(group.id)! } : {}),
+      projects: parsed.projects.filter((project) => project.groupId === group.id),
+    })),
+    hidden,
   };
 }
 
@@ -199,7 +260,13 @@ export class DesktopLive {
         { sessionId },
       ),
   });
-  constructor(private readonly now: () => number = Date.now) {}
+  /** Remote unlock requests for the desktop renderer, and the grants phones earned. */
+  readonly groupLock: DesktopGroupLock;
+  constructor(private readonly now: () => number = Date.now) {
+    this.groupLock = new DesktopGroupLock(now);
+    // A grant given or ended changes what a phone sees of the directory.
+    this.groupLock.onChange = () => this.onDirectoryChange?.();
+  }
 
   /** Only running state, including heartbeat/stored-mark expiry, influences
    * list metadata. Prompt text changes must not reread SQLite list rows. */
@@ -232,7 +299,11 @@ export class DesktopLive {
     return this.lastChange;
   }
 
-  beat(input: unknown): { commands: DesktopCommand[]; projectDirectoryRevision?: string } {
+  beat(input: unknown): {
+    commands: DesktopCommand[];
+    projectDirectoryRevision?: string;
+    groupLock: ReturnType<DesktopGroupLock["beat"]>;
+  } {
     const value =
       input && typeof input === "object" && !Array.isArray(input)
         ? (input as Record<string, unknown>)
@@ -426,6 +497,7 @@ export class DesktopLive {
     if (changedIds.size) this.onChange?.([...changedIds]);
     if (directoryChanged) this.onDirectoryChange?.();
     return {
+      groupLock: this.groupLock.beat(clientId, value.groupLock),
       ...(revision && this.directories.get(clientId)?.revision === revision
         ? { projectDirectoryRevision: revision }
         : {}),
@@ -448,6 +520,8 @@ export class DesktopLive {
   projectDirectory(
     registered: readonly HostProject[],
     environmentId: string,
+    /** What the calling phone earned; without it only open groups show, as for any caller. */
+    access: GroupAccess = NO_GROUP_ACCESS,
   ): HostProjectDirectory {
     const snapshots = [...this.directories.values()]
       .filter((snapshot) => this.now() - snapshot.at <= DESKTOP_BEAT_STALE_MS)
@@ -475,6 +549,12 @@ export class DesktopLive {
         if (!paths.has(key)) paths.set(key, project);
       }
     }
+    const concealed = this.concealedView(valid, excludedGroups, access);
+    for (const group of concealed.opened) groups.set(group.id, group);
+    for (const project of concealed.projects) {
+      const key = directoryPathKey(project.cwd);
+      if (!paths.has(key)) paths.set(key, project);
+    }
     const projects: HostProjectDirectory["projects"] = [];
     const registeredByPath = new Map<string, HostProject[]>();
     for (const project of registered) {
@@ -486,8 +566,24 @@ export class DesktopLive {
     for (const [key, projection] of paths) {
       const matches = registeredByPath.get(key) ?? [];
       if (matches.length) {
-        for (const project of matches)
-          projects.push({ ...project, ...projection, cwd: project.cwd, registered: true });
+        // One entry per folder: legacy rows spelling the same path differently stay in
+        // the store (their sessions reference them) but are not listed twice. Prefer the
+        // row spelled exactly like the desktop, then the lowest id; the session list
+        // merges the other rows' sessions into the listed one.
+        const project = [...matches].sort(
+          (a, b) =>
+            Number(b.cwd === projection.cwd) - Number(a.cwd === projection.cwd) ||
+            a.id.localeCompare(b.id),
+        )[0];
+        // Sessions of the folded rows still carry their own id; phones accept them through this list.
+        const aliasIds = matches.filter((row) => row.id !== project.id).map((row) => row.id);
+        projects.push({
+          ...project,
+          ...projection,
+          cwd: project.cwd,
+          registered: true,
+          ...(aliasIds.length ? { aliasIds } : {}),
+        });
       } else
         projects.push({
           ...projection,
@@ -495,7 +591,57 @@ export class DesktopLive {
           registered: false,
         });
     }
-    return { version: 1, privacyReady: true, groups: [...groups.values()], projects };
+    return {
+      version: 1,
+      privacyReady: true,
+      groups: [...groups.values()],
+      projects,
+      ...(concealed.locked.length ? { lockedGroups: concealed.locked } : {}),
+      ...(access.hiddenList ? { hiddenGroups: concealed.hidden } : {}),
+    };
+  }
+
+  /**
+   * Locked groups by name, opened where this device holds a grant (a nested group is
+   * reachable only through an open parent), and hidden group names for a device that
+   * passed the hidden-list password. Hidden groups never reveal their projects.
+   */
+  private concealedView(
+    snapshots: readonly DesktopProjectDirectory[],
+    excludedGroups: ReadonlySet<string>,
+    access: GroupAccess,
+  ) {
+    const locked = new Map<string, DesktopConcealedGroups["locked"][number]>();
+    const hidden = new Map<string, DesktopConcealedGroups["hidden"][number]>();
+    for (const snapshot of snapshots) {
+      for (const group of snapshot.concealed?.locked ?? [])
+        if (excludedGroups.has(group.id) && !locked.has(group.id)) locked.set(group.id, group);
+      for (const group of snapshot.concealed?.hidden ?? [])
+        if (excludedGroups.has(group.id) && !hidden.has(group.id)) hidden.set(group.id, group);
+    }
+    const reachable = (group: DesktopConcealedGroups["locked"][number], depth = 0): boolean => {
+      const parent = group.parentId ? locked.get(group.parentId) : undefined;
+      if (!parent) return true;
+      return depth < 32 && access.groupIds.has(parent.id) && reachable(parent, depth + 1);
+    };
+    const stubs: NonNullable<HostProjectDirectory["lockedGroups"]> = [];
+    const opened: DesktopProjectDirectory["groups"] = [];
+    const projects: DesktopProjectDirectory["projects"] = [];
+    for (const entry of locked.values()) {
+      if (!reachable(entry)) continue;
+      const { parentId: _parentId, projects: rows, ...group } = entry;
+      if (access.groupIds.has(entry.id)) {
+        opened.push(group);
+        projects.push(...rows);
+      } else
+        stubs.push({
+          id: group.id,
+          name: group.name,
+          ...(group.color ? { color: group.color } : {}),
+          ...(group.appearance ? { appearance: group.appearance } : {}),
+        });
+    }
+    return { locked: stubs, opened, projects, hidden: [...hidden.values()] };
   }
 
   private clientAlive(clientId: string): boolean {

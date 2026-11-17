@@ -131,6 +131,7 @@ export function createSubscriptionsRuntime(
               directory: dependencies.desktop.live.projectDirectory(
                 await dependencies.engine.store.projects(),
                 dependencies.engine.store.environmentId,
+                dependencies.desktop.live.groupLock.access(principalId),
               ),
             };
           else if (target.kind === "models")

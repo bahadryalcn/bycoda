@@ -16,6 +16,10 @@
     align-items: flex-start;
   }
 }
+/* A long scannable list (DropdownMenu density="compact") keeps the dense list height. */
+[data-menu-density="compact"] .item {
+  --list-row-height: var(--ui-control-height-sm);
+}
 .destructive {
   composes: danger from "../../ListRow.module.css";
 }

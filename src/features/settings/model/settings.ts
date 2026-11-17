@@ -65,6 +65,7 @@ export type SettingsSectionId =
   | "chat"
   | "voice"
   | "providers"
+  | "decisionModels"
   | "usage"
   | "models"
   | "work"
@@ -268,6 +269,19 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     },
     keywords:
       "providers account sign in login model harness claude codex cli default hooks background work order groups pools assignments roles limits subagents delegation",
+  },
+  {
+    id: "decisionModels",
+    group: "agents",
+    get label() {
+      return t("Decision models");
+    },
+    get description() {
+      return t(
+        "Local and connected models that decide small things for the app, such as routing and privacy scans.",
+      );
+    },
+    keywords: "local model ollama gguf clef classifier routing threshold scan privacy decision",
   },
   {
     id: "usage",
@@ -996,7 +1010,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   },
   {
     id: "decision-models",
-    section: "providers",
+    section: "decisionModels",
     get label() {
       return t("Decision models");
     },

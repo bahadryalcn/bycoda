@@ -1,7 +1,6 @@
 import { Text } from "../../../shared/ui/Text";
 import { invoke } from "@tauri-apps/api/core";
-import { useEffect, useRef, useState } from "react";
-import { copyText } from "../../../platform/tauri/clipboard";
+import { useEffect, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import {
   buildIdentity,
@@ -9,9 +8,8 @@ import {
   compareBuildIdentity,
 } from "../../../shared/model/build-info";
 import { Button } from "../../../shared/ui/Button";
-import { Check, Copy } from "../../../shared/ui/icons";
+import { CopyButton } from "../../../shared/ui/CopyButton";
 import type { BuildIdentity } from "../../workspaces/model/contracts";
-import { SettingsFeedback } from "../../../shared/ui/settings";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 
@@ -22,10 +20,6 @@ export function BuildIdentityDetails() {
   // "failed" is a read error; a successful read of nothing stays "ready" with null (honestly unknown).
   const [readState, setReadState] = useState<"loading" | "ready" | "failed">("loading");
   const [attempt, setAttempt] = useState(0);
-  const [copying, setCopying] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [error, setError] = useState<string>();
-  const pending = useRef(false);
   useEffect(() => {
     let active = true;
     setReadState("loading");
@@ -44,22 +38,6 @@ export function BuildIdentityDetails() {
       active = false;
     };
   }, [attempt]);
-  const copy = async () => {
-    if (pending.current) return;
-    pending.current = true;
-    setCopying(true);
-    setCopied(false);
-    setError(undefined);
-    try {
-      await copyText(JSON.stringify({ renderer: buildIdentity, native }, null, 2));
-      setCopied(true);
-    } catch (cause) {
-      setError(String(cause));
-    } finally {
-      pending.current = false;
-      setCopying(false);
-    }
-  };
   const comparison = compareBuildIdentity(buildIdentity, native);
   return (
     <Disclosure
@@ -105,29 +83,16 @@ export function BuildIdentityDetails() {
         )}
       </DescriptionList>
       <div className="flex flex-wrap items-center gap-2">
-        <Button
-          variant="ghost"
-          size="sm"
+        <CopyButton
           iconOnly
+          size="sm"
           label={t("Copy build details")}
-          tooltip={copied ? t("Copied") : t("Copy build details")}
-          loading={copying}
-          onClick={() => void copy()}
-        >
-          {copied ? (
-            <Check aria-hidden className="icon-xs" strokeWidth={1.75} />
-          ) : (
-            <Copy aria-hidden className="icon-xs" strokeWidth={1.75} />
-          )}
-        </Button>
-        <Text role="status" size="inherit" tone="secondary" className="empty:hidden">
-          {copied ? t("Copied") : ""}
-        </Text>
+          text={() => JSON.stringify({ renderer: buildIdentity, native }, null, 2)}
+        />
         {readState === "failed" ? (
           <Button onClick={() => setAttempt((value) => value + 1)}>{t("Retry native read")}</Button>
         ) : null}
       </div>
-      {error && <SettingsFeedback state="error">{error}</SettingsFeedback>}
     </Disclosure>
   );
 }

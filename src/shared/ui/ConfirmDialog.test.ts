@@ -208,3 +208,23 @@ it("gives a second request with the same title a fresh dialog instance", async (
   });
   expect(document.querySelector('[role="switch"]')?.getAttribute("aria-checked")).toBe("false");
 });
+
+it("offers an alternative that runs its action, settles false and never confirms", async () => {
+  const onSelect = vi.fn();
+  const onConfirm = vi.fn();
+  const settle = await render({
+    title: "Save before leaving?",
+    message: "2 unsaved changes",
+    confirmLabel: "Save and leave",
+    cancelLabel: "Keep editing",
+    alternative: { label: "Discard and leave", onSelect, danger: true },
+    onConfirm,
+  });
+  expect(
+    [...document.querySelectorAll("footer button")].map((node) => node.textContent?.trim()),
+  ).toEqual(["Discard and leave", "Keep editing", "Save and leave"]);
+  await click(button("Discard and leave"));
+  expect(onSelect).toHaveBeenCalledOnce();
+  expect(onConfirm).not.toHaveBeenCalled();
+  expect(settle).toHaveBeenLastCalledWith(false);
+});

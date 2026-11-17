@@ -116,6 +116,7 @@ export function MessageQueue({
   busy = false,
   runningTarget,
   steerSupported = false,
+  account: conversationAccount,
   onEdit,
   onEditingChange,
   onReorder,
@@ -537,15 +538,18 @@ export function MessageQueue({
               target && supportsProviderAccounts(target.harness)
                 ? (accountLists[target.harness] ?? [])
                 : [];
-            const account = accounts.find(
-              (account) => account.id === (target?.providerAccountId ?? "default"),
-            );
+            // A row for the conversation's provider runs on its current account, not the
+            // one it was queued with (the owner may have switched after a usage limit).
+            const accountId =
+              target && conversationAccount && target.harness === conversationAccount.harness
+                ? conversationAccount.providerAccountId
+                : target?.providerAccountId;
+            const account = accounts.find((account) => account.id === (accountId ?? "default"));
             const accountLabel =
               target && supportsProviderAccounts(target.harness)
                 ? account
                   ? accountDisplayLabel(accounts, account)
-                  : target.providerAccountId &&
-                      target.providerAccountId !== DEFAULT_PROVIDER_ACCOUNT_ID
+                  : accountId && accountId !== DEFAULT_PROVIDER_ACCOUNT_ID
                     ? t("Removed account")
                     : t("Default account")
                 : undefined;

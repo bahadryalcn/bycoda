@@ -19,7 +19,7 @@ import {
   type DelegationInput,
 } from "../model/crossDelegation";
 import type { AgentModel, ModelSetting } from "../model/models";
-import { DelegationSubagentsControl } from "./DelegationSettings";
+import { DelegationSubagentsControl, delegationSelectChoice } from "./DelegationSettings";
 
 // A plain surface that keeps the menu's role, ref and key handling, and dismisses on Escape like the real popover.
 vi.mock("../../../shared/ui/Popover", async () => ({
@@ -319,4 +319,21 @@ it("distinguishes Automatic, Off and explicit lists and switches modes without s
   expect(container.querySelector('[data-tone="accent"]')).not.toBeNull();
   // The resolved models are not listed: the badge alone says Automatic.
   expect(container.textContent).not.toContain("Strong");
+});
+
+it("names the account on a subagent model that more than one account offers", () => {
+  const option = (account: string, model = "Haiku 5.5") => ({
+    value: encodeAdvisor({ harness: "claude", model: "claude:haiku", providerAccountId: account })!,
+    label: `Claude · ${model} · ${account}`,
+  });
+  const setting = {
+    id: CROSS_SUBAGENTS_KEY,
+    label: "Subagents (any provider)",
+    value: "",
+    options: [option("work"), option("home"), option("work", "Fable 5.2")],
+  } as unknown as ModelSetting;
+  const t = (text: string) => text;
+  expect(delegationSelectChoice(setting, setting.options[0], t).label).toBe("Haiku 5.5 · work");
+  expect(delegationSelectChoice(setting, setting.options[1], t).label).toBe("Haiku 5.5 · home");
+  expect(delegationSelectChoice(setting, setting.options[2], t).label).toBe("Fable 5.2");
 });

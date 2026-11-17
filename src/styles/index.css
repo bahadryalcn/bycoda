@@ -3251,10 +3251,6 @@ header[data-tauri-drag-region] [data-tab-draggable="true"] [data-no-drag] * {
   background: var(--ui-surface-panel);
 }
 
-.agent-markdown .markdown-code-copy.is-failed {
-  color: var(--color-danger, var(--palette-dangerDark));
-}
-
 .agent-markdown .markdown-code-copy {
   appearance: none;
   position: absolute;
@@ -3403,47 +3399,6 @@ header[data-tauri-drag-region] [data-tab-draggable="true"] [data-no-drag] * {
 .agent-markdown .markdown-code-resizable:has(.markdown-code-toggle) .markdown-code-path,
 .agent-markdown .markdown-code-resizable .markdown-code-fallback-label {
   right: 68px;
-}
-
-.agent-markdown .markdown-code-copy-pages,
-.agent-markdown .markdown-code-copy-check {
-  transform-box: fill-box;
-  transform-origin: center;
-}
-
-.agent-markdown .markdown-code-copy-pages {
-  transition:
-    opacity var(--motion-duration-fast) var(--motion-ease-standard) var(--motion-duration-fast),
-    transform var(--motion-duration-slow) var(--motion-ease-standard);
-}
-
-.agent-markdown .markdown-code-copy-check {
-  opacity: 0;
-  stroke-dasharray: 16;
-  stroke-dashoffset: 16;
-  transform: scale(0.65) rotate(-12deg);
-  transition:
-    opacity var(--motion-duration-instant) var(--motion-ease-standard) var(--motion-notice-duration),
-    transform var(--motion-duration-slow) var(--motion-ease-standard),
-    stroke-dashoffset var(--motion-duration-slow) var(--motion-ease-standard);
-}
-
-.agent-markdown .markdown-code-copy.is-copied .markdown-code-copy-pages {
-  opacity: 0;
-  transform: scale(0.55) rotate(12deg);
-  transition:
-    opacity var(--motion-duration-fast) ease,
-    transform var(--motion-duration-slow) var(--motion-ease-standard);
-}
-
-.agent-markdown .markdown-code-copy.is-copied .markdown-code-copy-check {
-  opacity: 1;
-  stroke-dashoffset: 0;
-  transform: scale(1) rotate(0);
-  transition:
-    opacity var(--motion-duration-instant) ease,
-    transform var(--motion-duration-slow) var(--motion-ease-standard),
-    stroke-dashoffset var(--motion-duration-slow) var(--motion-ease-standard);
 }
 
 .agent-markdown .markdown-code-icon {
@@ -3603,13 +3558,6 @@ header[data-tauri-drag-region] [data-tab-draggable="true"] [data-no-drag] * {
   display: flex;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .agent-markdown .markdown-code-copy-pages,
-  .agent-markdown .markdown-code-copy-check {
-    transition: none;
-  }
-}
-
 .agent-markdown [data-streamdown="code-block-body"] {
   padding: 10px 8px 10px 0;
   border: 0;
@@ -3695,7 +3643,7 @@ html:not(.theme-light) .markdown-code-token {
 /* The button sits over the header row, so a pointer device only shows it while
    the table is hovered or focused. Touch devices always show it. */
 @media (hover: hover) and (pointer: fine) {
-  .agent-markdown .markdown-table-shell > .markdown-code-copy:not(.is-copied, .is-failed) {
+  .agent-markdown .markdown-table-shell > .markdown-code-copy:not([data-copy-state]) {
     opacity: 0;
     transition:
       opacity var(--motion-duration-fast) ease,
@@ -3705,7 +3653,7 @@ html:not(.theme-light) .markdown-code-token {
 
   .agent-markdown
     .markdown-table-shell:is(:hover, :focus-within)
-    > .markdown-code-copy:not(.is-copied, .is-failed) {
+    > .markdown-code-copy:not([data-copy-state]) {
     opacity: 1;
   }
 }
@@ -4489,27 +4437,11 @@ html:not(.theme-light) .markdown-code-token {
   animation: word-fade-in var(--motion-duration-reveal) var(--motion-ease-out) both;
 }
 
-@keyframes zen-thinking-pulse {
-  0%,
-  100% {
-    opacity: 0.35;
-  }
-  50% {
-    opacity: 0.9;
-  }
-}
-
-/* The thinking line breathes while reasoning streams in. */
-.zen-thinking-pulse {
-  animation: zen-thinking-pulse 1.8s ease-in-out infinite;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .agent-markdown.word-fading [data-word-fade],
   .zen-phase-step[data-entering],
   .zen-phase-step[data-entering]::before,
-  .zen-phase-step[data-entering]::after,
-  .zen-thinking-pulse {
+  .zen-phase-step[data-entering]::after {
     animation: none;
   }
 
@@ -5195,23 +5127,17 @@ html:is([data-decorative-motion="off"], [data-window-focus="off"]) .working-dot 
 }
 /* The other decorative loops stop their clock on the same conditions. */
 html:is([data-decorative-motion="off"], [data-window-focus="off"])
-  :is(
-    .activity-dock-waiting,
-    .zen-thinking-pulse,
-    .terminal-live-bar,
-    .bycoda-sigil-active,
-    .context-speed-bolt
-  ) {
+  :is(.activity-dock-waiting, .terminal-live-bar, .bycoda-sigil-active, .context-speed-bolt) {
   animation-play-state: paused !important;
 }
 /* Inactive session panes keep their DOM (only the pane root's visibility flag
    changes), so pause their decorative loops there without per-frame JS. */
 [data-session-visible="false"]
-  :is(.activity-dock-waiting, .zen-thinking-pulse, .terminal-live-bar, .context-speed-bolt) {
+  :is(.activity-dock-waiting, .terminal-live-bar, .context-speed-bolt) {
   animation-play-state: paused !important;
 }
 @media (prefers-reduced-motion: reduce) {
-  :is(.activity-dock-waiting, .zen-thinking-pulse, .terminal-live-bar, .bycoda-sigil-active) {
+  :is(.activity-dock-waiting, .terminal-live-bar, .bycoda-sigil-active) {
     animation-play-state: paused !important;
   }
   /* Tailwind spinners and pulses: no rotation; the pending state stays visible as the same slow

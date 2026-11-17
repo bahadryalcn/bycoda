@@ -35,16 +35,18 @@ export function inheritedChoiceLabel(inherited: string | undefined, valid: boole
 }
 
 /**
- * The inheriting segment of a segmented default: the wand and the value it resolves to stay
- * visible, while the full "Bycoda defaults (…)" text is the tooltip and accessible name, so
- * the control fits the row instead of scrolling.
+ * The inheriting segment of a segmented default: reads "Default (value)" so it never looks like a
+ * duplicate of the segment with that value; the full "Bycoda defaults (…)" text is the tooltip and
+ * accessible name, so the control fits the row instead of scrolling.
  */
 function inheritedSegment(inherited: string | undefined, valid: boolean) {
   const full = inheritedChoiceLabel(inherited, valid);
   return {
     value: "",
     icon: <WandSparkles className="icon-sm" />,
-    label: inherited ? (valid ? inherited : `${inherited} · ${t("Unavailable")}`) : full,
+    label: inherited
+      ? `${t("Default")} (${valid ? inherited : `${inherited} · ${t("Unavailable")}`})`
+      : full,
     tooltip: inherited ? full : undefined,
     ariaLabel: inherited ? full : undefined,
   };
@@ -157,7 +159,16 @@ export function ProviderDefaultExtras({
                       inheritedLabel ? t(inheritedLabel) : undefined,
                       Boolean(inheritedOption),
                     ),
-                    ...compactOptions.slice(1),
+                    ...compactOptions
+                      .slice(1)
+                      .filter((option) => option.value !== "")
+                      // The catalog's own "Default" keeps Claude Code's /config choice; naming it apart
+                      // from the inheriting segment keeps every segment a distinct choice.
+                      .map((option) =>
+                        option.value === "default"
+                          ? { ...option, label: t("Claude default") }
+                          : option,
+                      ),
                   ]}
                   onValueChange={updateCompact}
                 />
@@ -257,14 +268,16 @@ export function ProviderDefaultExtras({
                           : undefined,
                       Boolean(inheritedOption),
                     ),
-                    ...setting.options.map((option) => ({
-                      value: option.value,
-                      label: speedLabel(option.value, option.label),
-                      icon:
-                        option.value === "true" || option.value === "fast" ? (
-                          <Zap className="icon-sm" tone="accent" fill="currentColor" />
-                        ) : undefined,
-                    })),
+                    ...setting.options
+                      .filter((option) => option.value !== "")
+                      .map((option) => ({
+                        value: option.value,
+                        label: speedLabel(option.value, option.label),
+                        icon:
+                          option.value === "true" || option.value === "fast" ? (
+                            <Zap className="icon-sm" tone="accent" fill="currentColor" />
+                          ) : undefined,
+                      })),
                   ]}
                   onValueChange={(next) => {
                     const extras = { ...scopeDefaults.extras };

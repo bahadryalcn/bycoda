@@ -197,7 +197,8 @@ it("carries a dirty draft onto a save that changed only job choices", async () =
     "modelRouting.save",
     expect.objectContaining({
       expectedVersion: 5,
-      draft: expect.objectContaining({ defaultMaxRunMinutes: 30, roles }),
+      // Saving drops non-helper "any model, in order" bindings; they are the default.
+      draft: expect.objectContaining({ defaultMaxRunMinutes: 30, roles: {} }),
     }),
     false,
     true,

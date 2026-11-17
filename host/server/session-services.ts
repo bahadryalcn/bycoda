@@ -62,10 +62,11 @@ export function createSessionServicesRuntime(
         ),
     },
     directoryPorts: {
-      directory: async () =>
+      directory: async (context) =>
         dependencies.desktop.live.projectDirectory(
           await dependencies.engine.store.projects(),
           dependencies.engine.store.environmentId,
+          dependencies.desktop.live.groupLock.access(context.principalId),
         ),
       browse: browseHostDirectories,
       createDirectory: createHostDirectory,

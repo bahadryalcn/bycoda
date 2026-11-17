@@ -141,6 +141,22 @@ it("uses the native text clipboard if WebView permissions reject a long copy", a
   }
 });
 
+it("falls back to the native clipboard when the WebView write never settles", async () => {
+  vi.useFakeTimers();
+  vi.spyOn(navigator.clipboard, "writeText").mockReturnValue(new Promise<void>(() => {}));
+  vi.mocked(invoke).mockResolvedValue(undefined);
+  Object.defineProperty(window, "__TAURI_INTERNALS__", { value: {}, configurable: true });
+  try {
+    const copied = copyText("stuck");
+    await vi.advanceTimersByTimeAsync(1500);
+    await copied;
+    expect(invoke).toHaveBeenCalledWith("copy_text_to_clipboard", { text: "stuck" });
+  } finally {
+    delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+    vi.useRealTimers();
+  }
+});
+
 it("cleans up failed legacy copying and preserves focus and text selection", async () => {
   vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(new Error("denied"));
   const original = Object.getOwnPropertyDescriptor(document, "execCommand");

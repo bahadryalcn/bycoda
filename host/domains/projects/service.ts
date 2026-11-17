@@ -12,7 +12,10 @@ import {
 
 export type ProjectsReadOptions = { signal?: AbortSignal };
 export interface ProjectDirectoryPorts {
-  directory(): dto.HostProjectDirectory | Promise<dto.HostProjectDirectory>;
+  /** The caller decides what is concealed: a phone sees locked groups it has unlocked. */
+  directory(
+    context: HostDomainContext,
+  ): dto.HostProjectDirectory | Promise<dto.HostProjectDirectory>;
   browse(path: unknown): Promise<dto.HostDirectory>;
   createDirectory(
     path: unknown,
@@ -51,7 +54,7 @@ export function createProjectsService<Project>(dependencies: {
         ? dto.ProjectsEmptyParamsSchema.strip()
         : dto.ProjectsEmptyParamsSchema
       ).parse(raw);
-      const result = await ports().directory();
+      const result = await ports().directory(context);
       await assertDomainAuthority(context);
       return result;
     },

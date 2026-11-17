@@ -7,6 +7,7 @@ import { CrewManagedBar, useCrewManagedSession } from "../../crews/public/manage
 import { AssistantManagedBadge } from "./AssistantManagedBadge";
 import { SessionPanelTargetsContext, SessionPanelTargetHost } from "./SessionPanelTargets";
 import { AssistantSessionControl } from "./AssistantSessionControl";
+import { useSessionLifecycleActions } from "./SessionLifecycleControl";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Alert } from "../../../shared/ui/Alert";
 import { Badge } from "../../../shared/ui/Badge";
@@ -1510,24 +1511,35 @@ const LocalSessionPane = memo(function LocalSessionPane({
   ) : null;
   const notesShortcut = useKeybindingShortcut(NOTES_PANEL_COMMAND);
   const closeShortcut = useKeybindingShortcut("Pane: Close");
+  const lifecycle = useSessionLifecycleActions({
+    sessionId: session.id,
+    cwd: session.cwd,
+    local: !remote,
+    hasMessages,
+  });
+  const notesAction: ExpandingButtonGroupItem | null =
+    notesEnabled && visible && focused
+      ? {
+          id: "notes",
+          label: t("Notes"),
+          ariaLabel: showNotesPanel ? t("Close notes") : t("Open notes panel"),
+          shortcut: notesShortcut,
+          active: showNotesPanel,
+          icon: <StickyNote className="icon-sm" strokeWidth={1.75} />,
+          onSelect: () => toggleNotesPanel(),
+        }
+      : null;
+  // The header keeps the frequent actions as buttons; the rest wait in its "More actions" menu.
+  // Open notes stay a pressed button so one click closes them.
   const paneActions: ExpandingButtonGroupItem[] = [
-    ...(!session.inboxAsk && findAction ? [findAction] : []),
-    // Notes stays put while its dock is open (pressed, click closes); the transient Prompts
-    // menu follows it so neither displaces the other.
-    ...(notesEnabled && visible && focused
-      ? [
-          {
-            id: "notes",
-            label: t("Notes"),
-            ariaLabel: showNotesPanel ? t("Close notes") : t("Open notes panel"),
-            shortcut: notesShortcut,
-            active: showNotesPanel,
-            icon: <StickyNote className="icon-sm" strokeWidth={1.75} />,
-            onSelect: () => toggleNotesPanel(),
-          },
-        ]
-      : []),
+    ...(lifecycle.settle ? [lifecycle.settle] : []),
+    ...(notesAction?.active ? [notesAction] : []),
     ...(outlineAction ? [outlineAction] : []),
+  ];
+  const overflowActions: ExpandingButtonGroupItem[] = [
+    ...(!session.inboxAsk && findAction ? [findAction] : []),
+    ...(notesAction && !notesAction.active ? [notesAction] : []),
+    ...(lifecycle.link ? [lifecycle.link] : []),
   ];
   const projectActions = visible ? (
     <ProjectQuickActions
@@ -1535,6 +1547,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       actionsCwd={session.cwd}
       shortcutsEnabled={focused}
       additionalItems={paneActions}
+      overflowItems={overflowActions}
       trailing={
         hasPaneHeader ? (
           <Button
@@ -1637,7 +1650,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
           <div className="session-pane-header-actions">
             <AssistantManagedBadge management={session.managedBy} local={!remote} />
             <AssistantSessionControl
-              hasMessages={hasMessages}
               sessionId={session.id}
               cwd={session.cwd}
               management={session.managedBy}
@@ -1658,7 +1670,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
                 {workingBadge ? <div className="min-w-0 max-w-56">{workingBadge}</div> : null}
                 <AssistantManagedBadge management={session.managedBy} local={!remote} />
                 <AssistantSessionControl
-                  hasMessages={hasMessages}
                   sessionId={session.id}
                   cwd={session.cwd}
                   management={session.managedBy}
@@ -1677,7 +1688,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
             {workingBadge ? <div className="me-auto min-w-0">{workingBadge}</div> : null}
             <AssistantManagedBadge management={session.managedBy} local={!remote} />
             <AssistantSessionControl
-              hasMessages={hasMessages}
               sessionId={session.id}
               cwd={session.cwd}
               management={session.managedBy}
@@ -1688,6 +1698,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
           </div>
         )
       ) : null}
+      {lifecycle.dialog}
       <div data-session-body className="relative flex min-h-0 min-w-0 flex-1 flex-col">
         <SharedQueueRecoveryNotice key={`queue:${session.id}`} sessionId={session.id} />
         <AdoptedSessionNotice

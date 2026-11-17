@@ -71,7 +71,8 @@ function systemLocale(): Locale {
       ? []
       : navigator.languages?.length
         ? navigator.languages
-        : [navigator.language],
+        : // React Native's navigator has no language; fall back to the default locale there.
+          [navigator.language].filter((value) => typeof value === "string"),
   );
 }
 function readPreference(): LanguagePreference {
@@ -261,7 +262,8 @@ export const languageReady = Promise.all([
     ),
   ),
 ]);
-if (typeof window !== "undefined") {
+// React Native defines `window` without DOM events; the mobile app reaches this through shared models.
+if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
   window.addEventListener("storage", (event) => {
     for (const domain of ["git", "technical"] as const) {
       if (event.key === DOMAIN_LANGUAGE_STORAGE_KEYS[domain] || event.key === null) {

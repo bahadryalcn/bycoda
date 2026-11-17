@@ -317,6 +317,20 @@ function InlineEditControl({
     retire(): void;
   } | null>(null);
   useLayoutEffect(() => {
+    // An idle external rename is saved text, not private input to recover on close.
+    // Preserve active, failed and pending edits even when their displayed value changes.
+    if (
+      lastExternalValue.current !== value &&
+      !editing &&
+      !pendingInput.current &&
+      !composing.current &&
+      !error &&
+      failed === null &&
+      phase !== "saving" &&
+      rawDraft.current === lastExternalValue.current
+    ) {
+      rawDraft.current = value;
+    }
     readInput.current = () => ({
       snapshot: {
         source: "inline-edit",

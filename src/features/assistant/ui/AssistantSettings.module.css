@@ -53,25 +53,6 @@
   inline-size: 100%;
   min-inline-size: 0;
 }
-.footerRow {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-inline-size: 0;
-}
-.footerRow > * {
-  min-inline-size: 0;
-}
-.footerActions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-inline-start: auto;
-  min-inline-size: 0;
-}
 @media (max-width: 640px) {
   .dialog {
     block-size: calc(100dvh - 24px);

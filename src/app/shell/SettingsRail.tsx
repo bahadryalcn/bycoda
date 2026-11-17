@@ -62,6 +62,7 @@ export const SETTINGS_SECTION_ICONS: Record<SettingsSectionId, IconComponent> = 
   chat: MessageSquare,
   voice: AudioLines,
   providers: Bot,
+  decisionModels: Brain,
   usage: Gauge,
   models: Brain,
   work: Briefcase,

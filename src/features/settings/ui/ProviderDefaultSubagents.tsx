@@ -50,7 +50,11 @@ export function ProviderDefaultSubagents({
           placeholder={t("Add")}
           value={selected.map((ref) => encodeAdvisor(ref)!)}
           options={setting.options
-            .filter((option) => decodeAdvisor(option.value))
+            .filter(
+              (option, index, all) =>
+                decodeAdvisor(option.value) &&
+                all.findIndex((other) => other.value === option.value) === index,
+            )
             .map((option) => ({
               value: option.value,
               ...delegationSelectChoice(setting, option, t),

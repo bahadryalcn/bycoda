@@ -384,6 +384,28 @@ describe("WebSocket read admission and safe disclosure", () => {
     },
   );
 
+  it("logs a client close with its code and the request it abandoned", async () => {
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    let started!: () => void;
+    const dispatched = new Promise<void>((resolve) => (started = resolve));
+    const host = await fixture({
+      dispatch: () => {
+        started();
+        return new Promise(() => {});
+      },
+    });
+    const client = await host.ready();
+    void client.request("held", "projects.list").catch(() => {});
+    await dispatched;
+    client.socket.close(4000, "test closed");
+    await vi.waitFor(() =>
+      expect(stderr.mock.calls.map(([line]) => String(line)).join("")).toMatch(
+        /\[host\.ws\] connection closed .*code=4000 reason="?peer closed: test closed.*pending=1 methods="?projects\.list@\d+ms/,
+      ),
+    );
+    stderr.mockRestore();
+  });
+
   it("keeps typed method result validation before delivery", async () => {
     const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     const host = await fixture({

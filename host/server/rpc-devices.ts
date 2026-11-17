@@ -133,6 +133,16 @@ export async function handleDevicesRpc(
         tunnels: async () => await dependencies.tunnels.status(),
       });
       break;
+    case "devices.paired":
+      if (
+        !request.input.params ||
+        typeof request.input.params !== "object" ||
+        Array.isArray(request.input.params) ||
+        Object.keys(request.params).length !== 0
+      )
+        throw new Error("Unexpected devices.paired parameters");
+      request.result = await dependencies.engine.store.pairedDeviceDetails(request.token);
+      break;
     case "devices.revokeOther":
       if (
         Object.keys(request.params).some((key) => key !== "id") ||

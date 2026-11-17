@@ -117,7 +117,9 @@ it("fails closed on locked targets and owner revocation during an effect", async
     visibleProject: async () => false,
     execute,
   });
-  await expect(locked(call, admission)).rejects.toThrow("unavailable or locked");
+  await expect(locked(call, admission)).rejects.toThrow(
+    "not in the desktop's visible project list",
+  );
   expect(execute).not.toHaveBeenCalled();
   const dispatch = createRoomManagementDispatcher({
     environmentId: "host",

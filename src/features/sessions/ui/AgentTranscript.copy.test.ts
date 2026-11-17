@@ -271,7 +271,7 @@ it("shows a copy error instead of success and allows retry", async () => {
   const button = container.querySelector<HTMLButtonElement>('[aria-label="Copy message"]')!;
   await act(async () => button.click());
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("Clipboard unavailable");
-  expect(button.getAttribute("aria-label")).toBe("Copy message");
+  expect(button.getAttribute("aria-label")).toBe("Copy failed. Try again.");
   write.mockResolvedValue();
   await act(async () => button.click());
   expect(button.getAttribute("aria-label")).toBe("Copied");

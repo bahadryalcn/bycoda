@@ -1,7 +1,6 @@
 import { Text } from "../../../shared/ui/Text";
 import { useState, useSyncExternalStore } from "react";
-import { DataTableRow } from "../../../shared/ui/SortableDataTable";
-import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { formatRelativeTime } from "../../../shared/i18n/format";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -15,7 +14,6 @@ import {
   CircleX,
   CircleHelp,
   Minus,
-  Bot,
 } from "../../../shared/ui/icons";
 import { hasProbedHarnessAvailability } from "../../../integrations/harness/core/availability";
 import { HARNESS_TITLE, type HarnessId } from "../../../shared/model/harnessIdentity";
@@ -37,7 +35,7 @@ import {
   subscribeHarnessUpdates,
   type HarnessUpdateRun,
 } from "../model/harnessUpdateActions";
-/** Account detail identity; CLI facts live in the CLI tab. */
+/** Account detail identity; CLI facts follow in ProviderStatusGroup. */
 export function ProviderDetailHeader({
   harness,
   available,
@@ -85,8 +83,8 @@ function updateNotice(
   return null;
 }
 /**
- * Sign-in, plan or limit state, and the CLI version with its update state and refresh, in the
- * order a person checks them when something does not work.
+ * The CLI version with its update state, refresh and path actions, shown under the provider's
+ * header.
  */
 export function ProviderStatusGroup({
   id,
@@ -189,27 +187,12 @@ export function ProviderStatusGroup({
         ? t("Checked {p0}", { p0: formatRelativeTime(lastChecked) })
         : undefined;
   return (
-    <DataTableRow
-      id={id}
-      data-setting-id={`cli-path-${harness}`}
-      className="provider-inventory-row"
-      cells={[
-        <span key="name" className="provider-inventory-name">
-          {harness === "acp" ? (
-            <Bot className="icon-md shrink-0" aria-hidden />
-          ) : (
-            <HarnessIcon harness={harness} className="icon-md shrink-0" />
-          )}
-          <OverflowTooltip label={title}>
-            <Text size="secondary" tone={notFound ? "secondary" : "primary"} truncate>
-              {title}
-            </Text>
-          </OverflowTooltip>
-        </span>,
-        <Code key="version" size="caption" tone="secondary" className="tabular-nums">
+    <div id={id} data-setting-id={`cli-path-${harness}`} className="provider-cli-status">
+      <div className="provider-cli-status-line">
+        <Code size="caption" tone="secondary" className="tabular-nums">
           {version}
-        </Code>,
-        <Tooltip key="status" label={hint}>
+        </Code>
+        <Tooltip label={hint}>
           {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- passive status details must remain reachable by keyboard to open their tooltip */}
           <span tabIndex={hint ? 0 : undefined}>
             <Badge
@@ -230,8 +213,8 @@ export function ProviderStatusGroup({
               {status}
             </Badge>
           </span>
-        </Tooltip>,
-        <div key="actions" className="provider-inventory-actions">
+        </Tooltip>
+        <div className="provider-inventory-actions">
           {!notFound && check?.status === "behind" ? (
             <Button
               size="sm"
@@ -266,22 +249,14 @@ export function ProviderStatusGroup({
             showLabel={notFound}
             triggerVariant="ghost"
           />
-        </div>,
-      ]}
-      detail={
-        notice || (check?.status === "unknown" && !notFound && canCheck) ? (
-          <>
-            {notice ? (
-              <SettingsFeedback state={notice.state}>{notice.text}</SettingsFeedback>
-            ) : null}
-            {check?.status === "unknown" && !notFound && canCheck ? (
-              <SettingsFeedback state="warning">
-                {t("Could not check: {p0}", { p0: check.error })}
-              </SettingsFeedback>
-            ) : null}
-          </>
-        ) : null
-      }
-    />
+        </div>
+      </div>
+      {notice ? <SettingsFeedback state={notice.state}>{notice.text}</SettingsFeedback> : null}
+      {check?.status === "unknown" && !notFound && canCheck ? (
+        <SettingsFeedback state="warning">
+          {t("Could not check: {p0}", { p0: check.error })}
+        </SettingsFeedback>
+      ) : null}
+    </div>
   );
 }

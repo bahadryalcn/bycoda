@@ -22,3 +22,13 @@ export {
   type SettingsPageResetRegistration,
 } from "./settingsPageReset";
 export { Segmented, Select, Slider, Toggle, setToggleCue } from "./settingsInputs";
+export { SettingsSaveBar, type SettingsSaveBarProps } from "./SettingsSaveBar";
+export { useLeaveGuard } from "./useLeaveGuard";
+export {
+  discardAllPending,
+  pendingChangeCount,
+  saveAllPending,
+  usePendingSources,
+  type PendingChange,
+  type PendingSource,
+} from "./pendingChanges";

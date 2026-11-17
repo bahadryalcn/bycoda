@@ -54,12 +54,14 @@ export function connectedCandidate(
   return undefined;
 }
 /** Count semantic route changes; key ordering and empty automatic routes are irrelevant. */
-export function routingChanges(draft: DecisionRouting, saved: DecisionRouting): number {
+export function routingChangedTasks(draft: DecisionRouting, saved: DecisionRouting) {
   return DECISION_TASK_TYPES.filter((task) => {
     const a = draft[task]?.sourceIds.length ? draft[task] : undefined;
     const b = saved[task]?.sourceIds.length ? saved[task] : undefined;
     return (
       a?.threshold !== b?.threshold || JSON.stringify(a?.sourceIds) !== JSON.stringify(b?.sourceIds)
     );
-  }).length;
+  });
 }
+export const routingChanges = (draft: DecisionRouting, saved: DecisionRouting): number =>
+  routingChangedTasks(draft, saved).length;

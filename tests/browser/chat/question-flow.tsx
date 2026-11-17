@@ -159,6 +159,15 @@ const initial: UserQuestionPrompt = {
   ],
 };
 
+if (query.has("multiple")) {
+  initial.questions.push({
+    ...initial.questions[0],
+    id: "constraints",
+    header: "Constraints",
+    prompt: "Which constraints should the implementation preserve?",
+  });
+}
+
 const CAPACITY_ROOT = "fixture-decision-capacity-session";
 const CAPACITY_SCOPE = "fixture-decision-capacity-cache";
 const FIRST_EXACT = "  Original retained answer\r\n漢🦀\n";

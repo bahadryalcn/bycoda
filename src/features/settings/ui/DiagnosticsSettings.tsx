@@ -1,5 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { getPerformanceTrace, clearPerformanceTrace } from "../../../shared/lib/performanceTrace";
 import {
@@ -8,8 +8,8 @@ import {
   loadPerformanceTraceEnabled,
   savePerformanceTraceEnabled,
 } from "../../../shared/lib/performanceTraceSettings";
-import { copyText } from "../../../platform/tauri/clipboard";
 import { Button } from "../../../shared/ui/Button";
+import { CopyButton } from "../../../shared/ui/CopyButton";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Group, Row, Toggle, SettingsFeedback } from "../../../shared/ui/settings";
 
@@ -33,10 +33,7 @@ export function DiagnosticsGroup() {
   /** Set when the last toggle took effect in this window but could not be stored. */
   const [unsaved, setUnsaved] = useState(false);
   // One operation result at a time: Copy and Clear replace each other's message.
-  const [result, setResult] = useState<"copied" | "cleared" | null>(null);
-  const [copying, setCopying] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const copyPending = useRef(false);
+  const [result, setResult] = useState<"cleared" | null>(null);
 
   // The stored preference is shared with sibling windows: follow it, and apply it here.
   useEffect(() => {
@@ -66,31 +63,15 @@ export function DiagnosticsGroup() {
     setUnsaved(loadPerformanceTraceEnabled() !== next);
   };
 
-  const onCopy = async () => {
-    if (copyPending.current) return;
-    copyPending.current = true;
-    setCopying(true);
-    setResult(null);
-    setError(null);
-    try {
-      const payload = {
-        version: 1,
-        exportedAt: new Date().toISOString(),
-        records: getPerformanceTrace(),
-      };
-      await copyText(JSON.stringify(payload, null, 2));
-      setResult("copied");
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      copyPending.current = false;
-      setCopying(false);
-    }
-  };
+  const traceJson = () =>
+    JSON.stringify(
+      { version: 1, exportedAt: new Date().toISOString(), records: getPerformanceTrace() },
+      null,
+      2,
+    );
 
   const onClear = () => {
     clearPerformanceTrace();
-    setError(null);
     setResult("cleared");
   };
 
@@ -130,15 +111,17 @@ export function DiagnosticsGroup() {
         description={t("Copy the recorded timings as JSON, or clear them.")}
         dependsOn={enabled}
         disabledReason={t("Turn on Performance trace first")}
-        feedback={error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : undefined}
       >
         <Text role="status" size="caption" tone="secondary" className="empty:hidden">
-          {result === "copied" ? t("Copied") : result === "cleared" ? t("Cleared") : ""}
+          {result === "cleared" ? t("Cleared") : ""}
         </Text>
-        <Button className="shrink-0" onClick={onCopy} loading={copying}>
-          {t("Copy trace")}
-        </Button>
-        <Button className="shrink-0" onClick={onClear} disabled={copying}>
+        <CopyButton
+          className="shrink-0"
+          label={t("Copy trace")}
+          text={traceJson}
+          onClick={() => setResult(null)}
+        />
+        <Button className="shrink-0" onClick={onClear}>
           {t("Clear")}
         </Button>
       </Row>

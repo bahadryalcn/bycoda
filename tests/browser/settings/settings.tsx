@@ -556,6 +556,18 @@ mockIPC(
         const machine = machines.find((entry) => entry.id === args.machineId)!;
         if (args.method === "mobile.access.status") {
           const mode = (args.params as { mode?: string })?.mode ?? "lan";
+          // `?phone=unavailable`: the LAN listener could not bind; several adapters exist.
+          if (mode === "lan" && new URLSearchParams(location.search).get("phone") === "unavailable")
+            return {
+              mode,
+              state: "unavailable",
+              addresses: ["192.168.2.108", "192.168.95.2"],
+              addressInterfaces: { "192.168.2.108": "Ethernet", "192.168.95.2": "Ethernet 5" },
+              reason:
+                "The mobile port is blocked by Windows or system policy. Choose another port or check network permissions.",
+              networkHint:
+                "Windows treats this network as Public, which can block your phone. Set it to Private in Windows network settings.",
+            };
           return mode === "lan"
             ? {
                 mode,
@@ -573,6 +585,43 @@ mockIPC(
             expiresAt: new Date(Date.now() + 120_000).toISOString(),
             environmentId: machine.environmentId,
           };
+        if (args.method === "devices.paired") {
+          const now = Date.now();
+          return {
+            devicesTruncated: false,
+            devices:
+              machine.id === "fixture-local"
+                ? [
+                    { id: "d-self", name: "Desktop", isCurrent: true, kind: "desktop" },
+                    {
+                      id: "d-pixel",
+                      name: "Bahadır'ın Pixel 9 Pro",
+                      isCurrent: false,
+                      kind: "phone",
+                      pairedAt: now - 9 * 86_400_000,
+                      lastSeenAt: now - 4 * 60_000,
+                    },
+                    {
+                      id: "d-iphone",
+                      name: "iPhone 16",
+                      isCurrent: false,
+                      kind: "phone",
+                      pairedAt: now - 30 * 86_400_000,
+                    },
+                  ]
+                : [
+                    { id: "r-self", name: "Desktop", isCurrent: true, kind: "desktop" },
+                    {
+                      id: "r-pixel",
+                      name: "Bahadır'ın Pixel 9 Pro",
+                      isCurrent: false,
+                      kind: "phone",
+                      lastSeenAt: now - 2 * 3_600_000,
+                    },
+                  ],
+          };
+        }
+        if (args.method === "devices.revokeOther") return { revoked: true };
         if (args.method === "mobile.pairing.status") return { state: "pending" };
         if (args.method === "mobile.pairing.cancel") return {};
         if (args.method === "environment.describe") {
@@ -591,7 +640,13 @@ mockIPC(
             capabilities:
               statusFixture && machine.id === "fixture-lab"
                 ? ["tunnels.manage"]
-                : ["workspace.run", "git.worktreeCreate", "tunnels.manage"],
+                : [
+                    "workspace.run",
+                    "git.worktreeCreate",
+                    "tunnels.manage",
+                    "devices.paired",
+                    "devices.revokeOther",
+                  ],
             ...(statusFixture
               ? { buildIdentity: { buildId: machine.id === "fixture-lab" ? "0.7.8" : "0.7.9" } }
               : {}),

@@ -3,6 +3,50 @@ const captureRoot =
   process.env.BYCODA_APPROVAL_VERIFICATION_DIR ?? "temp/verification/question-flow";
 
 for (const theme of ["light", "dark"] as const) {
+  for (const width of [1280, 800, 390]) {
+    test(`question file controls and navigation stay aligned at ${width}px in ${theme}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 950 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/chat/question-flow.html?theme=${theme}&variant=choices&multiple=1&attachments=1`,
+      );
+      const form = page.locator("[data-question-form]");
+      const attach = form.getByRole("button", { name: "Attach files", exact: true });
+      await expect(attach).toHaveText("Attach files");
+      await form.getByRole("radio", { name: /Windows and macOS/ }).check();
+      const next = form.getByRole("button", { name: "Next", exact: true });
+      const sendBounds = await next.boundingBox();
+      expect(sendBounds!.width).toBeLessThan(110);
+      const controls = await form.evaluate((node) => {
+        const buttons = [...node.querySelectorAll("button")];
+        const attach = buttons.find((button) => button.textContent?.trim() === "Attach files")!;
+        const next = node.querySelector('button[type="submit"]')!;
+        return {
+          fileBottom: attach.getBoundingClientRect().bottom,
+          nextTop: next.getBoundingClientRect().top,
+          fileInFields: !!attach.closest("fieldset"),
+        };
+      });
+      expect(controls.fileInFields).toBe(true);
+      expect(controls.fileBottom).toBeLessThanOrEqual(controls.nextTop);
+      await form.screenshot({ path: `${captureRoot}/question-layout-${theme}-${width}.png` });
+      await next.click();
+      await expect(form.getByRole("button", { name: "Back", exact: true })).toBeVisible();
+      await attach.click();
+      await expect(
+        form.getByRole("button", { name: "Remove picked.txt", exact: true }),
+      ).toBeVisible();
+      await form.screenshot({ path: `${captureRoot}/question-files-${theme}-${width}.png` });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(
+        false,
+      );
+    });
+  }
+}
+
+for (const theme of ["light", "dark"] as const) {
   for (const width of [1280, 800]) {
     test(`fixed choices retain additional notes at ${width}px in ${theme}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 950 });

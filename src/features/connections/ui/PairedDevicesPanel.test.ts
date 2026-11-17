@@ -1,0 +1,257 @@
+// @vitest-environment happy-dom
+import { act, createElement, type ReactNode } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { setLanguagePreference } from "../../../shared/i18n";
+import type { PairedDevice, PairedDeviceList } from "../model/pairedDevices";
+import type { PhonePairingApi } from "../model/phonePairingTypes";
+import type { RemoteMachine } from "../model/protocol";
+import { PairedDevicesPanel } from "./PairedDevicesPanel";
+
+const api = vi.hoisted(() => ({
+  access: vi.fn<PhonePairingApi["access"]>(),
+  enable: vi.fn<PhonePairingApi["enable"]>(),
+  disable: vi.fn<NonNullable<PhonePairingApi["disable"]>>(),
+  create: vi.fn<PhonePairingApi["create"]>(),
+  status: vi.fn<PhonePairingApi["status"]>(),
+  cancel: vi.fn<PhonePairingApi["cancel"]>(),
+}));
+const devices = vi.hoisted(() => ({
+  loadPairedDevices: vi.fn<(machine: RemoteMachine) => Promise<PairedDeviceList>>(),
+  canRevokePairedDevices: vi.fn<(machine: RemoteMachine) => Promise<boolean>>(),
+  revokePairedDevice: vi.fn<(machine: RemoteMachine, device: PairedDevice) => Promise<void>>(),
+}));
+vi.mock("../model/phonePairingApi", () => ({ phonePairingApi: api }));
+vi.mock("../model/pairedDevices", () => devices);
+vi.mock("../../../shared/ui/Modal", () => ({
+  ModalActions: ({ children }: { children?: ReactNode }) =>
+    createElement("div", { "data-modal-actions": "" }, children),
+  Modal: ({
+    children,
+    footer,
+    onClose,
+  }: {
+    children: ReactNode;
+    footer?: ReactNode;
+    onClose: () => void;
+  }) =>
+    createElement(
+      "div",
+      { role: "dialog" },
+      createElement("button", { "aria-label": "Close", onClick: onClose }, "Close"),
+      children,
+      footer,
+    ),
+}));
+vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
+
+const local: RemoteMachine = {
+  id: "local",
+  name: "Local sync",
+  localHost: true,
+  endpoint: "http://127.0.0.1:3776",
+  environmentId: "local-environment",
+};
+const remote: RemoteMachine = {
+  id: "remote",
+  name: "Home Mac",
+  endpoint: "http://127.0.0.1:49000",
+  environmentId: "remote-environment",
+  ssh: { target: "owner@home-mac", remotePort: 3776 },
+};
+const desktop: PairedDevice = { id: "desk", name: "Desktop", isCurrent: true, kind: "desktop" };
+const phone: PairedDevice = {
+  id: "phone-1",
+  name: "Pixel 9",
+  isCurrent: false,
+  kind: "phone",
+  lastSeenAt: Date.now() - 60_000,
+};
+
+let root: Root;
+let container: HTMLDivElement;
+
+beforeEach(async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  await setLanguagePreference("en");
+  for (const mock of [...Object.values(api), ...Object.values(devices)]) mock.mockReset();
+  api.access.mockImplementation(async (_machine, mode) =>
+    mode === "lan"
+      ? {
+          state: "ready",
+          mode: "lan",
+          endpoint: "http://192.168.1.20:3777",
+          lanKey: "ab".repeat(32),
+          addresses: ["192.168.1.20"],
+        }
+      : { state: "ready", endpoint: "https://home.tail123.ts.net" },
+  );
+  api.disable.mockResolvedValue({ mode: "lan", state: "setup-required" });
+  api.enable.mockResolvedValue({ state: "ready", endpoint: "https://home.tail123.ts.net" });
+  api.create.mockImplementation(async (machine) => ({
+    pairingId: `pair-${machine.id}`,
+    ticket: "a".repeat(43),
+    expiresAt: new Date(Date.now() + 120_000).toISOString(),
+    environmentId: machine.environmentId,
+  }));
+  api.status.mockResolvedValue({ state: "pending" });
+  api.cancel.mockResolvedValue(undefined);
+  devices.loadPairedDevices.mockImplementation(async (machine) =>
+    machine.id === "local"
+      ? { state: "ready", devices: [desktop, phone], truncated: false }
+      : { state: "unsupported" },
+  );
+  devices.canRevokePairedDevices.mockResolvedValue(true);
+  devices.revokePairedDevice.mockResolvedValue(undefined);
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+});
+
+afterEach(async () => {
+  await act(async () => root.unmount());
+  container.remove();
+  vi.unstubAllGlobals();
+});
+
+const buttons = (within: Element = container) => [
+  ...within.querySelectorAll<HTMLButtonElement>("button"),
+];
+async function click(text: string, within: Element = container) {
+  const button =
+    buttons(within).find(
+      (entry) => entry.textContent?.trim() === text || entry.getAttribute("aria-label") === text,
+    ) ??
+    [...within.querySelectorAll<HTMLInputElement>('input[type="radio"]')].find((entry) =>
+      [...(entry.labels ?? [])].some((label) => label.textContent?.trim() === text),
+    );
+  expect(button, text).toBeDefined();
+  await act(async () => button!.click());
+}
+
+async function render(props: { active?: boolean; machines?: RemoteMachine[] } = {}) {
+  await act(async () =>
+    root.render(
+      createElement(PairedDevicesPanel, {
+        machines: [remote, local],
+        loaded: true,
+        loading: false,
+        onRefresh: vi.fn(),
+        ...props,
+      }),
+    ),
+  );
+}
+
+it("lists each computer's devices with this desktop marked and revoke only for others", async () => {
+  await render();
+  expect(devices.loadPairedDevices).toHaveBeenCalledWith(local);
+  expect(devices.loadPairedDevices).toHaveBeenCalledWith(remote);
+  expect(container.textContent).toContain("Pixel 9");
+  expect(container.textContent).toContain("This desktop");
+  expect(container.textContent).toContain("Active");
+  expect(buttons().filter((entry) => entry.textContent?.trim() === "Revoke")).toHaveLength(1);
+  expect(container.textContent).toContain("Update the host on Home Mac to see its devices.");
+  // Opening the tab never creates a pairing code or enables networking.
+  expect(api.create).not.toHaveBeenCalled();
+  expect(api.enable).not.toHaveBeenCalled();
+});
+
+it("revokes another device after an in-place confirmation and reloads the list", async () => {
+  await render();
+  await click("Revoke");
+  expect(devices.revokePairedDevice).not.toHaveBeenCalled();
+  // ConfirmMorph ignores an answer within ~280 ms of the question being asked.
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 320)));
+  await click("Revoke access", document.body);
+  expect(devices.revokePairedDevice).toHaveBeenCalledWith(local, phone);
+  expect(devices.loadPairedDevices.mock.calls.filter(([machine]) => machine === local).length).toBe(
+    2,
+  );
+});
+
+it("warns when the host's list is cut off at its limit", async () => {
+  devices.loadPairedDevices.mockResolvedValue({
+    state: "ready",
+    devices: [desktop, phone],
+    truncated: true,
+  });
+  await render({ machines: [local] });
+  expect(container.textContent).toContain("has more devices than this list shows");
+});
+
+it("never shows a previous Host's list after the connection is rebound to another Host", async () => {
+  await render({ machines: [local] });
+  expect(container.textContent).toContain("Pixel 9");
+  devices.loadPairedDevices.mockRejectedValue(new Error("unreachable"));
+  await render({ machines: [{ ...local, environmentId: "other-environment" }] });
+  expect(container.textContent).not.toContain("Pixel 9");
+  expect(buttons().some((entry) => entry.textContent?.trim() === "Revoke")).toBe(false);
+});
+
+it("keeps revoke disabled with a reason on a host that cannot revoke from here", async () => {
+  devices.canRevokePairedDevices.mockResolvedValue(false);
+  await render({ machines: [local] });
+  const revoke = buttons().find((entry) => entry.textContent?.trim() === "Revoke")!;
+  expect(revoke.disabled).toBe(true);
+  expect(container.textContent).toContain("revoke devices from here");
+});
+
+it("pairs a phone in a dialog on the chosen computer and releases the code when the tab is left", async () => {
+  await render();
+  expect(container.querySelector('[role="dialog"]')).toBeNull();
+  await click("Connect a phone");
+  const dialog = container.querySelector('[role="dialog"]')!;
+  expect(api.access).toHaveBeenCalledWith(local, "lan");
+  await click("Show QR code", dialog);
+  expect(api.create).toHaveBeenCalledWith(local);
+  expect(dialog.querySelector("svg title")?.textContent).toBe(
+    "Scan this code in bycoda on your phone",
+  );
+  expect(dialog.textContent).not.toContain("a".repeat(43));
+  await render({ active: false });
+  expect(api.cancel).toHaveBeenCalledWith(local, "pair-local");
+  expect(container.querySelector('[role="dialog"]')).toBeNull();
+});
+
+it("requires the explicit secure connection button before creating a Tailscale QR", async () => {
+  api.access.mockResolvedValue({ state: "setup-required" });
+  await render();
+  await click("Connect a phone");
+  const dialog = container.querySelector('[role="dialog"]')!;
+  await click("Anywhere (Tailscale)", dialog);
+  expect(api.enable).not.toHaveBeenCalled();
+  await click("Enable secure connection", dialog);
+  expect(api.enable).toHaveBeenCalledWith(local, "tailscale", undefined);
+  expect(api.create).toHaveBeenCalledWith(local);
+});
+
+it("refreshes the devices when the paired dialog is closed", async () => {
+  api.status.mockResolvedValue({ state: "paired" });
+  await render();
+  await click("Connect a phone");
+  await click("Show QR code", container.querySelector('[role="dialog"]')!);
+  expect(container.textContent).toContain("Your phone is connected");
+  const before = devices.loadPairedDevices.mock.calls.length;
+  await click("Done");
+  expect(container.querySelector('[role="dialog"]')).toBeNull();
+  expect(devices.loadPairedDevices.mock.calls.length).toBeGreaterThan(before);
+});
+
+it("turns local network access off only after confirmation and shows the network hint", async () => {
+  api.access.mockResolvedValue({
+    mode: "lan",
+    state: "ready",
+    endpoint: "http://192.168.1.20:3777",
+    networkHint: "Windows treats this network as Public.",
+  });
+  await render();
+  expect(container.textContent).toContain("Windows treats this network as Public.");
+  const toggle = container.querySelector<HTMLElement>(
+    '[role="switch"][aria-label="Local network access"]',
+  )!;
+  await act(async () => toggle.click());
+  expect(api.disable).not.toHaveBeenCalled();
+  await click("Turn off local network access", document.body);
+  expect(api.disable).toHaveBeenCalledWith(local);
+});

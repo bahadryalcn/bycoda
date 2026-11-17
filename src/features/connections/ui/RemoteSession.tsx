@@ -471,7 +471,7 @@ function ConnectedRemoteSession({
         contentRefreshInFlight.current = false;
         const cached = next ? cachedSessionSnapshots.get(snapshotKey(machine.id, next)) : undefined;
         publishRemoteDataState(
-          cached ? { phase: "stale" } : next ? { phase: "loading" } : { phase: "empty" },
+          cached ? { phase: "refreshing" } : next ? { phase: "loading" } : { phase: "empty" },
         );
         setRemovingDraft(undefined);
         preparingRef.current = false;
@@ -490,11 +490,13 @@ function ConnectedRemoteSession({
   );
   const [pageCacheOnly, setPageCacheOnly] = useState(false);
   const [remoteDeleted, setRemoteDeleted] = useState(false);
+  // A cached transcript is shown while its first owner read is in flight; that
+  // read is a refresh, and only its failure makes the content unverified.
   const [remoteDataState, setRemoteDataState] = useState<RemoteDataState>(() =>
     !sessionId
       ? { phase: "empty" }
       : cachedSessionSnapshots.has(snapshotKey(machine.id, sessionId))
-        ? { phase: "stale" }
+        ? { phase: "refreshing" }
         : { phase: "loading" },
   );
   const remoteDataStateRef = useRef(remoteDataState);
@@ -539,7 +541,7 @@ function ConnectedRemoteSession({
       snapshotRef.current = cached;
       setSnapshot(cached);
       setPageCacheOnly(true);
-      publishRemoteDataState({ phase: "stale" });
+      publishRemoteDataState({ phase: "refreshing" });
     },
   });
   const {
@@ -3896,7 +3898,10 @@ function ConnectedRemoteSession({
     sendBlockedReason: remoteDeleted
       ? t("This conversation was deleted on the host.")
       : pageCacheOnly
-        ? t("Showing a saved transcript preview. Reconnect to confirm the host before sending.")
+        ? // Opening from the saved preview while the host answers is loading, not a problem.
+          blocksSending(connection.status)
+          ? t("Showing a saved transcript preview. Reconnect to confirm the host before sending.")
+          : t("Loading conversation…")
         : queue.error
           ? t("Could not load queued messages. Retry loading the saved queue above.")
           : snapshot?.historyLoading

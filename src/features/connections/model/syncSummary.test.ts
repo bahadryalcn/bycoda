@@ -25,9 +25,10 @@ it("maps the quiet states", () => {
     tone: "warning",
     text: "Sync is unavailable. Update the host on this machine.",
   });
+  // Capabilities not read yet (a cold start, a Host still starting) is no problem to report.
   expect(summarizeSync({ state: "unlinked", pendingOps: 0 }, now)).toEqual({
-    tone: "warning",
-    text: "Sync is not linked yet.",
+    tone: "muted",
+    text: "Sync has not run yet",
   });
 });
 

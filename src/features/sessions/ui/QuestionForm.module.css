@@ -41,18 +41,26 @@
 .context + * > .body {
   padding-block-start: var(--space-2);
 }
+.attachmentArea {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin-block-start: var(--space-3);
+  min-inline-size: 0;
+}
 .attachments {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
-  margin-block-start: var(--space-3);
+  max-inline-size: 100%;
 }
 .footer {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-2);
+  padding: var(--space-2) var(--space-4);
 }
 .feedback {
   flex: 1 1 14rem;
@@ -60,13 +68,10 @@
 }
 .status {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--space-2);
   margin: 0;
   overflow-wrap: anywhere;
-}
-.status > svg {
-  margin-block-start: 2px;
 }
 .actions {
   display: flex;

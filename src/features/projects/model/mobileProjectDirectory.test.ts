@@ -157,4 +157,33 @@ describe("mobile desktop projection", () => {
     expect(result.groups.map((group) => group.id)).toEqual(["work", "locked"]);
     expect(result.projects.find((project) => project.cwd === "/locked")?.groupId).toBe("locked");
   });
+  it("publishes locked groups with their projects and hidden groups by name for the local Host only", () => {
+    const result = projectMobileDirectory({
+      groups,
+      assignments,
+      paths: ["/work", "/hidden", "/locked"],
+      lock: {
+        lockedGroupIds: new Set(["hidden", "locked"]),
+        lockedProjectKeys: new Set(["/hidden", "/locked"]),
+      },
+      hiddenGroupIds: new Set(["hidden"]),
+    });
+    // The visible directory is unchanged: nothing concealed leaks into it.
+    expect(result.groups.map((group) => group.id)).toEqual(["work"]);
+    expect(result.projects.map((project) => project.cwd)).toEqual(["/work"]);
+    expect(result.concealed?.locked.map((group) => group.id)).toEqual(["locked"]);
+    expect(result.concealed?.locked[0].projects.map((project) => project.cwd)).toEqual(["/locked"]);
+    // Hidden groups are names only: their projects are never published.
+    expect(result.concealed?.hidden).toMatchObject([{ id: "hidden", name: "Hidden client" }]);
+    expect(JSON.stringify(result.concealed)).not.toContain("/hidden");
+  });
+  it("publishes nothing concealed when no group is locked", () => {
+    const result = projectMobileDirectory({
+      groups,
+      assignments,
+      paths: ["/work"],
+      lock: { lockedGroupIds: new Set(), lockedProjectKeys: new Set() },
+    });
+    expect(result.concealed).toBeUndefined();
+  });
 });

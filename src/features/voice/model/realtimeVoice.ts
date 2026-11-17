@@ -2,7 +2,7 @@ import { boundToolOutput } from "./voiceToolOutput";
 import captureUrl from "./voiceCapture.js?url&no-inline";
 import type { RealtimeProvider, RealtimeSecret } from "./realtimeVoiceClient";
 import { VoiceVad, decodePcmBase64, pcmBase64 } from "./voiceVad";
-import { speechTranscript } from "./voiceTranscript";
+import { removeSpeechFillers, speechTranscript } from "./voiceTranscript";
 import { voiceTools } from "./voiceToolSchemas";
 import { voiceInstructions } from "./voiceInstructions";
 import { voiceLanguageCode } from "./voiceLanguage";
@@ -284,6 +284,7 @@ export class RealtimeVoice {
     turnEndSilence?: number;
     allowBargeIn?: boolean;
     manualTurnEnd?: boolean;
+    removeFillers?: boolean;
     experimentalSemanticVad?: boolean;
   }): boolean {
     if (
@@ -364,6 +365,7 @@ export class RealtimeVoice {
       turnEndSilence?: number;
       allowBargeIn?: boolean;
       manualTurnEnd?: boolean;
+      removeFillers?: boolean;
       experimentalSemanticVad?: boolean;
     } = {},
   ) {}
@@ -1037,7 +1039,13 @@ export class RealtimeVoice {
     clearTimeout(timer);
     this.pendingInput = undefined;
     if (this.conversation.experimentalSemanticVad) this.semanticInput = undefined;
-    const text = speechTranscript(typeof event.transcript === "string" ? event.transcript : "");
+    const spoken = speechTranscript(typeof event.transcript === "string" ? event.transcript : "");
+    // A hesitation alone ("eee") is discarded like empty speech once the owner opted in.
+    const text = this.conversation.removeFillers
+      ? removeSpeechFillers(spoken, {
+          language: voiceLanguageCode(this.languageLock) ?? this.language,
+        })
+      : spoken;
     if (
       this.closed ||
       this.muted ||

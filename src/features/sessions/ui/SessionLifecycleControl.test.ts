@@ -2,7 +2,23 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
-import { SessionLifecycleControl } from "./SessionLifecycleControl";
+import { useSessionLifecycleActions } from "./SessionLifecycleControl";
+
+/** Renders the settle action the way the header renders it: a button named by its label. */
+function SettleButton(props: Parameters<typeof useSessionLifecycleActions>[0]) {
+  const { settle } = useSessionLifecycleActions(props);
+  return settle
+    ? createElement(
+        "button",
+        {
+          "aria-label": settle.label,
+          disabled: settle.disabled,
+          onClick: () => void settle.onSelect?.(),
+        },
+        settle.label,
+      )
+    : null;
+}
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -32,7 +48,7 @@ it("blocks settling an empty session and enables it when a message arrives", asy
   const render = async (hasMessages: boolean) => {
     await act(async () =>
       root.render(
-        createElement(SessionLifecycleControl, {
+        createElement(SettleButton, {
           sessionId: "session",
           cwd: "/project",
           local: true,

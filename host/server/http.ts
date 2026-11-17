@@ -176,6 +176,7 @@ export function createHttpRuntime(
     | "gitService"
     | "fileService"
     | "decisionModels"
+    | "featureDirectory"
     | "accountPlatform"
   >,
 ) {

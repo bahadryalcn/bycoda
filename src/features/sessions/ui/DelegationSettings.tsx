@@ -290,9 +290,19 @@ export function delegationSelectChoice(
 ) {
   const ref = isDelegationSetting(setting) ? decodeAdvisor(option.value) : undefined;
   const parts = option.label.split(" · ");
+  const model = ref && parts.length > 1 ? parts[1] : undefined;
+  // The same model offered by several accounts needs the account in its name, or a summary of
+  // the selection ("Haiku 5.5, Fable 5.2, Haiku 5.5") cannot tell the copies apart.
+  const shared =
+    ref &&
+    model &&
+    parts.length > 2 &&
+    setting.options.filter((item) => item.label.split(" · ")[1] === model).length > 1;
   return {
-    label: ref && parts.length > 1 ? parts[1] : t(option.label),
-    meta: ref ? [HARNESS_TITLE[ref.harness], ...parts.slice(2)].join(" · ") : undefined,
+    label: model ? (shared ? [model, ...parts.slice(2)].join(" · ") : model) : t(option.label),
+    meta: ref
+      ? [HARNESS_TITLE[ref.harness], ...(shared ? [] : parts.slice(2))].join(" · ")
+      : undefined,
     group:
       ref &&
       new Set(setting.options.map((item) => decodeAdvisor(item.value)?.harness).filter(Boolean))

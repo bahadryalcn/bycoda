@@ -7,13 +7,17 @@ import type { HarnessVersionCheck } from "../model/providerCliChecks";
 import { Text } from "../../../shared/ui/Text";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import {
   Group,
   RevealedSetting,
   SettingsFeedback,
   settingDomId,
+  usePendingSources,
+  useLeaveGuard,
 } from "../../../shared/ui/settings";
+import { TabDirtyDot } from "../../../shared/ui/TabLabel";
 import { t, useLocale } from "../../../shared/i18n";
 import { ArrowDownCircle, RefreshCw } from "../../../shared/ui/icons";
 import { useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
@@ -57,7 +61,10 @@ import {
   providerMetaLine,
   type ProviderListEntry,
 } from "../../providers/ui/ProviderList";
-import { ProviderDetailHeader } from "../../providers/public/ProviderStatusGroup";
+import {
+  ProviderDetailHeader,
+  ProviderStatusGroup,
+} from "../../providers/public/ProviderStatusGroup";
 import { providerAuthState } from "../../providers/ui/providerStatus";
 import {
   checkInstalledHarnessVersions,
@@ -77,10 +84,8 @@ import type { RecentProject } from "../../projects/public/recents";
 import { loadClaudeHooks, saveClaudeHooks, subscribeClaudeHooks } from "../model/settings";
 import { providersTabForSetting, type ProvidersTab } from "../model/providerSettingsTabs";
 import { ProviderAccountsSettings } from "./ProviderAccountsSettings";
-import { ProviderDecisionModels } from "./ProviderDecisionModels";
 import { storedDefaultProvider } from "./ProviderDefaultsPanel";
 import { ProviderModelsGroup } from "./ProviderModelsGroup";
-import { ProviderCliTab } from "./ProviderCliTab";
 import { ProviderRuntimeGroup } from "./ProviderRuntimeGroup";
 import { ModelsPage as DefaultsPage } from "./models/ModelsPage";
 
@@ -92,6 +97,7 @@ export function resetRetainedProvidersPage() {
 
 export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: RecentProject[] }) {
   useLocale();
+  const pendingSources = usePendingSources();
   const modelsVersion = useSyncExternalStore(subscribeModels, getModelSnapshot, getModelSnapshot);
   useSyncExternalStore(
     subscribeHarnessAvailability,
@@ -125,10 +131,14 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
     () => loadLastModelChoice()?.harness ?? null,
   );
   const [tab, setTabState] = useState<ProvidersTab>(retainedTab);
-  const setTab = (next: ProvidersTab) => {
-    retainedTab = next;
-    setTabState(next);
-  };
+  const leave = useLeaveGuard();
+  const setTab = useStableCallback((next: ProvidersTab) => {
+    if (next === tab) return;
+    leave.guard(() => {
+      retainedTab = next;
+      setTabState(next);
+    });
+  });
   const [accountBusy, setAccountBusy] = useState(false);
   const [standaloneSignIn, setStandaloneSignIn] = useState<HarnessId | null>(null);
   // When this window last finished a version check; the snapshot itself carries no time.
@@ -236,7 +246,7 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
           : PROVIDER_ACCOUNT_PROVIDERS[0],
       );
     }
-  }, [revealedSetting, modelsVersion, activeProvider, accountBusy]);
+  }, [revealedSetting, modelsVersion, activeProvider, accountBusy, setTab]);
 
   const listDefault = storedDefaultProvider({ kind: "global" });
   const probed = hasProbedHarnessAvailability();
@@ -321,10 +331,19 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
     );
   };
 
+  // A tab holding unsaved changes carries a dot, so switching tabs never hides them.
+  const dirtyTabs = new Set<ProvidersTab>(
+    pendingSources.flatMap((source) =>
+      source.id.startsWith("background-work:")
+        ? ["work"]
+        : source.id === "models-defaults"
+          ? ["defaults"]
+          : [],
+    ),
+  );
   const tabs: { id: ProvidersTab; label: string }[] = [
     { id: "work", label: t("Background work") },
-    { id: "chat", label: t("Chats") },
-    { id: "delegation", label: t("Subagents") },
+    { id: "defaults", label: t("Defaults") },
     { id: "providers", label: t("Providers") },
   ];
 
@@ -340,23 +359,13 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
           {tabs.map((item) => (
             <Tab key={item.id} value={item.id} disabled={accountBusy && item.id !== tab}>
               {item.label}
+              {dirtyTabs.has(item.id) ? <TabDirtyDot /> : null}
             </Tab>
           ))}
         </TabList>
         <TabPanel className="provider-tab-panel" tabIndex={-1}>
-          {/* One defaults instance keeps its draft while Chats and Subagents switch. */}
-          {tab !== "providers" ? (
-            <DefaultsPage
-              cwd={cwd}
-              recents={recents}
-              view={tab}
-              onOpenOrder={() =>
-                document
-                  .getElementById(settingDomId("models-order"))
-                  ?.scrollIntoView?.({ block: "start" })
-              }
-            />
-          ) : null}
+          {/* One defaults instance keeps its draft while Background work and Defaults switch. */}
+          {tab !== "providers" ? <DefaultsPage cwd={cwd} recents={recents} view={tab} /> : null}
           {listOutcome?.state === "unsaved" ? (
             <SettingsFeedback
               state="error"
@@ -368,92 +377,7 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
             </SettingsFeedback>
           ) : null}
           <div className="provider-cli-container" hidden={tab !== "providers"}>
-            <div className="provider-cli-workspace">
-              <div className="provider-cli-select">
-                <SearchableSelect
-                  hideLabel
-                  label={t("Providers")}
-                  value={activeProvider ?? ""}
-                  disabled={accountBusy}
-                  searchPlaceholder={t("Search providers…")}
-                  options={entries.map((entry) => ({
-                    value: entry.harness,
-                    label: HARNESS_TITLE[entry.harness],
-                    description: [
-                      providerMetaLine(entry, probed),
-                      entry.isDefault ? t("Default provider") : "",
-                    ]
-                      .filter(Boolean)
-                      .join(" · "),
-                  }))}
-                  onChange={(value) => {
-                    const provider = orderedHarnesses.find((harness) => harness === value);
-                    if (provider) setSelectedProvider(provider);
-                  }}
-                />
-              </div>
-              <ProviderList
-                entries={entries}
-                active={activeProvider}
-                probed={probed}
-                disabled={accountBusy}
-                onSelect={setSelectedProvider}
-                onPickerVisible={onPickerVisible}
-                onSetup={setupProvider}
-              />
-              <div
-                {...surfaceAttributes(
-                  { frame: "pane", edge: "responsive-start" },
-                  "provider-cli-detail",
-                )}
-              >
-                {/* Overview stays mounted across tabs so CLI path, ACP and sign-in drafts survive. */}
-                <div className="provider-cli-section">
-                  {activeProvider ? (
-                    <>
-                      <ProviderDetailHeader
-                        harness={activeProvider}
-                        signInCompleted={standaloneSignIn === activeProvider}
-                        available={isHarnessAvailable(activeProvider)}
-                      />
-                    </>
-                  ) : null}
-                  {accountBusy ? (
-                    <Text role="status" as="p" size="caption" tone="secondary">
-                      {t("Finish or cancel the account operation before switching providers.")}
-                    </Text>
-                  ) : null}
-                  <ProviderAccountsSettings
-                    harness={activeProvider ?? undefined}
-                    onBusyChange={setAccountBusy}
-                    onStandaloneSignIn={setStandaloneSignIn}
-                  />
-                  {orderedHarnesses.map((harness) => (
-                    <div
-                      key={harness}
-                      className="provider-cli-panel"
-                      hidden={activeProvider !== harness}
-                    >
-                      <ProviderRuntimeGroup
-                        harness={harness}
-                        claudeHooks={claudeHooks}
-                        onClaudeHooksChange={onClaudeHooks}
-                        inPicker={!hiddenGlobally.includes(harness)}
-                        onPickerVisible={(visible) => onPickerVisible(harness, visible)}
-                      />
-                      {harness === "acp" ? <GenericAcpSettings cwd={cwd} embedded /> : null}
-                    </div>
-                  ))}
-                  {/* The provider's catalog sits under its own account and runtime. */}
-                  {tab === "providers" && activeProvider ? (
-                    <ProviderModelsGroup key={activeProvider} harness={activeProvider} />
-                  ) : null}
-                </div>
-              </div>
-            </div>
-          </div>
-          {/* Every installed CLI in one table, then the local decision models. */}
-          <div className="provider-cli-section" hidden={tab !== "providers"}>
+            {/* Bulk check and update; each provider's own version state is in its detail header. */}
             {tab === "providers" ? (
               <Group
                 id="harness-updates"
@@ -512,23 +436,112 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
                 {null}
               </Group>
             ) : null}
-            <ProviderCliTab
-              checkedAt={checkedAt}
-              onCheck={runCheck}
-              onRowCheck={(check) =>
-                setRowChecks((rows) => [
-                  ...rows.filter((row) => row.check.harness !== check.harness),
-                  { source: sharedChecks, check },
-                ])
-              }
-            />
-          </div>
-          {/* Decision models keeps its scan and routing drafts while other tabs show. */}
-          <div className="provider-cli-section" hidden={tab !== "providers"}>
-            <ProviderDecisionModels />
+            <div className="provider-cli-workspace">
+              <div className="provider-cli-select">
+                <SearchableSelect
+                  hideLabel
+                  label={t("Providers")}
+                  value={activeProvider ?? ""}
+                  disabled={accountBusy}
+                  searchPlaceholder={t("Search providers…")}
+                  options={entries.map((entry) => ({
+                    value: entry.harness,
+                    label: HARNESS_TITLE[entry.harness],
+                    description: [
+                      providerMetaLine(entry, probed),
+                      entry.isDefault ? t("Default provider") : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" · "),
+                  }))}
+                  onChange={(value) => {
+                    const provider = orderedHarnesses.find((harness) => harness === value);
+                    if (provider) setSelectedProvider(provider);
+                  }}
+                />
+              </div>
+              <ProviderList
+                entries={entries}
+                active={activeProvider}
+                probed={probed}
+                disabled={accountBusy}
+                onSelect={setSelectedProvider}
+                onPickerVisible={onPickerVisible}
+                onSetup={setupProvider}
+              />
+              <div
+                {...surfaceAttributes(
+                  { frame: "pane", edge: "responsive-start" },
+                  "provider-cli-detail",
+                )}
+              >
+                {/* Overview stays mounted across tabs so CLI path, ACP and sign-in drafts survive. */}
+                <div className="provider-cli-section">
+                  {activeProvider ? (
+                    <>
+                      <ProviderDetailHeader
+                        harness={activeProvider}
+                        signInCompleted={standaloneSignIn === activeProvider}
+                        available={isHarnessAvailable(activeProvider)}
+                      />
+                      {/* Every provider's CLI state stays mounted so path drafts survive switching. */}
+                      {orderedHarnesses.map((harness) => (
+                        <div key={harness} hidden={activeProvider !== harness}>
+                          <ProviderStatusGroup
+                            id={settingDomId(`cli-path-${harness}`)}
+                            harness={harness}
+                            available={isHarnessAvailable(harness)}
+                            checkedAt={checkedAt}
+                            onCheck={runCheck}
+                            onRowCheck={(check) =>
+                              setRowChecks((rows) => [
+                                ...rows.filter((row) => row.check.harness !== check.harness),
+                                { source: sharedChecks, check },
+                              ])
+                            }
+                            onSetup={() => undefined}
+                          />
+                        </div>
+                      ))}
+                    </>
+                  ) : null}
+                  {accountBusy ? (
+                    <Text role="status" as="p" size="caption" tone="secondary">
+                      {t("Finish or cancel the account operation before switching providers.")}
+                    </Text>
+                  ) : null}
+                  <ProviderAccountsSettings
+                    harness={activeProvider ?? undefined}
+                    onBusyChange={setAccountBusy}
+                    onStandaloneSignIn={setStandaloneSignIn}
+                  />
+                  {orderedHarnesses.map((harness) => (
+                    <div
+                      key={harness}
+                      className="provider-cli-panel"
+                      hidden={activeProvider !== harness}
+                    >
+                      <ProviderRuntimeGroup
+                        harness={harness}
+                        claudeHooks={claudeHooks}
+                        onClaudeHooksChange={onClaudeHooks}
+                        inPicker={!hiddenGlobally.includes(harness)}
+                        onPickerVisible={(visible) => onPickerVisible(harness, visible)}
+                      />
+                      {harness === "acp" ? <GenericAcpSettings cwd={cwd} embedded /> : null}
+                    </div>
+                  ))}
+                  {/* The provider's catalog sits under its own account and runtime. */}
+                  {tab === "providers" && activeProvider ? (
+                    <ProviderModelsGroup key={activeProvider} harness={activeProvider} />
+                  ) : null}
+                </div>
+              </div>
+            </div>
           </div>
         </TabPanel>
       </Tabs>
+      {leave.dialog}
     </div>
   );
 }

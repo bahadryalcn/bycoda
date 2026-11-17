@@ -347,7 +347,7 @@ their values. Advisors keep their independent selection and may use the main mod
 **Subagent max effort** is independent of main-model effort. Automatic means no
 ceiling. A selected level caps both requested effort and an omitted model default,
 including later replies to that child. For example the main model may use Low while
-subagents may use Max. The control appears beside Subagents in the Subagents tab; defaults remain drafts until saved, inherit through the existing
+subagents may use Max. The control appears beside Subagents in the Defaults tab; defaults remain drafts until saved, inherit through the existing
 scopes, and the ceiling is portable across providers.
 
 A provider with several accounts shows an **Account** picker above its defaults.

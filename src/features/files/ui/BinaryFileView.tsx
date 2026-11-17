@@ -9,7 +9,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertCircle, Check, Copy, Folder, Minus, Plus, RotateCcw } from "../../../shared/ui/icons";
 import { ExplorerMenu } from "./ExplorerMenu";
 import { FileTypeIcon } from "./FileTypeIcon";
-import { copyText } from "../../../platform/tauri/clipboard";
 import { formatFileSize, sniffImageMime } from "../model/filePreview";
 import { watchFile } from "../model/fileWatch";
 import {
@@ -22,6 +21,7 @@ import { displayPath } from "../../../shared/lib/paths";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { useImageZoom } from "../../../shared/hooks/useImageZoom";
 import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
+import { CopyButton } from "../../../shared/ui/CopyButton";
 
 type Props = { path: string; cwd: string };
 
@@ -401,15 +401,13 @@ function FileCard({
           >
             {t("Reveal")}
           </Button>
-          <Button
+          <CopyButton
             size="sm"
             variant="ghost"
-            disabled={pending !== null}
-            loading={pending === "copy"}
-            onClick={() => void run("copy", () => copyText(path))}
-          >
-            {t("Copy path")}
-          </Button>
+            label={t("Copy path")}
+            text={path}
+            resetKeys={[path]}
+          />
         </div>
       </div>
     </div>

@@ -3,8 +3,8 @@ import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { InlineError } from "../../../shared/ui/InlineError";
-import { BlockQuote, Copy, Info, X } from "../../../shared/ui/icons";
+import { CopyButton } from "../../../shared/ui/CopyButton";
+import { BlockQuote, Info, X } from "../../../shared/ui/icons";
 import { Popover } from "../../../shared/ui/Popover";
 import { copyMessage } from "../../../platform/tauri/clipboard";
 import { chatCitationPreview, chatCitationToken, type ChatCitation } from "../model/chatCitation";
@@ -95,7 +95,6 @@ function Citation({ citation, token }: { citation: ChatCitation; token?: string 
   const t = useT();
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [unavailable, setUnavailable] = useState(false);
-  const [copyState, setCopyState] = useState<"idle" | "pending" | "copied" | "error">("idle");
   const label = citation.comment.trim() || citation.text;
   return (
     <div className={styles.item}>
@@ -193,27 +192,13 @@ function Citation({ citation, token }: { citation: ChatCitation; token?: string 
                 {citation.comment}
               </Text>
             ) : null}
-            <Button
+            <CopyButton
               variant="ghost"
               size="sm"
-              loading={copyState === "pending"}
-              onClick={async () => {
-                if (copyState === "pending") return;
-                setCopyState("pending");
-                try {
-                  await copyMessage(citation.text);
-                  setCopyState("copied");
-                } catch {
-                  setCopyState("error");
-                }
-              }}
-            >
-              <Copy className="icon-sm" />
-              {copyState === "copied" ? t("Quote copied") : t("Copy quote")}
-            </Button>
-            {copyState === "error" ? (
-              <InlineError>{t("Could not copy quote. Please try again.")}</InlineError>
-            ) : null}
+              label={t("Copy quote")}
+              copiedLabel={t("Quote copied")}
+              onCopy={() => copyMessage(citation.text)}
+            />
           </div>
         </Popover>
       ) : null}

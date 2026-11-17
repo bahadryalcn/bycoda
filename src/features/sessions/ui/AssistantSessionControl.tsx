@@ -11,33 +11,21 @@ import { Modal } from "../../../shared/ui/Modal";
 import { Bot } from "../../../shared/ui/icons";
 import { useT } from "../../../shared/i18n";
 import { InlineError } from "../../../shared/ui/InlineError";
-import { SessionLifecycleControl } from "./SessionLifecycleControl";
 
-/** Header controls of a session: close/reopen/task link, and the assistant detach control. */
+/** The assistant detach control of a session the assistant manages on this computer. */
 export function AssistantSessionControl(props: {
   sessionId: string;
   cwd: string;
   management?: AssistantSessionManagement;
   local: boolean;
-  hasMessages: boolean;
 }) {
-  return (
-    <>
-      <SessionLifecycleControl
-        sessionId={props.sessionId}
-        cwd={props.cwd}
-        local={props.local}
-        hasMessages={props.hasMessages}
-      />
-      {props.local && props.management?.assistant && props.management.detachedAt === undefined ? (
-        <LocalControl
-          key={`${props.sessionId}:${props.management.jobId ?? props.management.supervisionId}`}
-          {...props}
-          management={props.management}
-        />
-      ) : null}
-    </>
-  );
+  return props.local && props.management?.assistant && props.management.detachedAt === undefined ? (
+    <LocalControl
+      key={`${props.sessionId}:${props.management.jobId ?? props.management.supervisionId}`}
+      {...props}
+      management={props.management}
+    />
+  ) : null;
 }
 // Reads only environmentId, so heartbeat and profile changes do not re-render each pane.
 const selectEnvironmentId = (state: { environmentId: string | null }) => state.environmentId;

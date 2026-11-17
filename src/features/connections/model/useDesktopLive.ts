@@ -32,6 +32,11 @@ import type { RemoteMachine } from "./protocol";
 import { buildMobileProjectDirectory } from "../../projects/public/mobileProjectDirectory";
 import { withMobileProjectLogos } from "../../projects/public/mobileProjectLogos";
 import {
+  getRemoteGrantEpoch,
+  runRemoteGroupLockJob,
+  type RemoteGroupLockReply,
+} from "../../group-lock/public/remoteGroupLock";
+import {
   retainedHarnessWriters,
   retireHarnessWriter,
   captureHarnessControlTurn,
@@ -58,6 +63,8 @@ export function useDesktopLive(
     beat: {} as DesktopLiveBeat,
     inboxResults: new Map<string, DesktopInboxReply>(),
     inboxRunning: new Set<string>(),
+    groupLockResults: new Map<string, RemoteGroupLockReply>(),
+    groupLockRunning: new Set<string>(),
     deletions: {
       results: new Map<string, { id: string; error?: string }>(),
       running: new Set<string>(),
@@ -197,6 +204,12 @@ export function useDesktopLive(
           runLeases: { held: heldRunLeases, answered: noteRunLeases },
           beat,
           deletions: state.current.deletions,
+          groupLock: {
+            results: state.current.groupLockResults,
+            running: state.current.groupLockRunning,
+            epoch: getRemoteGrantEpoch,
+            run: runRemoteGroupLockJob,
+          },
           inbox: {
             jira: async (operation, deadline) =>
               (await import("../../inbox/model/jiraMobileBridge")).executeRemoteJiraBoard(

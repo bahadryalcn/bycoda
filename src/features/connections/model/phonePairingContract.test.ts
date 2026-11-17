@@ -19,6 +19,18 @@ const machine: RemoteMachine = {
 };
 
 describe("phone pairing wire validation", () => {
+  it("keeps the Host's interface names and network hint for LAN addresses only", () => {
+    const access = readMobileAccessStatus({
+      mode: "lan",
+      state: "unavailable",
+      addresses: ["192.168.2.108"],
+      addressInterfaces: { "192.168.2.108": "Ethernet", "8.8.8.8": "Public", "10.0.0.2": 5 },
+      networkHint: "Windows treats this network as Public.",
+    });
+    expect(access.addressInterfaces).toEqual({ "192.168.2.108": "Ethernet" });
+    expect(access.networkHint).toBe("Windows treats this network as Public.");
+  });
+
   it("uses the host-discovered HTTPS address and rejects tunnel/manual credentials", () => {
     const access = readMobileAccessStatus({
       state: "ready",

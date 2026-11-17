@@ -2,6 +2,7 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
     matches!(
         method,
         "social.request"
+            | "modelRouting.catalogFacts"
             | "modelRouting.get"
             | "modelRouting.resolve"
             | "modelRouting.save"
@@ -134,6 +135,9 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "devices.start"
             | "devices.stop"
             | "devices.list"
+            | "devices.paired"
+            | "devices.revokeOther"
+            | "host.access.read"
             | "devices.boot"
             | "devices.capture"
             | "devices.stream"
@@ -327,6 +331,10 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "secrets.input.list"
             | "secrets.input.answer"
             | "drafts.presence.report"
+            | "projects.groups.unlock"
+            | "projects.groups.authorizeHidden"
+            | "projects.groups.lock"
+            | "projects.groups.setHidden"
             | "secrets.owner.revoke"
             | "sessions.lifecycle.get"
             | "sessions.lifecycle.list"

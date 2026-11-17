@@ -82,6 +82,19 @@ afterEach(async () => {
   vi.useRealTimers();
 });
 
+it.each(["desktop", "phone", "invalid", undefined])(
+  "carries pairing kind %s into issuance with phone fallback",
+  async (kind) => {
+    const { manager, owner, issueDevice, redeem } = setup();
+    const ticket = await manager.create(owner, { kind });
+    await manager.redeem(redeem(ticket));
+    expect(issueDevice).toHaveBeenCalledExactlyOnceWith(
+      "My test phone",
+      kind === "desktop" ? "desktop" : "phone",
+    );
+  },
+);
+
 it("serializes asynchronous claims and never replays an issuance with an uncertain outcome", async () => {
   const owner = secret();
   const allowed = new Set([digest(owner)]);
@@ -242,7 +255,7 @@ describe("short-lived mobile pairing", () => {
     const input = redeem(ticket);
     const result = await manager.redeem(input);
     expect(await manager.redeem(input)).toEqual(result);
-    expect(issueDevice).toHaveBeenCalledExactlyOnceWith("My test phone");
+    expect(issueDevice).toHaveBeenCalledExactlyOnceWith("My test phone", "phone");
     expect(await manager.status(owner, ticket.pairingId)).toEqual({
       state: "paired",
       deviceName: "My test phone",

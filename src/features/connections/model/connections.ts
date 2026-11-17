@@ -16,7 +16,7 @@ import {
   type SessionSyncChunk,
   type SessionSyncResponse,
 } from "./protocol";
-import { subscribeRemoteMachineChannel } from "./remoteMachineChannel";
+import { MachineChannelStreamError, subscribeRemoteMachineChannel } from "./remoteMachineChannel";
 import { remoteProjectFor } from "./remoteProjects";
 import { railSessions, type RemoteRailSession } from "./remoteRailSessions";
 import { blocksSending } from "./remoteConnection";
@@ -1357,6 +1357,15 @@ export function useRemoteProjectSessions(project: string, enabled = true): Remot
           }
         },
         (reason) => {
+          // Only this list's stream was refused; the machine still answers, so
+          // re-read over HTTP instead of reporting the list as unrefreshable.
+          if (reason instanceof MachineChannelStreamError) {
+            void sharedSessionLists
+              .load(machine.id, remote.projectId, true)
+              .then(saveList)
+              .catch(fail);
+            return;
+          }
           recovering = true;
           fail(reason);
         },
