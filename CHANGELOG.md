@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.12]
+
+### Improved
+
+- Manage paired devices in one panel and show live desktop state on connected machines.
+- Save settings pages through one shared save bar that warns before leaving unsaved changes.
+- Refresh smart model setup, model order limits and role groups with live catalog facts.
+- Show toast history and clearer copy, notes and question flows.
+
+### Fixed
+
+- Keep queued sends and remote group locks consistent after reconnects.
+- Recover local network pairing when the LAN address changes.
+
 ## [0.7.11]
 
 ### Improved

@@ -10,7 +10,7 @@ members = [
 exclude = ["vendor/portable-pty"]
 
 [workspace.package]
-version = "0.7.11"
+version = "0.7.12"
 edition = "2021"
 license = "MIT"
 
