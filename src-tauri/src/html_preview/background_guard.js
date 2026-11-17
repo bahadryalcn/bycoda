@@ -8,6 +8,8 @@
     "WebSocket",
     "Worker",
     "SharedWorker",
+    // WebView2's immutable IPC shims look up this transport at call time.
+    "chrome",
     "__TAURI_INTERNALS__",
     "__TAURI__",
     "__TAURI_IPC__",

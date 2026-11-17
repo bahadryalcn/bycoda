@@ -49,3 +49,26 @@ test("background capabilities stay retired, including readonly configurable and 
   }
   assert.doesNotThrow(() => runInContext(guard, context));
 });
+
+test("immutable native shims cannot recover their WebView2 transport", () => {
+  const context = createContext({});
+  runInContext(
+    `
+    globalThis.chrome = { webview: { postMessage() { throw new Error('native transport reached'); } } };
+    const bridge = {};
+    Object.defineProperty(bridge, 'invoke', { value: () => globalThis.chrome.webview.postMessage('test') });
+    Object.defineProperty(globalThis, '__TAURI_INTERNALS__', { value: bridge });
+  `,
+    context,
+  );
+  assert.doesNotThrow(() => runInContext(guard, context));
+  assert.equal(runInContext("typeof chrome", context), "undefined");
+  assert.throws(
+    () => runInContext("__TAURI_INTERNALS__.invoke()", context),
+    /Cannot read properties of undefined/,
+  );
+  assert.throws(
+    () => runInContext("Object.defineProperty(globalThis, 'chrome', { value: {} })", context),
+    /Cannot redefine property/,
+  );
+});
