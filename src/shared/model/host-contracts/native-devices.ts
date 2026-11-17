@@ -2,6 +2,12 @@ import { z } from "zod";
 import { SafeCounterSchema } from "./schemas";
 
 export const DevicePlatformSchema = z.enum(["ios", "android"]);
+/** Who holds a device or browser lease right now; absent when nobody does. */
+export const LeaseHolderSchema = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("session"), sessionId: z.string() }),
+  z.strictObject({ kind: z.literal("controller") }),
+]);
+export type LeaseHolder = z.infer<typeof LeaseHolderSchema>;
 export const DeviceSummarySchema = z.strictObject({
   id: z.string(),
   name: z.string(),
@@ -10,6 +16,8 @@ export const DeviceSummarySchema = z.strictObject({
   booted: z.boolean(),
   physical: z.boolean(),
   supportsFold: z.boolean().optional(),
+  /** Set by owner `devices.list` when a live control lease exists (`devices.holder.v1`). */
+  heldBy: LeaseHolderSchema.optional(),
 });
 export const DeviceHostStatusSchema = z.strictObject({
   running: z.boolean(),
@@ -159,7 +167,11 @@ export const NATIVE_DEVICES_RPC_SCHEMAS = {
   },
   "devices.control.status": {
     params: z.strictObject({ ...base, deviceId: z.string() }),
-    result: z.strictObject({ deviceId: z.string(), busy: z.boolean() }),
+    result: z.strictObject({
+      deviceId: z.string(),
+      busy: z.boolean(),
+      heldBy: LeaseHolderSchema.optional(),
+    }),
   },
   "devices.control.claim": {
     params: z.strictObject({ ...base, deviceId: z.string(), requestId: z.string() }),

@@ -128,7 +128,13 @@ export function ModelSettingsColumn({
   locked,
   onChoose,
   onExplain,
+  hideAgentSettings = false,
 }: {
+  /**
+   * Leaves out the Agents tab and its settings (advisor, subagents, subagent effort, image
+   * models), for callers whose changes would be discarded.
+   */
+  hideAgentSettings?: boolean;
   current: AgentModel;
   settings: ModelSetting[];
   values: Record<string, string>;
@@ -139,7 +145,9 @@ export function ModelSettingsColumn({
   onExplain: (setting: ModelSetting | null) => void;
 }) {
   const t = useT();
-  const { model, agents } = splitPanelSettings(settings);
+  const split = splitPanelSettings(settings);
+  const model = split.model;
+  const agents = hideAgentSettings ? [] : split.agents;
   const [tab, setTab] = useState<PanelTab>("settings");
   const [explainedId, setExplainedId] = useState<string | null>(null);
   const [pickingId, setPickingId] = useState<string | null>(null);

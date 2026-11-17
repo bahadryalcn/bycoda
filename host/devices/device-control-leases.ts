@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import type { LeaseHolder } from "../../src/shared/model/host-contracts/native-devices";
+import { leaseHolderFromOwner } from "./lease-holder";
 
 type Lease = {
   owner: string;
@@ -58,7 +60,19 @@ export class DeviceControlLeases {
 
   async status(deviceId: string) {
     const lease = await this.live(deviceId);
-    return { deviceId, busy: !!lease };
+    return lease
+      ? { deviceId, busy: true, heldBy: leaseHolderFromOwner(lease.owner) }
+      : { deviceId, busy: false };
+  }
+
+  /** Holder of every device with a live lease; devices nobody holds are absent. */
+  async holders(): Promise<Map<string, LeaseHolder>> {
+    const held = new Map<string, LeaseHolder>();
+    for (const deviceId of this.leases.keys()) {
+      const lease = await this.live(deviceId);
+      if (lease) held.set(deviceId, leaseHolderFromOwner(lease.owner));
+    }
+    return held;
   }
 
   async claim(

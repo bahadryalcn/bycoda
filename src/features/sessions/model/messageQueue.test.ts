@@ -626,3 +626,12 @@ describe("ownerQueueRows", () => {
     ]);
   });
 });
+
+it("names a blank conversation by the first message its paused queue holds", () => {
+  const blank = { ...newSession("claude", "/tmp/project"), queuedMessages: undefined };
+  const held = holdUndeliveredFollowUp(blank, queued("first", "Remove private repos\nmore"));
+  expect(held.title).toBe("claude · Remove private repos");
+  expect(holdUndeliveredFollowUp(held, queued("second", "Other")).title).toBe(
+    "claude · Remove private repos",
+  );
+});

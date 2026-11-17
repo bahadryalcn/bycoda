@@ -24,6 +24,7 @@ import {
 } from "../../sessions/model/models";
 import { rememberRemoteProject, remoteProjectFor } from "../model/remoteProjects";
 import { RemoteSession, type RemoteSessionOverrides } from "./RemoteSession";
+import { saveRemoteAutoReconnect } from "../../settings/model/settings";
 import { outputTest } from "./RemoteSession.output.test-support";
 import { outboxFixture } from "./remoteSessionOutboxFixture";
 import { effort, settle, tooltipText, typeText } from "./RemoteSession.test-support";
@@ -653,6 +654,10 @@ afterEach(async () => {
   vi.unstubAllGlobals();
   localStorage.clear();
 });
+
+/** Automatic reconnecting off: the session notice explains a drop at once instead of first
+ * showing the quiet "Reconnecting…" phase. */
+const explainAtOnce = () => saveRemoteAutoReconnect(false);
 
 /** Whether the host in a test advertises `!command` support. */
 let shellSupported = false;
@@ -2177,6 +2182,7 @@ it("keeps a saved model's effort editable when the host catalog fails", async ()
 });
 
 it("explains a dropped connection above the session and reconnects from there", async () => {
+  explainAtOnce();
   machineDown = unreachable;
   await render();
   expect(container.textContent).toContain("Can’t reach Home server");
@@ -3280,6 +3286,7 @@ it("coalesces revision hints received during a tail read into one follow-up", as
 });
 
 it("keeps the transcript on disconnect, shows one connection notice and reconnects to verified empty", async () => {
+  explainAtOnce();
   lazyHistorySupported = true;
   openExistingChat();
   await render();
@@ -3335,6 +3342,7 @@ it("uses one connection recovery for blocked conversation and queue reads withou
 });
 
 it("keeps an independent queue-storage retry available beside a connection problem", async () => {
+  explainAtOnce();
   queueReadFailed = true;
   machineDown = unreachable;
   openExistingChat();
@@ -3884,6 +3892,7 @@ slow("queues a plain Send while the host turn runs, and sends the messages in or
 });
 
 slow("holds the queue while the machine is unreachable and sends after it reconnects", async () => {
+  explainAtOnce();
   openRunningChat();
   await render();
   await whenStopShown();

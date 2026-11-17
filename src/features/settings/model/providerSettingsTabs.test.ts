@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { providersTabForSetting, PROVIDERS_TABS } from "./providerSettingsTabs";
 it("routes every installation reveal and provider option to the Providers tab", () => {
-  expect(PROVIDERS_TABS).toEqual(["work", "defaults", "providers"]);
+  expect(PROVIDERS_TABS).toEqual(["providers", "work", "defaults"]);
   for (const id of [
     "harness-updates",
     "cli-path-codex",

@@ -8,15 +8,15 @@ import {
   encodeSubagents,
 } from "../../../shared/model/host-contracts/delegation";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
-import { SubagentModeControl } from "../../sessions/public/SubagentModeControl";
+import { SubagentModeControl } from "./SubagentModeControl";
 import {
   DelegationOptionIcon,
   delegationSelectChoice,
-} from "../../sessions/public/modelPickerData";
-import type { ModelSetting } from "../../sessions/public/models";
+} from "./DelegationSettings";
+import type { ModelSetting } from "../model/models";
 
-/** Provider-default draft using the conversation panel's subagent wire values. */
-export function ProviderDefaultSubagents({
+/** Subagent mode (Automatic, Custom, Off) with the custom model list, in the conversation panel's wire values. */
+export function SubagentSelectionControl({
   setting,
   value,
   onChange,

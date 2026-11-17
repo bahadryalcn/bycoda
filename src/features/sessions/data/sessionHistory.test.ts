@@ -27,6 +27,19 @@ function summary(id: string, cwd: string, updatedAt = 1): SessionSummary {
 }
 
 describe("historyWithLiveSessions", () => {
+  it("lists a blank open conversation only while its composer holds unsent text", () => {
+    const session: Session = { ...newSession("codex", "/tmp/draft"), id: "typed" };
+    expect(historyWithLiveSessions([], [session], session.cwd)).toEqual([]);
+    const rows = historyWithLiveSessions(
+      [],
+      [session],
+      session.cwd,
+      undefined,
+      [],
+      new Set(["typed"]),
+    );
+    expect(rows.map((row) => row.id)).toEqual(["typed"]);
+  });
   it("removes a legacy interruption warning once the loaded transcript proves owner Stop", () => {
     const session: Session = {
       ...newSession("codex", "/tmp/stopped"),

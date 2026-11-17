@@ -2086,7 +2086,14 @@ const TranscriptBlock = memo(function TranscriptBlock({
   if (block.role === "tool") {
     if (block.inlineVisual) return <InlineVisual snapshot={block.inlineVisual} />;
     if (isAdvisorBlock(block))
-      return <AdvisorRow block={block} modelSettings={planModelSettings} />;
+      return (
+        <AdvisorRow
+          block={block}
+          modelSettings={planModelSettings}
+          cwd={cwd}
+          onOpenFile={onOpenFile}
+        />
+      );
     return (
       <ToolCall
         block={block}

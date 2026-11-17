@@ -109,6 +109,36 @@ it("infers the kind from the label and uses explicit Host catalogs only", () => 
   expect(setupCandidates({ ...source(), available: () => false })).toEqual([]);
 });
 
+it("proposes concrete models available to the Host and skips mismatched Claude aliases", () => {
+  const concrete = {
+    id: "claude:fable-5-2",
+    nativeId: "claude-fable-5-2",
+    harness: "claude",
+    name: "Fable 5.2",
+  } as const;
+  const alias = {
+    ...concrete,
+    id: "claude:fable",
+    nativeId: "fable",
+    aliasTarget: "claude-fable-5-2",
+  };
+  const renderer = {
+    ...source(),
+    id: "remote",
+    accounts: { claude: [{ id: "default", label: "Default" }] },
+    modelsFor: () => [alias, concrete, { ...concrete, id: "claude:missing" }],
+  };
+  const catalog = { models: { claude: [concrete] } };
+  expect(setupCandidates(renderer, catalog).map(({ target }) => target.model)).toEqual([
+    concrete.id,
+  ]);
+  expect(
+    setupCandidates(renderer, { models: { claude: [alias, concrete] } }).map(
+      ({ target }) => target.model,
+    ),
+  ).toEqual([concrete.id]);
+});
+
 it("adds missing models, orders strong moderately priced models first and creates tier pools", () => {
   const candidates = [
     candidate("mini", 2, 1),
@@ -120,20 +150,14 @@ it("adds missing models, orders strong moderately priced models first and create
   const original = draft();
   const next = setup(original, candidates);
   expect(original.routing.entries).toEqual([]);
-  expect(next.routing.entries.map((e) => e.model)).toEqual([
-    "cheap-opus",
-    "opus",
-    "opus",
-    "mid",
-    "mini",
-  ]);
+  expect(next.routing.entries.map((e) => e.model)).toEqual(["cheap-opus", "opus", "mid", "mini"]);
   expect(next.routing.entries.every((e) => !e.modelSettings.crossAdvisor)).toBe(true);
   expect(next.routing.pools.map((p) => [p.name, p.entryIds.length])).toEqual([
-    ["Smartest", 3],
-    ["Balanced", 4],
+    ["Smartest", 2],
+    ["Balanced", 3],
     ["Fast", 1],
   ]);
-  expect(prepareOrderSave(next).routing.entries).toHaveLength(5);
+  expect(prepareOrderSave(next).routing.entries).toHaveLength(4);
 });
 
 it("puts Opus and Sol first, cheaper capable models next and top-priced models after them", () => {
@@ -149,6 +173,8 @@ it("puts Opus and Sol first, cheaper capable models next and top-priced models a
       ["claude:opus-5-5", 4, 3],
     ] as const
   ).map(([model, intelligence, cost]) => candidate(model, intelligence, cost));
+  for (const item of list)
+    if (item.target.model.startsWith("claude:")) item.target.harness = "claude";
   expect(baselineOrder(list).map((i) => list[i]!.target.model)).toEqual([
     "claude:opus-5-5",
     "codex:gpt-6.1-sol",
@@ -397,31 +423,58 @@ it("runs light pools at low, the order at medium and heavy pools at high, never 
     { ...candidate("mini", 2, 1), effort: efforts },
   ];
   const next = setup(draft(), list);
-  const byId = new Map(next.routing.entries.map((entry) => [entry.id, entry]));
-  const pool = (name: string) =>
-    next.routing.pools
-      .find((item) => item.name === name)!
-      .entryIds.map((id) => `${byId.get(id)!.model}:${byId.get(id)!.modelSettings.effort}`);
-  expect(next.routing.entries.slice(0, 3).map((e) => e.modelSettings.effort)).toEqual([
+  const [strong, , mini] = next.routing.entries;
+  const pool = (name: string) => next.routing.pools.find((item) => item.name === name)!;
+  expect(next.routing.entries.map((e) => e.modelSettings.effort)).toEqual([
     "medium",
     "medium",
     "medium",
   ]);
-  expect(pool("Smartest")).toEqual(["strong:high"]);
-  expect(pool("Fast")).toEqual(["mini:low"]);
+  expect(pool("Smartest")).toMatchObject({ effort: "high", entryIds: [strong!.id] });
+  expect(pool("Balanced").effort).toBe("medium");
+  expect(pool("Fast")).toMatchObject({ effort: "low", entryIds: [mini!.id] });
   expect(next.routing.entries.some((e) => e.modelSettings.effort === "xhigh")).toBe(false);
   expect(setup(next, list).routing.entries).toHaveLength(next.routing.entries.length);
 });
 
-it("keeps an owner's above-high entry for heavy pools and collapses missing levels", () => {
+it("keeps legacy copies and refills pools using the existing medium entry when available", () => {
   const list = [{ ...candidate("strong", 5, 3), effort: { id: "effort", options: ["xhigh"] } }];
   expect(setup(draft(), list).routing.entries.map((e) => e.modelSettings.effort)).toEqual(["high"]);
   const owner = draft();
   owner.routing.entries = [
     { ...list[0]!.target, id: "own", modelSettings: { effort: "max" }, unknownLimit: "use" },
+    { ...list[0]!.target, id: "medium", modelSettings: { effort: "medium" }, unknownLimit: "use" },
   ];
   const tuned = [{ ...list[0]!, effort: { id: "effort", options: ["medium", "high", "max"] } }];
   const next = setup(owner, tuned);
-  expect(next.routing.pools.find((p) => p.name === "Smartest")!.entryIds).toEqual(["own"]);
+  expect(next.routing.pools.find((p) => p.name === "Smartest")).toMatchObject({
+    effort: "high",
+    entryIds: ["medium"],
+  });
+  expect(next.routing.entries.map((e) => e.id)).toEqual(["medium", "own"]);
   expect(next.routing.entries.find((e) => e.id === "own")!.modelSettings.effort).toBe("max");
+});
+
+it("applies AI order to pool members and baseline tier fallbacks only", () => {
+  const account = { id: "other", label: "Other" };
+  const list = [
+    candidate("top", 5, 3),
+    candidate("pool-only", 4, 3),
+    candidate("unused", 4, 3),
+    candidate("other-best", 5, 3, account),
+    candidate("other-unused", 4, 3, account),
+    candidate("light", 2, 1),
+  ];
+  const next = applySmartSetup(draft(), list, {
+    order: [2, 1],
+    pools: [{ name: "Top", members: [1], includes: [] }],
+    roles: { "task.reviewer": { pool: "Top" } },
+  });
+  expect(next.routing.entries.map((entry) => entry.model)).toEqual([
+    "pool-only",
+    "top",
+    "other-best",
+    "light",
+  ]);
+  expect(next.routing.pools[0]!.entryIds).toEqual([next.routing.entries[0]!.id]);
 });

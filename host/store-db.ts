@@ -9,19 +9,35 @@ import {
   type PersistenceHealth,
 } from "./storage/persistence-health";
 import { createDedupedWarn } from "./diagnostics/log-dedupe";
+import { elapsedSince, monotonicNow } from "../src/shared/lib/time/timestamps";
 
 export type StoreRow = Record<string, any>;
 /** Every Host read and write waits behind a scope this long; the owner names the holder. */
 const SLOW_SCOPE_MS = 1_000;
 const slowScopeWarn = createDedupedWarn({ windowMs: 10 * 60_000 });
+/**
+ * A scope still open after this long blocks every later Host request. The release
+ * warning never fires for an owner that never returns, so name it while it holds.
+ */
+const STUCK_SCOPE_MS = 15_000;
+const SCOPE_DEADLINE_MS = 5 * 60_000;
+const BOUNDARY_DEADLINE_MS = 60_000;
+export type ScopeOptions = { deadlineMs?: number };
+/** A holder never returned: it was failed so the queue could move on. */
+class ScopeDeadlineError extends Error {
+  constructor(site: string, ms: number) {
+    super(`Host database queue holder ${site} exceeded its deadline ms=${ms}`);
+    this.name = "ScopeDeadlineError";
+  }
+}
 /** The functions that entered a scope: names only, no paths and none of this module's frames. */
-const scopeSite = (entry: Error): string =>
+const scopeSite = (entry: Error, depth = 3): string =>
   (entry.stack ?? "")
     .split("\n")
     .slice(1)
     .map((line) => /^\s*at (?:async )?([\w$.<>]+) \(/.exec(line)?.[1])
     .filter((name): name is string => !!name && !/^(?:StoreDatabase|StoreStatement)\./.test(name))
-    .slice(0, 3)
+    .slice(0, depth)
     .join(" < ") || "unknown";
 /**
  * Structured clone ships a typed-array view's entire backing ArrayBuffer. A 64 KiB
@@ -73,6 +89,14 @@ export class StoreDatabase {
   /** Cache publication failed after a commit: the store must drop its caches. */
   onMutationFault?: () => void;
   onCommit?: (effect: () => void | Promise<void>) => void;
+  /** A holder exceeded its deadline: drop any state it kept for a transaction it will never finish. */
+  onScopeAbandoned?: () => void;
+  /** The worker failed for good: only a Host restart recovers. Called once, from `fail()`. */
+  onFatal?: () => void;
+  /** Longest one owner may hold the queue (see `scope`). */
+  scopeDeadlineMs = SCOPE_DEADLINE_MS;
+  /** Longest the worker may take to answer an enter/leave or a liveness ping. */
+  boundaryDeadlineMs = BOUNDARY_DEADLINE_MS;
   private tail: Promise<unknown> = Promise.resolve();
   private sequence = 0;
   admissionVersion = 0;
@@ -124,12 +148,16 @@ export class StoreDatabase {
           code: reply.code,
           errcode: reply.errcode,
         });
-        const health = storageFailure(error);
-        // A busy, full or I/O failure of a read changes nothing on disk, so it only fails
-        // that read. Writes stay blocked only after a failed write; corruption always blocks.
-        if (health && (request.write || health.state === "recovery-required"))
-          this.setHealth(health);
-        request.reject(error);
+        try {
+          const health = storageFailure(error);
+          // A busy, full or I/O failure of a read changes nothing on disk, so it only fails
+          // that read. Writes stay blocked only after a failed write; corruption always blocks.
+          if (health && (request.write || health.state === "recovery-required"))
+            this.setHealth(health);
+        } finally {
+          // The request left `pending`; whatever bookkeeping throws, its caller must hear back.
+          request.reject(error);
+        }
       } else {
         try {
           if (
@@ -169,6 +197,8 @@ export class StoreDatabase {
       rejectReady(error);
     };
     this.worker.on("error", failed);
+    // A reply that cannot be deserialized never reaches "message": its request would wait forever.
+    this.worker.on("messageerror", failed);
     this.worker.on("exit", (code) => {
       if (!this.terminating) failed(new Error(`Database worker exit ${code}`));
     });
@@ -242,7 +272,9 @@ export class StoreDatabase {
         primary = error;
         rejected = true;
       }
-      if (rejected && !this.failed) {
+      // An abandoned owner (deadline) has no live scope: its transaction was already rolled
+      // back by the release, and its cleanup requests must not fail the database.
+      if (rejected && !this.failed && this.ownsScope) {
         try {
           await this.request("rollbackOpen");
         } catch (error) {
@@ -261,7 +293,7 @@ export class StoreDatabase {
           }
         }
       }
-      if (!this.failed) {
+      if (!this.failed && this.ownsScope) {
         try {
           await this.request("durability", undefined, [1]);
         } catch (error) {
@@ -344,11 +376,21 @@ export class StoreDatabase {
   }
   /** Caller holds the same source admission through manifest/blob capture. */
   backupTo(destination: string): Promise<void> {
-    return this.scope(() => this.request("backup", undefined, [destination]));
+    return this.scope(() => this.request("backup", undefined, [destination]), undefined, {
+      deadlineMs: Infinity,
+    });
   }
 
   fail(error: Error): void {
+    const first = !this.failed;
     this.failed ??= error;
+    if (first) {
+      try {
+        this.onFatal?.();
+      } catch (fatalError) {
+        console.error("Host database failure handler failed:", fatalError);
+      }
+    }
     clearTimeout(this.recoveryTimer);
     this.health = { state: "recovery-required", reason: "worker" };
     for (const request of this.pending.values()) request.reject(this.failed);
@@ -411,8 +453,8 @@ export class StoreDatabase {
     )
       throw new RequestAuthorizationError();
   }
-  storeScope<T>(work: () => T | Promise<T>): Promise<T> {
-    return this.scope(() => this.internal.run(true, work));
+  storeScope<T>(work: () => T | Promise<T>, options?: ScopeOptions): Promise<T> {
+    return this.scope(() => this.internal.run(true, work), undefined, options);
   }
   afterCommit(effect: () => void | Promise<void>): void {
     if (this.onCommit) this.onCommit(effect);
@@ -424,7 +466,16 @@ export class StoreDatabase {
       });
   }
 
-  scope<T>(work: () => T | Promise<T>, signal?: AbortSignal): Promise<T> {
+  /**
+   * Runs `work` as the one owner of the database; later scopes queue FIFO behind it.
+   * An owner still running after the deadline (default 5 minutes; `deadlineMs: Infinity`
+   * for work that is legitimately long, such as backups and migrations) is abandoned: its
+   * promise rejects with `ScopeDeadlineError`, its transaction rolls back and the queue
+   * moves on. Abandonment cannot stop code: whatever `work` does outside the store
+   * (processes, network, timers, in-memory state) keeps running, and only its later store
+   * requests are rejected as having no live owner.
+   */
+  scope<T>(work: () => T | Promise<T>, signal?: AbortSignal, options?: ScopeOptions): Promise<T> {
     if (signal?.aborted) return Promise.reject(new Error("Database read admission cancelled."));
     const current = this.owners.getStore();
     if (current) {
@@ -449,6 +500,7 @@ export class StoreDatabase {
     // V8 formats the stack only when it is read, so an unread entry costs one capture.
     const entry = new Error();
     let entered = false;
+    let stuck: ReturnType<typeof setInterval> | undefined;
     const pending = this.tail.then(async () => {
       if (this.failed) throw this.failed;
       await this.ready;
@@ -456,6 +508,12 @@ export class StoreDatabase {
       entered = true;
       const owner: Owner = { id: randomUUID(), phase: "open" };
       const enteredAt = performance.now();
+      stuck = setInterval(() => {
+        console.warn(
+          `Host database queue still held by ${scopeSite(entry, 8)} ms=${Math.round(performance.now() - enteredAt)} queued=${this.admissionVersion - admittedBefore}`,
+        );
+      }, STUCK_SCOPE_MS);
+      stuck.unref?.();
       return this.owners.run(owner, async () => {
         await this.request("enter", undefined, [], owner);
         let primary: unknown;
@@ -463,10 +521,24 @@ export class StoreDatabase {
         let workFailed = false;
         try {
           await this.authorize(authorization);
-          result = await work();
+          result = await this.withDeadline(
+            work(),
+            owner,
+            entry,
+            options?.deadlineMs ?? this.scopeDeadlineMs,
+          );
         } catch (error) {
           primary = error;
           workFailed = true;
+          if (error instanceof ScopeDeadlineError) {
+            // The abandoned work can never roll back its own state; the leave below rolls
+            // back the SQL transaction, the store resets what it kept beside it.
+            try {
+              this.onScopeAbandoned?.();
+            } catch (abandonError) {
+              console.error("Host database abandoned-scope reset failed:", abandonError);
+            }
+          }
         }
         owner.phase = "closing";
         try {
@@ -498,6 +570,7 @@ export class StoreDatabase {
       });
     });
     const settled = pending.finally(() => {
+      clearInterval(stuck);
       if (signal) this.queuedCancellableReads--;
     });
     this.tail = settled.catch(() => undefined);
@@ -515,6 +588,98 @@ export class StoreDatabase {
         .finally(() => signal.removeEventListener("abort", cancelled))
         .catch(() => undefined);
     });
+  }
+
+  /**
+   * Bounds how long one owner may hold the FIFO. Past the deadline the holder fails with
+   * `ScopeDeadlineError` so the queue moves on; its late requests find a closed owner. A
+   * holder blocked on the worker itself (reply lost) cannot be released safely, so the
+   * database fails and every pending request rejects instead of waiting forever.
+   */
+  private withDeadline<T>(
+    work: T | Promise<T>,
+    owner: Owner,
+    entry: Error,
+    deadlineMs: number,
+  ): Promise<T> {
+    if (!Number.isFinite(deadlineMs)) return Promise.resolve(work);
+    return new Promise<T>((resolve, reject) => {
+      const startedAt = monotonicNow();
+      let settled = false;
+      const timer = setTimeout(() => {
+        const error = new ScopeDeadlineError(
+          scopeSite(entry, 8),
+          Math.round(elapsedSince(startedAt)),
+        );
+        const abandon = () => {
+          if (settled) return;
+          console.error(`Host database queue holder abandoned: ${error.message}`);
+          reject(error);
+        };
+        if (![...this.pending.values()].some((request) => request.owner === owner)) {
+          abandon();
+          return;
+        }
+        // A request is still on the worker: slow is not dead. Only a worker that does not
+        // answer a ping is failed; a responsive one lets the holder be abandoned.
+        // A missing answer already failed the database in `watchReply`, which rejects the work.
+        this.pingWorker().then(abandon, () => undefined);
+      }, deadlineMs);
+      timer.unref?.();
+      Promise.resolve(work)
+        .then(resolve, reject)
+        .finally(() => {
+          settled = true;
+          clearTimeout(timer);
+        });
+    });
+  }
+
+  /** Resolves when the worker answers between operations; rejects when it does not in time. */
+  private pingWorker(): Promise<void> {
+    if (this.failed) return Promise.reject(this.failed);
+    const id = ++this.sequence;
+    return new Promise<void>((resolve, reject) => {
+      const timer = this.watchReply(id, "a liveness ping");
+      this.pending.set(id, {
+        resolve: () => {
+          clearTimeout(timer);
+          resolve();
+        },
+        reject: (error) => {
+          clearTimeout(timer);
+          reject(error);
+        },
+        owner: { id: "", phase: "closed" },
+        mutation: false,
+        write: false,
+      });
+      try {
+        this.worker.postMessage({ id, owner: "", method: "ping", params: [] });
+      } catch (error) {
+        this.pending.delete(id);
+        clearTimeout(timer);
+        reject(error);
+      }
+    });
+  }
+
+  /**
+   * Fails the database when request `id` has no answer after the boundary deadline. The
+   * check runs on `setImmediate`: after a long main-thread stall or sleep the timer fires
+   * before the queued replies are delivered, and a late-but-delivered reply is not a failure.
+   */
+  private watchReply(id: number, what: string): ReturnType<typeof setTimeout> {
+    const timer = setTimeout(() => {
+      setImmediate(() => {
+        const request = this.pending.get(id);
+        if (!request) return;
+        const error = new Error(`Host database worker did not answer ${what} in time.`);
+        this.fail(error);
+      });
+    }, this.boundaryDeadlineMs);
+    timer.unref?.();
+    return timer;
   }
 
   private request(
@@ -542,9 +707,18 @@ export class StoreDatabase {
       return Promise.reject(new Error("Database request has no live owner."));
     const id = ++this.sequence;
     return new Promise((resolve, reject) => {
+      // Admission and release are instant for a healthy worker; no reply means it is lost.
+      const boundary =
+        method === "enter" || method === "leave" ? this.watchReply(id, `"${method}"`) : undefined;
       this.pending.set(id, {
-        resolve,
-        reject,
+        resolve: (value) => {
+          clearTimeout(boundary);
+          resolve(value);
+        },
+        reject: (error) => {
+          clearTimeout(boundary);
+          reject(error);
+        },
         owner,
         sql,
         mutation:
@@ -559,6 +733,7 @@ export class StoreDatabase {
         this.worker.postMessage({ id, owner: owner.id, method, sql, params: workerParams(params) });
       } catch (error) {
         this.pending.delete(id);
+        clearTimeout(boundary);
         reject(error);
       }
     });

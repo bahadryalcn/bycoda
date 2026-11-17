@@ -1,3 +1,5 @@
+import { isMachineFocused, UNFOCUSED_OFFLINE_CHECK_MS } from "./machineFocus";
+
 /** Transcript reads may slow down in the background; explicit commands never do. */
 export function remoteSessionPollDelay(
   active: boolean,
@@ -23,6 +25,15 @@ export function remoteSessionPollDelay(
  * 12 s, 24 s, then 30 s. Shared by every poller so they back off alike. */
 export function remoteBackoffDelay(failures: number): number {
   return Math.min(30_000, 3_000 * 2 ** Math.min(4, failures));
+}
+
+/** A machine's status check: every 15 s while it answers. One that does not backs off to 30 s
+ * while the user works in it (see `machineFocus`), and is checked only every few minutes otherwise. */
+export function machineStatusPollDelay(failures: number, environmentId?: string): number {
+  if (!failures) return 15_000;
+  return environmentId && !isMachineFocused(environmentId)
+    ? UNFOCUSED_OFFLINE_CHECK_MS
+    : remoteBackoffDelay(failures);
 }
 
 /** Spreads retries of many targets that failed together (+-15 %). */

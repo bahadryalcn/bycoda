@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useStableCallback } from "../../../../shared/hooks/useStableCallback";
 import { useT } from "../../../../shared/i18n";
 import { WandSparkles } from "../../../../shared/ui/icons";
@@ -6,14 +7,15 @@ import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { Button } from "../../../../shared/ui/Button";
 import { Text } from "../../../../shared/ui/Text";
 import { toast } from "../../../../shared/ui/ToastRegion";
-import { useModelSource } from "../../../sessions/public/modelSource";
+import { LOCAL_MODEL_SOURCE, useModelSource } from "../../../sessions/public/modelSource";
 import type { OrderDraft } from "../../model/modelRoutingDraft";
 import { refreshLocalLiveCatalogFacts } from "../../model/liveCatalogFacts";
 import { applySmartSetup, rulePlan, setupCandidates } from "../../model/smartSetup";
 import { planSmartSetup, type SmartSetupResult } from "../../model/smartSetupAi";
+import { localSetupCatalog, setupCatalogQuery } from "../../model/smartSetupCatalog";
 
 /**
- * One reversible draft edit that adds every available account and model, orders them, fills
+ * One reversible draft edit that adds pool models and account fallbacks, orders them, fills
  * the groups, binds every job and sets subagents and advisor. The primary action applies the
  * researched rules at once; "Plan with AI" asks a model first and falls back to the rules.
  * Persistence stays with the version-bound Save. Failures reach the owner through the draft
@@ -28,6 +30,7 @@ export function SmartSetupAction({
 }) {
   const t = useT();
   const source = useModelSource();
+  const client = useQueryClient();
   const [running, setRunning] = useState(false);
   const abort = useRef<AbortController | null>(null);
   // The edit lands after an async step, so it must use the editor of the latest render.
@@ -53,22 +56,27 @@ export function SmartSetupAction({
     });
     return applied;
   }
+  async function candidatesForSetup() {
+    const [, catalog] = await Promise.all([
+      refreshLocalLiveCatalogFacts(3000),
+      localSetupCatalog((machineId) => client.fetchQuery(setupCatalogQuery(machineId))),
+    ]);
+    return setupCandidates(source.id ? LOCAL_MODEL_SOURCE : source, catalog);
+  }
   async function runRules() {
     const controller = new AbortController();
     abort.current = controller;
     setRunning(true);
-    // Live prices and scores, at most 3 s; the researched table covers a slow or offline Host.
-    await refreshLocalLiveCatalogFacts(3000);
-    if (controller.signal.aborted) return;
-    setRunning(false);
     let result: SmartSetupResult | undefined;
     let failure: unknown;
     try {
-      const candidates = setupCandidates(source);
+      const candidates = await candidatesForSetup();
       if (candidates.length) result = { candidates, plan: rulePlan(candidates, names) };
     } catch (cause) {
       failure = cause;
     }
+    if (controller.signal.aborted) return;
+    setRunning(false);
     if (apply(result, failure))
       toast.show({
         tone: "info",
@@ -82,8 +90,8 @@ export function SmartSetupAction({
     let result: SmartSetupResult | undefined;
     let failure: unknown;
     try {
-      await refreshLocalLiveCatalogFacts(3000);
-      const candidates = setupCandidates(source);
+      const candidates = await candidatesForSetup();
+      if (controller.signal.aborted) return;
       if (candidates.length)
         result = await planSmartSetup(candidates, names, { signal: controller.signal });
     } catch (cause) {
@@ -137,7 +145,7 @@ export function SmartSetupAction({
       <InfoPopover label={t("About smart setup")} className="shrink-0">
         <Text as="p" tone="muted" leading="inherit">
           {t(
-            "Adds every signed-in account and enabled model. Strong models at a moderate price come first, cheaper capable models next, top-priced models last; reviews and planning use the strongest. Also sets subagents and the advisor. Effort never goes above High.",
+            "Adds models used by groups and the best fallback in each tier for every account. Strong models at a moderate price come first, then cheaper capable models and top-priced models. Groups set reasoning effort for their jobs, up to High. Also sets subagents and the advisor.",
           )}
         </Text>
         <Text as="p" tone="muted" leading="inherit">

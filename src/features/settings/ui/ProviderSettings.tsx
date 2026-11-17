@@ -89,10 +89,10 @@ import { ProviderModelsGroup } from "./ProviderModelsGroup";
 import { ProviderRuntimeGroup } from "./ProviderRuntimeGroup";
 import { ModelsPage as DefaultsPage } from "./models/ModelsPage";
 
-let retainedTab: ProvidersTab = "work";
+let retainedTab: ProvidersTab = "providers";
 
 export function resetRetainedProvidersPage() {
-  retainedTab = "work";
+  retainedTab = "providers";
 }
 
 export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: RecentProject[] }) {
@@ -342,9 +342,9 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
     ),
   );
   const tabs: { id: ProvidersTab; label: string }[] = [
+    { id: "providers", label: t("Providers") },
     { id: "work", label: t("Background work") },
     { id: "defaults", label: t("Defaults") },
-    { id: "providers", label: t("Providers") },
   ];
 
   return (

@@ -192,8 +192,16 @@ export function bindNativeDevicesOwner(
           )
             effectAdmitted?.();
           if (method === "devices.status") result = await host.status(effect);
-          else if (method === "devices.list") result = await host.list(effect);
-          else if (method === "devices.preflight")
+          else if (method === "devices.list") {
+            const listed = await host.list(effect);
+            const held = await host.control.holders();
+            result = {
+              ...listed,
+              devices: listed.devices.map((device) =>
+                held.has(device.id) ? { ...device, heldBy: held.get(device.id) } : device,
+              ),
+            };
+          } else if (method === "devices.preflight")
             result = await host.preflight(params.deviceId as string | undefined, effect);
           else if (method === "devices.start") result = await host.start(effect);
           else if (method === "devices.setup") {

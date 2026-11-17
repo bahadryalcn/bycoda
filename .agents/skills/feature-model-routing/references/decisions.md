@@ -65,3 +65,13 @@ Owner decision, 2026-11-17:
 (Gloss: Fable and Astra are expensive and not always needed; Opus and Sol are the everyday models; rank by benefit, price and capability together.) The owner also chose two separate lists for work and personal accounts, one global smart setup that also sets subagents and the advisor, and decision models on their own Settings page.
 
 Recorded decision: smart setup orders by tier (strong at a moderate price, then cheaper capable, then top-priced, then light), capability within a tier. Its primary action applies the researched rules at once; planning with AI is an explicit menu choice. It also sets global subagents, advisor and a medium subagent effort ceiling and clears those keys from provider and account layers in the draft. Models, groups, job bindings and limits are one draft with one Save. Entries are kept grouped work, personal, shared. No new execution or publishing authority.
+
+## Chat usage-limit failover follows the order only when the owner turns it on
+
+Owner decision, 2026-11-17:
+
+> tamam bunların hepsini düzeltelim. 3 ü de yapalım var olan sistemde açıp kapatabilsin ama kullanıcı bu özellikleri kontrollü olsun yani
+
+(Gloss: fix all of it, including automatic failover, but the owner must be able to turn it on and off.)
+
+Recorded decision: a Chat setting (`usageLimitFailover`: off, another account, model order; default off) lets a local conversation stopped at a usage limit switch once per limit and send Continue. Model order reads the main order and its live status and skips the limited account. Routing runs keep their run-start snapshot; this is an explicit chat preference, not order or quota changes moving a running session.

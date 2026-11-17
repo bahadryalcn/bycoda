@@ -1,6 +1,7 @@
 import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import { retainedTransactionValue, useRetainedTransaction } from "../../model/retainedTransaction";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useT } from "../../../../shared/i18n";
 import {
   HOST_MODEL_ROUTING,
   type ModelRoutingState,
@@ -9,22 +10,26 @@ import type { HostSettings } from "../../../tasks/public/hostSettings";
 import {
   listMachineLimits,
   saveMachineLimits,
-  settingsMachines,
+  settingsMachine,
 } from "../../../tasks/public/hostSettings";
 import { useModelRouting } from "../../model/modelRoutingClient";
 import {
+  findUnavailableOrderEntry,
   orderDraft,
   prepareOrderSave,
   sameOrderDraft,
+  unavailableOrderEntryId,
   type OrderDraft,
 } from "../../model/modelRoutingDraft";
+import { setupCatalogQuery } from "../../model/smartSetupCatalog";
 
 export function useOrderSettings(machineId: string) {
   const routing = useModelRouting(machineId, true);
+  const catalog = useQuery(setupCatalogQuery(machineId));
   const limits = useQuery({
     queryKey: ["model-routing-limits", machineId],
     queryFn: async () => {
-      const machine = (await settingsMachines()).find((candidate) => candidate.id === machineId);
+      const machine = await settingsMachine(machineId);
       if (!machine) throw new Error("Work limits are unavailable on this Host.");
       const [state] = await listMachineLimits([machine]);
       if (!state) throw new Error("The Host did not return work limits.");
@@ -32,7 +37,7 @@ export function useOrderSettings(machineId: string) {
     },
     retry: false,
   });
-  return { routing, limits };
+  return { routing, limits, catalog };
 }
 
 function routingWithoutRoles(state: ModelRoutingState): string {
@@ -45,6 +50,7 @@ type Baseline = { routing: ModelRoutingState; limits: HostSettings };
 
 /** One editing transaction; each separate Host acknowledgement becomes its own baseline. */
 export function useOrderDraft(settings: Settings, initial: Baseline, machineId: string) {
+  const t = useT();
   const client = useQueryClient();
   const [baseline, setBaseline] = useRetainedTransaction(`order:${machineId}:baseline`, initial);
   const [draft, setDraft] = useRetainedTransaction(
@@ -66,7 +72,8 @@ export function useOrderDraft(settings: Settings, initial: Baseline, machineId: 
       setPending(value);
     },
   };
-  const dirty = !sameOrderDraft(draft, orderDraft(baseline.routing, baseline.limits));
+  const base = orderDraft(baseline.routing, baseline.limits);
+  const dirty = !sameOrderDraft(draft, base);
   // Query notifications can lag a mutation's acknowledgement by one render.
   const observedRouting = settings.routing.state;
   const latestRouting =
@@ -106,9 +113,17 @@ export function useOrderDraft(settings: Settings, initial: Baseline, machineId: 
     });
   }
   const conflict = saveConflict || (dirty && changedElsewhere && !pending);
+  const unavailable = sameOrderDraft({ ...draft, limits: base.limits }, base)
+    ? undefined
+    : findUnavailableOrderEntry(draft.routing.entries, settings.catalog.data);
   let validation = "";
   try {
     prepareOrderSave(draft);
+    if (unavailable)
+      validation = t("Model {p0} is unavailable on this Host (entry {p1}).", {
+        p0: unavailable.model,
+        p1: unavailable.id,
+      });
   } catch (cause) {
     validation = cause instanceof Error ? cause.message : String(cause);
   }
@@ -199,7 +214,9 @@ export function useOrderDraft(settings: Settings, initial: Baseline, machineId: 
       setSaved(true);
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
-      setSaveConflict(/conflict|version|changed/i.test(message));
+      setSaveConflict(
+        !unavailableOrderEntryId(message) && /conflict|version|changed/i.test(message),
+      );
       setError(routingSaved ? `Models saved; work limits were not saved. ${message}` : message);
     } finally {
       submitting.current = false;
@@ -209,7 +226,7 @@ export function useOrderDraft(settings: Settings, initial: Baseline, machineId: 
   return {
     draft,
     /** The acknowledged document as a draft; changes are listed against it. */
-    base: orderDraft(baseline.routing, baseline.limits),
+    base,
     change,
     edit,
     pending,
@@ -217,6 +234,7 @@ export function useOrderDraft(settings: Settings, initial: Baseline, machineId: 
     conflict,
     validation,
     error,
+    invalidEntryId: unavailable?.id ?? unavailableOrderEntryId(error),
     saved,
     save,
     revert,

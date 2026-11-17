@@ -1,5 +1,5 @@
 /** The Models page tabs, in display order. */
-export const PROVIDERS_TABS = ["work", "defaults", "providers"] as const;
+export const PROVIDERS_TABS = ["providers", "work", "defaults"] as const;
 export type ProvidersTab = (typeof PROVIDERS_TABS)[number];
 
 /** The tab that holds a searched setting; undefined leaves the current tab. */

@@ -10,10 +10,7 @@ import { useSidebarActions } from "./workspace/layout/useSidebarActions";
 import { useLocalSessionReferences } from "./workspace/sessions/useLocalSessionReferences";
 import { LocalSessionReferenceProvider } from "../features/sessions/ui/LocalSessionReferenceContext";
 import { VoiceCompanionGate } from "../features/voice/ui/VoiceCompanionGate";
-import {
-  RemoteConnectionFeedbackProvider,
-  RemoteConnectionNotices,
-} from "../features/connections/ui/RemoteConnectionFeedback";
+import { RemoteConnectionFeedbackProvider } from "../features/connections/ui/RemoteConnectionFeedback";
 import { AssistantNotifications } from "../features/assistant/ui/AssistantNotifications";
 import { AssistantBackgroundRoom } from "../features/assistant/model/AssistantBackgroundRoom";
 import { useVoiceAppBridge, useVoiceRailProjects } from "./workspace/bridges/useVoiceAppBridge";
@@ -104,6 +101,7 @@ import { useHistorySessionArchive } from "./workspace/sessions/useHistorySession
 import { useHistorySessionMeta } from "./workspace/sessions/useHistorySessionMeta";
 import { useTitleTabActions } from "./workspace/sessions/useTitleTabActions";
 import { useSessionModelActions } from "./workspace/sessions/useSessionModelActions";
+import { useUsageLimitFailover } from "./workspace/sessions/useUsageLimitFailover";
 import { useSessionDraftActions } from "./workspace/sessions/useSessionDraftActions";
 import { useSessionShell } from "./workspace/sessions/useSessionShell";
 import { useSubmitSession } from "./workspace/sessions/submit/useSubmitSession";
@@ -2126,6 +2124,17 @@ function Workspace({
     onUsageLimitResume,
   });
 
+  useUsageLimitFailover({
+    sessions,
+    sessionsRef,
+    movingSessionIds,
+    windowTransferPendingRef,
+    enqueueHarnessEvent,
+    flushHarnessEvents,
+    onModelChange,
+    onSubmit,
+  });
+
   const { openSessionBeside, onSecondOpinion } = useSecondOpinion({
     sessionsRef,
     setSessions,
@@ -3170,7 +3179,6 @@ function Workspace({
               className="app-canvas flex h-full flex-col"
             >
               {compactTitleBar ? workspaceTitleBar : null}
-              <RemoteConnectionNotices />
               <CrewManagedSessionsFeed cwds={crewFeedCwds} />
               {!detachedSessionWindow && <AssistantNotifications />}
               {!detachedSessionWindow && !toolWindow && !windowTransfer && (

@@ -1294,3 +1294,10 @@ it("saves the exact CI context alongside the compact user message", () => {
     ciContext: context,
   });
 });
+
+it("persists a blank conversation whose refused first message waits in the queue", () => {
+  const session = newSession("codex", "/repo");
+  expect(shouldPersistSession(session)).toBe(false);
+  session.queuedMessages = [{ id: "q", text: "Refused send", attachments: [] }];
+  expect(shouldPersistSession(session)).toBe(true);
+});

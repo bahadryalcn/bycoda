@@ -4,6 +4,8 @@ export {
   DEFAULT_AGENT_DEFAULTS,
   HOST_BEHAVIOR_DEFAULTS,
   parseAgentDefaults,
+  USAGE_LIMIT_FAILOVERS,
+  type UsageLimitFailover,
   type AgentDefaults,
   type AgentDefaultsRecord,
 } from "../model/hostSettings";

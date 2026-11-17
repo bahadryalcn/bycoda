@@ -36,6 +36,10 @@ describe("agent defaults", () => {
       parseAgentDefaults({ streamingTextMode: "adaptive" }, current.agentDefaults),
     ).toMatchObject({ resumeAtReset: false, streamingTextMode: "adaptive" });
   });
+  it("keeps usage limit failover off until the owner picks a target", () => {
+    expect(DEFAULT_AGENT_DEFAULTS.usageLimitFailover).toBe("off");
+    expect(parseAgentDefaults({ usageLimitFailover: "order" }).usageLimitFailover).toBe("order");
+  });
   it.each([
     { resumeAtReset: "true" },
     { keepAwakeHoldAfter: 0 },
@@ -44,6 +48,7 @@ describe("agent defaults", () => {
     { version: Infinity },
     { schemaVersion: 2 },
     { streamingTextMode: "fast" },
+    { usageLimitFailover: "pool" },
   ])("rejects invalid patch %j", (patch) => {
     expect(() => parseAgentDefaults(patch)).toThrow();
   });

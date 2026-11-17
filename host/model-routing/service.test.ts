@@ -33,6 +33,61 @@ const draft = (): ModelRoutingDraft => ({
   ...structuredClone(EMPTY_MODEL_ROUTING),
   entries: [{ id: "a", harness: "codex", model: "x", modelSettings: {}, unknownLimit: "use" }],
 });
+
+it("persists pool effort and resolves it against the chosen model's supported settings", async () => {
+  const service = createModelRoutingService({
+    store,
+    accounts: async () => ({}),
+    catalog: async () => ({
+      models: {
+        codex: [
+          {
+            id: "x",
+            settings: [
+              {
+                id: "reasoningEffort",
+                label: "Reasoning effort",
+                kind: "select",
+                value: "low",
+                options: ["low", "medium", "xhigh"].map((value) => ({ value, label: value })),
+              },
+            ],
+          },
+        ],
+      },
+    }),
+    signals: async () => ({
+      available: () => true,
+      signedIn: () => true,
+      accountKind: () => undefined,
+      quota: () => ({ unknown: true }),
+    }),
+  });
+  const next = draft();
+  next.entries[0]!.modelSettings = { reasoningEffort: "low", fast: "on" };
+  next.pools = [
+    { id: "outer", name: "Outer", entryIds: [], poolIds: ["inner"], effort: "high" },
+    { id: "inner", name: "Inner", entryIds: ["a"], effort: "low" },
+    { id: "legacy", name: "Legacy", entryIds: ["a"] },
+  ];
+  next.roles["task.worker"] = { kind: "pool", poolId: "outer" };
+  expect((await service.save(0, next)).pools).toEqual(next.pools);
+  await expect(
+    service.resolve({
+      role: "task.worker",
+      eligible: (target) => target.modelSettings.reasoningEffort === "medium",
+    }),
+  ).resolves.toMatchObject({
+    ok: true,
+    source: { kind: "pool", poolId: "outer", entryId: "a" },
+    target: { modelSettings: { reasoningEffort: "medium", fast: "on" } },
+  });
+  for (const choice of [{ kind: "order" }, { kind: "pool", poolId: "legacy" }] as const)
+    await expect(service.resolve({ role: "task.worker", choice })).resolves.toMatchObject({
+      ok: true,
+      target: { modelSettings: { reasoningEffort: "low", fast: "on" } },
+    });
+});
 function setup() {
   const signals = vi.fn(async () => ({
     available: () => true,
@@ -92,7 +147,7 @@ it("does not reinterpret corrupt storage as unconfigured", async () => {
 it("exposes status and typed in-process run-start resolution", async () => {
   const { service } = setup();
   await service.save(0, draft());
-  expect(await service.status()).toEqual([{ entryId: "a" }]);
+  expect(await service.status()).toEqual([{ entryId: "a", limitState: "unavailable" }]);
   expect(await resolveModelChoice(service, { role: "task.worker" })).toMatchObject({
     ok: true,
     source: { kind: "order", entryId: "a" },

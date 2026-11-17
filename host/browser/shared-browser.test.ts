@@ -697,3 +697,22 @@ it("streams live frames beside a pending operation and falls back to screenshots
   }
   expect(session.detach).toHaveBeenCalled();
 });
+
+it("reports who holds the browser without exposing owner fingerprints or other lease ids", async () => {
+  let now = 1000;
+  const browser = new SharedBrowser(undefined, () => now);
+  expect((await browser.dispatch("browser.status", {}, "desktop")).heldBy).toBeUndefined();
+  const agent = await browser.dispatchForSession(
+    "browser.claim",
+    { projectId: "project", sessionId: "session-1" },
+    "agent",
+  );
+  const observed = await browser.dispatch("browser.status", {}, "phone");
+  expect(observed.heldBy).toEqual({ kind: "session", sessionId: "session-1" });
+  expect(observed.leaseId).toBeUndefined();
+  expect(JSON.stringify(observed)).not.toContain(String(agent.leaseId));
+  const owner = await browser.dispatch("browser.claim", {}, "desktop", { takeover: true });
+  expect(owner.heldBy).toEqual({ kind: "controller" });
+  now = owner.leaseExpiresAt!;
+  expect((await browser.dispatch("browser.status", {}, "phone")).heldBy).toBeUndefined();
+});

@@ -34,6 +34,8 @@ vi.mock("../../core/child", () =>
   }),
 );
 
+vi.mock("../../../../platform/tauri/fs", () => ({ homeDir: async () => "/home/test" }));
+
 const { runGrokTextPrompt, stopGrokTextPrompt, warmupGrokText } = await import("./grokText");
 
 function messages() {
@@ -157,6 +159,22 @@ it.each([{ chunks: ["ha", "ha"] }, { chunks: ["-", "--"] }, { chunks: ["\n", "\n
     ).toBe(chunks.join(""));
   },
 );
+it("sends the absolute home folder, never a literal ~, as the ACP session cwd", async () => {
+  const result = runGrokTextPrompt({ cwd: "~", prompt: "question" });
+  await waitFor(() => !!outbound("initialize"), "initialize");
+  reply("initialize", {});
+  await waitFor(() => !!outbound("session/new"), "session/new");
+  expect(outbound("session/new")?.params).toMatchObject({ cwd: "/home/test", mcpServers: [] });
+  reply("session/new", { sessionId: "550e8400-e29b-41d4-a716-446655440000" });
+  await waitFor(() => !!outbound("session/set_model"), "session/set_model");
+  reply("session/set_model", {});
+  await waitFor(() => !!outbound("session/set_mode"), "session/set_mode");
+  reply("session/set_mode", {});
+  await waitFor(() => !!outbound("session/prompt"), "session/prompt");
+  reply("session/prompt", {});
+  await expect(result).resolves.toBe("");
+});
+
 it("forwards Grok text deltas without duplicating snapshots", async () => {
   const events: HarnessEvent[] = [];
   const result = runGrokTextPrompt({

@@ -4,6 +4,7 @@ import {
   subscribeMachineTurnedOff,
 } from "./machineEnabled";
 import { closeTurnedOffMachine } from "./machineTurnOff";
+import { isMachineFocused, subscribeMachineFocused } from "./machineFocus";
 import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
 import {
   knownRemoteMachine,
@@ -250,6 +251,7 @@ function schedule() {
     const wanted =
       !offline() &&
       !paused.has(environmentId) &&
+      isMachineFocused(environmentId) &&
       (state.status === "connection-blocked"
         ? shouldRetryBlocked(blocked, hiddenSince, now, enabled)
         : shouldAutoRetry(state.status, hiddenSince, now, enabled));
@@ -281,10 +283,12 @@ async function retry(environmentId: string, force: boolean) {
   // key may have been fixed outside the app. They never open a prompt. With
   // automatic reconnecting off, nothing here runs. A blocked machine is limited
   // to its quiet attempts, even when the window regains focus.
+  // A machine nobody works in is left to the rare status check; only focused ones are dialed.
   const allowed =
     !offline() &&
     !paused.has(environmentId) &&
     isMachineEnabled(environmentId) &&
+    isMachineFocused(environmentId) &&
     loadRemoteAutoReconnect() &&
     status !== "identity-mismatch" &&
     (blocked
@@ -329,7 +333,7 @@ function wake() {
 const retryOnline = () => wake();
 const pauseOffline = () => schedule();
 
-/** Starts retrying dropped machines in the background, once per app run, with a
+/** Starts retrying dropped focused machines (see `machineFocus`) in the background, once per app run, with a
  * jittered wait that doubles from about two seconds to at most five minutes,
  * and at once when the window regains focus or the network returns. Nothing is
  * dialed while the computer is offline. Machines that need a password are left
@@ -368,6 +372,11 @@ export function startRemoteAutoRecovery(): () => void {
   });
   const stopTunnelWatch = watchTunnelExits();
   const stopTurnOff = subscribeMachineTurnedOff(closeTurnedOffMachine);
+  // Opening a down machine's project is new demand: dial it now instead of at the next check.
+  const stopFocus = subscribeMachineFocused((environmentId) => {
+    void retry(environmentId, true);
+    schedule();
+  });
   window.addEventListener("focus", retryOnFocus);
   window.addEventListener("online", retryOnline);
   window.addEventListener("offline", pauseOffline);
@@ -380,6 +389,7 @@ export function startRemoteAutoRecovery(): () => void {
     unsubscribeSetting();
     stopTunnelWatch();
     stopTurnOff();
+    stopFocus();
     window.removeEventListener("focus", retryOnFocus);
     window.removeEventListener("online", retryOnline);
     window.removeEventListener("offline", pauseOffline);

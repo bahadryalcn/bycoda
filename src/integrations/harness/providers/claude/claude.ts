@@ -87,6 +87,9 @@ import {
   isTodoTool,
   applyClaudeTaskTool,
   isUsageLimitResult,
+  isUsageLimitText,
+  claudeExitMessage,
+  pushClaudeStderrTail,
   normalizeClaudeCliEffort,
   parseBackgroundTasks,
   parseControlCancelId,
@@ -238,6 +241,10 @@ type Live = {
   queryGeneration: number | null;
   /** Latest `rate_limit_event` refused requests; reported when the turn ends. */
   usageLimit: { resetsAt?: number } | null;
+  /** Claude's own limit wording from stderr, shown when it exits at the limit. */
+  usageLimitText: string | null;
+  /** Last stderr lines, kept to explain an unexpected exit. */
+  stderrTail: string[];
   /** One failure can arrive as assistant, result and rejected promise in this turn. */
   reportedTurnErrors: Set<string>;
   cancelled: boolean;
@@ -830,6 +837,8 @@ function newLiveState(input: {
     commands: new ClaudeCommandLedger(),
     queryGeneration: null,
     usageLimit: null,
+    usageLimitText: null,
+    stderrTail: [],
     reportedTurnErrors: new Set(),
     cancelled: false,
     muteUpdates: false,
@@ -948,7 +957,15 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
         }
         if (current) {
           stopOutputWatches(current);
-          current.exitError ??= new Error(reason || "Claude Code exited");
+          // Claude can stop at a refused usage window before it reports a result;
+          // that is a usage limit, not a crash.
+          if (!current.exitError && current.usageLimit && !current.cancelled) {
+            current.exitError = new Error(current.usageLimitText ?? "Usage limit reached");
+            if (!current.muteUpdates)
+              current.onEvent({ type: "usage.limited", ...current.usageLimit });
+          }
+          current.usageLimit = null;
+          current.exitError ??= new Error(reason || claudeExitMessage(code, current.stderrTail));
         }
         if (!current?.muteUpdates) {
           (current?.onEvent ?? input.onEvent)({ type: "session.ended", code });
@@ -967,8 +984,15 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       },
       (line) => {
         const current = liveRef.current;
-        if (!current || current.muteUpdates) return;
-        // Only this explicit startup failure is actionable; ordinary CLI
+        if (!current) return;
+        pushClaudeStderrTail(current.stderrTail, line);
+        if (current.muteUpdates) return;
+        // A limit printed on stderr is reported only if Claude then exits.
+        if (isUsageLimitText(line)) {
+          current.usageLimit ??= {};
+          current.usageLimitText = current.stderrTail[current.stderrTail.length - 1] ?? null;
+        }
+        // Only these explicit failures are actionable; ordinary CLI
         // diagnostics must not turn a successful conversation into an error.
         if (/No conversation found with session ID:/i.test(line)) {
           current.exitError = new Error(

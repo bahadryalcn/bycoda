@@ -158,6 +158,7 @@ export function buildSetupPrompt(candidates: SetupCandidate[], names: SetupPoolN
     "researchedScore (0-100) and usd prices come from current public leaderboards and price lists; baselineOrder is our researched " +
     "benefit-per-cost ranking. Start from it and improve it, don't just copy it. Intelligence is 1-5, cost 1-4 (4 most expensive). " +
     "The same model on several accounts is listed once per account; spread work across accounts so one account's quota is not the only option. " +
+    "Keep each pool selective. The main order keeps models used by pools plus the best fallback in each tier per account. " +
     `Accounts have kind work, personal or unknown. Work projects never run on personal accounts and personal projects never on work accounts; ` +
     `shared accounts serve both. Decide each unknown account's kind from its label (shared when it says neither). When any account is work or personal, ` +
     `create pools named ${JSON.stringify(names.work)} (work + shared accounts) and ${JSON.stringify(names.personal)} (personal + shared accounts). ` +
@@ -201,7 +202,7 @@ export function parsePlanAnswer(text: string): PlanAnswer | undefined {
 /**
  * Turn an answer into candidates and a plan. Only estimated profiles and kind-less accounts
  * take the AI's values; unknown keys, roles and empty pools are dropped. `applySmartSetup`
- * appends every candidate the order leaves out.
+ * fills missing pool members and per-account tier fallbacks into the order.
  */
 export function planFromAnswer(
   candidates: SetupCandidate[],

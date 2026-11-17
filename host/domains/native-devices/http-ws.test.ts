@@ -77,6 +77,7 @@ it("routes actual DeviceHost inventory, preflight, boot, action and four-MiB cap
   expect(await f.callHttp("devices.control.status", { deviceId: "emulator-5554" })).toEqual({
     deviceId: "emulator-5554",
     busy: true,
+    heldBy: { kind: "controller" },
   });
   const action = await ws.call("devices.action", {
     deviceId: "emulator-5554",

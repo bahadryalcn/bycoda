@@ -7,6 +7,7 @@ import {
 } from "../../../shared/model/host-contracts/model-routing";
 import {
   entrySettings,
+  findUnavailableOrderEntry,
   groupEntriesByKind,
   orderDraft,
   reorderKind,
@@ -17,6 +18,7 @@ import {
   sameOrderDraft,
   includablePools,
   setPoolMembers,
+  unavailableOrderEntryId,
 } from "./modelRoutingDraft";
 
 const entry = (id: string): ModelRoutingEntry => ({
@@ -36,6 +38,20 @@ const state = (): ModelRoutingState => ({
 const draft = () => orderDraft(state(), { maxRunningTasks: 2, dailyAgentMinutes: 0 });
 
 describe("model routing order draft", () => {
+  it("identifies a rejected row using a known Host catalog or the Host error", () => {
+    const entries = [entry("available"), { ...entry('invalid"id'), model: "claude:fable" }];
+    expect(findUnavailableOrderEntry(entries, { models: {} })).toBeUndefined();
+    expect(findUnavailableOrderEntry(entries, { models: { codex: [] } })).toBeUndefined();
+    expect(
+      findUnavailableOrderEntry(entries, { models: { codex: [{ id: "gpt", name: "GPT" }] } }),
+    ).toMatchObject({ id: 'invalid"id' });
+    expect(
+      unavailableOrderEntryId(
+        `Host rejected request: Model "claude:fable" is not available for codex (entry id: "invalid\\"id").`,
+      ),
+    ).toBe('invalid"id');
+    expect(unavailableOrderEntryId('Model "missing" is not available for codex.')).toBeUndefined();
+  });
   it("clones state, retains roles and delegation, omits storage metadata", () => {
     const original = state();
     original.roles["task.worker"] = { kind: "pool", poolId: "p" };

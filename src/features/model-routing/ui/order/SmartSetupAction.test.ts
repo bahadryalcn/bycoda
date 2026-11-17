@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
 import { SmartSetupAction } from "./SmartSetupAction";
 import { orderDraft, type OrderDraft } from "../../model/modelRoutingDraft";
@@ -11,6 +12,7 @@ import {
   type SetupCandidate,
 } from "../../model/smartSetup";
 import { planSmartSetup } from "../../model/smartSetupAi";
+import { localSetupCatalog } from "../../model/smartSetupCatalog";
 import { toast } from "../../../../shared/ui/ToastRegion";
 import { EMPTY_MODEL_ROUTING } from "../../../../shared/model/host-contracts/model-routing";
 
@@ -21,6 +23,9 @@ vi.mock("../../model/smartSetup", () => ({
   rulePlan: vi.fn(),
 }));
 vi.mock("../../model/smartSetupAi", () => ({ planSmartSetup: vi.fn() }));
+vi.mock("../../model/smartSetupCatalog", () => ({
+  localSetupCatalog: vi.fn(async () => undefined),
+}));
 vi.mock("../../../../shared/ui/ToastRegion", () => ({ toast: { show: vi.fn() } }));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const roots: ReturnType<typeof createRoot>[] = [];
@@ -28,6 +33,7 @@ afterEach(async () => {
   for (const root of roots.splice(0)) await act(() => root.unmount());
   document.body.replaceChildren();
   vi.clearAllMocks();
+  vi.mocked(localSetupCatalog).mockResolvedValue(undefined);
 });
 
 const candidate = { target: { harness: "codex", model: "gpt" } } as unknown as SetupCandidate;
@@ -52,14 +58,19 @@ async function mount(run = false) {
   document.body.append(container);
   const root = createRoot(container);
   roots.push(root);
+  const client = new QueryClient({ defaultOptions: { queries: { gcTime: Infinity } } });
   await act(() =>
     root.render(
-      createElement(SmartSetupAction, {
-        onEdit: (operation) => {
-          edits.push(operation);
-          if (run) operation(start());
-        },
-      }),
+      createElement(
+        QueryClientProvider,
+        { client },
+        createElement(SmartSetupAction, {
+          onEdit: (operation) => {
+            edits.push(operation);
+            if (run) operation(start());
+          },
+        }),
+      ),
     ),
   );
   return { edits, container, root };
@@ -80,10 +91,13 @@ it("fills the draft with the researched rules at once, without asking a model", 
   vi.mocked(setupCandidates).mockReturnValue([candidate]);
   vi.mocked(rulePlan).mockReturnValue(plan);
   vi.mocked(applySmartSetup).mockReturnValue(start());
+  const catalog = { models: { codex: [{ id: "gpt", name: "GPT" }] } };
+  vi.mocked(localSetupCatalog).mockResolvedValue(catalog);
   const { edits, container } = await mount(true);
   expect(container.textContent).toContain("Smart setup");
   await act(async () => primary(container).click());
   expect(planSmartSetup).not.toHaveBeenCalled();
+  expect(setupCandidates).toHaveBeenCalledWith(expect.anything(), catalog);
   expect(rulePlan).toHaveBeenCalledWith([candidate], names);
   expect(edits).toHaveLength(1);
   expect(applySmartSetup).toHaveBeenCalledWith(expect.anything(), [candidate], plan);

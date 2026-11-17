@@ -374,7 +374,8 @@ Connect another computer using an SSH forward to the loopback port.`);
   }
   boot?.phase("db-open");
   const { HostStore } = await import("./store");
-  const { armShutdownDeadline, shutdownExitCode } = await import("./server/lifecycle");
+  const { armShutdownDeadline, shutdownExitCode, DATABASE_FAILED_STOP } =
+    await import("./server/lifecycle");
   const store = new HostStore(join(directory, "host.db"));
   try {
     await store.ready;
@@ -623,6 +624,13 @@ Connect another computer using an SSH forward to the loopback port.`);
     await writeFileAtomic(statePath, JSON.stringify({ pid: process.pid, port, secret }), {
       mode: 0o600,
     });
+    // A failed database worker never recovers in place; exit non-zero so the service
+    // supervisor restarts the Host instead of leaving it serving a dead store.
+    store.db.onFatal = () => {
+      console.error("Host database failed; shutting down so the supervisor restarts the Host.");
+      stop(DATABASE_FAILED_STOP).catch((error) => console.error("Host shutdown failed:", error));
+    };
+    if (store.db.restartRequired) store.db.onFatal();
     process.once("SIGTERM", () => {
       void stop("SIGTERM");
     });

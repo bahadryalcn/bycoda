@@ -88,20 +88,6 @@ export function listRemoteOutages(): string[] {
     .map(([environmentId]) => environmentId);
 }
 
-let outageSnapshot: readonly string[] = [];
-function readOutages(): readonly string[] {
-  const next = listRemoteOutages();
-  // Keep the array identity while the set is unchanged, as useSyncExternalStore requires.
-  if (next.length !== outageSnapshot.length || next.some((id, i) => id !== outageSnapshot[i]))
-    outageSnapshot = next;
-  return outageSnapshot;
-}
-
-/** Subscribe-able list of machines with an outage, independent of any mounted pane. */
-export function useRemoteOutages(): readonly string[] {
-  return useSyncExternalStore(subscribeChanges, readOutages, readOutages);
-}
-
 export function readRemoteConnection(environmentId: string): RemoteConnectionState {
   return connections.get(environmentId) ?? INITIAL_CONNECTION;
 }

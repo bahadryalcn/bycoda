@@ -3,6 +3,6 @@ export { formatAgentMinutes, parseHostSettings, type HostSettings } from "../mod
 export {
   listMachineLimits,
   saveMachineLimits,
-  settingsMachines,
+  settingsMachine,
   type MachineLimits,
 } from "../model/settingsClient";

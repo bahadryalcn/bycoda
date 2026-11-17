@@ -446,31 +446,33 @@ function DockAgentRow({
         onClick={() => onOpen(agent)}
         className="activity-dock-agent min-w-0 flex-1 items-center text-left"
       >
-        <span className="flex shrink-0" aria-hidden="true">
-          <AgentStatusDot status={agent.status} />
-        </span>
         <span className="activity-dock-agent-identity flex min-w-0 flex-1 flex-col gap-0.5">
-          <ClampText
-            as="span"
-            lines={2}
-            expandable={false}
-            size="inherit"
-            tone="neutral"
-            weight="medium"
-            className="whitespace-pre-wrap [overflow-wrap:anywhere]"
-          >
-            {agent.name}
-            {agent.crewMember?.handle ? (
-              <Text size="inherit" tone="muted" weight="regular" className="ml-1.5">
-                @{agent.crewMember.handle}
-              </Text>
-            ) : null}
-            {agent.round && agent.round > 1 ? (
-              <Badge size="xs" appearance="subtle" tone="neutral" className="ml-1.5">
-                {t("Round {p0}", { p0: agent.round })}
-              </Badge>
-            ) : null}
-          </ClampText>
+          <span className="flex min-w-0 items-start gap-1.5" data-dock-agent-title>
+            <span className="flex shrink-0" aria-hidden="true" data-dock-agent-status>
+              <AgentStatusDot status={agent.status} size="md" />
+            </span>
+            <ClampText
+              as="span"
+              lines={2}
+              expandable={false}
+              size="inherit"
+              tone="neutral"
+              weight="medium"
+              className="whitespace-pre-wrap [overflow-wrap:anywhere]"
+            >
+              {agent.name}
+              {agent.crewMember?.handle ? (
+                <Text size="inherit" tone="muted" weight="regular" className="ml-1.5">
+                  @{agent.crewMember.handle}
+                </Text>
+              ) : null}
+              {agent.round && agent.round > 1 ? (
+                <Badge size="xs" appearance="subtle" tone="neutral" className="ml-1.5">
+                  {t("Round {p0}", { p0: agent.round })}
+                </Badge>
+              ) : null}
+            </ClampText>
+          </span>
           {agent.kind === "agent" ? (
             <Text size="micro" tone="muted" className="flex min-w-0 items-center gap-1.5">
               <SubagentMarks
@@ -564,19 +566,25 @@ function DockAgentRow({
   );
 }
 
-export function AgentStatusDot({ status }: { status: DockAgent["status"] }) {
+export function AgentStatusDot({
+  status,
+  size = "xs",
+}: {
+  status: DockAgent["status"];
+  size?: "xs" | "md";
+}) {
   useLocale();
-  if (status === "running") return <WorkingIndicator size="xs" />;
-  if (status === "done")
-    return <Check className="icon-xs shrink-0" tone="success" strokeWidth={2} />;
+  if (status === "running") return <WorkingIndicator size={size} />;
+  const className = `${size === "md" ? "icon-md" : "icon-xs"} shrink-0`;
+  if (status === "done") return <Check className={className} tone="success" strokeWidth={2} />;
   if (status === "failed") {
-    return <X className="icon-xs shrink-0" tone="danger" strokeWidth={2} />;
+    return <X className={className} tone="danger" strokeWidth={2} />;
   }
   if (status === "stopped") {
-    return <Square className="icon-xs shrink-0" tone="warning" strokeWidth={2} />;
+    return <Square className={className} tone="warning" strokeWidth={2} />;
   }
   if (status === "interrupted") {
-    return <CircleAlert className="icon-xs shrink-0" tone="warning" strokeWidth={2} />;
+    return <CircleAlert className={className} tone="warning" strokeWidth={2} />;
   }
   return null;
 }

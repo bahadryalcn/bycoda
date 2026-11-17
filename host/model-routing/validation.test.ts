@@ -58,7 +58,7 @@ it("checks listed catalog models but permits unavailable catalog", () => {
   ])
     expect(validateModelRoutingDraft(d, {}, catalog)).toEqual(d);
   expect(() => validateModelRoutingDraft(d, {}, { models: { codex: [{ id: "y" }] } })).toThrow(
-    "not available",
+    'Model "x" is not available for codex (entry id: "a").',
   );
 });
 it("validates fixed role targets with identical account, catalog and delegation rules", () => {

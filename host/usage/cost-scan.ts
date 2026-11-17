@@ -8,7 +8,8 @@ import type { UsageRow } from "../../src/features/providers/model/usagePricing";
 /** Token usage from the Claude Code / Codex session logs on the Host, mirroring
  * `src-tauri/src/provider_usage.rs` (same request keys and de-duplication). */
 
-export type LogRequest = Omit<UsageRow, "slot"> & { ts: number };
+/** `session` is the provider log session id (the transcript file), when the request came from a file. */
+export type LogRequest = Omit<UsageRow, "slot"> & { ts: number; session?: string };
 export type KeyedRequest = [key: string, request: LogRequest];
 export type Provider = "claude" | "codex";
 
@@ -159,13 +160,21 @@ async function* lines(path: string): AsyncGenerator<string> {
   yield* createInterface({ input, crlfDelay: Infinity });
 }
 
+/** The transcript's session id; a Claude subagent log (`<session>/subagents/agent-x`) belongs to its parent session. */
+export function sessionOf(path: string): string {
+  const parts = path.split(/[\\/]+/);
+  const name = (parts.pop() ?? "").replace(/\.zst$/, "").replace(/\.jsonl$/, "");
+  return parts.at(-1) === "subagents" && parts.length >= 2 ? (parts.at(-2) as string) : name;
+}
+
 async function parseFile(path: string, provider: Provider): Promise<KeyedRequest[]> {
   const merged = new Map<string, LogRequest>();
   const carry: CodexCarry = { project: "", model: "", lastTotal: null };
+  const session = sessionOf(path);
   try {
     for await (const line of lines(path)) {
       const parsed = provider === "claude" ? parseClaudeLine(line) : parseCodexLine(line, carry);
-      if (parsed) mergeRequest(merged, provider, parsed[0], parsed[1]);
+      if (parsed) mergeRequest(merged, provider, parsed[0], { ...parsed[1], session });
     }
   } catch {
     /* A truncated or unreadable log contributes what it parsed. */

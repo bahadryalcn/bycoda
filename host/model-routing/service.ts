@@ -16,7 +16,11 @@ export interface ModelRoutingPorts {
   store: ModelRoutingStore;
   accounts(): Promise<HostProviderAccountCatalog>;
   catalog(): Promise<ModelRoutingCatalog | undefined>;
-  signals(state: ModelRoutingDraft): Promise<ModelRoutingSignals>;
+  /** `awaitQuota` lets the settings status read wait (bounded) for a first quota sample. */
+  signals(
+    state: ModelRoutingDraft,
+    options?: { awaitQuota?: boolean },
+  ): Promise<ModelRoutingSignals>;
   now?: () => number;
 }
 import type { ModelRoutingService } from "../domains/model-routing/ports";
@@ -37,7 +41,7 @@ export function createModelRoutingService(ports: ModelRoutingPorts): ModelRoutin
     },
     async status() {
       const state = await readModelRouting(ports.store);
-      const signals = await ports.signals(state);
+      const signals = await ports.signals(state, { awaitQuota: true });
       return state.entries.map((entry) => modelRoutingEntryStatus(entry, signals));
     },
     async resolve(input) {
@@ -45,7 +49,9 @@ export function createModelRoutingService(ports: ModelRoutingPorts): ModelRoutin
       // Fixed choices bypass availability and quota, including signal I/O.
       const choice =
         !input.choice || input.choice.kind === "default" ? state.roles[input.role] : input.choice;
-      const signals =
+      const poolEffort =
+        choice?.kind === "pool" && state.pools.find((pool) => pool.id === choice.poolId)?.effort;
+      const [signals, catalog] = await Promise.all([
         choice?.kind === "fixed"
           ? {
               available: () => true,
@@ -53,8 +59,10 @@ export function createModelRoutingService(ports: ModelRoutingPorts): ModelRoutin
               quota: () => ({ unknown: true as const }),
               accountKind: () => undefined,
             }
-          : await ports.signals(state);
-      return selectModelRouting(state, input, signals);
+          : ports.signals(state),
+        poolEffort ? ports.catalog().catch(() => undefined) : undefined,
+      ]);
+      return selectModelRouting(state, input, signals, catalog);
     },
   };
 }

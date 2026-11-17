@@ -13,7 +13,7 @@ import { remoteRequest } from "../../../connections/public/connections";
 import {
   listMachineLimits,
   saveMachineLimits,
-  settingsMachines,
+  settingsMachine,
   type MachineLimits,
 } from "../../../tasks/public/hostSettings";
 import { useOrderDraft, useOrderSettings } from "./useOrderDraft";
@@ -21,7 +21,7 @@ import { useOrderDraft, useOrderSettings } from "./useOrderDraft";
 vi.mock("../../../connections/public/connections", () => ({ remoteRequest: vi.fn() }));
 vi.mock("../../../tasks/public/hostSettings", async (original) => ({
   ...(await original<typeof import("../../../tasks/public/hostSettings")>()),
-  settingsMachines: vi.fn(),
+  settingsMachine: vi.fn(),
   listMachineLimits: vi.fn(),
   saveMachineLimits: vi.fn(),
 }));
@@ -72,7 +72,7 @@ beforeEach(() => {
     usedMinutes: 0,
     limitReached: false,
   };
-  vi.mocked(settingsMachines).mockResolvedValue([machine]);
+  vi.mocked(settingsMachine).mockResolvedValue(machine);
   vi.mocked(listMachineLimits).mockImplementation(async () => [hostLimits]);
   vi.mocked(saveMachineLimits).mockImplementation(async (_machine, limits) => {
     hostLimits = { ...hostLimits, ...limits };

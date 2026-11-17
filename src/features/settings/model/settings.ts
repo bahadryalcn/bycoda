@@ -940,6 +940,15 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     keywords: "usage limit rate limit continue automatically wait",
   },
   {
+    id: "usage-limit-failover",
+    section: "chat",
+    get label() {
+      return t("At usage limit, continue on");
+    },
+    keywords:
+      "usage limit rate limit failover switch account model order pool fallback limit dolunca hesap değiştir",
+  },
+  {
     id: "auto-continue-interrupted",
     section: "chat",
     get label() {
@@ -2087,6 +2096,10 @@ export function loadResumeAtReset(): boolean {
 export function saveResumeAtReset(value: boolean) {
   return saveAgentDefault("resumeAtReset", value);
 }
+
+/** Where a chat continues when its provider stops it at a usage limit; `off` keeps waiting. */
+export const loadUsageLimitFailover = () => loadAgentDefault("usageLimitFailover");
+export const subscribeUsageLimitFailover = subscribeAgentDefaults;
 
 const FORMAT_ON_SAVE_KEY = "bycoda.formatOnSave";
 const FORMAT_ON_SAVE_CHANGE_EVENT = "bycoda:format-on-save-change";

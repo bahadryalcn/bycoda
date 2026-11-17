@@ -4,10 +4,19 @@ import type { UsageLimitsReport } from "../../usage/limits-report";
 export const QUOTA_STALE_MS = 15 * 60_000;
 /** Minimum gap between background refreshes of one provider. */
 export const QUOTA_REFRESH_MS = 5 * 60_000;
+/** Longest the settings status read waits for a first quota sample. */
+export const QUOTA_WARM_TIMEOUT_MS = 8_000;
 
+export type AssistantQuotaUnknownReason =
+  | "noQuota"
+  | "noSample"
+  | "stale"
+  | "noProvider"
+  | "accountUnavailable"
+  | "noWindow";
 export type AssistantQuotaReading =
   | { leftPercent: number; resetsAt?: number; sampledAt: number }
-  | { unknown: true; reason: string };
+  | { unknown: true; reason: AssistantQuotaUnknownReason };
 
 type Provider = "claude" | "codex" | "opencode";
 type Sample = { sampledAt: number; report: UsageLimitsReport };
@@ -74,6 +83,26 @@ export class AssistantQuotaReader {
       ...(tightest.resetsAt === null ? {} : { resetsAt: tightest.resetsAt }),
       sampledAt: sample.sampledAt,
     };
+  }
+
+  /** Bounded warm-up for the settings status read: waits for one refresh when there is no fresh
+   * sample, never longer than `timeoutMs`. Run-start selection must not call it. */
+  async warm(harness: string, timeoutMs = QUOTA_WARM_TIMEOUT_MS): Promise<void> {
+    if (harness !== "claude" && harness !== "codex" && harness !== "opencode") return;
+    const sample = this.samples.get(harness);
+    if (sample && this.now() - sample.sampledAt <= QUOTA_STALE_MS) return;
+    this.refreshIfStale(harness);
+    const running = this.refreshing.get(harness);
+    if (!running) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, timeoutMs);
+    });
+    try {
+      await Promise.race([running.catch(() => undefined), deadline]);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   /** Awaitable refresh for tests and warm-up; selection never calls it. */

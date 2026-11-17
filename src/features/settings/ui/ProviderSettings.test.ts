@@ -120,9 +120,9 @@ it("lists the three Models tabs and keeps provider setup rows mounted across tab
   await render();
   const tabs = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
   expect(tabs.map((node) => node.textContent?.trim())).toEqual([
+    "Providers",
     "Background work",
     "Defaults",
-    "Providers",
   ]);
   const row = container.querySelector('[data-setting-id="cli-path-codex"]')!;
   expect(row.closest<HTMLElement>("[hidden]")).not.toBeNull();
@@ -140,18 +140,18 @@ it("lists the three Models tabs and keeps provider setup rows mounted across tab
 
 it("asks before switching Models tabs while an editor has pending changes", async () => {
   await render(true);
-  const providers = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
-    (node) => node.textContent === "Providers",
+  const target = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
+    (node) => node.textContent === "Defaults",
   )!;
-  await act(async () => providers.click());
-  expect(providers.getAttribute("aria-selected")).toBe("false");
+  await act(async () => target.click());
+  expect(target.getAttribute("aria-selected")).toBe("false");
   expect(document.body.textContent).toContain("Save changes before leaving?");
   await act(async () =>
     [...document.querySelectorAll<HTMLButtonElement>("button")]
       .find((node) => node.textContent === "Keep editing")!
       .click(),
   );
-  expect(providers.getAttribute("aria-selected")).toBe("false");
+  expect(target.getAttribute("aria-selected")).toBe("false");
 });
 
 it("waits for the save before leaving a Models tab", async () => {
@@ -160,18 +160,18 @@ it("waits for the save before leaving a Models tab", async () => {
     finish = resolve;
   });
   await render(true, wait);
-  const providers = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
-    (node) => node.textContent === "Providers",
+  const target = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
+    (node) => node.textContent === "Defaults",
   )!;
-  await act(async () => providers.click());
+  await act(async () => target.click());
   await act(async () =>
     [...document.querySelectorAll<HTMLButtonElement>("button")]
       .find((node) => node.textContent === "Save and leave")!
       .click(),
   );
-  expect(providers.getAttribute("aria-selected")).toBe("false");
+  expect(target.getAttribute("aria-selected")).toBe("false");
   await act(async () => finish());
-  await vi.waitFor(() => expect(providers.getAttribute("aria-selected")).toBe("true"));
+  await vi.waitFor(() => expect(target.getAttribute("aria-selected")).toBe("true"));
   expect(document.body.textContent).not.toContain("Some changes were not saved.");
 });
 
@@ -192,7 +192,7 @@ it("does not offer discard while a save is committing", async () => {
   );
   await act(async () =>
     [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
-      .find((node) => node.textContent === "Providers")!
+      .find((node) => node.textContent === "Defaults")!
       .click(),
   );
   expect(document.body.textContent).not.toContain("Discard and leave");

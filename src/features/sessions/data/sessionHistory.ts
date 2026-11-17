@@ -146,6 +146,7 @@ export function historyWithLiveSessions(
   cwd: string,
   git?: SessionGitHint,
   runs: readonly OrchestrationRun[] = [],
+  composerDraftIds: ReadonlySet<string> = new Set(),
 ): SessionSummary[] {
   const workerIds = new Set([
     ...sessions.filter((session) => session.orchestrationLeadId).map((session) => session.id),
@@ -166,7 +167,8 @@ export function historyWithLiveSessions(
   for (const session of sessions) {
     if (session.inboxAsk || workerIds.has(session.id)) continue;
     if (!sameProjectPath(session.cwd, cwd)) continue;
-    const live = session.busy || sessionNeedsInput(session);
+    // A blank conversation with unsent composer text is listed as a draft.
+    const live = session.busy || sessionNeedsInput(session) || composerDraftIds.has(session.id);
     if (!shouldPersistSession(session) && !live) continue;
     const storedIndex = rows.findIndex((row) => row.id === session.id);
     if (storedIndex >= 0) {

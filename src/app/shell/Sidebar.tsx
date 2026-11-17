@@ -148,6 +148,7 @@ import { RemoteDataStatus } from "../../features/connections/ui/RemoteDataStatus
 import { RemoteLoadError } from "../../features/connections/ui/RemoteLoadError";
 import { useRemoteConnectionFeedback } from "../../features/connections/ui/RemoteConnectionFeedback";
 import { useRemoteConnection } from "../../features/connections/model/useRemoteConnection";
+import { useMachineFocus } from "../../features/connections/model/machineFocus";
 import {
   classifyRemoteError,
   isConnectionFailure,
@@ -705,6 +706,7 @@ function SidebarComponent({
   );
   const remoteConnection = useRemoteConnection(remoteProject ? cwd : undefined);
   useRemoteConnectionFeedback(remoteProject ? cwd : undefined);
+  useMachineFocus(remoteConnection.environmentId);
   const remoteConnectionIssue =
     (remoteConnection.status !== "connected" &&
       (remoteConnection.status !== "connecting" || remoteConnection.reconnecting)) ||

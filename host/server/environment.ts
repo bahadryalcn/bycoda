@@ -68,6 +68,8 @@ export function createEnvironmentRuntime(
         "models.routing.v1",
         "browser.sessionScopes.v1",
         "browser.ownerPresentationScopes.v1",
+        "browser.holder.v1",
+        "devices.holder.v1",
         "assistant.v1",
         "desktop.control.v1",
         HOST_WS_READ_CAPABILITY,

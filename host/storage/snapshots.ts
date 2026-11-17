@@ -107,74 +107,79 @@ export async function captureHostSnapshot(input: {
   environmentId: string;
   flush: () => Promise<void>;
 }): Promise<HostSnapshotManifest> {
-  return input.database.scope(async () => {
-    input.database.assertWriteAdmission();
-    const destination = resolve(input.destination);
-    const source = await realpath(dirname(input.attachmentDir));
-    const targetParent = await realpath(dirname(destination));
-    if (
-      destination === source ||
-      targetParent === source ||
-      targetParent.startsWith(`${source}${sep}`)
-    )
-      throw new Error("Snapshot destination must be outside the active profile.");
-    // Exclusive directory: existing files and active profiles can never be replaced.
-    await mkdir(destination, { mode: 0o700 });
-    await writeFile(
-      join(destination, "host-recovery.json"),
-      JSON.stringify({ state: "recovery-required", kind: "snapshot" }),
-      { flag: "wx", mode: 0o600 },
-    );
-    await input.flush();
-    const databasePath = join(destination, "host.db");
-    await input.database.backupTo(databasePath);
-    const schema = await inspectDatabase(databasePath, true);
-    const manifest: HostSnapshotManifest = {
-      version: 1,
-      snapshotId: randomUUID(),
-      environmentId: input.environmentId,
-      createdAt: Date.now(),
-      coherence: "host-only",
-      authorityReconciliationRequired: true,
-      schemaDigest: createHash("sha256").update(JSON.stringify(schema)).digest("hex"),
-      files: [],
-    };
-    const add = async (path: string) => {
-      const info = await lstat(path);
-      const bytes = manifest.files.reduce((total, file) => total + file.bytes, 0) + info.size;
-      if (bytes > MAX_BYTES || manifest.files.length >= MAX_FILES)
-        throw new Error("Snapshot size limit exceeded.");
-      await durableFile(path);
-      manifest.files.push({
-        path: inside(destination, path),
-        bytes: info.size,
-        sha256: await digest(path),
-      });
-    };
-    await add(databasePath);
-    for (const path of await filesBelow(input.attachmentDir)) {
-      const size = (await lstat(path)).size;
+  return input.database.scope(
+    async () => {
+      input.database.assertWriteAdmission();
+      const destination = resolve(input.destination);
+      const source = await realpath(dirname(input.attachmentDir));
+      const targetParent = await realpath(dirname(destination));
       if (
-        size + manifest.files.reduce((total, file) => total + file.bytes, 0) > MAX_BYTES ||
-        manifest.files.length >= MAX_FILES
+        destination === source ||
+        targetParent === source ||
+        targetParent.startsWith(`${source}${sep}`)
       )
-        throw new Error("Snapshot size limit exceeded.");
-      const target = join(destination, "attachments", inside(input.attachmentDir, path));
-      const expected = await digest(path);
-      await mkdir(dirname(target), { recursive: true, mode: 0o700 });
-      await copyFile(path, target, constants.COPYFILE_EXCL);
-      if ((await digest(target)) !== expected)
-        throw new Error("Attachment changed during snapshot capture.");
-      await add(target);
-    }
-    await writeFile(join(destination, "manifest.json"), JSON.stringify(manifest), {
-      flag: "wx",
-      mode: 0o600,
-    });
-    await durableFile(join(destination, "manifest.json"));
-    await durableFile(join(destination, "host-recovery.json"));
-    return manifest;
-  });
+        throw new Error("Snapshot destination must be outside the active profile.");
+      // Exclusive directory: existing files and active profiles can never be replaced.
+      await mkdir(destination, { mode: 0o700 });
+      await writeFile(
+        join(destination, "host-recovery.json"),
+        JSON.stringify({ state: "recovery-required", kind: "snapshot" }),
+        { flag: "wx", mode: 0o600 },
+      );
+      await input.flush();
+      const databasePath = join(destination, "host.db");
+      await input.database.backupTo(databasePath);
+      const schema = await inspectDatabase(databasePath, true);
+      const manifest: HostSnapshotManifest = {
+        version: 1,
+        snapshotId: randomUUID(),
+        environmentId: input.environmentId,
+        createdAt: Date.now(),
+        coherence: "host-only",
+        authorityReconciliationRequired: true,
+        schemaDigest: createHash("sha256").update(JSON.stringify(schema)).digest("hex"),
+        files: [],
+      };
+      const add = async (path: string) => {
+        const info = await lstat(path);
+        const bytes = manifest.files.reduce((total, file) => total + file.bytes, 0) + info.size;
+        if (bytes > MAX_BYTES || manifest.files.length >= MAX_FILES)
+          throw new Error("Snapshot size limit exceeded.");
+        await durableFile(path);
+        manifest.files.push({
+          path: inside(destination, path),
+          bytes: info.size,
+          sha256: await digest(path),
+        });
+      };
+      await add(databasePath);
+      for (const path of await filesBelow(input.attachmentDir)) {
+        const size = (await lstat(path)).size;
+        if (
+          size + manifest.files.reduce((total, file) => total + file.bytes, 0) > MAX_BYTES ||
+          manifest.files.length >= MAX_FILES
+        )
+          throw new Error("Snapshot size limit exceeded.");
+        const target = join(destination, "attachments", inside(input.attachmentDir, path));
+        const expected = await digest(path);
+        await mkdir(dirname(target), { recursive: true, mode: 0o700 });
+        await copyFile(path, target, constants.COPYFILE_EXCL);
+        if ((await digest(target)) !== expected)
+          throw new Error("Attachment changed during snapshot capture.");
+        await add(target);
+      }
+      await writeFile(join(destination, "manifest.json"), JSON.stringify(manifest), {
+        flag: "wx",
+        mode: 0o600,
+      });
+      await durableFile(join(destination, "manifest.json"));
+      await durableFile(join(destination, "host-recovery.json"));
+      return manifest;
+      // Copying up to the snapshot size limit is legitimately long; the limit bounds it.
+    },
+    undefined,
+    { deadlineMs: Infinity },
+  );
 }
 
 /** Validate/copy into a NEW staging directory. Never replace or start an active Host. */

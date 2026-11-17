@@ -252,7 +252,9 @@ process exit cannot be confirmed, the rule shows **Status unknown** and offers
 **Retry stop** before it can be started or removed again.
 
 When a Host connection is blocked, the conversation shows one connection recovery
-notice. Use **Reconnect** there to verify the saved machine and open a fresh
+notice above the message box; a machine whose project is not open shows none.
+While a machine is off and you are not working in it, it is checked only every
+few minutes; opening its project checks it at once. Use **Reconnect** there to verify the saved machine and open a fresh
 connection. The conversation, queue and workspace reload after recovery; a failed
 queue read continues to hold sending. Reconnecting never resends a message whose
 delivery is uncertain. Authentication or machine identity failures may require

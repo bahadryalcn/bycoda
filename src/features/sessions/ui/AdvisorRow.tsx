@@ -1,34 +1,40 @@
-import { AiIdea } from "../../../shared/ui/icons";
+import type { ComponentProps } from "react";
 import { useT } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
-import { ClampText } from "../../../shared/ui/ClampText";
 import { Disclosure } from "../../../shared/ui/Disclosure";
+import { HarnessIcon } from "../../../shared/ui/identity/HarnessIcon";
 import { Text } from "../../../shared/ui/Text";
-import { advisorModelName } from "../model/claudeAdvisor";
+import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
+import { useAdvisorModelName } from "../model/reactiveReads";
 import type { Block } from "../model/session";
 import { toolCallState } from "../model/transcriptActivity";
+import { AgentMarkdown } from "./AgentMarkdown";
 
 /**
  * The provider's own advisor (Claude Code's advisor tool) giving a second opinion inside the
  * main agent's turn. It is no separate session: one row names the advisor model and its state,
- * and the advice opens below it like a subagent's report.
+ * and the full advice opens below it when the owner expands the row.
  */
 export function AdvisorRow({
   block,
   modelSettings,
+  cwd,
+  onOpenFile,
 }: {
   block: Block;
   modelSettings?: Record<string, string>;
+  cwd?: string;
+  onOpenFile?: ComponentProps<typeof AgentMarkdown>["onOpenFile"];
 }) {
   const t = useT();
   const state = toolCallState(block);
-  const model = advisorModelName(modelSettings);
+  const model = useAdvisorModelName(modelSettings);
   const advice = block.tool?.detail?.trim();
   const status =
     state === "pending" ? (
-      <Badge size="xs" appearance="subtle" tone="accent">
+      <WorkingIndicator size="sm" text={{ size: "caption" }}>
         {t("Thinking…")}
-      </Badge>
+      </WorkingIndicator>
     ) : (
       <Badge size="xs" appearance="subtle" tone={state === "accepted" ? "success" : "danger"}>
         {state === "accepted" ? t("Done") : t("Failed")}
@@ -36,7 +42,7 @@ export function AdvisorRow({
     );
   const summary = (
     <span className="flex min-w-0 items-center gap-2">
-      <AiIdea className="icon-sm shrink-0" aria-hidden="true" />
+      <HarnessIcon harness="claude" size="sm" className="shrink-0" />
       <Text size="inherit" tone="inherit" truncate className="min-w-0">
         {model ? `${t("Advisor")} · ${model}` : t("Advisor")}
       </Text>
@@ -44,18 +50,12 @@ export function AdvisorRow({
     </span>
   );
   return (
-    <div data-advisor-row className="flex min-w-0 flex-col px-4 font-sans pbs-1 pbe-1.5">
+    <div data-advisor-row className="flex min-w-0 flex-col px-4 pbs-1 pbe-1.5">
       {advice ? (
         <Disclosure variant="plain" size="sm" textSize="caption" tone="secondary" summary={summary}>
-          <ClampText
-            as="div"
-            lines={12}
-            size="caption"
-            tone="secondary"
-            className="whitespace-pre-wrap [overflow-wrap:anywhere] ps-5"
-          >
-            {advice}
-          </ClampText>
+          <Text as="div" size="secondary" tone="primary" className="min-w-0 ps-5">
+            <AgentMarkdown text={advice} revealOnMount={false} cwd={cwd} onOpenFile={onOpenFile} />
+          </Text>
         </Disclosure>
       ) : (
         <Text as="div" size="caption" tone="secondary">

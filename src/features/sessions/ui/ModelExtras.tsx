@@ -459,3 +459,15 @@ export function TogglePill({
     </Button>
   );
 }
+
+/**
+ * The delegation rows (advisor, subagents, subagent max effort, image models) as offered for a
+ * provider, for editors that are not tied to one model selection. Option labels follow the
+ * catalog and signed-in accounts; `values` are the stored keys of the layer being edited.
+ */
+export function useDelegationSettings(
+  harness: HarnessId,
+  values: Record<string, string>,
+): ModelSetting[] {
+  return useModelExtras(harness, "", values).settings.filter(isDelegationSetting);
+}

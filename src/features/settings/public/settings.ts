@@ -17,6 +17,7 @@ export {
   loadRemoteAutoReconnect,
   loadResumeAtReset,
   loadStreamingTextMode,
+  loadUsageLimitFailover,
   saveDiffLayout,
   saveInlineBlame,
   shortcutMatches,

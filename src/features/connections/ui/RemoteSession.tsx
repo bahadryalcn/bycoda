@@ -179,7 +179,7 @@ import {
   type CommandFailureClass,
   type CommandRetryBackoff,
 } from "../model/remoteCommandRetry";
-import { RemoteConnectionBanner } from "./RemoteConnectionBanner";
+import { RemoteConnectionNotice } from "./RemoteConnectionFeedback";
 import {
   parseRemotePath,
   remotePath,
@@ -4119,7 +4119,10 @@ function ConnectedRemoteSession({
         {snapshot?.historyLoading ? (
           <LoadingText className="shrink-0 px-4 py-2">{t("Loading earlier messages…")}</LoadingText>
         ) : null}
-        <RemoteConnectionBanner cwd={owner?.environmentId ?? project.key} stale={!!hostSession} />
+        <RemoteConnectionNotice
+          cwdOrEnvironmentId={owner?.environmentId ?? project.key}
+          stale={!!hostSession}
+        />
         <RemoteDataStatus
           cwd={owner?.environmentId ?? project.key}
           presentation="notice"

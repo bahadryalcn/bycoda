@@ -91,6 +91,10 @@ describe("shutdownExitCode", () => {
     expect(shutdownExitCode("lifecycle", true)).toBe(0);
   });
 
+  it("exits non-zero after a database worker failure so the supervisor restarts the Host", () => {
+    expect(shutdownExitCode("database-failed", false)).toBe(1);
+  });
+
   it("reports a failed drain after a signal", () => {
     expect(shutdownExitCode("SIGTERM", true)).toBe(1);
     expect(shutdownExitCode("SIGINT", true)).toBe(1);

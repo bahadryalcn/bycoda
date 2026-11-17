@@ -329,6 +329,16 @@ it("groups all roles and stores fixed targets in the draft without delegation ke
   expect(latest.routing.pools).toEqual(state.pools);
 });
 
+it("shows the no-fallback hint only while a job is Fixed", async () => {
+  await render(<Groups initial={draftOf()} />);
+  const noFallback = () => rowOf("Task worker").querySelector('button[aria-label="No fallback"]');
+  expect(noFallback()).toBeNull();
+  await choose(rowOf("Task worker"), "fixed");
+  expect(noFallback()).toBeTruthy();
+  await choose(rowOf("Task worker"), "order");
+  expect(noFallback()).toBeNull();
+});
+
 it("deletes a non-helper role switched to Any model, in order", async () => {
   state.roles = { "task.worker": { kind: "pool", poolId: "p" } };
   await render(<Groups initial={draftOf({ roles: state.roles })} />);

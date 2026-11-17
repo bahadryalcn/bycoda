@@ -21,6 +21,7 @@ import { remoteProjectFor } from "./remoteProjects";
 import { railSessions, type RemoteRailSession } from "./remoteRailSessions";
 import { blocksSending } from "./remoteConnection";
 import { isMachineEnabled, startNativeDisabledMachinesSync } from "./machineEnabled";
+import { subscribeMachineFocused } from "./machineFocus";
 import {
   bindMachineEnvironment,
   captureConnectionGeneration,
@@ -44,7 +45,7 @@ import {
 } from "./remoteAttachmentPreviews";
 import { RemoteSessionLists } from "./remoteSessionLists";
 import { applyProjectChange, noteOwnSessionRequest } from "./remoteListActivity";
-import { remoteBackoffDelay } from "./remotePollingPolicy";
+import { machineStatusPollDelay, remoteBackoffDelay } from "./remotePollingPolicy";
 import { startRailPoller } from "./remoteRailPoller";
 import { startPerformanceSpan } from "../../../shared/lib/performanceTrace";
 import { queueRemoteSummaryCache } from "./remoteSummaryCache";
@@ -1073,7 +1074,17 @@ export function useRemoteMachines(enabled = true): {
 
 const STATUS = "bycoda:remote-machine-status";
 const machineOnline = new Map<string, boolean>();
-const statusWatchers = new Map<string, { count: number; timer?: ReturnType<typeof setTimeout> }>();
+type StatusWatcher = {
+  count: number;
+  timer?: ReturnType<typeof setTimeout>;
+  /** Checks now when the machine is down; a focus change is new demand, not new evidence. */
+  wake?: () => void;
+};
+const statusWatchers = new Map<string, StatusWatcher>();
+subscribeMachineFocused((environmentId) => {
+  const machineId = cachedMachines.find((entry) => entry.environmentId === environmentId)?.id;
+  if (machineId) statusWatchers.get(machineId)?.wake?.();
+});
 
 /** Records whether a machine answered its latest request, for every view
  * that shows its connection state. `error` is why it did not. */
@@ -1097,12 +1108,17 @@ function watchMachineStatus(machineId: string): () => void {
   if (existing) {
     existing.count++;
   } else {
-    const watcher: { count: number; timer?: ReturnType<typeof setTimeout> } = {
-      count: 1,
-    };
+    const watcher: StatusWatcher = { count: 1 };
     statusWatchers.set(machineId, watcher);
     let failures = 0;
+    let polling = false;
+    watcher.wake = () => {
+      if (polling || !failures || statusWatchers.get(machineId) !== watcher) return;
+      clearTimeout(watcher.timer);
+      void poll();
+    };
     const poll = async () => {
+      polling = true;
       const machine = cachedMachines.find((entry) => entry.id === machineId);
       const generation = machine ? captureConnectionGeneration(machine.environmentId) : undefined;
       const current = () =>
@@ -1128,10 +1144,11 @@ function watchMachineStatus(machineId: string): () => void {
           reportRemoteMachineStatus(machineId, false, reason);
         }
       }
+      polling = false;
       if (statusWatchers.get(machineId) === watcher)
         watcher.timer = setTimeout(
           () => void poll(),
-          !current() ? 0 : failures ? remoteBackoffDelay(failures) : 15_000,
+          !current() ? 0 : machineStatusPollDelay(failures, machine?.environmentId),
         );
     };
     void poll();

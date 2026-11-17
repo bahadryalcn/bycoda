@@ -209,7 +209,10 @@ export function shouldPersistSession(session: Session): boolean {
     !isRemoteProjectPath(session.cwd) &&
     session.cwd !== "~" &&
     (session.blocks.some((block) => block.role === "user") ||
-      (session.rewindHistory?.length ?? 0) > 0)
+      (session.rewindHistory?.length ?? 0) > 0 ||
+      // A first message held in the queue (a refused or interrupted send) is the
+      // conversation's content: list it and keep the record its queue belongs to.
+      (session.queuedMessages?.length ?? 0) > 0)
   );
 }
 

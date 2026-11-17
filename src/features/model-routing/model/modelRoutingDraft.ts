@@ -14,6 +14,7 @@ import {
 import { parseHostSettings, type HostSettings } from "../../tasks/public/hostSettings";
 import { supportsProviderAccounts } from "../../providers/public/providerAccounts";
 import { roleBindingsForSave } from "./modelRoutingRoles";
+import type { SetupCatalog } from "./smartSetupCatalog";
 
 export type CapDraft = {
   daily: { tokens: string; costUsd: string };
@@ -27,6 +28,25 @@ export type OrderDraft = {
   maxRunMinutes: string;
   limits: { maxRunningTasks: string; dailyAgentMinutes: string };
 };
+
+/** Match the Host's validation: absent and empty provider lists aren't authoritative. */
+export function findUnavailableOrderEntry(entries: ModelRoutingEntry[], catalog?: SetupCatalog) {
+  return entries.find((entry) => {
+    const models = catalog?.models[entry.harness];
+    return models?.length && !models.some((model) => model.id === entry.model);
+  });
+}
+
+/** The Host RPC transports the readable message, including a JSON-quoted row id. */
+export function unavailableOrderEntryId(message: string): string | undefined {
+  const encoded = / \(entry id: ("(?:[^"\\]|\\.)*")\)\.$/s.exec(message)?.[1];
+  if (!encoded) return undefined;
+  try {
+    return JSON.parse(encoded) as string;
+  } catch {
+    return undefined;
+  }
+}
 
 function capDraft(caps?: WorkCalendarCaps): CapDraft {
   return {

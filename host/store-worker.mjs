@@ -25,7 +25,14 @@ const closeCursors = (owner) => {
 };
 const closed = new Set();
 parentPort.postMessage({ ready: true });
+// Selected by `durability` for a critical transaction; `leave` restores the normal level.
+let synchronousRaised = false;
 parentPort.on("message", async ({ id, owner, method, sql, params }) => {
+  // Liveness probe: answered between operations, owns nothing.
+  if (method === "ping") {
+    parentPort.postMessage({ id });
+    return;
+  }
   try {
     if (!Number.isSafeInteger(id) || typeof owner !== "string" || !Array.isArray(params))
       throw new Error("Invalid database request.");
@@ -39,10 +46,15 @@ parentPort.on("message", async ({ id, owner, method, sql, params }) => {
         active = undefined;
         closed.add(owner);
         if (closed.size > 1024) closed.delete(closed.values().next().value);
-        if (!databaseClosed && db.isTransaction) {
-          db.exec("ROLLBACK");
-          throw new Error("Database owner left an open transaction; it was rolled back.");
+        const abandoned = !databaseClosed && db.isTransaction;
+        if (abandoned) db.exec("ROLLBACK");
+        // An owner that never restored durability must not leave every later write at FULL.
+        if (synchronousRaised && !databaseClosed) {
+          db.exec("PRAGMA synchronous=1");
+          synchronousRaised = false;
         }
+        if (abandoned)
+          throw new Error("Database owner left an open transaction; it was rolled back.");
       } else if (method === "rollbackOpen") {
         if (db.isTransaction) db.exec("ROLLBACK");
       } else if (method === "durability") {
@@ -50,6 +62,7 @@ parentPort.on("message", async ({ id, owner, method, sql, params }) => {
           throw new Error("Critical durability must be selected before a transaction starts.");
         if (params[0] !== 1 && params[0] !== 2) throw new Error("Invalid durability class.");
         db.exec(`PRAGMA synchronous=${params[0]}`);
+        synchronousRaised = params[0] === 2;
       } else if (method === "backup") {
         if (db.isTransaction) throw new Error("Backup requires a settled transaction boundary.");
         if (typeof params[0] !== "string") throw new Error("Invalid backup destination.");

@@ -5,4 +5,8 @@ export {
   useCachedRateLimits,
 } from "../model/rateLimitsCache";
 export { useRateLimitQuery } from "../model/useRateLimitQuery";
-export { formatResetCountdown, formatWindowLabel } from "../model/rateLimits";
+export {
+  exhaustedWindowResetAt,
+  formatResetCountdown,
+  formatWindowLabel,
+} from "../model/rateLimits";

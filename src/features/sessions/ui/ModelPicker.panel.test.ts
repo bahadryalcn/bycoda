@@ -958,6 +958,103 @@ describe("model panel settings column", () => {
     expect(panel()!.dataset.side).toBe("bottom");
   });
 
+  describe("field trigger badges", () => {
+    const badge = (name: string) => trigger().querySelector<HTMLElement>(`[${name}]`);
+    const renderField = (values: Record<string, string>, extra: Partial<PickerProps> = {}) =>
+      render({
+        harness: "cursor",
+        model: "cursor:ordered",
+        values,
+        presentation: "field",
+        showEffortSummary: true,
+        ...extra,
+      });
+
+    it("names effort and tells Fast on from Fast off", async () => {
+      await openOrdered({});
+      await act(async () => trigger().click());
+      await renderField({});
+      expect(badge("data-model-effort")?.getAttribute("aria-label")).toBe("Effort: low");
+      expect(badge("data-model-fast")?.getAttribute("data-model-fast")).toBe("off");
+      expect(badge("data-model-fast")?.getAttribute("aria-label")).toBe("Fast off");
+      await renderField({ fast: "true", effort: "high" });
+      expect(badge("data-model-fast")?.getAttribute("data-model-fast")).toBe("on");
+      expect(badge("data-model-fast")?.getAttribute("aria-label")).toBe("Fast on");
+      expect(badge("data-model-effort")?.textContent).toBe("high");
+      expect(trigger().getAttribute("aria-label")).toContain("Fast");
+    });
+
+    it("shows no Fast badge for a model without Fast and keeps the inline trigger unchanged", async () => {
+      setHarnessModels("cursor", [
+        {
+          id: "cursor:ordered",
+          harness: "cursor",
+          name: "Ordered",
+          nativeId: "ordered",
+          settings: [sel("effort", "Reasoning", "low", ["low", "high"])],
+        },
+      ]);
+      await renderField({});
+      expect(badge("data-model-effort")).not.toBeNull();
+      expect(badge("data-model-fast")).toBeNull();
+      await render({ harness: "cursor", model: "cursor:ordered", showEffortSummary: true });
+      expect(badge("data-model-effort")?.hasAttribute("role")).toBe(false);
+    });
+
+    it("lists only settings that differ from the model default", async () => {
+      await openOrdered({});
+      await act(async () => trigger().click());
+      await renderField({});
+      expect(trigger().querySelector("[data-model-extra]")).toBeNull();
+      await renderField({ autoCompactWindow: "400k" });
+      expect(badge("data-model-extra")?.getAttribute("aria-label")).toBe(
+        "Auto-compact window: 400k",
+      );
+    });
+
+    it("names the account without accountChoices", async () => {
+      saveProviderAccount({ id: "account-work", provider: "claude", label: "work" });
+      setHarnessModels("claude", [
+        { id: "claude:opus-5.5", harness: "claude", name: "Opus 5.5", nativeId: "opus-5.5" },
+      ]);
+      await render({
+        harness: "claude",
+        model: "claude:opus-5.5",
+        presentation: "field",
+        accountId: "account-work",
+      });
+      expect(badge("data-model-account")?.getAttribute("aria-label")).toBe("Account: work");
+      expect(trigger().getAttribute("aria-label")).toContain("Account: work");
+      await render({
+        harness: "claude",
+        model: "claude:opus-5.5",
+        presentation: "field",
+        accountId: "account-gone",
+      });
+      expect(badge("data-model-account")?.textContent).toBe("Removed account");
+    });
+  });
+
+  it("removes the Agents tab and its settings with hideAgentSettings", async () => {
+    await openOrdered({});
+    expect(
+      [...container.querySelectorAll('[data-model-settings] [role="tab"]')].map(
+        (tab) => tab.textContent,
+      ),
+    ).toEqual(["Settings", "Agents"]);
+    await act(async () => trigger().click());
+    await render({
+      harness: "cursor",
+      model: "cursor:ordered",
+      showEffortSummary: true,
+      hideAgentSettings: true,
+    });
+    await openPanel();
+    expect(container.querySelector('[data-model-settings] [role="tab"]')).toBeNull();
+    expect(container.querySelector('[data-setting-id="advisor"]')).toBeNull();
+    expect(container.querySelector('[data-setting-id="effort"]')).not.toBeNull();
+  });
+
   it("offers a labelled inherit choice that maps to the owner's empty value", async () => {
     setHarnessModels("cursor", [
       {

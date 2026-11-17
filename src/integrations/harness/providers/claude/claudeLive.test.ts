@@ -2507,8 +2507,44 @@ describe("claude subagents", () => {
     expect(secondEvents).toContainEqual({ type: "session.ended", code: 1 });
     expect(secondEvents).toContainEqual({
       type: "session.error",
-      message: "Claude Code exited",
+      message: "Claude Code exited unexpectedly (exit code 1).",
     });
+  });
+
+  it("reports an exit after a refused usage window as the usage limit", async () => {
+    const { events, turn } = await startTurn("s1");
+    emit({
+      type: "rate_limit_event",
+      rate_limit_info: { status: "rejected", resetsAt: 1_800_000_000 },
+    });
+    onExit!(1);
+    await expect(turn).rejects.toThrow("Usage limit reached");
+    expect(events).toContainEqual({ type: "usage.limited", resetsAt: 1_800_000_000_000 });
+    expect(events).toContainEqual({ type: "session.error", message: "Usage limit reached" });
+  });
+
+  it("reports Claude's stderr limit wording when it exits at the limit", async () => {
+    const { events, turn } = await startTurn("s1");
+    const message = "You've hit your limit · resets 11pm (Europe/Istanbul)";
+    onStderr!(message);
+    onExit!(1);
+    await expect(turn).rejects.toThrow(message);
+    expect(events).toContainEqual({ type: "usage.limited" });
+    expect(events).toContainEqual({ type: "session.error", message });
+  });
+
+  it("explains an unexpected exit with the code and Claude's last stderr lines", async () => {
+    const { events, turn } = await startTurn("s1");
+    onStderr!("first");
+    onStderr!("   ");
+    onStderr!("second");
+    onStderr!("third");
+    onStderr!("fourth");
+    onExit!(2);
+    const message = "Claude Code exited unexpectedly (exit code 2):\nsecond\nthird\nfourth";
+    await expect(turn).rejects.toThrow(message);
+    expect(events.some((event) => event.type === "usage.limited")).toBe(false);
+    expect(events).toContainEqual({ type: "session.error", message });
   });
 });
 

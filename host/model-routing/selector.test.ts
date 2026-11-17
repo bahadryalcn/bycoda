@@ -189,6 +189,19 @@ describe("model routing selection", () => {
     ).toEqual({ entryId: "a", skip: "belowLimit", leftPercent: 20, resetsAt: 100 });
     expect(quota).toHaveBeenCalledTimes(1);
   });
+  it("says why a limit is unknown", () => {
+    const state = (reason?: string) =>
+      modelRoutingEntryStatus(
+        entry("a"),
+        signals({ quota: () => ({ unknown: true as const, reason }) }),
+      ).limitState;
+    expect([state("noSample"), state("noQuota"), state("stale"), state()]).toEqual([
+      "reading",
+      "noQuota",
+      "unavailable",
+      "unavailable",
+    ]);
+  });
   it("scopes delegation to chosen harness and exact account", () => {
     const draft = state([entry("a", { providerAccountId: "work" })]);
     draft.delegation = {

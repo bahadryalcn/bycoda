@@ -329,6 +329,8 @@ export class HostStore {
   // Kept apart from the LRU cache so eviction can never drop unwritten data.
   private pending = new Map<string, PendingWrite>();
   private inTransaction = false;
+  /** Bumped when a transaction's scope is abandoned; stale runs then leave shared state alone. */
+  private transactionEpoch = 0;
   private readonly transactionEffects = new TransactionEffects();
   private flushedInTransaction: PendingWrite[] = [];
   /** Snapshot upserts issued so far; lets tests count checkpoints. */
@@ -513,16 +515,46 @@ export class HostStore {
       this.dropCaches();
     };
     this.db.onCommit = (effect) => this.afterCommit(effect);
+    this.db.onScopeAbandoned = () => this.resetAbandonedTransaction();
     this.ready = this.db
-      .storeScope(async () => {
-        await assertProfileNotStaged(dirname(path));
-        await this.initialize();
-      })
+      .storeScope(
+        async () => {
+          await assertProfileNotStaged(dirname(path));
+          await this.initialize();
+        },
+        // Migrations of a large profile are legitimately long; nothing else runs before them.
+        { deadlineMs: Infinity },
+      )
       .catch((error) => {
         this.db.fail(error);
         throw error;
       });
     void this.ready.catch(() => undefined);
+  }
+  /** A transaction callback never settled and its scope was released: the SQL rollback
+   * happens on owner leave, so only the in-memory transaction state is reset here. */
+  private resetAbandonedTransaction(): void {
+    this.transactionEpoch++;
+    const pendingBefore = this.pendingBefore;
+    this.pendingBefore = undefined;
+    this.inTransaction = false;
+    this.transactionChanges = 0;
+    this.transactionProjectChanges.clear();
+    this.versions.clearPending();
+    this.versions.forgetListed();
+    this.cache.clear();
+    this.summaryRows.clear();
+    this.cacheWeights.clear();
+    this.stateMetadata.clear();
+    this.clearAuthCache();
+    this.transactionEffects.commit = [];
+    this.flushedInTransaction = [];
+    for (const [id, entry] of pendingBefore ?? []) {
+      clearTimeout(this.pending.get(id)?.timer);
+      this.pending.delete(id);
+      if (entry) this.restore(entry);
+    }
+    this.transactionEffects.rolledBack();
   }
   private externalMutation(sql: string): void {
     if (
@@ -777,6 +809,9 @@ export class HostStore {
         return Promise.resolve().then(fn);
       }
       const run = async () => {
+        // Each run owns the shared transaction state only while its epoch is current; an
+        // abandoned run that resumes later must not touch what the next holder built.
+        const epoch = this.transactionEpoch;
         await this.db.exec("BEGIN IMMEDIATE");
         const mutationVersion = this.db.dataMutationVersion;
         const pendingBefore = new Map<string, PendingWrite | undefined>();
@@ -789,6 +824,7 @@ export class HostStore {
         try {
           const value = await fn();
           await this.db.exec("COMMIT");
+          if (epoch !== this.transactionEpoch) throw new Error("Transaction was abandoned.");
           this.committedChangeVersion += this.transactionChanges;
           for (const [id, count] of this.transactionProjectChanges)
             this.projectVersions.set(id, (this.projectVersions.get(id) ?? 0) + count);
@@ -811,6 +847,7 @@ export class HostStore {
           });
           return value;
         } catch (error) {
+          if (epoch !== this.transactionEpoch) throw error;
           this.pendingBefore = undefined;
           this.inTransaction = false;
           this.transactionChanges = 0;

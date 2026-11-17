@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { agentToolAllowed } from "../delegation/tools";
+import { conversationLeaseOwner } from "../devices/lease-holder";
 import { dirname } from "node:path";
 import { sessionConversationPage } from "../../src/features/agent-app/model/sessionConversation";
 import type { DeviceAction } from "../../src/features/devices/types";
@@ -448,25 +449,25 @@ export async function dispatchConversationTools(
       else if (action === "devices.control.claim")
         request.result = await dependencies.deviceHost.control.claim(
           String(args.deviceId),
-          `conversation:${request.tokenHash}:${boundPrincipal.sessionId}`,
+          conversationLeaseOwner(request.tokenHash, boundPrincipal.sessionId),
           String(args.requestId),
           scopedDeviceAuthorized,
         );
       else if (action === "devices.control.release")
         request.result = await dependencies.deviceHost.control.release(
           String(args.deviceId),
-          `conversation:${request.tokenHash}:${boundPrincipal.sessionId}`,
+          conversationLeaseOwner(request.tokenHash, boundPrincipal.sessionId),
           String(args.leaseId),
         );
       else if (action === "devices.control.renew")
         request.result = await dependencies.deviceHost.control.renew(
           String(args.deviceId),
-          `conversation:${request.tokenHash}:${boundPrincipal.sessionId}`,
+          conversationLeaseOwner(request.tokenHash, boundPrincipal.sessionId),
           String(args.leaseId),
         );
       else if (action === "devices.inspect") {
         const id = String(args.deviceId),
-          owner = `conversation:${request.tokenHash}:${boundPrincipal.sessionId}`,
+          owner = conversationLeaseOwner(request.tokenHash, boundPrincipal.sessionId),
           lease = String(args.leaseId);
         await dependencies.deviceHost.control.assert(id, owner, lease);
         request.result = await dependencies.deviceHost.inspect(id, `${owner}:${lease}`, {
@@ -483,7 +484,7 @@ export async function dispatchConversationTools(
       } else if (action === "devices.action")
         request.result = await dependencies.deviceHost.control.execute(
           String(args.deviceId),
-          `conversation:${request.tokenHash}:${boundPrincipal.sessionId}`,
+          conversationLeaseOwner(request.tokenHash, boundPrincipal.sessionId),
           String(args.leaseId),
           String(args.requestId),
           args.action,
@@ -498,7 +499,7 @@ export async function dispatchConversationTools(
                   try {
                     await dependencies.deviceHost.control.assert(
                       String(args.deviceId),
-                      `conversation:${request.tokenHash}:${boundPrincipal.sessionId}`,
+                      conversationLeaseOwner(request.tokenHash, boundPrincipal.sessionId),
                       String(args.leaseId),
                     );
                     return true;
@@ -507,7 +508,7 @@ export async function dispatchConversationTools(
                   }
                 },
               },
-              `conversation:${request.tokenHash}:${boundPrincipal.sessionId}:${String(args.leaseId)}`,
+              `${conversationLeaseOwner(request.tokenHash, boundPrincipal.sessionId)}:${String(args.leaseId)}`,
             ),
         );
       else if (action === "browser.preview")

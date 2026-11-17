@@ -1,7 +1,9 @@
 import { remoteRequest } from "../../connections/public/connections";
 import { isLocalSyncMachine } from "../../connections/public/localSync";
 import type { RemoteMachine } from "../../connections";
+import { invoke } from "@tauri-apps/api/core";
 import { backgroundMachines } from "../../automations/model/hostAutomationClient";
+import { machineCapabilities } from "../../automations/public/hostMachines";
 import {
   HOST_SETTINGS,
   parseHostSettingsState,
@@ -20,6 +22,15 @@ export type MachineLimits = HostSettingsState & {
  * hosts are not among them. */
 export function settingsMachines(fresh = false): Promise<RemoteMachine[]> {
   return backgroundMachines(HOST_SETTINGS, fresh);
+}
+
+/** One machine whose host keeps work limits, asked alone so an unreachable
+ * other machine never delays it; undefined when it is unknown or older. */
+export async function settingsMachine(machineId: string): Promise<RemoteMachine | undefined> {
+  const machines = await invoke<RemoteMachine[]>("remote_machines");
+  const machine = machines?.find((candidate) => candidate.id === machineId);
+  if (!machine) return undefined;
+  return (await machineCapabilities(machine)).includes(HOST_SETTINGS) ? machine : undefined;
 }
 
 function machineLimits(machine: RemoteMachine, state: HostSettingsState): MachineLimits {

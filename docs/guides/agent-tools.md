@@ -401,8 +401,10 @@ In a Claude conversation, a Claude advisor (for example Fable with an Opus main 
 Claude Code's own advisor tool: it answers inside the main agent's turn, sees the native
 conversation context and starts no separate session. It runs on the conversation's account
 whichever account label you picked, so the Advisor menu lists each Claude model once. Its
-advice shows in the transcript as an Advisor row with the model and its state; open the row
-to read it. Codex and the other providers have no built-in advisor, so their advisor is a
+advice shows in the transcript as an Advisor row with the provider icon, model and state.
+While it works, the Thinking label uses the shared working shimmer and respects motion
+preferences. Returned advice is collapsed by default; click the row to expand or collapse
+its Markdown content, without a line limit. Codex and the other providers have no built-in advisor, so their advisor is a
 Host advisor: read-only, in plan mode, seeing only the question and context the main model
 sends it, writing only to the main agent. Its answer arrives as an Advisor completion. When
 the Host connection is not ready for a turn, the conversation says the advisor is
@@ -424,7 +426,9 @@ Default account. The picker recognizes these selections without changing their
 stored account or switching them to the conversation's current account.
 
 Host advisors and subagents appear in their parent's activity dock, including finished
-runs. They do not appear in conversation lists, search results or workspace tabs.
+runs. Each dock row places a larger status mark beside its title: working bars,
+a success check, a failure cross, a stop square or an interruption alert.
+They do not appear in conversation lists, search results or workspace tabs.
 Existing desktop conversations can delegate without moving the parent conversation
 to Host execution. Child runs keep their own Host history; the parent's drafts and
 execution owner stay with the desktop.

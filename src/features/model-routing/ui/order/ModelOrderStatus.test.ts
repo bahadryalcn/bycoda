@@ -9,7 +9,7 @@ import { ModelOrderSettings } from "./ModelOrderSettings";
 vi.mock("../../../connections/public/connections", () => ({ remoteRequest: vi.fn() }));
 vi.mock("../../../tasks/public/hostSettings", async (original) => ({
   ...(await original<typeof import("../../../tasks/public/hostSettings")>()),
-  settingsMachines: vi.fn(async () => [{ id: "host", name: "Host" }]),
+  settingsMachine: vi.fn(async () => ({ id: "host", name: "Host" })),
   listMachineLimits: vi.fn(async () => [
     {
       machineId: "host",

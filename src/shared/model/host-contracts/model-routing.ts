@@ -88,6 +88,8 @@ export const ModelRoutingPoolSchema = z.strictObject({
   entryIds: z.array(id).max(MODEL_ROUTING_MAX_ENTRIES),
   /** Other pools included by reference after this pool's own entries. Cycles are rejected. */
   poolIds: z.array(id).max(MODEL_ROUTING_MAX_POOLS).optional(),
+  /** Run-start effort for this pool, including models reached through included pools. */
+  effort: z.enum(["low", "medium", "high"]).optional(),
 });
 export type ModelRoutingPool = z.infer<typeof ModelRoutingPoolSchema>;
 
@@ -229,6 +231,8 @@ export const ModelRoutingEntryStatusSchema = z.strictObject({
   skip: z.enum(MODEL_ROUTING_SKIP_REASONS).optional(),
   leftPercent: z.number().min(0).max(100).optional(),
   resetsAt: z.number().int().nonnegative().optional(),
+  /** Why no `leftPercent` is known: still being read, no plan quota exists, or the read failed. */
+  limitState: z.enum(["reading", "noQuota", "unavailable"]).optional(),
 });
 export type ModelRoutingEntryStatus = z.infer<typeof ModelRoutingEntryStatusSchema>;
 

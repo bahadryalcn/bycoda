@@ -155,7 +155,18 @@ for (const theme of ["dark", "light"]) {
           ),
         );
         await expect(row).toHaveAttribute("data-dock-agent-state", state);
-        await expect(row.locator(":scope > span").first()).toBeVisible();
+        const status = row.locator("[data-dock-agent-title] > [data-dock-agent-status]");
+        await expect(status).toBeVisible();
+        const geometry = await status.evaluate((node) => {
+          const icon = node.getBoundingClientRect();
+          const title = node.nextElementSibling!.getBoundingClientRect();
+          return {
+            size: icon.width,
+            besideTitle: icon.right <= title.left,
+            alignedWithTitle: Math.abs(icon.top - title.top) <= 2,
+          };
+        });
+        expect(geometry).toEqual({ size: 16, besideTitle: true, alignedWithTitle: true });
       }
       const running = dock.locator('[data-dock-agent="status-running"]');
       const geometry = await running.evaluate((node) => {
@@ -335,12 +346,27 @@ for (const theme of ["light", "dark"])
       // shows those runs, so the queue lists nothing while it drains normally.
       await expect(page.getByText(/subagent results? waiting/)).toHaveCount(0);
       await expect(page.getByRole("button", { name: "Remove queued message" })).toHaveCount(0);
-      // Claude Code's built-in advisor: its own row with the model, the advice behind it.
+      // Claude Code's built-in advisor: details start closed and toggle on click.
       const advisor = page.locator("[data-advisor-row]");
       await expect(advisor).toContainText("Advisor · Fable 5.2");
       await expect(advisor).toContainText("Done");
+      await expect(advisor.locator("summary img")).toBeVisible();
+      await expect(advisor.locator("details")).not.toHaveAttribute("open");
+      await advisor.screenshot({
+        path: `temp/verification/advisor/completed-collapsed-${theme}-${width}.png`,
+      });
+      await expect(
+        advisor.getByText("Re-run the failed migration check", { exact: false }),
+      ).toBeHidden();
       await advisor.locator("summary").click();
-      await expect(advisor).toContainText("Re-run the failed migration check");
+      await expect(
+        advisor.getByText("Re-run the failed migration check", { exact: false }),
+      ).toBeVisible();
+      await advisor.locator("summary").click();
+      await expect(
+        advisor.getByText("Re-run the failed migration check", { exact: false }),
+      ).toBeHidden();
+      await advisor.locator("summary").click();
       // Transcript: a completion folds into its card; a notice without a card stays a disclosure.
       const benchmark = page.getByRole("button", { name: /^(Show|Hide) Benchmark review's work$/ });
       await expect(async () => {
@@ -372,6 +398,35 @@ for (const theme of ["light", "dark"])
       await page.screenshot({
         path: `temp/verification/subagent-audit/audit-${theme}-${width}.png`,
       });
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`advisor working with visible advice ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(
+        `/tests/browser/chat/subagent-relay.html?audit&advisor-pending&theme=${theme}`,
+      );
+      const advisor = page.locator("[data-advisor-row]");
+      await expect(advisor.locator("summary img")).toBeVisible();
+      await expect(advisor.locator("summary")).toContainText("Thinking…");
+      await expect(advisor.locator('[class*="sweepClip"]')).toHaveCount(1);
+      await expect(advisor.locator("details")).not.toHaveAttribute("open");
+      await advisor.screenshot({
+        path: `temp/verification/advisor/working-collapsed-${theme}-${width}.png`,
+      });
+      await expect(
+        advisor.getByText("Re-run the failed migration check", { exact: false }),
+      ).toBeHidden();
+      await advisor.locator("summary").click();
+      await expect(
+        advisor.getByText("Re-run the failed migration check", { exact: false }),
+      ).toBeVisible();
+      await advisor.screenshot({ path: `temp/verification/advisor/working-${theme}-${width}.png` });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await expect(
+        advisor.getByText("Re-run the failed migration check", { exact: false }),
+      ).toBeVisible();
     });
 
 for (const theme of ["light", "dark"])

@@ -6,11 +6,18 @@ export const HOST_BEHAVIOR_DEFAULTS = "host.settings.behavior.v1";
 /** Advertised only once the Host has authoritative client draft clearance; gates the archive fields. */
 export const HOST_AUTO_ARCHIVE = "host.settings.autoArchive.v1";
 
+/** `account`: another signed-in account of the same provider and model; `order`: the next
+ * eligible entry of the Host's model order. */
+export const USAGE_LIMIT_FAILOVERS = ["off", "account", "order"] as const;
+export type UsageLimitFailover = (typeof USAGE_LIMIT_FAILOVERS)[number];
+
 export type AgentDefaults = {
   keepAwakeWhileAgentsWork: boolean;
   keepAwakeHoldAfter: "0" | "15m" | "30m" | "1h" | "4h" | "forever";
   autoContinueInterrupted: boolean;
   resumeAtReset: boolean;
+  /** Where a chat continues when its provider stops it at a usage limit; `off` waits. */
+  usageLimitFailover: UsageLimitFailover;
   streamingTextMode: "paced" | "adaptive";
   archiveMergedSessions: boolean;
   archiveInactiveDays: number;
@@ -23,6 +30,7 @@ export const DEFAULT_AGENT_DEFAULTS: AgentDefaultsRecord = {
   keepAwakeHoldAfter: "0",
   autoContinueInterrupted: true,
   resumeAtReset: true,
+  usageLimitFailover: "off",
   streamingTextMode: "paced",
   archiveMergedSessions: false,
   archiveInactiveDays: 0,
@@ -56,6 +64,11 @@ export function parseAgentDefaults(
     )
       throw new Error("Invalid keep awake hold");
     next.keepAwakeHoldAfter = v.keepAwakeHoldAfter as AgentDefaults["keepAwakeHoldAfter"];
+  }
+  if (v.usageLimitFailover !== undefined) {
+    if (!USAGE_LIMIT_FAILOVERS.includes(v.usageLimitFailover as UsageLimitFailover))
+      throw new Error("Invalid usage limit failover");
+    next.usageLimitFailover = v.usageLimitFailover as UsageLimitFailover;
   }
   if (v.streamingTextMode !== undefined) {
     if (v.streamingTextMode !== "paced" && v.streamingTextMode !== "adaptive")

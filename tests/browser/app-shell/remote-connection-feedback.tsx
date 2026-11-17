@@ -2,10 +2,9 @@ import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   RemoteConnectionFeedbackProvider,
-  RemoteConnectionNotices,
+  RemoteConnectionNotice,
 } from "../../../src/features/connections/ui/RemoteConnectionFeedback";
 import { RemoteLoadError } from "../../../src/features/connections/ui/RemoteLoadError";
-import { RemoteConnectionBanner } from "../../../src/features/connections/ui/RemoteConnectionBanner";
 import { RemoteDataStatus } from "../../../src/features/connections/ui/RemoteDataStatus";
 import { CrewSessions } from "../../../src/features/crews/ui/CrewSessions";
 import {
@@ -82,7 +81,6 @@ function Fixture() {
             Crew hatası
           </Button>
         </header>
-        <RemoteConnectionNotices />
         <div
           style={{
             display: "grid",
@@ -132,7 +130,7 @@ function Fixture() {
               <h1 className="font-medium">Uzak proje · tailm</h1>
               <RemoteDataStatus cwd={cwd} state={dataState} presentation="indicator" />
             </header>
-            <RemoteConnectionBanner cwd={cwd} stale />
+            <RemoteConnectionNotice cwdOrEnvironmentId={cwd} stale />
             <RemoteDataStatus cwd={cwd} state={dataState} presentation="notice" />
             <p className="mb-4 leading-relaxed">
               Önceden yüklenen konuşma, dosyalar ve değişiklikler bağlantı yenilenirken görünür

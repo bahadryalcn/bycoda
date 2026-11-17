@@ -30,6 +30,7 @@ import {
   cancelRemoteReconnect,
 } from "./remoteReconnect";
 import { invalidateConnection, readRemoteLifecycle } from "./remoteLifecycle";
+import { focusMachine } from "./machineFocus";
 import {
   applyRemoteConnection,
   forgetRemoteConnection,
@@ -42,6 +43,7 @@ import {
 const down = "Machine is unreachable. Check the host and SSH tunnel, then reconnect.";
 const denied = "SSH connection failed: Permission denied (publickey).";
 let stop: () => void;
+let releaseFocus: () => void;
 let online = true;
 
 beforeEach(() => {
@@ -56,10 +58,13 @@ beforeEach(() => {
   registry.missing = false;
   request.mockReset();
   requestReconnect.mockReset();
+  // The user works in this machine's project; unfocused machines have their own tests.
+  releaseFocus = focusMachine("env");
   stop = startRemoteAutoRecovery();
 });
 afterEach(() => {
   stop();
+  releaseFocus();
   vi.useRealTimers();
   vi.restoreAllMocks();
 });
@@ -153,6 +158,18 @@ describe("automatic recovery", () => {
     await vi.advanceTimersByTimeAsync(120_000);
     expect(request).toHaveBeenCalledTimes(1);
     expect(readRemoteConnection("env")).toEqual({ status: "connecting" });
+  });
+
+  it("leaves a down machine nobody works in alone, and dials it once its project opens", async () => {
+    releaseFocus();
+    request.mockRejectedValue(down);
+    recordRemoteConnection("env", down);
+    window.dispatchEvent(new Event("focus"));
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(request).not.toHaveBeenCalled();
+    releaseFocus = focusMachine("env");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(request).toHaveBeenCalledTimes(1);
   });
 
   it("does not retry, or prompt, when SSH needs a password", async () => {

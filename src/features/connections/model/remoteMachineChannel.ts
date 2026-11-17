@@ -9,6 +9,11 @@ import { remoteBackoffDelay, withBackoffJitter } from "./remotePollingPolicy";
 import { cachedRemoteCapabilities, mayStartTunnel, remoteRequest } from "./connections";
 import { startPerformanceSpan } from "../../../shared/lib/performanceTrace";
 import { subscribeRemoteRecovered } from "./remoteHealth";
+import {
+  isMachineFocused,
+  subscribeMachineFocused,
+  UNFOCUSED_OFFLINE_CHECK_MS,
+} from "./machineFocus";
 import { nativeConnectionFailureCode } from "./remoteFailure";
 import {
   captureConnectionGeneration,
@@ -234,10 +239,19 @@ let stopWake: (() => void) | undefined;
 
 function startWake() {
   if (stopWake) return;
-  const wake = (environmentId?: string, reset = false) => {
+  const wake = (environmentId?: string, reset = false, networkBack = false) => {
     for (const [machineId, channel] of channels) {
       const environment = environmentForMachine(machineId);
       if (environmentId && environment && environment !== environmentId) continue;
+      // A window focus is no news about a down machine nobody works in; its rare check stands.
+      if (
+        !environmentId &&
+        !networkBack &&
+        channel.failures &&
+        environment &&
+        !isMachineFocused(environment)
+      )
+        continue;
       if (reset) {
         releaseWs(channel);
         const route = nativeRoutes.get(machineId);
@@ -263,17 +277,20 @@ function startWake() {
     wake(environmentId, true),
   );
   const onWake = () => wake();
+  const onOnline = () => wake(undefined, false, true);
+  const stopFocus = subscribeMachineFocused((environmentId) => wake(environmentId));
   if (typeof window !== "undefined") {
     window.addEventListener("focus", onWake);
-    window.addEventListener("online", onWake);
+    window.addEventListener("online", onOnline);
     document.addEventListener("visibilitychange", onVisibility);
   }
   stopWake = () => {
     unsubscribe();
     stopInvalidation();
+    stopFocus();
     if (typeof window !== "undefined") {
       window.removeEventListener("focus", onWake);
-      window.removeEventListener("online", onWake);
+      window.removeEventListener("online", onOnline);
       document.removeEventListener("visibilitychange", onVisibility);
     }
     stopWake = undefined;
@@ -886,7 +903,12 @@ async function poll(machineId: string, channel: Channel) {
       }
     }
     channel.failures = Math.min(6, channel.failures + 1);
-    delay = withBackoffJitter(remoteBackoffDelay(channel.failures));
+    const environmentId = environmentForMachine(machineId);
+    // A machine nobody works in is not asked every 30 s while it stays down.
+    delay =
+      environmentId && !isMachineFocused(environmentId)
+        ? UNFOCUSED_OFFLINE_CHECK_MS
+        : withBackoffJitter(remoteBackoffDelay(channel.failures));
   } finally {
     done();
     channel.polling = false;

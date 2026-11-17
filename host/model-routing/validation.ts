@@ -4,13 +4,16 @@ import {
   type ModelRoutingDraft,
   type ModelRoutingTarget,
 } from "../../src/shared/model/host-contracts/model-routing";
+import type { z } from "zod";
+import type { CatalogModelSchema } from "../../src/shared/model/host-contracts/models";
 import {
   modelRoutingPoolCycle,
   modelRoutingProjectKey,
 } from "../../src/shared/model/modelRoutingPools";
 import { isProfileProvider, type HostProviderAccountCatalog } from "../providers/provider-accounts";
 
-export type ModelRoutingCatalog = { models: Partial<Record<string, { id: string }[]>> };
+type CatalogModel = Pick<z.infer<typeof CatalogModelSchema>, "id" | "settings">;
+export type ModelRoutingCatalog = { models: Partial<Record<string, CatalogModel[]>> };
 export function validateModelRoutingDraft(
   raw: unknown,
   accounts: HostProviderAccountCatalog,
@@ -46,13 +49,18 @@ export function validateModelRoutingDraft(
   for (const key of Object.keys(draft.projectKinds ?? {}))
     if (modelRoutingProjectKey(key) !== key)
       throw new Error("Project scope keys must be normalized project keys.");
-  const targets: ModelRoutingTarget[] = [...draft.entries];
+  const targets: { target: ModelRoutingTarget; entryId?: string }[] = draft.entries.map(
+    (entry) => ({
+      target: entry,
+      entryId: entry.id,
+    }),
+  );
   for (const choice of Object.values(draft.roles)) {
     if (choice.kind === "pool" && !pools.has(choice.poolId))
       throw new Error(`Unknown role pool ${choice.poolId}.`);
-    if (choice.kind === "fixed") targets.push(choice.target);
+    if (choice.kind === "fixed") targets.push({ target: choice.target });
   }
-  for (const target of targets) {
+  for (const { target, entryId } of targets) {
     if (MODEL_ROUTING_DELEGATION_KEYS.some((key) => key in target.modelSettings))
       throw new Error("Delegation keys belong in model routing delegation settings.");
     if (isProfileProvider(target.harness)) {
@@ -62,8 +70,10 @@ export function validateModelRoutingDraft(
     } else if (target.providerAccountId !== undefined)
       throw new Error(`${target.harness} has no provider accounts.`);
     const models = catalog?.models[target.harness];
-    if (models?.length && !models.some((model) => model.id === target.model))
-      throw new Error(`Model "${target.model}" is not available for ${target.harness}.`);
+    if (models?.length && !models.some((model) => model.id === target.model)) {
+      const location = entryId === undefined ? "" : ` (entry id: ${JSON.stringify(entryId)})`;
+      throw new Error(`Model "${target.model}" is not available for ${target.harness}${location}.`);
+    }
   }
   for (const settings of [
     draft.delegation.global,

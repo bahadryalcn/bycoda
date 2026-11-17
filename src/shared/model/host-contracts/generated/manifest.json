@@ -26261,6 +26261,25 @@
         "additionalProperties": false,
         "properties": {
           "booted": { "type": "boolean" },
+          "heldBy": {
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": { "const": "session", "type": "string" },
+                  "sessionId": { "type": "string" }
+                },
+                "required": ["kind", "sessionId"],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": { "kind": { "const": "controller", "type": "string" } },
+                "required": ["kind"],
+                "type": "object"
+              }
+            ]
+          },
           "id": { "type": "string" },
           "name": { "type": "string" },
           "physical": { "type": "boolean" },
@@ -26416,7 +26435,29 @@
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
-        "properties": { "busy": { "type": "boolean" }, "deviceId": { "type": "string" } },
+        "properties": {
+          "busy": { "type": "boolean" },
+          "deviceId": { "type": "string" },
+          "heldBy": {
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": { "const": "session", "type": "string" },
+                  "sessionId": { "type": "string" }
+                },
+                "required": ["kind", "sessionId"],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": { "kind": { "const": "controller", "type": "string" } },
+                "required": ["kind"],
+                "type": "object"
+              }
+            ]
+          }
+        },
         "required": ["deviceId", "busy"],
         "type": "object"
       },
@@ -26535,6 +26576,25 @@
               "additionalProperties": false,
               "properties": {
                 "booted": { "type": "boolean" },
+                "heldBy": {
+                  "oneOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "kind": { "const": "session", "type": "string" },
+                        "sessionId": { "type": "string" }
+                      },
+                      "required": ["kind", "sessionId"],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": { "kind": { "const": "controller", "type": "string" } },
+                      "required": ["kind"],
+                      "type": "object"
+                    }
+                  ]
+                },
                 "id": { "type": "string" },
                 "name": { "type": "string" },
                 "physical": { "type": "boolean" },
@@ -26588,6 +26648,25 @@
             "additionalProperties": false,
             "properties": {
               "booted": { "type": "boolean" },
+              "heldBy": {
+                "oneOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": { "const": "session", "type": "string" },
+                      "sessionId": { "type": "string" }
+                    },
+                    "required": ["kind", "sessionId"],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": { "kind": { "const": "controller", "type": "string" } },
+                    "required": ["kind"],
+                    "type": "object"
+                  }
+                ]
+              },
               "id": { "type": "string" },
               "name": { "type": "string" },
               "physical": { "type": "boolean" },
@@ -26603,6 +26682,25 @@
               "additionalProperties": false,
               "properties": {
                 "booted": { "type": "boolean" },
+                "heldBy": {
+                  "oneOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "kind": { "const": "session", "type": "string" },
+                        "sessionId": { "type": "string" }
+                      },
+                      "required": ["kind", "sessionId"],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": { "kind": { "const": "controller", "type": "string" } },
+                      "required": ["kind"],
+                      "type": "object"
+                    }
+                  ]
+                },
                 "id": { "type": "string" },
                 "name": { "type": "string" },
                 "physical": { "type": "boolean" },
@@ -80313,5 +80411,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "ee8bce671e018b668c190e88bd3c26093c345d9eec813dd02ccd344a0ae04853"
+  "schemaHash": "c3c60582485adf57b40c4151cacbc9829073a9506fb68dd794bffe73f3684577"
 }

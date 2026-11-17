@@ -1,4 +1,5 @@
 import { asRecord } from "../../../../shared/lib/records";
+import { truncateGraphemes } from "../../../../shared/lib/text/truncate";
 import type {
   Attachment,
   RuntimeMode,
@@ -534,13 +535,40 @@ export function usageLimitFromRateLimitEvent(
 
 const USAGE_LIMIT_TEXT = /hit your (?:(?:usage|weekly) )?limit|usage limit reached/i;
 
+/** Claude's wording for a refused usage window, in a result or on stderr. */
+export function isUsageLimitText(text: string): boolean {
+  return USAGE_LIMIT_TEXT.test(text);
+}
+
 /** Claude also ends a limited turn with the limit as its error text. */
 export function isUsageLimitResult(rec: Record<string, unknown>): boolean {
   if (rec.is_error !== true) return false;
   const errors = Array.isArray(rec.errors)
     ? rec.errors.filter((item): item is string => typeof item === "string")
     : [];
-  return [stringField(rec, "result") ?? "", ...errors].some((text) => USAGE_LIMIT_TEXT.test(text));
+  return [stringField(rec, "result") ?? "", ...errors].some(isUsageLimitText);
+}
+
+/** Lines of Claude's stderr kept to explain an exit. */
+export const CLAUDE_EXIT_STDERR_LINES = 3;
+const EXIT_STDERR_LINE_MAX = 300;
+
+/** Keeps the last few non-empty stderr lines, each bounded, for the exit message. */
+export function pushClaudeStderrTail(tail: string[], line: string): void {
+  const text = line.trim();
+  if (!text) return;
+  tail.push(truncateGraphemes(text, EXIT_STDERR_LINE_MAX));
+  if (tail.length > CLAUDE_EXIT_STDERR_LINES)
+    tail.splice(0, tail.length - CLAUDE_EXIT_STDERR_LINES);
+}
+
+/** Error text for an exit nobody asked for: the code and what Claude last printed. */
+export function claudeExitMessage(code: number | null | undefined, stderrTail: readonly string[]) {
+  const status = code == null ? "" : ` (exit code ${code})`;
+  const detail = stderrTail.join("\n");
+  return detail
+    ? `Claude Code exited unexpectedly${status}:\n${detail}`
+    : `Claude Code exited unexpectedly${status}.`;
 }
 
 export function streamDeltaFromEvent(

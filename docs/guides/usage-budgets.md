@@ -32,6 +32,19 @@ Repeated copies of the same failure appear once per submitted attempt, including
 older saved transcripts. Stored diagnostics remain unchanged. A quota rejection
 does not offer **Retry**, even if an older record has no structured limit metadata.
 Other failures keep the retry action without a second generic failure banner.
+When Claude Code exits at a refused usage window before finishing the turn, the
+conversation shows the same usage-limit notice instead of a crash. Other unexpected
+exits name the exit code and Claude's last error lines.
+
+**Settings > Chat > Advanced conversation settings > At usage limit, continue on**
+decides what a local conversation does when its provider stops it at a usage limit.
+**Off** (the default) keeps the limit notice and waits. **Another account** keeps the
+model and switches to the next signed-in account of the same provider whose quota
+still reads fine. **Model order** switches to the first entry of the Host's model
+order (Settings > Models) that is not skipped and is not on the limited account. The
+switch appears in the conversation and Continue is sent on the new target. When
+nothing is available, the notice stays and **Resume at reset** still applies.
+Limits restored at launch and Host-run conversations are not switched.
 
 Grok shows the signed-in Grok Build CLI's plan quota in this view and the workspace
 footer. The used/remaining preference applies to its provider-reported credit usage

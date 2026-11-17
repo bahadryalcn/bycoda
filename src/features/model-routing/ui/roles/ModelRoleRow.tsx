@@ -5,6 +5,8 @@ import type {
   ModelRoutingRole,
   ModelRoutingTarget,
 } from "../../../../shared/model/host-contracts/model-routing";
+import { InfoPopover } from "../../../../shared/ui/InfoPopover";
+import { TriangleAlert } from "../../../../shared/ui/icons";
 import { Select } from "../../../../shared/ui/Select";
 import { Row } from "../../../../shared/ui/settings";
 import { ModelPicker } from "../../../sessions/public/ModelPicker";
@@ -142,6 +144,7 @@ export function ModelRoleRow({
               model={choice.target.model}
               values={choice.target.modelSettings}
               presentation="field"
+              hideAgentSettings
               showExtras
               extrasDisabled={disabled}
               onChange={(harness, model, providerAccountId) => {
@@ -170,6 +173,18 @@ export function ModelRoleRow({
               }
             />
           </div>
+        ) : null}
+        {choice?.kind === "fixed" ? (
+          <InfoPopover
+            label={t("No fallback")}
+            width={280}
+            className="shrink-0 text-(--ui-tone-warning-fg)"
+            icon={<TriangleAlert aria-hidden className="icon-sm" strokeWidth={1.75} />}
+          >
+            {t(
+              "No fallback: if this model is unavailable or out of quota, the job stops instead of moving to another model.",
+            )}
+          </InfoPopover>
         ) : null}
       </div>
     </Row>

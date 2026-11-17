@@ -6,6 +6,7 @@ import { Button } from "../../../shared/ui/Button";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { RefreshCw, X } from "../../../shared/ui/icons";
 import { useRemoteMachineOnline } from "../model/connections";
+import { useMachineFocus } from "../model/machineFocus";
 import type { RemoteMachine } from "../model/protocol";
 import { connectionIndicator, needsSignIn } from "../model/remoteConnection";
 import { readRemoteConnection, subscribeChanges } from "../model/remoteHealth";
@@ -31,6 +32,8 @@ export function MachineStatus({
   showDiagnostics?: boolean;
 }) {
   useRemoteMachineOnline(machine.id);
+  // A machine shown in settings is one the user is looking at: keep its status live.
+  useMachineFocus(machine.environmentId);
   const state = useSyncExternalStore(
     subscribeChanges,
     () => readRemoteConnection(machine.environmentId),

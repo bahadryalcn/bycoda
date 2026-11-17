@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { inspectBrowserElement, type ElementInspection } from "./browser-annotation";
 import type { BrowserAnnotationCapture } from "../../src/shared/lib/browserAnnotation";
+import type { LeaseHolder } from "../../src/shared/model/host-contracts/native-devices";
 import { applyBrowserInput } from "./browser-input";
 import { BrowserRefs } from "./browser-read";
 import { BrowserScreencast, browserFrameCursor } from "./browser-screencast";
@@ -176,7 +177,8 @@ export class SharedBrowser {
     glass: boolean;
     glassExpected: boolean;
   };
-  private lease?: { owner: string; id: string; expiresAt: number };
+  /** `sessionId` is set only when an agent conversation claimed it (never for a person's panel). */
+  private lease?: { owner: string; id: string; expiresAt: number; sessionId?: string };
   private busy = false;
   private readonly refs = new BrowserRefs();
   private readonly inputReceipts = new Map<
@@ -246,8 +248,10 @@ export class SharedBrowser {
     method: string,
     params: Record<string, unknown>,
     credential: string,
-    options: { takeover?: boolean } = {},
+    options: { takeover?: boolean; holderSessionId?: string } = {},
   ) {
+    if (method === "browser.claim" && typeof params.sessionId === "string")
+      options = { ...options, holderSessionId: params.sessionId };
     const matches =
       this.logSource?.projectId === params.projectId &&
       this.logSource?.sessionId === params.sessionId &&
@@ -283,7 +287,7 @@ export class SharedBrowser {
     method: string,
     params: Record<string, unknown>,
     credential: string,
-    options: { takeover?: boolean } = {},
+    options: { takeover?: boolean; holderSessionId?: string } = {},
   ) {
     const receiptOwner = fingerprint(credential);
     let receiptKey: string | undefined;
@@ -334,7 +338,12 @@ export class SharedBrowser {
           this.lease = undefined;
           this.annotation = undefined;
         }
-        this.lease = { owner, id: this.lease?.id ?? randomUUID(), expiresAt: at + 30_000 };
+        this.lease = {
+          owner,
+          id: this.lease?.id ?? randomUUID(),
+          expiresAt: at + 30_000,
+          sessionId: options.holderSessionId,
+        };
         return this.status(owner);
       }
       if (method === "browser.release") {
@@ -482,11 +491,20 @@ export class SharedBrowser {
       controlling: this.lease?.owner === owner,
       leaseId: this.lease?.owner === owner ? this.lease.id : undefined,
       leaseExpiresAt: this.lease?.expiresAt,
+      heldBy: this.holder(),
       viewport: { ...this.viewport },
       navigationId: this.navigationId,
       documentId: this.documentId,
       annotationId: this.annotation?.owner === owner ? this.annotation.id : undefined,
     };
+  }
+  /** Public holder of a live lease; no owner fingerprint or lease id of another client. */
+  private holder(): LeaseHolder | undefined {
+    const lease = this.lease;
+    if (!lease || lease.expiresAt <= this.now()) return undefined;
+    return lease.sessionId
+      ? { kind: "session", sessionId: lease.sessionId }
+      : { kind: "controller" };
   }
   private requireLease(owner: string, params: Record<string, unknown>) {
     if (!this.lease || this.lease.owner !== owner || this.lease.id !== params.leaseId)

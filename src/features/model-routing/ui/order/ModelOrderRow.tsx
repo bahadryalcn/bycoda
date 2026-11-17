@@ -63,7 +63,15 @@ export function ModelOrderRow({
   const kindLabel = account.kind === "work" ? t("Work") : t("Personal");
   const left =
     status?.leftPercent == null
-      ? t(statusLoading ? "Reading limit…" : statusError ? "Limit unavailable" : "Limit unknown")
+      ? t(
+          statusLoading || status?.limitState === "reading"
+            ? "Reading limit…"
+            : statusError || status?.limitState === "unavailable"
+              ? "Limit unavailable"
+              : status?.limitState === "noQuota"
+                ? "No plan quota"
+                : "Limit unknown",
+        )
       : t("{p0}% left", { p0: format.formatNumber(status.leftPercent) });
   return (
     <div

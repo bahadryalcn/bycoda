@@ -5,6 +5,7 @@ import { createModelRoutingService, type ModelRoutingPorts } from "./service";
 import { readDisabledModels } from "../providers/disabled-models";
 import { providerAuthStatus } from "../providers/provider-auth";
 
+const warm = vi.hoisted(() => vi.fn(async () => undefined));
 vi.mock("./service", () => ({ createModelRoutingService: vi.fn((ports) => ports) }));
 vi.mock("../providers/disabled-models", () => ({
   readDisabledModels: vi.fn(async () => ["claude:opus-4.7"]),
@@ -18,6 +19,7 @@ vi.mock("../providers/provider-auth", () => ({
 vi.mock("../assistant/models/assistant-quota-reader", () => ({
   AssistantQuotaReader: class {
     reading = vi.fn(() => ({ leftPercent: 42 }));
+    warm = warm;
   },
 }));
 
@@ -81,6 +83,29 @@ it("uses catalog, disabled preferences, account auth and quota without picker fa
   const unknown = await ports.signals({ ...EMPTY_MODEL_ROUTING, entries });
   expect(unknown.signedIn(entries[1]!)).toBe(true);
   expect(unknown.available(entries[0]!)).toBe(true);
+});
+
+it("awaits one bounded quota warm-up for the settings status read only", async () => {
+  createHostModelRoutingService({
+    store: {} as never,
+    catalog: async () => ({ models: {} }),
+    command: async () => "cli",
+    readLimits: vi.fn(),
+  });
+  const ports = vi.mocked(createModelRoutingService).mock.calls.at(-1)![0] as ModelRoutingPorts;
+  const entry = (id: string, harness: "claude" | "codex") => ({
+    id,
+    harness,
+    model: "m",
+    modelSettings: {},
+    unknownLimit: "use" as const,
+  });
+  const state = { ...EMPTY_MODEL_ROUTING, entries: [entry("a", "claude"), entry("b", "codex")] };
+  warm.mockClear();
+  await ports.signals(state);
+  expect(warm).not.toHaveBeenCalled();
+  await ports.signals(state, { awaitQuota: true });
+  expect(warm.mock.calls.map(([harness]) => harness)).toEqual(["claude", "codex"]);
 });
 
 it("gives a store without a registered service a store-only one instead of failing runs", async () => {

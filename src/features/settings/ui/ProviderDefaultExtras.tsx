@@ -25,7 +25,7 @@ import {
 import type { ProviderSessionDefaults } from "../../sessions/public/projectProviders";
 import { mergeProviderExtras } from "../../sessions/public/providerSessionDefaults";
 import { Row } from "../../../shared/ui/settings";
-import { ProviderDefaultSubagents } from "./ProviderDefaultSubagents";
+import { SubagentSelectionControl } from "../../sessions/public/SubagentModeControl";
 
 /** Label of the "follow the scope above" choice, naming the value it inherits. */
 export function inheritedChoiceLabel(inherited: string | undefined, valid: boolean): string {
@@ -218,7 +218,7 @@ export function ProviderDefaultExtras({
                 />
               </div>
             ) : setting.id === CROSS_SUBAGENTS_KEY ? (
-              <ProviderDefaultSubagents
+              <SubagentSelectionControl
                 setting={setting}
                 value={effectiveValues[setting.id]}
                 onChange={(next) => {

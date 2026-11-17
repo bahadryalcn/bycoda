@@ -18,9 +18,12 @@ import {
   subscribeModelControls,
   loadResumeAtReset,
   subscribeResumeAtReset,
+  loadUsageLimitFailover,
+  subscribeUsageLimitFailover,
   saveModelControls,
   type ModelControls,
 } from "../model/settings";
+import type { UsageLimitFailover } from "../../tasks/public/agentDefaults";
 import { saveAgentDefaultConfirmed } from "../model/agentDefaults";
 import {
   AdvancedSettings,
@@ -66,6 +69,10 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
   const [resumeAtReset, setResumeAtReset] = useStoredPreferenceState(
     loadResumeAtReset,
     subscribeResumeAtReset,
+  );
+  const [usageLimitFailover, setUsageLimitFailover] = useStoredPreferenceState(
+    loadUsageLimitFailover,
+    subscribeUsageLimitFailover,
   );
   const [autoContinue, setAutoContinue] = useStoredPreferenceState(
     loadAutoContinueInterrupted,
@@ -142,6 +149,15 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
       loadResumeAtReset,
       next,
       () => setResumeAtReset(next),
+    );
+  };
+  const onUsageLimitFailover = (next: UsageLimitFailover) => {
+    commit(
+      "usage-limit-failover",
+      () => saveAgentDefaultConfirmed("usageLimitFailover", next),
+      loadUsageLimitFailover,
+      next,
+      () => setUsageLimitFailover(next),
     );
   };
   const onAutoContinue = (next: boolean) => {
@@ -242,7 +258,12 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
         <AdvancedSettings
           title={t("Advanced conversation settings")}
           defaultOpen={false}
-          settingIds={["resume-at-reset", "auto-continue-interrupted", "model-controls"]}
+          settingIds={[
+            "resume-at-reset",
+            "usage-limit-failover",
+            "auto-continue-interrupted",
+            "model-controls",
+          ]}
         >
           <Row
             id="resume-at-reset"
@@ -269,6 +290,56 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
               on={resumeAtReset}
               onChange={onResumeAtReset}
               disabled={pending["resume-at-reset"]}
+            />
+          </Row>
+          <Row
+            id="usage-limit-failover"
+            feedback={feedback("usage-limit-failover")}
+            label={t("At usage limit, continue on")}
+            info={
+              <InfoPopover className="shrink-0">
+                <p>
+                  {t(
+                    "When a provider stops a chat at its usage limit, continue the same conversation elsewhere instead of waiting for the reset.",
+                  )}
+                </p>
+                <p>
+                  {t(
+                    "Another account keeps the model and moves to the next signed-in account of the same provider that still has quota. Model order uses the first eligible model in Settings > Models, skipping the limited account.",
+                  )}
+                </p>
+                <p>
+                  {t(
+                    "The switch shows in the conversation. If nothing is available, the limit notice stays and Resume at reset still applies.",
+                  )}
+                </p>
+              </InfoPopover>
+            }
+          >
+            <Segmented
+              label={t("At usage limit, continue on")}
+              value={usageLimitFailover}
+              options={[
+                {
+                  value: "off",
+                  get label() {
+                    return t("Off");
+                  },
+                },
+                {
+                  value: "account",
+                  get label() {
+                    return t("Another account");
+                  },
+                },
+                {
+                  value: "order",
+                  get label() {
+                    return t("Model order");
+                  },
+                },
+              ]}
+              onChange={onUsageLimitFailover}
             />
           </Row>
           <Row

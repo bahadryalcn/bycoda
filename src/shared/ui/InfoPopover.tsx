@@ -16,6 +16,7 @@ export function InfoPopover({
   children,
   width = 320,
   className,
+  icon,
 }: {
   /** Accessible name and tooltip. Defaults to "Help". */
   label?: string;
@@ -23,6 +24,8 @@ export function InfoPopover({
   width?: number;
   /** Layout hook for the trigger only (e.g. `shrink-0`). */
   className?: string;
+  /** Glyph of the trigger; defaults to the info mark. Pass a tone-colored icon for warnings. */
+  icon?: ReactNode;
 }) {
   const t = useT();
   const [open, setOpen] = useState(false);
@@ -45,7 +48,7 @@ export function InfoPopover({
         aria-controls={open ? contentId : undefined}
         onClick={() => setOpen((current) => !current)}
       >
-        <Info aria-hidden className="icon-sm" strokeWidth={1.75} />
+        {icon ?? <Info aria-hidden className="icon-sm" strokeWidth={1.75} />}
       </Button>
       {open ? (
         <Popover

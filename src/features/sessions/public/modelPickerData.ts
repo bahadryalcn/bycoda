@@ -10,3 +10,4 @@ export { signedOutAccountKeys } from "../model/accountModelChoices";
 export { SubagentEffortSwitch } from "../ui/SubagentEffortSwitch";
 
 export { ascendingEffortOptions } from "../model/modelPanelData";
+export { useDelegationSettings } from "../ui/ModelExtras";

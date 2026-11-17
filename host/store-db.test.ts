@@ -32,6 +32,237 @@ it("names the caller that held the store queue past a second, and how many waite
   }
 });
 
+it("names a store queue owner that is still holding, before it ever returns", async () => {
+  const database = new StoreDatabase(":memory:");
+  await database.ready;
+  cleanups.push(() => database.close());
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  try {
+    let release!: () => void;
+    let entered!: () => void;
+    const inside = new Promise<void>((resolve) => (entered = resolve));
+    const neverReturns = () =>
+      database.scope(() => {
+        entered();
+        return new Promise<void>((resolve) => (release = resolve));
+      });
+    const held = neverReturns();
+    const waiting = database.prepare("SELECT 1 AS n").get();
+    await inside;
+    vi.advanceTimersByTime(15_000);
+    const lines = warn.mock.calls.map(([line]) => String(line));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(/^Host database queue still held by .*neverReturns.* queued=1$/);
+    release();
+    await Promise.all([held, waiting]);
+    vi.advanceTimersByTime(60_000);
+    expect(warn.mock.calls).toHaveLength(1);
+  } finally {
+    vi.useRealTimers();
+    warn.mockRestore();
+  }
+});
+
+it("fails a queue holder that never returns so later requests are served", async () => {
+  const database = new StoreDatabase(":memory:");
+  await database.ready;
+  cleanups.push(() => database.close());
+  database.scopeDeadlineMs = 50;
+  const error = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    let lateWrite: Promise<unknown> | undefined;
+    const hung = database.scope(async () => {
+      await database.exec("CREATE TABLE IF NOT EXISTS hang_probe (id INTEGER)");
+      await database.exec("BEGIN IMMEDIATE");
+      lateWrite = new Promise((resolve) => setTimeout(resolve, 120)).then(() =>
+        database.exec("INSERT INTO hang_probe VALUES (1)"),
+      );
+      lateWrite.catch(() => undefined);
+      await new Promise<never>(() => undefined);
+    });
+    const waiting = database.prepare("SELECT 1 AS n").get();
+    await expect(hung).rejects.toThrow(/exceeded its deadline/);
+    expect(await waiting).toEqual({ n: 1 });
+    // The abandoned transaction was rolled back and its late write has no live owner.
+    await expect(lateWrite).rejects.toThrow(/no live owner|closed owner/);
+    expect(await database.prepare("SELECT count(*) AS n FROM hang_probe").get()).toEqual({ n: 0 });
+    expect(database.restartRequired).toBe(false);
+  } finally {
+    error.mockRestore();
+  }
+});
+
+it("fails the database instead of waiting forever when the worker stops answering", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "store-silent-worker-"));
+  cleanups.push(() => rmSync(directory, { recursive: true, force: true }));
+  const silent = join(directory, "silent-worker.mjs");
+  writeFileSync(
+    silent,
+    'import { parentPort } from "node:worker_threads"; parentPort.postMessage({ ready: true }); parentPort.on("message", () => {});',
+  );
+  const database = new StoreDatabase(":memory:", pathToFileURL(silent));
+  database.boundaryDeadlineMs = 50;
+  const error = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    await database.ready;
+    const first = database.prepare("SELECT 1 AS n").get();
+    const second = database.prepare("SELECT 2 AS n").get();
+    await expect(first).rejects.toThrow(/worker stopped|did not answer/);
+    await expect(second).rejects.toThrow();
+    expect(database.restartRequired).toBe(true);
+  } finally {
+    error.mockRestore();
+  }
+});
+
+const slowWorker = () => {
+  const directory = mkdtempSync(join(tmpdir(), "store-slow-worker-"));
+  cleanups.push(() => rmSync(directory, { recursive: true, force: true }));
+  const file = join(directory, "slow-worker.mjs");
+  // Answers ping/enter/leave at once; every statement takes 400 ms.
+  writeFileSync(
+    file,
+    `import { parentPort } from "node:worker_threads"; parentPort.postMessage({ ready: true });
+parentPort.on("message", ({ id, method }) => {
+  if (method === "ping" || method === "enter" || method === "leave") parentPort.postMessage({ id });
+  else setTimeout(() => parentPort.postMessage({ id, value: { n: 1 } }), 400);
+});`,
+  );
+  return pathToFileURL(file);
+};
+
+it("abandons a holder with a slow worker request without failing a responsive worker", async () => {
+  const database = new StoreDatabase(":memory:", slowWorker());
+  database.scopeDeadlineMs = 50;
+  database.boundaryDeadlineMs = 1_000;
+  const error = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    await database.ready;
+    const holder = database.prepare("SELECT 1 AS n").get();
+    await expect(holder).rejects.toThrow(/exceeded its deadline/);
+    expect(database.restartRequired).toBe(false);
+    await database.scope(async () => undefined);
+  } finally {
+    error.mockRestore();
+  }
+});
+
+it("settles a holder that finishes at its deadline exactly once and keeps serving", async () => {
+  const database = new StoreDatabase(":memory:");
+  await database.ready;
+  cleanups.push(() => database.close());
+  database.scopeDeadlineMs = 30;
+  const error = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    for (const delay of [24, 28, 30, 32, 36]) {
+      const outcome = await database
+        .scope(() => new Promise<string>((resolve) => setTimeout(() => resolve("done"), delay)))
+        .then(
+          (value) => value,
+          (failure: Error) => failure.name,
+        );
+      expect(["done", "ScopeDeadlineError"]).toContain(outcome);
+      expect(await database.prepare("SELECT 1 AS n").get()).toEqual({ n: 1 });
+    }
+    expect(database.restartRequired).toBe(false);
+  } finally {
+    error.mockRestore();
+  }
+});
+
+it("fails the database and rejects pending requests on a worker messageerror", async () => {
+  const database = new StoreDatabase(":memory:", slowWorker());
+  const error = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    await database.ready;
+    const pending = database.prepare("SELECT 1 AS n").get();
+    void pending.catch(() => undefined);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    (database as any).worker.emit("messageerror", new Error("cannot deserialize"));
+    await expect(pending).rejects.toThrow(/worker stopped/);
+    expect(database.restartRequired).toBe(true);
+  } finally {
+    error.mockRestore();
+  }
+});
+
+it("restores normal durability after an abandoned critical scope", async () => {
+  const database = new StoreDatabase(":memory:");
+  await database.ready;
+  cleanups.push(() => database.close());
+  database.scopeDeadlineMs = 50;
+  const error = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    await expect(database.durableScope(() => new Promise<never>(() => undefined))).rejects.toThrow(
+      /exceeded its deadline/,
+    );
+    expect(await database.prepare("PRAGMA synchronous").get()).toEqual({ synchronous: 1 });
+    expect(database.restartRequired).toBe(false);
+  } finally {
+    error.mockRestore();
+  }
+});
+
+it("notifies the host once when the worker fails for good", async () => {
+  const database = new StoreDatabase(":memory:");
+  await database.ready;
+  // A failed database cannot close normally; stop its worker directly.
+  cleanups.push(async () => void (await (database as any).worker.terminate()));
+  const fatal = vi.fn();
+  database.onFatal = fatal;
+  database.fail(new Error("one"));
+  database.fail(new Error("two"));
+  expect(fatal).toHaveBeenCalledTimes(1);
+});
+
+it("leaves no timers behind once its scopes end", async () => {
+  const database = new StoreDatabase(":memory:");
+  await database.ready;
+  cleanups.push(() => database.close());
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+  try {
+    await database.scope(async () => undefined);
+    await database.prepare("SELECT 1 AS n").get();
+    await database
+      .scope(async () => {
+        throw new Error("boom");
+      })
+      .catch(() => undefined);
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("keeps the next transaction's state when an abandoned transaction resumes and fails", async () => {
+  const { store } = await fixture();
+  store.db.scopeDeadlineMs = 60;
+  const error = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    await store.db.exec("CREATE TABLE IF NOT EXISTS epoch_probe (v TEXT)");
+    let resume!: () => void;
+    const first = store.transaction(async () => {
+      await store.db.exec("INSERT INTO epoch_probe VALUES ('a')");
+      await new Promise<void>((resolve) => (resume = resolve));
+      throw new Error("late failure");
+    });
+    await expect(first).rejects.toThrow(/exceeded its deadline/);
+    let during = false;
+    await store.transaction(async () => {
+      await store.db.exec("INSERT INTO epoch_probe VALUES ('b')");
+      resume();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      during = (store as any).inTransaction;
+    });
+    expect(during).toBe(true);
+    expect((store as any).inTransaction).toBe(false);
+    expect(await store.db.prepare("SELECT v FROM epoch_probe").all()).toEqual([{ v: "b" }]);
+  } finally {
+    error.mockRestore();
+  }
+});
+
 it("captures request authority without restoring a closed SQL owner, and rechecks the original grant inside a different live transaction", async () => {
   const { store } = await fixture();
   let allowed = true,

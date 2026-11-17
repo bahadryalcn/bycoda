@@ -48,7 +48,7 @@ import {
   providerAccountsAtSnapshot,
 } from "./modelStoreReaders";
 import { offeredDelegationSetting } from "../model/claudeAdvisor";
-import { delegationNextValue } from "../model/crossDelegation";
+import { delegationNextValue, isDelegationSetting } from "../model/crossDelegation";
 import { HARNESSES, HARNESS_TITLE, type HarnessId } from "../model/session";
 import { HarnessIcon } from "./HarnessIcon";
 import { ModelPanel } from "./ModelPanel";
@@ -68,17 +68,21 @@ import {
 import { getAllRateLimits, subscribeRateLimits } from "../../providers/public/rateLimitsCache";
 import {
   defaultProviderAccountId,
+  providerAccountColorValue,
   providerAccountLabel,
   supportsProviderAccounts,
   subscribeProviderAccounts,
 } from "../../providers/public/providerAccounts";
+import { ModelTriggerBadges, type ModelTriggerBadgeData } from "./ModelTriggerBadges";
 import {
   effortSetting,
   fastSetting,
+  fastToggleValues,
   isEffortSetting,
   isSettingLocked,
   pillSettings,
   recentMenuModels,
+  settingGroupId,
   settingLabel,
   settingValue,
   settingValueLabel,
@@ -119,6 +123,11 @@ type Props = {
   inheritChoice?: { label: string; selected: boolean; onSelect: () => void };
   accountId?: string;
   accountChoices?: boolean;
+  /**
+   * Removes the Agents tab (advisor, subagents, subagent effort, image models) from the panel,
+   * for callers that discard those changes, e.g. model-routing rows. Panel presentation only.
+   */
+  hideAgentSettings?: boolean;
   /** Offer the current selection's extras inside the picker; only where changes are kept. */
   showExtras?: boolean;
   /** Model settings stay readable but locked, e.g. while a turn runs. */
@@ -165,6 +174,7 @@ export function ModelPicker({
   inheritChoice,
   accountId,
   accountChoices = false,
+  hideAgentSettings = false,
   showExtras = false,
   extrasDisabled = false,
   onChange,
@@ -291,6 +301,33 @@ export function ModelPicker({
     source.accounts,
     t,
   ]);
+  // The field trigger names the account whenever one is given, even a lone one and without
+  // `accountChoices`; a missing account is still shown honestly.
+  const fieldAccount = useMemo((): ModelTriggerBadgeData["account"] => {
+    if (!field || inheritSelected || !accountId || !supportsProviderAccounts(harness))
+      return undefined;
+    if (source.accounts !== undefined) {
+      if (!accountsKnown) return undefined;
+      const accounts = source.accounts[harness] ?? [];
+      const saved = accounts.find((account) => account.id === accountId);
+      if (!saved)
+        return accountId === "default" ? undefined : { label: t("Unavailable Host account") };
+      return {
+        label: accountDisplayLabel(accounts, saved),
+        color: providerAccountColorValue({ id: saved.id, provider: harness }),
+      };
+    }
+    const accounts = providerAccountsAtSnapshot(harness, accountsSnapshot);
+    const saved = accounts.find((account) => account.id === accountId);
+    if (saved)
+      return {
+        label: accountDisplayLabel(accounts, saved),
+        color: providerAccountColorValue({ ...saved, provider: harness }),
+      };
+    if (accountId !== defaultProviderAccountId(harness) && accountId !== "default")
+      return { label: t("Removed account") };
+    return { label: providerAccountLabel(harness, accountId) };
+  }, [accountId, accountsKnown, accountsSnapshot, field, harness, inheritSelected, source, t]);
   useLayoutEffect(() => {
     onCloseRef.current = onClose;
     currentRef.current = current;
@@ -318,7 +355,7 @@ export function ModelPicker({
     // menu lists models only.
     if (hideSettings || inheritSelected) return [];
     // Delegation and Context lead; Fast and Reasoning stay near Model.
-    return menuSettingsAtRevision(
+    const all = menuSettingsAtRevision(
       {
         current,
         harnesses: pickerHarnesses,
@@ -333,10 +370,14 @@ export function ModelPicker({
       },
       catalogVersion,
     );
+    return hideAgentSettings
+      ? all.filter((setting) => settingGroupId(setting) !== "delegation")
+      : all;
   }, [
     catalogVersion,
     current,
     currentAccountId,
+    hideAgentSettings,
     hideSettings,
     inheritSelected,
     pickerHarnesses,
@@ -356,6 +397,35 @@ export function ModelPicker({
     showEffortSummary && !inheritSelected ? fastSetting(current) : undefined;
   const triggerFastOn =
     triggerFastSetting?.kind === "toggle" && settingValue(triggerFastSetting, values) === "true";
+  // Field trigger: Fast is on, off or (without the setting) not offered at all.
+  const fastValues = fastToggleValues(triggerFastSetting);
+  const triggerFastState: "on" | "off" | undefined = !triggerFastSetting
+    ? undefined
+    : triggerFastSetting.kind === "toggle"
+      ? triggerFastOn
+        ? "on"
+        : "off"
+      : fastValues
+        ? settingValue(triggerFastSetting, values) === fastValues.on
+          ? "on"
+          : "off"
+        : undefined;
+  const triggerExtras =
+    field && showEffortSummary && !inheritSelected
+      ? pillSettings(current)
+          .filter(
+            (setting) =>
+              setting !== triggerEffortSetting &&
+              setting !== triggerFastSetting &&
+              !isDelegationSetting(setting) &&
+              values[setting.id] !== undefined &&
+              values[setting.id] !== setting.value,
+          )
+          .map((setting) => ({
+            name: t(settingLabel(setting)),
+            label: t(settingValueLabel(setting, values)),
+          }))
+      : [];
   const triggerTitle = inheritSelected
     ? inherit.label
     : [HARNESS_TITLE[current.harness], current.provider?.name].filter(Boolean).join(" · ");
@@ -688,7 +758,7 @@ export function ModelPicker({
               ? inherit.label
               : `${HARNESS_TITLE[current.harness]}${
                   current.provider ? `, ${current.provider.name},` : ""
-                } ${currentLabel}${triggerEffortLabel ? `, ${t("effort {p0}", { p0: triggerEffortLabel })}` : ""}${triggerFastOn ? `, ${t("Fast")}` : ""}`
+                } ${currentLabel}${triggerEffortLabel ? `, ${t("effort {p0}", { p0: triggerEffortLabel })}` : ""}${triggerFastOn ? `, ${t("Fast")}` : triggerFastState === "off" && field ? `, ${t("Fast off")}` : ""}${fieldAccount ? `, ${t("Account: {p0}", { p0: fieldAccount.label })}` : ""}${triggerExtras.map((extra) => `, ${extra.name}: ${extra.label}`).join("")}`
           }
           expanded={open || recentOpen}
           aria-haspopup="dialog"
@@ -705,7 +775,9 @@ export function ModelPicker({
 
           onClick={() => togglePicker()}
         >
-          <span className="flex min-w-0 flex-1 items-center gap-1.5">
+          <span
+            className={`flex min-w-0 flex-1 items-center gap-1.5${field ? " @container/model-trigger" : ""}`}
+          >
             {inheritSelected ? (
               <Text
                 data-model-inherit
@@ -726,37 +798,48 @@ export function ModelPicker({
               </>
             )}
 
-            {triggerAccountLabel && !inheritSelected ? (
-              <>
-                {" "}
-                <Text
-                  data-model-account
-                  size="inherit"
-                  tone="secondary"
-                  truncate
-                  className="min-w-0 max-w-24"
-                >
-                  {triggerAccountLabel}
-                </Text>
-              </>
-            ) : null}
-
-            {triggerEffortLabel ? (
-              <Text data-model-effort size="inherit" tone="secondary" className="shrink-0">
-                {triggerEffortLabel}
-              </Text>
-            ) : null}
-
-            {triggerFastOn ? (
-              <Zap
-                data-model-fast
-                className="icon-xs shrink-0"
-                tone="secondary"
-                fill="currentColor"
-                strokeWidth={1.75}
-                aria-hidden
+            {field ? (
+              <ModelTriggerBadges
+                account={fieldAccount}
+                effort={showEffortSummary && !inheritSelected ? triggerEffortLabel : undefined}
+                fast={triggerFastState}
+                extras={triggerExtras}
               />
-            ) : null}
+            ) : (
+              <>
+                {triggerAccountLabel && !inheritSelected ? (
+                  <>
+                    {" "}
+                    <Text
+                      data-model-account
+                      size="inherit"
+                      tone="secondary"
+                      truncate
+                      className="min-w-0 max-w-24"
+                    >
+                      {triggerAccountLabel}
+                    </Text>
+                  </>
+                ) : null}
+
+                {triggerEffortLabel ? (
+                  <Text data-model-effort size="inherit" tone="secondary" className="shrink-0">
+                    {triggerEffortLabel}
+                  </Text>
+                ) : null}
+
+                {triggerFastOn ? (
+                  <Zap
+                    data-model-fast
+                    className="icon-xs shrink-0"
+                    tone="secondary"
+                    fill="currentColor"
+                    strokeWidth={1.75}
+                    aria-hidden
+                  />
+                ) : null}
+              </>
+            )}
           </span>
         </Trigger>
       </Tooltip>

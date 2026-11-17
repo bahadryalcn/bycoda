@@ -10,8 +10,15 @@ import { runtimeLogsAcpServers, runtimeLogsBridge } from "./runtimeLogsBridge";
 import { conversationToolsAcpServers, conversationToolsBridge } from "./conversationToolsBridge";
 import type { NativeOutputWork } from "./nativeOutputDelivery";
 import type { ChildProcessHandle, ChildTurnWriter } from "./child";
+import { homeDir } from "../../../platform/tauri/fs";
 
 export type { JsonRpcMessage };
+
+const SESSION_METHODS = ["session/new", "session/load", "session/resume", "session/fork"];
+
+function isHomeRelative(cwd: string): boolean {
+  return cwd === "~" || cwd.startsWith("~/") || cwd.startsWith("~\\");
+}
 
 export type AcpHandlers = {
   onNotification?: (
@@ -119,8 +126,19 @@ export class AcpClient {
     timeoutMs = 0,
     consume?: (value: T, work: NativeOutputWork | null) => T | Promise<T>,
   ): Promise<T> {
+    // ACP requires an absolute cwd; "~" (the project-less session folder) is the home folder.
+    const tilde =
+      SESSION_METHODS.includes(method) && params && typeof params === "object"
+        ? (params as { cwd?: unknown }).cwd
+        : undefined;
+    if (typeof tilde === "string" && isHomeRelative(tilde)) {
+      return homeDir().then((home) => {
+        const cwd = tilde === "~" ? home : `${home.replace(/[\\/]+$/, "")}/${tilde.slice(2)}`;
+        return this.requestOwned(rpc, method, { ...(params as Record<string, unknown>), cwd }, timeoutMs, consume);
+      });
+    }
     if (
-      ["session/new", "session/load", "session/resume", "session/fork"].includes(method) &&
+      SESSION_METHODS.includes(method) &&
       params &&
       typeof params === "object" &&
       "mcpServers" in params

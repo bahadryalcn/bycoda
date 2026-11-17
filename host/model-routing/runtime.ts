@@ -48,11 +48,19 @@ export function createHostModelRoutingService(ports: {
     store: ports.store,
     accounts: () => hostProviderAccounts(),
     catalog,
-    async signals(state) {
+    async signals(state, options) {
       const [models, disabled, accounts] = await Promise.all([
         catalog(),
         readDisabledModels(ports.store),
         hostProviderAccounts(),
+        // Settings status only: run-start resolution stays non-blocking.
+        options?.awaitQuota
+          ? (async () => {
+              // Sequential: one report fills every provider, so later warms return at once.
+              for (const harness of new Set(state.entries.map((entry) => entry.harness)))
+                await quota.warm(harness);
+            })()
+          : undefined,
       ]);
       const auth = new Map<string, boolean>();
       const accountKeys = [

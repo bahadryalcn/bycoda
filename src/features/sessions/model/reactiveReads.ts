@@ -26,6 +26,7 @@ import { executionUserIndex } from "./executionTurn";
 import { queuedSteerRoute, queuedTargetSummary } from "./messageQueue";
 import { getModelSnapshot, resolveModel, subscribeModels } from "./models";
 import { modelDisplayName, modelHarness } from "./modelDisplayName";
+import { advisorModelName } from "./advisorModelName";
 import type { Block, HarnessId, Session, ToolPreview } from "./session";
 import { useSessionsSelector } from "./sessionsStore";
 import { resolveToolCallDisplay, subagentModelName } from "./transcriptActivity";
@@ -42,6 +43,18 @@ import { resolveToolCallDisplay, subagentModelName } from "./transcriptActivity"
 /** Changes when the live model catalog or the turned-off models change. */
 export function useModelCatalogRevision(): number {
   return useSyncExternalStore(subscribeModels, getModelSnapshot, getModelSnapshot);
+}
+
+/** Advisor identity follows the same live catalog as other model labels. */
+export function useAdvisorModelName(
+  settings: Record<string, string> | undefined,
+): string | undefined {
+  const catalog = useModelCatalogRevision();
+  return useMemo(
+    () => advisorModelName(settings),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- catalog invalidates the live lookup
+    [settings, catalog],
+  );
 }
 
 /** Readable identity follows catalog updates through a subscribed hook. */

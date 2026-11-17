@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
 
 /**
- * Decides whether an error is a machine connection failure that the one central (top-center)
+ * Decides whether an error is a machine connection failure that the session's one machine
  * connection notice already explains. Shared failure components consult it so a pane, row or
  * field never repeats "can't reach the machine" with its own small Retry while that notice is up.
  * The workspace owner of the connection notice installs the gate; without it nothing is hidden.

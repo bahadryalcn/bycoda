@@ -90,6 +90,17 @@ describe("AssistantQuotaReader", () => {
     await reader.refresh("claude");
     expect(reader.reading("claude", undefined, "sonnet")).toMatchObject({ leftPercent: 80 });
   });
+  it("warm waits for the first sample but never longer than its deadline", async () => {
+    const { reader, calls } = setup([card("session", null, { default: win(80) })]);
+    await reader.warm("claude");
+    expect(reader.reading("claude", undefined, "sonnet")).toMatchObject({ leftPercent: 80 });
+    await reader.warm("claude");
+    expect(calls()).toBe(1);
+    await reader.warm("grok");
+    const slow = new AssistantQuotaReader({ readLimits: () => new Promise(() => undefined) });
+    await slow.warm("claude", 5);
+    expect(slow.reading("claude", undefined, "m")).toEqual({ unknown: true, reason: "noSample" });
+  });
   it("takes the minimum across whole-account and model windows, ignoring other models", async () => {
     const { reader } = setup([
       card("session", null, { default: win(60, 5000) }),
