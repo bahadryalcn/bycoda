@@ -48,7 +48,8 @@ for (const light of [true, false])
       await expect(page.getByRole("dialog")).toBeVisible();
       await page.screenshot({ path: `${folder}/attachment-preview-${theme}-${width}.png` });
       await page.keyboard.press("Escape");
-      await page.getByRole("button", { name: "Find in conversation", exact: true }).click();
+      await page.getByRole("button", { name: "More actions", exact: true }).click();
+      await page.getByRole("menuitem", { name: /Find in conversation/ }).click();
       await expect(page.getByRole("textbox", { name: "Find in conversation" })).toBeVisible();
       await page.screenshot({ path: `${folder}/find-${theme}-${width}.png` });
       await page.keyboard.press("Escape");

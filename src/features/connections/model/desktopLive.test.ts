@@ -1410,18 +1410,17 @@ describe("desktop live memoization and idle cadence", () => {
 });
 
 describe("phone group unlock relay", () => {
-  const runner = (run: (job: never) => Promise<never>) => ({
-    results: new Map<
-      string,
-      { id: string; result?: "ok" | "wrong" | "throttled"; error?: "failed" }
-    >(),
+  type TickDeps = Parameters<typeof runDesktopLiveTick>[0];
+  type GroupLockDeps = NonNullable<TickDeps["groupLock"]>;
+  const runner = (run: GroupLockDeps["run"]): GroupLockDeps => ({
+    results: new Map(),
     running: new Set<string>(),
     epoch: () => "nonce:3",
     run,
   });
-  const tick = (groupLock: ReturnType<typeof runner>, request: ReturnType<typeof vi.fn>) =>
+  const tick = (groupLock: GroupLockDeps, request: ReturnType<typeof vi.fn>) =>
     runDesktopLiveTick({
-      request,
+      request: request as TickDeps["request"],
       sessions: () => [],
       groupLock,
       handlers: { stop: vi.fn(), approve: vi.fn(), answer: vi.fn() },

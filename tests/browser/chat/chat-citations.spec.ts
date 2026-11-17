@@ -273,9 +273,8 @@ test("citation submit retains exact quote and comment, changed source remains re
     window.fixtureClipboardFailure = true;
   });
   await composer.getByRole("button", { name: "Copy quote", exact: true }).click();
-  await expect(
-    composer.getByText("Could not copy quote. Please try again.", { exact: true }),
-  ).toBeVisible();
+  const failedCopy = composer.getByRole("button", { name: "Copy failed. Try again.", exact: true });
+  await expect(failedCopy).toHaveAttribute("data-copy-state", "failed");
   await expect(
     composer.getByRole("button", { name: "Focus on this specific sentence.", exact: true }),
   ).toBeVisible();
@@ -290,7 +289,7 @@ test("citation submit retains exact quote and comment, changed source remains re
       exact: true,
     }),
   ).toBeVisible();
-  await composer.getByRole("button", { name: "Copy quote", exact: true }).click();
+  await failedCopy.click();
   await expect.poll(() => page.evaluate(() => window.fixtureCopiedText)).toBe(quote);
   await composer.getByRole("button", { name: "Send", exact: true }).click();
   await expect

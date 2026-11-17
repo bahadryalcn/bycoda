@@ -14,10 +14,11 @@ for (const theme of ["light", "dark"]) {
       );
       const root = page.locator("#setting-remote-machines");
       await expect(root.getByText("Studio Mac", { exact: true })).toBeVisible();
-      await expect(root.getByText("Known hosts", { exact: true }).first()).toBeVisible();
+      await expect(root.getByRole("heading", { name: /^Your computers/ })).toBeVisible();
       await page.screenshot({ path: `${evidence}/${theme}-${width}-computers.png` });
-      await root.getByRole("tab", { name: "Phone", exact: true }).click();
-      const phone = root.getByRole("region", { name: "Connect your phone", exact: true });
+      await root.getByRole("tab", { name: "Devices", exact: true }).click();
+      await root.getByRole("button", { name: "Connect a phone", exact: true }).click();
+      const phone = page.getByRole("dialog", { name: "Connect your phone", exact: true });
       // One failure message: the Host reason, not the generic firewall copy as well.
       await expect(phone.getByText(/mobile port is blocked/)).toBeVisible();
       await expect(phone.getByText(/Local network access is unavailable/)).toHaveCount(0);

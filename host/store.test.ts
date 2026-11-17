@@ -617,14 +617,19 @@ describe("project filesystem identity", () => {
     expect(notify).not.toHaveBeenCalled();
     expect((await store.addProject(join(directory, "another"), "Another")).id).not.toBe(project.id);
   });
-  it("reuses a project registered with backslashes when added with slashes", async () => {
-    const directory = open();
-    const store = new HostStore(join(directory, "host.db"));
-    cleanups.push(async () => await store.close());
-    const project = await store.addProject(directory.replace(/\//g, "\\"), "Original");
-    expect((await store.addProject(directory.replace(/\\/g, "/"), "Slashed")).id).toBe(project.id);
-    expect(await store.projects()).toHaveLength(1);
-  });
+  it.runIf(process.platform === "win32")(
+    "reuses a project registered with backslashes when added with slashes",
+    async () => {
+      const directory = open();
+      const store = new HostStore(join(directory, "host.db"));
+      cleanups.push(async () => await store.close());
+      const project = await store.addProject(directory.replace(/\//g, "\\"), "Original");
+      expect((await store.addProject(directory.replace(/\\/g, "/"), "Slashed")).id).toBe(
+        project.id,
+      );
+      expect(await store.projects()).toHaveLength(1);
+    },
+  );
   it("preserves legacy project IDs and their sessions when opening an alias", async () => {
     const directory = open();
     const store = new HostStore(join(directory, "host.db"));

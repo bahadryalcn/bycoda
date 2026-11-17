@@ -155,7 +155,7 @@ for (const [theme, width] of [
       dialog.getByRole("switch", { name: "Physical input", exact: true }),
     ).not.toBeVisible();
     await capture("assistant-access");
-    const footer = dialog.getByRole("button", { name: "Save profile settings", exact: true });
+    const footer = dialog.getByRole("button", { name: "Save", exact: true });
     await expect(footer).toBeVisible();
     const checks = dialog.locator("summary").filter({ hasText: "All checks" });
     await checks.scrollIntoViewIfNeeded();

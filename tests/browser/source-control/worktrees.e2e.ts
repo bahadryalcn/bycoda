@@ -55,7 +55,8 @@ for (const theme of ["light", "dark"])
       await page.goto(
         `/tests/browser/source-control/worktrees.html?visualCaller=quick-actions&theme=${theme}`,
       );
-      await page.getByRole("button", { name: "Open project in", exact: true }).click();
+      await page.getByRole("button", { name: "More actions", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Open project in", exact: true }).click();
       await expect(
         page.getByRole("dialog", { name: "Project action failed", exact: true }),
       ).toBeVisible();
@@ -142,7 +143,8 @@ for (const theme of ["light", "dark"])
           await expect(page.getByText("No matching icons", { exact: true })).toBeVisible();
         }
         if (view === "quick-actions") {
-          await page.getByRole("button", { name: "Open project in", exact: true }).click();
+          await page.getByRole("button", { name: "More actions", exact: true }).click();
+          await page.getByRole("menuitem", { name: "Open project in", exact: true }).click();
           await expect(
             page.getByRole("dialog", { name: "Project action failed", exact: true }),
           ).toBeVisible();
@@ -302,8 +304,8 @@ for (const theme of ["light", "dark"]) {
       const surface = page.getByTestId("workspace-policy-settings");
       await expect(surface.getByText("Cleanup blocked", { exact: true })).toBeVisible();
       await expect(surface.getByText("Pinned", { exact: true })).toBeVisible();
-      // The policy is always visible; the save bar appears only once it is edited.
-      await expect(surface.getByRole("button", { name: "Save", exact: true })).toHaveCount(0);
+      // The save bar is always present; Save stays disabled until the policy is edited.
+      await expect(surface.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
       await expect(surface.getByText("New workspaces are paused.", { exact: false })).toBeVisible();
       mkdirSync("temp/verification/2026-11-06-worktrees", { recursive: true });
       await page.screenshot({
@@ -325,8 +327,8 @@ for (const theme of ["light", "dark"]) {
       });
       await expect(save).toBeEnabled();
       await save.click();
-      // A saved policy clears the draft, so the save bar leaves the page.
-      await expect(save).toHaveCount(0);
+      // A saved policy clears the draft: the unsaved-changes count leaves the bar.
+      await expect(surface.getByRole("button", { name: /unsaved change/ })).toHaveCount(0);
       const calls = await page.evaluate(
         () =>
           (
@@ -764,7 +766,7 @@ for (const theme of ["light", "dark"])
         exact: true,
       });
       const discard = group.getByRole("button", {
-        name: "Discard changes",
+        name: "Discard",
         exact: true,
       });
       await expect(save).toBeDisabled();
@@ -777,9 +779,8 @@ for (const theme of ["light", "dark"])
         expect(box.y).toBeGreaterThanOrEqual(groupBox.y - 1);
         expect(box.y + box.height).toBeLessThanOrEqual(groupBox.y + groupBox.height + 1);
       }
-      // Save and Discard share one save bar row, after the notice in the group.
+      // Save and Discard share one sticky save bar row; its offset from the notice depends on the scroll position.
       expect(Math.abs(saveBox.y - discardBox.y)).toBeLessThan(24);
-      expect(saveBox.y).toBeGreaterThan(noticeBox.y);
       await group.scrollIntoViewIfNeeded();
       mkdirSync(l3Directory, { recursive: true });
       await page.screenshot({
@@ -949,7 +950,7 @@ for (const theme of ["light", "dark"])
       await expect(storage).not.toContainText("could not be measured");
       await expect(pin).toBeChecked();
       await expect(surface.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
-      await surface.getByRole("button", { name: "Discard changes", exact: true }).click();
+      await surface.getByRole("button", { name: "Discard", exact: true }).click();
       await expect(pin).not.toBeChecked();
       expect(errors).toEqual([]);
     });

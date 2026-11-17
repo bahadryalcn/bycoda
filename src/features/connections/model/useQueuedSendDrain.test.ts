@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { QueuedMessage } from "../../sessions";
+import type { HarnessId } from "../../../shared/model/harnessIdentity";
 import { useQueuedSendDrain, type QueuedConfigurationChange } from "./useQueuedSendDrain";
 
 let root: Root;
@@ -47,7 +48,7 @@ const saved: QueuedConfigurationChange = {
   mode: "supervised",
   providerAccountId: "work",
 };
-const queued = (harness: string, model: string): QueuedMessage => ({
+const queued = (harness: HarnessId, model: string): QueuedMessage => ({
   id: `row-${harness}-${model}`,
   text: "Next",
   attachments: [],

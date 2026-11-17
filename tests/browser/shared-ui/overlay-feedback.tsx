@@ -234,6 +234,7 @@ let stackSample = 0;
 const addToast = () =>
   toast.show({
     ...STACK_SAMPLES[stackSample++ % STACK_SAMPLES.length],
+    placement: "top-center",
     durationMs: null,
     onDismiss: () => count("stack-dismiss"),
   });

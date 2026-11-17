@@ -141,8 +141,9 @@ test("project, find, notes and close share one working group", async ({ page }) 
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/chat/chat-chrome.html?count=10");
   const toolbar = page.locator("header");
-  await expect(toolbar.getByRole("button")).toHaveCount(5);
-  await toolbar.getByRole("button", { name: "Project actions", exact: true }).click();
+  await expect(toolbar.getByRole("button")).toHaveCount(4);
+  await toolbar.getByRole("button", { name: "More actions", exact: true }).click();
+  await page.getByRole("menuitem").filter({ hasText: "Project actions" }).click();
   await expect(page.getByRole("menuitem").filter({ hasText: "Add action" })).toBeVisible();
   await page.keyboard.press("Escape");
   const find = toolbar.getByRole("button", { name: "Find in conversation", exact: true });
@@ -196,7 +197,7 @@ for (const dark of [false, true]) {
         const tooltip = page.getByRole("tooltip");
         await expect(tooltip).toBeVisible();
         await expect(tooltip).toContainText(
-          /dev|Project actions|Open project in|Find in conversation|Notes|Close pane|Minimize|Maximize|Close/,
+          /dev|More actions|Project actions|Open project in|Find in conversation|Notes|Close pane|Minimize|Maximize|Close/,
         );
         const after = await button.boundingBox();
         expect(after?.width).toBe(before?.width);

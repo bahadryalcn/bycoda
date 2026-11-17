@@ -70,8 +70,10 @@ function environmentRuntime() {
     onChange?: () => void;
     onSourceChange?: () => void;
     onDirectoryChange?: () => void;
+    groupLock: { access: () => unknown };
     projectDirectory: () => unknown;
   } = {
+    groupLock: { access: () => ({ groupIds: new Set<string>(), hiddenList: false }) },
     projectDirectory: () => ({
       version: 1,
       privacyReady: state.privacyReady,

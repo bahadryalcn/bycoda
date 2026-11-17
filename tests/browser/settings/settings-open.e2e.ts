@@ -134,10 +134,11 @@ test("settings expose advanced controls without opening a menu", async ({ page }
         }),
       ).toBeVisible();
       await page.keyboard.press("Escape");
-      // Manual URL setup shares the inline Add machine form instead of a separate disclosure.
-      // Add manually opens the inline form.
-      await form.getByRole("button", { name: "Add manually", exact: true }).click();
-      const machineForm = form.getByRole("form", { name: "Add a new machine", exact: true });
+      // Manual setup lives in the Add a computer dialog, on its address tab.
+      await form.getByRole("button", { name: "Add a computer", exact: true }).first().click();
+      const addDialog = page.getByRole("dialog", { name: "Add a computer", exact: true });
+      await addDialog.getByRole("tab", { name: "Enter address", exact: true }).click();
+      const machineForm = addDialog.getByRole("form", { name: "Add a new machine", exact: true });
       const hostUrl = machineForm.getByRole("radio", { name: "Host URL", exact: true });
       await hostUrl.focus();
       await hostUrl.press("Space");
@@ -147,7 +148,7 @@ test("settings expose advanced controls without opening a menu", async ({ page }
       ).toBeVisible();
       await expect(machineForm.getByLabel("Device token", { exact: true })).toBeVisible();
       await machineForm.getByRole("button", { name: "Cancel", exact: true }).click();
-      await expect(machineForm).toHaveCount(0);
+      await expect(addDialog).toHaveCount(0);
     }
     if (section === "general") {
       const buildDetails = form.getByTestId("build-identity-details");

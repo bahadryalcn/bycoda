@@ -212,6 +212,9 @@ it("fences compacted actual buffer deliveries across authenticated HTTP and WebS
   });
   expect(compacted).toEqual({ ...epoch, through: 1, highWater: 1 });
   expect(await receipts(f)).toBe(0);
+  // A device's first authentication records last_seen_at; warm the foreign token so the
+  // version fence only measures delivery effects.
+  await f.store.authenticated(f.other.token);
   const beforeClocks = await clocks(f),
     beforeVersion = f.store.db.dataMutationVersion;
   const fenced = {
