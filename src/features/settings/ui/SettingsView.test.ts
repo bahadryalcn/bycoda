@@ -7,6 +7,9 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import * as clipboard from "../../../platform/tauri/clipboard";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { SettingsView } from "./SettingsView";
+import { DEFAULT_AGENT_DEFAULTS } from "../../tasks/public/agentDefaults";
+import { acceptAgentDefaults } from "../model/agentDefaultsStore";
+import { loadKeepAwakeEnabled, loadKeepAwakeHoldAfter } from "../model/settings";
 import { resetRetainedProvidersPage } from "./ProviderSettings";
 import { navigationGroups } from "./SettingsAccountRow";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -89,6 +92,20 @@ vi.mock("../../../platform/tauri/platform", async (importOriginal) => ({
     return platform.isWindows;
   },
 }));
+
+/** Fake Host: a confirmed save is acknowledged by accepting the updated record. */
+vi.mock("../model/agentDefaults", async (original) => {
+  const actual = await original<object>();
+  const store = await import("../model/agentDefaultsStore");
+  return {
+    ...actual,
+    saveAgentDefaultConfirmed: async (key: string, value: unknown) => {
+      const record = store.agentDefaultsSnapshot()!;
+      store.acceptAgentDefaults({ agentDefaults: { ...record, [key]: value } });
+      return true;
+    },
+  };
+});
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(async () => undefined),
@@ -200,6 +217,7 @@ beforeEach(() => {
   platform.isWindows = false;
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   mockLocalStorage();
+  acceptAgentDefaults({ agentDefaults: { ...DEFAULT_AGENT_DEFAULTS, version: 1 } });
   resetRetainedProvidersPage();
   container = document.createElement("div");
   document.body.append(container);
@@ -368,20 +386,6 @@ describe("settings pages", () => {
       next: "0",
       selector: '[data-setting-id="close-to-tray"] [role="switch"]',
     },
-    {
-      section: "chat",
-      key: "bycoda.resumeAtReset",
-      initial: "1",
-      next: "0",
-      selector: '[data-setting-id="resume-at-reset"] [role="switch"]',
-    },
-    {
-      section: "chat",
-      key: "bycoda.autoContinueInterrupted",
-      initial: "1",
-      next: "0",
-      selector: '[data-setting-id="auto-continue-interrupted"] [role="switch"]',
-    },
   ])(
     "refreshes mounted $section controls after sibling storage changes to $key",
     async ({ section, key, initial, next, selector, index = 0, tab }) => {
@@ -410,6 +414,40 @@ describe("settings pages", () => {
       });
       expect(control()!.getAttribute("aria-checked"), key).not.toBe(before);
       expect(localStorage.getItem(key)).toBe(next);
+    },
+  );
+
+  it.each([
+    {
+      key: "resumeAtReset",
+      selector: '[data-setting-id="resume-at-reset"] [role="switch"]',
+    },
+    {
+      key: "autoContinueInterrupted",
+      selector: '[data-setting-id="auto-continue-interrupted"] [role="switch"]',
+    },
+  ] as const)(
+    "refreshes mounted chat controls after the Host snapshot changes $key",
+    async ({ key, selector }) => {
+      platform.isWindows = true;
+      localStorage.setItem(
+        "bycoda.lastModel",
+        JSON.stringify({ harness: "claude", model: "claude:opus-5" }),
+      );
+      await render("chat");
+      const advanced = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+        (button) => button.textContent === "Advanced conversation settings",
+      );
+      await act(async () => advanced?.click());
+      const control = () => container.querySelector(selector);
+      const before = control()?.getAttribute("aria-checked");
+      expect(before, key).toBe("true");
+      await act(async () => {
+        acceptAgentDefaults({
+          agentDefaults: { ...DEFAULT_AGENT_DEFAULTS, version: 2, [key]: false },
+        });
+      });
+      expect(control()!.getAttribute("aria-checked"), key).toBe("false");
     },
   );
 
@@ -842,14 +880,14 @@ describe("settings pages", () => {
     await act(async () => toggle.click());
     expect(hold.disabled).toBe(false);
     expect(toggle.getAttribute("aria-checked")).toBe("true");
-    expect(localStorage.getItem("bycoda.keepAwakeWhileAgentsWork")).toBe("1");
+    expect(loadKeepAwakeEnabled()).toBe(true);
 
     await act(async () => hold.click());
     const fifteen = Array.from(
       document.querySelectorAll<HTMLButtonElement>('[role="option"]'),
     ).find((button) => button.textContent?.includes("15 minutes"))!;
     await act(async () => fifteen.click());
-    expect(localStorage.getItem("bycoda.keepAwakeHoldAfter")).toBe("15m");
+    expect(loadKeepAwakeHoldAfter()).toBe("15m");
 
     const screen = container.querySelector<HTMLButtonElement>('[aria-label="Keep the screen on"]')!;
     expect(screen.getAttribute("aria-checked")).toBe("false");

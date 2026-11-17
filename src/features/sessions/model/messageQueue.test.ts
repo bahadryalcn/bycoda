@@ -6,6 +6,7 @@ import {
   dequeueQueuedMessage,
   isEditingQueuedHead,
   moveQueuedMessage,
+  ownerQueueRows,
   queuedHead,
   queuedMessageForSubmit,
   queuedModelTarget,
@@ -553,5 +554,29 @@ describe("restoring a removed queue row", () => {
     expect(
       restoreQueuedMessage([], queued("r"), ["a", "b", "c"], "b").map((row) => row.id),
     ).toEqual(["r"]);
+  });
+});
+
+describe("ownerQueueRows", () => {
+  const author = { kind: "delegation", runId: "r", title: "Child", reason: "completion" } as const;
+  const notice = { id: "n", text: "Done", attachments: [], author };
+  const owner = { id: "o", text: "Next", attachments: [] };
+
+  it("leaves subagent results out: the activity dock already shows them waiting", () => {
+    expect(ownerQueueRows([notice, owner], { status: "active" })).toEqual([owner]);
+    expect(ownerQueueRows([notice], { status: undefined })).toEqual([]);
+  });
+
+  it("shows them while the queue needs the owner, so a held result is never stuck unseen", () => {
+    for (const status of ["paused", "resuming", "restored"] as const)
+      expect(ownerQueueRows([notice, owner], { status })).toEqual([notice, owner]);
+    expect(ownerQueueRows([notice, owner], { status: "active", deliveryProblem: "n" })).toEqual([
+      notice,
+      owner,
+    ]);
+    expect(ownerQueueRows([notice, owner], { status: "active", held: true })).toEqual([
+      notice,
+      owner,
+    ]);
   });
 });

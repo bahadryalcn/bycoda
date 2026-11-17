@@ -75,10 +75,9 @@ pub(crate) fn init(app: &AppHandle) -> tauri::Result<()> {
                             ));
                         }
                     });
-                    #[cfg(target_os = "macos")]
                     return;
                 }
-                #[cfg(target_os = "macos")]
+                #[cfg(any(target_os = "macos", target_os = "windows"))]
                 crate::quick_composer::handle_global_shortcut(app, shortcut, event);
             })
             .build(),

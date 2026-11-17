@@ -481,7 +481,7 @@ describe("planWorkspaceTabClose", () => {
     ).toEqual({ action: "close", nextActiveTabId: "tm1" });
   });
 
-  it("closes a projectless tab to the neighbor when the project on screen has no other tab", () => {
+  it("keeps a projectless tab when the project on screen has no other tab", () => {
     const blankSessions = [...sessions, session("blank", "~")];
     expect(
       planWorkspaceTabClose({
@@ -491,7 +491,7 @@ describe("planWorkspaceTabClose", () => {
         scope: "project",
         activeCwd: "/projects/bycoda",
       }),
-    ).toEqual({ action: "close", nextActiveTabId: "tr1" });
+    ).toEqual({ action: "keep" });
   });
 
   it("keeps the global neighbor for a projectless tab without an active project", () => {

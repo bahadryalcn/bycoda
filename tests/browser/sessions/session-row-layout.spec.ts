@@ -6,6 +6,64 @@ const evidence = path.resolve("temp/verification/2026-11-04-last-sessions-worksp
 const titleEvidence = path.resolve("temp/verification/2026-11-04-session-titles");
 for (const light of [false, true])
   for (const width of [1280, 800])
+    test(`workspace toolbar overflow ${light ? "light" : "dark"} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(
+        `/tests/browser/sessions/session-row-layout.html?${light ? "light" : "dark"}`,
+      );
+      const pane = page.locator('[data-side-pane="workspace"]');
+      const header = pane.locator("[data-workspace-header]");
+      await pane.evaluate((element) => element.style.setProperty("width", "400px", "important"));
+      const expectedHeight = await header.evaluate(
+        (element) => element.getBoundingClientRect().height,
+      );
+      await pane.evaluate((element) => element.style.setProperty("width", "270px", "important"));
+      const directory = path.resolve("temp/verification/2026-11-17-workspace-overflow");
+      await mkdir(directory, { recursive: true });
+      await header.screenshot({
+        path: path.join(directory, `${light ? "light" : "dark"}-${width}.png`),
+      });
+      expect(await header.evaluate((element) => element.getBoundingClientRect().height)).toBe(
+        expectedHeight,
+      );
+      await header.getByRole("button", { name: "More actions", exact: true }).click();
+      await expect(
+        page.getByRole("menuitem", { name: "Search sessions", exact: true }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("menuitemcheckbox", { name: "Select conversations", exact: true }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("menuitemcheckbox", { name: "Filter sessions", exact: true }),
+      ).toBeVisible();
+      await page.getByRole("menu").screenshot({
+        path: path.join(directory, `${light ? "light" : "dark"}-${width}-menu.png`),
+      });
+      await page.getByRole("menuitem", { name: "Search sessions", exact: true }).click();
+      await expect(
+        header.getByRole("combobox", { name: "Search sessions", exact: true }),
+      ).toBeFocused();
+      await page.keyboard.press("Escape");
+      await header.getByRole("button", { name: "More actions", exact: true }).click();
+      await page
+        .getByRole("menuitemcheckbox", { name: "Select conversations", exact: true })
+        .click();
+      await expect(pane.getByRole("toolbar", { name: "Selected conversations" })).toBeVisible();
+      await header.getByRole("button", { name: "More actions", exact: true }).click();
+      await page.getByRole("menuitemcheckbox", { name: "Filter sessions", exact: true }).click();
+      await expect(page.getByRole("menu", { name: "Filter sessions", exact: true })).toBeVisible();
+      await page.keyboard.press("Escape");
+      await header.getByRole("button", { name: "More actions", exact: true }).click();
+      await page.getByRole("menuitem", { name: "New session", exact: true }).click();
+      await expect(page.getByLabel("Created sessions", { exact: true })).toHaveText("1");
+      await pane.evaluate((element) => element.style.setProperty("width", "400px", "important"));
+      await expect(header.getByRole("button", { name: "More actions", exact: true })).toBeHidden();
+      await expect(
+        header.getByRole("button", { name: "Filter sessions", exact: true }),
+      ).toBeVisible();
+    });
+for (const light of [false, true])
+  for (const width of [1280, 800])
     for (const rail of ["compact", "wide", "hidden"])
       test(`remote project header ${light ? "light" : "dark"} ${width} ${rail}`, async ({
         page,

@@ -69,13 +69,20 @@
   min-inline-size: 0;
 }
 
+/* Page tools sit right after the address: inspect (live, select), then size and setup,
+   then the control state. The address field takes the remaining width. */
 .host-browser-bar > .host-browser-view-actions {
   display: flex;
   align-items: center;
-  flex: 1 1 auto;
+  flex: none;
   flex-wrap: nowrap;
   gap: 2px;
   min-inline-size: 0;
+  margin-inline-start: auto;
+}
+
+.host-browser-view-actions > .host-browser-viewport-trigger {
+  font-variant-numeric: tabular-nums;
 }
 
 /* Status dot left of the address field; its tooltip names the state. */
@@ -86,7 +93,7 @@
 /* Labelled control state at the row end: eye = view only, dot = you control it. */
 .host-browser-view-actions > .host-browser-control-toggle {
   flex: none;
-  margin-inline-start: auto;
+  margin-inline-start: 4px;
 }
 
 .host-browser-highlight-label {

@@ -53,6 +53,9 @@ export function failedTurnRetry(session: Session) {
   const error = [...output].reverse().find(isSessionErrorBlock);
   if (
     !error ||
+    // Admission failed before the new user block existed. Its input belongs to
+    // the composer/queue; retrying the last transcript user would replay an older request.
+    /^Message not sent:/i.test(error.text.trim()) ||
     sessionErrorPresentation(error.text).usageLimit ||
     output.some(
       (block) => block.streaming || block.internal || (block.approval && !block.approval.decided),

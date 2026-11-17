@@ -70,6 +70,7 @@ function extraSettingsJson(
       accountChoices: true,
       signedOutAccounts: source.accounts === undefined ? signedOutAccountKeys(usage) : undefined,
       signedOutLabel: t("Not signed in"),
+      savedAccountLabel: t("Saved account"),
       values: merged,
       unavailable: (name) => t("Unavailable: {p0}", { p0: name }),
     }),

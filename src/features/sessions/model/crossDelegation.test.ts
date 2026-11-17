@@ -473,3 +473,56 @@ describe("subagent max effort levels", () => {
     ).toEqual(["", "low", "medium", "high", "xhigh", "max", "ultra"]);
   });
 });
+
+describe("saved delegation against a Host account list", () => {
+  const saved = {
+    harness: "claude",
+    model: CLAUDE_OPUS.id,
+    providerAccountId: "account-win",
+  } as const;
+  const values = {
+    [CROSS_ADVISOR_KEY]: encodeAdvisor(saved)!,
+    [CROSS_SUBAGENTS_KEY]: encodeSubagents([saved])!,
+  };
+  const remote = (accounts: Record<string, { id: string; label: string }[]>, known: boolean) =>
+    ({
+      modelsFor: source.modelsFor,
+      accounts,
+      accountsKnown: () => known,
+    }) as DelegationInput["source"];
+  const labelsOf = (setting: { options: { value: string; label: string }[] }) =>
+    setting.options.filter((o) => o.value).map((o) => o.label);
+  const run = (src: DelegationInput["source"]) =>
+    settingsFor({
+      source: src,
+      values,
+      harnesses: ["claude"],
+      accountChoices: true,
+      savedAccountLabel: "Saved account",
+    });
+
+  it("keeps the saved ref neutral and offers Host models without local accounts while the list is unknown", () => {
+    const { advisor, subagents } = run(remote({}, false));
+    const hostModels = source.modelsFor("claude").map((m) => `Claude Code · ${m.name}`);
+    expect(labelsOf(advisor)).toEqual([
+      ...hostModels,
+      "Claude Code · Claude Opus 5.5 · Saved account",
+    ]);
+    expect(labelsOf(subagents).filter((l) => !l.startsWith("Automatic"))).toEqual([
+      ...hostModels,
+      "Claude Code · Claude Opus 5.5 · Saved account",
+    ]);
+    expect(advisor.options.map((o) => o.label).join()).not.toContain("Unavailable");
+  });
+
+  it("says Unavailable only when a known list lacks the saved account", () => {
+    const { advisor } = run(remote({ claude: [{ id: "default", label: "Host main" }] }, true));
+    expect(labelsOf(advisor)).toContain("Unavailable · Claude Code · Claude Opus 5.5");
+  });
+
+  it("labels the saved ref with its account when the known list has it", () => {
+    const { advisor } = run(remote({ claude: [{ id: "account-win", label: "Windows" }] }, true));
+    expect(labelsOf(advisor)).toContain("Claude Code · Opus 5.5 · Windows");
+    expect(labelsOf(advisor).join()).not.toContain("Unavailable");
+  });
+});

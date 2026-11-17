@@ -7,6 +7,7 @@ import {
   decodeAdvisor,
   decodeSubagents,
   delegateRefKey,
+  nativeAdvisor,
   type DelegateModelRef,
 } from "../../../shared/model/host-contracts/delegation";
 import { HARNESS_TITLE } from "../../../shared/model/harnessIdentity";
@@ -55,10 +56,13 @@ export function delegationGuidance(
     lines.push(
       `Subagent models: ${subagents.map((ref) => `${label(ref)} [${delegateRefKey(ref)}]`).join(", ")}. Pass the bracketed ref as agents.delegate model.`,
     );
-  // Children are fresh sessions: they see only the brief, never this conversation.
+  // Children are fresh sessions: they see only the brief, never this conversation. Claude
+  // Code's own advisor runs inside this turn instead (`nativeAdvisor`), with no child session.
   if (advisor)
     lines.push(
-      `Advisor model: ${label(advisor)}. A read-only child session that sees only the question and context you send.`,
+      nativeAdvisor(thread?.harness, settings)
+        ? `Your advisor is Claude Code's built-in advisor tool (${advisor.model}); ask it inside your own turn when a second opinion helps. agents.consult is not used.`
+        : `Advisor model: ${label(advisor)}. A read-only child session that sees only the question and context you send.`,
     );
   if (subagents.length || automatic)
     lines.push(

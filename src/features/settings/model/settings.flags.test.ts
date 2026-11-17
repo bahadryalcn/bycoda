@@ -2,6 +2,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as settings from "./settings";
 import * as appearance from "./appearance";
+import { DEFAULT_AGENT_DEFAULTS } from "../../tasks/public/agentDefaults";
+import { acceptAgentDefaults, registerAgentDefaultsSync } from "./agentDefaultsStore";
 
 const platform = vi.hoisted(() => ({ isWindows: true }));
 vi.mock("../../../platform/tauri/platform", async (importOriginal) => ({
@@ -38,14 +40,7 @@ afterEach(() => {
 });
 
 /** Change events that carry no detail payload. */
-const NO_DETAIL = new Set([
-  "bycoda.closeToTray",
-  "bycoda.tabAnimationsEnabled",
-  "bycoda.resumeAtReset",
-  "bycoda.autoContinueInterrupted",
-]);
-/** Flags that notify only after the durable write is confirmed. */
-const CONFIRMED_ONLY = new Set(["bycoda.resumeAtReset", "bycoda.autoContinueInterrupted"]);
+const NO_DETAIL = new Set(["bycoda.closeToTray", "bycoda.tabAnimationsEnabled"]);
 /** Appearance flags keep the applied value for this window when the write fails. */
 const APPLIED_ON_FAILURE = new Set(["bycoda.bodyGlass"]);
 
@@ -70,13 +65,6 @@ describe.each([
     settings.saveLiveAgentsEnabled,
     true,
     "bycoda:live-agents-enabled-change",
-  ],
-  [
-    "bycoda.keepAwakeWhileAgentsWork",
-    settings.loadKeepAwakeEnabled,
-    settings.saveKeepAwakeEnabled,
-    false,
-    settings.KEEP_AWAKE_CHANGE_EVENT,
   ],
   [
     "bycoda.keepAwakeScreen",
@@ -105,20 +93,6 @@ describe.each([
     settings.saveClaudeHooks,
     true,
     "bycoda:claude-hooks-change",
-  ],
-  [
-    "bycoda.resumeAtReset",
-    settings.loadResumeAtReset,
-    settings.saveResumeAtReset,
-    true,
-    "bycoda:resume-at-reset-change",
-  ],
-  [
-    "bycoda.autoContinueInterrupted",
-    settings.loadAutoContinueInterrupted,
-    settings.saveAutoContinueInterrupted,
-    true,
-    "bycoda:auto-continue-interrupted-change",
   ],
   [
     "bycoda.bodyGlass",
@@ -206,7 +180,7 @@ describe.each([
       expect(() => save(value)).not.toThrow();
       // Appearance keeps the applied value in this window; other flags keep the stored value.
       expect(load()).toBe(APPLIED_ON_FAILURE.has(key) ? value : fallback);
-      const emits = eventName && !CONFIRMED_ONLY.has(key);
+      const emits = eventName;
       expect(dispatch).toHaveBeenCalledTimes(emits ? 1 : 0);
       if (emits) {
         expect(dispatch).toHaveBeenCalledWith(
@@ -245,37 +219,117 @@ it("disables close-to-tray outside Windows without consulting storage", () => {
   expect(read).not.toHaveBeenCalled();
 });
 
-it("reads keep-awake on Linux and macOS from storage", () => {
-  platform.isWindows = false;
-  settings.saveKeepAwakeEnabled(true);
+/** Preferences the Host owns: storage is only a legacy source until the Host accepts a record. */
+const HOST_OWNED = [
+  ["bycoda.keepAwakeWhileAgentsWork", "keepAwakeWhileAgentsWork", false],
+  ["bycoda.resumeAtReset", "resumeAtReset", true],
+  ["bycoda.autoContinueInterrupted", "autoContinueInterrupted", true],
+] as const;
+const hostLoad = {
+  keepAwakeWhileAgentsWork: settings.loadKeepAwakeEnabled,
+  resumeAtReset: settings.loadResumeAtReset,
+  autoContinueInterrupted: settings.loadAutoContinueInterrupted,
+};
+const hostSave = {
+  keepAwakeWhileAgentsWork: settings.saveKeepAwakeEnabled,
+  resumeAtReset: settings.saveResumeAtReset,
+  autoContinueInterrupted: settings.saveAutoContinueInterrupted,
+};
+const acceptHost = (patch: Partial<typeof DEFAULT_AGENT_DEFAULTS>, version: number) =>
+  acceptAgentDefaults({ agentDefaults: { ...DEFAULT_AGENT_DEFAULTS, version, ...patch } });
 
-  expect(settings.loadKeepAwakeEnabled()).toBe(true);
+// These run before any Host record is accepted, so the module snapshot is still empty.
+describe.each(HOST_OWNED)("%s before the Host answers", (storageKey, key, fallback) => {
+  it("uses its default when unset or unreadable", () => {
+    expect(hostLoad[key]()).toBe(fallback);
+    vi.spyOn(localStorage, "getItem").mockImplementation(() => {
+      throw new Error("storage unavailable");
+    });
+    expect(hostLoad[key]()).toBe(fallback);
+  });
+
+  it.each([
+    ["1", true],
+    ["true", true],
+    ["0", false],
+    ["false", false],
+    ["invalid", false],
+  ] as const)("reads the legacy value %j as %s", (stored, expected) => {
+    localStorage.setItem(storageKey, stored);
+    expect(hostLoad[key]()).toBe(expected);
+  });
 });
 
-it("persists how long to stay awake after an agent ends", () => {
+it("reads the legacy keep-awake hold only until the Host answers", () => {
   expect(settings.loadKeepAwakeHoldAfter()).toBe("0");
-  settings.saveKeepAwakeHoldAfter("15m");
+  localStorage.setItem("bycoda.keepAwakeHoldAfter", "15m");
   expect(settings.loadKeepAwakeHoldAfter()).toBe("15m");
-  expect(settings.keepAwakeHoldAfterMs("15m")).toBe(15 * 60 * 1000);
-  expect(settings.keepAwakeHoldAfterMs("forever")).toBe(Number.POSITIVE_INFINITY);
   localStorage.setItem("bycoda.keepAwakeHoldAfter", "nope");
   expect(settings.loadKeepAwakeHoldAfter()).toBe("0");
+  expect(settings.keepAwakeHoldAfterMs("15m")).toBe(15 * 60 * 1000);
+  expect(settings.keepAwakeHoldAfterMs("forever")).toBe(Number.POSITIVE_INFINITY);
 });
 
-it("notifies another window when the keep-awake setting changes", () => {
-  const listener = vi.fn();
-  const unsubscribe = settings.subscribeKeepAwakeEnabled(listener);
-  window.dispatchEvent(
-    new StorageEvent("storage", {
-      key: "bycoda.keepAwakeWhileAgentsWork",
-    }),
+describe("after the Host accepts a record", () => {
+  const save = vi.fn(async () => true);
+  beforeEach(() => {
+    save.mockClear();
+    registerAgentDefaultsSync({ start: () => () => {}, save });
+    acceptHost({}, 1);
+  });
+
+  it.each(HOST_OWNED)(
+    "%s forwards a save and changes only after the Host acknowledges it",
+    (storageKey, key, fallback) => {
+      const listener = vi.fn();
+      const unsubscribe = settings.subscribeKeepAwakeEnabled(listener);
+      try {
+        expect(hostSave[key](!fallback)).toBe(false);
+        expect(save).toHaveBeenCalledWith(key, !fallback);
+        expect(hostLoad[key]()).toBe(fallback);
+        expect(listener).not.toHaveBeenCalled();
+        expect(localStorage.getItem(storageKey)).toBeNull();
+        acceptHost({ [key]: !fallback }, 2);
+        expect(hostLoad[key]()).toBe(!fallback);
+        expect(listener).toHaveBeenCalledTimes(1);
+        // Once the snapshot already holds the value, the save is durable.
+        expect(hostSave[key](!fallback)).toBe(true);
+      } finally {
+        unsubscribe();
+      }
+    },
   );
-  expect(listener).toHaveBeenCalledTimes(1);
-  unsubscribe();
-  window.dispatchEvent(
-    new StorageEvent("storage", {
-      key: "bycoda.keepAwakeWhileAgentsWork",
-    }),
-  );
-  expect(listener).toHaveBeenCalledTimes(1);
+
+  it("ignores legacy storage once the Host owns the value", () => {
+    localStorage.setItem("bycoda.keepAwakeWhileAgentsWork", "1");
+    localStorage.setItem("bycoda.keepAwakeHoldAfter", "1h");
+    expect(settings.loadKeepAwakeEnabled()).toBe(false);
+    expect(settings.loadKeepAwakeHoldAfter()).toBe("0");
+  });
+
+  it("persists how long to stay awake after an agent ends through the Host", () => {
+    settings.saveKeepAwakeHoldAfter("15m");
+    expect(save).toHaveBeenCalledWith("keepAwakeHoldAfter", "15m");
+    expect(settings.loadKeepAwakeHoldAfter()).toBe("0");
+    acceptHost({ keepAwakeHoldAfter: "15m" }, 2);
+    expect(settings.loadKeepAwakeHoldAfter()).toBe("15m");
+  });
+
+  it("reads keep-awake on Linux and macOS from the Host record", () => {
+    platform.isWindows = false;
+    acceptHost({ keepAwakeWhileAgentsWork: true }, 2);
+    expect(settings.loadKeepAwakeEnabled()).toBe(true);
+  });
+
+  it("notifies another window's change through the Host snapshot, not storage events", () => {
+    const listener = vi.fn();
+    const unsubscribe = settings.subscribeKeepAwakeEnabled(listener);
+    window.dispatchEvent(new StorageEvent("storage", { key: "bycoda.keepAwakeWhileAgentsWork" }));
+    expect(listener).not.toHaveBeenCalled();
+    acceptHost({ keepAwakeWhileAgentsWork: true }, 2);
+    expect(listener).toHaveBeenCalledTimes(1);
+    unsubscribe();
+    acceptHost({ keepAwakeWhileAgentsWork: false }, 3);
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
 });

@@ -3,8 +3,8 @@ import {
   CROSS_ADVISOR_KEY,
   CROSS_SUBAGENTS_KEY,
   CROSS_SUBAGENT_MAX_EFFORT_KEY,
-  decodeAdvisor,
   decodeSubagents,
+  nativeAdvisor,
   providerModelSettings,
 } from "../../../shared/model/host-contracts/delegation";
 
@@ -68,7 +68,6 @@ export function providerTurnInput<
     input.modelSettings[CROSS_SUBAGENTS_KEY] === "auto"
       ? runtimeAutomaticSubagents(input)
       : decodeSubagents(input.modelSettings[CROSS_SUBAGENTS_KEY]);
-  const advisor = decodeAdvisor(input.modelSettings[CROSS_ADVISOR_KEY]);
   if (
     input.modelSettings[CROSS_SUBAGENTS_KEY] !== undefined ||
     input.modelSettings[CROSS_SUBAGENT_MAX_EFFORT_KEY]
@@ -89,8 +88,10 @@ export function providerTurnInput<
     }
   }
   if (input.modelSettings[CROSS_ADVISOR_KEY] !== undefined) {
-    settings.advisor = "off";
-    if (advisor && sameAccount(advisor)) settings.advisor = nativeModelId(advisor.model);
+    // Claude Code's advisor tool runs inside this turn on this conversation's account, so any
+    // Claude advisor pick is native; other providers' advisors run as Host sessions.
+    const native = nativeAdvisor("claude", input.modelSettings);
+    settings.advisor = native ? nativeModelId(native.model) : "off";
   }
   return { ...clean, modelSettings: settings };
 }

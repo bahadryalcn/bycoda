@@ -51,6 +51,10 @@ export type PullRequestWatchStore = Pick<HostStore, "session" | "sessionStateMet
 export type PullRequestWatchEngine = Pick<HostEngine, "command" | "withMessageAuthor">;
 
 export type PullRequestWatchOptions = {
+  archiveLink?: {
+    record(sessionId: string, url: string, state: string): Promise<void>;
+    forget(sessionId: string, url: string): Promise<void>;
+  };
   /** Under the Host data directory; written with writeFileAtomic. */
   file: string;
   store: PullRequestWatchStore;
@@ -229,6 +233,8 @@ export class PullRequestWatches {
       }
       return { value: undefined, changed };
     });
+    if (this.watches.includes(watch))
+      await this.options.archiveLink?.record(watch.sessionId, watch.url, observed.state);
     await this.deliver(id);
   }
 
@@ -324,6 +330,7 @@ export class PullRequestWatches {
     if (isTerminalState(view.snapshot.state))
       throw new Error(`This pull request is already ${view.snapshot.state.toLowerCase()}.`);
     const number = parsePullRequestUrl(view.url)?.number ?? 0;
+    await this.options.archiveLink?.record(scope.sessionId, view.url, view.snapshot.state);
     return await this.mutate(() => {
       const existing = this.watches.find(
         (entry) => entry.sessionId === scope.sessionId && entry.url === view.url,
@@ -359,6 +366,12 @@ export class PullRequestWatches {
 
   /** Removes one of the session's own watches. Another session's watch id returns false. */
   async unwatch(sessionId: string, watchId: string): Promise<boolean> {
+    await this.ready;
+    const entry = this.watches.find(
+      (watch) => watch.id === watchId && watch.sessionId === sessionId,
+    );
+    if (!entry) return false;
+    await this.options.archiveLink?.forget(sessionId, entry.url);
     return await this.mutate(() => {
       const index = this.watches.findIndex(
         (entry) => entry.id === watchId && entry.sessionId === sessionId,

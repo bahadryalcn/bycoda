@@ -15,6 +15,9 @@ import {
 import { StreamDeltaEncoder, tailStreamKey, tailStreamSessionId } from "../sync/stream-delta";
 import { HostSubscriptionHub } from "../transport/ws/subscriptions";
 import type { ServerBindings } from "./bindings";
+import { onProviderAccountStatusChange } from "./native";
+/** Quiet period that merges a burst of catalog or sign-in changes into one models reload. */
+const MODELS_INVALIDATE_DEBOUNCE_MS = 250;
 /** Well inside DESKTOP_BEAT_STALE_MS so a lapsed desktop snapshot reaches phones promptly. */
 const DIRECTORY_AGING_CHECK_MS = 5_000;
 export function createSubscriptionsRuntime(
@@ -35,6 +38,8 @@ export function createSubscriptionsRuntime(
     | "signal"
     | "invalidateSessionSource"
     | "transfers"
+    | "modelsService"
+    | "catalogs"
   >,
 ) {
   const bulkTransfers = new HostBulkTransfers({
@@ -108,7 +113,9 @@ export function createSubscriptionsRuntime(
             ? `session:${target.sessionId}`
             : target.kind === "project"
               ? `project:${target.projectId}`
-              : "environment";
+              : target.kind === "models"
+                ? `models:${target.projectId ?? ""}`
+                : "environment";
         const lease = bulkTransfers.begin(principalId, resource);
         try {
           let value: unknown;
@@ -126,6 +133,14 @@ export function createSubscriptionsRuntime(
                 dependencies.engine.store.environmentId,
               ),
             };
+          else if (target.kind === "models")
+            // Same service and authority as `models.list`; `pending` shrinks as providers land.
+            value = await dependencies.engine.store.db.withAuthorization(context.authorized, () =>
+              dependencies.modelsService.list(
+                { ...(target.projectId ? { projectId: target.projectId } : {}), progressive: true },
+                { authorized: context.authorized, principalId, signal },
+              ),
+            );
           else if (target.kind === "project") {
             streamProjectVersions.set(
               target.projectId,
@@ -288,6 +303,10 @@ export function createSubscriptionsRuntime(
   const unsubscribeChanges = () => {
     unsubscribeStoreChanges();
     clearInterval(directoryAging);
+    clearTimeout(modelsTimer);
+    modelsTimer = undefined;
+    unsubscribeAccountStatus();
+    dependencies.catalogs.onChange = undefined;
     dependencies.desktop.live.onDirectoryChange = previousDirectoryChange;
   };
   const httpTokenHashes = new WeakMap<object, { token: string; hash: string }>();
@@ -338,6 +357,20 @@ export function createSubscriptionsRuntime(
     for (const projectId of streamProjectVersions.keys())
       subscriptionHub.invalidate({ kind: "project", projectId });
   };
+  // Discovery lands provider by provider and sign-in probes finish in bursts, so a short
+  // trailing debounce keeps the hub at one reload per burst.
+  let modelsTimer: ReturnType<typeof setTimeout> | undefined;
+  const invalidateModelCatalog = () => {
+    if (modelsTimer) return;
+    modelsTimer = setTimeout(() => {
+      modelsTimer = undefined;
+      for (const target of subscriptionHub.targets())
+        if (target.kind === "models") subscriptionHub.invalidate(target);
+    }, MODELS_INVALIDATE_DEBOUNCE_MS);
+    modelsTimer.unref();
+  };
+  dependencies.catalogs.onChange = invalidateModelCatalog;
+  const unsubscribeAccountStatus = onProviderAccountStatusChange(invalidateModelCatalog);
   const invalidateSessionCopies = (sessionId: string, projectId: string) => {
     subscriptionHub.forget({ kind: "session", sessionId });
     bulkTransfers.invalidate(`session:${sessionId}`);
@@ -383,5 +416,6 @@ export function createSubscriptionsRuntime(
     previousDesktopChange,
     previousDesktopSourceChange,
     invalidateSessionCopies,
+    invalidateModelCatalog,
   };
 }

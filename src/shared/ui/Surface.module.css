@@ -415,6 +415,38 @@ button.appearance[data-surface-frame="card"] {
 .appearance[data-surface-elevation="floating"] {
   box-shadow: var(--ui-elevation-floating);
 }
+/* Glass: a floating panel docked over the transcript (owner 2026-11-17, translated: "the
+   background is meant to be transparent but it doesn't look it"). Per-theme tokens live in
+   src/styles/index.css. A blur re-samples the transcript on every streamed frame, so a streaming
+   pane, disabled blur, forced colors and reduced transparency use the opaque composer surface. */
+:is(.surface, .appearance)[data-surface-material="glass"][data-surface-role="floating"] {
+  background: var(--ui-composer-surface);
+}
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  :is(.surface, .appearance)[data-surface-material="glass"][data-surface-role="floating"] {
+    background: var(--ui-activity-dock-glass);
+    box-shadow: var(--ui-activity-dock-edge);
+    -webkit-backdrop-filter: var(--ui-activity-dock-filter);
+    backdrop-filter: var(--ui-activity-dock-filter);
+  }
+}
+:global(html[data-performance-no-blur])
+  :is(.surface, .appearance)[data-surface-material="glass"][data-surface-role="floating"],
+:global([data-session-streaming="true"])
+  :is(.surface, .appearance)[data-surface-material="glass"][data-surface-role="floating"] {
+  background: var(--ui-composer-surface);
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+@media (forced-colors: active), (prefers-reduced-transparency: reduce) {
+  :is(.surface, .appearance)[data-surface-material="glass"][data-surface-role="floating"] {
+    background: var(--ui-composer-surface);
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
 .surface[data-surface-ring="pane"],
 .appearance[data-surface-ring="pane"] {
   box-shadow: inset 0 0 0 1px var(--ui-pane-border);

@@ -18,6 +18,9 @@ describe("advertised device actions match executable arguments", () => {
     { type: "pressNode", inspectionId: "inspection", nodeId: "0" },
     { type: "waitForText", text: "Ready", timeoutMs: 120000 },
     { type: "home" },
+    { type: "fold", posture: "closed" },
+    { type: "fold", posture: "half-open" },
+    { type: "fold", posture: "open" },
     { type: "snapshot" },
   ];
   const rejected: DeviceAction[] = [
@@ -75,5 +78,18 @@ describe("advertised device actions match executable arguments", () => {
     )!.inputSchema;
     expect(JSON.stringify(schema)).toContain('"maximum":20000');
     expect(JSON.stringify(schema)).toContain('"maxLength":4096');
+  });
+  it("maps fold presets exactly and rejects arbitrary CLI arguments", () => {
+    expect(deviceActionArgs({ type: "fold", posture: "half-open" })).toEqual(["fold", "half-open"]);
+    const action = { type: "fold", posture: "--help" } as unknown as DeviceAction;
+    expect(() => deviceActionArgs(action)).toThrow("Invalid device fold posture");
+    expect(() =>
+      validateConversationTool("devices.action", {
+        deviceId: "duo",
+        leaseId: "lease",
+        requestId: "fold",
+        action,
+      }),
+    ).toThrow();
   });
 });

@@ -9,6 +9,7 @@ import {
 } from "../../features/sessions/model/turnRecovery";
 import type { TurnSteps } from "../../features/sessions/model/turnSteps";
 import { loadAutoContinueInterrupted } from "../../features/settings/model/settings";
+import { initializeAgentDefaults } from "../../features/settings/public/settings";
 
 /**
  * Local CLIs cannot outlive Bycoda: on Windows every harness child is in a
@@ -111,6 +112,11 @@ export async function recoverInterruptedTurn(session: Session): Promise<Session>
     recovery.state === "interrupted"
       ? await withRecordedSteps(session, steps, "interrupted")
       : session;
+  try {
+    await initializeAgentDefaults();
+  } catch {
+    return recovered;
+  }
   if (
     shouldAutoContinue({
       recovery,

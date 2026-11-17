@@ -1,4 +1,5 @@
 import { isImeComposition } from "../../../shared/lib/keyboard";
+import { loadAgentDefault, saveAgentDefault, subscribeAgentDefaults } from "./agentDefaultsStore";
 import { modelsSettingsEntries } from "./modelsSettingsEntries";
 import { TOOL_SETTINGS_INDEX, TOOL_SETTINGS_SECTIONS } from "./toolSettingsSections";
 import { toolSettingsAnchorForSection, toolSettingsTabForSection } from "./toolSettingsSections";
@@ -43,18 +44,10 @@ import {
 } from "./integrationsSettingsIndex";
 const SECTION_KEY = "bycoda.settingsSection";
 export type StreamingTextMode = "paced" | "adaptive";
-const streamingTextModeSetting = createStoredSetting<StreamingTextMode>({
-  key: "bycoda.streamingTextMode",
-  fallback: "paced",
-  event: "bycoda:streaming-text-mode-change",
-  storageEvents: true,
-  parse: (value) => (value === "adaptive" ? "adaptive" : "paced"),
-  serialize: String,
-});
-export const loadStreamingTextMode = streamingTextModeSetting.load;
-export const subscribeStreamingTextMode = streamingTextModeSetting.subscribe;
+export const loadStreamingTextMode = () => loadAgentDefault("streamingTextMode");
+export const subscribeStreamingTextMode = subscribeAgentDefaults;
 export function saveStreamingTextMode(value: StreamingTextMode) {
-  streamingTextModeSetting.save(value === "adaptive" ? "adaptive" : "paced");
+  return saveAgentDefault("streamingTextMode", value);
 }
 
 export type SettingsSectionId =
@@ -666,7 +659,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     },
     keywords: item.keywords,
   })),
-  ...(IS_MAC
+  ...(IS_MAC || IS_WIN
     ? [
         {
           id: "quick-composer",
@@ -1778,26 +1771,18 @@ export const subscribeLiveAgentsEnabled = liveAgentsEnabledSetting.subscribe;
 
 const CLOSE_TO_TRAY_KEY = "bycoda.closeToTray";
 
-const KEEP_AWAKE_KEY = "bycoda.keepAwakeWhileAgentsWork";
 export const KEEP_AWAKE_DEFAULT = false;
 export const KEEP_AWAKE_CHANGE_EVENT = "bycoda:keep-awake-change";
 
-const keepAwakeEnabledSetting = storedFlag(
-  KEEP_AWAKE_KEY,
-  KEEP_AWAKE_DEFAULT,
-  KEEP_AWAKE_CHANGE_EVENT,
-  true,
-);
-
 export function loadKeepAwakeEnabled(): boolean {
-  return keepAwakeEnabledSetting.load() ?? KEEP_AWAKE_DEFAULT;
+  return loadAgentDefault("keepAwakeWhileAgentsWork");
 }
 
 export function saveKeepAwakeEnabled(value: boolean) {
-  keepAwakeEnabledSetting.save(value);
+  return saveAgentDefault("keepAwakeWhileAgentsWork", value);
 }
 
-export const subscribeKeepAwakeEnabled = keepAwakeEnabledSetting.subscribe;
+export const subscribeKeepAwakeEnabled = subscribeAgentDefaults;
 
 export const KEEP_AWAKE_HOLD_AFTER = [
   {
@@ -1840,7 +1825,6 @@ export const KEEP_AWAKE_HOLD_AFTER = [
 
 export type KeepAwakeHoldAfter = (typeof KEEP_AWAKE_HOLD_AFTER)[number]["value"];
 
-const KEEP_AWAKE_HOLD_AFTER_KEY = "bycoda.keepAwakeHoldAfter";
 export const KEEP_AWAKE_HOLD_AFTER_DEFAULT: KeepAwakeHoldAfter = "0";
 export const KEEP_AWAKE_HOLD_AFTER_CHANGE_EVENT = "bycoda:keep-awake-hold-after-change";
 
@@ -1866,26 +1850,11 @@ export function keepAwakeHoldAfterMs(value: KeepAwakeHoldAfter): number {
 }
 
 export function loadKeepAwakeHoldAfter(): KeepAwakeHoldAfter {
-  try {
-    const raw = localStorage.getItem(KEEP_AWAKE_HOLD_AFTER_KEY);
-    return isKeepAwakeHoldAfter(raw) ? raw : KEEP_AWAKE_HOLD_AFTER_DEFAULT;
-  } catch {
-    return KEEP_AWAKE_HOLD_AFTER_DEFAULT;
-  }
+  return loadAgentDefault("keepAwakeHoldAfter");
 }
 
 export function saveKeepAwakeHoldAfter(value: KeepAwakeHoldAfter): void {
-  try {
-    localStorage.setItem(KEEP_AWAKE_HOLD_AFTER_KEY, value);
-  } catch {
-    // private mode / quota
-  }
-  if (typeof window !== "undefined")
-    window.dispatchEvent(
-      new CustomEvent<KeepAwakeHoldAfter>(KEEP_AWAKE_HOLD_AFTER_CHANGE_EVENT, {
-        detail: value,
-      }),
-    );
+  saveAgentDefault("keepAwakeHoldAfter", value);
 }
 
 const REMOTE_AUTO_RECONNECT_KEY = "bycoda.remoteAutoReconnect";
@@ -1932,16 +1901,7 @@ export function saveKeepAwakeScreen(value: boolean) {
 export const subscribeKeepAwakeScreen = keepAwakeScreenSetting.subscribe;
 
 export function subscribeKeepAwakeHoldAfter(onChange: () => void): () => void {
-  if (typeof window === "undefined") return () => {};
-  const onStorage = (event: StorageEvent) => {
-    if (event.key === KEEP_AWAKE_HOLD_AFTER_KEY || event.key === null) onChange();
-  };
-  window.addEventListener(KEEP_AWAKE_HOLD_AFTER_CHANGE_EVENT, onChange);
-  window.addEventListener("storage", onStorage);
-  return () => {
-    window.removeEventListener(KEEP_AWAKE_HOLD_AFTER_CHANGE_EVENT, onChange);
-    window.removeEventListener("storage", onStorage);
-  };
+  return subscribeAgentDefaults(onChange);
 }
 
 export const CLOSE_TO_TRAY_DEFAULT = true;
@@ -2101,37 +2061,17 @@ export function saveDiffLayout(value: DiffLayout) {
 
 export const subscribeDiffLayout = diffLayoutSetting.subscribe;
 
-const RESUME_AT_RESET_KEY = "bycoda.resumeAtReset";
-
 export const RESUME_AT_RESET_DEFAULT = true;
 
 /** Whether a usage limit notice starts armed to continue at the reset. */
-const resumeAtResetSetting = storedFlag(
-  RESUME_AT_RESET_KEY,
-  RESUME_AT_RESET_DEFAULT,
-  "bycoda:resume-at-reset-change",
-  true,
-);
-export const subscribeResumeAtReset = resumeAtResetSetting.subscribe;
-
-function saveChatFlag(key: string, value: boolean, event: string): boolean {
-  try {
-    const raw = value ? "1" : "0";
-    localStorage.setItem(key, raw);
-    if (localStorage.getItem(key) !== raw) return false;
-  } catch {
-    return false;
-  }
-  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(event));
-  return true;
-}
+export const subscribeResumeAtReset = subscribeAgentDefaults;
 
 export function loadResumeAtReset(): boolean {
-  return resumeAtResetSetting.load() ?? RESUME_AT_RESET_DEFAULT;
+  return loadAgentDefault("resumeAtReset");
 }
 
 export function saveResumeAtReset(value: boolean) {
-  return saveChatFlag(RESUME_AT_RESET_KEY, value, "bycoda:resume-at-reset-change");
+  return saveAgentDefault("resumeAtReset", value);
 }
 
 const FORMAT_ON_SAVE_KEY = "bycoda.formatOnSave";
@@ -2237,7 +2177,7 @@ export const KEYBINDINGS: KeybindingRow[] = [
   { command: "App: Open Tasks", keys: `${MOD}${SHIFT}Y`, when: "Always" },
   { command: "App: Open Automations", keys: `${MOD}${SHIFT}U`, when: "Always" },
   { command: "App: Open Crews", keys: `${MOD}${SHIFT}E`, when: "Always" },
-  ...(IS_MAC
+  ...(IS_MAC || IS_WIN
     ? [
         {
           command: "App: Quick Composer",
@@ -2681,8 +2621,6 @@ export function saveInlineBlame(value: boolean) {
 
 export const subscribeInlineBlame = inlineBlameSetting.subscribe;
 
-const AUTO_CONTINUE_INTERRUPTED_KEY = "bycoda.autoContinueInterrupted";
-
 export const AUTO_CONTINUE_INTERRUPTED_DEFAULT = true;
 
 /**
@@ -2690,20 +2628,11 @@ export const AUTO_CONTINUE_INTERRUPTED_DEFAULT = true;
  * the next launch. Off leaves an "Interrupted - Continue" action on the chat.
  */
 export function loadAutoContinueInterrupted(): boolean {
-  return readFlag(AUTO_CONTINUE_INTERRUPTED_KEY) ?? AUTO_CONTINUE_INTERRUPTED_DEFAULT;
+  return loadAgentDefault("autoContinueInterrupted");
 }
 
 export function saveAutoContinueInterrupted(value: boolean) {
-  return saveChatFlag(
-    AUTO_CONTINUE_INTERRUPTED_KEY,
-    value,
-    "bycoda:auto-continue-interrupted-change",
-  );
+  return saveAgentDefault("autoContinueInterrupted", value);
 }
 
-export const subscribeAutoContinueInterrupted = (onChange: () => void) =>
-  subscribePreferenceChanges(
-    [AUTO_CONTINUE_INTERRUPTED_KEY],
-    "bycoda:auto-continue-interrupted-change",
-    onChange,
-  );
+export const subscribeAutoContinueInterrupted = subscribeAgentDefaults;

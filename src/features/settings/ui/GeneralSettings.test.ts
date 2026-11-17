@@ -4,7 +4,6 @@ import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it, vi } from "vitest";
 import { GeneralPage, UpdateRow } from "./GeneralSettings";
-import { KEEP_AWAKE_DEFAULT, saveKeepAwakeEnabled } from "../model/settings";
 import { LANGUAGE_STORAGE_KEY, DOMAIN_LANGUAGE_STORAGE_KEYS } from "../../../shared/i18n";
 const mocks = vi.hoisted(() => ({
   reset: null as null | (() => Promise<void>),
@@ -13,7 +12,23 @@ const mocks = vi.hoisted(() => ({
   domain: vi.fn(),
   version: vi.fn(),
   enabled: vi.fn(),
+  confirmed: vi.fn(async (_key: string, _value: unknown) => true),
 }));
+vi.mock("../model/agentDefaults", async (original) => {
+  const actual = await original<object>();
+  const { acceptAgentDefaults } = await import("../model/agentDefaultsStore");
+  const { DEFAULT_AGENT_DEFAULTS } = await import("../../tasks/model/hostSettings");
+  let record = { ...DEFAULT_AGENT_DEFAULTS, version: 1 };
+  return {
+    ...actual,
+    saveAgentDefaultConfirmed: async (key: string, value: unknown) => {
+      if (!(await mocks.confirmed(key, value))) return false;
+      record = { ...record, [key]: value };
+      acceptAgentDefaults({ agentDefaults: record });
+      return true;
+    },
+  };
+});
 vi.mock("../../../app/model/updater", async (original) => ({
   ...(await original<object>()),
   readAppVersion: mocks.version,
@@ -52,22 +67,10 @@ it("restores canonical independent English domains and reports partial reset fai
 });
 
 it("does not hide a rejected durable preference write behind partial reset success", async () => {
-  saveKeepAwakeEnabled(!KEEP_AWAKE_DEFAULT);
+  mocks.confirmed.mockRejectedValueOnce(new Error("Host rejected write"));
   mocks.session.mockResolvedValue(undefined);
   renderToStaticMarkup(createElement(GeneralPage, { onOpenWhatsNew: () => {} }));
-  const originalStorage = globalThis.localStorage;
-  vi.stubGlobal("localStorage", {
-    getItem: originalStorage.getItem.bind(originalStorage),
-    setItem: () => {
-      throw new Error("storage full");
-    },
-  });
-  try {
-    await expect(mocks.reset!()).rejects.toThrow("Some settings could not be reset");
-  } finally {
-    vi.unstubAllGlobals();
-    saveKeepAwakeEnabled(KEEP_AWAKE_DEFAULT);
-  }
+  await expect(mocks.reset!()).rejects.toThrow("Some settings could not be reset");
   expect(mocks.session).toHaveBeenCalled();
 });
 

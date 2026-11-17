@@ -12,6 +12,112 @@ vi.mock("node:child_process", async (importOriginal) => {
   return { ...actual, spawn: vi.fn(actual.spawn) };
 });
 describe("device boundaries", () => {
+  it("refreshes the active Duo panel for each capture", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "bycoda-duo-capture-"));
+    const host = new DeviceHost(directory, { platform: "darwin", env: {} });
+    const internal = host as unknown as {
+      device: () => Promise<unknown>;
+      captureFrame: (id: string) => Promise<{ base64: string }>;
+    };
+    const device = vi.spyOn(internal, "device").mockResolvedValue({
+      id: "duo",
+      booted: true,
+      platform: "ios",
+      physical: false,
+      supportsFold: true,
+    });
+    const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+    let litPanel = "LCD";
+    const command = vi
+      .spyOn(deviceProcesses, "deviceCommand")
+      .mockImplementation(async (_exe, args) => {
+        if (args[0] === "devicectl") {
+          expect(args).toContain("duo");
+          await writeFile(
+            args.at(-1)!,
+            JSON.stringify({
+              result: {
+                displays: ["LCD", "LCD-1"].map((name) => ({
+                  name,
+                  type: { integrated: {} },
+                  backlightState: name === litPanel ? "activeOn" : "off",
+                })),
+              },
+            }),
+          );
+        } else {
+          expect(args).toContain(`--display=${litPanel}`);
+          await writeFile(args.at(-1)!, png);
+        }
+        return "";
+      });
+    try {
+      expect((await internal.captureFrame("duo")).base64).toBe(png.toString("base64"));
+      litPanel = "LCD-1";
+      expect((await internal.captureFrame("duo")).base64).toBe(png.toString("base64"));
+      expect(command).toHaveBeenCalledTimes(4);
+    } finally {
+      command.mockRestore();
+      device.mockRestore();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+  it.each([
+    { platform: "ios" as const, physical: true, supportsFold: true },
+    { platform: "ios" as const, physical: false, supportsFold: undefined },
+    { platform: "android" as const, physical: false, supportsFold: true },
+  ])(
+    "rejects folding unsupported target $platform/$physical/$supportsFold before commands",
+    async (target) => {
+      const host = new DeviceHost("/unused-fold-test", { platform: "darwin", env: {} });
+      const internal = host as unknown as { device: (id: string) => Promise<unknown> };
+      const device = vi
+        .spyOn(internal, "device")
+        .mockResolvedValue({ id: "target", booted: true, ...target });
+      const command = vi.spyOn(deviceProcesses, "deviceCommand");
+      try {
+        await expect(host.action("target", { type: "fold", posture: "closed" })).rejects.toThrow(
+          "Folding requires an iPhone Duo simulator",
+        );
+        expect(command).not.toHaveBeenCalled();
+      } finally {
+        device.mockRestore();
+        command.mockRestore();
+      }
+    },
+  );
+  it("detects a renamed Duo by simulator type, never by its display name", async () => {
+    const host = new DeviceHost("/unused-fold-test", { platform: "darwin", env: {} });
+    const command = vi.spyOn(deviceProcesses, "deviceCommand").mockResolvedValue(
+      JSON.stringify({
+        devices: {
+          "com.apple.CoreSimulator.SimRuntime.iOS-27-1": [
+            {
+              udid: "duo",
+              name: "Renamed",
+              state: "Booted",
+              deviceTypeIdentifier: "com.apple.CoreSimulator.SimDeviceType.iPhone-Duo",
+            },
+            {
+              udid: "ordinary",
+              name: "iPhone Duo",
+              state: "Booted",
+              deviceTypeIdentifier: "com.apple.CoreSimulator.SimDeviceType.iPhone-17",
+            },
+          ],
+        },
+      }),
+    );
+    try {
+      const devices = await (
+        host as unknown as { listIos: () => Promise<{ id: string; supportsFold?: boolean }[]> }
+      ).listIos();
+      expect(devices[0]).toMatchObject({ id: "duo", supportsFold: true });
+      expect(devices[1].supportsFold).toBeUndefined();
+    } finally {
+      command.mockRestore();
+    }
+  });
   it("captures iOS through an owned native screenshot file without a healthy hub", async () => {
     const directory = await mkdtemp(join(tmpdir(), "bycoda-native-capture-"));
     const host = new DeviceHost(directory, { platform: "darwin", env: {} });

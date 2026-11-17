@@ -32,6 +32,7 @@ import {
   WIRE_METHOD_PATTERN,
   WIRE_SHA256_PATTERN,
   WIRE_UUID_V4_PATTERN,
+  WIRE_CLIENT_MESSAGE_ID_PATTERN,
   BulkDescriptorSchema,
   BulkResultSchema,
 } from "./schemas";
@@ -101,6 +102,7 @@ function assertWireSubset(value: z.ZodType, visited = new Set<z.ZodType>()): voi
         WIRE_CAPABILITY_PATTERN.source,
         WIRE_SHA256_PATTERN.source,
         WIRE_UUID_V4_PATTERN.source,
+        WIRE_CLIENT_MESSAGE_ID_PATTERN.source,
       ].includes(pattern.source);
     if (!numeric && !arrayLength && !identifier)
       throw new Error(`Unsupported wire schema check: ${String(rule.check)}.`);

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { remoteRequest } from "../../connections/model/connections";
+import { remoteRequest } from "../../connections/public/connections";
 import { machineCapabilities, machineProjects } from "../../automations/model/machineSnapshot";
 import { LOCAL_SYNC_MACHINE_NAME } from "../../connections/model/localSync";
 import type { RemoteMachine } from "../../connections/model/protocol";
@@ -20,8 +20,10 @@ import {
 import type { HostGoal, HostGoalInput } from "./hostGoals";
 import { TASK_AGENT_ERROR } from "./taskClient";
 
-vi.mock("../../connections/model/connections", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../connections/model/connections")>()),
+// Mock the entry the client imports: the model module sits in an import cycle, so spreading
+// its original can hand the client the real transport before the mock exists.
+vi.mock("../../connections/public/connections", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../connections/public/connections")>()),
   remoteRequest: vi.fn(),
 }));
 vi.mock("../../automations/model/machineSnapshot", async (importOriginal) => ({

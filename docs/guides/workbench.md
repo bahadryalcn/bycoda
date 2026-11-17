@@ -1,5 +1,9 @@
 # Workbench navigation
 
+Closing the last conversation tab in the current project keeps a blank conversation
+in that project. Hidden tabs from other projects are not selected, including when
+the closing tab has no project of its own and uses the project on screen.
+
 Remote workspace headers show the project's saved name and icon, like local projects.
 The machine icon beside the name shows the owning machine and data freshness on hover
 or keyboard focus. Click it to refresh conversations. Loading and connection failures
@@ -79,8 +83,8 @@ small-size vector mark. Expanded sections share label and count columns; Last
 sessions keeps separate collapse and open actions. The workspace header emphasizes
 the current location. Its Back, Forward and Expand projects controls sit after the
 title, before conversation search; Expand projects is no longer repeated in the
-compact rail. Narrow workspace panes keep the location on its own row and the
-same controls immediately below, so every action stays inside the pane. Crews, Servers, Notes,
+compact rail. Narrow workspace panes keep the header on one row; More actions
+contains conversation search, selection, filters and New session. Crews, Servers, Notes,
 Automations, Social Media, Tasks and Room appear directly as stacked rail icons.
 Hover or focus an icon for its name and shortcut. The rail scrolls in short windows
 while Account and Settings remain at the bottom. Recovered work uses a restore

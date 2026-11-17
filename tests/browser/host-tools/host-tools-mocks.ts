@@ -110,6 +110,15 @@ let device: DeviceSummary = {
   booted: new URLSearchParams(location.search).has("devicesReady"),
   physical: false,
 };
+// Duo fixture exercises control presentation; it does not emulate native hinge behavior.
+if (new URLSearchParams(location.search).has("duo")) {
+  device = { ...device, name: "iPhone Duo", platform: "ios", version: "27.1", supportsFold: true };
+  deviceStatus = {
+    ...deviceStatus,
+    platform: "darwin",
+    platforms: [{ platform: "ios", available: true }],
+  };
+}
 if (new URLSearchParams(location.search).get("deviceName") === "long") {
   device.name =
     "Development emulator with a very long accessible device name 日本語 العربية Türkçe 0123456789";

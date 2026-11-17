@@ -49,11 +49,17 @@ export function subagentModeValue(mode: "auto" | "off"): string {
 export type DelegationInput = {
   current: AgentModel;
   harnesses: readonly HarnessId[];
-  source: { modelsFor(harness: HarnessId): AgentModel[]; accounts?: ModelAccountCatalog };
+  source: {
+    modelsFor(harness: HarnessId): AgentModel[];
+    accounts?: ModelAccountCatalog;
+    accountsKnown?(harness: HarnessId): boolean;
+  };
   accountChoices?: boolean;
   currentAccountId?: string;
   signedOutAccounts?: ReadonlySet<string>;
   signedOutLabel?: string;
+  /** Account part of a saved selection whose Host account list has not arrived. */
+  savedAccountLabel?: string;
   values: Record<string, string>;
   /** Label for a saved model that is no longer offered; the caller translates it. */
   unavailable(name: string): string;
@@ -172,6 +178,12 @@ export function crossDelegationSettings(input: DelegationInput): ModelSetting[] 
       ref.harness === "claude" && ref.model !== "default"
         ? CLAUDE_SUBAGENT_SETTINGS[0].options.find((item) => item.value === ref.model)
         : undefined;
+    // An unknown list never condemns a saved ref; the owning Host validates on send.
+    if (input.source.accountsKnown?.(ref.harness) === false)
+      return {
+        value: refValue(ref),
+        label: `${HARNESS_TITLE[ref.harness]} · ${option?.label ?? modelDisplayName(ref.model, ref.harness)} · ${input.savedAccountLabel ?? "Saved account"}`,
+      };
     const account = ref.providerAccountId
       ? accountModelChoices(
           [

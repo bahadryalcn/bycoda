@@ -278,6 +278,7 @@ export type Attachment = {
 };
 
 export type QueuedMessage = {
+  clientMessageId?: string;
   /** Authority captured when this intent was created; never upgraded during retry/drain. */
   authorityGeneration?: number;
   /** A written Steer has no definite delivery acknowledgement. Never replay automatically. */

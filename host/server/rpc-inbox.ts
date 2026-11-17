@@ -27,12 +27,18 @@ export async function handleInboxRpc(
         request.params.confirm !==
           (operation.action === "comment"
             ? "SEND_COMMENT"
-            : operation.action === "review"
-              ? "SUBMIT_PR_REVIEW"
-              : operation.action === "jira-board-transition" ||
-                  operation.action === "jira-board-move"
-                ? "CHANGE_JIRA_BOARD"
-                : "CHANGE_PR_STATE")
+            : operation.action === "reviewers"
+              ? "CHANGE_PR_REVIEWERS"
+              : operation.action === "labels"
+                ? "CHANGE_PR_LABELS"
+                : operation.action === "reaction"
+                  ? "CHANGE_PR_REACTION"
+                  : operation.action === "review"
+                    ? "SUBMIT_PR_REVIEW"
+                    : operation.action === "jira-board-transition" ||
+                        operation.action === "jira-board-move"
+                      ? "CHANGE_JIRA_BOARD"
+                      : "CHANGE_PR_STATE")
       )
         throw new Error("This inbox write requires an explicit owner action.");
       request.result = await dependencies.providerInbox.request(

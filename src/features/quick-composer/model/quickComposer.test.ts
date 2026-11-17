@@ -9,6 +9,27 @@ import {
 } from "./quickComposer";
 
 describe("parseQuickLaunch", () => {
+  it.each(["plan", "orchestrate"] as const)("keeps the selected %s mode", (intent) => {
+    expect(
+      parseQuickLaunch({ prompt: "hi", cwd: "/repo", harness: "codex", intent }),
+    ).toMatchObject({ intent });
+  });
+
+  it("keeps an unsent draft through native delivery", () => {
+    expect(
+      parseQuickLaunch({ prompt: "hi", cwd: "/repo", harness: "codex", draft: true }),
+    ).toMatchObject({ draft: true });
+  });
+
+  it.each([{ draft: "true" }, { intent: "unknown" }, { intent: false }])(
+    "rejects malformed launch modes: %j",
+    (mode) => {
+      expect(
+        parseQuickLaunch({ prompt: "hi", cwd: "/repo", harness: "codex", ...mode }),
+      ).toBeNull();
+    },
+  );
+
   it.each(HARNESSES)("accepts the registered %s harness", (harness) => {
     expect(parseQuickLaunch({ prompt: "hi", cwd: "/tmp/project", harness })?.harness).toBe(harness);
   });

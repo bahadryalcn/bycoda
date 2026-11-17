@@ -131,6 +131,7 @@ type Dependencies = Pick<
   | "desktopDelete"
   | "remoteActivity"
   | "invalidateSessionCopies"
+  | "invalidateModelCatalog"
   | "sessionQueues"
   | "commandService"
   | "withinBeat"
@@ -336,6 +337,7 @@ const handlers: Record<
   "sessions.update": handleSessionsRpc,
   "sessions.delete": handleSessionsRpc,
   "sessions.page": handleSessionsRpc,
+  "sessions.sideQuestion": handleSessionsRpc,
   "sessions.sync": handleSessionsRpc,
   "commands.status": handleSessionsRpc,
   "sessions.desktopLive": handleSessionsRpc,
@@ -374,6 +376,8 @@ const handlers: Record<
   "projects.browse": handleProjectsRpc,
   "projects.createDirectory": handleProjectsRpc,
   "projects.open": handleProjectsRpc,
+  "projects.clone": handleProjectsRpc,
+  "projects.clone.progress": handleProjectsRpc,
   "projects.organization.read": handleProjectsRpc,
   "projects.organization.patch": handleProjectsRpc,
   "projects.organization.status": handleProjectsRpc,

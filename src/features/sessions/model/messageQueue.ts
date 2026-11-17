@@ -237,6 +237,28 @@ export function reorderQueuedMessages(queue: QueuedMessage[], ids: string[]): Qu
   return next.every((message, index) => message === queue[index]) ? queue : next;
 }
 
+/**
+ * The rows the queue panel lists. A subagent result waiting for the parent is not the owner's
+ * message and the activity dock already shows it, so it is left out, and it still delivers.
+ * While the queue needs the owner (paused, restored, held, or a row whose delivery failed or
+ * is unconfirmed) every row shows, so a held result can never be stuck out of sight.
+ */
+export function ownerQueueRows<T extends Pick<QueuedMessage, "id" | "author">>(
+  messages: T[],
+  state: { status?: Session["queueStatus"]; deliveryProblem?: string; held?: boolean },
+): T[] {
+  const needsOwner =
+    state.held ||
+    state.status === "paused" ||
+    state.status === "resuming" ||
+    state.status === "restored" ||
+    (state.deliveryProblem !== undefined &&
+      messages.some((message) => message.id === state.deliveryProblem));
+  if (needsOwner) return messages;
+  const shown = messages.filter((message) => message.author?.kind !== "delegation");
+  return shown.length === messages.length ? messages : shown;
+}
+
 /** Reorder a session's queue. Status and the edited row are left alone: order is all that changes. */
 export function reorderSessionQueue(session: Session, ids: string[]): Session {
   const queue = session.queuedMessages;

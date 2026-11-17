@@ -104,6 +104,19 @@ const parentBlocks: Block[] = [
     "succeeded",
     "No card remains for this run.",
   ),
+  // Claude Code's built-in advisor: a server tool inside the turn, not a child session.
+  {
+    id: "advisor-call",
+    role: "tool",
+    text: "advisor",
+    tool: {
+      callId: "advisor-call",
+      kind: "advisor",
+      title: "advisor",
+      status: "completed",
+      detail: "Re-run the failed migration check before trusting the benchmark agreement.",
+    },
+  },
   {
     id: "answer",
     role: "assistant",
@@ -135,6 +148,7 @@ export function seedSubagentAudit() {
       id: parentId,
       busy: false,
       blocks: parentBlocks,
+      modelSettings: { crossAdvisor: '{"harness":"claude","model":"claude:fable-5-2"}' },
     },
     child(1, "Benchmark review", {}, 1, [brief(1), said(1, "All 12 benchmarks agree.")]),
     child(2, "Migration check", {}, 1, [
@@ -180,6 +194,8 @@ export function SubagentAuditFixture() {
         >
           {(blocks) => (
             <AgentTranscript
+              delegatedRunOwner={parentId}
+              modelSettings={parent.modelSettings}
               blocks={blocks}
               onSaveNote={noop}
               onSendDraft={() => true}

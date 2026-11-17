@@ -355,7 +355,9 @@ describe("quick composer shortcut setting", () => {
   beforeEach(mockLocalStorage);
 
   it("defaults to the existing shortcut and persists a custom binding", () => {
-    expect(loadQuickComposerShortcut()).toBe("Command+Shift+Space");
+    expect(loadQuickComposerShortcut()).toBe(
+      IS_MAC ? "Command+Shift+Space" : "Control+Shift+Space",
+    );
     saveQuickComposerShortcut("Command+Option+KeyK");
     expect(localStorage.getItem(QUICK_COMPOSER_SHORTCUT_KEY)).toBe("Command+Option+KeyK");
     expect(loadQuickComposerShortcut()).toBe("Command+Option+KeyK");
@@ -363,7 +365,9 @@ describe("quick composer shortcut setting", () => {
 
   it("ignores malformed stored bindings", () => {
     localStorage.setItem(QUICK_COMPOSER_SHORTCUT_KEY, "Shift+Space");
-    expect(loadQuickComposerShortcut()).toBe("Command+Shift+Space");
+    expect(loadQuickComposerShortcut()).toBe(
+      IS_MAC ? "Command+Shift+Space" : "Control+Shift+Space",
+    );
   });
 });
 

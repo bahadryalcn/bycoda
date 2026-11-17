@@ -14,7 +14,9 @@ import { amendPushedCopy, discardSelectedCopy, discardUnstagedCopy } from "./git
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { openUrlSafely } from "../../../shared/lib/openUrlSafely";
 import {
+  CheckCircle,
   FileDiff,
+  GitBranch,
   ListFilter,
   FolderTree,
   Minus,
@@ -48,7 +50,7 @@ import { GitConflictRows } from "./GitConflictRows";
 import { GitOperationBanner } from "./GitOperationBanner";
 import { GitPanelSections, usePanelPreferencesMenu } from "./GitPanelSections";
 import { GitActionsMenu, type ChangesActions } from "./GitActionsMenu";
-import { BranchPicker } from "./BranchPicker";
+import { BranchPicker, type CheckoutChoice } from "./BranchPicker";
 import { applyCommit, applyIndexAction, applySync } from "../model/optimisticIndex";
 import { ACTION_LABEL, busyLabel } from "../model/gitBusyLabel";
 import { AUTO_FETCH_MS, loadAutoFetch, saveAutoFetch } from "../model/autoFetch";
@@ -174,6 +176,8 @@ type Props = {
   refreshInTarget?: boolean;
   /** The target header above already offers worktree management. */
   worktreesInTarget?: boolean;
+  /** Puts the working-copy choice in the branch control, so target and branch share one row. */
+  checkout?: CheckoutChoice & { onRefresh: () => void };
 };
 
 export function GitChangesPanel({
@@ -192,6 +196,7 @@ export function GitChangesPanel({
   onOpenCommit,
   refreshInTarget = false,
   worktreesInTarget = false,
+  checkout,
 }: Props) {
   "use memo";
   const t = useT();
@@ -316,7 +321,7 @@ export function GitChangesPanel({
   // The one branch control: leads the header of the single panel and sits with
   // the actions in a grouped repository row.
   const branchControl =
-    detailsOpen && index?.repository !== false && (index?.branch || repository) ? (
+    detailsOpen && (checkout || (index?.repository !== false && (index?.branch || repository))) ? (
       <Text
         className={`flex min-w-0 items-center gap-1 ${repository ? "max-w-48 shrink-4" : "-ms-1.5 max-w-[65%] shrink-0"}`}
       >
@@ -326,6 +331,7 @@ export function GitChangesPanel({
           branch={index?.branch ?? undefined}
           enabled={enabled && !busy && !loading}
           popoverSide="bottom"
+          checkouts={checkout}
           onChange={() => {
             onMutated();
             changesRef.current?.refreshPr?.();
@@ -488,6 +494,7 @@ export function GitChangesPanel({
                   loadingLabel={t("Refreshing…")}
                   onClick={() => {
                     onMutated();
+                    checkout?.onRefresh();
                     changesRef.current?.refreshPr?.();
                   }}
                 >
@@ -1448,7 +1455,9 @@ function ChangedFiles({
         ) : files.length === 0 && conflicts.length === 0 ? (
           index && index.repository !== false ? (
             <EmptyState
-              size="inline"
+              context={fill ? "page" : "panel"}
+              className={fill ? "h-full" : undefined}
+              icon={diverged ? <GitBranch /> : <CheckCircle />}
               description={
                 diverged
                   ? t("Diverged from {p0}", { p0: index.upstream ?? "upstream" })

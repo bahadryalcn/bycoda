@@ -4,7 +4,10 @@ import {
   isAutoContinueDue,
   markAutoContinueDue,
 } from "../../sessions/public/autoContinue";
-import { loadAutoContinueInterrupted } from "../../settings/public/settings";
+import {
+  initializeAgentDefaults,
+  loadAutoContinueInterrupted,
+} from "../../settings/public/settings";
 import type { HostSession } from "./protocol";
 import { shouldAutoContinueRemote } from "./remoteRecovery";
 import { unwatchRun, watchKey, watchRun, watchedRun } from "./remoteTurnWatch";
@@ -52,22 +55,32 @@ export function useRemoteRecovery(input: {
     if (!key || status !== "interrupted" || !queueLoaded) return;
     const watched = watchedRun(key);
     if (!watched) return;
-    unwatchRun(key);
-    if (
-      shouldAutoContinueRemote({
-        status,
-        runId,
-        watchedRunId: watched,
-        providerSessionId: input.providerSessionId,
-        enabled: loadAutoContinueInterrupted(),
-        queuedCount: input.queuedCount,
+    let disposed = false;
+    void initializeAgentDefaults()
+      .then(() => {
+        if (disposed || watchedRun(key) !== watched) return;
+        unwatchRun(key);
+        if (
+          shouldAutoContinueRemote({
+            status,
+            runId,
+            watchedRunId: watched,
+            providerSessionId: input.providerSessionId,
+            enabled: loadAutoContinueInterrupted(),
+            queuedCount: input.queuedCount,
+          })
+        ) {
+          markAutoContinueDue(shellId);
+          render((value) => value + 1);
+        }
       })
-    ) {
-      markAutoContinueDue(shellId);
-      // The pane hides its Continue notice while the send is pending.
-      render((value) => value + 1);
-    }
-  }, [key, status, runId, queueLoaded]);
+      .catch(() => {
+        /* Failed Host reads retain manual Continue and never use legacy fallback. */
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [key, status, runId, queueLoaded, shellId, input.providerSessionId, input.queuedCount]);
 
   // Send it as soon as the machine can take it, then never again.
   useEffect(() => {

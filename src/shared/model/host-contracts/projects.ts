@@ -62,6 +62,25 @@ export const ProjectsCreateDirectoryParamsSchema = z.strictObject({
   name: z.string(),
 });
 export const ProjectsOpenParamsSchema = z.strictObject({ cwd: z.string() });
+export const ProjectsCloneParamsSchema = z.strictObject({
+  url: z.string(),
+  parentPath: z.string(),
+  name: z.string().optional(),
+  operationId: z.string().min(1).max(80).optional(),
+});
+export const ProjectsCloneProgressParamsSchema = z.strictObject({
+  operationId: z.string().min(1).max(80),
+});
+export const ProjectsCloneResultSchema = z.strictObject({ path: z.string() });
+export const ProjectsCloneProgressResultSchema = z.strictObject({
+  progress: z
+    .strictObject({
+      state: z.enum(["running", "done", "failed"]),
+      phase: z.string(),
+      percent: z.number().nullable(),
+    })
+    .nullable(),
+});
 export type HostProject = z.infer<typeof HostProjectSchema>;
 export type HostDirectory = z.infer<typeof HostDirectorySchema>;
 export type HostProjectDirectory = z.infer<typeof ProjectDirectorySchema>;

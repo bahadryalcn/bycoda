@@ -1,6 +1,52 @@
 import { test, expect } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 
+for (const theme of ["light", "dark"] as const) {
+  for (const width of [1280, 800]) {
+    test(`Windows quick composer settings ${theme} ${width}`, async ({ page }) => {
+      await page.addInitScript(() => {
+        Object.defineProperty(navigator, "platform", { get: () => "Win32" });
+      });
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/settings/settings.html?section=workspace&theme=${theme}&lang=en`,
+      );
+      const toggle = page.getByRole("switch", { name: "Quick composer", exact: true });
+      await expect(toggle).toBeChecked();
+      await toggle.scrollIntoViewIfNeeded();
+      const row = page.locator('[data-setting-id="quick-composer"]');
+      await expect(row).toContainText("Ctrl+Shift+Space");
+      await expect(row).toContainText("Ctrl+Enter");
+      mkdirSync("temp/verification/windows-quick-composer", { recursive: true });
+      await page.screenshot({
+        path: `temp/verification/windows-quick-composer/workspace-${theme}-${width}.png`,
+      });
+      await toggle.click();
+      await expect(toggle).not.toBeChecked();
+      await page.reload();
+      await expect(toggle).not.toBeChecked();
+      await toggle.click();
+      await expect(toggle).toBeChecked();
+      await page.goto(
+        `/tests/browser/settings/settings.html?section=keybindings&theme=${theme}&lang=en`,
+      );
+      await page
+        .getByRole("searchbox", { name: "Filter keybindings", exact: true })
+        .fill("Quick Composer");
+      const recorder = page.getByRole("button", {
+        name: "Change Quick composer shortcut",
+        exact: true,
+      });
+      await expect(recorder).toContainText("Ctrl");
+      await expect(recorder).toContainText("Space");
+      await page.screenshot({
+        path: `temp/verification/windows-quick-composer/keybindings-${theme}-${width}.png`,
+      });
+    });
+  }
+}
+
 for (const theme of ["light", "dark"]) {
   for (const width of [390, 768, 1024, 1440]) {
     test(`compact workspace settings: ${theme} ${width}`, async ({ page }) => {

@@ -1841,6 +1841,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                       }
                       approvalContext={approvalContext}
                       sessionId={session.id}
+                      delegatedRunOwner={session.id}
                       blocks={
                         projectedDraft
                           ? liveBlocks.filter((block) => block.id !== draftBlock?.id)

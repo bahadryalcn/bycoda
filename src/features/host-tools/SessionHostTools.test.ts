@@ -469,8 +469,11 @@ it("clears machine selection on a conversation switch and retains a removed expl
   await clickToolTab("Devices");
   await chooseMachine("machine:linux");
   vi.mocked(listHostToolMachines).mockResolvedValue([]);
+  await openMachineOptions();
   await toolAct(async () =>
-    container.querySelector<HTMLButtonElement>(".host-tools-machine-refresh")!.click(),
+    [...document.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "Refresh machines")!
+      .click(),
   );
   expect(machineTrigger().getAttribute("aria-label")).toContain(
     "Selected machine unavailable · linux",

@@ -479,6 +479,25 @@ describe("mergeAdoptedSession", () => {
     expect(cleared.providerGoal).toBeUndefined();
   });
 
+  it("carries host background work only while the host turn is running", () => {
+    const background = {
+      backgroundTasks: ["npm run dev"],
+      backgroundAgents: 0,
+      backgroundSince: 5,
+    };
+    const blocks = [block("a"), block("b")];
+    const running = mergeAdoptedSession(local(), host({ blocks, ...background }, "running"))!;
+    expect(running).toMatchObject(background);
+    const idle = mergeAdoptedSession(running, host({ blocks, ...background }, "idle"))!;
+    expect(idle.backgroundTasks).toBeUndefined();
+    expect(idle.backgroundAgents).toBeUndefined();
+    expect(idle.backgroundSince).toBeUndefined();
+    expect(
+      desktopCopyOf(host({ backgroundTasks: ["x"] }, "idle"), "C:/proj", (a, b) => a === b)
+        .backgroundTasks,
+    ).toBeUndefined();
+  });
+
   it("rejects foreign and malformed goal JSON during initial copy and mirror updates", () => {
     const goal: NonNullable<Session["providerGoal"]> = {
       provider: "codex",

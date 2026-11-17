@@ -109,6 +109,7 @@ export function desktopCopyOf(
     historyLoadError: undefined,
     continuingElsewhere: host.status === "running" || undefined,
     adoptedRunId: host.status === "running" ? host.runId : undefined,
+    ...backgroundWaitOf(host),
     adoptedAuthorityGeneration: appliedAuthorityGeneration(host),
     // The copy is the host's transcript, so that is where both last agreed.
     adoptedBase: hostHead(host),
@@ -484,8 +485,23 @@ export function mergeAdoptedSession(
     adoptedRunId: host.status === "running" ? host.runId : undefined,
     adoptedAuthorityGeneration: appliedAuthorityGeneration(host, local),
     retryMessage: host.status === "running" ? remote.retryMessage : undefined,
+    // A yielded host turn still waiting on background work: without these the
+    // copy reads as a turn still thinking instead of background-only.
+    ...backgroundWaitOf(host),
     adoptedSyncConflict: undefined,
     adoptedDivergence: undefined,
+  };
+}
+
+/** The host turn's background wait, kept only while that turn runs. */
+export function backgroundWaitOf(
+  host: HostSession,
+): Pick<Session, "backgroundTasks" | "backgroundAgents" | "backgroundSince"> {
+  const running = host.status === "running";
+  return {
+    backgroundTasks: running ? host.session.backgroundTasks : undefined,
+    backgroundAgents: running ? host.session.backgroundAgents : undefined,
+    backgroundSince: running ? host.session.backgroundSince : undefined,
   };
 }
 
@@ -978,7 +994,14 @@ export async function mirrorAdoptedSessions(deps: AdoptedMirrorDeps): Promise<Se
           // Another window may have written since: the save then refuses and
           // the next pass starts over from the newer stored copy.
           const saved = await deps.save(
-            { ...merged, continuingElsewhere: undefined, adoptedRunId: undefined },
+            {
+              ...merged,
+              continuingElsewhere: undefined,
+              adoptedRunId: undefined,
+              backgroundTasks: undefined,
+              backgroundAgents: undefined,
+              backgroundSince: undefined,
+            },
             stamp,
           );
           if (saved === false) continue;

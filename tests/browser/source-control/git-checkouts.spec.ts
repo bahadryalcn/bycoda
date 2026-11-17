@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 
 for (const theme of ["light", "dark"])
@@ -464,14 +464,21 @@ test("submodules keep independent drafts, staging, commits and pushes", async ({
   await page.screenshot({ path: testInfo.outputPath("submodules.png") });
 });
 
+// A single checkout's choice lives in the panel header's merged trigger: it opens on Branches
+// when a branch is known and holds the Worktrees tab for switching checkouts.
+const checkoutTrigger = (page: Page) =>
+  page.getByRole("button", { name: /^Working copy [^:]/ }).first();
+const pickCheckout = async (page: Page, option: string | RegExp) => {
+  await checkoutTrigger(page).click();
+  await page.getByRole("tab", { name: /^Worktrees/ }).click();
+  await page.getByRole("option", { name: option }).first().click();
+};
+
 test("new branch from accepts typed references with branch suggestions", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("bycoda.language.git", "en"));
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/source-control/git-workspace.html?checkouts");
-  await page
-    .getByRole("button", { name: /^Branch / })
-    .first()
-    .click();
+  await checkoutTrigger(page).click();
   await page.getByRole("button", { name: "New branch from…", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "New branch from…", exact: true });
   const base = dialog.getByLabel("Base branch", { exact: true });
@@ -590,7 +597,7 @@ test("compact checkout header and branch fetch remain usable across widths and t
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/source-control/git-workspace.html?checkouts");
   const header = page.locator("[data-workspace-source-control] > div").first();
-  const branch = page.getByRole("button", { name: /^Branch / }).first();
+  const branch = checkoutTrigger(page);
   for (const width of [390, 768, 1024, 1440]) {
     await page.setViewportSize({ width, height: 850 });
     for (const light of [false, true]) {
@@ -598,14 +605,27 @@ test("compact checkout header and branch fetch remain usable across widths and t
         (value) => document.documentElement.classList.toggle("theme-light", value),
         light,
       );
-      await expect(header.getByText("Working copy", { exact: true })).toHaveCount(0);
-      await expect(header.getByRole("button", { name: /^Working copy:/ })).toBeVisible();
+      // One header row: the merged trigger, Manage worktrees and Refresh share a line, and the
+      // removed top "Working copy:" select is gone.
+      await expect(page.getByRole("button", { name: /^Working copy:/ })).toHaveCount(0);
+      await expect(branch).toContainText("fixture · main");
+      const manage = page.getByRole("button", { name: "Manage worktrees…", exact: true }).first();
+      const refresh = page
+        .getByRole("button", { name: "Refresh source control", exact: true })
+        .first();
+      await expect(manage).toBeVisible();
+      await expect(refresh).toBeVisible();
+      const [triggerBox, manageBox, refreshBox] = await Promise.all(
+        [branch, manage, refresh].map((locator) => locator.boundingBox()),
+      );
+      expect(Math.abs(triggerBox!.y - manageBox!.y)).toBeLessThan(triggerBox!.height);
+      expect(Math.abs(manageBox!.y - refreshBox!.y)).toBeLessThan(2);
       expect(await header.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
         true,
       );
       // The switch hint is the shared tooltip (no native title).
       await branch.hover();
-      await expect(page.getByRole("tooltip")).toContainText("Switch branch in this working copy");
+      await expect(page.getByRole("tooltip")).toContainText("Working copy");
       await page.mouse.move(0, 0);
       await expect(page.getByRole("tooltip")).toHaveCount(0);
       await branch.focus();
@@ -672,8 +692,7 @@ test("checkout panels preserve identity, keyboard expansion and searchable selec
   await page.addInitScript(() => localStorage.setItem("bycoda.language.git", "en"));
   await page.goto("/tests/browser/source-control/git-workspace.html?checkouts");
   // The picker opens on the session checkout; the overview lists every checkout.
-  await page.getByRole("button", { name: /^Working copy:/ }).click();
-  await page.getByRole("option", { name: "All checkouts", exact: true }).click();
+  await pickCheckout(page, "All checkouts");
   const list = page.locator("[data-checkout-overview]");
   const panelFor = (cwd: string) => list.locator(`[data-git-repository="${cwd}"]`);
   const headerFor = (cwd: string) => panelFor(cwd).locator("header button[aria-expanded]").first();
@@ -737,7 +756,7 @@ test("checkout panels preserve identity, keyboard expansion and searchable selec
     .click();
   await expect(list).toHaveCount(0);
   await expect(
-    page.getByRole("button", { name: /^Working copy: very-long-worktree-folder-name/ }),
+    page.getByRole("button", { name: /^Working copy very-long-worktree-folder-name · / }),
   ).toBeVisible();
 });
 
@@ -756,8 +775,7 @@ for (const theme of ["light", "dark"])
         (light) => document.documentElement.classList.toggle("theme-light", light),
         theme === "light",
       );
-      await page.getByRole("button", { name: /^Working copy:/ }).click();
-      await page.getByRole("option", { name: "All checkouts", exact: true }).click();
+      await pickCheckout(page, "All checkouts");
       const overview = page.locator("[data-checkout-overview]");
       const main = overview.locator('[data-git-repository="/fixture"]');
       const worktree = overview.locator('[data-git-repository="/trees/cross-provider"]');
@@ -843,13 +861,13 @@ for (const theme of ["light", "dark"])
             call.args.includeRepositories === true,
         ),
       ).toBe(true);
+      // The overview keeps its own "Working copy:" select; a single checkout uses the header trigger.
       await page.getByRole("button", { name: /^Working copy:/ }).click();
       await page.getByRole("option").filter({ hasText: "/fixture/mobile" }).click();
       await expect(page.getByRole("textbox", { name: "Commit message", exact: true })).toHaveValue(
         "Mobile draft stays here",
       );
-      await page.getByRole("button", { name: /^Working copy:/ }).click();
-      await page.getByRole("option", { name: "All checkouts", exact: true }).click();
+      await pickCheckout(page, "All checkouts");
       await expect(message(main)).toHaveValue("Main checkout draft stays here");
       await expect(message(worktree)).toHaveValue("Worktree draft stays here");
       await expect(message(mobile)).toHaveValue("Mobile draft stays here");

@@ -26,6 +26,7 @@ import { DescriptionItem, DescriptionList } from "../../shared/ui/DescriptionLis
 import { WorkspaceTabList } from "./WorkspaceTabList";
 import { Divider } from "../../shared/ui/Divider";
 import styles from "./Sidebar.module.css";
+import { WorkspaceToolbar } from "../../features/sessions/ui/WorkspaceToolbar";
 import {
   SourceControl,
   ProjectSearch,
@@ -2982,7 +2983,9 @@ function SidebarComponent({
     saveSessionSidebarFilters(next);
   };
 
-  const onFilterButtonClick = (event: ReactMouseEvent<HTMLButtonElement>) => {
+  const onFilterButtonClick = (
+    event: Pick<ReactMouseEvent<HTMLButtonElement>, "currentTarget">,
+  ) => {
     if (filterMenu) {
       setFilterMenu(null);
       return;
@@ -3299,19 +3302,6 @@ function SidebarComponent({
             </Text>
           )
         }
-        actions={
-          <>
-            <WorkspaceTitleActions
-              onNew={
-                lastSessionsOpen
-                  ? onNewListedSession
-                    ? () => setNewSessionProjectOpen(true)
-                    : undefined
-                  : onNew
-              }
-            />
-          </>
-        }
       >
         {withVisitNav ? (
           <TabVisitNav
@@ -3330,7 +3320,78 @@ function SidebarComponent({
             <PanelLeft className="icon-sm" strokeWidth={1.75} />
           </IconButton>
         ) : null}
-        {sessionToolbar}
+        <WorkspaceToolbar
+          active={
+            showSessionTools && (selectionMode || filtersActive || searchQuery.trim().length > 0)
+          }
+          newAction={
+            <WorkspaceTitleActions
+              onNew={
+                lastSessionsOpen
+                  ? onNewListedSession
+                    ? () => setNewSessionProjectOpen(true)
+                    : undefined
+                  : onNew
+              }
+            />
+          }
+          items={[
+            ...(showSessionTools
+              ? [
+                  {
+                    kind: "item" as const,
+                    id: "search",
+                    label: t("Search sessions"),
+                    icon: <Search className="icon-sm" />,
+                  },
+                  ...(!lastSessionsOpen
+                    ? [
+                        {
+                          kind: "item" as const,
+                          id: "select",
+                          label: selectionMode ? t("Stop selecting") : t("Select conversations"),
+                          checked: selectionMode,
+                          icon: <CheckList className="icon-sm" />,
+                        },
+                      ]
+                    : []),
+                  {
+                    kind: "item" as const,
+                    id: "filter",
+                    label: t("Filter sessions"),
+                    checked: filtersActive,
+                    icon: <ListFilter className="icon-sm" />,
+                  },
+                ]
+              : []),
+            ...((lastSessionsOpen ? onNewListedSession : onNew)
+              ? [
+                  {
+                    kind: "item" as const,
+                    id: "new",
+                    label: t("New session"),
+                    icon: <Plus className="icon-sm" />,
+                  },
+                ]
+              : []),
+          ]}
+          onPick={(id, anchor) => {
+            if (id === "search") sessionSearchRef.current?.expand();
+            else if (id === "filter") onFilterButtonClick({ currentTarget: anchor });
+            else if (id === "select") {
+              if (selectionMode) clearSessionSelection();
+              else {
+                setSessionMenu(null);
+                selection.enterMode();
+              }
+            } else if (id === "new") {
+              if (lastSessionsOpen) setNewSessionProjectOpen(true);
+              else onNew?.();
+            }
+          }}
+        >
+          {sessionToolbar}
+        </WorkspaceToolbar>
       </PaneHeader>
     );
   };

@@ -158,3 +158,62 @@ it("does not retain an oversized settled catalog beyond the shared byte budget",
   await cache.read("/large");
   expect(discover).toHaveBeenCalledTimes(2);
 });
+
+it("calls onChange only when the catalog differs from what was last read", async () => {
+  vi.useFakeTimers();
+  const slow = deferred();
+  const onChange = vi.fn();
+  const cache = new ModelCatalogCache(
+    ["codex", "pi"],
+    async () => "v1",
+    (provider) => (provider === "codex" ? Promise.resolve([model("codex:a")]) : slow.promise),
+    onChange,
+  );
+  const read = cache.read("/p", true);
+  await vi.advanceTimersByTimeAsync(150);
+  expect((await read).pending).toEqual(["pi"]);
+  const before = onChange.mock.calls.length;
+  slow.resolve([model("pi:a")]);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(onChange.mock.calls.length).toBeGreaterThan(before);
+  expect((await cache.read("/p", true)).pending).toBeUndefined();
+  // A fresh entry revalidates silently: the re-read neither shows pending nor notifies.
+  const settled = onChange.mock.calls.length;
+  await vi.advanceTimersByTimeAsync(0);
+  expect(onChange).toHaveBeenCalledTimes(settled);
+  cache.clear();
+  expect(onChange).toHaveBeenCalledTimes(settled + 1);
+});
+
+it("lets a subscriber that re-reads on every change settle instead of looping", async () => {
+  let cache!: ModelCatalogCache;
+  let reloads = 0;
+  const discover = vi.fn(async () => [model("codex:a")]);
+  cache = new ModelCatalogCache(
+    ["codex"],
+    async () => "v1",
+    discover,
+    () => {
+      reloads++;
+      if (reloads < 50) void cache.read("/p", true).catch(() => {});
+    },
+  );
+  await cache.read("/p");
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(reloads).toBeLessThan(5);
+  expect(discover).toHaveBeenCalledTimes(1);
+});
+
+it("keeps reading when the onChange listener throws", async () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  const cache = new ModelCatalogCache(
+    ["codex"],
+    async () => "v1",
+    async () => [model("codex:a")],
+    () => {
+      throw new Error("boom");
+    },
+  );
+  expect((await cache.read("/p")).models.codex).toEqual([model("codex:a")]);
+  warn.mockRestore();
+});

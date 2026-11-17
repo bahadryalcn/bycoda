@@ -160,6 +160,11 @@ export type SurfaceAppearance = {
    *  is not a popup owner. Popups, menus and tooltips keep their Popover or Modal owner. */
   /** `sticky-mask` covers the 4px base-canvas seam above a sticky settings section. */
   elevation?: "floating" | "sticky-mask";
+  /** `glass` with the `floating` role: a panel docked over a scrolling transcript (the composer's
+   *  activity dock and queue card) is a translucent veil over a blur instead of the opaque popup
+   *  fill. While its pane streams, with blur off, forced colors or reduced transparency it falls
+   *  back to the opaque composer surface. */
+  material?: "glass";
   /** One-pixel inset ring (`box-shadow: inset`) in a semantic edge colour: `stroke` the neutral
    *  divider colour, `accent` the interaction ink, `tone-accent`/`tone-neutral` their tone borders. It is a
    *  box-shadow, so it adds no border width; it replaces `ring-1 ring-inset ring-*` classes.
@@ -202,6 +207,7 @@ export function surfaceAttributes(appearance: SurfaceAppearance, className?: str
     "data-surface-tone": appearance.tone,
     "data-surface-tone-fill": appearance.toneFill,
     "data-surface-elevation": appearance.elevation,
+    "data-surface-material": appearance.material,
     "data-surface-ring": appearance.ring,
     "data-surface-separator": appearance.separator,
     className: [styles.appearance, className].filter(Boolean).join(" "),
@@ -262,6 +268,7 @@ export function Surface({
   tone,
   toneFill,
   elevation,
+  material,
   ring,
   separator,
   dividers,
@@ -287,6 +294,7 @@ export function Surface({
       data-surface-tone={tone}
       data-surface-tone-fill={toneFill}
       data-surface-elevation={elevation}
+      data-surface-material={material}
       data-surface-ring={ring}
       data-surface-separator={separator}
       data-surface-dividers={dividers}

@@ -43,13 +43,12 @@ import {
   loadKeepAwakeHoldAfter,
   loadKeepAwakeScreen,
   saveCloseToTray,
-  saveKeepAwakeEnabled,
-  saveKeepAwakeHoldAfter,
   saveKeepAwakeScreen,
   subscribeKeepAwakeEnabled,
   subscribeKeepAwakeHoldAfter,
   subscribeKeepAwakeScreen,
 } from "../model/settings";
+import { saveAgentDefaultConfirmed } from "../model/agentDefaults";
 import { LanguageSettings } from "./LanguageSettings";
 import { BuildIdentityDetails } from "./BuildIdentityDetails";
 import { UpdateChannelRow } from "./UpdateChannelRow";
@@ -87,11 +86,48 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
     loadKeepAwakeScreen,
     () => false,
   );
+  const [powerPending, setPowerPending] = useState<Record<string, boolean>>({});
+  const [powerFailures, setPowerFailures] = useState<Record<string, () => void>>({});
+  const savePower = async (id: string, write: () => Promise<boolean>) => {
+    setPowerPending((current) => ({ ...current, [id]: true }));
+    try {
+      if (!(await write())) throw new Error("Preference not persisted");
+      setPowerFailures((current) => {
+        const next = { ...current };
+        delete next[id];
+        return next;
+      });
+    } catch {
+      setPowerFailures((current) => ({
+        ...current,
+        [id]: () => {
+          void savePower(id, write).catch(console.error);
+        },
+      }));
+    } finally {
+      setPowerPending((current) => ({ ...current, [id]: false }));
+    }
+  };
+  const powerFeedback = (id: string) =>
+    powerPending[id] ? (
+      <SettingsFeedback state="loading" immediate>
+        {t("Saving…")}
+      </SettingsFeedback>
+    ) : powerFailures[id] ? (
+      <SettingsFeedback state="error" action={{ label: t("Retry"), onClick: powerFailures[id] }}>
+        {t("Could not save changes")}
+      </SettingsFeedback>
+    ) : undefined;
   const onKeepAwake = (next: boolean) => {
-    saveKeepAwakeEnabled(next);
+    void savePower("keep-awake", () =>
+      saveAgentDefaultConfirmed("keepAwakeWhileAgentsWork", next),
+    ).catch(console.error);
   };
   const onKeepAwakeHoldAfter = (next: string) => {
-    if (isKeepAwakeHoldAfter(next)) saveKeepAwakeHoldAfter(next);
+    if (isKeepAwakeHoldAfter(next))
+      void savePower("keep-awake-duration", () =>
+        saveAgentDefaultConfirmed("keepAwakeHoldAfter", next),
+      ).catch(console.error);
   };
   const onKeepAwakeScreen = (next: boolean) => {
     saveKeepAwakeScreen(next);
@@ -106,12 +142,16 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
             return loadCloseToTray() === CLOSE_TO_TRAY_DEFAULT;
           }
         },
-        () => {
-          saveKeepAwakeEnabled(KEEP_AWAKE_DEFAULT);
+        async () => {
+          if (!(await saveAgentDefaultConfirmed("keepAwakeWhileAgentsWork", KEEP_AWAKE_DEFAULT)))
+            return false;
           return loadKeepAwakeEnabled() === KEEP_AWAKE_DEFAULT;
         },
-        () => {
-          saveKeepAwakeHoldAfter(KEEP_AWAKE_HOLD_AFTER_DEFAULT);
+        async () => {
+          if (
+            !(await saveAgentDefaultConfirmed("keepAwakeHoldAfter", KEEP_AWAKE_HOLD_AFTER_DEFAULT))
+          )
+            return false;
           return loadKeepAwakeHoldAfter() === KEEP_AWAKE_HOLD_AFTER_DEFAULT;
         },
         () => {
@@ -177,6 +217,7 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
       >
         <Row
           id="keep-awake"
+          feedback={powerFeedback("keep-awake")}
           label={t("Prevent sleep while agents work")}
           info={
             <InfoPopover className="shrink-0" label={t("Sleep behavior")}>
@@ -189,10 +230,12 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
             label={t("Prevent sleep while agents work")}
             on={keepAwake}
             onChange={onKeepAwake}
+            disabled={powerPending["keep-awake"]}
           />
         </Row>
         <Row
           id="keep-awake-duration"
+          feedback={powerFeedback("keep-awake-duration")}
           label={t("After agents finish")}
           description={t(
             "Choose when this computer can sleep again after the last agent finishes.",
@@ -206,7 +249,7 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
             value={keepAwakeHoldAfter}
             options={[...KEEP_AWAKE_HOLD_AFTER]}
             onValueChange={onKeepAwakeHoldAfter}
-            disabled={!keepAwake}
+            disabled={!keepAwake || powerPending["keep-awake-duration"]}
           />
         </Row>
         <Row

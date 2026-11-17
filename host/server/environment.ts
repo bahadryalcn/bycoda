@@ -4,6 +4,7 @@ import { createEnvironmentService } from "../domains/environment/service";
 import { reachableAddresses } from "../mobile/mobile-lan";
 import { createMobileRoutes } from "../mobile/mobile-routes";
 import { HOST_WS_READ_CAPABILITY } from "../transport/ws/server";
+import { agentDefaultsCapabilities } from "../settings-defaults/archive-capability";
 import { WORKSPACE_CAPABILITIES } from "../workspaces/workspace-contracts";
 import type { ServerBindings } from "./bindings";
 export function createEnvironmentRuntime(
@@ -129,6 +130,8 @@ export function createEnvironmentRuntime(
         "sessions.createFirstTurn",
         "sessions.contextReplay.v1",
         "sessions.pages",
+        "sessions.clientMessageId.v1",
+        "sessions.sideQuestion",
         "sessions.longPoll",
         "sessions.lazyHistory",
         "sessions.block",
@@ -151,12 +154,19 @@ export function createEnvironmentRuntime(
           ? ["sessions.stopItem.claude"]
           : []),
         "projects.browse",
+        "projects.clone",
+        "projects.clone.progress",
+        "projects.clone.v1",
+        "workspaces.list",
+        "workspaces.delivery.review",
+        "workspaces.delivery.merge",
         "projects.directory.v1",
         // The environment stream carries `directory` (groups, privacy proof) beside `projects`.
         "projects.directory.stream.v1",
         "projects.createDirectory",
         "models.list",
         "models.providerAccounts.v1",
+        "models.catalog.stream.v1",
         "sessions.configure.providerAccount.v1",
         "crews.v1",
         "crews.tasks.v1",
@@ -239,6 +249,7 @@ export function createEnvironmentRuntime(
         "goals",
         "stewards",
         "host.settings",
+        ...agentDefaultsCapabilities(),
         "notes",
         "notes.sessionFilter.v1",
         "sessions.noteContext.v1",

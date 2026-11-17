@@ -264,7 +264,7 @@ function DockBody({
       data-activity-dock={dock.state}
       data-dock-subagents={dock.agents.some((agent) => agent.kind === "agent") ? "" : undefined}
       {...surfaceAttributes(
-        { radius: "card", variant: "floating" },
+        { radius: "card", variant: "floating", material: "glass" },
         `activity-dock overflow-hidden font-sans ${
           dock.state === "done" ? "activity-dock-done" : ""
         }`,

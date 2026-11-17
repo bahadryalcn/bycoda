@@ -18,11 +18,10 @@ import {
   subscribeModelControls,
   loadResumeAtReset,
   subscribeResumeAtReset,
-  saveAutoContinueInterrupted,
   saveModelControls,
-  saveResumeAtReset,
   type ModelControls,
 } from "../model/settings";
+import { saveAgentDefaultConfirmed } from "../model/agentDefaults";
 import {
   AdvancedSettings,
   Group,
@@ -73,15 +72,17 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
     subscribeAutoContinueInterrupted,
   );
   const [failures, setFailures] = useState<Record<string, () => void>>({});
-  const commit = (
+  const [pending, setPending] = useState<Record<string, boolean>>({});
+  const commitConfirmed = async (
     id: string,
-    write: () => boolean | void,
+    write: () => boolean | void | Promise<boolean | void>,
     read: () => unknown,
     next: unknown,
     update: () => void,
   ) => {
+    setPending((current) => ({ ...current, [id]: true }));
     try {
-      if (write() === false || read() !== next) throw new Error("Preference not persisted");
+      if ((await write()) === false || read() !== next) throw new Error("Preference not persisted");
       update();
       setFailures((current) => {
         const updated = { ...current };
@@ -89,11 +90,25 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
         return updated;
       });
     } catch {
-      setFailures((current) => ({ ...current, [id]: () => commit(id, write, read, next, update) }));
+      setFailures((current) => ({
+        ...current,
+        [id]: () => {
+          void commitConfirmed(id, write, read, next, update).catch(console.error);
+        },
+      }));
+    } finally {
+      setPending((current) => ({ ...current, [id]: false }));
     }
   };
+  const commit = (...args: Parameters<typeof commitConfirmed>) => {
+    void commitConfirmed(...args).catch(console.error);
+  };
   const feedback = (id: string) =>
-    failures[id] ? (
+    pending[id] ? (
+      <SettingsFeedback state="loading" immediate>
+        {t("Saving…")}
+      </SettingsFeedback>
+    ) : failures[id] ? (
       <SettingsFeedback state="error" action={{ label: t("Retry"), onClick: failures[id] }}>
         {t("Could not save changes")}
       </SettingsFeedback>
@@ -123,7 +138,7 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
   const onResumeAtReset = (next: boolean) => {
     commit(
       "resume-at-reset",
-      () => saveResumeAtReset(next),
+      () => saveAgentDefaultConfirmed("resumeAtReset", next),
       loadResumeAtReset,
       next,
       () => setResumeAtReset(next),
@@ -132,7 +147,7 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
   const onAutoContinue = (next: boolean) => {
     commit(
       "auto-continue-interrupted",
-      () => saveAutoContinueInterrupted(next),
+      () => saveAgentDefaultConfirmed("autoContinueInterrupted", next),
       loadAutoContinueInterrupted,
       next,
       () => setAutoContinue(next),
@@ -249,7 +264,12 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
               </InfoPopover>
             }
           >
-            <Toggle label={t("Resume at reset")} on={resumeAtReset} onChange={onResumeAtReset} />
+            <Toggle
+              label={t("Resume at reset")}
+              on={resumeAtReset}
+              onChange={onResumeAtReset}
+              disabled={pending["resume-at-reset"]}
+            />
           </Row>
           <Row
             id="auto-continue-interrupted"
@@ -271,6 +291,7 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
               label={t("Automatically continue interrupted turns")}
               on={autoContinue}
               onChange={onAutoContinue}
+              disabled={pending["auto-continue-interrupted"]}
             />
           </Row>
           <Row

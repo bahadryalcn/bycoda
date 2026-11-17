@@ -40,7 +40,6 @@ import {
   CursorMagicSelection,
   RefreshCw,
   SlidersHorizontal,
-  Maximize2,
   MessageSquarePlus,
   X,
 } from "../../shared/ui/icons";
@@ -912,45 +911,6 @@ function ProjectBrowserPanel({
             onToggle={() => setLive((value) => !value)}
           />
           <Button
-            variant="ghost"
-            iconOnly
-            label={actualSize ? t("Fit preview") : t("Actual size")}
-            tooltipDetails={frame ? [`${frame.width} × ${frame.height}`] : undefined}
-            aria-pressed={actualSize}
-            selected={actualSize}
-            disabled={!frame}
-            disabledReason={t("Refresh frame")}
-            onClick={() => setActualSize((value) => !value)}
-          >
-            <Maximize2 className="icon-sm" aria-hidden />
-          </Button>
-          {active && state?.open && state.viewport ? (
-            <BrowserViewportMenu
-              viewport={state.viewport}
-              disabled={!canPageInput}
-              disabledReason={inputDisabledReason}
-              action={action}
-              request={request}
-            />
-          ) : null}
-          <Button
-            ref={controlsTrigger}
-            variant="ghost"
-            iconOnly
-            label={t("Browser controls and setup")}
-            tooltipDetails={[t("Keyboard, scrolling, control and browser setup")]}
-            aria-haspopup="dialog"
-            aria-expanded={controlsOpen && !controlsFromStatus}
-            selected={controlsOpen && !controlsFromStatus}
-            onClick={() => {
-              setSelectionOpen(false);
-              setControlsOpen((open) => !open || controlsFromStatus);
-              setControlsFromStatus(false);
-            }}
-          >
-            <SlidersHorizontal className="icon-sm" aria-hidden />
-          </Button>
-          <Button
             motion="none"
             type="button"
             variant="ghost"
@@ -1023,6 +983,36 @@ function ProjectBrowserPanel({
               <MessageSquarePlus className="icon-sm" aria-hidden />
             </Button>
           ) : null}
+          {/* Page size and preview scale share one menu, labelled with the current size. */}
+          {active && state?.open && state.viewport ? (
+            <BrowserViewportMenu
+              viewport={state.viewport}
+              disabled={!canPageInput}
+              disabledReason={inputDisabledReason}
+              actualSize={actualSize}
+              canScale={!!frame}
+              onActualSizeChange={setActualSize}
+              action={action}
+              request={request}
+            />
+          ) : null}
+          <Button
+            ref={controlsTrigger}
+            variant="ghost"
+            iconOnly
+            label={t("Browser controls and setup")}
+            tooltipDetails={[t("Keyboard, scrolling, control and browser setup")]}
+            aria-haspopup="dialog"
+            aria-expanded={controlsOpen && !controlsFromStatus}
+            selected={controlsOpen && !controlsFromStatus}
+            onClick={() => {
+              setSelectionOpen(false);
+              setControlsOpen((open) => !open || controlsFromStatus);
+              setControlsFromStatus(false);
+            }}
+          >
+            <SlidersHorizontal className="icon-sm" aria-hidden />
+          </Button>
           {state?.open ? (
             <BrowserControlToggle
               controlling={state.controlling}

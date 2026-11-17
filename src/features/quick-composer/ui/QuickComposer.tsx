@@ -5,6 +5,7 @@ import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { ShortcutKbd } from "../../../shared/ui/ShortcutKbd";
+import { IS_MAC, MOD } from "../../../platform/tauri/platform";
 import { Button } from "../../../shared/ui/Button";
 import { ListRow } from "../../../shared/ui/ListRow";
 import { PromptField } from "../../../shared/ui/PromptField";
@@ -560,15 +561,15 @@ export function QuickComposer({
     }
     if (event.key === "Enter" && !event.shiftKey && !event.altKey) {
       event.preventDefault();
-      void submit(event.metaKey);
+      void submit(IS_MAC ? event.metaKey : event.ctrlKey);
       return;
     }
-    if (event.metaKey && event.key.toLowerCase() === "p") {
+    if ((IS_MAC ? event.metaKey : event.ctrlKey) && event.key.toLowerCase() === "p") {
       event.preventDefault();
       openPicker("project");
       return;
     }
-    if (event.metaKey && event.key === ".") {
+    if ((IS_MAC ? event.metaKey : event.ctrlKey) && event.key === ".") {
       event.preventDefault();
       openPicker("model");
     }
@@ -677,7 +678,7 @@ export function QuickComposer({
           onClick={() => openPicker("project")}
           disabled={projects.length === 0}
           tooltip={t("Project")}
-          shortcut="Meta+P"
+          shortcut="mod+p"
           expanded={picker === "project"}
           className={`ml-auto flex min-w-0 max-w-[40%] items-center gap-1.5 `}
         >
@@ -844,7 +845,7 @@ export function QuickComposer({
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => openPicker("model")}
           tooltip={t("Model")}
-          shortcut="Meta+."
+          shortcut="mod+."
           expanded={picker === "model"}
           className={`flex min-w-0 max-w-[40%] items-center gap-1.5 `}
         >
@@ -882,7 +883,7 @@ export function QuickComposer({
                 {t(" start")}
               </span>
               <span className="max-[600px]:hidden">
-                <Kbd>⌘↵</Kbd>
+                <Kbd>{`${MOD}↵`}</Kbd>
                 {t(" start and open")}
               </span>
             </>

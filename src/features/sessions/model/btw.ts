@@ -1,4 +1,4 @@
-import { t } from "../../../shared/i18n";
+import { t } from "../../../shared/i18n/core";
 import { applyHarnessEvent } from "../../../integrations/harness/core/apply";
 import type { HarnessEvent } from "../../../integrations/harness/core/types";
 import { displayPath } from "../../../shared/lib/paths";

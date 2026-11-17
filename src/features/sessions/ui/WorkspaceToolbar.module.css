@@ -1,0 +1,37 @@
+.toolbar,
+.inline {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--space-1) / 2);
+  min-inline-size: 0;
+  flex: 1;
+}
+
+.newAction {
+  flex: none;
+}
+
+.overflow {
+  display: none;
+}
+
+@container workspace-pane (inline-size < 340px) {
+  .inline {
+    display: none;
+  }
+
+  /* Reveal during ExpandingSearch's synchronous expansion, before it moves focus. */
+  .inline:has([data-expanded]) {
+    display: flex;
+  }
+
+  .inline:has([data-expanded]) .newAction {
+    display: none;
+  }
+
+  .overflow {
+    display: flex;
+    flex: none;
+    margin-inline-start: auto;
+  }
+}

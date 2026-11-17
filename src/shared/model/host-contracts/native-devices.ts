@@ -9,6 +9,7 @@ export const DeviceSummarySchema = z.strictObject({
   version: z.string(),
   booted: z.boolean(),
   physical: z.boolean(),
+  supportsFold: z.boolean().optional(),
 });
 export const DeviceHostStatusSchema = z.strictObject({
   running: z.boolean(),
@@ -58,6 +59,10 @@ export const DeviceActionSchema = z.discriminatedUnion("type", [
     endY: coordinate,
   }),
   z.strictObject({ type: z.literal("home") }),
+  z.strictObject({
+    type: z.literal("fold"),
+    posture: z.enum(["closed", "half-open", "open"]),
+  }),
   z.strictObject({ type: z.literal("snapshot") }),
   z.strictObject({ type: z.literal("pressElement"), label: z.string() }),
   z.strictObject({ type: z.literal("pressNode"), inspectionId: z.string(), nodeId: z.string() }),

@@ -1,4 +1,6 @@
 import { join } from "node:path";
+import { createDefaultsAutoArchive } from "../settings-defaults/auto-archive";
+import { forgetArchivePullRequest } from "../settings-defaults/pull-request-links";
 import { ActivityService } from "../activity/activity-store";
 import { SessionLifecycleStore } from "../sessions/lifecycle-store";
 import {
@@ -80,6 +82,12 @@ export async function createAccountPlatformRuntime(dependencies: Dependencies) {
     now: Date.now,
   };
   const lifecycle = createSessionLifecycleService(store, ports);
+  const defaultsAutoArchive = createDefaultsAutoArchive({
+    engine: dependencies.engine,
+    limits: dependencies.tasks.limits,
+    queued: async (id) => (await dependencies.sessionQueues.get(id)).messages.length > 0,
+    running: dependencies.hostRuns,
+  });
 
   // New work wakes a settled session once the Host accepted it; Stop and answers never do.
   const commands = dependencies.commandService;
@@ -110,6 +118,7 @@ export async function createAccountPlatformRuntime(dependencies: Dependencies) {
   const deleteQueue = dependencies.sessionQueues.delete.bind(dependencies.sessionQueues);
   dependencies.sessionQueues.delete = async (id) => {
     await deleteQueue(id);
+    await forgetArchivePullRequest(dependencies.engine.store, id);
     await store.update(id, () => ({ result: undefined })).catch(warn);
     await links.unlink(id).catch(warn);
   };
@@ -131,6 +140,7 @@ export async function createAccountPlatformRuntime(dependencies: Dependencies) {
     void lifecycle
       .autoSettle()
       .then(() => lifecycle.autoArchive())
+      .then(() => defaultsAutoArchive.tick())
       .catch(warn);
   autoSettle();
   const timer = setInterval(autoSettle, AUTO_SETTLE_INTERVAL_MS);

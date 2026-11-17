@@ -46,6 +46,20 @@ describe("delegationGuidance", () => {
     expect(text).toContain("The Host enforces limits");
   });
 
+  it("points a Claude conversation with a Claude advisor at its built-in advisor, not agents.consult", () => {
+    const text = delegationGuidance(
+      { [CROSS_ADVISOR_KEY]: advisor },
+      { harness: "claude", providerAccountId: "work" },
+    );
+    expect(text).toContain("built-in advisor");
+    expect(text).toContain("agents.consult is not used");
+    expect(text).not.toContain("Advisor model:");
+    // A Codex conversation has no built-in advisor: its Claude advisor is a Host session.
+    expect(delegationGuidance({ [CROSS_ADVISOR_KEY]: advisor }, { harness: "codex" })).toContain(
+      "Advisor model:",
+    );
+  });
+
   it("omits the advisor lines when only subagents are on", () => {
     const text = delegationGuidance({ [CROSS_SUBAGENTS_KEY]: subagents });
     expect(text).toContain("Subagent models:");

@@ -75,9 +75,15 @@ export const AGENT_TOOL_SCHEMAS = {
 /** Read actions: they never start or stop a child. */
 export const AGENT_READ_ACTIONS = ["agents.options", "agents.wait", "agents.list"] as const;
 
-/** Children discover/contact their own group, without permission to launch or control runs. */
-export function agentToolAllowedForChild(action: string): boolean {
-  return !action.startsWith("agents.") || action === "agents.list" || action === "agents.send";
+/** Owner conversation, a subagent that may start subagents, or a leaf (advisor or grandchild). */
+export type AgentRole = "owner" | "subagent" | "leaf";
+
+/** A subagent runs and controls its own subagents but never consults an advisor; a leaf only
+ * discovers and contacts its own group. The Host refuses the rest even when a tool is called. */
+export function agentToolAllowed(action: string, role: AgentRole): boolean {
+  if (role === "owner" || !action.startsWith("agents.")) return true;
+  if (role === "subagent") return action !== "agents.consult";
+  return action === "agents.list" || action === "agents.send";
 }
 
 export function describeAgentTool(action: string): string {

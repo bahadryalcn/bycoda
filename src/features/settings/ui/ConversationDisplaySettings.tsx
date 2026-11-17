@@ -1,10 +1,7 @@
 import { useState, useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../shared/i18n";
-import {
-  loadStreamingTextMode,
-  subscribeStreamingTextMode,
-  saveStreamingTextMode,
-} from "../model/settings";
+import { loadStreamingTextMode, subscribeStreamingTextMode } from "../model/settings";
+import { saveAgentDefaultConfirmed } from "../model/agentDefaults";
 import { Row, Select, SettingsFeedback, Toggle } from "../../../shared/ui/settings";
 import type { AppearanceSettings } from "./useAppearanceSettings";
 
@@ -12,9 +9,20 @@ export function ConversationDisplaySettings({ appearance: a }: { appearance: App
   useLocale();
   const p = a.preferences;
   const [failedMode, setFailedMode] = useState<"paced" | "adaptive" | null>(null);
+  const [modePending, setModePending] = useState(false);
+  const saveModeConfirmed = async (next: "paced" | "adaptive") => {
+    setModePending(true);
+    try {
+      const saved = await saveAgentDefaultConfirmed("streamingTextMode", next);
+      setFailedMode(saved && loadStreamingTextMode() === next ? null : next);
+    } catch {
+      setFailedMode(next);
+    } finally {
+      setModePending(false);
+    }
+  };
   const saveMode = (next: "paced" | "adaptive") => {
-    saveStreamingTextMode(next);
-    setFailedMode(loadStreamingTextMode() === next ? null : next);
+    void saveModeConfirmed(next).catch(console.error);
   };
   const streamingTextMode = useSyncExternalStore(
     subscribeStreamingTextMode,
@@ -78,7 +86,11 @@ export function ConversationDisplaySettings({ appearance: a }: { appearance: App
       <Row
         id="streaming-text-mode"
         feedback={
-          failedMode ? (
+          modePending ? (
+            <SettingsFeedback state="loading" immediate>
+              {t("Saving…")}
+            </SettingsFeedback>
+          ) : failedMode ? (
             <SettingsFeedback
               state="error"
               action={{ label: t("Retry"), onClick: () => saveMode(failedMode) }}
@@ -96,6 +108,7 @@ export function ConversationDisplaySettings({ appearance: a }: { appearance: App
           hideLabel
           label={t("Streaming text animation")}
           value={streamingTextMode}
+          disabled={modePending}
           options={[
             { value: "paced", label: t("Paced (default)") },
             { value: "adaptive", label: t("Immediate with adaptive fade") },

@@ -25,6 +25,8 @@ export function createProviderAccountStatusCache(deps: {
   probe(provider: Probed, accountId: string): Promise<ProbeStatus>;
   now?: () => number;
   firstReadWaitMs?: number;
+  /** Called when a probe changes a definitive sign-in status (including the first one). */
+  onChange?: () => void;
 }) {
   const now = deps.now ?? monotonicNow;
   const entries = new Map<string, Entry>();
@@ -46,10 +48,18 @@ export function createProviderAccountStatusCache(deps: {
     entry.pending = new Promise<void>((resolve) => {
       queue.push(async () => {
         const status = await deps.probe(provider, id).catch((): ProbeStatus => "unknown");
+        const changed = status !== "unknown" && entry.status !== status;
         if (status !== "unknown") entry.status = status;
         entry.checkedAt = now();
         entry.pending = undefined;
         resolve();
+        if (changed) {
+          try {
+            deps.onChange?.();
+          } catch (error) {
+            console.warn("Provider account status listener failed", error);
+          }
+        }
       });
       pump();
     });

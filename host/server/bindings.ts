@@ -362,6 +362,7 @@ export interface ServerBindings {
   /** Remote changes the desktop shows a notice for; read on its heartbeat. */
   remoteActivity: RemoteActivityFeed;
   invalidateSessionCopies: ReturnType<typeof createSubscriptionsRuntime>["invalidateSessionCopies"];
+  invalidateModelCatalog: ReturnType<typeof createSubscriptionsRuntime>["invalidateModelCatalog"];
   withinBeat: ReturnType<typeof createSessionLeasesRuntime>["withinBeat"];
   desktopCommandDelivery: DesktopCommandDelivery;
   renewRunLeases: ReturnType<typeof createSessionLeasesRuntime>["renewRunLeases"];

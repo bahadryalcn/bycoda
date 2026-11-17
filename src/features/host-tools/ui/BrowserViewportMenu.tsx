@@ -3,19 +3,26 @@ import { t } from "../../../shared/i18n/technical";
 import { Button } from "../../../shared/ui/Button";
 import { PanelHeader } from "../../../shared/ui/PanelHeader";
 import { Popover } from "../../../shared/ui/Popover";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { BrowserViewportControls } from "./BrowserViewportControls";
 
-/** Page dimensions stay discoverable beside preview controls; resize retains Host authority. */
+/** Page dimensions and preview scale in one menu labelled with the current size; resize retains Host authority. */
 export function BrowserViewportMenu({
   viewport,
   disabled,
   disabledReason,
+  actualSize,
+  canScale,
+  onActualSizeChange,
   action,
   request,
 }: {
   viewport: { width: number; height: number };
   disabled: boolean;
   disabledReason?: string;
+  actualSize: boolean;
+  canScale: boolean;
+  onActualSizeChange: (actualSize: boolean) => void;
   action: (work: () => Promise<unknown>) => Promise<unknown>;
   request: (method: string, params?: Record<string, unknown>) => Promise<unknown>;
 }) {
@@ -32,11 +39,12 @@ export function BrowserViewportMenu({
         type="button"
         size="sm"
         variant="ghost"
+        className="host-browser-viewport-trigger"
         label={t("Browser viewport")}
         tooltip={t("Change page dimensions to test responsive layouts.")}
         selected={open}
         aria-haspopup="dialog"
-        aria-expanded={open}
+        expanded={open}
         onClick={() => setOpen((value) => !value)}
       >
         {viewport.width} × {viewport.height}
@@ -59,6 +67,16 @@ export function BrowserViewportMenu({
             title={t("Browser viewport")}
             closeLabel={t("Close")}
             onClose={() => dismiss("close")}
+          />
+          <SegmentedControl
+            label={t("Preview")}
+            size="sm"
+            value={actualSize ? "actual" : "fit"}
+            onValueChange={(value) => onActualSizeChange(value === "actual")}
+            options={[
+              { value: "fit", label: t("Fit preview"), disabled: !canScale },
+              { value: "actual", label: t("Actual size"), disabled: !canScale },
+            ]}
           />
           <BrowserViewportControls
             key={`${viewport.width}x${viewport.height}`}

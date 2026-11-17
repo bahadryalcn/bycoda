@@ -52,10 +52,31 @@ vi.mock("./GitChangesPanel", () => ({
     };
     onOpenFile: (file: string, kind: string) => void;
     onOpenCommit: (commit: { sha: string }) => void;
+    checkout?: {
+      onRefresh: () => void;
+      value: string;
+      options: { value: string; title: string }[];
+      onChange: (value: string) => void;
+    };
   }) =>
     createElement(
       "section",
       { "data-cwd": props.cwd },
+      // The real panel hosts this choice inside its branch picker.
+      props.checkout
+        ? createElement(
+            "select",
+            {
+              "aria-label": "Working copy",
+              value: props.checkout.value,
+              onChange: (event: { target: { value: string } }) =>
+                props.checkout!.onChange(event.target.value),
+            },
+            props.checkout.options.map((option) =>
+              createElement("option", { key: option.value, value: option.value }, option.title),
+            ),
+          )
+        : null,
       createElement(
         "button",
         {
@@ -66,6 +87,12 @@ vi.mock("./GitChangesPanel", () => ({
       ),
       createElement("button", { onClick: () => props.onOpenFile("same.ts", "unstaged") }, "diff"),
       createElement("button", { onClick: () => props.onOpenCommit({ sha: "abc" }) }, "commit"),
+      props.checkout
+        ? createElement("button", {
+            "aria-label": "Refresh source control",
+            onClick: props.checkout.onRefresh,
+          })
+        : null,
     ),
 }));
 let container: HTMLDivElement;
@@ -179,10 +206,11 @@ it("selects a remote worktree without changing machine identity and returns to a
     container.querySelector<HTMLButtonElement>('[aria-label="Refresh source control"]')!.click(),
   );
   expect(state.refresh).toHaveBeenCalledOnce();
-  expect(state.notify).toHaveBeenLastCalledWith(task, "checkout");
+  expect(state.notify).toHaveBeenCalledWith(task, "checkout");
   await act(async () => {
-    select.value = "";
-    select.dispatchEvent(new Event("change", { bubbles: true }));
+    const top = container.querySelector("select")!;
+    top.value = "";
+    top.dispatchEvent(new Event("change", { bubbles: true }));
   });
   expect(container.querySelectorAll("[data-checkout-overview] section")).toHaveLength(2);
 });

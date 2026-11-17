@@ -10,6 +10,7 @@ import {
   foldableWork,
   foldedBlocks,
   groupTurnItems,
+  isAdvisorBlock,
   groupTurns,
   groupTurnsStable,
   hasTurnCopyText,
@@ -1480,4 +1481,25 @@ describe("hasTurnCopyText", () => {
       expect(hasTurnCopyText(blocks)).toBe(turnCopyText(blocks) !== "");
     }
   });
+});
+
+it("keeps Claude's built-in advisor on its own row, live and settled", () => {
+  const advisor = {
+    id: "adv",
+    role: "tool",
+    text: "advisor",
+    tool: { callId: "adv", kind: "advisor", title: "advisor", status: "completed" },
+  } as Block;
+  const read = {
+    id: "read",
+    role: "tool",
+    text: "Read a.ts",
+    tool: { callId: "read", kind: "read", title: "Read a.ts", status: "completed" },
+  } as Block;
+  expect(isAdvisorBlock(advisor)).toBe(true);
+  expect(isAdvisorBlock(read)).toBe(false);
+  for (const settled of [false, true]) {
+    const items = groupTurnItems([read, advisor, read], { settled });
+    expect(items.map((item) => item.type)).toEqual(["activity", "block", "activity"]);
+  }
 });

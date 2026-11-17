@@ -505,6 +505,13 @@ export function groupTurnItems(blocks: Block[], options?: { settled?: boolean })
     activity = [];
   };
   visible.forEach((block) => {
+    // The built-in advisor's second opinion is part of the answer, not process: it keeps
+    // its own row, live and settled, instead of folding into the activity trail.
+    if (isAdvisorBlock(block)) {
+      flush();
+      items.push({ type: "block", block });
+      return;
+    }
     // Delegated runs keep their own rows while the turn is live. Once settled
     // they fold in, except a run that died and a Crew member's own conversation.
     if (isSubagentBlock(block) && (!settled || ownsRow(block))) {
@@ -626,6 +633,11 @@ export function hasRunningSubagent(blocks: Block[]): boolean {
  * you is not one yet — it stays in the work trail, where its approval controls
  * are.
  */
+/** A call to the provider's own advisor (Claude Code's server-side advisor tool). */
+export function isAdvisorBlock(block: Block): boolean {
+  return isToolBlock(block) && block.tool?.kind === "advisor";
+}
+
 export function isSubagentBlock(block: Block): boolean {
   return (
     isToolBlock(block) &&

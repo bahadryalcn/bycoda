@@ -13,6 +13,8 @@ import {
   saveSettingsSection,
   settingsSectionForAnchor,
 } from "./settings";
+import { DEFAULT_AGENT_DEFAULTS } from "../../tasks/public/agentDefaults";
+import { acceptAgentDefaults, registerAgentDefaultsSync } from "./agentDefaultsStore";
 import { TOOL_SETTINGS_TAB_ANCHORS, type ToolSettingsTab } from "./toolSettingsSections";
 
 afterEach(() => {
@@ -38,19 +40,22 @@ it.each(Object.entries(TOOL_SETTINGS_TAB_ANCHORS) as [ToolSettingsTab, string][]
     expect(localStorage.getItem("bycoda.settingsSection")).toBe("tools");
   },
 );
-it("the cross-tab owner receives same-key and clear events but not sessionStorage events", () => {
+it("keep-awake listeners hear Host snapshots, never localStorage events", () => {
   const callback = vi.fn();
+  const save = vi.fn(async () => true);
+  registerAgentDefaultsSync({ start: () => () => {}, save });
   const unsubscribe = subscribeKeepAwakeEnabled(callback);
   try {
-    saveKeepAwakeEnabled(true);
+    // A save is forwarded to the Host and is not reported durable until it is acknowledged.
+    expect(saveKeepAwakeEnabled(true)).toBe(false);
+    expect(save).toHaveBeenCalledWith("keepAwakeWhileAgentsWork", true);
+    expect(loadKeepAwakeEnabled()).toBe(false);
+    expect(callback).not.toHaveBeenCalled();
+    // Another window's change reaches this one through the Host record.
+    acceptAgentDefaults({
+      agentDefaults: { ...DEFAULT_AGENT_DEFAULTS, version: 1, keepAwakeWhileAgentsWork: true },
+    });
     expect(loadKeepAwakeEnabled()).toBe(true);
-    expect(callback).toHaveBeenCalledTimes(1);
-    window.dispatchEvent(
-      new StorageEvent("storage", {
-        key: "bycoda.keepAwakeWhileAgentsWork",
-        storageArea: sessionStorage,
-      }),
-    );
     expect(callback).toHaveBeenCalledTimes(1);
     window.dispatchEvent(
       new StorageEvent("storage", {
@@ -59,12 +64,12 @@ it("the cross-tab owner receives same-key and clear events but not sessionStorag
       }),
     );
     window.dispatchEvent(new StorageEvent("storage", { key: null, storageArea: localStorage }));
-    expect(callback).toHaveBeenCalledTimes(3);
+    expect(callback).toHaveBeenCalledTimes(1);
   } finally {
     unsubscribe();
   }
-  window.dispatchEvent(new StorageEvent("storage", { key: null, storageArea: localStorage }));
-  expect(callback).toHaveBeenCalledTimes(3);
+  acceptAgentDefaults({ agentDefaults: { ...DEFAULT_AGENT_DEFAULTS, version: 2 } });
+  expect(callback).toHaveBeenCalledTimes(1);
 });
 it("keeps enum normalization and the event detail/load split after a failed save", () => {
   saveDiffLayout("split");

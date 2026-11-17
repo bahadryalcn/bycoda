@@ -88,9 +88,18 @@ export async function executeDesktopInboxOperation(
     };
   }
   if (
-    !["details", "thread", "comment", "pr-action", "review-context", "review"].includes(
-      operation.action,
-    )
+    ![
+      "details",
+      "thread",
+      "checks",
+      "reviewers",
+      "labels",
+      "reaction",
+      "comment",
+      "pr-action",
+      "review-context",
+      "review",
+    ].includes(operation.action)
   )
     throw new Error("Unsupported desktop inbox operation.");
   const { command, args } = nativeInboxCommand(operation);

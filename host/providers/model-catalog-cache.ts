@@ -15,7 +15,11 @@ type Entry = {
   readers: number;
   weight: number;
   fingerprintRetryAt?: number;
+  /** What the last read returned, so a refresh that changes nothing notifies nobody. */
+  served?: string;
 };
+const signature = (entry: Entry) =>
+  JSON.stringify([entry.value.models, entry.value.errors, [...entry.pending].sort()]);
 const MAX_AGE_MS = 5 * 60_000;
 const PREVIEW_WAIT_MS = 150;
 const RETRY_MS = 30_000;
@@ -31,10 +35,24 @@ export class ModelCatalogCache {
     private readonly providers: RemoteProvider[],
     private readonly fingerprint: () => Promise<string>,
     private readonly discover: (provider: RemoteProvider, cwd: string) => Promise<AgentModel[]>,
+    /** Called when a catalog differs from what its last read returned; never alters read(). */
+    public onChange?: () => void,
   ) {}
+
+  // A subscriber reloads by reading, and every read revalidates in the background, so an
+  // unconditional notification would reload forever. Only a real difference notifies.
+  private notify(entry?: Entry) {
+    if (entry && signature(entry) === entry.served) return;
+    try {
+      this.onChange?.();
+    } catch (error) {
+      console.warn("Model catalog change listener failed", error);
+    }
+  }
 
   clear() {
     this.entries.clear();
+    this.notify();
   }
 
   async read(cwd: string, progressive = false, force = false): Promise<HostModelCatalog> {
@@ -59,14 +77,26 @@ export class ModelCatalogCache {
     entry.readers++;
     try {
       if (!entry.running) {
-        // Checking binaries also runs in the background, within the preview budget.
-        entry.pending = new Set(this.providers);
+        // Checking binaries also runs in the background, within the preview budget. A fresh
+        // entry revalidates silently: only providers due for a retry show as pending.
         const current = entry;
+        const now = Date.now();
+        current.pending = new Set(
+          current.probed === 0 || now - current.probed >= MAX_AGE_MS
+            ? this.providers
+            : this.providers.filter(
+                (provider) =>
+                  current.value.errors[provider] !== undefined &&
+                  (current.failures[provider]?.retryAt ?? 0) <= now,
+              ),
+        );
         current.running = this.refresh(cwd, current, force).finally(() => {
           current.pending.clear();
           current.running = undefined;
           current.weight = Buffer.byteLength(JSON.stringify(current.value));
           this.prune();
+          // A failed fingerprint publishes errors and clears pending without a provider landing.
+          this.notify(current);
         });
       }
       if (progressive) {
@@ -84,6 +114,7 @@ export class ModelCatalogCache {
       } else {
         await entry.running;
       }
+      entry.served = signature(entry);
       return {
         models: { ...entry.value.models },
         errors: { ...entry.value.errors },
@@ -142,6 +173,7 @@ export class ModelCatalogCache {
             };
           } finally {
             entry.pending.delete(provider);
+            this.notify(entry);
           }
         }),
       );

@@ -32,10 +32,11 @@ import {
   subscribeCrewSceneEnabled,
   subscribeCrewTheme,
   loadKeepAwakeEnabled,
-  saveKeepAwakeEnabled,
   subscribeKeepAwakeEnabled,
   type CrewTheme,
 } from "../../settings/model/settings";
+import { saveAgentDefaultConfirmed } from "../../settings/public/settings";
+import { SettingsFeedback } from "../../../shared/ui/settings";
 import {
   useWorkspaceFeatures,
   workspaceFeatureSettings,
@@ -61,10 +62,12 @@ function SwitchRow({
   label,
   checked,
   onChange,
+  disabled,
 }: {
   label: string;
   checked: boolean;
   onChange: (next: boolean) => void;
+  disabled?: boolean;
 }) {
   return (
     <Switch
@@ -74,6 +77,7 @@ function SwitchRow({
       labelPosition="start"
       checked={checked}
       onCheckedChange={onChange}
+      disabled={disabled}
     />
   );
 }
@@ -91,6 +95,20 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 export function OnboardingWorkspace() {
   useLocale();
+  const [powerPending, setPowerPending] = useState(false);
+  const [powerFailed, setPowerFailed] = useState<boolean | null>(null);
+  const savePower = async (next: boolean) => {
+    setPowerPending(true);
+    try {
+      setPowerFailed(
+        (await saveAgentDefaultConfirmed("keepAwakeWhileAgentsWork", next)) ? null : next,
+      );
+    } catch {
+      setPowerFailed(next);
+    } finally {
+      setPowerPending(false);
+    }
+  };
   const features = useWorkspaceFeatures();
   const keepAwake = useSyncExternalStore(
     subscribeKeepAwakeEnabled,
@@ -155,8 +173,24 @@ export function OnboardingWorkspace() {
         <SwitchRow
           label={t("Prevent sleep while agents work")}
           checked={keepAwake}
-          onChange={saveKeepAwakeEnabled}
+          onChange={(next) => {
+            void savePower(next).catch(console.error);
+          }}
+          disabled={powerPending}
         />
+        {powerFailed !== null ? (
+          <SettingsFeedback
+            state="error"
+            action={{
+              label: t("Retry"),
+              onClick: () => {
+                void savePower(powerFailed).catch(console.error);
+              },
+            }}
+          >
+            {t("Could not save changes")}
+          </SettingsFeedback>
+        ) : null}
       </div>
     </>
   );

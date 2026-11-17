@@ -14,8 +14,38 @@ static LOCK: Mutex<()> = Mutex::new(());
 static TRANSITION_LOCK: Mutex<()> = Mutex::new(());
 struct PendingTransition {
     actor: String,
+    owner: Arc<crate::control::receipts::WindowIssuer>,
     operation_id: String,
     baseline: Option<Option<Projection>>,
+}
+
+impl PendingTransition {
+    fn new(owner: &Arc<crate::control::receipts::WindowIssuer>, operation_id: &str) -> Self {
+        Self {
+            actor: owner.identity().into(),
+            owner: owner.clone(),
+            operation_id: operation_id.into(),
+            baseline: None,
+        }
+    }
+}
+
+/// A reloaded or closed page can never finish its own held transition. The next
+/// live window takes it over with the Host still revoked and the effect gate
+/// still closed; it must prove its own baseline and cross-window locks before
+/// anything reopens. A live owner is never superseded.
+fn adopt_retired(
+    pending: &mut Option<PendingTransition>,
+    owner: &Arc<crate::control::receipts::WindowIssuer>,
+    operation_id: &str,
+) -> bool {
+    match pending.as_mut() {
+        Some(lease) if lease.owner.is_retired() && !Arc::ptr_eq(&lease.owner, owner) => {
+            *lease = PendingTransition::new(owner, operation_id);
+            true
+        }
+        _ => false,
+    }
 }
 static PENDING_TRANSITION: Mutex<Option<PendingTransition>> = Mutex::new(None);
 const MAX_BYTES: usize = 1024 * 1024;
@@ -401,18 +431,20 @@ pub fn control_privacy_projection_begin(
         let mut pending = PENDING_TRANSITION
             .lock()
             .map_err(|_| "Privacy projection is unavailable")?;
-        if let Some(existing) = pending.as_ref() {
-            if existing.actor != issuer.identity() || existing.operation_id != operation_id {
-                return Err("Another privacy transition is pending".into());
-            }
+        let Some(existing) = pending.as_ref() else {
+            *pending = Some(PendingTransition::new(&issuer, &operation_id));
+            return Ok(true);
+        };
+        let resumed = existing.actor == issuer.identity() && existing.operation_id == operation_id;
+        // A workspace upgrade needs its own effect permit drained; it waits for
+        // a plain transition to adopt and settle the retired lease first.
+        if resumed
+            || (workspace_request_id.is_none()
+                && adopt_retired(&mut pending, &issuer, &operation_id))
+        {
             Ok(false)
         } else {
-            *pending = Some(PendingTransition {
-                actor: issuer.identity().into(),
-                operation_id: operation_id.clone(),
-                baseline: None,
-            });
-            Ok(true)
+            Err("Another privacy transition is pending".into())
         }
     })?;
     if created {
@@ -494,13 +526,12 @@ pub fn control_privacy_projection_transition(
         let mut pending = PENDING_TRANSITION
             .lock()
             .map_err(|_| "Privacy projection is unavailable")?;
+        if lease_id.is_none() {
+            adopt_retired(&mut pending, &issuer, &operation_id);
+        }
         match (pending.as_ref(), lease_id.as_deref()) {
             (None, None) => {
-                *pending = Some(PendingTransition {
-                    actor: issuer.identity().into(),
-                    operation_id: operation_id.clone(),
-                    baseline: None,
-                });
+                *pending = Some(PendingTransition::new(&issuer, &operation_id));
                 true
             }
             (Some(lease), id)
@@ -534,11 +565,7 @@ pub fn control_privacy_projection_transition(
                 } else {
                     require_rebase_not_applied(current.as_ref(), &lease.operation_id, expected)?;
                 }
-                *pending = Some(PendingTransition {
-                    actor: issuer.identity().into(),
-                    operation_id: operation_id.clone(),
-                    baseline: None,
-                });
+                *pending = Some(PendingTransition::new(&issuer, &operation_id));
                 false
             }
             _ => return Err("Privacy transition ownership changed".into()),
@@ -1053,6 +1080,30 @@ mod tests {
         .is_err());
         std::fs::remove_file(file).unwrap();
         std::fs::remove_dir(root).unwrap();
+    }
+
+    #[test]
+    fn only_a_retired_owner_hands_its_held_transition_to_the_next_window() {
+        use crate::control::receipts::WindowIssuer;
+        use tauri::Resource;
+        let first = Arc::new(WindowIssuer::default());
+        let second = Arc::new(WindowIssuer::default());
+        let mut pending = Some(PendingTransition::new(&first, "held"));
+        pending.as_mut().unwrap().baseline = Some(None);
+        assert!(!adopt_retired(&mut pending, &second, "next"));
+        assert_eq!(pending.as_ref().unwrap().operation_id, "held");
+        Resource::close(first.clone());
+        assert!(!adopt_retired(&mut pending, &first, "again"));
+        assert!(adopt_retired(&mut pending, &second, "next"));
+        let lease = pending.as_ref().unwrap();
+        assert_eq!(
+            (lease.actor.as_str(), lease.operation_id.as_str()),
+            (second.identity(), "next")
+        );
+        assert!(lease.baseline.is_none());
+        assert!(!adopt_retired(&mut pending, &second, "other"));
+        let mut empty = None;
+        assert!(!adopt_retired(&mut empty, &second, "next"));
     }
 
     #[test]

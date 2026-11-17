@@ -3,6 +3,7 @@ import { t } from "../../../shared/i18n/core";
 import { createWindowStore } from "../../../shared/lib/store";
 import { themePalette } from "../../../shared/theme/palette";
 import type { HarnessId } from "../../sessions/model/session";
+import { PROVIDER_ACCOUNT_PROVIDERS } from "./providerAccountId";
 
 const LEGACY_ACCOUNTS_KEY = "bycoda.providerAccounts.v1";
 const ACCOUNTS_KEY = "bycoda.providerAccounts.v2";
@@ -24,12 +25,7 @@ export function sameProviderAccountId(
   return (left ?? DEFAULT_PROVIDER_ACCOUNT_ID) === (right ?? DEFAULT_PROVIDER_ACCOUNT_ID);
 }
 
-/** Providers whose CLIs support isolated, locally named account profiles. */
-export const PROVIDER_ACCOUNT_PROVIDERS = [
-  "claude",
-  "codex",
-  "grok",
-] as const satisfies readonly HarnessId[];
+export { PROVIDER_ACCOUNT_PROVIDERS };
 
 export type ProviderAccountProvider = (typeof PROVIDER_ACCOUNT_PROVIDERS)[number];
 

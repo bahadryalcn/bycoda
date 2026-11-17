@@ -30,6 +30,7 @@ import {
   EFFORT_LEVELS,
   decodeAdvisor,
   decodeDelegationParent,
+  nativeAdvisor,
   delegateRefKey,
   type DelegateModelRef,
   type DelegationKind,
@@ -56,6 +57,7 @@ import { CHAT_ONLY_PROVIDERS } from "./child-native";
 import { delegationBudgetScope, delegationWorkRoot } from "./work-root";
 import { cancelSessionWorkOccurrence } from "../work/session-adapter";
 import { refuseSingleSlotChild } from "./capacity";
+import type { AgentRole } from "./tools";
 import { AgentCommunication } from "./communication";
 import { agentMessageDelivery, inspectAgentSession } from "./message-delivery";
 
@@ -101,6 +103,10 @@ function nextRoundParent(link: string, round: number): string {
 }
 
 const KIND_LABEL: Record<DelegationKind, string> = { subagent: "Subagent", advisor: "Advisor" };
+
+/** Subagents one caller may run at once: fewer for a subagent's own (grandchildren). */
+const subagentLimit = (depth: 0 | 1) =>
+  depth === 1 ? DELEGATION_LIMITS.runningNestedSubagents : DELEGATION_LIMITS.runningSubagents;
 
 /**
  * Trust boundary for `agents.*`. Models come from the caller's own settings and
@@ -237,14 +243,41 @@ export class ConversationDelegation {
     );
   }
 
+  /** Which agents tools a session is offered: an owner conversation, a subagent that may start
+   * subagents, or a leaf (an advisor or a grandchild) that may only message its group. */
+  async agentRole(sessionId: string): Promise<AgentRole> {
+    const link = await this.link(sessionId);
+    if (!link) return "owner";
+    return link.kind === "advisor" || (await this.link(link.parentSessionId)) ? "leaf" : "subagent";
+  }
+
+  /** The run that started a session, from the store or else its parent link; none for an owner conversation. */
+  private async link(
+    sessionId: string,
+    session?: Session,
+  ): Promise<{ parentSessionId: string; kind: DelegationKind } | undefined> {
+    const record = (await this.store.list()).find((entry) => entry.childSessionId === sessionId);
+    if (record) return { parentSessionId: record.parentSessionId, kind: record.kind };
+    const own =
+      session ?? (await this.deps.featureSession(sessionId).catch(() => undefined))?.session;
+    const parent = decodeDelegationParent(own?.modelSettings[DELEGATION_PARENT_KEY]);
+    return parent ? { parentSessionId: parent.parentSessionId, kind: parent.kind } : undefined;
+  }
+
+  /**
+   * Depth 0 is the owner's conversation, 1 its subagent. Owner decision 2026-11-17: a subagent may
+   * start subagents, a grandchild is the deepest level, and advisors never start runs.
+   */
   private async caller(caller: AgentsCaller, taskRepair = false) {
     const own = await this.deps.featureSession(caller.sessionId);
     if (own.projectId !== caller.projectId)
       throw new Error("Conversation belongs to another project.");
-    // Children never start children: the store knows them, and the parent key is checked too.
-    if (!taskRepair && (await this.isChild(caller.sessionId, own.session)))
-      throw new Error("A subagent cannot start agents runs.");
-    return own;
+    const link = taskRepair ? undefined : await this.link(caller.sessionId, own.session);
+    if (!link) return { ...own, depth: 0 as const };
+    if (await this.link(link.parentSessionId))
+      throw new Error("A subagent's subagent cannot start agents runs.");
+    if (link.kind === "advisor") throw new Error("An advisor cannot start agents runs.");
+    return { ...own, depth: 1 as const };
   }
 
   private async selected(session: Session, catalog: HostModelCatalog) {
@@ -279,7 +312,10 @@ export class ConversationDelegation {
       ...(session.modelSettings[CROSS_SUBAGENTS_KEY] === AUTOMATIC_SUBAGENTS && !subagents.length
         ? { automatic: { reason: automaticSubagentEmptyReason(input) } }
         : {}),
-      advisor: decodeAdvisor(session.modelSettings[CROSS_ADVISOR_KEY]),
+      // Claude Code's own advisor answers a Claude conversation's Claude pick inside its turn.
+      advisor: nativeAdvisor(session.harness, session.modelSettings)
+        ? undefined
+        : decodeAdvisor(session.modelSettings[CROSS_ADVISOR_KEY]),
     };
   }
 
@@ -332,7 +368,7 @@ export class ConversationDelegation {
         own.runId,
       )),
       limits: {
-        runningSubagents: DELEGATION_LIMITS.runningSubagents,
+        runningSubagents: subagentLimit(own.depth),
         runningAdvisors: DELEGATION_LIMITS.runningAdvisors,
       },
     };
@@ -346,6 +382,12 @@ export class ConversationDelegation {
     taskRepair = false,
   ) {
     const own = await this.caller(caller, taskRepair);
+    if (own.depth === 1 && kind === "advisor")
+      throw new Error("A subagent cannot consult an advisor.");
+    if (kind === "advisor" && nativeAdvisor(own.session.harness, own.session.modelSettings))
+      throw new Error(
+        "This conversation's advisor is Claude Code's built-in advisor tool; ask it inside your own turn. agents.consult is not used.",
+      );
     if (args.notifyOnCompletion !== undefined && typeof args.notifyOnCompletion !== "boolean")
       throw new Error("notifyOnCompletion must be a boolean.");
     if (
@@ -465,9 +507,23 @@ export class ConversationDelegation {
             ? own.session.modelSettings[CROSS_SUBAGENT_MAX_EFFORT_KEY]
             : undefined,
         );
-      const modelSettings = chatOnly
-        ? { ...baseSettings, [DELEGATION_CHAT_ONLY_KEY]: "on" }
-        : baseSettings;
+      // A subagent inherits the owner's selection and ceiling, so its own runs and its native
+      // subagents stay inside them. A grandchild gets explicit Off: nothing runs below it.
+      const lineage: Record<string, string> =
+        kind !== "subagent"
+          ? {}
+          : own.depth === 1
+            ? { [CROSS_SUBAGENTS_KEY]: "[]" }
+            : Object.fromEntries(
+                [CROSS_SUBAGENTS_KEY, CROSS_SUBAGENT_MAX_EFFORT_KEY].flatMap((key) =>
+                  own.session.modelSettings[key] ? [[key, own.session.modelSettings[key]!]] : [],
+                ),
+              );
+      const modelSettings = existing?.modelSettings ?? {
+        ...baseSettings,
+        ...lineage,
+        ...(chatOnly ? { [DELEGATION_CHAT_ONLY_KEY]: "on" } : {}),
+      };
       if (!existing)
         await this.store.add({
           runId,
@@ -499,7 +555,7 @@ export class ConversationDelegation {
       }
       const running = await this.runningCounts(caller.sessionId, runId);
       if (
-        (kind === "subagent" && running.subagent >= DELEGATION_LIMITS.runningSubagents) ||
+        (kind === "subagent" && running.subagent >= subagentLimit(own.depth)) ||
         (kind === "advisor" && running.advisor >= DELEGATION_LIMITS.runningAdvisors)
       )
         return await this.describe(pending, locate);
@@ -645,9 +701,7 @@ export class ConversationDelegation {
       await this.verifySignIn(record.model);
       const running = await this.runningCounts(caller.sessionId);
       const limit =
-        record.kind === "subagent"
-          ? DELEGATION_LIMITS.runningSubagents
-          : DELEGATION_LIMITS.runningAdvisors;
+        record.kind === "subagent" ? subagentLimit(own.depth) : DELEGATION_LIMITS.runningAdvisors;
       if (brief && running[record.kind] >= limit) return { waiting: true };
       if (running[record.kind] >= limit)
         throw new Error("Running " + record.kind + " limit reached. Wait or cancel first.");

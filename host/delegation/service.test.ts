@@ -271,9 +271,10 @@ it("supports direct sibling steering and same-context continuation with peer aut
     parent,
   );
   expect(host.commandsOf("send").at(-1)?.sessionId).toBe(second.sessionId);
-  await expect(
-    call("agents.delegate", { requestId: "nested", title: "No", prompt: "No" }, caller),
-  ).rejects.toThrow("subagent cannot start");
+  // A subagent may start its own subagent, inside the owner's selection.
+  expect(
+    await call("agents.delegate", { requestId: "nested", title: "Yes", prompt: "Yes" }, caller),
+  ).toMatchObject({ status: "running" });
 });
 
 beforeEach(() => {
@@ -581,11 +582,12 @@ describe("launch", () => {
     expect(host.commandsOf("send")[0]).not.toHaveProperty("intent");
   });
 
-  it("gives the child its own model defaults and the parent link, never the owner's reserved keys", async () => {
+  it("gives the child its own model defaults, the parent link and only the owner's subagent selection", async () => {
     setup({ subagents: [codexFive], advisor: codexSix });
     const result = await delegate("req-1");
     const settings = (host.commandsOf("create")[0]!.modelSettings ?? {}) as Record<string, string>;
-    expect(settings).not.toHaveProperty(CROSS_SUBAGENTS_KEY);
+    // The selection bounds the child's own runs; the advisor stays with the owner's conversation.
+    expect(settings[CROSS_SUBAGENTS_KEY]).toBe(JSON.stringify([codexFive]));
     expect(settings).not.toHaveProperty(CROSS_ADVISOR_KEY);
     expect(settings).not.toHaveProperty("effort");
     expect(JSON.parse(settings[DELEGATION_PARENT_KEY]!)).toEqual({
@@ -938,7 +940,7 @@ describe("recursion and caller checks", () => {
       },
     });
     await expect(call("agents.consult", args, caller)).rejects.toThrow(
-      "A subagent cannot start agents runs.",
+      "A subagent cannot consult an advisor.",
     );
     await expect(
       delegation.consultTaskRepair("task", { ...args, requestId: "other" }, caller, locate),
@@ -948,31 +950,97 @@ describe("recursion and caller checks", () => {
     );
   });
 
-  it("rejects agents runs started by a subagent", async () => {
+  it("lets a subagent start subagents within the owner's selection, and no deeper", async () => {
     setup({ subagents: [codexFive], advisor: codexSix });
     const started = await delegate("req-1");
-    const child: AgentsCaller = {
-      sessionId: String(started.sessionId),
-      projectId: "p",
-    };
-    await expect(call("agents.options", {}, child)).rejects.toThrow(
-      "A subagent cannot start agents runs.",
-    );
-    await expect(
-      call("agents.delegate", { requestId: "req-2", title: "t", prompt: "p" }, child),
-    ).rejects.toThrow("A subagent cannot start agents runs.");
+    const child: AgentsCaller = { sessionId: String(started.sessionId), projectId: "p" };
+    // The child inherits the owner's selection, so its own runs stay inside it.
+    expect(host.commandsOf("create")[0]!.modelSettings).toMatchObject({
+      [CROSS_SUBAGENTS_KEY]: JSON.stringify([codexFive]),
+    });
+    expect(host.commandsOf("create")[0]!.modelSettings).not.toHaveProperty(CROSS_ADVISOR_KEY);
+    expect(await call("agents.options", {}, child)).toMatchObject({
+      subagents: [{ ref: "codex:gpt-5" }],
+    });
     await expect(
       call("agents.consult", { requestId: "req-3", question: "q" }, child),
-    ).rejects.toThrow("A subagent cannot start agents runs.");
-    expect(host.commandsOf("create")).toHaveLength(1);
+    ).rejects.toThrow("A subagent cannot consult an advisor.");
+
+    const nested = await call(
+      "agents.delegate",
+      { requestId: "req-2", title: "t", prompt: "p" },
+      child,
+    );
+    const grandchild: AgentsCaller = { sessionId: String(nested.sessionId), projectId: "p" };
+    const created = host.commandsOf("create")[1]!.modelSettings as Record<string, string>;
+    expect(JSON.parse(created[DELEGATION_PARENT_KEY]!).parentSessionId).toBe(child.sessionId);
+    // Explicit Off: no Host runs and no native subagents below a grandchild.
+    expect(created[CROSS_SUBAGENTS_KEY]).toBe("[]");
+    for (const action of ["agents.options", "agents.delegate", "agents.consult"])
+      await expect(
+        call(action, { requestId: "req-4", title: "t", prompt: "p", question: "q" }, grandchild),
+      ).rejects.toThrow("A subagent's subagent cannot start agents runs.");
+    expect(host.commandsOf("create")).toHaveLength(2);
+    expect(await delegation.agentRole("parent")).toBe("owner");
+    expect(await delegation.agentRole(child.sessionId)).toBe("subagent");
+    expect(await delegation.agentRole(grandchild.sessionId)).toBe("leaf");
   });
 
-  it("rejects a session that carries a delegation parent link even when the store does not know it", async () => {
+  it("leaves a Claude conversation's Claude advisor to Claude Code, with no advisor session", async () => {
+    setup({ advisor: claudeSonnet });
+    host.entries.get("parent")!.session.harness = "claude";
+    await expect(consult("adv-native")).rejects.toThrow("built-in advisor");
+    expect(await call("agents.options")).not.toHaveProperty("advisor");
+    expect(host.commandsOf("create")).toHaveLength(0);
+    // A Codex conversation has no built-in advisor: the same pick runs as a Host session.
+    host.entries.get("parent")!.session.harness = "codex";
+    expect(await consult("adv-host")).toMatchObject({ status: "running" });
+  });
+
+  it("keeps an advisor from starting agents runs", async () => {
+    setup({ subagents: [codexFive], advisor: codexSix });
+    const advisor = await consult("adv-1");
+    const caller: AgentsCaller = { sessionId: String(advisor.sessionId), projectId: "p" };
+    await expect(
+      call("agents.delegate", { requestId: "req-2", title: "t", prompt: "p" }, caller),
+    ).rejects.toThrow("An advisor cannot start agents runs.");
+  });
+
+  it("caps how many subagents one subagent runs at once", async () => {
     setup({ subagents: [codexFive] });
-    host.add("orphan", {
+    const started = await delegate("req-1");
+    const child: AgentsCaller = { sessionId: String(started.sessionId), projectId: "p" };
+    for (let index = 0; index < DELEGATION_LIMITS.runningNestedSubagents; index++)
+      await call("agents.delegate", { requestId: `n-${index}`, title: "t", prompt: "p" }, child);
+    const queued = await call(
+      "agents.delegate",
+      { requestId: "n-over", title: "t", prompt: "p" },
+      child,
+    );
+    expect(queued).toMatchObject({ status: "queued" });
+    expect(host.commandsOf("create")).toHaveLength(1 + DELEGATION_LIMITS.runningNestedSubagents);
+  });
+
+  it("counts the depth from the parent link even when the store does not know the session", async () => {
+    setup({ subagents: [codexFive] });
+    // A child of a child, known only by its link: still a grandchild.
+    host.add("linked-child", {
       modelSettings: {
+        [CROSS_SUBAGENTS_KEY]: JSON.stringify([codexFive]),
         [DELEGATION_PARENT_KEY]: JSON.stringify({
           parentSessionId: "parent",
+          runId: "run-y",
+          kind: "subagent",
+          model: "codex:gpt-5",
+          startedAt: 1,
+        }),
+      },
+    } as Partial<Session>);
+    host.add("orphan", {
+      modelSettings: {
+        [CROSS_SUBAGENTS_KEY]: JSON.stringify([codexFive]),
+        [DELEGATION_PARENT_KEY]: JSON.stringify({
+          parentSessionId: "linked-child",
           runId: "run-x",
           kind: "subagent",
           model: "codex:gpt-5",
@@ -989,7 +1057,8 @@ describe("recursion and caller checks", () => {
           projectId: "p",
         },
       ),
-    ).rejects.toThrow("A subagent cannot start agents runs.");
+    ).rejects.toThrow("A subagent's subagent cannot start agents runs.");
+    expect(host.commandsOf("create")).toHaveLength(0);
   });
 
   it("rejects a caller from another project", async () => {
@@ -1133,7 +1202,8 @@ describe("continuations and multi-wait", () => {
         { runId: first.runId, requestId: "x", message: "x" },
         { sessionId: String(first.sessionId), projectId: "p" },
       ),
-    ).rejects.toThrow("cannot start");
+      // A subagent replies only to its own children, never to its own run.
+    ).rejects.toThrow("Run not found");
   });
 
   it("keeps advisors read-only and restores recorded model/account", async () => {

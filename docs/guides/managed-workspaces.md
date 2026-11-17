@@ -44,6 +44,14 @@ execution Host and committed base; missing Host support shows an update requirem
 The quick composer follows the same policy and preserves an explicit
 **Current checkout** choice when the project default is Worktree.
 
+Quick composer is available on macOS with **Command+Shift+Space** and on Windows
+with **Ctrl+Shift+Space** while bycoda is running. Change or disable its global
+shortcut in Settings → Keybindings; its switch is in Settings → Workspace.
+Enter starts in the background; Command+Enter on macOS or Ctrl+Enter on Windows
+also brings the session forward. Project/model selection, attachments and draft,
+plan and orchestration modes use the same delivery path. Screenshot capture lets
+you select a region; Escape cancels without clearing the prompt or attachments.
+
 In that page, refreshing keeps an unsaved policy draft. If the Host policy changed
 meanwhile, choose **Reload** or **Keep my edits** before saving. Saving stores the
 whole project override. A badge shows **Following Host defaults** or **Project override**;

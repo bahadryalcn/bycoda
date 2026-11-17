@@ -335,6 +335,12 @@ for (const theme of ["light", "dark"])
       // shows those runs, so the queue lists nothing while it drains normally.
       await expect(page.getByText(/subagent results? waiting/)).toHaveCount(0);
       await expect(page.getByRole("button", { name: "Remove queued message" })).toHaveCount(0);
+      // Claude Code's built-in advisor: its own row with the model, the advice behind it.
+      const advisor = page.locator("[data-advisor-row]");
+      await expect(advisor).toContainText("Advisor · Fable 5.2");
+      await expect(advisor).toContainText("Done");
+      await advisor.locator("summary").click();
+      await expect(advisor).toContainText("Re-run the failed migration check");
       // Transcript: a completion folds into its card; a notice without a card stays a disclosure.
       const benchmark = page.getByRole("button", { name: /^(Show|Hide) Benchmark review's work$/ });
       await expect(async () => {

@@ -1,5 +1,14 @@
 import * as dto from "../../../src/shared/model/host-contracts/projects";
 import { HostDomainRefusalError, assertDomainAuthority, type HostDomainContext } from "../context";
+import {
+  ProjectsCloneParamsSchema,
+  ProjectsCloneProgressParamsSchema,
+  cloneProgress,
+  cloneRepository,
+  runGitClone,
+  type PathExists,
+  type SpawnProcess,
+} from "./clone";
 
 export type ProjectsReadOptions = { signal?: AbortSignal };
 export interface ProjectDirectoryPorts {
@@ -18,6 +27,8 @@ export interface ProjectDirectoryPorts {
 export function createProjectsService<Project>(dependencies: {
   list: (options: ProjectsReadOptions) => readonly Project[] | Promise<readonly Project[]>;
   directoryPorts?: ProjectDirectoryPorts;
+  /** Process launch and existence check for `git clone`; domains never import platform modules. */
+  clonePorts?: { spawn: SpawnProcess; exists: PathExists };
 }) {
   const ports = () => {
     if (!dependencies.directoryPorts) throw new Error("Project directory access is unavailable");
@@ -65,6 +76,34 @@ export function createProjectsService<Project>(dependencies: {
       );
       await assertDomainAuthority(context);
       return result;
+    },
+    async clone(raw: unknown, context: HostDomainContext, options: Options = {}) {
+      await assertDomainAuthority(context);
+      const params = (
+        options.legacy ? ProjectsCloneParamsSchema.strip() : ProjectsCloneParamsSchema
+      ).parse(raw);
+      // Same folder vetting as projects.browse: absolute, existing directory.
+      const parent = await ports().browse(params.parentPath);
+      await assertDomainAuthority(context);
+      const runtime = () => {
+        if (!dependencies.clonePorts) throw new Error("Project cloning is unavailable");
+        return dependencies.clonePorts;
+      };
+      // The URL and destination are validated before the ports are needed, so an invalid
+      // request fails with its own message on any Host.
+      const result = await cloneRepository(
+        params,
+        parent.path,
+        (url, dest, options) => runGitClone(url, dest, { ...options, spawn: runtime().spawn }),
+        (path) => runtime().exists(path),
+      );
+      await assertDomainAuthority(context);
+      return result;
+    },
+    async cloneProgress(raw: unknown, context: HostDomainContext) {
+      await assertDomainAuthority(context);
+      const params = ProjectsCloneProgressParamsSchema.strip().parse(raw);
+      return { progress: cloneProgress(params.operationId) };
     },
     async open(raw: unknown, context: HostDomainContext, options: Options = {}) {
       await assertDomainAuthority(context);

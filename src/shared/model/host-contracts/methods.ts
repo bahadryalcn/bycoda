@@ -1,4 +1,5 @@
 import { nativeRuntimeLogMethods } from "./native-runtime-log-methods";
+import { SIDE_CHAT_RPC } from "./side-chat";
 import * as modelRoutingDto from "./model-routing";
 import { desktopStatusMethods } from "./desktop-status-methods";
 import {
@@ -652,6 +653,18 @@ export const HOST_RPC_METHODS = Object.freeze({
     projectsDto.HostProjectSchema,
     true,
   ),
+  "projects.clone": {
+    ...projectOperation(
+      projectsDto.ProjectsCloneParamsSchema,
+      projectsDto.ProjectsCloneResultSchema,
+      true,
+    ),
+    responseTimeoutMs: 630_000,
+  },
+  "projects.clone.progress": projectOperation(
+    projectsDto.ProjectsCloneProgressParamsSchema,
+    projectsDto.ProjectsCloneProgressResultSchema,
+  ),
   "environment.persistence.status": {
     ...read(HostPersistenceParamsSchema, HostPersistenceStatusSchema),
     cost: "control",
@@ -921,6 +934,14 @@ export const HOST_RPC_METHODS = Object.freeze({
     ...gitOperation(gitDto.GitGenerateTextParamsSchema, gitDto.GitGenerateTextResultSchema, true),
     responseTimeoutMs: 120_000,
   },
+  "sessions.sideQuestion": {
+    ...control(
+      SIDE_CHAT_RPC["sessions.sideQuestion"].params,
+      SIDE_CHAT_RPC["sessions.sideQuestion"].result,
+    ),
+    cost: "read",
+    responseTimeoutMs: 150_000,
+  } satisfies HostRpcMethodDefinition,
   "git.fileDiff": gitOperation(gitDto.GitFileDiffParamsSchema, gitDto.GitFileDiffSchema),
   "git.switch": gitOperation(gitDto.GitSwitchParamsSchema, gitDto.GitBranchesSchema, true),
   "git.createBranch": gitOperation(

@@ -40,9 +40,18 @@ import type { ServerBindings } from "./bindings";
 import { resolveBinary } from "./support";
 
 /** One Host-wide cache: every catalog read shares the last known sign-in results. */
+const accountStatusListeners = new Set<() => void>();
+/** Runs when a provider account's definitive sign-in status changes; returns the unsubscribe. */
+export function onProviderAccountStatusChange(listener: () => void): () => void {
+  accountStatusListeners.add(listener);
+  return () => accountStatusListeners.delete(listener);
+}
 const accountStatuses = createProviderAccountStatusCache({
   probe: async (provider, id) =>
     providerAuthStatus(provider, (await resolveBinary[provider]()).path, id),
+  onChange: () => {
+    for (const listener of accountStatusListeners) listener();
+  },
 });
 export function createNativeRuntime(
   dependencies: Pick<

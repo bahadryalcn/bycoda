@@ -11,6 +11,7 @@ import {
   ArrowDownCircle as LucideArrowDownCircle,
   ArrowLeft as LucideArrowLeft,
   ArrowLeftRight as LucideArrowLeftRight,
+  ArrowRight as LucideArrowRight,
   ArrowUp as LucideArrowUp,
   Quote as LucideBlockQuote,
   Bold as LucideBold,
@@ -298,6 +299,7 @@ export const ArrowDownCircle = wrap(LucideArrowDownCircle, "ArrowDownCircle");
 export const ArrowDown = wrap(LucideArrowDown, "ArrowDown");
 export const ArrowLeft = wrap(LucideArrowLeft, "ArrowLeft");
 export const ArrowLeftRight = wrap(LucideArrowLeftRight, "ArrowLeftRight");
+export const ArrowRight = wrap(LucideArrowRight, "ArrowRight");
 export const ArrowUp = wrap(LucideArrowUp, "ArrowUp");
 export const Home = wrap(LucideHome, "Home");
 export const BlockQuote = wrap(LucideBlockQuote, "BlockQuote");

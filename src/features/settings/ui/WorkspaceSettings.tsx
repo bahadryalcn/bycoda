@@ -1,6 +1,6 @@
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { IS_MAC } from "../../../platform/tauri/platform";
+import { IS_MAC, IS_WIN, MOD } from "../../../platform/tauri/platform";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { setQuickComposerShortcut } from "../../quick-composer/model/quickComposer";
@@ -228,9 +228,9 @@ export function WorkspacePage({ children }: { children?: ReactNode }) {
           />
         </Row>
       </Group>
-      {IS_MAC ? (
+      {IS_MAC || IS_WIN ? (
         <Group title={t("Session access")}>
-          {IS_MAC && (
+          {(IS_MAC || IS_WIN) && (
             <Row
               id="quick-composer"
               label={t("Quick composer")}
@@ -244,10 +244,11 @@ export function WorkspacePage({ children }: { children?: ReactNode }) {
                 ) : undefined
               }
               description={t(
-                "Press {p0} in any app to float a prompt over it and start a session without switching to {p1}. Change the shortcut in Keybindings. Return starts it in the background; ⌘Return starts it and brings the session forward.",
+                "Press {p0} in any app to float a prompt over it and start a session without switching to {p1}. Change the shortcut in Keybindings. Enter starts it in the background; {p2}Enter starts it and brings the session forward.",
                 {
                   p0: quickComposerShortcutLabel(loadQuickComposerShortcut()),
                   p1: PRODUCT_IDENTITY.displayName,
+                  p2: MOD,
                 },
               )}
             >

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AGENT_TOOL_SCHEMAS, describeAgentTool } from "./tools";
+import { AGENT_TOOL_SCHEMAS, agentToolAllowed, describeAgentTool } from "./tools";
 
 describe("files: false schema", () => {
   it("is an optional boolean on delegate and consult, nowhere else", () => {
@@ -15,4 +15,16 @@ describe("files: false schema", () => {
   it("tells the parent when to use it, in one short sentence", () => {
     expect(describeAgentTool("agents.delegate")).toContain("files:false");
   });
+});
+
+it("offers a subagent its own runs but no advisor, and a leaf only its group", () => {
+  for (const action of ["agents.delegate", "agents.consult", "agents.wait", "agents.list"])
+    expect(agentToolAllowed(action, "owner"), action).toBe(true);
+  expect(agentToolAllowed("agents.delegate", "subagent")).toBe(true);
+  expect(agentToolAllowed("agents.wait", "subagent")).toBe(true);
+  expect(agentToolAllowed("agents.consult", "subagent")).toBe(false);
+  for (const action of ["agents.delegate", "agents.consult", "agents.wait", "agents.options"])
+    expect(agentToolAllowed(action, "leaf"), action).toBe(false);
+  expect(agentToolAllowed("agents.send", "leaf")).toBe(true);
+  expect(agentToolAllowed("files.read", "leaf")).toBe(true);
 });

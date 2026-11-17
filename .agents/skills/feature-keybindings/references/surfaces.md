@@ -14,6 +14,7 @@ All source paths are repository-relative.
 
 ## Interaction and scope
 
+- Quick composer defaults to Command+Shift+Space on macOS and Control+Shift+Space on Windows. The shared launch queue and native window identity checks serve both; `src-tauri/src/quick_composer/windows.rs` owns Windows presentation, capture and picker geometry.
 - Inspect `KEYBINDINGS`, `keybindingSettingId`, `filterKeybindings`, Quick composer enabled/chord ownership and focusOwner consumers before changing labels or capture.
 - Resetting ordinary override and resetting Quick composer can have different enabled/default consequences. Preserve current validation and native replacement rollback rather than copying one handler to the other.
 - Shared filters keep feature selection/count/query/reset semantics. Mobile staged Apply behavior (for example `mobile/src/ui/filter-sheet.tsx`) does not define desktop immediate-filter behavior.

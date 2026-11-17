@@ -187,7 +187,16 @@ export function useAdoptedSessions(
                 const continuingElsewhere = running.has(session.id) || undefined;
                 if (session.continuingElsewhere === continuingElsewhere) return session;
                 changed = true;
-                return { ...session, continuingElsewhere };
+                // A finished host turn leaves no background wait behind.
+                return continuingElsewhere
+                  ? { ...session, continuingElsewhere }
+                  : {
+                      ...session,
+                      continuingElsewhere,
+                      backgroundTasks: undefined,
+                      backgroundAgents: undefined,
+                      backgroundSince: undefined,
+                    };
               });
               return changed ? next : list;
             };

@@ -2,7 +2,8 @@
 //! whatever app is in front, and its prompt starts a session in a workspace
 //! window without bringing that window forward.
 //!
-//! The panel is a WKWebView window re-classed as a non-activating `NSPanel`.
+//! On Windows an independent topmost WebView2 window takes focus. On macOS the
+//! WKWebView window is re-classed as a non-activating `NSPanel`.
 //! A plain `NSWindow` would have to activate Bycoda to take keys, which pulls
 //! the workspace window over the browser and leaves focus with Bycoda after
 //! the panel hides. A non-activating panel takes keys while the other app
@@ -15,21 +16,31 @@ use crate::quick_native::launch::{
 pub use crate::quick_native::QuickLaunch;
 use crate::quick_native::{CaptureWork, QuickAttachment, QuickWindowOwner};
 pub mod git_popup;
+#[cfg(target_os = "windows")]
+mod windows;
 pub(crate) use crate::quick_native::screenshots;
+#[cfg(target_os = "windows")]
+use windows::{capture_screenshot, present};
 
 use std::str::FromStr;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Mutex, OnceLock,
+    Mutex,
 };
 
+#[cfg(target_os = "macos")]
 use objc2::runtime::{AnyClass, AnyObject, Bool, ClassBuilder, Sel};
+#[cfg(target_os = "macos")]
 use objc2::{msg_send, sel, ClassType, MainThreadMarker};
+#[cfg(target_os = "macos")]
 use objc2_app_kit::{
     NSApplication, NSPanel, NSStatusWindowLevel, NSWindow, NSWindowCollectionBehavior,
     NSWindowStyleMask,
 };
+#[cfg(target_os = "macos")]
 use objc2_foundation::NSObjectProtocol;
+#[cfg(target_os = "macos")]
+use std::sync::OnceLock;
 use tauri::window::{Effect, EffectState, EffectsBuilder};
 use tauri::{
     AppHandle, Emitter, Manager, PhysicalPosition, State, WebviewUrl, WebviewWindow,
@@ -55,7 +66,30 @@ const MAX_PROMPT_BYTES: usize = 256 * 1024;
 const LAUNCH: &str = "quick_composer_launch";
 /// The panel refreshes its projects and focuses the prompt on every show.
 const SHOWN: &str = "quick_composer_shown";
+#[cfg(target_os = "macos")]
 const DEFAULT_SHORTCUT: &str = "Command+Shift+Space";
+#[cfg(target_os = "windows")]
+const DEFAULT_SHORTCUT: &str = "Control+Shift+Space";
+
+fn panel_effects<'a, R: tauri::Runtime, M: Manager<R>>(
+    builder: WebviewWindowBuilder<'a, R, M>,
+    radius: f64,
+) -> WebviewWindowBuilder<'a, R, M> {
+    #[cfg(target_os = "macos")]
+    let builder = builder.visible_on_all_workspaces(true);
+    let effect = if cfg!(target_os = "macos") {
+        Effect::Popover
+    } else {
+        Effect::Acrylic
+    };
+    builder.effects(
+        EffectsBuilder::new()
+            .effect(effect)
+            .state(EffectState::Active)
+            .radius(radius)
+            .build(),
+    )
+}
 
 fn parse_shortcut(value: &str) -> Result<Shortcut, String> {
     let shortcut = Shortcut::from_str(value).map_err(|err| err.to_string())?;
@@ -162,13 +196,15 @@ pub async fn quick_composer_prepare(app: AppHandle, window: WebviewWindow) -> Re
             {
                 return Ok(true);
             }
+            #[cfg(target_os = "macos")]
             let Some(mtm) = MainThreadMarker::new() else {
                 return Ok(false);
             };
-            if !NSApplication::sharedApplication(mtm).isActive()
-                || !window.is_visible().unwrap_or(false)
-                || !window.is_focused().unwrap_or(false)
-            {
+            #[cfg(target_os = "macos")]
+            if !NSApplication::sharedApplication(mtm).isActive() {
+                return Ok(false);
+            }
+            if !window.is_visible().unwrap_or(false) || !window.is_focused().unwrap_or(false) {
                 return Ok(false);
             }
             prepare(&handle)
@@ -237,6 +273,7 @@ pub fn quick_composer_set_enabled(
 /// Grow or shrink to the card, keeping the top edge where it was so the
 /// prompt does not jump while the project list opens.
 #[tauri::command]
+#[cfg(target_os = "macos")]
 pub fn quick_composer_fit(window: WebviewWindow, height: f64) -> Result<(), String> {
     if window.label() != QUICK_COMPOSER_LABEL || !height.is_finite() {
         return Ok(());
@@ -258,6 +295,20 @@ pub fn quick_composer_fit(window: WebviewWindow, height: f64) -> Result<(), Stri
             ns_window.invalidateShadow();
             ns_window.displayIfNeeded();
         })
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+#[cfg(target_os = "windows")]
+pub fn quick_composer_fit(window: WebviewWindow, height: f64) -> Result<(), String> {
+    if window.label() != QUICK_COMPOSER_LABEL || !height.is_finite() {
+        return Ok(());
+    }
+    window
+        .set_size(tauri::LogicalSize::new(
+            WIDTH,
+            height.clamp(1.0, MAX_HEIGHT),
+        ))
         .map_err(|err| err.to_string())
 }
 
@@ -675,6 +726,7 @@ pub async fn quick_composer_capture(
 
 /// Error text the quick composer UI recognizes to show the Screen Recording
 /// recovery action; it is a stable code, not user-facing copy.
+#[cfg(target_os = "macos")]
 pub(crate) const SCREEN_RECORDING_DENIED: &str = "screen-recording-permission-required";
 
 #[cfg(target_os = "macos")]
@@ -692,13 +744,7 @@ mod screen_access {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
-mod screen_access {
-    pub(super) fn granted() -> bool {
-        true
-    }
-}
-
+#[cfg(target_os = "macos")]
 fn capture_screenshot() -> Result<Option<String>, String> {
     if !screen_access::granted() {
         return Err(SCREEN_RECORDING_DENIED.into());
@@ -846,7 +892,7 @@ fn toggle(app: &AppHandle) {
 fn build(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     let creation = crate::native_window_lifecycle::admit_window(app, QUICK_COMPOSER_LABEL)
         .map_err(std::io::Error::other)?;
-    let panel = crate::webview_args::inherit_main_browser_args(
+    let builder = crate::webview_args::inherit_main_browser_args(
         app,
         WebviewWindowBuilder::new(
             app,
@@ -866,31 +912,36 @@ fn build(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     .shadow(true)
     // Popover follows the window's appearance, which the page sets to the
     // app theme. Active keeps it vibrant while another app is frontmost.
-    .effects(
-        EffectsBuilder::new()
-            .effect(Effect::Popover)
-            .state(EffectState::Active)
-            .radius(CORNER_RADIUS)
-            .build(),
-    )
     .always_on_top(true)
-    .visible_on_all_workspaces(true)
     .skip_taskbar(true)
     .visible(false)
-    .focused(false)
-    .build()?;
+    .focused(false);
+    let panel = panel_effects(builder, CORNER_RADIUS).build()?;
 
     creation.created(&panel);
     let identity = QuickWindowOwner::install(&mut panel.as_ref().window().resources_table())
         .map_err(std::io::Error::other)?;
     let handle = app.clone();
+    let retained = panel.clone();
     panel.on_window_event(move |event| {
-        if matches!(event, tauri::WindowEvent::Destroyed) {
-            identity.retire();
-            git_popup::retire(&handle, &identity);
+        match event {
+            tauri::WindowEvent::CloseRequested { api, .. } => {
+                // Alt+F4/OS close has the same draft-preserving meaning as Escape.
+                // Authorized physical retirement uses destroy(), not close().
+                api.prevent_close();
+                advance_presentation(&handle);
+                git_popup::dismiss(&handle, false);
+                let _ = retained.hide();
+            }
+            tauri::WindowEvent::Destroyed => {
+                identity.retire();
+                git_popup::retire(&handle, &identity);
+            }
+            _ => {}
         }
     });
 
+    #[cfg(target_os = "macos")]
     make_panel(&panel);
 
     // Keep the drop target visible when users switch apps to collect files.
@@ -910,6 +961,7 @@ fn show(app: &AppHandle, panel: &WebviewWindow) {
 }
 
 /// Restore focus without resetting a draft or moving the panel after capture.
+#[cfg(target_os = "macos")]
 fn present(panel: &WebviewWindow) {
     match crate::macos::ns_window(panel) {
         Some(ns_window) if is_panel(&ns_window) => {
@@ -947,6 +999,7 @@ fn place(app: &AppHandle, panel: &WebviewWindow) {
 /// A runtime `NSPanel` subclass rather than `define_class!`, because it has to
 /// carry Tao's `focusable` ivar: objc2 only re-classes an object into a class
 /// of exactly the same instance size, and Tao reads that ivar by name.
+#[cfg(target_os = "macos")]
 fn panel_class() -> Option<&'static AnyClass> {
     static CLASS: OnceLock<Option<&'static AnyClass>> = OnceLock::new();
     *CLASS.get_or_init(|| {
@@ -969,20 +1022,24 @@ fn panel_class() -> Option<&'static AnyClass> {
     })
 }
 
+#[cfg(target_os = "macos")]
 extern "C-unwind" fn can_become_key_window(_this: &AnyObject, _cmd: Sel) -> Bool {
     Bool::YES
 }
 
+#[cfg(target_os = "macos")]
 extern "C-unwind" fn can_become_main_window(_this: &AnyObject, _cmd: Sel) -> Bool {
     Bool::NO
 }
 
+#[cfg(target_os = "macos")]
 fn is_panel(ns_window: &NSWindow) -> bool {
     panel_class().is_some_and(|class| ns_window.isKindOfClass(class))
 }
 
 /// Swap Tao's window class for a non-activating panel subclass in place, the
 /// way tauri-nspanel does. Tao and wry keep their delegate and views.
+#[cfg(target_os = "macos")]
 fn make_panel(window: &WebviewWindow) {
     let Some(ns_window) = crate::macos::ns_window(window) else {
         return;
@@ -1058,7 +1115,12 @@ mod tests {
     fn quick_composer_shortcut_requires_a_non_shift_modifier() {
         let original = parse_shortcut(DEFAULT_SHORTCUT).unwrap();
         assert_eq!(original.key, Code::Space);
-        assert_eq!(original.mods, Modifiers::SUPER | Modifiers::SHIFT);
+        let primary = if cfg!(target_os = "macos") {
+            Modifiers::SUPER
+        } else {
+            Modifiers::CONTROL
+        };
+        assert_eq!(original.mods, primary | Modifiers::SHIFT);
         let custom = parse_shortcut("Control+Option+KeyK").unwrap();
         assert_eq!(custom.key, Code::KeyK);
         assert_eq!(custom.mods, Modifiers::CONTROL | Modifiers::ALT);
