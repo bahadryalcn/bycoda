@@ -53,6 +53,7 @@ const dirs = new Map<string, FsEntry[]>([
     ),
   ],
 ]);
+const remoteDown = new URLSearchParams(location.search).get("remote") === "down";
 const callbacks = new Map<number, (event: unknown) => void>(),
   listeners = new Map<string, number>();
 let nextId = 0;
@@ -79,6 +80,10 @@ Object.assign(window, {
     },
     unregisterCallback: (id: number) => callbacks.delete(id),
     invoke: async (command: string, args: Record<string, unknown> = {}) => {
+      // ?remote=down: every request to the machine fails the way an unreachable machine
+      // does, so no incidental answer ("the machine replied") clears the outage mid-test.
+      if (remoteDown && !command.startsWith("plugin:event|"))
+        throw new Error("Machine is unreachable");
       if (command === "read_binary_file")
         return (await fetch("/brand/bycoda-tasks.png")).arrayBuffer();
       if (command === "reveal_path" && operationState.hold)
