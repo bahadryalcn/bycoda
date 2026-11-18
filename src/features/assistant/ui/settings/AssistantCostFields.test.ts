@@ -35,6 +35,21 @@ it("keeps raw context-limit drafts mounted while technical sections are collapse
   }
   try {
     await act(async () => root.render(createElement(Form)));
+    const workerHeader = [...host.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent?.trim() === "Worker context limits",
+    )!;
+    expect(workerHeader.getAttribute("aria-expanded")).toBe("false");
+    await act(async () => workerHeader.click());
+    const workerBody = host.querySelector('[data-settings-part="advanced-content"]:not([hidden])')!;
+    for (const label of [
+      "Compact by token count",
+      "Start fresh by token count",
+      "Compact by context usage",
+      "Start fresh by context usage",
+    ]) {
+      expect(workerBody.querySelector(`input[aria-label="${label}"]`)).not.toBeNull();
+    }
+    await act(async () => workerHeader.click());
     const header = [...host.querySelectorAll<HTMLButtonElement>("button")].find(
       (button) => button.textContent?.trim() === "Supervisor limits",
     )!;

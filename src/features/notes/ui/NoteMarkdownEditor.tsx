@@ -4,7 +4,12 @@ import { indentWithTab, redo } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { openSearchPanel } from "@codemirror/search";
 import { Annotation, Compartment, EditorState, Prec, type Text } from "@codemirror/state";
-import { EditorView, keymap, lineNumbers, placeholder } from "@codemirror/view";
+import {
+  EditorView,
+  keymap,
+  lineNumbers,
+  placeholder as editorPlaceholder,
+} from "@codemirror/view";
 import { minimalSetup } from "codemirror";
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { MOD } from "../../../platform/tauri/platform";
@@ -108,6 +113,7 @@ export function NoteMarkdownEditor({
   showLineNumbers = true,
   onFocus,
   label,
+  placeholder,
   inputObserver,
   inputPublication,
   readOnly = false,
@@ -124,6 +130,7 @@ export function NoteMarkdownEditor({
   showLineNumbers?: boolean;
   onFocus?: () => void;
   label?: string;
+  placeholder?: string;
   inputObserver?: NativeInputObserver;
   inputPublication?: NativeInputPublication;
   /** Freeze edits while the owning save operation has an unresolved outcome. */
@@ -132,7 +139,7 @@ export function NoteMarkdownEditor({
   onRejectedInput?: (text: string) => void;
 }) {
   const translate = useT();
-  const placeholderText = translate("Write markdown…");
+  const placeholderText = placeholder ?? translate("Write markdown…");
   const editorLabel = label ?? translate("Note body");
   const hostRef = useRef<HTMLDivElement>(null);
   const scheme = useColorScheme();
@@ -186,7 +193,7 @@ export function NoteMarkdownEditor({
         EditorView.lineWrapping,
         markdown(),
         localeConfig.current.of([
-          placeholder(initial.current.placeholderText),
+          editorPlaceholder(initial.current.placeholderText),
           EditorView.contentAttributes.of({
             "aria-label": initial.current.editorLabel,
             spellcheck: "true",
@@ -424,7 +431,7 @@ export function NoteMarkdownEditor({
     const apply = () =>
       viewRef.current?.dispatch({
         effects: localeConfig.current.reconfigure([
-          placeholder(placeholderText),
+          editorPlaceholder(placeholderText),
           EditorView.contentAttributes.of({ "aria-label": editorLabel, spellcheck: "true" }),
         ]),
       });

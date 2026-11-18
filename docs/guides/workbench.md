@@ -571,9 +571,10 @@ If session ownership cannot be loaded, the saved source remains available with R
 
 ## Notes
 
-The note header keeps title, project and tags together. Session Notes saves automatically
-and shows Saved, Saving or Unsaved changes beside its Save button. Use Save or Ctrl/Cmd+S
-to save immediately. Closing the panel flushes pending changes; reopening resumes the
+In Session Notes, click the title in the top bar to rename the note. A new note opens
+with focus in its writing area, and tags are visible under the title. Session Notes
+saves automatically. Use Save in the bottom bar or Ctrl/Cmd+S to save immediately.
+Closing the panel flushes pending changes; reopening resumes the
 last note and preserves a failed draft. Private edits that still need review appear in
 a compact Review changes notice with Open note, Copy exact text and expandable recovery text.
 The library keeps its keyboard Save command and shows failures and recovery messages.

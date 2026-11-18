@@ -174,6 +174,32 @@ export const AnonymousPing = z.strictObject({
 });
 export type AnonymousPing = z.infer<typeof AnonymousPing>;
 
+/** Completed UTC days of opt-in Bycoda desktop usage. Costs use millionths of a USD. */
+export const AnonymousUsage = z.strictObject({
+  installId: z.uuid(),
+  days: z
+    .array(
+      z
+        .strictObject({
+          date: LocalDate,
+          tokens: z.number().int().min(1).max(10_000_000_000),
+          estimatedUsdMicros: z.number().int().min(0).max(10_000_000_000),
+          pricedTurns: z.number().int().min(0).max(50_000),
+          unpricedTurns: z.number().int().min(0).max(50_000),
+        })
+        .refine(
+          (day) =>
+            day.pricedTurns + day.unpricedTurns > 0 &&
+            day.pricedTurns + day.unpricedTurns <= 50_000 &&
+            (day.pricedTurns > 0 || day.estimatedUsdMicros === 0),
+        ),
+    )
+    .min(1)
+    .max(7)
+    .refine((days) => new Set(days.map((day) => day.date)).size === days.length),
+});
+export type AnonymousUsage = z.infer<typeof AnonymousUsage>;
+
 export const DataExportRequest = z.strictObject({ format: z.literal("json").default("json") });
 export type DataExportRequest = z.input<typeof DataExportRequest>;
 export const DataExport = z.object({

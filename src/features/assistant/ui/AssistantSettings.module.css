@@ -1,5 +1,8 @@
+/* Hallmark: Bycoda settings, with the existing canvas and room controls. */
+/* Keep the workspace behind the floating frame and the settings on one readable column. */
 .dialog {
-  block-size: min(760px, calc(100dvh - 48px));
+  max-inline-size: 48rem;
+  block-size: min(44rem, calc(100dvh - 32px));
 }
 .form {
   display: flex;
@@ -10,22 +13,18 @@
 }
 .navigation {
   flex: none;
-  padding: 0 20px 8px;
-  overflow-x: auto;
-  overscroll-behavior-inline: contain;
+  padding: var(--space-2) var(--space-4);
 }
 .tabs {
-  inline-size: max-content;
-  min-inline-size: 100%;
-  flex-wrap: nowrap;
+  inline-size: 100%;
 }
 .content {
   flex: 1;
   min-block-size: 0;
   min-inline-size: 0;
   overscroll-behavior: contain;
-  padding: 14px 20px 20px;
-  scroll-padding-block: 14px;
+  padding: var(--space-3) var(--space-4) var(--space-5);
+  scroll-padding-block: var(--space-3);
   container-type: inline-size;
 }
 /* Each tab holds titled settings groups; the groups own their spacing. `ownRows` marks the tabs
@@ -45,26 +44,14 @@
     max-inline-size: 24rem;
   }
 }
-/* Footer actions wrap when translated labels or discard feedback need another line. */
 .footer {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  inline-size: 100%;
-  min-inline-size: 0;
+  flex: none;
+  padding-inline: var(--space-4);
 }
-@media (max-width: 640px) {
-  .dialog {
-    block-size: calc(100dvh - 24px);
-  }
-  .navigation {
-    padding-inline: 12px;
-  }
+@media (max-width: 40rem) {
+  .navigation,
+  .footer,
   .content {
-    padding: 10px 12px 14px;
+    padding-inline: var(--space-3);
   }
-}
-/* Scopes the profile-row control width to one group without adding a layout box. */
-.rowsScope {
-  display: contents;
 }

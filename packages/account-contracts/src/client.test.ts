@@ -54,6 +54,7 @@ describe("route table", () => {
       "/v1/feedback/anonymous",
       "/v1/diagnostics/reports/anonymous",
       "/v1/anonymous/ping",
+      "/v1/anonymous/usage",
     ]);
   });
 

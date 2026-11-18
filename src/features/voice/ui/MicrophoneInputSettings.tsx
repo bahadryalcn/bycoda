@@ -73,10 +73,10 @@ export function MicrophoneInputSettings() {
     settings.microphoneId && !devices.some((device) => device.deviceId === settings.microphoneId);
   return (
     <>
-      <Row id="voice-microphone-input" label={t("Microphone")}>
+      <Row id="voice-microphone-input" label={t("Input device")}>
         <Select
           hideLabel
-          label={t("Microphone")}
+          label={t("Input device")}
           value={settings.microphoneId ?? ""}
           options={[
             { value: "", label: t("System default") },

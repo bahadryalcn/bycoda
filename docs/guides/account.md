@@ -138,6 +138,14 @@ and statistics stay off). When on, bycoda sends at most once a day a random inst
 app version, operating system, release channel and date, and nothing else. Without an account
 the same switch is in Settings → Privacy. Turning it off stops sending immediately.
 
+**Share anonymous token totals** has its own switch in Settings → Privacy and Account →
+Privacy & data. It starts off. When enabled, desktop sends completed UTC days of measured
+Bycoda turn usage since you enabled it, with a random installation ID. The service receives
+only dates, token totals, estimated API-equivalent USD and counts of priced and unpriced
+turns. It keeps the daily reports for 400 days. The estimate uses known rates and omits
+unpriced turns. Turning the switch off stops future reports. Desktop can catch up on up to
+seven days after an outage.
+
 ### Diagnostic logs
 
 **Share diagnostic logs** (Account → Privacy and data, and Settings → Privacy) has three

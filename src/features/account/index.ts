@@ -16,6 +16,7 @@ export { AnnouncementNotices } from "./ui/AnnouncementNotices";
 export { FeedbackDialog } from "./ui/FeedbackDialog";
 export { openFeedbackDialog } from "./model/feedbackDialog";
 export { StatsConsentNotice } from "./ui/StatsConsentNotice";
+export { AnonymousUsageSetting } from "./ui/AnonymousUsageSetting";
 export { ACCOUNT_CACHE_TTL_MS } from "./model/accountCache";
 export { accountApi, reportAccountFailure } from "./model/accountApi";
 export { accountNotificationsPort } from "./model/notificationsPort";

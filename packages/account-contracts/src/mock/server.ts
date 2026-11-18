@@ -411,6 +411,7 @@ const handlers: Record<RouteName, Handler> = {
   anonymousPing: ({ state, body }) => {
     state.pings.push(body);
   },
+  anonymousUsage: () => undefined,
 };
 
 /** Routes a deactivated account may still call (everything else answers `account_deactivated`). */

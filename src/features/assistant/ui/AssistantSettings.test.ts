@@ -395,21 +395,28 @@ function titles(id: string) {
 
 it("offers four tabs: Personal, Work, Access and Advanced", async () => {
   await render();
-  const tabs = [...document.querySelectorAll('[role="tab"]')].map((node) => node.textContent);
-  expect(tabs).toEqual(["Personal", "Work", "Access", "Advanced"]);
+  const tabs = [...document.querySelectorAll('[role="tab"]')];
+  expect(tabs.map((node) => node.textContent)).toEqual(["Personal", "Work", "Access", "Advanced"]);
   expect(document.querySelectorAll("[data-settings-page]")).toHaveLength(4);
+  for (const tab of tabs) {
+    const panel = document.getElementById(tab.getAttribute("aria-controls")!);
+    expect(panel?.getAttribute("role")).toBe("tabpanel");
+    expect(panel?.getAttribute("aria-labelledby")).toBe(tab.id);
+  }
+  await press("Work");
+  expect(page("personal").hidden).toBe(true);
+  expect(page("work").hidden).toBe(false);
 });
 
 it("groups every setting under the tab that answers its question", async () => {
   await render();
   expect(titles("personal")).toEqual(["Identity", "Conversation"]);
   expect(sections("personal")).toEqual(["language", "personality", "behavior"]);
-  expect(titles("work")).toEqual(["Models", "Presence and hours"]);
+  expect(titles("work")).toEqual(["Work limits", "Presence and hours"]);
   expect(sections("work")).toEqual(["budget", "presence", "notifications"]);
   expect(titles("access")).toEqual([
-    "Access",
+    "Permissions",
     "Customize access",
-    "Job permissions",
     "Folders and commands",
     "Computer use",
     "Manual session supervision",
@@ -431,11 +438,24 @@ it("shows the permission picker only once a worker execution exists", async () =
 });
 
 it("links to Models roles without a pool editor or writable pool request", async () => {
-  await render();
+  const { onClose } = await render();
+  await press("Work");
   await press("Manage models");
+  expect(onClose).toHaveBeenCalledOnce();
   expect(openModelsSettings).toHaveBeenCalledWith("roles");
   expect(mock.request.mock.calls.some(([input]) => input.op === "models.pool.set")).toBe(false);
   expect(control("Add model")).toBeUndefined();
+});
+
+it("keeps a profile draft when the owner cancels navigation to Models", async () => {
+  const { onClose } = await render();
+  await press("Rename assistant");
+  await press("Work");
+  await press("Manage models");
+  expect(openModelsSettings).not.toHaveBeenCalled();
+  await press("Keep editing");
+  expect(onClose).not.toHaveBeenCalled();
+  expect(control("Save")!.disabled).toBe(false);
 });
 
 it("keeps preset grants selected while customizing and preserves the mounted owners", async () => {

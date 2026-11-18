@@ -4,7 +4,7 @@ import { Badge } from "../../../shared/ui/Badge";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Button } from "../../../shared/ui/Button";
 import { t } from "../../../shared/i18n";
-import { Row } from "../../../shared/ui/settings";
+import { AdvancedSettings, Row } from "../../../shared/ui/settings";
 import { MicrophoneRecoveryAction } from "./MicrophoneRecoveryAction";
 import {
   isMicrophoneBlocked,
@@ -101,7 +101,6 @@ export function MicrophonePermissionSettings() {
               ));
   return (
     <>
-      <PermissionRow id="microphone" />
       <Row
         id="speech-microphone"
         label={t("Microphone access")}
@@ -141,6 +140,9 @@ export function MicrophonePermissionSettings() {
         ) : null}
         <MicrophoneRecoveryAction message={blocked ? microphoneBlockedMessage() : error} />
       </Row>
+      <AdvancedSettings title={t("Permissions")} settingIds={["permission-microphone"]} keepMounted>
+        <PermissionRow id="microphone" />
+      </AdvancedSettings>
     </>
   );
 }

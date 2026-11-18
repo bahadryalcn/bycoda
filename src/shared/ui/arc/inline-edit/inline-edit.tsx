@@ -55,8 +55,8 @@ export interface InlineEditProps {
   placeholder?: string;
   /** Wraps onto several lines and grows in height. Enter still saves; Shift+Enter adds a line break. */
   multiline?: boolean;
-  /** `title` for names and headings, `body` for descriptions. */
-  variant?: "title" | "body";
+  /** `title` for headings, `compact-title` for pane headers, `body` for descriptions. */
+  variant?: "title" | "compact-title" | "body";
   /** The element that holds the text, so a title can stay a heading. */
   as?: "span" | "p" | "h1" | "h2" | "h3";
   className?: string;

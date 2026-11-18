@@ -41,7 +41,7 @@ for (const theme of ["light", "dark"]) {
 for (const theme of ["light", "dark"]) {
   for (const width of [320, 800, 1280]) {
     test(`dictation stress settings ${theme} ${width}`, async ({ page }) => {
-      const output = join(process.cwd(), "temp/verification/voice-dictation-parity");
+      const output = join(process.cwd(), "temp/verification/assistant-settings-simplify/dictation");
       await mkdir(output, { recursive: true });
       await page.setViewportSize({ width, height: 1000 });
       const errors: string[] = [];
@@ -87,12 +87,14 @@ for (const theme of ["light", "dark"]) {
 for (const theme of ["light", "dark"]) {
   for (const width of [800, 1280]) {
     test(`dictation stress local models and microphone ${theme} ${width}`, async ({ page }) => {
-      const output = join(process.cwd(), "temp/verification/voice-dictation-parity");
+      const output = join(process.cwd(), "temp/verification/assistant-settings-simplify/dictation");
       await mkdir(output, { recursive: true });
       await page.setViewportSize({ width, height: 1000 });
       await page.goto(
         `/tests/browser/voice/dictation-permissions.html?theme=${theme}&stress=1&surface=settings&engine=local&recording-fixture=1`,
       );
+      await expect(page.getByText("Whisper Small", { exact: true })).not.toBeVisible();
+      await page.getByRole("button", { name: "Transcription models", exact: true }).click();
       await expect(page.getByText("Whisper Small", { exact: true })).toBeVisible();
       await expect(page.getByText("Whisper large-v3-turbo", { exact: true })).toBeVisible();
       await expect(page.getByText("Dictation is ready", { exact: true })).toBeVisible();
@@ -128,6 +130,7 @@ for (const state of ["error", "loading", "working"]) {
     await page.goto(
       `/tests/browser/voice/dictation-permissions.html?stress=1&surface=settings&engine=local&models=${state}`,
     );
+    await page.getByRole("button", { name: "Transcription models", exact: true }).click();
     await expect(
       page.getByText(
         state === "error"

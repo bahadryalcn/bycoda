@@ -35,6 +35,8 @@ export function NoteEditablePreview({
   stateObserver,
   canMutate,
   readOnly = false,
+  writeOnBlank = false,
+  onRejectedInput,
 }: {
   value: string;
   cwd?: string;
@@ -49,6 +51,9 @@ export function NoteEditablePreview({
   stateObserver?: NativeInputObserver;
   canMutate?: () => boolean;
   readOnly?: boolean;
+  /** Keep a full-height writing area ready in the session dock's blank document. */
+  writeOnBlank?: boolean;
+  onRejectedInput?: (text: string) => void;
 }) {
   const t = useT();
   const previewRoot = useRef<HTMLDivElement>(null);
@@ -63,7 +68,13 @@ export function NoteEditablePreview({
   const callbacks = useRef({ onEditingChange });
   callbacks.current = { onEditingChange };
   // A source edit or host update invalidates the selected source range.
-  const currentActive = localValue.current === value ? active : null;
+  const blank = writeOnBlank && !value.trim();
+  const currentActive =
+    (localValue.current === value ? active : null) ??
+    (blank
+      ? { from: 0, to: value.length, preview: value, previewFrom: 0, previewTo: value.length }
+      : null);
+  const writingCanvas = writeOnBlank && currentActive?.preview.trim() === "";
   const inputState = useRef({ value, active: currentActive });
   useLayoutEffect(() => {
     inputState.current = { value, active: currentActive };
@@ -209,20 +220,28 @@ export function NoteEditablePreview({
   );
 
   return (
-    <div ref={previewRoot} data-note-preview className="min-w-0 select-text">
+    <div
+      ref={previewRoot}
+      data-note-preview
+      data-note-writing-canvas={writingCanvas || undefined}
+      className="min-w-0 select-text"
+    >
       {currentActive ? (
         <>
           {before}
           <div
-            {...surfaceAttributes({ radius: "control", variant: "selected" }, "note-active-block")}
+            {...(writingCanvas
+              ? { className: "note-writing-area" }
+              : surfaceAttributes({ radius: "control", variant: "selected" }, "note-active-block"))}
           >
             <NoteMarkdownEditor
               readOnly={readOnly}
               inputObserver={inputObserver}
               viewRef={viewRef}
               value={value.slice(currentActive.from, currentActive.to)}
-              autoFocus
-              minHeight={24}
+              autoFocus={!writingCanvas}
+              minHeight={writingCanvas ? 0 : 24}
+              placeholder={writingCanvas ? t("Start writing") : undefined}
               showLineNumbers={false}
               onFocus={onFocus}
               onChange={(next) => {
@@ -235,29 +254,42 @@ export function NoteEditablePreview({
                 );
                 localValue.current = updated;
                 setActive({ ...currentActive, to: currentActive.from + next.length });
+                if (!active) onEditingChange(true);
                 onChange(updated);
               }}
+              onRejectedInput={
+                onRejectedInput
+                  ? (next) =>
+                      onRejectedInput(
+                        replacePreviewBlock(value, currentActive.from, currentActive.to, next),
+                      )
+                  : undefined
+              }
               onSave={onSave}
               onPasteImages={onPasteImages}
             />
-            <Button
-              variant="ghost"
-              size="sm"
-              type="button"
-              className="note-edit-block"
-              onClick={finish}
-            >
-              {t("Read document")}
-            </Button>
+            {(!writingCanvas || !blank) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                type="button"
+                className="note-edit-block"
+                onClick={finish}
+              >
+                {t("Read document")}
+              </Button>
+            )}
           </div>
           {after}
         </>
       ) : (
         before
       )}
-      <Button variant="ghost" size="sm" type="button" className="note-add-block" onClick={append}>
-        {value.trim() ? t("Add text") : t("Start writing")}
-      </Button>
+      {(!writeOnBlank || !currentActive) && (
+        <Button variant="ghost" size="sm" type="button" className="note-add-block" onClick={append}>
+          {value.trim() ? t("Add text") : t("Start writing")}
+        </Button>
+      )}
     </div>
   );
 }

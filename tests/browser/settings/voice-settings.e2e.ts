@@ -59,7 +59,7 @@ for (const [theme, width] of [
     page,
   }) => {
     const region = await openVoice(page, "ready", theme, width);
-    const output = join(process.cwd(), "temp/verification/voice-settings-layout-20261113/after");
+    const output = join(process.cwd(), "temp/verification/assistant-settings-simplify/voice");
     await mkdir(output, { recursive: true });
     const capture = async (name: string) => {
       await page.mouse.move(0, 0);
@@ -71,12 +71,25 @@ for (const [theme, width] of [
     await expect(region.getByText("Voice is ready", { exact: true })).toBeVisible();
     await assertVoiceRows(region);
     await capture("top");
+    const wake = region.locator('[data-setting-id="voice-wake"]').getByRole("switch");
+    const wakeField = region.locator('[data-setting-id="voice-wake-phrase"]').getByRole("textbox");
+    await expect(wake).toBeInViewport();
+    await expect(wakeField).not.toBeVisible();
+    await wake.check();
+    await wakeField.fill("Hey Arif");
+    await wakeField.press("Enter");
+    await expect(wakeField).toHaveValue("Hey Arif");
+    await wakeField.scrollIntoViewIfNeeded();
+    await capture("wake-phrase");
+    await wake.uncheck();
+    await expect(wakeField).not.toBeVisible();
     await region.locator('[data-setting-id="voice-persona"]').scrollIntoViewIfNeeded();
     await capture("bottom");
     for (const title of [
       "Voice options",
+      "Transcription models",
       "Dictation options",
-      "Sleep and wake",
+      "When you step away",
       "Appearance and voice style",
     ])
       await region.getByRole("button", { name: new RegExp(`^${title}`) }).click();
@@ -99,6 +112,16 @@ for (const [theme, width] of [
         return !!hit && (hit === element || element.contains(hit));
       }),
     ).toBe(true);
+    await region.getByRole("button", { name: "Customize", exact: true }).click();
+    const style = page.getByRole("dialog", { name: "Voice style", exact: true });
+    await expect(style).toBeVisible();
+    await capture("voice-style");
+    await style
+      .locator("summary")
+      .filter({ hasText: /^Tasks$/ })
+      .click();
+    await capture("voice-style-tasks");
+    await style.getByRole("button", { name: "Cancel", exact: true }).click();
     await region.getByRole("button", { name: /^Reply voice:/ }).click();
     await expect(page.getByRole("listbox")).toBeVisible();
     const popup = (await page.getByRole("listbox").boundingBox())!;
@@ -197,6 +220,16 @@ async function openVoice(page: Page, fixture: string, theme = "dark", width = 12
     .locator(".settings-topics")
     .filter({ has: page.locator('[data-setting-id="voice-companion"]') });
 }
+
+test("settings search takes wake up to voice activation", async ({ page }) => {
+  const region = await openVoice(page, "ready");
+  await page.getByRole("button", { name: "Search settings", exact: true }).click();
+  const search = page.getByRole("combobox", { name: "Search settings", exact: true });
+  await search.fill("wake up");
+  await expect(page.getByRole("option").first()).toContainText("Wake and sleep phrases");
+  await search.press("Enter");
+  await expect(region.locator('[data-setting-id="voice-wake"]').getByRole("switch")).toBeFocused();
+});
 
 for (const theme of ["light", "dark"]) {
   for (const width of [390, 1280]) {

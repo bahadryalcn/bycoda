@@ -2,6 +2,7 @@ import { useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { DIAGNOSTIC_RETENTION_DAYS } from "@bycoda/account-contracts";
 import {
+  AnonymousUsageSetting,
   isAnonymousStatsEnabled,
   setAnonymousStatsEnabled,
   subscribeAnonymousStats,
@@ -96,6 +97,7 @@ export function PrivacyStartupSettings() {
             onChange={setAnonymousStatsEnabled}
           />
         </Row>
+        <AnonymousUsageSetting />
         <Row
           label={t("Share diagnostic logs")}
           description={t(

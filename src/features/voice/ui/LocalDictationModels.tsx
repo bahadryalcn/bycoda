@@ -2,8 +2,8 @@ import { VoicePreferenceRow as Row } from "./VoicePreferenceRow";
 import { useEffect, useRef, useState } from "react";
 import { t } from "../../../shared/i18n";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
+import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
-import { TextField } from "../../../shared/ui/TextField";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { SettingsFeedback } from "../../../shared/ui/settings";
@@ -25,7 +25,6 @@ export function LocalDictationModels({
 }) {
   const [models, setModels] = useState<LocalDictationModel[]>([]);
   const [job, setJob] = useState<LocalModelJob>({ state: "idle" });
-  const [filter, setFilter] = useState("");
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -127,9 +126,6 @@ export function LocalDictationModels({
       setError(t("Could not request cancellation. Try again."));
     }
   }
-  const visible = models.filter((model) =>
-    model.label.toLowerCase().includes(filter.toLowerCase()),
-  );
   return (
     <>
       {dialog}
@@ -150,20 +146,17 @@ export function LocalDictationModels({
           ) : undefined
         }
       >
-        <TextField
-          label={t("Filter models")}
-          hideLabel
-          placeholder={t("Filter models")}
-          value={filter}
-          onChange={(event) => setFilter(event.target.value)}
-        />
-        <Button
-          variant="ghost"
-          disabled={busy || !settings.dictationLocalModelPath}
-          onClick={() => change({ dictationLocalModelPath: "" })}
-        >
-          {t("Automatic")}
-        </Button>
+        {settings.dictationLocalModelPath ? (
+          <Button
+            variant="ghost"
+            disabled={busy}
+            onClick={() => change({ dictationLocalModelPath: "" })}
+          >
+            {t("Use automatic selection")}
+          </Button>
+        ) : (
+          <Badge size="xs">{t("Automatic")}</Badge>
+        )}
         {error ? (
           <Button
             variant="ghost"
@@ -197,15 +190,10 @@ export function LocalDictationModels({
         ) : null}
       </Row>
       {loading ? <LoadingText>{t("Loading models…")}</LoadingText> : null}
-      {!loading && !error && !visible.length ? (
-        <EmptyState
-          size="inline"
-          kind="filtered"
-          description={t("No matching models")}
-          onReset={() => setFilter("")}
-        />
+      {!loading && !error && !models.length ? (
+        <EmptyState size="inline" description={t("No local transcription models found.")} />
       ) : null}
-      {visible.map((model) => (
+      {models.map((model) => (
         <Row
           key={model.id}
           id={`dictation-local-${model.id}`}

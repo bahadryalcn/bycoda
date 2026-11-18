@@ -1,9 +1,12 @@
 # Voice companion
 
-In **Settings > Voice assistant**, voice and dictation have separate groups.
-Core voice controls and speaker selection stay visible. The dictation group shows
-language, recognition provider, model and shortcut mode. Dictionary, text cleanup
-and processing options open separately. **Sleep and wake** holds idle sleep, return calls and wake phrases.
+In **Settings > Voice assistant**, **Voice conversations** puts the conversation
+switch and wake phrase together. **Microphone** contains the input device, test
+recording and access check. Expand **Permissions** for system access and recovery.
+**Voice engine** selects how the assistant hears and replies. The **Dictation**
+group shows language, recognition, and shortcut mode. Expand **Transcription models**
+to manage local models. Dictionary, text cleanup and processing options open
+separately. **When you step away** holds idle sleep and return calls.
 **Advanced turn detection** contains the optional OpenAI detector. **Appearance and
 voice style** contains visual previews and the style editor. These sections retain
 their drafts and settings while closed. Opening them never starts capture.
@@ -14,7 +17,7 @@ visible; optional explanations are under the information buttons.
 
 ## Dictation controls
 
-Choose **Microphone** independently of assistant setup. **Record test** records up
+Choose an **Input device** independently of assistant setup. **Record test** records up
 to ten seconds locally; **Play recording** lets you hear the input. Audio is never
 transcribed or uploaded by this test. Discarding, changing microphones or leaving
 the screen releases capture and removes the recording.
@@ -33,8 +36,8 @@ dictionary. Existing drafts are not rewritten when a dictionary entry changes.
 Dictionary edits and invalid wake/sleep phrase drafts survive navigation and closing Settings
 for this window. Save or Cancel clears the dictionary draft. A failed dictionary or voice-style
 save keeps the editor open; retry the same action. Automatic preferences retain their saved
-value and show Retry beside the failed setting. Search results for disabled dictation controls
-explain the prerequisite and focus its switch without enabling dictation or starting capture.
+value and show Retry beside the failed setting. Search results for disabled dictation
+controls and wake/sleep phrases explain the prerequisite and can focus its switch.
 
 **Clean up dictated text** is off by default. When enabled, it sends the recognized
 phrase and your cleanup instructions to a separate Codex utility turn. Surrounding
@@ -945,7 +948,7 @@ before cloud connection seeding. Missing registration or an uncertain reply keep
 the provider disconnected. Privacy revocation waits for that exact runtime's
 closure; reopening the panel does not prove an old connection has closed.
 
-**Wake and sleep phrases** (Settings → Voice assistant → Conversation style, off by
+**Wake and sleep phrases** (Settings → Voice assistant → Voice conversations, off by
 default) let you open and close the conversation by voice. While no conversation is
 open, the desktop is unlocked and you are not Away or on Do not disturb, the
 microphone listens on this computer only for your wake phrase, and a visible

@@ -319,6 +319,36 @@ export function turnDimensions(
   };
 }
 
+/** Converts supported provider turn counters into disjoint token buckets. */
+export function meteredTurnUsage(turn: UsageTurn, pricing: UsagePricing) {
+  const { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens } = turn;
+  const cacheRead = cacheReadTokens ?? 0;
+  const cacheWrite = cacheWriteTokens ?? 0;
+  if (
+    inputTokens == null ||
+    outputTokens == null ||
+    ![inputTokens, outputTokens, cacheRead, cacheWrite].every(
+      (n) => Number.isFinite(n) && n >= 0,
+    ) ||
+    !["claude", "codex"].includes(turn.provider)
+  )
+    return null;
+  const input = Math.max(0, inputTokens - (turn.provider === "codex" ? cacheRead : 0));
+  const usage: UsageRow = {
+    slot: turn.startedAt / 1000,
+    model: turn.model,
+    project: turn.project,
+    input,
+    output: outputTokens,
+    cacheRead,
+    cacheWrite5m: cacheWrite,
+    cacheWrite1h: 0,
+  };
+  // Turn metrics do not retain Claude cache-write TTL.
+  const cost = turn.provider === "claude" && cacheWrite > 0 ? null : rowCost(usage, pricing);
+  return { input, output: outputTokens, cacheRead, cacheWrite, cost };
+}
+
 /** Runtime uses measured finished intervals only. Missing/live durations are not guessed. */
 export function durationSamples(
   turns: readonly UsageTurn[],
@@ -390,42 +420,19 @@ export function sessionUsage(
       turn.durationMs != null &&
       turn.durationMs >= 0 &&
       turn.startedAt >= window.start &&
-      end <= window.end &&
-      turn.inputTokens != null &&
-      turn.outputTokens != null &&
-      [
-        turn.inputTokens,
-        turn.outputTokens,
-        turn.cacheReadTokens ?? 0,
-        turn.cacheWriteTokens ?? 0,
-      ].every((n) => Number.isFinite(n) && n >= 0) &&
-      ["claude", "codex"].includes(turn.provider)
+      end <= window.end
     ) {
-      const input = Math.max(
-        0,
-        turn.inputTokens - (turn.provider === "codex" ? (turn.cacheReadTokens ?? 0) : 0),
-      );
-      const usage: UsageRow = {
-        slot: turn.startedAt / 1000,
-        model: turn.model,
-        project: turn.project,
-        input,
-        output: turn.outputTokens,
-        cacheRead: turn.cacheReadTokens ?? 0,
-        cacheWrite5m: turn.cacheWriteTokens ?? 0,
-        cacheWrite1h: 0,
-      };
-      // Turn metrics do not retain Claude cache-write TTL; do not invent a write price.
-      const cost =
-        turn.provider === "claude" && usage.cacheWrite5m > 0 ? null : rowCost(usage, pricing);
-      row.meteredTurns++;
-      row.input += input;
-      row.output += usage.output;
-      row.cacheRead += usage.cacheRead;
-      row.cacheWrite += usage.cacheWrite5m;
-      row.tokens += input + usage.output + usage.cacheRead + usage.cacheWrite5m;
-      row.cost += cost ?? 0;
-      if (cost === null) row.unpricedTurns++;
+      const usage = meteredTurnUsage(turn, pricing);
+      if (usage) {
+        row.meteredTurns++;
+        row.input += usage.input;
+        row.output += usage.output;
+        row.cacheRead += usage.cacheRead;
+        row.cacheWrite += usage.cacheWrite;
+        row.tokens += usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
+        row.cost += usage.cost ?? 0;
+        if (usage.cost === null) row.unpricedTurns++;
+      }
     }
     sessions.set(turn.sessionId, row);
   }

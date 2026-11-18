@@ -3,6 +3,7 @@ import { InlineError } from "../../../shared/ui/InlineError";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Combobox } from "../../../shared/ui/Combobox";
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { TextField } from "../../../shared/ui/TextField";
@@ -64,6 +65,27 @@ export function VoicePersonaDialog({
       duties: on ? [...draft.duties, duty] : draft.duties.filter((value) => value !== duty),
     });
   const welcome = purpose === "welcome";
+  const tasks = (
+    <FieldGroup legend={t("Tasks")} hideLegend={styleOnly} gap="sm">
+      <div className={styles.choices}>
+        {Object.entries(PERSONA_DUTIES).map(([duty, { label }]) => (
+          <Checkbox
+            key={duty}
+            label={t(label)}
+            checked={draft.duties.includes(duty)}
+            onChange={(event) => toggleDuty(duty, event.target.checked)}
+          />
+        ))}
+      </div>
+      <TextField
+        label={t("Other tasks")}
+        value={draft.customDuties}
+        placeholder={t("Other tasks, in your own words")}
+        maxLength={PERSONA_LIMITS.customDuties}
+        onChange={(event) => change({ customDuties: event.target.value })}
+      />
+    </FieldGroup>
+  );
   return (
     <Modal
       title={
@@ -76,7 +98,7 @@ export function VoicePersonaDialog({
       description={
         welcome
           ? t("Pick a few options or write your own. You can change them later in Settings.")
-          : t("Choose how your voice companion introduces itself and talks to you.")
+          : undefined
       }
       size="md"
       onClose={onClose}
@@ -155,29 +177,13 @@ export function VoicePersonaDialog({
             onValueChange={(tone) => change({ tone: tone.slice(0, PERSONA_LIMITS.tone) })}
           />
         </div>
-        <FieldGroup className={styles.duties} legend={t("Tasks")} gap="sm">
-          <div className={styles.choices}>
-            {Object.entries(PERSONA_DUTIES).map(([duty, { label }]) => (
-              <Checkbox
-                key={duty}
-                className={styles.choice}
-                size="body"
-                tone="primary"
-                label={t(label)}
-                checked={draft.duties.includes(duty)}
-                onChange={(event) => toggleDuty(duty, event.target.checked)}
-              />
-            ))}
-          </div>
-          <TextField
-            label={t("Other tasks")}
-            hideLabel
-            value={draft.customDuties}
-            placeholder={t("Other tasks, in your own words")}
-            maxLength={PERSONA_LIMITS.customDuties}
-            onChange={(event) => change({ customDuties: event.target.value })}
-          />
-        </FieldGroup>
+        {styleOnly ? (
+          <Disclosure variant="row" chevron="end" summary={t("Tasks")}>
+            {tasks}
+          </Disclosure>
+        ) : (
+          tasks
+        )}
         {!styleOnly ? (
           <TextareaField
             label={t("Ground rules")}
@@ -197,13 +203,8 @@ export function VoicePersonaDialog({
   );
 }
 
-/** One line for Settings: the chosen name and tone, or the default. */
+/** The local label used before the shared assistant profile is available. */
 export function voicePersonaSummary(persona: VoicePersona): string {
   if (persona.status !== "configured") return t("Default companion");
-  const name = persona.name.trim() || "bycoda";
-  const tone = persona.tone.trim();
-  const toneLabel = Object.prototype.hasOwnProperty.call(PERSONA_TONES, tone)
-    ? t(PERSONA_TONES[tone as keyof typeof PERSONA_TONES].label)
-    : tone;
-  return toneLabel ? `${name} · ${toneLabel}` : name;
+  return persona.name.trim() || "bycoda";
 }

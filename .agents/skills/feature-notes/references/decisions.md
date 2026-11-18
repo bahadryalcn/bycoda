@@ -20,3 +20,10 @@ Owner request, 2026-11-12:
 The library editor autosaves silently: no Save button, no saved/unsaved/saving
 text; failures, conflicts and recovery still show. The header "..." popover shows
 details only; deletion stays in the library context menu and selection mode.
+
+Owner request, 2026-11-19:
+
+> aşağıda saved yazıyor karşısında save yazıyor
+
+The session dock keeps manual Save in the action bar and omits routine autosave
+status. The Save control shows pending work, and errors still offer recovery.

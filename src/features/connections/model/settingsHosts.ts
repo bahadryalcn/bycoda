@@ -159,7 +159,13 @@ export function chooseSettingsHost(
   return { entry, missing: !entry };
 }
 
-export type SettingsHostOption = { value: string; label: string; disabled?: boolean };
+export type SettingsHostOption = {
+  value: string;
+  label: string;
+  disabled?: boolean;
+  /** The machine's live state; absent for a machine that was removed. */
+  status?: SettingsHostStatus;
+};
 
 const STATUS_TAG: Record<SettingsHostStatus, () => string | undefined> = {
   connected: () => undefined,
@@ -173,7 +179,11 @@ const STATUS_TAG: Record<SettingsHostStatus, () => string | undefined> = {
 export function settingsHostOptions(entries: readonly SettingsHostEntry[]): SettingsHostOption[] {
   return entries.map((entry) => {
     const tag = STATUS_TAG[entry.status]();
-    return { value: entry.id, label: tag ? `${entry.name} · ${tag}` : entry.name };
+    return {
+      value: entry.id,
+      label: tag ? `${entry.name} · ${tag}` : entry.name,
+      status: entry.status,
+    };
   });
 }
 

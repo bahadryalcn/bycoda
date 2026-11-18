@@ -31,26 +31,6 @@ export function AssistantCostInfo() {
       </Text>
       <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
         {t(
-          "Reservations guide local scheduling. Provider charges are not capped when usage or output limits are unavailable.",
-        )}
-      </Text>
-      <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
-        {t(
-          "Claude utility requests include an output token allowance. Codex uses a local text limit because its integration cannot set an output token limit. These are not total billing caps.",
-        )}
-      </Text>
-      <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
-        {t(
-          "These limits estimate retained text. Summaries, daily renewal, review reservations and a 1 MB safety limit can shorten it earlier. They do not guarantee the provider's context window or charges.",
-        )}
-      </Text>
-      <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
-        {t(
-          "Messages to workers also use the worker's context. Unknown usage is not counted as zero.",
-        )}
-      </Text>
-      <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
-        {t(
           "Worker limits use the first threshold reached: token count or percentage of the provider context window.",
         )}
       </Text>
@@ -92,16 +72,30 @@ export function AssistantCostFields({
       {number("chiefWakeLimit", "Supervisor reviews", 1, 120, policy.chiefWakeLimit, "/hour")}
       {number("nudgeLimit", "Follow-ups", 0, 2, policy.nudgeLimit, "before recovery")}
       {number("summaryRefreshMessages", "Summary every", 10, 200, 20, "messages")}
-      {number("perWakeTokenCap", "Review reservation", 1000, 1_000_000, undefined, "tokens")}
-      {number("chiefSoftContext", "Compact at", 10_000, 1_000_000, undefined, "tokens")}
-      {number("chiefHardContext", "Renew at", 20_000, 2_000_000, undefined, "tokens")}
+      {number("perWakeTokenCap", "Reserve per review", 1000, 1_000_000, undefined, "tokens")}
+      {number(
+        "chiefSoftContext",
+        "Compact supervisor context",
+        10_000,
+        1_000_000,
+        undefined,
+        "tokens",
+      )}
+      {number(
+        "chiefHardContext",
+        "Restart supervisor context",
+        20_000,
+        2_000_000,
+        undefined,
+        "tokens",
+      )}
     </>
   );
   const workerLimits = (
     <>
       {number(
         "workerSoftContext",
-        "Worker compact at",
+        "Compact by token count",
         10000,
         999999,
         workerContext.workerSoftContext,
@@ -109,7 +103,7 @@ export function AssistantCostFields({
       )}
       {number(
         "workerHardContext",
-        "Worker fresh session at",
+        "Start fresh by token count",
         10001,
         1000000,
         workerContext.workerHardContext,
@@ -117,7 +111,7 @@ export function AssistantCostFields({
       )}
       {number(
         "workerCompactPercent",
-        "Worker compact at",
+        "Compact by context usage",
         1,
         98,
         workerContext.workerCompactPercent,
@@ -125,7 +119,7 @@ export function AssistantCostFields({
       )}
       {number(
         "workerHandoffPercent",
-        "Worker fresh session at",
+        "Start fresh by context usage",
         2,
         99,
         workerContext.workerHandoffPercent,

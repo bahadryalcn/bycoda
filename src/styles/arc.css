@@ -523,11 +523,6 @@ html[data-control-density="touch"] .bycoda-arc-switch {
   --control-height-md: var(--ui-control-height-compact);
   flex: 1;
 }
-.bycoda-note-inline-title {
-  padding: var(--space-2) var(--space-3);
-  border-block-end: 1px solid var(--border);
-  flex-shrink: 0;
-}
 .bycoda-image-comparison {
   inline-size: min(100%, 80rem);
   block-size: 100%;

@@ -46,20 +46,19 @@ export function SessionNoteDocument({
 }) {
   useLocale();
   const [previewEditing, setPreviewEditing] = useState(false);
+  const documentEditing = previewEditing || !body.trim();
   const { detailRef, visibleMode, modeRef, setMode, setToolbarTarget } = useNoteEditorMode(
     `session-dock:${noteId}`,
-    previewEditing,
+    documentEditing,
   );
   const editorViewRef = useRef<EditorView | null>(null);
   const previewViewRef = useRef<EditorView | null>(null);
   const previewRangeRef = useRef<{ from: number; to: number } | null>(null);
-  const previewEditingRef = useRef(previewEditing);
-  previewEditingRef.current = previewEditing;
 
   // Selection reads the editor on screen: the active Document block, else Source.
   selectionRef.current = () => {
     const view =
-      modeRef.current === "preview" && previewEditingRef.current
+      modeRef.current === "preview"
         ? previewViewRef.current
         : modeRef.current === "source"
           ? editorViewRef.current
@@ -68,12 +67,13 @@ export function SessionNoteDocument({
     return view && range && !range.empty ? view.state.sliceDoc(range.from, range.to) : "";
   };
 
-  // oxlint-disable-next-line bycoda/effect-names-its-sync -- moves DOM focus into the CodeMirror view when the dock requests it (new or switched note); Document starts from its own "Start writing" control
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- routes requested dock focus to the visible CodeMirror editor
   useEffect(() => {
-    if (!autoFocus) return;
-    if (modeRef.current === "source") editorViewRef.current?.focus();
+    if (!autoFocus || readOnly) return;
+    const view = visibleMode === "source" ? editorViewRef.current : previewViewRef.current;
+    view?.focus();
     onFocused();
-  }, [autoFocus, onFocused, modeRef]);
+  }, [autoFocus, onFocused, readOnly, visibleMode]);
 
   const toolbarView: MutableRefObject<EditorView | null> =
     visibleMode === "preview" ? previewViewRef : editorViewRef;
@@ -91,7 +91,7 @@ export function SessionNoteDocument({
           </TabList>
           <NoteMarkdownToolbar
             viewRef={toolbarView}
-            editing={visibleMode !== "preview" || previewEditing}
+            editing={visibleMode !== "preview" || documentEditing}
           />
         </div>
         <TabPanel
@@ -124,6 +124,7 @@ export function SessionNoteDocument({
               hidden={visibleMode === "source"}
             >
               <NoteEditablePreview
+                writeOnBlank
                 stateObserver={inputOwner.observer("preview-state")}
                 inputObserver={inputOwner.observer("preview-block")}
                 canMutate={inputOwner.allowed}
@@ -135,6 +136,7 @@ export function SessionNoteDocument({
                 onEditingChange={setPreviewEditing}
                 onFocus={() => setToolbarTarget("preview")}
                 onChange={onChange}
+                onRejectedInput={onRejectedInput}
                 onSave={onSave}
               />
             </NoteEditorPane>

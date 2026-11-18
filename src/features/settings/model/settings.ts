@@ -915,6 +915,14 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
       "voice speech microphone whisper voxcpm python models ses konuşma mikrofon sesli model kurulum",
   },
   {
+    id: "voice-wake",
+    section: "voice",
+    get label() {
+      return t("Wake and sleep phrases");
+    },
+    keywords: "wake up wake word wake phrase voice activation uyandırma komutu uyandırma sözcüğü",
+  },
+  {
     id: "anchor-prompts",
     section: "chat",
     get label() {

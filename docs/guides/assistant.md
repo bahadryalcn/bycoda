@@ -185,7 +185,7 @@ project; that content does not become a saved personal rule or trusted memory.
 
 Room **Settings** has four sections. **Personal** holds identity and language;
 personality and conversation are under **Personality and conversation**. **Work**
-holds the daily token budget, a link to Models, presence and hours,
+holds the daily token budget and **Manage models** under **Work limits**, plus presence, hours,
 and notifications. **Access** holds everything the assistant may touch: job
 execution permissions, folders and commands, computer use, manual session
 supervision and the 24/7 readiness list. **Advanced** holds cost and context
@@ -557,7 +557,10 @@ request system wakefulness while children are actually running; it does not keep
 the display lit or change the power plan. Unsupported or failed requests are
 shown explicitly.
 
-The token budget controls local scheduling. At 80% the supervisor switches to
+The assistant's daily token budget controls its own scheduling. The limits in
+**Settings > Models > Background work** apply to model routing across background
+work. Both apply when the assistant starts work. At 80% of the assistant's daily
+budget, the supervisor switches to
 reporting and no new job starts, while children already dispatched keep working;
 exhaustion holds new child work. A repeated request for work that is already
 active in the same project returns that job instead of starting it twice.

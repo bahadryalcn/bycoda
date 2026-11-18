@@ -84,7 +84,7 @@ for (const [theme, width] of [
   ["dark", 560],
 ] as const)
   test(`assistant settings compact row containment ${theme} ${width}`, async ({ page }) => {
-    const directory = "temp/verification/assistant-settings-layout-20261113/after";
+    const directory = "temp/verification/assistant-settings-simplify/assistant";
     await mkdir(directory, { recursive: true });
     await page.setViewportSize({ width, height: 900 });
     await page.goto(
@@ -94,9 +94,7 @@ for (const [theme, width] of [
     const dialog = page.getByRole("dialog").first();
     for (const tab of ["Personal", "Work", "Access", "Advanced"]) {
       await dialog.getByRole("tab", { name: tab, exact: true }).click();
-      const region = dialog
-        .locator('[data-axis="y"]')
-        .and(dialog.getByRole("region", { name: tab, exact: true }));
+      const region = dialog.getByRole("tabpanel", { name: tab, exact: true });
       const capture = async (state: string) => {
         await page.mouse.move(0, 0);
         await expect(page.getByRole("tooltip")).toHaveCount(0);
@@ -331,7 +329,7 @@ for (const theme of ["light", "dark"])
       await tab("Advanced").click();
       await dialog.getByRole("button", { name: tr("Supervisor limits"), exact: true }).click();
       await dialog
-        .getByRole("spinbutton", { name: tr("Review reservation"), exact: true })
+        .getByRole("spinbutton", { name: tr("Reserve per review"), exact: true })
         .fill("9000");
       await dialog
         .getByRole("spinbutton", {
@@ -358,7 +356,7 @@ for (const theme of ["light", "dark"])
       ).toEqual(writesBefore);
       await tab("Advanced").click();
       const reservation = dialog.getByRole("spinbutton", {
-        name: tr("Review reservation"),
+        name: tr("Reserve per review"),
         exact: true,
       });
       await reservation.fill("1");
@@ -465,23 +463,21 @@ for (const theme of ["light", "dark"])
       await page.getByRole("button", { name: "Settings", exact: true }).click();
       const dialog = page.getByRole("dialog").first();
       await dialog.getByRole("tab", { name: "Work", exact: true }).click();
-      const models = dialog
-        .locator("section")
-        .filter({ has: page.getByRole("heading", { name: "Models", exact: true }) })
-        .first();
-      await expect(models.locator("fieldset")).toHaveCount(0);
+      const models = dialog.getByRole("button", { name: "Manage models", exact: true });
+      await expect(models).toHaveCount(1);
+      await expect(dialog.getByRole("heading", { name: "Models", exact: true })).toHaveCount(0);
+      await models.scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: join(poolOutput, `pool-${theme}-${width}.png`),
+        animations: "disabled",
+      });
       await page.evaluate(() => {
         window.addEventListener("bycoda:open-models-settings", (event) => {
           (window as any).__openedModelsTab = (event as CustomEvent).detail;
         });
       });
-      await models.getByRole("button", { name: "Manage models", exact: true }).click();
+      await models.click();
       expect(await page.evaluate(() => (window as any).__openedModelsTab)).toBe("roles");
-      await models.scrollIntoViewIfNeeded();
-      await models.screenshot({
-        path: join(poolOutput, `pool-${theme}-${width}.png`),
-        animations: "disabled",
-      });
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );

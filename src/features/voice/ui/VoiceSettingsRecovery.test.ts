@@ -125,6 +125,10 @@ it("keeps persona custom text after failed Save and Reset, then retries successf
   const field = [...document.querySelectorAll("input")].find(
     (field) => field.placeholder === "Other tasks, in your own words",
   )!;
+  const tasks = field.closest("details")!;
+  expect(tasks.open).toBe(false);
+  await act(async () => tasks.querySelector("summary")!.click());
+  expect(tasks.open).toBe(true);
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
       field,

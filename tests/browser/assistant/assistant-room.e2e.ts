@@ -385,9 +385,11 @@ for (const theme of ["light", "dark"])
         path: join(output, `settings-${theme}-${width}-behavior.png`),
       });
       const models = await showGroup("Models");
-      await expectModelsNavigation(page, models);
+      await expect(
+        models.getByRole("button", { name: "Manage models", exact: true }),
+      ).toBeVisible();
       expect(await page.evaluate(() => (window as any).__setupModelSelections ?? 0)).toBe(0);
-      const autonomy = dialog.getByRole("region", { name: "Work", exact: true });
+      const autonomy = dialog.getByRole("tabpanel", { name: "Work", exact: true });
       for (const amount of ["100k", "500k", "1m", "5m"])
         await chooseSetupValue(page, "Daily token budget", `${amount} tokens/day`);
       await chooseSetupValue(page, "Daily token budget", "Custom");
@@ -415,7 +417,7 @@ for (const theme of ["light", "dark"])
         path: join(output, `settings-${theme}-${width}-presence.png`),
       });
       const cost = await showGroup("Cost and context");
-      await cost.getByRole("spinbutton", { name: "Review reservation", exact: true }).fill("9000");
+      await cost.getByRole("spinbutton", { name: "Reserve per review", exact: true }).fill("9000");
       await cost.getByRole("spinbutton", { name: "Summary every", exact: true }).fill("25");
       await cost.screenshot({
         animations: "disabled",
@@ -446,7 +448,7 @@ for (const theme of ["light", "dark"])
       );
       await page.getByRole("button", { name: "Settings", exact: true }).click();
       await openSettingsGroup(page, "Models");
-      const reopened = dialog.getByRole("region", { name: "Work", exact: true });
+      const reopened = dialog.getByRole("tabpanel", { name: "Work", exact: true });
       await expect(
         reopened.getByRole("button", { name: "Daily token budget: 500k tokens/day", exact: true }),
       ).toBeVisible();
@@ -455,6 +457,7 @@ for (const theme of ["light", "dark"])
     });
 
 const headings: Record<string, string> = {
+  Models: "Work limits",
   Language: "Conversation",
   "Conversation behavior": "Conversation",
   Jobs: "Customize access",
@@ -576,7 +579,7 @@ for (const theme of ["light", "dark"])
       await openWrittenBrief(page);
       await expect(draft).toHaveValue("Review the saved release draft");
       await room.getByRole("button", { name: "Settings", exact: true }).click();
-      const settings = page.getByRole("dialog", { name: "Settings · Arif", exact: true });
+      const settings = page.getByRole("dialog", { name: "Settings for Arif", exact: true });
       await capture("settings");
       for (const section of [
         "Jobs",
@@ -1052,7 +1055,7 @@ for (const theme of ["light", "dark"])
       const cost = await openSettingsGroup(page, "Cost and context");
       await cost.scrollIntoViewIfNeeded();
       await cost.getByRole("button", { name: "About cost and context", exact: true }).click();
-      await expect(page.getByText(/Claude utility requests include/)).toBeVisible();
+      await expect(page.getByText(/Worker limits use the first threshold reached/)).toBeVisible();
       await page.screenshot({
         animations: "disabled",
         path: join(output, `output-context-help-${theme}-${width}.png`),
@@ -1063,12 +1066,10 @@ for (const theme of ["light", "dark"])
         path: join(output, `output-context-compact-${theme}-${width}.png`),
       });
       await cost.getByRole("button", { name: "Worker context limits", exact: true }).click();
-      // Token and percentage limits share a label; the unit beside each field tells them apart,
-      // and the token fields come first.
-      const soft = cost.getByRole("spinbutton", { name: "Worker compact at", exact: true }).first();
+      const soft = cost.getByRole("spinbutton", { name: "Compact by token count", exact: true });
       await expect(soft).toHaveValue("150000");
       await expect(
-        cost.getByRole("spinbutton", { name: "Worker fresh session at", exact: true }).nth(1),
+        cost.getByRole("spinbutton", { name: "Start fresh by context usage", exact: true }),
       ).toHaveValue("80");
       await soft.fill("160000");
       await soft.blur();
@@ -1082,11 +1083,11 @@ for (const theme of ["light", "dark"])
       await openSettingsGroup(page, "Cost and context");
       await dialog.getByRole("button", { name: "Worker context limits", exact: true }).click();
       await expect(
-        dialog.getByRole("spinbutton", { name: "Worker compact at", exact: true }).first(),
+        dialog.getByRole("spinbutton", { name: "Compact by token count", exact: true }),
       ).toHaveValue("160000");
-      await expect(dialog.getByRole("spinbutton", { name: "Compact at", exact: true })).toHaveValue(
-        "150000",
-      );
+      await expect(
+        dialog.getByRole("spinbutton", { name: "Compact supervisor context", exact: true }),
+      ).toHaveValue("150000");
     });
 
 for (const theme of ["light", "dark"])
@@ -1740,14 +1741,13 @@ for (const theme of ["light", "dark"])
       await page.getByRole("button", { name: "Settings", exact: true }).click();
       const dialog = page.getByRole("dialog");
       const models = await openSettingsGroup(page, "Models");
-      await expect(
-        models.getByText("Models and limits follow Settings > Models.", { exact: true }),
-      ).toBeVisible();
-      await expectModelsNavigation(page, models);
       await models.screenshot({
         animations: "disabled",
         path: join(output, `roles-central-link-${theme}-${width}.png`),
       });
+      await expectModelsNavigation(page, models);
+      await expect(dialog).toHaveCount(0);
+      await page.getByRole("button", { name: "Settings", exact: true }).click();
       await openSettingsGroup(page, "Identity");
       await dialog
         .getByRole("textbox", { name: "Assistant name", exact: true })

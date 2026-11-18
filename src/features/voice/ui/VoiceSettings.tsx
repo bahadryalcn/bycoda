@@ -13,6 +13,7 @@ import { MicrophonePermissionSettings } from "./MicrophonePermissionSettings";
 import { VoiceSetupRow } from "./VoiceSetupRow";
 import { VoiceConversationStyle } from "./VoiceConversationStyle";
 import { VoiceCompanionSettings } from "./VoiceCompanionSettings";
+import { VoiceWakeRows } from "./VoiceWakeSettings";
 import { useVoiceSetup, type VoiceSetup } from "./useVoiceSetup";
 import { speakerEngine, speakerOptions } from "../model/voiceSpeakers";
 import {
@@ -36,7 +37,7 @@ export function VoiceSettings() {
   const companion = speechEnabled && settings.enabled;
   return (
     <>
-      <Group title={t("Voice and dictation")} layout="full">
+      <Group title={t("Voice conversations")} layout="full">
         <VoiceActivityRow />
         <Row
           id="voice-companion"
@@ -58,19 +59,18 @@ export function VoiceSettings() {
             onChange={(enabled) => change({ enabled })}
           />
         </Row>
-        <MicrophonePermissionSettings />
+        <VoiceWakeRows settings={settings} change={change} profile={assistant?.profile} />
+        {companion ? <VoiceSetupRow setup={setup} settings={settings} change={change} /> : null}
+      </Group>
+      <Group title={t("Microphone")} layout="full">
         <MicrophoneInputSettings />
-        {speechEnabled ? <VoiceSetupRow setup={setup} settings={settings} change={change} /> : null}
+        <MicrophonePermissionSettings />
       </Group>
       {companion ? <VoiceEngine settings={settings} change={change} setup={setup} /> : null}
       <DictationSettings settings={settings} change={change} setup={setup} />
       {companion ? (
         <>
-          <VoiceConversationStyle
-            settings={settings}
-            change={change}
-            profile={assistant?.profile}
-          />
+          <VoiceConversationStyle settings={settings} change={change} />
           <VoiceCompanionSettings
             settings={settings}
             change={change}
@@ -115,8 +115,9 @@ function VoiceEngine({
     <Group title={t("Voice engine")} layout="full">
       <Row
         id="voice-mode"
-        label={t("Conversation")}
+        label={t("Voice provider")}
         stacked
+        descriptionVisible
         description={
           local
             ? t("Speech is recognized on this computer; the session's provider writes replies.")
@@ -127,7 +128,7 @@ function VoiceEngine({
         disabled={installing}
       >
         <Segmented
-          label={t("Conversation")}
+          label={t("Voice provider")}
           value={settings.mode}
           options={[
             { value: "local", label: t("Local") },

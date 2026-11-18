@@ -13,6 +13,7 @@ import { Button } from "../../../shared/ui/Button";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Group, Row } from "../../../shared/ui/settings";
+import { AnonymousUsageSetting } from "./AnonymousUsageSetting";
 import { useDataExport, useDataSummary } from "../hooks/useAccountData";
 
 export function retentionLabel(key: RetentionKey): string {
@@ -177,6 +178,7 @@ export function AccountData() {
     >
       {summary ? <StoredData summary={summary} /> : null}
       <DataExportRow />
+      <AnonymousUsageSetting />
     </Group>
   );
 }

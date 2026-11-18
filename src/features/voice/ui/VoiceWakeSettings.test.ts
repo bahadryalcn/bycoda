@@ -13,7 +13,12 @@ it("updates an untouched phrase when settings change externally", async () => {
   document.body.append(container);
   const root = createRoot(container);
   const change = vi.fn();
-  const settings = { ...loadVoiceSettings(), wakeEnabled: true, wakePhrase: "Hello there" };
+  const settings = {
+    ...loadVoiceSettings(),
+    enabled: true,
+    wakeEnabled: true,
+    wakePhrase: "Hello there",
+  };
   await act(async () => root.render(createElement(VoiceWakeRows, { settings, change })));
   await act(async () =>
     root.render(
@@ -32,7 +37,12 @@ it("preserves edits across external changes and commits valid, invalid, and defa
   document.body.append(container);
   const root = createRoot(container);
   const change = vi.fn();
-  const settings = { ...loadVoiceSettings(), wakeEnabled: true, wakePhrase: "Hello there" };
+  const settings = {
+    ...loadVoiceSettings(),
+    enabled: true,
+    wakeEnabled: true,
+    wakePhrase: "Hello there",
+  };
   const render = async (wakePhrase: string) =>
     act(async () =>
       root.render(createElement(VoiceWakeRows, { settings: { ...settings, wakePhrase }, change })),
@@ -74,7 +84,7 @@ it("keeps invalid wake and sleep drafts through navigation and disable/remount w
   document.body.append(host);
   const root = createRoot(host);
   const change = vi.fn();
-  const settings = { ...loadVoiceSettings(), wakeEnabled: true };
+  const settings = { ...loadVoiceSettings(), enabled: true, wakeEnabled: true };
   try {
     const render = async (wakeEnabled = true) =>
       act(async () =>
@@ -117,6 +127,7 @@ it.each([
   const change = vi.fn();
   const settings = {
     ...loadVoiceSettings(),
+    enabled: true,
     wakeEnabled: true,
     wakePhrase: "Hello there",
   };

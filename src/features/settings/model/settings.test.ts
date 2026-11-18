@@ -831,6 +831,15 @@ describe("settings search", () => {
     expect(searchSettings("   ")).toEqual([]);
   });
 
+  it.each(["wake up", "wake word", "uyandırma komutu"])(
+    "finds voice activation when searching for %s",
+    (query) => {
+      expect(searchSettings(query)).toContainEqual(
+        expect.objectContaining({ section: "voice", settingId: "voice-wake" }),
+      );
+    },
+  );
+
   it("ranks label matches over keyword matches, and pages last", () => {
     expect(searchSettings("glass").map((result) => result.label)).toEqual([
       "Main pane glass",

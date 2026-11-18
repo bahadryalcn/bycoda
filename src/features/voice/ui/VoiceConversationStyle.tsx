@@ -14,18 +14,15 @@ import {
   Toggle,
   AdvancedSettings,
 } from "../../../shared/ui/settings";
-import { VoiceWakeRows } from "./VoiceWakeSettings";
 import type { VoiceSettings as Preferences } from "../model/voiceSettings";
 
 /** How a spoken conversation takes turns: pauses, interruptions, progress updates and sleep. */
 export function VoiceConversationStyle({
   settings,
   change,
-  profile,
 }: {
   settings: Preferences;
   change: (patch: Partial<Preferences>) => void;
-  profile?: { name: string; language: string };
 }) {
   const [presetError, setPresetError] = useState(false);
   const [turnChoiceError, setTurnChoiceError] = useState(false);
@@ -137,15 +134,8 @@ export function VoiceConversationStyle({
         />
       </Row>
       <AdvancedSettings
-        title={t("Sleep and wake")}
-        settingIds={[
-          "voice-idle-sleep",
-          "voice-return-call",
-          "voice-return-call-seconds",
-          "voice-wake",
-          "voice-wake-phrase",
-          "voice-sleep-phrase",
-        ]}
+        title={t("When you step away")}
+        settingIds={["voice-idle-sleep", "voice-return-call", "voice-return-call-seconds"]}
         keepMounted
       >
         <Row
@@ -202,7 +192,6 @@ export function VoiceConversationStyle({
             />
           </Row>
         )}
-        <VoiceWakeRows settings={settings} change={change} profile={profile} />
       </AdvancedSettings>
       {settings.mode === "openai" && (
         <AdvancedSettings

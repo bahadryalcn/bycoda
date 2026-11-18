@@ -54,7 +54,7 @@ export function AssistantWorkFields({
         label={t("Daily token budget")}
         value={value.dailyTokenBudget}
         min={ASSISTANT_MIN_DAILY_TOKEN_BUDGET}
-        description={rows ? undefined : budgetHelp}
+        description={rows ? t("Assistant replies and jobs share this daily budget.") : undefined}
         info={
           rows ? (
             <InfoPopover label={t("About daily token budget")}>

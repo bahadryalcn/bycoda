@@ -101,7 +101,7 @@ test("single save writes the profile and the computer draft together", async ({ 
   const save = dialog.getByRole("button", { name: tr("Save"), exact: true });
   await save.click();
   await expect(dialog.getByRole("button", { name: tr("Saving…"), exact: true })).toBeDisabled();
-  await dialog.getByRole("button", { name: tr("Close"), exact: true }).click();
+  await expect(dialog.getByRole("button", { name: tr("Close"), exact: true })).toBeDisabled();
   await expect(dialog).toBeVisible();
   await expect(dialog.getByText(tr("Save changes before leaving?"), { exact: true })).toHaveCount(
     0,

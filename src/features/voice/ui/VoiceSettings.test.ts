@@ -63,6 +63,47 @@ async function setup(enabled = true) {
   root = createRoot(container);
   await act(async () => root!.render(createElement(VoiceSettings)));
 }
+
+it.each(["voice-wake-phrase", "voice-sleep-phrase"])(
+  "lands on %s and points to the required opt-ins without changing them",
+  async (target) => {
+    await setup(false);
+    const row = (id: string) => container.querySelector(`[data-setting-id="${id}"]`)!;
+    const wake = row("voice-wake").querySelector<HTMLButtonElement>('[role="switch"]')!;
+    const companion = row("voice-companion").querySelector<HTMLButtonElement>('[role="switch"]')!;
+    expect(wake.disabled || wake.getAttribute("aria-disabled") === "true").toBe(true);
+    expect(row("voice-companion").parentElement).toBe(row("voice-wake").parentElement);
+
+    await act(async () =>
+      root!.render(
+        createElement(RevealedSetting.Provider, { value: target }, createElement(VoiceSettings)),
+      ),
+    );
+    const followPrerequisite = async () =>
+      act(async () => row(target).querySelector<HTMLButtonElement>("button")!.click());
+    await followPrerequisite();
+    expect(document.activeElement?.getAttribute("aria-label")).toBe(
+      companion.getAttribute("aria-label"),
+    );
+    expect(loadVoiceSettings().enabled).toBe(false);
+
+    await act(async () =>
+      row("voice-companion").querySelector<HTMLButtonElement>('[role="switch"]')!.click(),
+    );
+    await followPrerequisite();
+    expect(document.activeElement?.getAttribute("aria-label")).toBe(
+      wake.getAttribute("aria-label"),
+    );
+    expect(loadVoiceSettings().wakeEnabled).not.toBe(true);
+
+    await act(async () =>
+      row("voice-wake").querySelector<HTMLButtonElement>('[role="switch"]')!.click(),
+    );
+    expect(row(target).querySelector("input")).not.toBeNull();
+    expect(loadVoiceSettings().wakeEnabled).toBe(true);
+    expect(backend.setup).not.toHaveBeenCalled();
+  },
+);
 it("enables dictation independently without microphone capture or companion settings", async () => {
   await setup(false);
   const capture = vi.fn();

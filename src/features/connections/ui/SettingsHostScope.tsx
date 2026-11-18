@@ -3,6 +3,7 @@ import { useQueries, useQuery } from "@tanstack/react-query";
 import { t, useT } from "../../../shared/i18n";
 import { Select } from "../../../shared/ui/Select";
 import { SettingsFeedback } from "../../../shared/ui/settings";
+import { StatusDot } from "../../../shared/ui/StatusDot";
 import {
   chooseSettingsHost,
   loadSettingsHosts,
@@ -10,6 +11,7 @@ import {
   settingsHostEntries,
   settingsHostOptions,
   settingsHostUnavailableMessage,
+  type SettingsHostStatus,
 } from "../model/settingsHosts";
 import type { RemoteMachine } from "../model/protocol";
 import { readRemoteConnection, subscribeChanges } from "../model/remoteHealth";
@@ -183,6 +185,24 @@ export function SettingsHostFailure({
   );
 }
 
+/** Decorative state mark before a machine's name; the option text names the state. */
+function HostStatusDot({ status }: { status?: SettingsHostStatus }) {
+  switch (status) {
+    case "connected":
+      return <StatusDot tone="success" />;
+    case "offline":
+      return <StatusDot tone="muted" appearance="presence" hollow />;
+    case "pair-again":
+      return <StatusDot tone="danger" />;
+    case "update-needed":
+      return <StatusDot tone="warning" />;
+    case "checking":
+      return <StatusDot tone="muted" />;
+    default:
+      return <StatusDot tone="danger" hollow appearance="presence" />;
+  }
+}
+
 /** "Applying settings to <machine>"; hidden while this computer is the only saved machine. */
 export function SettingsHostPicker({ scope }: { scope: SettingsHostScope }) {
   const t = useT();
@@ -192,7 +212,10 @@ export function SettingsHostPicker({ scope }: { scope: SettingsHostScope }) {
       <Select
         label={t("Applying settings to")}
         value={scope.value}
-        options={scope.options}
+        options={scope.options.map(({ status, ...option }) => ({
+          ...option,
+          icon: <HostStatusDot status={status} />,
+        }))}
         onValueChange={scope.select}
         fieldSize="sm"
       />
