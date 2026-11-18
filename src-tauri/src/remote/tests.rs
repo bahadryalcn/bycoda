@@ -1561,12 +1561,19 @@ fn desktop_forwards_supported_host_operations() {
         "social.browser.status",
         "social.token.connect",
         "social.tiktok.creator",
+        "social.browser.facebook.monetization",
+        "social.facebook.live.encoder",
     ] {
         assert!(supported_remote_method(method), "{method}");
     }
     assert!(!supported_remote_method("git.arbitrary"));
     assert!(!supported_remote_method("social.browser.cookies"));
-    for method in ["attachments.claim", "attachments.release"] {
+    for method in [
+        "attachments.claim",
+        "attachments.release",
+        "social.browser.facebook.monetization",
+        "social.facebook.live.encoder",
+    ] {
         assert!(!super::shareable_remote_read(
             method,
             &serde_json::json!({})

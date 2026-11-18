@@ -87,6 +87,9 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "social.browser.view.frame"
             | "social.browser.view.input"
             | "social.monitoring.status"
+            // Facebook owner requests still pass through Host admission.
+            | "social.browser.facebook.monetization"
+            | "social.facebook.live.encoder"
             | "social.media.upload"
             | "social.media.claim"
             | "social.media.transfer"
