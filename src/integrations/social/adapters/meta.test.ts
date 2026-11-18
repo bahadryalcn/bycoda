@@ -184,8 +184,10 @@ describe("Meta adapter contracts (mocked Graph)", () => {
   it("maps Facebook post insights and edge counts", async () => {
     const fetcher = vi.fn(async (raw: string | URL | Request) => {
       const url = new URL(String(raw));
-      if (url.pathname.endsWith("/insights"))
-        return json({ data: [{ name: "post_impressions_unique", values: [{ value: 42 }] }] });
+      if (url.pathname.endsWith("/insights")) {
+        expect(url.searchParams.get("metric")).toBe("post_media_view");
+        return json({ data: [{ name: "post_media_view", values: [{ value: 42 }] }] });
+      }
       return json({
         likes: { summary: { total_count: 5 } },
         comments: { summary: { total_count: 2 } },
@@ -195,6 +197,18 @@ describe("Meta adapter contracts (mocked Graph)", () => {
     const adapter = createSocialAdapters(new SocialHttp(fetcher)).facebook;
     await expect(adapter.getAnalytics!(account("facebook"), "synthetic", ["p1"])).resolves.toEqual({
       p1: { views: 42, likes: 5, comments: 2, shares: 1 },
+    });
+  });
+
+  it("preserves zero Facebook counts and leaves unavailable views absent", async () => {
+    const fetcher = vi.fn(async (raw: string | URL | Request) =>
+      json(new URL(String(raw)).pathname.endsWith("/insights")
+        ? { data: [] }
+        : { likes: { summary: { total_count: 0 } }, shares: { count: 0 } }),
+    );
+    const adapter = createSocialAdapters(new SocialHttp(fetcher)).facebook;
+    await expect(adapter.getAnalytics!(account("facebook"), "synthetic", ["p1"])).resolves.toEqual({
+      p1: { views: undefined, likes: 0, comments: undefined, shares: 0 },
     });
   });
 

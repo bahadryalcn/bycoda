@@ -2,6 +2,7 @@ import type { SocialAdapter, SocialHttp } from "../adapter";
 import { SocialPlatformError } from "../adapter";
 import type { CollectedPerson } from "../audience-types";
 import { at, graphNext, id, requireId } from "./common";
+import { readFacebookPostInsights } from "./facebook-insights";
 
 type Platform = "instagram" | "facebook";
 export type MetaExtendedOperations = Pick<
@@ -74,22 +75,10 @@ export function metaExtendedOperations(
       for (const postId of postIds) {
         const post = id(postId);
         if (platform === "facebook") {
-          const { value } = await http.request(
-            endpoint(
-              `${post}?fields=likes.summary(true).limit(0),comments.summary(true).limit(0),shares`,
-            ),
-            token,
+          result[postId] = await readFacebookPostInsights(
+            (path) => http.request(endpoint(path), token),
+            postId,
           );
-          const { value: insights } = await http.request(
-            endpoint(`${post}/insights?metric=post_impressions_unique`),
-            token,
-          );
-          result[postId] = {
-            views: metric(insights, "post_impressions_unique"),
-            likes: Number(value.likes?.summary?.total_count) || undefined,
-            comments: Number(value.comments?.summary?.total_count) || undefined,
-            shares: Number(value.shares?.count) || undefined,
-          };
         } else {
           const { value } = await http.request(
             endpoint(`${post}/insights?metric=views,likes,comments,shares`),
@@ -195,7 +184,8 @@ export async function metaCommentAction(
     return;
   }
   if (platform === "facebook") {
-    await http.json(url(comment), token, { is_hidden: action === "hide" });
+    const { value } = await http.json(url(comment), token, { is_hidden: action === "hide" });
+    if (value.success !== true) throw new SocialPlatformError("unknown");
     return;
   }
   await http.request(url(`${comment}?hide=${action === "hide"}`), token, { method: "POST" });
