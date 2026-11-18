@@ -2,6 +2,7 @@ import { Tooltip } from "../../shared/ui/Tooltip";
 import { Text } from "../../shared/ui/Text";
 import { LEVEL_LABELS, RuntimeLogRow } from "./ui/RuntimeLogRow";
 import { useRuntimeTerminalMonitor } from "./hooks/useRuntimeTerminalMonitor";
+import { MAX_POLL_FAILURES, pollDelay } from "./model/pollBackoff";
 import { EmptyState } from "../../shared/ui/EmptyState";
 import { FailureState } from "../../shared/ui/FailureState";
 import { ScrollArea } from "../../shared/ui/ScrollArea";
@@ -238,6 +239,8 @@ function ScopedRuntimeLogsPanel({
   const visible = useRef(active);
   visible.current = active;
   const pending = useRef(false);
+  /** Consecutive failed reads; a transient failure retries with backoff, a run of them pauses. */
+  const failures = useRef(0);
   const generation = useRef(0);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const timeline = useRef<HTMLDivElement>(null);
@@ -283,21 +286,28 @@ function ScopedRuntimeLogsPanel({
               : previous,
           );
         }
+        failures.current = 0;
         setLoaded(true);
         setError("");
         if (next.restarted) setNotice(t("The host restarted. A new log stream is now active."));
       } catch (cause) {
         if (alive.current && revision === generation.current) {
           setError(cause instanceof Error ? cause.message : String(cause));
-          pausedRef.current = true;
-          setPaused(true);
+          failures.current += 1;
+          if (failures.current >= MAX_POLL_FAILURES) {
+            pausedRef.current = true;
+            setPaused(true);
+          }
         }
       } finally {
         pending.current = false;
         if (alive.current) {
           if (showBusy) setBusy(false);
           if (visible.current && !pausedRef.current && !document.hidden)
-            timer.current = setTimeout(() => void read(false), pollInterval);
+            timer.current = setTimeout(
+              () => void read(false),
+              pollDelay(pollInterval, failures.current),
+            );
         }
       }
     },
@@ -390,6 +400,7 @@ function ScopedRuntimeLogsPanel({
     setStarted(true);
     const next = !pausedRef.current;
     pausedRef.current = next;
+    failures.current = 0;
     generation.current += 1;
     setPaused(next);
     clearTimeout(timer.current);
@@ -424,6 +435,7 @@ function ScopedRuntimeLogsPanel({
         setMonitorUrl("");
         setStarted(true);
         pausedRef.current = false;
+        failures.current = 0;
         setPaused(false);
         // Capturing a website must not hide the project's server output.
         setSource("all");

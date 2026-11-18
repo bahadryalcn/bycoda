@@ -363,14 +363,30 @@ it("starts live reads with a source chooser and keeps monitor setup and filters 
   expect(hostToolRequest).toHaveBeenCalledTimes(2);
 });
 
-it("stops automatic retries after a missing session or disconnected host error", async () => {
-  vi.mocked(hostToolRequest).mockRejectedValueOnce(new Error("Session not found on this machine"));
+it("retries a transient read failure with backoff, keeps the error visible and recovers without a manual restart", async () => {
+  vi.mocked(hostToolRequest).mockRejectedValueOnce(new Error("Host is offline"));
   await mount();
-  await act(async () => vi.advanceTimersByTimeAsync(15_000));
   expect(dataReads()).toHaveLength(1);
   expect(container.textContent).toContain("Disconnected");
-  await act(async () => button("Resume").click());
+  expect(container.querySelector('[role="alert"]')).not.toBeNull();
+  // First retry is backed off to twice the 1.5 s interval.
+  await act(async () => vi.advanceTimersByTimeAsync(2_999));
+  expect(dataReads()).toHaveLength(1);
+  await act(async () => vi.advanceTimersByTimeAsync(1));
   expect(dataReads()).toHaveLength(2);
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  await act(async () => vi.advanceTimersByTimeAsync(1_500));
+  expect(dataReads()).toHaveLength(3);
+});
+
+it("stops automatic retries after consecutive read failures until the owner resumes", async () => {
+  vi.mocked(hostToolRequest).mockRejectedValue(new Error("Session not found on this machine"));
+  await mount();
+  await act(async () => vi.advanceTimersByTimeAsync(30_000));
+  expect(dataReads()).toHaveLength(3);
+  expect(container.textContent).toContain("Disconnected");
+  await act(async () => button("Resume").click());
+  expect(dataReads()).toHaveLength(4);
 });
 
 it("explains an unavailable website while retaining technical details and the entered URL", async () => {
@@ -611,7 +627,7 @@ it("keeps retained logs readable when the host disconnects and recovers with Ref
   expect(rows()).toHaveLength(3);
   await act(async () => button("Refresh").click());
   expect(container.querySelector('[role="alert"]')).toBeNull();
-  expect(container.textContent).toContain("Paused");
+  expect(button("Pause")).toBeDefined();
 });
 
 it("opens a source line through the existing editor callback only for the project host", async () => {
