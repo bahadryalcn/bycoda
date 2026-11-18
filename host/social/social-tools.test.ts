@@ -433,6 +433,12 @@ describe("Real local CLI and MCP transport", () => {
         "ai.report",
         "browser.needsHuman.list",
         "browser.recipeSuggestions.list",
+        // Snapchat
+        "snapchat.profile.read",
+        "snapchat.content.list",
+        "snapchat.analytics.get",
+        "snapchat.earnings.get",
+        "snapchat.monetization.get",
       ];
       const writes = [
         "accounts.request",
@@ -471,6 +477,12 @@ describe("Real local CLI and MCP transport", () => {
         "inbox.setStatus",
         "ai.actions.undo",
         "ai.stop",
+        // Snapchat
+        "snapchat.signup.request",
+        "snapchat.chat.draft",
+        "snapchat.profile.create.request",
+        "snapchat.profile.update.request",
+        "snapchat.content.delete.request",
       ];
       const method = (action: string) => `social_${action.replaceAll(/[.-]/g, "_")}`;
       // Draft inspection/editing is a concurrent additive capability. Keep the

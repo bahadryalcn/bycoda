@@ -75,6 +75,17 @@ export const SOCIAL_TOOLS = [
   // Browser layers (4H)
   "browser.needsHuman.list",
   "browser.recipeSuggestions.list",
+  // Snapchat
+  "snapchat.profile.read",
+  "snapchat.content.list",
+  "snapchat.analytics.get",
+  "snapchat.earnings.get",
+  "snapchat.monetization.get",
+  "snapchat.signup.request",
+  "snapchat.chat.draft",
+  "snapchat.profile.create.request",
+  "snapchat.profile.update.request",
+  "snapchat.content.delete.request",
 ] as const;
 export type SocialTool = (typeof SOCIAL_TOOLS)[number];
 export function socialToolName(tool: SocialTool): string {

@@ -65,6 +65,13 @@ export interface SocialServiceApi {
   project(p: SocialPrincipal, projectId: string): Promise<HostProject>;
   adapterFor(account: SocialAccount): SocialAdapter;
   credentialFor(accountId: string): Promise<SocialCredential | undefined>;
+  // Snapchat browser owner review
+  snapchatBrowserProfile?: (
+    principal: SocialPrincipal,
+    accountId: string,
+    action: "read" | "update" | "create" | "monetization" | "delete-story",
+    input: Record<string, unknown>,
+  ) => Promise<unknown>;
   capability(account: SocialAccount, operation: SocialOperation): void;
   createDraft(
     p: SocialPrincipal,

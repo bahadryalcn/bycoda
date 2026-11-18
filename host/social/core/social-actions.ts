@@ -7,6 +7,8 @@ import type { SocialPrincipal } from "../social";
 import type { SocialServiceApi } from "./social-service-api";
 
 export type SocialActionContext = {
+  /** Executor of provider operations bound to this Host. */
+  environmentId?: string;
   service: SocialServiceApi;
   store: SocialAudienceStore;
   now: () => number;

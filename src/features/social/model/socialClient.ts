@@ -88,6 +88,33 @@ export function socialClient(machineId: string) {
     });
   return {
     request,
+    // Snapchat
+    snapchatProfileRead: (accountId: string) =>
+      request<import("../../../integrations/social/snapchat-profile").SnapchatProfileState>(
+        "snapchat.profile.read", { accountId },
+      ),
+    snapchatProfileCreate: (
+      accountId: string,
+      patch?: import("../../../integrations/social/snapchat-profile").SnapchatProfilePatch,
+    ) =>
+      remoteRequest<import("../../../integrations/social/snapchat-profile").SnapchatProfileState>(
+        machineId, "social.browser.profile.create", { accountId, patch, confirm: "CREATE_SNAPCHAT_PROFILE" },
+      ),
+    snapchatProfileUpdate: (
+      accountId: string,
+      patch: import("../../../integrations/social/snapchat-profile").SnapchatProfilePatch,
+    ) =>
+      remoteRequest<import("../../../integrations/social/snapchat-profile").SnapchatProfileState>(
+        machineId, "social.browser.profile.update", { accountId, patch, confirm: "UPDATE_SNAPCHAT_PROFILE" },
+      ),
+    snapchatMonetization: (accountId: string) =>
+      request<import("../../../integrations/social/snapchat-profile").SnapchatMonetizationStatus>(
+        "snapchat.monetization.get", { accountId },
+      ),
+    snapchatStoryDelete: (accountId: string, storyId: string) =>
+      remoteRequest<{ storyId: string; deleted: true }>(
+        machineId, "social.browser.profile.delete-story", { accountId, storyId, confirm: "DELETE_SNAPCHAT_STORY" },
+      ),
     browserProfileRead: (accountId: string) =>
       remoteRequest<import("./socialBrowser").XProfileState>(
         machineId,

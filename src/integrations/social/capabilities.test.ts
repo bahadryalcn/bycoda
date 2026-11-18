@@ -192,7 +192,9 @@ describe("capability table shape", () => {
       // TikTok: analytics only (capabilities/tiktok.test.ts). X: delete, analytics, audience.collect, profile.read.
       // Reddit: delete, audience.collect, profile.read (capabilities/reddit.ts).
       const openedByApi =
-        platform === "youtube"
+        platform === "snapchat"
+          ? ["delete", "analytics", "profile.read"]
+          : platform === "youtube"
           ? ["analytics", "audience.collect", "profile.read"]
           : platform === "tiktok"
             ? ["analytics"]
@@ -248,11 +250,14 @@ describe("capability table shape", () => {
   });
 });
 
-describe("Snapchat copy", () => {
-  it("describes Spotlight publishing as available and does not say publishing is missing", () => {
+describe("Snapchat access", () => {
+  it("enables Public Profile writes and insights only with the API scope", () => {
     const caps = accountCapabilities(apiAccount("snapchat", { scopes: ["snapchat-profile-api"] }));
-    expect(row(caps, "publish").status).toBe("available");
-    expect(row(caps, "publish").reason).not.toMatch(/Publishing.*not implemented/);
-    expect(row(caps, "reply").reason).toContain("Spotlight publishing");
+    const missing = accountCapabilities(apiAccount("snapchat", { scopes: [] }));
+    for (const operation of ["publish", "delete", "analytics", "profile.read"] as const) {
+      expect(row(caps, operation).status).toBe("available");
+      expect(row(missing, operation).status).toBe("pending");
+    }
+    expect(row(caps, "reply").status).toBe("unsupported");
   });
 });

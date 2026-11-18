@@ -90,6 +90,8 @@ export async function sendWithFallback(
   try {
     return await send(primary, account);
   } catch (error) {
+    // Snapchat Public Profile publishing has an official API for every queued format.
+    if (account.platform === "snapchat") throw error;
     // The adapter failed before submit, so the dispatch marker set by the caller is not a submit.
     const notSubmitted = { ...job, dispatchedAt: undefined };
     const browserSupports =

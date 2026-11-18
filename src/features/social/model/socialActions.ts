@@ -41,6 +41,13 @@ export const SOCIAL_READ_ACTIONS = [
   "browser.settings.get",
   "browser.recipeSuggestions.list",
   "accounts.requests.list",
+  // Snapchat
+  "snapchat.profile.read",
+  "snapchat.content.list",
+  "snapchat.analytics.get",
+  "snapchat.earnings.get",
+  "snapchat.monetization.get",
+  "snapchat.review.list",
 ] as const;
 export type SocialReadAction = (typeof SOCIAL_READ_ACTIONS)[number];
 

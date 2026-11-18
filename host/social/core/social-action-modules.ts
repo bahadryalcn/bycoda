@@ -1,4 +1,5 @@
 import { accountRequestActions } from "../accounts/account-request-actions";
+import { snapchatActions } from "../accounts/snapchat-actions";
 import { aiActions } from "../ai/ai-actions";
 import { audienceActions } from "../audience/audience-actions";
 import { autonomyActions } from "../autonomy/autonomy-actions";
@@ -16,4 +17,6 @@ export const SOCIAL_ACTION_MODULES: SocialActionModule[] = [
   browserLayerActions,
   autonomyActions,
   accountRequestActions,
+  // Snapchat
+  snapchatActions,
 ];
