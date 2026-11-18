@@ -33,5 +33,6 @@ export * from "./delegation";
 export { default as HOST_CONTRACT_FIXTURES } from "./fixtures.json";
 
 export * from "./native-devices";
+export * from "./voice";
 export * from "./native-delivery";
 export * from "./native-delivery-identity";

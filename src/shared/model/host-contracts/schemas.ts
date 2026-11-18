@@ -60,7 +60,9 @@ export const ConnectionHelloResultSchema = z.strictObject({
   schemaVersion: z.literal(HOST_SCHEMA_VERSION),
   connectionId: IdentifierSchema,
   capabilities: z.array(CapabilityNameSchema).max(256),
-  methods: z.array(MethodNameSchema).max(256),
+  // The Host advertised exactly 256 methods before phone voice; clients older than this bound
+  // reject a larger hello and must be updated together with the Host.
+  methods: z.array(MethodNameSchema).max(512),
 });
 export type ConnectionHelloResult = z.infer<typeof ConnectionHelloResultSchema>;
 export const ConnectionProbeParamsSchema = z.strictObject({});

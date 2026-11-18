@@ -27,10 +27,14 @@ import { askSideQuestion } from "../side-chat/side-question";
 import { reportDraftPresence } from "../drafts/rpc";
 import { createGroupLockService } from "../group-lock/rpc";
 import { SecretInputListParamsSchema } from "../../src/shared/model/host-contracts/secrets-input";
+import { voiceSocketOperations } from "../voice/voice-ws-operations";
 export function createRegistryRuntime(
   dependencies: Pick<
     ServerBindings,
     | "engine"
+    | "localVoice"
+    | "voiceCloud"
+    | "voiceSetup"
     | "featureDirectory"
     | "accountPlatform"
     | "models"
@@ -81,6 +85,7 @@ export function createRegistryRuntime(
     environment: dependencies.environmentService,
     projects: dependencies.projectsService,
     operations: {
+      ...voiceSocketOperations(dependencies),
       "assistant.request": assistantDomain(dependencies.assistant, dependencies.engine.store),
       "desktop.request": desktopControlDomain(
         dependencies.desktopControl,

@@ -11,6 +11,7 @@ Own capture, recognition, playback and companion UI across `src/features/voice/`
 
 - UI/model: `src/features/voice/ui/` (VoiceCompanion, VoiceSettings, DictationButton) and `src/features/voice/model/` (voiceSession, localVoice, realtimeVoice).
 - Host: `host/voice/` (runtime/setup and worker dispatch); `host/assistant/voice/` owns admitted Assistant delivery.
+- Phone calls: the native Host socket carries only the methods in `src/shared/model/host-contracts/voice.ts` (capability `transport.ws.voice.v1`), routed by `host/voice/voice-ws-operations.ts`; setup, models and keys stay on owner RPC.
 - Native: `src-tauri/src/` owns presence, microphone settings, generation and overlay adapters. Follow the affected adapter in the [owner map](references/surfaces.md).
 - Tests: adjacent UI/model/Host suites and voice fixtures in `tests/browser/`.
 

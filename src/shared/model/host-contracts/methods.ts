@@ -1,5 +1,6 @@
 import { nativeRuntimeLogMethods } from "./native-runtime-log-methods";
 import { SIDE_CHAT_RPC } from "./side-chat";
+import { VOICE_CAPABILITY, VOICE_RPC_SCHEMAS, type VoiceMethod } from "./voice";
 import {
   SecretInputListParamsSchema,
   SecretInputListResultSchema,
@@ -395,7 +396,22 @@ const nativeDeliveryOperation = (method: NativeDeliveryMethod): HostRpcMethodDef
         : "native.services.delivery.v1",
   responseTimeoutMs: 30_000,
 });
+/** A voice call owns its own socket; recognizer start and transcription may load a model first. */
+const voiceOperation = (method: VoiceMethod): HostRpcMethodDefinition => ({
+  ...control(VOICE_RPC_SCHEMAS[method].params, VOICE_RPC_SCHEMAS[method].result),
+  cost: "read",
+  requiredCapability: VOICE_CAPABILITY,
+  responseTimeoutMs:
+    method === "voice.local.start" ? 90_000 : method.endsWith(".transcribe") ? 60_000 : 30_000,
+});
 export const HOST_RPC_METHODS = Object.freeze({
+  "voice.local.start": voiceOperation("voice.local.start"),
+  "voice.local.transcribe": voiceOperation("voice.local.transcribe"),
+  "voice.cloud.transcribe": voiceOperation("voice.cloud.transcribe"),
+  "voice.local.speak": voiceOperation("voice.local.speak"),
+  "voice.local.speechNext": voiceOperation("voice.local.speechNext"),
+  "voice.local.keepAlive": voiceOperation("voice.local.keepAlive"),
+  "voice.local.release": voiceOperation("voice.local.release"),
   "assistant.request": workflowOperation(
     "assistant.v1",
     AssistantRequestSchema,

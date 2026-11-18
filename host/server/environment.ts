@@ -114,6 +114,7 @@ export function createEnvironmentRuntime(
         "transport.ws.models.v1",
         "transport.ws.devices.v1",
         "transport.ws.devices.preview.mobile.v1",
+        "transport.ws.voice.v1",
         "native.services.v1",
         "native.workspaces.v1",
         "native.buffers.upload.v1",
