@@ -270,6 +270,9 @@ async function facebookProfileFixture(
   vi.mocked(fake.page.evaluate).mockImplementation(async <T>(expression: string): Promise<T> => {
     if (expression.includes("const instagram ="))
       return { origin: "https://www.facebook.com", path: "/profile.php", authenticated: true } as T;
+    if (expression.includes("captchaFrame"))
+      return { origin: "https://www.facebook.com", path: "/profile.php", captchaFrame: false } as T;
+    if (expression.includes('input[type="password"]')) return false as T;
     if (expression.includes("const raw=images[0]"))
       return `https://scontent.example.fbcdn.net/v/t39.30808-1/${saved ? "444_555_666" : "111_222_333"}_n.jpg` as T;
     if (expression.includes("const paths=images.map"))
@@ -518,10 +521,10 @@ describe("Facebook Page logo Host routing", () => {
     ).rejects.toMatchObject({ code: "unsupported" });
     await expect(
       s.browser.profileAction(s.social, owner, s.account.id, "update", {
-        patch: { name: "Different" },
+        patch: { bio: "Use the Page settings API" },
         confirm: "UPDATE_FACEBOOK_PROFILE",
       }),
-    ).rejects.toThrow("logo");
+    ).rejects.toThrow("valid Facebook Page");
     expect(s.fake.launcher).not.toHaveBeenCalled();
   });
   it("stages exact owner logo bytes in the separate Page profile and cleans them after one Save", async () => {

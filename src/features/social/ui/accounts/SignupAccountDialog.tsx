@@ -282,6 +282,17 @@ export function SignupAccountDialog({
               ),
             )
           : null}
+        {platform === "facebook" &&
+        accountType === "page" &&
+        (!live || (registration?.step === "profile" && required.length > 0)) ? (
+          <TextField
+            label={registrationFieldLabel("bio")}
+            value={draft.bio ?? ""}
+            maxLength={100}
+            disabled={busy}
+            onChange={(event) => update("bio", event.currentTarget.value)}
+          />
+        ) : null}
         {problem ? <InlineMessage tone="warning">{problem}</InlineMessage> : null}
         {pollError ? <InlineMessage tone="info">{pollError}</InlineMessage> : null}
         {error ? <InlineError>{error}</InlineError> : null}

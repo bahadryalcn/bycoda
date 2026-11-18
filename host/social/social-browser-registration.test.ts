@@ -794,6 +794,45 @@ describe("specific observed registration contracts", () => {
     expect(f.click.mock.calls).toHaveLength(1);
     expect(JSON.stringify(state)).not.toMatch(/Bycoda|Yazılım|biography/);
   });
+  it("prepares an optional Page biography without accepting the terms", async () => {
+    const f = fixture(
+      "https://www.facebook.com/pages/creation/",
+      facebookPage.replace("Owner biography draft", ""),
+    );
+    const state = await advanceSocialRegistration(f.page, "facebook", {
+      accountKind: "brand",
+      displayName: "Bycoda",
+      category: "Yazılım",
+      bio: "Page biography",
+    });
+    expect(state).toMatchObject({
+      status: "awaiting_owner",
+      step: "terms",
+      filledFields: ["displayName", "category", "bio"],
+      canAdvance: false,
+    });
+    expect(f.window.document.querySelector("textarea")!.value).toBe("Page biography");
+    expect(f.click).toHaveBeenCalledTimes(1);
+  });
+  it("does not overwrite a biography already entered by the owner", async () => {
+    const f = fixture("https://www.facebook.com/pages/creation/", facebookPage);
+    const state = await advanceSocialRegistration(f.page, "facebook", {
+      accountKind: "brand",
+      displayName: "Bycoda",
+      category: "Yazılım",
+      bio: "Different biography",
+    });
+    expect(state).toMatchObject({ status: "changed", filledFields: ["displayName", "category"] });
+    expect(f.window.document.querySelector("textarea")!.value).toBe("Owner biography draft");
+  });
+  it("keeps personal signup on Facebook and hands the password back to the owner", async () => {
+    const f = fixture("https://www.facebook.com/r.php", '<input type="password">');
+    const state = await advanceSocialRegistration(f.page, "facebook", { accountKind: "person" });
+    expect(state).toMatchObject({ status: "awaiting_owner", step: "password", canAdvance: false });
+    expect(f.page.goto).not.toHaveBeenCalled();
+    expect(f.click).not.toHaveBeenCalled();
+    expect(f.window.document.querySelector("input")!.value).toBe("");
+  });
   it("opens the known Facebook Page setup route without creating a person and prepares its fields", async () => {
     const f = fixture(
       "https://www.facebook.com/r.php",

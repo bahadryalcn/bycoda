@@ -111,11 +111,16 @@ function fixture(
 }
 const patch = { avatarUploadId: "11111111-1111-4111-8111-111111111111" };
 
-it("accepts one uploaded logo and rejects unrelated profile fields or paths", () => {
+it("accepts one valid Page name, username or uploaded logo", () => {
   expect(parseFacebookProfilePatch(patch)).toEqual(patch);
+  expect(parseFacebookProfilePatch({ name: "  Bycoda Page  " })).toEqual({ name: "Bycoda Page" });
+  expect(parseFacebookProfilePatch({ username: "bycoda.page" })).toEqual({
+    username: "bycoda.page",
+  });
   for (const value of [
     {},
-    { name: "Bycoda" },
+    { name: "Bycoda\nPage" },
+    { username: "@bycoda" },
     { bio: "test" },
     { bannerUploadId: patch.avatarUploadId },
     { ...patch, name: "Bycoda" },
@@ -123,6 +128,76 @@ it("accepts one uploaded logo and rejects unrelated profile fields or paths", ()
     null,
   ])
     expect(() => parseFacebookProfilePatch(value)).toThrow();
+});
+
+function settingsFixture(field: "name" | "username", passwordRequired = false, persist = true) {
+  const f = fixture();
+  let saved = field === "name" ? "Old Name" : "old.username";
+  const label = field === "name" ? "Page name" : "Username";
+  const action = field === "name" ? "Review Change" : "Save Changes";
+  const route = `https://www.facebook.com/settings/?tab=profile&section=${field}&view`;
+  vi.mocked(f.page.goto).mockImplementation(async (url) => {
+    f.window.location.href = url;
+    f.window.document.body.innerHTML = `<main><input type="text" aria-label="${label}"><button>${action}</button></main>`;
+    const input = f.window.document.querySelector("input")!;
+    input.value = saved;
+    f.window.document.querySelector("button")!.addEventListener("click", () => {
+      if (field === "username") {
+        if (persist) saved = input.value;
+        return;
+      }
+      f.window.document.body.insertAdjacentHTML(
+        "beforeend",
+        `<div role="dialog">
+        <p></p>${passwordRequired ? '<input type="password" aria-label="Password">' : ""}
+        <button>Request Change</button></div>`,
+      );
+      const dialog = f.window.document.querySelector('[role="dialog"]')!;
+      dialog.querySelector("p")!.textContent = input.value;
+      dialog.querySelector("button")!.addEventListener("click", () => {
+        if (persist) saved = input.value;
+        dialog.remove();
+      });
+    });
+  });
+  f.page.fill = vi.fn(async (selector, value) => {
+    f.window.document.querySelector<HTMLInputElement>(selector)!.value = value;
+  });
+  return { ...f, route };
+}
+
+it.each(["name", "username"] as const)(
+  "updates the exact Page %s and verifies it on reload",
+  async (field) => {
+    const f = settingsFixture(field);
+    const value = field === "name" ? "New Name" : "new.username";
+    await expect(f.actions.update({ [field]: value }, {})).resolves.toMatchObject({
+      [field]: value,
+    });
+    expect(f.page.goto).toHaveBeenNthCalledWith(1, f.route);
+    expect(f.page.goto).toHaveBeenNthCalledWith(2, f.route);
+    expect(f.page.click).toHaveBeenCalledTimes(field === "name" ? 2 : 1);
+  },
+);
+
+it("pauses at a name-change password prompt before clicking its request button", async () => {
+  const f = settingsFixture("name", true);
+  await expect(f.actions.update({ name: "New Name" }, {})).rejects.toMatchObject({
+    code: "needs_human",
+  });
+  expect(f.page.fill).toHaveBeenCalledTimes(1);
+  expect(f.window.document.querySelector<HTMLInputElement>('input[type="password"]')?.value).toBe(
+    "",
+  );
+  expect(f.page.click).toHaveBeenCalledTimes(1);
+});
+
+it("leaves an unverified username write uncertain without another Save", async () => {
+  const f = settingsFixture("username", false, false);
+  await expect(f.actions.update({ username: "new.username" }, {})).rejects.toMatchObject({
+    code: "unknown",
+  });
+  expect(f.page.click).toHaveBeenCalledTimes(1);
 });
 it.each([false, true])(
   "uploads a scoped logo and reads the exact saved asset back, English=%s",
