@@ -79,11 +79,15 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "social.browser.profile.follow"
             // Instagram owner operations use exact names.
             | "social.browser.instagram.recipient"
+            | "social.browser.instagram.live"
             | "social.browser.instagram.post"
             | "social.browser.instagram.followers"
             | "social.browser.instagram.follow"
             | "social.browser.instagram.mentions"
             | "social.browser.instagram.comment-like"
+            | "social.browser.instagram.earnings"
+            | "social.browser.instagram.highlights"
+            | "social.browser.instagram.highlight-change"
             | "social.browser.workflow.begin"
             | "social.browser.workflow.status"
             | "social.browser.workflow.cancel"
@@ -424,11 +428,15 @@ mod tests {
     fn instagram_management_only_forwards_named_operations() {
         for method in [
             "social.browser.instagram.recipient",
+            "social.browser.instagram.live",
             "social.browser.instagram.post",
             "social.browser.instagram.followers",
             "social.browser.instagram.follow",
             "social.browser.instagram.mentions",
             "social.browser.instagram.comment-like",
+            "social.browser.instagram.earnings",
+            "social.browser.instagram.highlights",
+            "social.browser.instagram.highlight-change",
         ] {
             assert!(supported_remote_method(method));
         }

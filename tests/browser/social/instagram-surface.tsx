@@ -52,7 +52,28 @@ const client = {
     if (action === "inbox.replyOptions")
       return {
         canReply: true,
-        instagram: input?.threadId === "dm" ? { attachment: true } : { privateReply: true },
+        instagram:
+          input?.threadId === "dm"
+            ? { attachment: true, localAttachment: true }
+            : { privateReply: true },
+      };
+    if (action === "instagram.comments.requests.list")
+      return {
+        requests: [
+          {
+            id: "fixture-moderation-request",
+            accountId: account.id,
+            platformAccountId: account.platformId,
+            projectId: comment.projectId,
+            threadId: comment.id,
+            eventId: comment.events[0].id,
+            commentId: comment.events[0].platformId,
+            commentText: comment.events[0].text,
+            action: "hide",
+            status: "pending",
+            createdAt: Date.UTC(2026, 10, 16),
+          },
+        ],
       };
     if (action === "instagram.insights")
       return {
@@ -81,6 +102,21 @@ const client = {
       bio: "Stories from the studio.",
       location: "",
     };
+  },
+  async browserInstagramEarnings() {
+    return {
+      values: [
+        { kind: "estimated", amount: "€321.40" },
+        { kind: "pending", amount: "€174.20" },
+      ],
+      observedAt: Date.UTC(2026, 10, 16),
+    };
+  },
+  async browserInstagramHighlights() {
+    return { items: [{ id: "321", name: "Studio Stories" }], partial: true };
+  },
+  async browserInstagramLive() {
+    return { state: "awaiting_stream", windowOpen: true, credentialsStored: true, canStart: false };
   },
 } as unknown as SocialClient;
 

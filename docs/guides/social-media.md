@@ -68,6 +68,21 @@ In chat, ask the AI to draft an Instagram Story or a private reply, or to read
 insights or observed mentions on a granted account. Review the exact send or
 publication if your account requires approval.
 
+To ask chat to hide, show or delete an Instagram comment, point it to the Inbox
+conversation. Open **Instagram comment actions**, then **Review Instagram
+moderation requests** to approve the exact comment and action or dismiss it.
+
+Existing Instagram Login DMs can send image, video, audio and PDF attachments.
+Choose a public HTTPS attachment or upload a local file when the Host has a
+public HTTPS media origin. Send the attachment separately from text.
+
+In **Accounts**, a verified browser account can read available Instagram
+earnings, manage Highlights and open a private Live Producer window. In that
+window, select **Live video** and reveal the stream credentials before using
+**Capture Instagram stream credentials**. Connect your external encoder and
+read the Live status before starting. End the broadcast before closing the
+window from bycoda. The saved credentials can be removed in Accounts.
+
 ## Reply uncertainty
 
 An unconfirmed reply is not shown as definitely unsent. **Retry same reply** checks or resumes the original operation with its original identity rather than creating another reply. The draft and unresolved operation survive conversation switches and component remounts within the current app session. They are not a new disk-persistence guarantee across app reloads. Jobs that require review remain visible as requiring review.

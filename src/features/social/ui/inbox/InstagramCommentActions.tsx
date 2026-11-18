@@ -7,6 +7,7 @@ import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
 import type { SocialAccount, SocialThread } from "../../model/social";
 import type { SocialClient } from "../../model/socialClient";
 import { useAccountWrite } from "../accounts/useAccountWrite";
+import { InstagramModerationReviews } from "./InstagramModerationReviews";
 
 export function InstagramCommentActions({
   client,
@@ -81,6 +82,7 @@ export function InstagramCommentActions({
         ))}
       </div>
       {completed ? <InlineMessage tone="success">{t("Instagram updated.")}</InlineMessage> : null}
+      {!browser ? <InstagramModerationReviews client={client} threadId={thread.id} /> : null}
       {error ? <InlineError>{error}</InlineError> : null}
       {confirmation.dialog}
     </Disclosure>

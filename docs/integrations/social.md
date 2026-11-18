@@ -215,14 +215,40 @@ permission grants still determine availability.
   [Meta media reference](https://developers.facebook.com/docs/instagram-platform/reference/instagram-media/v21.0/)
 - Professional conversion, additional profile settings, Highlights,
   monetization and Live Producer open an owner workflow. Availability depends on
-  the Instagram account and desktop page. bycoda does not read earnings balances
-  or collect stream keys. Obtain the stream key from Instagram's private owner
-  window and enter it directly in the streaming application.
+  the Instagram account and desktop page. See the owner tools below for
+  eligible dashboard rows and private Live Producer credential capture.
 - Chat can request an account, prepare and schedule eligible publications, read
   granted insights and mentions, and draft and queue public replies, private
   replies and supported DMs. Account administration and browser-only
   management stay owner-only. Captchas, passwords and verification remain
   human steps.
+
+**Instagram owner reviews and Live Producer**
+
+- Chat can file `instagram.comments.request` with an inbound comment ID
+  from its project. The owner reviews the exact comment and action in Inbox.
+  Approval checks the current account, project grant and comment again. A
+  dispatched request with an uncertain outcome stays in Inbox for inspection.
+- Existing Instagram Login DM replies support HTTPS image, video, audio and PDF
+  attachments. The owner can upload the same types from desktop when the Host has
+  a public HTTPS media origin. After the send checks, Meta receives a short-lived
+  URL for that attachment. The Host keeps local files and private vault values
+  out of chat tools.
+  [Meta Instagram Login messaging](https://developers.facebook.com/documentation/instagram-platform/instagram-api-with-instagram-login/messaging-api)
+- An eligible verified browser account can read the explicitly labelled
+  currency-bearing earnings rows visible in its dashboard. Highlights can be
+  listed, created from visible archived Stories, edited and deleted when the
+  corresponding controls are available. Outcomes depend on the desktop
+  dashboard and account eligibility.
+- Open the dedicated private Live Producer window from Accounts, select **Live
+  video**, and capture the URL and key when Instagram displays the two fields.
+  The Host saves both in its OS-backed vault. The private window is excluded
+  from browser tracking and live view. The owner can start or end the broadcast
+  on a recognized Producer screen. Connect an external encoder to supply the
+  stream. Inbox receives signed Live comments, and eligible comment replies
+  follow the existing review queue. Meta permits private replies to Live
+  comments during the broadcast.
+  [Meta Live comments and replies](https://developers.facebook.com/docs/graph-api/changelog/ooc-changes/nov-9-2021)
 
 - Professional Instagram accounts use Instagram Login. The short-lived token is exchanged
   for a long-lived token before identity selection. Facebook requires an eligible managed

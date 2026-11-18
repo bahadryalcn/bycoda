@@ -22,6 +22,7 @@ import type {
 } from "../../../src/features/social/model/outreach";
 import type { AiAction, AutonomyPolicy } from "../../../src/features/social/model/autonomy";
 import type { SocialAccountRequest } from "../../../src/features/social/model/accountRequests";
+import type { InstagramModerationRequest } from "../../../src/features/social/model/instagramModeration";
 import type { InboxStatusRecord } from "../inbox/inbox-types";
 import { readInstagramMentions } from "../inbox/instagram-mentions";
 
@@ -34,7 +35,8 @@ export type AudienceRecordKind =
   | "email-account"
   | "autonomy"
   | "inbox-status"
-  | "account-request";
+  | "account-request"
+  | "instagram-moderation";
 
 export type AudienceRecordValue = {
   person: SocialPerson;
@@ -45,6 +47,7 @@ export type AudienceRecordValue = {
   autonomy: AutonomyPolicy;
   "inbox-status": InboxStatusRecord;
   "account-request": SocialAccountRequest;
+  "instagram-moderation": InstagramModerationRequest;
 };
 
 export type Page<T> = { items: T[]; next?: string };
@@ -158,6 +161,32 @@ export class SocialAudienceStore {
   /** Account-specific Instagram mention notifications, paged by delivery order. */
   async instagramMentions(accountId: string, cursor?: string) {
     return readInstagramMentions(this.store, accountId, cursor);
+  }
+
+  async instagramModerationRequests(threadId: string, before?: string) {
+    const prefix = `${encodeURIComponent(threadId)}/`;
+    if (before !== undefined && !before.startsWith(prefix))
+      throw new Error("Invalid Instagram moderation cursor.");
+    const rows = await this.store.db
+      .prepare(
+        "SELECT value FROM social_records WHERE kind='instagram-moderation' AND id>=? AND id<? " +
+          "AND json_extract(value,'$.status') IN ('pending','attempting','uncertain') ORDER BY id DESC LIMIT 26",
+      )
+      .all(prefix, before ?? `${prefix}\uffff`);
+    const requests = rows.slice(0, 25).map((row) => parse<InstagramModerationRequest>(row));
+    return { requests, ...(rows.length > 25 ? { next: requests.at(-1)?.id } : {}) };
+  }
+
+  async activeInstagramModeration(threadId: string, commentId: string, action: string) {
+    const prefix = `${encodeURIComponent(threadId)}/`;
+    const row = await this.store.db
+      .prepare(
+        "SELECT value FROM social_records WHERE kind='instagram-moderation' AND id>=? AND id<? " +
+          "AND json_extract(value,'$.commentId')=? AND json_extract(value,'$.action')=? " +
+          "AND json_extract(value,'$.status') IN ('pending','attempting','uncertain') LIMIT 1",
+      )
+      .get(prefix, `${prefix}\uffff`, commentId, action);
+    return row ? parse<InstagramModerationRequest>(row) : undefined;
   }
 
   // People and handles.

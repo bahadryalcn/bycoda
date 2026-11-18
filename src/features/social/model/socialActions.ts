@@ -44,6 +44,7 @@ export const SOCIAL_READ_ACTIONS = [
   // Instagram
   "instagram.insights",
   "instagram.mentions",
+  "instagram.comments.requests.list",
 ] as const;
 export type SocialReadAction = (typeof SOCIAL_READ_ACTIONS)[number];
 

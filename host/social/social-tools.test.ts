@@ -438,6 +438,7 @@ describe("Real local CLI and MCP transport", () => {
         "instagram.mentions",
       ];
       const writes = [
+        "instagram.comments.request",
         "accounts.request",
         "campaigns.create",
         "campaigns.schedule",

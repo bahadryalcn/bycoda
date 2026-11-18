@@ -78,6 +78,7 @@ export const SOCIAL_TOOLS = [
   // Instagram
   "instagram.insights",
   "instagram.mentions",
+  "instagram.comments.request",
 ] as const;
 export type SocialTool = (typeof SOCIAL_TOOLS)[number];
 export function socialToolName(tool: SocialTool): string {
