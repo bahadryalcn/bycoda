@@ -2,6 +2,7 @@ import type { SocialAccount, TikTokCreatorInfo } from "../../../model/social";
 import type { ContentMedia, PlatformDraft } from "../contentDraft";
 import { FacebookReelFields } from "./FacebookReelFields";
 import { LinkedInFields } from "./LinkedInFields";
+import { FacebookVideoFields } from "./FacebookVideoFields";
 import { MetaFields } from "./MetaFields";
 import { RedditFields } from "./RedditFields";
 import { SnapchatFields } from "./SnapchatFields";
@@ -31,6 +32,9 @@ export function PlatformFields(props: PlatformFieldProps) {
           <MetaFields {...props} />
           {props.account.platform === "facebook" && props.value.facebook?.target === "reel" ? (
             <FacebookReelFields {...props} />
+          ) : null}
+          {props.account.platform === "facebook" && props.account.connection !== "browser" ? (
+            <FacebookVideoFields {...props} />
           ) : null}
         </>
       );

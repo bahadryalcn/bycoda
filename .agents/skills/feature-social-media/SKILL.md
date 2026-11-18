@@ -15,6 +15,7 @@ Full paths are repository-root relative; adjacent abbreviated names share the pr
 - `src/features/social/model/`: `socialTools.ts` (AI-callable actions), `autonomy.ts` (levels and defaults), `audience.ts`, `outreach.ts`, `socialActions.ts` (RPC names). Hooks, `ui/socialBulk.ts` and draft/program models hold workflow state.
 - `src/integrations/social/`: platform adapters, capabilities, reason codes, messaging, media and OAuth helpers. It must not import `features`.
 - `host/social/core/`: action registry (`social-actions.ts`) and service API. `social.ts` only composes; add operations through the registry.
+- Facebook Page-specific reads and management register in `host/social/core/facebook-page-actions.ts`. Live receipts and encoder custody live in `host/social/facebook-live/`. Facebook publication and engagement adapters live under `src/integrations/social/adapters/`.
 - `host/social/accounts/` (project account requests), `audience/`, `outreach/`, `inbox/`, `ai/`, `autonomy/`, `contacts/`, `rules/`, `execution/`, `store/`, `oauth/`, `token-connections/`, `email/`.
 - `host/social/browser*` and `browser-layers/`: sessions, recipes, layered driver, NEEDS_HUMAN, live view. `host/social/social-programs.ts` and `social-program-*.ts`: campaign programs.
 - `host/decision-models/`: decision gateway for the browser decision layer and AI tools (own skill: `feature-decision-models`).

@@ -1,5 +1,6 @@
 import { Text } from "../../../../shared/ui/Text";
-import { useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore } from "react";
+import { FACEBOOK_PRIVATE_REPLY_WINDOW_MS } from "../../../../integrations/social/adapters/facebook-engagement";
 import { t } from "../../../../shared/i18n";
 import { useConfirm } from "../../../../shared/ui/ConfirmDialog";
 import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
@@ -17,6 +18,7 @@ import { inboxApi } from "./inboxApi";
 import { createInboxReplyOperation } from "./inboxReplyOperation";
 import { inboxReplyState, type ReplyDraft } from "./inboxReplyState";
 import { replyBlockedText } from "./inboxModel";
+import { FacebookCommentActions } from "./FacebookCommentActions";
 import { useInboxInvalidate, useInboxReplyOptions, useInboxSnapshot } from "./useInboxData";
 import "./inbox.css";
 
@@ -54,6 +56,22 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
   const setError = (error: string) => state.update({ error });
   const setQueued = (queued: boolean) => state.update({ queued });
   const confirmation = useConfirm();
+  const [openedAt] = useState(Date.now);
+  const facebookCapabilities =
+    thread.kind === "comment" &&
+    snapshot.data?.accounts.some(
+      (account) => account.id === thread.accountId && account.platform === "facebook",
+    )
+      ? (snapshot.data.capabilities[thread.accountId] ?? [])
+      : [];
+  const canPrivateReply =
+    openedAt - thread.lastInboundAt < FACEBOOK_PRIVATE_REPLY_WINDOW_MS &&
+    facebookCapabilities.some(
+      ({ operation, status }) => operation === "comment.privateReply" && status === "available",
+    );
+  const canModerate = facebookCapabilities.some(
+    ({ operation, status }) => operation === "comment.moderate" && status === "available",
+  );
 
   const blocked = options.data ? replyBlockedText(options.data) : undefined;
   // Until the Host answers, Send says why it is off instead of guessing that a reply is allowed.
@@ -62,7 +80,8 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
     : options.data
       ? undefined
       : t("Checking whether this conversation can take a reply.");
-  const blockedReason = operation?.sendAttempted ? undefined : (unknownReason ?? blocked);
+  const blockedReason =
+    operation?.sendAttempted || operation?.facebookDraft ? undefined : (unknownReason ?? blocked);
   const facts =
     snapshot.data?.profiles.find((profile) => profile.projectId === thread.projectId)?.facts ?? [];
 
@@ -129,36 +148,53 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
       .catch(() => undefined);
   };
 
-  const send = async () => {
+  const send = async (privateReply = false) => {
     const current = state.snapshot();
     if (
       current.busy ||
       !hasContent ||
-      (sendGate.disabled && !current.operation?.sendAttempted) ||
-      (blockedReason && !current.operation?.sendAttempted)
+      (sendGate.disabled && !privateReply && !current.operation?.sendAttempted) ||
+      (blockedReason &&
+        !privateReply &&
+        !current.operation?.facebookDraft &&
+        !current.operation?.sendAttempted)
+    )
+      return;
+    if (
+      privateReply &&
+      !current.operation &&
+      !(await confirmation.confirm({
+        title: t("Send private reply"),
+        message: current.draft.text.trim(),
+        confirmLabel: t("Send"),
+      }))
     )
       return;
     setBusy("send");
     setError("");
     setQueued(false);
+    const input = {
+      threadId: thread.id,
+      text: current.draft.text.trim(),
+      factIds: current.draft.factIds,
+      ...(current.draft.instagramPrivateReply ? { instagramPrivateReply: true as const } : {}),
+      ...(current.draft.instagramAttachment?.url.trim()
+        ? {
+            media: [
+              {
+                ...current.draft.instagramAttachment,
+                url: current.draft.instagramAttachment.url.trim(),
+              },
+            ],
+          }
+        : {}),
+    };
     const attempt =
       current.operation ??
-      createInboxReplyOperation({
-        threadId: thread.id,
-        text: current.draft.text.trim(),
-        factIds: current.draft.factIds,
-        ...(current.draft.instagramPrivateReply ? { instagramPrivateReply: true as const } : {}),
-        ...(current.draft.instagramAttachment?.url.trim()
-          ? {
-              media: [
-                {
-                  ...current.draft.instagramAttachment,
-                  url: current.draft.instagramAttachment.url.trim(),
-                },
-              ],
-            }
-          : {}),
-      });
+      createInboxReplyOperation(
+        input,
+        privateReply ? { action: "facebook.privateReplyDraft", input } : undefined,
+      );
     state.update({ operation: attempt });
     try {
       await api.sendReply(attempt);
@@ -245,18 +281,31 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
           ) : null}
         </div>
       ) : null}
+      {canModerate ? (
+        <FacebookCommentActions key={thread.id} client={client} thread={thread} />
+      ) : null}
       <PromptField
         label={t("Reply")}
         minRows={3}
         maxRows={10}
         value={text}
-        disabled={!!blocked || busy !== "" || !!operation}
+        disabled={(!!blocked && !canPrivateReply) || busy !== "" || !!operation}
         placeholder={t("Write a reply")}
         onChange={(event) => {
           changeDraft({ ...draft, text: event.target.value, factIds: [] });
         }}
         toolbarTrailing={
           <>
+            {canPrivateReply && !operation ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={busy !== "" || !text.trim()}
+                onClick={() => void send(true).catch(() => undefined)}
+              >
+                {t("Send private reply")}
+              </Button>
+            ) : null}
             <Button
               variant="ghost"
               size="sm"

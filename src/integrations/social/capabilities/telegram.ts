@@ -20,6 +20,7 @@ export function telegramCapabilities(type: SocialAccount["accountType"]): Platfo
   );
   const base: Record<SocialOperation, CapabilityRequirement> = {
     ...X_ONLY_UNSUPPORTED,
+    ...NOT_YET,
     publish: unsupported,
     media: unsupported,
     "comments.read": unsupported,

@@ -48,6 +48,7 @@ export const SIGNUP_FIELD_ORDER: readonly SocialRegistrationField[] = [
   "birthdate",
   "category",
   "phone",
+  "bio",
 ];
 
 export function registrationFieldLabel(field: SocialRegistrationField): string {
@@ -68,6 +69,8 @@ export function registrationFieldLabel(field: SocialRegistrationField): string {
       return t("Category");
     case "phone":
       return t("Phone number");
+    case "bio":
+      return t("About");
   }
 }
 

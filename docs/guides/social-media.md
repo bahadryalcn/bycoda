@@ -154,3 +154,30 @@ publications or earnings. AI can prepare campaigns and messages under the
 account's existing autonomy settings. Signup requests appear in Command.
 Profile changes and deletion requests appear on the Snapchat account for owner
 review.
+
+## Facebook Pages
+
+Connect a managed Page in **Accounts and Settings** and select the permissions needed for
+publishing, Inbox, Page insights, or Live. **Edit profile** reads the Page and its follower and
+like counts. The saved Facebook browser connection supports owner-confirmed Page name and
+username edits. Setup stops at Facebook's password, agreement and verification steps.
+
+Choose **Feed**, **Video**, **Reel** or **Story** when composing for a Page. The optional
+**Facebook publish time** on Feed and Video hands the accepted item to Facebook's scheduler.
+The Bycoda schedule controls when the Host submits it. Stories use the attached photo or video.
+
+Open a Facebook comment in **Inbox** to hide, restore, delete, like or unlike it. An eligible
+comment can receive one private Messenger reply within seven days. Facebook opens the standard
+conversation window when the recipient responds. Check **Activity** for uncertain outcomes.
+
+The Page details also show posts, mentions, insights, applicable earnings estimates and
+current Live controls. Copy encoder details from the owner controls to configure an encoder.
+The browser monetization overview can read visible Stars, in-stream ads and bonus status for
+the verified Page. Facebook Groups and unsolicited Messenger conversations are unavailable.
+
+In chat, ask AI to read a project's connected Facebook Page, find posts and mentions, check
+insights and Graph earnings estimates, prepare a private reply, or draft a public Live reply.
+AI can prepare and schedule Facebook campaigns through the existing campaign tools. Account
+setup, Page edits, post moderation, the browser monetization overview and Live setup require the owner.
+AI can file changes to the Page, posts, moderation and Live under **Facebook requests** on the
+account. Review the exact request there before approving.

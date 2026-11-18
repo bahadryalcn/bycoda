@@ -1,6 +1,7 @@
 import type { SocialAccount, SocialJob } from "./adapter";
 import { browserContentIssue } from "./browserCapabilities";
 import { facebookReelContentIssue } from "./facebookReels";
+import { facebookPublishingIssue } from "./adapters/facebook-publishing";
 import { messagingContentIssue } from "./adapters/messaging-shared";
 import { instagramStoryAccountIssue } from "./adapters/instagram-publish";
 import { instagramMessageContentIssue } from "./adapters/instagram-messaging";
@@ -31,7 +32,7 @@ export function contentSupport(
     if (storyIssue) return storyIssue;
   }
   if (job.payload.facebook && (account.platform !== "facebook" || account.connection === "browser"))
-    return "The Facebook Reel destination requires a Facebook Page API connection.";
+    return "Facebook publishing options require a Facebook Page API connection.";
   // LinkedIn publishing formats.
   if (
     job.payload.linkedinFormat &&
@@ -55,7 +56,9 @@ export function contentSupport(
   if (account.platform === "telegram" && account.accountType === "channel")
     return telegramChannelContentIssue(account, job);
   if (account.platform === "facebook" && job.payload.facebook)
-    return facebookReelContentIssue(account, job);
+    return job.payload.facebook.target === "reel"
+      ? facebookReelContentIssue(account, job)
+      : facebookPublishingIssue(account, job);
   if (account.platform === "instagram" && job.kind !== "publish" && job.payload.media.length)
     return instagramMessageContentIssue(job);
   if (job.payload.media.some((item) => item.kind === "document"))

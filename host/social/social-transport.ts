@@ -9,6 +9,9 @@ import type { XBrowserSessions } from "./social-browser-x";
 import type { SocialPrincipal, SocialService } from "./social";
 import type { SocialOperation } from "../../src/features/social/model/social";
 import type { SocialBrowserIntent } from "../../src/features/social/model/socialBrowser";
+import { assertLivePage } from "./facebook-live/actions";
+import { readLiveEncoder } from "./facebook-live/receipts";
+import { facebookLiveId } from "../../src/integrations/social/adapters/facebook-live";
 
 /** Constant-time comparison; both sides are hashed first so a length difference does not leak through timing. */
 function sameSecret(actual: string | null, expected: string): boolean {
@@ -60,6 +63,24 @@ export class SocialTransport {
     // X Live custody uses a separate owner-only path with a receipt that contains no key.
     if (method === "social.x.liveKey.store")
       return this.service.saveXLiveKey(p, String(params.accountId ?? ""), params.key);
+    // Facebook encoder credentials bypass registry results and never enter Social receipts.
+    if (method === "social.facebook.live.encoder") {
+      const account = await this.service.accountForOAuth(p, String(params.accountId ?? ""));
+      assertLivePage(account, this.service.store.environmentId);
+      const liveId = facebookLiveId(params.liveId);
+      await this.service.store.db.checkAuthorization();
+      const encoder = await readLiveEncoder(
+        this.service,
+        this.service.credentials,
+        account.id,
+        account.platformId,
+        liveId,
+      );
+      const latest = await this.service.accountForOAuth(p, account.id);
+      assertLivePage(latest, this.service.store.environmentId);
+      if (latest.platformId !== account.platformId) throw new Error("Facebook Page changed.");
+      return encoder;
+    }
     if (method === "social.request")
       return this.service.call(
         p,
@@ -99,6 +120,9 @@ export class SocialTransport {
       return this.oauth.select(p, String(params.accountId ?? ""), String(params.candidateId ?? ""));
     if (method.startsWith("social.browser.")) {
       if (!this.browser) throw new Error("Browser-session connection is unavailable on this host.");
+      // Facebook-only, read-only Business Suite overview.
+      if (method === "social.browser.facebook.monetization")
+        return this.browser.facebookMonetization(this.service, p, String(params.accountId ?? ""));
       if (method === "social.browser.availability")
         return params.existingChrome === true
           ? this.browser.chromeTabs(

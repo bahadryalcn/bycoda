@@ -12,6 +12,10 @@ import { youtubeActions } from "../youtube/youtube-actions";
 import type { SocialActionModule } from "./social-actions";
 import { createXActions } from "./x-actions";
 import { tiktokActions } from "../tiktok/tiktok-actions";
+// Facebook Page actions
+import { facebookPageActions } from "./facebook-page-actions";
+import { facebookLiveActions } from "../facebook-live/actions";
+import { facebookManagementActions } from "./facebook-management-actions";
 
 /** Every registry action module. Phase 4 adds an action by editing its own module, not this list. */
 export const SOCIAL_ACTION_MODULES: SocialActionModule[] = [
@@ -33,4 +37,8 @@ export const SOCIAL_ACTION_MODULES: SocialActionModule[] = [
   // Snapchat
   snapchatActions,
   linkedinActions,
+  // Facebook Page actions
+  facebookPageActions,
+  facebookLiveActions,
+  facebookManagementActions,
 ];

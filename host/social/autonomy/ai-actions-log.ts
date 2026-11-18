@@ -17,6 +17,8 @@ export function isWriteAction(action: string): boolean {
     )
   )
     return false;
+  // Facebook Live comment pagination is read-only.
+  if (action === "facebook.live.comments") return false;
   return !READ_ACTION.test(action);
 }
 

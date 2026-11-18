@@ -12,6 +12,7 @@ import type { SocialInbound } from "../../../src/integrations/social/adapter";
 import type { SocialPrincipal } from "../social";
 import { socialGenerationPrompt } from "../social-generation";
 import type { SocialServiceInternals } from "../core/social-internals";
+import type { SocialIngestOptions } from "../core/social-service-api";
 import { finite, hash, sanitizeSocialError, str, UNASSIGNED_REVIEW } from "../core/social-helpers";
 import { linkInboundToPeople } from "../audience/audience-ingest";
 import { onInbound } from "../outreach/outreach-ingest";
@@ -26,6 +27,7 @@ export async function ingestEvents(
   s: SocialServiceInternals,
   accountId: string,
   events: SocialInbound[],
+  options?: SocialIngestOptions,
 ): Promise<number> {
   const account = await s.get<SocialAccount>("account", accountId);
   let count = 0;
@@ -125,8 +127,8 @@ export async function ingestEvents(
     });
     if (saved) {
       count++;
-      await runInboundHooks(s, account, event, saved);
-      await applyInboundRules(s, key, event);
+      await runInboundHooks(s, account, event, saved, options);
+      if (!options?.draftOnly) await applyInboundRules(s, key, event);
     }
   }
   return count;
@@ -138,6 +140,7 @@ async function runInboundHooks(
   account: SocialAccount,
   event: SocialInbound,
   contact: SocialContact,
+  options?: SocialIngestOptions,
 ): Promise<void> {
   const ctx = { store: s.audience, now: s.now(), decisions: s.decisionModels };
   await Promise.all([
@@ -147,12 +150,13 @@ async function runInboundHooks(
         sanitizeSocialError(error),
       ),
     ),
-    onInbound(ctx, account, [event], [contact]).catch((error) =>
-      console.error(
-        "Social outreach inbound hook failed; inbound event kept:",
-        sanitizeSocialError(error),
+    !options?.draftOnly &&
+      onInbound(ctx, account, [event], [contact]).catch((error) =>
+        console.error(
+          "Social outreach inbound hook failed; inbound event kept:",
+          sanitizeSocialError(error),
+        ),
       ),
-    ),
   ]);
 }
 

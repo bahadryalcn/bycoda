@@ -14,7 +14,11 @@ import { pollTikTokOrganicComments } from "./tiktok/tiktok-organic-inbox";
 import { PROGRAM_OPERATION_FIELDS, socialActionRegistry } from "./core/social-actions";
 import { instagramDirectHandle, instagramPrivateReplyTarget } from "./inbox/instagram-reply";
 import type { YouTubeRuntime } from "./youtube/youtube-runtime";
-import type { AutonomousRequest, SocialServiceApi } from "./core/social-service-api";
+import type {
+  AutonomousRequest,
+  SocialIngestOptions,
+  SocialServiceApi,
+} from "./core/social-service-api";
 import {
   array,
   exact,
@@ -49,6 +53,7 @@ import {
   sendWithFallback,
 } from "./execution/social-job-gates";
 import { enabledOAuthPlatform } from "./oauth/registry";
+import { FACEBOOK_PRIVATE_REPLY_WINDOW_MS } from "../../src/integrations/social/adapters/facebook-engagement";
 import { readInboxSettings } from "./inbox/inbox-settings";
 import { holdForHuman, requeueJobForHuman } from "./execution/social-human-review";
 import { osSecretValues } from "../secrets/secret-store";
@@ -123,6 +128,10 @@ import {
 } from "../../src/integrations/social/adapter";
 import { contentSupport } from "../../src/integrations/social/platformAdapters";
 import { parseSnapchatPublishOptions } from "./execution/snapchat-publish-options";
+import {
+  facebookNativeScheduleAt,
+  facebookScheduleTime,
+} from "../../src/integrations/social/adapters/facebook-schedule";
 import { validatePublishingText } from "../../src/integrations/social/publishingFormats";
 import { xPostExtrasIssue, type XPostExtras } from "../../src/integrations/social/x-publish";
 import { parseLinkedInPostFormat } from "./linkedin/linkedin-format-input";
@@ -685,17 +694,15 @@ export class SocialService implements SocialServiceApi {
                 ) &&
                 !(account.platform === "snapchat" && variant.snapchat?.target === "story") &&
                 !(account.platform === "instagram" && variant.media.length > 0) &&
-                !(
-                  account.platform === "facebook" &&
-                  variant.facebook?.target === "reel" &&
-                  variant.media.length === 1
-                )
+                !(account.platform === "facebook" && variant.media.length > 0)
               )
                 throw new Error("Enter campaign text.");
               this.parseMedia(
                 variant.media,
                 account.platform === "instagram" && account.connection !== "browser",
               );
+              if (facebookNativeScheduleAt(variant.facebook) !== undefined)
+                throw new Error("Facebook scheduling is supported for one-off campaigns only.");
               if (variant.link) url(variant.link, "link");
               validatePublishingText(account, variant);
               const unsupported = contentSupport(account, { kind: "publish", payload: variant });
@@ -703,9 +710,7 @@ export class SocialService implements SocialServiceApi {
             },
             prepareMedia: async (variant) => {
               const account = await this.get<SocialAccount>("account", variant.accountId);
-              const needsUrl =
-                account.connection !== "browser" &&
-                (account.platform === "instagram" || account.platform === "facebook");
+              const needsUrl = account.connection !== "browser" && account.platform === "instagram";
               return {
                 ...variant,
                 media: await mapAsync(variant.media, async (media) => {
@@ -2186,6 +2191,7 @@ export class SocialService implements SocialServiceApi {
           campaign,
           targets: await mapAsync(campaign.variants, async (variant) => {
             const account = await this.access(p, variant.accountId, "read");
+            const facebookAt = facebookNativeScheduleAt(variant.facebook);
             const capability = accountCapabilities(account, this.now()).find(
               (cap) => cap.operation === "publish",
             )!;
@@ -2193,10 +2199,15 @@ export class SocialService implements SocialServiceApi {
               accountId: account.id,
               platform: account.platform,
               capability,
-              contentError: contentSupport(account, {
-                kind: "publish",
-                payload: variant,
-              }),
+              contentError:
+                facebookAt !== undefined &&
+                facebookScheduleTime(facebookAt, Math.max(this.now(), variant.scheduledAt)) ===
+                  undefined
+                  ? "Facebook scheduling requires 10 minutes to 75 days after dispatch."
+                  : contentSupport(account, {
+                      kind: "publish",
+                      payload: variant,
+                    }),
               approved: await this.approved(campaign.id, campaign),
             };
           }),
@@ -2506,7 +2517,8 @@ export class SocialService implements SocialServiceApi {
           job.preparation?.youtubeVideoId ||
           job.preparation?.snapchatMedia?.submittedAt !== undefined ||
           job.preparation?.snapchatMedia?.spotlightId ||
-          job.preparation?.facebookReel?.stage === "submitted"
+          job.preparation?.facebookReel?.stage === "submitted" ||
+          job.preparation?.facebookMedia?.stage === "submitted"
         )
           throw new Error(
             "A dispatched send cannot be recalled. Stop the account to prevent later sends.",
@@ -2582,6 +2594,10 @@ export class SocialService implements SocialServiceApi {
               },
               avatar: (id) => this.readOwnerMedia(p, id),
               rename: (account, profile) => this.renameTikTokBrowser(p, account, profile),
+            },
+            facebookLive: {
+              credentials: this.credentials,
+              environmentId: this.store.environmentId,
             },
           },
           input,
@@ -3597,6 +3613,8 @@ export class SocialService implements SocialServiceApi {
         [variant.text, variant.link].filter(Boolean).join("\n"),
       );
       if (variant.media.length) this.capability(account, "media");
+      if (facebookNativeScheduleAt(variant.facebook) !== undefined)
+        throw new Error("Facebook scheduling is supported for one-off campaigns only.");
       const unsupported = contentSupport(account, { kind: "publish", payload: variant });
       if (unsupported) throw new Error(unsupported);
     }
@@ -3832,33 +3850,53 @@ export class SocialService implements SocialServiceApi {
           typeof value.facebook !== "object" ||
           Array.isArray(value.facebook)
         )
-          throw new Error("Facebook Reel metadata requires an API Page connection.");
+          throw new Error("Facebook publishing options require an API Page connection.");
         const metadata = value.facebook as Record<string, unknown>;
-        exact(metadata, ["target", "durationSeconds", "width", "height", "frameRate"]);
-        if (
-          metadata.target !== "reel" ||
-          ![metadata.durationSeconds, metadata.width, metadata.height, metadata.frameRate].every(
-            (item) => typeof item === "number" && Number.isFinite(item),
-          ) ||
-          Number(metadata.durationSeconds) < 4 ||
-          Number(metadata.durationSeconds) > 60 ||
-          !Number.isInteger(metadata.width) ||
-          !Number.isInteger(metadata.height) ||
-          Number(metadata.width) < 540 ||
-          Number(metadata.height) < 960 ||
-          Number(metadata.width) * 16 !== Number(metadata.height) * 9 ||
-          Number(metadata.frameRate) < 23
-        )
-          throw new Error(
-            "Choose Reel and a 4–60 second vertical MP4 of at least 540 × 960 pixels and 23 fps.",
-          );
-        facebook = {
-          target: "reel",
-          durationSeconds: Number(metadata.durationSeconds),
-          width: Number(metadata.width),
-          height: Number(metadata.height),
-          frameRate: Number(metadata.frameRate),
-        };
+        if (metadata.target === "story") {
+          exact(metadata, ["target"]);
+          facebook = { target: "story" };
+        } else if (metadata.target === "feed" || metadata.target === "video") {
+          exact(metadata, ["target", "scheduledPublishAt"]);
+          const at = metadata.scheduledPublishAt;
+          if (
+            (metadata.target === "feed" || at !== undefined) &&
+            (typeof at !== "number" || !Number.isSafeInteger(at))
+          )
+            throw new Error("Invalid Facebook scheduling options.");
+          facebook =
+            metadata.target === "feed"
+              ? { target: "feed", scheduledPublishAt: at as number }
+              : {
+                  target: "video",
+                  ...(at !== undefined ? { scheduledPublishAt: at as number } : {}),
+                };
+        } else {
+          exact(metadata, ["target", "durationSeconds", "width", "height", "frameRate"]);
+          if (
+            metadata.target !== "reel" ||
+            ![metadata.durationSeconds, metadata.width, metadata.height, metadata.frameRate].every(
+              (item) => typeof item === "number" && Number.isFinite(item),
+            ) ||
+            Number(metadata.durationSeconds) < 4 ||
+            Number(metadata.durationSeconds) > 60 ||
+            !Number.isInteger(metadata.width) ||
+            !Number.isInteger(metadata.height) ||
+            Number(metadata.width) < 540 ||
+            Number(metadata.height) < 960 ||
+            Number(metadata.width) * 16 !== Number(metadata.height) * 9 ||
+            Number(metadata.frameRate) < 23
+          )
+            throw new Error(
+              "Choose Reel and a 4–60 second vertical MP4 of at least 540 × 960 pixels and 23 fps.",
+            );
+          facebook = {
+            target: "reel",
+            durationSeconds: Number(metadata.durationSeconds),
+            width: Number(metadata.width),
+            height: Number(metadata.height),
+            frameRate: Number(metadata.frameRate),
+          };
+        }
       }
       if (value.snapchat !== undefined)
         snapchat = parseSnapchatPublishOptions(account, value.snapchat);
@@ -3933,8 +3971,8 @@ export class SocialService implements SocialServiceApi {
             (linkedinFormat || media.length) &&
             typeof value.text === "string" &&
             !value.text.trim()) ||
-          (facebook?.target === "reel" &&
-            media.length === 1 &&
+          (account.platform === "facebook" &&
+            media.length > 0 &&
             typeof value.text === "string" &&
             !value.text.trim()) ||
           (telegramChannelMedia && typeof value.text === "string" && !value.text.trim())
@@ -4064,6 +4102,13 @@ export class SocialService implements SocialServiceApi {
       );
       this.capability(account, "publish");
       if (variant.media.length) this.capability(account, "media");
+      const nativeAt = facebookNativeScheduleAt(variant.facebook);
+      if (
+        nativeAt !== undefined &&
+        (automated !== undefined ||
+          facebookScheduleTime(nativeAt, Math.max(this.now(), variant.scheduledAt)) === undefined)
+      )
+        throw new Error("Facebook scheduling requires 10 minutes to 75 days after dispatch.");
       const unsupported = contentSupport(account, {
         kind: "publish",
         payload: variant,
@@ -4122,11 +4167,13 @@ export class SocialService implements SocialServiceApi {
       "factIds",
       ...(action === "replies.draft" ? ["instagramPrivateReply", "media"] : []),
     ]);
-    const kind: SocialDraft["kind"] = action.startsWith("replies")
-      ? "reply"
-      : action.startsWith("messages")
-        ? "message"
-        : "comment";
+    const facebookPrivateReply = ["facebook.privateReplyDraft"].includes(action);
+    const kind: SocialDraft["kind"] =
+      action.startsWith("replies") || facebookPrivateReply
+        ? "reply"
+        : action.startsWith("messages")
+          ? "message"
+          : "comment";
     const thread = input.threadId
       ? await this.accessibleThread(p, str(input.threadId, "thread"))
       : undefined;
@@ -4140,6 +4187,13 @@ export class SocialService implements SocialServiceApi {
     if (privateReply) {
       this.capability(draftAccount, "message.reply");
       instagramPrivateReplyTarget(draftAccount, thread, this.now());
+    }
+    if (facebookPrivateReply) {
+      if (draftAccount.platform !== "facebook" || thread?.kind !== "comment")
+        throw new Error("Choose a Facebook Page comment.");
+      if (this.now() - thread.lastInboundAt >= FACEBOOK_PRIVATE_REPLY_WINDOW_MS)
+        throw new Error("The Facebook private reply window has closed.");
+      this.capability(draftAccount, "comment.privateReply");
     }
     const personal =
       !!thread && !thread.projectId && (!!p.assistantAccountId || p.kind === "owner");
@@ -4184,6 +4238,7 @@ export class SocialService implements SocialServiceApi {
       ...(projectId ? { projectId } : {}),
       contactId,
       kind,
+      ...(facebookPrivateReply ? { facebookPrivateReply: true } : {}),
       ...(thread
         ? {
             threadId: thread.id,
@@ -4202,7 +4257,7 @@ export class SocialService implements SocialServiceApi {
       draft.reviewReason = thread.reviewReason;
     await this.assertLength(
       await this.get<SocialAccount>("account", accountId),
-      privateReply || kind === "message" || thread?.kind === "message" ? "message" : "comment",
+      privateReply || facebookPrivateReply || kind === "message" || thread?.kind === "message" ? "message" : "comment",
       draft.text,
     );
     return await this.put("draft", draft.id, draft);
@@ -4414,6 +4469,7 @@ export class SocialService implements SocialServiceApi {
       draft.accountId !== account.id ||
       (draft.projectId ?? null) !== proposal.projectId ||
       draft.kind !== kind ||
+      draft.facebookPrivateReply ||
       draft.ruleId
     )
       throw new Error("Room social draft source changed.");
@@ -4647,6 +4703,7 @@ export class SocialService implements SocialServiceApi {
         throw new Error("Personal sends require an owner-reviewed conversation.");
     }
     const account = await this.access(p, draft.accountId, kind);
+    if (draft.facebookPrivateReply) await this.access(p, draft.accountId, "message");
     if (draft.generation && draft.generation.status !== "completed")
       throw new Error("AI draft generation requires completion or review before sending.");
     const covered = Boolean(draft.ruleId) || (await this.approved(draft.id, draft));
@@ -4663,7 +4720,7 @@ export class SocialService implements SocialServiceApi {
     if (instagramPrivateReply) this.capability(account, "message.reply");
     await this.assertLength(
       account,
-      instagramPrivateReply || kind === "message" || thread?.kind === "message"
+      instagramPrivateReply || draft.facebookPrivateReply || kind === "message" || thread?.kind === "message"
         ? "message"
         : "comment",
       draft.text,
@@ -4674,18 +4731,18 @@ export class SocialService implements SocialServiceApi {
         thread.events.filter((event) => event.direction === "inbound").at(-1)?.id
     )
       throw new Error("A newer inbound message arrived. Review a new draft before sending.");
-    this.eligibility(account, contact, kind, thread, !draft.projectId);
+    this.eligibility(account, contact, kind, thread, !draft.projectId, draft.facebookPrivateReply);
     await assertContactSendable(
       this,
       contact.id,
       account.platform,
-      instagramPrivateReply ? "message" : kind,
+      instagramPrivateReply || draft.facebookPrivateReply ? "message" : kind,
       thread,
     );
     return await this.transaction(async () => {
       // Different drafts/sessions targeting the same inbound event share one lock/key.
       const key = thread
-        ? `${instagramPrivateReply ? "instagram-private" : "reply"}:${thread.id}:${thread.events.filter((event) => event.direction === "inbound").at(-1)?.id}`
+        ? `${instagramPrivateReply ? "instagram-private" : draft.facebookPrivateReply ? "facebook-private-reply" : "reply"}:${thread.id}:${thread.events.filter((event) => event.direction === "inbound").at(-1)?.id}`
         : `draft:${draft.id}`;
       const previous = await this.queuedJob(key);
       if (previous) return previous;
@@ -4706,7 +4763,8 @@ export class SocialService implements SocialServiceApi {
           text: draft.text,
           media: draft.media ?? [],
           recipientId:
-            thread?.kind === "comment" || (kind === "comment" && account.platform !== "youtube")
+            !draft.facebookPrivateReply &&
+            (thread?.kind === "comment" || (kind === "comment" && account.platform !== "youtube"))
               ? undefined
               : contact.platformId,
           threadId:
@@ -4727,6 +4785,7 @@ export class SocialService implements SocialServiceApi {
           kind === "message"
             ? { instagramRecipientHandle: instagramDirectHandle(contact) }
             : {}),
+          ...(draft.facebookPrivateReply ? { facebookPrivateReply: true } : {}),
           ...(thread?.replyUntil === undefined ? {} : { replyUntil: thread.replyUntil }),
           ...(instagramPrivateReply ? { instagramPrivateReply } : {}),
         },
@@ -4742,8 +4801,9 @@ export class SocialService implements SocialServiceApi {
     kind: SocialJob["kind"],
     thread?: SocialThread,
     allowPersonal = false,
+    facebookPrivateReply?: true,
   ) {
-    checkEligibility(this, account, contact, kind, thread, allowPersonal);
+    checkEligibility(this, account, contact, kind, thread, allowPersonal, facebookPrivateReply);
   }
   async upsertContact(p: SocialPrincipal, input: Record<string, unknown>): Promise<SocialContact> {
     return await upsertSocialContact(this, p, input);
@@ -4841,11 +4901,15 @@ export class SocialService implements SocialServiceApi {
     );
   }
   /** Only the platform adapter/signed webhook can call this; never exposed as a session tool. */
-  async ingest(accountId: string, events: SocialInbound[]): Promise<number> {
+  async ingest(
+    accountId: string,
+    events: SocialInbound[],
+    options?: SocialIngestOptions,
+  ): Promise<number> {
     return this.operation(async () => {
       await this.ready;
 
-      return await ingestEvents(this, accountId, events);
+      return await ingestEvents(this, accountId, events, options);
     });
   }
   /** OAuth completion is host-only; a UI/tool cannot submit a token or forge scopes. */
@@ -5646,6 +5710,7 @@ export class SocialService implements SocialServiceApi {
           job.kind === "publish"
             ? "content"
             : job.kind === "message" ||
+                job.payload.facebookPrivateReply ||
                 (replyThread &&
                   (await this.get<SocialThread>("thread", replyThread)).kind === "message")
               ? "message"
@@ -5775,14 +5840,33 @@ export class SocialService implements SocialServiceApi {
             )
               throw new Error("Instagram private reply target changed.");
           }
+          if (job.payload.facebookPrivateReply) {
+            if (
+              !draft.facebookPrivateReply ||
+              draft.text !== job.payload.text ||
+              thread?.platformThreadId !== job.payload.postId ||
+              contact.platformId !== job.payload.recipientId ||
+              (draft.projectId && !currentAccount.grants[draft.projectId]?.includes("message"))
+            )
+              throw new Error("Private reply source or message permission changed.");
+          }
           await assertContactSendable(
             this,
             contact.id,
             currentAccount.platform,
-            job.payload.instagramPrivateReply ? "message" : job.kind,
+            job.payload.instagramPrivateReply || job.payload.facebookPrivateReply
+              ? "message"
+              : job.kind,
             thread,
           );
-          this.eligibility(currentAccount, contact, job.kind, thread, !draft.projectId);
+          this.eligibility(
+            currentAccount,
+            contact,
+            job.kind,
+            thread,
+            !draft.projectId,
+            job.payload.facebookPrivateReply,
+          );
         } else {
           this.capability(currentAccount, "publish");
           if (currentAccount.platform === "instagram")
@@ -5842,13 +5926,14 @@ export class SocialService implements SocialServiceApi {
         const contact = await this.get<SocialContact>("contact", job.contactId);
         contact.history.push({
           operationId: job.operationId,
-          kind: `outbound:${job.kind}`,
+          kind: `outbound:${job.payload.facebookPrivateReply ? "message" : job.kind}`,
           at: this.now(),
           platformId: result.platformId,
         });
         await this.put("contact", contact.id, contact);
         const draft = await this.get<SocialDraft>("draft", job.draftId!);
-        if (draft.threadId) {
+        // Private Messenger text must never appear as a public comment reply.
+        if (draft.threadId && !job.payload.facebookPrivateReply) {
           const thread = await this.get<SocialThread>("thread", draft.threadId);
           thread.events.push({
             id: job.operationId,
@@ -5899,7 +5984,8 @@ export class SocialService implements SocialServiceApi {
             !job.preparation?.youtubeVideoId &&
             job.preparation?.snapchatMedia?.submittedAt === undefined &&
             !job.preparation?.snapchatMedia?.spotlightId &&
-            job.preparation?.facebookReel?.stage !== "submitted"
+            job.preparation?.facebookReel?.stage !== "submitted" &&
+            job.preparation?.facebookMedia?.stage !== "submitted"
           )
             delete job.dispatchedAt;
           await this.setSetting(`rate:${account.id}`, String(job.scheduledAt));

@@ -113,6 +113,17 @@ export const SOCIAL_TOOLS = [
   "linkedin.management.prepare",
   "linkedin.live.status",
   "linkedin.creator.handoff",
+  // Facebook Page tools
+  "facebook.page.read",
+  "facebook.mentions.list",
+  "facebook.insights.read",
+  "facebook.earnings.read",
+  "facebook.posts.list",
+  "facebook.privateReplyDraft",
+  "facebook.live.list",
+  "facebook.live.comments",
+  "facebook.live.replyDraft",
+  "facebook.management.request",
 ] as const;
 export type SocialTool = (typeof SOCIAL_TOOLS)[number];
 export function socialToolName(tool: SocialTool): string {

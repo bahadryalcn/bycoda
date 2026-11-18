@@ -1,23 +1,35 @@
 import type { BrowserPage } from "./social-browser";
 import type { XProfilePatch, XProfileState } from "../../src/features/social/model/socialBrowser";
 import { SocialPlatformError } from "../../src/integrations/social/adapter";
+import { detectChallenge, needsHumanError } from "./browser/challenge";
 
 type Until = <T>(expression: string, timeout: number) => Promise<T | undefined>;
 const avatarLabels = ["Profil resmi işlemleri", "Profile picture actions"];
 const dialogLabels = ["Profil resmi seç", "Select profile picture"];
 
-/** Page branding currently supports only the live-observed logo editor. */
-export function parseFacebookProfilePatch(raw: unknown): XProfilePatch {
+type FacebookProfilePatch = XProfilePatch & { username?: string };
+type FacebookProfileState = XProfileState & { username?: string };
+type SettingsField = "name" | "username";
+const settingsLabels = {
+  name: ["Name", "Page name", "New Page name", "Ad", "Sayfa adı", "Yeni Sayfa adı"],
+  username: ["Username", "Kullanıcı adı"],
+};
+
+/** One field per confirmed browser action. Page metadata and cover use Graph. */
+export function parseFacebookProfilePatch(raw: unknown): FacebookProfilePatch {
   if (!raw || typeof raw !== "object" || Array.isArray(raw))
     throw new Error("Invalid profile update.");
   const input = raw as Record<string, unknown>;
-  if (
-    Object.keys(input).length !== 1 ||
-    typeof input.avatarUploadId !== "string" ||
-    !/^[a-f0-9-]{36}$/i.test(input.avatarUploadId)
-  )
-    throw new Error("Choose one uploaded Facebook Page logo.");
-  return { avatarUploadId: input.avatarUploadId };
+  if (Object.keys(input).length !== 1) throw new Error("Choose one Facebook Page field.");
+  if (typeof input.name === "string") {
+    const name = input.name.trim();
+    if (name && [...name].length <= 75 && !/[\p{Cc}\p{Cf}]/u.test(name)) return { name };
+  }
+  if (typeof input.username === "string" && /^[A-Za-z0-9.]{5,50}$/.test(input.username))
+    return { username: input.username };
+  if (typeof input.avatarUploadId === "string" && /^[a-f0-9-]{36}$/i.test(input.avatarUploadId))
+    return { avatarUploadId: input.avatarUploadId };
+  throw new Error("Choose a valid Facebook Page name, username or uploaded logo.");
 }
 
 export class FacebookProfileActions {
@@ -39,18 +51,123 @@ export class FacebookProfileActions {
       ${body}
     })()`;
   }
-  private async verify() {
+  private async noChallenge() {
+    const hit = await detectChallenge(this.page);
+    if (hit) throw needsHumanError(hit);
+    const passwordRequired = await this.page.evaluate<boolean>(
+      `[...document.querySelectorAll('input[type="password"]')].some(el=>!el.hidden&&!!el.getClientRects().length)`,
+    );
+    if (passwordRequired) throw new SocialPlatformError("needs_human");
+  }
+  private async verify(expression = this.expression("return true;")) {
     await this.authorize();
+    await this.noChallenge();
     await this.identity();
-    if (!(await this.page.evaluate<boolean>(this.expression("return true;"))))
-      throw new SocialPlatformError("denied");
+    if (!(await this.page.evaluate<boolean>(expression))) throw new SocialPlatformError("denied");
   }
   private async open() {
     await this.authorize();
     await this.page.goto(`https://www.facebook.com/profile.php?id=${this.actor}`);
+    await this.noChallenge();
     if (!(await this.until<boolean>(this.expression("return avatar.length===1;"), 20_000)))
       throw new SocialPlatformError("unsupported");
     await this.verify();
+  }
+  private settingsExpression(field: SettingsField, body: string) {
+    return `(() => {
+      const query=new URLSearchParams(location.search);
+      if(location.origin!=='https://www.facebook.com'||!/^\\/settings\\/?$/.test(location.pathname)||query.get('tab')!=='profile'||query.get('section')!==${JSON.stringify(field)})return;
+      const visible=el=>!el.hidden&&el.getAttribute('aria-hidden')!=='true'&&!!el.getClientRects().length;
+      const usable=el=>visible(el)&&!el.disabled&&el.getAttribute('aria-disabled')!=='true';
+      const label=el=>(el.getAttribute('aria-label')||el.textContent||'').trim();
+      const labels=${JSON.stringify(settingsLabels[field])};
+      const inputs=[...document.querySelectorAll('input[type="text"],input:not([type])')].filter(el=>
+        usable(el)&&!el.readOnly&&(labels.includes(el.getAttribute('aria-label')||'')||[...el.labels||[]].some(el=>labels.includes(label(el)))));
+      const fieldInput=inputs.length===1?inputs[0]:undefined;
+      const mark=el=>{
+        document.querySelectorAll('[data-bycoda-fb-setting]').forEach(el=>el.removeAttribute('data-bycoda-fb-setting'));
+        if(!el)return false;
+        el.setAttribute('data-bycoda-fb-setting','true');return true;
+      };
+      ${body}
+    })()`;
+  }
+  private async updateIdentity(field: SettingsField, value: string): Promise<FacebookProfileState> {
+    await this.authorize();
+    await this.noChallenge();
+    const url = `https://www.facebook.com/settings/?tab=profile&section=${field}&view`;
+    await this.page.goto(url);
+    const scope = this.settingsExpression(field, "return true;");
+    await this.verify(scope);
+    const selector = '[data-bycoda-fb-setting="true"]';
+    const input = this.settingsExpression(field, "return mark(fieldInput);");
+    if (!(await this.until<boolean>(input, 15_000))) {
+      await this.noChallenge();
+      throw new SocialPlatformError("unsupported");
+    }
+    await this.verify(scope);
+    await this.page.fill(selector, value);
+    const button = (labels: string[], inDialog: boolean) =>
+      this.settingsExpression(
+        field,
+        `
+      const dialogs=[...document.querySelectorAll('[role="dialog"]')].filter(visible);
+      if(${inDialog ? "dialogs.length!==1" : "dialogs.length||fieldInput?.value!==" + JSON.stringify(value)})return;
+      const root=${inDialog ? "dialogs[0]" : "document"};
+      ${inDialog ? `if(![...root.querySelectorAll('span,strong,p,[role="heading"]')].some(el=>visible(el)&&el.textContent.trim()===${JSON.stringify(value)}))return;` : ""}
+      const buttons=[...root.querySelectorAll('button,[role="button"]')].filter(el=>usable(el)&&${JSON.stringify(labels)}.includes(label(el)));
+      return buttons.length===1&&mark(buttons[0]);`,
+      );
+    const submit = async (expression: string) => {
+      if (!(await this.until<boolean>(expression, 15_000))) {
+        await this.noChallenge();
+        throw new SocialPlatformError("unsupported");
+      }
+      await this.verify(scope);
+      await this.page.click(selector);
+      await this.noChallenge();
+    };
+    if (field === "name") {
+      await submit(
+        button(
+          [
+            "Review Change",
+            "Review change",
+            "Değişikliği Gözden Geçir",
+            "Değişikliği gözden geçir",
+          ],
+          false,
+        ),
+      );
+      await submit(
+        button(["Request Change", "Request change", "Değişiklik İste", "Değişiklik iste"], true),
+      );
+    } else {
+      await submit(
+        button(["Save Changes", "Save changes", "Save", "Değişiklikleri kaydet", "Kaydet"], false),
+      );
+    }
+    // A name can be pending Meta review. Only report the new value after a fresh read verifies it.
+    await this.authorize();
+    await this.page.goto(url);
+    await this.verify(scope);
+    if (
+      !(await this.until<boolean>(
+        this.settingsExpression(field, `return fieldInput?.value===${JSON.stringify(value)};`),
+        15_000,
+      ))
+    ) {
+      await this.noChallenge();
+      throw new SocialPlatformError("unknown");
+    }
+    await this.verify(scope);
+    return {
+      name: field === "name" ? value : "",
+      bio: "",
+      location: "",
+      website: "",
+      ...(field === "username" ? { username: value } : {}),
+    };
   }
   private logoExpression(expectedAsset?: string, beforePath?: string) {
     return this.expression(`
@@ -82,7 +199,10 @@ export class FacebookProfileActions {
       matches[0].setAttribute('data-bycoda-fb-profile-action','true');return true;`),
       15_000,
     );
-    if (!found) throw new SocialPlatformError("unsupported");
+    if (!found) {
+      await this.noChallenge();
+      throw new SocialPlatformError("unsupported");
+    }
     await this.verify();
     return '[data-bycoda-fb-profile-action="true"]';
   }
@@ -97,10 +217,16 @@ export class FacebookProfileActions {
     };
   }
   async update(
-    raw: XProfilePatch,
+    raw: FacebookProfilePatch,
     files: { avatar?: string; banner?: string },
-  ): Promise<XProfileState> {
-    parseFacebookProfilePatch(raw);
+  ): Promise<FacebookProfileState> {
+    const patch = parseFacebookProfilePatch(raw);
+    if (patch.name || patch.username) {
+      if (files.avatar || files.banner) throw new SocialPlatformError("rejected");
+      return patch.name
+        ? this.updateIdentity("name", patch.name)
+        : this.updateIdentity("username", patch.username!);
+    }
     if (!files.avatar || files.banner) throw new SocialPlatformError("rejected");
     await this.open();
     const before = await this.page.evaluate<string | undefined>(this.logoExpression());

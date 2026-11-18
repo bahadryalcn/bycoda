@@ -205,7 +205,7 @@ export function socialClient(machineId: string) {
       accountId: string,
       platform: "x" | "linkedin" | "facebook" | "instagram",
       patch:
-        | import("./socialBrowser").XProfilePatch
+        | (import("./socialBrowser").XProfilePatch & { username?: string })
         | import("./socialBrowser").InstagramProfilePatch,
     ) =>
       remoteRequest<import("./socialBrowser").XProfileState>(
@@ -224,6 +224,24 @@ export function socialClient(machineId: string) {
                   : "UPDATE_X_PROFILE",
         },
       ),
+    // Owner-only Facebook transport. Encoder credentials are read on demand.
+    facebookEncoder: (accountId: string, liveId: string) =>
+      remoteRequest<{ server: string; streamKey: string }>(
+        machineId,
+        "social.facebook.live.encoder",
+        {
+          accountId,
+          liveId,
+        },
+      ),
+    facebookMonetization: (accountId: string) =>
+      remoteRequest<{
+        programs: {
+          program: "stars" | "in_stream_ads" | "bonuses" | "content_monetization";
+          status?: string;
+          earnings?: string;
+        }[];
+      }>(machineId, "social.browser.facebook.monetization", { accountId }),
     xProfileRead: (accountId: string) =>
       remoteRequest<import("./socialBrowser").XProfileState>(
         machineId,

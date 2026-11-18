@@ -109,6 +109,7 @@ const fields: Record<RegistrationField, string> = {
   birthdate: "",
   category: "",
   phone: "",
+  bio: "",
 };
 const tiktokEmail =
   'input[type="text"][name="email"][autocomplete="email"][placeholder="Email address"]';
@@ -142,7 +143,10 @@ function fieldSelector(contract: Contract, field: RegistrationField): string {
     return field === "displayName" || field === "username" ? linkedInPageFields[field] : "";
   if (contract === "x-profile")
     return field === "displayName" || field === "email" ? xSelectors[field] : "";
-  if (contract === "facebook-page" && field === "displayName") return 'label input[type="text"]';
+  if (contract === "facebook-page") {
+    if (field === "displayName") return 'label input[type="text"]';
+    if (field === "bio") return "label textarea";
+  }
   if (contract === "google-name")
     return field === "givenName" || field === "familyName" ? googleSelectors[field] : "";
   if (contract === "google-email") return field === "email" ? googleSelectors.email : "";
@@ -263,17 +267,19 @@ function probeExpression(
       if(dialogs.some(el=>/Nasıl görüneceksiniz\?|How you(?:’|')ll appear/i.test(normalize(el.textContent))&&[...el.querySelectorAll('button,[role="button"]')].some(button=>visible(button)&&/^(Kanal oluştur|Create channel)$/i.test(normalize(button.textContent)))))return {contract:'youtube-channel-confirmation',fields:[],blockers:[...blockers,'terms']};
       return {...empty,blockers};
     }
-    if(${literal(platform)}==='facebook'&&/^\/pages\/creation\/?$/.test(location.pathname)){
+    if(${literal(platform)}==='facebook'&&/^\/(?:checkpoint|challenge)(?:\/|$)/.test(location.pathname))return {...empty,blockers:[...blockers,'challenge']};
+    if(${literal(platform)}==='facebook'&&${literal(accountKind !== "person")}&&/^\/pages\/creation\/?$/.test(location.pathname)){
       const normalize=value=>(value||'').replace(/\s+/g,' ').trim();
       const headings=[...document.querySelectorAll('h1,h2,[role="heading"]')].filter(el=>visible(el)&&normalize(el.textContent)==='Bir Sayfa Oluştur');
       const names=[...document.querySelectorAll('label input[type="text"]')].filter(el=>visible(el)&&normalize(el.closest('label')?.textContent).startsWith('Sayfa adı (zorunlu)'));
       const categories=[...document.querySelectorAll('input[type="search"][role="combobox"][aria-label="Kategori (zorunlu)"]')].filter(visible);
       const submits=[...document.querySelectorAll('button,[role="button"]')].filter(el=>visible(el)&&normalize(el.getAttribute('aria-label')||el.textContent)==='Sayfa Oluştur');
       const terms=[...document.querySelectorAll('a[href]')].some(el=>{try{const url=new URL(el.getAttribute('href'),location.origin);return visible(el)&&url.origin===location.origin&&url.pathname==='/policies_center/pages_groups_events/';}catch{return false;}});
+      const bios=[...document.querySelectorAll('label textarea')].filter(el=>visible(el)&&/^Biyografi \(isteğe bağlı\)/.test(normalize(el.closest('label')?.textContent)));
       if(headings.length===1&&names.length===1&&categories.length===1&&submits.length===1&&terms)
-        return {contract:'facebook-page',fields:['displayName','category'],blockers:[...blockers,'terms']};
+        return {contract:'facebook-page',fields:['displayName','category',...(bios.length===1?['bio']:[])],blockers:[...blockers,'terms']};
     }
-    if(${literal(platform)}==='facebook'&&/^\/(?:r\.php|login(?:\.php)?\/?)?$/.test(location.pathname))
+    if(${literal(platform)}==='facebook'&&${literal(accountKind !== "person")}&&/^\/(?:r\.php|login(?:\.php)?\/?)?$/.test(location.pathname))
       return {contract:'facebook-page-navigation',fields:[],blockers,navigation:'facebook-page'};
     if(${literal(platform)}==='linkedin'&&/^\/signup\/?$/.test(location.pathname)){
       const forms=[...document.querySelectorAll('form.join-form')].filter(visible);
@@ -676,6 +682,13 @@ function progress(
       "Complete the platform's verification in its browser window, then resume this step.",
       { blockers: probe.blockers },
     );
+  if (platform === "facebook" && profile.accountKind === "person")
+    return result(
+      "awaiting_owner",
+      probe.blockers[0] ?? "profile",
+      "Complete personal account registration in the Facebook window, then connect it here.",
+      { blockers: probe.blockers },
+    );
   if (platform === "youtube" && probe.contract === "google-signin") {
     // An existing Google account signs in here; a new one starts only after the owner entered
     // the name for it and pressed Continue, so opening the window never starts account creation.
@@ -751,7 +764,7 @@ function progress(
       "The current signup layout cannot be safely advanced. Review the open platform window.",
       { blockers: probe.blockers },
     );
-  const requiredFields = probe.fields.filter((key) => !profile[key]);
+  const requiredFields = probe.fields.filter((key) => key !== "bio" && !profile[key]);
   if (requiredFields.length)
     return result(
       "needs_fields",
@@ -826,6 +839,12 @@ async function prepareRegistrationStep(
   const probe = await page.evaluate<Probe>(probeExpression(selected, profile.accountKind));
   if (!probe.contract || probe.blockers.includes("challenge"))
     return progress(platform, profile, probe);
+  if (probe.contract === "facebook-page" && profile.bio && !probe.fields.includes("bio"))
+    return result(
+      "changed",
+      "profile",
+      "The Page biography field changed. Review the open Facebook form.",
+    );
   const filledFields: RegistrationField[] = [];
   const google = probe.contract.startsWith("google-");
   const origin = google ? GOOGLE_ORIGIN : origins[selected];
@@ -845,6 +864,20 @@ async function prepareRegistrationStep(
                 : "^/signup/?$";
   for (const key of probe.fields) {
     if (!profile[key]) continue;
+    if (probe.contract === "facebook-page") {
+      const current = await page.evaluate<Probe>(probeExpression("facebook", profile.accountKind));
+      const blocker = current.blockers.find((kind) => kind !== "terms");
+      if (blocker)
+        return result(
+          "awaiting_owner",
+          blocker,
+          "Complete the required step in the Facebook window.",
+          {
+            blockers: current.blockers,
+            filledFields,
+          },
+        );
+    }
     if (key === "category" && probe.contract === "linkedin-page") {
       if (!(await fillLinkedInIndustry(page, profile.category!, options.beforeAction)))
         return result(
@@ -926,7 +959,8 @@ async function prepareRegistrationStep(
       if(location.origin!==${literal(origin)}||!new RegExp(${literal(fieldPath)}).test(location.pathname))return;
       const matches=[...document.querySelectorAll(${literal(selector)})].filter(el=>!el.hidden&&el.getAttribute('aria-hidden')!=='true'&&!!el.getClientRects().length&&!el.disabled&&!el.readOnly);
       if(${literal(probe.contract)}==='facebook-page'){
-        for(let index=matches.length-1;index>=0;index--)if(!(matches[index].closest('label')?.textContent||'').replace(/\s+/g,' ').trim().startsWith('Sayfa adı (zorunlu)'))matches.splice(index,1);
+        const expected=${literal(key === "bio" ? "Biyografi (isteğe bağlı)" : "Sayfa adı (zorunlu)")};
+        for(let index=matches.length-1;index>=0;index--)if(!(matches[index].closest('label')?.textContent||'').replace(/\s+/g,' ').trim().startsWith(expected))matches.splice(index,1);
       }
       if(matches.length!==1)return;const input=matches[0];
       if(input.type==='password'||input.autocomplete==='one-time-code'||/password|verification|confirmation|security_code|otp/i.test(input.name))return;

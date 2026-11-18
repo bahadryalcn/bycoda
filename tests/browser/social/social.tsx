@@ -158,6 +158,59 @@ if (new URLSearchParams(location.search).has("youtube-management")) {
     snapshot.capabilities[account.id] = accountCapabilities(account);
   }
 }
+// Facebook Page controls, using synthetic Graph responses.
+const facebookFixture = new URLSearchParams(location.search).has("facebook-page");
+if (facebookFixture) {
+  const account = {
+    ...snapshot.accounts[0],
+    id: "fixture-facebook",
+    platform: "facebook",
+    platformId: "123",
+    accountType: "page",
+    connection: new URLSearchParams(location.search).has("facebook-browser") ? "browser" : "oauth",
+    name: "Fixture Facebook Page",
+    connected: true,
+    accessApproved: true,
+    scopes: [
+      "pages_read_engagement",
+      "pages_manage_posts",
+      "pages_show_list",
+      "pages_read_user_content",
+      "pages_manage_metadata",
+      "business_management",
+      "pages_manage_engagement",
+      "pages_messaging",
+      "read_insights",
+      "publish_video",
+    ],
+    grants: { demo: ["read", "draft", "publish", "comment", "reply", "message"] },
+  } satisfies SocialSnapshot["accounts"][number];
+  snapshot.accounts = [account];
+  snapshot.capabilities = { [account.id]: accountCapabilities(account) };
+  snapshot.sendingEnabled = true;
+  const commentAt = Date.now() - 60_000;
+  snapshot.threads = [
+    {
+      id: "facebook-comment",
+      accountId: account.id,
+      platformThreadId: "789_456",
+      platformPostId: "123_789",
+      contactId: "facebook-viewer",
+      kind: "comment",
+      lastInboundAt: commentAt,
+      replyAllowed: true,
+      events: [
+        {
+          id: "comment-1",
+          direction: "inbound",
+          text: "When is the next workshop?",
+          at: commentAt,
+          platformId: "789_456",
+        },
+      ],
+    },
+  ];
+}
 const calls: { command: string; args: Record<string, unknown> }[] = [];
 let heldAction: string | undefined;
 let releaseAction: ((reject: boolean) => void) | undefined;
@@ -2002,6 +2055,97 @@ Object.assign(window, {
                 },
               ],
             };
+          if (facebookFixture) {
+            if (params.action === "facebook.management.list")
+              return {
+                requests: [
+                  {
+                    id: "request-1",
+                    accountId: "fixture-facebook",
+                    pageId: "123",
+                    projectId: "demo",
+                    operation: "facebook.page.update",
+                    details: { patch: { about: "More studio workshops" } },
+                    status: "pending",
+                    createdAt: 1763452800000,
+                  },
+                ],
+              };
+            if (params.action === "inbox.unified")
+              return {
+                items: [
+                  {
+                    threadId: "facebook-comment",
+                    accountId: "fixture-facebook",
+                    platform: "facebook",
+                    kind: "comment",
+                    title: "Fixture viewer",
+                    preview: "When is the next workshop?",
+                    at: snapshot.threads[0].lastInboundAt,
+                    status: "unread",
+                    tags: [],
+                  },
+                ],
+                unreadable: [],
+              };
+            if (params.action === "inbox.replyOptions") return { canReply: true };
+            if (params.action === "thread.read")
+              return structuredClone(
+                snapshot.threads.find((thread) => thread.id === params.input?.id),
+              );
+            if (params.action === "facebook.page.read")
+              return {
+                id: "123",
+                name: "Fixture Facebook Page",
+                username: "fixturepage",
+                category: "Creator",
+                about: "Photography and workshops",
+                description: "Local studio and creator workshops.",
+                website: "https://example.test/",
+                phone: "+90 555 010 0101",
+                followersCount: 1270,
+                fanCount: 932,
+              };
+            if (
+              params.action === "facebook.posts.list" ||
+              params.action === "facebook.mentions.list"
+            )
+              return {
+                posts: [{ id: "123_789", text: "Fixture studio announcement", at: 1763452800000 }],
+              };
+            if (params.action === "facebook.insights.read")
+              return {
+                metrics: [{ name: "page_media_view", values: [{ value: 240 }], available: true }],
+              };
+            if (params.action === "facebook.earnings.read")
+              return {
+                metrics: [
+                  { name: "monetization_approximate_earnings", values: [], available: false },
+                ],
+              };
+            if (params.action === "facebook.live.list")
+              return {
+                broadcasts: [
+                  {
+                    id: "101",
+                    title: "Fixture live workshop",
+                    phase: "unpublished",
+                    encoderReady: true,
+                  },
+                ],
+              };
+            if (params.action === "facebook.live.comments")
+              return {
+                comments: [
+                  {
+                    id: "101_456",
+                    text: "When does it begin?",
+                    authorName: "Fixture viewer",
+                    canReply: true,
+                  },
+                ],
+              };
+          }
           if (params.action === heldAction)
             await new Promise<void>((resolve, reject) => {
               releaseAction = (fail) =>
