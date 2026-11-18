@@ -9,6 +9,8 @@ import type {
 } from "../../features/social/model/social";
 import type { CaptureSource, CollectedPerson } from "./audience-types";
 import { META_RATE_LIMIT_CODES } from "./meta-codes";
+import type { InstagramInsightInput, InstagramInsightResult } from "./adapters/instagram-insights";
+import type { CommentAction } from "./adapters/meta-extended";
 
 export type { Capability, SocialAccount, SocialJob, SocialMedia, SocialOperation };
 
@@ -86,6 +88,7 @@ export type SocialInbound = {
   postId?: string;
   optedOut?: boolean;
   replyAllowed?: boolean;
+  instagramSource?: "live_comment";
 };
 export type SocialOwnedPostPage = (after?: string) => Promise<{
   posts: string[];
@@ -146,6 +149,18 @@ export interface SocialAdapter {
   ): Promise<
     Record<string, { views?: number; likes?: number; comments?: number; shares?: number }>
   >;
+  // Instagram Login account, media and moderation operations.
+  instagramInsights?(
+    account: SocialAccount,
+    token: string,
+    input?: InstagramInsightInput,
+  ): Promise<InstagramInsightResult>;
+  instagramCommentAction?(
+    account: SocialAccount,
+    token: string,
+    commentId: string,
+    action: CommentAction,
+  ): Promise<void>;
   getProfile?(
     account: SocialAccount,
     token: string,
@@ -342,6 +357,16 @@ export class SocialHttp {
         const value = await response.json().catch(() => ({}));
         const code = Number(value?.error?.code);
         if ([102, 190].includes(code)) throw new SocialPlatformError("expired");
+        // Instagram reports below-threshold Story insights with permission code 10.
+        if (
+          parsed.hostname === "graph.instagram.com" &&
+          parsed.pathname.endsWith("/insights") &&
+          code === 10 &&
+          /^(?:\(#10\) )?Not enough viewers for the media to show insights\.?$/i.test(
+            String(value?.error?.message),
+          )
+        )
+          throw new SocialPlatformError("rejected");
         if (code === 10 || (code >= 200 && code <= 299)) throw new SocialPlatformError("denied");
         if (META_RATE_LIMIT_CODES.includes(code) || WHATSAPP_RATE_LIMIT_CODES.includes(code))
           throw new SocialPlatformError("rate_limit", retryAfter(response.headers, this.now()));
