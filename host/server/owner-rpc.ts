@@ -114,9 +114,24 @@ export class OwnerRpcDeadlineError extends HostDomainOutcomeError {
 }
 
 /**
+ * The Host began shutting down while the call was in flight. The HTTP layer aborts every
+ * live request signal with this reason; the dispatcher gives the handler
+ * `HOST_STOP_GRACE_MS` to settle and then answers 503 so the shutdown drain is not held.
+ */
+export class HostStoppingError extends HostDomainOutcomeError {
+  readonly code = "HOST_STOPPING";
+  constructor() {
+    super("Host is stopping.", "unknown");
+    this.name = "HostStoppingError";
+  }
+}
+export const HOST_STOP_GRACE_MS = 2_000;
+
+/**
  * Settles with the handler, or rejects when the request signal aborts: on the deadline with
- * `OwnerRpcDeadlineError`, on a client disconnect with a cancellation. Either way the HTTP
- * request leaves the drain set instead of waiting on a handler that never settles.
+ * `OwnerRpcDeadlineError`, on a client disconnect with a cancellation, on Host shutdown with
+ * `HostStoppingError` once the stop grace has passed. Either way the HTTP request leaves the
+ * drain set instead of waiting on a handler that never settles.
  */
 function untilAborted(
   work: Promise<void>,
@@ -125,17 +140,24 @@ function untilAborted(
   deadlineMs: number,
 ): Promise<void> {
   const reason = () =>
-    signal.reason instanceof DOMException && signal.reason.name === "TimeoutError"
-      ? new OwnerRpcDeadlineError(method, deadlineMs)
-      : new Error("Request cancelled");
-  if (signal.aborted) {
-    work.catch(() => undefined);
-    return Promise.reject(reason());
-  }
+    signal.reason instanceof HostStoppingError
+      ? signal.reason
+      : signal.reason instanceof DOMException && signal.reason.name === "TimeoutError"
+        ? new OwnerRpcDeadlineError(method, deadlineMs)
+        : new Error("Request cancelled");
+  work.catch(() => undefined);
   return new Promise<void>((resolve, reject) => {
-    const abort = () => reject(reason());
-    signal.addEventListener("abort", abort, { once: true });
-    work.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+    let grace: ReturnType<typeof setTimeout> | undefined;
+    const abort = () => {
+      if (!(signal.reason instanceof HostStoppingError)) reject(reason());
+      else grace = setTimeout(() => reject(reason()), HOST_STOP_GRACE_MS);
+    };
+    if (signal.aborted) abort();
+    else signal.addEventListener("abort", abort, { once: true });
+    work.then(resolve, reject).finally(() => {
+      clearTimeout(grace);
+      signal.removeEventListener("abort", abort);
+    });
   });
 }
 

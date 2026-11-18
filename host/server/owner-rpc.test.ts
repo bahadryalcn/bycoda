@@ -11,6 +11,8 @@ import {
 import { SessionReadError } from "../domains/sessions/read-errors";
 import {
   dispatchOwnerRpc,
+  HOST_STOP_GRACE_MS,
+  HostStoppingError,
   OwnerRpcDeadlineError,
   ownerRpcDeadlineMs,
   rpcFailureFields,
@@ -125,6 +127,30 @@ it("stops waiting on a stuck handler when the client disconnects", async () => {
   await expect(call).rejects.toThrow("Request cancelled");
   const already = stuckCall(abort.signal);
   await expect(already.call).rejects.toThrow("Request cancelled");
+});
+
+it("answers a stuck handler with HOST_STOPPING once the stop grace passes after shutdown", async () => {
+  vi.useFakeTimers();
+  try {
+    const abort = new AbortController();
+    const { call } = stuckCall(abort.signal);
+    let failure: unknown;
+    void call.catch((error: unknown) => {
+      failure = error;
+    });
+    abort.abort(new HostStoppingError());
+    await vi.advanceTimersByTimeAsync(HOST_STOP_GRACE_MS - 1);
+    expect(failure).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(failure).toBeInstanceOf(HostStoppingError);
+    expect(failure).toMatchObject({ code: "HOST_STOPPING", delivery: "unknown" });
+    // A call that arrives after shutdown began gets the same grace, then the same answer.
+    const late = stuckCall(abort.signal).call.catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(HOST_STOP_GRACE_MS);
+    expect(await late).toBeInstanceOf(HostStoppingError);
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it("gives long-running methods a deadline beyond their client's and owner commands none", () => {
