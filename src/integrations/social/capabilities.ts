@@ -6,6 +6,7 @@ import {
   NOT_YET,
   NOT_YET_OPERATIONS,
   SOCIAL_DOCUMENTS,
+  X_CAPABILITY_OPERATIONS,
   type CapabilityOperation,
   type CapabilityRequirement,
   type OperationRequirements,
@@ -60,6 +61,12 @@ const X_BROWSER_NO_RECIPE =
 const isNotYet = (operation: CapabilityOperation): boolean =>
   (NOT_YET_OPERATIONS as readonly string[]).includes(operation);
 
+function capabilityOperations(platform: SocialPlatform) {
+  return platform === "x"
+    ? [...CAPABILITY_OPERATIONS, ...X_CAPABILITY_OPERATIONS]
+    : CAPABILITY_OPERATIONS;
+}
+
 /** Selecting polling requests both read products. Existing grants may enable either channel independently. */
 export function platformRequirements(
   platform: SocialPlatform,
@@ -92,7 +99,7 @@ function browserCapabilities(account: SocialAccount, now: number): SocialCapabil
   const notes = PLATFORM_TABLES[account.platform](account.accountType).browser;
   const source = SOCIAL_DOCUMENTS[account.platform];
   const expired = account.expiresAt !== undefined && account.expiresAt <= now;
-  return CAPABILITY_OPERATIONS.map((operation): SocialCapability => {
+  return capabilityOperations(account.platform).map((operation): SocialCapability => {
     const row = { operation, scopes: [] as string[], source };
     if (isNotYet(operation) && !supported.includes(operation))
       return {
@@ -139,7 +146,7 @@ function apiCapabilities(account: SocialAccount, now: number): SocialCapability[
     account.accountType,
   );
   const expired = account.expiresAt !== undefined && account.expiresAt <= now;
-  return CAPABILITY_OPERATIONS.map((operation): SocialCapability => {
+  return capabilityOperations(account.platform).map((operation): SocialCapability => {
     const requirement: CapabilityRequirement = requirements[operation];
     let status: SocialCapability["status"] = "available";
     let reason = requirement.reason;
@@ -192,6 +199,12 @@ function apiCapabilities(account: SocialAccount, now: number): SocialCapability[
       reason =
         "Search exists in approved X API products, but external discovery is not implemented by this adapter. Local contacts.search is available.";
       reasonCode = "unsupported.platform";
+    }
+    // X API billing is a separate owner grant, including for previously connected accounts.
+    if (account.platform === "x" && !account.xApiProduct && status !== "unsupported") {
+      status = "pending";
+      reason = "The owner must enable a paid X API product before making API requests.";
+      reasonCode = "x.api.paid_product";
     }
     if (["instagram", "facebook"].includes(account.platform) && operation === "webhook") {
       status = "pending";

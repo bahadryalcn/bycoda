@@ -36,6 +36,7 @@ const account = (patch: Partial<SocialAccount> = {}): SocialAccount =>
     name: "Studio",
     accountType: "member",
     connection: "oauth",
+    xApiProduct: "pay-per-use",
     connected: false,
     paused: false,
     grants: {},

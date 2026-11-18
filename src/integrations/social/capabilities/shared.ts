@@ -7,6 +7,13 @@ export const NOT_YET_OPERATIONS = [
   "audience.collect",
   "profile.read",
 ] as const;
+export const X_CAPABILITY_OPERATIONS = [
+  "x.engagement",
+  "x.relationships",
+  "x.lists",
+  "x.spaces",
+] as const;
+type XCapabilityOperation = (typeof X_CAPABILITY_OPERATIONS)[number];
 export type NotYetOperation = (typeof NOT_YET_OPERATIONS)[number];
 export type CapabilityOperation = SocialOperation | NotYetOperation;
 export const CAPABILITY_OPERATIONS: readonly CapabilityOperation[] = [
@@ -52,11 +59,19 @@ export const r = (
   unsupported,
 });
 
-export const NOT_YET: Record<NotYetOperation, CapabilityRequirement> = {
+export const X_ONLY_UNSUPPORTED: Record<XCapabilityOperation, CapabilityRequirement> = {
+  "x.engagement": r([], "X engagement requires an X API account.", true),
+  "x.relationships": r([], "X relationships require an X API account.", true),
+  "x.lists": r([], "X lists require an X API account.", true),
+  "x.spaces": r([], "X Spaces require an X API account.", true),
+};
+
+export const NOT_YET: Record<NotYetOperation | XCapabilityOperation, CapabilityRequirement> = {
   delete: r([], "Post deletion is not implemented yet.", true),
   analytics: r([], "Post analytics are not implemented yet.", true),
   "audience.collect": r([], "Audience collection is not implemented yet.", true),
   "profile.read": r([], "Profile reading is not implemented yet.", true),
+  ...X_ONLY_UNSUPPORTED,
 };
 
 export const SOCIAL_DOCUMENTS = {

@@ -958,6 +958,27 @@ describe("campaign dispatch publication grants", () => {
   );
 });
 describe("reviewed campaign approval", () => {
+  it("keeps X publishing options in preview and the exact scheduled job", async () => {
+    const s = await fixture();
+    const account = await s.account("x");
+    const x = { communityId: "789", thread: ["Second post", "Third post"] };
+    const campaign = await s.call<SocialCampaign>("campaigns.create", {
+      name: "Community thread",
+      projectIds: [s.a.id],
+      variants: [{ accountId: account.id, text: "First post", x }],
+    });
+    const preview = await s.call<{ campaign: SocialCampaign }>("campaigns.preview", {
+      id: campaign.id,
+    });
+    expect(preview.campaign.variants[0]?.x).toEqual(x);
+    await s.call("campaigns.approveReviewed", {
+      id: campaign.id,
+      expectedRevision: campaign.revision,
+    });
+    await s.call("campaigns.schedule", { id: campaign.id });
+    expect((await s.social.snapshot(owner)).jobs[0]?.payload.x).toEqual(x);
+  });
+
   async function draft(s: Awaited<ReturnType<typeof fixture>>) {
     const account = await s.account();
     return await s.call<SocialCampaign>("campaigns.create", {

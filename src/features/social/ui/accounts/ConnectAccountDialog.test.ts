@@ -108,11 +108,13 @@ async function choose(trigger: string, option: string) {
   await act(async () => found?.click());
 }
 
-it("defaults to the official API and asks for a name before it connects", () => {
+it("defaults to browser for X and asks for a name before it connects", () => {
   const { client } = fakeClient();
   render(client);
   expect(element.querySelector('button[aria-label="Platform: X"]')).not.toBeNull();
-  expect(element.querySelector('button[aria-label="How to connect: Official API"]')).not.toBeNull();
+  expect(
+    element.querySelector('button[aria-label="How to connect: Browser sign-in"]'),
+  ).not.toBeNull();
   expect(button("Connect")?.disabled).toBe(true);
   expect(element.textContent).toContain("Enter a name for this account.");
 });
@@ -128,7 +130,7 @@ it("creates the account with the chosen projects and leaves the connection to it
     platform: "x",
     name: "Launch account",
     accountType: "member",
-    connection: "oauth",
+    connection: "browser",
     projectIds: ["p1", "p2"],
   });
   expect(onCreated).toHaveBeenCalledExactlyOnceWith("new-1");
@@ -206,6 +208,8 @@ it("switches to the email account form from the same dialog", async () => {
 it("offers a new account only for browser accounts on platforms with a signup route", async () => {
   const { client } = fakeClient();
   render(client);
+  expect(button("Create a new X account instead")).toBeTruthy();
+  await choose("How to connect", "Official API");
   expect(button("Create a new X account instead")).toBeUndefined();
   await choose("Platform", "Reddit");
   expect(button("Create a new Reddit account instead")).toBeUndefined();

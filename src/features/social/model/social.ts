@@ -3,7 +3,7 @@ import type { RemoteProvider } from "../../connections/model/protocol";
 // Payload shapes are owned by the adapters; type-only imports keep one source of truth.
 import type { InstagramPublishOptions } from "../../../integrations/social/adapters/instagram-publish";
 import type { RedditPayload } from "../../../integrations/social/adapters/reddit-rules";
-import type { XPostExtras } from "../../../integrations/social/adapters/x";
+import type { XPostExtras } from "../../../integrations/social/x-publish";
 import type {
   WhatsAppInteractive,
   WhatsAppTemplateMessage,
@@ -115,7 +115,12 @@ export type SocialOperation =
   | "delete"
   | "analytics"
   | "audience.collect"
-  | "profile.read";
+  | "profile.read"
+  // X capabilities.
+  | "x.engagement"
+  | "x.relationships"
+  | "x.lists"
+  | "x.spaces";
 export type Capability = {
   operation: SocialOperation;
   status: "available" | "unsupported" | "pending" | "expired";
@@ -149,6 +154,8 @@ export type SocialAccount = {
   connected: boolean;
   /** Undefined means OAuth. Browser uses the executor's isolated web profile; token uses host-configured bot/business credentials. */
   connection?: "oauth" | "browser" | "token";
+  /** Owner-selected X API billing product. Absent means paid X calls are disabled. */
+  xApiProduct?: "pay-per-use" | "enterprise";
   /** Hybrid mode: API first, browser only when the adapter allows the fallback. */
   fallback?: "browser";
   paused: boolean;
@@ -201,6 +208,7 @@ export type CampaignVariant = {
   snapchat?: SnapchatPublishOptions;
   facebook?: FacebookReelOptions;
   instagram?: InstagramPublishOptions;
+  x?: XPostExtras;
 };
 /** Explicit Reel destination; omission preserves ordinary Page feed publishing. */
 export type FacebookReelOptions = {
@@ -465,6 +473,7 @@ export type SocialJob = {
   createdAt: number;
   actorId: string;
   preparation?: {
+    xThread?: { postIds: string[]; submitting: boolean };
     containerId?: string;
     mediaIds?: string[];
     /** Meta preparation is bound to the exact actor/content and expires with its containers. */

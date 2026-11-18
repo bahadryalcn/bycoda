@@ -102,6 +102,8 @@ export async function publishX(
   media: (id: string) => Promise<Uint8Array>,
   beforeSubmit?: () => Promise<void>,
 ): Promise<SocialSendResult> {
+  if (job.payload.x !== undefined)
+    throw new SocialPlatformError("needs_human", undefined, { url: "https://x.com/compose/post" });
   const postId = job.payload.postId;
   const message = job.kind === "message" || (job.kind === "reply" && !postId);
   if (

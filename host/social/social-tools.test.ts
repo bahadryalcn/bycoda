@@ -227,6 +227,7 @@ async function fixture(platform: "x" | "youtube" = "x") {
   } as const;
   const account = (await social.call(owner, "accounts.create", {
     platform,
+    ...(platform === "x" ? { connection: "oauth", xApiProduct: "pay-per-use" } : {}),
     name: "Shared account",
     accountType: platform === "youtube" ? "channel" : "member",
     projectIds: [project.id],
@@ -436,6 +437,11 @@ describe("Real local CLI and MCP transport", () => {
         // Instagram
         "instagram.insights",
         "instagram.mentions",
+        // X.
+        "x.handoff",
+        "x.insights",
+        "x.lists",
+        "x.spaces",
       ];
       const writes = [
         "accounts.request",

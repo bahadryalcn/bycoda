@@ -99,6 +99,27 @@ export function xCapabilities(): PlatformCapabilities {
         ["tweet.read", "users.read"],
         "Reads this account's public profile and follower count through the X API.",
       ),
+      // X API actions and readouts. Likes and reply moderation are owner-operated on X.
+      "x.engagement": r(
+        [
+          "tweet.read",
+          "users.read",
+          "tweet.write",
+          "bookmark.write",
+          "like.write",
+          "tweet.moderate.write",
+        ],
+        "Single-post actions require explicit owner confirmation.",
+      ),
+      "x.relationships": r(
+        ["tweet.read", "users.read", "follows.write", "mute.write"],
+        "Follow and mute with explicit owner confirmation. Blocking requires Enterprise.",
+      ),
+      "x.lists": r(
+        ["tweet.read", "users.read", "list.read", "list.write"],
+        "Read or manage X lists.",
+      ),
+      "x.spaces": r(["tweet.read", "users.read", "space.read"], "Read Spaces by their creator."),
     },
     browser: X_BROWSER_NOTES,
   };

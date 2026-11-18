@@ -86,6 +86,7 @@ export function AccountConnection({
     t("The connection could not be started. Try again."),
   );
   const usesBrowser = account.connection === "browser";
+  const xBillingDisabled = account.platform === "x" && !account.xApiProduct;
   const isTelegram = account.platform === "telegram";
   const isToken = TOKEN_PLATFORMS.includes(account.platform) && !usesBrowser;
   const isOrganization = account.accountType === "organization";
@@ -110,7 +111,12 @@ export function AccountConnection({
     });
   const startOAuth = () =>
     write("connect:oauth", async () => {
-      if (!requestedOperations.length || (isOrganization && !/^\d+$/.test(resourceId))) return;
+      if (
+        xBillingDisabled ||
+        !requestedOperations.length ||
+        (isOrganization && !/^\d+$/.test(resourceId))
+      )
+        return;
       const begin = await client.oauthBegin(
         account.id,
         isOrganization ? resourceId : undefined,
@@ -259,6 +265,7 @@ export function AccountConnection({
               loading={is("connect:oauth")}
               disabled={
                 locked ||
+                xBillingDisabled ||
                 !requestedOperations.length ||
                 (isOrganization && !/^\d+$/.test(resourceId))
               }

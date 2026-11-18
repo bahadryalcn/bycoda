@@ -73,6 +73,11 @@ const NO_REQUEST_ID_ACTIONS = new Set<string>([
   "programs.media-preview",
   "programs.preview-schedule",
   ...SOCIAL_READ_ACTIONS,
+  // X.
+  "x.handoff",
+  "x.insights",
+  "x.spaces",
+  "x.lists",
 ]);
 
 export function socialClient(machineId: string) {
@@ -87,6 +92,9 @@ export function socialClient(machineId: string) {
       ...(NO_REQUEST_ID_ACTIONS.has(action) ? {} : { requestId }),
     });
   return {
+    // The Host's owner-only vault endpoint returns status without the key.
+    saveXLiveKey: (accountId: string, key: string) =>
+      remoteRequest<{ stored: true }>(machineId, "social.x.liveKey.store", { accountId, key }),
     request,
     // Instagram owner-only browser operations.
     browserInstagramRecipient: (accountId: string, handle: string) =>

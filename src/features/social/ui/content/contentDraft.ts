@@ -6,6 +6,7 @@ import type {
   YouTubeVideoOptions,
 } from "../../model/social";
 import type { InstagramPublishOptions } from "../../../../integrations/social/adapters/instagram-publish";
+import { hasXPostExtras, type XPostExtras } from "../../../../integrations/social/x-publish";
 
 /** Read from the local file before upload (video only). Never sent to the Host. */
 export type MediaProbe = { durationSeconds?: number; width?: number; height?: number };
@@ -33,6 +34,12 @@ export type InstagramDraft = Omit<InstagramPublishOptions, "userTags"> & {
   userTags?: InstagramTagDraft[];
   altText?: Record<string, string>;
 };
+export type XPostDraft = {
+  quotePostId?: string;
+  communityId?: string;
+  poll?: { options: string; durationMinutes: string };
+  thread?: string[];
+};
 
 /** Platform options the owner sets per account. Only fields the Host accepts reach a variant. */
 export type PlatformDraft = {
@@ -40,6 +47,7 @@ export type PlatformDraft = {
   youtube?: Partial<YouTubeVideoOptions>;
   facebook?: FacebookDraft;
   instagram?: InstagramDraft;
+  x?: XPostDraft;
   /** Kept in the draft for review; the Host has no Reddit variant field yet (see contentRules). */
   reddit?: RedditDraft;
 };
@@ -138,6 +146,32 @@ function withoutDuration(
   return copy;
 }
 
+/** Convert exact editor strings into validated Host fields only at the variant boundary. */
+export function xPostExtras(draft: XPostDraft | undefined): XPostExtras | undefined {
+  if (!draft) return undefined;
+  const lines = (value: string) =>
+    value
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+  const quotePostId = draft.quotePostId?.trim();
+  const communityId = draft.communityId?.trim();
+  const extras: XPostExtras = {
+    ...(quotePostId ? { quotePostId } : {}),
+    ...(communityId ? { communityId } : {}),
+    ...(draft.poll
+      ? {
+          poll: {
+            options: lines(draft.poll.options),
+            durationMinutes: Number(draft.poll.durationMinutes),
+          },
+        }
+      : {}),
+    ...(draft.thread?.length ? { thread: [...draft.thread] } : {}),
+  };
+  return hasXPostExtras(extras) ? extras : undefined;
+}
+
 /** Maps a saved campaign to an editable draft. Media keeps its upload identity and metadata. */
 export function draftFromCampaign(
   campaign: SocialCampaign,
@@ -207,6 +241,16 @@ export function draftFromCampaign(
     if (variant.tiktok) entry.tiktok = withoutDuration(variant.tiktok);
     if (variant.facebook)
       entry.facebook = { target: "reel", frameRate: variant.facebook.frameRate };
+    if (variant.x)
+      entry.x = {
+        quotePostId: variant.x.quotePostId,
+        communityId: variant.x.communityId,
+        poll: variant.x.poll && {
+          options: variant.x.poll.options.join("\n"),
+          durationMinutes: String(variant.x.poll.durationMinutes),
+        },
+        thread: variant.x.thread && [...variant.x.thread],
+      };
     platform[variant.accountId] = entry;
   }
   // The media is one file shared by every variant, so its size and length come from whichever

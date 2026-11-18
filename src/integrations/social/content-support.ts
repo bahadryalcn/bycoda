@@ -9,6 +9,7 @@ import { metaPublishingIssue } from "./metaMedia";
 import { snapchatContentIssue } from "./snapchat";
 import { telegramChannelContentIssue } from "./telegramChannel";
 import { tiktokContentIssue } from "./tiktok";
+import { hasXPostExtras, xPostExtrasIssue } from "./x-publish";
 import { xMediaIssue } from "./xMedia";
 
 export function contentSupport(
@@ -45,6 +46,16 @@ export function contentSupport(
   if (account.platform === "whatsapp" || account.platform === "telegram")
     return messagingContentIssue(account, job);
   if (account.platform === "x") {
+    // A format cannot fall through to plain browser posting or a lower API product.
+    if (job.payload.x !== undefined) {
+      const issue = xPostExtrasIssue(job.payload.x, job.payload.media.length);
+      if (issue) return issue;
+      if (hasXPostExtras(job.payload.x)) {
+        if (account.connection === "browser") return "Open X to publish these options manually.";
+        if (job.payload.x.quotePostId && account.xApiProduct !== "enterprise")
+          return "X quote posts require Enterprise API access.";
+      }
+    }
     const message =
       job.kind === "message" ||
       (job.kind === "reply" && !!job.payload.recipientId && !job.payload.postId);

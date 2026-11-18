@@ -21,7 +21,7 @@ export type PlatformFieldProps = {
 export function PlatformFields(props: PlatformFieldProps) {
   switch (props.account.platform) {
     case "x":
-      return <XFields />;
+      return <XFields {...props} />;
     case "instagram":
     case "facebook":
       return (

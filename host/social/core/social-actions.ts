@@ -12,6 +12,8 @@ export type SocialActionContext = {
   now: () => number;
   principal: SocialPrincipal;
   operationId: string;
+  /** Executor identity for X API actions that contact the provider directly. */
+  executorId?: string;
   /** Decision-model service from the Host composition; undefined when no model is configured. */
   decisions?: DecisionService;
   /** Host vault for email credentials; undefined makes every email action refuse before sending. */
@@ -101,6 +103,8 @@ export const SOCIAL_LEGACY_ACTIONS: readonly string[] = [
   "thread.page",
   "thread.read",
   "workspace.snapshot",
+  // X account billing.
+  "x.api.setProduct",
 ];
 
 /** Builds the action map. Throws on a duplicate name or a name the built-in switch already owns. */

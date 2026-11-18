@@ -36,6 +36,15 @@ export function operationText(operation: SocialOperation): string {
       return t("Audience collection");
     case "profile.read":
       return t("Profile reading");
+    // X capabilities.
+    case "x.engagement":
+      return t("X engagement");
+    case "x.relationships":
+      return t("X relationships");
+    case "x.lists":
+      return t("X lists");
+    case "x.spaces":
+      return t("Spaces");
   }
 }
 
@@ -57,6 +66,7 @@ export function needsConnection(row: CapabilityRow): boolean {
 export function capabilityReasonText(row: CapabilityRow): string {
   const code = row.reasonCode;
   if (code === "api.ready" || code === "browser.ready") return t("Ready");
+  if (code === "x.api.paid_product") return t("Paid X API disabled");
   if (needsConnection(row)) return t("Connection needed");
   if (code === "unsupported.platform") return t("Not available on this platform");
   if (code === "unsupported.not_yet") return t("Not available yet");

@@ -7,6 +7,7 @@ import { inboxActions } from "../inbox/inbox-actions";
 import { instagramActions } from "../inbox/instagram-actions";
 import { outreachActions } from "../outreach/outreach-actions";
 import type { SocialActionModule } from "./social-actions";
+import { createXActions } from "./x-actions";
 
 /** Every registry action module. Phase 4 adds an action by editing its own module, not this list. */
 export const SOCIAL_ACTION_MODULES: SocialActionModule[] = [
@@ -19,4 +20,6 @@ export const SOCIAL_ACTION_MODULES: SocialActionModule[] = [
   accountRequestActions,
   // Instagram
   instagramActions,
+  // X API and owner browser handoffs.
+  createXActions(),
 ];

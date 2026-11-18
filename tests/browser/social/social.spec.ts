@@ -413,6 +413,54 @@ test("account capability and Telegram connection visual matrix", async ({ page }
   }
 });
 
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`X billing, actions and publishing ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.goto("/tests/browser/social/social.html?x-paid-fixture");
+      await page.evaluate((light) => {
+        document.documentElement.classList.toggle("theme-light", light);
+      }, theme === "light");
+      await sections(page).getByRole("tab", { name: "Hesaplar ve Ayarlar" }).click();
+      await page.getByRole("button", { name: /Demo account/ }).click();
+      const account = page.getByRole("dialog", { name: "Demo account" });
+      const actions = account.locator("summary").filter({ hasText: /X işlemleri/i });
+      await actions.click();
+      await expect(
+        account
+          .getByRole("button", { name: "Analiz", exact: true })
+          .or(account.getByRole("button", { name: "Analitik", exact: true })),
+      ).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/social-x/account-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+      await account.getByRole("button", { name: "Analiz", exact: true }).scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: `temp/verification/social-x/actions-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+      await page.keyboard.press("Escape");
+      await sections(page).getByRole("tab", { name: "İçerik", exact: true }).click();
+      await page.getByRole("button", { name: "Yeni gönderi", exact: true }).click();
+      const editor = page.getByRole("dialog", { name: "Yeni gönderi", exact: true });
+      await expect(editor).toBeVisible();
+      await editor.getByRole("checkbox", { name: "Demo account" }).check();
+      await expect(
+        editor.getByRole("textbox", { name: "Alıntılanacak gönderinin kimliği" }),
+      ).toBeVisible();
+      await editor.getByRole("checkbox", { name: "Anket", exact: true }).check();
+      await editor.getByRole("button", { name: "Diziye gönderi ekle", exact: true }).click();
+      await editor
+        .getByRole("textbox", { name: "Dizideki 2. gönderi", exact: true })
+        .scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: `temp/verification/social-x/content-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+    });
+  }
+
 test("account settings and connection forms visual matrix", async ({ page }, testInfo) => {
   for (const theme of ["light", "dark"]) {
     for (const width of [800, 1280]) {

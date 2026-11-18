@@ -24,6 +24,7 @@ export function connectionMethods(platform: SocialPlatform): ConnectionMethod[] 
  * account type" stands in for "free API". Upgrade when the Host reports the free tier.
  */
 export function defaultConnectionMethod(platform: SocialPlatform): ConnectionMethod {
+  if (platform === "x") return "browser";
   return connectionMethods(platform)[0] ?? "browser";
 }
 

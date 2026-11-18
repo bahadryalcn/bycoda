@@ -22,6 +22,10 @@ Full paths are repository-root relative; adjacent abbreviated names share the pr
 
 ## Preserve
 
+- X API operations require owner billing opt-in. Keep X actions and stream-key
+  custody in X-specific modules. See [X integration](../../../docs/integrations/social.md#x)
+  for supported API operations and owner browser handoffs.
+
 - The full invariant list is in [Social contracts](references/contracts.md). Keep these summaries true when editing.
 
 - Autonomy: levels `suggest` (default), `approve`, `autonomous`, per account and action. Only the owner sets `autonomous`; an AI principal at `autonomous` still obeys limits, hours, suppression and both stops.
