@@ -272,6 +272,74 @@ describe("registration profile input", () => {
 });
 
 describe("specific observed registration contracts", () => {
+  const snapchatForm = `<form>
+    <input name="firstName" type="text"><input name="lastName" type="text">
+    <input name="username" type="text"><input name="phoneNumber" type="tel">
+    <input name="birthday" type="date"><input name="password" type="password">
+    <button type="submit">Sign Up &amp; Accept</button>
+  </form>`;
+
+  it("prepares email only on the exact Snapchat form and preserves an owner value", async () => {
+    const url = "https://accounts.snapchat.com/accounts/signup";
+    const html = snapchatForm.replace(
+      '<input name="phoneNumber" type="tel">',
+      '<input name="email" type="email">',
+    );
+    const f = fixture(url, html);
+    await expect(
+      advanceSocialRegistration(f.page, "snapchat", { email: "owner@example.test" }),
+    ).resolves.toMatchObject({ filledFields: ["email"], canAdvance: false });
+    await expect(
+      advanceSocialRegistration(f.page, "snapchat", { email: "other@example.test" }),
+    ).resolves.toMatchObject({ status: "changed" });
+    expect(f.page.fill).toHaveBeenCalledOnce();
+    expect(f.page.click).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    snapchatForm.replace("<form>", '<form action="https://example.test/collect">'),
+    snapchatForm.replace(
+      'type="submit"',
+      'type="submit" formaction="https://example.test/collect"',
+    ),
+    snapchatForm + '<form><input type="password" autocomplete="current-password"></form>',
+  ])("won't prepare data for an unrelated form or login overlay", async (html) => {
+    const f = fixture("https://accounts.snapchat.com/accounts/signup", html);
+    await advanceSocialRegistration(f.page, "snapchat", { givenName: "Ada" });
+    expect(f.page.fill).not.toHaveBeenCalled();
+    expect(f.page.click).not.toHaveBeenCalled();
+  });
+
+  it("prepares the Snapchat signup form without accepting the agreement or touching secrets", async () => {
+    const f = fixture("https://accounts.snapchat.com/v2/signup", snapchatForm);
+    const state = await advanceSocialRegistration(f.page, "snapchat", {
+      givenName: "Ada",
+      familyName: "Lovelace",
+      username: "ada.snap",
+      phone: "+15550100000",
+      birthdate: "1999-03-12",
+    });
+    expect(state).toMatchObject({
+      status: "awaiting_owner",
+      blockers: ["password", "terms"],
+      filledFields: ["givenName", "familyName", "username", "phone", "birthdate"],
+      canAdvance: false,
+    });
+    expect(f.fill).toHaveBeenCalledTimes(5);
+    expect(f.click).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["<input name='verificationCode' autocomplete='one-time-code'>", "verification"],
+    ["<iframe src='https://example.test/captcha'></iframe>", "challenge"],
+  ])("waits for the owner on a protected Snapchat screen", async (prompt, step) => {
+    const f = fixture("https://accounts.snapchat.com/v2/signup", snapchatForm + prompt);
+    const state = await advanceSocialRegistration(f.page, "snapchat", { givenName: "Ada" });
+    expect(state).toMatchObject({ status: "awaiting_owner", step, canAdvance: false });
+    expect(f.fill).not.toHaveBeenCalled();
+    expect(f.click).not.toHaveBeenCalled();
+  });
+
   it("prepares the observed LinkedIn Page name and public username without choosing organization details or accepting authority", async () => {
     const f = fixture("https://www.linkedin.com/company/setup/new/", linkedinPage);
     const state = await advanceSocialRegistration(f.page, "linkedin", {

@@ -27,11 +27,12 @@ describe("signup availability", () => {
     expect(canCreateAccount("reddit", "browser")).toBe(true);
     expect(canCreateAccount("linkedin", "browser")).toBe(true);
     expect(canCreateAccount("x", "browser")).toBe(true);
+    expect(canCreateAccount("snapchat", "browser")).toBe(true);
+    expect(canCreateAccount("snapchat", "api")).toBe(false);
     expect(canCreateAccount("linkedin", "api")).toBe(false);
   });
 
   it("is not offered where the Host has no signup contract", () => {
-    expect(canCreateAccount("snapchat", "browser")).toBe(false);
     expect(canCreateAccount("telegram", "browser")).toBe(false);
   });
 });

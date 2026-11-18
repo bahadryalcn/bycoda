@@ -9,6 +9,12 @@ import {
   GOOGLE_SIGNUP_URL,
   googleSelectors,
 } from "./social-browser-registration-google";
+import {
+  SNAPCHAT_SIGNUP_ORIGIN,
+  SNAPCHAT_SIGNUP_PATH,
+  SNAPCHAT_SIGNUP_PROBE,
+  snapchatSignupSelectors,
+} from "./social-browser-registration-snapchat";
 import type {
   SocialRegistrationField,
   SocialRegistrationProfile,
@@ -54,7 +60,8 @@ type Contract =
   | "google-signin"
   | "google-name"
   | "google-birthdate"
-  | "google-email";
+  | "google-email"
+  | "snapchat-signup";
 type Probe = {
   contract?: Contract;
   fields: RegistrationField[];
@@ -79,6 +86,8 @@ const supported = new Set<SocialPlatform>([
   "youtube",
   "reddit",
   "x",
+  // Snapchat owner-assisted signup.
+  "snapchat",
 ]);
 const origins = {
   linkedin: "https://www.linkedin.com",
@@ -88,6 +97,7 @@ const origins = {
   youtube: "https://www.youtube.com",
   reddit: "https://www.reddit.com",
   x: "https://x.com",
+  snapchat: SNAPCHAT_SIGNUP_ORIGIN,
 } as const;
 const fields: Record<RegistrationField, string> = {
   email: 'form.join-form input#email-address[name="email-address"][type="email"]',
@@ -98,6 +108,7 @@ const fields: Record<RegistrationField, string> = {
   username: "",
   birthdate: "",
   category: "",
+  phone: "",
 };
 const tiktokEmail =
   'input[type="text"][name="email"][autocomplete="email"][placeholder="Email address"]';
@@ -126,6 +137,7 @@ const linkedInPageFields = {
     'input[id="single-typeahead-entity-form-component-urn-li-fsu-pageCreationFormItem-INDUSTRY"][role="combobox"][aria-autocomplete="list"]',
 } as const;
 function fieldSelector(contract: Contract, field: RegistrationField): string {
+  if (contract === "snapchat-signup") return snapchatSignupSelectors[field] ?? "";
   if (contract === "linkedin-page")
     return field === "displayName" || field === "username" ? linkedInPageFields[field] : "";
   if (contract === "x-profile")
@@ -190,6 +202,8 @@ export function parseRegistrationProfile(raw: unknown): RegistrationProfile {
   }
   if (parsed.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parsed.email))
     throw new Error("Enter a valid registration email address.");
+  if (parsed.phone && !/^\+?[0-9]{7,15}$/.test(parsed.phone))
+    throw new Error("Enter a valid registration phone number.");
   if (parsed.username && !/^[A-Za-z0-9._-]{2,64}$/.test(parsed.username))
     throw new Error("Enter the intended public username without @.");
   if (parsed.birthdate) {
@@ -208,6 +222,7 @@ export function parseRegistrationProfile(raw: unknown): RegistrationProfile {
 function probeExpression(
   platform: keyof typeof origins,
   accountKind?: RegistrationProfile["accountKind"],
+  markedSnapchatField?: RegistrationField,
 ): string {
   return String.raw`(() => {
     const empty={fields:[],blockers:[]};
@@ -229,6 +244,7 @@ function probeExpression(
     if(reddit&&all('h1,h2,[role="heading"]').filter(visible).some(el=>/^(Verify your email|Check your email|Verify email address|E-postanı doğrula)/i.test(el.textContent.trim())))blockers.push('verification');
     if(all('iframe').some(el=>visible(el)&&/captcha|arkoselabs|hcaptcha|recaptcha/i.test(el.getAttribute('src')||''))||all('[role="dialog"],h1,h2').filter(visible).some(el=>/^(Verify (?:you are|you're) human|Complete the security check|Security verification|Prove your humanity|Güvenlik doğrulaması)$/i.test(el.textContent.trim())))blockers.push('challenge');
     if(x&&xHeadings.some(text=>/^(Authenticate|Suspicious login|Kimlik doğrulama|Şüpheli)/i.test(text)))blockers.push('challenge');
+    if(${literal(platform)}==='snapchat'){const markedField=${literal(markedSnapchatField ?? null)};${SNAPCHAT_SIGNUP_PROBE}}
     if(googleAuth){${GOOGLE_PROBE}
     }
     const normalize=value=>(value||'').replace(/\s+/g,' ').trim();
@@ -813,17 +829,20 @@ async function prepareRegistrationStep(
   const filledFields: RegistrationField[] = [];
   const google = probe.contract.startsWith("google-");
   const origin = google ? GOOGLE_ORIGIN : origins[selected];
-  const fieldPath = google
-    ? GOOGLE_FIELD_PATH
-    : probe.contract === "linkedin-page"
-      ? "^/company/setup/new/$"
-      : selected === "x"
-        ? xPath
-        : selected === "tiktok"
-          ? "^/signup/phone-or-email/email/?$"
-          : selected === "facebook"
-            ? "^/pages/creation/?$"
-            : "^/signup/?$";
+  const fieldPath =
+    selected === "snapchat"
+      ? SNAPCHAT_SIGNUP_PATH
+      : google
+        ? GOOGLE_FIELD_PATH
+        : probe.contract === "linkedin-page"
+          ? "^/company/setup/new/$"
+          : selected === "x"
+            ? xPath
+            : selected === "tiktok"
+              ? "^/signup/phone-or-email/email/?$"
+              : selected === "facebook"
+                ? "^/pages/creation/?$"
+                : "^/signup/?$";
   for (const key of probe.fields) {
     if (!profile[key]) continue;
     if (key === "category" && probe.contract === "linkedin-page") {
@@ -898,6 +917,11 @@ async function prepareRegistrationStep(
     const selector = fieldSelector(probe.contract, key);
     if (!selector) continue;
     await options.beforeAction?.();
+    if (selected === "snapchat") {
+      const fresh = await page.evaluate<Probe>(probeExpression(selected, profile.accountKind));
+      if (fresh.contract !== probe.contract || !fresh.fields.includes(key))
+        return { ...progress(platform, profile, fresh), filledFields };
+    }
     const marked = await page.evaluate<"empty" | "same" | "changed" | undefined>(String.raw`(() => {
       if(location.origin!==${literal(origin)}||!new RegExp(${literal(fieldPath)}).test(location.pathname))return;
       const matches=[...document.querySelectorAll(${literal(selector)})].filter(el=>!el.hidden&&el.getAttribute('aria-hidden')!=='true'&&!!el.getClientRects().length&&!el.disabled&&!el.readOnly);
@@ -920,6 +944,19 @@ async function prepareRegistrationStep(
       );
     if (marked === "empty") {
       await options.beforeAction?.();
+      if (selected === "snapchat") {
+        const fresh = await page.evaluate<Probe>(
+          probeExpression(selected, profile.accountKind, key),
+        );
+        if (fresh.contract !== probe.contract || !fresh.fields.includes(key))
+          return fresh.blockers.some(
+            (blocker) => blocker === "challenge" || blocker === "verification",
+          )
+            ? { ...progress(platform, profile, fresh), filledFields }
+            : result("changed", "profile", "The signup field changed. Review it before resuming.", {
+                filledFields,
+              });
+      }
       const unchanged = await page.evaluate<"empty" | "same" | undefined>(String.raw`(() => {
         if(location.origin!==${literal(origin)}||!new RegExp(${literal(fieldPath)}).test(location.pathname))return;
         const input=document.querySelector('[data-bycoda-registration-field="${key}"]');
