@@ -110,6 +110,9 @@ continue to apply.
 
 ### Support matrix
 
+For current Instagram coverage, see [Instagram Login and browser coverage](#instagram-facebook-and-meta).
+The Instagram row below reflects the earlier adapter matrix.
+
 | Platform  | Official API (free where listed)                                                                                                                                                                                                                            | Browser connection                                                                                                                                                                                           | Deferred or not implemented                                                                                                                                                               |
 | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | X         | OAuth posts, text plus up to four JPEG/PNG images or one MP4, replies, delete, mentions and comments on own posts, profile read, metrics, rate-limit pause. DM read and reply with DM scopes. Likes/reposts are adapter functions without an operation row. | Posts, images or one video, mentions and saved-post comments, legacy web DM text, owner profile and follow controls.                                                                                         | Threads (not implemented), quote posts and polls (no model field, not reachable), encrypted Chat, DM attachments, search-based discovery on the API (product tier dependent).             |
@@ -206,8 +209,9 @@ permission grants still determine availability.
   [Meta webhooks](https://developers.facebook.com/docs/graph-api/webhooks/getting-started/webhooks-for-instagram/) · [Meta insights](https://developers.facebook.com/documentation/instagram-platform/insights)
 - The verified browser connection supports owner-confirmed caption edits and
   deletion, comment likes, follow and unfollow, a partial follower sample and
-  profile editing where the controls are present. Native API deletion requires
-  Facebook Login, which differs from this Instagram Login connection.
+  profile editing where the controls are present. New browser text DMs verify
+  the recipient and use the existing approved sending queue. Native API deletion
+  requires Facebook Login, which differs from this Instagram Login connection.
   [Meta media reference](https://developers.facebook.com/docs/instagram-platform/reference/instagram-media/v21.0/)
 - Professional conversion, additional profile settings, Highlights,
   monetization and Live Producer open an owner workflow. Availability depends on
