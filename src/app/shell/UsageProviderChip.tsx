@@ -319,6 +319,15 @@ function UsageProviderDetails({
       setReconnectState("error");
     }
   };
+  const showUsageHeader = accountView === "usage" && !loginView;
+  const refreshButton = onRefresh ? (
+    <UsageRefreshButton
+      accountId={detailAccountId}
+      onRefresh={onRefresh}
+      refreshing={refreshing}
+      disabled={resetAction === "using" || reconnectState === "running"}
+    />
+  ) : null;
   return (
     <Popover
       anchor={trigger}
@@ -335,7 +344,7 @@ function UsageProviderDetails({
       className={`overflow-y-auto ${accountView === "usage" && loginView && !canBrowseUsage ? "" : "p-2.5"}`}
     >
       <Text as="div" size="inherit" tone="primary">
-        {canBrowseUsage || onRefresh ? (
+        {canBrowseUsage || (!showUsageHeader && refreshButton) ? (
           <div className="mbe-2 flex items-start gap-1">
             {canBrowseUsage ? (
               <div
@@ -370,12 +379,7 @@ function UsageProviderDetails({
                 ))}
               </div>
             ) : null}
-            <UsageRefreshButton
-              accountId={detailAccountId}
-              onRefresh={onRefresh}
-              refreshing={refreshing}
-              disabled={resetAction === "using" || reconnectState === "running"}
-            />
+            {!showUsageHeader ? refreshButton : null}
           </div>
         ) : null}
         {accountView === "accounts" ? (
@@ -436,10 +440,23 @@ function UsageProviderDetails({
                 <HarnessIcon harness={iconHarness} className="size-4" />
               </span>
               <div className="min-w-0 flex-1">
-                <Heading size="item" level={2}>
-                  {providerLabel}
-                  {t(" usage")}
-                </Heading>
+                <div className="flex items-center gap-2">
+                  <Heading size="item" level={2}>
+                    {providerLabel}
+                    {t(" usage")}
+                  </Heading>
+                  {detailLimits.status === "fetching" ? (
+                    <Text
+                      size="caption"
+                      tone="secondary"
+                      className="ms-auto inline-flex items-center gap-1"
+                    >
+                      <Spinner size="micro" />
+                      {t("Updating")}
+                    </Text>
+                  ) : null}
+                  {refreshButton}
+                </div>
                 <Text as="p" size="caption" tone="secondary" className="mt-0.5">
                   {updatedLabel(detailLimits, now, t)}
                 </Text>
@@ -482,16 +499,6 @@ function UsageProviderDetails({
                   </Text>
                 ) : null}
               </div>
-              {detailLimits.status === "fetching" ? (
-                <Text
-                  size="caption"
-                  tone="secondary"
-                  className="mt-0.5 inline-flex items-center gap-1"
-                >
-                  <Spinner size="micro" />
-                  {t("Updating")}
-                </Text>
-              ) : null}
             </div>
             {detailLimits.status === "error" && detailWindows.length > 0 ? (
               <Text

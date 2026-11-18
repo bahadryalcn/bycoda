@@ -58,7 +58,7 @@ it("removes several entries and refuses to empty a group", () => {
     [{ id: "p", name: "P", entryIds: ["a"] }],
   );
   expect(removeEntries(draft, ["b", "c"]).routing.entries.map((item) => item.id)).toEqual(["a"]);
-  expect(() => removeEntries(draft, ["a"])).toThrow(/last model in a group/);
+  expect(() => removeEntries(draft, ["a"])).toThrow(/Group "P" would be empty/);
 });
 
 it("sets effort only where the model accepts the value", () => {
@@ -94,5 +94,16 @@ it("adds the account's catalog models the order does not list yet", () => {
     "default",
   );
   expect(next.routing.entries.map((item) => item.model)).toEqual(["m1", "m2"]);
-  expect(next.percentages[next.routing.entries[1]!.id]).toBe("0");
+  expect(next.percentages[next.routing.entries[1]!.id]).toBe("");
+});
+
+it("names the group when the whole selection would empty it, before removing anything", () => {
+  const draft = draftOf(
+    [entry("a", "claude"), entry("b", "codex"), entry("c", "grok")],
+    [{ id: "p", name: "Pair", entryIds: ["a", "b"] }],
+  );
+  expect(() => removeEntries(draft, ["a", "b"])).toThrow(
+    'Group "Pair" would be empty. Remove it or keep one of its models.',
+  );
+  expect(removeEntries(draft, ["a", "c"]).routing.pools[0]!.entryIds).toEqual(["b"]);
 });

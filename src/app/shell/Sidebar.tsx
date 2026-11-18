@@ -93,6 +93,7 @@ import {
   GitPullRequest,
   Inbox,
   ListFilter,
+  MessageSquarePlus,
   PanelLeft,
   Pin,
   PinOff,
@@ -3280,6 +3281,9 @@ function SidebarComponent({
   // of leaving an empty row over the Workspace selector.
   const workspaceHeader = (withVisitNav = false) => {
     const switcher = !lastSessionsOpen && !remoteProject && cwd && cwd !== "~";
+    const createSession = lastSessionsOpen
+      ? onNewListedSession && (() => setNewSessionProjectOpen(true))
+      : onNew;
     return (
       <PaneHeader
         dragRegion
@@ -3304,96 +3308,73 @@ function SidebarComponent({
             </Text>
           )
         }
+        trailing={createSession ? <WorkspaceNewSessionButton onNew={createSession} /> : null}
       >
-        {withVisitNav ? (
-          <TabVisitNav
-            canGoBack={canGoBack}
-            canGoForward={canGoForward}
-            onGoBack={onGoBack}
-            onGoForward={onGoForward}
-          />
+        {withVisitNav || (compactRailVisible && onToggleProjectRail) ? (
+          <div className="flex shrink-0 items-center gap-1" data-workspace-navigation>
+            {withVisitNav ? (
+              <TabVisitNav
+                canGoBack={canGoBack}
+                canGoForward={canGoForward}
+                onGoBack={onGoBack}
+                onGoForward={onGoForward}
+              />
+            ) : null}
+            {compactRailVisible && onToggleProjectRail ? (
+              <IconButton
+                label={t("Expand projects")}
+                command="App: Toggle Sidebar"
+                onClick={onToggleProjectRail}
+              >
+                <PanelLeft className="icon-sm" strokeWidth={1.75} />
+              </IconButton>
+            ) : null}
+          </div>
         ) : null}
-        {compactRailVisible && onToggleProjectRail ? (
-          <IconButton
-            label={t("Expand projects")}
-            command="App: Toggle Sidebar"
-            onClick={onToggleProjectRail}
+        {sessionToolbar ? (
+          <WorkspaceToolbar
+            active={selectionMode || filtersActive || searchQuery.trim().length > 0}
+            items={[
+              {
+                kind: "item",
+                id: "search",
+                label: t("Search sessions"),
+                icon: <Search className="icon-sm" />,
+              },
+              ...(!lastSessionsOpen
+                ? [
+                    {
+                      kind: "item" as const,
+                      id: "select",
+                      label: selectionMode ? t("Stop selecting") : t("Select conversations"),
+                      checked: selectionMode,
+                      icon: <CheckList className="icon-sm" />,
+                    },
+                  ]
+                : []),
+              {
+                kind: "item",
+                id: "filter",
+                label: t("Filter sessions"),
+                checked: filtersActive,
+                icon: <ListFilter className="icon-sm" />,
+              },
+            ]}
+            onPick={(id, anchor) => {
+              if (id === "search") sessionSearchRef.current?.expand();
+              else if (id === "filter") onFilterButtonClick({ currentTarget: anchor });
+              else if (id === "select") {
+                if (selectionMode) clearSessionSelection();
+                else {
+                  setSessionMenu(null);
+                  selection.enterMode();
+                }
+              }
+            }}
           >
-            <PanelLeft className="icon-sm" strokeWidth={1.75} />
-          </IconButton>
+            {sessionToolbar}
+          </WorkspaceToolbar>
         ) : null}
-        <WorkspaceToolbar
-          active={
-            showSessionTools && (selectionMode || filtersActive || searchQuery.trim().length > 0)
-          }
-          newAction={
-            <WorkspaceTitleActions
-              onNew={
-                lastSessionsOpen
-                  ? onNewListedSession
-                    ? () => setNewSessionProjectOpen(true)
-                    : undefined
-                  : onNew
-              }
-            />
-          }
-          items={[
-            ...(showSessionTools
-              ? [
-                  {
-                    kind: "item" as const,
-                    id: "search",
-                    label: t("Search sessions"),
-                    icon: <Search className="icon-sm" />,
-                  },
-                  ...(!lastSessionsOpen
-                    ? [
-                        {
-                          kind: "item" as const,
-                          id: "select",
-                          label: selectionMode ? t("Stop selecting") : t("Select conversations"),
-                          checked: selectionMode,
-                          icon: <CheckList className="icon-sm" />,
-                        },
-                      ]
-                    : []),
-                  {
-                    kind: "item" as const,
-                    id: "filter",
-                    label: t("Filter sessions"),
-                    checked: filtersActive,
-                    icon: <ListFilter className="icon-sm" />,
-                  },
-                ]
-              : []),
-            ...((lastSessionsOpen ? onNewListedSession : onNew)
-              ? [
-                  {
-                    kind: "item" as const,
-                    id: "new",
-                    label: t("New session"),
-                    icon: <Plus className="icon-sm" />,
-                  },
-                ]
-              : []),
-          ]}
-          onPick={(id, anchor) => {
-            if (id === "search") sessionSearchRef.current?.expand();
-            else if (id === "filter") onFilterButtonClick({ currentTarget: anchor });
-            else if (id === "select") {
-              if (selectionMode) clearSessionSelection();
-              else {
-                setSessionMenu(null);
-                selection.enterMode();
-              }
-            } else if (id === "new") {
-              if (lastSessionsOpen) setNewSessionProjectOpen(true);
-              else onNew?.();
-            }
-          }}
-        >
-          {sessionToolbar}
-        </WorkspaceToolbar>
       </PaneHeader>
     );
   };
@@ -5021,20 +5002,24 @@ function CompactRailAction({
   );
 }
 
-/** The header's one remaining global action; the global Search is the top-left control. */
-function WorkspaceTitleActions({ onNew }: { onNew?: () => void }) {
+function WorkspaceNewSessionButton({ onNew }: { onNew: () => void }) {
   const t = useT();
-  if (!onNew) return null;
+  const shortcut = useKeybindingShortcut("Tab: New");
+  const label = t("New Session");
   return (
-    <div className="flex shrink-0 items-center gap-0.5" data-tauri-drag-region="false">
-      {onNew ? (
-        <span className="inline-flex" data-usage-guide="new-session">
-          <IconButton label={t("New session")} command="Tab: New" onClick={onNew}>
-            <Plus className="icon-sm" strokeWidth={1.75} />
-          </IconButton>
-        </span>
-      ) : null}
-    </div>
+    <Button
+      aria-label={label}
+      tooltip={label}
+      shortcut={shortcut || undefined}
+      motion="none"
+      padding={{ inline: "sm" }}
+      startIcon={<MessageSquarePlus className="icon-sm" strokeWidth={1.75} />}
+      onClick={onNew}
+      data-session-selection-keep
+      data-usage-guide="new-session"
+    >
+      <span className={styles.newSessionLabel}>{label}</span>
+    </Button>
   );
 }
 

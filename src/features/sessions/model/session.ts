@@ -269,6 +269,8 @@ export type Attachment = {
   path?: string;
   /** Base64 payload for vision images (and pasted blobs) sent to the harness. */
   data?: string;
+  /** Saved queue record only: the pasted payload lives outside it and is loaded back on restore. */
+  externalPayload?: true;
   /** Object URL for in-session thumbnails. Not persisted. */
   previewUrl?: string;
   /** Remote history preview loaded on explicit user action. Never persisted. */

@@ -24,4 +24,29 @@
 
 .workspaceHeader > [data-pane-header-body] {
   min-inline-size: fit-content;
+  justify-content: flex-end;
+}
+
+@container workspace-pane (inline-size < 440px) {
+  .workspaceHeader,
+  .workspaceHeader > [data-pane-header-body],
+  .workspaceHeader [data-workspace-navigation],
+  .workspaceHeader [data-session-tools] {
+    column-gap: 0;
+  }
+
+  .workspaceHeader > [data-pane-header-heading] {
+    margin-inline-end: var(--space-1);
+  }
+
+  .newSessionLabel {
+    display: none;
+  }
+}
+
+@container workspace-pane (inline-size < 280px) {
+  .workspaceHeader [data-workspace-copy-name],
+  .workspaceHeader:has([data-session-tools] [data-expanded]) [data-workspace-navigation] {
+    display: none;
+  }
 }

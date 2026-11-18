@@ -4,6 +4,28 @@ import { expect, test, type Page } from "@playwright/test";
 const fixture = "/tests/browser/host-tools/host-tools.html";
 const captures = "temp/verification/2026-10-26-device-panel";
 
+test("selects a remote Mac from device setup without starting it", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 800, height: 980 });
+  await page.goto(`${fixture}?detached=1&theme=dark`);
+  const openSetup = () =>
+    page.getByRole("button", { name: "Setup and access", exact: true }).click();
+  const setup = page.getByRole("dialog", { name: "Setup and access", exact: true });
+  await openSetup();
+  await expect(setup.getByText("Xcode requires macOS")).toBeVisible();
+  await setup.getByRole("button", { name: "Tool machine: This computer" }).click();
+  await page.getByRole("option", { name: "Fixture MacBook", exact: true }).click();
+  await expect(setup).toBeHidden();
+  await openSetup();
+  await expect(setup.getByRole("button", { name: "Tool machine: Fixture MacBook" })).toBeVisible();
+  await expect(setup.getByText("Xcode requires macOS")).toBeHidden();
+  await expect(setup.getByText("SDK detected")).toBeVisible();
+  await expect(setup.getByText("Device host stopped")).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("mac-setup.png"), animations: "disabled" });
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Connect devices", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Start simulator", exact: true })).toBeVisible();
+});
+
 for (const width of [1280, 800])
   for (const theme of ["light", "dark"]) {
     test(`Duo fold controls ${theme} ${width}`, async ({ page }) => {

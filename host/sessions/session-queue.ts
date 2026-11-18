@@ -238,7 +238,7 @@ export class SessionQueues {
         await this.release(id, clientId, epoch);
         queue = await this.get(id);
       } else if (action === "change") {
-        await this.assertNoticesUntouched(id, change?.after);
+        await this.assertNoticesUntouched(id, change?.before, change?.after);
         queue = await this.change(
           id,
           change?.before,
@@ -482,8 +482,9 @@ export class SessionQueues {
    * Host-authored rows (delegation notices) are never editable by an owner client and an
    * owner cannot author one; only removing such a row is allowed.
    */
-  private async assertNoticesUntouched(id: string, after: unknown): Promise<void> {
+  private async assertNoticesUntouched(id: string, before: unknown, after: unknown): Promise<void> {
     const current = await this.get(id);
+    const old = new Map(this.parse(before).messages.map((row) => [row.id, row]));
     const incoming = new Map(this.parse(after).messages.map((row) => [row.id, row]));
     const refuse = () =>
       new HostDomainRefusalError(
@@ -493,8 +494,16 @@ export class SessionQueues {
         "A system notice in the queue cannot be edited. Remove it or let it send.",
       );
     for (const row of incoming.values()) {
+      if (!row.author) continue;
       const existing = current.messages.find((entry) => entry.id === row.id);
-      if (row.author && !sameQueueValue(existing, row)) throw refuse();
+      if (existing) {
+        if (!sameQueueValue(existing, row)) throw refuse();
+        continue;
+      }
+      // Sent or removed here while the client still listed it (it missed that change): the
+      // merge drops a removed or unchanged row and never adds it back.
+      if (sameQueueValue(old.get(row.id), row) || (await this.wasRemoved(id, row.id))) continue;
+      throw refuse();
     }
     for (const row of current.messages) {
       const next = incoming.get(row.id);
@@ -512,9 +521,7 @@ export class SessionQueues {
       for (const row of incoming.messages) {
         if (
           old.messages.some((entry) => entry.id === row.id) ||
-          !(await this.db
-            .prepare("SELECT 1 FROM session_queue_removed WHERE session_id=? AND message_id=?")
-            .get(id, row.id))
+          !(await this.wasRemoved(id, row.id))
         )
           accepted.push(row);
       }
@@ -541,6 +548,11 @@ export class SessionQueues {
         if (!next.messages.some((entry) => entry.id === row.id)) await this.removed(id, row.id);
       return sameQueueValue(current, next) ? current : await this.save(id, next);
     });
+  }
+  private async wasRemoved(id: string, messageId: string): Promise<boolean> {
+    return !!(await this.db
+      .prepare("SELECT 1 FROM session_queue_removed WHERE session_id=? AND message_id=?")
+      .get(id, messageId));
   }
   private parse(raw: unknown): RemoteQueue {
     if (!raw || typeof raw !== "object") throw new Error("Invalid queue");

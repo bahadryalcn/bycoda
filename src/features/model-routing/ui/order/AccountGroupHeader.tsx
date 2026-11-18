@@ -49,7 +49,9 @@ export function AccountGroupHeader({
         {label}
       </Text>
       <Text size="caption" tone="secondary" className="whitespace-nowrap">
-        {t("{p0} models", { p0: format.formatNumber(rows.length) })}
+        {rows.length === 1
+          ? t("1 model listed")
+          : t("{p0} models listed", { p0: format.formatNumber(rows.length) })}
       </Text>
       <Text size="caption" tone="secondary" className="ms-auto whitespace-nowrap">
         {quota}

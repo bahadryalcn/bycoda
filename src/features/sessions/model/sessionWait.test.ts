@@ -80,7 +80,7 @@ describe("sessionWait", () => {
       typeof sessionWaitReasonWith
     >[0];
     expect(sessionWaitReasonWith(tagged, { kind: "agents", count: 1 })).toBe(
-      "x:Waiting on subagents: {p0}",
+      "x:Subagents running: {p0}",
     );
     expect(sessionWaitsEqual({ kind: "agents", count: 1 }, { kind: "agents", count: 1 })).toBe(
       true,

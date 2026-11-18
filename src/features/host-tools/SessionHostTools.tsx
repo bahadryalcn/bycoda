@@ -284,6 +284,71 @@ function ConversationHostTools({
         request("action", { deviceId, action, leaseId, requestId: crypto.randomUUID() }),
     };
   }, [cwd, target]);
+  const renderMachinePicker = (inSetup = false) => (
+    <SearchableSelect
+      hideLabel
+      label={t("Tool machine")}
+      tooltip={{ label: hostLabel, details: [title, cwd], wide: true }}
+      value={targetValue}
+      onChange={selectTarget}
+      searchable={machines.length > 5}
+      align="end"
+      renderTrigger={({ props, open, selectedLabel }) => (
+        <Button
+          {...props}
+          variant={inSetup ? "secondary" : "ghost"}
+          size="sm"
+          className={inSetup ? undefined : "host-tools-machine-trigger"}
+          expanded={open}
+          startIcon={
+            target.kind === "local" || (target.kind === "project" && !remote) ? (
+              <Laptop className="icon-sm" aria-hidden />
+            ) : (
+              <Server className="icon-sm" aria-hidden />
+            )
+          }
+        >
+          <Text size="inherit" tone="inherit" leading="inherit" truncate>
+            {selectedLabel ?? hostLabel}
+          </Text>
+        </Button>
+      )}
+      footer={
+        <Button
+          variant="ghost"
+          size="sm"
+          startIcon={<RefreshCw className="icon-sm" aria-hidden />}
+          loading={machinesLoading}
+          disabled={machinesLoading}
+          onClick={() => setMachinesRefresh((value) => value + 1)}
+        >
+          {machinesError && !machinesShownCentrally ? t("Retry") : t("Refresh machines")}
+        </Button>
+      }
+      options={[
+        { value: "project", label: ownerLabel, description: t("Project host") },
+        {
+          value: "local",
+          label: t("This computer"),
+          description: remote ? undefined : t("Local app"),
+        },
+        ...machines
+          .filter((machine) => !isLocalSyncMachine(machine))
+          .map((machine) => ({
+            value: `machine:${machine.id}`,
+            label: machine.name,
+          })),
+        ...(target.kind === "machine" && !selectedMachine
+          ? [
+              {
+                value: targetValue,
+                label: `${t("Selected machine unavailable")} · ${target.machineId}`,
+              },
+            ]
+          : []),
+      ]}
+    />
+  );
   return (
     <div className="host-tools host-tools-docked font-sans" data-active-tool={tab}>
       <section aria-label={t("Conversation tools")} className="host-tools-section">
@@ -396,71 +461,7 @@ function ConversationHostTools({
               <div className="host-tools-machine" aria-busy={machinesLoading}>
                 {/* A ghost trigger like the tool tabs beside it; refreshing the machine list
                     lives in the menu instead of a second loose icon in the row. */}
-                <SearchableSelect
-                  hideLabel
-                  label={t("Tool machine")}
-                  tooltip={{ label: hostLabel, details: [title, cwd], wide: true }}
-                  value={targetValue}
-                  onChange={selectTarget}
-                  searchable={machines.length > 5}
-                  align="end"
-                  renderTrigger={({ props, open, selectedLabel }) => (
-                    <Button
-                      {...props}
-                      variant="ghost"
-                      size="sm"
-                      className="host-tools-machine-trigger"
-                      expanded={open}
-                      startIcon={
-                        target.kind === "local" || (target.kind === "project" && !remote) ? (
-                          <Laptop className="icon-sm" aria-hidden />
-                        ) : (
-                          <Server className="icon-sm" aria-hidden />
-                        )
-                      }
-                    >
-                      <Text size="inherit" tone="inherit" leading="inherit" truncate>
-                        {selectedLabel ?? hostLabel}
-                      </Text>
-                    </Button>
-                  )}
-                  footer={
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      startIcon={<RefreshCw className="icon-sm" aria-hidden />}
-                      loading={machinesLoading}
-                      disabled={machinesLoading}
-                      onClick={() => setMachinesRefresh((value) => value + 1)}
-                    >
-                      {machinesError && !machinesShownCentrally
-                        ? t("Retry")
-                        : t("Refresh machines")}
-                    </Button>
-                  }
-                  options={[
-                    { value: "project", label: ownerLabel, description: t("Project host") },
-                    {
-                      value: "local",
-                      label: t("This computer"),
-                      description: remote ? undefined : t("Local app"),
-                    },
-                    ...machines
-                      .filter((machine) => !isLocalSyncMachine(machine))
-                      .map((machine) => ({
-                        value: `machine:${machine.id}`,
-                        label: machine.name,
-                      })),
-                    ...(target.kind === "machine" && !selectedMachine
-                      ? [
-                          {
-                            value: targetValue,
-                            label: `${t("Selected machine unavailable")} · ${target.machineId}`,
-                          },
-                        ]
-                      : []),
-                  ]}
-                />
+                {renderMachinePicker()}
               </div>
             ) : (
               <Tooltip label={`${ownerLabel}\n${cwd}`} asChild>
@@ -557,6 +558,7 @@ function ConversationHostTools({
                 key={JSON.stringify([cwd, sessionId, targetKey])}
                 api={api}
                 hostLabel={hostLabel}
+                machinePicker={renderMachinePicker(true)}
                 onAddDevice={(device) =>
                   attachDeviceToComposer(
                     cwd,

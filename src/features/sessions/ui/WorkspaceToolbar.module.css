@@ -4,11 +4,10 @@
   align-items: center;
   gap: calc(var(--space-1) / 2);
   min-inline-size: 0;
-  flex: 1;
 }
 
-.newAction {
-  flex: none;
+.toolbar:has([data-expanded]) {
+  flex: 1;
 }
 
 .overflow {
@@ -23,10 +22,6 @@
   /* Reveal during ExpandingSearch's synchronous expansion, before it moves focus. */
   .inline:has([data-expanded]) {
     display: flex;
-  }
-
-  .inline:has([data-expanded]) .newAction {
-    display: none;
   }
 
   .overflow {

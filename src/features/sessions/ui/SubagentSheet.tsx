@@ -7,6 +7,7 @@ import { Surface } from "../../../shared/ui/Surface";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useFollowBottom } from "../hooks/useFollowBottom";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { useLocale, useT } from "../../../shared/i18n";
 import {
   useCallback,
@@ -600,6 +601,14 @@ function CopyTranscriptButton({
   const label = command ? t("Copy details") : t("Copy transcript");
   // A different run invalidates any copy in flight and any shown outcome (resetKeys); streaming
   // content of the same run does not, because the text is read when the click happens.
+  const copyText = useStableCallback(() => {
+    const text = command
+      ? commandDetailsCopyText(block, busy, status, t)
+      : agentRunMarkdown(block, status);
+    // Nothing to copy: show the failed state instead of a false "Copied".
+    if (!text) throw new Error("Nothing to copy");
+    return text;
+  });
   return (
     <CopyButton
       iconOnly
@@ -608,14 +617,7 @@ function CopyTranscriptButton({
       label={label}
       tooltip={command ? label : t("{p0} (Markdown)", { p0: label })}
       resetKeys={[block.id]}
-      text={() => {
-        const text = command
-          ? commandDetailsCopyText(block, busy, status, t)
-          : agentRunMarkdown(block, status);
-        // Nothing to copy: show the failed state instead of a false "Copied".
-        if (!text) throw new Error("Nothing to copy");
-        return text;
-      }}
+      text={copyText}
     />
   );
 }

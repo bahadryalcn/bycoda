@@ -449,6 +449,7 @@ void Promise.all([languageReady, flushHostSessionBindings()]).then(() =>
         <UsageProviderChip
           project="/fixture/project"
           now={1790000000000}
+          onRefresh={async () => {}}
           limits={{
             provider: "codex",
             session: { usedPercent: 42, windowMinutes: 300, resetsAt: 1790010000000 },

@@ -8,7 +8,7 @@ const base: SessionRowStatusInput = {
   done: false,
   draft: false,
 };
-const wait = { kind: "commands", count: 1 } as const;
+const wait = { kind: "delegated", count: 1 } as const;
 const kind = (patch: Partial<SessionRowStatusInput>) => sessionRowStatusKind({ ...base, ...patch });
 
 describe("sessionRowStatusKind", () => {
@@ -27,5 +27,11 @@ describe("sessionRowStatusKind", () => {
 
   it("shows a delegated-wait parent that is not busy as waiting, not idle or done", () => {
     expect(kind({ wait: { kind: "delegated", count: 1 }, done: true })).toBe("waiting");
+  });
+
+  it("shows the turn's own subagents, commands and background work as working", () => {
+    for (const own of ["agents", "commands", "tasks"] as const)
+      expect(kind({ busy: true, wait: { kind: own, count: 4 } })).toBe("working");
+    expect(kind({ wait: { kind: "pull-request", count: 1 } })).toBe("waiting");
   });
 });

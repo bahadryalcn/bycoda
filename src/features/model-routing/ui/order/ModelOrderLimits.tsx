@@ -58,10 +58,13 @@ export function ModelOrderLimits({
   draft,
   usage,
   onChange,
+  onFieldInvalid,
 }: {
   draft: OrderDraft;
   usage: MachineLimits;
   onChange: (draft: OrderDraft) => void;
+  /** Token fields report by key whether they hold an unparsable value, which blocks Save. */
+  onFieldInvalid?: (key: string, invalid: boolean) => void;
 }) {
   const t = useT();
   useSyncExternalStore(
@@ -251,6 +254,7 @@ export function ModelOrderLimits({
                         hideLabel
                         value={current[period][metric]}
                         onChange={update}
+                        onInvalidChange={(invalid) => onFieldInvalid?.(`${scope}:${key}`, invalid)}
                       />
                     ) : (
                       <TextField

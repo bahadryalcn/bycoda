@@ -107,6 +107,9 @@ const initial: SessionSummary[] = [
     harness: "codex",
     model: "gpt-6.1",
     title: "Arif: 7/24 Sesli Asistan ve İş Takibi",
+    managedBy: params.has("managed")
+      ? { assistant: true as const, jobId: "fixture-job", managedAt: now }
+      : undefined,
     branch: "feature/voice",
     createdAt: now - 7_200_000,
     updatedAt: now - 60_000,
@@ -127,10 +130,11 @@ const initial: SessionSummary[] = [
   harness: row.harness as "claude" | "codex",
   runtimeMode: "supervised" as const,
 }));
-// ?statuses: one row per session status, including the three "Waiting" reasons.
+// ?statuses: one row per session status: the turn's own background commands read as
+// working, delegated tasks and a pull request watch as "Waiting".
 const statusRows: SessionSummary[] = [
   ["status-working", "Working on a refactor"],
-  ["status-wait-commands", "Waiting on a dev server"],
+  ["status-wait-commands", "Running a dev server"],
   ["status-wait-delegated", "Waiting on delegated tasks"],
   ["status-wait-pr", "Waiting on a pull request"],
   ["status-approval", "Needs your approval"],
@@ -168,13 +172,12 @@ const statusLiveAgents = [
   {
     id: "status-wait-commands",
     cwd,
-    title: "Waiting on a dev server",
+    title: "Running a dev server",
     harness: "codex" as const,
     activity: "",
     startedAt: now - 12 * 60_000,
     needsApproval: false,
     done: false,
-    waiting: statusWaits.get("status-wait-commands"),
   },
 ];
 const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });

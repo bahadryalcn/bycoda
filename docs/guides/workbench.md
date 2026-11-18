@@ -102,10 +102,10 @@ its label. Clicking it opens the existing update dialog.
 Collapsed project navigation uses a 56px icon rail with a centered divider and a
 small-size vector mark. Expanded sections share label and count columns; Last
 sessions keeps separate collapse and open actions. The workspace header emphasizes
-the current location. Its Back, Forward and Expand projects controls sit after the
-title, before conversation search; Expand projects is no longer repeated in the
-compact rail. Narrow workspace panes keep the header on one row; More actions
-contains conversation search, selection, filters and New session. Crews, Servers, Notes,
+the current location. Back, Forward, Expand projects and conversation tools align
+to the right. **New Session** sits at the far right, with a label when the workspace
+pane is wide and a conversation icon when space is limited. In narrow panes, **More
+actions** contains conversation search, selection and filters. Crews, Servers, Notes,
 Automations, Social Media, Tasks and Room appear directly as stacked rail icons.
 Hover or focus an icon for its name and shortcut. The rail scrolls in short windows
 while Account and Settings remain at the bottom. Recovered work uses a restore
@@ -192,8 +192,11 @@ in the attention group before ordinary work, without the ordinary preview limit.
 Select a conversation to inspect its error, answer its question or review its approval
 in the existing conversation view. Opening a row never retries work or grants approval.
 While a project is open, its running conversations are summarized in a disclosure
-row. Expand it to select a conversation directly. Waiting conversations keep their
-own group and do not count as running. The panel header counts all conversations;
+row. Expand it to select a conversation directly. A conversation whose own subagents
+or background commands still run counts as running and shows **Working**; its tooltip
+names what runs ("Subagents running: 4"). Conversations waiting only on delegated
+tasks or a pull request watch show **Waiting**, keep their own group and do not count
+as running. The panel header counts all conversations;
 when collapsed, it retains an attention count. Last Sessions keeps the complete list.
 
 Above the composer, expanded background work shows the reported model and provider

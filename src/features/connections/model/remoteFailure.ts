@@ -28,9 +28,12 @@ const LOCAL_TIMEOUT = /TimeoutError: .*timed out after \d+ ?ms/i;
 const OUTDATED =
   /Unsupported (host method|remote operation|workspace command)|Update bycoda Host in (?:Connections|Machines) settings/i;
 const UNSUPPORTED = /isn.t available for projects on another machine/i;
-/** HTTP failures from `remote.rs`: the deadline passed or the answer was not a host's. */
+/**
+ * HTTP failures from `remote.rs`: the deadline passed or the answer was not a host's. A read
+ * whose owner moved while it ran (`SessionReadError("source-changed")`) answers on the next read.
+ */
 const TEMPORARY =
-  /\[RPC_TIMEOUT\]|\[RPC_PROTOCOL\]|^Invalid host response$|Host read capacity is busy|Host pending (read request|control queue) limit reached/;
+  /\[RPC_TIMEOUT\]|\[RPC_PROTOCOL\]|^Invalid host response$|Host read capacity is busy|Host pending (read request|control queue) limit reached|Session read owner changed; retry/;
 
 export function remoteErrorText(error: unknown): string {
   if (typeof error === "string") return error;

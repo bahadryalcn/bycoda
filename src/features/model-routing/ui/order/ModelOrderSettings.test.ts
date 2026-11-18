@@ -188,6 +188,7 @@ function rowProps(): ComponentProps<typeof ModelOrderRow> {
     index: 0,
     count: 2,
     percent: "25",
+    providerPercent: "",
     status: { entryId: "a", leftPercent: 15, skip: "belowLimit" },
     statusLoading: false,
     sortable: {

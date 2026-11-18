@@ -17,6 +17,7 @@ vi.mock("../providers/provider-auth", () => ({
   providerAuthStatus: vi.fn(async () => "signedOut"),
 }));
 vi.mock("../assistant/models/assistant-quota-reader", () => ({
+  QUOTA_WARM_TIMEOUT_MS: 8_000,
   AssistantQuotaReader: class {
     reading = vi.fn(() => ({ leftPercent: 42 }));
     warm = warm;
@@ -105,7 +106,12 @@ it("awaits one bounded quota warm-up for the settings status read only", async (
   await ports.signals(state);
   expect(warm).not.toHaveBeenCalled();
   await ports.signals(state, { awaitQuota: true });
-  expect(warm.mock.calls.map(([harness]) => harness)).toEqual(["claude", "codex"]);
+  expect(warm.mock.calls.map((call: unknown[]) => call[0])).toEqual(["claude", "codex"]);
+  // One shared budget across providers, never a fresh full wait per provider.
+  for (const call of warm.mock.calls as unknown[][]) {
+    expect(call[1]).toBeGreaterThan(0);
+    expect(call[1]).toBeLessThanOrEqual(8_000);
+  }
 });
 
 it("gives a store without a registered service a store-only one instead of failing runs", async () => {

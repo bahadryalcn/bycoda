@@ -2,7 +2,12 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
-import { DeliveryProgressIndicator, DeliveryProgressNotice } from "./DeliveryProgressNotice";
+import {
+  DeliveryNoticeReopen,
+  DeliveryProgressIndicator,
+  DeliveryProgressNotice,
+} from "./DeliveryProgressNotice";
+import { resetDeliveryNoticeDismissals } from "../model/deliveryNoticeDismissal";
 import {
   beginDeliveryProgress,
   clearDeliveryProgress,
@@ -13,6 +18,7 @@ import { getSessions, resetSessionsStore, setSessions } from "../model/sessionsS
 import { newSession } from "../model/session";
 import {
   registerDeliveryResolver,
+  requestDeliveryReview,
   trackLateSettlement,
   type DeliveryReviewOutcome,
 } from "../model/deliveryReview";
@@ -32,7 +38,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("keeps the delivery summary compact and shows failure details directly", async () => {
+it("titles a rejected delivery with its stage label and keeps the raw text out of the title", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const row = { id: "queued", text: "Retained instruction", attachments: [] };
   const progress = beginDeliveryProgress("progress-chat", row.id, "preparing");
@@ -49,19 +55,117 @@ it("keeps the delivery summary compact and shows failure details directly", asyn
       createElement(DeliveryProgressNotice, {
         sessionId: "progress-chat",
         messages: [row],
-        embedded: true,
       }),
     ),
   );
-  const detail = container.querySelector("[data-delivery-details]")!;
-  expect(container.querySelector("details")).toBeNull();
-  expect(detail.textContent).toContain("Provider crashed: exit 1");
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-    "Provider crashed: exit 1",
+  const alert = container.querySelector('[role="alert"]')!;
+  expect(alert.querySelector("strong")?.textContent).toBe(
+    "Queue paused: the last message was not accepted",
   );
-  expect(container.querySelector('[role="alert"]')?.textContent).not.toContain(
-    "Native provider output",
+  expect(alert.textContent).toContain("Provider crashed: exit 1");
+  expect(alert.textContent).not.toContain("Native provider output");
+  expect(alert.textContent).toContain("Details");
+  await act(async () => root.unmount());
+});
+
+async function renderNotice(messages: { id: string; text: string; attachments: never[] }[] = []) {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  const render = (rows = messages) =>
+    act(async () =>
+      root.render(
+        createElement(DeliveryProgressNotice, { sessionId: "progress-chat", messages: rows }),
+      ),
+    );
+  await render();
+  return { container, root, render };
+}
+const row = { id: "queued", text: "Retained instruction", attachments: [] as never[] };
+
+it.each([
+  ["rejected", "danger", "Queue paused: the last message was not accepted"],
+  ["waiting", "warning", "Not sent yet. The message stays queued and is retried automatically."],
+] as const)("shows a %s delivery as a %s card with a readable body", async (stage, tone, title) => {
+  resetDeliveryNoticeDismissals();
+  const progress = beginDeliveryProgress("progress-chat", row.id, "preparing");
+  updateDeliveryProgress(
+    "progress-chat",
+    progress,
+    stage,
+    "QuotaExceededError: Failed to execute 'setItem' on 'Storage': quota",
   );
+  const { container, root } = await renderNotice([row]);
+  const card = container.querySelector(`[data-delivery-progress="${stage}"]`)!;
+  expect(card.getAttribute("role")).toBe(tone === "danger" ? "alert" : "status");
+  expect(card.querySelector("strong")?.textContent).toBe(title);
+  expect(card.textContent).toContain("local storage is full");
+  expect(card.querySelector("strong")?.textContent).not.toContain("QuotaExceededError");
+  await act(async () => root.unmount());
+});
+
+it("keeps a dismissed notice closed across remounts, re-opens it from the header and re-shows a new operation", async () => {
+  resetDeliveryNoticeDismissals();
+  const progress = beginDeliveryProgress("progress-chat", row.id, "preparing");
+  updateDeliveryProgress("progress-chat", progress, "waiting", "RPC_WS_INTERRUPTED: ended");
+  let view = await renderNotice([row]);
+  const dismiss = view.container.querySelector<HTMLButtonElement>('button[aria-label^="Dismiss"]')!;
+  await act(async () => dismiss.click());
+  expect(view.container.querySelector("[data-delivery-progress]")).toBeNull();
+  await act(async () => view.root.unmount());
+
+  view = await renderNotice([row]);
+  expect(view.container.querySelector("[data-delivery-progress]")).toBeNull();
+  await act(async () => view.root.unmount());
+
+  const host = document.createElement("div");
+  const hostRoot = createRoot(host);
+  await act(async () =>
+    hostRoot.render(
+      createElement(
+        "div",
+        null,
+        createElement(DeliveryNoticeReopen, { sessionId: "progress-chat", messages: [row] }),
+        createElement(DeliveryProgressNotice, { sessionId: "progress-chat", messages: [row] }),
+      ),
+    ),
+  );
+  const reopen = host.querySelector<HTMLButtonElement>("[data-delivery-notice-reopen]")!;
+  expect(reopen).not.toBeNull();
+  await act(async () => reopen.click());
+  expect(host.querySelector("[data-delivery-progress]")).not.toBeNull();
+  expect(host.querySelector("[data-delivery-notice-reopen]")).toBeNull();
+
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('button[aria-label^="Dismiss"]')!.click(),
+  );
+  expect(host.querySelector("[data-delivery-progress]")).toBeNull();
+  const next = beginDeliveryProgress("progress-chat", row.id, "preparing");
+  await act(async () => updateDeliveryProgress("progress-chat", next, "waiting", "again"));
+  expect(host.querySelector("[data-delivery-progress]")).not.toBeNull();
+  await act(async () => hostRoot.unmount());
+});
+
+it("re-opens a dismissed notice when a delivery review is requested", async () => {
+  resetDeliveryNoticeDismissals();
+  const unknown = { ...row, deliveryUnknown: true as const };
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  const render = () =>
+    act(async () =>
+      root.render(
+        createElement(DeliveryProgressNotice, { sessionId: "progress-chat", messages: [unknown] }),
+      ),
+    );
+  await render();
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label^="Dismiss"]')!.click(),
+  );
+  expect(container.querySelector("[data-delivery-progress]")).toBeNull();
+  await act(async () => requestDeliveryReview("progress-chat"));
+  expect(container.querySelector('[data-delivery-progress="unknown"]')).not.toBeNull();
+  expect(container.textContent).toContain("Already delivered");
   await act(async () => root.unmount());
 });
 

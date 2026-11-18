@@ -350,6 +350,54 @@ const chooseMachine = async (value: string) => {
   );
 };
 
+it("switches Devices from a local project to the paired Mac from Setup and access", async () => {
+  const cwd = "/local/project";
+  vi.mocked(hostToolRequest).mockResolvedValue({
+    running: false,
+    installed: true,
+    agentInstalled: false,
+    platform: "darwin",
+    platforms: [{ platform: "ios", available: true }],
+  });
+  await toolAct(() =>
+    root.render(
+      createElement(SessionHostTools, { cwd, sessionId: "session", title: "Local project" }),
+    ),
+  );
+  await clickToolTab("Devices");
+  const openSetup = () =>
+    toolAct(() =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === "Setup and access")!
+        .click(),
+    );
+  const setup = () => document.querySelector('[role="dialog"][aria-label="Setup and access"]')!;
+  await openSetup();
+  await toolAct(() =>
+    setup()
+      .querySelector<HTMLButtonElement>(
+        'button[aria-haspopup="dialog"][aria-label*="Tool machine"]',
+      )!
+      .click(),
+  );
+  await toolAct(() =>
+    [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')]
+      .find((option) => option.textContent === "MacBook")!
+      .click(),
+  );
+  expect(hostToolRequest).toHaveBeenCalledExactlyOnceWith(
+    cwd,
+    "device.host",
+    "devices.status",
+    {},
+    { kind: "machine", machineId: "mac" },
+  );
+  await openSetup();
+  expect(setup().textContent).toContain("MacBook");
+  expect(setup().textContent).toContain("SDK detected");
+  expect(hostToolRequest).toHaveBeenCalledTimes(1);
+});
+
 it("offers local and saved machines only for host tools while keeping conversation tools on their owner", async () => {
   const cwd = "remote://macbook/Users/owner/project";
   await toolAct(async () =>
@@ -397,8 +445,11 @@ it("offers local and saved machines only for host tools while keeping conversati
       .find((button) => button.textContent === "Setup and access")!
       .click(),
   );
+  expect(document.querySelector(".device-panel-setup-host")?.textContent).toContain(
+    "This computer",
+  );
   expect(document.querySelector(".device-panel-setup-summary")?.textContent).toContain(
-    "This computer · Device host stopped",
+    "Device host stopped",
   );
   await clickToolTab("Resource usage");
   await toolAct(async () =>

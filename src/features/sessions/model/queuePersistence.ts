@@ -32,6 +32,8 @@ function persistableAttachment(file: Attachment): Attachment {
   if (file.path) {
     return { ...base, path: file.path, ...(file.missing ? { missing: true } : {}) };
   }
+  // The caller keeps the payload elsewhere (a store with room for it) and loads it back.
+  if (file.externalPayload && !file.missing) return { ...base, externalPayload: true };
   if (file.data && file.data.length <= MAX_PERSISTED_ATTACHMENT_CHARS) {
     return { ...base, data: file.data };
   }
@@ -105,6 +107,9 @@ function restoreAttachment(raw: unknown): Attachment | null {
     ...(browserAnnotation ? { browserAnnotation } : {}),
     ...(typeof value.path === "string" && value.path ? { path: value.path } : {}),
     ...(typeof value.data === "string" && value.data ? { data: value.data } : {}),
+    ...(value.externalPayload === true && value.missing !== true
+      ? { externalPayload: true as const }
+      : {}),
     ...(value.missing === true ? { missing: true } : {}),
   };
 }

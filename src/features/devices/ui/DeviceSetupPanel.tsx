@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { OutputBlock } from "../../../shared/ui/OutputBlock";
 import { Text } from "../../../shared/ui/Text";
@@ -20,6 +21,7 @@ type Action = { loading: boolean; disabled: boolean; onClick: () => void };
 export function DeviceSetupPanel({
   status,
   hostLabel,
+  machinePicker,
   unknown,
   deviceCount,
   showLastError,
@@ -30,6 +32,7 @@ export function DeviceSetupPanel({
 }: {
   status: DeviceHostStatus;
   hostLabel?: string;
+  machinePicker?: ReactNode;
   /** The last status or discovery read failed, so the running state is not known. */
   unknown: boolean;
   /** Unknown until discovery succeeds; a failed read never means zero devices. */
@@ -43,30 +46,12 @@ export function DeviceSetupPanel({
   const running = status.running && !unknown;
   return (
     <div className="device-panel-setup">
-      <div className="device-panel-setup-head">
-        <StatusDot tone={unknown ? "warning" : running ? "success" : "neutral"} />
-        <Text
-          size="body"
-          tone="primary"
-          weight="medium"
-          leading="inherit"
-          className="device-panel-setup-summary"
-        >
-          {hostLabel ? `${hostLabel} · ` : ""}
-          {unknown ? t("Unknown") : running ? t("Device host running") : t("Device host stopped")}
-          <Text
-            as="span"
-            size="caption"
-            tone="secondary"
-            leading="relaxed"
-            weight="regular"
-            className="device-panel-setup-count"
-          >
-            {deviceCount === undefined
-              ? `${t("Devices")} · ${t("Unknown")}`
-              : t("{p0} devices found", { p0: deviceCount })}
+      <div className="device-panel-setup-host">
+        {machinePicker ?? (
+          <Text size="body" tone="primary" weight="medium" truncate>
+            {hostLabel}
           </Text>
-        </Text>
+        )}
         <InfoPopover>
           <p>
             {t(
@@ -74,16 +59,37 @@ export function DeviceSetupPanel({
             )}
           </p>
         </InfoPopover>
+      </div>
+      <div className="device-panel-setup-head">
+        <div className="device-panel-setup-summary">
+          <div className="device-panel-setup-state">
+            <StatusDot tone={unknown ? "warning" : running ? "success" : "neutral"} />
+            <Text size="body" tone="primary" weight="medium">
+              {unknown
+                ? t("Unknown")
+                : running
+                  ? t("Device host running")
+                  : t("Device host stopped")}
+            </Text>
+          </div>
+          {status.running ? (
+            <Text as="div" size="caption" tone="secondary">
+              {deviceCount === undefined
+                ? `${t("Devices")} · ${t("Unknown")}`
+                : t("{p0} devices found", { p0: deviceCount })}
+            </Text>
+          ) : null}
+        </div>
         <Button
           variant="ghost"
           size="sm"
+          iconOnly
           label={t("Refresh status")}
           loading={refresh.loading}
           disabled={refresh.disabled}
           onClick={refresh.onClick}
         >
           <RefreshCw className="icon-sm" aria-hidden />
-          {t("Refresh status")}
         </Button>
       </div>
       <ul
@@ -103,25 +109,18 @@ export function DeviceSetupPanel({
             data-available={item.available}
           >
             <DevicePlatformIcon platform={item.platform} active={item.available} />
-            <Text
-              size="inherit"
-              tone="primary"
-              weight="medium"
-              className="device-panel-setup-platform"
-            >
-              {platformLabel(item.platform)}
-            </Text>
-            <Text size="inherit" tone="secondary" className="device-panel-setup-fact">
-              {item.available ? t("SDK detected") : item.reason}
-            </Text>
+            <div className="device-panel-setup-fact">
+              <Text as="div" size="inherit" tone="primary" weight="medium">
+                {platformLabel(item.platform)}
+              </Text>
+              <Text as="div" size="inherit" tone="secondary">
+                {item.available ? t("SDK detected") : (item.reason ?? t("Unavailable"))}
+              </Text>
+            </div>
             {item.available ? (
-              <Check className="icon-sm device-panel-setup-mark" tone="success" aria-hidden />
+              <Check className="icon-sm" tone="success" aria-hidden />
             ) : (
-              <TriangleAlert
-                className="icon-sm device-panel-setup-mark"
-                tone="warning"
-                aria-hidden
-              />
+              <TriangleAlert className="icon-sm" tone="warning" aria-hidden />
             )}
           </Text>
         ))}
@@ -131,7 +130,7 @@ export function DeviceSetupPanel({
           {status.lastError}
         </OutputBlock>
       ) : null}
-      <div className="host-tool-actions">
+      <div className="host-tool-actions device-panel-setup-actions">
         <Button disabled={setup.disabled} loading={setup.loading} onClick={setup.onClick}>
           <Download className="icon-sm" aria-hidden />
           {status.installed ? t("Update setup") : t("Set up device tools")}

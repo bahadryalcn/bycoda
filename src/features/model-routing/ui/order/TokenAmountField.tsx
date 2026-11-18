@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent } from "react";
+import { useEffect, useState, type KeyboardEvent } from "react";
 import { useFormat, useT } from "../../../../shared/i18n";
 import { Combobox } from "../../../../shared/ui/Combobox";
 import { InlineError } from "../../../../shared/ui/InlineError";
@@ -18,14 +18,17 @@ export type TokenAmountFieldProps = {
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
+  /** Reports whether the field shows an error, and false once it unmounts, so Save can wait for a fix. */
+  onInvalidChange?: (invalid: boolean) => void;
 };
 
 type TokenAmountError = Extract<TokenAmountParse, { ok: false }>["reason"];
 
 /**
- * Token limit with free entry and preset suggestions. Typing keeps the user's text; blur or a
- * pick parses it and shows the formatted number. ArrowUp/ArrowDown step the preset ladder while
- * the suggestion list is closed. Invalid text is shown with an error and never sent to onChange.
+ * Token limit with free entry and preset suggestions. Typing keeps the user's text; blur, Enter or
+ * a pick parses it and shows the formatted number. ArrowUp/ArrowDown step the preset ladder while
+ * the suggestion list is closed and commit at once. Invalid text is shown with an error, never
+ * sent to onChange, and reported through onInvalidChange.
  */
 export function TokenAmountField({
   label,
@@ -33,6 +36,7 @@ export function TokenAmountField({
   value,
   onChange,
   disabled,
+  onInvalidChange,
 }: TokenAmountFieldProps) {
   const t = useT();
   const { locale } = useFormat();
@@ -46,6 +50,14 @@ export function TokenAmountField({
     setText(value ? formatTokenAmount(Number(value), locale) : "");
     setError(null);
   }
+
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Tells the editor this field holds an unfixed value; onInvalidChange only sets state by key, so a stale closure is harmless.
+  useEffect(() => {
+    onInvalidChange?.(error !== null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Re-report only when the error changes, not when the parent re-renders.
+  }, [error]);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Clears the report when the field unmounts (for example a tab change) so a gone field cannot block Save.
+  useEffect(() => () => onInvalidChange?.(false), []); // eslint-disable-line react-hooks/exhaustive-deps -- Unmount-only cleanup.
 
   const apply = (amount: number | null) => {
     setError(null);
@@ -89,7 +101,8 @@ export function TokenAmountField({
   }));
 
   return (
-    <div className="flex min-w-0 flex-col gap-1">
+    // A floor that keeps "No limit" and a 9-digit amount readable; narrow tables scroll instead.
+    <div className="flex min-w-32 flex-col gap-1">
       <Combobox
         label={label}
         hideLabel={hideLabel}

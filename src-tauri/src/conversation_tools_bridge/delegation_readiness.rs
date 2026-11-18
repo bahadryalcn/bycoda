@@ -50,7 +50,9 @@ pub(super) fn delegation_bridge_ready(_app: &AppHandle, session: &str) -> bool {
 /// did not answer, or the Host restarted since) gains Host tools only when it starts
 /// again: a CLI reads its MCP servers at spawn. True only while the Host answers now.
 pub(super) fn respawn_restores_tools(app: &AppHandle, session: &str) -> bool {
-    if !app.state::<crate::harness::HarnessHost>().has_child(session)
+    if !app
+        .state::<crate::harness::HarnessHost>()
+        .has_child(session)
         || crate::session_tools_bridge::conversation_grant(session).is_some()
     {
         return false;

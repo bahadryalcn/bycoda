@@ -459,6 +459,17 @@ for (const light of [true, false])
       const mascot = page.locator('[data-reset-mascot-mood="happy"] svg');
       await expect(mascot).toBeVisible();
       await mascot.screenshot({ path: info.outputPath(`project-mascot-${light}-${width}.png`) });
+      const usage = page.getByRole("dialog", { name: "Codex usage details" });
+      const heading = usage.getByRole("heading", { name: "Codex usage", exact: true });
+      const refresh = usage.getByRole("button", { name: "Refresh usage" });
+      await expect(refresh).toBeVisible();
+      await usage.screenshot({ path: info.outputPath(`codex-usage-${light}-${width}.png`) });
+      const headingBox = (await heading.boundingBox())!;
+      const refreshBox = (await refresh.boundingBox())!;
+      expect(refreshBox.x).toBeGreaterThan(headingBox.x + headingBox.width);
+      expect(
+        Math.abs(refreshBox.y + refreshBox.height / 2 - headingBox.y - headingBox.height / 2),
+      ).toBeLessThanOrEqual(1);
     });
 for (const light of [true, false])
   for (const width of [800, 1280])

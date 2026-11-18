@@ -152,6 +152,21 @@ describe("persistableQueue", () => {
     expect(saved?.[0].attachments[1]).not.toHaveProperty("previewUrl");
   });
 
+  it("keeps only a marker for a payload the caller stores elsewhere", () => {
+    const saved = persistableQueue([
+      message({
+        attachments: [
+          file({ id: "x", kind: "image", externalPayload: true }),
+          file({ id: "y", kind: "image", externalPayload: true, missing: true }),
+        ],
+      }),
+    ]);
+    expect(saved?.[0].attachments[0]).toMatchObject({ id: "x", externalPayload: true });
+    expect(saved?.[0].attachments[0]).not.toHaveProperty("missing");
+    expect(saved?.[0].attachments[1]).toMatchObject({ id: "y", missing: true });
+    expect(saved?.[0].attachments[1]).not.toHaveProperty("externalPayload");
+  });
+
   it("marks an attachment that cannot come back instead of dropping it", () => {
     const saved = persistableQueue([
       message({

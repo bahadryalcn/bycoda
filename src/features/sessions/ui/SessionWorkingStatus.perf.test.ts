@@ -75,7 +75,7 @@ describe("session working status waiting", () => {
       root.render(
         createElement(SessionWorkingStatus, {
           startedAt: START + 4_000,
-          wait: { kind: "commands", count: 2, since: START },
+          wait: { kind: "delegated", count: 2, since: START },
           labelled: true,
         }),
       ),
@@ -85,5 +85,21 @@ describe("session working status waiting", () => {
     expect(node?.getAttribute("aria-label")).toContain("2");
     expect(node?.getAttribute("aria-label")).toContain("<1m");
     expect(node?.textContent).toContain("Waiting");
+  });
+
+  it("keeps Working while the turn's own subagents run, naming them in the label", () => {
+    act(() =>
+      root.render(
+        createElement(SessionWorkingStatus, {
+          startedAt: START,
+          wait: { kind: "agents", count: 4, since: START + 4_000 },
+          labelled: true,
+        }),
+      ),
+    );
+    const node = container.querySelector("[data-session-working-status]");
+    expect(node?.hasAttribute("data-session-waiting")).toBe(false);
+    expect(node?.getAttribute("aria-label")).toContain("Subagents running: 4");
+    expect(node?.textContent).toContain("Working");
   });
 });

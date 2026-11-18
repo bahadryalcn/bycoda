@@ -1,5 +1,5 @@
 import { toolPreferences } from "../host-tools/public/toolPreferences";
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { Tooltip } from "../../shared/ui/Tooltip";
 import { surfaceAttributes } from "../../shared/ui/Surface";
 import { OutputBlock } from "../../shared/ui/OutputBlock";
@@ -145,6 +145,7 @@ type DevicePanelProps = {
   active?: boolean;
   api: DevicePanelApi;
   hostLabel?: string;
+  machinePicker?: ReactNode;
   onAddDevice?: (device: DeviceSummary) => Promise<void>;
   onAddImage?: (
     device: DeviceSummary,
@@ -176,6 +177,7 @@ function DevicePanelSurface({
   active: visible = true,
   api,
   hostLabel,
+  machinePicker,
   onAddDevice,
   onAddImage,
   draftScope,
@@ -384,6 +386,7 @@ function DevicePanelSurface({
   currentScope.current = scope;
   const pending = useRef<object | null>(null);
   const pendingDone = useRef<Promise<void>>(Promise.resolve());
+  const inputQueue = useRef<Promise<void>>(Promise.resolve());
   const capturePending = useRef<Promise<DeviceFrame> | null>(null);
   const mounted = useRef(true);
   const visibleRef = useRef(visible);
@@ -418,8 +421,9 @@ function DevicePanelSurface({
       setErrorOperation(name);
       if (name !== "addImage" && name !== "capture") setActionCompleted(false);
       try {
-        // A live capture must finish before boot/stop/input or another capture.
+        // A live capture and sent gestures must finish before boot/stop/input or another capture.
         await capturePending.current?.catch(() => {});
+        await inputQueue.current;
         if (!current()) return;
         const value = await work(current);
         if (current()) commit(value);
@@ -699,6 +703,59 @@ function DevicePanelSurface({
         }
       },
     );
+  // Screen gestures reach the device like a remote screen: they never put the panel in its busy
+  // state, so the stage, device bar and following taps stay live while earlier input is sent.
+  // Gestures run one after another in the order the user made them.
+  const sendGesture = (command: Extract<DeviceAction, { type: "press" | "swipe" }>) => {
+    const deviceId = selected;
+    const requestScope = scope;
+    const refreshStill = !streaming && !live;
+    const current = () =>
+      mounted.current && currentScope.current === requestScope && selectedRef.current === deviceId;
+    setInspection(undefined);
+    setSelectedNode("");
+    const run = async () => {
+      await capturePending.current?.catch(() => {});
+      const lease = controlLeaseRef.current;
+      if (!current() || !lease?.leaseId || lease.deviceId !== deviceId) return;
+      try {
+        const output = await api.action(deviceId, command, lease.leaseId);
+        if (!current()) return;
+        setOutput(output);
+        if (errorOperationRef.current === "press" || errorOperationRef.current === "swipe")
+          setError(undefined);
+      } catch (cause) {
+        if (!current()) return;
+        setErrorOperation(command.type);
+        setError(presentRemoteError(cause, { explicit: true }));
+        if (/DEVICE_CONTROL_LEASE_INVALID/.test(String(cause))) {
+          setControl(false);
+          setControlLease(undefined);
+          delete claimRequests.current[deviceId];
+        }
+        if (unavailableTransport(cause)) setConnectionUnavailable(true);
+        return;
+      }
+      // Video and live stills already show the result; a paused screen reads one still.
+      if (!refreshStill) return;
+      try {
+        const value = await capture(deviceId);
+        if (!current()) return;
+        setFrame(value);
+        setFrameStale(false);
+      } catch (cause) {
+        if (!current()) return;
+        setFrameStale(true);
+        setErrorOperation("capture");
+        setError(String(cause));
+        setActionCompleted(true);
+      }
+    };
+    const next = inputQueue.current.then(run).catch(() => {});
+    inputQueue.current = next;
+    // Releasing control waits for every gesture already sent.
+    pendingDone.current = Promise.all([pendingDone.current, next]).then(() => {});
+  };
   const device = devices.find((item) => item.id === selected);
   useEffect(() => {
     if (!controlLease) return;
@@ -1013,7 +1070,7 @@ function DevicePanelSurface({
       right: [0.25, 0.5, 0.75, 0.5],
     } as const;
     const [x, y, endX, endY] = starts[direction];
-    action({
+    sendGesture({
       type: "swipe",
       x: Math.round(x * width),
       y: Math.round(y * height),
@@ -1348,7 +1405,7 @@ function DevicePanelSurface({
                         imageSize.width &&
                         imageSize.height
                       )
-                        action({
+                        sendGesture({
                           type: "press",
                           x: Math.round(imageSize.width / 2),
                           y: Math.round(imageSize.height / 2),
@@ -1375,7 +1432,7 @@ function DevicePanelSurface({
                       if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
                         if (!imageSize.width || !imageSize.height) return;
-                        action({
+                        sendGesture({
                           type: "press",
                           x: Math.round(imageSize.width / 2),
                           y: Math.round(imageSize.height / 2),
@@ -1483,9 +1540,9 @@ function DevicePanelSurface({
                       if (
                         Math.hypot(event.clientX - start.clientX, event.clientY - start.clientY) < 6
                       )
-                        action({ type: "press", x: start.x, y: start.y });
+                        sendGesture({ type: "press", x: start.x, y: start.y });
                       else
-                        action({
+                        sendGesture({
                           type: "swipe",
                           x: start.x,
                           y: start.y,
@@ -2232,6 +2289,7 @@ function DevicePanelSurface({
             <DeviceSetupPanel
               status={status}
               hostLabel={hostLabel}
+              machinePicker={machinePicker}
               unknown={connectionUnavailable || discoveryUnavailable}
               deviceCount={
                 devicesLoaded && !loadingDevices && !discoveryUnavailable

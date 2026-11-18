@@ -183,6 +183,7 @@ export async function createSessionListRuntime(
     local: HostSessionSummary[],
     etagPrefix: string,
     wakeSources: ReturnType<ServerBindings["pullRequestWatch"]["wakeSources"]>,
+    siblingIds?: string[],
   ) => {
     const project = await dependencies.engine.store.project(projectId);
     const stamps = new Map(local.map((session) => [session.id, session]));
@@ -205,7 +206,7 @@ export async function createSessionListRuntime(
     // legacy duplicate id of the same folder stay visible through the listed id.
     const folderSessions = (
       await Promise.all(
-        [projectId, ...(await siblingProjectIds(project))].map((id) =>
+        [projectId, ...(siblingIds ?? (await siblingProjectIds(project)))].map((id) =>
           dependencies.engine.store.summaries(id),
         ),
       )
@@ -295,21 +296,20 @@ export async function createSessionListRuntime(
       projectId,
       dependencies.providers,
     );
-    await currentProject();
     const cached = projectChangeCache.get(projectId);
     const paths = cached?.paths ?? [];
     // Reuse the lightweight branch TTL/singleflight even when this checkout
     // is not watched. Caching a full list must not extend branch staleness
     // from the branch cache's 4s contract to the 30s safety fallback.
     const branches = await Promise.all(paths.map(async (cwd) => await branchCache.get(cwd)));
-    await currentProject();
     // Watches live outside the store: their wake sources key the cached list too.
     const wakeSources = dependencies.pullRequestWatch.wakeSources(projectId);
+    // One project-table read per list, shared with the build. Every store call is a
+    // turn in the single database queue that approvals and authorization also wait in.
+    const siblingIds = await siblingProjectIds(project);
     const prefix = [
       dependencies.engine.store.projectVersion(projectId),
-      (await siblingProjectIds(project))
-        .map((id) => `${id}:${dependencies.engine.store.projectVersion(id)}`)
-        .join(","),
+      siblingIds.map((id) => `${id}:${dependencies.engine.store.projectVersion(id)}`).join(","),
       project.cwd,
       project.name,
       local.fingerprint,
@@ -324,7 +324,13 @@ export async function createSessionListRuntime(
       await currentProject();
       return result;
     }
-    const promise = buildProjectSessionList(projectId, local.sessions, prefix, wakeSources);
+    const promise = buildProjectSessionList(
+      projectId,
+      local.sessions,
+      prefix,
+      wakeSources,
+      siblingIds,
+    );
     const entry = { key, refreshed: now, paths, bytes: 0, promise };
     projectChangeCache.set(projectId, entry);
     void promise.then(
@@ -347,7 +353,9 @@ export async function createSessionListRuntime(
         if (projectChangeCache.get(projectId) === entry) projectChangeCache.delete(projectId);
       },
     );
-    while (projectChangeCache.size > 32)
+    // The byte budget above bounds memory; the count only has to cover every project a
+    // phone polls, or each poll evicts the next group's lists and rebuilds all of them.
+    while (projectChangeCache.size > 512)
       projectChangeCache.delete(projectChangeCache.keys().next().value!);
     const result = await promise;
     await currentProject();

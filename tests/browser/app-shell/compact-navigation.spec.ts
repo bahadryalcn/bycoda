@@ -568,10 +568,32 @@ test("workspace header keeps location before history and project controls", asyn
     const titleFrame = header.locator("[data-pane-header-heading]");
     const workspacePane = page.locator('[data-side-pane="workspace"]');
     const resize = page.getByRole("separator", { name: "Resize sidebar", exact: true });
+    const newSession = header.getByRole("button", { name: "New Session", exact: true });
+    if (project) {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await resize.press("Enter");
+      await expect(newSession).toBeVisible({ timeout: 5_000 });
+      await expect(newSession.getByText("New Session", { exact: true })).toBeHidden();
+      await newSession.press("Enter");
+      await expect(page.getByLabel("Selected action")).toHaveText("New session");
+      await header.getByRole("button", { name: "More actions", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Search sessions", exact: true }).click();
+      const search = header.getByPlaceholder("Search conversations...");
+      await expect(search).toBeFocused();
+      await expect(newSession).toBeInViewport();
+      const actionBounds = (await newSession.boundingBox())!;
+      const headerBounds = (await header.boundingBox())!;
+      expect(actionBounds.x + actionBounds.width).toBeLessThanOrEqual(
+        headerBounds.x + headerBounds.width,
+      );
+      await search.press("Escape");
+      await expect(header.getByRole("button", { name: "Back", exact: true })).toBeVisible();
+    }
     for (const pane of ["default", "wide"]) {
+      await page.setViewportSize({ width: 1280, height: 800 });
       await resize.press("Enter");
       if (pane === "wide") {
-        for (let step = 0; step < 3; step++) await resize.press("Shift+ArrowRight");
+        for (let step = 0; step < 5; step++) await resize.press("Shift+ArrowRight");
       }
       await resize.blur();
       for (const theme of ["dark", "light"]) {
@@ -649,6 +671,35 @@ test("workspace header keeps location before history and project controls", asyn
               `${name} must follow the title and prior controls`,
             ).toBeGreaterThanOrEqual(previousRight);
             previousRight = bounds.x + bounds.width;
+          }
+          if (project) {
+            const label = newSession.getByText("New Session", { exact: true });
+            const showLabel = pane === "wide" && width === 1280;
+            if (showLabel) await expect(label).toBeVisible();
+            else await expect(label).toBeHidden();
+            const button = (await newSession.boundingBox())!;
+            const headerBox = (await header.boundingBox())!;
+            expect(button.x).toBeGreaterThanOrEqual(previousRight);
+            expect(headerBox.x + headerBox.width - button.x - button.width).toBeLessThan(12);
+            if (!showLabel) {
+              const controls = header
+                .getByRole("button")
+                .and(
+                  header.locator(
+                    "[data-pane-header-body] button, [data-usage-guide='new-session']",
+                  ),
+                );
+              const gaps = await controls.evaluateAll((elements) =>
+                elements.slice(1).map((element, index) => {
+                  const previous = elements[index].getBoundingClientRect();
+                  return element.getBoundingClientRect().left - previous.right;
+                }),
+              );
+              for (const gap of gaps) {
+                expect(gap).toBeGreaterThanOrEqual(0);
+                expect(gap).toBeLessThanOrEqual(1);
+              }
+            }
           }
           const paneBounds = (await workspacePane.boundingBox())!;
           for (const control of await header.getByRole("button").all()) {

@@ -2,8 +2,8 @@ import type { AssistantSessionManagement } from "../model/session";
 import { useAssistantIdentity } from "../../assistant/model/assistantClient";
 import { useT } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
-import { OverflowTooltip } from "../../../shared/ui/Tooltip";
-import { Bot } from "../../../shared/ui/icons";
+import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
+import styles from "./AssistantManagedBadge.module.css";
 
 /** Host provenance only. Rendering this badge grants no session authority. */
 export function AssistantManagedBadge({
@@ -38,11 +38,23 @@ function ManagedBadge({ compact, manual }: { compact: boolean; manual: boolean }
   return <ManagementMark label={label} compact={compact} />;
 }
 function ManagementMark({ label, compact }: { label: string; compact: boolean }) {
-  return (
-    <OverflowTooltip label={label}>
-      <Badge tone="info" size="xs" aria-label={label} data-assistant-managed>
-        {compact ? <Bot className="icon-xs" aria-hidden="true" /> : label}
-      </Badge>
-    </OverflowTooltip>
+  const badge = (
+    <Badge
+      tone="info"
+      size="xs"
+      appearance={compact ? "subtle" : "outline"}
+      role={compact ? "img" : undefined}
+      aria-label={label}
+      data-assistant-managed
+    >
+      {compact ? <span className={`icon-xs ${styles.mark}`} aria-hidden="true" /> : label}
+    </Badge>
+  );
+  return compact ? (
+    <Tooltip label={label} asChild>
+      {badge}
+    </Tooltip>
+  ) : (
+    <OverflowTooltip label={label}>{badge}</OverflowTooltip>
   );
 }

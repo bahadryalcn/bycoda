@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { t } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import {
   AUTOMATIC_SUBAGENTS,
   decodeAdvisor,
@@ -22,6 +22,7 @@ export function SubagentSelectionControl({
   value: string | undefined;
   onChange: (value: string) => void;
 }) {
+  const t = useT();
   const [picking, setPicking] = useState<{ value: string | undefined } | null>(null);
   const selection = decodeSubagentSelection(value ?? AUTOMATIC_SUBAGENTS);
   const selected = selection === AUTOMATIC_SUBAGENTS ? [] : selection;

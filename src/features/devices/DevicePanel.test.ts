@@ -1189,6 +1189,61 @@ it("requires control permission for Android screen gestures and maps tap and swi
   expect(button("Allow device control").getAttribute("aria-checked")).toBe("false");
 });
 
+it("keeps the screen live while a tap is sent and sends following taps in order", async () => {
+  const api = makeApi();
+  const finishes: ((value: string) => void)[] = [];
+  vi.mocked(api.action).mockImplementation(
+    () => new Promise<string>((resolve) => finishes.push(resolve)),
+  );
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  await clickButton("Allow device control");
+  const image = container.querySelector("img")!;
+  Object.defineProperties(image, {
+    naturalWidth: { configurable: true, value: 400 },
+    naturalHeight: { configurable: true, value: 800 },
+    setPointerCapture: { configurable: true, value: vi.fn() },
+  });
+  vi.spyOn(image, "getBoundingClientRect").mockReturnValue({
+    x: 0,
+    y: 0,
+    left: 0,
+    top: 0,
+    right: 200,
+    bottom: 400,
+    width: 200,
+    height: 400,
+    toJSON: () => ({}),
+  });
+  const tap = async (x: number, y: number) => {
+    for (const type of ["pointerdown", "pointerup"])
+      await act(async () =>
+        image.dispatchEvent(
+          new PointerEvent(type, {
+            pointerId: 1,
+            button: 0,
+            clientX: x,
+            clientY: y,
+            bubbles: true,
+          }),
+        ),
+      );
+  };
+  await tap(10, 10);
+  expect(container.querySelector(".device-panel")!.getAttribute("aria-busy")).toBe("false");
+  expect(image.classList.contains("host-frame-interactive")).toBe(true);
+  expect(container.querySelector('[role="progressbar"]')).toBeNull();
+  await tap(50, 50);
+  expect(api.action).toHaveBeenCalledTimes(1);
+  await act(async () => finishes[0]!("Done"));
+  expect(api.action).toHaveBeenCalledTimes(2);
+  expect(api.action).toHaveBeenLastCalledWith(
+    device.id,
+    { type: "press", x: 100, y: 100 },
+    "test-lease",
+  );
+  await act(async () => finishes[1]!("Done"));
+});
+
 it("returns from annotation to pointer control without revoking the already enabled permission", async () => {
   const api = makeApi();
   await act(async () => root.render(createElement(DevicePanel, { api })));

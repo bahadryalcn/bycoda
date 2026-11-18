@@ -2,6 +2,7 @@ import { Text } from "../../../shared/ui/Text";
 import { setSessions } from "../../sessions/public/sessionsStore";
 import { modelDisplayName } from "../../sessions/public/modelDisplayName";
 import { Alert } from "../../../shared/ui/Alert";
+import { Toast } from "../../../shared/ui/ToastRegion";
 import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { Button } from "../../../shared/ui/Button";
 import { ErrorDetails, fitsOneLine } from "../../../shared/ui/ErrorDetails";
@@ -3072,8 +3073,12 @@ function ConnectedRemoteSession({
   const outageShownCentrally = useConnectionErrorShownCentrally(error);
   const waitingForReconnect =
     !!pending && !sending && !retryStopped && !online && !pendingNeedsConfirmation;
+  // A busy host (deadline, overload) is read again quietly first; sending stays held meanwhile.
+  const queueRetrying = useQuietRetry(queue.error, queue.retry);
   const notice = queue.error
-    ? remoteQueueReadNotice(queue.error, queue.retry)
+    ? queueRetrying
+      ? undefined
+      : remoteQueueReadNotice(queue.error, queue.retry)
     : pending && !sending && !(waitingForReconnect && outageShownCentrally)
       ? remotePendingRequestNotice(
           retryStopped,
@@ -3165,6 +3170,10 @@ function ConnectedRemoteSession({
                   },
                 }
               : undefined;
+
+  // The notice the owner closed; different text or detail shows again.
+  const [closedNotice, setClosedNotice] = useState("");
+  const noticeKey = notice ? JSON.stringify([notice.text, notice.detail ?? ""]) : "";
 
   // A transport failure has one recovery owner above the conversation. Keep
   // independent queue/storage and command failures actionable in their own notice.
@@ -3903,7 +3912,11 @@ function ConnectedRemoteSession({
           ? t("Showing a saved transcript preview. Reconnect to confirm the host before sending.")
           : t("Loading conversation…")
         : queue.error
-          ? t("Could not load queued messages. Retry loading the saved queue above.")
+          ? queueRetrying
+            ? t(
+                "Waiting for the bycoda Host to coordinate the queued messages. They send as soon as it answers.",
+              )
+            : t("Could not load queued messages. Retry loading the saved queue above.")
           : snapshot?.historyLoading
             ? t("Loading earlier messages…")
             : outboxIssues.length
@@ -4133,20 +4146,13 @@ function ConnectedRemoteSession({
           connectionIssueHandled={connectionIssueHandled}
         />
         <RemoteOutboxNotice project={project.key} environment={machine.environmentId} />
-        {notice && !noticeHandledByConnection ? (
-          <div className="shrink-0 px-4 py-2">
-            <Alert
-              tone={error ? "danger" : "warning"}
-              action={
-                notice.action
-                  ? {
-                      label: notice.action.label,
-                      disabled: !online && !queue.error && notice.action.kind !== "dismiss",
-                      onClick: notice.action.run,
-                    }
-                  : undefined
-              }
-            >
+        {notice && !noticeHandledByConnection && closedNotice !== noticeKey ? (
+          // The shared alert stack (top center for warnings and errors). Closing it only hides
+          // it: sending stays held, and the same problem shows again once it changes.
+          <Toast
+            tone={error ? "danger" : "warning"}
+            durationMs={null}
+            message={
               <span className="min-w-0 break-words">
                 {notice.text}
                 {notice.detail ? (
@@ -4156,8 +4162,23 @@ function ConnectedRemoteSession({
                   </Text>
                 ) : null}
               </span>
-            </Alert>
-          </div>
+            }
+            historyMessage={notice.text}
+            action={
+              notice.action && notice.action.kind !== "dismiss"
+                ? {
+                    label: notice.action.label,
+                    disabled: !online && !queue.error,
+                    onClick: notice.action.run,
+                  }
+                : undefined
+            }
+            onDismiss={
+              notice.action?.kind === "dismiss"
+                ? notice.action.run
+                : () => setClosedNotice(noticeKey)
+            }
+          />
         ) : null}
         <RemoteSessionContent compact={compactPresentation}>
           {render(overrides)}

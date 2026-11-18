@@ -373,3 +373,31 @@ export function attachmentOwnershipSourceNames(
   }
   return [...names];
 }
+
+/**
+ * Removes ledgers that hold nothing: a retired owner's ledger stays behind empty
+ * once its claims were released. A ledger with a held id, release intent or claim
+ * is never touched. A live owner rewrites its ledger on the next save.
+ */
+export function sweepEmptyAttachmentLedgers(): number {
+  const prefix = "bycoda:attachment-ownership:v1:";
+  const empty: string[] = [];
+  for (let index = 0; index < localStorage.length; index++) {
+    const key = localStorage.key(index);
+    if (!key?.startsWith(prefix)) continue;
+    try {
+      const ledger = JSON.parse(localStorage.getItem(key)!) as Ledger;
+      if (
+        !ledger.held?.length &&
+        !ledger.releases?.length &&
+        !Object.keys(ledger.claims ?? {}).length &&
+        Object.values(ledger.sources ?? {}).every((ids) => !ids.length)
+      )
+        empty.push(key);
+    } catch {
+      // An unreadable ledger may still matter to its owner: keep it.
+    }
+  }
+  for (const key of empty) localStorage.removeItem(key);
+  return empty.length;
+}

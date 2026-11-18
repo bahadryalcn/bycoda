@@ -33,6 +33,7 @@ import {
 import { Portal } from "../../../shared/ui/Portal";
 import { useTitleBarActionsSlot } from "../../../app/shell/TitleBarActionsSlot";
 import { Composer } from "./Composer";
+import { DeliveryProgressNotice } from "./DeliveryProgressNotice";
 import { RewoundHistoryDisclosure } from "./RewoundHistoryDisclosure";
 import { useSavedDraftProjection } from "./useSavedDraftProjection";
 import {
@@ -1701,6 +1702,11 @@ const LocalSessionPane = memo(function LocalSessionPane({
       {lifecycle.dialog}
       <div data-session-body className="relative flex min-h-0 min-w-0 flex-1 flex-col">
         <SharedQueueRecoveryNotice key={`queue:${session.id}`} sessionId={session.id} />
+        <DeliveryProgressNotice
+          key={`delivery:${session.id}`}
+          sessionId={session.id}
+          messages={session.queuedMessages ?? []}
+        />
         <AdoptedSessionNotice
           key={session.id}
           session={session}

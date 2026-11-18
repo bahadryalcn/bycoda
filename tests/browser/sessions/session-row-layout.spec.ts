@@ -4,6 +4,32 @@ import path from "node:path";
 
 const evidence = path.resolve("temp/verification/2026-11-04-last-sessions-workspace");
 const titleEvidence = path.resolve("temp/verification/2026-11-04-session-titles");
+for (const theme of ["dark", "light"]) {
+  test(`managed session mark in ${theme}`, async ({ page }) => {
+    const directory = path.resolve("temp/verification/managed-session-mark");
+    await mkdir(directory, { recursive: true });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    for (const surface of ["project", "global", "recent-row"]) {
+      await page.goto(
+        `/tests/browser/sessions/session-row-layout.html?managed&${theme}&${surface}`,
+        { waitUntil: "domcontentloaded" },
+      );
+      const row =
+        surface === "recent-row"
+          ? page.getByRole("button", { name: /Sesli Asistan/ })
+          : page.locator('[data-session-card="row-working"]');
+      const mark = row.locator("[data-assistant-managed]");
+      await expect(mark).toBeVisible();
+      const label = (await mark.getAttribute("aria-label")) ?? "";
+      expect(label).toMatch(/^(Managed session|Managed by .+)$/);
+      await expect(mark.locator('[aria-hidden="true"]')).toHaveCSS("mask-image", /^url\(/);
+      await row.screenshot({ path: path.join(directory, `${theme}-${surface}.png`) });
+      await mark.hover();
+      await expect(page.getByRole("tooltip", { name: label, exact: true })).toBeVisible();
+    }
+  });
+}
+
 for (const light of [false, true])
   for (const width of [1280, 800])
     test(`workspace toolbar overflow ${light ? "light" : "dark"} ${width}`, async ({ page }) => {
@@ -53,8 +79,7 @@ for (const light of [false, true])
       await page.getByRole("menuitemcheckbox", { name: "Filter sessions", exact: true }).click();
       await expect(page.getByRole("menu", { name: "Filter sessions", exact: true })).toBeVisible();
       await page.keyboard.press("Escape");
-      await header.getByRole("button", { name: "More actions", exact: true }).click();
-      await page.getByRole("menuitem", { name: "New session", exact: true }).click();
+      await header.getByRole("button", { name: "New Session", exact: true }).click();
       await expect(page.getByLabel("Created sessions", { exact: true })).toHaveText("1");
       await pane.evaluate((element) => element.style.setProperty("width", "400px", "important"));
       await expect(header.getByRole("button", { name: "More actions", exact: true })).toBeHidden();
@@ -612,13 +637,8 @@ for (const light of [false, true]) {
         `/tests/browser/sessions/session-row-layout.html?global&${width === 1280 ? "wide" : "compact"}&${light ? "light" : "dark"}`,
         { waitUntil: "domcontentloaded" },
       );
-      // The default pane is narrow, so "New session" lives in the "More actions" menu.
-      const create = page.getByRole("button", { name: "More actions", exact: true });
-      const openProjectPicker = async () => {
-        await create.click();
-        await page.getByRole("menuitem", { name: "New session", exact: true }).click();
-      };
-      await openProjectPicker();
+      const create = page.getByRole("button", { name: "New Session", exact: true });
+      await create.click();
       const dialog = page.getByRole("dialog", { name: "Choose a project for the new session" });
       const search = dialog.getByRole("combobox", { name: "Search projects" });
       await expect(search).toBeFocused();
@@ -634,7 +654,7 @@ for (const light of [false, true]) {
       await expect(dialog).toHaveCount(0);
       await expect(create).toBeFocused();
       await expect(page.getByRole("status", { name: "Created sessions" })).toHaveText("0");
-      await openProjectPicker();
+      await create.click();
       await search.fill("no-such-project");
       await expect(dialog.getByRole("option")).toHaveCount(0);
       await search.press("Enter");
@@ -658,16 +678,14 @@ test("new session accepts explicit current project and preserves project-local d
   await page.goto("/tests/browser/sessions/session-row-layout.html?global", {
     waitUntil: "domcontentloaded",
   });
-  await page.getByRole("button", { name: "More actions", exact: true }).click();
-  await page.getByRole("menuitem", { name: "New session", exact: true }).click();
+  await page.getByRole("button", { name: "New Session", exact: true }).click();
   await page.getByRole("option", { name: /^bycoda / }).click();
   await expect(page.getByRole("status", { name: "Created sessions" })).toHaveText("1");
   await expect(page.getByRole("status", { name: "Created project" })).toHaveText("/fixture/bycoda");
   await page.goto("/tests/browser/sessions/session-row-layout.html", {
     waitUntil: "domcontentloaded",
   });
-  await page.getByRole("button", { name: "More actions", exact: true }).click();
-  await page.getByRole("menuitem", { name: "New session", exact: true }).click();
+  await page.getByRole("button", { name: "New Session", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.getByRole("status", { name: "Created sessions" })).toHaveText("1");
 });
@@ -678,8 +696,7 @@ test("new session retains selector and error when selected project becomes unava
   await page.goto("/tests/browser/sessions/session-row-layout.html?global&create-error", {
     waitUntil: "domcontentloaded",
   });
-  await page.getByRole("button", { name: "More actions", exact: true }).click();
-  await page.getByRole("menuitem", { name: "New session", exact: true }).click();
+  await page.getByRole("button", { name: "New Session", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Choose a project for the new session" });
   await dialog.getByRole("option", { name: /demo-repo / }).click();
   await expect(
@@ -884,16 +901,20 @@ for (const light of [false, true]) {
       await page.goto(
         `/tests/browser/sessions/session-row-layout.html?statuses&${light ? "light" : "dark"}`,
       );
-      for (const id of ["status-wait-commands", "status-wait-delegated", "status-wait-pr"]) {
+      for (const id of ["status-wait-delegated", "status-wait-pr"]) {
         const status = page.locator(`[data-session-card="${id}"] [data-session-working-status]`);
         await expect(status).toHaveAttribute("data-session-waiting", "");
         await expect(status).toContainText("Waiting");
       }
-      const working = page.locator(
-        '[data-session-card="status-working"] [data-session-working-status]',
-      );
-      await expect(working).toContainText("Working");
-      await expect(working).not.toHaveAttribute("data-session-waiting", "");
+      // The turn's own background commands (and subagents) still run: that is work.
+      for (const id of ["status-working", "status-wait-commands"]) {
+        const working = page.locator(`[data-session-card="${id}"] [data-session-working-status]`);
+        await expect(working).toContainText("Working");
+        await expect(working).not.toHaveAttribute("data-session-waiting", "");
+      }
+      await expect(
+        page.locator('[data-session-card="status-wait-commands"] [data-session-working-status]'),
+      ).toHaveAttribute("aria-label", /Background commands running: 2/);
       await expect(
         page.locator('[data-session-card="status-wait-pr"] [data-session-working-status]'),
       ).toHaveAttribute("aria-label", /owner\/repo#12/);

@@ -202,25 +202,28 @@
 .device-panel-zoom-value {
   min-inline-size: 3.5rem;
 }
-/* Setup sheet: state line, one row per platform, then the actions. */
+/* Setup sheet: machine, runtime, platform checks and actions. */
 .device-panel-setup {
-  gap: 10px;
+  gap: 12px;
 }
+.device-panel-setup-host,
 .device-panel-setup-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
+  justify-content: space-between;
   gap: 8px;
 }
-.device-panel-setup-head > :first-child {
-  margin-block-start: 0.45em;
-}
+.device-panel-setup-host > :first-child,
 .device-panel-setup-summary {
-  flex: 1;
   min-inline-size: 0;
 }
-.device-panel-popover .device-panel-setup-summary > .device-panel-setup-count {
-  display: block;
-  margin: 0;
+.device-panel-setup-state {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.device-panel-setup-summary {
+  overflow-wrap: anywhere;
 }
 .device-panel-setup-platforms {
   display: grid;
@@ -229,23 +232,17 @@
   list-style: none;
 }
 .device-panel-setup-platforms > li {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 8px 10px;
-}
-.device-panel-setup-platform {
-  flex: none;
-  min-inline-size: 4rem;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  padding: 8px 12px;
 }
 .device-panel-setup-fact {
-  flex: 1;
-  min-inline-size: 0;
-
   overflow-wrap: anywhere;
 }
-.device-panel-setup-mark {
-  flex: none;
+.device-panel-setup-actions {
+  justify-content: flex-end;
 }
 /* Empty, connect and waiting states: centered, icon-led, one clear action row. */
 .device-panel-state {

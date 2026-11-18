@@ -6,6 +6,18 @@ import { resolve } from "node:path";
 import { SessionQueues } from "../../../../host/sessions/session-queue";
 import { invoke } from "@tauri-apps/api/core";
 import { SharedQueueClient, type QueueTransport } from "./sharedQueueClient";
+import {
+  setQueuePayloadStore,
+  sweepOrphanQueuePayloads,
+  type QueuePayloadStore,
+} from "./sharedQueuePayloads";
+import {
+  refreshLiveDesktopInstances,
+  setQueueStorageOwner,
+  STORAGE_FULL_MESSAGE,
+  sweepQueueStorage,
+  writeQueueStorage,
+} from "./sharedQueueStorage";
 import { mergeQueueChange, QUEUE_LEASE_TTL_MS, type SharedQueue } from "./sharedQueue";
 // These queue fixtures contain no persisted remote command attachments. Durable
 // outbox inventories have their own transaction/recovery regression suites.
@@ -926,23 +938,169 @@ describe("desktop window storage", () => {
     expect(second.snapshot().queue.messages).toEqual([]);
   });
 
-  it("copies the old queue and send journal instead of moving them, so a downgrade keeps pending state", async () => {
+  it("moves the old queue and send journal to the first window and removes the old keys", async () => {
     const f = fixture();
     const oldKey = `bycoda:shared-queue:v1:${JSON.stringify(["host", "chat", "desktop"])}`;
     const saved = { base: { messages: [], revision: 0 }, desired: { messages: [message("kept")] } };
     const journal = { token: "t", clientId: "desktop", accepted: null };
     localStorage.setItem(oldKey, JSON.stringify(saved));
     localStorage.setItem(`${oldKey}:send`, JSON.stringify(journal));
+    localStorage.setItem(`${oldKey}:adopted`, "desktop:previous");
     f.client("desktop:one");
     f.client("desktop:two");
-    // An older build still finds exactly what it saved.
-    expect(JSON.parse(localStorage.getItem(oldKey)!)).toEqual(saved);
-    expect(JSON.parse(localStorage.getItem(`${oldKey}:send`)!)).toEqual(journal);
-    // And only the first window adopted it.
+    for (const suffix of ["", ":send", ":adopted"])
+      expect(localStorage.getItem(oldKey + suffix)).toBeNull();
     const v2 = (id: string) =>
       localStorage.getItem(`bycoda:shared-queue:v2:${JSON.stringify(["host", "chat", id])}`);
     expect(v2("desktop:one")).toEqual(JSON.stringify(saved));
+    expect(
+      localStorage.getItem(
+        `bycoda:shared-queue:v2:${JSON.stringify(["host", "chat", "desktop:one"])}:send`,
+      ),
+    ).toEqual(JSON.stringify(journal));
     expect(v2("desktop:two")).toBeNull();
+  });
+
+  it("keeps non-desktop clients on their own v1 key", async () => {
+    const f = fixture();
+    const client = f.client("remote:abc");
+    await client.initialize();
+    client.update((queue) => enqueueRemoteMessage(queue, message("r")));
+    expect(
+      localStorage.getItem(`bycoda:shared-queue:v1:${JSON.stringify(["host", "chat", "remote"])}`),
+    ).not.toBeNull();
+  });
+
+  it("saves the host copy without attachment bytes", async () => {
+    const f = fixture();
+    const file = { id: "f", name: "a.png", mimeType: "image/png", kind: "image" as const, size: 3 };
+    f.replace({
+      revision: 1,
+      messages: [{ ...message("a"), attachments: [{ ...file, data: "AAAA", path: "/p/a.png" }] }],
+    } as SharedQueue);
+    const client = f.client("desktop:win");
+    await client.initialize();
+    const saved = JSON.parse(
+      localStorage.getItem(
+        `bycoda:shared-queue:v2:${JSON.stringify(["host", "chat", "desktop:win"])}`,
+      )!,
+    );
+    expect(saved.base.messages[0].attachments[0]).toEqual({ ...file, path: "/p/a.png" });
+  });
+});
+
+describe("a full local storage", () => {
+  const key = (session: string, id: string) =>
+    `bycoda:shared-queue:v2:${JSON.stringify(["host", session, id])}`;
+  const empty = { base: { messages: [], revision: 1 }, desired: { messages: [] } };
+  const held = {
+    base: { messages: [message("m")], revision: 1 },
+    desired: { messages: [message("m")] },
+  };
+  const dirty = {
+    base: { messages: [], revision: 1 },
+    desired: { messages: [message("unsent")] },
+  };
+  /** A store whose only free space is what `occupied` holds: writes fail while it exists. */
+  function fullWhile(occupied: string | null) {
+    const real = Storage.prototype.setItem;
+    return vi.spyOn(localStorage, "setItem").mockImplementation((name, value) => {
+      if (name.startsWith("bycoda:shared-queue:") && (!occupied || localStorage.getItem(occupied)))
+        throw new DOMException("quota", "QuotaExceededError");
+      real.call(localStorage, name, value);
+    });
+  }
+
+  it("sweeps empty records and retries the write once", () => {
+    const stale = key("gone", "desktop:old");
+    localStorage.setItem(stale, JSON.stringify(empty));
+    const spy = fullWhile(stale);
+    writeQueueStorage(key("chat", "desktop:win"), "{}");
+    spy.mockRestore();
+    expect(localStorage.getItem(stale)).toBeNull();
+    expect(localStorage.getItem(key("chat", "desktop:win"))).toBe("{}");
+  });
+
+  it("explains a store that is still full, keeping the quota error name", () => {
+    const spy = fullWhile(null);
+    let caught: Error | undefined;
+    try {
+      writeQueueStorage(key("chat", "desktop:win"), "{}");
+    } catch (error) {
+      caught = error as Error;
+    }
+    spy.mockRestore();
+    expect(caught?.name).toBe("QuotaExceededError");
+    expect(caught?.message).toBe(STORAGE_FULL_MESSAGE);
+  });
+
+  it("does not pause the queue when a write was applied but its reply was lost", async () => {
+    let queue: SharedQueue = { messages: [], revision: 0 };
+    let lose = false;
+    const request: QueueTransport = async (method, params) => {
+      if (method.endsWith(".change")) {
+        if (
+          JSON.stringify((params.before as SharedQueue).messages) !== JSON.stringify(queue.messages)
+        )
+          throw new Error("Shared queue state changed on another computer.");
+        queue = {
+          ...mergeQueueChange(queue, {
+            before: params.before as SharedQueue,
+            after: params.after as SharedQueue,
+          }),
+          revision: queue.revision + 1,
+        };
+        if (lose) {
+          lose = false;
+          throw new Error("RPC_WS_INTERRUPTED: Host connection ended before the result was known.");
+        }
+      }
+      return structuredClone(queue) as never;
+    };
+    const client = new SharedQueueClient("machine", "host", "chat", "desktop:win", request);
+    await client.initialize();
+    lose = true;
+    client.update((value) => enqueueRemoteMessage(value, message("a")));
+    await client.sync().catch(() => {});
+    expect(client.snapshot().error).toMatch(/RPC_WS_INTERRUPTED/);
+    // The retry is refused as a conflict; the next look finds the host already holds it.
+    await client.retry().catch(() => {});
+    await client.retry();
+    expect(client.snapshot().error).toBeUndefined();
+    expect(client.snapshot().queue.status).not.toBe("paused");
+    expect(client.snapshot().queue.messages.map((row) => row.id)).toEqual(["a"]);
+  });
+
+  it("never sweeps a record with queued edits, an unsettled send, or a live queue", async () => {
+    setQueueStorageOwner({ hasSession: (id) => id === "chat", clientId: "desktop:own" });
+    await refreshLiveDesktopInstances("desktop:own");
+    localStorage.setItem(key("chat", "desktop:own"), JSON.stringify(held));
+    localStorage.setItem(key("other", "desktop:dead"), JSON.stringify(dirty));
+    localStorage.setItem(key("other2", "desktop:dead"), JSON.stringify(empty));
+    localStorage.setItem(`${key("other2", "desktop:dead")}:send`, JSON.stringify({ id: "x" }));
+    localStorage.setItem(key("other3", "desktop:dead"), JSON.stringify(held));
+    localStorage.setItem(key("gone", "desktop:own"), JSON.stringify(held));
+    const ledger = (id: string, ledger: object) =>
+      localStorage.setItem(
+        `bycoda:attachment-ownership:v1:${JSON.stringify(["scope", id])}`,
+        JSON.stringify(ledger),
+      );
+    ledger("retired", { held: [], sources: { queue: [] }, releases: [], claims: {} });
+    ledger("busy", { held: ["f"], sources: {}, releases: [], claims: {} });
+    sweepQueueStorage();
+    // Edits not yet on the host and an unsettled send survive.
+    expect(localStorage.getItem(key("other", "desktop:dead"))).not.toBeNull();
+    expect(localStorage.getItem(key("other2", "desktop:dead"))).not.toBeNull();
+    // A live session's queue in this window survives.
+    expect(localStorage.getItem(key("chat", "desktop:own"))).not.toBeNull();
+    // A window that no longer exists and a session that is gone: the host holds the copy.
+    expect(localStorage.getItem(key("other3", "desktop:dead"))).toBeNull();
+    expect(localStorage.getItem(key("gone", "desktop:own"))).toBeNull();
+    const ledgerKey = (id: string) =>
+      `bycoda:attachment-ownership:v1:${JSON.stringify(["scope", id])}`;
+    expect(localStorage.getItem(ledgerKey("retired"))).toBeNull();
+    expect(localStorage.getItem(ledgerKey("busy"))).not.toBeNull();
+    setQueueStorageOwner(undefined);
   });
 });
 
@@ -1116,4 +1274,140 @@ it("reports a conversation the host does not store as absent, except while a sen
   await claimed.initialize();
   expect(claimed.absent()).toBe(false);
   expect(claimed.snapshot().error).toMatch(/Session not found on this machine/);
+});
+
+describe("pasted images of queued messages", () => {
+  const owner = (id: string) => `bycoda:shared-queue:v2:${JSON.stringify(["host", "chat", id])}`;
+  const paste = (id: string, data: string) => ({
+    id,
+    name: `${id}.png`,
+    mimeType: "image/png",
+    kind: "image" as const,
+    size: data.length,
+    data,
+  });
+  /** An in-memory payload store; `failReads` simulates an unreadable IndexedDB. */
+  function memoryStore() {
+    const rows = new Map<string, string>();
+    const state = { failReads: false };
+    const key = (o: string, id: string) => `${o}|${id}`;
+    const store: QueuePayloadStore = {
+      put: async (o, id, data) => void rows.set(key(o, id), data),
+      read: async (o, ids) => {
+        if (state.failReads) throw new Error("idb unreadable");
+        return new Map(
+          ids.flatMap((id) => (rows.has(key(o, id)) ? [[id, rows.get(key(o, id))!] as const] : [])),
+        );
+      },
+      prune: async (o, keep) => {
+        for (const k of [...rows.keys()])
+          if (k.startsWith(`${o}|`) && !keep.has(k.slice(o.length + 1))) rows.delete(k);
+      },
+      owners: async () => [...new Set([...rows.keys()].map((k) => k.slice(0, k.lastIndexOf("|"))))],
+    };
+    setQueuePayloadStore(store);
+    return { rows, state };
+  }
+  afterEach(() => setQueuePayloadStore());
+
+  async function pasted(f: ReturnType<typeof fixture>, data: string) {
+    const client = f.client("desktop:win");
+    await client.initialize();
+    f.offline(true);
+    client.update((queue) =>
+      enqueueRemoteMessage(queue, { ...message("a"), attachments: [paste("img", data)] }),
+    );
+    await client.sync().catch(() => {});
+    return client;
+  }
+
+  it("keeps a 6 MB paste out of localStorage and restores it after a restart", async () => {
+    const payloads = memoryStore();
+    const f = fixture();
+    const big = "A".repeat(6_000_000);
+    await pasted(f, big);
+    await vi.waitFor(() => expect(payloads.rows.get(`${owner("desktop:win")}|img`)).toBe(big));
+    const raw = localStorage.getItem(owner("desktop:win"))!;
+    expect(raw.length).toBeLessThan(20_000);
+    expect(JSON.parse(raw).desired.messages[0].attachments[0]).toMatchObject({
+      id: "img",
+      externalPayload: true,
+    });
+    expect(JSON.parse(raw).desired.messages[0].attachments[0]).not.toHaveProperty("data");
+
+    const restarted = f.client("desktop:win");
+    await restarted.initialize();
+    const file = restarted.snapshot().queue.messages[0].attachments[0];
+    expect(file.data).toBe(big);
+    expect(file.missing).toBeUndefined();
+  });
+
+  it("marks a paste missing only when the store answered and the payload is gone", async () => {
+    const payloads = memoryStore();
+    const f = fixture();
+    await pasted(f, "AAAA");
+    await vi.waitFor(() => expect(payloads.rows.size).toBe(1));
+
+    f.upload.mockClear();
+    payloads.state.failReads = true;
+    const unreadable = f.client("desktop:win");
+    await unreadable.initialize();
+    expect(unreadable.snapshot().queue.messages[0].attachments[0].missing).toBeUndefined();
+    expect(f.upload).not.toHaveBeenCalled();
+
+    payloads.state.failReads = false;
+    payloads.rows.clear();
+    const gone = f.client("desktop:win");
+    await gone.initialize();
+    expect(gone.snapshot().queue.messages[0].attachments[0].missing).toBe(true);
+  });
+
+  it("does not upload a restored row before its payload is back, then drops the payload once uploaded", async () => {
+    const payloads = memoryStore();
+    const f = fixture();
+    await pasted(f, "AAAA");
+    await vi.waitFor(() => expect(payloads.rows.size).toBe(1));
+    f.upload.mockClear();
+    f.upload.mockImplementation(async (_machine, attachments) => {
+      expect(attachments[0].data).toBe("AAAA");
+      return attachments.map(({ id, name, mimeType, kind, size }) => ({
+        id,
+        name,
+        mimeType,
+        kind,
+        size,
+        path: "/host/img.png",
+      }));
+    });
+    const restarted = f.client("desktop:win");
+    f.offline(false);
+    await restarted.initialize();
+    expect(f.upload).toHaveBeenCalled();
+    await vi.waitFor(() => expect(payloads.rows.size).toBe(0));
+    const saved = JSON.parse(localStorage.getItem(owner("desktop:win"))!);
+    expect(saved.desired.messages[0].attachments[0]).toMatchObject({ path: "/host/img.png" });
+    expect(saved.desired.messages[0].attachments[0]).not.toHaveProperty("externalPayload");
+  });
+
+  it("deletes the payload when the row is removed", async () => {
+    const payloads = memoryStore();
+    const f = fixture();
+    const client = await pasted(f, "AAAA");
+    await vi.waitFor(() => expect(payloads.rows.size).toBe(1));
+    client.update((queue) => removeRemoteMessage(queue, "a"));
+    await vi.waitFor(() => expect(payloads.rows.size).toBe(0));
+  });
+
+  it("sweeps payloads of records that are gone", async () => {
+    const payloads = memoryStore();
+    const f = fixture();
+    await pasted(f, "AAAA");
+    await vi.waitFor(() => expect(payloads.rows.size).toBe(1));
+    payloads.rows.set(`${owner("desktop:closed")}|other`, "BBBB");
+    await sweepOrphanQueuePayloads();
+    expect([...payloads.rows.keys()]).toEqual([`${owner("desktop:win")}|img`]);
+    localStorage.removeItem(owner("desktop:win"));
+    await sweepOrphanQueuePayloads();
+    expect(payloads.rows.size).toBe(0);
+  });
 });

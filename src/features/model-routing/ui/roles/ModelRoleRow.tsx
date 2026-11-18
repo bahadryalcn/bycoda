@@ -178,8 +178,10 @@ export function ModelRoleRow({
           <InfoPopover
             label={t("No fallback")}
             width={280}
-            className="shrink-0 text-(--ui-tone-warning-fg)"
-            icon={<TriangleAlert aria-hidden className="icon-sm" strokeWidth={1.75} />}
+            className="shrink-0"
+            icon={
+              <TriangleAlert aria-hidden className="icon-sm" tone="warning" strokeWidth={1.75} />
+            }
           >
             {t(
               "No fallback: if this model is unavailable or out of quota, the job stops instead of moving to another model.",

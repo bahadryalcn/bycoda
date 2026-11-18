@@ -1,9 +1,8 @@
 import type { ComponentProps, ReactNode } from "react";
 import { useT } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
-import type { QueuedMessage, UsageLimit } from "../model/session";
+import type { UsageLimit } from "../model/session";
 import { ComposerNoticeStack } from "./ComposerNoticeStack";
-import { DeliveryProgressNotice } from "./DeliveryProgressNotice";
 import { recheckSessionFolderState } from "./recheckSessionFolderState";
 import { UsageLimitNotice } from "./UsageLimitNotice";
 
@@ -12,8 +11,6 @@ type ProviderAccountProvider = NonNullable<ComponentProps<typeof UsageLimitNotic
 type Props = {
   /** Pane-level notices (interrupted turn, provider retry), rendered first. */
   leading?: ReactNode;
-  sessionId?: string;
-  queuedMessages: QueuedMessage[];
   usageLimit?: UsageLimit;
   accountProvider?: ProviderAccountProvider;
   providerAccountId?: string;
@@ -37,8 +34,6 @@ type Props = {
 /** The one stack above the composer card: every composer notice renders here, in stable order. */
 export function ComposerNotices({
   leading,
-  sessionId,
-  queuedMessages,
   usageLimit,
   accountProvider,
   providerAccountId,
@@ -79,9 +74,6 @@ export function ComposerNotices({
           onSwitchModel={onSwitchModel}
           onDismiss={onUsageLimitDismiss ? () => guard(onUsageLimitDismiss) : undefined}
         />
-      ) : null}
-      {queuedMessages.length === 0 ? (
-        <DeliveryProgressNotice sessionId={sessionId} messages={queuedMessages} />
       ) : null}
       {pasteError ? (
         <Alert tone="danger" extra={pasteErrorAction}>

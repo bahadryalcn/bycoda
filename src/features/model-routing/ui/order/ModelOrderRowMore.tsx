@@ -17,6 +17,7 @@ export function ModelOrderRowMore({
   entry,
   index,
   percent,
+  providerPercent,
   account,
   status,
   onChange,
@@ -26,6 +27,8 @@ export function ModelOrderRowMore({
   entry: ModelRoutingEntry;
   index: number;
   percent: string;
+  /** The provider default "keep free" percent as typed; "" when none. */
+  providerPercent: string;
   account: EntryAccount;
   status?: ModelRoutingEntryStatus;
   onChange: (entry: ModelRoutingEntry) => void;
@@ -86,6 +89,9 @@ export function ModelOrderRowMore({
             min={0}
             max={100}
             step={1}
+            placeholder={
+              providerPercent.trim() ? t("{p0} (provider)", { p0: providerPercent }) : "0"
+            }
             value={percent}
             onChange={(event) => onPercent(event.currentTarget.value)}
           />

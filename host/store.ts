@@ -88,6 +88,9 @@ import { replaceControlCharacters } from "../src/shared/lib/controlCharacters";
 import type { DesktopCommandAcceptance } from "./domains/commands/service";
 export type { DesktopCommandAcceptance } from "./domains/commands/service";
 export { blockRevisions } from "./sessions/block-revisions";
+// A machine can register over a hundred projects, and the phone reads them all every few seconds;
+// the row budget below bounds memory, so this count must not evict projects a poll still needs.
+const SUMMARY_PROJECTS = 512;
 const CACHED_SESSIONS = 32;
 // Original request signatures compact after a week. Compact fences (the replay answer) are
 // deleted only after their request id leaves the replay horizon (see command-receipt-retention).
@@ -1654,7 +1657,7 @@ export class HostStore {
           sorted: list,
         });
         while (
-          this.summaryRows.size > 16 ||
+          this.summaryRows.size > SUMMARY_PROJECTS ||
           [...this.summaryRows.values()].reduce((count, item) => count + item.rows.size, 0) > 100000
         )
           this.summaryRows.delete(this.summaryRows.keys().next().value!);

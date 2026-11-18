@@ -9,6 +9,7 @@ import {
   type SessionWakeSource,
 } from "./sessionWaitRules";
 
+export { waitStillWorking } from "./sessionWaitRules";
 export type { SessionWait, SessionWaitKind, SessionWakeSource } from "./sessionWaitRules";
 
 /** What the session's Host lists for it: its own wait and pending wake sources. */
@@ -70,11 +71,11 @@ export function sessionWaitReasonWith(t: typeof Translate, wait: SessionWait): s
   const p0 = String(wait.count);
   switch (wait.kind) {
     case "commands":
-      return t("Waiting on background commands: {p0}", { p0 });
+      return t("Background commands running: {p0}", { p0 });
     case "agents":
-      return t("Waiting on subagents: {p0}", { p0 });
+      return t("Subagents running: {p0}", { p0 });
     case "tasks":
-      return t("Waiting on background work: {p0}", { p0 });
+      return t("Background work running: {p0}", { p0 });
     case "delegated":
       return t("Waiting on delegated tasks: {p0}", { p0 });
     case "pull-request":

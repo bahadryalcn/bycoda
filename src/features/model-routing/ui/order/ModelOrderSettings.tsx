@@ -191,6 +191,7 @@ function OrderSettingsForm({
                 draft={draft}
                 usage={settings.limits.data?.state ?? initial.limits}
                 onChange={change}
+                onFieldInvalid={editor.fieldInvalid}
               />
             ) : null}
           </FieldGroup>

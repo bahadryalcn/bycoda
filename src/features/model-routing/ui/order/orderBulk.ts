@@ -2,6 +2,7 @@ import {
   MODEL_ROUTING_MAX_ENTRIES,
   type ModelRoutingEntry,
 } from "../../../../shared/model/host-contracts/model-routing";
+import { t } from "../../../../shared/i18n";
 import { modelEffortSetting, resolveModel } from "../../../sessions/public/models";
 import {
   entrySettings,
@@ -12,8 +13,21 @@ import {
 import type { SetupCandidate } from "../../model/smartSetup";
 import { entryAccountId } from "./orderGrouping";
 
-/** Removes every listed entry; the first model that would empty a group stops the whole edit. */
+/** Removes every listed entry; a group the whole selection would empty stops the edit and is named. */
 export function removeEntries(draft: OrderDraft, ids: readonly string[]): OrderDraft {
+  const gone = new Set(ids);
+  const emptied = draft.routing.pools.find(
+    (pool) =>
+      pool.entryIds.length > 0 &&
+      !pool.poolIds?.length &&
+      pool.entryIds.every((entryId) => gone.has(entryId)),
+  );
+  if (emptied)
+    throw new Error(
+      t('Group "{p0}" would be empty. Remove it or keep one of its models.', {
+        p0: emptied.name || emptied.id,
+      }),
+    );
   return ids.reduce((current, id) => removeOrderEntry(current, id), draft);
 }
 
@@ -96,7 +110,7 @@ export function addAccountModels(
     ...draft,
     percentages: {
       ...draft.percentages,
-      ...Object.fromEntries(added.map((entry) => [entry.id, "0"])),
+      ...Object.fromEntries(added.map((entry) => [entry.id, ""])),
     },
     routing: { ...draft.routing, entries: [...draft.routing.entries, ...added] },
   };

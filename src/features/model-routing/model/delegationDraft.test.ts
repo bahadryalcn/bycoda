@@ -60,6 +60,7 @@ it("lists stored overrides and the targets an order offers", () => {
     id: `${harness}${providerAccountId ?? ""}`,
     harness,
     model: "m",
+    modelSettings: {},
     unknownLimit: "use" as const,
     ...(providerAccountId ? { providerAccountId } : {}),
   });

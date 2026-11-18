@@ -19,6 +19,12 @@ import {
   SHARED_QUEUE_CAPABILITY,
 } from "./sharedQueue";
 import { desktopQueueClientId, SharedQueueClient } from "./sharedQueueClient";
+import { sweepOrphanQueuePayloads } from "./sharedQueuePayloads";
+import {
+  refreshLiveDesktopInstances,
+  setQueueStorageOwner,
+  sweepQueueStorage,
+} from "./sharedQueueStorage";
 import {
   type Entry,
   takeQueue,
@@ -61,6 +67,8 @@ export function useLocalSharedQueueClient(sessionId: string) {
 const IDLE_SYNC_MS = 60_000;
 /** Retry of a queue whose last look failed while the host is reachable: it doubles up to the safety pass. */
 const ERROR_RETRY_MS = 1_500;
+/** Saved queue records are swept this long after start, when the conversations have loaded. */
+const SWEEP_DELAY_MS = 30_000;
 /** How long a claimed send may wait for the provider before Resume gives up on it. */
 export const HUNG_CLAIM_MS = 30_000;
 /** Queues another computer changed, to be read at once even if idle or hidden. */
@@ -188,6 +196,8 @@ export async function submitSharedLocalQueue(
   let transientHold = false;
   let handedOver = false;
   let caughtDeferred = false;
+  /** Nothing reached the provider and the send could not start: a wait, not a rejection. */
+  let waiting = false;
   try {
     entry.publish();
     if (steer) {
@@ -271,12 +281,10 @@ export async function submitSharedLocalQueue(
     }
     // Nothing reached the provider: a host that could not be asked or a queue
     // another computer changed is a coordination wait, not a failed delivery.
-    if (
-      !handedOver &&
-      !(error instanceof DeliveryUnknownError) &&
-      !(error instanceof QueueNotReadyError)
-    )
-      error = new QueueNotReadyError(failure);
+    if (!handedOver && !(error instanceof DeliveryUnknownError)) {
+      waiting = !caughtDeferred;
+      if (!(error instanceof QueueNotReadyError)) error = new QueueNotReadyError(failure);
+    }
     if (error instanceof DeliveryUnknownError && token) {
       const heldToken = token;
       failure = t(
@@ -369,7 +377,7 @@ export async function submitSharedLocalQueue(
       updateDeliveryProgress(
         sessionId,
         progress,
-        accepted ? "accepted" : uncertain ? "unknown" : "rejected",
+        accepted ? "accepted" : uncertain ? "unknown" : waiting ? "waiting" : "rejected",
         failure,
       );
   }
@@ -906,7 +914,20 @@ export function useSharedLocalQueues(
       if (attention) void tick();
     });
     void tick();
+    // Saved records of closed windows and gone conversations are cleaned once the
+    // conversations have loaded; a full store runs the same sweep on demand.
+    setQueueStorageOwner({
+      hasSession: (id) => !sessionsRef.current.length || !!sessionById(sessionsRef.current, id),
+      clientId: desktopQueueClientId,
+    });
+    const sweepTimer = setTimeout(() => {
+      void refreshLiveDesktopInstances(desktopQueueClientId)
+        .then(() => sweepQueueStorage())
+        .then(() => sweepOrphanQueuePayloads())
+        .catch((error) => console.warn("Saved queue cleanup failed", error));
+    }, SWEEP_DELAY_MS);
     return () => {
+      clearTimeout(sweepTimer);
       stopped = true;
       window.removeEventListener("pagehide", releaseAll);
       clearInterval(timer);

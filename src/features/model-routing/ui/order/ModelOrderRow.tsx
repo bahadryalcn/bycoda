@@ -36,6 +36,7 @@ export function ModelOrderRow({
   index,
   count,
   percent,
+  providerPercent,
   status,
   statusLoading,
   statusError = false,
@@ -53,6 +54,8 @@ export function ModelOrderRow({
   index: number;
   count: number;
   percent: string;
+  /** The provider default "keep free" percent as typed; "" when none. */
+  providerPercent: string;
   status?: ModelRoutingEntryStatus;
   statusLoading: boolean;
   statusError?: boolean;
@@ -170,6 +173,7 @@ export function ModelOrderRow({
         entry={entry}
         index={index}
         percent={percent}
+        providerPercent={providerPercent}
         account={account}
         status={status}
         onChange={onChange}

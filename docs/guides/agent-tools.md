@@ -62,8 +62,10 @@ icon (Android or iOS), green while the device is running; its version, kind and 
 are in the picker list and tooltip. The screen fills the panel with its controls on a
 vertical rail beside it; **Device options** at the end of the rail holds the
 accessibility snapshot, coordinate controls, setup and zoom. **Setup and access**
-shows the device host state, what each platform's SDK check found, and the setup and
-start or stop actions. Without a selected device, the panel lists devices to open.
+lets you choose the machine that runs Devices. For iOS simulators, select the paired
+Mac even when the conversation belongs to a Windows project. The runtime status,
+platform checks, and setup and start or stop actions follow that selection. Without a
+selected device, the panel lists devices to open.
 
 Live view follows an Android device as video when the Host is on Windows or macOS,
 so the screen moves as it does on the phone and input shows its result at once.
@@ -112,7 +114,7 @@ available while the original result is checked.
 
 ## Conversation tools
 
-Before a turn disables native subagents, bycoda checks whether Conversation Tools can initialize for that session. If this bounded check fails, Automatic without an effort ceiling uses the provider's built-in subagents for that turn. Explicit model selections and effort ceilings remain enforced; bycoda tells the model and shows a non-blocking conversation status when delegation is unavailable. Off stays Off. A successful check cannot guarantee that a provider's later MCP connection will succeed.
+Before a turn disables native subagents, bycoda checks whether Conversation Tools can initialize for that session. If this bounded check fails, Automatic without an effort ceiling uses the provider's built-in subagents for that turn. Explicit model selections and effort ceilings remain enforced; bycoda tells the model and shows a non-blocking conversation status when delegation is unavailable. Off stays Off. A successful check cannot guarantee that a provider's later MCP connection will succeed. A provider reads its tools only when it starts, so one that started while the Host did not answer, or that outlived a Host restart, starts again before the next message once the Host answers; the conversation and its context continue. If that start does not restore the tools, bycoda waits ten minutes before trying again.
 
 For Codex, bycoda sets `agents.enabled=false` in thread start/resume config to
 disable native agent tools (Codex 0.167.2). Legacy `features.multi_agent` and
@@ -407,8 +409,8 @@ preferences. Returned advice is collapsed by default; click the row to expand or
 its Markdown content, without a line limit. Codex and the other providers have no built-in advisor, so their advisor is a
 Host advisor: read-only, in plan mode, seeing only the question and context the main model
 sends it, writing only to the main agent. Its answer arrives as an Advisor completion. When
-the Host connection is not ready for a turn, the conversation says the advisor is
-unavailable instead of failing silently.
+the Host does not respond for a turn, the conversation says the advisor is off for
+that message instead of failing silently.
 
 A delegated child starts only bycoda's own tools (Claude with strict MCP config, Codex with
 the owner's other MCP servers disabled for that thread; no config file is changed) and gets

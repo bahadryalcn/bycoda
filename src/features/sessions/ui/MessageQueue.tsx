@@ -9,7 +9,7 @@ import { useAcceptedQueueDeparture, type MessageQueueProps } from "./useAccepted
 import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
 import { InlineError } from "../../../shared/ui/InlineError";
 import {
-  DeliveryProgressNotice,
+  DeliveryNoticeReopen,
   DeliveryProgressIndicator,
   deliveryIsPending,
   useDeliveryProgress,
@@ -378,19 +378,23 @@ export function MessageQueue({
           <Text as="div" size="caption" tone="inherit" className="mb-1 flex h-7 items-center gap-2">
             <Pause className="icon-sm" />
             {messages.length > 0 ? <DeliveryProgressIndicator sessionId={sessionId} /> : null}
-            <Tooltip label={holdDetail} asChild>
-              <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
-                {(delivery && (delivery.stage === "rejected" || delivery.stage === "unknown")) ||
-                messages.some((message) => message.deliveryUnknown)
-                  ? `${t("Queue")} · ${messages.length}`
-                  : hold.kind === "held" && hold.reason === "unknown"
-                    ? t("Queue held: delivery is not confirmed")
-                    : hold.kind === "held" && hold.reason === "rejected"
-                      ? holdDetail?.split(/\r?\n/, 1)[0] ||
-                        t("Queue paused: the last message was not accepted")
-                      : t("Queue paused because you interrupted")}
-              </Text>
-            </Tooltip>
+            <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
+              {(delivery &&
+                (delivery.stage === "rejected" ||
+                  delivery.stage === "unknown" ||
+                  delivery.stage === "waiting")) ||
+              messages.some((message) => message.deliveryUnknown)
+                ? `${t("Queue")} · ${messages.length}`
+                : hold.kind === "held" && hold.reason === "unknown"
+                  ? t("Queue held: delivery is not confirmed")
+                  : hold.kind === "held" && hold.reason === "rejected"
+                    ? t("Queue paused: the last message was not accepted")
+                    : // A failed turn or an unsynced hold also pauses: blame a Stop only when it was one.
+                      holdReason === "stopped"
+                      ? t("Queue paused because you interrupted")
+                      : t("Queue paused")}
+            </Text>
+            <DeliveryNoticeReopen sessionId={sessionId} messages={messages} />
             <Button
               variant="ghost"
               type="button"
@@ -426,6 +430,7 @@ export function MessageQueue({
                 ? activeFeedback.text
                 : t("Queue held by another window, which sends it")}
             </Text>
+            <DeliveryNoticeReopen sessionId={sessionId} messages={messages} />
             <Button
               variant="ghost"
               type="button"
@@ -448,6 +453,7 @@ export function MessageQueue({
                 ? t("1 queued message restored")
                 : t("{p0} queued messages restored", { p0: messages.length })}
             </Text>
+            <DeliveryNoticeReopen sessionId={sessionId} messages={messages} />
             <Button
               variant="ghost"
               type="button"
@@ -489,17 +495,7 @@ export function MessageQueue({
                 {activeFeedback.text}
               </Text>
             ) : null}
-          </Text>
-        ) : null}
-        <DeliveryProgressNotice sessionId={sessionId} messages={messages} embedded />
-        {holdDetail && !delivery && (holdDetail.length > 180 || holdDetail.includes("\n")) ? (
-          <Text
-            as="p"
-            size="inherit"
-            tone="muted"
-            className="max-h-32 overflow-y-auto px-1 pb-1 whitespace-pre-wrap [overflow-wrap:anywhere]"
-          >
-            {holdDetail}
+            <DeliveryNoticeReopen sessionId={sessionId} messages={messages} />
           </Text>
         ) : null}
         <div

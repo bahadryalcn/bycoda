@@ -789,4 +789,13 @@ it("keeps system notices intact: an owner client cannot edit, forge or strip one
   ).rejects.toThrow("cannot be edited");
   const removed = await serve({ ...before, messages: [] });
   expect(removed.messages).toEqual([]);
+  // A client that missed the send (the Host did not answer) still lists the delivered notice.
+  // Its next change carries the row along: the Host drops it instead of refusing the change.
+  const owned = message("owner-row", "Next");
+  const stale = await serve({ ...before, messages: [notice, owned] });
+  expect(stale.messages.map((row) => row.id)).toEqual(["owner-row"]);
+  // A notice the Host never had is still a forgery.
+  await expect(
+    serve({ ...stale, messages: [...stale.messages, { ...notice, id: "never-queued" }] }),
+  ).rejects.toThrow("cannot be edited");
 });

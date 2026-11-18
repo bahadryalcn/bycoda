@@ -186,6 +186,7 @@ export function SidebarWorktreeSwitcher({
       <Button
         variant="item"
         motion="none"
+        padding={{ inline: "xs" }}
         ref={anchor}
         type="button"
         data-tauri-drag-region="false"
@@ -215,7 +216,7 @@ export function SidebarWorktreeSwitcher({
           event.preventDefault();
           openPicker();
         }}
-        className="flex w-fit min-w-0 max-w-full items-center gap-2"
+        className="flex w-fit min-w-0 max-w-full items-center gap-2 @max-[280px]/workspace-pane:gap-1"
       >
         {projectIcon ? (
           <span className="grid size-4 shrink-0 place-items-center">{projectIcon}</span>
@@ -224,7 +225,7 @@ export function SidebarWorktreeSwitcher({
           {project}
         </MiddleTruncate>
         {copyName ? (
-          <MiddleTruncate mode="text" tone="muted" className="min-w-0">
+          <MiddleTruncate mode="text" tone="muted" className="min-w-0" data-workspace-copy-name>
             {copyName}
           </MiddleTruncate>
         ) : null}

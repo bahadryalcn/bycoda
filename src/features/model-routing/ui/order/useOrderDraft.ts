@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import { retainedTransactionValue, useRetainedTransaction } from "../../model/retainedTransaction";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -64,6 +65,7 @@ export function useOrderDraft(settings: Settings, initial: Baseline, machineId: 
     false,
   );
   const [saved, setSaved] = useRetainedTransaction(`order:${machineId}:saved`, false);
+  const [invalidFields, setInvalidFields] = useState<ReadonlySet<string>>(new Set());
   const submitting = {
     get current() {
       return retainedTransactionValue<boolean>(`order:${machineId}:pending`) ?? false;
@@ -127,6 +129,19 @@ export function useOrderDraft(settings: Settings, initial: Baseline, machineId: 
   } catch (cause) {
     validation = cause instanceof Error ? cause.message : String(cause);
   }
+  // A typed limit the draft could not take is not in the draft, so Save would drop it silently.
+  if (invalidFields.size) validation = t("Fix the highlighted limit before saving.");
+
+  /** Fields call this by key when they start or stop showing an unparsable value. */
+  function fieldInvalid(key: string, invalid: boolean) {
+    setInvalidFields((current) => {
+      if (current.has(key) === invalid) return current;
+      const next = new Set(current);
+      if (invalid) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  }
 
   function change(next: OrderDraft) {
     if (submitting.current) return;
@@ -135,11 +150,14 @@ export function useOrderDraft(settings: Settings, initial: Baseline, machineId: 
     setSaved(false);
   }
 
-  function edit(operation: (current: OrderDraft) => OrderDraft) {
+  /** Applies an edit; returns false (and shows the message) when it throws. */
+  function edit(operation: (current: OrderDraft) => OrderDraft): boolean {
     try {
       change(operation(draft));
+      return true;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
+      return false;
     }
   }
 
@@ -233,6 +251,7 @@ export function useOrderDraft(settings: Settings, initial: Baseline, machineId: 
     dirty,
     conflict,
     validation,
+    fieldInvalid,
     error,
     invalidEntryId: unavailable?.id ?? unavailableOrderEntryId(error),
     saved,

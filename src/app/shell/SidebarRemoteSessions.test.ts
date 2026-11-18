@@ -95,9 +95,11 @@ async function renderRemoteProject(environmentId = "env-mac") {
 
 it("explains an orphaned project's connection and offers machine settings", async () => {
   await renderRemoteProject("previous-host-identity");
-  expect(container.textContent).toContain("Can’t reach this machine");
-  expect(container.textContent).toContain("Connect this project’s machine to load its sessions.");
-  expect(container.textContent).not.toContain("Loading sessions");
+  expect(document.body.textContent).toContain("Can’t reach this machine");
+  expect(document.body.textContent).toContain(
+    "Connect this project’s machine to load its sessions.",
+  );
+  expect(document.body.textContent).not.toContain("Loading sessions");
   const settings = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
     (button) => button.textContent === "Connection settings",
   );
@@ -115,12 +117,12 @@ it("explains an orphaned project's connection and offers machine settings", asyn
 it("says it is loading a remote project's sessions until they arrive", async () => {
   await renderRemoteProject();
   // Passive loaders stay hidden for LOADING_DELAY_MS so a quick load never flashes one.
-  expect(container.textContent).not.toContain("Loading sessions");
+  expect(document.body.textContent).not.toContain("Loading sessions");
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, LOADING_DELAY_MS + 100));
   });
-  expect(container.textContent).toContain("Loading sessions from MacBook…");
-  expect(container.textContent).not.toContain("isn’t connected");
+  expect(document.body.textContent).toContain("Loading sessions from MacBook…");
+  expect(document.body.textContent).not.toContain("isn’t connected");
 
   await act(async () =>
     answer([
@@ -136,18 +138,18 @@ it("says it is loading a remote project's sessions until they arrive", async () 
     ]),
   );
   await act(async () => {});
-  expect(container.textContent).not.toContain("Loading sessions");
-  expect(container.textContent).toContain("Fix the build");
+  expect(document.body.textContent).not.toContain("Loading sessions");
+  expect(document.body.textContent).toContain("Fix the build");
 });
 
 it("says the machine did not answer instead of loading forever", async () => {
   await renderRemoteProject();
   await act(async () => refuse(new Error("ssh: connect timed out")));
   await act(async () => {});
-  expect(container.textContent).not.toContain("Loading sessions");
-  expect(container.textContent).toContain("Couldn’t refresh sessions from MacBook");
-  expect(container.textContent).toContain("ssh: connect timed out");
-  expect(container.querySelector('[data-remote-data-state="error"]')).not.toBeNull();
+  expect(document.body.textContent).not.toContain("Loading sessions");
+  expect(document.body.textContent).toContain("Couldn’t refresh sessions from MacBook");
+  expect(document.body.textContent).toContain("ssh: connect timed out");
+  expect(document.body.querySelector('[data-remote-data-state="error"]')).not.toBeNull();
 });
 
 const freshSession = {
@@ -163,27 +165,27 @@ const freshSession = {
 it("refreshes within the cache TTL, retains rows on failure and retries to a verified empty list", async () => {
   await renderRemoteProject();
   await act(async () => answer([freshSession]));
-  expect(container.querySelector('[data-remote-data-state="ready"]')).not.toBeNull();
+  expect(document.body.querySelector('[data-remote-data-state="ready"]')).not.toBeNull();
   const refreshButton = container.querySelector<HTMLButtonElement>(
     'button[aria-label="Refresh sessions from MacBook"]',
   )!;
   await act(async () => refreshButton.click());
-  expect(container.querySelector('[data-remote-data-state="refreshing"]')).not.toBeNull();
-  expect(container.textContent).toContain("Current conversation");
+  expect(document.body.querySelector('[data-remote-data-state="refreshing"]')).not.toBeNull();
+  expect(document.body.textContent).toContain("Current conversation");
   expect(refreshButton.disabled).toBe(true);
   await act(async () => refuse(new Error("permission denied reading sessions")));
-  expect(container.querySelector('[data-remote-data-state="error"]')).not.toBeNull();
-  expect(container.textContent).toContain("Showing last loaded data");
-  expect(container.textContent).toContain("Current conversation");
+  expect(document.body.querySelector('[data-remote-data-state="error"]')).not.toBeNull();
+  expect(document.body.textContent).toContain("Showing last loaded data");
+  expect(document.body.textContent).toContain("Current conversation");
   await act(async () =>
-    container
+    document.body
       .querySelector<HTMLButtonElement>('button[aria-label="Retry loading sessions from MacBook"]')!
       .click(),
   );
   await act(async () => answer([]));
-  expect(container.querySelector('[data-remote-data-state="empty"]')).not.toBeNull();
-  expect(container.textContent).not.toContain("Current conversation");
-  expect(container.textContent).not.toContain("permission denied");
+  expect(document.body.querySelector('[data-remote-data-state="empty"]')).not.toBeNull();
+  expect(document.body.textContent).not.toContain("Current conversation");
+  expect(document.body.textContent).not.toContain("permission denied");
 });
 
 it("retains cached sessions without repeating the shared connection warning", async () => {
@@ -197,11 +199,11 @@ it("retains cached sessions without repeating the shared connection warning", as
   await act(async () =>
     refuse(new Error("SSH connection failed (exit 255, host unreachable): connection timed out")),
   );
-  expect(container.textContent).toContain("Current conversation");
+  expect(document.body.textContent).toContain("Current conversation");
   expect(container.querySelector("[data-workspace-header] .lucide-server")).not.toBeNull();
-  expect(container.querySelector('[role="alert"]')).toBeNull();
-  expect(container.textContent).not.toContain("connection timed out");
-  expect(container.textContent).not.toContain("Couldn’t refresh sessions");
+  expect(document.body.querySelector('[role="alert"]')).toBeNull();
+  expect(document.body.textContent).not.toContain("connection timed out");
+  expect(document.body.textContent).not.toContain("Couldn’t refresh sessions");
 });
 
 it("labels cached rows as unverified while the initial owner read is pending", async () => {
@@ -212,9 +214,9 @@ it("labels cached rows as unverified while the initial owner read is pending", a
   });
   localStorage.setItem(`bycoda.remote-history.v2:${project.key}`, JSON.stringify([freshSession]));
   await renderRemoteProject();
-  expect(container.textContent).toContain("Current conversation");
-  expect(container.querySelector('[data-remote-data-state="refreshing"]')).not.toBeNull();
-  expect(container.textContent).toContain("Showing last loaded data");
+  expect(document.body.textContent).toContain("Current conversation");
+  expect(document.body.querySelector('[data-remote-data-state="refreshing"]')).not.toBeNull();
+  expect(document.body.textContent).toContain("Showing last loaded data");
   await act(async () => answer([freshSession]));
-  expect(container.querySelector('[data-remote-data-state="ready"]')).not.toBeNull();
+  expect(document.body.querySelector('[data-remote-data-state="ready"]')).not.toBeNull();
 });

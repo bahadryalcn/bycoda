@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { Text } from "../../../shared/ui/Text";
+import { Toast } from "../../../shared/ui/ToastRegion";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
 import { ErrorDetails, fitsOneLine } from "../../../shared/ui/ErrorDetails";
@@ -45,6 +47,9 @@ export function RemoteDataStatus({
   // A first load that ends quickly never shows its indicator; a background refresh only spins
   // inside the refresh button.
   const loadingShown = useDelayedVisible(state.phase === "loading");
+  // The notice the owner closed; a different phase, error or verification time shows again.
+  const [dismissed, setDismissed] = useState("");
+  const noticeKey = JSON.stringify([state.phase, state.error ?? "", state.updatedAt ?? 0]);
   const failure = state.error ? classifyRemoteError(state.error) : undefined;
   const sharedConnectionIssue = useRemoteConnectionFeedback(cwd, failure);
   // A busy machine is retried in the background; its failure is not an error yet.
@@ -149,11 +154,60 @@ export function RemoteDataStatus({
       </Text>
     );
   }
+  const tone = state.phase === "error" ? "danger" : "info";
+  const retryLabel =
+    state.phase === "error"
+      ? t("Retry loading {p0}", { p0: dataLabel })
+      : t("Refresh {p0}", { p0: dataLabel });
+  // A floating notice joins the shared alert stack (errors at top center) and can be closed;
+  // the same state comes back only once it changes.
+  if (presentation === "notice") {
+    if (dismissed === noticeKey) return null;
+    return (
+      <Toast
+        tone={tone}
+        message={
+          <span data-remote-data-state={state.phase} aria-busy={busy}>
+            {message}
+            {time ? (
+              <Text size="inherit" tone="muted" className="ml-1">
+                · {time}
+              </Text>
+            ) : null}
+            {shownError && fitsOneLine(shownError) ? (
+              <Text as="p" size="inherit" tone="muted" className="mt-1 break-words">
+                {shownError}
+              </Text>
+            ) : null}
+          </span>
+        }
+        historyMessage={message}
+        durationMs={null}
+        extra={
+          shownError && (!fitsOneLine(shownError) || replacedError) ? (
+            <ErrorDetails title={message} detail={state.error ?? shownError} />
+          ) : null
+        }
+        action={
+          onRefresh
+            ? {
+                label: retryLabel,
+                ariaLabel: retryLabel,
+                onClick: onRefresh,
+                pending: busy,
+                disabled: disabled || busy,
+              }
+            : undefined
+        }
+        onDismiss={() => setDismissed(noticeKey)}
+      />
+    );
+  }
   return (
     <Alert
       data-remote-data-state={state.phase}
       aria-busy={busy}
-      tone={state.phase === "error" ? "danger" : "info"}
+      tone={tone}
       icon={busy ? <Spinner /> : undefined}
     >
       <div className="flex items-start gap-2">
@@ -194,19 +248,11 @@ export function RemoteDataStatus({
             type="button"
             onClick={onRefresh}
             disabled={disabled || busy}
-            aria-label={
-              state.phase === "error"
-                ? t("Retry loading {p0}", { p0: dataLabel })
-                : t("Refresh {p0}", { p0: dataLabel })
-            }
+            aria-label={retryLabel}
             variant="ghost"
             iconOnly
             loading={busy}
-            label={
-              state.phase === "error"
-                ? t("Retry loading {p0}", { p0: dataLabel })
-                : t("Refresh {p0}", { p0: dataLabel })
-            }
+            label={retryLabel}
           >
             <RefreshCw aria-hidden className="icon-sm" />
           </Button>

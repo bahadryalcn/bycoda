@@ -1,4 +1,8 @@
-import { AssistantQuotaReader } from "../assistant/models/assistant-quota-reader";
+import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps";
+import {
+  AssistantQuotaReader,
+  QUOTA_WARM_TIMEOUT_MS,
+} from "../assistant/models/assistant-quota-reader";
 import { readDisabledModels } from "../providers/disabled-models";
 import { hostProviderAccounts } from "../providers/provider-accounts";
 import { providerAuthStatus } from "../providers/provider-auth";
@@ -57,8 +61,13 @@ export function createHostModelRoutingService(ports: {
         options?.awaitQuota
           ? (async () => {
               // Sequential: one report fills every provider, so later warms return at once.
-              for (const harness of new Set(state.entries.map((entry) => entry.harness)))
-                await quota.warm(harness);
+              // One shared budget: a hanging limits read must not add a wait per provider.
+              const started = monotonicNow();
+              for (const harness of new Set(state.entries.map((entry) => entry.harness))) {
+                const left = QUOTA_WARM_TIMEOUT_MS - elapsedSince(started);
+                if (left <= 0) break;
+                await quota.warm(harness, left);
+              }
             })()
           : undefined,
       ]);

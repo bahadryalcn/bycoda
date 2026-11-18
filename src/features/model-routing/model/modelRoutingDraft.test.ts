@@ -126,7 +126,7 @@ describe("model routing order draft", () => {
     expect(changed.routing.entries.map((row) => row.id)).toEqual(["a", "b"]);
   });
 
-  it.each(["", "-1", "101", "1.5", "NaN", "Infinity"])(
+  it.each(["-1", "101", "1.5", "NaN", "Infinity"])(
     "rejects invalid percentage %s without clamping",
     (value) => {
       const edit = draft();
@@ -135,6 +135,23 @@ describe("model routing order draft", () => {
       expect(edit.percentages.a).toBe(value);
     },
   );
+
+  it("keeps an unset per-entry reserve unset so the provider default applies", () => {
+    const stored = state();
+    stored.entries[1] = { ...stored.entries[1]!, minRemainingPercent: 0 };
+    stored.entries[0] = { ...stored.entries[0]!, minRemainingPercent: 15 };
+    const edit = orderDraft(stored, { maxRunningTasks: 2, dailyAgentMinutes: 0 });
+    expect(edit.percentages).toEqual({ a: "15", b: "0" });
+    expect(orderDraft(state(), { maxRunningTasks: 2, dailyAgentMinutes: 0 }).percentages).toEqual({
+      a: "",
+      b: "",
+    });
+    const saved = prepareOrderSave(edit).routing.entries;
+    expect(saved.map((row) => row.minRemainingPercent)).toEqual([15, 0]);
+    edit.percentages.b = "";
+    const cleared = prepareOrderSave(edit).routing.entries[1]!;
+    expect(cleared).not.toHaveProperty("minRemainingPercent");
+  });
 
   it("validates run, daily and concurrency limits", () => {
     const edit = draft();

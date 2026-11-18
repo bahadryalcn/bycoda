@@ -45,7 +45,7 @@ it("puts routine verification in one named refresh action without a banner", asy
   expect(button.title).toBe("");
   expect(await tooltipText(button)).toContain("Last verified");
   expect(button.querySelector("svg")).not.toBeNull();
-  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(document.body.querySelector('[role="alert"]')).toBeNull();
   act(() => button.click());
   expect(onRefresh).toHaveBeenCalledOnce();
 });
@@ -67,7 +67,7 @@ it.each(["ready", "empty", "loading", "refreshing", "stale", "error"] as const)(
     );
     const button = container.querySelector("button");
     expect(button).not.toBeNull();
-    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(document.body.querySelector('[role="alert"]')).toBeNull();
     expect(await tooltipText(button!)).toContain("Office Mac");
     if (phase === "ready") {
       expect(button!.querySelector(".lucide-server")).not.toBeNull();
@@ -100,22 +100,45 @@ it.each(["ready", "empty", "loading", "refreshing", "stale", "error"] as const)(
     );
     if (phase === "loading") {
       // A first load that finishes quickly shows nothing at all.
-      expect(container.querySelectorAll("[data-remote-data-state]")).toHaveLength(0);
+      expect(document.body.querySelectorAll("[data-remote-data-state]")).toHaveLength(0);
       act(() => vi.advanceTimersByTime(LOADING_DELAY_MS));
     }
     vi.useRealTimers();
-    expect(container.querySelectorAll("[data-remote-data-state]")).toHaveLength(1);
-    expect(container.querySelectorAll("button")).toHaveLength(1);
-    const button = container.querySelector("button")!;
+    expect(document.body.querySelectorAll("[data-remote-data-state]")).toHaveLength(1);
+    // A notice is a floating card in the shared alert stack, outside the pane.
+    const attention = phase === "error" || phase === "stale";
+    expect(container.querySelectorAll("[data-remote-data-state]")).toHaveLength(attention ? 0 : 1);
+    const button = document.body.querySelector<HTMLButtonElement>(
+      `button[aria-label="${phase === "error" ? "Retry loading conversation" : "Refresh conversation"}"]`,
+    )!;
     expect(button.disabled).toBe(phase === "loading" || phase === "refreshing");
-    if (phase === "error") {
-      expect(container.querySelector('[role="alert"]')?.textContent).toContain("Read failed");
-      expect(button.getAttribute("aria-label")).toBe("Retry loading conversation");
-      act(() => button.click());
-      expect(onRefresh).toHaveBeenCalledOnce();
-    }
+    if (phase === "error")
+      expect(document.body.querySelector("[data-toast-region]")?.textContent).toContain(
+        "Read failed",
+      );
+    act(() => button.click());
+    expect(onRefresh).toHaveBeenCalledTimes(button.disabled ? 0 : 1);
   },
 );
+
+it("closes a floating notice until its state changes", () => {
+  const render = (state: RemoteDataState) =>
+    act(() =>
+      root.render(
+        createElement(RemoteDataStatus, { state, onRefresh: vi.fn(), presentation: "notice" }),
+      ),
+    );
+  render({ phase: "error", updatedAt: 1000, error: "Read failed" });
+  const close = document.body.querySelector<HTMLButtonElement>(
+    'button[aria-label="Dismiss notice"]',
+  )!;
+  act(() => close.click());
+  expect(document.body.querySelector("[data-remote-data-state]")).toBeNull();
+  render({ phase: "error", updatedAt: 1000, error: "Read failed" });
+  expect(document.body.querySelector("[data-remote-data-state]")).toBeNull();
+  render({ phase: "error", updatedAt: 2000, error: "Another failure" });
+  expect(document.body.querySelector("[data-remote-data-state]")).not.toBeNull();
+});
 
 it("defers to the common connection warning instead of duplicating it", () => {
   act(() =>
@@ -126,7 +149,7 @@ it("defers to the common connection warning instead of duplicating it", () => {
       }),
     ),
   );
-  expect(container.textContent).toBe("");
+  expect(document.body.textContent).toBe("");
 });
 
 it("does not call retained data current while the owning connection is unavailable", async () => {
@@ -158,7 +181,7 @@ it("keeps an independent data error actionable beside a shared connection warnin
       }),
     ),
   );
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+  expect(document.body.querySelector('[role="alert"]')?.textContent).toContain(
     "Queue storage unavailable",
   );
   act(() => container.querySelector("button")!.click());
@@ -195,8 +218,8 @@ it("retries a busy machine in the toolbar instead of showing an error", async ()
       ),
     );
     expect(container.querySelector("[data-remote-data-state]")?.tagName).toBe("SPAN");
-    expect(container.textContent).toContain("The machine is busy. Retrying…");
-    expect(container.textContent).not.toContain("Couldn’t refresh");
+    expect(document.body.textContent).toContain("The machine is busy. Retrying…");
+    expect(document.body.textContent).not.toContain("Couldn’t refresh");
     await act(async () => vi.advanceTimersByTime(2_000));
     expect(onRefresh).toHaveBeenCalledOnce();
   } finally {
@@ -215,7 +238,7 @@ it("shows the classified reason after quiet retries and keeps the raw text behin
       }),
     ),
   );
-  const alert = container.querySelector('[role="alert"]');
+  const alert = document.body.querySelector('[role="alert"]');
   expect(alert?.textContent).toContain("This computer is busy right now. Try again in a moment.");
   expect(alert?.textContent).not.toContain("RPC_TIMEOUT");
   expect(alert?.textContent).toContain("Details");

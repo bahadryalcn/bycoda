@@ -6,7 +6,7 @@ import {
 } from "../../../shared/ui/ButtonGroup";
 import { useT } from "../../../shared/i18n";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   listExternalEditors,
@@ -154,44 +154,41 @@ function ProjectQuickActionsFor({
   // listener below from being rebuilt for it.
   const onRunLatest = useStableCallback(onRun);
   const canRun = !!onRun;
-  const run = useCallback(
-    (action: ProjectAction) => {
-      setMenu(null);
-      setError("");
-      if (action.devServer && action.command.trim()) {
-        if (pendingLaunch.current) return;
-        pendingLaunch.current = true;
-        const revision = launchGeneration.current;
-        const expectedPort = actionExpectedPort(action.url);
-        const input = {
-          name: action.name,
-          command: action.command.trim(),
-          cwd: parseRemotePath(cwd)?.hostPath ?? cwd,
-          expectedPort,
-        };
-        setLaunch({ input, pending: true });
-        void hostFeatureRequest<DevServerStartResult>(cwd, "dev.servers", "devServers.start", input)
-          .then((result) => {
-            if (revision === launchGeneration.current)
-              setLaunch((current) => (current ? { input, result } : current));
-          })
-          .catch((reason: unknown) => {
-            if (revision === launchGeneration.current) {
-              setLaunch((current) => (current ? { input } : current));
-              setError(String(reason));
-            }
-          })
-          .finally(() => {
-            if (revision === launchGeneration.current) pendingLaunch.current = false;
-          });
-        return;
-      }
-      if (action.command.trim()) onRunLatest?.(action);
-      if (action.url.trim() && action.openUrlOnRun !== false)
-        void openUrl(action.url.trim()).catch((reason: unknown) => setError(String(reason)));
-    },
-    [cwd, onRunLatest],
-  );
+  const run = useStableCallback((action: ProjectAction) => {
+    setMenu(null);
+    setError("");
+    if (action.devServer && action.command.trim()) {
+      if (pendingLaunch.current) return;
+      pendingLaunch.current = true;
+      const revision = launchGeneration.current;
+      const expectedPort = actionExpectedPort(action.url);
+      const input = {
+        name: action.name,
+        command: action.command.trim(),
+        cwd: parseRemotePath(cwd)?.hostPath ?? cwd,
+        expectedPort,
+      };
+      setLaunch({ input, pending: true });
+      void hostFeatureRequest<DevServerStartResult>(cwd, "dev.servers", "devServers.start", input)
+        .then((result) => {
+          if (revision === launchGeneration.current)
+            setLaunch((current) => (current ? { input, result } : current));
+        })
+        .catch((reason: unknown) => {
+          if (revision === launchGeneration.current) {
+            setLaunch((current) => (current ? { input } : current));
+            setError(String(reason));
+          }
+        })
+        .finally(() => {
+          if (revision === launchGeneration.current) pendingLaunch.current = false;
+        });
+      return;
+    }
+    if (action.command.trim()) onRunLatest?.(action);
+    if (action.url.trim() && action.openUrlOnRun !== false)
+      void openUrl(action.url.trim()).catch((reason: unknown) => setError(String(reason)));
+  });
 
   useEffect(() => {
     if (!shortcutsEnabled) return;

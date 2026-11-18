@@ -7,7 +7,7 @@ import { formatLiveMinutes } from "../model/liveAgents";
 import { usePresentationVisible } from "./presentationVisibility";
 import { Clock } from "../../../shared/ui/icons";
 import { Text } from "../../../shared/ui/Text";
-import { sessionWaitReason, type SessionWait } from "../model/sessionWait";
+import { sessionWaitReason, waitStillWorking, type SessionWait } from "../model/sessionWait";
 import { TerminalSpinner } from "./TerminalSpinner";
 
 /** The same working indicator and turn clock in rail rows and session cards. */
@@ -25,7 +25,11 @@ export function SessionWorkingStatus({
    * lists hide the word on narrow sidebars (sessionList.css); the mark and time stay.
    */
   labelled?: boolean;
-  /** The agent yielded and background work holds the turn: a still mark and "Waiting". */
+  /**
+   * What holds the turn. Delegated children and wake sources show a still mark and
+   * "Waiting"; the turn's own subagents and commands keep "Working" and name themselves
+   * in the tooltip.
+   */
   wait?: SessionWait;
 }) {
   const t = useT();
@@ -33,10 +37,13 @@ export function SessionWorkingStatus({
   const visible = usePresentationVisible();
   // Minute precision: rail rows and cards re-render once a minute, not every second.
   // The minute tick only triggers the render; the label reads the exact time.
-  const since = wait ? (wait.since ?? startedAt) : startedAt;
+  // The turn's own subagents and commands still run: it reads as working, the
+  // tooltip names what runs. Only delegated children and wake sources are a wait.
+  const held = !!wait && !waitStillWorking(wait);
+  const since = held ? (wait.since ?? startedAt) : startedAt;
   const now = useMinuteNow(showElapsed && since != null && visible) ? wallClockNow() : 0;
   const elapsed = showElapsed && since != null && now > 0 ? formatLiveMinutes(since, now) : null;
-  const word = t(wait ? "Waiting" : "Working");
+  const word = t(held ? "Waiting" : "Working");
   const reason = wait ? sessionWaitReason(wait) : word;
   return (
     <Tooltip label={labelled ? undefined : [reason, elapsed].filter(Boolean).join(", ")} asChild>
@@ -45,7 +52,7 @@ export function SessionWorkingStatus({
         size={labelled ? "inherit" : "micro"}
         tone="inherit"
         data-session-working-status
-        data-session-waiting={wait ? "" : undefined}
+        data-session-waiting={held ? "" : undefined}
         role="img"
         aria-label={[reason, elapsed].filter(Boolean).join(", ")}
 
@@ -53,7 +60,7 @@ export function SessionWorkingStatus({
           labelled ? "" : "text-(--color-active)"
         }`}
       >
-        {wait ? <Clock className="icon-xs" strokeWidth={1.75} aria-hidden /> : <TerminalSpinner />}
+        {held ? <Clock className="icon-xs" strokeWidth={1.75} aria-hidden /> : <TerminalSpinner />}
         {labelled ? (
           <span
             aria-hidden

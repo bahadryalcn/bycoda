@@ -8,7 +8,9 @@ export type DeliveryStage =
   | "confirming"
   | "accepted"
   | "rejected"
-  | "unknown";
+  | "unknown"
+  /** Nothing reached the provider (storage, host connection, queue race): the row stays queued and is retried. */
+  | "waiting";
 export type DeliveryProgress = {
   operationId: number;
   messageId: string;
@@ -29,7 +31,7 @@ export const subscribeDeliveryProgress = store.subscribe;
 export const readDeliveryProgress = (sessionId: string, messageId?: string) =>
   messageId ? operations.get(sessionId)?.get(messageId) : values.get(sessionId);
 const pending = (value: DeliveryProgress) =>
-  !["accepted", "rejected", "unknown"].includes(value.stage);
+  !["accepted", "rejected", "unknown", "waiting"].includes(value.stage);
 function publish(sessionId: string) {
   const rows = [...(operations.get(sessionId)?.values() ?? [])];
   // Keep the oldest blocked send visible even when a newer composer submission arrives.

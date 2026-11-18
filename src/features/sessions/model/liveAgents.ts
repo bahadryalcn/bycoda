@@ -5,7 +5,7 @@ import {
 } from "../../../shared/model/host-contracts/delegation";
 import { sessionIssue } from "./sessionIssue";
 import { delegationParentOf, isDelegatedChildOf } from "./delegatedAgents";
-import { sessionWait, type SessionWait } from "./sessionWait";
+import { sessionWait, waitStillWorking, type SessionWait } from "./sessionWait";
 import { executionUserIndex } from "./executionTurn";
 import { composeToolTitle } from "../../../integrations/harness/core/preview";
 import { displayPath } from "../../../shared/lib/paths";
@@ -33,7 +33,10 @@ export type LiveAgent = {
   inputKind?: "approval" | "question";
   done: boolean;
   issue?: "retrying" | "failed";
-  /** The agent yielded but work it started still runs; not counted as working. */
+  /**
+   * The turn ended and only delegated children or wake sources hold it; not counted as
+   * working. The turn's own subagents and commands count as working.
+   */
   waiting?: SessionWait;
 };
 
@@ -140,7 +143,10 @@ function toLiveAgent(
         ? "approval"
         : undefined,
     done,
-    waiting: wait && !done && !issue && !pending && !pendingQuestion ? wait : undefined,
+    waiting:
+      wait && !waitStillWorking(wait) && !done && !issue && !pending && !pendingQuestion
+        ? wait
+        : undefined,
   };
 }
 

@@ -303,6 +303,7 @@ export function ModelPicker({
   ]);
   // The field trigger names the account whenever one is given, even a lone one and without
   // `accountChoices`; a missing account is still shown honestly.
+  // oxlint-disable-next-line bycoda/compiler-owns-memo -- Reads the account store snapshot like triggerAccountLabel above; the compiler cannot prove that read pure, so the memo keeps the trigger from recomputing it each render.
   const fieldAccount = useMemo((): ModelTriggerBadgeData["account"] => {
     if (!field || inheritSelected || !accountId || !supportsProviderAccounts(harness))
       return undefined;

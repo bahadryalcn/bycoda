@@ -321,3 +321,14 @@ describe("nested pools and project scope", () => {
     ).toMatchObject({ ok: true, source: { kind: "fixed" } });
   });
 });
+
+describe("explicit zero reserve", () => {
+  it("keeps an owner-set 0 even when the provider reserve is higher", () => {
+    const quota = () => ({ leftPercent: 5 });
+    const own = entry("a", { minRemainingPercent: 0 });
+    expect(modelRoutingEntryStatus(own, signals({ quota }), undefined, 30).skip).toBeUndefined();
+    expect(modelRoutingEntryStatus(entry("a"), signals({ quota }), undefined, 30).skip).toBe(
+      "belowLimit",
+    );
+  });
+});

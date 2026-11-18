@@ -2653,7 +2653,7 @@ function WorkFoldLine({
       {harness ? (
         <HarnessIcon harness={harness} className="size-3.5 shrink-0" />
       ) : (
-        <ChatWork className="size-3.5 shrink-0 text-(--ui-text-secondary)" />
+        <ChatWork className="icon-sm shrink-0 text-(--ui-text-secondary)" />
       )}
     </span>
   );

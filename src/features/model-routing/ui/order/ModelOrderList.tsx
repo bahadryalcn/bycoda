@@ -67,7 +67,7 @@ export function ModelOrderList({
   /** Unsaved edits hide the Next marks, which describe the saved order. */
   dirty: boolean;
   change: (draft: OrderDraft) => void;
-  edit: (operation: (draft: OrderDraft) => OrderDraft) => void;
+  edit: (operation: (draft: OrderDraft) => OrderDraft) => boolean;
   status: ReturnType<typeof useModelRoutingStatus>;
   catalog?: SetupCatalog;
   /** Chat conversations continue on this order at a usage limit. */
@@ -148,7 +148,7 @@ export function ModelOrderList({
     const id = crypto.randomUUID();
     change({
       ...draft,
-      percentages: { ...draft.percentages, [id]: "0" },
+      percentages: { ...draft.percentages, [id]: "" },
       routing: {
         ...draft.routing,
         entries: [
@@ -165,8 +165,8 @@ export function ModelOrderList({
     });
   }
   const remove = (ids: readonly string[]) => {
-    edit((current) => removeEntries(current, ids));
-    clear();
+    // A refused removal keeps the selection so the owner can adjust it.
+    if (edit((current) => removeEntries(current, ids))) clear();
   };
   const addAll = (group: AccountGroup) =>
     edit((current) =>
@@ -190,7 +190,8 @@ export function ModelOrderList({
       index={index}
       count={byKind[kind].length}
       next={nextIds.has(entry.id)}
-      percent={draft.percentages[entry.id] ?? "0"}
+      percent={draft.percentages[entry.id] ?? ""}
+      providerPercent={draft.workCaps.reserve[entry.harness] ?? ""}
       status={statusOf(entry.id)}
       statusLoading={status.loading}
       statusError={statusFailed}
@@ -261,6 +262,7 @@ export function ModelOrderList({
       />
     );
   return (
+    // oxlint-disable-next-line jsx-a11y/no-static-element-interactions -- Escape from any control inside the list clears the bulk selection; the controls themselves stay the interactive elements.
     <div ref={root} className="flex flex-col gap-4" onKeyDown={onKeyDown}>
       <Text size="caption" tone="secondary">
         {chatFallback

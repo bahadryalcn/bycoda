@@ -30,6 +30,7 @@ export type OrderDraft = {
     reserve: Record<string, string>;
   };
   routing: ModelRoutingDraft;
+  /** Per-entry "keep for my own use" percent as typed; "" means unset, so the provider default applies. */
   percentages: Record<string, string>;
   maxRunMinutes: string;
   limits: { maxRunningTasks: string; dailyAgentMinutes: string };
@@ -121,7 +122,10 @@ export function orderDraft(state: ModelRoutingState, limits: HostSettings): Orde
       ),
     },
     percentages: Object.fromEntries(
-      state.entries.map((entry) => [entry.id, String(entry.minRemainingPercent ?? 0)]),
+      state.entries.map((entry) => [
+        entry.id,
+        entry.minRemainingPercent === undefined ? "" : String(entry.minRemainingPercent),
+      ]),
     ),
     maxRunMinutes: String(state.defaultMaxRunMinutes ?? ""),
     limits: {
@@ -167,16 +171,24 @@ export function prepareOrderSave(draft: OrderDraft): {
     ...otherRouting,
     ...(workCaps ? { workCaps } : {}),
     roles: roleBindingsForSave(draft.routing.roles),
-    entries: draft.routing.entries.map((entry) => ({
-      ...entry,
-      modelSettings: entrySettings(entry.modelSettings),
-      minRemainingPercent: integer(
-        draft.percentages[entry.id] ?? "0",
-        0,
-        100,
-        "Keep for my own use must be a whole percentage from 0 to 100.",
-      ),
-    })),
+    entries: draft.routing.entries.map(({ minRemainingPercent: _own, ...entry }) => {
+      const text = draft.percentages[entry.id] ?? "";
+      return {
+        ...entry,
+        modelSettings: entrySettings(entry.modelSettings),
+        // An empty field stays unset so the provider's default reserve applies.
+        ...(text.trim() === ""
+          ? {}
+          : {
+              minRemainingPercent: integer(
+                text,
+                0,
+                100,
+                "Keep for my own use must be a whole percentage from 0 to 100.",
+              ),
+            }),
+      };
+    }),
     defaultMaxRunMinutes: draft.maxRunMinutes.trim()
       ? integer(draft.maxRunMinutes, 1, 10080, "Run time must be 1 to 10080 whole minutes.")
       : undefined,

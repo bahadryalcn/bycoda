@@ -335,19 +335,17 @@ describe("waiting agents", () => {
     startedAt: 5,
   });
 
-  it("marks a busy session with background commands as waiting, not working", () => {
-    const waiting = chat("/repo", {
-      busy: true,
-      backgroundTasks: ["dev server"],
-      backgroundAgents: 0,
-    });
-    const [agent] = liveAgentsFromSessions([waiting]);
-    expect(agent.waiting).toEqual({
-      kind: "commands",
-      count: 1,
-      since: undefined,
-    });
-    expect(workingProjectPaths([agent])).toEqual([]);
+  it("counts a turn held open by its own commands or subagents as working", () => {
+    for (const backgroundAgents of [0, 4]) {
+      const held = chat("/repo", {
+        busy: true,
+        backgroundTasks: ["dev server"],
+        backgroundAgents,
+      });
+      const [agent] = liveAgentsFromSessions([held]);
+      expect(agent.waiting).toBeUndefined();
+      expect(workingProjectPaths([agent])).toEqual(["/repo"]);
+    }
   });
 
   it("keeps an idle parent with running delegated children in the rail", () => {
@@ -368,17 +366,17 @@ describe("waiting agents", () => {
   });
 
   it("orders waiting after working and before done, and never when input is needed", () => {
-    const waiting = chat("/a", {
-      id: "w",
+    const waiting = chat("/a", { id: "parent" });
+    const child = chat("/a", {
+      id: "child",
       busy: true,
-      backgroundTasks: ["x"],
-      backgroundAgents: 1,
+      modelSettings: { delegationParent: link },
     });
     const working = chat("/b", { id: "k", busy: true });
     const finished = chat("/c", { id: "d" });
-    const agents = liveAgentsFromSessions([finished, waiting, working], new Set(["d"]));
-    expect(agents.map((agent) => agent.id)).toEqual(["k", "w", "d"]);
-    expect(agents[1].waiting?.kind).toBe("agents");
+    const agents = liveAgentsFromSessions([finished, waiting, child, working], new Set(["d"]));
+    expect(agents.map((agent) => agent.id)).toEqual(["k", "parent", "d"]);
+    expect(agents[1].waiting?.kind).toBe("delegated");
     expect(agents[2].waiting).toBeUndefined();
   });
 });

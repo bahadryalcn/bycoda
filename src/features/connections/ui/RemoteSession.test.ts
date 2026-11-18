@@ -873,7 +873,7 @@ it.each(["codex", "cursor"] as const)(
 
     await act(async () => root.render(createElement(Workspace)));
     await settle();
-    expect(container.textContent).toContain("Remote conversation");
+    expect(document.body.textContent).toContain("Remote conversation");
     expect(publish).toHaveBeenCalledWith(
       "shell",
       expect.objectContaining({
@@ -935,9 +935,9 @@ it("holds the composer while durable outbox storage is unavailable and recovers 
   outboxFixture.unavailable = true;
   await renderRemoteProbe();
   expect(transportProbe.current).toBeUndefined();
-  expect(container.textContent).toContain("Saved requests cannot be read.");
+  expect(document.body.textContent).toContain("Saved requests cannot be read.");
   outboxFixture.unavailable = false;
-  const retry = [...container.querySelectorAll("button")].find((button) =>
+  const retry = [...document.body.querySelectorAll("button")].find((button) =>
     button.textContent?.includes("Retry"),
   );
   expect(retry).toBeDefined();
@@ -970,7 +970,7 @@ it("keeps pending Social context and the draft when the remote Host cannot prese
   );
   expect(remoteOverrides.session).toBeDefined();
   expect(remoteOverrides.session!.retryMessage).toBeUndefined();
-  expect(container.textContent).toContain("Update the Host");
+  expect(document.body.textContent).toContain("Update the Host");
 });
 const byLabel = (prefix: string) =>
   container.querySelector<HTMLButtonElement>(`button[aria-label^="${prefix}"]`);
@@ -1145,7 +1145,7 @@ it("keeps a previously uncertain desktop answer when an old Host cannot confirm 
   savePendingRemoteCommand(projectKey, "env", command, "shell");
   await renderRemoteProbe();
   expect(remoteOverrides.session?.pendingQuestion?.delivery).toBe("unknown");
-  const retry = [...container.querySelectorAll("button")].find(
+  const retry = [...document.body.querySelectorAll("button")].find(
     (button) => button.textContent === "Retry",
   );
   expect(retry).toBeDefined();
@@ -1169,7 +1169,7 @@ it("allows Host-owned controls on a Host without desktop receipt capability", as
   expect(commands.filter((command) => command.type === "answer")).toHaveLength(1);
 });
 const remoteDataPhase = () =>
-  container.querySelector("[data-remote-data-state]")?.getAttribute("data-remote-data-state");
+  document.body.querySelector("[data-remote-data-state]")?.getAttribute("data-remote-data-state");
 const type = (text: string) => typeText(container, text);
 async function send(text: string) {
   await type(text);
@@ -1189,7 +1189,7 @@ it("does not dispatch when durable outbox admission fails and retains the draft"
   outboxFixture.failWrites = true;
   await send("Keep this draft");
   expect(commands.filter((command) => command.type === "send")).toHaveLength(0);
-  expect(container.textContent).toContain("Cannot save remote requests.");
+  expect(document.body.textContent).toContain("Cannot save remote requests.");
   expect(container.querySelector("textarea")?.value).toContain("Keep this draft");
   outboxFixture.failWrites = false;
   await act(async () => byLabel("Send")!.click());
@@ -1282,19 +1282,19 @@ it("uses the normal composer with the host branch in its top row", async () => {
   await render();
   expect(container.querySelector("textarea")).not.toBeNull();
   // The machine is named in the project rail, not the composer.
-  expect(container.textContent).not.toContain("Home server");
+  expect(document.body.textContent).not.toContain("Home server");
   expect(byLabel("Branch main")).not.toBeNull();
   expect(
-    [...container.querySelectorAll("button")].some(
+    [...document.body.querySelectorAll("button")].some(
       (button) => button.textContent === "Source Control",
     ),
   ).toBe(false);
   // The host's model, keeping the tab's effort where the model supports it.
   expect(byLabel("Codex GPT Test")?.getAttribute("aria-label")).toBe("Codex GPT Test, effort High");
-  expect(container.textContent).toContain("GPT Test");
+  expect(document.body.textContent).toContain("GPT Test");
   // Nothing from the old standalone remote view or local-only tools.
-  expect(container.textContent).not.toContain("New remote session");
-  expect(container.textContent).not.toContain("Apply settings");
+  expect(document.body.textContent).not.toContain("New remote session");
+  expect(document.body.textContent).not.toContain("Apply settings");
   expect(byLabel("Add files or skills")?.closest(".hidden")).toBeNull();
   expect(byLabel("Mode")?.closest(".hidden")).toBeNull();
   await act(async () => byLabel("Add files or skills")!.click());
@@ -1355,9 +1355,11 @@ it("loads an existing conversation through a host-verified legacy project alias"
     return original(command, input);
   });
   await render();
-  expect(container.textContent).toContain("Conversation through alias");
-  expect(container.textContent).not.toContain("This session belongs to a different host project");
-  expect(container.textContent).not.toContain("Loading conversation");
+  expect(document.body.textContent).toContain("Conversation through alias");
+  expect(document.body.textContent).not.toContain(
+    "This session belongs to a different host project",
+  );
+  expect(document.body.textContent).not.toContain("Loading conversation");
   await send("Continue here");
   expect(
     commands.some((command) => command.type === "send" && command.sessionId === "host-session"),
@@ -1385,7 +1387,7 @@ it("opens a host conversation in an already mounted empty tab", async () => {
   commands = [];
   await act(async () => rememberRemoteSession("shell", "host-session"));
   await settle();
-  expect(container.textContent).toContain("Earlier message");
+  expect(document.body.textContent).toContain("Earlier message");
   await send("Continue here");
   expect(commands.some((command) => command.type === "create")).toBe(false);
   expect(commands.some((command) => command.type === "send")).toBe(true);
@@ -1421,16 +1423,16 @@ it("keeps an unopened remote conversation docked while its transcript loads", as
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 550));
   });
-  expect(container.textContent).toContain("Loading session…");
-  expect(container.textContent).not.toContain("Work on repo.");
+  expect(document.body.textContent).toContain("Loading session…");
+  expect(document.body.textContent).not.toContain("Work on repo.");
 
   await act(async () => {
     releaseSync();
     syncDelay = undefined;
   });
   await settle();
-  expect(container.textContent).toContain("Earlier message");
-  expect(container.textContent).not.toContain("Loading session…");
+  expect(document.body.textContent).toContain("Earlier message");
+  expect(document.body.textContent).not.toContain("Loading session…");
   expect(container.querySelector("[data-session-composer]")).toBe(composer);
 });
 
@@ -1470,8 +1472,8 @@ it("shows a preloaded conversation's transcript on its first render", async () =
       } as unknown as SessionPaneProps),
     ),
   );
-  expect(container.textContent).toContain("Earlier message");
-  expect(container.textContent).not.toContain("Work on repo.");
+  expect(document.body.textContent).toContain("Earlier message");
+  expect(document.body.textContent).not.toContain("Work on repo.");
 });
 
 it("shows an unavailable branch when Git lookup fails", async () => {
@@ -1520,7 +1522,7 @@ it("holds explicit worktree remote creation and drafts when the Host lacks manag
   });
   await render({ ...shell(), workspaceMode: "worktree" });
   await type("Keep this unsent remote message");
-  expect(container.textContent).toContain(
+  expect(document.body.textContent).toContain(
     "Update bycoda to create managed sessions on this remote Host.",
   );
   expect(byLabel("Send")!.disabled).toBe(true);
@@ -1634,7 +1636,7 @@ it.each([
     else await sendTransport(kind === "shell" ? "!git status" : "Keep this message");
     expect(commands).toEqual([]);
     expect(remoteSessionFor("shell")).toBeUndefined();
-    expect(container.textContent).toContain(
+    expect(document.body.textContent).toContain(
       "Update bycoda to create managed sessions on this remote Host.",
     );
   } finally {
@@ -1659,7 +1661,7 @@ it("transport: creates the host session with the chosen settings on the first me
     text: "Fix the tests",
   });
   expect(remoteSessionFor("shell")).toBe("host-session");
-  expect(container.textContent).toContain("Fix the tests");
+  expect(document.body.textContent).toContain("Fix the tests");
 });
 
 it("transport: keeps a new session on its selected remote provider", async () => {
@@ -1721,7 +1723,7 @@ it("lets an existing Claude host session select another installed provider", asy
     model: gpt.id,
   });
   expect(host?.session.harness).toBe("codex");
-  expect(container.textContent).toContain("Earlier work");
+  expect(document.body.textContent).toContain("Earlier work");
 });
 
 it("applies the local model visibility settings to a historical host chat", async () => {
@@ -1833,7 +1835,7 @@ it("transport: keeps a new draft on screen while the host confirms it", async ()
   await saveDraftTransport("Review this later");
   expect(commands.map((command) => command.type)).toEqual(["create", "draft"]);
   expect(transcriptItems("Review this later")).toHaveLength(1);
-  expect(container.textContent).not.toContain("Work on repo.");
+  expect(document.body.textContent).not.toContain("Work on repo.");
   expect(container.querySelector('[aria-label="Transcript"]')?.getAttribute("data-busy")).toBe(
     "false",
   );
@@ -1868,7 +1870,7 @@ it("transport: removes a draft-only conversation with its draft, as a local one"
   expect(deletedSessions).toEqual([sessionId]);
   expect(commands.some((command) => command.type === "removeDraft")).toBe(false);
   expect(remoteSessionFor("shell")).toBeUndefined();
-  expect(container.textContent).not.toContain("Work on repo.");
+  expect(document.body.textContent).not.toContain("Work on repo.");
 });
 
 it("transport: keeps a sent message visible until the host sync confirms it", async () => {
@@ -1907,8 +1909,8 @@ it("transport: shows confirmation progress while an ordinary message is in fligh
 
   await type("Second");
   await act(async () => byLabel("Send")!.click());
-  expect(container.textContent).toContain("Second");
-  expect(container.textContent).toContain("Waiting for the host to confirm");
+  expect(document.body.textContent).toContain("Second");
+  expect(document.body.textContent).toContain("Waiting for the host to confirm");
 
   await act(async () => {
     releaseDispatch();
@@ -2171,7 +2173,7 @@ it("keeps a saved model's effort editable when the host catalog fails", async ()
   await act(async () => root.unmount());
   root = createRoot(container);
   await render();
-  expect(container.textContent).toContain("Couldn’t load models");
+  expect(document.body.textContent).toContain("Couldn’t load models");
   expect(byLabel("Codex GPT Test")?.getAttribute("aria-label")).toBe("Codex GPT Test, effort High");
   await chooseEffort("Low");
   expect(commands.at(-1)).toMatchObject({
@@ -2185,10 +2187,10 @@ it("explains a dropped connection above the session and reconnects from there", 
   explainAtOnce();
   machineDown = unreachable;
   await render();
-  expect(container.textContent).toContain("Can’t reach Home server");
+  expect(document.body.textContent).toContain("Can’t reach Home server");
   // The transport text stays behind Details instead of filling the bar.
-  expect(container.textContent).not.toContain("The machine did not answer");
-  const details = [...container.querySelectorAll("button")].find(
+  expect(document.body.textContent).not.toContain("The machine did not answer");
+  const details = [...document.body.querySelectorAll("button")].find(
     (button) => button.textContent === "Details",
   )!;
   await act(async () => details.click());
@@ -2196,16 +2198,16 @@ it("explains a dropped connection above the session and reconnects from there", 
     "The machine did not answer",
   );
   await act(async () => details.click());
-  expect(container.querySelector("[data-remote-data-state]")).toBeNull();
+  expect(document.body.querySelector("[data-remote-data-state]")).toBeNull();
   expect(container.querySelector("textarea")).not.toBeNull();
-  const reconnect = [...container.querySelectorAll("button")].find(
+  const reconnect = [...document.body.querySelectorAll("button")].find(
     (button) => button.textContent === "Reconnect",
   )!;
   machineDown = undefined;
   await act(async () => reconnect.click());
   await settle();
   await settle();
-  expect(container.textContent).not.toContain("Can’t reach Home server");
+  expect(document.body.textContent).not.toContain("Can’t reach Home server");
 });
 
 it("keeps a message sent while disconnected in the outbox and sends it once the machine answers", async () => {
@@ -2260,9 +2262,11 @@ it("transport: keeps a first message visible while disconnected, and sends it on
     "Fix the tests",
   );
   // Waiting for the machine is not a failure: no failed bubble and no Try again.
-  expect(container.textContent).not.toContain("Couldn’t send the message on Home server");
+  expect(document.body.textContent).not.toContain("Couldn’t send the message on Home server");
   expect(
-    [...container.querySelectorAll("button")].some((button) => button.textContent === "Try again"),
+    [...document.body.querySelectorAll("button")].some(
+      (button) => button.textContent === "Try again",
+    ),
   ).toBe(false);
   machineDown = undefined;
   await act(async () => notifyRemoteRecovered("env"));
@@ -2302,7 +2306,7 @@ it("asks to connect the machine when it is not set up on this computer", async (
     command === "remote_machines" ? [] : undefined,
   );
   await render();
-  expect(container.textContent).toContain(
+  expect(document.body.textContent).toContain(
     "The machine for this project isn’t connected on this computer.",
   );
   expect(container.querySelector("textarea")).toBeNull();
@@ -2433,11 +2437,11 @@ it("never sends a request again past the replay horizon, and says its outcome is
   await settle();
   expect(statusRequests).toEqual([commandId]);
   expect(commands.filter((command) => command.type === "send")).toHaveLength(0);
-  expect(container.textContent).toContain("will not be sent automatically");
+  expect(document.body.textContent).toContain("will not be sent automatically");
   machineDown = unreachable;
   await act(async () => notifyRemoteRecovered("env"));
   await settle();
-  expect(container.textContent).not.toContain("Your message will be sent automatically");
+  expect(document.body.textContent).not.toContain("Your message will be sent automatically");
 });
 
 it("transport: ignores a late create response after its tab has switched conversations", async () => {
@@ -2455,7 +2459,7 @@ it("transport: ignores a late create response after its tab has switched convers
   await settle();
   expect(remoteSessionFor("shell")).toBe("different-session");
   expect(commands.map((command) => command.type)).toEqual(["create"]);
-  expect(container.textContent).not.toContain("Pending first message");
+  expect(document.body.textContent).not.toContain("Pending first message");
 });
 
 it("transport: names the create window until the receipt has bound the host session", async () => {
@@ -2606,7 +2610,7 @@ it("authority intent: checks the old pending ID once and keeps its old payload w
   };
   savePendingRemoteCommand(projectKey, "env", pending, "shell");
   await renderRemoteProbe();
-  const retry = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
+  const retry = Array.from(document.body.querySelectorAll<HTMLButtonElement>("button")).find(
     (button) => button.textContent === "Retry",
   )!;
   expect(retry).toBeTruthy();
@@ -2619,7 +2623,7 @@ it("authority intent: checks the old pending ID once and keeps its old payload w
   expect(
     (await readDurableRemoteCommand(projectKey, "env", "host-session", "shell")).command,
   ).toEqual(pending);
-  expect(container.textContent).toContain("earlier session authority");
+  expect(document.body.textContent).toContain("earlier session authority");
 });
 
 it.each([undefined, 2])(
@@ -2916,7 +2920,7 @@ it("authority intent: keeps deferred Configure on its old generation until an ex
   await vi.waitFor(() => expect(remoteOverrides.session?.busy).toBe(false), { timeout: 5000 });
   await settle();
   expect(commands.filter((command) => command.type === "configure")).toEqual([]);
-  expect(container.textContent).toContain("earlier session authority");
+  expect(document.body.textContent).toContain("earlier session authority");
   await act(async () => remoteOverrides.onRuntimeModeChange!("shell", "auto"));
   await settle();
   expect(commands.find((command) => command.type === "configure")).toMatchObject({
@@ -3234,8 +3238,8 @@ it("re-reads the owner tail when a reset arrives during its initial read", async
     tailReadDelay = undefined;
     release();
   });
-  await vi.waitFor(() => expect(container.textContent).toContain("Current task output"));
-  expect(container.textContent).not.toContain("Earlier reply");
+  await vi.waitFor(() => expect(document.body.textContent).toContain("Current task output"));
+  expect(document.body.textContent).not.toContain("Earlier reply");
   expect(remoteDataPhase()).toBe("ready");
   expect(tailReads()).toBe(2);
   expect(
@@ -3276,7 +3280,7 @@ it("coalesces revision hints received during a tail read into one follow-up", as
     tailReadDelay = undefined;
     release();
   });
-  await vi.waitFor(() => expect(container.textContent).toContain("Live task output"));
+  await vi.waitFor(() => expect(document.body.textContent).toContain("Live task output"));
   const contentReads = vi.mocked(invoke).mock.calls.filter(([, input]) => {
     const method = (input as { method?: string } | undefined)?.method;
     return method === "sessions.page" || method === "sessions.sync";
@@ -3293,19 +3297,19 @@ it("keeps the transcript on disconnect, shows one connection notice and reconnec
   await vi.waitFor(() => expect(remoteDataPhase()).toBe("ready"));
   machineDown = unreachable;
   await act(async () => byLabel("Refresh conversation")!.click());
-  await vi.waitFor(() => expect(container.textContent).toContain("Can’t reach Home server"));
-  expect(container.textContent).toContain("Earlier reply");
-  expect(container.querySelector("[data-remote-data-state]")).toBeNull();
-  expect(container.textContent).not.toContain("Couldn’t refresh conversation");
+  await vi.waitFor(() => expect(document.body.textContent).toContain("Can’t reach Home server"));
+  expect(document.body.textContent).toContain("Earlier reply");
+  expect(document.body.querySelector("[data-remote-data-state]")).toBeNull();
+  expect(document.body.textContent).not.toContain("Couldn’t refresh conversation");
   machineDown = undefined;
   host = { ...host!, revision: host!.revision + 1, session: { ...host!.session, blocks: [] } };
   await act(async () =>
-    [...container.querySelectorAll("button")]
+    [...document.body.querySelectorAll("button")]
       .find((button) => button.textContent === "Reconnect")!
       .click(),
   );
   await vi.waitFor(() => expect(remoteDataPhase()).toBe("empty"));
-  expect(container.textContent).not.toContain("Earlier reply");
+  expect(document.body.textContent).not.toContain("Earlier reply");
 });
 
 it("uses one connection recovery for blocked conversation and queue reads without replaying messages", async () => {
@@ -3323,12 +3327,16 @@ it("uses one connection recovery for blocked conversation and queue reads withou
   await vi.waitFor(() =>
     expect(remoteOverrides.sendBlockedReason).toContain("Could not load queued messages"),
   );
-  expect(container.querySelector("[data-remote-data-state]")).toBeNull();
-  expect(container.textContent).not.toContain("Could not load queued messages. Sending is held");
+  expect(document.body.querySelector("[data-remote-data-state]")).toBeNull();
+  expect(document.body.textContent).not.toContain(
+    "Could not load queued messages. Sending is held",
+  );
   expect(
-    [...container.querySelectorAll("button")].filter((button) => button.textContent === "Retry"),
+    [...document.body.querySelectorAll("button")].filter(
+      (button) => button.textContent === "Retry",
+    ),
   ).toHaveLength(0);
-  const reconnect = [...container.querySelectorAll("button")].filter(
+  const reconnect = [...document.body.querySelectorAll("button")].filter(
     (button) => button.textContent === "Reconnect",
   );
   expect(reconnect).toHaveLength(1);
@@ -3347,12 +3355,14 @@ it("keeps an independent queue-storage retry available beside a connection probl
   machineDown = unreachable;
   openExistingChat();
   await renderRemoteProbe();
-  expect(container.textContent).toContain("queue storage unavailable");
+  expect(document.body.textContent).toContain("queue storage unavailable");
   expect(
-    [...container.querySelectorAll("button")].filter((button) => button.textContent === "Retry"),
+    [...document.body.querySelectorAll("button")].filter(
+      (button) => button.textContent === "Retry",
+    ),
   ).toHaveLength(1);
   expect(
-    [...container.querySelectorAll("button")].filter(
+    [...document.body.querySelectorAll("button")].filter(
       (button) => button.textContent === "Reconnect",
     ),
   ).toHaveLength(1);
@@ -3416,7 +3426,7 @@ it("reopens a cached conversation as refreshing, not as an unverified notice", a
   });
   await render();
   expect(remoteDataPhase()).toBe("refreshing");
-  expect(container.textContent).not.toContain("Updates have not been verified");
+  expect(document.body.textContent).not.toContain("Updates have not been verified");
   syncDelay = undefined;
   await act(async () => release());
   await vi.waitFor(() => expect(remoteDataPhase()).toBe("ready"));
@@ -3445,7 +3455,7 @@ it("marks known revision updates refreshing and settles on the new owner snapsho
   machineSessionRevisionHint = host!.revision;
   await vi.waitFor(() => expect(remoteDataPhase()).toBe("refreshing"));
   release();
-  await vi.waitFor(() => expect(container.textContent).toContain("Updated on host"));
+  await vi.waitFor(() => expect(document.body.textContent).toContain("Updated on host"));
   expect(remoteDataPhase()).toBe("ready");
 });
 
@@ -3460,7 +3470,7 @@ it("releases transcript demand and stops polling when the host deletes a session
   );
   machineSessionDeleted = true;
   await vi.waitFor(() =>
-    expect(container.textContent).toContain("This conversation was deleted on the host."),
+    expect(document.body.textContent).toContain("This conversation was deleted on the host."),
   );
   await vi.waitFor(() =>
     expect(
@@ -3546,7 +3556,7 @@ slow(
       await new Promise((resolve) => setTimeout(resolve, 7_500));
     });
     await vi.waitFor(() =>
-      expect(container.textContent).toContain("This conversation was deleted on the host."),
+      expect(document.body.textContent).toContain("This conversation was deleted on the host."),
     );
     await act(async () => await new Promise((resolve) => setTimeout(resolve, 150)));
     expect(
@@ -3569,7 +3579,7 @@ it("shows a saved tail offline but requires a fresh tail page before sending", a
   };
   vi.mocked(readRemotePageCache).mockResolvedValue(cached as HostSession);
   await render();
-  await vi.waitFor(() => expect(container.textContent).toContain("Earlier reply"));
+  await vi.waitFor(() => expect(document.body.textContent).toContain("Earlier reply"));
   expect(await tooltipText(byLabel("Send")!)).toContain("saved transcript preview");
   await type("verified against host");
   await act(async () => byLabel("Send")!.click());
@@ -3653,7 +3663,7 @@ it("shows a host turn as running from its status without requiring the transcrip
   openExistingChat({ status: "running", runId: "run-1" });
   host!.session.busy = false;
   await render();
-  expect(container.textContent).toContain("Working on Home server.");
+  expect(document.body.textContent).toContain("Working on Home server.");
   expect(container.querySelector('[aria-label="Transcript"]')?.getAttribute("data-busy")).toBe(
     "true",
   );
@@ -3661,7 +3671,7 @@ it("shows a host turn as running from its status without requiring the transcrip
   setHost({ status: "idle", busy: true });
   await act(async () => notifyRemoteRecovered());
   await settle();
-  expect(container.textContent).not.toContain("Working on Home server.");
+  expect(document.body.textContent).not.toContain("Working on Home server.");
   expect(container.querySelector('[aria-label="Transcript"]')?.getAttribute("data-busy")).toBe(
     "false",
   );
@@ -3687,17 +3697,17 @@ it("shows host activity alongside a preserved local conversation conflict", asyn
   ).not.toBeNull();
   // Sending is not refused: the message waits in the shared queue instead.
   expect(container.querySelector('button[aria-label^="Send."]')).toBeNull();
-  expect(container.textContent).not.toContain("running in the background");
+  expect(document.body.textContent).not.toContain("running in the background");
   expect(
     Array.from(container.querySelectorAll('[role="status"]'))
       .map((node) => node.textContent)
       .join(" "),
   ).toContain("Your messages are kept");
-  expect(container.textContent).toContain("local edit");
+  expect(document.body.textContent).toContain("local edit");
   expect(byLabel("Stop")).not.toBeNull();
   await render({ ...session, continuingElsewhere: undefined });
   expect(byLabel("Stop")).toBeNull();
-  expect(container.textContent).not.toContain("running in the background");
+  expect(document.body.textContent).not.toContain("running in the background");
   expect(
     Array.from(container.querySelectorAll('[role="status"]'))
       .map((node) => node.textContent)
@@ -3721,7 +3731,7 @@ it("refreshes an adopted conversation without remounting or clearing its unsent 
   await render(session, { onRefreshAdoptedSession });
   await type("my unsent draft");
   const composer = container.querySelector("textarea")!;
-  const refreshButton = [...container.querySelectorAll("button")].find(
+  const refreshButton = [...document.body.querySelectorAll("button")].find(
     (button) => button.textContent === "Sync conversation",
   )!;
   await act(async () => refreshButton.click());
@@ -3737,10 +3747,10 @@ it("refreshes an adopted conversation without remounting or clearing its unsent 
   );
   expect(container.querySelector("textarea")).toBe(composer);
   expect(composer.value).toBe("my unsent draft");
-  expect(container.textContent).toContain("latest host conversation");
+  expect(document.body.textContent).toContain("latest host conversation");
   // A plain sync never makes a copy: two changed versions are the user's to answer.
-  expect(container.textContent).toContain("Conversation synced.");
-  expect(container.textContent).not.toContain("(local copy)");
+  expect(document.body.textContent).toContain("Conversation synced.");
+  expect(document.body.textContent).not.toContain("(local copy)");
   // Composer drafts survive mounts; leave the next test an empty composer.
   await type("");
 });
@@ -3830,7 +3840,7 @@ slow("keeps a !command in the composer when the host is too old to run it", asyn
   await send("!git status");
   expect(commands).toHaveLength(0);
   expect(container.querySelector("textarea")!.value).toBe("!git status");
-  expect(container.textContent).toContain("Update bycoda Host");
+  expect(document.body.textContent).toContain("Update bycoda Host");
   // The draft is remembered across mounts; leave the composer empty.
   await type("");
 });
@@ -3903,7 +3913,7 @@ slow("holds the queue while the machine is unreachable and sends after it reconn
   // The turn ends while the app cannot see the host.
   endTurn();
   machineDown = unreachable;
-  await vi.waitFor(() => expect(container.textContent).toContain("Can’t reach Home server"), {
+  await vi.waitFor(() => expect(document.body.textContent).toContain("Can’t reach Home server"), {
     timeout: 6_000,
   });
   await settle();
@@ -4065,7 +4075,7 @@ slow(
     expect(queueWrites).toEqual([]);
     expect(commands).toEqual([]);
     queueReadFailed = false;
-    const retry = [...container.querySelectorAll("button")].find(
+    const retry = [...document.body.querySelectorAll("button")].find(
       (button) => button.textContent === "Retry",
     )!;
     await act(async () => retry.click());
@@ -4102,7 +4112,7 @@ it.each([undefined, "desktop" as const])(
     host = { ...host!, desktop: { updatedAt: 1 }, runId: "desktop", executionOwner };
     await renderRemoteProbe();
     expect(remoteOverrides.remoteFeatures.steer).toBe(false);
-    expect(container.textContent).not.toContain("running in the desktop app");
+    expect(document.body.textContent).not.toContain("running in the desktop app");
     await act(async () => {
       expect(remoteOverrides.onSubmit!("shell", "After the desktop turn", [])).toBe(true);
     });
@@ -4136,7 +4146,7 @@ it("shows follow-up attachment preparation and refuses repeated Send while keepi
       ]),
     ).toBe(true);
   });
-  expect(container.textContent).toContain("Preparing the message and attachments");
+  expect(document.body.textContent).toContain("Preparing the message and attachments");
   await act(async () => {
     expect(remoteOverrides.onSubmit!("shell", "Follow-up with file", [])).toBe(false);
     expect(
@@ -4152,13 +4162,13 @@ it("shows follow-up attachment preparation and refuses repeated Send while keepi
     await act(async () => notifyRemoteRecovered("env"));
     await settle();
     await act(async () => remoteOverrides.onSubmit!("shell", "New unsent text", []));
-    const dismiss = [...container.querySelectorAll("button")].find(
-      (entry) => entry.textContent === t("Dismiss"),
+    const dismiss = [...document.body.querySelectorAll("button")].find(
+      (entry) => entry.getAttribute("aria-label") === t("Dismiss notice"),
     )!;
     expect(dismiss).toBeTruthy();
     expect(dismiss.disabled).toBe(false);
     await act(async () => dismiss.click());
-    expect(container.textContent).not.toContain(
+    expect(document.body.textContent).not.toContain(
       t("The previous message is still being sent. Your message is kept."),
     );
   } finally {
@@ -4171,7 +4181,7 @@ it("shows follow-up attachment preparation and refuses repeated Send while keepi
     release();
   });
   await settle();
-  expect(container.textContent).not.toContain("Preparing the message and attachments");
+  expect(document.body.textContent).not.toContain("Preparing the message and attachments");
   expect(commands.filter((command) => command.type === "steer")).toHaveLength(1);
   expect(remoteOverrides.session?.queuedMessages?.map((row) => row.text)).toEqual([
     "Explicitly queued",
@@ -4281,8 +4291,8 @@ it("queues a send the host refuses with LEASE_HELD while the desktop runs a turn
     "Typed while the desktop was busy",
   ]);
   expect(remoteOverrides.session?.queueStatus).not.toBe("paused");
-  expect(container.textContent).not.toContain("LEASE_HELD");
-  expect(container.textContent).not.toContain("Try again");
+  expect(document.body.textContent).not.toContain("LEASE_HELD");
+  expect(document.body.textContent).not.toContain("Try again");
   // It is offered again only after a wait, not in a loop against the host.
   const attempts = commands.length;
   await settle();
@@ -4350,7 +4360,7 @@ slow(
     await type("Do not lose me");
     await act(async () => byLabel("Send")!.click());
     await vi.waitFor(
-      () => expect(container.textContent).toContain("could not be saved to the queue"),
+      () => expect(document.body.textContent).toContain("could not be saved to the queue"),
       {
         timeout: 12_000,
       },
@@ -4359,7 +4369,7 @@ slow(
       "Do not lose me",
     );
     expect(
-      [...container.querySelectorAll("button")].some((button) =>
+      [...document.body.querySelectorAll("button")].some((button) =>
         button.textContent?.includes("Try again"),
       ),
     ).toBe(true);
@@ -4532,7 +4542,7 @@ slow(
     await settle();
     expect(sentTexts()).toEqual(["New manual message"]);
     expect(commands.filter((command) => command.type === "create")).toHaveLength(1);
-    expect(container.textContent).not.toContain("Couldn’t send the message");
+    expect(document.body.textContent).not.toContain("Couldn’t send the message");
   },
 );
 
@@ -4556,7 +4566,7 @@ slow(
     });
     for (let i = 0; i < 4; i++) await settle();
     expect(commands).toHaveLength(0);
-    expect(container.textContent).toContain("Stopped while reconnecting");
+    expect(document.body.textContent).toContain("Stopped while reconnecting");
   },
 );
 
@@ -4668,7 +4678,7 @@ slow("re-attaches to a turn still running on the host: working, nothing sent", a
       ],
     },
   };
-  await vi.waitFor(() => expect(container.textContent).toContain("Edited three files"), {
+  await vi.waitFor(() => expect(document.body.textContent).toContain("Edited three files"), {
     timeout: 4_000,
   });
   expect(commands).toHaveLength(0);
@@ -4679,7 +4689,7 @@ slow("shows a turn that finished while the app was away, and sends nothing", asy
   watchRun(watchKey("env", "host-session"), "run-1");
   await render();
   await settle();
-  expect(container.textContent).toContain("Earlier reply");
+  expect(document.body.textContent).toContain("Earlier reply");
   expect(byLabel("Stop")).toBeNull();
   expect(commands).toHaveLength(0);
   expect(container.querySelector("[data-interrupted-turn]")).toBeNull();
@@ -4821,7 +4831,7 @@ it.each(["window", "pane"] as const)(
       Object.defineProperty(document, "hidden", { configurable: true, value: false });
       await act(async () => document.dispatchEvent(new Event("visibilitychange")));
     } else await render(currentShell, { visible: true, onRemoteSnapshot: published });
-    await vi.waitFor(() => expect(container.textContent).toContain("Hidden tail"));
+    await vi.waitFor(() => expect(document.body.textContent).toContain("Hidden tail"));
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 250));
     });
@@ -4871,7 +4881,7 @@ it.each(["inline", "mismatched", "legacy"] as const)(
             blockIds: blocks.map((block) => block.id),
           };
     machineSessionRevisionHint = host.revision;
-    await vi.waitFor(() => expect(container.textContent).toContain("Inline host update"));
+    await vi.waitFor(() => expect(document.body.textContent).toContain("Inline host update"));
     expect(syncReads()).toBe(mode === "inline" ? before : before + 1);
     if (mode === "inline") {
       await act(async () => {
@@ -5046,7 +5056,7 @@ it("local Host opt-in: real creation and first send preserve local cwd, account 
   session.workspaceMode = "current";
   await render(session);
   await sendTransport("First local Host message");
-  await vi.waitFor(() => expect(commands, container.textContent ?? "").toHaveLength(1));
+  await vi.waitFor(() => expect(commands, document.body.textContent ?? "").toHaveLength(1));
   expect(commands[0]).toMatchObject({
     type: "create",
     sessionId: session.id,

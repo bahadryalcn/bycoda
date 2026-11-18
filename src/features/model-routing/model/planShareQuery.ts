@@ -8,7 +8,7 @@ import {
   type PlanShareWindow,
 } from "../../../shared/model/host-contracts/usage-plan-share";
 import { remoteRequest } from "../../connections/public/connections";
-import { useRateLimitHistory, type QuotaSample } from "../../providers/model/rateLimitHistory";
+import { useRateLimitHistory, type QuotaSample } from "../../providers/public/rateLimitHistory";
 
 const KIND: Record<PlanShareWindow, QuotaSample["kind"]> = {
   fiveHour: "session",

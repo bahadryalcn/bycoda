@@ -35,6 +35,7 @@ export function ModelOrderLimitsTab({
   draft,
   usage,
   onChange,
+  onFieldInvalid,
 }: {
   machineId: string;
   /** The Host's settings machine; plan share needs its capability list. */
@@ -42,6 +43,8 @@ export function ModelOrderLimitsTab({
   draft: OrderDraft;
   usage: MachineLimits;
   onChange: (draft: OrderDraft) => void;
+  /** A limit field reports by key whether it shows a value the draft could not take. */
+  onFieldInvalid: (key: string, invalid: boolean) => void;
 }) {
   const t = useT();
   const [quotaWindow, setQuotaWindow] = useState<PlanShareWindow>("fiveHour");
@@ -57,7 +60,12 @@ export function ModelOrderLimitsTab({
   const supported = capable.data === true;
   return (
     <div className="flex flex-col gap-4">
-      <ModelOrderLimits draft={draft} usage={usage} onChange={onChange} />
+      <ModelOrderLimits
+        draft={draft}
+        usage={usage}
+        onChange={onChange}
+        onFieldInvalid={onFieldInvalid}
+      />
       {supported ? (
         <Group
           title={t("Plan share by job")}

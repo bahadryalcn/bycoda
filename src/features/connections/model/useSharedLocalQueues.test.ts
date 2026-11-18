@@ -364,6 +364,48 @@ it("recovers a synchronization failure and steers on the same click", async () =
   expect(queue.messages).toEqual([]);
 });
 
+it("records a wait, not a rejection, when the host cannot be asked before anything is sent", async () => {
+  await mount();
+  const send = vi.fn(() => true);
+  mocks.request.mockRejectedValue(
+    new Error("RPC_WS_INTERRUPTED: Host connection ended before the result was known."),
+  );
+  await expect(submitSharedLocalQueue("chat", "a", false, send)).rejects.toBeInstanceOf(
+    QueueNotReadyError,
+  );
+  expect(send).not.toHaveBeenCalled();
+  expect(readDeliveryProgress("chat")).toMatchObject({
+    stage: "waiting",
+    detail: expect.stringContaining("RPC_WS_INTERRUPTED"),
+  });
+  expect(sessionsRef.current[0].queuedMessages).toEqual([row("a")]);
+  expect(sessionsRef.current[0].queueStatus).toBe("active");
+});
+
+it("records a wait when the full local storage stops the claim, and the next send replaces it", async () => {
+  await mount();
+  const send = vi.fn(() => true);
+  const setItem = vi.spyOn(localStorage, "setItem").mockImplementation(() => {
+    throw new DOMException("quota", "QuotaExceededError");
+  });
+  try {
+    await expect(submitSharedLocalQueue("chat", "a", false, send)).rejects.toBeInstanceOf(
+      QueueNotReadyError,
+    );
+  } finally {
+    setItem.mockRestore();
+  }
+  expect(readDeliveryProgress("chat")).toMatchObject({
+    stage: "waiting",
+    detail: expect.stringContaining("local storage is full"),
+  });
+  expect(send).not.toHaveBeenCalled();
+  expect(sessionsRef.current[0].queuedMessages).toEqual([row("a")]);
+  await wake();
+  expect(await submitSharedLocalQueue("chat", "a", false, send)).toBe(true);
+  expect(readDeliveryProgress("chat")?.stage).toBe("accepted");
+});
+
 it("durably releases a paused shared queue without sending a message", async () => {
   await mount();
   sessionsRef.current = [{ ...sessionsRef.current[0], queueStatus: "resuming", busy: true }];

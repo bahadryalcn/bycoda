@@ -421,7 +421,7 @@ function candidateEntries(draft: OrderDraft, candidates: SetupCandidate[]) {
         modelSettings: entrySettings(settings),
         unknownLimit: "use",
       });
-      percentages[entryId] = "0";
+      percentages[entryId] = "";
     }
     cache.set(key, entryId);
     return entryId;

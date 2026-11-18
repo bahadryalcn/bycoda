@@ -17,6 +17,8 @@ import {
   type SharedQueue,
 } from "./sharedQueue";
 import { desktopInstanceId } from "./desktopInstance";
+import { writeQueueStorage } from "./sharedQueueStorage";
+import { queuePayloads } from "./sharedQueuePayloads";
 import type { RemoteQueue } from "./remoteQueue";
 import { finishQueueAcknowledgement, type SendJournal } from "./sharedQueueAcknowledgement";
 
@@ -70,6 +72,10 @@ export class SharedQueueClient {
   private recoveredAttachmentOwners = false;
   private recoveredSources: Record<string, string[]> = {};
   private attachmentWrites = Promise.resolve();
+  /** Pasted payloads this client knows are in the payload store, so polling rewrites nothing. */
+  private storedPayloads = new Set<string>();
+  private payloadWrites = Promise.resolve();
+  private payloadsLoaded?: Promise<void>;
   private attachmentFingerprint?: string;
   private attachments() {
     if (!cachedRemoteCapabilities(this.environmentId)?.includes(ATTACHMENT_OWNERSHIP_CAPABILITY))
@@ -97,21 +103,18 @@ export class SharedQueueClient {
     if (desktop) {
       const shared = this.storageKey;
       this.storageKey = `bycoda:shared-queue:v2:${JSON.stringify([environmentId, sessionId, clientId])}`;
-      // The first window to start adopts what the single shared key held. The
-      // old keys are copied, never removed: an older build still reads them, so
-      // a downgrade keeps the pending queue and send journal. The marker keeps
-      // the other windows from adopting the same copy.
-      const adopted = `${shared}:adopted`;
-      if (localStorage.getItem(adopted) === null) {
-        let copied = false;
+      // The first window to start adopts what the single shared key held and
+      // removes it, so no other window adopts the same copy. A copy that cannot be
+      // written leaves the old keys in place.
+      try {
         for (const suffix of ["", ":send"]) {
           const old = localStorage.getItem(shared + suffix);
-          if (old !== null && localStorage.getItem(this.storageKey + suffix) === null) {
-            localStorage.setItem(this.storageKey + suffix, old);
-            copied = true;
-          }
+          if (old !== null && localStorage.getItem(this.storageKey + suffix) === null)
+            writeQueueStorage(this.storageKey + suffix, old);
         }
-        if (copied) localStorage.setItem(adopted, clientId);
+        for (const suffix of ["", ":send", ":adopted"]) localStorage.removeItem(shared + suffix);
+      } catch {
+        // shortcut: adoption retries on the next start, and the sweep removes it once adopted.
       }
     }
     const stored = localStorage.getItem(this.storageKey);
@@ -165,19 +168,111 @@ export class SharedQueueClient {
   private fields(queue: RemoteQueue): RemoteQueue {
     return { messages: queue.messages, status: queue.status, editingId: queue.editingId };
   }
+  /** A row still waiting for its pasted payload (saved with a marker, bytes not loaded yet). */
+  private awaitsPayload = (file: RemoteQueue["messages"][number]["attachments"][number]) =>
+    file.externalPayload === true && !file.data && !file.path && !file.missing;
+  /**
+   * Loads the pasted payloads saved outside localStorage back into the queue. A row
+   * is marked missing only when the store answered and the payload is gone; a store
+   * that cannot be read fails this call so nothing is uploaded without its bytes.
+   */
+  private loadPayloads(): Promise<void> {
+    return (this.payloadsLoaded ??= this.hydratePayloads().catch((error: unknown) => {
+      this.payloadsLoaded = undefined;
+      throw error;
+    }));
+  }
+  private async hydratePayloads(): Promise<void> {
+    const wanted = this.desired.messages.flatMap((row) =>
+      row.attachments.filter(this.awaitsPayload).map((file) => file.id),
+    );
+    if (!wanted.length) return;
+    await this.payloadWrites;
+    const found = await queuePayloads().read(this.storageKey, wanted);
+    this.desired = {
+      ...this.desired,
+      messages: this.desired.messages.map((row) => ({
+        ...row,
+        attachments: row.attachments.map((file) => {
+          if (!this.awaitsPayload(file)) return file;
+          const data = found.get(file.id);
+          return data
+            ? { ...file, data }
+            : { ...file, externalPayload: undefined, missing: true as const };
+        }),
+      })),
+    };
+    for (const id of found.keys()) this.storedPayloads.add(id);
+    this.emit();
+  }
+  /**
+   * Writes the pasted payloads of the saved queue to the payload store and drops the
+   * ones no row refers to any more (sent, removed, or uploaded to the host). It runs
+   * after the localStorage record, so a record never points at a payload that was
+   * never started; a crash in between leaves the row marked missing on restore.
+   */
+  private savePayloads() {
+    const keep = new Set<string>();
+    const fresh: [string, string][] = [];
+    for (const row of this.desired.messages)
+      for (const file of row.attachments) {
+        if (file.path || file.missing) continue;
+        if (file.data) {
+          keep.add(file.id);
+          if (!this.storedPayloads.has(file.id)) fresh.push([file.id, file.data]);
+        } else if (file.externalPayload) keep.add(file.id);
+      }
+    const stale = [...this.storedPayloads].some((id) => !keep.has(id));
+    if (!fresh.length && !stale) return;
+    const owner = this.storageKey;
+    this.payloadWrites = this.payloadWrites.then(async () => {
+      const store = queuePayloads();
+      try {
+        for (const [id, data] of fresh) {
+          await store.put(owner, id, data);
+          this.storedPayloads.add(id);
+        }
+        await store.prune(owner, keep);
+        for (const id of [...this.storedPayloads])
+          if (!keep.has(id)) this.storedPayloads.delete(id);
+      } catch (error) {
+        this.emit(
+          this.state.loaded,
+          `Could not keep a pasted image of a queued message on this device: ${String(error).replace(/^Error: /, "")}`,
+        );
+      }
+    });
+  }
   private persist() {
-    localStorage.setItem(
+    // Pasted bytes never go into localStorage: the record keeps a marker for them.
+    const desiredRows = this.desired.messages.map((row) => ({
+      ...row,
+      attachments: row.attachments.map((file) =>
+        file.data && !file.path
+          ? { ...file, data: undefined, externalPayload: true as const }
+          : file,
+      ),
+    }));
+    writeQueueStorage(
       this.storageKey,
       JSON.stringify({
-        base: this.base,
+        // The host's copy needs no attachment bytes or previews: only what a merge compares.
+        base: {
+          ...this.base,
+          messages: (persistableQueue(this.base.messages) ?? []).map((row) => ({
+            ...row,
+            attachments: row.attachments.map(({ data: _data, ...file }) => file),
+          })),
+        },
         desired: {
           ...this.fields(this.desired),
-          messages: persistableQueue(this.desired.messages) ?? [],
+          messages: persistableQueue(desiredRows) ?? [],
         },
         takeOwnership: this.takeOwnership,
       }),
     );
     this.hasBaseline = true;
+    this.savePayloads();
     if (this.attachmentScope) {
       const scope = this.attachmentScope;
       const savedSources = {
@@ -319,6 +414,8 @@ export class SharedQueueClient {
   async initialize(legacy?: RemoteQueue): Promise<void> {
     this.missing = false;
     try {
+      // A store that cannot be read fails again where a row is uploaded, with the reason shown.
+      await this.loadPayloads().catch(() => {});
       await this.recoverAcknowledgement();
       if (!this.dirty()) {
         const previous = this.hasBaseline ? this.base : undefined;
@@ -395,6 +492,9 @@ export class SharedQueueClient {
   private async wire(queue: RemoteQueue): Promise<RemoteQueue> {
     const messages = [];
     for (const row of queue.messages) {
+      // Never upload a row without the pasted bytes its marker stands for.
+      if (row.attachments.some(this.awaitsPayload))
+        throw new Error("A pasted image of a queued message is still loading.");
       const refs = await this.upload(this.machineId, row.attachments, {
         ownership: this.attachments(),
         ownershipSource: `queue-upload:${row.id}`,
@@ -403,7 +503,11 @@ export class SharedQueueClient {
       });
       messages.push({
         ...row,
-        attachments: refs.map((file) => ({ ...file, hostEnvironmentId: this.environmentId })),
+        attachments: refs.map((file) => ({
+          ...file,
+          hostEnvironmentId: this.environmentId,
+          externalPayload: undefined,
+        })),
       });
     }
     return { ...this.fields(queue), messages };
@@ -423,6 +527,7 @@ export class SharedQueueClient {
         if (this.conflict) await this.resolveConflict();
         for (;;) {
           while (this.dirty()) {
+            await this.loadPayloads();
             const sent = this.desired;
             const ownership = this.takeOwnership;
             const after = await this.wire(sent);
@@ -513,6 +618,17 @@ export class SharedQueueClient {
    */
   private async resolveConflict(): Promise<void> {
     const value = await this.call<SharedQueue>("get");
+    // A dropped connection can lose the reply of a write the host did apply: the
+    // retry then looks like a conflict, but the host already holds exactly this
+    // window's queue. Nothing was changed by anyone else, so nothing is paused.
+    if (sameQueueValue(this.fields(value), this.fields(this.desired))) {
+      this.base = value;
+      this.desired = value;
+      this.conflict = false;
+      this.persist();
+      this.emit(true);
+      return;
+    }
     const kept: typeof value.messages = [];
     let duplicated = false;
     for (const row of this.desired.messages) {
@@ -543,7 +659,7 @@ export class SharedQueueClient {
   noteStop(): void {
     const prior = this.journal();
     if (!prior || prior.stopped) return;
-    localStorage.setItem(`${this.storageKey}:send`, JSON.stringify({ ...prior, stopped: true }));
+    writeQueueStorage(`${this.storageKey}:send`, JSON.stringify({ ...prior, stopped: true }));
   }
   /**
    * An explicit "Take over": this window becomes the drainer even though another
@@ -687,7 +803,7 @@ export class SharedQueueClient {
       if (!this.canDrain()) return undefined;
       // Write before the RPC: a committed claim with a lost reply must be recoverable.
       // No provider callback can run until this method returns its token.
-      localStorage.setItem(
+      writeQueueStorage(
         `${this.storageKey}:send`,
         // `held: false`: if only the reply is lost, the claim is released as it was
         // and the queue is not paused for a send that never started.
@@ -710,7 +826,7 @@ export class SharedQueueClient {
     this.base = value;
     this.desired = value;
     this.emit(true);
-    localStorage.setItem(
+    writeQueueStorage(
       `${this.storageKey}:send`,
       JSON.stringify({ token: value.claim?.token, id, clientId: this.clientId, accepted: null }),
     );
@@ -724,7 +840,7 @@ export class SharedQueueClient {
    */
   async finish(token: string, accepted: boolean, held = !accepted) {
     const prior = this.journal();
-    localStorage.setItem(
+    writeQueueStorage(
       `${this.storageKey}:send`,
       JSON.stringify({
         ...(prior?.id ? { id: prior.id } : {}),
@@ -760,7 +876,11 @@ export class SharedQueueClient {
       if (!pending.token) {
         if (value.claim?.clientId === pending.clientId && value.claim.id === pending.id) {
           pending.token = value.claim.token;
-          localStorage.setItem(`${this.storageKey}:send`, JSON.stringify(pending));
+          try {
+            writeQueueStorage(`${this.storageKey}:send`, JSON.stringify(pending));
+          } catch {
+            // The claim is found by id again if this note is lost; finishing it is not blocked.
+          }
         } else if (!value.claim) {
           localStorage.removeItem(`${this.storageKey}:send`);
           return;
@@ -825,7 +945,7 @@ export class SharedQueueClient {
     if (!this.recovery) return;
     const pending = JSON.parse(localStorage.getItem(`${this.storageKey}:send`)!);
     // The owner decided on an unconfirmed send: the rest of the queue waits for them.
-    localStorage.setItem(
+    writeQueueStorage(
       `${this.storageKey}:send`,
       JSON.stringify({ ...pending, accepted: pending.accepted ?? accepted, held: true }),
     );

@@ -178,6 +178,24 @@ describe("managed workspace persistence", () => {
     ).toMatchObject({ n: 1 });
     spy.mockRestore();
   });
+  it("keeps the summaries of every registered project cached, not only the last 16", async () => {
+    const store = new HostStore(join(open(), "summary-capacity.db"));
+    cleanups.push(() => store.close());
+    const ids: string[] = [];
+    for (let index = 0; index < 40; index++) {
+      const project = await store.addProject(`/summary-capacity-${index}`, `P${index}`);
+      await store.save(session(`capacity-${index}`, project.id), {});
+      ids.push(project.id);
+    }
+    for (const id of ids) await store.summaries(id);
+    const prepare = vi.spyOn(store.db, "prepare");
+    for (const id of ids) expect(await store.summaries(id)).toHaveLength(1);
+    const reads = prepare.mock.calls.filter(([sql]) =>
+      String(sql).includes("FROM session_state WHERE project_id"),
+    );
+    prepare.mockRestore();
+    expect(reads).toHaveLength(0);
+  });
   it("does not refresh a legacy summary after authority transfers during hydration", async () => {
     const store = new HostStore(join(open(), "summary-authority.db"));
     cleanups.push(() => store.close());

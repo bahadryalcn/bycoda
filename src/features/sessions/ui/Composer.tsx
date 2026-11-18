@@ -3076,8 +3076,6 @@ export const Composer = memo(function Composer({
       ) : null}
       <ComposerNotices
         leading={notices}
-        sessionId={sessionId}
-        queuedMessages={queuedMessages}
         usageLimit={usageLimit}
         accountProvider={accountProvider}
         providerAccountId={providerAccountId}

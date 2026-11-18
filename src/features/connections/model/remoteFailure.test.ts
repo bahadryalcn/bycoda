@@ -70,6 +70,9 @@ describe("classifyRemoteError", () => {
     "Host rejected request: Host read capacity is busy; retry later.",
     "RPC_WS_OVERLOAD: Host read capacity is busy; retry later.",
     "Host pending read request limit reached",
+    // The session's owner moved while the list was read; the next read answers.
+    "Host rejected request: Session read owner changed; retry",
+    "Session read owner changed; retry",
   ])("classifies %j as temporary, not a lost connection", (text) => {
     expect(classifyRemoteError(text).kind).toBe("temporary");
     expect(classifyRemoteError(new Error(text)).kind).toBe("temporary");
