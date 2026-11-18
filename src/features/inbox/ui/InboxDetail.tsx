@@ -279,6 +279,7 @@ export function InboxDetail({
     }
   };
 
+  const githubWorkspace = item.provider === "github" && !panel;
   const identityRow = (
     <Text
       as="div"
@@ -341,12 +342,15 @@ export function InboxDetail({
               `relative ${panel ? "" : "shrink-0"}`,
             )}
           >
-            <div className={`flex w-full min-w-0 flex-col gap-2 px-4 pt-3 ${isPr ? "" : "pb-3"}`}>
+            <div
+              className={`flex w-full min-w-0 flex-col gap-2 px-4 pt-3 ${isPr ? "" : "pb-3"} ${githubWorkspace ? "mx-auto max-w-3xl" : ""}`}
+            >
               <header className={`flex flex-col ${panel ? "gap-2" : "gap-2.5"}`}>
+                {githubWorkspace ? identityRow : null}
                 <Heading size="page" lines={3} className="break-words">
                   {item.title}
                 </Heading>
-                {panel ? null : identityRow}
+                {panel || githubWorkspace ? null : identityRow}
                 <Text
                   as="div"
                   size="caption"
@@ -370,7 +374,7 @@ export function InboxDetail({
                     </span>
                   ) : null}
                   {showAssignment ? (
-                    <>
+                    <span className="inline-flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
                       <Text size="inherit" tone="muted">
                         {t("Assignee")}
                       </Text>
@@ -392,11 +396,11 @@ export function InboxDetail({
                       ) : (
                         <span>{t("Unassigned")}</span>
                       )}
-                    </>
+                    </span>
                   ) : null}
                   {item.createdAt && formatRelativeTime(item.createdAt) ? (
                     <>
-                      <span aria-hidden>·</span>
+                      {githubWorkspace ? null : <span aria-hidden>·</span>}
                       <Timestamp
                         value={Date.parse(item.createdAt)}
                         format="relative"
@@ -406,7 +410,7 @@ export function InboxDetail({
                   ) : null}
                   {formatRelativeTime(item.updatedAt) ? (
                     <>
-                      <span aria-hidden>·</span>
+                      {githubWorkspace ? null : <span aria-hidden>·</span>}
                       <span>
                         {t("Updated ")}
                         {formatRelativeTime(item.updatedAt)}
@@ -415,7 +419,7 @@ export function InboxDetail({
                   ) : null}
                   {baseRef && headRef ? (
                     <>
-                      <span aria-hidden>·</span>
+                      {githubWorkspace ? null : <span aria-hidden>·</span>}
                       <span className="inline-flex min-w-0 items-center gap-1">
                         <GitCompare className="icon-xs shrink-0" strokeWidth={1.75} />
                         <span className="min-w-0 wrap-anywhere">
@@ -440,13 +444,18 @@ export function InboxDetail({
                       {t(reviewLabel)}
                     </Badge>
                   ) : null}
-                  <BadgeList
-                    label={t("Labels")}
-                    rows={1}
-                    items={inboxLabelItems(item.labels)}
-                    className="min-w-0 max-w-full"
-                  />
+                  {githubWorkspace ? null : (
+                    <BadgeList
+                      label={t("Labels")}
+                      rows={1}
+                      items={inboxLabelItems(item.labels)}
+                      className="min-w-0 max-w-full"
+                    />
+                  )}
                 </Text>
+                {githubWorkspace ? (
+                  <BadgeList label={t("Labels")} rows={2} items={inboxLabelItems(item.labels)} />
+                ) : null}
                 {!panel && relatedSessions.length > 0 ? (
                   <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto">
                     <Text
@@ -519,7 +528,7 @@ export function InboxDetail({
                         >
                           {starting ? t("Sending...") : t("Send to agent")}
                         </Button>
-                        {!chooseStartProject && item.repo ? (
+                        {!chooseStartProject && item.repo && !githubWorkspace ? (
                           <Text
                             size="caption"
                             tone="secondary"

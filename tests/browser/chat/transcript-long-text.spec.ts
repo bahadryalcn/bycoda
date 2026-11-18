@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-test("text in the long text preview and window can be selected with the mouse and copied", async ({
+test("long text opens only on demand and its rendered Markdown can be selected and copied", async ({
   page,
   context,
   browserName,
@@ -13,10 +13,11 @@ test("text in the long text preview and window can be selected with the mouse an
   await page.goto("/tests/browser/chat/transcript.html?longText");
   const trigger = page.getByRole("button", { name: "Show full long text" });
   await trigger.hover();
-  const preview = page
-    .locator("[data-hover-card]")
-    .filter({ has: page.getByText("Long text preview", { exact: true }) });
-  await expect(preview.getByRole("button", { name: "Copy message" })).toBeVisible();
+  await trigger.focus();
+  await expect(page.locator("[data-hover-card]")).toHaveCount(0);
+  await trigger.press("Enter");
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("button", { name: "Copy message" })).toBeVisible();
   const selectExcerpt = async (selector: string) => {
     const pre = page.locator(selector);
     await expect(pre).toHaveCSS("user-select", "text");
@@ -52,20 +53,45 @@ test("text in the long text preview and window can be selected with the mouse an
         .toBe("Selectable excerpt");
     }
   };
-  await selectExcerpt("[data-hover-card] pre.select-text");
-  await page.getByRole("button", { name: "Show full content", exact: true }).click();
-  const dialog = page.getByRole("dialog");
-  await expect(dialog.getByRole("button", { name: "Copy message" })).toBeVisible();
-  await selectExcerpt('[role="dialog"] pre');
+  await selectExcerpt('[role="dialog"] h1');
   if (browserName === "chromium") {
     await dialog.getByRole("button", { name: "Copy message" }).click();
     await expect
       .poll(() =>
         page.evaluate(async () => (await navigator.clipboard.readText()).replace(/\r\n/g, "\n")),
       )
-      .toBe("Selectable excerpt\n" + "Long content ".repeat(200).trimEnd());
+      .toBe("# Selectable excerpt\n\n" + "Long content ".repeat(200).trimEnd());
   }
 });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`long message Markdown (${theme}, ${width}px)`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/tests/browser/chat/transcript.html?longText");
+      await page.locator("#root").evaluate((root) => (root.style.maxWidth = "100%"));
+      await page.evaluate((theme) => {
+        document.documentElement.classList.toggle("dark", theme === "dark");
+        document.documentElement.classList.toggle("theme-light", theme === "light");
+      }, theme);
+      const captures = "temp/verification/user-message-markdown";
+      const heading = page.locator(".user-message-bubble h1");
+      await expect(heading).toHaveText("Selectable excerpt");
+      const bounds = (await heading.boundingBox())!;
+      expect(bounds.x + bounds.width).toBeLessThan(width);
+      await page.screenshot({
+        animations: "disabled",
+        path: `${captures}/card-${theme}-${width}.png`,
+      });
+      await page.getByRole("button", { name: "Show full long text" }).click();
+      await expect(
+        page.getByRole("dialog").getByRole("heading", { name: "Selectable excerpt" }),
+      ).toBeVisible();
+      await page.screenshot({
+        animations: "disabled",
+        path: `${captures}/dialog-${theme}-${width}.png`,
+      });
+    });
 
 for (const theme of ["light", "dark"])
   for (const width of [1280, 800])

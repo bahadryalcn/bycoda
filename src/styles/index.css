@@ -1780,7 +1780,10 @@ html.chat-background-layer-off .gradient-blur-background-strong {
   mask-image: var(--tab-label-mask);
 }
 
-.agent-transcript [data-transcript-search-current="true"] .user-message-bubble pre.line-clamp-4 {
+.agent-transcript
+  [data-transcript-search-current="true"]
+  .user-message-bubble
+  [data-selectable-agent-response].line-clamp-4 {
   display: block;
   overflow: visible;
   -webkit-line-clamp: unset;

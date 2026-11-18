@@ -15,6 +15,7 @@ import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
+import { InboxGithubListControls, type InboxListLayout } from "./InboxGithubListControls";
 import { Sash } from "../../../shared/ui/Sash";
 import { useQueryVisible } from "../../../shared/hooks/useQueryVisible";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
@@ -199,6 +200,21 @@ export function InboxView({
     setRefresh((value) => value + 1);
   };
   const [detailOpen, setDetailOpen] = useState(false);
+  const [githubListKind, setGithubListKind] = useRetainedState<"issue" | "pr">(
+    `${viewStateKey}:github-kind`,
+    () => {
+      const { hiddenKinds } = loadInboxFilters();
+      return hiddenKinds.includes("issue") && !hiddenKinds.includes("pr") ? "pr" : "issue";
+    },
+  );
+  const [listLayout, setListLayout] = useRetainedState<InboxListLayout>(
+    `inbox:${projectKey(cwd)}:github-list-layout`,
+    "compact",
+  );
+  const [splitView, setSplitView] = useRetainedState(
+    `inbox:${projectKey(cwd)}:github-split-view`,
+    true,
+  );
   const [jiraView, setJiraView] = useRetainedState<"list" | "board">(
     `${viewStateKey}:jira-view`,
     "list",
@@ -248,18 +264,39 @@ export function InboxView({
     },
   });
   const { targetSelectionKey } = linked;
+  const githubKind =
+    source === "github" && !pullRequestsOnly
+      ? linked.pinnedKey && target
+        ? target.kind
+        : githubListKind
+      : null;
   const searchInput = linked.searchPinned ? "" : retainedSearch;
   const deferredSearch = useDeferredValue(searchInput);
-  const [retainedKey, setSelectedKey] = useRetainedState<string | null>(
+  const [sourceKey, setSourceKey] = useRetainedState<string | null>(
     `${viewStateKey}:${source}:selected`,
-    targetSelectionKey,
+    null,
   );
+  const [githubPrKey, setGithubPrKey] = useRetainedState<string | null>(
+    `${viewStateKey}:github:pr:selected`,
+    null,
+  );
+  const [githubIssueKey, setGithubIssueKey] = useRetainedState<string | null>(
+    `${viewStateKey}:github:issue:selected`,
+    null,
+  );
+  const [retainedKey, setSelectedKey] =
+    githubKind === "pr"
+      ? [githubPrKey, setGithubPrKey]
+      : githubKind === "issue"
+        ? [githubIssueKey, setGithubIssueKey]
+        : [sourceKey, setSourceKey];
   // The selection stays the user's own choice; a linked target only pins it.
   const selectedKey = linked.pinnedKey ?? retainedKey;
   /** Hands the pinned target over to the user's retained selection and search. */
   const releaseTarget = () => {
     if (!linked.pinnedKey) return;
     setSelectedKey(linked.pinnedKey);
+    if (githubKind) setGithubListKind(githubKind);
     setRetainedSearch("");
     linked.releaseTarget();
   };
@@ -286,12 +323,12 @@ export function InboxView({
   const activeFilters = useMemo(
     () =>
       pruneInboxFilters(
-        filters,
+        source === "github" ? { ...filters, hiddenKinds: [] } : filters,
         projects.map((project) => project.path),
       ),
-    [filters, projects],
+    [filters, projects, source],
   );
-  const listScope = `${viewStateKey}:${JSON.stringify([source, activeFilters, jiraScope, linearScope])}`;
+  const listScope = `${viewStateKey}:${JSON.stringify([source, githubKind, activeFilters, jiraScope, linearScope])}`;
   const filtersActive =
     codeScopes.hidden.length > 0 ||
     hasActiveInboxFilters(activeFilters, source, linearHiddenTeamIds, jiraHiddenProjectIds);
@@ -434,7 +471,12 @@ export function InboxView({
     setMessagesChosen(false);
     selectSource(item.provider);
     setSearchInput(item.identifier || String(item.number));
-    setSelectedKey(inboxItemKey(item));
+    if (item.provider === "github" && (item.kind === "issue" || item.kind === "pr")) {
+      setGithubListKind(item.kind);
+      (item.kind === "pr" ? setGithubPrKey : setGithubIssueKey)(inboxItemKey(item));
+    } else {
+      setSelectedKey(inboxItemKey(item));
+    }
     setDetailOpen(true);
   });
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- store listener for chat work-item chips; a request sent before mount waits in the store.
@@ -467,6 +509,7 @@ export function InboxView({
       visibleInboxItems({
         items,
         pullRequestsOnly,
+        githubKind,
         prSort,
         filters: activeFilters,
         search: deferredSearch,
@@ -477,12 +520,13 @@ export function InboxView({
           scopes: codeScopesLoaded,
           hidden: codeScopesHidden,
         },
-        target,
+        target: linked.pinnedKey ? target : null,
         targetItem,
         now: Date.now(),
       }),
     [
       pullRequestsOnly,
+      githubKind,
       prSort,
       activeFilters,
       items,
@@ -490,6 +534,7 @@ export function InboxView({
       source,
       sourceAvailable,
       target,
+      linked.pinnedKey,
       targetItem,
       codeScopesProvider,
       codeScopesLoaded,
@@ -524,7 +569,9 @@ export function InboxView({
   // selected identity from allowed loaded data before considering a default.
   const allowedItems = sourceAvailable
     ? filterCodeHostScopes(
-        items.filter((item) => item.provider === source),
+        items.filter(
+          (item) => item.provider === source && (!githubKind || item.kind === githubKind),
+        ),
         codeScopes.provider,
         codeScopes.scopes,
         codeScopes.hidden,
@@ -554,7 +601,7 @@ export function InboxView({
 
   const onFiltersChange = (next: InboxFilters) => {
     const pruned = pruneInboxFilters(
-      next,
+      source === "github" ? { ...next, hiddenKinds: filters.hiddenKinds } : next,
       projects.map((project) => project.path),
     );
     setFilters(pruned);
@@ -564,7 +611,7 @@ export function InboxView({
   const onSourceChange = (next: InboxSource) => {
     setDetailOpen(false);
     releaseTarget();
-    setSelectedKey(null);
+    if (!githubKind) setSelectedKey(null);
     setBoardIssue(null);
     setMessagesChosen(false);
     selectSource(next);
@@ -698,6 +745,24 @@ export function InboxView({
       )}
     >
       {sourceRow}
+      {sourceAvailable && source === "github" ? (
+        <InboxGithubListControls
+          kind={githubKind}
+          layout={listLayout}
+          onLayoutChange={setListLayout}
+          splitView={splitView}
+          onSplitViewChange={(value) => {
+            setSplitView(value);
+            setDetailOpen(false);
+          }}
+          onKindChange={(kind) => {
+            releaseTarget();
+            setGithubListKind(kind);
+            setDetailOpen(false);
+            setDiscussionOpen(false);
+          }}
+        />
+      ) : null}
       {noSourcesConnected ? null : (
         <div className="inbox-collection-toolbar flex shrink-0 flex-wrap items-center gap-2 px-2 py-1.5">
           {showCollectionTools ? (
@@ -708,18 +773,22 @@ export function InboxView({
                   focusOwner="group"
                   value={searchInput}
                   onChange={(event) => setSearchInput(event.target.value)}
-                  placeholder={t("Filter issues")}
+                  placeholder={
+                    githubKind === "pr" || pullRequestsOnly
+                      ? t("Filter loaded items")
+                      : t("Filter issues")
+                  }
                   aria-label={t("Filter loaded items")}
                   spellCheck={false}
                   autoComplete="off"
                 />
               </SearchInputGroup>
-              {pullRequestsOnly ? (
+              {pullRequestsOnly || githubKind ? (
                 <>
                   <Button
                     iconOnly
                     ref={sortButtonRef}
-                    label={t("Sort pull requests")}
+                    label={githubKind === "issue" ? t("Sort") : t("Sort pull requests")}
                     variant="ghost"
                     type="button"
                     aria-haspopup="menu"
@@ -731,7 +800,7 @@ export function InboxView({
                   {sortMenuOpen ? (
                     <DropdownMenu
                       anchor={sortButtonRef}
-                      label={t("Sort pull requests")}
+                      label={githubKind === "issue" ? t("Sort") : t("Sort pull requests")}
                       returnFocusRef={sortButtonRef}
                       onClose={() => setSortMenuOpen(false)}
                       items={[
@@ -884,12 +953,18 @@ export function InboxView({
             onRetry={collection.jiraContinuation.loadMore}
             fill
             className="p-1.5 overscroll-none"
-            label={t("Inbox")}
+            label={
+              githubKind === "issue"
+                ? t("Issues")
+                : githubKind === "pr"
+                  ? t("Pull requests")
+                  : t("Inbox")
+            }
             items={visibleItems}
             stateKey={`inbox:${listScope}`}
             itemKey={inboxItemKey}
             requiredKey={selected ? inboxItemKey(selected) : null}
-            estimateSize={48}
+            estimateSize={source === "github" && listLayout === "comfortable" ? 76 : 48}
             renderItem={(item) => {
               const key = inboxItemKey(item);
               const relatedSessionCount = sessionCounts.get(key) ?? 0;
@@ -900,6 +975,7 @@ export function InboxView({
                     active={selected != null && key === inboxItemKey(selected)}
                     relatedSessionCount={relatedSessionCount}
                     onSelect={selectItem}
+                    comfortable={source === "github" && listLayout === "comfortable"}
                   />
                 </div>
               );
@@ -919,7 +995,7 @@ export function InboxView({
         {...resize.sashProps}
         appearance="hidden"
         label={t("Resize inbox list")}
-        className="absolute inset-y-0 -right-px"
+        className="inbox-list-sash absolute inset-y-0 -right-px"
       />
     </div>
   );
@@ -1092,6 +1168,7 @@ export function InboxView({
         <div
           className="inbox-list-detail flex min-h-0 min-w-0 flex-1"
           data-detail-open={detailOpen}
+          data-list-only={source === "github" && !splitView}
         >
           {list}
           <div className="inbox-detail-pane flex min-h-0 min-w-0 flex-1 flex-col">

@@ -3,6 +3,73 @@ import { expect, test } from "@playwright/test";
 const providers = ["github", "jira", "gitlab", "azuredevops", "linear"];
 
 test.describe("Inbox audit", () => {
+  for (const theme of ["light", "dark"])
+    for (const width of [800, 1280]) {
+      test(`GitHub split lists ${theme} ${width}`, async ({ page }) => {
+        await page.setViewportSize({ width, height: 800 });
+        await page.goto(
+          `/tests/browser/inbox/jira-board.html?auditProvider=github&auditScreen=githubCollection&theme=${theme}`,
+        );
+        const issues = page.getByRole("radio", { name: "Issues", exact: true });
+        const pulls = page.getByRole("radio", { name: "Pull requests", exact: true });
+        const issueRow = page.getByRole("button", { name: /issue #42: Keep payment form drafts/ });
+        const prRow = page.getByRole("button", {
+          name: /pull request #58: Preserve payment drafts/,
+        });
+        const detail = page.locator(".inbox-detail-pane");
+        const output = `temp/verification/github-inbox-layout/${theme}-${width}`;
+
+        await expect(issues).toBeChecked();
+        await expect(issueRow).toBeVisible();
+        await expect(prRow).toHaveCount(0);
+        await expect(detail.getByRole("heading", { name: "Payment validation" })).toBeVisible();
+        await page.screenshot({ path: `${output}-issues.png`, animations: "disabled" });
+
+        await issues.focus();
+        await page.keyboard.press("ArrowRight");
+        await expect(pulls).toBeChecked();
+        await expect(prRow).toBeVisible();
+        await expect(issueRow).toHaveCount(0);
+        const layout = page.getByRole("button", { name: "List view", exact: true });
+        await layout.click();
+        await page.getByRole("menuitemradio", { name: "Comfortable", exact: true }).click();
+        const rowLabel = page
+          .getByRole("list", { name: "Pull requests", exact: true })
+          .getByRole("list", { name: "Labels", exact: true })
+          .first()
+          .getByText("payment-validation", { exact: true });
+        await expect(rowLabel).toBeVisible();
+        await expect(detail.getByRole("tab", { name: "Code", exact: true })).toBeVisible();
+        await page.mouse.move(550, 20);
+        await page.screenshot({ path: `${output}-pull-requests.png`, animations: "disabled" });
+
+        await layout.click();
+        await page.getByRole("menuitemcheckbox", { name: "Side by side", exact: true }).click();
+        await expect(detail).toBeHidden();
+        await expect(prRow).toBeVisible();
+        await page.mouse.move(550, 20);
+        await page.screenshot({ path: `${output}-full-list.png`, animations: "disabled" });
+        const back = page.getByRole("button", { name: "Back", exact: true });
+        await prRow.click();
+        await expect(detail).toBeVisible();
+        await expect(pulls).toBeHidden();
+        await back.click();
+        await expect(prRow).toHaveAttribute("aria-current", "true");
+        await layout.click();
+        await page.getByRole("menuitemcheckbox", { name: "Side by side", exact: true }).click();
+        await expect(detail).toBeVisible();
+
+        if (width === 800) {
+          await page.setViewportSize({ width: 640, height: 800 });
+          await prRow.click();
+          await expect(pulls).toBeHidden();
+          await back.click();
+          await expect(pulls).toBeChecked();
+          await expect(prRow).toHaveAttribute("aria-current", "true");
+        }
+      });
+    }
+
   test("pending provider keeps loading while another provider has items", async ({ page }) => {
     await page.goto("/tests/browser/inbox/jira-board.html?inbox&pendingProvider=gitlab");
     await expect

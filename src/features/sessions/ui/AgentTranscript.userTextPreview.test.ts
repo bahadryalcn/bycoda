@@ -66,8 +66,8 @@ it.each(["chat", "focus"] as const)(
   },
 );
 
-it("bounds the chat and focus preview, opens the exact full text, and copies the original", async () => {
-  const text = "Start\n" + "Long content ".repeat(200) + "\nEND OF MESSAGE";
+it("renders the card and dialog as Markdown, skips hover, and copies the original", async () => {
+  const text = "# Start\n\n" + "Long content ".repeat(200) + "\nEND OF MESSAGE";
   act(() =>
     root.render(
       createElement(AgentTranscript, {
@@ -77,24 +77,17 @@ it("bounds the chat and focus preview, opens the exact full text, and copies the
   );
   const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Show full long text"]')!;
   expect(trigger).not.toBeNull();
+  expect(container.querySelector("h1")?.textContent).toBe("Start");
   expect(container.textContent).not.toContain("END OF MESSAGE");
   await act(async () => {
     trigger.dispatchEvent(new Event("pointerover", { bubbles: true }));
     await new Promise((resolve) => setTimeout(resolve, 350));
   });
   act(() => trigger.focus());
-  const preview = document.querySelector<HTMLElement>("[data-hover-card]");
-  expect(preview).not.toBeNull();
-  expect(preview?.textContent).toContain("Long text preview");
-  expect(preview?.textContent).not.toContain("END OF MESSAGE");
-  expect(preview?.querySelector("pre")?.classList.contains("select-text")).toBe(true);
-  await act(async () =>
-    preview!.querySelector<HTMLButtonElement>('[aria-label="Copy message"]')!.click(),
-  );
-  expect(await navigator.clipboard.readText()).toBe(text);
+  expect(document.querySelector("[data-hover-card]")).toBeNull();
   act(() => trigger.click());
-  expect(document.querySelector('[role="dialog"] pre')?.textContent).toBe(text);
-  expect(document.querySelector('[role="dialog"] pre')?.getAttribute("data-size")).toBe("body");
+  expect(document.querySelector('[role="dialog"] h1')?.textContent).toBe("Start");
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("END OF MESSAGE");
   await navigator.clipboard.writeText("");
   await act(async () =>
     document
@@ -133,7 +126,7 @@ it("uses the save-note and edit message actions in the long text dialog", async 
   expect(toolbar.querySelector('[aria-label="Copy message"]')?.textContent).toBe("Copy message");
   expect(toolbar.querySelector('[aria-label="Save as note"]')?.textContent).toBe("Save as note");
   expect(
-    toolbar.compareDocumentPosition(dialog.querySelector("pre")!) &
+    toolbar.compareDocumentPosition(dialog.querySelector(".agent-markdown")!) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
   await act(async () =>
@@ -173,5 +166,38 @@ it("detects JSON in a message while keeping the surrounding instructions visible
   const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Show full json"]')!;
   expect(trigger).not.toBeNull();
   act(() => trigger.click());
-  expect(document.querySelector('[role="dialog"] pre')?.textContent).toBe('```json\n{"a":1}\n```');
+  expect(document.querySelector('[role="dialog"] pre')?.textContent).toContain('{"a":1}');
+  expect(document.querySelector('[role="dialog"] pre')?.textContent).not.toContain("```");
+});
+
+it("renders Markdown and keeps attachment tokens interactive in ordinary messages", () => {
+  act(() =>
+    root.render(
+      createElement(AgentTranscript, {
+        blocks: [
+          {
+            id: "prompt",
+            role: "user",
+            text: "## Details\n- **Photo** [image1]\n- `[image1]`\n- [Docs](https://example.com/docs)",
+            attachments: [
+              {
+                id: "photo",
+                kind: "image",
+                name: "photo.png",
+                mimeType: "image/png",
+                size: 1,
+                path: "/fixture/photo.png",
+              },
+            ],
+          },
+        ],
+      }),
+    ),
+  );
+  const message = container.querySelector('[data-selectable-agent-response="prompt"]')!;
+  expect(message.querySelector("h2")?.textContent).toBe("Details");
+  expect(message.querySelector('li [data-streamdown="strong"]')?.textContent).toBe("Photo");
+  expect(message.querySelector("li button")?.getAttribute("aria-label")).toContain("photo.png");
+  expect(message.querySelector("li code")?.textContent).toBe("[image1]");
+  expect(message.querySelector('a[href="https://example.com/docs"]')?.textContent).toBe("Docs");
 });

@@ -160,7 +160,7 @@ function Fixture() {
                     {
                       id: "long-text",
                       role: "user",
-                      text: "Selectable excerpt\n" + "Long content ".repeat(200),
+                      text: "# Selectable excerpt\n\n" + "Long content ".repeat(200),
                     },
                   ]
                 : blocks

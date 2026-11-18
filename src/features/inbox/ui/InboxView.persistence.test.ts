@@ -362,3 +362,67 @@ it("offers the pull-request mode inside Inbox and keeps the all-items route reac
   await act(async () => toggle().click());
   expect(change).toHaveBeenLastCalledWith(false);
 });
+
+it("switches GitHub lists by kind and retains the chosen row layout when Inbox reopens", async () => {
+  const issues = items("/work/project");
+  const pr: InboxItem = {
+    ...issues[0],
+    kind: "pr",
+    number: 16,
+    title: "Review the new Inbox layout",
+    url: "https://github.com/acme/web/pull/16",
+    labels: [{ name: "design", color: "" }],
+  };
+  read.mockResolvedValue({ items: [...issues, pr], errors: {} });
+  const kind = (label: string) =>
+    container.querySelector<HTMLButtonElement>(`[role="radio"][aria-label="${label}"]`)!;
+
+  await show();
+  expect(kind("Issues").getAttribute("aria-checked")).toBe("true");
+  expect(inboxRow(container, pr.title)).toBeNull();
+  await act(async () => kind("Pull requests").click());
+  expect(inboxRow(container, issues[0].title)).toBeNull();
+  expect(inboxRow(container, pr.title)?.getAttribute("aria-current")).toBe("true");
+  expect(inboxRow(container, pr.title)?.textContent).not.toContain("design");
+
+  const layout = container.querySelector<HTMLButtonElement>('button[aria-label="List view"]')!;
+  await act(async () => layout.click());
+  const comfortable =
+    document.querySelector<HTMLButtonElement>(
+      '[role="menuitemradio"][data-menu-id="comfortable"]',
+    ) ??
+    [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')].find(
+      (option) => option.textContent?.trim() === "Comfortable",
+    )!;
+  await act(async () => comfortable.click());
+  expect(inboxRow(container, pr.title)?.parentElement?.textContent).toContain("design");
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await show();
+  expect(kind("Pull requests").getAttribute("aria-checked")).toBe("true");
+  expect(inboxRow(container, pr.title)?.parentElement?.textContent).toContain("design");
+});
+
+it("reveals a linked GitHub pull request when Issues was the active list", async () => {
+  const issue = items("/work/project")[0];
+  const pr: InboxItem = {
+    ...issue,
+    kind: "pr",
+    number: 16,
+    title: "Review the linked change",
+    url: "https://github.com/acme/web/pull/16",
+  };
+  read.mockResolvedValue({ items: [issue, pr], errors: {} });
+  await show();
+  expect(inboxRow(container, issue.title)).not.toBeNull();
+  await show("/work/project", { kind: "pr", number: pr.number, repo: pr.repo, url: pr.url });
+  expect(inboxRow(container, issue.title)).toBeNull();
+  expect(inboxRow(container, pr.title)?.getAttribute("aria-current")).toBe("true");
+});
+
+it("opens Pull requests for a saved legacy filter that hid issues", async () => {
+  saveInboxFilters({ ...DEFAULT_INBOX_FILTERS, hiddenKinds: ["issue"] });
+  await show();
+  const pulls = container.querySelector('[role="radio"][aria-label="Pull requests"]');
+  expect(pulls?.getAttribute("aria-checked")).toBe("true");
+});

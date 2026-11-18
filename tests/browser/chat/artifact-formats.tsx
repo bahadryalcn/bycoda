@@ -267,6 +267,7 @@ function ChatOverflowFixture() {
       </section>
       <section aria-label="User text">
         <UserTextPreview
+          markdown
           parts={[{ kind: "text", text: "unbroken".repeat(200), compact: true }]}
           messageId="overflow-user"
           renderActions={() => null}

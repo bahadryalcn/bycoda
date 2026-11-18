@@ -75,13 +75,12 @@ import {
 } from "react";
 import { TranscriptRetentionContext } from "./TranscriptPool";
 import { AttachmentChip } from "./AttachmentChip";
-import { AttachmentTokenText } from "./AttachmentTokenText";
 import { WorkItemMentionCwd } from "./WorkItemMentionChip";
 import { ChatCitationList } from "./ChatCitationText";
 import { extractChatCitations } from "../model/chatCitation";
 import { TranscriptSkills } from "./SkillTokenText";
 import { RunHarness } from "./SubagentAnatomy";
-import { UserTextPreview } from "./UserTextPreview";
+import { UserMessageMarkdown, UserTextPreview } from "./UserTextPreview";
 import { userTextParts } from "../model/userTextPreview";
 import { findTokens } from "../model/attachmentTokens";
 import { GeneratedImage } from "./GeneratedImage";
@@ -2329,8 +2328,13 @@ function UserMessageBlock({
       ? ""
       : visibleUserPrompt(bycoda ? operatorUserPrompt(block) : block.text);
   const { text, citations } = extractChatCitations(rawText);
-  const messageLink = text ? parseUserMessageLink(text) : null;
-  const displayText = messageLink ? `${messageLink.beforeText}${messageLink.afterText}` : text;
+  const firstLink = text ? parseUserMessageLink(text) : null;
+  // Keep the compact URL card for plain prose. Splitting a formatted message
+  // at a URL would break its links, code spans, or enclosing Markdown blocks.
+  const messageLink =
+    firstLink && !/[\n\r[`*_<~#]/.test(firstLink.beforeText + firstLink.afterText)
+      ? firstLink
+      : null;
   const chat = layout === "chat";
   const previewParts = userTextParts(text);
   const compactText = previewParts.some((part) => part.compact);
@@ -2460,6 +2464,7 @@ function UserMessageBlock({
           ) : null}
           {compactText ? (
             <UserTextPreview
+              markdown
               parts={previewParts}
               messageId={block.id}
               attachments={block.attachments}
@@ -2474,32 +2479,32 @@ function UserMessageBlock({
               className="user-message-with-link min-w-0 whitespace-pre-wrap break-words font-sans text-ui-body"
               data-selectable-agent-response={block.id}
             >
-              <AttachmentTokenText
+              <UserMessageMarkdown
                 text={messageLink.beforeText}
                 attachments={block.attachments}
                 citations={citations}
               />
               <UserLinkPreview link={messageLink.link} cwd={cwd} compact />
-              <AttachmentTokenText
+              <UserMessageMarkdown
                 text={messageLink.afterText}
                 attachments={block.attachments}
                 citations={citations}
               />
             </div>
-          ) : displayText ? (
-            <pre
+          ) : text ? (
+            <div
               data-selectable-agent-response={block.id}
               ref={(element) => {
                 textRef.current = element;
               }}
-              className={`min-w-0 whitespace-pre-wrap break-words font-sans text-ui-body ${expanded || questionAnswer ? "" : "line-clamp-4"}`}
+              className={`min-w-0 ${expanded || questionAnswer ? "" : "line-clamp-4"}`}
             >
-              <AttachmentTokenText
-                text={displayText}
+              <UserMessageMarkdown
+                text={text}
                 attachments={block.attachments}
                 citations={citations}
               />
-            </pre>
+            </div>
           ) : null}
           {overflows && !compactText ? (
             <Button

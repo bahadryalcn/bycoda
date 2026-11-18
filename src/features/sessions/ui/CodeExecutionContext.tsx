@@ -58,6 +58,10 @@ const CodeExecutionContext = createContext<
   ((command: string, shellKind: CodeShellKind) => void) | undefined
 >(undefined);
 
+export function CodeExecutionDisabled({ children }: { children: ReactNode }) {
+  return <CodeExecutionContext value={undefined}>{children}</CodeExecutionContext>;
+}
+
 /** Kept with the pooled transcript, including its original result destination. */
 export function CodeExecutionProvider({
   scope,

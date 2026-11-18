@@ -2331,3 +2331,27 @@ for (const theme of ["light", "dark"])
       await expect(page.getByLabel("Picker activation")).toHaveText("fixture-chat-a");
     });
   }
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`draft Markdown updates while editing (${theme}, ${width}px)`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`/tests/browser/chat/composer-extras.html?chat-layout&theme=${theme}`);
+      const draft = page.getByRole("textbox", { name: "Message", exact: true });
+      const source = "## Plan\n\n- **First step**\n- `pnpm test`";
+      await draft.fill(source);
+      const toggle = page.getByRole("button", { name: "Markdown preview", exact: true });
+      await toggle.click();
+      const preview = page.locator("[data-composer-markdown-preview]");
+      await expect(preview.getByRole("heading", { name: "Plan" })).toBeVisible();
+      const emphasis = preview.locator('li [data-streamdown="strong"]');
+      await expect(emphasis).toHaveText("First step");
+      await draft.fill(source.replace("First", "Next"));
+      await expect(emphasis).toHaveText("Next step");
+      await page.screenshot({
+        animations: "disabled",
+        path: `temp/verification/user-message-markdown/composer-${theme}-${width}.png`,
+      });
+      await toggle.click();
+      await expect(preview).toHaveCount(0);
+      await expect(draft).toHaveValue(source.replace("First", "Next"));
+    });

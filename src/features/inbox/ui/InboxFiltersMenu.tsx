@@ -292,7 +292,7 @@ export function InboxFiltersMenu({
           onValueChange={(value) => setTime(value as InboxTimeFilter)}
         />
 
-        {!tracker ? (
+        {!tracker && source !== "github" ? (
           <div className="grid min-w-0 gap-1.5">
             <SectionLabel variant="menu">{t("Type")}</SectionLabel>
             {KIND_OPTIONS.map((option) => (

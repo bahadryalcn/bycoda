@@ -333,6 +333,20 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
 
   const shortcut = keybindingShortcutLabel(NOTES_PANEL_COMMAND, `${MOD}${ALT}N`);
   const hasNotes = offered.session.length + offered.project.length > 0;
+  const libraryAction = (
+    <Button
+      variant="ghost"
+      size="sm"
+      iconOnly
+      label={t("Open note library")}
+      motion="none"
+      onClick={() =>
+        requestOpenNoteLibrary({ id: selected?.id, cwd: selected?.sourceCwd ?? project })
+      }
+    >
+      <BookOpen className="icon-sm" strokeWidth={1.75} />
+    </Button>
+  );
 
   const renderHeader = (title?: ReactNode) => (
     <>
@@ -369,18 +383,6 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
               onClick={() => void onCreate()}
             >
               <Plus className="icon-sm" strokeWidth={1.75} />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              iconOnly
-              label={t("Open note library")}
-              motion="none"
-              onClick={() =>
-                requestOpenNoteLibrary({ id: selected?.id, cwd: selected?.sourceCwd ?? project })
-              }
-            >
-              <BookOpen className="icon-sm" strokeWidth={1.75} />
             </Button>
             <Button
               variant="ghost"
@@ -544,6 +546,7 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
           key={selectedDetail.id}
           note={selectedDetail}
           renderHeader={renderHeader}
+          libraryAction={libraryAction}
           autoFocus={wantFocus}
           onFocused={focused}
           onSaved={onSaved}
@@ -576,6 +579,11 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
       ) : (
         <SurfaceLoading className="min-h-0 flex-1" title={t("Loading notes…")} />
       )}
+      {!selectedDetail && (
+        <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "session-note-actions")}>
+          {libraryAction}
+        </div>
+      )}
     </Text>
   );
 }
@@ -583,6 +591,7 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
 const PanelNoteEditor = memo(function PanelNoteEditor({
   note,
   renderHeader,
+  libraryAction,
   autoFocus,
   onFocused,
   onSaved,
@@ -595,6 +604,7 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
 }: {
   note: Note;
   renderHeader: (title: ReactNode) => ReactNode;
+  libraryAction: ReactNode;
   autoFocus: boolean;
   onFocused: () => void;
   onSaved: (note: Note) => void;
@@ -1134,6 +1144,7 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
             <Link className="icon-sm" />
           </Button>
         ) : null}
+        {libraryAction}
         <span className="min-w-0 flex-1" />
         {preparing ? (
           <LoadingText>{t("Preparing checkpoint…")}</LoadingText>
