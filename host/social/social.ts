@@ -648,6 +648,7 @@ export class SocialService implements SocialServiceApi {
                 "tiktok",
                 "snapchat",
                 "facebook",
+                "linkedinFormat",
               ]);
               const account = await this.get<SocialAccount>("account", variant.accountId);
               await this.assertLength(
@@ -657,6 +658,10 @@ export class SocialService implements SocialServiceApi {
               );
               if (
                 !variant.text?.trim() &&
+                !(
+                  account.platform === "linkedin" &&
+                  (variant.linkedinFormat || variant.media.length)
+                ) &&
                 !(account.platform === "snapchat" && variant.snapchat?.target === "story") &&
                 !(
                   account.platform === "facebook" &&
@@ -3792,7 +3797,10 @@ export class SocialService implements SocialServiceApi {
         accountId,
         text:
           (snapchat?.target === "story" && value.text === "") ||
-          (linkedinFormat && typeof value.text === "string" && !value.text.trim()) ||
+          (account.platform === "linkedin" &&
+            (linkedinFormat || media.length) &&
+            typeof value.text === "string" &&
+            !value.text.trim()) ||
           (facebook?.target === "reel" &&
             media.length === 1 &&
             typeof value.text === "string" &&

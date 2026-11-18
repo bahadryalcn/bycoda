@@ -207,6 +207,7 @@ describe("capability table shape", () => {
                     : platform === "reddit"
                       ? ["delete", "audience.collect", "profile.read"]
                       : [];
+      if (platform === "linkedin") openedByApi.push("analytics", "delete");
       // Browser recipes that open a not-yet operation (browserCapabilities.ts). The row is then "available".
       const openedByBrowser = browserOperations(browserAccount(platform)) as readonly string[];
       for (const operation of NOT_YET_OPERATIONS) {

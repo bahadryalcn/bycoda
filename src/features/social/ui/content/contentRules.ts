@@ -219,14 +219,7 @@ export function draftProblems(input: RuleInput): Problem[] {
   const problems: Problem[] = [];
   if (!input.projectId) problems.push({ text: t("Choose a project first.") });
   const accounts = selectedAccounts(draft, input.accounts);
-  if (
-    !draft.text.trim() &&
-    !draft.media.length &&
-    (!accounts.length ||
-      accounts.some(
-        (account) => account.platform !== "linkedin" || !draft.platform[account.id]?.linkedinFormat,
-      ))
-  )
+  if (!hasPostContent(draft, accounts))
     problems.push({ text: t("Write the post or attach media.") });
   if (!draft.accountIds.length) problems.push({ text: t("Choose at least one account.") });
   const link = draft.link.trim();
@@ -273,6 +266,8 @@ export function draftProblems(input: RuleInput): Problem[] {
     const platform = draft.platform[account.id];
     if (account.platform === "linkedin") {
       const format = platform?.linkedinFormat;
+      if (format && draft.repeat.enabled)
+        add(t("Turn off repeat for LinkedIn polls and article links."));
       if (format && (link || (format.kind === "poll" && draft.media.length)))
         add(t("Remove attachments and the separate link for this LinkedIn format."));
       if (format?.kind === "poll") {
@@ -309,6 +304,20 @@ export function selectedAccounts(draft: ContentDraft, accounts: SocialAccount[])
   return draft.accountIds
     .map((id) => accounts.find((account) => account.id === id))
     .filter((account): account is SocialAccount => account !== undefined);
+}
+
+export function hasPostContent(draft: ContentDraft, accounts: SocialAccount[]): boolean {
+  return (
+    !!draft.text.trim() ||
+    !!draft.media.length ||
+    (accounts.length > 0 &&
+      accounts.every(
+        (account) =>
+          account.platform === "linkedin" &&
+          account.connection === "oauth" &&
+          !!draft.platform[account.id]?.linkedinFormat,
+      ))
+  );
 }
 
 /** The Host variants for a valid draft. Call only when `draftProblems` returned nothing. */

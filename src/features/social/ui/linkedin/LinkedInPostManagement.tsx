@@ -40,14 +40,15 @@ export function LinkedInPostManagement({
   );
   const job = posts.find((item) => item.id === jobId);
   const accountId = account.id;
-  const loadPosts = () => write("posts", async () => {
-    const page = await client.workspaceSnapshot({
-      section: "history",
-      limit: 50,
-      filters: { jobs: { accountId, kind: "publish", status: "succeeded" } },
+  const loadPosts = () =>
+    write("posts", async () => {
+      const page = await client.workspaceSnapshot({
+        section: "history",
+        limit: 50,
+        filters: { jobs: { accountId, kind: "publish", status: "succeeded" } },
+      });
+      setJobs(page.snapshot?.jobs ?? []);
     });
-    setJobs(page.snapshot?.jobs ?? []);
-  });
   const load = (kind?: "editPost" | "deletePost") =>
     write("review", async () => {
       const next = kind
@@ -102,7 +103,12 @@ export function LinkedInPostManagement({
   return (
     <Disclosure summary={t("Manage LinkedIn posts")} variant="row">
       <FieldGroup variant="bare" disabled={disabled || busy}>
-        <Button variant="secondary" size="sm" loading={is("posts")} onClick={() => void loadPosts().catch(() => undefined)}>
+        <Button
+          variant="secondary"
+          size="sm"
+          loading={is("posts")}
+          onClick={() => void loadPosts().catch(() => undefined)}
+        >
           {t("Refresh")}
         </Button>
         {posts.length ? (
@@ -119,7 +125,8 @@ export function LinkedInPostManagement({
               ]}
               onValueChange={(value) => {
                 setJobId(value);
-                setText(posts.find((item) => item.id === value)?.payload.text ?? "");
+                const payload = posts.find((item) => item.id === value)?.payload;
+                setText([payload?.text, payload?.link].filter(Boolean).join("\n"));
               }}
             />
             {job ? (

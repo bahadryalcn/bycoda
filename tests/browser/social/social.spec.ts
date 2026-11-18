@@ -90,6 +90,8 @@ for (const theme of ["light", "dark"])
       await editor.getByLabel("Anket sorusu").fill("Hangi özelliği önce çıkaralım?");
       await editor.getByLabel("1. seçenek").fill("Analizler");
       await editor.getByLabel("2. seçenek").fill("Yayın");
+      await expect(editor.getByRole("button", { name: "Taslağı kaydet" })).toBeEnabled();
+      await editor.getByRole("button", { name: /^Anket süresi/ }).scrollIntoViewIfNeeded();
       await shot("poll-composer");
       expect(errors).toEqual([]);
     });

@@ -76,7 +76,9 @@ export function AccountConnection({
   const [browser, setBrowser] = useState<BrowserState>();
   const [oauth, setOAuth] = useState<OAuthState>();
   const [operations, setOperations] = useState<SocialOperation[]>(() =>
-    account.platform === "linkedin" && account.scopes.includes("r_member_postAnalytics")
+    account.platform === "linkedin" &&
+    account.accountType === "member" &&
+    account.scopes.includes("r_member_postAnalytics")
       ? ["publish", "analytics"]
       : ["publish"],
   );
