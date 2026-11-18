@@ -4,6 +4,7 @@ import { recordHostConnection } from "../../diagnostics";
 import {
   classifyRemoteError,
   isConnectionFailure,
+  isTimeoutFailure,
   unreachablePollDelay,
   type RemoteFailure,
 } from "./remoteFailure";
@@ -36,6 +37,10 @@ const unreachable = new Map<string, { count: number; at: number }>();
 const connections = new Map<string, RemoteConnectionState>();
 /** When each machine's status first left `connected`; cleared once it connects again. */
 const downSince = new Map<string, number>();
+/** Requests in a row that timed out per machine, with no answer of any kind between. */
+const timeouts = new Map<string, number>();
+/** This many timeouts in a row make a machine unreachable. */
+export const TIMEOUTS_BEFORE_UNREACHABLE = 3;
 const changeListeners = new Set<() => void>();
 const recoveredListeners = new Set<(environmentId?: string) => void>();
 
@@ -46,6 +51,9 @@ const emit = () => changeListeners.forEach((listener) => listener());
 /** Applies one event to a machine's connection state. Listeners hear about it
  * only when what the user sees changed, not for every successful poll. */
 export function applyRemoteConnection(environmentId: string, event: RemoteConnectionEvent): void {
+  // Any answer, or a failure that is not a busy/timeout one, ends a run of timeouts.
+  if (event.type !== "failure" || classifyRemoteError(event.error).kind !== "temporary")
+    timeouts.delete(environmentId);
   const previous = connections.get(environmentId) ?? INITIAL_CONNECTION;
   const next = reduceConnection(previous, event);
   if (next === previous) return;
@@ -62,6 +70,18 @@ export function applyRemoteConnection(environmentId: string, event: RemoteConnec
 /** Records one outcome of a request to a machine, from a view that has no cwd. */
 export function recordRemoteConnection(environmentId: string, error?: unknown): void {
   if (error !== undefined && remoteErrorText(error) === SUPERSEDED_CONNECTION) return;
+  if (error !== undefined && isTimeoutFailure(error)) {
+    // One timeout proves nothing; a run of them with no answer between means the
+    // machine is half-open, so it is unreachable and the reconnect ladder starts.
+    const count = (timeouts.get(environmentId) ?? 0) + 1;
+    timeouts.set(environmentId, count);
+    if (count < TIMEOUTS_BEFORE_UNREACHABLE) return;
+    return applyRemoteConnection(environmentId, {
+      type: "failure",
+      error: `Machine is unreachable: ${count} requests in a row timed out.`,
+      at: Date.now(),
+    });
+  }
   applyRemoteConnection(
     environmentId,
     error === undefined
@@ -139,7 +159,12 @@ export function reportRemoteLoad(cwd: string, source: string, error?: unknown): 
 export function reportRemoteConnection(cwd: string, source: string, error?: unknown): void {
   // A timed-out/overloaded request proves neither failure nor recovery. Keep
   // the previous outage and backoff until an actual answer arrives.
-  if (error !== undefined && classifyRemoteError(error).kind === "temporary") return;
+  if (error !== undefined && classifyRemoteError(error).kind === "temporary") {
+    // Only a run of timeouts says anything about the machine; see `recordRemoteConnection`.
+    const environmentId = environmentOf(cwd);
+    if (environmentId && isTimeoutFailure(error)) recordRemoteConnection(environmentId, error);
+    return;
+  }
   reportRemoteLoad(
     cwd,
     source,
@@ -226,6 +251,7 @@ export function forgetRemoteConnection(environmentId: string): void {
   invalidateConnection(environmentId);
   connections.delete(environmentId);
   downSince.delete(environmentId);
+  timeouts.delete(environmentId);
   unreachable.delete(environmentId);
   for (const key of Array.from(failures.keys()))
     if (key.startsWith(`${environmentId}\n`)) failures.delete(key);
@@ -239,4 +265,5 @@ export function resetRemoteHealth(): void {
   unreachable.clear();
   connections.clear();
   downSince.clear();
+  timeouts.clear();
 }

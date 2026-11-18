@@ -274,3 +274,54 @@ it("keeps an outdated Host out of the outage list and times an outage from its f
   recordRemoteConnection("env");
   expect(readRemoteDownSince("env")).toBeUndefined();
 });
+
+const deadline = Object.assign(new Error("RPC_WS_DEADLINE: The machine did not answer in time"), {
+  code: "RPC_WS_DEADLINE",
+});
+
+it("marks a machine that only times out unreachable after a run of timeouts", () => {
+  reportRemoteConnection(project, "session", "Host rejected request: [RPC_TIMEOUT] slow");
+  reportRemoteConnection(project, "session", deadline);
+  expect(readRemoteConnection("env").status).toBe("connecting");
+  recordRemoteConnection("env", deadline);
+  const state = readRemoteConnection("env");
+  expect(state.status).toBe("unreachable");
+  expect(state.error).toBe("The machine did not answer. It may be off, asleep or offline.");
+  expect(shouldAutoRetry(state.status, undefined, Date.now())).toBe(true);
+  // More timeouts keep the same state.
+  recordRemoteConnection("env", deadline);
+  recordRemoteConnection("env", deadline);
+  recordRemoteConnection("env", deadline);
+  expect(readRemoteConnection("env")).toBe(state);
+});
+
+it("lets a single answer end a run of timeouts", () => {
+  recordRemoteConnection("env", deadline);
+  recordRemoteConnection("env", deadline);
+  recordRemoteConnection("env");
+  recordRemoteConnection("env", deadline);
+  recordRemoteConnection("env", deadline);
+  expect(readRemoteConnection("env").status).toBe("connected");
+  recordRemoteConnection("env", deadline);
+  expect(readRemoteConnection("env").status).toBe("unreachable");
+});
+
+it("does not count busy or replaced requests as timeouts", () => {
+  recordRemoteConnection("env");
+  for (let i = 0; i < 6; i += 1)
+    recordRemoteConnection("env", new Error("RPC_WS_OVERLOAD: Host is busy"));
+  expect(readRemoteConnection("env").status).toBe("connected");
+});
+
+it("forgets a run of timeouts when the machine is reset or forgotten", () => {
+  recordRemoteConnection("env", deadline);
+  recordRemoteConnection("env", deadline);
+  resetRemoteConnection("env");
+  recordRemoteConnection("env", deadline);
+  expect(readRemoteConnection("env").status).toBe("connecting");
+  recordRemoteConnection("env", deadline);
+  forgetRemoteConnection("env");
+  recordRemoteConnection("env", deadline);
+  recordRemoteConnection("env", deadline);
+  expect(readRemoteConnection("env").status).toBe("connecting");
+});

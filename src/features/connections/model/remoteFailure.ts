@@ -93,6 +93,19 @@ export function classifyRemoteError(error: unknown): RemoteFailure {
   return { kind: "other", message };
 }
 
+/** A request ended because its deadline passed, as opposed to a busy or replaced
+ * connection. One proves nothing; a run of them with no answer in between means
+ * the machine is not answering at all. */
+export function isTimeoutFailure(error: unknown): boolean {
+  if (classifyRemoteError(error).kind !== "temporary") return false;
+  return (
+    error instanceof TimeoutError ||
+    nativeConnectionFailureCode(error) === "RPC_WS_DEADLINE" ||
+    /\[RPC_TIMEOUT\]/.test(remoteErrorText(error)) ||
+    LOCAL_TIMEOUT.test(remoteErrorText(error))
+  );
+}
+
 /** The fixed messages thrown in English (they are matched above) shown in the user's language. */
 function localizeRemoteMessage(message: string): string {
   const text = message.replace(/^Host rejected request:\s*/i, "");
