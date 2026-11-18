@@ -3,6 +3,7 @@ import { TimeoutError } from "../../../shared/lib/withTimeout";
 import {
   classifyRemoteError,
   isConnectionFailure,
+  isTimeoutFailure,
   isTransientTransportError,
   presentRemoteError,
   unreachablePollDelay,
@@ -211,5 +212,26 @@ describe("superseded and timed-out requests", () => {
     expect(classifyRemoteError("TimeoutError: Host discovery timed out after 5000ms").kind).toBe(
       "temporary",
     );
+  });
+});
+
+describe("isTimeoutFailure", () => {
+  it.each([
+    new Error("RPC_WS_DEADLINE: late"),
+    Object.assign(new Error("late"), { code: "RPC_WS_DEADLINE" }),
+    "Host rejected request: [RPC_TIMEOUT] slow",
+    new TimeoutError("Host discovery", 5000),
+  ])("is true for a deadline failure %#", (error) => {
+    expect(isTimeoutFailure(error)).toBe(true);
+  });
+
+  it.each([
+    "RPC_WS_OVERLOAD: busy",
+    "RPC_WS_CANCELLED: replaced",
+    "Connection changed while the request was running",
+    "Machine is unreachable",
+    "Not a working copy",
+  ])("is false for %j", (error) => {
+    expect(isTimeoutFailure(error)).toBe(false);
   });
 });
