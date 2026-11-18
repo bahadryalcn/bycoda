@@ -164,3 +164,42 @@ it("never has more than the concurrency limit in flight and stops cleanly", asyn
   stop();
   expect(vi.getTimerCount()).toBe(0);
 });
+
+it("times out a load that never settles so its slot frees and the target backs off", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("navigator", { onLine: true });
+  const onError = vi.fn();
+  const onResult = vi.fn();
+  const load = vi.fn((target: string) =>
+    target === "stuck" ? new Promise<HostSessionSummary[]>(() => {}) : Promise.resolve(list()),
+  );
+  const stop = startRailPoller({
+    targets: ["stuck", "ok"],
+    concurrency: 1,
+    load,
+    onResult,
+    onError,
+    loadTimeoutMs: 10_000,
+    foregroundMs: 1_000,
+    random: () => 0.5,
+  });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(onResult).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(10_000);
+  expect(onError).toHaveBeenCalledWith("stuck", expect.objectContaining({ name: "TimeoutError" }));
+  expect(onResult).toHaveBeenCalledWith("ok", list());
+  stop();
+});
+
+it("lets queued polls finish when stopped", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("navigator", { onLine: true });
+  const load = vi.fn(() => new Promise<HostSessionSummary[]>(() => {}));
+  const stop = startRailPoller({ targets: ["a", "b"], concurrency: 1, load, onResult: vi.fn() });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(load).toHaveBeenCalledTimes(1);
+  stop();
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(load).toHaveBeenCalledTimes(1);
+  expect(vi.getTimerCount()).toBe(0);
+});
