@@ -1,7 +1,7 @@
 import { installAssistantObservationProducers } from "../assistant/observations/assistant-observation-producers";
 import { perfMetrics } from "../diagnostics/perf-metrics";
 import type { ServerBindings } from "./bindings";
-import { bootPhase } from "./boot-phases";
+import { bootPhase, readyWithin } from "./boot-phases";
 import {
   markSessionWorkCoverage,
   startSessionWork,
@@ -23,6 +23,16 @@ export function shutdownExitCode(reason: string, failed: boolean): number {
 }
 
 type ClosePromise = Promise<void> & { pendingDrains(): string[] };
+
+/**
+ * Recovery services whose entry points await `ready` themselves, so a slow or wedged one
+ * must not hold the Host's listen back: boot waits a bounded time and reports it degraded.
+ */
+const OPTIONAL_RECOVERY_SERVICES: ReadonlySet<string> = new Set([
+  "provider-inbox",
+  "social",
+  "social-peers",
+]);
 
 /**
  * Hard stop for a drain that never settles: a dead listener must not keep the
@@ -342,7 +352,13 @@ export async function createLifecycleRuntime(
             ["tasks", dependencies.tasks.ready],
             ["goals", dependencies.goals.ready],
           ] as const
-        ).map(([name, ready]) => bootPhase(`recovery-service-${name}`, () => ready)),
+        ).map(([name, ready]) =>
+          bootPhase(`recovery-service-${name}`, () =>
+            OPTIONAL_RECOVERY_SERVICES.has(name)
+              ? readyWithin(`recovery-service-${name}`, ready)
+              : ready,
+          ),
+        ),
       ),
     );
     dependencies.observationCoverage = await bootPhase("recovery-observations", () =>

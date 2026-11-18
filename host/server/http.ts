@@ -17,7 +17,12 @@ import { HostVoiceToolDisclosure } from "../voice/voice-tool-disclosure";
 import type { ServerBindings } from "./bindings";
 import { endResponseAndAwaitWrite } from "./http-response-write";
 import type { HttpToolRequest } from "./http-tool-context";
-import { dispatchOwnerRpc, OwnerRpcDeadlineError, ownerRpcDeadlineMs } from "./owner-rpc";
+import {
+  dispatchOwnerRpc,
+  HostStoppingError,
+  OwnerRpcDeadlineError,
+  ownerRpcDeadlineMs,
+} from "./owner-rpc";
 import { body } from "./support";
 import { handleAssistantObservationTools } from "./tools-assistant-observation";
 import { handleConversationTools } from "./tools-conversation-redacted";
@@ -182,6 +187,8 @@ export function createHttpRuntime(
 ) {
   let closing = false;
   const requests = new Set<Promise<void>>();
+  // Signals of /rpc calls still in flight, aborted when the Host starts closing.
+  const liveRequests = new Set<AbortController>();
   const server = createServer(
     { requestTimeout: 20_000, headersTimeout: 10_000, maxHeaderSize: 8192 },
     (request, response) => {
@@ -234,6 +241,7 @@ export function createHttpRuntime(
         let voiceDisclosure: HostVoiceToolDisclosure | undefined;
         let voiceBrowserOwner: string | undefined;
         let deadline: ReturnType<typeof setTimeout> | undefined;
+        let liveAbort: AbortController | undefined;
         const resultScopeReleases: Array<() => void> = [];
         const resultScopeSettlements: Promise<void>[] = [];
         let voiceToolLog:
@@ -340,11 +348,14 @@ export function createHttpRuntime(
               : {};
           const transportToken = token;
           const resultAuthorities: Array<() => Promise<boolean>> = [];
-          // Handlers see one signal for both ends of the request: the client hanging up
-          // before its answer was written, and the dispatcher's per-method deadline.
+          // Handlers see one signal for the client hanging up before its answer was
+          // written, the dispatcher's per-method deadline and the Host shutting down.
           const requestAbort = new AbortController();
           const signal = requestAbort.signal;
-          if (response.destroyed) requestAbort.abort();
+          liveAbort = requestAbort;
+          liveRequests.add(requestAbort);
+          if (closing) requestAbort.abort(new HostStoppingError());
+          else if (response.destroyed) requestAbort.abort();
           else
             response.once("close", () => {
               if (!response.writableEnded) requestAbort.abort();
@@ -741,20 +752,22 @@ export function createHttpRuntime(
               .writeHead(
                 error instanceof OwnerRpcDeadlineError
                   ? 504
-                  : error instanceof RequestAuthorizationError ||
-                      error instanceof HostDomainAuthorizationError ||
-                      (error instanceof HostDomainOutcomeError &&
-                        (error.cause instanceof RequestAuthorizationError ||
-                          error.cause instanceof HostDomainAuthorizationError))
-                    ? 401
-                    : 400,
+                  : error instanceof HostStoppingError
+                    ? 503
+                    : error instanceof RequestAuthorizationError ||
+                        error instanceof HostDomainAuthorizationError ||
+                        (error instanceof HostDomainOutcomeError &&
+                          (error.cause instanceof RequestAuthorizationError ||
+                            error.cause instanceof HostDomainAuthorizationError))
+                      ? 401
+                      : 400,
               )
               .end(
                 JSON.stringify({
                   error: error instanceof Error ? error.message : "Host request failed",
                   ...(deviceEffectAdmitted
                     ? { code: "HOST_DEVICE_OPERATION_UNCONFIRMED", delivery: "unknown" }
-                    : error instanceof OwnerRpcDeadlineError
+                    : error instanceof OwnerRpcDeadlineError || error instanceof HostStoppingError
                       ? { code: error.code, delivery: error.delivery }
                       : error instanceof HostDomainOutcomeError
                         ? { delivery: error.delivery }
@@ -772,6 +785,7 @@ export function createHttpRuntime(
           else if (!response.destroyed && !response.writableEnded) response.destroy();
         } finally {
           clearTimeout(deadline);
+          if (liveAbort) liveRequests.delete(liveAbort);
           for (const release of resultScopeReleases) release();
           await Promise.allSettled(resultScopeSettlements);
           if (voiceToolLog)
@@ -810,8 +824,13 @@ export function createHttpRuntime(
     get closing() {
       return closing;
     },
+    /**
+     * Shutdown aborts every /rpc call in flight with `HostStoppingError`, so held polls and
+     * unbounded methods answer 503 after the stop grace instead of holding the drain.
+     */
     set closing(value: typeof closing) {
       closing = value;
+      if (value) for (const live of liveRequests) live.abort(new HostStoppingError());
     },
     requests,
     server,

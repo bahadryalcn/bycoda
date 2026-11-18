@@ -1876,6 +1876,27 @@ it("joins accepted asynchronous request handlers during resource shutdown", asyn
   }
 });
 
+it("aborts an in-flight request that never settles when resource shutdown begins", async () => {
+  const s = await setup([]);
+  const paused = pauseDesktopMetadata(s.project.id);
+  const request = s.call("sessions.list", { projectId: s.project.id });
+  try {
+    await paused.started;
+    const startedAt = performance.now();
+    const closing = s.server.closeResources();
+    const answer = await request;
+    expect(answer.status).toBe(503);
+    expect(answer.value).toMatchObject({ code: "HOST_STOPPING", delivery: "unknown" });
+    await closing;
+    // The stop grace, not the 45 s hard-exit deadline, bounds the wait.
+    expect(performance.now() - startedAt).toBeLessThan(10_000);
+  } finally {
+    paused.release();
+    paused.read.mockRestore();
+    await request.catch(() => {});
+  }
+});
+
 it.each(["sessions.update", "commands.dispatch"])(
   "does not adopt or mutate after owner revocation during desktop preparation for %s",
   async (method) => {

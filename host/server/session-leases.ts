@@ -1,6 +1,11 @@
 import { type RunLease } from "../../src/features/sync/model/runLease";
 import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps";
+import { createLogger } from "../diagnostics/logger";
+import { recordDuration } from "../diagnostics/perf-metrics";
 import type { ServerBindings } from "./bindings";
+
+const beatLog = createLogger("host.sessions");
+
 export function createSessionLeasesRuntime(
   dependencies: Pick<
     ServerBindings,
@@ -90,19 +95,63 @@ export function createSessionLeasesRuntime(
    * counts silence as gone, so a stalled store queue must not delay the reply. Whatever
    * has not finished keeps running and lands later; the missing part of the answer is
    * simply absent, which the window treats as "no news".
+   *
+   * With a `stage`, at most one copy of that stage's work runs per window: while an
+   * earlier copy is still running (up to a minute) the beat answers the fallback without
+   * starting another, so a slow store does not pile up copies. Every fallback of a stage is
+   * counted as the `<stage>.fallback` perf metric and logged at most once a minute.
    */
   const BEAT_STORE_WAIT_MS = 1_500;
-  const withinBeat = async <T>(work: () => Promise<T>, fallback: T): Promise<T> => {
+  const BEAT_COALESCE_MAX_MS = 60_000;
+  const inFlight = new Map<string, { pending: Promise<unknown>; startedAt: number }>();
+  const fallbacks = new Map<string, { count: number; loggedAt: number }>();
+  const noteFallback = (stage: string, reason: "timeout" | "busy") => {
+    recordDuration(`${stage}.fallback`, reason === "timeout" ? BEAT_STORE_WAIT_MS : 0);
+    const seen = fallbacks.get(stage) ?? { count: 0, loggedAt: -Infinity };
+    seen.count++;
+    fallbacks.set(stage, seen);
+    const now = monotonicNow();
+    if (elapsedSince(seen.loggedAt, now) < 60_000) return;
+    beatLog.warn("heartbeat fallback", { stage, reason, count: seen.count });
+    seen.count = 0;
+    seen.loggedAt = now;
+  };
+  const withinBeat = async <T>(
+    work: () => Promise<T>,
+    fallback: T,
+    stage?: { name: string; owner: string },
+  ): Promise<T> => {
+    const key = stage && `${stage.name}\0${stage.owner}`;
+    const running = key ? inFlight.get(key) : undefined;
+    // A copy that never settles must not switch the stage off for good: past the cap the
+    // next beat starts a fresh copy.
+    if (stage && running && elapsedSince(running.startedAt) < BEAT_COALESCE_MAX_MS) {
+      noteFallback(stage.name, "busy");
+      return fallback;
+    }
     const pending = work();
+    if (key) {
+      const entry = { pending, startedAt: monotonicNow() };
+      inFlight.set(key, entry);
+      void pending
+        .catch(() => undefined)
+        .finally(() => {
+          if (inFlight.get(key) === entry) inFlight.delete(key);
+        });
+    }
     let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = Symbol("late");
     try {
-      return await Promise.race([
+      const outcome = await Promise.race([
         pending,
-        new Promise<T>((resolve) => {
-          timer = setTimeout(() => resolve(fallback), BEAT_STORE_WAIT_MS);
+        new Promise<typeof late>((resolve) => {
+          timer = setTimeout(() => resolve(late), BEAT_STORE_WAIT_MS);
           timer.unref?.();
         }),
       ]);
+      if (outcome !== late) return outcome;
+      if (stage) noteFallback(stage.name, "timeout");
+      return fallback;
     } finally {
       clearTimeout(timer);
       // An abandoned wait must not surface as an unhandled rejection.
@@ -153,6 +202,7 @@ export function createSessionLeasesRuntime(
               return running;
             }),
           undefined,
+          { name: "desktopLive.runLeases", owner: holder },
         );
       } catch (error) {
         hostRunsError = error;

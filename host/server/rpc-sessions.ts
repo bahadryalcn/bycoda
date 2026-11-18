@@ -560,6 +560,8 @@ export async function handleSessionsRpc(
       );
       // Input in a focused window disproves a stale idle or away reading.
       if (request.params.userActive === true) dependencies.assistant.refreshPresenceSoon();
+      // One window of one device: each bounded stage runs at most one copy per window.
+      const beatOwner = `${request.tokenHash}:${String(request.params.clientId ?? "")}`;
       // Sequential: an acknowledged command can change the turn the run leases read.
       const durableCommands = await measure("desktopLive.poll", () =>
         dependencies.withinBeat(
@@ -568,6 +570,7 @@ export async function handleSessionsRpc(
               assertDomainAuthority(request.domainContext),
             ),
           [],
+          { name: "desktopLive.poll", owner: beatOwner },
         ),
       );
       // Renew the reported epoch before queued busy bookkeeping can implicitly
@@ -576,7 +579,10 @@ export async function handleSessionsRpc(
         dependencies.renewRunLeases(request.params),
       );
       await measure("desktopLive.effects", () =>
-        dependencies.withinBeat(() => dependencies.heartbeatEffects, undefined),
+        dependencies.withinBeat(() => dependencies.heartbeatEffects, undefined, {
+          name: "desktopLive.effects",
+          owner: beatOwner,
+        }),
       );
       // These four touch separate state (deletion replies, provider inbox, adopted
       // rows, drain leases) and none reads another's writes from this beat, so they
@@ -584,12 +590,9 @@ export async function handleSessionsRpc(
       const [deletions, inbox, adopted, queueLeases, hostPush] = await Promise.all([
         measure("desktopLive.deletions", () =>
           dependencies.withinBeat(
-            () =>
-              dependencies.desktopDelete.beat(
-                `${request.tokenHash}:${String(request.params.clientId ?? "")}`,
-                request.params.deletions,
-              ),
+            () => dependencies.desktopDelete.beat(beatOwner, request.params.deletions),
             { jobs: [], acked: [] },
+            { name: "desktopLive.deletions", owner: beatOwner },
           ),
         ),
         measure("desktopLive.inbox", () =>
@@ -601,22 +604,28 @@ export async function handleSessionsRpc(
                 request.params.inbox,
               ),
             { jobs: [], acked: [] },
+            { name: "desktopLive.inbox", owner: beatOwner },
           ),
         ),
         measure("desktopLive.adopted", () =>
           dependencies.withinBeat(
             () => dependencies.adoptedChanges.changesSince(request.params.adoptedSeq),
             undefined,
+            { name: "desktopLive.adopted", owner: beatOwner },
           ),
         ),
         // The drain leases a desktop holds: `null` is one it no longer holds, and the
         // host drains that queue itself.
         measure("desktopLive.queueLeases", () =>
-          dependencies.withinBeat(() => dependencies.renewQueueLeases(request.params), undefined),
+          dependencies.withinBeat(() => dependencies.renewQueueLeases(request.params), undefined, {
+            name: "desktopLive.queueLeases",
+            owner: beatOwner,
+          }),
         ),
         dependencies.withinBeat(
           () => dependencies.pushNotifications.ownedEvents().catch(() => undefined),
           undefined,
+          { name: "desktopLive.hostPush", owner: beatOwner },
         ),
       ]);
       request.result = {
