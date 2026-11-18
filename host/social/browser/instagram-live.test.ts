@@ -1,4 +1,4 @@
-import { Window } from "happy-dom";
+import { type HTMLElement, Window } from "happy-dom";
 import { afterEach, expect, it, vi } from "vitest";
 import type { SecretValueStore } from "../../secrets/secret-store";
 import type { BrowserPage } from "../social-browser";
