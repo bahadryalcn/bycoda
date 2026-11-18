@@ -603,7 +603,6 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
                     iconOnly
                     shape="pill"
                     size="lg"
-                    variant="primary"
                     tone="danger"
                     label={t("Disconnect voice")}
                     onClick={() => send("disconnect")}

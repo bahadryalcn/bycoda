@@ -82,7 +82,7 @@ function UpdateImpactFixture() {
   const target =
     kind === "ssh"
       ? { machineId: "remote" }
-      : kind === "host"
+      : kind === "host" || kind === "loading" || kind === "error"
         ? ("local-host" as const)
         : ("app" as const);
   return (
@@ -110,15 +110,15 @@ function UpdateImpactFixture() {
                       name: "Work PC",
                       local: true,
                       affected: kind !== "ssh",
-                      running: 3,
-                      desktopRunning: 1,
+                      running: kind === "idle" ? 0 : 3,
+                      desktopRunning: kind === "idle" ? 0 : 1,
                     },
                     {
                       id: "remote",
                       name: "Studio Mac",
                       local: false,
                       affected: kind === "ssh",
-                      running: 2,
+                      running: kind === "idle" ? 0 : 2,
                       desktopRunning: 0,
                     },
                     {

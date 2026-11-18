@@ -10,6 +10,7 @@ const availability = vi.hoisted(() => ({
   grok: true,
   listeners: new Set<() => void>(),
 }));
+const refreshHarnessCatalogs = vi.hoisted(() => vi.fn(async () => {}));
 vi.mock("../../../integrations/harness/core/availability", () => ({
   getHarnessAvailabilitySnapshot: () => availability.version,
   hasProbedHarnessAvailability: () => true,
@@ -22,7 +23,7 @@ vi.mock("../../../integrations/harness/core/availability", () => ({
 }));
 
 vi.mock("../../../integrations/harness/core/registry", () => ({
-  refreshHarnessCatalogs: () => Promise.resolve(),
+  refreshHarnessCatalogs,
 }));
 
 vi.mock("../../../shared/ui/Popover", async () => ({
@@ -138,6 +139,64 @@ async function inputText(input: HTMLInputElement, value: string) {
 }
 
 describe("model picker", () => {
+  it("refreshes Codex speed options on open even after the catalog loaded", async () => {
+    const model = {
+      id: "codex:gpt-6.2-sol",
+      harness: "codex" as const,
+      name: "GPT-6.2 Sol",
+      settings: [
+        {
+          id: "serviceTier",
+          label: "Service Tier",
+          kind: "select" as const,
+          value: "default",
+          options: [
+            { value: "default", label: "Standard" },
+            { value: "priority", label: "Fast" },
+          ],
+        },
+      ],
+    };
+    setHarnessModels("codex", [model]);
+    refreshHarnessCatalogs.mockClear();
+    const onSettingsChange = vi.fn();
+    await act(async () =>
+      root.render(
+        createElement(ModelPicker, {
+          harness: "codex",
+          model: model.id,
+          values: { serviceTier: "default" },
+          onChange: vi.fn(),
+          onSettingsChange,
+        }),
+      ),
+    );
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!.click(),
+    );
+    expect(refreshHarnessCatalogs).toHaveBeenCalledWith(["codex"], { force: true });
+
+    await act(async () =>
+      setHarnessModels("codex", [
+        {
+          ...model,
+          settings: [
+            {
+              ...model.settings[0],
+              options: [...model.settings[0].options, { value: "ultrafast", label: "Ultrafast" }],
+            },
+          ],
+        },
+      ]),
+    );
+    const ultrafast = [...container.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(
+      (option) => option.textContent === "Ultrafast",
+    );
+    expect(ultrafast).toBeDefined();
+    await act(async () => ultrafast!.click());
+    expect(onSettingsChange).toHaveBeenCalledWith({ serviceTier: "ultrafast" });
+  });
+
   it("refreshes account labels and open account choices after account changes", async () => {
     renameProviderAccount("claude", "default", "personal");
     await act(async () =>

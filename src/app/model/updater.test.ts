@@ -251,29 +251,29 @@ describe("background probe back-off", () => {
   it("lengthens the background wait while the feed fails and restores it on success", async () => {
     const { updater, backoff } = await failingFeed();
     await expect(updater.probeForUpdate()).rejects.toThrow();
-    expect(backoff.nextUpdateProbeDelayMs()).toBe(60 * MINUTE);
+    expect(backoff.nextUpdateProbeDelayMs()).toBe(10 * MINUTE);
     await expect(updater.probeForUpdate()).rejects.toThrow();
-    expect(backoff.nextUpdateProbeDelayMs()).toBe(120 * MINUTE);
+    expect(backoff.nextUpdateProbeDelayMs()).toBe(20 * MINUTE);
 
     mocks.check.mockResolvedValue(null);
     await expect(updater.probeForUpdate()).resolves.toBeNull();
-    expect(backoff.nextUpdateProbeDelayMs()).toBe(30 * MINUTE);
+    expect(backoff.nextUpdateProbeDelayMs()).toBe(5 * MINUTE);
   });
 
   it("always reaches the feed for an explicit check, which starts the wait again", async () => {
     const { updater, backoff } = await failingFeed();
-    for (let streak = 0; streak < 5; streak++)
+    for (let streak = 0; streak < 7; streak++)
       await expect(updater.probeForUpdate()).rejects.toThrow();
     expect(backoff.nextUpdateProbeDelayMs()).toBe(480 * MINUTE);
 
     mocks.check.mockClear();
     expect((await updater.runUpdateFlow(true)).phase).toBe("error");
     expect(mocks.check).toHaveBeenCalledOnce();
-    expect(backoff.nextUpdateProbeDelayMs()).toBe(30 * MINUTE);
+    expect(backoff.nextUpdateProbeDelayMs()).toBe(5 * MINUTE);
 
     await expect(updater.probeForUpdate()).rejects.toThrow();
-    expect(backoff.nextUpdateProbeDelayMs()).toBe(60 * MINUTE);
+    expect(backoff.nextUpdateProbeDelayMs()).toBe(10 * MINUTE);
     await expect(updater.probeForUpdate(true)).rejects.toThrow();
-    expect(backoff.nextUpdateProbeDelayMs()).toBe(30 * MINUTE);
+    expect(backoff.nextUpdateProbeDelayMs()).toBe(5 * MINUTE);
   });
 });

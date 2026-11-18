@@ -13,12 +13,10 @@ const nextVersion = "0.6.93";
 const accountCaptureRoot = "temp/verification/2026-11-11-rail-size-reset";
 const toolsCaptureRoot = "temp/verification/2026-11-13-rail-tools-selection";
 
-test("multi-machine update impact previews retain counts, unknown activity and cancel focus", async ({
-  page,
-}) => {
-  const capture = "temp/verification/multi-machine-update";
+test("update impact previews show active work and preserve cancel focus", async ({ page }) => {
+  const capture = "temp/verification/update-running-work";
   mkdirSync(capture, { recursive: true });
-  for (const kind of ["app", "host", "ssh", "loading", "error"]) {
+  for (const kind of ["idle", "app", "host", "ssh", "loading", "error"]) {
     for (const theme of ["light", "dark"]) {
       for (const width of [1280, 800]) {
         await page.setViewportSize({ width, height: 900 });
@@ -30,25 +28,29 @@ test("multi-machine update impact previews retain counts, unknown activity and c
         const dialog = page.getByRole("dialog");
         await expect(dialog).toBeVisible();
         await expect(page.getByRole("button", { name: "Cancel", exact: true })).toBeFocused();
-        if (kind === "loading" || kind === "error") {
+        if (kind === "idle") {
+          await expect(dialog.getByRole("table")).toHaveCount(0);
+          await expect(dialog).not.toContainText("may be interrupted");
+        } else if (kind === "loading" || kind === "error") {
           await expect(dialog).toContainText(
             kind === "error"
               ? "Machine activity could not be checked."
               : "Checking machine activity…",
           );
-          await expect(dialog).toContainText("Unverified activity may also be interrupted.");
+          if (kind === "error")
+            await expect(dialog).toContainText("Unverified activity may also be interrupted.");
+          else await expect(dialog).not.toContainText("may be interrupted");
         } else {
-          await expect(dialog).toContainText("Work PC");
+          await expect(dialog).toContainText("This computer");
           await expect(dialog).toContainText("Studio Mac");
-          await expect(dialog).toContainText("Unknown");
+          await expect(dialog).not.toContainText("Offline laptop");
           await expect(dialog).toContainText(
             kind === "app" ? "This app restarts" : "Host restarts",
           );
           await expect(dialog).toContainText(
             `Sessions that may be interrupted: ${kind === "app" ? 1 : kind === "host" ? 3 : 2}.`,
           );
-          if (kind !== "app")
-            await expect(dialog).not.toContainText("Unverified activity may also be interrupted.");
+          await expect(dialog).not.toContainText("Unverified activity may also be interrupted.");
         }
         const bounds = await dialog.boundingBox();
         expect(bounds!.x).toBeGreaterThanOrEqual(0);

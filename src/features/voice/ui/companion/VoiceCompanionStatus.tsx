@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { surfaceAttributes, type SurfaceTone } from "../../../../shared/ui/Surface";
 import { Button } from "../../../../shared/ui/Button";
 import { LiveText } from "../../../../shared/ui/LiveText";
 import { Text } from "../../../../shared/ui/Text";
@@ -64,7 +65,13 @@ export function VoiceCompanionStatus({
   const tone = voiceStatusTone(visualState);
   const work = working ? sessionStatusText : "";
   return (
-    <div className={styles.stage} data-layout={stage ? "stage" : "strip"} data-state={visualState}>
+    <div
+      {...surfaceAttributes(
+        { radius: "panel", tone: stage ? stageTone(visualState) : undefined },
+        styles.stage,
+      )}
+      data-layout={stage ? "stage" : "strip"}
+    >
       <div className={styles.status}>
         <VoiceCore
           state={visualState}
@@ -101,7 +108,14 @@ export function VoiceCompanionStatus({
         </div>
       </div>
       {stage && caption ? (
-        <Text as="p" size="secondary" tone="secondary" leading="normal" className={styles.spoken}>
+        <Text
+          as="p"
+          size="secondary"
+          tone="secondary"
+          leading="normal"
+          lines={4}
+          className={styles.spoken}
+        >
           {caption}
         </Text>
       ) : null}
@@ -124,6 +138,14 @@ export function VoiceCompanionStatus({
       )}
     </div>
   );
+}
+
+/** The stage tint follows the voice core's ink: accent while talking, warning while thinking. */
+function stageTone(state: VoiceVisualState): SurfaceTone {
+  if (state === "thinking") return "warning";
+  if (state === "error") return "danger";
+  if (state === "off" || state === "muted" || state === "connecting") return "neutral";
+  return "accent";
 }
 
 /**

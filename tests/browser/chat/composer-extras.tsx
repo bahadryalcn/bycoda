@@ -62,7 +62,10 @@ setHarnessModels(
       displayName: "GPT-5.4",
       supportedReasoningEfforts: ["low", "medium", "high"],
       defaultReasoningEffort: "medium",
-      serviceTiers: ["fast"],
+      serviceTiers: [
+        { id: "fast", name: "Fast" },
+        { id: "ultrafast", name: "Ultrafast" },
+      ],
     },
   ]),
 );

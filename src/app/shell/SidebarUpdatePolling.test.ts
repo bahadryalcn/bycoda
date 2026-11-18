@@ -125,18 +125,18 @@ it("checks periodically, preserves available updates, and clears its timer on un
   try {
     await act(async () => root.render(createElement(SidebarUpdateFooter)));
     expect(mocks.probe).toHaveBeenCalledTimes(1);
-    await act(async () => vi.advanceTimersByTimeAsync(30 * 60 * 1000));
+    await act(async () => vi.advanceTimersByTimeAsync(5 * 60 * 1000));
     expect(mocks.probe).toHaveBeenCalledTimes(2);
     expect(container.querySelector('[aria-label="Update to 0.8.34"]')).not.toBeNull();
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     mocks.probe.mockResolvedValue({ version: "0.8.40" });
-    await act(async () => vi.advanceTimersByTimeAsync(30 * 60 * 1000));
+    await act(async () => vi.advanceTimersByTimeAsync(5 * 60 * 1000));
     expect(mocks.probe).toHaveBeenCalledTimes(3);
     expect(container.querySelector('[aria-label="Update to 0.8.40"]')).not.toBeNull();
   } finally {
     await act(async () => root.unmount());
   }
   // The update prompt can schedule exit animations; only update polling must stop.
-  await act(async () => vi.advanceTimersByTimeAsync(30 * 60 * 1000));
+  await act(async () => vi.advanceTimersByTimeAsync(5 * 60 * 1000));
   expect(mocks.probe).toHaveBeenCalledTimes(3);
 });

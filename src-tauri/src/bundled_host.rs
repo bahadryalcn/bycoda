@@ -709,6 +709,22 @@ fn run_installer(
     run_with_timeout(command, SCRIPT_TIMEOUT, lock, script)
 }
 
+/// The installer's own message from its stderr. An uncaught PowerShell error
+/// ends in a record (`At <script>:<line> char:<n>`, `+ CategoryInfo ...`,
+/// `+ FullyQualifiedErrorId ...`); the message is the line before it.
+fn installer_error(stderr: &str) -> Option<&str> {
+    let is_record = |line: &str| {
+        line.starts_with('+')
+            || line.starts_with('~')
+            || (line.starts_with("At ") && line.contains(" char:"))
+    };
+    stderr
+        .lines()
+        .map(str::trim)
+        .rev()
+        .find(|line| !line.is_empty() && !is_record(line))
+}
+
 fn run_with_timeout(
     mut command: Command,
     timeout: Duration,
@@ -739,10 +755,8 @@ fn run_with_timeout(
                 if status.success() {
                     return Ok(());
                 }
-                let detail = errors.lines().rev().find(|line| !line.trim().is_empty());
-                return Err(detail
+                return Err(installer_error(&errors)
                     .unwrap_or("The host installer failed.")
-                    .trim()
                     .to_string());
             }
             Ok(None) if started.elapsed() > timeout => {
@@ -1008,6 +1022,24 @@ pub async fn local_host_bundle_update(app: AppHandle) -> Result<Option<BundledHo
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn installer_error_shows_the_message_not_the_powershell_record() {
+        // The update dialog showed "+ FullyQualifiedErrorId : Could not stop ...".
+        let stderr = "The old host did not finish shutting down; service paths were preserved.\r\n\
+            Could not stop the old host service.\r\n\
+            At C:\\Users\\me\\AppData\\Local\\Temp\\bootstrap.ps1:138 char:36\r\n\
+            +     if ($LASTEXITCODE -ne 0) { throw 'Could not stop the old host service.' }\r\n\
+            +                                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\r\n    \
+            + CategoryInfo          : OperationStopped: (Could not stop the old host service.:String) [], RuntimeException\r\n    \
+            + FullyQualifiedErrorId : Could not stop the old host service.\r\n\r\n";
+        assert_eq!(
+            installer_error(stderr),
+            Some("Could not stop the old host service.")
+        );
+        assert_eq!(installer_error("plain failure\n"), Some("plain failure"));
+        assert_eq!(installer_error("  \n"), None);
+    }
 
     #[test]
     fn another_install_is_rechecked_soon_so_its_notice_clears() {

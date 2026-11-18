@@ -296,7 +296,8 @@ When Work concurrency is one, an active Work turn cannot start a delegated child
 
 **Settings > Models > Subagents** sets advisor and subagent defaults for new
 conversations. **Chats** holds provider, model, effort, permissions and
-Fast / Service Tier choices. Main-model effort uses a stepped scale; Subagent max
+Fast / Service Tier choices. Codex shows Ultrafast when the provider catalog offers it for the model.
+Main-model effort uses a stepped scale; Subagent max
 effort uses a select.
 The apply bar separates provider scope from save destinations. **Apply to** chooses
 the current provider or **All providers**. All providers copies only supported,

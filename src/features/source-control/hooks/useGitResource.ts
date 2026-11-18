@@ -95,10 +95,14 @@ export function useGitResource<T>(
     let cancelled = false;
     let inFlight = false;
     let pending = false;
+    // Progress is for a read someone waits on: the first one, or an explicit
+    // refresh. A watcher or focus reload of shown data stays silent, or busy
+    // checkouts (many agents committing) would keep the refresh control spinning.
+    const shows = (force: boolean) => (!quiet || !completed.has(key)) && (force || !cache.has(key));
     setSnapshot((previous) => ({
       key,
       data: previous.key === key ? previous.data : (readCached<T>(key) ?? null),
-      loading: enabled && (!quiet || !completed.has(key)),
+      loading: enabled && shows(forced),
       error: completed.get(key)?.error ?? null,
     }));
     if (!enabled) return;
@@ -114,8 +118,7 @@ export function useGitResource<T>(
       }
       inFlight = true;
       const readGeneration = generation;
-      if (!quiet || !completed.has(key))
-        setSnapshot((previous) => ({ ...previous, loading: true }));
+      if (shows(force)) setSnapshot((previous) => ({ ...previous, loading: true }));
       try {
         // An explicit refresh follows a change: a read already running may
         // predate it, so it is replaced, and its late answer is not kept.

@@ -101,7 +101,6 @@ export function VoiceCompanionControls({
             iconOnly
             shape="pill"
             size="lg"
-            variant="primary"
             tone="danger"
             label={t("Disconnect voice")}
             onClick={onClose}
@@ -157,7 +156,6 @@ export function VoiceCompanionControls({
           iconOnly
           shape="pill"
           size="lg"
-          variant="primary"
           tone="danger"
           label={t("Disconnect voice")}
           onClick={onClose}

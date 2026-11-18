@@ -417,7 +417,7 @@ export function ModelPicker({
           .filter(
             (setting) =>
               setting !== triggerEffortSetting &&
-              setting !== triggerFastSetting &&
+              (setting !== triggerFastSetting || triggerFastState === undefined) &&
               !isDelegationSetting(setting) &&
               values[setting.id] !== undefined &&
               values[setting.id] !== setting.value,

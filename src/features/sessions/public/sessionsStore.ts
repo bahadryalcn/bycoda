@@ -3,6 +3,7 @@ export {
   getSessions,
   getShellSessions,
   setSessions,
+  subscribeSessionCommits,
   subscribeShell,
   usePaneSession,
   useSession,

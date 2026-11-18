@@ -139,8 +139,9 @@ export function buildTurnStartParams(input: {
       : {}),
     ...(input.model?.trim() ? { model: input.model.trim() } : {}),
     ...(input.effort ? { effort: input.effort } : {}),
-    ...(input.serviceTier && input.serviceTier !== "default"
-      ? { serviceTier: input.serviceTier }
+    // A missing tier inherits the thread's last speed. Standard clears that override.
+    ...(input.serviceTier
+      ? { serviceTier: input.serviceTier === "default" ? null : input.serviceTier }
       : {}),
   };
 }

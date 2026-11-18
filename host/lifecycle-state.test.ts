@@ -3,7 +3,12 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { acquireHostOwner } from "./owner";
-import { readRunningHost, verifyHostStopped } from "./lifecycle-state";
+import {
+  HOST_SHUTDOWN_DEADLINE_MS,
+  HOST_STOP_WAIT_MS,
+  readRunningHost,
+  verifyHostStopped,
+} from "./lifecycle-state";
 
 let directory: string;
 let release: (() => void) | undefined;
@@ -50,4 +55,10 @@ it("certifies stopped only when no owner remains", async () => {
   await expect(verifyHostStopped(directory)).resolves.toBeUndefined();
   writeFileSync(join(directory, "owner.lock"), `{"pid":${process.pid}`);
   await expect(verifyHostStopped(directory)).rejects.toThrow("unknown");
+});
+
+it("waits for a stopping Host longer than the Host may take to force its exit", () => {
+  // Upgrades failed with "Could not stop the old host service" while the old
+  // Host was still inside its 45 s drain: the caller gave up after 20 s.
+  expect(HOST_STOP_WAIT_MS).toBeGreaterThan(HOST_SHUTDOWN_DEADLINE_MS);
 });

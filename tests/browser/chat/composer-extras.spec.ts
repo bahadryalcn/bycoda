@@ -1630,12 +1630,21 @@ test("chat edits model settings from one panel at narrow and wide sizes", async 
   await page.keyboard.press("Escape");
   await expect(main).toContainText("High");
   await expect(page.getByTestId("choice")).toContainText('"serviceTier":"fast"');
-  await page.setViewportSize({ width: 1000, height: 800 });
+  await page.setViewportSize({ width: 1280, height: 800 });
   await openPanel();
+  await choose("Service Tier", "Ultrafast");
+  await expect(page.getByTestId("choice")).toContainText('"serviceTier":"ultrafast"');
+  await expect(option("Service Tier", "Ultrafast")).toHaveAttribute("aria-checked", "true");
   await page.screenshot({
-    path: testInfo.outputPath("chat-codex-settings-wide.png"),
+    path: testInfo.outputPath("chat-codex-ultrafast-dark.png"),
     animations: "disabled",
   });
+  await page.evaluate(() => document.documentElement.classList.add("theme-light"));
+  await page.screenshot({
+    path: testInfo.outputPath("chat-codex-ultrafast-light.png"),
+    animations: "disabled",
+  });
+  await page.evaluate(() => document.documentElement.classList.remove("theme-light"));
   // Models and settings share one panel; its search drives the listbox, so it is a combobox.
   await expect(panel.getByRole("listbox", { name: "Models", exact: true })).toBeVisible();
   await expect(panel.getByRole("combobox", { name: "Search models", exact: true })).toBeVisible();

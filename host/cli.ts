@@ -16,10 +16,16 @@ import { spawn } from "node:child_process";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { REMOTE_PROVIDERS, type RemoteProvider } from "../src/features/connections/model/protocol";
 import { version } from "../package.json";
+import { elapsedSince, monotonicNow } from "../src/shared/lib/time/timestamps";
 import { readHostBuildIdentity } from "./build-identity";
 import { createNativeAuthorityBootstrap } from "./native-authority/bootstrap";
 import { writeFileAtomic } from "./storage/atomic-write";
-import { readRunningHost, verifyHostStopped, type RunningHost as Running } from "./lifecycle-state";
+import {
+  HOST_STOP_WAIT_MS,
+  readRunningHost,
+  verifyHostStopped,
+  type RunningHost as Running,
+} from "./lifecycle-state";
 import { acquireHostOwner, probeHostOwner } from "./owner";
 import { startHostDiagnostics, type HostDiagnostics } from "./diagnostics/host-lifecycle";
 import { createBootTimer } from "./server/boot-phases";
@@ -259,7 +265,8 @@ Connect another computer using an SSH forward to the loopback port.`);
           exitedState = state;
         }
       } else await lifecycle(state, "stop").catch(() => undefined);
-      for (let i = 0; !exitedState && i < 200 && existsSync(statePath); i++)
+      const stopStarted = monotonicNow();
+      while (!exitedState && elapsedSince(stopStarted) < HOST_STOP_WAIT_MS && existsSync(statePath))
         await new Promise((resolve) => setTimeout(resolve, 100));
       if (process.platform === "win32" && !exitedState && existsSync(statePath))
         throw new Error("The old host did not finish shutting down; service paths were preserved.");

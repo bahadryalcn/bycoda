@@ -57,6 +57,9 @@ export function rejectUpgrade(socket: Duplex, status: number): void {
         : status === 503
           ? "Service Unavailable"
           : "Bad Request";
+  // After "upgrade" the HTTP server no longer listens for socket errors. A client
+  // that already dropped makes this write fail, and an unhandled "error" crashes the Host.
+  socket.on("error", () => socket.destroy());
   socket.end(`HTTP/1.1 ${status} ${phrase}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`, () =>
     socket.destroy(),
   );

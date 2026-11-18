@@ -6,7 +6,7 @@ import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import { GitHistoryGraph } from "./GitHistoryGraph";
 import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
 import { GitStashSection } from "./GitStashSection";
-import { gitHistory, gitStashList } from "../../../platform/tauri/fs";
+import { gitHistory, gitStashList, subscribeGitChanged } from "../../../platform/tauri/fs";
 import { resetGitResourceCache } from "../hooks/useGitResource";
 import { resetGitPanelState, withGitOperation } from "../model/gitPanelState";
 
@@ -202,6 +202,21 @@ it("retains commits while refreshing and after a failed refresh, then retries", 
   });
   await click("Retry");
   expect(container.textContent).not.toContain("Couldn’t load commit graph");
+});
+
+it("reloads shown commits on a Git change without spinning the refresh control", async () => {
+  vi.mocked(gitHistory).mockResolvedValueOnce({ head: commit.sha, commits: [commit] });
+  await graph();
+  const request = deferred<Awaited<ReturnType<typeof gitHistory>>>();
+  vi.mocked(gitHistory).mockReturnValueOnce(request.promise);
+  const changed = vi.mocked(subscribeGitChanged).mock.calls.at(-1)![0];
+  await act(async () => changed(null));
+  expect(gitHistory).toHaveBeenCalledTimes(2);
+  expect(container.querySelector('button[aria-busy="true"]')).toBeNull();
+  await act(async () =>
+    request.resolve({ head: commit.sha, commits: [{ ...commit, subject: "Newer commit" }] }),
+  );
+  expect(container.textContent).toContain("Newer commit");
 });
 
 it("does not turn an initial failure into an empty history", async () => {

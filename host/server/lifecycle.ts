@@ -8,8 +8,7 @@ import {
   stopSessionWork,
 } from "../work/session-adapter";
 import { guardUnhandledRejections } from "./support";
-/** Total time a stopping Host may spend draining before it force-exits. */
-export const HOST_SHUTDOWN_DEADLINE_MS = 45_000;
+import { HOST_SHUTDOWN_DEADLINE_MS } from "../lifecycle-state";
 
 /**
  * Exit status of a shutdown that ran to its end. Service supervisors restart a Host that

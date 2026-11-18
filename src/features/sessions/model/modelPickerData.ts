@@ -114,7 +114,7 @@ export function fastSetting(model: AgentModel): ModelSetting | undefined {
 export function fastToggleValues(
   setting: ModelSetting | undefined,
 ): { on: string; off: string } | undefined {
-  if (!setting) return undefined;
+  if (!setting || setting.options.length !== 2) return undefined;
   const on = setting.options.find(
     (option) => /^(true|fast|priority)$/i.test(option.value) || /^(on|fast)$/i.test(option.label),
   )?.value;

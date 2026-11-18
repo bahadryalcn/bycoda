@@ -4,6 +4,14 @@ import { readStateFileSync } from "./storage/atomic-write";
 
 export type RunningHost = { pid: number; port: number; secret: string };
 
+/** Total time a stopping Host may spend draining before it force-exits. */
+export const HOST_SHUTDOWN_DEADLINE_MS = 45_000;
+
+/** How long a stopping caller waits for the Host to exit. It outlasts the Host's
+ * own forced exit: a drain stuck on an open request still ends by that deadline,
+ * and giving up earlier failed every upgrade while the old Host was still leaving. */
+export const HOST_STOP_WAIT_MS = HOST_SHUTDOWN_DEADLINE_MS + 15_000;
+
 /** Retain corrupt metadata: removing it could hide an owner from another CLI reader. */
 export function readRunningHost(directory: string): RunningHost | undefined {
   const result = readStateFileSync(

@@ -90,6 +90,12 @@ it("only treats a plain on/off pair as Fast", () => {
   };
   expect(fastSetting(model([tier]))?.id).toBe("serviceTier");
   expect(fastToggleValues(tier)).toEqual({ on: "priority", off: "default" });
+  expect(
+    fastToggleValues({
+      ...tier,
+      options: [...tier.options, { value: "ultrafast", label: "Ultrafast" }],
+    }),
+  ).toBeUndefined();
   expect(fastToggleValues(select("effort"))).toBeUndefined();
   expect(fastToggleValues(undefined)).toBeUndefined();
 });

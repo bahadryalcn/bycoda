@@ -38,10 +38,30 @@ it("shows every machine, with local first and conservative desktop interruption 
     "remote",
     "projects.list",
     {},
-    true,
+    false,
     false,
     "remote-env",
   );
+});
+
+it("reports responsive machines before an unreachable peer's read times out", async () => {
+  vi.useFakeTimers();
+  try {
+    const request = vi.mocked(remoteRequest).getMockImplementation()!;
+    vi.mocked(remoteRequest).mockImplementation((...args) =>
+      args[0] === "remote" ? new Promise(() => {}) : request(...args),
+    );
+    const onMachine = vi.fn();
+    const pending = readUpdateImpact("app", onMachine);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(onMachine).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ id: "local", running: 3 }),
+    );
+    await vi.advanceTimersByTimeAsync(8_000);
+    expect((await pending)[1]).toMatchObject({ id: "remote", running: null });
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it("deduplicates alternate routes and repeated session IDs", async () => {
