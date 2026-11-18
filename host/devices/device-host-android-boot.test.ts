@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { EventEmitter } from "node:events";
+import { PassThrough } from "node:stream";
 import * as childProcesses from "node:child_process";
 import { DeviceHost } from "./device-host";
+import { DeviceAuthorityRevokedError } from "./device-authority";
 import * as deviceProcesses from "./device-process";
 vi.mock("node:child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:child_process")>();
@@ -24,10 +26,15 @@ function windowsHost() {
 }
 function emulatorProcess() {
   const child = Object.assign(new EventEmitter(), {
+    pid: 4242,
     exitCode: null as number | null,
     signalCode: null,
+    stderr: new PassThrough(),
     unref: vi.fn(),
-    kill: vi.fn(() => true),
+    kill: vi.fn(() => {
+      queueMicrotask(() => child.emit("close", null));
+      return true;
+    }),
   });
   vi.mocked(childProcesses.spawn).mockImplementationOnce(() => child as never);
   return child;
@@ -58,5 +65,39 @@ describe("Windows Android boot", () => {
     expect(calls.some((args) => args[0] === "-list-avds")).toBe(false);
     expect(calls.filter((args) => args[2] === "emu")).toHaveLength(1);
     expect(polls).toBe(4);
+  });
+  it("stops the emulator and reports its stderr when boot times out", async () => {
+    vi.useFakeTimers();
+    const child = emulatorProcess();
+    const calls: string[][] = [];
+    vi.spyOn(deviceProcesses, "deviceCommand").mockImplementation(async (_exe, args) => {
+      calls.push(args);
+      return "List of devices attached\n";
+    });
+    child.stderr.write("PANIC: HAX is not working");
+    const booted = windowsHost().boot("Pixel");
+    const assertion = expect(booted).rejects.toThrow(/180 seconds.*HAX is not working/s);
+    await vi.advanceTimersByTimeAsync(200_000);
+    await assertion;
+    expect(calls).toContainEqual(["/pid", "4242", "/T", "/F"]);
+    expect(child.kill).toHaveBeenCalled();
+  });
+  it("stops the emulator when device authority is revoked mid-boot", async () => {
+    vi.useFakeTimers();
+    const child = emulatorProcess();
+    const calls: string[][] = [];
+    vi.spyOn(deviceProcesses, "deviceCommand").mockImplementation(async (_exe, args) => {
+      calls.push(args);
+      return "List of devices attached\n";
+    });
+    let authorized = true;
+    const booted = windowsHost().boot("Pixel", { authorized: () => authorized });
+    const assertion = expect(booted).rejects.toBeInstanceOf(DeviceAuthorityRevokedError);
+    await vi.advanceTimersByTimeAsync(2000);
+    authorized = false;
+    await vi.advanceTimersByTimeAsync(10_000);
+    await assertion;
+    expect(calls).toContainEqual(["/pid", "4242", "/T", "/F"]);
+    expect(child.kill).toHaveBeenCalled();
   });
 });
