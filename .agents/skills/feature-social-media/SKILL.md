@@ -19,17 +19,11 @@ Full paths are repository-root relative; adjacent abbreviated names share the pr
 - `host/social/browser*` and `browser-layers/`: sessions, recipes, layered driver, NEEDS_HUMAN, live view. `host/social/social-programs.ts` and `social-program-*.ts`: campaign programs.
 - `host/decision-models/`: decision gateway for the browser decision layer and AI tools (own skill: `feature-decision-models`).
 - Contracts: `docs/integrations/social.md`, `social-programs.md`, `decision-models.md`.
-- YouTube management: `host/social/youtube/`, `src/integrations/social/youtube-*.ts` and `src/features/social/ui/accounts/youtube/`. Keep Live ingestion credentials in the Host vault. Consult the YouTube management section in the Social integration guide for scope and quota contracts.
-- TikTok account actions live in `host/social/tiktok/`. Business OAuth
-  credentials and LIVE setup credentials are separate vault entries scoped to
-  the verified account. Keep owner mutations and credential setup off session tools.
+- Platform actions: `host/social/youtube/`, `host/social/tiktok/`, `ui/accounts/youtube/`. Live and Business credentials stay in per-account Host vault entries; keep owner mutations and credential setup off session tools.
 
 ## Preserve
 
-- X API operations require owner billing opt-in. Keep X actions and stream-key
-  custody in X-specific modules. See [X integration](../../../docs/integrations/social.md#x)
-  for supported API operations and owner browser handoffs.
-
+- X API operations need owner billing opt-in; keep X actions and stream-key custody in X modules ([X integration](../../../docs/integrations/social.md#x)).
 - The full invariant list is in [Social contracts](references/contracts.md). Keep these summaries true when editing.
 
 - Autonomy: levels `suggest` (default), `approve`, `autonomous`, per account and action. Only the owner sets `autonomous`; an AI principal at `autonomous` still obeys limits, hours, suppression and both stops.
