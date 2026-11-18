@@ -55,7 +55,7 @@ describe("YouTube result localization", () => {
     expect(markup).toContain("My original post");
     expect(markup).toContain("推定広告収益");
     expect(markup).toContain("収益化対象の再生回数");
-    expect(markup).toContain("投稿の本文");
+    expect(markup).toContain("投稿本文");
     expect(markup).not.toContain("scheduled");
   });
 });
