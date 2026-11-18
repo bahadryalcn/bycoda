@@ -2893,9 +2893,9 @@ export class HostEngine {
                 handoffText = handoff?.text;
                 handoffFrom = handoff?.from as RemoteProvider | undefined;
                 if (handoffText) {
-                  const archive = new HandoffHistoryStore(
+                  const archive = await new HandoffHistoryStore(
                     dirname(this.store.attachmentDir),
-                  ).saveSync(handoffHistory(value.session));
+                  ).save(handoffHistory(value.session));
                   // Budget the actual outgoing request once. Skill bodies and runtime
                   // hints are model input too, but must not be added to the request twice.
                   const request = codexGoal ? command.text : withShellContext(shellRuns, turnText);

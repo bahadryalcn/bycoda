@@ -1,5 +1,6 @@
 import type { HostSession } from "../../src/features/connections/model/protocol";
-import { sessionNeedsInput } from "../../src/features/sessions/model/session";
+import { changedBlocks, type BlockChanges } from "../../src/features/sessions/model/blockChanges";
+import { sessionNeedsInput, type Block } from "../../src/features/sessions/model/session";
 
 export interface SessionAttentionPatch {
   unread?: boolean;
@@ -71,8 +72,32 @@ export function sessionAttention(
   input: HostSession,
   previous?: HostSession,
   metadataWrite = false,
+  changes?: BlockChanges,
+  previousPositions?: ReadonlyMap<string, number>,
 ) {
-  const oldBlocks = new Map(previous?.session.blocks.map((block) => [block.id, block]) ?? []);
+  // Only added or changed blocks can raise activity or a new approval, so a known
+  // delta is scanned instead of the whole transcript.
+  const known =
+    previous && (changes ?? changedBlocks(previous.session.blocks, input.session.blocks));
+  let oldBlocks: Map<string, Block> | undefined;
+  const oldBlock = (id: string): Block | undefined => {
+    if (!previous) return undefined;
+    if (previousPositions) {
+      const position = previousPositions.get(id);
+      return position === undefined ? undefined : previous.session.blocks[position];
+    }
+    return (oldBlocks ??= new Map(previous.session.blocks.map((block) => [block.id, block]))).get(
+      id,
+    );
+  };
+  const candidates = (): Iterable<Block> =>
+    known
+      ? [...known.values()].filter((block): block is Block => block !== null)
+      : input.session.blocks;
+  const anyCandidate = (test: (block: Block) => boolean) => {
+    for (const block of candidates()) if (test(block)) return true;
+    return false;
+  };
   const needsInput = sessionNeedsInput(input.session);
   const newNeedsInput =
     needsInput &&
@@ -81,21 +106,22 @@ export function sessionAttention(
       input.session.pendingQuestion?.requestId !== previous.session.pendingQuestion?.requestId ||
       input.session.pendingQuestion?.occurrenceId !==
         previous.session.pendingQuestion?.occurrenceId ||
-      input.session.blocks.some(
-        (block) =>
-          block.approval &&
-          !block.approval.decided &&
-          (!oldBlocks.get(block.id)?.approval ||
-            oldBlocks.get(block.id)?.approval?.decided ||
-            oldBlocks.get(block.id)?.approval?.occurrenceId !== block.approval.occurrenceId ||
-            oldBlocks.get(block.id)?.approval?.requestId !== block.approval.requestId),
-      ));
+      anyCandidate((block) => {
+        if (!block.approval || block.approval.decided) return false;
+        const old = oldBlock(block.id)?.approval;
+        return (
+          !old ||
+          !!old.decided ||
+          old.occurrenceId !== block.approval.occurrenceId ||
+          old.requestId !== block.approval.requestId
+        );
+      }));
   const activity =
     newNeedsInput ||
     (previous?.status === "running" && input.status !== "running") ||
-    input.session.blocks.some((block) => {
+    anyCandidate((block) => {
       if (block.role !== "assistant") return false;
-      const old = oldBlocks.get(block.id);
+      const old = oldBlock(block.id);
       return !old || old.text !== block.text;
     });
   const owner = previous && !metadataWrite ? previous : input;

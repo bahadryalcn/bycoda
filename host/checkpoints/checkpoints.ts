@@ -14,6 +14,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { dirname, join, resolve, relative } from "node:path";
+import { forEachConcurrent } from "../../src/shared/lib/concurrent";
 import { execFileAsync as exec } from "../../src/shared/lib/processExecution.node";
 import type {
   CheckpointFileDiff,
@@ -116,6 +117,10 @@ async function git(cwd: string, args: string[], index?: string): Promise<Buffer>
   });
   return result.stdout as Buffer;
 }
+const repositoryPrefix = (cwd: string) =>
+  git(cwd, ["rev-parse", "--show-prefix"]).then((value) => value.toString().trimEnd());
+/** Files whose stats are computed at once; each one runs several git processes. */
+const STATUS_CONCURRENCY = 4;
 const head = (cwd: string) =>
   git(cwd, ["rev-parse", "--verify", "HEAD"]).then(
     (v) => v.toString().trim(),
@@ -841,35 +846,45 @@ export class HostCheckpoints {
         record.head === (await head(record.cwd)) &&
         !(await this.active(session, record.cwd)).length &&
         !(await this.leases.active(record.cwd));
-      const files = await Promise.all(
-        Object.entries(record.files).map(async ([path, pair]) => {
-          const diff = await this.diff(record.cwd, path, pair);
-          return {
-            path: resolve(record.cwd, path),
-            relative: path,
-            status: !pair.before ? "untracked" : !pair.after ? "deleted" : "modified",
-            exact: pair.exact,
-            undoable: safe && (await this.restorable(record, path, pair)),
-            ...diff.stats,
-          };
-        }),
-      );
+      // Each file spawns several git processes; a bounded pool keeps a large turn from
+      // starting them all at once, and one prefix lookup serves every file.
+      let prefixLookup: Promise<string> | undefined;
+      const prefix = () => (prefixLookup ??= repositoryPrefix(record.cwd));
+      const entries = Object.entries(record.files);
+      const files: CheckpointStatus["files"] = new Array(entries.length);
+      await forEachConcurrent(entries, STATUS_CONCURRENCY, async ([path, pair], index) => {
+        const diff = await this.diff(record.cwd, path, pair, prefix);
+        files[index] = {
+          path: resolve(record.cwd, path),
+          relative: path,
+          status: !pair.before ? "untracked" : !pair.after ? "deleted" : "modified",
+          exact: pair.exact,
+          undoable: safe && (await this.restorable(record, path, pair)),
+          ...diff.stats,
+        };
+      });
       return { files, expectedCheckpoint: checkpointToken(record, generation) };
     });
   }
-  private async contents(cwd: string, path: string, blob: Blob, raw?: string) {
+  private async contents(
+    cwd: string,
+    path: string,
+    blob: Blob,
+    raw?: string,
+    prefix?: () => Promise<string>,
+  ) {
     if (raw !== undefined) return Buffer.from(raw, "base64");
     if (!blob) return Buffer.alloc(0);
     const size = Number((await git(cwd, ["cat-file", "-s", blob.oid])).toString());
     if (size > MAX_BYTES) throw new Error("Checkpoint file is too large");
     // cat-file's filter path is repository-relative, unlike our checkpoint paths.
-    const prefix = (await git(cwd, ["rev-parse", "--show-prefix"])).toString().trimEnd();
-    return git(cwd, ["cat-file", "--filters", `--path=${prefix}${path}`, blob.oid]);
+    const repositoryPath = await (prefix?.() ?? repositoryPrefix(cwd));
+    return git(cwd, ["cat-file", "--filters", `--path=${repositoryPath}${path}`, blob.oid]);
   }
-  private async diff(cwd: string, path: string, pair: Pair) {
+  private async diff(cwd: string, path: string, pair: Pair, prefix?: () => Promise<string>) {
     const [original, current] = await Promise.all([
-      this.contents(cwd, path, pair.before, pair.rawBefore),
-      this.contents(cwd, path, pair.after, pair.rawAfter),
+      this.contents(cwd, path, pair.before, pair.rawBefore, prefix),
+      this.contents(cwd, path, pair.after, pair.rawAfter, prefix),
     ]);
     const binary = original.includes(0) || current.includes(0);
     // Git computes the actual counts on two private files; no real index is used.
@@ -894,7 +909,7 @@ export class HostCheckpoints {
           join(scratch, "before"),
           join(scratch, "after"),
         ],
-        { encoding: "utf8", windowsHide: true },
+        { encoding: "utf8", windowsHide: true, timeout: 60_000, maxBuffer: 1024 * 1024 },
       ).catch((e: { code?: number; stdout?: string }) => {
         if (e.code === 1) return { stdout: e.stdout ?? "" };
         throw e;
