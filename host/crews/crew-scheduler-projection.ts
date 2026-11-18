@@ -21,6 +21,8 @@ export async function initializeCrewSchedulerProjection(store: HostStore): Promi
       CREATE TABLE IF NOT EXISTS crew_finish_sequence (singleton INTEGER PRIMARY KEY CHECK(singleton=1), value INTEGER NOT NULL);
       INSERT OR IGNORE INTO crew_finish_sequence(singleton,value) VALUES(1,0);
       CREATE INDEX IF NOT EXISTS crew_runs_v2_active ON crew_runs_v2(status, coordinator_session_id, ordinal);
+      CREATE INDEX IF NOT EXISTS crew_runs_v2_owner_coordinator ON crew_runs_v2(coordinator_session_id)
+        WHERE status<>'finished';
       DROP TRIGGER IF EXISTS crew_scheduler_insert_v1;
       DROP TRIGGER IF EXISTS crew_scheduler_update_v1;
       DROP TRIGGER IF EXISTS crew_scheduler_delete_v1;`);

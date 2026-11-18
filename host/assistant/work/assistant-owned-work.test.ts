@@ -3,6 +3,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HostStore } from "../../store";
+import { HostEngine } from "../../engine";
+import { initializeCrewSchedulerProjection } from "../../crews/crew-scheduler-projection";
+import { HostAssistantQuickAutomations } from "./assistant-quick-automations";
 import { assistantProfileDefaults } from "../profile-defaults";
 import {
   assistantOwnedSessionAllowed,
@@ -11,13 +14,117 @@ import {
   stopAssistantOwnedWork,
 } from "./assistant-owned-work";
 import type { HostTask } from "../../../src/features/tasks/model/hostTasks";
-import type { HostTasks } from "../../tasks/tasks";
+import { HostTasks } from "../../tasks/tasks";
 import type { HostGoals } from "../../goals/goals";
 import type { HostAutomations } from "../../automations/automations";
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => {
   for (const close of cleanups.splice(0)) await close();
+});
+
+it("seeks existing worker, reviewer, crew and receipt rows through ownership indexes", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "assistant-owned-indexes-"));
+  const store = new HostStore(join(directory, "host.db"));
+  const engine = new HostEngine(store, {});
+  let tasks: HostTasks | undefined;
+  cleanups.push(async () => {
+    await tasks?.close();
+    await engine.close();
+    await store.close();
+    rmSync(directory, { recursive: true, force: true, maxRetries: 5 });
+  });
+  await store.ready;
+  await store.db.exec("CREATE TABLE tasks(id TEXT PRIMARY KEY,value TEXT NOT NULL)");
+  const task = {
+    id: "legacy-task",
+    projectId: "p",
+    createdAt: 5,
+    updatedAt: 5,
+    status: "queued",
+    title: "Legacy task",
+    sessionId: "legacy-worker",
+    reviewer: { sessionId: "legacy-reviewer" },
+  };
+  await store.db.prepare("INSERT INTO tasks VALUES(?,?)").run(task.id, JSON.stringify(task));
+  await store.db.prepare("INSERT INTO metadata VALUES(?,?)").run(
+    "voice-work:legacy-receipt",
+    JSON.stringify({
+      ownership: {
+        kind: "task",
+        id: task.id,
+        projectId: task.projectId,
+        threadId: "room",
+        state: "completed",
+        entityCreatedAt: task.createdAt,
+      },
+    }),
+  );
+  tasks = new HostTasks(store, engine);
+  const quick = new HostAssistantQuickAutomations(store, {
+    automations: () => {
+      throw new Error("No automation writes expected");
+    },
+    authorized: async () => false,
+  });
+  await Promise.all([tasks.ready, quick.ready, initializeCrewSchedulerProjection(store)]);
+  await store.db.exec(`
+    CREATE TABLE assistant_jobs(id TEXT PRIMARY KEY,value TEXT NOT NULL,deleted_at INTEGER);
+    CREATE TABLE automations(id TEXT PRIMARY KEY,value TEXT NOT NULL);
+    CREATE TABLE automation_runs(id TEXT PRIMARY KEY,automation_id TEXT,value TEXT NOT NULL);
+    INSERT INTO assistant_jobs VALUES('quick','{"id":"quick","projectId":"p"}',NULL);
+    INSERT INTO assistant_quick_automations VALUES('quick','{"state":"completed","automationId":"schedule","automationCreatedAt":7}');
+    INSERT INTO automations VALUES('schedule','{"createdAt":7}');
+    INSERT INTO automation_runs VALUES('attempt','schedule','{"taskId":"automated-task"}');
+  `);
+  const automationTask = {
+    id: "automated-task",
+    source: "automation",
+    projectId: "p",
+    automationId: "schedule",
+    automationRunId: "attempt",
+  } as HostTask;
+  const profile = {
+    ...assistantProfileDefaults,
+    enabled: true,
+    setupComplete: true,
+    permissionLevel: "everything" as const,
+  };
+  const prepare = vi.spyOn(store.db, "prepare");
+  expect(await assistantOwnedSessionAllowed(store, "manual", profile, true)).toBe(true);
+  expect(prepare.mock.calls.some(([sql]) => sql.includes("voice-work:%"))).toBe(false);
+  expect(
+    await assistantOwnedSessionAllowed(store, "legacy-worker", assistantProfileDefaults, true),
+  ).toBe(false);
+  expect(
+    await assistantOwnedSessionAllowed(store, "legacy-reviewer", assistantProfileDefaults, true),
+  ).toBe(false);
+  expect(await assistantOwnedTaskAllowed(store, automationTask, profile, true)).toBe(false);
+  expect(await assistantOwnedTaskAllowed(store, automationTask, profile, false)).toBe(true);
+  expect(
+    await assistantOwnedTaskAllowed(
+      store,
+      { ...automationTask, automationRunId: "unlinked" },
+      profile,
+      false,
+    ),
+  ).toBe(false);
+  const statements = prepare.mock.calls.map(([sql]) => sql);
+  prepare.mockRestore();
+  const queries = [
+    ["$.reviewer.sessionId", ["tasks_owner_session", "tasks_owner_reviewer_session"]],
+    ["coordinator_session_id=?", ["crew_runs_v2_owner_coordinator"]],
+    ["voice-work:%", ["metadata_voice_work_owner"]],
+    ["FROM assistant_quick_automations q", ["assistant_quick_automations_owner"]],
+  ] as const;
+  for (const [fragment, indexes] of queries) {
+    const query = statements.find((sql) => sql.includes(fragment))!;
+    expect(query).toBeDefined();
+    const parameters = Array.from(query.matchAll(/\?/g), () => "lookup");
+    const plan = await store.db.prepare(`EXPLAIN QUERY PLAN ${query}`).all(...parameters);
+    const details = plan.map((row) => String(row.detail)).join("\n");
+    for (const index of indexes) expect(details).toContain(`USING INDEX ${index}`);
+  }
 });
 it("binds a Room Crew coordinator and members to the actual linked Task creation", async () => {
   const directory = mkdtempSync(join(tmpdir(), "assistant-owned-crew-"));
