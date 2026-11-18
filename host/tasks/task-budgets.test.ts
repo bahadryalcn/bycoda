@@ -1,5 +1,5 @@
 import { forEachAsync } from "../async-collections";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { HostStore } from "../store";
 import { HostTaskBudgets, type BudgetRunRegistration } from "./task-budgets";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -523,6 +523,41 @@ describe("durable task/goal family budgets", () => {
           role: "reviewer",
         }))(),
     ).rejects.toThrow("different task");
+  });
+  it("does not reload settled run transcripts until their session changes", async () => {
+    const s = await setup();
+    await s.save("session", "run");
+    await s.store.transaction(() =>
+      admitRunDuration(s.store, "session", "run", s.clock.now, s.clock.now),
+    );
+    await s.register();
+    s.clock.now += 30_000;
+    await finishRunDuration(s.store, "session", "run", s.clock.now, s.clock.now);
+    await s.finish("session", { durationMs: 30_000, metrics: reported, cost: 1 });
+    const settled = await s.budgets.read({ taskId: "task" });
+    expect(settled).toMatchObject({ runningRuns: 0, tokens: 89, reportedCostUsd: 1 });
+    const transcripts = vi.spyOn(s.store, "session");
+    expect(await s.budgets.read({ taskId: "task" })).toMatchObject({
+      agentMinutes: settled.agentMinutes,
+      tokens: 89,
+      reportedCostUsd: 1,
+    });
+    expect(transcripts).not.toHaveBeenCalled();
+    const current = await s.store.session("session");
+    await s.store.save(
+      {
+        ...current,
+        revision: current.revision + 1,
+        session: {
+          ...current.session,
+          usage: { costUsd: 3, apiMs: 0, lastProcessCostUsd: 3, lastProcessApiMs: 0 },
+        },
+      },
+      {},
+    );
+    transcripts.mockClear();
+    expect((await s.budgets.read({ taskId: "task" })).reportedCostUsd).toBe(3);
+    expect(transcripts).toHaveBeenCalledTimes(1);
   });
   it("can enrich host-resolved parent lineage once without duplicating old runs", async () => {
     const s = await setup();
