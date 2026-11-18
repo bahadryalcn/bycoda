@@ -15,15 +15,6 @@ const options = {
   sourcemap: true,
 };
 await build({
-  bundle: true,
-  platform: "browser",
-  format: "iife",
-  target: "es2020",
-  minify: true,
-  entryPoints: ["host/live-games/overlay/browser.ts"],
-  outfile: "build/host/live-games-overlay.js",
-});
-await build({
   ...options,
   entryPoints: ["host/cli.ts"],
   outfile: "build/host/bycoda-host.mjs",
@@ -59,4 +50,14 @@ await build({
   ...options,
   entryPoints: ["host/session-read-helper.mjs"],
   outfile: "build/host/session-read-helper.mjs",
+});
+// The browser overlay stays last: the first plan must remain the Node ESM Host bundle.
+await build({
+  bundle: true,
+  platform: "browser",
+  format: "iife",
+  target: "es2020",
+  minify: true,
+  entryPoints: ["host/live-games/overlay/browser.ts"],
+  outfile: "build/host/live-games-overlay.js",
 });
