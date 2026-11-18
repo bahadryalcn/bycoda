@@ -106,6 +106,22 @@ describe("validation", () => {
     expect(r.git("branch", "--show-current")).toBe("main");
   });
 
+  it("snapshots a repository whose uncommitted diff exceeds 2 MiB and still sees edits", async () => {
+    const r = repo();
+    const line = "x".repeat(99) + "\n";
+    r.commit("big.txt", "base\n");
+    r.write("big.txt", line.repeat(30_000));
+    const snapshot = (await r.run("git_management_snapshot")) as { token: string };
+    expect(snapshot.token).toMatch(/^[a-f0-9]{64}$/);
+    expect(((await r.run("git_management_snapshot")) as { token: string }).token).toBe(
+      snapshot.token,
+    );
+    r.write("big.txt", line.repeat(30_000) + "tail\n");
+    await expect(
+      r.run("git_delete_tag", { name: "missing", expectedSnapshot: snapshot.token }),
+    ).rejects.toThrow("Repository state changed");
+  });
+
   it("deletes an annotated tag only with its exact reviewed object identity", async () => {
     const r = repo();
     r.commit("file.txt", "base\n");

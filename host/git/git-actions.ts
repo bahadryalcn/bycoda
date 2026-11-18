@@ -9,6 +9,7 @@ import {
 import { isAbsolute, join, relative, resolve as resolvePath, sep } from "node:path";
 import { readFile, realpath } from "node:fs/promises";
 import { realpathSync } from "node:fs";
+import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   hostConflictStages,
@@ -665,28 +666,69 @@ const HEAD_PRESERVING: ReadonlySet<string> = new Set<GitActionCommand>([
   "git_fetch",
 ]);
 
+const SNAPSHOT_MS = 10_000;
+const SNAPSHOT_REFS_BYTES = 2 * 1024 * 1024;
+
+/** Hashes a git command's output as it streams, so large diffs and indexes never
+ * have to fit in a buffer. Fails with the command that could not be read. */
+function gitOutputDigest(root: string, args: string[]): Promise<string> {
+  let timedOut = false;
+  const failed = () =>
+    new Error(
+      `Git management snapshot could not read \`git ${args.join(" ")}\`${timedOut ? ` within ${SNAPSHOT_MS / 1000} seconds` : ""}. No action was executed.`,
+    );
+  return new Promise((resolve, reject) => {
+    const hash = createHash("sha256");
+    const child = spawn("git", ["--no-pager", ...args], {
+      cwd: root,
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "ignore"],
+      env: {
+        ...process.env,
+        LC_ALL: "C.UTF-8",
+        GIT_OPTIONAL_LOCKS: "0",
+        GIT_TERMINAL_PROMPT: "0",
+      },
+    });
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill();
+    }, SNAPSHOT_MS);
+    child.stdout.on("data", (chunk: Buffer) => hash.update(chunk));
+    child.once("error", () => {
+      clearTimeout(timer);
+      reject(failed());
+    });
+    child.once("close", (code) => {
+      clearTimeout(timer);
+      if (code === 0) resolve(hash.digest("hex"));
+      else reject(failed());
+    });
+  });
+}
+
 /** An opaque receipt: credentials in remote configuration never leave the host. */
 export async function gitManagementSnapshot(
   root: string,
 ): Promise<{ token: string; refs: Record<string, string> }> {
   await ensureWorkTree(root);
-  const read = (args: string[]) =>
-    git(root, args, { timeout: 10_000, maxBuffer: 2 * 1024 * 1024 }).catch(() => {
-      throw new Error(
-        "Git management snapshot is unavailable or exceeds the safe size/time limit. No action was executed.",
-      );
-    });
+  const refsArgs = ["for-each-ref", "--format=%(refname)%00%(objectname)%00%(symref)"];
   const parts = await Promise.all([
     realpath(root),
     gitOrNull(root, ["rev-parse", "--verify", "HEAD"]),
     gitOrNull(root, ["symbolic-ref", "--quiet", "HEAD"]),
-    read(["for-each-ref", "--format=%(refname)%00%(objectname)%00%(symref)"]),
-    read(["config", "--list", "--null", "--includes"]),
-    read(["status", "--porcelain=v1", "-z", "--untracked-files=all"]),
-    read(["diff", "--no-ext-diff", "--binary", "--"]),
-    read(["diff", "--cached", "--no-ext-diff", "--binary", "--"]),
-    read(["remote", "-v"]),
-    read(["ls-files", "--stage", "-z"]),
+    // Refs are parsed and returned, so they stay buffered and bounded.
+    git(root, refsArgs, { timeout: SNAPSHOT_MS, maxBuffer: SNAPSHOT_REFS_BYTES }).catch(() => {
+      throw new Error(
+        "Git management snapshot has too many references or could not read them. No action was executed.",
+      );
+    }),
+    gitOutputDigest(root, ["config", "--list", "--null", "--includes"]),
+    gitOutputDigest(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]),
+    gitOutputDigest(root, ["diff", "--no-ext-diff", "--binary", "--"]),
+    gitOutputDigest(root, ["diff", "--cached", "--no-ext-diff", "--binary", "--"]),
+    gitOutputDigest(root, ["remote", "-v"]),
+    gitOutputDigest(root, ["ls-files", "--stage", "-z"]),
   ]);
   const refs: Record<string, string> = Object.fromEntries(
     (parts[3] ?? "")
