@@ -120,7 +120,7 @@ if (facebookFixture) {
     platform: "facebook",
     platformId: "123",
     accountType: "page",
-    connection: "oauth",
+    connection: new URLSearchParams(location.search).has("facebook-browser") ? "browser" : "oauth",
     name: "Fixture Facebook Page",
     connected: true,
     accessApproved: true,

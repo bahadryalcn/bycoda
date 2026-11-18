@@ -135,6 +135,33 @@ for (const theme of ["light", "dark"])
         .click();
       await expect(page.getByRole("button", { name: "Özel yanıt gönder" })).toBeVisible();
       await capture("moderation");
+
+      await page.goto(
+        "/tests/browser/social/social.html?facebook-page&facebook-browser&signup-create",
+      );
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await sections(page).getByRole("tab", { name: "Hesaplar ve Ayarlar" }).click();
+      await page.getByRole("button", { name: /Fixture Facebook Page/ }).click();
+      await detail
+        .locator("summary")
+        .filter({ hasText: /^Profili düzenle$/ })
+        .click();
+      await expect(detail.getByLabel("Kullanıcı adı", { exact: true })).toBeVisible();
+      await capture("browser-profile");
+      await page.keyboard.press("Escape");
+      await page.getByRole("button", { name: "Hesap bağla", exact: true }).click();
+      await page.getByRole("button", { name: /^Platform: / }).click();
+      await page.getByRole("option", { name: "Facebook", exact: true }).click();
+      await page.getByRole("button", { name: /^Nasıl bağlanılacak: / }).click();
+      await page.getByRole("option", { name: "Tarayıcıda oturum açma" }).click();
+      await page
+        .getByRole("button", { name: /Bunun yerine yeni bir Facebook hesabı oluştur/ })
+        .click();
+      await expect(page.getByRole("dialog").getByLabel("Hakkında", { exact: true })).toBeVisible();
+      await capture("signup");
     });
   }
 
