@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { surfaceCaptureRules, surfaceSequences } from "./social-surface-data";
+import { snapchatFixtureAccounts, snapchatFixtureResult, storyId } from "./snapchat-data";
 import { createRoot } from "react-dom/client";
 import {
   LOCAL_MODEL_SOURCE,
@@ -48,6 +49,7 @@ import type { SocialList } from "../../../src/features/social/model/audience";
 import "../../../src/styles/index.css";
 import type { SocialProgram } from "../../../src/features/social/model/socialProgram";
 const programFixture = new URLSearchParams(location.search).has("programs");
+const snapchatUiFixture = new URLSearchParams(location.search).has("snapchat-ui");
 const telegramChannelFixture = new URLSearchParams(location.search).has("telegram-channel");
 const programRecords: SocialProgram[] = [];
 const browserWorkflows: import("../../../src/features/social/model/socialBrowser").SocialBrowserWorkflow[] =
@@ -57,8 +59,12 @@ function fixtureRegistrationProgress(
   platform: string,
   profile: SocialRegistrationProfile,
 ): SocialRegistrationProgress {
-  const fields: ("email" | "birthdate")[] =
-    platform === "tiktok" ? ["email", "birthdate"] : ["email"];
+  const fields: SocialRegistrationProgress["requiredFields"] =
+    platform === "snapchat" && snapchatUiFixture
+      ? ["givenName", "familyName", "phone", "birthdate"]
+      : platform === "tiktok"
+        ? ["email", "birthdate"]
+        : ["email"];
   const missing = fields.filter((field) => !profile[field]);
   return {
     status: missing.length ? "needs_fields" : "awaiting_owner",
@@ -131,7 +137,8 @@ let xProfileFixture = {
 const pageProfileFixtures = new Map<string, typeof xProfileFixture>();
 const finalRegistrationReviews = new Map<string, SocialRegistrationReview>();
 const telegramChannelReviews = new Map<string, SocialTelegramChannelReview>();
-if (new URLSearchParams(location.search).has("signup-create")) browserWrites = true;
+if (snapchatUiFixture || new URLSearchParams(location.search).has("signup-create"))
+  browserWrites = true;
 if (telegramChannelFixture) {
   browserWrites = true;
   configured = true;
@@ -1301,6 +1308,16 @@ Object.assign(window, {
       if (command === "plugin:event|listen") return 1;
       if (command === "social_authority_status") return null;
       if (command === "remote_request") {
+        if (snapchatUiFixture && args.method === "social.browser.profile.delete-story") {
+          const input = args.params as { accountId: string; storyId: string; confirm: string };
+          if (
+            input.accountId !== "snapchat-browser" ||
+            input.storyId !== storyId ||
+            input.confirm !== "DELETE_SNAPCHAT_STORY"
+          )
+            throw new Error("Wrong Snapchat Story target.");
+          return { storyId, deleted: true };
+        }
         if (args.method === "environment.describe")
           return {
             protocolVersion: 1,
@@ -1790,6 +1807,8 @@ Object.assign(window, {
               releaseAction = (fail) =>
                 fail ? reject(new Error("Fixture request rejected.")) : resolve();
             });
+          if (snapchatUiFixture && params.action.startsWith("snapchat."))
+            return snapchatFixtureResult(params.action, params.input);
           if (params.action === "programs.media-preview") {
             const uploadId = String(params.input?.uploadId ?? "");
             const upload = mediaUploads.get(uploadId);
@@ -2496,6 +2515,12 @@ const fixtureModelSource: ModelSource = {
 };
 if (new URLSearchParams(location.search).has("extra-seeded")) {
   (window as unknown as { socialFixtureSeed: () => void }).socialFixtureSeed();
+}
+if (snapchatUiFixture) {
+  snapshot.accounts = snapchatFixtureAccounts;
+  snapshot.capabilities = Object.fromEntries(
+    snapshot.accounts.map((account) => [account.id, accountCapabilities(account)]),
+  );
 }
 if (new URLSearchParams(location.search).has("inbox-surfaces")) {
   snapshot.threads[0].events.push({

@@ -30,6 +30,7 @@ import {
 import { draftFromCampaign, emptyDraft } from "./contentDraft";
 import { useContentData } from "./useContentData";
 import { useContentDraft } from "./useContentDraft";
+import { SnapchatContentList } from "./SnapchatContentList";
 import "./content.css";
 
 const OUTCOME_TEXT: Record<EditorOutcome, () => string> = {
@@ -269,6 +270,22 @@ export function ContentScreen({
         onLoadMore={data.loadMore}
         onRetry={data.loadMore}
       />
+      {snapshot ? (
+        <SnapchatContentList
+          key={projectId}
+          client={client}
+          accounts={accounts.filter(
+            (account) =>
+              account.platform === "snapchat" &&
+              account.accountType === "public_profile" &&
+              (!projectId || account.grants[projectId]?.includes("read")),
+          )}
+          capabilities={snapshot.capabilities}
+          executorId={snapshot.executorId}
+          projectId={projectId}
+          disabled={!active || !shellState.hostOnline || shellState.unreachable}
+        />
+      ) : null}
       {open && projectId ? (
         <ContentEditor
           key={workspace.key}

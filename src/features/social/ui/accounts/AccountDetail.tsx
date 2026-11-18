@@ -18,6 +18,8 @@ import { BrowserSettings } from "./BrowserSettings";
 import { ReplyRules } from "./ReplyRules";
 import { accountHealth, accountModeText } from "./accountsModel";
 import { useAccountWrite } from "./useAccountWrite";
+import { SnapchatProfilePanel } from "./SnapchatProfilePanel";
+import { snapchatAccountKey } from "../common/snapchatAccount";
 import "./accounts.css";
 
 const HEALTH_TONE: Record<"ok" | "warn" | "error", BadgeTone> = {
@@ -130,6 +132,18 @@ export function AccountDetail({
         disabled={disabled}
         onChanged={onChanged}
       />
+      {account.platform === "snapchat" &&
+      (account.accountType === "public_profile" || account.connection === "browser") ? (
+        <SnapchatProfilePanel
+          key={snapchatAccountKey(client, account)}
+          client={client}
+          account={account}
+          capabilities={capabilities}
+          disabled={disabled}
+          onThisComputer={onThisComputer}
+          onChanged={onChanged}
+        />
+      ) : null}
       <Disclosure
         summary={
           <span className="social-detail-topic">
