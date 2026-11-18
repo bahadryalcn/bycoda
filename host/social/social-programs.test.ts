@@ -10,6 +10,7 @@ import type { SocialAccount, SocialJob } from "../../src/features/social/model/s
 import {
   defaultProgram,
   type ProgramDetail,
+  type ProgramFeatures,
   type SocialProgram,
 } from "../../src/features/social/model/socialProgram";
 import type { SocialAdapters } from "../../src/integrations/social/adapter";
@@ -598,14 +599,40 @@ describe("AI campaign programs through SocialService", () => {
     expect(f.send).toHaveBeenCalledTimes(1);
     expect((await f.detail(p)).occurrences[0].targets[0].jobId).toBe(id);
   });
-  it("rejects X repeated content and requires publication review for LinkedIn", async () => {
+  it("rejects X repeated content", async () => {
     const f = await fixture();
     f.config.strategy = "repeat";
     await expect(f.create()).rejects.toThrow("X");
+  });
+  it("publishes an owner-activated LinkedIn occurrence under publish autonomy", async () => {
+    const f = await fixture();
     const linked = await f.account("linkedin");
     f.config.accountIds = [linked.id];
-    f.config.strategy = "unique";
     const p = await f.create();
+    await f.call("autonomy.set", {
+      accountId: linked.id,
+      policy: { levels: { publish: "autonomous" } },
+      confirm: "ENABLE_AUTONOMY",
+    });
+    await f.activate(p);
+    await f.call("programs.generate", { id: p.id });
+    await f.service.programs.idle();
+    expect(f.send).not.toHaveBeenCalled();
+    await f.call("execution.enable", { confirm: "ENABLE_EXTERNAL_SENDS" });
+    await f.service.tick();
+    await f.service.tick();
+    expect(f.send).toHaveBeenCalledTimes(1);
+    const jobs = await f.call<SocialJob[]>("jobs.status");
+    expect(jobs[0].approval).toMatchObject({ kind: "autonomy", accountId: linked.id });
+    const features = await f.call<ProgramFeatures>("programs.features");
+    expect(features.formats[linked.id].requiresReview).toBe(false);
+  });
+  it("requires the configured publication approval for a LinkedIn program", async () => {
+    const f = await fixture();
+    const linked = await f.account("linkedin");
+    f.config.accountIds = [linked.id];
+    const config = { ...f.config, approval: { mode: "approved", steps: ["publish"] } };
+    const p = await f.call<SocialProgram>("programs.configure", { config });
     await f.activate(p);
     await f.call("programs.generate", { id: p.id });
     await f.service.programs.idle();
