@@ -23,6 +23,7 @@ import { tiktokCapabilities } from "./capabilities/tiktok";
 import { whatsappCapabilities } from "./capabilities/whatsapp";
 import { X_BROWSER_SCOPES, xCapabilities } from "./capabilities/x";
 import { youtubeCapabilities } from "./capabilities/youtube";
+import { YOUTUBE_CAPABILITIES } from "./capabilities/youtube-operations";
 
 export { SOCIAL_DOCUMENTS, X_BROWSER_OPERATIONS, X_BROWSER_SCOPES };
 export type { CapabilityOperation, CapabilityRequirement, OperationRequirements, SocialCapability };
@@ -62,9 +63,9 @@ const isNotYet = (operation: CapabilityOperation): boolean =>
   (NOT_YET_OPERATIONS as readonly string[]).includes(operation);
 
 function capabilityOperations(platform: SocialPlatform) {
-  return platform === "x"
-    ? [...CAPABILITY_OPERATIONS, ...X_CAPABILITY_OPERATIONS]
-    : CAPABILITY_OPERATIONS;
+  if (platform === "x") return [...CAPABILITY_OPERATIONS, ...X_CAPABILITY_OPERATIONS];
+  if (platform === "youtube") return [...CAPABILITY_OPERATIONS, ...YOUTUBE_CAPABILITIES];
+  return CAPABILITY_OPERATIONS;
 }
 
 /** Selecting polling requests both read products. Existing grants may enable either channel independently. */
@@ -108,7 +109,7 @@ function browserCapabilities(account: SocialAccount, now: number): SocialCapabil
         reason: NOT_YET[operation as keyof typeof NOT_YET].reason,
         reasonCode: "unsupported.not_yet",
       };
-    if (!supported.includes(operation))
+    if (!supported.includes(operation) && !(account.platform === "youtube" && notes[operation]))
       return {
         ...row,
         status: "unsupported",
@@ -147,7 +148,12 @@ function apiCapabilities(account: SocialAccount, now: number): SocialCapability[
   );
   const expired = account.expiresAt !== undefined && account.expiresAt <= now;
   return capabilityOperations(account.platform).map((operation): SocialCapability => {
-    const requirement: CapabilityRequirement = requirements[operation];
+    const requirement: CapabilityRequirement = requirements[operation] ?? {
+      scopes: [],
+      unsupported: true,
+      reason: "This operation requires a verified YouTube browser connection.",
+      reasonCode: "youtube.browser_required",
+    };
     let status: SocialCapability["status"] = "available";
     let reason = requirement.reason;
     let reasonCode = "api.ready";

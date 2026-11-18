@@ -125,6 +125,12 @@ export function ContentScreen({
   };
 
   const isEmpty = !!snapshot && snapshot.campaigns.length === 0 && data.programs.length === 0;
+  const youtubeAccounts = accounts.filter(
+    (account) =>
+      account.platform === "youtube" && account.connected && account.connection !== "browser",
+  );
+  const youtubeAccount =
+    youtubeAccounts.find((account) => account.id === accountFilter) ?? youtubeAccounts[0];
   const days = view === "week" ? weekDays(anchor) : monthCells(anchor);
   const shift = (step: number) =>
     setAnchor((value) => (view === "week" ? shiftWeek(value, step) : shiftMonth(value, step)));
@@ -135,9 +141,9 @@ export function ContentScreen({
 
   return (
     <section className="content-screen">
-      {!isEmpty ? (
+      {!isEmpty || youtubeAccount ? (
         <div className="content-toolbar">
-          {projectId && !data.error && !data.loading ? (
+          {!isEmpty && projectId && !data.error && !data.loading ? (
             <SegmentedControl
               label={t("View")}
               selectionRole="radio"
@@ -150,7 +156,7 @@ export function ContentScreen({
               onValueChange={(value) => setView(value as CalendarView)}
             />
           ) : null}
-          {projectId && !data.error && !data.loading && view !== "list" ? (
+          {!isEmpty && projectId && !data.error && !data.loading && view !== "list" ? (
             <div className="content-range">
               <Button
                 variant="ghost"
@@ -178,15 +184,26 @@ export function ContentScreen({
             </div>
           ) : null}
           <span className="content-toolbar-primary">
-            <DisabledReason
-              variant="primary"
-              size="sm"
-              startIcon={<Plus className="icon-sm" aria-hidden />}
-              onClick={() => openNew()}
-              {...gateProps(newGate)}
-            >
-              {t("New post")}
-            </DisabledReason>
+            {youtubeAccount ? (
+              <Button
+                onClick={() =>
+                  onNavigate("accounts", { accountId: youtubeAccount.id, youtubeSection: "videos" })
+                }
+              >
+                {t("Videos and playlists")}
+              </Button>
+            ) : null}
+            {!isEmpty ? (
+              <DisabledReason
+                variant="primary"
+                size="sm"
+                startIcon={<Plus className="icon-sm" aria-hidden />}
+                onClick={() => openNew()}
+                {...gateProps(newGate)}
+              >
+                {t("New post")}
+              </DisabledReason>
+            ) : null}
           </span>
         </div>
       ) : null}

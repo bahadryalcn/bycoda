@@ -25,6 +25,10 @@ import {
 } from "../../src/features/connections/model/protocol";
 import type { SocialAccount, SocialCampaign } from "../../src/features/social/model/social";
 import { SOCIAL_TOOLS } from "../../src/features/social/model/socialTools";
+import {
+  YOUTUBE_READ_TOOLS,
+  YOUTUBE_WRITE_TOOLS,
+} from "../../src/features/social/model/youtubeManagement";
 import { SOCIAL_ACTION_MODULES } from "./core/social-action-modules";
 import { SOCIAL_LEGACY_ACTIONS, socialActionRegistry } from "./core/social-actions";
 describe("Social tool receipt transport", () => {
@@ -404,6 +408,7 @@ describe("Real local CLI and MCP transport", () => {
       const tools = responses.find((value) => value.id === 2).result.tools;
       // Explicit lists: the read set must match SOCIAL_READ_TOOLS (owner-reviewed classification).
       const reads = [
+        ...YOUTUBE_READ_TOOLS,
         "policy.get",
         "accounts.list",
         "capabilities.get",
@@ -444,6 +449,7 @@ describe("Real local CLI and MCP transport", () => {
         "x.spaces",
       ];
       const writes = [
+        ...YOUTUBE_WRITE_TOOLS,
         "accounts.request",
         "campaigns.create",
         "campaigns.schedule",

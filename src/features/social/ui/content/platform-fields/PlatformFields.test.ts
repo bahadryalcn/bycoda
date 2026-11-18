@@ -194,7 +194,7 @@ describe("YouTube options", () => {
 
   it("starts with no privacy chosen and the kids question unanswered as 'not for kids'", () => {
     render("youtube");
-    expect(element.querySelector<HTMLSelectElement>("select")!.value).toBe("");
+    expect(element.querySelector('button[aria-label="Privacy: Choose privacy"]')).not.toBeNull();
     expect(checkbox("Made for kids").checked).toBe(false);
     expect(checkbox("Contains altered or synthetic content").checked).toBe(false);
   });
@@ -203,7 +203,12 @@ describe("YouTube options", () => {
     render("youtube");
     setValue(field("Title"), "Launch day");
     expect(onChange).toHaveBeenLastCalledWith({ youtube: { title: "Launch day" } });
-    setValue(element.querySelector("select")!, "unlisted");
+    act(() => element.querySelector<HTMLButtonElement>('button[aria-label^="Privacy:"]')!.click());
+    act(() =>
+      [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')]
+        .find((item) => item.textContent === "Unlisted")!
+        .click(),
+    );
     expect(onChange).toHaveBeenLastCalledWith({ youtube: { privacy: "unlisted" } });
     act(() => checkbox("Made for kids").click());
     expect(onChange).toHaveBeenLastCalledWith({ youtube: { madeForKids: true } });

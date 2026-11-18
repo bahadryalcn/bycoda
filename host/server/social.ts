@@ -135,6 +135,7 @@ export async function createSocialRuntime(
       dependencies.decisionModels,
     );
   await social.ready;
+  social.youtubeBrowser = xBrowser.youtubeOperation.bind(xBrowser);
   social.setSessionAuthorityResolver(
     createSessionAuthorityResolver(
       dependencies.engine.store,

@@ -304,7 +304,7 @@ describe("YouTubeFields", () => {
       createElement(YouTubeFields, props("youtube", { value: { youtube: { title: "Launch" } } })),
     );
     expect(element.textContent).toContain("6 of 100 characters");
-    expect(select("Privacy").value).toBe("");
+    expect(element.querySelector('button[aria-label="Privacy: Choose privacy"]')).not.toBeNull();
     expect(checkbox("Made for kids")!.checked).toBe(false);
   });
 
@@ -312,7 +312,12 @@ describe("YouTubeFields", () => {
     render(createElement(YouTubeFields, props("youtube")));
     setInput(textInput("Title")!, "Launch day");
     expect(onChange).toHaveBeenLastCalledWith({ youtube: { title: "Launch day" } });
-    setSelect(select("Privacy"), "unlisted");
+    act(() => element.querySelector<HTMLButtonElement>('button[aria-label^="Privacy:"]')!.click());
+    act(() =>
+      [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')]
+        .find((item) => item.textContent === "Unlisted")!
+        .click(),
+    );
     expect(onChange).toHaveBeenLastCalledWith({ youtube: { privacy: "unlisted" } });
     act(() => checkbox("Made for kids")!.click());
     expect(onChange).toHaveBeenLastCalledWith({ youtube: { madeForKids: true } });
@@ -374,7 +379,7 @@ describe("XFields and PlatformFields", () => {
     expect(element.textContent).toContain("TikTok");
     expect(element.querySelector('select[aria-label="Who can see this video"]')).not.toBeNull();
     render(createElement(PlatformFields, props("youtube")));
-    expect(element.querySelector('select[aria-label="Privacy"]')).not.toBeNull();
+    expect(element.querySelector('button[aria-label^="Privacy:"]')).not.toBeNull();
     render(createElement(PlatformFields, props("reddit")));
     expect(element.textContent).toContain("Subreddit");
   });

@@ -24,6 +24,7 @@ import type { AiAction, AutonomyPolicy } from "../../../src/features/social/mode
 import type { SocialAccountRequest } from "../../../src/features/social/model/accountRequests";
 import type { InboxStatusRecord } from "../inbox/inbox-types";
 import { readInstagramMentions } from "../inbox/instagram-mentions";
+import type { YouTubeOperation } from "../../../src/features/social/model/youtubeManagement";
 
 /** Generic `social_records` kinds. Person and list have dedicated typed methods below. */
 export type AudienceRecordKind =
@@ -34,7 +35,8 @@ export type AudienceRecordKind =
   | "email-account"
   | "autonomy"
   | "inbox-status"
-  | "account-request";
+  | "account-request"
+  | "youtube-operation";
 
 export type AudienceRecordValue = {
   person: SocialPerson;
@@ -45,6 +47,13 @@ export type AudienceRecordValue = {
   autonomy: AutonomyPolicy;
   "inbox-status": InboxStatusRecord;
   "account-request": SocialAccountRequest;
+  "youtube-operation": YouTubeOperation & {
+    actorId: string;
+    projectId?: string;
+    channelId: string;
+    fingerprint: string;
+    submittedAt?: number;
+  };
 };
 
 export type Page<T> = { items: T[]; next?: string };
@@ -62,6 +71,8 @@ export const SYSTEM_COMMENTERS_RULE_ID = "system-commenters-capture";
 /** Idempotent DDL. social.ts also creates social_records and social_settings; repeating them is safe. */
 const AUDIENCE_DDL = `
   CREATE TABLE IF NOT EXISTS social_records (kind TEXT NOT NULL, id TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY(kind,id));
+  CREATE INDEX IF NOT EXISTS social_youtube_operations_account ON social_records(json_extract(value,'$.accountId'), id) WHERE kind='youtube-operation';
+  CREATE INDEX IF NOT EXISTS social_youtube_operations_outcome ON social_records(json_extract(value,'$.fingerprint'), json_extract(value,'$.status')) WHERE kind='youtube-operation';
   CREATE TABLE IF NOT EXISTS social_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS social_person_handles (account_id TEXT NOT NULL, platform_id TEXT NOT NULL, person_id TEXT NOT NULL, PRIMARY KEY(account_id, platform_id));
   CREATE INDEX IF NOT EXISTS social_person_handles_person ON social_person_handles(person_id);
@@ -141,6 +152,26 @@ export class SocialAudienceStore {
       .prepare("DELETE FROM social_records WHERE kind=? AND id=?")
       .run(kind, id);
     return Number(result.changes) > 0;
+  }
+
+  async listYouTubeOperations(accountId: string, cursor = "") {
+    const rows = await this.store.db
+      .prepare(
+        "SELECT id,value FROM social_records WHERE kind='youtube-operation' AND json_extract(value,'$.accountId')=? AND id>? ORDER BY id LIMIT ?",
+      )
+      .all(accountId, cursor, DEFAULT_PAGE + 1);
+    return pageOf(rows, DEFAULT_PAGE, (row) =>
+      parse<AudienceRecordValue["youtube-operation"]>(row),
+    );
+  }
+
+  async unresolvedYouTubeOperation(fingerprint: string) {
+    const row = await this.store.db
+      .prepare(
+        "SELECT value FROM social_records WHERE kind='youtube-operation' AND json_extract(value,'$.fingerprint')=? AND json_extract(value,'$.status') IN ('submitted','unknown') LIMIT 1",
+      )
+      .get(fingerprint);
+    return row ? parse<AudienceRecordValue["youtube-operation"]>(row) : undefined;
   }
 
   /** Keyset page ordered by id. The cursor is the last id of the previous page. */

@@ -5,7 +5,7 @@ import type {
   SocialMonitorChannel,
   Capability,
   SocialMedia,
-  SocialOperation,
+  BaseSocialOperation as SocialOperation,
 } from "../../features/social/model/social";
 import type { CaptureSource, CollectedPerson } from "./audience-types";
 import { META_RATE_LIMIT_CODES } from "./meta-codes";
@@ -295,6 +295,8 @@ export class SocialHttp {
         "open.tiktokapis.com",
         "businessapi.snapchat.com",
         "oauth.reddit.com",
+        // YouTube channel reports.
+        "youtubeanalytics.googleapis.com",
       ].includes(parsed.hostname)
     )
       throw new SocialPlatformError("denied");
@@ -344,6 +346,17 @@ export class SocialHttp {
           );
         if (reasons.includes("commentsDisabled"))
           throw new SocialPlatformError("comments_disabled");
+        // YouTube Live activation is an owner step in YouTube.
+        if (
+          parsed.pathname.startsWith("/youtube/v3/live") &&
+          reasons.some((reason: string) =>
+            ["liveStreamingNotEnabled", "livePermissionBlocked"].includes(reason),
+          )
+        )
+          throw new SocialPlatformError("needs_human", undefined, {
+            reasonCode: "youtube_live_not_enabled",
+            url: "https://www.youtube.com/features",
+          });
       }
       throw new SocialPlatformError("denied");
     }

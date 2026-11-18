@@ -5,6 +5,7 @@ import type { SecretValueStore } from "../../secrets/secret-store";
 import type { SocialAudienceStore } from "../store/social-audience-store";
 import type { SocialPrincipal } from "../social";
 import type { SocialServiceApi } from "./social-service-api";
+import type { YouTubeRuntime } from "../youtube/youtube-runtime";
 
 export type SocialActionContext = {
   service: SocialServiceApi;
@@ -18,6 +19,9 @@ export type SocialActionContext = {
   decisions?: DecisionService;
   /** Host vault for email credentials; undefined makes every email action refuse before sending. */
   emailSecrets?: SecretValueStore;
+  /** YouTube management uses the verified account's executor and its credential vault. */
+  youtube?: YouTubeRuntime;
+  youtubeRequestId?: string;
 };
 
 export type SocialActionSpec = {

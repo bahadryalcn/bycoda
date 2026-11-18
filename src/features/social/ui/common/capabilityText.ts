@@ -45,6 +45,33 @@ export function operationText(operation: SocialOperation): string {
       return t("X lists");
     case "x.spaces":
       return t("Spaces");
+    // YouTube management.
+    case "video.update":
+      return t("Video editing");
+    case "thumbnail.set":
+      return t("Video thumbnails");
+    case "playlists.manage":
+      return t("Playlists");
+    case "comment.moderate":
+      return t("Comment moderation");
+    case "comment.react":
+      return t("Comment reactions");
+    case "subscribe":
+      return t("Subscriptions");
+    case "channel.profile.update":
+      return t("Channel profile editing");
+    case "analytics.report":
+      return t("YouTube Analytics");
+    case "monetization.read":
+      return t("Estimated earnings");
+    case "monetization.status":
+      return t("Monetization status");
+    case "live.manage":
+      return t("Live broadcasts");
+    case "live.chat":
+      return t("Live chat");
+    case "community.publish":
+      return t("Community posts");
   }
 }
 
@@ -71,6 +98,7 @@ export function capabilityReasonText(row: CapabilityRow): string {
   if (code === "unsupported.platform") return t("Not available on this platform");
   if (code === "unsupported.not_yet") return t("Not available yet");
   if (code === "browser.no_recipe") return t("Not available in the browser yet");
+  if (code === "youtube.browser_required") return t("YouTube browser connection needed");
   if (code === "api.account_type_unsupported") return t("Not available for this account type");
   if (code.endsWith(".webhook.external_setup")) return t("Finish setup on the platform");
   switch (row.status) {

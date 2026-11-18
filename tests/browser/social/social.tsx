@@ -28,6 +28,7 @@ import type {
 import {
   accountCapabilities,
   X_BROWSER_SCOPES,
+  platformRequirements,
 } from "../../../src/integrations/social/capabilities";
 import { browserScopes } from "../../../src/integrations/social/browserCapabilities";
 import { contentSupport } from "../../../src/integrations/social/platformAdapters";
@@ -125,6 +126,31 @@ if (new URLSearchParams(location.search).has("x-paid-fixture")) {
     grants: { demo: ["read", "draft", "publish"] },
   });
   snapshot.capabilities = { x: accountCapabilities(x) };
+}
+if (new URLSearchParams(location.search).has("youtube-management")) {
+  const scopes = [
+    ...new Set(
+      Object.values(platformRequirements("youtube", "channel")).flatMap(
+        (item) => item?.scopes ?? [],
+      ),
+    ),
+  ];
+  for (const browser of [false, true]) {
+    const account = {
+      ...snapshot.accounts[0]!,
+      id: browser ? "youtube-browser" : "youtube-api",
+      platform: "youtube" as const,
+      platformId: (browser ? "web:youtube:" : "") + "UC" + "a".repeat(22),
+      accountType: "channel" as const,
+      connection: browser ? ("browser" as const) : ("oauth" as const),
+      name: browser ? "Studio fixture" : "YouTube fixture",
+      scopes: browser ? [] : scopes,
+      connected: true,
+      accessApproved: true,
+    };
+    snapshot.accounts.push(account);
+    snapshot.capabilities[account.id] = accountCapabilities(account);
+  }
 }
 const calls: { command: string; args: Record<string, unknown> }[] = [];
 let heldAction: string | undefined;
@@ -1800,6 +1826,72 @@ Object.assign(window, {
         }
         if (args.method === "social.request") {
           const params = args.params as { action: string; input?: Record<string, unknown> };
+          if (params.action === "youtube.videos.list")
+            return {
+              items: [
+                {
+                  id: "shortDemo01",
+                  title: "Summer release",
+                  privacy: "public",
+                  description: "Release notes and demo.",
+                },
+              ],
+            };
+          if (params.action === "youtube.video.update") return { status: "done" };
+          if (params.action === "youtube.video.delete")
+            throw new Error("Fixture YouTube deletion denied.");
+          if (params.action === "youtube.channel.read")
+            return {
+              name: "Fixture channel",
+              handle: "@fixture",
+              description: "Independent videos and live shows.",
+            };
+          if (params.action === "youtube.analytics.report")
+            return {
+              status: "ok",
+              rows: [{ views: 41820, estimatedMinutesWatched: 5228, subscribersGained: 164 }],
+            };
+          if (params.action === "youtube.quota.status")
+            return { day: "2026-11-18", units: 53, searchCalls: 1, uploadCalls: 0 };
+          if (params.action === "youtube.subscriptions.list")
+            return {
+              items: [
+                {
+                  id: "subscription-1",
+                  channelId: "UC" + "b".repeat(22),
+                  title: "Fixture subscriber",
+                },
+              ],
+            };
+          if (params.action === "youtube.broadcasts.list")
+            return {
+              broadcasts: [
+                {
+                  id: "liveDemo001",
+                  title: "Friday livestream",
+                  status: "ready",
+                  privacyStatus: "unlisted",
+                },
+              ],
+            };
+          if (params.action === "youtube.comments.list") return { comments: [] };
+          if (params.action === "youtube.operations.list")
+            return {
+              items: [
+                {
+                  id: "fixture-review",
+                  accountId: "youtube-api",
+                  action: "youtube.video.update",
+                  input: {
+                    accountId: "youtube-api",
+                    videoId: "shortDemo01",
+                    patch: { title: "Summer release" },
+                  },
+                  status: "awaiting_approval",
+                },
+              ],
+            };
+          if (params.action === "youtube.monetization.status") return { status: "needs_human" };
           if (params.action === heldAction)
             await new Promise<void>((resolve, reject) => {
               releaseAction = (fail) =>

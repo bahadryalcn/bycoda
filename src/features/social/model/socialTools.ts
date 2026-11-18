@@ -1,3 +1,5 @@
+import { YOUTUBE_READ_TOOLS, YOUTUBE_WRITE_TOOLS } from "./youtubeManagement";
+
 /**
  * MCP identifiers use underscores; host RPC/CLI keeps the dot contract.
  * Every entry is an AI-callable operation. Owner-only actions never appear here; the Host
@@ -83,6 +85,9 @@ export const SOCIAL_TOOLS = [
   "x.insights",
   "x.spaces",
   "x.lists",
+  // YouTube management.
+  ...YOUTUBE_READ_TOOLS,
+  ...YOUTUBE_WRITE_TOOLS,
 ] as const;
 export type SocialTool = (typeof SOCIAL_TOOLS)[number];
 export function socialToolName(tool: SocialTool): string {

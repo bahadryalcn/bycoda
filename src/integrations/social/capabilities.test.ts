@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { YOUTUBE_CAPABILITIES } from "./capabilities/youtube-operations";
 import {
   SOCIAL_API_ACCOUNT_TYPES,
   SOCIAL_PLATFORMS,
@@ -170,7 +171,11 @@ describe("capability table shape", () => {
         accountCapabilities(browserAccount(platform)),
       ]) {
         expect(caps.map((item) => item.operation).sort()).toEqual(
-          [...CAPABILITY_OPERATIONS, ...(platform === "x" ? X_CAPABILITY_OPERATIONS : [])].sort(),
+          [
+            ...CAPABILITY_OPERATIONS,
+            ...(platform === "x" ? X_CAPABILITY_OPERATIONS : []),
+            ...(platform === "youtube" ? YOUTUBE_CAPABILITIES : []),
+          ].sort(),
         );
         for (const item of caps) expect(item.reasonCode.length, platform).toBeGreaterThan(0);
       }
@@ -193,14 +198,14 @@ describe("capability table shape", () => {
   it("marks the new operations unsupported with unsupported.not_yet unless the API or a browser recipe opens them", () => {
     for (const platform of SOCIAL_PLATFORMS) {
       // API opens (per platform table; each platform test confirms it):
-      // YouTube: analytics, audience.collect, profile.read (youtube-capabilities.test.ts).
+      // YouTube: delete, analytics, audience.collect, profile.read.
       // Telegram bot: delete, audience.collect (capabilities/telegram.test.ts).
       // Meta: Facebook delete, analytics, audience.collect; Instagram analytics, audience.collect.
       // TikTok: analytics only (capabilities/tiktok.test.ts). X: delete, analytics, audience.collect, profile.read.
       // Reddit: delete, audience.collect, profile.read (capabilities/reddit.ts).
       const openedByApi =
         platform === "youtube"
-          ? ["analytics", "audience.collect", "profile.read"]
+          ? ["delete", "analytics", "audience.collect", "profile.read"]
           : platform === "tiktok"
             ? ["analytics"]
             : platform === "telegram"

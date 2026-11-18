@@ -36,7 +36,11 @@ import { BrowserSendLimiter } from "./browser/limiter";
 import { ExistingChromeBindings } from "./browser/existing-chrome-bindings";
 import { connectExistingChrome } from "./browser/existing-chrome-connect";
 import { runLayered, visibilityOf, type BrowserWiring } from "./browser-layers/wiring";
-import { PlatformBrowserSessions } from "./social-browser-platforms";
+import {
+  PlatformBrowserSessions,
+  type YouTubeBrowserOperationOptions,
+} from "./social-browser-platforms";
+import type { YouTubeBrowserRecipeContext } from "./browser/youtube-recipe-guards";
 import { SOCIAL_BROWSER_RECIPES } from "./social-browser-recipes";
 import {
   FacebookProfileActions,
@@ -805,6 +809,13 @@ export class XBrowserSessions {
       if (this.now() >= deadline) return undefined;
       await this.wait(250);
     }
+  }
+  youtubeOperation<T>(
+    account: SocialAccount,
+    run: (context: YouTubeBrowserRecipeContext) => Promise<T>,
+    options?: YouTubeBrowserOperationOptions,
+  ): Promise<T> {
+    return this.platforms.youtubeOperation(account, run, options);
   }
   adapter(): SocialAdapter {
     const platforms = this.platforms.adapter();

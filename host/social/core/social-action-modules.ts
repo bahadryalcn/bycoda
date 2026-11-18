@@ -6,6 +6,7 @@ import { browserLayerActions } from "../browser-layers/browser-layer-actions";
 import { inboxActions } from "../inbox/inbox-actions";
 import { instagramActions } from "../inbox/instagram-actions";
 import { outreachActions } from "../outreach/outreach-actions";
+import { youtubeActions } from "../youtube/youtube-actions";
 import type { SocialActionModule } from "./social-actions";
 import { createXActions } from "./x-actions";
 
@@ -22,4 +23,6 @@ export const SOCIAL_ACTION_MODULES: SocialActionModule[] = [
   instagramActions,
   // X API and owner browser handoffs.
   createXActions(),
+  // YouTube management.
+  youtubeActions,
 ];
