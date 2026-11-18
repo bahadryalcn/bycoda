@@ -6,6 +6,8 @@ export type MobileRoute = { endpoint: string; lanKey?: string };
 
 /** `tailscale status` and `serve status` run the CLI twice; describe is polled. */
 const TAILSCALE_TTL_MS = 60_000;
+/** A failed probe is tried again sooner than a good answer is refreshed. */
+const TAILSCALE_RETRY_MS = 5_000;
 
 /**
  * The ways a paired phone can reach this Host, advertised in
@@ -21,15 +23,32 @@ export function createMobileRoutes(dependencies: {
   let tailscale:
     | { at: number; pending: boolean; endpoint: Promise<string | undefined> }
     | undefined;
+  // The last definite answer. A CLI hiccup (`unavailable`, a throw) keeps it and retries
+  // soon; only `ready`, `setup-required` and `install-required` replace it.
+  let known: string | undefined;
+  let ttl = TAILSCALE_TTL_MS;
   return async function mobileRoutes(): Promise<MobileRoute[]> {
-    if (!tailscale || (!tailscale.pending && elapsedSince(tailscale.at) >= TAILSCALE_TTL_MS)) {
+    if (!tailscale || (!tailscale.pending && elapsedSince(tailscale.at) >= ttl)) {
       const probe = {
         at: monotonicNow(),
         pending: true,
         endpoint: dependencies
           .tailscale()
-          .then((status) => (status.state === "ready" ? status.endpoint : undefined))
-          .catch(() => undefined)
+          .then((status) => {
+            if (status.state === "ready") known = status.endpoint;
+            else if (status.state === "setup-required" || status.state === "install-required")
+              known = undefined;
+            else {
+              ttl = TAILSCALE_RETRY_MS;
+              return known;
+            }
+            ttl = TAILSCALE_TTL_MS;
+            return known;
+          })
+          .catch(() => {
+            ttl = TAILSCALE_RETRY_MS;
+            return known;
+          })
           .finally(() => {
             probe.pending = false;
             probe.at = monotonicNow();

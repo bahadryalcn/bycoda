@@ -36,7 +36,12 @@ function listener(savedPort: number, code?: string, failEphemeral = false) {
   return { server, listen };
 }
 
-async function fixture(plainCode?: string, tlsCode?: string, failEphemeral = false) {
+async function fixture(
+  plainCode?: string,
+  tlsCode?: string,
+  failEphemeral = false,
+  addresses = () => ["192.168.95.2", "192.168.2.108"],
+) {
   const directory = await mkdtemp(join(tmpdir(), "mobile-lan-recovery-"));
   const file = join(directory, "mobile-lan.json");
   const key = createLanIdentity().encoded;
@@ -53,7 +58,7 @@ async function fixture(plainCode?: string, tlsCode?: string, failEphemeral = fal
     file,
     "pc",
     () => 3776,
-    () => ["192.168.95.2", "192.168.2.108"],
+    addresses,
     () => plain.server,
     {
       tlsAuthority: {
@@ -145,4 +150,39 @@ it.each([
   await f.access.start();
   expect(await f.access.status()).toMatchObject({ state: "unavailable", reason });
   expect(JSON.parse(await readFile(f.file, "utf8"))).toMatchObject({ port: 63888, tlsPort: 64749 });
+});
+
+it("keeps the listener through a brief interface blip and restores a closed one within a poll", async () => {
+  let present = true;
+  const f = await fixture(undefined, undefined, false, () =>
+    present ? ["192.168.2.108"] : ["192.168.95.2"],
+  );
+  // Fake timers first: the address watcher's interval is created by start().
+  vi.useFakeTimers();
+  cleanups.push(async () => void vi.useRealTimers());
+  await f.access.start();
+  const tick = () => vi.advanceTimersByTimeAsync(5_000);
+  // Two polls without the address, then it is back: the listener is never closed.
+  present = false;
+  await tick();
+  await tick();
+  present = true;
+  await tick();
+  // The miss count restarted, so two more misses still keep it.
+  present = false;
+  await tick();
+  await tick();
+  expect(f.plain.server.close).not.toHaveBeenCalled();
+  expect(f.secure.server.close).not.toHaveBeenCalled();
+  // A third consecutive miss closes both listeners.
+  await tick();
+  expect(f.plain.server.close).toHaveBeenCalledOnce();
+  expect(f.secure.server.close).toHaveBeenCalledOnce();
+  expect(await f.access.status()).toMatchObject({ state: "unavailable" });
+  const binds = f.plain.listen.mock.calls.length;
+  // Once the address returns it is served again on the next 5 s poll.
+  present = true;
+  await tick();
+  expect(f.plain.listen.mock.calls.length).toBe(binds + 1);
+  expect(await f.access.status()).toMatchObject({ state: "ready" });
 });

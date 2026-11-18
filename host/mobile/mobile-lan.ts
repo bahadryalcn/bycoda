@@ -66,14 +66,27 @@ function addressForInterface(name: string): string | undefined {
   )?.address;
 }
 
+/** A gateway failure with its own status, so a phone can tell a retryable one from a
+ * rejection. Retry: 429, 502, 504. Fix first: 400 `clock-skew` (set the phone clock),
+ * 413 (send less). Re-pair or re-scan: 403, which covers anything that fails decryption,
+ * authentication, the boot epoch or replay protection. */
+class LanFailure extends Error {
+  constructor(
+    readonly status: 400 | 413 | 502 | 504,
+    readonly code: string,
+  ) {
+    super(code);
+  }
+}
+
 async function boundedBody(request: IncomingMessage): Promise<string> {
   if (Number(request.headers["content-length"]) > MOBILE_LAN_MAX_WIRE_BYTES)
-    throw new Error("Too large");
+    throw new LanFailure(413, "request-too-large");
   let size = 0;
   const chunks: Buffer[] = [];
   for await (const chunk of request) {
     size += chunk.length;
-    if (size > MOBILE_LAN_MAX_WIRE_BYTES) throw new Error("Too large");
+    if (size > MOBILE_LAN_MAX_WIRE_BYTES) throw new LanFailure(413, "request-too-large");
     chunks.push(chunk);
   }
   return Buffer.concat(chunks).toString("utf8");
@@ -97,6 +110,12 @@ export function createLanGateway(
       const deny = () => {
         if (!response.destroyed)
           response.writeHead(403).end('{"error":"Mobile LAN request rejected."}');
+      };
+      const fail = (failure: LanFailure) => {
+        if (!response.destroyed)
+          response
+            .writeHead(failure.status)
+            .end(JSON.stringify({ error: "Mobile LAN request failed.", code: failure.code }));
       };
       // The public boot challenge prevents replay across listener restarts.
       if (
@@ -139,8 +158,13 @@ export function createLanGateway(
           !input ||
           typeof input !== "object" ||
           input.epoch !== epoch ||
-          !Number.isFinite(input.time) ||
-          Math.abs(now - input.time) > MOBILE_LAN_WINDOW_MS ||
+          !Number.isFinite(input.time)
+        )
+          throw new Error("Invalid request");
+        // The envelope is already authenticated here, so naming the skew reveals nothing.
+        if (Math.abs(now - input.time) > MOBILE_LAN_WINDOW_MS)
+          throw new LanFailure(400, "clock-skew");
+        if (
           seen.has(opened.envelope.id) ||
           seen.size >= 10_000 ||
           !["/rpc", "/mobile/pairing/redeem"].includes(input.path) ||
@@ -171,10 +195,11 @@ export function createLanGateway(
               const chunks: Buffer[] = [];
               reply.on("data", (chunk: Buffer) => {
                 size += chunk.length;
-                if (size > MOBILE_LAN_MAX_BYTES) upstream.destroy(new Error("Response too large"));
+                if (size > MOBILE_LAN_MAX_BYTES)
+                  upstream.destroy(new LanFailure(413, "response-too-large"));
                 else chunks.push(chunk);
               });
-              reply.on("error", reject);
+              reply.on("error", () => reject(new LanFailure(502, "upstream-failed")));
               reply.on("end", () =>
                 resolve({
                   status: reply.statusCode ?? 502,
@@ -188,13 +213,18 @@ export function createLanGateway(
           };
           response.once("close", disconnect);
           upstream.once("close", () => response.off("close", disconnect));
-          upstream.setTimeout(180_000, () => upstream.destroy(new Error("Timeout")));
-          upstream.on("error", reject);
+          upstream.setTimeout(180_000, () =>
+            upstream.destroy(new LanFailure(504, "upstream-timeout")),
+          );
+          upstream.on("error", (error) =>
+            reject(error instanceof LanFailure ? error : new LanFailure(502, "upstream-failed")),
+          );
           upstream.end(input.body);
         });
         if (!response.destroyed) response.end(JSON.stringify(opened.seal(result)));
-      } catch {
-        deny();
+      } catch (error) {
+        if (error instanceof LanFailure) fail(error);
+        else deny();
       } finally {
         pending--;
       }
@@ -238,6 +268,12 @@ async function listenStablePort(
   await listen(0);
 }
 
+/** The check reads the OS interface list only, so a short period costs nothing and a
+ * restored address is served again within one tick. The listener is closed only after
+ * this many consecutive polls without the address. */
+const ADDRESS_POLL_MS = 5_000;
+const ADDRESS_MISSES_BEFORE_CLOSE = 3;
+
 type SavedAccess = {
   key: string;
   enabled: boolean;
@@ -263,6 +299,7 @@ export class MobileLanAccess {
   private loading?: Promise<void>;
   private operation?: Promise<MobileAccessStatus>;
   private addressTimer?: ReturnType<typeof setInterval>;
+  private missedPolls = 0;
   private addressCheck?: Promise<void>;
   private notice?: string;
   private disposed = false;
@@ -390,9 +427,17 @@ export class MobileLanAccess {
         const available = !!current && this.addresses().includes(current);
         const active = this.gateway?.address();
         if (!available) {
-          this.notice = "The selected mobile network interface is unavailable.";
-          if (active) await this.closeGateway();
-        } else if (
+          // A Wi-Fi roam or DHCP renewal drops the address for a moment. Closing the
+          // listener ends every phone's WebSocket, so wait for a few polls in a row.
+          this.missedPolls++;
+          if (this.missedPolls >= ADDRESS_MISSES_BEFORE_CLOSE) {
+            this.notice = "The selected mobile network interface is unavailable.";
+            if (active) await this.closeGateway();
+          }
+          return;
+        }
+        this.missedPolls = 0;
+        if (
           available &&
           (!active || (typeof active !== "string" && active.address !== current)) &&
           !this.disposed
@@ -405,7 +450,7 @@ export class MobileLanAccess {
         .finally(() => {
           if (this.addressCheck === check) this.addressCheck = undefined;
         });
-    }, 15_000);
+    }, ADDRESS_POLL_MS);
     this.addressTimer.unref?.();
   }
   enable(address?: unknown): Promise<MobileAccessStatus> {

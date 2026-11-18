@@ -128,6 +128,40 @@ describe("external tunnels host ownership", () => {
     await restarted.close();
   });
 
+  it("backs off automatic Host access retries while starts keep failing", async () => {
+    const s = await setup();
+    vi.useFakeTimers();
+    s.probe.mockResolvedValue(false);
+    await s.service.start({ provider: "cloudflare", target: "host", automatic: true });
+    for (let second = 5; second <= 60; second += 5) {
+      await vi.advanceTimersByTimeAsync(5_000);
+      await s.service.status();
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    // The first start, then retries after 5, 10, 20 and 40 s; a fixed 5 s retry made 13.
+    expect(s.probe).toHaveBeenCalledTimes(5);
+    expect(s.launch).not.toHaveBeenCalled();
+    await s.service.close();
+  });
+
+  it("waits the longest time before running the cloudflared installer again", async () => {
+    const s = await setup();
+    vi.useFakeTimers();
+    s.executable.mockResolvedValue(undefined as never);
+    await s.service.start({ provider: "cloudflare", target: "host", automatic: true });
+    expect(s.install).toHaveBeenCalledTimes(1);
+    const tick = async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+      await s.service.status();
+      await vi.advanceTimersByTimeAsync(0);
+    };
+    for (let seconds = 5; seconds <= 300; seconds += 5) await tick();
+    expect(s.install).toHaveBeenCalledTimes(2);
+    for (let seconds = 305; seconds <= 600; seconds += 5) await tick();
+    expect(s.install).toHaveBeenCalledTimes(3);
+    await s.service.close();
+  });
+
   it("does not replace a process whose retirement is unknown", async () => {
     const s = await setup();
     s.launch.mockImplementationOnce((_command, emit) => {

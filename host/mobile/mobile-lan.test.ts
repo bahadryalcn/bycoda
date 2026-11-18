@@ -44,6 +44,7 @@ function encryptedLanFetch(
   environmentId: string,
   serverKey: string,
   _random: typeof random,
+  clockOffsetMs = 0,
 ): typeof fetch {
   return async (url, init) => {
     const client = createLanIdentity();
@@ -69,7 +70,7 @@ function encryptedLanFetch(
     const value = JSON.stringify({
       epoch: challenge.epoch,
       path: new URL(String(url)).pathname,
-      time: Date.now(),
+      time: Date.now() + clockOffsetMs,
       token: new Headers(init?.headers).get("Authorization")?.slice(7),
       body: init?.body,
     });
@@ -83,7 +84,10 @@ function encryptedLanFetch(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ version: 1, id, publicKey: client.publicKey, data }),
     });
-    if (!response.ok) throw new Error("Rejected");
+    if (!response.ok) {
+      const failure = await response.json().catch(() => ({}));
+      throw new Error(`Rejected ${response.status} ${failure.code ?? ""}`.trim());
+    }
     const reply = await response.json();
     const bytes = Buffer.from(reply.data, "hex");
     const decipher = createDecipheriv("aes-256-gcm", key("response"), Buffer.alloc(12));
@@ -215,6 +219,33 @@ describe("encrypted mobile LAN access", () => {
     await expect(
       encryptedLanFetch(swapped, "pc", identity.publicKey, random)(`${endpoint}/rpc`, init),
     ).rejects.toThrow();
+  });
+  it("names retryable and fixable failures and keeps 403 for authentication", async () => {
+    let mode: "reset" | "huge" | "ok" = "reset";
+    const upstream = createServer((request, response) => {
+      if (mode === "reset") request.socket.destroy();
+      else if (mode === "huge") response.end("x".repeat(16 * 1024 * 1024 + 1));
+      else response.end("{}");
+    });
+    const port = await listen(upstream);
+    const identity = createLanIdentity();
+    const gateway = createLanGateway(identity, "pc", () => port);
+    const endpoint = `http://127.0.0.1:${await listen(gateway)}`;
+    const init = {
+      method: "POST",
+      headers: { Authorization: `Bearer ${"a".repeat(43)}` },
+      body: "{}",
+    };
+    const call = (offset = 0, key = identity.publicKey) =>
+      encryptedLanFetch(fetch, "pc", key, random, offset)(`${endpoint}/rpc`, init);
+    await expect(call()).rejects.toThrow("Rejected 502 upstream-failed");
+    mode = "huge";
+    await expect(call()).rejects.toThrow("Rejected 413 response-too-large");
+    mode = "ok";
+    await expect(call(5 * 60_000)).rejects.toThrow("Rejected 400 clock-skew");
+    await expect(call(-5 * 60_000)).rejects.toThrow("Rejected 400 clock-skew");
+    await expect(call(0, createLanIdentity().publicKey)).rejects.toThrow("Rejected 403");
+    expect((await call()).status).toBe(200);
   });
   it("keeps status read-only and does not bind arbitrary addresses", async () => {
     const folder = await mkdtemp(join(tmpdir(), "bycoda-mobile-lan-"));

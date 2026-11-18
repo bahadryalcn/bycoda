@@ -16,6 +16,7 @@ import {
   type TunnelProvider,
   type TunnelStart,
 } from "../../src/integrations/external-tunnels";
+import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps";
 import { OsSocialCredentials, type SocialCredentialStore } from "../social/social-credentials";
 import { startTunnelGuardian, type OwnedTunnelProcess } from "./tunnel-process";
 import {
@@ -35,6 +36,11 @@ type Dependencies = {
 };
 const MAX_RECORDS = 32;
 const MAX_ACTIVE = 4;
+/** Automatic Host access checks every 5 s but starts a tunnel at most this often, doubling to the cap. */
+const AUTOMATIC_RETRY_MS = 5_000;
+const AUTOMATIC_MAX_RETRY_MS = 300_000;
+/** A tunnel ready this long resets the backoff. */
+const AUTOMATIC_STABLE_MS = 60_000;
 
 function tunnelCredentials(directory: string, environmentId: string): SocialCredentialStore {
   const vault = new OsSocialCredentials(directory, `${environmentId}.tunnels`);
@@ -120,6 +126,9 @@ export class ExternalTunnels {
   private repair?: TunnelRepair;
   private automaticHostAccess = false;
   private automaticTimer?: ReturnType<typeof setTimeout>;
+  private automaticFailures = 0;
+  private automaticNotBefore = 0;
+  private automaticReadySince?: number;
   private readonly dependencies: Dependencies;
 
   constructor(
@@ -190,14 +199,37 @@ export class ExternalTunnels {
   private async reconcileAutomatic(): Promise<void> {
     if (this.closing || !this.automaticHostAccess) return;
     // Unknown retirement retains ownership and blocks a replacement.
-    if (
-      this.records.some(
-        (record) =>
-          record.provider === "cloudflare" && record.target === "host" && this.owned.has(record.id),
-      )
-    )
+    const owned = this.records.find(
+      (record) =>
+        record.provider === "cloudflare" && record.target === "host" && this.owned.has(record.id),
+    );
+    if (owned) {
+      if (owned.state !== "ready") this.automaticReadySince = undefined;
+      else {
+        this.automaticReadySince ??= monotonicNow();
+        // A tunnel that stayed up proves the last failures are over.
+        if (elapsedSince(this.automaticReadySince) >= AUTOMATIC_STABLE_MS)
+          this.resetAutomaticBackoff();
+      }
       return;
-    await this.start({ provider: "cloudflare", target: "host" });
+    }
+    this.automaticReadySince = undefined;
+    if (monotonicNow() < this.automaticNotBefore) return;
+    // Every attempt that has not yet proven stable widens the wait: 5 s, 10 s ... 5 min.
+    this.automaticFailures++;
+    this.automaticNotBefore =
+      monotonicNow() +
+      Math.min(AUTOMATIC_RETRY_MS * 2 ** (this.automaticFailures - 1), AUTOMATIC_MAX_RETRY_MS);
+    const attempt = await this.start({ provider: "cloudflare", target: "host" });
+    // Without the CLI each retry would run the installer again; wait the longest time.
+    if (attempt.issue === "cli-missing")
+      this.automaticNotBefore = monotonicNow() + AUTOMATIC_MAX_RETRY_MS;
+  }
+
+  private resetAutomaticBackoff(): void {
+    this.automaticFailures = 0;
+    this.automaticNotBefore = 0;
+    this.automaticReadySince = undefined;
   }
 
   private async setAutomatic(enabled: boolean): Promise<void> {
@@ -210,6 +242,8 @@ export class ExternalTunnels {
       { mode: 0o600 },
     );
     this.automaticHostAccess = enabled;
+    // The owner acted: start over instead of waiting out an earlier backoff.
+    this.resetAutomaticBackoff();
     this.scheduleAutomatic();
   }
 

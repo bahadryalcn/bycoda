@@ -27,8 +27,13 @@ export function createTailnetServeHosts(read: () => Promise<MobileAccessStatus>)
     pending = true;
     void read()
       .then((status) => {
-        const host = tailnetServeHost(status);
-        hosts = host ? [host] : [];
+        // `status()` reports a CLI failure as `unavailable` rather than throwing. Only a
+        // definite answer replaces the list; anything else keeps the last known name.
+        if (status.state === "ready") {
+          const host = tailnetServeHost(status);
+          hosts = host ? [host] : [];
+        } else if (status.state === "setup-required" || status.state === "install-required")
+          hosts = [];
       })
       .catch(() => {
         /* Keep the last known name; a failed probe is not proof Serve stopped. */
