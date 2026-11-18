@@ -2,6 +2,7 @@ import type { SocialAdapter, SocialHttp } from "../adapter";
 import { SocialPlatformError } from "../adapter";
 import type { CollectedPerson } from "../audience-types";
 import { at, graphNext, id, requireId } from "./common";
+import { readInstagramMediaSummary } from "./instagram-insights";
 
 type Platform = "instagram" | "facebook";
 export type MetaExtendedOperations = Pick<
@@ -91,16 +92,8 @@ export function metaExtendedOperations(
             shares: Number(value.shares?.count) || undefined,
           };
         } else {
-          const { value } = await http.request(
-            endpoint(`${post}/insights?metric=views,likes,comments,shares`),
-            token,
-          );
-          result[postId] = {
-            views: metric(value, "views"),
-            likes: metric(value, "likes"),
-            comments: metric(value, "comments"),
-            shares: metric(value, "shares"),
-          };
+          // Instagram Login returns a partial result when a media metric is unavailable.
+          result[postId] = await readInstagramMediaSummary(http, graphVersion, token, postId);
         }
       }
       return result;
@@ -198,5 +191,9 @@ export async function metaCommentAction(
     await http.json(url(comment), token, { is_hidden: action === "hide" });
     return;
   }
-  await http.request(url(`${comment}?hide=${action === "hide"}`), token, { method: "POST" });
+  // Instagram Login documents an explicit success boolean for hide and unhide.
+  const { value } = await http.request(url(`${comment}?hide=${action === "hide"}`), token, {
+    method: "POST",
+  });
+  if (value.success !== true) throw new SocialPlatformError("unknown");
 }

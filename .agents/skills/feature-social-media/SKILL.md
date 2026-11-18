@@ -55,6 +55,7 @@ Inspect populated, empty and long content, account switches during requests, rec
 ## References
 
 - [Social contracts](references/contracts.md) for the full preserve list: autonomy, grants, credentials, indexed queries and polling cursors.
+- [Instagram Login and browser coverage](../../../docs/integrations/social.md#instagram-facebook-and-meta) for Instagram permissions, publishing formats, reviewed Inbox actions and owner workflow boundaries.
 - [Decisions](references/decisions.md) for owner decisions that set autonomy, consent, driver and browser rules.
 - [Social integration](../../../docs/integrations/social.md) for screens, account modes, platforms, audience, outreach, email, suppression, autonomy and browser layers.
 - [AI programs](../../../docs/integrations/social-programs.md) when changing campaigns, models, schedules or program dispatch.

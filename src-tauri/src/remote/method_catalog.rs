@@ -77,6 +77,13 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "social.browser.profile.read"
             | "social.browser.profile.update"
             | "social.browser.profile.follow"
+            // Instagram owner operations use exact names.
+            | "social.browser.instagram.recipient"
+            | "social.browser.instagram.post"
+            | "social.browser.instagram.followers"
+            | "social.browser.instagram.follow"
+            | "social.browser.instagram.mentions"
+            | "social.browser.instagram.comment-like"
             | "social.browser.workflow.begin"
             | "social.browser.workflow.status"
             | "social.browser.workflow.cancel"
@@ -447,5 +454,25 @@ mod tests {
         }
         assert!(!supported_remote_method("social.media.releaseAll"));
         assert!(!supported_remote_method("social.media.claim.anything"));
+    }
+
+    #[test]
+    fn instagram_management_only_forwards_named_operations() {
+        for method in [
+            "social.browser.instagram.recipient",
+            "social.browser.instagram.post",
+            "social.browser.instagram.followers",
+            "social.browser.instagram.follow",
+            "social.browser.instagram.mentions",
+            "social.browser.instagram.comment-like",
+        ] {
+            assert!(supported_remote_method(method));
+        }
+        assert!(!supported_remote_method(
+            "social.browser.instagram.stream-key"
+        ));
+        assert!(!supported_remote_method(
+            "social.browser.instagram.recipient.anything"
+        ));
     }
 }

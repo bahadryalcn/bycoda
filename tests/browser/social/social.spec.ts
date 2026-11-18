@@ -26,6 +26,45 @@ const sections = (page: Page) => page.getByRole("tablist", { name: "Social böl�
 
 for (const theme of ["light", "dark"])
   for (const width of [800, 1280]) {
+    test(`Instagram surfaces ${theme} ${width}`, async ({ page }) => {
+      for (const surface of ["publishing", "story", "inbox", "browser", "insights"]) {
+        await page.setViewportSize({ width, height: surface === "browser" ? 1600 : 900 });
+        await page.goto(`/tests/browser/social/social.html?instagram-surface=${surface}`);
+        const frame = page.locator("[data-instagram-surface]");
+        await expect(frame).toBeVisible();
+        await page.evaluate(
+          (light) => document.documentElement.classList.toggle("theme-light", light),
+          theme === "light",
+        );
+        if (surface === "browser" || surface === "insights") {
+          await frame.getByText(/^(Instagram tools|Instagram araçları)$/i).click();
+          if (surface === "browser")
+            await frame
+              .getByRole("button", { name: /^(Read Instagram profile|Instagram profilini oku)$/i })
+              .click();
+          else
+            await frame
+              .getByRole("button", {
+                name: /^(Read Instagram insights|Instagram istatistiklerini oku)$/i,
+              })
+              .click();
+        } else if (surface === "inbox") {
+          await frame.getByText(/^(Instagram comment actions|Instagram yorum işlemleri)$/i).click();
+          await expect(
+            frame.getByText(/Send privately on Instagram|Instagram’da özel yanıt gönder/),
+          ).toBeVisible();
+        }
+        await page.screenshot({
+          path: `temp/verification/social-instagram/${surface}-${theme}-${width}.png`,
+          fullPage: true,
+          animations: "disabled",
+        });
+      }
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
     test(`social audience shared surfaces ${theme} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto("/tests/browser/social/social.html?extra-seeded&audience-surfaces");

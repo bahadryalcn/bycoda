@@ -1,9 +1,16 @@
 import { t } from "../../../../shared/i18n";
 import {
+  INSTAGRAM_CAROUSEL_MAX,
+  instagramPublishOptionsIssue,
+  instagramStoryAccountIssue,
+  type InstagramPublishOptions,
+} from "../../../../integrations/social/adapters/instagram-publish";
+import {
   SOCIAL_PLATFORM_NAMES,
   type CampaignVariant,
   type Capability,
   type SocialAccount,
+  type SocialMedia,
   type SocialPolicies,
   type SocialSnapshot,
   type TikTokCreatorInfo,
@@ -18,6 +25,7 @@ import {
   type ContentDraft,
   type ContentMedia,
   type FacebookDraft,
+  type InstagramDraft,
   type MediaProbe,
   type PlatformDraft,
 } from "./contentDraft";
@@ -30,6 +38,10 @@ export const REEL_SECONDS = { min: 4, max: 60 } as const;
 export const REEL_SIZE = { minWidth: 540, minHeight: 960 } as const;
 export const REEL_MIN_FPS = 23;
 export const REDDIT_SUBREDDIT = /^[A-Za-z0-9_]{3,21}$/;
+
+export function usesInstagramApi(account: SocialAccount): boolean {
+  return account.platform === "instagram" && account.connection !== "browser";
+}
 
 export type Problem = { text: string; accountId?: string };
 
@@ -91,6 +103,47 @@ function isHttpUrl(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+export function isPublicMediaUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && !url.username && !url.password;
+  } catch {
+    return false;
+  }
+}
+
+function instagramPayload(options: InstagramDraft | undefined, media: ContentMedia[]) {
+  const story = options?.format === "story";
+  const instagram: InstagramPublishOptions = {
+    ...(story ? { format: "story" } : {}),
+    ...(!story && options?.collaborators ? { collaborators: options.collaborators } : {}),
+    ...(!story && options?.locationId ? { locationId: options.locationId } : {}),
+    ...(options?.isAiGenerated !== undefined ? { isAiGenerated: options.isAiGenerated } : {}),
+    ...(options?.userTags?.length
+      ? {
+          userTags: options.userTags.map(({ localMediaId, username, x, y }) => ({
+            username: username.trim(),
+            x,
+            y,
+            mediaIndex: media.findIndex((item) => item.localId === localMediaId),
+          })),
+        }
+      : {}),
+  };
+  return {
+    instagram,
+    media: media.map<SocialMedia>((item) => {
+      const { alt, ...asset } = item.media;
+      const description = options?.altText?.[item.localId] ?? alt;
+      return !story && description?.trim() ? { ...asset, alt: description.trim() } : asset;
+    }),
+  };
+}
+
+function isInstagramStory(account: SocialAccount, draft: ContentDraft): boolean {
+  return usesInstagramApi(account) && draft.platform[account.id]?.instagram?.format === "story";
 }
 
 function videoProbe(media: ContentMedia[]): MediaProbe | undefined {
@@ -243,7 +296,9 @@ export function draftProblems(input: RuleInput): Problem[] {
         accountId: id,
       });
   }
-  for (const account of selectedAccounts(draft, input.accounts)) {
+  const selected = selectedAccounts(draft, input.accounts);
+  const hasCaptionTarget = selected.some((account) => !isInstagramStory(account, draft));
+  for (const account of selected) {
     const name = accountLabel(account);
     const add = (text: string) =>
       problems.push({ text: `${name}: ${text}`, accountId: account.id });
@@ -253,11 +308,51 @@ export function draftProblems(input: RuleInput): Problem[] {
       reel: draft.platform[account.id]?.facebook?.target === "reel",
       hasMedia: draft.media.length > 0,
     });
-    const count = characterCount(account, draft.text.trim(), withUtm(link, draft.utm));
+    const platform = draft.platform[account.id];
+    const story = isInstagramStory(account, draft);
+    const count = story ? 0 : characterCount(account, draft.text.trim(), withUtm(link, draft.utm));
     if (limit !== undefined && count > limit)
       add(t("Content for this account can be at most {p0} characters.", { p0: limit }));
-    for (const text of mediaProblems(account.platform, draft.media)) add(text);
-    const platform = draft.platform[account.id];
+    if (usesInstagramApi(account)) {
+      if (
+        draft.media.length < 1 ||
+        draft.media.length > INSTAGRAM_CAROUSEL_MAX ||
+        draft.media.some((item) => item.media.kind === "document")
+      )
+        add(t("Attach between one and 20 Instagram images or videos."));
+      if (
+        draft.media.some(
+          ({ media }) => !media.url || !isPublicMediaUrl(media.url) || media.uploadId,
+        )
+      )
+        add(t("Instagram API publishing requires public HTTPS media URLs."));
+      if (
+        platform?.instagram?.userTags?.some(
+          (tag) => !draft.media.some((item) => item.localId === tag.localMediaId),
+        )
+      )
+        add(t("Choose an attachment for every Instagram tag."));
+      const payload = instagramPayload(platform?.instagram, draft.media);
+      if (
+        draft.repeat.enabled &&
+        (Object.keys(payload.instagram).length || payload.media.some((item) => item.alt))
+      )
+        add(t("Instagram Stories, tags, alt text and publishing options require a one-time post."));
+      // A caption belongs to the other selected targets. For Stories alone, ask the owner to clear it.
+      const caption =
+        story && hasCaptionTarget ? "" : [draft.text, link].filter(Boolean).join("\n");
+      const issue =
+        instagramStoryAccountIssue(payload.instagram, account.instagramAccountType) ??
+        instagramPublishOptionsIssue(payload.instagram, payload.media, caption);
+      if (issue) add(issue);
+    } else {
+      for (const text of mediaProblems(account.platform, draft.media)) add(text);
+      if (
+        account.platform === "instagram" &&
+        draft.media.some(({ media }) => !media.uploadId || media.url)
+      )
+        add(t("Instagram browser publishing requires files uploaded from this device."));
+    }
     if (account.platform === "facebook")
       for (const text of reelProblems(platform?.facebook, draft.media)) add(text);
     if (account.platform === "tiktok")
@@ -285,7 +380,9 @@ export function buildVariants(input: RuleInput): CampaignVariant[] {
   const link = withUtm(draft.link, draft.utm) || undefined;
   const media = mediaOf(draft.media);
   const probe = videoProbe(draft.media);
-  return selectedAccounts(draft, input.accounts).map((account) => {
+  const selected = selectedAccounts(draft, input.accounts);
+  const hasCaptionTarget = selected.some((account) => !isInstagramStory(account, draft));
+  return selected.map((account) => {
     const platform = draft.platform[account.id];
     const variant: CampaignVariant = {
       accountId: account.id,
@@ -329,6 +426,15 @@ export function buildVariants(input: RuleInput): CampaignVariant[] {
         height: probe?.height ?? 0,
         frameRate: platform.facebook.frameRate ?? 0,
       };
+    }
+    if (usesInstagramApi(account)) {
+      const payload = instagramPayload(platform?.instagram, draft.media);
+      if (platform?.instagram) variant.instagram = payload.instagram;
+      variant.media = payload.media;
+      if (payload.instagram.format === "story" && hasCaptionTarget) {
+        variant.text = "";
+        delete variant.link;
+      }
     }
     return variant;
   });

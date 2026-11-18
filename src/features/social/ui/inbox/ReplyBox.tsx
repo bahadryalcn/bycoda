@@ -4,15 +4,18 @@ import { t } from "../../../../shared/i18n";
 import { useConfirm } from "../../../../shared/ui/ConfirmDialog";
 import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
 import { Button } from "../../../../shared/ui/Button";
+import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { Sparkles } from "../../../../shared/ui/icons";
 import { PromptField } from "../../../../shared/ui/PromptField";
+import { Select } from "../../../../shared/ui/Select";
+import { TextField } from "../../../../shared/ui/TextField";
 import type { ActionGate } from "../common/DisabledReason";
 import type { SocialThread } from "../../model/social";
 import type { SocialClient } from "../../model/socialClient";
 import { socialQueryScope } from "../../model/socialQuery";
 import { inboxApi } from "./inboxApi";
 import { createInboxReplyOperation } from "./inboxReplyOperation";
-import { inboxReplyState } from "./inboxReplyState";
+import { inboxReplyState, type ReplyDraft } from "./inboxReplyState";
 import { replyBlockedText } from "./inboxModel";
 import { useInboxInvalidate, useInboxReplyOptions, useInboxSnapshot } from "./useInboxData";
 import "./inbox.css";
@@ -24,8 +27,6 @@ const MAX_FACTS = 20;
  * Reply editor for one conversation. The Host decides whether a reply is allowed (replyOptions);
  * a blocked reply shows its reason next to the disabled Send button. AI text lands in the editor.
  */
-type ReplyDraft = { text: string; factIds: string[] };
-
 export function ReplyBox(props: { client: SocialClient; thread: SocialThread }) {
   return (
     <ThreadReplyBox
@@ -46,6 +47,8 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
     state.snapshot,
   );
   const { text } = draft;
+  const attachment = draft.instagramAttachment;
+  const hasContent = !!text.trim() || !!attachment?.url.trim();
   const changeDraft = (next: ReplyDraft) => state.update({ draft: next });
   const setBusy = (busy: "" | "suggest" | "send") => state.update({ busy });
   const setError = (error: string) => state.update({ error });
@@ -80,9 +83,14 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
     ? { disabled: true, disabledReason: blockedReason }
     : busy
       ? { disabled: true, disabledReason: busy === "send" ? t("Sending…") : t("Working…") }
-      : !text.trim()
+      : !hasContent
         ? { disabled: true, disabledReason: t("Write a reply first.") }
-        : { disabled: false };
+        : text.trim() && attachment?.url.trim()
+          ? {
+              disabled: true,
+              disabledReason: t("Send Instagram attachments separately from text."),
+            }
+          : { disabled: false };
 
   const suggest = async () => {
     if (state.snapshot().busy || state.snapshot().operation) return;
@@ -94,7 +102,7 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
         thread.id,
         facts.slice(0, MAX_FACTS).map((fact) => fact.id),
       );
-      changeDraft({ text: result.text, factIds: result.factIds });
+      changeDraft({ ...state.snapshot().draft, text: result.text, factIds: result.factIds });
     } catch {
       setError(t("Could not prepare a suggestion. Try again."));
     } finally {
@@ -125,7 +133,8 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
     const current = state.snapshot();
     if (
       current.busy ||
-      !current.draft.text.trim() ||
+      !hasContent ||
+      (sendGate.disabled && !current.operation?.sendAttempted) ||
       (blockedReason && !current.operation?.sendAttempted)
     )
       return;
@@ -138,6 +147,17 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
         threadId: thread.id,
         text: current.draft.text.trim(),
         factIds: current.draft.factIds,
+        ...(current.draft.instagramPrivateReply ? { instagramPrivateReply: true as const } : {}),
+        ...(current.draft.instagramAttachment?.url.trim()
+          ? {
+              media: [
+                {
+                  ...current.draft.instagramAttachment,
+                  url: current.draft.instagramAttachment.url.trim(),
+                },
+              ],
+            }
+          : {}),
       });
     state.update({ operation: attempt });
     try {
@@ -175,6 +195,56 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
 
   return (
     <div className="inbox-reply">
+      {options.data?.instagram?.privateReply || draft.instagramPrivateReply ? (
+        <Checkbox
+          label={t("Send privately on Instagram")}
+          checked={!!draft.instagramPrivateReply}
+          disabled={!!busy || !!operation}
+          onChange={(event) =>
+            changeDraft({
+              ...draft,
+              instagramPrivateReply: event.target.checked ? true : undefined,
+            })
+          }
+        />
+      ) : null}
+      {options.data?.instagram?.attachment || attachment ? (
+        <div className="social-tag-line">
+          <Select
+            label={t("Instagram attachment")}
+            disabled={!!busy || !!operation}
+            value={attachment?.kind ?? ""}
+            options={[
+              { value: "", label: t("None") },
+              { value: "image", label: t("Image") },
+              { value: "video", label: t("Video") },
+            ]}
+            onValueChange={(kind) =>
+              changeDraft({
+                ...draft,
+                instagramAttachment:
+                  kind === "image" || kind === "video"
+                    ? { kind, url: attachment?.url ?? "" }
+                    : undefined,
+              })
+            }
+          />
+          {attachment ? (
+            <TextField
+              label={t("Instagram attachment URL")}
+              type="url"
+              value={attachment.url}
+              disabled={!!busy || !!operation}
+              onChange={(event) =>
+                changeDraft({
+                  ...draft,
+                  instagramAttachment: { ...attachment, url: event.target.value },
+                })
+              }
+            />
+          ) : null}
+        </div>
+      ) : null}
       <PromptField
         label={t("Reply")}
         minRows={3}
@@ -183,7 +253,7 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
         disabled={!!blocked || busy !== "" || !!operation}
         placeholder={t("Write a reply")}
         onChange={(event) => {
-          changeDraft({ text: event.target.value, factIds: [] });
+          changeDraft({ ...draft, text: event.target.value, factIds: [] });
         }}
         toolbarTrailing={
           <>

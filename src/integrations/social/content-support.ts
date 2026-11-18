@@ -2,6 +2,8 @@ import type { SocialAccount, SocialJob } from "./adapter";
 import { browserContentIssue } from "./browserCapabilities";
 import { facebookReelContentIssue } from "./facebookReels";
 import { messagingContentIssue } from "./adapters/messaging-shared";
+import { instagramStoryAccountIssue } from "./adapters/instagram-publish";
+import { instagramMessageContentIssue } from "./adapters/instagram-messaging";
 import { linkedInMultiImageIssue } from "./linkedinMedia";
 import { metaPublishingIssue } from "./metaMedia";
 import { snapchatContentIssue } from "./snapchat";
@@ -13,6 +15,19 @@ export function contentSupport(
   account: SocialAccount,
   job: Pick<SocialJob, "payload" | "kind">,
 ): string | undefined {
+  if (job.payload.instagram !== undefined) {
+    if (
+      account.platform !== "instagram" ||
+      account.connection === "browser" ||
+      job.kind !== "publish"
+    )
+      return "Instagram publishing options require an Instagram API publication.";
+    const storyIssue = instagramStoryAccountIssue(
+      job.payload.instagram,
+      account.instagramAccountType,
+    );
+    if (storyIssue) return storyIssue;
+  }
   if (job.payload.facebook && (account.platform !== "facebook" || account.connection === "browser"))
     return "The Facebook Reel destination requires a Facebook Page API connection.";
   if (account.connection === "browser" && account.platform !== "x")
@@ -21,6 +36,8 @@ export function contentSupport(
     return telegramChannelContentIssue(account, job);
   if (account.platform === "facebook" && job.payload.facebook)
     return facebookReelContentIssue(account, job);
+  if (account.platform === "instagram" && job.kind !== "publish" && job.payload.media.length)
+    return instagramMessageContentIssue(job);
   if (job.payload.media.some((item) => item.kind === "document"))
     return "PDF document publishing requires a LinkedIn browser connection.";
   if (account.platform === "tiktok") return tiktokContentIssue(job);

@@ -10,7 +10,7 @@ export function instagramCapabilities(): PlatformCapabilities {
     ),
     media: r(
       ["instagram_business_content_publish"],
-      "HTTPS images, a single video published as a Reel in the feed, or an ordered image/video carousel. The Host accepts up to four media assets; processing is checked before publication. Stories are not implemented.",
+      "HTTPS images, feed Reels, ordered carousels of up to 20 assets, and Stories for eligible business accounts. Processing is checked before publication.",
     ),
     "comments.read": r(
       ["instagram_business_manage_comments"],
@@ -28,7 +28,7 @@ export function instagramCapabilities(): PlatformCapabilities {
     ),
     "message.reply": r(
       ["instagram_business_manage_messages"],
-      "User-initiated conversation; standard 24-hour response window. No human-agent tag for automation.",
+      "Existing conversations support text and image/video URL attachments within the response window. Eligible comments support one private reply.",
     ),
     "message.start": r(
       [],
@@ -48,7 +48,7 @@ export function instagramCapabilities(): PlatformCapabilities {
       ...NOT_YET,
       analytics: r(
         ["instagram_business_basic", "instagram_business_manage_insights"],
-        "Basic owned-media views and engagement counts. Metric names are unverified against live Graph; a metric Meta rejects fails the read.",
+        "Account and owned-media insights, with eligible audience breakdowns. Missing metrics are reported separately.",
       ),
       "audience.collect": r(
         ["instagram_business_manage_comments"],

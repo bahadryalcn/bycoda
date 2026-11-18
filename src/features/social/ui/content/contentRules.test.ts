@@ -80,6 +80,108 @@ function input(
   };
 }
 
+describe("Instagram API publication drafts", () => {
+  const story = account({ id: "story", platform: "instagram", instagramAccountType: "BUSINESS" });
+  const feed = account({ id: "feed", platform: "instagram", instagramAccountType: "CREATOR" });
+  const browser = account({ id: "web", platform: "instagram", connection: "browser" });
+  const remote = (id: string, kind: "image" | "video" = "image"): ContentMedia => ({
+    localId: id,
+    name: id,
+    media: { kind, url: `https://media.example.com/${id}` },
+  });
+
+  it("accepts 20 mixed public media items and preserves the browser media limits", () => {
+    const media = Array.from({ length: 20 }, (_, index) =>
+      remote(`asset-${index}`, index % 2 ? "video" : "image"),
+    );
+    expect(draftProblems(input({ media }, [feed]))).toEqual([]);
+    expect(draftProblems(input({ media: [...media, remote("extra")] }, [feed]))).toEqual([
+      expect.objectContaining({ accountId: feed.id, text: expect.stringContaining("one and 20") }),
+    ]);
+    expect(
+      draftProblems(input({ media }, [feed, browser])).map((problem) => problem.accountId),
+    ).toEqual([browser.id, browser.id]);
+    expect(draftProblems(input({ media: [image("local")] }, [feed]))).toEqual([
+      expect.objectContaining({
+        accountId: feed.id,
+        text: expect.stringContaining("public HTTPS"),
+      }),
+    ]);
+  });
+
+  it("keeps Story and feed metadata isolated across review and reopening", () => {
+    const media = [remote("cover")];
+    const target = input(
+      {
+        text: "Feed caption",
+        link: "https://example.com",
+        media,
+        platform: {
+          [story.id]: {
+            instagram: { format: "story", locationId: "123", altText: { cover: "Old alt" } },
+          },
+          [feed.id]: { instagram: { collaborators: ["peer"], altText: { cover: "A new cover." } } },
+        },
+      },
+      [story, feed],
+    );
+    expect(draftProblems(target)).toEqual([]);
+    const variants = buildVariants(target);
+    expect(variants[0]).toMatchObject({
+      text: "",
+      instagram: { format: "story" },
+      media: [media[0].media],
+    });
+    expect(variants[0].link).toBeUndefined();
+    expect(variants[0].instagram?.locationId).toBeUndefined();
+    expect(variants[0].media[0].alt).toBeUndefined();
+    expect(variants[1]).toMatchObject({
+      text: "Feed caption",
+      link: "https://example.com",
+      media: [{ alt: "A new cover." }],
+    });
+    const reopened = draftFromCampaign(
+      {
+        id: "draft",
+        name: "Shared campaign",
+        projectIds: ["p1"],
+        variants,
+        revision: 1,
+        paused: false,
+        createdAt: NOW,
+      },
+      [story, feed],
+    );
+    expect(buildVariants({ ...target, draft: reopened })).toEqual(variants);
+  });
+
+  it("holds a removed tag target for correction instead of moving it to the next item", () => {
+    const first = remote("first");
+    const second = remote("second", "video");
+    const target = input(
+      {
+        media: [first, second],
+        platform: {
+          [feed.id]: {
+            instagram: { userTags: [{ id: "tag", localMediaId: "second", username: "peer" }] },
+          },
+        },
+      },
+      [feed],
+    );
+    expect(draftProblems(target)).toEqual([]);
+    expect(buildVariants(target)[0].instagram?.userTags?.[0].mediaIndex).toBe(1);
+    target.draft.media = [second];
+    expect(buildVariants(target)[0].instagram?.userTags?.[0].mediaIndex).toBe(0);
+    target.draft.media = [first];
+    expect(draftProblems(target)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ text: expect.stringContaining("Choose an attachment") }),
+      ]),
+    );
+  });
+});
+
 describe("media rules per platform", () => {
   it("allows up to four X images or one video, never a mix", () => {
     const x = account({ id: "x1", platform: "x" });

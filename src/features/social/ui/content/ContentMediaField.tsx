@@ -3,10 +3,15 @@ import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { Text } from "../../../../shared/ui/Text";
 import { FileField } from "../../../../shared/ui/FileField";
+import { FieldGroup } from "../../../../shared/ui/FieldGroup";
+import { Select } from "../../../../shared/ui/Select";
+import { TextField } from "../../../../shared/ui/TextField";
+import { INSTAGRAM_CAROUSEL_MAX } from "../../../../integrations/social/adapters/instagram-publish";
 import type { SocialClient } from "../../model/socialClient";
 import { uploadForSocialEditor, type SocialMediaEditor } from "../../model/socialMediaEditor";
 import type { ContentMedia } from "./contentDraft";
 import { probeVideo } from "./mediaProbe";
+import { isPublicMediaUrl } from "./contentRules";
 import { presentRemoteError } from "../../../connections/public/remoteFailure";
 
 const IMAGE_TYPES = ["image/jpeg", "image/png"];
@@ -19,6 +24,7 @@ export type ContentMediaFieldProps = {
   disabled: boolean;
   /** Why attaching is off (for example the account cannot upload media). */
   disabledReason?: string;
+  instagramMedia?: "public-only" | "mixed";
   onChange: (next: ContentMedia[]) => void;
   onBusyChange?: (busy: boolean) => void;
 };
@@ -30,11 +36,16 @@ export function ContentMediaField({
   media,
   disabled,
   disabledReason,
+  instagramMedia,
   onChange,
   onBusyChange,
 }: ContentMediaFieldProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const [address, setAddress] = useState("");
+  const [remoteKind, setRemoteKind] = useState<"image" | "video">("image");
+  const [urlError, setUrlError] = useState<string>();
+  const atInstagramLimit = !!instagramMedia && media.length >= INSTAGRAM_CAROUSEL_MAX;
   const add = async (files: File[]) => {
     setBusy(true);
     onBusyChange?.(true);
@@ -43,6 +54,8 @@ export function ContentMediaField({
       // Refuse the whole pick before any upload, so a batch with one bad file uploads nothing.
       if (files.some((file) => ![...IMAGE_TYPES, VIDEO_TYPE].includes(file.type)))
         throw new Error(t("Use JPEG or PNG images, or one MP4 video."));
+      if (instagramMedia && media.length + files.length > INSTAGRAM_CAROUSEL_MAX)
+        throw new Error(t("Instagram carousel supports up to 20 images and videos."));
       const added: ContentMedia[] = [];
       for (const file of files) {
         const upload = await uploadForSocialEditor(editor, client, file);
@@ -71,24 +84,83 @@ export function ContentMediaField({
       onBusyChange?.(false);
     }
   };
+  const addPublicMedia = () => {
+    const url = address.trim();
+    if (!isPublicMediaUrl(url)) {
+      setUrlError(t("Enter a public HTTPS media URL without credentials."));
+      return;
+    }
+    const path = new URL(url).pathname.split("/").filter(Boolean).pop();
+    onChange([
+      ...media,
+      {
+        localId: crypto.randomUUID(),
+        name: path || (remoteKind === "image" ? t("Image") : t("Video")),
+        media: { kind: remoteKind, url },
+      },
+    ]);
+    setAddress("");
+    setUrlError(undefined);
+  };
   const remove = (item: ContentMedia) => {
     onChange(media.filter((other) => other.localId !== item.localId));
     if (item.mediaId) void editor.releaseCurrent(item.mediaId).catch(() => {});
   };
   return (
     <div className="content-media">
-      <FileField
-        label={t("Images or one video")}
-        multiple
-        accept="image/jpeg,image/png,video/mp4"
-        disabled={disabled || busy}
-        description={disabledReason ?? (busy ? t("Uploading…") : undefined)}
-        hint={t("JPEG or PNG images, or one MP4 video.")}
-        error={error}
-        onFiles={(files) =>
-          void add(files).catch(() => setError(t("The file could not be attached.")))
-        }
-      />
+      {instagramMedia !== "public-only" ? (
+        <FileField
+          label={instagramMedia ? t("Images and videos") : t("Images or one video")}
+          multiple
+          accept="image/jpeg,image/png,video/mp4"
+          disabled={disabled || busy || atInstagramLimit}
+          description={disabledReason ?? (busy ? t("Uploading…") : undefined)}
+          hint={
+            instagramMedia
+              ? t("JPEG, PNG or MP4 files.")
+              : t("JPEG or PNG images, or one MP4 video.")
+          }
+          error={error}
+          onFiles={(files) =>
+            void add(files).catch(() => setError(t("The file could not be attached.")))
+          }
+        />
+      ) : null}
+      {instagramMedia ? (
+        <FieldGroup
+          legend={t("Instagram media")}
+          disabled={disabled || busy || atInstagramLimit}
+          description={
+            disabledReason ?? t("Instagram carousel supports up to 20 images and videos.")
+          }
+          descriptionVisible
+        >
+          <Select
+            label={t("Media type")}
+            value={remoteKind}
+            disabled={disabled || busy || atInstagramLimit}
+            options={[
+              { value: "image", label: t("Image") },
+              { value: "video", label: t("Video") },
+            ]}
+            onValueChange={(value) => setRemoteKind(value === "video" ? "video" : "image")}
+          />
+          <TextField
+            label={t("Public media URL")}
+            type="url"
+            maxLength={2048}
+            value={address}
+            error={urlError}
+            onChange={(event) => {
+              setAddress(event.target.value);
+              setUrlError(undefined);
+            }}
+          />
+          <Button size="sm" disabled={!address.trim()} onClick={addPublicMedia}>
+            {t("Attach media URL")}
+          </Button>
+        </FieldGroup>
+      ) : null}
       {media.length ? (
         <ul className="content-media-list">
           {media.map((item) => (

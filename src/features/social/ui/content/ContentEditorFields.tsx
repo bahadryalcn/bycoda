@@ -18,7 +18,7 @@ import type { SocialScreenProps } from "../shell/screens";
 import { ContentEditorAi } from "./ContentEditorAi";
 import { ContentMediaField } from "./ContentMediaField";
 import { setPlatform, toggleAccount, type ContentDraft, type ContentMedia } from "./contentDraft";
-import { accountAvailability, selectedAccounts } from "./contentRules";
+import { accountAvailability, selectedAccounts, usesInstagramApi } from "./contentRules";
 import { dayKey } from "./calendarModel";
 import { PlatformFields } from "./platform-fields/PlatformFields";
 
@@ -54,6 +54,11 @@ export function ContentEditorFields(props: ContentEditorFieldsProps) {
   } = props;
   const accounts = snapshot?.accounts ?? [];
   const selected = selectedAccounts(draft, accounts);
+  const instagramMedia = selected.some(usesInstagramApi)
+    ? selected.every(usesInstagramApi)
+      ? "public-only"
+      : "mixed"
+    : undefined;
   const disabled = !!locked;
   // Uploads may finish after this editor unmounts; update its retained workspace current draft.
   const changeMedia = (media: ContentMedia[]) => onDraft((current) => ({ ...current, media }));
@@ -198,6 +203,7 @@ export function ContentEditorFields(props: ContentEditorFieldsProps) {
         media={draft.media}
         disabled={disabled || mediaBlocked}
         disabledReason={locked ?? (mediaBlocked ? mediaReason : undefined)}
+        instagramMedia={instagramMedia}
         onChange={changeMedia}
         onBusyChange={onMediaBusyChange}
       />

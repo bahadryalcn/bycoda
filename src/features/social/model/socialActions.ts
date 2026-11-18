@@ -41,6 +41,9 @@ export const SOCIAL_READ_ACTIONS = [
   "browser.settings.get",
   "browser.recipeSuggestions.list",
   "accounts.requests.list",
+  // Instagram
+  "instagram.insights",
+  "instagram.mentions",
 ] as const;
 export type SocialReadAction = (typeof SOCIAL_READ_ACTIONS)[number];
 

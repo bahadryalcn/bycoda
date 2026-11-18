@@ -5,10 +5,14 @@ import { FieldGroup } from "../../../../../shared/ui/FieldGroup";
 import { NativeSelect } from "../../../../../shared/ui/Select";
 import { SOCIAL_PLATFORM_NAMES } from "../../../model/social";
 import type { PlatformFieldProps } from "./PlatformFields";
+import { InstagramFields } from "./InstagramFields";
 
 /** Instagram and Facebook: feed or Reel for Facebook; carousel rules come from the attachment. */
-export function MetaFields({ account, value, disabled, onChange }: PlatformFieldProps) {
+export function MetaFields(props: PlatformFieldProps) {
+  const { account, value, disabled, onChange } = props;
   const name = SOCIAL_PLATFORM_NAMES[account.platform];
+  if (account.platform === "instagram" && account.connection !== "browser")
+    return <InstagramFields {...props} />;
   if (account.platform !== "facebook")
     return (
       <Text as="p" size="caption" tone="muted" leading="inherit" className="content-platform-note">

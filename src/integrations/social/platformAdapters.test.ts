@@ -903,7 +903,7 @@ describe("Official social API adapter contracts", () => {
     publish.payload.media = [{ kind: "video", uploadId: "local" }];
     expect(contentSupport(account("x"), publish)).toBeUndefined();
     publish.payload.media = [];
-    expect(contentSupport(account("instagram"), publish)).toContain("one to four");
+    expect(contentSupport(account("instagram"), publish)).toContain("one to 20");
   });
   it("rejects forbidden YouTube description characters in both text and appended links", () => {
     const publish = job();

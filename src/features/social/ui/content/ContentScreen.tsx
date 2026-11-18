@@ -92,7 +92,7 @@ export function ContentScreen({
       return;
     }
     setNotice(undefined);
-    workspace.loadDraft(draftFromCampaign(campaign));
+    workspace.loadDraft(draftFromCampaign(campaign, accounts));
     setOpen(true);
   };
   const discard = async () => {

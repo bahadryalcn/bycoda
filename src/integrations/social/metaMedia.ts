@@ -1,5 +1,13 @@
 import type { SocialAccount, SocialJob } from "../../features/social/model/social";
 import { SocialHttp, SocialPlatformError, type SocialSendResult } from "./adapter";
+import {
+  INSTAGRAM_CAROUSEL_MAX,
+  instagramPostFields,
+  instagramPublishOptionsIssue,
+  instagramStoryAccountIssue,
+  instagramTagFields,
+  parseInstagramPublishOptions,
+} from "./adapters/instagram-publish";
 
 type Platform = "instagram" | "facebook";
 type Preparation = NonNullable<SocialJob["preparation"]>;
@@ -25,8 +33,9 @@ export function metaPublishingIssue(
 ): string | undefined {
   if (job.kind !== "publish") return "Meta media preparation supports publication only.";
   const items = job.payload.media;
-  if (items.length > 4 || (platform === "instagram" && !items.length))
-    return "Instagram requires one to four media items; Facebook accepts up to four images.";
+  if (platform === "instagram" && (items.length < 1 || items.length > INSTAGRAM_CAROUSEL_MAX))
+    return `Instagram requires one to ${INSTAGRAM_CAROUSEL_MAX} media items.`;
+  if (platform === "facebook" && items.length > 4) return "Facebook accepts up to four images.";
   if (
     items.some(
       (item) =>
@@ -42,6 +51,8 @@ export function metaPublishingIssue(
     return "Instagram captions, including links, must fit 2200 characters.";
   if (platform === "facebook" && content(job).length > 63_206)
     return "Facebook text, including links, must fit 63,206 characters.";
+  if (platform === "instagram")
+    return instagramPublishOptionsIssue(job.payload.instagram, items, content(job));
   return undefined;
 }
 
@@ -71,6 +82,9 @@ async function signature(
       job.payload.text,
       job.payload.link ?? null,
       job.payload.media.map((item) => [item.kind, item.url, item.alt ?? null]),
+      ...(platform === "instagram" && job.payload.instagram
+        ? [parseInstagramPublishOptions(job.payload.instagram)]
+        : []),
     ]),
   );
   const hash = await crypto.subtle.digest("SHA-256", bytes);
@@ -102,8 +116,19 @@ export async function publishMetaMedia(
     throw new SocialPlatformError("denied");
   if (!/^v\d+\.0$/.test(graphVersion) || metaPublishingIssue(platform, job))
     throw new SocialPlatformError("unsupported");
+  const instagram = platform === "instagram" ? job.payload.instagram : undefined;
+  const story = instagram?.format === "story";
+  if (instagramStoryAccountIssue(instagram, account.instagramAccountType))
+    throw new SocialPlatformError("unsupported");
   const origin = `https://graph.${platform === "instagram" ? "instagram" : "facebook"}.com`;
-  const endpoint = (path: string) => `${origin}/${graphVersion}/${path}`;
+  // Meta documents 20-child carousels and the extended options on the v27 publishing endpoint.
+  const version =
+    platform === "instagram" &&
+    (job.payload.media.length > 10 || instagram) &&
+    Number(graphVersion.slice(1, -2)) < 27
+      ? "v27.0"
+      : graphVersion;
+  const endpoint = (path: string) => `${origin}/${version}/${path}`;
   const actor = pathId(account.platformId);
   const expectedSignature = await signature(platform, account, job);
   let state: Preparation = { ...job.preparation };
@@ -130,6 +155,7 @@ export async function publishMetaMedia(
       state.mediaIds?.length ||
       (state.containerId &&
         (platform !== "instagram" ||
+          !!instagram ||
           job.payload.media.length !== 1 ||
           job.payload.media[0]?.kind !== "image"))
     )
@@ -155,6 +181,8 @@ export async function publishMetaMedia(
     return { platformId, url: permalink(platform, details?.value.permalink) };
   };
   if (previous?.publishedId) return result(previous.publishedId);
+  if (platform === "instagram" && previous?.instagramSubmitted)
+    throw new SocialPlatformError("unknown");
   await save();
   const ready = async (containerId: string) => {
     const { value } = await http.request(
@@ -182,6 +210,7 @@ export async function publishMetaMedia(
                 ? { image_url: item.url, ...(item.alt ? { alt_text: item.alt } : {}) }
                 : { media_type: "VIDEO", video_url: item.url }),
               is_carousel_item: true,
+              ...instagramTagFields(instagram, index),
             });
             ids[index] = identifier(value.id);
             state.mediaIds = [...ids];
@@ -193,26 +222,53 @@ export async function publishMetaMedia(
           media_type: "CAROUSEL",
           children: ids,
           caption: content(job),
+          ...instagramPostFields(instagram),
         });
         state.containerId = identifier(value.id);
       } else {
         const item = items[0];
         const { value } = await http.json(endpoint(`${actor}/media`), token, {
-          ...(item.kind === "image"
-            ? { image_url: item.url, ...(item.alt ? { alt_text: item.alt } : {}) }
-            : { media_type: "REELS", video_url: item.url, share_to_feed: true }),
-          caption: content(job),
+          ...(story
+            ? {
+                media_type: "STORIES",
+                ...(item.kind === "image" ? { image_url: item.url } : { video_url: item.url }),
+              }
+            : {
+                ...(item.kind === "image"
+                  ? { image_url: item.url, ...(item.alt ? { alt_text: item.alt } : {}) }
+                  : { media_type: "REELS", video_url: item.url, share_to_feed: true }),
+                caption: content(job),
+              }),
+          ...instagramPostFields(instagram),
+          ...instagramTagFields(instagram, 0),
         });
         state.containerId = identifier(value.id);
       }
       await save();
     }
     await ready(state.containerId);
-    await beforeSubmit?.();
-    const { value } = await http.json(endpoint(`${actor}/media_publish`), token, {
-      creation_id: state.containerId,
-    });
-    const publishedId = identifier(value.id);
+    state.metaMedia = { ...state.metaMedia!, instagramSubmitted: true };
+    await save();
+    let publishedId: string;
+    let submissionStarted = false;
+    try {
+      await beforeSubmit?.();
+      submissionStarted = true;
+      const { value } = await http.json(endpoint(`${actor}/media_publish`), token, {
+        creation_id: state.containerId,
+      });
+      publishedId = identifier(value.id);
+    } catch (error) {
+      // A provider rate-limit response is an explicit refusal. An unknown outcome stays sealed.
+      if (
+        !submissionStarted ||
+        (error instanceof SocialPlatformError && error.code === "rate_limit")
+      ) {
+        delete state.metaMedia.instagramSubmitted;
+        await save();
+      }
+      throw error;
+    }
     state = { ...state, metaMedia: { ...state.metaMedia!, publishedId } };
     try {
       await save();

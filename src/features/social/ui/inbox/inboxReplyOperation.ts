@@ -1,4 +1,4 @@
-import type { SocialDraft, SocialJob, SocialJobsPage } from "../../model/social";
+import type { SocialDraft, SocialJob, SocialJobsPage, SocialMedia } from "../../model/social";
 
 type RequestFn = <T>(
   action: string,
@@ -10,6 +10,8 @@ export type InboxReplyInput = {
   text: string;
   /** Verified fact IDs, empty for a manual reply. */
   factIds: string[];
+  instagramPrivateReply?: true;
+  media?: SocialMedia[];
 };
 
 /** One owner action, including retries. Never change its input or its request IDs. */

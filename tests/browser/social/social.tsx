@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { surfaceCaptureRules, surfaceSequences } from "./social-surface-data";
+import { InstagramSurface } from "./instagram-surface";
 import { createRoot } from "react-dom/client";
 import {
   LOCAL_MODEL_SOURCE,
@@ -2449,10 +2450,17 @@ Object.assign(window, {
 });
 document.body.style.cssText =
   "height:100vh;margin:0;background:var(--color-background-base);color:var(--color-content)";
+if (new URLSearchParams(location.search).has("instagram-surface")) {
+  document.documentElement.style.overflowY = "auto";
+  document.body.style.height = "auto";
+  document.body.style.overflow = "visible";
+}
 function SocialFixture() {
   const [shown, setShown] = useState(true);
   Object.assign(window, { socialFixtureShow: setShown });
   if (new URLSearchParams(location.search).has("x-media")) return <XMediaFixture />;
+  const instagramSurface = new URLSearchParams(location.search).get("instagram-surface");
+  if (instagramSurface) return <InstagramSurface surface={instagramSurface} />;
   return (
     <div className="flex h-screen min-w-0 flex-col">
       <ToolPanel active={shown}>

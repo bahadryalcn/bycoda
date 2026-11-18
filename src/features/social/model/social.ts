@@ -1,6 +1,7 @@
 /** Public host contract. OAuth credentials and tool grants never belong here. */
 import type { RemoteProvider } from "../../connections/model/protocol";
 // Payload shapes are owned by the adapters; type-only imports keep one source of truth.
+import type { InstagramPublishOptions } from "../../../integrations/social/adapters/instagram-publish";
 import type { RedditPayload } from "../../../integrations/social/adapters/reddit-rules";
 import type { XPostExtras } from "../../../integrations/social/adapters/x";
 import type {
@@ -199,6 +200,7 @@ export type CampaignVariant = {
   tiktok?: TikTokVideoOptions;
   snapchat?: SnapchatPublishOptions;
   facebook?: FacebookReelOptions;
+  instagram?: InstagramPublishOptions;
 };
 /** Explicit Reel destination; omission preserves ordinary Page feed publishing. */
 export type FacebookReelOptions = {
@@ -300,6 +302,7 @@ export type SocialThread = {
   lastInboundAt: number;
   replyUntil?: number;
   replyAllowed?: boolean;
+  instagramSource?: "live_comment";
   platformPostId?: string;
   events: {
     id: string;
@@ -356,6 +359,7 @@ export type SocialDraft = {
   media?: SocialMedia[];
   factIds: string[];
   inboundEventId?: string;
+  instagramPrivateReply?: true;
   createdAt: number;
   /** Review reason; autonomy uses "awaiting_approval" | "needs_human" | "retry_exhausted". */
   reviewReason?: string;
@@ -423,6 +427,7 @@ export type SocialJob = {
     media: SocialMedia[];
     link?: string;
     recipientId?: string;
+    instagramRecipientHandle?: string;
     threadId?: string;
     postId?: string;
     objectPostId?: string;
@@ -430,11 +435,13 @@ export type SocialJob = {
     tiktok?: TikTokVideoOptions;
     snapchat?: SnapchatPublishOptions;
     facebook?: FacebookReelOptions;
+    instagram?: InstagramPublishOptions;
     reddit?: RedditPayload;
     x?: XPostExtras;
     whatsapp?: { template?: WhatsAppTemplateMessage; interactive?: WhatsAppInteractive };
     /** Meta 24-hour messaging window end (epoch ms), set from the thread when the draft is created. */
     replyUntil?: number;
+    instagramPrivateReply?: { commentId: string; until: number };
   };
   contactId?: string;
   status: "queued" | "running" | "succeeded" | "failed" | "review" | "cancelled";
@@ -467,6 +474,7 @@ export type SocialJob = {
       signature: string;
       startedAt: number;
       publishedId?: string;
+      instagramSubmitted?: true;
     };
     facebookReel?: {
       actorId: string;

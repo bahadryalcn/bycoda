@@ -45,6 +45,29 @@ Content lists and calendars can contain more records than one loaded page. **Loa
 
 AI planning preserves text entered after a request started. Conflicting plan operations cannot overlap. Activity refreshes while Command is active and provides continuation and retry for older records. A navigation prompt can populate an empty request or be explicitly added to an existing one. Generated reports identify their actual period when the Day/Week selection changes.
 
+## Instagram
+
+In **Accounts**, connect an Instagram professional account with Instagram Login
+for publishing, Inbox and insights. Select the operations you need before
+connecting so the OAuth flow requests the relevant permissions. Keep a verified
+browser connection for owner-managed profile, follower and post actions.
+
+In **Content**, choose the Instagram format. A feed post can use one image or
+video or a carousel with up to 20 images and videos. Story publishing uses one
+image or video and needs an eligible Business account. Schedule in bycoda to
+let its Host publish at the selected time.
+
+In **Inbox**, open an Instagram comment to reply publicly, send an eligible
+private reply or open its moderation actions. Existing API DMs can send an
+image or video at an HTTPS URL separately from the text. Check **Activity**
+after sending to see the actual outcome. The Instagram account tools show
+insights and the available mentions, and open Instagram's own workflow for
+professional conversion, Highlights, monetization and Live Producer.
+
+In chat, ask the AI to draft an Instagram Story or a private reply, or to read
+insights or observed mentions on a granted account. Review the exact send or
+publication if your account requires approval.
+
 ## Reply uncertainty
 
 An unconfirmed reply is not shown as definitely unsent. **Retry same reply** checks or resumes the original operation with its original identity rather than creating another reply. The draft and unresolved operation survive conversation switches and component remounts within the current app session. They are not a new disk-persistence guarantee across app reloads. Jobs that require review remain visible as requiring review.

@@ -16,8 +16,10 @@ import { operationText } from "../common/capabilityText";
 import type { Capability, SocialAccount, SocialOperation } from "../../model/social";
 import { TOKEN_PLATFORMS } from "../../model/social";
 import type { SocialClient } from "../../model/socialClient";
+import type { HostProject } from "../../../connections/public/protocol";
 import { TelegramChannelConnect } from "./platform/TelegramChannelConnect";
 import { XProfileEditor } from "./platform/XProfileEditor";
+import { InstagramAccountTools } from "./platform/InstagramAccountTools";
 import { useAccountWrite } from "./useAccountWrite";
 import { ChromeSessionConnect } from "./ChromeSessionConnect";
 import "./accounts.css";
@@ -26,6 +28,7 @@ export type AccountConnectionProps = {
   client: SocialClient;
   account: SocialAccount;
   capabilities: Capability[];
+  projects?: readonly HostProject[];
   /** This account's executor is the computer the owner is looking at. */
   onThisComputer: boolean;
   disabled: boolean;
@@ -64,6 +67,7 @@ export function AccountConnection({
   client,
   account,
   capabilities,
+  projects = [],
   onThisComputer,
   disabled,
   onChanged,
@@ -320,6 +324,15 @@ export function AccountConnection({
       ) : null}
       {account.platform === "x" && account.connected ? (
         <XProfileEditor client={client} accountId={account.id} accountName={account.name} />
+      ) : null}
+      {account.platform === "instagram" ? (
+        <InstagramAccountTools
+          client={client}
+          account={account}
+          capabilities={capabilities}
+          projects={projects}
+          disabled={disabled}
+        />
       ) : null}
       {browser?.error || oauth?.error ? (
         <InlineError>{browser?.error ?? oauth?.error}</InlineError>
