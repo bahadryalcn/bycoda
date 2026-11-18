@@ -6,18 +6,21 @@ import type { SocialAccount, SocialDraft } from "../../../model/social";
 import type { SocialClient } from "../../../model/socialClient";
 import { InstagramDirectComposer } from "./InstagramDirectComposer";
 
-const account = {
+const account: SocialAccount = {
   id: "ig",
   platform: "instagram",
   platformId: "web:instagram:42",
   name: "Studio",
+  accountType: "professional",
   connection: "browser",
+  scopes: [],
   executorId: "host",
   connected: true,
   accessApproved: true,
   paused: false,
-  grants: { "p1": ["message"] },
-} as SocialAccount;
+  grants: { p1: ["message"] },
+  createdAt: 1,
+};
 const projects = [{ id: "p1", name: "Launch", cwd: "fixture" }];
 const text = "Hello Ada.\nHere is the artwork.";
 
@@ -45,12 +48,14 @@ function button(label: string) {
 
 function render(client: SocialClient, currentAccount = account) {
   act(() =>
-    root.render(createElement(InstagramDirectComposer, {
-      client,
-      account: currentAccount,
-      projects,
-      disabled: false,
-    })),
+    root.render(
+      createElement(InstagramDirectComposer, {
+        client,
+        account: currentAccount,
+        projects,
+        disabled: false,
+      }),
+    ),
   );
 }
 
@@ -60,7 +65,10 @@ function typeMessage() {
   act(() => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, "@Ada");
     input.dispatchEvent(new Event("input", { bubbles: true }));
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(message, text);
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
+      message,
+      text,
+    );
     message.dispatchEvent(new Event("input", { bubbles: true }));
   });
 }
@@ -90,16 +98,25 @@ function fixture() {
     switch (action) {
       case "contacts.upsert":
         return { id: "contact-1", accountId: "ig", platformId: "71", projectIds: ["p1"] };
-      case "messages.draft": return draft;
-      case "drafts.approve": return draft;
-      case "messages.send": return send();
-      case "jobs.status": return jobs();
-      default: throw new Error(`Unexpected fixture action ${action}.`);
+      case "messages.draft":
+        return draft;
+      case "drafts.approve":
+        return draft;
+      case "messages.send":
+        return send();
+      case "jobs.status":
+        return jobs();
+      default:
+        throw new Error(`Unexpected fixture action ${action}.`);
     }
   });
   return {
     client: { browserInstagramRecipient, request } as unknown as SocialClient,
-    browserInstagramRecipient, request, send, jobs, draft,
+    browserInstagramRecipient,
+    request,
+    send,
+    jobs,
+    draft,
   };
 }
 
@@ -109,15 +126,25 @@ it("reviews the verified recipient and exact saved draft before the owner queues
   typeMessage();
   await act(async () => button("Review Instagram message").click());
   expect(browserInstagramRecipient).toHaveBeenCalledExactlyOnceWith("ig", "ada");
-  expect(request.mock.calls.map(([action]) => action)).toEqual(["contacts.upsert", "messages.draft"]);
+  expect(request.mock.calls.map(([action]) => action)).toEqual([
+    "contacts.upsert",
+    "messages.draft",
+  ]);
   expect(request.mock.calls[0]![1]).toEqual({
-    accountId: "ig", platformId: "71", name: "ada", instagramRecipientProjectId: "p1",
+    accountId: "ig",
+    platformId: "71",
+    name: "ada",
+    instagramRecipientProjectId: "p1",
   });
   const dialog = document.querySelector('[role="dialog"], [role="alertdialog"]');
   expect(dialog?.textContent).toContain("Queue this message from Studio to @ada for Launch?");
   expect(dialog?.querySelector("textarea")?.value).toBe(text);
   await act(async () => button("Queue Instagram message").click());
-  expect(request.mock.calls[2]).toEqual(["drafts.approve", { id: draft.id, reviewedDraft: draft }, expect.any(String)]);
+  expect(request.mock.calls[2]).toEqual([
+    "drafts.approve",
+    { id: draft.id, reviewedDraft: draft },
+    expect.any(String),
+  ]);
   expect(request.mock.calls[3]).toEqual(["messages.send", { id: draft.id }, expect.any(String)]);
   const requestIds = request.mock.calls.map(([, , id]) => id);
   expect(new Set(requestIds).size).toBe(4);
