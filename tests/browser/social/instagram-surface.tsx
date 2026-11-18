@@ -76,6 +76,32 @@ const client = {
           },
         ],
       };
+    if (action === "instagram.management.list")
+      return {
+        requests: [
+          {
+            id: "fixture-management-post",
+            accountId: account.id,
+            platformAccountId: account.platformId,
+            projectId: "demo",
+            kind: "post.edit",
+            details: {
+              postUrl: "https://www.instagram.com/p/FixturePost1/",
+              caption: "Studio opens at nine. Come early for coffee.",
+            },
+            createdAt: Date.UTC(2026, 10, 16),
+          },
+          {
+            id: "fixture-management-profile",
+            accountId: account.id,
+            platformAccountId: account.platformId,
+            projectId: "demo",
+            kind: "profile.update",
+            details: { patch: { bio: "Stories from the studio, every week." } },
+            createdAt: Date.UTC(2026, 10, 17),
+          },
+        ],
+      };
     if (action === "instagram.insights")
       return {
         metrics: {

@@ -279,6 +279,7 @@ export function AccountConnection({
             <FieldGroup legend={t("What this account can do")} hideLegend layout="row">
               {operationOptions.map((operation) => (
                 <Checkbox
+                  size="secondary"
                   key={operation}
                   label={operationText(operation)}
                   checked={operations.includes(operation)}
@@ -294,6 +295,7 @@ export function AccountConnection({
               ))}
               {account.platform === "linkedin" && isOrganization ? (
                 <Checkbox
+                  size="secondary"
                   label={t("LinkedIn Live comments")}
                   checked={linkedinLiveComments}
                   disabled={locked}

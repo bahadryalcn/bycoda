@@ -22,6 +22,15 @@
   min-width: 0;
 }
 
+/* A labelled picker and its refresh button: the picker fills the row and the button sits on its baseline. */
+.social-x-toolbar-pick {
+  align-items: end;
+}
+
+.social-x-toolbar-pick > :first-child {
+  flex: 1 1 12rem;
+}
+
 .social-x-list {
   display: flex;
   flex-direction: column;

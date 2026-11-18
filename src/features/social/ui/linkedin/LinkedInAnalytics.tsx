@@ -69,6 +69,7 @@ export function LinkedInAnalytics({
           {browser ? null : (
             <FieldGroup variant="bare" disabled={disabled || is("analytics")}>
               <Select
+                hideLabel
                 label={t("Analytics")}
                 value={selection}
                 options={[

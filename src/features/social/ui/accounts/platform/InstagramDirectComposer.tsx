@@ -75,6 +75,27 @@ function composerStore(client: SocialClient, key: string) {
   return store;
 }
 
+/** Loads a proposed message into the composer; the owner still reviews and queues it there. */
+export function prefillInstagramDirect(
+  client: SocialClient,
+  account: Pick<SocialAccount, "id" | "platformId" | "executorId">,
+  input: { handle: string; text: string },
+) {
+  const store = composerStore(
+    client,
+    JSON.stringify([account.id, account.platformId, account.executorId]),
+  );
+  const current = store.read();
+  if (current.pending || current.attempt?.sendAttempted) return false;
+  store.update({
+    input: { ...current.input, ...input },
+    attempt: undefined,
+    feedback: undefined,
+    error: undefined,
+  });
+  return true;
+}
+
 function newAttempt(input: ComposerInput): Attempt {
   return {
     input,

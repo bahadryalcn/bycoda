@@ -5,14 +5,17 @@ import { Checkbox } from "../../../../../shared/ui/Checkbox";
 import { Disclosure } from "../../../../../shared/ui/Disclosure";
 import { FieldGroup } from "../../../../../shared/ui/FieldGroup";
 import { NumberField } from "../../../../../shared/ui/NumberField";
+import { Select } from "../../../../../shared/ui/Select";
+import { publishedXPosts } from "../contentSchedule";
 import { TextareaField } from "../../../../../shared/ui/TextareaField";
 import { TextField } from "../../../../../shared/ui/TextField";
 import type { XPostDraft } from "../contentDraft";
 import type { PlatformFieldProps } from "./PlatformFields";
 
 /** Extra X format fields belong to each selected account's draft. */
-export function XFields({ value, disabled, onChange }: PlatformFieldProps) {
+export function XFields({ account, value, posts = [], disabled, onChange }: PlatformFieldProps) {
   const draft = value.x ?? {};
+  const quoteTargets = publishedXPosts(posts, account.id);
   const thread = draft.thread ?? [];
   const update = (patch: XPostDraft) => onChange({ x: { ...draft, ...patch } });
   return (
@@ -21,6 +24,7 @@ export function XFields({ value, disabled, onChange }: PlatformFieldProps) {
         {t("X posts take either up to four images or one video.")}
       </Text>
       <Checkbox
+        size="body"
         label={t("Poll")}
         checked={!!draft.poll}
         onChange={(event) =>
@@ -74,6 +78,19 @@ export function XFields({ value, disabled, onChange }: PlatformFieldProps) {
         <Button variant="secondary" onClick={() => update({ thread: [...thread, ""] })}>
           {t("Add thread post")}
         </Button>
+      ) : null}
+      {quoteTargets.length ? (
+        <Select
+          label={t("Quote a published post")}
+          value={
+            quoteTargets.some((item) => item.id === draft.quotePostId) ? draft.quotePostId! : ""
+          }
+          options={[
+            { value: "", label: t("No quote") },
+            ...quoteTargets.map((item) => ({ value: item.id, label: item.label })),
+          ]}
+          onValueChange={(id) => update({ quotePostId: id })}
+        />
       ) : null}
       <Disclosure summary={t("More X options")} variant="row" size="sm">
         <div className="content-platform-more">

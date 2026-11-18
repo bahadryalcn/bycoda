@@ -388,7 +388,7 @@
 .content-footer {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-start;
   justify-content: flex-end;
   gap: 0.5rem;
 }

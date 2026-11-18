@@ -21,6 +21,7 @@ import { ContentMediaField } from "./ContentMediaField";
 import { setPlatform, toggleAccount, type ContentDraft, type ContentMedia } from "./contentDraft";
 import { accountAvailability, selectedAccounts, usesInstagramApi } from "./contentRules";
 import { dayKey } from "./calendarModel";
+import { localScheduleHint } from "./contentSchedule";
 import { PlatformFields, hasPlatformFields } from "./platform-fields/PlatformFields";
 
 export type ContentEditorFieldsProps = {
@@ -141,6 +142,7 @@ export function ContentEditorFields(props: ContentEditorFieldsProps) {
             const checked = draft.accountIds.includes(account.id);
             return (
               <Checkbox
+                size="body"
                 checked={checked}
                 disabled={availability.disabled && !checked}
                 onChange={() =>
@@ -207,6 +209,16 @@ export function ContentEditorFields(props: ContentEditorFieldsProps) {
             onChange={(value) => onDraft({ ...draft, scheduledAt: value })}
           />
         ) : null}
+        {draft.when === "later"
+          ? selected.map((account) => {
+              const hint = localScheduleHint(account);
+              return hint ? (
+                <Text key={account.id} as="p" size="caption" tone="muted" leading="inherit">
+                  {hint}
+                </Text>
+              ) : null;
+            })
+          : null}
       </FieldGroup>
       <ContentMediaField
         client={client}
@@ -243,6 +255,7 @@ export function ContentEditorFields(props: ContentEditorFieldsProps) {
             media={draft.media}
             disabled={disabled}
             creator={creators[account.id]}
+            posts={snapshot?.jobs ?? []}
             onChange={(next) => onDraft(setPlatform(draft, account.id, next))}
           />
         </section>

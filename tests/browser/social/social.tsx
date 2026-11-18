@@ -2012,6 +2012,12 @@ Object.assign(window, {
               handle: "@fixture",
               description: "Independent videos and live shows.",
             };
+          if (params.action === "youtube.analytics.report" && params.input?.kind === "earnings")
+            return {
+              status: "needs_scope",
+              reasonCode: "youtube_monetary_scope_required",
+              requiredScopes: ["https://www.googleapis.com/auth/yt-analytics-monetary.readonly"],
+            };
           if (params.action === "youtube.analytics.report")
             return {
               status: "ok",
@@ -2076,6 +2082,15 @@ Object.assign(window, {
               ],
             };
           if (params.action === "youtube.monetization.status") return { status: "needs_human" };
+          if (params.action === "x.lists")
+            return params.input?.listId
+              ? { items: [{ id: "1002", username: "studiofan", name: "Studio Fan" }] }
+              : {
+                  items: [
+                    { id: "2001", name: "Studio friends", private: false, memberCount: 12 },
+                    { id: "2002", name: "Press", private: true, memberCount: 4 },
+                  ],
+                };
           if (params.action === "linkedin.analytics")
             return { source: "api", metrics: { impressions: 1247, reactions: 46, comments: 12 } };
           if (params.action === "linkedin.live.status")
@@ -3064,6 +3079,71 @@ if (new URLSearchParams(location.search).has("calendar-seeded")) {
       actorId: "fixture",
     },
   ];
+}
+if (new URLSearchParams(location.search).has("composer-multi")) {
+  // Visual evidence: X, Instagram, YouTube, Facebook and TikTok selected together.
+  const base = snapshot.accounts[0]!;
+  Object.assign(base, {
+    xApiProduct: "enterprise",
+    connection: "oauth",
+    connected: true,
+    accessApproved: true,
+    platformId: "12345",
+    scopes: ["tweet.read", "tweet.write", "users.read", "media.write"],
+    grants: { demo: ["read", "draft", "publish"] },
+  });
+  const youtubeScopes = [
+    ...new Set(
+      Object.values(platformRequirements("youtube", "channel")).flatMap(
+        (item) => item?.scopes ?? [],
+      ),
+    ),
+  ];
+  const others = [
+    [
+      "instagram",
+      "Studio Instagram",
+      "member",
+      ["instagram_business_basic", "instagram_business_content_publish"],
+    ],
+    ["youtube", "Studio YouTube", "channel", youtubeScopes],
+    [
+      "facebook",
+      "Studio Facebook Page",
+      "page",
+      ["pages_manage_posts", "pages_read_engagement", "pages_show_list"],
+    ],
+    ["tiktok", "Studio TikTok", "member", ["user.info.basic", "video.publish"]],
+  ] as const;
+  for (const [platform, name, accountType, scopes] of others)
+    snapshot.accounts.push({
+      ...base,
+      id: `multi-${platform}`,
+      platform,
+      platformId: `${platform}-1`,
+      name,
+      accountType,
+      xApiProduct: undefined,
+      connection: "oauth",
+      scopes: [...scopes],
+    } as SocialSnapshot["accounts"][number]);
+  snapshot.capabilities = Object.fromEntries(
+    snapshot.accounts.map((account) => [account.id, accountCapabilities(account)]),
+  );
+  // Fixture only: every selected platform can publish, so the composer shows all five at once.
+  for (const account of snapshot.accounts)
+    snapshot.capabilities[account.id] = [
+      ...snapshot.capabilities[account.id].filter((item) => item.operation !== "publish"),
+      {
+        operation: "publish",
+        status: "available",
+        reason: "Fixture publishing.",
+        reasonCode: "api.ready",
+        scopes: [],
+        source: "fixture",
+      },
+    ];
+  snapshot.sendingEnabled = true;
 }
 const fixtureQueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 createRoot(document.getElementById("root")!).render(

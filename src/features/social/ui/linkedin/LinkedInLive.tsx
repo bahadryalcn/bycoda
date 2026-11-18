@@ -159,7 +159,7 @@ function LinkedInLiveAccount({ account, client, disabled }: Props) {
                 maxLength={4096}
                 required
               />
-              <div className="social-li-actions">
+              <div className="social-li-actions social-li-form-actions">
                 <Button type="submit" variant="primary" size="sm" loading={is("save")}>
                   {t("Save Live credentials")}
                 </Button>

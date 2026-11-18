@@ -1,4 +1,4 @@
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { t } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
@@ -19,7 +19,7 @@ import { useAccountWrite } from "../useAccountWrite";
 import { YouTubeBrowse } from "./YouTubeBrowse";
 import { YouTubeFields } from "./YouTubeFields";
 import { withDefaults, youtubePayload } from "./YouTubeFormFields";
-import { YouTubeFacts, YouTubeResult } from "./YouTubeResult";
+import { asYoutubeRecord, YouTubeFacts, YouTubeResult } from "./YouTubeResult";
 import {
   isBrowseForm,
   youtubeIdKeys,
@@ -30,7 +30,8 @@ import {
   type YouTubeSection,
   type YouTubeView,
 } from "./youtubeForms";
-import { youtubePick } from "./youtubeItems";
+import { youtubeChanged, youtubePick, youtubePrefill } from "./youtubeItems";
+import { YouTubeScopeHandoff, youtubeScopeOperation } from "./YouTubeScopeHandoff";
 import "./youtube.css";
 
 function browseTitle(action: string) {
@@ -94,15 +95,30 @@ export function YouTubeManage({
     id: string;
     title: string;
     keys: string[];
+    baseline: Record<string, string>;
   }>();
   const [result, setResult] = useState<unknown>();
-  const draft = drafts[section] ?? {};
+  const own = drafts[section] ?? {};
+  const selected = selection?.section === section ? selection : undefined;
+  const queryClient = useQueryClient();
+  // Browser accounts read the channel only when the owner presses Load, so only API accounts prefill.
+  const channelRead = useQuery({
+    queryKey: [...socialQueryScope(client), "youtube", account.id, "prefill", "channel"],
+    queryFn: () => client.request("youtube.channel.read", { accountId: account.id }),
+    enabled: section === "channel" && !browser && !disabled && account.connected && !account.paused,
+    staleTime: 15_000,
+  });
+  const channelBaseline = asYoutubeRecord(channelRead.data)
+    ? youtubePrefill("youtube.channel.update", asYoutubeRecord(channelRead.data)!)
+    : {};
+  const baseline = section === "channel" ? channelBaseline : (selected?.baseline ?? {});
+  // The edit form shows the current values; what the owner typed (the draft) wins over them.
+  const draft: YouTubeDraft = { ...baseline, ...own };
   const mergeDraft = (values: YouTubeDraft) =>
     setDrafts((current) => ({ ...current, [section]: { ...current[section], ...values } }));
   const setField = (key: string, value: string | File[]) => mergeDraft({ [key]: value });
   const { write, error, is, setError } = useAccountWrite(t("The YouTube operation failed."));
   const confirmation = useConfirm();
-  const queryClient = useQueryClient();
 
   const sectionViews = youtubeViews(section);
   const view = sectionViews.length ? (views[section] ?? sectionViews[0]!.value) : undefined;
@@ -126,7 +142,15 @@ export function YouTubeManage({
     form?.action === "youtube.community.publish" && draft.publishAt
       ? t("Schedule Community post")
       : (form?.label ?? "");
-  const selected = selection?.section === section ? selection : undefined;
+  const outgoing = form?.fieldsInPatch ? youtubeChanged(effective, baseline) : effective;
+  const nothingToChange =
+    form?.fieldsInPatch !== undefined &&
+    !form.fieldsInPatch.some((key) => {
+      const value = outgoing[key];
+      return Array.isArray(value) ? value.length > 0 : value !== undefined && value !== "";
+    }) &&
+    !form.fields?.some(({ key, emptyAllowed }) => emptyAllowed && outgoing[key] === "");
+  const scopeOperation = section === "analytics" ? youtubeScopeOperation(result) : undefined;
   const reviewing = section === "review";
 
   const refreshLists = () =>
@@ -148,12 +172,12 @@ export function YouTubeManage({
         await write(
           "youtube",
           async () =>
-            await client.request(form.action, await youtubePayload(form, effective, account.id)),
+            await client.request(form.action, await youtubePayload(form, outgoing, account.id)),
         ),
       );
       return;
     }
-    const details = await youtubePayload(form, effective, account.id);
+    const details = await youtubePayload(form, outgoing, account.id);
     const confirmed = await confirmation.confirm({
       title: actionLabel,
       message: account.name,
@@ -168,7 +192,7 @@ export function YouTubeManage({
         async () =>
           await client.request(
             form.action,
-            await youtubePayload(form, effective, account.id, client.upload),
+            await youtubePayload(form, outgoing, account.id, client.upload),
           ),
       ),
     );
@@ -180,14 +204,20 @@ export function YouTubeManage({
     setError("");
   };
   const pick = (row: Record<string, unknown>) => {
-    const target = youtubePick(section, view, draft, row);
+    const target = youtubePick(section, view, own, row);
     if (!target) return;
-    mergeDraft(target.values);
+    // A new row starts from its own current values, not from edits typed for the previous row.
+    setDrafts((current) => {
+      const next = { ...current[section], ...target.values };
+      for (const key of Object.keys(target.baseline ?? {})) delete next[key];
+      return { ...current, [section]: next };
+    });
     setSelection({
       section,
       id: String(row.id),
       title: target.title,
       keys: Object.keys(target.values),
+      baseline: target.baseline ?? {},
     });
     if (taskForms.some((item) => item.action === target.action)) chooseTask(target.action);
     else setResult(undefined);
@@ -196,7 +226,7 @@ export function YouTubeManage({
     if (!selected) return;
     setDrafts((current) => {
       const next = { ...current[section] };
-      for (const key of selected.keys) delete next[key];
+      for (const key of [...selected.keys, ...Object.keys(selected.baseline)]) delete next[key];
       return { ...current, [section]: next };
     });
     setSelection(undefined);
@@ -381,7 +411,7 @@ export function YouTubeManage({
             <Button
               variant={form.danger ? "secondary" : "primary"}
               tone={form.danger ? "danger" : undefined}
-              disabled={Boolean(incomplete || unavailable || blocked)}
+              disabled={Boolean(incomplete || unavailable || blocked || nothingToChange)}
               loading={busy}
               onClick={() => {
                 run().catch(handleError);
@@ -390,7 +420,16 @@ export function YouTubeManage({
               {actionLabel}
             </Button>
           </div>
-          {result !== undefined ? <YouTubeResult result={result} busy={busy} /> : null}
+          {scopeOperation ? (
+            <YouTubeScopeHandoff
+              client={client}
+              account={account}
+              operation={scopeOperation}
+              disabled={blocked}
+            />
+          ) : result !== undefined ? (
+            <YouTubeResult result={result} busy={busy} />
+          ) : null}
         </section>
       ) : (
         <>

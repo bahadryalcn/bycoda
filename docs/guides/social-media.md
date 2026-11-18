@@ -57,6 +57,28 @@ Content lists and calendars can contain more records than one loaded page. **Loa
 
 AI planning preserves text entered after a request started. Conflicting plan operations cannot overlap. Activity refreshes while Command is active and provides continuation and retry for older records. A navigation prompt can populate an empty request or be explicitly added to an existing one. Generated reports identify their actual period when the Day/Week selection changes.
 
+## What you can ask the AI, by platform
+
+The AI works through the same accounts and permissions you granted. Where a change
+edits your account or deletes something, the AI only queues a request. You approve
+the exact request on the account before anything happens. Passwords, captchas and
+verification always stay with you.
+
+| Platform  | Ask the AI to                                                                                                                                     | You do                                                                                                            |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| YouTube   | Plan uploads and Shorts, read Analytics and earnings, run Live, queue a channel update or a video, playlist, comment or Community delete.         | Approve queued changes in **Review**. Complete Google verification for sensitive scopes.                          |
+| TikTok    | Plan video and photo posts, read insights and earnings, queue follow, comment like, hide, pin and reply, LIVE reply, profile, privacy and delete. | Approve queued changes in **TikTok changes**. Replying to comments on a non-Business account opens TikTok Studio. |
+| Instagram | Plan images, Reels, carousels and Stories, read insights, mentions and earnings, queue post edit or delete, profile, Highlight and DM draft.      | Approve queued changes on the account. Cold DMs are not possible.                                                 |
+| Facebook  | Plan posts, photos, Reels and Stories, schedule, read insights and earnings, queue Page, post, moderation and Live changes.                       | Approve queued changes in **Facebook requests**. A browser-connected Page opens the Story composer for you.       |
+| Snapchat  | Plan Spotlight and Story videos, read insights and earnings, queue profile changes and sign-up.                                                   | Approve profile changes and sign-up. Snapchat has no comments or Live.                                            |
+| X         | Plan posts, read mentions, comments and insights.                                                                                                 | Profile, earnings and sign-up open the X page for you. X API use needs your billing opt-in.                       |
+| LinkedIn  | Plan posts, polls and articles, read analytics, prepare profile and Live work.                                                                    | Newsletters, Page messaging and profile edits open LinkedIn for you.                                              |
+
+Say "go live on YouTube with this scene" in a Live Games chat to start a broadcast on
+YouTube, Facebook, Instagram, TikTok, LinkedIn or X. You approve each go-live request.
+Everything the AI can do is limited by what the platform allows. See
+[Social integrations](../integrations/social.md) for exact operations per platform.
+
 ## Instagram
 
 In **Accounts**, connect an Instagram professional account with Instagram Login

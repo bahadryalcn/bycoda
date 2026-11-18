@@ -173,6 +173,7 @@ export function InstagramFields({ account, media, value, disabled, onChange }: P
         </>
       )}
       <Checkbox
+        size="body"
         checked={options.isAiGenerated ?? false}
         label={t("Label as AI-generated")}
         onChange={(event) => change({ isAiGenerated: event.target.checked })}

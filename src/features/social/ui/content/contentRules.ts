@@ -477,7 +477,8 @@ export function draftProblems(input: RuleInput): Problem[] {
     if (account.platform === "x") {
       const x = xPostExtras(platform?.x);
       if (x) {
-        if (xPostExtrasIssue(x, draft.media.length)) add(t("Check X publishing options."));
+        const xIssue = xPostExtrasIssue(x, draft.media.length);
+        if (xIssue) add(xExtrasIssueText(xIssue));
         if (account.connection === "browser") add(t("Open X to publish these options manually."));
         else if (x.quotePostId && account.xApiProduct !== "enterprise")
           add(t("X quote posts require Enterprise API access."));
@@ -553,6 +554,26 @@ export function draftProblems(input: RuleInput): Problem[] {
     }
   }
   return problems;
+}
+
+/** Owner-readable text for each shared X option check; unknown checks keep the generic line. */
+function xExtrasIssueText(issue: string): string {
+  switch (issue) {
+    case "An X poll needs two to four options.":
+      return t("An X poll needs two to four options.");
+    case "Each X poll option must be 1 to 25 characters.":
+      return t("Each X poll option must be 1 to 25 characters.");
+    case "An X poll lasts 5 minutes to 7 days.":
+      return t("An X poll lasts 5 minutes to 7 days.");
+    case "An X poll cannot include media or a quote.":
+      return t("An X poll cannot include media or a quote.");
+    case "An X thread allows 1 to 24 additional posts, each up to 280 characters.":
+      return t("An X thread allows 1 to 24 additional posts, each up to 280 characters.");
+    case "Quote post ID must be numeric.":
+      return t("Quote post ID must be numeric.");
+    default:
+      return t("Check X publishing options.");
+  }
 }
 
 export function selectedAccounts(draft: ContentDraft, accounts: SocialAccount[]): SocialAccount[] {

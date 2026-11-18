@@ -8,7 +8,7 @@ import {
   youtubeViewForms,
   youtubeViews,
 } from "./youtubeForms";
-import { youtubePick, youtubeRefOptions } from "./youtubeItems";
+import { youtubeChanged, youtubePick, youtubePrefill, youtubeRefOptions } from "./youtubeItems";
 
 describe("YouTube list picking", () => {
   it("fills the video id and opens the video edit task", () => {
@@ -17,8 +17,61 @@ describe("YouTube list picking", () => {
     ).toEqual({
       values: { videoId: "v1" },
       action: "youtube.video.update",
+      baseline: { title: "Summer release", privacy: "public" },
       title: "Summer release",
     });
+  });
+
+  it("prefills the video edit form from the row, including tags and flags", () => {
+    expect(
+      youtubePrefill("youtube.video.update", {
+        id: "v1",
+        title: "Summer release",
+        description: "",
+        privacy: "unlisted",
+        categoryId: "22",
+        tags: ["a", "b", 3],
+        madeForKids: false,
+        publishAt: "2026-12-01T10:00:00Z",
+      }),
+    ).toEqual({
+      title: "Summer release",
+      description: "",
+      privacy: "unlisted",
+      categoryId: "22",
+      tags: "a\nb",
+      madeForKids: "false",
+    });
+  });
+
+  it("prefills the playlist and channel edit forms and ignores other actions", () => {
+    expect(
+      youtubePrefill("youtube.playlist.update", {
+        id: "pl1",
+        title: "Shorts",
+        description: "All shorts",
+        privacy: "private",
+      }),
+    ).toEqual({ title: "Shorts", description: "All shorts", privacy: "private" });
+    expect(
+      youtubePrefill("youtube.channel.update", {
+        name: "Fixture",
+        description: "About",
+        keywords: "a b",
+        country: "TR",
+        madeForKids: true,
+      }),
+    ).toEqual({ description: "About", keywords: "a b", country: "TR", madeForKids: "true" });
+    expect(youtubePrefill("youtube.comment.moderate", { title: "x" })).toEqual({});
+  });
+
+  it("sends only the prefilled values the owner changed", () => {
+    expect(
+      youtubeChanged(
+        { videoId: "v1", title: "Summer release", description: "New notes", privacy: "public" },
+        { title: "Summer release", description: "Old notes", privacy: "public" },
+      ),
+    ).toEqual({ videoId: "v1", description: "New notes" });
   });
 
   it("drills into a playlist, then picks one of its items", () => {

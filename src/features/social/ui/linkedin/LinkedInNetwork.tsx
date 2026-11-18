@@ -130,6 +130,7 @@ export function LinkedInNetwork({
             <FieldGroup variant="bare" disabled={disabled || busy}>
               <div className="social-li-toolbar">
                 <Select
+                  hideLabel
                   label={t("Connections")}
                   value={list}
                   options={[

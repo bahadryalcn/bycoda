@@ -64,6 +64,11 @@ export function MetaFields(props: PlatformFieldProps) {
           {t("Create a Story on Facebook")}
         </Button>
       ) : null}
+      {account.connection === "browser" ? (
+        <Text as="p" size="caption" tone="muted" leading="inherit">
+          {t("In Facebook, switch to the Page first so the Story posts as the Page.")}
+        </Text>
+      ) : null}
     </FieldGroup>
   );
 }

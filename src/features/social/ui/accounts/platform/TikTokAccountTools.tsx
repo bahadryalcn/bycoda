@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useT } from "../../../../../shared/i18n";
 import { Disclosure } from "../../../../../shared/ui/Disclosure";
+import { SegmentedControl } from "../../../../../shared/ui/SegmentedControl";
 import { SubTabs } from "../../../../../shared/ui/SubTabs";
 import type { HostProject } from "../../../../connections/public/protocol";
 import type { SocialAccount } from "../../../model/social";
@@ -38,6 +39,59 @@ export function TikTokAccountTools({
   const [changeDraft, setChangeDraft] = useState<TikTokChange>({ kind: "follow" });
   const [businessStatus, setBusinessStatus] = useState<TikTokBusinessStatus>();
   const props = { client, accountId: account.id, disabled };
+  // Eleven sections would wrap into two tab rows, so related ones share a tab and a view switch.
+  // Every panel below stays mounted and only hides, so a draft survives switching sections.
+  const groups = [
+    {
+      value: "account",
+      label: t("Account"),
+      views: [
+        { value: "profile", label: t("Profile") },
+        ...(browser
+          ? [
+              { value: "privacy", label: t("Privacy") },
+              { value: "business", label: t("TikTok for Business") },
+            ]
+          : []),
+      ],
+    },
+    {
+      value: "insights",
+      label: t("Analytics"),
+      views: [
+        { value: "analytics", label: t("Analytics") },
+        ...(browser ? [{ value: "earnings", label: t("Earnings") }] : []),
+      ],
+    },
+    ...(browser
+      ? [
+          {
+            value: "conversations",
+            label: t("Conversations"),
+            views: [
+              { value: "comments", label: t("Comments") },
+              { value: "mentions", label: t("Mentions") },
+              { value: "messages", label: t("Direct messages") },
+            ],
+          },
+          {
+            value: "audience",
+            label: t("Audience"),
+            views: [
+              { value: "followers", label: t("Followers") },
+              { value: "changes", label: t("TikTok changes") },
+            ],
+          },
+          {
+            value: "live",
+            label: t("TikTok LIVE"),
+            views: [{ value: "live", label: t("TikTok LIVE") }],
+          },
+        ]
+      : []),
+  ];
+  const group =
+    groups.find((item) => item.views.some((view) => view.value === section)) ?? groups[0]!;
   const selectChange = (change: TikTokChange) => {
     setChangeDraft(change);
     setSection("changes");
@@ -58,26 +112,21 @@ export function TikTokAccountTools({
       <div className="tiktok-tools">
         <SubTabs
           label={t("TikTok section")}
-          value={section}
-          onValueChange={setSection}
-          items={[
-            { value: "profile", label: t("Profile") },
-            { value: "analytics", label: t("Analytics") },
-            ...(browser
-              ? [
-                  { value: "privacy", label: t("Privacy") },
-                  { value: "comments", label: t("Comments") },
-                  { value: "mentions", label: t("Mentions") },
-                  { value: "messages", label: t("Direct messages") },
-                  { value: "followers", label: t("Followers") },
-                  { value: "earnings", label: t("Earnings") },
-                  { value: "changes", label: t("TikTok changes") },
-                  { value: "live", label: t("TikTok LIVE") },
-                  { value: "business", label: t("TikTok for Business") },
-                ]
-              : []),
-          ]}
+          value={group.value}
+          onValueChange={(value) => {
+            const next = groups.find((item) => item.value === value);
+            if (next) setSection(next.views[0]!.value);
+          }}
+          items={groups.map(({ value, label }) => ({ value, label }))}
         />
+        {group.views.length > 1 ? (
+          <SegmentedControl
+            label={t("TikTok view")}
+            value={section}
+            options={group.views}
+            onValueChange={setSection}
+          />
+        ) : null}
         <div hidden={section !== "profile"}>
           <TikTokProfile
             {...props}

@@ -1,4 +1,4 @@
-import type { SocialAccount, TikTokCreatorInfo } from "../../../model/social";
+import type { SocialAccount, SocialJob, TikTokCreatorInfo } from "../../../model/social";
 import type { ContentMedia, PlatformDraft } from "../contentDraft";
 import { FacebookReelFields } from "./FacebookReelFields";
 import { LinkedInFields } from "./LinkedInFields";
@@ -17,6 +17,8 @@ export type PlatformFieldProps = {
   /** Publishing is not available for this account, or the editor is locked. */
   disabled: boolean;
   creator?: TikTokCreatorInfo;
+  /** Jobs MonoCode already ran, for choosing a post to quote. */
+  posts?: readonly SocialJob[];
   onChange: (next: PlatformDraft) => void;
 };
 

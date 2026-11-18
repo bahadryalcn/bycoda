@@ -225,6 +225,7 @@ for (const theme of ["light", "dark"])
           await frame.getByText(/^(Instagram tools|Instagram araçları)$/i).click();
           const tool = (name: RegExp) => frame.getByRole("tab", { name }).click();
           if (surface === "browser") {
+            await tool(/^(Account|Hesap)$/);
             await tool(/^(Profile|Profil)$/);
             await frame
               .getByRole("button", { name: /^(Read Instagram profile|Instagram profilini oku)$/i })
@@ -235,6 +236,7 @@ for (const theme of ["light", "dark"])
                 name: /^(Open Instagram Live Producer|Instagram Canlı Yayın Yapımcısı’nı aç)$/i,
               })
               .click();
+            await tool(/^(Account|Hesap)$/);
             await tool(/^(Earnings|Kazançlar)$/);
             await frame
               .getByRole("button", {
@@ -242,6 +244,7 @@ for (const theme of ["light", "dark"])
               })
               .click();
             await expect(frame.getByText(/€321\.40/)).toBeVisible();
+            await tool(/^(Content|İçerik)$/);
             await tool(/^(Highlights|Öne çıkanlar)$/);
             await frame
               .getByRole("button", {
@@ -1054,9 +1057,14 @@ for (const theme of ["light", "dark"])
         .locator("summary")
         .filter({ hasText: /TikTok araçları|TikTok tools/ })
         .click();
-      const select = async (name: RegExp) => {
-        await detail.getByRole("tab", { name }).click();
+      // Grouped tools: pick the group tab, then the view inside it when the group has several.
+      const select = async (group: RegExp, view?: RegExp) => {
+        await detail.getByRole("tab", { name: group }).click();
+        if (view) await detail.getByRole("radio", { name: view }).click();
       };
+      const ACCOUNT = /^(Hesap|Account)$/;
+      const INSIGHTS = /^(Analiz|Analizler|Analitik|Analytics)$/;
+      const CONVERSATIONS = /^(Konuşmalar|Conversations)$/;
       const expose = async (button: RegExp, result: string | RegExp, surface: string) => {
         await detail.getByRole("button", { name: button }).click();
         const value = detail
@@ -1075,7 +1083,7 @@ for (const theme of ["light", "dark"])
         .getByRole("button", { name: /Profili kaydet|Save profile/i })
         .scrollIntoViewIfNeeded();
       await capture(page, "profile-options");
-      await select(/^(Gizlilik|Privacy)$/);
+      await select(ACCOUNT, /^(Gizlilik|Privacy)$/);
       await detail
         .getByRole("button", { name: /Gizlilik ayarlarını oku|Read privacy settings/ })
         .click();
@@ -1083,21 +1091,21 @@ for (const theme of ["light", "dark"])
         detail.getByRole("checkbox", { name: /Gizli hesap|Private account/ }),
       ).toBeVisible();
       await capture(page, "privacy");
-      await select(/^(Analiz|Analizler|Analitik|Analytics)$/);
+      await select(INSIGHTS);
       await expose(/Analizleri oku|Read analytics/, "128.450", "analytics");
-      await select(/^(Kazançlar|Earnings)$/);
+      await select(INSIGHTS, /^(Kazançlar|Earnings)$/);
       await expose(/Kazançları oku|Read earnings/, "₺ 450,50", "earnings");
-      await select(/^(Yorumlar|Comments)$/);
+      await select(CONVERSATIONS, /^(Yorumlar|Comments)$/);
       await expose(/Yorumları oku|Read comments/, "Yeni video ne zaman geliyor?", "comments");
-      await select(/^(Bahsetmeler|Bahsedilenler|Mentions)$/);
+      await select(CONVERSATIONS, /^(Bahsetmeler|Bahsedilenler|Mentions)$/);
       await expose(/Bahsetmeleri oku|Read mentions/, "Yeni video ne zaman geliyor?", "mentions");
-      await select(/^(Doğrudan mesajlar|Direct messages)$/i);
+      await select(CONVERSATIONS, /^(Doğrudan mesajlar|Direct messages)$/i);
       await expose(
         /Doğrudan mesajları oku|Read direct messages/,
         "Yeni video ne zaman geliyor?",
         "messages",
       );
-      await select(/^(Takipçiler|Followers)$/);
+      await select(/^(Hedef kitle|Audience)$/, /^(Takipçiler|Followers)$/);
       await expose(/Hedef kitleyi oku|Read audience/, "@demo.fan", "audience");
       await detail.getByRole("button", { name: /^(Takip et|Follow)$/ }).click();
       await detail
@@ -1120,7 +1128,7 @@ for (const theme of ["light", "dark"])
         /Yayın anahtarı bu Host’a kaydedildi|Stream key saved on this Host/,
         "live",
       );
-      await select(/^TikTok for Business$/);
+      await select(ACCOUNT, /^TikTok for Business$/);
       await expose(
         /Business API erişimini kontrol et|Check Business API access/,
         /Bu Host’ta TikTok Business API erişimi yok|TikTok Business API access unavailable/,

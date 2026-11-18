@@ -244,6 +244,7 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
     <div className="inbox-reply">
       {options.data?.instagram?.privateReply || draft.instagramPrivateReply ? (
         <Checkbox
+          size="secondary"
           label={t("Send privately on Instagram")}
           checked={!!draft.instagramPrivateReply}
           disabled={!!busy || !!operation}

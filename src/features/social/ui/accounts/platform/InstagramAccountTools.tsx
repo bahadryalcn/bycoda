@@ -12,7 +12,7 @@ import type { SocialBrowserIntent } from "../../../model/socialBrowser";
 import type { SocialClient } from "../../../model/socialClient";
 import { useAccountWrite } from "../useAccountWrite";
 import { InstagramAccountMentions } from "./InstagramAccountMentions";
-import { InstagramDirectComposer } from "./InstagramDirectComposer";
+import { InstagramDirectComposer, prefillInstagramDirect } from "./InstagramDirectComposer";
 import { InstagramEarningsPanel } from "./InstagramEarningsPanel";
 import { InstagramFollowersPanel } from "./InstagramFollowersPanel";
 import { InstagramHighlightsPanel } from "./InstagramHighlightsPanel";
@@ -23,6 +23,7 @@ import { InstagramPostsPanel } from "./InstagramPostsPanel";
 import { InstagramProfileEditor } from "./InstagramProfileEditor";
 import "./instagram.css";
 
+type Group = "overview" | "content" | "messages" | "account" | "live" | "requests";
 type Section =
   | "insights"
   | "mentions"
@@ -58,26 +59,58 @@ export function InstagramAccountTools({
   const analytics = available("analytics");
   const signedMentions = available("webhook");
   const messageStart = available("message.start");
-  const sections: { value: Section; label: string }[] = [
-    ...(analytics ? [{ value: "insights" as const, label: t("Insights") }] : []),
-    ...(browser || signedMentions ? [{ value: "mentions" as const, label: t("Mentions") }] : []),
-    ...(browser && messageStart ? [{ value: "messages" as const, label: t("Messages") }] : []),
+  const sections: { value: Section; label: string; group: Group }[] = [
+    ...(analytics
+      ? [{ value: "insights" as const, label: t("Insights"), group: "overview" as const }]
+      : []),
+    ...(browser || signedMentions
+      ? [{ value: "mentions" as const, label: t("Mentions"), group: "overview" as const }]
+      : []),
+    ...(browser
+      ? [{ value: "followers" as const, label: t("Followers"), group: "overview" as const }]
+      : []),
     ...(browser
       ? [
-          { value: "posts" as const, label: t("Posts") },
-          { value: "followers" as const, label: t("Followers") },
-          { value: "highlights" as const, label: t("Highlights") },
-          { value: "profile" as const, label: t("Profile") },
-          { value: "earnings" as const, label: t("Earnings") },
-          { value: "live" as const, label: t("Live") },
-          { value: "requests" as const, label: t("Requests") },
+          { value: "posts" as const, label: t("Posts"), group: "content" as const },
+          { value: "highlights" as const, label: t("Highlights"), group: "content" as const },
+        ]
+      : []),
+    ...(browser && messageStart
+      ? [{ value: "messages" as const, label: t("Messages"), group: "messages" as const }]
+      : []),
+    ...(browser
+      ? [
+          { value: "profile" as const, label: t("Profile"), group: "account" as const },
+          { value: "earnings" as const, label: t("Earnings"), group: "account" as const },
         ]
       : []),
     ...(account.connection === "browser"
-      ? [{ value: "browser" as const, label: t("Browser") }]
+      ? [{ value: "browser" as const, label: t("Browser"), group: "account" as const }]
+      : []),
+    ...(browser
+      ? [
+          { value: "live" as const, label: t("Live"), group: "live" as const },
+          { value: "requests" as const, label: t("Requests"), group: "requests" as const },
+        ]
       : []),
   ];
   const section = sections.some(({ value }) => value === chosen) ? chosen : sections[0]?.value;
+  const groupLabels: Record<Group, string> = {
+    overview: t("Overview"),
+    content: t("Content"),
+    messages: t("Messages"),
+    account: t("Account"),
+    live: t("Live"),
+    requests: t("Requests"),
+  };
+  // One strip of groups, then a second strip only inside a group with several sections, so the
+  // tab row stays on one line in a narrow drawer.
+  const groups = [...new Set(sections.map(({ group }) => group))].map((value) => ({
+    value,
+    label: groupLabels[value],
+  }));
+  const group = sections.find(({ value }) => value === section)?.group;
+  const inGroup = sections.filter((row) => row.group === group);
   const openWorkflow = (intent: SocialBrowserIntent) => {
     setNotice("");
     void write(intent, async () => {
@@ -102,11 +135,19 @@ export function InstagramAccountTools({
   return (
     <Disclosure summary={t("Instagram tools")}>
       <div className="instagram-tools">
-        {sections.length ? (
+        {groups.length && group ? (
           <SubTabs
             label={t("Instagram tools")}
-            value={section ?? sections[0]!.value}
-            items={sections}
+            value={group}
+            items={groups}
+            onValueChange={(next) => setChosen(sections.find((row) => row.group === next)?.value)}
+          />
+        ) : null}
+        {inGroup.length > 1 ? (
+          <SubTabs
+            label={t("Instagram section")}
+            value={section ?? inGroup[0]!.value}
+            items={inGroup}
             onValueChange={setChosen}
           />
         ) : null}
@@ -181,6 +222,11 @@ export function InstagramAccountTools({
                 client={client}
                 accountId={account.id}
                 disabled={disabled}
+                onReviewMessage={(input) => {
+                  const loaded = messageStart && prefillInstagramDirect(client, account, input);
+                  if (loaded) setChosen("messages");
+                  return loaded;
+                }}
               />,
             )}
             {panel(

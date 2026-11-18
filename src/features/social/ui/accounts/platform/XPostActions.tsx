@@ -100,7 +100,7 @@ export function XPostActions({ account, client, disabled }: Props) {
       />
       {action.target === "post" ? (
         <>
-          <div className="social-x-toolbar">
+          <div className="social-x-toolbar social-x-toolbar-pick">
             <Select
               label={t("Post")}
               value={picked}
@@ -158,6 +158,7 @@ export function XPostActions({ account, client, disabled }: Props) {
       )}
       {action.toggle ? (
         <Checkbox
+          size="secondary"
           label={t("Enable")}
           checked={enabled}
           disabled={busy}
