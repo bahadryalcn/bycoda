@@ -127,7 +127,9 @@ describe("Instagram earnings via the owned dashboard", () => {
   });
 });
 
-function highlightFixture(override: { persist?: boolean; receipt?: boolean } = {}) {
+function highlightFixture(
+  override: { persist?: boolean; receipt?: boolean; password?: boolean } = {},
+) {
   const f = fixture();
   const content = new Map([["42", { name: "Studio", stories: ["200"] }]]);
   const submit = vi.fn();
@@ -155,7 +157,7 @@ function highlightFixture(override: { persist?: boolean; receipt?: boolean } = {
       ${[...content].map(([id, { name }]) => `<a href="/stories/highlights/${id}/">${name}</a>`).join("")}</main>`);
     f.click("main button", () => {
       addDialog(
-        '<h2>New Highlight</h2><input type="text" placeholder="Highlight name"><button>Next</button>',
+        `<h2>New Highlight</h2><input type="${override.password ? "password" : "text"}" aria-label="Highlight name" placeholder="Highlight name"><button>Next</button>`,
       );
       f.click('[role="dialog"] button', () => {
         const name = fieldValue();
@@ -241,6 +243,15 @@ describe("Instagram Highlights on an editable owner profile", () => {
       partial: true,
     });
     expect(f.page.click).not.toHaveBeenCalled();
+  });
+
+  it("leaves a password input untouched even when its label matches the title field", async () => {
+    const f = highlightFixture({ password: true });
+    await expect(changeInstagramHighlight(f.context, create, async () => {})).rejects.toMatchObject(
+      { code: "unsupported" },
+    );
+    expect(f.page.fill).not.toHaveBeenCalled();
+    expect(f.submit).not.toHaveBeenCalled();
   });
 
   it.each([

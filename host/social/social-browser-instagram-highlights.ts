@@ -157,7 +157,8 @@ const titleInput = [
 ].join(",");
 const titleProbe = `
   if (!dialog || !heading(dialog, ${JSON.stringify(dialogHeadings)})) return;
-  const fields = matches(dialog, ${JSON.stringify(titleInput)}).filter(el => !el.disabled && !el.readOnly);
+  const fields = matches(dialog, ${JSON.stringify(titleInput)}).filter(el =>
+    el.type === 'text' && !el.disabled && !el.readOnly);
 `;
 const storyProbe = String.raw`
   if (!dialog || !heading(dialog, ['Select stories','Stories','Add stories','Edit highlight','Edit Highlight','New highlight','New Highlight','Hikayeler','Hikayeleri seç','Öne çıkanı düzenle'])) return;
@@ -174,6 +175,7 @@ const storyProbe = String.raw`
     const flag = pick.getAttribute('aria-checked');
     if (!/^\d{1,30}$/.test(id || '') || stories.has(id) || pick.disabled ||
         pick.getAttribute('aria-disabled') === 'true' ||
+        (pick.tagName === 'INPUT' && pick.type !== 'checkbox') ||
         (pick.tagName !== 'INPUT' && !['true','false'].includes(flag))) return;
     stories.set(id, { pick, checked: pick.tagName === 'INPUT' ? pick.checked : flag === 'true' });
   }
