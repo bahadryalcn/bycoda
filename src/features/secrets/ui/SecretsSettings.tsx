@@ -61,6 +61,8 @@ function OwnerSecretsInventory({ hostId }: { hostId: string }) {
         }
       },
     });
+    // The dialog already reported a failure; a closed or cancelled dialog leaves no banner behind.
+    setFailed(false);
     if (removed) reload();
   };
 

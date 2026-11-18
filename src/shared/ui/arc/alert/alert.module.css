@@ -27,6 +27,8 @@
   .copy {
     flex: 1 1 12rem;
     min-inline-size: 0;
+    /* The root is user-select: none; the message must stay copyable into a bug report. */
+    user-select: text;
   }
   /* A small control is taller than the first line; the negative margin centres it on that line. */
   .actions {

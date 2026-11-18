@@ -65,12 +65,10 @@ import { DescriptionItem, DescriptionList } from "../../shared/ui/DescriptionLis
 import "./dev-servers.css";
 import { toolPreferences } from "./model/toolPreferences";
 import { OutputBlock } from "../../shared/ui/OutputBlock";
+import { MAX_POLL_FAILURES, pollDelay } from "./model/pollBackoff";
 
 type Intent = "details" | "stop" | "kill" | "restart";
 type Launch = { input: DevServerStart; result?: DevServerStartResult; pending?: boolean };
-const MAX_FAILURES = 3;
-/** Each scan starts PowerShell on Windows, so a list that stopped changing is read less often. */
-const QUIET_SCANS = 3;
 const stateLabels = {
   starting: "Starting",
   running: "Running",
@@ -105,16 +103,6 @@ const canControl = (server: DevServer) => (server.process ? hasIdentity(server) 
 const endpointKey = (endpoint: DevServerEndpoint) => `${endpoint.address}:${endpoint.port}`;
 
 /** Mounted only for the visible tool; a changed host owns a fresh request scope. */
-function pollDelay(interval: number, failures: number, quietScans: number): number {
-  const base =
-    quietScans >= QUIET_SCANS * 2
-      ? interval * 4
-      : quietScans >= QUIET_SCANS
-        ? interval * 2
-        : interval;
-  return base * Math.min(4, 2 ** failures);
-}
-
 export function DevServersPanel({
   cwd,
   launch,
@@ -299,7 +287,7 @@ function ProjectDevServersPanel({
         if (!alive.current) return false;
         failures.current++;
         setScanError(cause instanceof Error ? cause.message : String(cause));
-        if (failures.current >= MAX_FAILURES) setAutoRefresh(false);
+        if (failures.current >= MAX_POLL_FAILURES) setAutoRefresh(false);
         return false;
       } finally {
         if (scanFlight.current === flight) scanFlight.current = undefined;
@@ -358,7 +346,7 @@ function ProjectDevServersPanel({
       } finally {
         polling = false;
       }
-      if (!stopped && !isHidden() && failures.current < MAX_FAILURES)
+      if (!stopped && !isHidden() && failures.current < MAX_POLL_FAILURES)
         timer = setTimeout(
           () => void poll(),
           pollDelay(pollInterval, failures.current, quiet.current.scans),
@@ -972,7 +960,7 @@ function ProjectDevServersPanel({
               disabled={unavailable("refresh") || (scanning && operation !== "refresh")}
               onClick={() =>
                 void action("refresh", async () => {
-                  const recovering = failures.current >= MAX_FAILURES;
+                  const recovering = failures.current >= MAX_POLL_FAILURES;
                   if ((await refresh(true)) && recovering) setAutoRefresh(true);
                 })
               }
