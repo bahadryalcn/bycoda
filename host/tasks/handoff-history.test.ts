@@ -65,15 +65,34 @@ describe("host handoff history", () => {
 });
 
 describe("incremental handoff storage", () => {
-  it("reuses message blobs and materializes immutable full JSON only on demand", async () => {
+  it("saves without reading back blobs it already names by content hash", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "bycoda-handoff-noreread-"));
+    try {
+      const store = new HandoffHistoryStore(directory);
+      const message = { id: "one", role: "user" as const, text: "one" };
+      const hash = createHash("sha256").update(JSON.stringify(message)).digest("hex");
+      // A directory with the blob's name cannot be read as a file, so any read-back fails.
+      await mkdir(join(directory, "handoff-history", "blobs", `${hash}.json`), {
+        recursive: true,
+      });
+      const saved = await store.save({ sessionId: "session", messages: [message] });
+      expect(JSON.parse(await readFile(saved.path, "utf8"))).toEqual({
+        sessionId: "session",
+        messages: [message],
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("reuses message blobs and keeps earlier immutable full JSON exports", async () => {
     const directory = await mkdtemp(join(tmpdir(), "bycoda-handoff-incremental-"));
     try {
       const store = new HandoffHistoryStore(directory);
       const first = { id: "one", role: "user" as const, text: "one" };
       const second = { id: "two", role: "assistant" as const, text: "two" };
-      const saved = store.saveSync({ sessionId: "session", messages: [first] });
+      const saved = await store.save({ sessionId: "session", messages: [first] });
       const base = join(directory, "handoff-history");
-      await expect(readdir(join(base, "exports"))).rejects.toMatchObject({ code: "ENOENT" });
       const firstPath = saved.path;
       expect(JSON.parse(await readFile(firstPath, "utf8"))).toEqual({
         sessionId: "session",
