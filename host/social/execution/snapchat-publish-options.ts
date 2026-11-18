@@ -31,10 +31,9 @@ export function parseSnapchatPublishOptions(
   if (target === "spotlight") {
     exact(input, ["target", ...dimensions, "locale", "linkStickerText", "linkStickerPlacement"]);
     if (!browser || input.locale !== undefined) {
-      const locale = str(input.locale, "Spotlight locale", 5);
-      if (!/^[a-z]{2}_[A-Z]{2}$/.test(locale))
-        throw new Error("Use a Spotlight locale such as tr_TR.");
-      result.locale = locale;
+      if (typeof input.locale !== "string" || !/^[a-z]{2}_[A-Z]{2}$/.test(input.locale))
+        throw new Error("Use an explicit locale such as tr_TR for Snapchat Spotlight.");
+      result.locale = input.locale;
     }
   } else if (target === "story") {
     exact(input, [

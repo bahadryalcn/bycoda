@@ -11,6 +11,7 @@ import {
   unsupported,
 } from "./social-browser-publishing-shared";
 import type { SocialAccount, SocialJob } from "../../src/features/social/model/social";
+import { BROWSER_PLATFORM_OPERATIONS } from "../../src/integrations/social/browserCapabilities";
 import type { SocialInbound, SocialSendResult } from "../../src/integrations/social/adapter";
 import type { BrowserPage } from "./social-browser";
 import { needsHumanError } from "./browser/challenge";
@@ -522,15 +523,7 @@ export const snapchatBrowserRecipe: BrowserRecipe = {
   platform: "snapchat",
   loginUrl: SNAP,
   connectionUrl: snapchatBrowserConnectionUrl,
-  operations: [
-    "publish",
-    "media",
-    "inbox.read",
-    "message.reply",
-    "poll",
-    "audience.collect",
-    "message.start",
-  ],
+  operations: BROWSER_PLATFORM_OPERATIONS.snapchat,
   identity: snapchatIdentityOrChallenge,
   send: (ctx, job) => (job.kind === "publish" ? snapchatUpload(ctx, job) : snapchatSend(ctx, job)),
   poll: snapchatPoll,
