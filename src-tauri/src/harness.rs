@@ -7489,10 +7489,7 @@ pub(crate) fn gui_search_path() -> String {
 
 /// Never starts or waits for the login shell on frequent Git status/diff calls.
 pub(crate) fn cached_gui_search_path() -> String {
-    let login_path = LOGIN_SHELL_ENV
-        .try_lock()
-        .ok()
-        .and_then(|cache| cache.as_ref().and_then(|env| env.get("PATH").cloned()));
+    let login_path = LOGIN_SHELL_ENV.try_cached("PATH");
     gui_search_path_from(login_path, dirs_home(), std::env::var("PATH").ok())
 }
 
@@ -7636,7 +7633,94 @@ fn apply_grok_env(cmd: &mut Command) {
     }
 }
 
-static LOGIN_SHELL_ENV: Mutex<Option<HashMap<String, String>>> = Mutex::new(None);
+/// One login-shell read is shared by every caller. A failed or timed-out read
+/// is remembered for `LOGIN_SHELL_RETRY_AFTER`, so a slow rc file costs one
+/// wait instead of one per spawn, and the shell runs without the lock held.
+static LOGIN_SHELL_ENV: LoginShellCache = LoginShellCache::new();
+
+const LOGIN_SHELL_RETRY_AFTER: Duration = Duration::from_secs(300);
+
+struct LoginShellCache {
+    state: Mutex<LoginShellState>,
+    ready: Condvar,
+}
+
+enum LoginShellState {
+    Unread,
+    Loading,
+    Loaded(HashMap<String, String>),
+    Failed(Instant),
+}
+
+impl LoginShellCache {
+    const fn new() -> Self {
+        Self {
+            state: Mutex::new(LoginShellState::Unread),
+            ready: Condvar::new(),
+        }
+    }
+
+    /// Never waits: `None` while unread, loading or failed.
+    fn try_cached(&self, name: &str) -> Option<String> {
+        match &*self.state.try_lock().ok()? {
+            LoginShellState::Loaded(env) => env_value(env, name),
+            _ => None,
+        }
+    }
+
+    fn get(
+        &self,
+        name: &str,
+        retry_after: Duration,
+        load: impl FnOnce() -> HashMap<String, String>,
+    ) -> Option<String> {
+        let mut state = self.state.lock().ok()?;
+        loop {
+            match &*state {
+                LoginShellState::Loaded(env) => return env_value(env, name),
+                LoginShellState::Failed(at) if at.elapsed() < retry_after => return None,
+                // Single flight: wait for the running read instead of starting
+                // a second shell. The loader is bounded by its own timeout.
+                LoginShellState::Loading => state = self.ready.wait(state).ok()?,
+                LoginShellState::Unread | LoginShellState::Failed(_) => break,
+            }
+        }
+        *state = LoginShellState::Loading;
+        drop(state);
+        // Records a failure even if `load` panics, so waiters never hang.
+        let mut finish = LoginShellFinish {
+            cache: self,
+            env: HashMap::new(),
+        };
+        finish.env = load();
+        env_value(&finish.env, name)
+    }
+}
+
+struct LoginShellFinish<'a> {
+    cache: &'a LoginShellCache,
+    env: HashMap<String, String>,
+}
+
+impl Drop for LoginShellFinish<'_> {
+    fn drop(&mut self) {
+        let env = std::mem::take(&mut self.env);
+        let next = if env.is_empty() {
+            LoginShellState::Failed(Instant::now())
+        } else {
+            LoginShellState::Loaded(env)
+        };
+        match self.cache.state.lock() {
+            Ok(mut state) => *state = next,
+            Err(poisoned) => *poisoned.into_inner() = next,
+        }
+        self.cache.ready.notify_all();
+    }
+}
+
+fn env_value(env: &HashMap<String, String>, name: &str) -> Option<String> {
+    env.get(name).filter(|value| !value.is_empty()).cloned()
+}
 
 /// Keys worth keeping out of `printenv`. PATH is the important one: a
 /// Finder-launched app inherits only launchd's bare PATH.
@@ -7654,14 +7738,7 @@ fn login_shell_path() -> Option<String> {
 }
 
 fn login_shell_env(name: &str) -> Option<String> {
-    let mut cache = LOGIN_SHELL_ENV.lock().ok()?;
-    if cache.is_none() {
-        *cache = Some(load_login_shell_env()).filter(|env| !env.is_empty());
-    }
-    cache
-        .as_ref()
-        .and_then(|map| map.get(name).cloned())
-        .filter(|value| !value.is_empty())
+    LOGIN_SHELL_ENV.get(name, LOGIN_SHELL_RETRY_AFTER, load_login_shell_env)
 }
 
 fn load_login_shell_env() -> HashMap<String, String> {
@@ -7728,6 +7805,98 @@ fn command_basename(command: &str) -> &str {
         .file_stem()
         .and_then(|name| name.to_str())
         .unwrap_or(command)
+}
+
+#[cfg(test)]
+mod login_shell_cache_tests {
+    use super::*;
+    use std::sync::atomic::AtomicUsize;
+
+    fn path_env(value: &str) -> HashMap<String, String> {
+        HashMap::from([("PATH".to_string(), value.to_string())])
+    }
+
+    #[test]
+    fn failed_read_is_cached_until_retry_window_passes() {
+        let cache = LoginShellCache::new();
+        let calls = AtomicUsize::new(0);
+        let failing = || {
+            calls.fetch_add(1, Ordering::SeqCst);
+            HashMap::new()
+        };
+        let hour = Duration::from_secs(3600);
+        assert_eq!(cache.get("PATH", hour, failing), None);
+        assert_eq!(cache.get("PATH", hour, failing), None);
+        assert_eq!(cache.get("PATH", hour, failing), None);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+        // Once the window is over, the next caller retries and a success sticks.
+        let loaded = cache.get("PATH", Duration::ZERO, || path_env("/opt/bin"));
+        assert_eq!(loaded.as_deref(), Some("/opt/bin"));
+        let cached = cache.get("PATH", Duration::ZERO, || panic!("must not reload"));
+        assert_eq!(cached.as_deref(), Some("/opt/bin"));
+        assert_eq!(cache.try_cached("PATH").as_deref(), Some("/opt/bin"));
+    }
+
+    #[test]
+    fn concurrent_callers_share_one_read_without_holding_the_lock() {
+        let cache = Arc::new(LoginShellCache::new());
+        let calls = Arc::new(AtomicUsize::new(0));
+        let (started_tx, started_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel::<()>();
+
+        let loader = {
+            let cache = cache.clone();
+            let calls = calls.clone();
+            thread::spawn(move || {
+                cache.get("PATH", LOGIN_SHELL_RETRY_AFTER, move || {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    started_tx.send(()).unwrap();
+                    release_rx.recv().unwrap();
+                    path_env("/login/bin")
+                })
+            })
+        };
+        started_rx.recv().unwrap();
+        // The shell is running: non-blocking readers get the fallback at once.
+        assert_eq!(cache.try_cached("PATH"), None);
+
+        let waiters: Vec<_> = (0..4)
+            .map(|_| {
+                let cache = cache.clone();
+                let calls = calls.clone();
+                thread::spawn(move || {
+                    cache.get("PATH", LOGIN_SHELL_RETRY_AFTER, move || {
+                        calls.fetch_add(1, Ordering::SeqCst);
+                        HashMap::new()
+                    })
+                })
+            })
+            .collect();
+        thread::sleep(Duration::from_millis(50));
+        release_tx.send(()).unwrap();
+
+        assert_eq!(loader.join().unwrap().as_deref(), Some("/login/bin"));
+        for waiter in waiters {
+            assert_eq!(waiter.join().unwrap().as_deref(), Some("/login/bin"));
+        }
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn panicking_read_records_failure_and_wakes_waiters() {
+        let cache = LoginShellCache::new();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            cache.get("PATH", LOGIN_SHELL_RETRY_AFTER, || {
+                panic!("shell read failed")
+            })
+        }));
+        assert!(result.is_err());
+        let after = cache.get("PATH", LOGIN_SHELL_RETRY_AFTER, || {
+            panic!("must not reload")
+        });
+        assert_eq!(after, None);
+    }
 }
 
 #[cfg(test)]
