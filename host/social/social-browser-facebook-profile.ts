@@ -44,7 +44,7 @@ export async function writeFacebookBrowserProfile(
   accountId: string,
   actor: string,
   patch: FacebookProfilePatch,
-  submit: () => Promise<FacebookProfileState>,
+  submit: (recordSubmission: () => void) => Promise<FacebookProfileState>,
   photoDigest?: string,
 ) {
   const key = `facebook.browser.profile.unconfirmed:${accountId}`;
@@ -59,12 +59,16 @@ export async function writeFacebookBrowserProfile(
     pending.delete(fingerprint);
     await service.setSetting(key, JSON.stringify([...pending]));
   };
+  let submitted = false;
   try {
-    const result = await submit();
+    const result = await submit(() => {
+      submitted = true;
+    });
     await clear();
     return result;
   } catch (error) {
-    if (error instanceof SocialPlatformError && error.code !== "unknown") await clear();
+    if (!submitted && error instanceof SocialPlatformError && error.code !== "unknown")
+      await clear();
     throw error;
   }
 }
@@ -216,8 +220,13 @@ export class FacebookProfileActions {
     private readonly identity: () => Promise<void>,
     private readonly until: Until,
     private readonly actorType: ActorType = "page",
+    private readonly recordSubmission?: () => void,
   ) {
     if (!/^[1-9]\d{0,24}$/.test(actor)) throw new SocialPlatformError("denied");
+  }
+  private async submit(selector: string) {
+    this.recordSubmission?.();
+    await this.page.click(selector);
   }
   private expression(body: string, section?: string) {
     return `(() => {
@@ -312,7 +321,7 @@ export class FacebookProfileActions {
     const save = await mark(`return mark([...document.querySelectorAll(${JSON.stringify(buttons)})]
       .filter(el=>enabled(el)&&${JSON.stringify(saveLabels)}.includes(label(el))),${JSON.stringify(attribute)});`);
     try {
-      await this.page.click(save);
+      await this.submit(save);
       await this.open();
       const bannerUrl = await this.until<string>(this.coverAsset(filename(preview)), 20_000);
       if (!bannerUrl) throw new SocialPlatformError("unknown");
@@ -405,7 +414,7 @@ export class FacebookProfileActions {
       if(selected&&!options.some(el=>el.contains(selected)||selected.contains(el)||el.control===selected))return;
       return mark([...root.querySelectorAll('button,[role="button"]')].filter(el=>visible(el)&&${JSON.stringify([...saveLabels, "Request change", "Değişiklik iste"]).replaceAll("<", "\\u003c")}.includes(label(el))));`);
     try {
-      await this.page.click(submit);
+      await this.submit(submit);
       await this.noChallenge();
       await this.page.goto(`${origin}${path}/`);
       if (!(await this.until<boolean>(expression(`return ${formMatches};`), 15_000)))
@@ -506,7 +515,7 @@ export class FacebookProfileActions {
       spec.section,
     );
     try {
-      await this.page.click(save);
+      await this.submit(save);
       await this.verify(scope);
       await this.page.goto(url);
       if (!value || !(await this.until<boolean>(saved, 15_000))) {
@@ -578,7 +587,7 @@ export class FacebookProfileActions {
       if(checked!==${detail.visible})return;
       return mark(${saveButtons},${JSON.stringify(attr)});`);
     try {
-      await this.page.click(save);
+      await this.submit(save);
       await this.noChallenge();
       await open();
       if (!(await this.until<boolean>(state, 15_000))) throw new SocialPlatformError("unknown");
@@ -635,13 +644,14 @@ export class FacebookProfileActions {
       const buttons=[...root.querySelectorAll('button,[role="button"]')].filter(el=>usable(el)&&${JSON.stringify(labels)}.includes(label(el)));
       return buttons.length===1&&mark(buttons[0]);`,
       );
-    const submit = async (expression: string) => {
+    const submit = async (expression: string, final = true) => {
       if (!(await this.until<boolean>(expression, 15_000))) {
         await this.noChallenge();
         throw new SocialPlatformError("unsupported");
       }
       await this.verify(scope);
-      await this.page.click(selector);
+      if (final) await this.submit(selector);
+      else await this.page.click(selector);
       await this.noChallenge();
     };
     if (field === "name") {
@@ -655,6 +665,7 @@ export class FacebookProfileActions {
           ],
           false,
         ),
+        false,
       );
       await submit(
         button(["Request Change", "Request change", "Değişiklik İste", "Değişiklik iste"], true),
@@ -787,7 +798,7 @@ export class FacebookProfileActions {
     if (!preview) throw new SocialPlatformError("unsupported");
     const save = await this.mark('[role="button"],button', ["Kaydet", "Save"], "dialog");
     await this.verify();
-    await this.page.click(save);
+    await this.submit(save);
     if (!(await this.until<boolean>(this.expression("return dialogs.length===0;"), 20_000)))
       throw new SocialPlatformError("unknown");
     await this.verify();

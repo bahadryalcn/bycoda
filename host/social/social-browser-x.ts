@@ -303,29 +303,31 @@ export class XBrowserSessions {
         if (facebook) {
           const recipe = this.recipes.find((entry) => entry.platform === "facebook");
           if (!recipe) throw new SocialPlatformError("unsupported");
-          const actions = new FacebookProfileActions(
-            page,
-            account.platformId,
-            check,
-            async () => {
-              const identity = await recipe.identity(page, account);
-              if (
-                identity?.platformId !== account.platformId ||
-                identity.accountType !== facebookType
-              )
-                throw new SocialPlatformError("denied");
-            },
-            async (expression, timeout) => await this.until(page, expression, timeout),
-            facebookType,
-          );
+          const actions = (recordSubmission?: () => void) =>
+            new FacebookProfileActions(
+              page,
+              account.platformId,
+              check,
+              async () => {
+                const identity = await recipe.identity(page, account);
+                if (
+                  identity?.platformId !== account.platformId ||
+                  identity.accountType !== facebookType
+                )
+                  throw new SocialPlatformError("denied");
+              },
+              async (expression, timeout) => await this.until(page, expression, timeout),
+              facebookType,
+              recordSubmission,
+            );
           return action === "read"
-            ? await actions.read()
+            ? await actions().read()
             : await writeFacebookBrowserProfile(
                 service,
                 accountId,
                 account.platformId,
                 patch!,
-                () => actions.update(patch!, files),
+                (recordSubmission) => actions(recordSubmission).update(patch!, files),
                 facebookPhotoDigest,
               );
         }

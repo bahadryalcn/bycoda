@@ -1,5 +1,6 @@
 import { Window, type HTMLElement, type HTMLInputElement } from "happy-dom";
 import { afterEach, expect, it, vi } from "vitest";
+import { SocialPlatformError } from "../../src/integrations/social/adapter";
 import type { BrowserPage } from "./social-browser";
 import {
   FacebookProfileActions,
@@ -235,6 +236,27 @@ it("holds an uncertain Facebook photo even when the same bytes get a new upload 
   ).rejects.toMatchObject({ code: "unknown" });
   expect(submit).toHaveBeenCalledTimes(1);
 });
+
+it.each([false, true])(
+  "holds a verification interruption only after the Facebook write was submitted (%s)",
+  async (submitted) => {
+    const settings = new Map<string, string>();
+    const service = {
+      setting: async (key: string) => settings.get(key),
+      setSetting: async (key: string, value: string) => {
+        settings.set(key, value);
+      },
+    };
+    const submit = vi.fn(async (recordSubmission: () => void) => {
+      if (submitted) recordSubmission();
+      throw new SocialPlatformError("needs_human");
+    });
+    const run = () => writeFacebookBrowserProfile(service, "a", actor, patch, submit);
+    await expect(run()).rejects.toMatchObject({ code: "needs_human" });
+    await expect(run()).rejects.toMatchObject({ code: submitted ? "unknown" : "needs_human" });
+    expect(submit).toHaveBeenCalledTimes(submitted ? 1 : 2);
+  },
+);
 
 it.each([true, false])(
   "updates a member bio and requires reload evidence (persist=%s)",
