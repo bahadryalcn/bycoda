@@ -79,7 +79,8 @@ AI can file changes to the Page, posts, moderation and Live under **Facebook req
 account. Review the exact request there before approving.
 
 With a personal Facebook browser connection, open **Edit profile** to request a
-name change, update the intro, or manage supported links and details. Use
+name change, update the intro, or manage supported links and details. Use the
+exact label Facebook displays to choose which detail appears in the intro. Use
 **Facebook profile photos** to upload a profile picture or cover from your computer
 for a connected personal profile or Page.
 

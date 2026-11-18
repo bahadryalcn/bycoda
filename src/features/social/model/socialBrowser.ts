@@ -25,6 +25,7 @@ export type FacebookBrowserProfilePatch = XProfilePatch & {
   detail?: { field: FacebookProfileDetail; value: string; current?: string };
   websiteUpdate?: { current: string; value: string };
   personalName?: FacebookPersonalName;
+  introDetail?: { label: string; visible: boolean };
 };
 
 export const SOCIAL_BROWSER_INTENTS = ["login", "signup", "inbox", "publish", "comments"] as const;

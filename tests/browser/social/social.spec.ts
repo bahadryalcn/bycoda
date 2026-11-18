@@ -237,6 +237,10 @@ for (const theme of ["light", "dark"])
       await page.getByRole("option", { name: "Web sitesi", exact: true }).click();
       await expect(member.getByLabel(/Facebook’taki mevcut değer/)).toBeVisible();
       await capture("personal-website");
+      await fields.click();
+      await page.getByRole("option", { name: "Facebook tanıtım bilgileri" }).click();
+      await member.getByLabel("Facebook’taki bilgi etiketi").fill("Ankara’da yaşıyor");
+      await capture("personal-intro-details");
       await member.locator("summary").filter({ hasText: "Profili düzenle" }).click();
       await member.locator("summary").filter({ hasText: "Facebook profil fotoğrafları" }).click();
       await member

@@ -155,6 +155,35 @@ function memberFixture() {
   };
 }
 
+it("sets the exact selected intro detail without touching neighboring switches", async () => {
+  const f = memberFixture();
+  let shown = false;
+  const original = vi.mocked(f.page.goto).getMockImplementation()!;
+  vi.mocked(f.page.goto).mockImplementation(async (url) => {
+    await original(url);
+    const body = f.window.document.body;
+    body.insertAdjacentHTML("beforeend", "<main><button>Edit details</button></main>");
+    body.querySelector("main button")!.addEventListener("click", () => {
+      body.insertAdjacentHTML(
+        "beforeend",
+        '<div role="dialog" aria-label="Edit details"><label><input type="checkbox">Lives in Ankara</label><label><input type="checkbox">From Ankara</label><button>Save</button></div>',
+      );
+      const [field, neighbor] = body.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+      field.checked = shown;
+      body.querySelector('[role="dialog"] button')!.addEventListener("click", () => {
+        expect(neighbor.checked).toBe(false);
+        shown = field.checked;
+      });
+    });
+  });
+  const input = { introDetail: { label: "Lives in Ankara", visible: true } };
+  await expect(f.actions.update(input, {})).resolves.toBeDefined();
+  expect(shown).toBe(true);
+  expect(f.page.click).toHaveBeenCalledTimes(4);
+  await expect(f.actions.update(input, {})).resolves.toBeDefined();
+  expect(f.page.click).toHaveBeenCalledTimes(5);
+});
+
 it("edits the exact existing website link and verifies the Facebook redirect wrapper on reload", async () => {
   const f = memberFixture();
   const oldUrl = "https://example.com/old";

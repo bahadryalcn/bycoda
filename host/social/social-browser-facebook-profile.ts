@@ -166,6 +166,13 @@ export function parseFacebookProfilePatch(
       if (value && (detail.current === undefined || (current && current !== value)))
         return { detail: { field: detail.field, value, ...(current ? { current } : {}) } };
     }
+    const intro = input.introDetail as
+      | Partial<NonNullable<FacebookProfilePatch["introDetail"]>>
+      | undefined;
+    if (intro && Object.keys(intro).length === 2 && typeof intro.visible === "boolean") {
+      const label = profileDetail(intro.label);
+      if (label) return { introDetail: { label, visible: intro.visible } };
+    }
   }
   throw new Error("Choose a supported Facebook profile field and valid value.");
 }
@@ -528,6 +535,61 @@ export class FacebookProfileActions {
       website: field === "website" ? value : "",
     };
   }
+
+  private async updateIntroVisibility(
+    detail: NonNullable<FacebookProfilePatch["introDetail"]>,
+  ): Promise<FacebookProfileState> {
+    const attr = "data-bycoda-fb-intro-detail";
+    const edit = ["Edit details", "Bilgileri düzenle", "Detayları düzenle"];
+    const dialogLabels = [...edit, "Edit Intro", "Edit intro", "Tanıtımı düzenle"];
+    const dialog = `
+      const editors=[...document.querySelectorAll('[role="dialog"]')].filter(el=>
+        visible(el)&&(${JSON.stringify(dialogLabels)}.includes(el.getAttribute('aria-label'))||
+          [...el.querySelectorAll('h1,h2,h3,[role="heading"]')].some(h=>visible(h)&&${JSON.stringify(dialogLabels)}.includes(label(h)))));
+      if(editors.length!==1)return;
+      const root=editors[0];`;
+    const field = `${dialog}
+      const fields=[...root.querySelectorAll('input[type="checkbox"],[role="switch"],[role="checkbox"]')].filter(el=>
+        enabled(el)&&(el.getAttribute('aria-label')===${JSON.stringify(detail.label)}||[...el.labels||[]].some(item=>label(item)===${JSON.stringify(detail.label)})));
+      if(fields.length!==1)return;
+      const field=fields[0];
+      const state=field instanceof HTMLInputElement?field.checked:field.getAttribute('aria-checked');
+      if(state===null||state==='mixed')return;
+      const checked=state===true||state==='true';`;
+    const control = (body: string) => this.control(this.expression(body), attr);
+    const open = async () => {
+      await this.open();
+      await this.page.click(
+        await control(`return mark([...document.querySelectorAll(${JSON.stringify(buttons)})].filter(el=>
+        enabled(el)&&${JSON.stringify(edit)}.includes(label(el))),${JSON.stringify(attr)});`),
+      );
+    };
+    const result = { name: "", bio: "", location: "", website: "" };
+    await open();
+    const state = this.expression(`${field} return checked===${detail.visible};`);
+    if (await this.page.evaluate<boolean>(state)) return result;
+    const saveButtons = `[...root.querySelectorAll(${JSON.stringify(buttons)})].filter(el=>
+      enabled(el)&&${JSON.stringify(saveLabels)}.includes(label(el)))`;
+    const selector = await control(
+      `${field} return ${saveButtons}.length===1&&mark(fields,${JSON.stringify(attr)});`,
+    );
+    await this.page.click(selector);
+    const save = await control(`${field}
+      if(checked!==${detail.visible})return;
+      return mark(${saveButtons},${JSON.stringify(attr)});`);
+    try {
+      await this.page.click(save);
+      await this.noChallenge();
+      await open();
+      if (!(await this.until<boolean>(state, 15_000))) throw new SocialPlatformError("unknown");
+      await this.verify();
+      return result;
+    } catch (error) {
+      await this.noChallenge();
+      if (error instanceof SocialPlatformError && error.code === "needs_human") throw error;
+      throw new SocialPlatformError("unknown");
+    }
+  }
   private settingsExpression(field: SettingsField, body: string) {
     return `(() => {
       const query=new URLSearchParams(location.search);
@@ -677,6 +739,7 @@ export class FacebookProfileActions {
   ): Promise<FacebookProfileState> {
     const patch = parseFacebookProfilePatch(raw, this.actorType);
     if (patch.personalName) return this.updatePersonalName(patch.personalName);
+    if (patch.introDetail) return this.updateIntroVisibility(patch.introDetail);
     if (patch.bannerUploadId) {
       if (!files.banner || files.avatar) throw new SocialPlatformError("rejected");
       return this.updateCover(files.banner);

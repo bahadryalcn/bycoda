@@ -107,6 +107,7 @@ export function FacebookPersonalProfileForm({ account, client }: Props) {
   const [drafts, setDrafts] = useState<Partial<Record<string, string>>>({});
   const [existing, setExisting] = useState<Partial<Record<string, string>>>({});
   const [name, setName] = useState<FacebookPersonalName>({ first: "", middle: "", last: "" });
+  const [visibility, setVisibility] = useState("show");
   const [saved, setSaved] = useState(false);
   const { error, is, write } = useAccountWrite(t("Could not save this change. Try again."));
   const confirm = useConfirm();
@@ -119,6 +120,7 @@ export function FacebookPersonalProfileForm({ account, client }: Props) {
   };
   const fields = {
     bio: t("Facebook profile bio"),
+    introDetail: t("Facebook intro details"),
     website: t("Website"),
     name: t("Profile name"),
     ...details,
@@ -143,17 +145,19 @@ export function FacebookPersonalProfileForm({ account, client }: Props) {
         ? { personalName: name }
         : field === "bio"
           ? { bio: draft }
-          : field === "website"
-            ? current
-              ? { websiteUpdate: { current, value: draft } }
-              : { website: draft }
-            : {
-                detail: {
-                  field: field as FacebookProfileDetail,
-                  value: draft,
-                  ...(current ? { current } : {}),
-                },
-              };
+          : field === "introDetail"
+            ? { introDetail: { label: draft, visible: visibility === "show" } }
+            : field === "website"
+              ? current
+                ? { websiteUpdate: { current, value: draft } }
+                : { website: draft }
+              : {
+                  detail: {
+                    field: field as FacebookProfileDetail,
+                    value: draft,
+                    ...(current ? { current } : {}),
+                  },
+                };
     const result = await write("profile", () =>
       client.browserProfileUpdate(account.id, "facebook", patch),
     );
@@ -171,7 +175,7 @@ export function FacebookPersonalProfileForm({ account, client }: Props) {
           setSaved(false);
         }}
       />
-      {field !== "name" && field !== "bio" ? (
+      {field !== "name" && field !== "bio" && field !== "introDetail" ? (
         <TextField
           label={t("Existing Facebook value (optional)")}
           value={existing[field] ?? ""}
@@ -207,7 +211,7 @@ export function FacebookPersonalProfileForm({ account, client }: Props) {
         </div>
       ) : (
         <TextField
-          label={label}
+          label={field === "introDetail" ? t("Facebook detail label") : label}
           value={draft}
           maxLength={field === "website" ? 2048 : field === "bio" ? 101 : 100}
           disabled={is("profile")}
@@ -217,6 +221,21 @@ export function FacebookPersonalProfileForm({ account, client }: Props) {
           }}
         />
       )}
+      {field === "introDetail" ? (
+        <Select
+          label={t("Visibility")}
+          value={visibility}
+          options={[
+            { value: "show", label: t("Show") },
+            { value: "hide", label: t("Hide") },
+          ]}
+          disabled={is("profile")}
+          onValueChange={(value) => {
+            setVisibility(value);
+            setSaved(false);
+          }}
+        />
+      ) : null}
       <Button
         variant="primary"
         size="sm"
