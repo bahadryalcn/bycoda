@@ -228,14 +228,35 @@ export async function resolveQuestionAttachments(
 }
 /** Clients match this wording to stop asking for a file this machine does not hold. */
 export const ATTACHMENT_MISSING_MESSAGE = "Attachment file is missing on this machine.";
-/** Reads only an attachment already accepted into this session. Paths supplied
- * by the client are never used, and each response stays below the RPC cap. */
-export async function readAttachmentChunk(
+type SessionAttachment = {
+  attachment: { id: string; size: number };
+  generated?: { path: string };
+};
+/** A download reads one file in many chunks; only the first chunk loads the session. */
+const DOWNLOAD_RESOLVE_TTL_MS = 30_000;
+const DOWNLOAD_RESOLVE_MAX = 64;
+const downloadResolves = new WeakMap<
+  HostStore,
+  Map<string, { resolved: SessionAttachment; usedAt: number }>
+>();
+async function resolveSessionAttachment(
   store: HostStore,
   input: Record<string, unknown>,
-  sessionFor: HostStore["session"] = async (id) => await store.session(id),
-) {
-  const session = await sessionFor(String(input.sessionId ?? ""));
+  sessionFor: HostStore["session"],
+): Promise<SessionAttachment> {
+  const sessionId = String(input.sessionId ?? "");
+  const key = `${sessionId}\0${String(input.id ?? "")}`;
+  const now = Date.now();
+  let cache = downloadResolves.get(store);
+  if (!cache) downloadResolves.set(store, (cache = new Map()));
+  // Offset 0 starts a download, so it always re-checks the session; later chunks of the same
+  // download reuse that answer while the download stays active.
+  const cached = Number(input.offset) > 0 ? cache.get(key) : undefined;
+  if (cached && now - cached.usedAt <= DOWNLOAD_RESOLVE_TTL_MS) {
+    cached.usedAt = now;
+    return cached.resolved;
+  }
+  const session = await sessionFor(sessionId);
   const generated = session.session.blocks.find(
     (block) => block.id === input.id && block.image,
   )?.image;
@@ -245,6 +266,23 @@ export async function readAttachmentChunk(
         .flatMap((block) => block.attachments ?? [])
         .find((file) => file.id === input.id);
   if (!attachment) throw new Error("Session attachment not found");
+  const resolved = { attachment, generated };
+  cache.delete(key);
+  for (const [entry, value] of cache) {
+    if (cache.size < DOWNLOAD_RESOLVE_MAX && now - value.usedAt <= DOWNLOAD_RESOLVE_TTL_MS) break;
+    cache.delete(entry);
+  }
+  cache.set(key, { resolved, usedAt: now });
+  return resolved;
+}
+/** Reads only an attachment already accepted into this session. Paths supplied
+ * by the client are never used, and each response stays below the RPC cap. */
+export async function readAttachmentChunk(
+  store: HostStore,
+  input: Record<string, unknown>,
+  sessionFor: HostStore["session"] = async (id) => await store.session(id),
+) {
+  const { attachment, generated } = await resolveSessionAttachment(store, input, sessionFor);
   if (
     !Number.isSafeInteger(attachment.size) ||
     attachment.size < 0 ||
