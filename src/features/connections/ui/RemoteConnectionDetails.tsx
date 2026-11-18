@@ -40,7 +40,7 @@ export function RemoteConnectionDetails({ environmentId }: { environmentId: stri
   return (
     <Text as="div" tone="inherit" className="flex min-w-0 flex-col gap-2">
       <Text role="status" as="p" size="inherit" tone="muted">
-        {t(phases[lifecycle.phase])}
+        {t(lifecycle.paused ? "Automatic reconnect paused" : phases[lifecycle.phase])}
         {lifecycle.phase === "checking" && lifecycle.startedAt != null && now != null ? (
           <span className="tabular-nums">
             {" "}

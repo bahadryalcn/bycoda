@@ -28,6 +28,7 @@ import {
   isReconnecting,
   isReconnectRequested,
   cancelRemoteReconnect,
+  PAUSE_RESUME_MS,
 } from "./remoteReconnect";
 import { invalidateConnection, readRemoteLifecycle } from "./remoteLifecycle";
 import { focusMachine } from "./machineFocus";
@@ -400,6 +401,31 @@ describe("reconnectRemoteMachine", () => {
     expect(readRemoteConnection("env").status).toBe("unreachable");
     request.mockResolvedValue({});
     expect(await reconnectRemoteMachine("env")).toEqual({ ok: true });
+  });
+  it("resumes automatic recovery by itself once a stopped reconnect has waited out its pause", async () => {
+    let finish!: (value: unknown) => void;
+    request.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    recordRemoteConnection("env", down);
+    const pending = reconnectRemoteMachine("env");
+    await vi.advanceTimersByTimeAsync(0);
+    cancelRemoteReconnect("env");
+    finish({});
+    await pending;
+    expect(readRemoteLifecycle("env").paused).toBe(true);
+    request.mockResolvedValue({ capabilities: [] });
+    await vi.advanceTimersByTimeAsync(PAUSE_RESUME_MS - 1);
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(readRemoteLifecycle("env").paused).toBe(true);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(readRemoteLifecycle("env").paused).toBe(false);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(readRemoteConnection("env").status).toBe("connected");
   });
   it("asks for a fresh tunnel and reports success", async () => {
     recordRemoteConnection("env", down);

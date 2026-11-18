@@ -12008,5 +12008,6 @@
   "This device's local storage is full, so the queue could not be saved.": "この端末のローカルストレージがいっぱいのため、キューを保存できませんでした。",
   "The connection to the Host dropped before the result was known. The queue checks again automatically.": "結果が確認される前に Host への接続が切断されました。キューは自動的に再確認します。",
   "The message was not sent. The technical reason is in the details.": "メッセージは送信されませんでした。技術的な理由は詳細を確認してください。",
-  "Sync is paused until room privacy protection is confirmed. It retries automatically.": "ルームのプライバシー保護が確認されるまで同期は一時停止中です。自動的に再試行されます。"
+  "Sync is paused until room privacy protection is confirmed. It retries automatically.": "ルームのプライバシー保護が確認されるまで同期は一時停止中です。自動的に再試行されます。",
+  "Automatic reconnect paused": "自動再接続は一時停止中"
 }

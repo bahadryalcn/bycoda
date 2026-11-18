@@ -12008,5 +12008,6 @@
   "This device's local storage is full, so the queue could not be saved.": "此设备的本地存储已满，无法保存队列。",
   "The connection to the Host dropped before the result was known. The queue checks again automatically.": "在得知结果之前，与 Host 的连接已断开。队列会自动重新检查。",
   "The message was not sent. The technical reason is in the details.": "消息未发送。技术原因见详细信息。",
-  "Sync is paused until room privacy protection is confirmed. It retries automatically.": "在确认房间隐私保护之前，同步已暂停。将自动重试。"
+  "Sync is paused until room privacy protection is confirmed. It retries automatically.": "在确认房间隐私保护之前，同步已暂停。将自动重试。",
+  "Automatic reconnect paused": "自动重新连接已暂停"
 }

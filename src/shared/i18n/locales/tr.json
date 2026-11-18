@@ -12008,5 +12008,6 @@
   "This device's local storage is full, so the queue could not be saved.": "Bu cihazın yerel depolaması dolu, bu yüzden kuyruk kaydedilemedi.",
   "The connection to the Host dropped before the result was known. The queue checks again automatically.": "Sonuç öğrenilmeden önce Host bağlantısı kesildi. Kuyruk otomatik olarak yeniden kontrol eder.",
   "The message was not sent. The technical reason is in the details.": "Mesaj gönderilmedi. Teknik neden ayrıntılarda.",
-  "Sync is paused until room privacy protection is confirmed. It retries automatically.": "Oda gizlilik koruması doğrulanana kadar senkronizasyon duraklatıldı. Otomatik olarak yeniden denenir."
+  "Sync is paused until room privacy protection is confirmed. It retries automatically.": "Oda gizlilik koruması doğrulanana kadar senkronizasyon duraklatıldı. Otomatik olarak yeniden denenir.",
+  "Automatic reconnect paused": "Otomatik yeniden bağlanma duraklatıldı"
 }

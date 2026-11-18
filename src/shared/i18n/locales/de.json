@@ -12008,5 +12008,6 @@
   "This device's local storage is full, so the queue could not be saved.": "Der lokale Speicher dieses Geräts ist voll, deshalb konnte die Warteschlange nicht gespeichert werden.",
   "The connection to the Host dropped before the result was known. The queue checks again automatically.": "Die Verbindung zum Host ist abgebrochen, bevor das Ergebnis bekannt war. Die Warteschlange prüft automatisch erneut.",
   "The message was not sent. The technical reason is in the details.": "Die Nachricht wurde nicht gesendet. Der technische Grund steht in den Details.",
-  "Sync is paused until room privacy protection is confirmed. It retries automatically.": "Synchronisierung ist pausiert, bis der Raum-Datenschutz bestätigt ist. Sie wird automatisch erneut versucht."
+  "Sync is paused until room privacy protection is confirmed. It retries automatically.": "Synchronisierung ist pausiert, bis der Raum-Datenschutz bestätigt ist. Sie wird automatisch erneut versucht.",
+  "Automatic reconnect paused": "Automatisches Wiederverbinden pausiert"
 }

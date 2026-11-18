@@ -12008,5 +12008,6 @@
   "This device's local storage is full, so the queue could not be saved.": "This device's local storage is full, so the queue could not be saved.",
   "The connection to the Host dropped before the result was known. The queue checks again automatically.": "The connection to the Host dropped before the result was known. The queue checks again automatically.",
   "The message was not sent. The technical reason is in the details.": "The message was not sent. The technical reason is in the details.",
-  "Sync is paused until room privacy protection is confirmed. It retries automatically.": "Sync is paused until room privacy protection is confirmed. It retries automatically."
+  "Sync is paused until room privacy protection is confirmed. It retries automatically.": "Sync is paused until room privacy protection is confirmed. It retries automatically.",
+  "Automatic reconnect paused": "Automatic reconnect paused"
 }
