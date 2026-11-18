@@ -279,7 +279,9 @@ Contracts: [OAuth](https://developers.google.com/youtube/v3/guides/auth/server-s
   approves the app. Link the Business open ID and creator token to the same
   verified TikTok handle. The Host verifies the match and stores the token in
   the credential vault. Business comments, replies, like, hide, delete, mentions
-  and reporting use the API when linked. An API failure stops that operation.
+  and reporting use the API when linked. Automatic comment refresh reads the
+  newest two available posts and reports partial coverage when more data exists.
+  Use the exact-post reader for older posts. An API failure stops that operation.
 - Browser recipes require the exact signed-in identity and exposed controls.
   Owner-reviewed changes go through the existing sending stop and recipient
   suppression gate. AI follow, comment and LIVE reply requests obey the account's

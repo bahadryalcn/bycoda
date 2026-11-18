@@ -4,11 +4,7 @@ import type {
   SocialJob,
   SocialPermission,
 } from "../../../src/features/social/model/social";
-import {
-  SocialHttp,
-  SocialPlatformError,
-  type SocialInbound,
-} from "../../../src/integrations/social/adapter";
+import { SocialHttp, SocialPlatformError } from "../../../src/integrations/social/adapter";
 import {
   readTikTokDisplay,
   TikTokOrganic,
@@ -33,6 +29,7 @@ import { listTikTokRelationships, setTikTokFollowing } from "./browser-audience"
 import { readTikTokAnalytics, readTikTokEarnings } from "./browser-insights";
 import { replyTikTokLive, saveTikTokLiveSetup } from "./browser-live";
 import { tiktokDeletePost, tiktokEditPost } from "./browser-publish-ext";
+import { tiktokOrganicInbound } from "./tiktok-organic-inbox";
 
 export type TikTokRuntime = {
   runBrowser?: PlatformBrowserSessions["runTikTok"];
@@ -481,25 +478,10 @@ export const tiktokActions: SocialActionModule = {
     run: async (ctx, input) => {
       const account = await getAccount(ctx, input.accountId);
       const organic = await business(ctx, account);
-      const events: SocialInbound[] = organic
-        ? (
-            await organic.api.comments(organic.credential, id(input.postId, postIdentifier))
-          ).comments.flatMap((comment) =>
-            comment.owned || !comment.username || !comment.at
-              ? []
-              : [
-                  {
-                    eventId: comment.id,
-                    threadId: comment.id,
-                    postId: comment.postId,
-                    contactId: `web:tiktok:${comment.username}`,
-                    contactName: comment.author || comment.username,
-                    kind: "comment" as const,
-                    text: comment.text,
-                    at: comment.at,
-                    replyAllowed: !comment.hidden,
-                  },
-                ],
+      const events = organic
+        ? tiktokOrganicInbound(
+            (await organic.api.comments(organic.credential, id(input.postId, postIdentifier)))
+              .comments,
           )
         : (await browser(ctx, account, tiktokStudioComments)).events;
       const latest = await getAccount(ctx, account.id);

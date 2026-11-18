@@ -10,6 +10,7 @@ import {
   tiktokBusinessSecretId,
   tiktokLiveSecretId,
 } from "./tiktok/tiktok-actions";
+import { pollTikTokOrganicComments } from "./tiktok/tiktok-organic-inbox";
 import { PROGRAM_OPERATION_FIELDS, socialActionRegistry } from "./core/social-actions";
 import type { AutonomousRequest, SocialServiceApi } from "./core/social-service-api";
 import {
@@ -1075,6 +1076,19 @@ export class SocialService implements SocialServiceApi {
       const browser = this.browserAdapter;
       return {
         ...browser,
+        poll: async (target, token, posts, cursor, ownedPosts) => {
+          try {
+            const business = await boundTikTokBusiness(target, this.credentials);
+            if (business) return await pollTikTokOrganicComments(business.api, business.credential);
+          } catch (error) {
+            if (error instanceof SocialPlatformError && error.code === "expired")
+              throw new SocialPlatformError("denied", undefined, {
+                reasonCode: "tiktok.business_reconnect",
+              });
+            throw error;
+          }
+          return browser.poll(target, token, posts, cursor, ownedPosts);
+        },
         send: async (target, job, token, media, checkpoint, beforeSubmit) => {
           const { threadId, postId } = job.payload;
           if (job.kind === "reply" && postId && threadId && job.contactId) {
