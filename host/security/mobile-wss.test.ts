@@ -10,7 +10,7 @@ import { connect as connectTcp } from "node:net";
 import { WebSocket, type ClientOptions } from "ws";
 import { MobileTlsAuthority } from "./mobile-tls";
 import { createMobileWssGateway, type MobileWssOptions } from "./mobile-wss";
-import { createLanGateway, MobileLanAccess } from "../mobile/mobile-lan";
+import { createLanGateway, MobileLanAccess, stablePortCandidates } from "../mobile/mobile-lan";
 import { attachHostWebSocketTransport } from "../transport/ws/server";
 import { createHostBulkHandler, HostBulkTransfers } from "../transport/http/bulk";
 import { WS_SUBPROTOCOL } from "../../src/shared/model/host-contracts";
@@ -321,9 +321,10 @@ it("keeps owner enablement, legacy LAN identity and persisted WSS bootstrap life
   const second = await resumed.status();
   expect(second.lanKey).toBe(first.lanKey);
   expect(second.tls?.caSpkiPin).toBe(first.tls?.caSpkiPin);
+  // First enable takes the environment's stable ports, not OS-assigned dynamic ones.
   expect(bindings).toEqual([
-    [0, "192.168.1.20"],
-    [0, "192.168.1.20"],
+    [stablePortCandidates(ENVIRONMENT, 0)[0], "192.168.1.20"],
+    [stablePortCandidates(ENVIRONMENT, 1)[0], "192.168.1.20"],
     [43210, "192.168.1.20"],
     [43211, "192.168.1.20"],
   ]);
