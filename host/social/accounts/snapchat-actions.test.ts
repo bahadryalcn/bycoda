@@ -162,7 +162,9 @@ it("requires the owner and explicit confirmation to create a Snapchat Public Pro
     code: "denied",
   });
   expect(browser).not.toHaveBeenCalled();
-  await expect(f.call("snapchat.profile.create", input)).resolves.toEqual({ hasPublicProfile: true });
+  await expect(f.call("snapchat.profile.create", input)).resolves.toEqual({
+    hasPublicProfile: true,
+  });
   expect(browser).toHaveBeenCalledExactlyOnceWith(owner, member.id, "create", {
     patch: input.patch,
     confirm: input.confirm,
