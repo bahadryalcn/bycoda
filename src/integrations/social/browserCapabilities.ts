@@ -42,6 +42,9 @@ export const BROWSER_PLATFORM_OPERATIONS: Record<
     "inbox.read",
     "message.reply",
     "poll",
+    // Facebook owner profile tools use the account's verified browser actor.
+    "profile.read",
+    "profile.update",
   ],
   linkedin: [
     "publish",
