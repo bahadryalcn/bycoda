@@ -191,18 +191,31 @@ impl SshForwards {
     fn owner(&self, owner: &str) -> Result<ForwardOwner, String> {
         crate::ssh_window_lifecycle::capture(owner)
     }
+    /// Marks the window's forwards as stopping under the lock and takes their
+    /// children without waiting for them. Finish with `reap_detached`, which
+    /// blocks, so the event loop calls it from a tracked reaper.
+    pub(crate) fn detach_window(&self, owner: &str) -> Vec<DetachedForward> {
+        let mut sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
+        sessions
+            .iter_mut()
+            .filter(|(_, live)| live.owner == owner && !live.owner_lease.is_alive())
+            .filter_map(|(id, live)| mark_stopping(id, live))
+            .map(DetachedForward)
+            .collect()
+    }
+    /// Reaps detached forwards in parallel; each reap waits for its own kill.
+    pub(crate) fn reap_detached(&self, detached: Vec<DetachedForward>) {
+        std::thread::scope(|scope| {
+            for DetachedForward(item) in detached {
+                scope.spawn(move || {
+                    let _ = stop_pending(self, item);
+                });
+            }
+        });
+    }
+    #[cfg(test)]
     pub(crate) fn kill_window(&self, owner: &str) {
-        let pending = {
-            let mut sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
-            sessions
-                .iter_mut()
-                .filter(|(_, live)| live.owner == owner && !live.owner_lease.is_alive())
-                .filter_map(|(id, live)| mark_stopping(id, live))
-                .collect::<Vec<_>>()
-        };
-        for item in pending {
-            let _ = stop_pending(self, item);
-        }
+        self.reap_detached(self.detach_window(owner));
     }
     pub(crate) fn kill_all(&self) {
         let pending = {
@@ -210,13 +223,14 @@ impl SshForwards {
             sessions
                 .iter_mut()
                 .filter_map(|(id, live)| mark_stopping(id, live))
+                .map(DetachedForward)
                 .collect::<Vec<_>>()
         };
-        for item in pending {
-            let _ = stop_pending(self, item);
-        }
+        self.reap_detached(pending);
     }
 }
+/// A forward whose child was taken from state and still has to be reaped.
+pub(crate) struct DetachedForward(PendingForwardStop);
 impl Drop for SshForwards {
     fn drop(&mut self) {
         self.kill_all();
@@ -934,6 +948,26 @@ mod tests {
         assert_eq!(live.owner, "owner");
         drop(sessions);
         assert!(stop_owned(&state, "owner", "id").is_err());
+    }
+
+    #[test]
+    fn detach_window_marks_stopping_without_reaping_until_asked() {
+        let state = SshForwards::default();
+        for id in ["a", "b"] {
+            let live = placeholder(id, "detached-window");
+            state.sessions.lock().unwrap().insert(id.into(), live);
+        }
+        crate::ssh_window_lifecycle::close("detached-window");
+        let detached = state.detach_window("detached-window");
+        assert_eq!(detached.len(), 2);
+        {
+            let sessions = state.sessions.lock().unwrap();
+            assert!(sessions
+                .values()
+                .all(|live| live.status.state == "stopping"));
+        }
+        state.reap_detached(detached);
+        assert!(state.sessions.lock().unwrap().is_empty());
     }
 
     #[test]

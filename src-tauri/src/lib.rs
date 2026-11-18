@@ -1313,9 +1313,18 @@ pub fn run() {
                 .state::<remote::RemoteConnections>()
                 .detach_window(&label);
             ssh_window_lifecycle::close(&label);
-            handle
+            // Detach under the lock here; each reap waits for its ssh child to die,
+            // so it runs off the event loop. Exit joins this reaper.
+            let forwards = handle
                 .state::<ssh_forward::SshForwards>()
-                .kill_window(&label);
+                .detach_window(&label);
+            if !forwards.is_empty() {
+                spawn_tracked_reap(handle, move |handle| {
+                    handle
+                        .state::<ssh_forward::SshForwards>()
+                        .reap_detached(forwards);
+                });
+            }
             ssh_sftp::kill_window(&label);
             handle
                 .state::<ssh_http_proxy_credentials::HttpProxyCredentials>()
