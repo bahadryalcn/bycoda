@@ -777,7 +777,8 @@ use Accounts Center. The profile flow handles the intro, website links, work and
 education, places lived, profile pictures and cover photos. It checks the selected
 actor before changing fields and stops for Facebook authentication or verification.
 Owner-confirmed local files on OAuth Pages go through the unpublished Page Photos edge
-and the Page profile-picture or cover operation. Browser accounts apply local photos
+and the Page profile-picture or cover operation. The Page token needs content creation
+access along with profile editing permissions. Browser accounts apply local photos
 through the verified profile controls.
 
 For Page post edits and reversible comment moderation, `facebook.management.execute`

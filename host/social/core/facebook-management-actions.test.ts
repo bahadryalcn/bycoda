@@ -17,16 +17,24 @@ it.each(["avatar", "cover"])(
       name: "Test Page",
       projectIds: [s.a.id],
     });
-    await s.social.connectAccount(
-      account.id,
-      {
-        platformId: "123",
-        name: "Test Page",
-        scopes: ["pages_manage_metadata", "business_management"],
-        accessApproved: true,
-      },
-      { accessToken: "synthetic-facebook-token" },
-    );
+    const connect = (photoScope: boolean) =>
+      s.social.connectAccount(
+        account.id,
+        {
+          platformId: "123",
+          name: "Test Page",
+          scopes: [
+            "pages_manage_metadata",
+            "business_management",
+            "pages_read_engagement",
+            "pages_manage_posts",
+            ...(photoScope ? ["pages_show_list"] : []),
+          ],
+          accessApproved: true,
+        },
+        { accessToken: "synthetic-facebook-token" },
+      );
+    await connect(false);
     const base64 =
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zlll1sAAAAASUVORK5CYII=";
     const { uploadId } = await s.social.uploadImage(
@@ -42,7 +50,11 @@ it.each(["avatar", "cover"])(
     await expect(
       s.call("facebook.page.uploadPhoto", input, (await s.session()).principal),
     ).rejects.toThrow(/owner/i);
+    await expect(s.call("facebook.page.uploadPhoto", input)).rejects.toMatchObject({
+      code: "denied",
+    });
     expect(graph).not.toHaveBeenCalled();
+    await connect(true);
     await expect(s.call("facebook.page.uploadPhoto", input)).resolves.toMatchObject({
       status: "updated",
     });

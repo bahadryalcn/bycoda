@@ -3,7 +3,8 @@ import { uploadFacebookPhoto } from "../metaMedia";
 import { moderateFacebookComment, type FacebookCommentAction } from "./facebook-engagement";
 import { readFacebookPageInsights } from "./facebook-insights";
 import { facebookPageEndpoint, listFacebookPageMentions, readFacebookPage } from "./facebook-page";
-import { updateFacebookPage } from "./facebook-page-edit";
+import { FACEBOOK_PAGE_PHOTO_SCOPES, updateFacebookPage } from "./facebook-page-edit";
+import { SocialPlatformError } from "../adapter";
 import { updateFacebookPost } from "./facebook-schedule";
 
 export function createFacebookPageOperations(http: SocialHttp, version: string) {
@@ -26,8 +27,12 @@ export function createFacebookPageOperations(http: SocialHttp, version: string) 
       uploadId: string,
       bytes: Uint8Array,
       recheck: () => Promise<void>,
-    ) =>
-      uploadFacebookPhoto(
+    ) => {
+      if (FACEBOOK_PAGE_PHOTO_SCOPES.some((scope) => !account.scopes.includes(scope)))
+        throw new SocialPlatformError("denied", undefined, {
+          reasonCode: "platform.scope_missing",
+        });
+      return uploadFacebookPhoto(
         http,
         `${facebookPageEndpoint(version, account.platformId)}/photos`,
         token,
@@ -37,7 +42,8 @@ export function createFacebookPageOperations(http: SocialHttp, version: string) 
       ).then(async (photoId) => {
         await recheck();
         return updateFacebookPage(http, version, account.platformId, token, { [field]: photoId });
-      }),
+      });
+    },
     editPost: (
       account: SocialAccount,
       token: string,

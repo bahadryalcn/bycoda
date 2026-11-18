@@ -5,6 +5,7 @@ import type {
   SocialThread,
 } from "../../../src/features/social/model/social";
 import { SocialPlatformError } from "../../../src/integrations/social/adapter";
+import { FACEBOOK_PAGE_PHOTO_SCOPES } from "../../../src/integrations/social/adapters/facebook-page-edit";
 import { exact, hash, str } from "./social-helpers";
 import type { SocialActionContext, SocialActionModule } from "./social-actions";
 
@@ -299,7 +300,11 @@ export const facebookPageActions: SocialActionModule = {
             bytes,
             async () => {
               const latest = await page(ctx, account.id, "profile.update");
-              if (latest.account.platformId !== current.account.platformId || latest.account.paused)
+              if (
+                latest.account.platformId !== current.account.platformId ||
+                latest.account.paused ||
+                FACEBOOK_PAGE_PHOTO_SCOPES.some((scope) => !latest.account.scopes.includes(scope))
+              )
                 throw new SocialPlatformError("denied");
             },
           ),
