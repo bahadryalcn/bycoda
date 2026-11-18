@@ -492,6 +492,9 @@ const facebookOperations: SocialOperation[] = [
   "inbox.read",
   "message.reply",
   "poll",
+  // Facebook profile operations dispatch through the owner browser controller.
+  "profile.read",
+  "profile.update",
 ];
 
 export const metaBrowserRecipes: BrowserRecipe[] = [
