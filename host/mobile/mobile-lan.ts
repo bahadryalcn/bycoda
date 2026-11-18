@@ -202,6 +202,42 @@ export function createLanGateway(
   );
 }
 
+// Windows (Hyper-V, WSL, Docker) reserves new blocks of the dynamic range 49152-65535 after
+// reboots and network service restarts. An OS-assigned port lands there and later fails with
+// EACCES, which moves the endpoint paired phones hold. Paired ports come from below that range.
+const STABLE_PORT_FIRST = 20000;
+const STABLE_PORT_SPAN = 20000;
+const STABLE_PORT_ATTEMPTS = 24;
+
+/** A port chosen from the environment id, so it stays the same across restarts and reinstalls. */
+export function stablePortCandidates(environmentId: string, slot: number): number[] {
+  let hash = 2166136261;
+  for (const char of environmentId) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619) >>> 0;
+  const base = hash % STABLE_PORT_SPAN;
+  // Even offsets for the plain listener, odd for TLS: the two never pick the same port.
+  return Array.from(
+    { length: STABLE_PORT_ATTEMPTS },
+    (_, index) =>
+      STABLE_PORT_FIRST + ((base - (base % 2) + slot + index * 2 * 97) % STABLE_PORT_SPAN),
+  );
+}
+
+async function listenStablePort(
+  listen: (port: number) => Promise<void>,
+  environmentId: string,
+  slot: number,
+) {
+  for (const port of stablePortCandidates(environmentId, slot)) {
+    try {
+      return await listen(port);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "EACCES" && code !== "EADDRINUSE") throw error;
+    }
+  }
+  await listen(0);
+}
+
 type SavedAccess = {
   key: string;
   enabled: boolean;
@@ -405,14 +441,20 @@ export class MobileLanAccess {
       gateway.maxConnections = 32;
       try {
         let portChanged = false;
-        const listenSaved = async (listen: (port: number) => Promise<void>, savedPort?: number) => {
-          try {
-            await listen(savedPort ?? 0);
-          } catch (error) {
-            if (!savedPort || (error as NodeJS.ErrnoException).code !== "EACCES") throw error;
-            await listen(0);
-            portChanged = true;
+        const listenSaved = async (
+          listen: (port: number) => Promise<void>,
+          savedPort: number | undefined,
+          slot: number,
+        ) => {
+          if (savedPort) {
+            try {
+              return await listen(savedPort);
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException).code !== "EACCES") throw error;
+              portChanged = true;
+            }
           }
+          await listenStablePort(listen, this.environmentId, slot);
         };
         const listenGateway = (port: number) =>
           new Promise<void>((resolve, reject) => {
@@ -424,7 +466,7 @@ export class MobileLanAccess {
           });
         // A paired device holds this endpoint. Never silently replace a saved
         // port when another process owns it; surface unavailable instead.
-        await listenSaved(listenGateway, this.saved?.port);
+        await listenSaved(listenGateway, this.saved?.port, 0);
         if (this.disposed) throw new Error("Host is closing");
         const active = gateway.address();
         if (!active || typeof active === "string") throw new Error("LAN access unavailable");
@@ -445,7 +487,7 @@ export class MobileLanAccess {
                 resolve();
               });
             });
-          await listenSaved(listen, this.saved?.tlsPort);
+          await listenSaved(listen, this.saved?.tlsPort, 1);
           const address = wss.address();
           if (!address || typeof address === "string")
             throw new Error("Mobile TLS access unavailable");

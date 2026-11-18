@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createLanIdentity } from "./mobile-lan-crypto";
-import { MobileLanAccess, type MobileLanTlsOptions } from "./mobile-lan";
+import { MobileLanAccess, stablePortCandidates, type MobileLanTlsOptions } from "./mobile-lan";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -86,21 +86,35 @@ it.each(["plain", "tls", "both"])(
       reason: "Mobile address changed. Reconnect paired devices using the new endpoint.",
     });
     const saved = JSON.parse(await readFile(f.file, "utf8"));
+    const plainPort = stablePortCandidates("pc", 0)[0];
+    const tlsPort = stablePortCandidates("pc", 1)[0];
     expect(saved).toMatchObject({
       key: f.key,
       enabled: true,
-      port: target !== "tls" ? 63898 : 63888,
-      tlsPort: target !== "plain" ? 64759 : 64749,
+      port: target !== "tls" ? plainPort : 63888,
+      tlsPort: target !== "plain" ? tlsPort : 64749,
     });
+    // The replacement sits below the Windows dynamic range, where reserved blocks move.
+    expect(plainPort).toBeLessThan(49152);
+    expect(tlsPort).toBeLessThan(49152);
+    expect(plainPort).not.toBe(tlsPort);
     expect(f.bootstrap).toHaveBeenCalledWith("192.168.2.108", saved.tlsPort);
     expect(f.plain.listen.mock.calls.map((call) => call[0])).toEqual(
-      target !== "tls" ? [63888, 0] : [63888],
+      target !== "tls" ? [63888, plainPort] : [63888],
     );
     expect(f.secure.listen.mock.calls.map((call) => call[0])).toEqual(
-      target !== "plain" ? [64749, 0] : [64749],
+      target !== "plain" ? [64749, tlsPort] : [64749],
     );
   },
 );
+
+it("keeps the same replacement port for an environment and skips taken candidates", () => {
+  const first = stablePortCandidates("8a19ae9e-478a-416f-acb8-d2af4d", 0);
+  expect(stablePortCandidates("8a19ae9e-478a-416f-acb8-d2af4d", 0)).toEqual(first);
+  expect(new Set(first).size).toBe(first.length);
+  for (const port of [...first, ...stablePortCandidates("8a19ae9e-478a-416f-acb8-d2af4d", 1)])
+    expect(port >= 20000 && port < 40000).toBe(true);
+});
 
 it.each(["plain", "tls"])("never replaces EADDRINUSE saved %s port", async (target) => {
   const f = await fixture(

@@ -12,7 +12,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createLanIdentity } from "./mobile-lan-crypto";
-import { createLanGateway, MobileLanAccess } from "./mobile-lan";
+import { createLanGateway, MobileLanAccess, stablePortCandidates } from "./mobile-lan";
 import { lanContext } from "../../src/integrations/mobile-lan";
 import { MobilePairing } from "./mobile-pairing";
 
@@ -266,7 +266,8 @@ describe("encrypted mobile LAN access", () => {
     const [a, b] = await Promise.all([first.enable(), first.enable()]);
     expect(a).toEqual(b);
     expect(a).toMatchObject({ state: "ready", endpoint: "http://192.168.1.20:43210" });
-    expect(bindings).toEqual([[0, "192.168.1.20"]]);
+    // First enable takes the environment's stable port, not an OS-assigned dynamic one.
+    expect(bindings).toEqual([[stablePortCandidates("pc", 0)[0], "192.168.1.20"]]);
     await first.close();
     const resumed = new MobileLanAccess(
       file,
