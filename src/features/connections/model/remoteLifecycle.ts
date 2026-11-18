@@ -115,6 +115,10 @@ export function pauseConnectionRecovery(environmentId: string) {
   const state = readRemoteLifecycle(environmentId);
   write(environmentId, { ...state, paused: true, nextRetryAt: undefined });
 }
+export function resumeConnectionRecovery(environmentId: string) {
+  const state = readRemoteLifecycle(environmentId);
+  if (state.paused) write(environmentId, { ...state, paused: false });
+}
 export function recordFeatureHealth(
   environmentId: string,
   feature: RemoteFeature,

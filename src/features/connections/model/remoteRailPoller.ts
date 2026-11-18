@@ -1,8 +1,12 @@
+import { withTimeout } from "../../../shared/lib/withTimeout";
 import type { HostSessionSummary } from "./protocol";
 import { remoteBackoffDelay, withBackoffJitter } from "./remotePollingPolicy";
 
 /** At most this many session-list requests of one rail are in flight. */
 export const RAIL_POLL_CONCURRENCY = 4;
+
+/** A load that has not settled by then counts as a failure, so a stuck read cannot hold its slot. */
+export const RAIL_LOAD_TIMEOUT_MS = 30_000;
 
 /** Polls each target on its own schedule: a result is handed over as soon as
  * it arrives, and a failing target backs off by its own failure count, so a
@@ -15,6 +19,7 @@ export function startRailPoller<T>(options: {
   onError?: (target: T, reason: unknown) => void;
   foregroundMs?: number;
   concurrency?: number;
+  loadTimeoutMs?: number;
   random?: () => number;
 }): () => void {
   const limit = options.concurrency ?? RAIL_POLL_CONCURRENCY;
@@ -90,7 +95,12 @@ export function startRailPoller<T>(options: {
         attempted = true;
         const force = state.force;
         state.force = false;
-        const next = await (force ? options.load(state.target, true) : options.load(state.target));
+        const pending = force ? options.load(state.target, true) : options.load(state.target);
+        const next = await withTimeout(
+          pending,
+          options.loadTimeoutMs ?? RAIL_LOAD_TIMEOUT_MS,
+          "Session list",
+        );
         list = Array.isArray(next) ? next : undefined;
       }
     } catch (error) {
@@ -140,7 +150,8 @@ export function startRailPoller<T>(options: {
       window.removeEventListener("offline", wake);
       document.removeEventListener("visibilitychange", wake);
     }
-    waiting.length = 0;
+    // Let queued polls run to their `stopped` check instead of leaving them pending.
+    for (const next of waiting.splice(0)) next();
     timers.forEach(clearTimeout);
     timers.clear();
   };

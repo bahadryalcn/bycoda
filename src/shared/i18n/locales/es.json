@@ -12013,5 +12013,6 @@
   "This device's local storage is full, so the queue could not be saved.": "El almacenamiento local de este dispositivo está lleno, por lo que no se pudo guardar la cola.",
   "The connection to the Host dropped before the result was known. The queue checks again automatically.": "La conexión con el Host se cortó antes de conocer el resultado. La cola vuelve a comprobarlo automáticamente.",
   "The message was not sent. The technical reason is in the details.": "El mensaje no se envió. El motivo técnico está en los detalles.",
-  "Sync is paused until room privacy protection is confirmed. It retries automatically.": "La sincronización está en pausa hasta que se confirme la protección de privacidad de la sala. Se reintenta automáticamente."
+  "Sync is paused until room privacy protection is confirmed. It retries automatically.": "La sincronización está en pausa hasta que se confirme la protección de privacidad de la sala. Se reintenta automáticamente.",
+  "Automatic reconnect paused": "Reconexión automática en pausa"
 }

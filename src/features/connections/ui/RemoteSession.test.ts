@@ -43,6 +43,7 @@ import {
   notifyRemoteRecovered,
   readRemoteConnection,
   resetRemoteHealth,
+  subscribeRemoteRecovered,
 } from "../model/remoteHealth";
 import { resetAutoContinueForTests } from "../../sessions/model/autoContinue";
 import {
@@ -3310,6 +3311,30 @@ it("keeps the transcript on disconnect, shows one connection notice and reconnec
   );
   await vi.waitFor(() => expect(remoteDataPhase()).toBe("empty"));
   expect(document.body.textContent).not.toContain("Earlier reply");
+});
+
+it("keeps the pane online and its transcript through one timed-out read, without a recovery reload", async () => {
+  explainAtOnce();
+  openExistingChat();
+  await render();
+  await vi.waitFor(() => expect(remoteDataPhase()).toBe("ready"));
+  const recovered = vi.fn();
+  const unsubscribe = subscribeRemoteRecovered(recovered);
+  const statusChanges = vi.fn();
+  window.addEventListener("bycoda:remote-machine-status", statusChanges);
+  machineDown = "[RPC_TIMEOUT] the Host did not answer in time";
+  await act(async () => byLabel("Refresh conversation")!.click());
+  await settle();
+  await settle();
+  // The manual refresh stays pending until the retry answers; it is not an error.
+  expect(remoteDataPhase()).not.toBe("error");
+  expect(document.body.textContent).toContain("Earlier reply");
+  expect(document.body.textContent).not.toContain("Can’t reach Home server");
+  // No offline status was published, so nothing announces a recovery later.
+  expect(statusChanges).not.toHaveBeenCalled();
+  expect(recovered).not.toHaveBeenCalled();
+  window.removeEventListener("bycoda:remote-machine-status", statusChanges);
+  unsubscribe();
 });
 
 it("uses one connection recovery for blocked conversation and queue reads without replaying messages", async () => {

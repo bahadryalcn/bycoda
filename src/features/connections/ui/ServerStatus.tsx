@@ -56,7 +56,7 @@ export function MachineStatus({
         : state.status === "outdated-host"
           ? t("Update Host")
           : indicator.tone === "down"
-            ? t("Not connected")
+            ? t(lifecycle.paused ? "Automatic reconnect paused" : "Not connected")
             : indicator.tone === "connecting"
               ? t("Connecting")
               : t(degraded ? "Refresh pending" : "Connected");

@@ -18,7 +18,13 @@ import {
 } from "./protocol";
 import { MachineChannelStreamError, subscribeRemoteMachineChannel } from "./remoteMachineChannel";
 import { remoteProjectFor } from "./remoteProjects";
-import { railSessions, type RemoteRailSession } from "./remoteRailSessions";
+import {
+  railEntryAfterFailure,
+  railSessions,
+  untrustedRailList,
+  type RailListEntry,
+  type RemoteRailSession,
+} from "./remoteRailSessions";
 import { blocksSending } from "./remoteConnection";
 import { isMachineEnabled, startNativeDisabledMachinesSync } from "./machineEnabled";
 import { subscribeMachineFocused } from "./machineFocus";
@@ -48,6 +54,7 @@ import { applyProjectChange, noteOwnSessionRequest } from "./remoteListActivity"
 import { machineStatusPollDelay, remoteBackoffDelay } from "./remotePollingPolicy";
 import { startRailPoller } from "./remoteRailPoller";
 import { startPerformanceSpan } from "../../../shared/lib/performanceTrace";
+import { TimeoutError } from "../../../shared/lib/withTimeout";
 import { queueRemoteSummaryCache } from "./remoteSummaryCache";
 import { forgetDeletedRemotePage } from "./remotePageCache";
 import { isLocalSyncMachine } from "./localSync";
@@ -1468,17 +1475,10 @@ export function useRemoteRailSessions(projects: readonly string[]): RemoteRailSe
       return;
     }
     // The cached list may be old: nothing in it counts as running until the host says so.
-    const lists = new Map<string, { list: HostSessionSummary[]; fresh: boolean }>(
+    const lists = new Map<string, RailListEntry>(
       targets.map(({ project }) => [
         project,
-        {
-          list: cachedSessions(project).map((session) => ({
-            ...session,
-            status: "idle" as const,
-            needsInput: false,
-          })),
-          fresh: false,
-        },
+        { list: untrustedRailList(cachedSessions(project)), fresh: false, failures: 0 },
       ]),
     );
     let shown = "";
@@ -1491,7 +1491,7 @@ export function useRemoteRailSessions(projects: readonly string[]): RemoteRailSe
     };
     publish();
     const save = (project: string, next: HostSessionSummary[]) => {
-      lists.set(project, { list: next, fresh: true });
+      lists.set(project, { list: next, fresh: true, failures: 0 });
       const stored = JSON.stringify(next);
       try {
         if (localStorage.getItem(historyKey(project)) !== stored) {
@@ -1501,6 +1501,13 @@ export function useRemoteRailSessions(projects: readonly string[]): RemoteRailSe
       } catch {
         /* the list is refetched next time */
       }
+      publish();
+    };
+    // A machine that stops answering must not keep its last running/needs-input state on the rail.
+    const fail = (project: string, reason: unknown) => {
+      const entry = lists.get(project);
+      if (!entry) return;
+      lists.set(project, railEntryAfterFailure(entry, reason));
       publish();
     };
     const capable = targets.filter(({ machine }) =>
@@ -1515,10 +1522,30 @@ export function useRemoteRailSessions(projects: readonly string[]): RemoteRailSe
           load: ({ machine, remote }, force) =>
             sharedSessionLists.load(machine.id, remote.projectId, force),
           onResult: ({ project }, next) => save(project, next),
+          onError: ({ project, machine, remote }, reason) => {
+            // A read that never settled stays shared as pending; drop it so the retry asks again.
+            if (reason instanceof TimeoutError)
+              sharedSessionLists.invalidateProject(machine.id, remote.projectId);
+            fail(project, reason);
+          },
         }),
       );
     for (const target of capable) {
       const { project, remote, machine } = target;
+      // After a failure the next delivery re-reads the list, even if it reports no change.
+      let recovering = false;
+      const reload = () => {
+        recovering = false;
+        sharedSessionLists.invalidateProject(machine.id, remote.projectId);
+        void sharedSessionLists
+          .load(machine.id, remote.projectId)
+          .then((next) => save(project, next))
+          .catch((error) => {
+            console.warn("connections operation failed", error);
+            recovering = true;
+            fail(project, error);
+          });
+      };
       cleanups.push(
         subscribeRemoteMachineChannel(
           machine.id,
@@ -1536,15 +1563,13 @@ export function useRemoteRailSessions(projects: readonly string[]): RemoteRailSe
               changed &&
               applyProjectChange(sharedSessionLists, machine, remote, changed, changes.reset);
             if (next) save(project, next);
-            else if (changed || changes.reset) {
-              sharedSessionLists.invalidateProject(machine.id, remote.projectId);
-              void sharedSessionLists
-                .load(machine.id, remote.projectId)
-                .then((next) => save(project, next))
-                .catch((error) => {
-                  console.warn("connections operation failed", error);
-                });
-            }
+            else if (changed || changes.reset || recovering) reload();
+          },
+          (reason) => {
+            // Only this list's stream was refused; the machine still answers.
+            if (reason instanceof MachineChannelStreamError) return;
+            recovering = true;
+            fail(project, reason);
           },
         ),
       );
@@ -1553,6 +1578,8 @@ export function useRemoteRailSessions(projects: readonly string[]): RemoteRailSe
         .then((next) => save(project, next))
         .catch((error) => {
           console.warn("connections operation failed", error);
+          recovering = true;
+          fail(project, error);
         });
     }
     return () => cleanups.forEach((cleanup) => cleanup());

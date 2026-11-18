@@ -169,7 +169,12 @@ import {
   requestDeliveryReview,
 } from "../../sessions/public/deliveryReview";
 import { useRemoteRecovery } from "../model/useRemoteRecovery";
-import { reportRemoteConnection, subscribeRemoteRecovered } from "../model/remoteHealth";
+import {
+  recordRemoteConnection,
+  reportRemoteConnection,
+  subscribeRemoteRecovered,
+  TIMEOUTS_BEFORE_UNREACHABLE,
+} from "../model/remoteHealth";
 import { useRemoteConnection } from "../model/useRemoteConnection";
 import { classifyRemoteError, isConnectionFailure } from "../model/remoteFailure";
 import { useQuietRetry } from "../model/useQuietRetry";
@@ -1200,16 +1205,23 @@ function ConnectedRemoteSession({
           readGeneration !== ownerResetGeneration
         )
           return;
-        const currentData = remoteDataStateRef.current;
-        publishRemoteDataState({
-          phase: "error",
-          error: String(reason).replace(/^Error: /, ""),
-          updatedAt: currentData.updatedAt,
-        });
-        setOnline(false);
-        reportRemoteMachineStatus(machine.id, false, reason);
-        described = false;
         failed++;
+        // One timeout or busy reply proves nothing: the shared connection state ignores it,
+        // so keep the last data and online status. Going offline on a blip would make the
+        // next success announce a recovery that reloads every view of this machine.
+        const blip =
+          classifyRemoteError(reason).kind === "temporary" && failed < TIMEOUTS_BEFORE_UNREACHABLE;
+        if (!blip) {
+          const currentData = remoteDataStateRef.current;
+          publishRemoteDataState({
+            phase: "error",
+            error: String(reason).replace(/^Error: /, ""),
+            updatedAt: currentData.updatedAt,
+          });
+          setOnline(false);
+          reportRemoteMachineStatus(machine.id, false, reason);
+        } else recordRemoteConnection(machine.environmentId, reason); // counts toward the timeout run
+        described = false;
       } finally {
         polling = false;
         contentRefreshInFlight.current = false;

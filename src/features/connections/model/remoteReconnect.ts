@@ -37,6 +37,7 @@ import {
   isCurrentConnectionAttempt,
   pauseConnectionRecovery,
   recordFeatureHealth,
+  resumeConnectionRecovery,
   setConnectionPhase,
   setConnectionRetry,
   subscribeConnectionInvalidated,
@@ -176,7 +177,7 @@ export async function reconnectRemoteMachine(
   environmentId: string,
   options: { signIn?: boolean } = {},
 ): Promise<ReconnectOutcome> {
-  paused.delete(environmentId);
+  clearPause(environmentId);
   setRequested(environmentId, true);
   const pending = attempt(environmentId, true);
   // An attempt that replaced this one keeps the mark until it ends too.
@@ -200,6 +201,17 @@ export function cancelRemoteReconnect(environmentId: string) {
   invalidateConnection(environmentId);
   pauseConnectionRecovery(environmentId);
   paused.add(environmentId);
+  // A pause outlives a bad moment, not the machine's absence: automatic recovery resumes by itself.
+  clearTimeout(pauseTimers.get(environmentId));
+  pauseTimers.set(
+    environmentId,
+    setTimeout(() => {
+      pauseTimers.delete(environmentId);
+      if (!paused.delete(environmentId)) return;
+      resumeConnectionRecovery(environmentId);
+      if (stopRecovery) schedule();
+    }, PAUSE_RESUME_MS),
+  );
   attempts.delete(environmentId);
   setReconnecting(environmentId, false);
   clearTimeout(retries.get(environmentId));
@@ -215,7 +227,16 @@ const retryCounts = new Map<string, number>();
 const connectedAt = new Map<string, number>();
 /** Quiet attempts at a `connection-blocked` machine since it last answered. */
 const blockedRetryCounts = new Map<string, number>();
+/** Machines whose automatic recovery the user stopped, until they reconnect or this wait ends. */
 const paused = new Set<string>();
+const pauseTimers = new Map<string, ReturnType<typeof setTimeout>>();
+function clearPause(environmentId: string) {
+  paused.delete(environmentId);
+  clearTimeout(pauseTimers.get(environmentId));
+  pauseTimers.delete(environmentId);
+}
+/** How long "Stop reconnecting" holds automatic recovery off. */
+export const PAUSE_RESUME_MS = 10 * 60_000;
 let hiddenSince: number | undefined;
 /** While the computer reports no network, timers wait for it to return instead
  * of spending attempts on an unchanged condition. A Reconnect press still dials. */
@@ -359,7 +380,7 @@ export function startRemoteAutoRecovery(): () => void {
     connectedAt.delete(environmentId);
     blockedRetryCounts.delete(environmentId);
     lastAttemptAt.delete(environmentId);
-    paused.delete(environmentId);
+    clearPause(environmentId);
     attempts.delete(environmentId);
     setReconnecting(environmentId, false);
     setConnectionRetry(environmentId);
@@ -400,6 +421,8 @@ export function startRemoteAutoRecovery(): () => void {
     connectedAt.clear();
     blockedRetryCounts.clear();
     paused.clear();
+    pauseTimers.forEach((timer) => clearTimeout(timer));
+    pauseTimers.clear();
     for (const environmentId of attempts.keys()) invalidateConnection(environmentId);
     attempts.clear();
     reconnecting.clear();
