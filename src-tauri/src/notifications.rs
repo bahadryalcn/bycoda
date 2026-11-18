@@ -411,8 +411,9 @@ mod platform {
     /// so the caller gives up rather than leaving the turn silent.
     const DISPATCH_TIMEOUT: Duration = Duration::from_secs(5);
 
-    /// `None` waits indefinitely, which is what the permission prompt needs:
-    /// its handler does not run until the user answers the system dialog.
+    /// `None` waits indefinitely, which only the permission prompt needs: its
+    /// handler does not run until the user answers the system dialog. Every
+    /// read-only query is bounded, because callers park a thread on it.
     async fn wait<T: Send + 'static>(
         rx: mpsc::Receiver<T>,
         timeout: Option<Duration>,
@@ -427,7 +428,7 @@ mod platform {
     }
 
     pub(super) async fn permission(_app: &AppHandle) -> Permission {
-        wait(query_permission(), None)
+        wait(query_permission(), Some(DISPATCH_TIMEOUT))
             .await
             .unwrap_or(Permission::Denied)
     }
@@ -592,6 +593,14 @@ mod platform {
         use super::*;
         use objc2::runtime::AnyProtocol;
         use objc2::{sel, ClassType};
+
+        #[test]
+        fn a_bounded_wait_gives_up_when_the_handler_never_answers() {
+            // The sender stays alive, like a center whose handler never runs.
+            let (_tx, rx) = mpsc::channel::<Permission>();
+            let answer = tauri::async_runtime::block_on(wait(rx, Some(Duration::from_millis(20))));
+            assert_eq!(answer, None);
+        }
 
         #[test]
         fn identifier_round_trips_the_session() {
