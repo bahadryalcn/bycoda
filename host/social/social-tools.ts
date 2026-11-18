@@ -6,6 +6,7 @@ import {
   type SocialTool,
 } from "../../src/features/social/model/social";
 import { HOST_PROTOCOL_VERSION } from "../../src/features/connections/model/protocol";
+import { X_DESTINATIONS } from "../../src/integrations/social/x-handoff";
 
 /** Credential material is added only in the native/headless backend, after the
  * renderer's ACP frame has crossed the process boundary. SDKs that deliberately
@@ -104,6 +105,22 @@ export const SOCIAL_TOOL_SCHEMAS: Record<SocialTool, Record<string, unknown>> = 
             link: string(),
             scheduledAt: { type: "number" },
             factIds: strings(),
+            // X publishing options used by the same reviewed campaign workflow as desktop.
+            x: object(
+              {
+                quotePostId: string(),
+                communityId: string(),
+                poll: object(
+                  {
+                    options: { ...strings(), minItems: 2, maxItems: 4 },
+                    durationMinutes: { type: "integer", minimum: 5, maximum: 10080 },
+                  },
+                  ["options", "durationMinutes"],
+                ),
+                thread: { ...strings(), minItems: 1, maxItems: 24 },
+              },
+              [],
+            ),
             tiktok: object(
               {
                 privacy: {
@@ -354,6 +371,14 @@ export const SOCIAL_TOOL_SCHEMAS: Record<SocialTool, Record<string, unknown>> = 
   "browser.needsHuman.list": object({}, []),
   "browser.recipeSuggestions.list": object({}, []),
   "people.score": object({ personId: string() }, ["personId"]),
+  // X.
+  "x.handoff": object(
+    { accountId: string(), destination: { enum: X_DESTINATIONS }, target: string() },
+    ["destination"],
+  ),
+  "x.insights": object({ accountId: string() }, ["accountId"]),
+  "x.spaces": object({ accountId: string() }, ["accountId"]),
+  "x.lists": object({ accountId: string(), listId: string(), cursor: string() }, ["accountId"]),
 };
 function pageLimit() {
   return { type: "integer", minimum: 1, maximum: 200 };
@@ -406,6 +431,11 @@ export const SOCIAL_READ_TOOLS: readonly SocialTool[] = [
   "ai.report",
   "browser.needsHuman.list",
   "browser.recipeSuggestions.list",
+  // X.
+  "x.handoff",
+  "x.insights",
+  "x.spaces",
+  "x.lists",
 ];
 const socialReads = new Set<string>(SOCIAL_READ_TOOLS);
 const SOCIAL_REQUEST_ID_PATTERN = "^[A-Za-z0-9._:-]+$";
@@ -446,6 +476,13 @@ export function normalizeSocialToolRequest(
 
 /** Extra guidance for tools whose use is not obvious from their name. */
 const TOOL_NOTES: Partial<Record<SocialTool, string>> = {
+  // X.
+  "x.handoff":
+    " Returns a fixed X page with status needs_human. The owner completes the action on X. Never claim it was completed.",
+  "x.insights":
+    " Reads seven days of metrics from a bounded sample of recent owned posts. Requires paid X API opt-in.",
+  "x.spaces": " Looks up this account's Spaces. Requires paid X API opt-in.",
+  "x.lists": " Lists owned X lists or individual list members. Requires paid X API opt-in.",
   "accounts.request":
     " Use when this project's social work needs a platform account the project does not have (check accounts.list first). It only asks the owner to create or sign in an account; it creates nothing on any platform, and the owner approves it in Social Command. Never retry a pending request.",
 };

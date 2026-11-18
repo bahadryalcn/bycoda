@@ -1,5 +1,6 @@
 import { SocialPlatformError, type SocialAccount, type SocialHttp } from "../adapter";
 import { xGet, xPostId } from "./x";
+import { isoTimestamp } from "../../../shared/lib/time/timestamps";
 
 const metricFields = [
   "impressions",
@@ -42,10 +43,9 @@ export async function xReadInsights(
 ): Promise<XInsights> {
   const start = Date.parse(range.startTime);
   const end = Date.parse(range.endTime);
-  if (!Number.isFinite(start) || !Number.isFinite(end) || start >= end)
-    throw new SocialPlatformError("rejected");
-  const startTime = new Date(start).toISOString();
-  const endTime = new Date(end).toISOString();
+  const startTime = isoTimestamp(start);
+  const endTime = isoTimestamp(end);
+  if (!startTime || !endTime || start >= end) throw new SocialPlatformError("rejected");
   const userId = xPostId(account.platformId);
   const { value: user } = await xGet(
     http,
@@ -99,9 +99,9 @@ export async function xReadInsights(
     if (!postIds.delete(post.id)) continue;
     const buckets: InsightBucket[] = [];
     for (const entry of post.timestamped_metrics ?? []) {
-      const at = typeof entry.timestamp === "string" ? Date.parse(entry.timestamp) : NaN;
-      if (!Number.isFinite(at)) continue;
-      const timestamp = new Date(at).toISOString();
+      const timestamp =
+        typeof entry.timestamp === "string" ? isoTimestamp(entry.timestamp) : undefined;
+      if (!timestamp) continue;
       const metrics: Metrics = {};
       const aggregate = accountBuckets.get(timestamp) ?? {};
       for (const field of metricFields) {

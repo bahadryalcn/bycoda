@@ -309,7 +309,7 @@ describe("RedditFields", () => {
 
 describe("XFields and PlatformFields", () => {
   it("explains the X media rule", () => {
-    render(createElement(XFields));
+    render(createElement(XFields, props("x")));
     expect(element.textContent).toContain("X posts take either up to four images or one video.");
   });
 

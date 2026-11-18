@@ -46,7 +46,9 @@ describe("X direct messages", () => {
       const url = new URL(String(raw));
       if (url.pathname.includes("media/upload")) {
         events.push("upload");
-        expect((init?.body as FormData).get("media_category")).toBe("dm_image");
+        const body = init?.body;
+        if (!(body instanceof FormData)) throw new Error("Expected DM image upload.");
+        expect(body.get("media_category")).toBe("dm_image");
         return Response.json({ data: { id: "500" } });
       }
       events.push("send");
@@ -62,7 +64,9 @@ describe("X direct messages", () => {
       media: [{ kind: "image", uploadId: "local" }],
       recipientId: "@not-an-id",
     });
-    await expect(x.send(account, request, "fixture", media)).rejects.toMatchObject({ code: "rejected" });
+    await expect(x.send(account, request, "fixture", media)).rejects.toMatchObject({
+      code: "rejected",
+    });
     expect(media).not.toHaveBeenCalled();
     expect(fetcher).not.toHaveBeenCalled();
     request.payload.recipientId = "876";
@@ -83,7 +87,12 @@ describe("X direct messages", () => {
     });
     const x = createXAdapter(new SocialHttp(fetcher));
     await expect(
-      x.send(account, message({ text, media: [], threadId: "123-876" }), "fixture", async () => new Uint8Array()),
+      x.send(
+        account,
+        message({ text, media: [], threadId: "123-876" }),
+        "fixture",
+        async () => new Uint8Array(),
+      ),
     ).rejects.toMatchObject({ code: "unknown" });
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
@@ -95,16 +104,36 @@ describe("X insights and Spaces", () => {
     const fetcher = vi.fn(async (raw: string | URL | Request) => {
       const url = new URL(String(raw));
       if (url.pathname === "/2/users/me")
-        return Response.json({ data: { id: "123", public_metrics: { followers_count: 8, post_count: 16 }, subscriber_count: 1 } });
+        return Response.json({
+          data: {
+            id: "123",
+            public_metrics: { followers_count: 8, post_count: 16 },
+            subscriber_count: 1,
+          },
+        });
       if (url.pathname === "/2/users/123/tweets")
-        return Response.json({ data: [{ id: "5" }, { id: "6", author_id: "123" }, { id: "7" }, { id: "8", author_id: "999" }], meta: { next_token: "older" } });
+        return Response.json({
+          data: [
+            { id: "5" },
+            { id: "6", author_id: "123" },
+            { id: "7" },
+            { id: "8", author_id: "999" },
+          ],
+          meta: { next_token: "older" },
+        });
       expect(url.pathname).toBe("/2/tweets/analytics");
       expect(url.searchParams.get("ids")).toBe("5,6,7");
       expect(url.searchParams.get("granularity")).toBe("daily");
       return Response.json({
         data: [
-          { id: "5", timestamped_metrics: [{ timestamp, metrics: { impressions: 7, replies: 0 } }] },
-          { id: "6", timestamped_metrics: [{ timestamp, metrics: { impressions: 4, url_clicks: 2 } }] },
+          {
+            id: "5",
+            timestamped_metrics: [{ timestamp, metrics: { impressions: 7, replies: 0 } }],
+          },
+          {
+            id: "6",
+            timestamped_metrics: [{ timestamp, metrics: { impressions: 4, url_clicks: 2 } }],
+          },
           { id: "8", timestamped_metrics: [{ timestamp, metrics: { impressions: 999 } }] },
         ],
       });
@@ -113,7 +142,10 @@ describe("X insights and Spaces", () => {
     expect(result.profile).toMatchObject({ followers: 8, posts: 16, subscribers: 1 });
     expect(result.posts.map(({ id }) => id)).toEqual(["5", "6"]);
     expect(result.daily).toEqual([
-      { timestamp: "2026-11-02T00:00:00.000Z", metrics: { impressions: 11, replies: 0, url_clicks: 2 } },
+      {
+        timestamp: "2026-11-02T00:00:00.000Z",
+        metrics: { impressions: 11, replies: 0, url_clicks: 2 },
+      },
     ]);
     expect(result.coverage).toEqual({ requestedPosts: 3, morePostsAvailable: true, partial: true });
   });
@@ -136,14 +168,29 @@ describe("X insights and Spaces", () => {
       expect(url.searchParams.get("user_ids")).toBe("123");
       return Response.json({
         data: [
-          { id: "1nAKErdLGmWxL", creator_id: "123", title: "Q&A", state: "live", participant_count: 0 },
+          {
+            id: "1nAKErdLGmWxL",
+            creator_id: "123",
+            title: "Q&A",
+            state: "live",
+            participant_count: 0,
+          },
           { id: "wrongCreator", creator_id: "456" },
           { id: "?unsafe=path", creator_id: "123" },
         ],
       });
     });
-    await expect(xListOwnSpaces(new SocialHttp(fetcher), account, "fixture")).resolves.toMatchObject({
-      spaces: [{ url: "https://x.com/i/spaces/1nAKErdLGmWxL", title: "Q&A", state: "live", participantCount: 0 }],
+    await expect(
+      xListOwnSpaces(new SocialHttp(fetcher), account, "fixture"),
+    ).resolves.toMatchObject({
+      spaces: [
+        {
+          url: "https://x.com/i/spaces/1nAKErdLGmWxL",
+          title: "Q&A",
+          state: "live",
+          participantCount: 0,
+        },
+      ],
       partial: true,
     });
   });

@@ -7,7 +7,11 @@ import {
 } from "../../features/social/model/social";
 import { accountCapabilities, platformRequirements, X_BROWSER_SCOPES } from "./capabilities";
 import { browserOperations } from "./browserCapabilities";
-import { CAPABILITY_OPERATIONS, NOT_YET_OPERATIONS } from "./capabilities/shared";
+import {
+  CAPABILITY_OPERATIONS,
+  NOT_YET_OPERATIONS,
+  X_CAPABILITY_OPERATIONS,
+} from "./capabilities/shared";
 
 const account = (overrides: Partial<SocialAccount> = {}): SocialAccount => ({
   id: "a",
@@ -121,7 +125,10 @@ describe("X browser connection", () => {
 
 describe("X API connection", () => {
   it("keeps the OAuth scope requirement and its API reason code", () => {
-    const publish = row(accountCapabilities(apiAccount("x")), "publish");
+    const publish = row(
+      accountCapabilities(apiAccount("x", { xApiProduct: "pay-per-use" })),
+      "publish",
+    );
     expect(publish.status).toBe("pending");
     expect(publish.reasonCode).toBe("x.publish.api_required");
     expect(publish.reason).toContain("OAuth");
@@ -163,7 +170,7 @@ describe("capability table shape", () => {
         accountCapabilities(browserAccount(platform)),
       ]) {
         expect(caps.map((item) => item.operation).sort()).toEqual(
-          [...CAPABILITY_OPERATIONS].sort(),
+          [...CAPABILITY_OPERATIONS, ...(platform === "x" ? X_CAPABILITY_OPERATIONS : [])].sort(),
         );
         for (const item of caps) expect(item.reasonCode.length, platform).toBeGreaterThan(0);
       }

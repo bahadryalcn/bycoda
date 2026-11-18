@@ -17,7 +17,10 @@ type XDirectMessageBody = { text?: string; attachments?: { media_id: string }[] 
 export async function xSendDm(
   request: ReturnType<typeof xDmRequest>,
   mediaIds: string[],
-  publish: (url: string, body: XDirectMessageBody) => Promise<{
+  publish: (
+    url: string,
+    body: XDirectMessageBody,
+  ) => Promise<{
     value: { data?: { dm_event_id?: unknown } };
   }>,
   beforeSubmit?: () => Promise<void>,

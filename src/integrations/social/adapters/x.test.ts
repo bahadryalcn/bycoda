@@ -1,12 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SocialAccount, SocialJob } from "../../../features/social/model/social";
 import { SocialHttp, SocialPlatformError } from "../adapter";
-import {
-  createXAdapter,
-  xAudienceRequest,
-  xPostExtrasIssue,
-  xPostId,
-} from "./x";
+import { createXAdapter, xAudienceRequest, xPostExtrasIssue, xPostId } from "./x";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -259,10 +254,17 @@ describe("X API posting extras and actions", () => {
   it("refuses polls with media before reading or uploading an asset", async () => {
     const { http, fetcher } = network();
     const readMedia = vi.fn(noop);
-    await expect(createXAdapter(http).send(account(), job({
-      x: { poll: { options: ["Yes", "No"], durationMinutes: 60 } },
-      media: [{ kind: "image", uploadId: "asset" }],
-    }), "token", readMedia)).rejects.toMatchObject({ code: "rejected" });
+    await expect(
+      createXAdapter(http).send(
+        account(),
+        job({
+          x: { poll: { options: ["Yes", "No"], durationMinutes: 60 } },
+          media: [{ kind: "image", uploadId: "asset" }],
+        }),
+        "token",
+        readMedia,
+      ),
+    ).rejects.toMatchObject({ code: "rejected" });
     expect(fetcher).not.toHaveBeenCalled();
     expect(readMedia).not.toHaveBeenCalled();
   });
@@ -278,15 +280,20 @@ describe("X API posting extras and actions", () => {
     const gate = vi.fn(async () => {
       expect(checkpoint.mock.calls.at(-1)?.[0].xThread.submitting).toBe(true);
     });
-    await expect(createXAdapter(http).send(account(), target, "token", noop, checkpoint, gate))
-      .resolves.toMatchObject({ platformId: "101" });
+    await expect(
+      createXAdapter(http).send(account(), target, "token", noop, checkpoint, gate),
+    ).resolves.toMatchObject({ platformId: "101" });
     expect(gate).toHaveBeenCalledTimes(3);
     expect(calledBody(fetcher, 0)).toEqual({ text: "hello", community_id: "555" });
     expect(calledBody(fetcher, 1)).toEqual({
-      text: "second", community_id: "555", reply: { in_reply_to_tweet_id: "101" },
+      text: "second",
+      community_id: "555",
+      reply: { in_reply_to_tweet_id: "101" },
     });
     expect(calledBody(fetcher, 2).reply).toEqual({ in_reply_to_tweet_id: "102" });
-    expect(checkpoint).toHaveBeenLastCalledWith({ xThread: { postIds: ["101", "102", "103"], submitting: false } });
+    expect(checkpoint).toHaveBeenLastCalledWith({
+      xThread: { postIds: ["101", "102", "103"], submitting: false },
+    });
   });
 
   it("refuses to resend a thread after a partial or uncertain dispatch", async () => {
@@ -304,8 +311,9 @@ describe("X API posting extras and actions", () => {
     const { fetcher, http } = network({ body: { data: { id: "102" } } });
     const target = job({ x: { thread: ["second"] } });
     target.preparation = { xThread: { postIds: ["101"], submitting: false } };
-    await expect(createXAdapter(http).send(account(), target, "token", noop, vi.fn()))
-      .resolves.toMatchObject({ platformId: "101" });
+    await expect(
+      createXAdapter(http).send(account(), target, "token", noop, vi.fn()),
+    ).resolves.toMatchObject({ platformId: "101" });
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(calledBody(fetcher).reply).toEqual({ in_reply_to_tweet_id: "101" });
   });

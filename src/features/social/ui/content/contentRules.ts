@@ -1,4 +1,6 @@
 import { t } from "../../../../shared/i18n";
+import { xPostWeight } from "../../../../integrations/social/publishingFormats";
+import { xPostExtrasIssue, X_POST_WEIGHT_LIMIT } from "../../../../integrations/social/x-publish";
 import {
   SOCIAL_PLATFORM_NAMES,
   type CampaignVariant,
@@ -15,6 +17,7 @@ import {
   mediaOf,
   scheduledMs,
   withUtm,
+  xPostExtras,
   type ContentDraft,
   type ContentMedia,
   type FacebookDraft,
@@ -75,12 +78,14 @@ export function characterLimit(
     return Math.min(configured ?? Infinity, 2200);
   if (isTelegramChannelBot(account))
     return Math.min(configured ?? Infinity, shape.hasMedia ? 1024 : 4096);
+  if (account.platform === "x") return Math.min(configured ?? Infinity, X_POST_WEIGHT_LIMIT);
   return configured;
 }
 
 /** Platform count: text plus link. Telegram channel bot posts count UTF-16 units. */
 export function characterCount(account: SocialAccount, text: string, link?: string): number {
   const content = [text, link].filter(Boolean).join("\n");
+  if (account.platform === "x") return xPostWeight(content);
   return isTelegramChannelBot(account) ? content.length : socialCharacterCount(content);
 }
 
@@ -258,6 +263,16 @@ export function draftProblems(input: RuleInput): Problem[] {
       add(t("Content for this account can be at most {p0} characters.", { p0: limit }));
     for (const text of mediaProblems(account.platform, draft.media)) add(text);
     const platform = draft.platform[account.id];
+    if (account.platform === "x") {
+      const x = xPostExtras(platform?.x);
+      if (x) {
+        if (xPostExtrasIssue(x, draft.media.length)) add(t("Check X publishing options."));
+        if (account.connection === "browser") add(t("Open X to publish these options manually."));
+        else if (x.quotePostId && account.xApiProduct !== "enterprise")
+          add(t("X quote posts require Enterprise API access."));
+        if (draft.repeat.enabled) add(t("Schedule this X format as a single campaign."));
+      }
+    }
     if (account.platform === "facebook")
       for (const text of reelProblems(platform?.facebook, draft.media)) add(text);
     if (account.platform === "tiktok")
@@ -295,6 +310,10 @@ export function buildVariants(input: RuleInput): CampaignVariant[] {
       scheduledAt: at,
       factIds: [...draft.factIds],
     };
+    if (account.platform === "x") {
+      const x = xPostExtras(platform?.x);
+      if (x) variant.x = x;
+    }
     // Spread the saved options first so fields without a form control (category, publish time,
     // TikTok mode and photo fields) survive an edit; the normalized fields below then override.
     if (account.platform === "youtube" && platform?.youtube) {

@@ -198,7 +198,7 @@ describe("YouTube and Reddit", () => {
 });
 
 describe("characters and links", () => {
-  it("counts Telegram channel bot posts in UTF-16 units and other posts in code points", () => {
+  it("counts Telegram channel bot posts in UTF-16 units and X posts using weighted length", () => {
     const bot = account({
       id: "t1",
       platform: "telegram",
@@ -207,7 +207,7 @@ describe("characters and links", () => {
     });
     const web = account({ id: "x1", platform: "x" });
     expect(characterCount(bot, "😀")).toBe(2);
-    expect(characterCount(web, "😀")).toBe(1);
+    expect(characterCount(web, "😀")).toBe(2);
   });
 
   it("applies the Facebook Reel and Telegram media caps", () => {

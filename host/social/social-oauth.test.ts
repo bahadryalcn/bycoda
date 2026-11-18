@@ -38,6 +38,7 @@ async function fixture(platform: SocialPlatform = "x") {
   });
   const account = (await social.call(owner, "accounts.create", {
     platform,
+    ...(platform === "x" ? { connection: "oauth", xApiProduct: "pay-per-use" } : {}),
     name: "Pending",
     accountType: SOCIAL_ACCOUNT_TYPES[platform][0],
     projectIds: [project.id],
@@ -53,6 +54,20 @@ async function fixture(platform: SocialPlatform = "x") {
   return { social, account, tokens, config };
 }
 describe("Social OAuth trust boundary", () => {
+  it("defaults new X accounts to browser and blocks paid OAuth until owner opt-in", async () => {
+    const s = await fixture();
+    const browser = await s.social.call(owner, "accounts.create", {
+      platform: "x",
+      name: "Free browser account",
+      accountType: "member",
+    });
+    expect(browser).toMatchObject({ connection: "browser" });
+    await s.social.call(owner, "x.api.setProduct", { accountId: s.account.id, product: null });
+    const fetcher = vi.fn();
+    const oauth = new SocialOAuth(s.social, { x: s.config }, fetcher);
+    await expect(oauth.begin(owner, s.account.id)).rejects.toThrow("owner opt-in");
+    expect(fetcher).not.toHaveBeenCalled();
+  });
   it.each(["tiktok", "snapchat"] as const)(
     "connects %s only after verified identity and explicit selection",
     async (platform) => {

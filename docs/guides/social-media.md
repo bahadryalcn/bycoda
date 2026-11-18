@@ -4,6 +4,18 @@ Social Media keeps accounts on the selected computer. Choose the computer and pr
 
 ## Create a new account
 
+For X, **Browser** is the default. Open **X actions** from the account for
+profile edits, Creator Studio and X Live Studio. Complete verification on X.
+To store a Live Studio stream key, paste it into **X stream key** and choose
+**Save stream key**.
+
+For paid API operations, choose the API connection and set **X API billing**
+to Pay per use or Enterprise. Review the example prices, select permissions
+and connect. Confirm the account, target and action before applying API changes.
+In **Content**, select an X account for polls, Community posts and threads.
+API quote posts require Enterprise. Review partial threads on X before
+sending additional posts.
+
 For a browser account on LinkedIn, TikTok, Instagram, Facebook, YouTube or Reddit, choose **Connect account**, then **Create a new account instead**. Bycoda saves the account, opens the platform's signup window and shows which steps you must finish there: password, verification code, terms or a security check. It asks only for non-secret details such as email, name, username or birth date, and never for a password or code. Bycoda does not solve security checks. When the signup window closes, choose **Continue to sign-in** to sign in and let the Host verify the identity. Closing the window does not prove the account was created. For YouTube, sign in to your Google account in the window, or enter your name and choose **Continue** to create a new Google account first; the channel is created after it.
 
 ## Accounts requested by a project

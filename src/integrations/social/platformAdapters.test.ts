@@ -19,6 +19,7 @@ const account = (platform: SocialAccount["platform"]): SocialAccount => ({
             ? "channel"
             : "member",
   scopes: [],
+  ...(platform === "x" ? { xApiProduct: "pay-per-use" as const } : {}),
   accessApproved: true,
   connected: true,
   paused: false,
@@ -189,7 +190,7 @@ describe("Official social API adapter contracts", () => {
         const url = String(raw);
         if (url === "https://api.x.com/2/media/upload")
           return Response.json({ data: { id: "500" } });
-        if (url.endsWith("/tweets")) return Response.json({ data: { id: "posted" } });
+        if (url.endsWith("/tweets")) return Response.json({ data: { id: "600" } });
         if (url.includes("graph.instagram.com")) {
           const path = new URL(url).pathname;
           if (path.endsWith("/media")) return Response.json({ id: "container" });
@@ -744,21 +745,19 @@ describe("Official social API adapter contracts", () => {
     const fetcher = vi.fn(async () => Response.json({ data: { dm_event_id: "456" } }));
     const adapters = createSocialAdapters(new SocialHttp(fetcher));
     const message = job("message");
-    message.payload.recipientId = "person";
+    message.payload.recipientId = "789";
     await adapters.x.send(account("x"), message, "synthetic-token", async () => new Uint8Array());
-    expect(fetcher.mock.calls[0][0]).toBe(
-      "https://api.x.com/2/dm_conversations/with/person/messages",
-    );
-    message.payload.threadId = "conversation";
+    expect(fetcher.mock.calls[0][0]).toBe("https://api.x.com/2/dm_conversations/with/789/messages");
+    message.payload.threadId = "123-789";
     await adapters.x.send(account("x"), message, "synthetic-token", async () => new Uint8Array());
-    expect(fetcher.mock.calls[1][0]).toContain("dm_conversations/conversation/messages");
+    expect(fetcher.mock.calls[1][0]).toContain("dm_conversations/123-789/messages");
   });
   it("X image MIME is sent correctly and a successful upload checkpoint is not uploaded again on the next attempt", async () => {
     const fetcher = vi.fn(async (raw: string | URL | Request) =>
       Response.json(
         String(raw).includes("media/upload")
           ? { data: { id: "12345" } }
-          : { data: { id: "post123" } },
+          : { data: { id: "98765" } },
       ),
     );
     const adapters = createSocialAdapters(new SocialHttp(fetcher));

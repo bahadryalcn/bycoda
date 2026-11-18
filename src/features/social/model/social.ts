@@ -2,7 +2,7 @@
 import type { RemoteProvider } from "../../connections/model/protocol";
 // Payload shapes are owned by the adapters; type-only imports keep one source of truth.
 import type { RedditPayload } from "../../../integrations/social/adapters/reddit-rules";
-import type { XPostExtras } from "../../../integrations/social/adapters/x";
+import type { XPostExtras } from "../../../integrations/social/x-publish";
 import type {
   WhatsAppInteractive,
   WhatsAppTemplateMessage,

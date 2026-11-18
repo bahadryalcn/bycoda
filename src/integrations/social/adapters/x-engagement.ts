@@ -26,16 +26,23 @@ export async function runXEngagement(
   if (typeof enabled !== "boolean") throw new SocialPlatformError("rejected");
 
   if (kind === "hideReply") {
-    const { value } = await xCall(http, account, `https://api.x.com/2/tweets/${postId}/hidden`, token, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ hidden: enabled }),
-    });
+    const { value } = await xCall(
+      http,
+      account,
+      `https://api.x.com/2/tweets/${postId}/hidden`,
+      token,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hidden: enabled }),
+      },
+    );
     if (value.data?.hidden !== enabled) throw new SocialPlatformError("unknown");
     return { postId, enabled };
   }
 
-  if (!Object.hasOwn(postActions, kind)) throw new SocialPlatformError("rejected");
+  if (!Object.prototype.hasOwnProperty.call(postActions, kind))
+    throw new SocialPlatformError("rejected");
   const userId = xResourceId(account.platformId);
   const operation = postActions[kind];
   const url = `https://api.x.com/2/users/${userId}/${operation.collection}`;

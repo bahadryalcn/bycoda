@@ -88,6 +88,7 @@ const snapshot: SocialSnapshot = {
       platformId: "",
       name: "Demo account",
       accountType: "member",
+      xApiProduct: "pay-per-use",
       scopes: [],
       connected: false,
       accessApproved: false,
@@ -111,6 +112,19 @@ const snapshot: SocialSnapshot = {
 };
 // Capabilities come from the shared capability map, so every entry carries its reason code.
 snapshot.capabilities = { x: accountCapabilities(snapshot.accounts[0]) };
+if (new URLSearchParams(location.search).has("x-paid-fixture")) {
+  const x = snapshot.accounts[0];
+  Object.assign(x, {
+    xApiProduct: "enterprise",
+    connection: "oauth",
+    connected: true,
+    accessApproved: true,
+    platformId: "12345",
+    scopes: ["tweet.read", "tweet.write", "users.read", "media.write"],
+    grants: { demo: ["read", "draft", "publish"] },
+  });
+  snapshot.capabilities = { x: accountCapabilities(x) };
+}
 const calls: { command: string; args: Record<string, unknown> }[] = [];
 let heldAction: string | undefined;
 let releaseAction: ((reject: boolean) => void) | undefined;

@@ -43,6 +43,7 @@ import { enabledOAuthPlatform } from "./oauth/registry";
 import { readInboxSettings } from "./inbox/inbox-settings";
 import { holdForHuman, requeueJobForHuman } from "./execution/social-human-review";
 import { osSecretValues } from "../secrets/secret-store";
+import { storeXLiveKey } from "./core/x-live-key";
 import type { AiAction } from "../../src/features/social/model/autonomy";
 import type { OutreachChannel } from "../../src/features/social/model/outreach";
 import { eraseSocialContact, optOutContact, upsertSocialContact } from "./contacts/social-contacts";
@@ -113,6 +114,7 @@ import {
 } from "../../src/integrations/social/adapter";
 import { contentSupport } from "../../src/integrations/social/platformAdapters";
 import { validatePublishingText } from "../../src/integrations/social/publishingFormats";
+import { xPostExtrasIssue, type XPostExtras } from "../../src/integrations/social/x-publish";
 import { parseTikTokOptions } from "../../src/integrations/social/tiktok";
 import type { SocialCredentialStore, SocialCredential } from "./social-credentials";
 import { SocialVideoUploads } from "./social-media";
@@ -1879,10 +1881,26 @@ export class SocialService implements SocialServiceApi {
         );
       case "accounts.create": {
         this.owner(p);
-        exact(input, ["platform", "name", "accountType", "projectIds", "connection"]);
+        exact(input, [
+          "platform",
+          "name",
+          "accountType",
+          "projectIds",
+          "connection",
+          "xApiProduct",
+        ]);
         if (!(SOCIAL_PLATFORMS as readonly unknown[]).includes(input.platform))
           throw new Error("Unsupported social platform.");
         const platform = input.platform as SocialAccount["platform"];
+        const connection = input.connection ?? (platform === "x" ? "browser" : undefined);
+        const xApiProduct = input.xApiProduct;
+        if (
+          xApiProduct !== undefined &&
+          (platform !== "x" ||
+            connection !== "oauth" ||
+            (xApiProduct !== "pay-per-use" && xApiProduct !== "enterprise"))
+        )
+          throw new Error("Choose a paid X API product for an X OAuth connection.");
         const accountType = input.accountType as SocialAccount["accountType"];
         if (
           input.connection !== undefined &&
@@ -1891,9 +1909,9 @@ export class SocialService implements SocialServiceApi {
           throw new Error("Unsupported social connection type.");
         if (!(SOCIAL_ACCOUNT_TYPES[platform] as readonly string[]).includes(accountType))
           throw new Error("Unsupported social account type.");
-        if (input.connection !== undefined) {
+        if (connection !== undefined) {
           const types =
-            input.connection === "browser"
+            connection === "browser"
               ? SOCIAL_BROWSER_ACCOUNT_TYPES[platform]
               : SOCIAL_API_ACCOUNT_TYPES[platform];
           if (
@@ -1914,15 +1932,32 @@ export class SocialService implements SocialServiceApi {
           scopes: [],
           accessApproved: false,
           connected: false,
-          ...(input.connection
-            ? { connection: input.connection as SocialAccount["connection"] }
-            : {}),
+          ...(connection ? { connection: connection as SocialAccount["connection"] } : {}),
+          ...(xApiProduct ? { xApiProduct } : {}),
           paused: false,
           executorId: this.store.environmentId,
           grants: Object.fromEntries(projects.map((id) => [id, ["read", "draft"]])),
           createdAt: this.now(),
         };
         return await this.put("account", account.id, account);
+      }
+      // X account billing.
+      case "x.api.setProduct": {
+        this.owner(p);
+        exact(input, ["accountId", "product"]);
+        const accountId = str(input.accountId, "account");
+        const product = input.product;
+        if (product !== null && product !== "pay-per-use" && product !== "enterprise")
+          throw new Error("Choose an X API billing product or turn it off.");
+        return await this.changeCredentials(accountId, async () => {
+          const account = await this.access(p, accountId, "read");
+          if (account.platform !== "x" || account.connection === "browser")
+            throw new Error("Choose an X OAuth account.");
+          return await this.put("account", accountId, {
+            ...account,
+            xApiProduct: product ?? undefined,
+          });
+        });
       }
       case "accounts.grants": {
         this.owner(p);
@@ -3599,6 +3634,7 @@ export class SocialService implements SocialServiceApi {
             tiktok: variant.tiktok,
             snapchat: variant.snapchat,
             facebook: variant.facebook,
+            ...(variant.x ? { x: variant.x } : {}),
           },
           ...approvalJobFields(automated, this.now()),
           attempts: 0,
@@ -3644,6 +3680,7 @@ export class SocialService implements SocialServiceApi {
         "tiktok",
         "snapchat",
         "facebook",
+        "x",
       ]);
       const accountId = str(value.accountId, "account");
       const account = await this.access(p, accountId, "draft");
@@ -3774,6 +3811,15 @@ export class SocialService implements SocialServiceApi {
         };
       }
       const media = this.parseMedia(value.media ?? []);
+      // X publishing options are included in the campaign's approval signature.
+      let x: XPostExtras | undefined;
+      if (value.x !== undefined) {
+        if (account.platform !== "x") throw new Error("X publishing options require an X account.");
+        const issue = xPostExtrasIssue(value.x, media.length);
+        if (issue) throw new Error(issue);
+        x = value.x as XPostExtras;
+      }
+      const xMediaOnly = account.platform === "x" && media.length > 0 && value.text === "";
       const telegramChannelMedia =
         account.platform === "telegram" &&
         account.accountType === "channel" &&
@@ -3782,6 +3828,7 @@ export class SocialService implements SocialServiceApi {
       return {
         accountId,
         text:
+          xMediaOnly ||
           (snapchat?.target === "story" && value.text === "") ||
           (facebook?.target === "reel" &&
             media.length === 1 &&
@@ -3798,6 +3845,7 @@ export class SocialService implements SocialServiceApi {
         ...(tiktok ? { tiktok } : {}),
         ...(snapchat ? { snapchat } : {}),
         ...(facebook ? { facebook } : {}),
+        ...(x ? { x } : {}),
       };
     });
     if (new Set(variants.map((variant) => variant.accountId)).size !== variants.length)
@@ -3938,6 +3986,7 @@ export class SocialService implements SocialServiceApi {
               tiktok: variant.tiktok,
               snapchat: variant.snapchat,
               facebook: variant.facebook,
+              ...(variant.x ? { x: variant.x } : {}),
             },
             ...approvalJobFields(decision, variant.scheduledAt),
             attempts: 0,
@@ -4768,6 +4817,20 @@ export class SocialService implements SocialServiceApi {
       throw new Error("Social automation is stopped.");
     return account;
   }
+  // X Live custody. The owner copies the key from X Live Studio.
+  async saveXLiveKey(p: SocialPrincipal, accountId: string, key: unknown) {
+    await this.ready;
+    this.owner(p);
+    const account = await this.access(p, accountId, "read");
+    if (
+      account.platform !== "x" ||
+      !account.connected ||
+      account.executorId !== this.store.environmentId
+    )
+      throw new Error("Connect the X account on this Host before saving its stream key.");
+    await this.store.db.checkAuthorization();
+    return storeXLiveKey(osSecretValues(this.directory, this.store.environmentId), account.id, key);
+  }
   /** Internal owner connection reviews must be invalidated by an explicit disconnect. */
   async connectionReviewEpoch(p: SocialPrincipal, accountId: string) {
     await this.accountForOAuth(p, accountId);
@@ -4838,6 +4901,9 @@ export class SocialService implements SocialServiceApi {
     return readFile(join(this.directory, "media", id));
   }
   async credentialFor(accountId: string): Promise<SocialCredential | undefined> {
+    const saved = await this.account(accountId);
+    if (saved.platform === "x" && saved.connection !== "browser" && !saved.xApiProduct)
+      return undefined;
     const initial = await this.credentials.get(accountId);
     if (
       !initial ||
@@ -4856,6 +4922,8 @@ export class SocialService implements SocialServiceApi {
         return credential;
       const account = await this.get<SocialAccount>("account", accountId),
         before = hash(JSON.stringify(account));
+      if (account.platform === "x" && account.connection !== "browser" && !account.xApiProduct)
+        return undefined;
       if (
         !account.connected ||
         account.paused ||
@@ -5302,6 +5370,8 @@ export class SocialService implements SocialServiceApi {
       const check = async () => {
         if (!roomSourceValid()) throw new Error("Room social source lease revoked.");
         const currentAccount = await this.get<SocialAccount>("account", account.id);
+        if (currentAccount.platform === "x" && currentAccount.xApiProduct !== account.xApiProduct)
+          throw new Error("The X API product changed. Review the job again.");
         await assertJobAuthority(this, job, currentAccount);
         if (job.roomSource) {
           const source = job.roomSource;

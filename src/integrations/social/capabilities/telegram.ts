@@ -1,6 +1,7 @@
 import type { SocialAccount, SocialOperation } from "../adapter";
 import {
   NOT_YET,
+  X_ONLY_UNSUPPORTED,
   r,
   type CapabilityRequirement,
   type OperationRequirements,
@@ -18,6 +19,7 @@ export function telegramCapabilities(type: SocialAccount["accountType"]): Platfo
     true,
   );
   const base: Record<SocialOperation, CapabilityRequirement> = {
+    ...X_ONLY_UNSUPPORTED,
     publish: unsupported,
     media: unsupported,
     "comments.read": unsupported,

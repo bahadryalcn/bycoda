@@ -36,7 +36,10 @@ function writeJson(method: "POST" | "PUT", body: object): RequestInit {
 function listFields({ name, description, private: isPrivate }: ListFields): ListFields {
   if (name !== undefined && (typeof name !== "string" || !name.trim() || [...name].length > 25))
     throw new SocialPlatformError("rejected");
-  if (description !== undefined && (typeof description !== "string" || [...description].length > 100))
+  if (
+    description !== undefined &&
+    (typeof description !== "string" || [...description].length > 100)
+  )
     throw new SocialPlatformError("rejected");
   if (isPrivate !== undefined && typeof isPrivate !== "boolean")
     throw new SocialPlatformError("rejected");
@@ -57,7 +60,8 @@ export async function runXRelationship(
       const ownerId = xResourceId(account.platformId);
       const userId = xResourceId(action.userId);
       const { enabled } = action;
-      if (userId === ownerId || typeof enabled !== "boolean") throw new SocialPlatformError("rejected");
+      if (userId === ownerId || typeof enabled !== "boolean")
+        throw new SocialPlatformError("rejected");
       if (action.kind === "block" && account.xApiProduct !== "enterprise")
         throw new SocialPlatformError("unsupported");
       const { collection, result } = userActions[action.kind];
@@ -65,7 +69,12 @@ export async function runXRelationship(
       const { value } = enabled
         ? await xCall(http, account, url, token, writeJson("POST", { target_user_id: userId }))
         : await xCall(http, account, `${url}/${userId}`, token, { method: "DELETE" });
-      if (action.kind === "follow" && enabled && value.data?.pending_follow === true && value.data.following === false)
+      if (
+        action.kind === "follow" &&
+        enabled &&
+        value.data?.pending_follow === true &&
+        value.data.following === false
+      )
         return { userId, enabled: false, pending: true };
       if (value.data?.[result] !== enabled) throw new SocialPlatformError("unknown");
       return { userId, enabled };
@@ -85,7 +94,13 @@ export async function runXRelationship(
     case "createList": {
       const fields = listFields(action);
       if (!fields.name) throw new SocialPlatformError("rejected");
-      const { value } = await xCall(http, account, `${BASE}/lists`, token, writeJson("POST", fields));
+      const { value } = await xCall(
+        http,
+        account,
+        `${BASE}/lists`,
+        token,
+        writeJson("POST", fields),
+      );
       if (!isXResourceId(value.data?.id) || typeof value.data.name !== "string")
         throw new SocialPlatformError("unknown");
       return { listId: value.data.id, name: value.data.name };
@@ -95,13 +110,21 @@ export async function runXRelationship(
       const fields = listFields(action);
       if (Object.values(fields).every((field) => field === undefined))
         throw new SocialPlatformError("rejected");
-      const { value } = await xCall(http, account, `${BASE}/lists/${listId}`, token, writeJson("PUT", fields));
+      const { value } = await xCall(
+        http,
+        account,
+        `${BASE}/lists/${listId}`,
+        token,
+        writeJson("PUT", fields),
+      );
       if (value.data?.updated !== true) throw new SocialPlatformError("unknown");
       return { listId, updated: true };
     }
     case "deleteList": {
       const listId = xResourceId(action.listId);
-      const { value } = await xCall(http, account, `${BASE}/lists/${listId}`, token, { method: "DELETE" });
+      const { value } = await xCall(http, account, `${BASE}/lists/${listId}`, token, {
+        method: "DELETE",
+      });
       if (value.data?.deleted !== true) throw new SocialPlatformError("unknown");
       return { listId, deleted: true };
     }
@@ -111,7 +134,13 @@ export async function runXRelationship(
 }
 
 type Page<T> = { items: T[]; next?: string };
-type XList = { id: string; name: string; description?: string; private?: boolean; memberCount?: number };
+type XList = {
+  id: string;
+  name: string;
+  description?: string;
+  private?: boolean;
+  memberCount?: number;
+};
 type XListMember = { id: string; name: string; username: string };
 
 function pageUrl(path: string, cursor?: string): URL {
@@ -127,7 +156,11 @@ function pageUrl(path: string, cursor?: string): URL {
 
 function pageRows(value: Record<string, unknown>): Record<string, unknown>[] {
   const data = value.data;
-  if (data === undefined && (value.meta as { result_count?: unknown } | undefined)?.result_count === 0 && !value.errors)
+  if (
+    data === undefined &&
+    (value.meta as { result_count?: unknown } | undefined)?.result_count === 0 &&
+    !value.errors
+  )
     return [];
   if (!Array.isArray(data) || data.some((row) => !row || typeof row !== "object"))
     throw new SocialPlatformError("unknown");
@@ -148,16 +181,18 @@ export async function getXOwnedLists(
   const url = pageUrl(`users/${xResourceId(account.platformId)}/owned_lists`, cursor);
   url.searchParams.set("list.fields", "description,private,member_count");
   const { value } = await xCall(http, account, url.toString(), token);
-  const items = pageRows(value).map(({ id, name, description, private: isPrivate, member_count }) => {
-    if (!isXResourceId(id) || typeof name !== "string") throw new SocialPlatformError("unknown");
-    return {
-      id,
-      name,
-      description: typeof description === "string" ? description : undefined,
-      private: typeof isPrivate === "boolean" ? isPrivate : undefined,
-      memberCount: typeof member_count === "number" ? member_count : undefined,
-    };
-  });
+  const items = pageRows(value).map(
+    ({ id, name, description, private: isPrivate, member_count }) => {
+      if (!isXResourceId(id) || typeof name !== "string") throw new SocialPlatformError("unknown");
+      return {
+        id,
+        name,
+        description: typeof description === "string" ? description : undefined,
+        private: typeof isPrivate === "boolean" ? isPrivate : undefined,
+        memberCount: typeof member_count === "number" ? member_count : undefined,
+      };
+    },
+  );
   return { items, next: nextCursor(value) };
 }
 

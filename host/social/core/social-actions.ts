@@ -101,6 +101,8 @@ export const SOCIAL_LEGACY_ACTIONS: readonly string[] = [
   "thread.page",
   "thread.read",
   "workspace.snapshot",
+  // X account billing.
+  "x.api.setProduct",
 ];
 
 /** Builds the action map. Throws on a duplicate name or a name the built-in switch already owns. */

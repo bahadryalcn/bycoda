@@ -68,6 +68,7 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "social.oauth.begin"
             | "social.oauth.status"
             | "social.oauth.select"
+            | "social.x.liveKey.store"
             | "social.token.connect"
             | "social.token.inspect"
             | "social.tiktok.creator"

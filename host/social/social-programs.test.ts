@@ -78,6 +78,7 @@ async function fixture(
   const account = async (platform: SocialAccount["platform"] = "x") => {
     const a = await call<SocialAccount>("accounts.create", {
       platform,
+      ...(platform === "x" ? { connection: "oauth", xApiProduct: "pay-per-use" } : {}),
       name: `${platform} account`,
       accountType:
         platform === "x" || platform === "linkedin"

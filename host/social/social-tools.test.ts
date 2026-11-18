@@ -227,6 +227,7 @@ async function fixture(platform: "x" | "youtube" = "x") {
   } as const;
   const account = (await social.call(owner, "accounts.create", {
     platform,
+    ...(platform === "x" ? { connection: "oauth", xApiProduct: "pay-per-use" } : {}),
     name: "Shared account",
     accountType: platform === "youtube" ? "channel" : "member",
     projectIds: [project.id],

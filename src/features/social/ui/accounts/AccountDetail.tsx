@@ -18,6 +18,8 @@ import { BrowserSettings } from "./BrowserSettings";
 import { ReplyRules } from "./ReplyRules";
 import { accountHealth, accountModeText } from "./accountsModel";
 import { useAccountWrite } from "./useAccountWrite";
+import { XApiSettings } from "./platform/XApiSettings";
+import { XAccountActions } from "./platform/XAccountActions";
 import "./accounts.css";
 
 const HEALTH_TONE: Record<"ok" | "warn" | "error", BadgeTone> = {
@@ -122,6 +124,9 @@ export function AccountDetail({
         </InlineMessage>
       ) : null}
       {error ? <InlineError>{error}</InlineError> : null}
+      {account.platform === "x" && account.connection !== "browser" ? (
+        <XApiSettings account={account} client={client} disabled={disabled} onChanged={onChanged} />
+      ) : null}
       <AccountConnection
         client={client}
         account={account}
@@ -130,6 +135,9 @@ export function AccountDetail({
         disabled={disabled}
         onChanged={onChanged}
       />
+      {account.platform === "x" ? (
+        <XAccountActions key={account.id} account={account} client={client} disabled={disabled} />
+      ) : null}
       <Disclosure
         summary={
           <span className="social-detail-topic">

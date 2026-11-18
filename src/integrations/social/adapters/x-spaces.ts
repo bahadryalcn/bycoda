@@ -23,7 +23,10 @@ export async function xListOwnSpaces(
   const creatorId = xPostId(account.platformId);
   const url = new URL("https://api.x.com/2/spaces/by/creator_ids");
   url.searchParams.set("user_ids", creatorId);
-  url.searchParams.set("space.fields", "title,state,scheduled_start,started_at,ended_at,participant_count");
+  url.searchParams.set(
+    "space.fields",
+    "title,state,scheduled_start,started_at,ended_at,participant_count",
+  );
   const { value } = await xGet(http, account, url.toString(), token);
   const spaces: XSpace[] = [];
   for (const space of value.data ?? []) {
@@ -31,7 +34,8 @@ export async function xListOwnSpaces(
       typeof space.id !== "string" ||
       !/^[A-Za-z0-9_-]{1,64}$/.test(space.id) ||
       (space.creator_id !== undefined && space.creator_id !== creatorId)
-    ) continue;
+    )
+      continue;
     spaces.push({
       id: space.id,
       url: `https://x.com/i/spaces/${space.id}`,
@@ -46,5 +50,8 @@ export async function xListOwnSpaces(
           : undefined,
     });
   }
-  return { spaces, partial: Boolean(value.errors?.length) || spaces.length !== (value.data?.length ?? 0) };
+  return {
+    spaces,
+    partial: Boolean(value.errors?.length) || spaces.length !== (value.data?.length ?? 0),
+  };
 }

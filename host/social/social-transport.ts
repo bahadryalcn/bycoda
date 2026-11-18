@@ -53,6 +53,9 @@ export class SocialTransport {
     }
     if (p.kind !== "owner")
       throw new Error("Social administration requires an owner device credential.");
+    // X Live custody uses a separate owner-only path with a receipt that contains no key.
+    if (method === "social.x.liveKey.store")
+      return this.service.saveXLiveKey(p, String(params.accountId ?? ""), params.key);
     if (method === "social.request")
       return this.service.call(
         p,

@@ -23,15 +23,11 @@ export async function sendXThread(
     await record(true);
     try {
       await beforeSubmit?.();
-      const postId = await create(text, postIds.at(-1));
+      const postId = await create(text, postIds[postIds.length - 1]);
       postIds = [...postIds, postId];
       await record(false);
     } catch (error) {
-      if (
-        postIds.length ||
-        !(error instanceof SocialPlatformError) ||
-        error.code === "unknown"
-      )
+      if (postIds.length || !(error instanceof SocialPlatformError) || error.code === "unknown")
         throw new SocialPlatformError("unknown");
       await record(false);
       throw error;

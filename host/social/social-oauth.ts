@@ -24,6 +24,11 @@ import type {
 
 export type { SocialOAuthConfig } from "./oauth/oauth-platform";
 
+function assertXOAuthBilling(account: SocialAccount): void {
+  if (account.platform === "x" && (account.connection === "browser" || !account.xApiProduct))
+    throw new Error("OAuth requires owner opt-in to a paid X API product.");
+}
+
 type Flow = {
   accountId: string;
   platform: SocialPlatform;
@@ -126,6 +131,7 @@ export class SocialOAuth {
     operations: SocialOperation[] = ["publish"],
   ): Promise<{ url: string; expiresAt: number }> {
     const account = await this.social.accountForOAuth(p, accountId);
+    assertXOAuthBilling(account);
     if (
       !(SOCIAL_API_ACCOUNT_TYPES[account.platform] as readonly string[]).includes(
         account.accountType,
@@ -153,7 +159,7 @@ export class SocialOAuth {
     if (
       !Array.isArray(operations) ||
       (!operations.length && !profileOnly) ||
-      operations.length > 11 ||
+      operations.length > (account.platform === "x" ? 19 : 11) ||
       operations.some(
         (operation) => !requirements[operation] || requirements[operation].unsupported,
       )
@@ -161,6 +167,12 @@ export class SocialOAuth {
       throw new Error("Choose supported OAuth operations for this account.");
     // Closed read permissions must not prevent an otherwise permitted login.
     const scopes = [...new Set(operations.flatMap((operation) => requirements[operation].scopes))];
+    if (
+      account.platform === "x" &&
+      account.xApiProduct === "enterprise" &&
+      operations.includes("x.relationships")
+    )
+      scopes.push("block.write");
     scopes.push(...definition.extraScopes(account.accountType, scopes));
     const flow: Flow = {
       accountId,
@@ -209,7 +221,7 @@ export class SocialOAuth {
       : { status: "idle", candidates: [] };
   }
   async select(p: SocialPrincipal, accountId: string, candidateId: string) {
-    await this.social.accountForOAuth(p, accountId);
+    assertXOAuthBilling(await this.social.accountForOAuth(p, accountId));
     const flow = [...this.flows.values()].find(
       (item) =>
         item.accountId === accountId &&
@@ -235,6 +247,7 @@ export class SocialOAuth {
     // Consume state before network I/O to reject replay/concurrent callbacks.
     flow.status = "failed";
     try {
+      if (platform === "x") assertXOAuthBilling(await this.social.account(flow.accountId));
       const code = params.get("code");
       if (!code || params.has("error")) throw new Error("OAuth authorization was not completed.");
       const definition = enabledOAuthPlatform(platform)!;
@@ -285,6 +298,7 @@ export class SocialOAuth {
       )
         scopes = result.permissions;
       flow.scopes = scopes;
+      if (platform === "x") assertXOAuthBilling(await this.social.account(flow.accountId));
       const identity = await definition.identity(
         { ...this.runtime(platform), config },
         { credential, token: result, scopes, resourceId: flow.resourceId },

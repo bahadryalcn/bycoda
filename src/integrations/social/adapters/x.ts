@@ -55,8 +55,12 @@ export async function xCall(
   }
 }
 
-export const xGet = (http: SocialHttp, account: Pick<SocialAccount, "id">, url: string, token: string) =>
-  xCall(http, account, url, token);
+export const xGet = (
+  http: SocialHttp,
+  account: Pick<SocialAccount, "id">,
+  url: string,
+  token: string,
+) => xCall(http, account, url, token);
 
 export const xJson = (
   http: SocialHttp,
@@ -206,7 +210,12 @@ export function createXAdapter(http: SocialHttp): SocialAdapter {
         ? []
         : await uploadXMedia(http, job, token, media, message, checkpoint);
       if (dm)
-        return xSendDm(dm, mediaIds, (url, body) => xJson(http, account, url, token, body), beforeSubmit);
+        return xSendDm(
+          dm,
+          mediaIds,
+          (url, body) => xJson(http, account, url, token, body),
+          beforeSubmit,
+        );
       const firstPost = {
         ...(mediaIds.length ? { media: { media_ids: mediaIds } } : {}),
         ...(extras.quotePostId ? { quote_tweet_id: extras.quotePostId } : {}),
@@ -230,7 +239,13 @@ export function createXAdapter(http: SocialHttp): SocialAdapter {
       };
       let platformId: string;
       if (extras.thread) {
-        platformId = await sendXThread(job, [text(job), ...extras.thread], createPost, checkpoint, beforeSubmit);
+        platformId = await sendXThread(
+          job,
+          [text(job), ...extras.thread],
+          createPost,
+          checkpoint,
+          beforeSubmit,
+        );
       } else {
         await beforeSubmit?.();
         platformId = await createPost(text(job), previousPostId);
@@ -416,4 +431,3 @@ export function createXAdapter(http: SocialHttp): SocialAdapter {
     },
   };
 }
-
