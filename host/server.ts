@@ -354,18 +354,22 @@ export async function createHostServer(
   const voiceRuntime = createVoiceRuntime(dependencies);
   // Before Social so the decision service can be handed to it (see phase3-p35b-done.md).
   const decisionRuntime = createDecisionModelsRuntime(dependencies);
-  const liveGames = createLiveGamesRuntime(dependencies, (): number => {
-    const address = httpRuntime.server.address();
-    if (!address || typeof address === "string")
-      throw new Error("Live games requires a TCP Host listener.");
-    return address.port;
-  });
+  const socialRuntime = createRuntimeSlot<Awaited<ReturnType<typeof createSocialRuntime>>>();
+  const liveGames = createLiveGamesRuntime(
+    dependencies,
+    (): number => {
+      const address = httpRuntime.server.address();
+      if (!address || typeof address === "string")
+        throw new Error("Live games requires a TCP Host listener.");
+      return address.port;
+    },
+    () => socialRuntime.current.social.live,
+  );
   const developmentRuntime = createDevelopmentRuntime(dependencies);
   const sessionsRuntime = createRuntimeSlot<Awaited<ReturnType<typeof createSessionsRuntime>>>();
   await bootPhase("runtime-sessions", () =>
     createSessionsRuntime(dependencies, sessionsRuntime.publish),
   );
-  const socialRuntime = createRuntimeSlot<Awaited<ReturnType<typeof createSocialRuntime>>>();
   await bootPhase("runtime-social", () => createSocialRuntime(dependencies, socialRuntime.publish));
   const sessionQueueRuntime =
     createRuntimeSlot<Awaited<ReturnType<typeof createSessionQueueRuntime>>>();

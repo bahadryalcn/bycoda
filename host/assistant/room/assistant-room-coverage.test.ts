@@ -14,6 +14,8 @@ describe("Room management capability contract", () => {
     expect(roomManagementToolAllowed("conversation", "liveGames.status")).toBe(true);
     expect(roomManagementToolAllowed("conversation", "liveGames.obsStream")).toBe(true);
     expect(roomManagementToolAllowed("conversation", "liveGames.obsCredentials")).toBe(false);
+    expect(roomManagementToolAllowed("conversation", "liveGames.goLive")).toBe(false);
+    expect(roomManagementToolAllowed("conversation", "liveGames.goLive", "project")).toBe(true);
     const call = {
       threadId: "thread",
       requestId: "request",

@@ -181,6 +181,8 @@ export async function createYouTubeLiveBroadcast(
   input: YouTubeLiveCreateInput,
   options: {
     saveIngest(secret: YouTubeLiveIngestSecret): Promise<string>;
+    /** Skip the private testing stage when a desktop-approved stream starts directly. */
+    disableMonitorStream?: boolean;
     /** Revalidates Host account, grants and stops before each remote write. */
     beforeWrite?(): Promise<void>;
     now?(): number;
@@ -222,7 +224,11 @@ export async function createYouTubeLiveBroadcast(
           privacyStatus: input.privacyStatus,
           selfDeclaredMadeForKids: input.madeForKids,
         },
-        contentDetails: { enableAutoStart: false, enableAutoStop: false },
+        contentDetails: {
+          enableAutoStart: false,
+          enableAutoStop: false,
+          ...(options.disableMonitorStream && { monitorStream: { enableMonitorStream: false } }),
+        },
       },
     },
   );
@@ -297,9 +303,16 @@ export async function transitionYouTubeLiveBroadcast(
   broadcastId: string,
   status: YouTubeLiveTransition,
   beforeWrite?: () => Promise<void>,
+  expected?: { streamId: string | undefined; privacyStatus?: string },
 ): Promise<YouTubeLiveBroadcast> {
   if (!transitionStatuses.includes(status)) throw new SocialPlatformError("rejected");
   const broadcast = await getYouTubeLiveBroadcast(http, token, quota, channelId, broadcastId);
+  if (
+    expected &&
+    (expected.streamId !== broadcast.streamId ||
+      (expected.privacyStatus !== undefined && expected.privacyStatus !== broadcast.privacyStatus))
+  )
+    throw new SocialPlatformError("needs_human");
   if (
     broadcast.status === status ||
     (status === "testing" && broadcast.status === "testStarting") ||

@@ -115,6 +115,16 @@ async function status(ctx: SocialActionContext, input: Record<string, unknown>) 
   return destination.binding === binding ? stored(destination) : result("missing");
 }
 
+/** The linked event destination may contain credentials in both fields. Host only. */
+export async function loadLinkedInLiveIngest(ctx: SocialActionContext, account: SocialAccount) {
+  const binding = await connectionBinding(ctx, account);
+  const raw = binding && (await vault(ctx).get(vaultRef(account.id)));
+  if (!raw) return undefined;
+  const destination = parseDestination(raw);
+  if (destination.binding !== binding) return undefined;
+  return { server: destination.streamUrl, key: destination.streamKey };
+}
+
 async function save(ctx: SocialActionContext, input: Record<string, unknown>) {
   ctx.service.owner(ctx.principal);
   exact(input, ["accountId", "eventId", "streamUrl", "streamKey", "confirm"]);

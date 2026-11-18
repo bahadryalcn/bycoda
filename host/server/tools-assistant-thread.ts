@@ -104,14 +104,15 @@ export async function handleAssistantThreadTools(
             action,
             args,
             authorized,
-            async (status, current) =>
+            async (operation, current) =>
               requestLiveGamesStreamApproval(
                 dependencies.conversationDesktop,
                 (await dependencies.engine.store.project(ports.boundPrincipal.projectId)).cwd,
                 ports.boundPrincipal,
-                status,
+                operation,
                 current,
               ),
+            ports.boundPrincipal,
           );
         if (action === "tools.list")
           return {

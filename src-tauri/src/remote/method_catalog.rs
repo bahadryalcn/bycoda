@@ -334,6 +334,10 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "liveGames.obsScene"
             | "liveGames.obsCredentials"
             | "liveGames.eulerKey"
+            | "liveGames.live.accounts"
+            | "liveGames.live.status"
+            | "liveGames.live.start"
+            | "liveGames.live.stop"
             | "decisionModels.decide"
             | "decisionModels.discovery.results"
             | "decisionModels.discovery.scan"
@@ -397,22 +401,35 @@ pub(super) fn decision_model_key_allowed(
         || local_host
 }
 
-pub(super) fn live_games_credential_allowed(method: &str, local_host: bool) -> bool {
-    !matches!(method, "liveGames.eulerKey" | "liveGames.obsCredentials") || local_host
+pub(super) fn live_games_method_allowed(method: &str, local_host: bool) -> bool {
+    !matches!(
+        method,
+        "liveGames.eulerKey"
+            | "liveGames.obsCredentials"
+            | "liveGames.live.accounts"
+            | "liveGames.live.status"
+            | "liveGames.live.start"
+            | "liveGames.live.stop"
+    ) || local_host
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        decision_model_key_allowed, live_games_credential_allowed, supported_remote_method,
-    };
+    use super::{decision_model_key_allowed, live_games_method_allowed, supported_remote_method};
 
     #[test]
-    fn live_games_admits_exact_names_and_keeps_credentials_local() {
-        for method in ["liveGames.eulerKey", "liveGames.obsCredentials"] {
+    fn live_games_admits_exact_names_and_keeps_sensitive_operations_local() {
+        for method in [
+            "liveGames.eulerKey",
+            "liveGames.obsCredentials",
+            "liveGames.live.accounts",
+            "liveGames.live.status",
+            "liveGames.live.start",
+            "liveGames.live.stop",
+        ] {
             assert!(supported_remote_method(method));
-            assert!(!live_games_credential_allowed(method, false));
-            assert!(live_games_credential_allowed(method, true));
+            assert!(!live_games_method_allowed(method, false));
+            assert!(live_games_method_allowed(method, true));
         }
         for method in [
             "liveGames.status",
@@ -420,9 +437,10 @@ mod tests {
             "liveGames.report",
         ] {
             assert!(supported_remote_method(method));
-            assert!(live_games_credential_allowed(method, false));
+            assert!(live_games_method_allowed(method, false));
         }
         assert!(!supported_remote_method("liveGames.anything"));
+        assert!(!supported_remote_method("liveGames.live.anything"));
     }
 
     #[test]

@@ -4,6 +4,7 @@ import { openExternal } from "../../../../../platform/tauri/openExternal";
 import { Button } from "../../../../../shared/ui/Button";
 import { Disclosure } from "../../../../../shared/ui/Disclosure";
 import { InlineError } from "../../../../../shared/ui/InlineError";
+import { PasswordField } from "../../../../../shared/ui/PasswordField";
 import { Select } from "../../../../../shared/ui/Select";
 import { TextField } from "../../../../../shared/ui/TextField";
 import { Text } from "../../../../../shared/ui/Text";
@@ -19,6 +20,7 @@ type Props = { account: SocialAccount; client: SocialClient; disabled: boolean }
 export function XAccountActions({ account, client, disabled }: Props) {
   const [destination, setDestination] = useState<XDestination>("profile");
   const [target, setTarget] = useState("");
+  const [streamServer, setStreamServer] = useState("");
   const [streamKey, setStreamKey] = useState("");
   const [keySaved, setKeySaved] = useState(false);
   const { error, is, write } = useAccountWrite(t("Could not open the link."));
@@ -45,6 +47,7 @@ export function XAccountActions({ account, client, disabled }: Props) {
           ]}
           onValueChange={(value) => {
             setDestination(value as XDestination);
+            setStreamServer("");
             setStreamKey("");
             setKeySaved(false);
           }}
@@ -74,8 +77,21 @@ export function XAccountActions({ account, client, disabled }: Props) {
         {destination === "live" && account.connected ? (
           <>
             <TextField
+              label={t("Stream server")}
+              description={t(
+                "Copy the server and key from X Live Studio. If you saved only a key before, save both again for Live games.",
+              )}
+              value={streamServer}
+              placeholder="rtmps://"
+              autoComplete="off"
+              disabled={disabled || is("key")}
+              onChange={(event) => {
+                setStreamServer(event.currentTarget.value);
+                setKeySaved(false);
+              }}
+            />
+            <PasswordField
               label={t("X stream key")}
-              type="password"
               value={streamKey}
               autoComplete="off"
               disabled={disabled || is("key")}
@@ -85,17 +101,18 @@ export function XAccountActions({ account, client, disabled }: Props) {
               }}
             />
             <Button
-              disabled={disabled || !streamKey.trim()}
+              disabled={disabled || !streamServer.trim() || !streamKey.trim()}
               loading={is("key")}
               onClick={() =>
                 void write("key", async () => {
-                  await client.saveXLiveKey(account.id, streamKey);
+                  await client.saveXLiveKey(account.id, streamKey.trim(), streamServer.trim());
+                  setStreamServer("");
                   setStreamKey("");
                   setKeySaved(true);
                 })
               }
             >
-              {t("Save stream key")}
+              {t("Save stream credentials")}
             </Button>
             {keySaved ? (
               <Text as="p" size="caption">

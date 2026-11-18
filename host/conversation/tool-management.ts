@@ -190,6 +190,7 @@ const CANCELLATIONS: Record<string, string[]> = {
   "liveGames.start": ["liveGames.stop"],
   "liveGames.demo": ["liveGames.stop"],
   "liveGames.obsStream": ["liveGames.obsStream"],
+  "liveGames.goLive": ["liveGames.endLive"],
 };
 const SOCIAL_READBACKS: Record<string, string[]> = {
   policy: ["policy.get"],
@@ -284,7 +285,8 @@ function effectFor(group: ManagedToolGroup, action: string, read: boolean): Tool
   if (action === "servers.ssh.cancel") return ["execution", "local-state"];
   if (action === "commands.run") return ["execution", "local-state", "external-write"];
   if (action === "commands.run.cancel") return ["execution", "local-state"];
-  if (action === "liveGames.obsStream") return ["execution", "external-write"];
+  if (["liveGames.obsStream", "liveGames.goLive", "liveGames.endLive"].includes(action))
+    return ["execution", "external-write"];
   if (/^liveGames\.(start|stop|demo|obsSetup|obsScene)$/.test(action))
     return ["execution", "local-state"];
   if (/^inbox\.(comment|review|prAction)$/.test(action)) return ["external-write"];
@@ -402,6 +404,8 @@ export function createManagedToolCatalog(
         readback = [`${family}.list`];
       if (action === "crews.save") readback = ["crews.definition.get"];
       if (action === "crews.agent.save") readback = ["crews.agent.get"];
+      if (action === "liveGames.goLive" || action === "liveGames.endLive")
+        readback = ["liveGames.liveStatus"];
       const effects = supported ? effectFor(group, action, read) : [];
       const requirement: ManagedTool["authorization"]["requirement"] =
         group === "social" &&
@@ -414,6 +418,7 @@ export function createManagedToolCatalog(
                   "tasks.transfer",
                   "tasks.notes.resolve",
                   "liveGames.obsStream",
+                  "liveGames.goLive",
                 ].includes(action))
             ? "native-owner-approval"
             : group === "conversation" && action === "secrets.request"
@@ -479,11 +484,13 @@ export function createManagedToolCatalog(
                 ? "Reuse requestId only with identical input. Receipt lookup is in-process, not durable; after restart or an uncertain result inspect browser and panel state before retrying."
                 : mode === "same-request"
                   ? "Reuse the same identity and exact payload; inspect the existing result before retrying an uncertain operation."
-                  : mode === "safe-read"
-                    ? "Repeat the read; preserve pagination and scope identity."
-                    : mode === "unsupported"
-                      ? "No managed workflow is defined for this operation."
-                      : "Read current state before retrying; metadata does not establish duplicate suppression.",
+                  : action === "liveGames.goLive"
+                    ? "Read liveGames.liveStatus. Never automatically retry an uncertain start."
+                    : mode === "safe-read"
+                      ? "Repeat the read; preserve pagination and scope identity."
+                      : mode === "unsupported"
+                        ? "No managed workflow is defined for this operation."
+                        : "Read current state before retrying; metadata does not establish duplicate suppression.",
         },
         preconditions,
         invalidates:

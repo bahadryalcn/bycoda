@@ -20,16 +20,20 @@ import {
 import {
   LiveGamesConfigPatchSchema,
   LiveGamesRulesSchema,
+  type LiveGamesLiveStartParams,
   type LiveGamesObsSetupOptions,
   type LiveGamesReport,
   type LiveGamesStatus,
 } from "../../src/shared/model/host-contracts/live-games";
 import type { SecretValueStore } from "../secrets/secret-store";
+import type { SocialLiveService } from "../social/core/social-live";
+import type { SocialPrincipal } from "../social/social";
 import { readStateFile, writeFileAtomic } from "../storage/atomic-write";
 import { AvatarCache } from "./avatars";
 import { connectDemo } from "./connectors/demo";
 import { connectTikTok, tiktokConnectionError } from "./connectors/tiktok";
 import { LiveGamesObs } from "./obs";
+import { LiveGamesSocialBroadcast, type ApprovedLiveTarget } from "./social-broadcast";
 
 const EULER_KEY = "live-games-euler-api";
 type Session = Pick<LiveGamesReport, "channel" | "platform" | "startedAt" | "endedAt">;
@@ -52,6 +56,7 @@ type Dependencies = {
   secrets: SecretValueStore;
   port: () => number;
   tiktok?: typeof connectTikTok;
+  social?: () => SocialLiveService;
 };
 
 function readSaved(text: string): Saved {
@@ -84,6 +89,7 @@ async function check(authorize?: Authority) {
 export class LiveGamesService {
   private readonly file: string;
   private readonly obs: LiveGamesObs;
+  private readonly socialBroadcast: LiveGamesSocialBroadcast;
   private readonly avatars = new AvatarCache();
   private readonly listeners = new Set<GameListener>();
   private readonly closer = new Set<() => void>();
@@ -116,6 +122,11 @@ export class LiveGamesService {
   constructor(private readonly dependencies: Dependencies) {
     this.file = join(dependencies.directory, "live-games.json");
     this.obs = new LiveGamesObs(dependencies.secrets);
+    this.socialBroadcast = new LiveGamesSocialBroadcast(
+      dependencies.directory,
+      this.obs,
+      dependencies.social,
+    );
   }
 
   private ready() {
@@ -459,6 +470,7 @@ export class LiveGamesService {
 
   obsSetup(options: LiveGamesObsSetupOptions = {}, authorize?: Authority) {
     return this.serial(async () => {
+      await this.socialBroadcast.assertManual("setup");
       const selected = {
         aspect: "9:16",
         ...this.state.obs,
@@ -473,6 +485,7 @@ export class LiveGamesService {
 
   obsStream(action: "start" | "stop", authorize?: Authority) {
     return this.serial(async () => {
+      await this.socialBroadcast.assertManual(action);
       await this.obs.stream(action, () => check(authorize));
       return this.status(authorize);
     }, authorize);
@@ -480,6 +493,7 @@ export class LiveGamesService {
 
   obsScene(authorize?: Authority) {
     return this.serial(async () => {
+      await this.socialBroadcast.assertManual("scene");
       await this.obs.switchScene(() => check(authorize));
       return this.status(authorize);
     }, authorize);
@@ -487,9 +501,48 @@ export class LiveGamesService {
 
   obsCredentials(server: string, key: string) {
     return this.serial(async () => {
+      await this.socialBroadcast.assertManual("credentials");
       await this.obs.credentials(server, key);
+      await this.socialBroadcast.manualDestinationSaved();
       return this.status();
     });
+  }
+
+  liveAccounts(principal?: SocialPrincipal) {
+    return this.socialBroadcast.accounts(principal);
+  }
+
+  liveAccount(accountId: string, principal?: SocialPrincipal) {
+    return this.socialBroadcast.approvalTarget(accountId, principal);
+  }
+
+  async liveStatus(principal?: SocialPrincipal) {
+    await this.ready();
+    return this.socialBroadcast.status(principal);
+  }
+
+  liveStart(
+    params: LiveGamesLiveStartParams,
+    principal: SocialPrincipal | undefined,
+    authorize: Authority,
+    approvedAccount?: ApprovedLiveTarget,
+  ) {
+    return this.serial(() =>
+      this.socialBroadcast.start(
+        params,
+        principal,
+        async () => !this.closing && authorize(),
+        approvedAccount,
+      ),
+    );
+  }
+
+  async liveStop(principal?: SocialPrincipal, authorize?: Authority, platformEnded?: boolean) {
+    if (!platformEnded) await this.socialBroadcast.cancel(principal, authorize);
+    return this.serial(
+      () => this.socialBroadcast.stop(principal, authorize, platformEnded),
+      authorize,
+    );
   }
 
   async close() {

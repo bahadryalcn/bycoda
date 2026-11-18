@@ -145,6 +145,17 @@ External MCP credentials do not expose the family.
   exact Native owner approval. With `action: "stop"` it ends the OBS broadcast.
   Confirm the stream state in status before retrying or reporting success.
   The Euler API key and OBS stream credentials are set in the owner UI.
+- `liveGames.liveAccounts` lists the ready Social destinations visible to the
+  conversation's project. Use its `accountId` with `liveGames.goLive`. The
+  optional `scene` defaults to `Bycoda Halay`. Starting requires exact native
+  owner approval for that account and scene, the project's Social account
+  grant, and current Social policy.
+- Read `liveGames.liveStatus` after starting or stopping. Report any owner
+  step, and never automatically retry an uncertain start. `liveGames.endLive`
+  stops OBS and ends the platform broadcast where supported. Tool responses
+  include status and account identity only. Keep the ingest URL and key in
+  Host custody. Assistant Room needs a Social-granted project to use these
+  four tools.
 
 See the [Live games guide](../guides/live-games.md) for the end-to-end workflow.
 

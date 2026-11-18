@@ -62,7 +62,12 @@ export class SocialTransport {
       throw new Error("Social administration requires an owner device credential.");
     // X Live custody uses a separate owner-only path with a receipt that contains no key.
     if (method === "social.x.liveKey.store")
-      return this.service.saveXLiveKey(p, String(params.accountId ?? ""), params.key);
+      return this.service.saveXLiveKey(
+        p,
+        String(params.accountId ?? ""),
+        params.key,
+        params.server,
+      );
     // Facebook encoder credentials bypass registry results and never enter Social receipts.
     if (method === "social.facebook.live.encoder") {
       const account = await this.service.accountForOAuth(p, String(params.accountId ?? ""));

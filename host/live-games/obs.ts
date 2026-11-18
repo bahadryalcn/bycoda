@@ -6,6 +6,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 import OBSWebSocket from "obs-websocket-js";
 import { z } from "zod";
+import { LIVE_GAMES_DEFAULT_SCENE } from "../../src/shared/model/host-contracts/live-games";
 import type {
   LiveGamesObsSetupOptions,
   LiveGamesStatus,
@@ -13,7 +14,7 @@ import type {
 import type { SecretValueStore } from "../secrets/secret-store";
 import { readStateFile, writeFileAtomic } from "../storage/atomic-write";
 
-export const HALAY_SCENE = "Bycoda Halay";
+export const HALAY_SCENE = LIVE_GAMES_DEFAULT_SCENE;
 const SOURCE = "Bycoda Halay Overlay";
 const PASSWORD = "live-games-obs-websocket";
 const STREAM_KEY = "live-games-obs-stream-key";
@@ -98,7 +99,10 @@ export class LiveGamesObs {
     return state.value ?? configSchema.parse({});
   }
 
-  private async withObs<T>(run: (client: OBSWebSocket) => Promise<T>, timeout = 7_000): Promise<T> {
+  private async withObs<T>(
+    run: (client: OBSWebSocket, assertConnected: () => void) => Promise<T>,
+    timeout = 7_000,
+  ): Promise<T> {
     const config = await this.config();
     const password = await this.secrets.get(PASSWORD);
     if (!config.server_enabled || !config.auth_required || !password)
@@ -113,7 +117,9 @@ export class LiveGamesObs {
             await client.disconnect();
             throw new Error("OBS did not respond in time.");
           }
-          return run(client);
+          return run(client, () => {
+            if (expired) throw new Error("OBS request expired.");
+          });
         }),
         delay(timeout, undefined, { signal: controller.signal }).then(() => {
           expired = true;
@@ -256,6 +262,18 @@ export class LiveGamesObs {
   }
 
   async credentials(server: string, key: string) {
+    this.validateDestination(server);
+    await this.withObs(async (client) => {
+      const { outputActive } = await client.call("GetStreamStatus");
+      if (outputActive)
+        throw new LiveGamesObsActionError("Stop streaming before changing the stream destination.");
+      await this.secrets.set(STREAM_KEY, key);
+      await this.setDestination(client, server, key);
+      await this.readBack(client);
+    });
+  }
+
+  private validateDestination(server: string) {
     const url = URL.parse(server);
     if (
       !url ||
@@ -266,16 +284,75 @@ export class LiveGamesObs {
       url.hash
     )
       throw new Error("Enter a valid RTMP or RTMPS server URL.");
-    await this.withObs(async (client) => {
-      const { outputActive } = await client.call("GetStreamStatus");
-      if (outputActive)
-        throw new LiveGamesObsActionError("Stop streaming before changing the stream destination.");
-      await this.secrets.set(STREAM_KEY, key);
-      await client.call("SetStreamServiceSettings", {
-        streamServiceType: "rtmp_custom",
-        streamServiceSettings: { server, key },
-      });
+  }
+
+  private async setDestination(client: OBSWebSocket, server: string, key: string) {
+    this.validateDestination(server);
+    await client.call("SetStreamServiceSettings", {
+      streamServiceType: "rtmp_custom",
+      streamServiceSettings: { server, key },
+    });
+  }
+
+  private async checkSocialScene(client: OBSWebSocket, scene: string) {
+    const { outputActive, outputReconnecting } = await client.call("GetStreamStatus");
+    if (outputActive || outputReconnecting)
+      throw new LiveGamesObsActionError("OBS_ALREADY_STREAMING");
+    const { scenes } = await client.call("GetSceneList");
+    if (!scenes.some((entry) => entry.sceneName === scene))
+      throw new LiveGamesObsActionError("SCENE_NOT_FOUND");
+  }
+
+  async socialPreflight(scene: string) {
+    if (!this.observed.configured) throw new LiveGamesObsActionError("OBS_NOT_CONFIGURED");
+    await this.withObs((client) => this.checkSocialScene(client, scene));
+  }
+
+  async startSocial(
+    server: string,
+    key: string,
+    scene: string,
+    beforeSettings: Authorize,
+    beforeStart: Authorize,
+  ) {
+    return this.withObs(async (client, assertConnected) => {
+      await this.checkSocialScene(client, scene);
+      await beforeSettings();
+      assertConnected();
+      await this.setDestination(client, server, key);
+      assertConnected();
+      await client.call("SetCurrentProgramScene", { sceneName: scene });
+      await beforeStart();
+      assertConnected();
+      await client.call("StartStream");
+      for (let probe = 0; probe < 6; probe++) {
+        const { outputActive } = await client.call("GetStreamStatus");
+        if (outputActive) break;
+        await delay(250);
+        assertConnected();
+      }
       await this.readBack(client);
+      return this.observed.streaming === true;
+    });
+  }
+
+  async socialStreamStatus() {
+    return this.withObs(async (client) => {
+      const { outputActive, outputReconnecting } = await client.call("GetStreamStatus");
+      return outputActive || outputReconnecting;
+    });
+  }
+
+  async stopSocial(authorize: Authorize) {
+    return this.withObs(async (client, assertConnected) => {
+      const status = await client.call("GetStreamStatus");
+      if (status.outputActive || status.outputReconnecting) {
+        await authorize();
+        assertConnected();
+        await client.call("StopStream");
+      }
+      const { outputActive, outputReconnecting } = await client.call("GetStreamStatus");
+      return !outputActive && !outputReconnecting;
     });
   }
 
@@ -293,4 +370,4 @@ export class LiveGamesObs {
   }
 }
 
-class LiveGamesObsActionError extends Error {}
+export class LiveGamesObsActionError extends Error {}

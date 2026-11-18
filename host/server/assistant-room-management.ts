@@ -278,14 +278,15 @@ export function registerRoomManagement(
               call.action,
               call.input,
               authorized,
-              (status, current) =>
+              (operation, current) =>
                 requestLiveGamesStreamApproval(
                   dependencies.conversationDesktop,
                   undefined,
                   principal,
-                  status,
+                  operation,
                   current,
                 ),
+              principal,
             );
           if (isRoomFileAction(call.action) || isRoomFolderAction(call.action))
             return dependencies.roomFiles.folders.call(
@@ -400,14 +401,15 @@ export function registerRoomManagement(
               action,
               call.input,
               current,
-              (status, approvalAuthority) =>
+              (operation, approvalAuthority) =>
                 requestLiveGamesStreamApproval(
                   dependencies.conversationDesktop,
                   captured.projectCwd,
                   principal,
-                  status,
+                  operation,
                   approvalAuthority,
                 ),
+              principal,
             );
           });
         }

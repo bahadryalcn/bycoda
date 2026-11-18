@@ -160,14 +160,15 @@ export async function dispatchConversationTools(
           action,
           args,
           scopedDeviceAuthorized,
-          (status, authorized) =>
+          (operation, authorized) =>
             requestLiveGamesStreamApproval(
               dependencies.conversationDesktop,
               project.cwd,
               boundPrincipal,
-              status,
+              operation,
               authorized,
             ),
+          boundPrincipal,
         );
       } else if (isManagementAction(action)) {
         request.result = await dependencies.conversationManagement.call(

@@ -770,6 +770,21 @@ This merges the listed source branch into the current branch (fast-forward or me
             return Err("Invalid OBS broadcast approval".into());
         }
         "\nThis starts broadcasting the active OBS scene to the destination configured in OBS. It can disclose video and audio outside bycoda."
+    } else if action == "liveGames.goLive" {
+        if review_input
+            .as_object()
+            .is_none_or(|input| input.len() != 4)
+            || !matches!(
+                review_input["platform"].as_str(),
+                Some("youtube" | "tiktok" | "instagram" | "facebook" | "linkedin" | "x")
+            )
+        {
+            return Err("Invalid Social broadcast approval".into());
+        }
+        for field in ["accountId", "label", "scene"] {
+            desktop_approval_field(&review_input, field, 256)?;
+        }
+        "\nThis starts a public broadcast of the listed OBS scene to the listed Social account. It can disclose video and audio outside bycoda. Approval applies to this operation only."
     } else if action.starts_with("terminals.") {
         "\nThis controls a Host pipe shell. Its launch directory is not a sandbox; accepted input may continue running after Room closes. Command completion is not observed."
     } else {
@@ -2040,6 +2055,16 @@ mod tests {
         stream["input"]["operation"]["input"] = json!({"action":"start", "scene":"Bycoda Halay"});
         let (message, _) = management_approval_message(&stream).unwrap();
         assert!(message.contains("starts broadcasting") && message.contains("Bycoda Halay"));
+        stream["input"]["operation"]["input"]["streamKey"] = json!("not for approval");
+        assert!(management_approval_message(&stream).is_err());
+        stream["input"]["operation"]["action"] = json!("liveGames.goLive");
+        stream["input"]["operation"]["input"] = json!({
+            "accountId": "youtube-one", "label": "Studio channel",
+            "platform": "youtube", "scene": "Bycoda Halay"
+        });
+        let (message, _) = management_approval_message(&stream).unwrap();
+        assert!(message.contains("public broadcast") && message.contains("Studio channel"));
+        assert!(message.contains("youtube-one") && message.contains("Bycoda Halay"));
         stream["input"]["operation"]["input"]["streamKey"] = json!("not for approval");
         assert!(management_approval_message(&stream).is_err());
         let mut note = request.clone();

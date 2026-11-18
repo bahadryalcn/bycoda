@@ -63,6 +63,11 @@ import { readInboxSettings } from "./inbox/inbox-settings";
 import { holdForHuman, requeueJobForHuman } from "./execution/social-human-review";
 import { osSecretValues } from "../secrets/secret-store";
 import { storeXLiveKey } from "./core/x-live-key";
+import {
+  createSocialLiveService,
+  socialLiveConnectionBinding,
+  type SocialLiveService,
+} from "./core/social-live";
 import type { AiAction } from "../../src/features/social/model/autonomy";
 import type { OutreachChannel } from "../../src/features/social/model/outreach";
 import { eraseSocialContact, optOutContact, upsertSocialContact } from "./contacts/social-contacts";
@@ -5092,7 +5097,50 @@ export class SocialService implements SocialServiceApi {
   }
   // X Live custody. Share one vault queue across saves and isolate it from email credentials.
   private xLiveVault?: ReturnType<typeof osSecretValues>;
-  async saveXLiveKey(p: SocialPrincipal, accountId: string, key: unknown) {
+  private instagramEncoderVault?: ReturnType<typeof osSecretValues>;
+  private socialLiveService?: SocialLiveService;
+  private xEncoderVault() {
+    return (this.xLiveVault ??= osSecretValues(
+      join(this.directory, "x-live"),
+      `${this.store.environmentId}.x-live`,
+    ));
+  }
+  /** Private encoder handoff for Live games. Neither this API nor its secrets enter Social RPC. */
+  get live(): SocialLiveService {
+    const environmentId = this.store.environmentId;
+    return (this.socialLiveService ??= createSocialLiveService({
+      credentials: this.credentials,
+      instagramVault: () =>
+        (this.instagramEncoderVault ??= osSecretValues(
+          join(this.directory, "instagram-live"),
+          environmentId,
+        )),
+      xVault: () => this.xEncoderVault(),
+      verify: async (principal) => {
+        await this.ready;
+        if (principal.sessionId) await this.verifyPeer?.(principal.sessionId);
+        await this.validate(principal);
+        await this.store.db.checkAuthorization();
+      },
+      context: (principal) => ({
+        principal,
+        environmentId,
+        service: this,
+        store: this.audience,
+        now: this.now,
+        operationId: "live-games",
+        emailSecrets: osSecretValues(this.directory, environmentId),
+        youtube: {
+          environmentId,
+          credentials: this.credentials,
+          media: (actor, id) => this.readOwnerMedia(actor, id),
+          assertAuthorized: () => this.store.db.checkAuthorization(),
+        },
+        facebookLive: { environmentId, credentials: this.credentials },
+      }),
+    }));
+  }
+  async saveXLiveKey(p: SocialPrincipal, accountId: string, key: unknown, server?: unknown) {
     await this.ready;
     this.owner(p);
     const account = await this.access(p, accountId, "read");
@@ -5102,12 +5150,15 @@ export class SocialService implements SocialServiceApi {
       account.executorId !== this.store.environmentId
     )
       throw new Error("Connect the X account on this Host before saving its stream key.");
+    const epoch = await this.setting(`connectionEpoch:${account.id}`);
     await this.store.db.checkAuthorization();
-    this.xLiveVault ??= osSecretValues(
-      join(this.directory, "x-live"),
-      `${this.store.environmentId}.x-live`,
+    return storeXLiveKey(
+      this.xEncoderVault(),
+      account.id,
+      key,
+      server,
+      socialLiveConnectionBinding(account, epoch),
     );
-    return storeXLiveKey(this.xLiveVault, account.id, key);
   }
   // TikTok username updates are committed only after the browser acknowledges the same account.
   private async renameTikTokBrowser(

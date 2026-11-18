@@ -201,3 +201,17 @@ export async function instagramStreamStored(
     throw new Error("Instagram stream credential store unavailable.");
   }
 }
+
+/** Authorized encoder handoff only. The capture and read share the identity and URL checks. */
+export async function loadInstagramLiveIngest(
+  vault: SecretValueStore,
+  accountId: string,
+  platformId: string,
+  epoch: string | undefined,
+) {
+  const raw = await vault.get(instagramStreamRef(accountId));
+  if (!raw) return undefined;
+  const record = JSON.parse(raw) as { platformId?: string; epoch?: string };
+  if (record.platformId !== platformId || record.epoch !== epoch) return undefined;
+  return streamCredentials(record);
+}

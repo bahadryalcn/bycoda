@@ -14,6 +14,7 @@ pub(super) const MANAGEMENT_APPROVAL_ACTIONS: &[&str] = &[
     "servers.ssh.remove",
     "social.send",
     "liveGames.obsStream",
+    "liveGames.goLive",
     "notebook.create",
     "notebook.update",
     "notebook.delete",
