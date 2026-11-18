@@ -1,11 +1,12 @@
 import type { SocialClient } from "../../model/socialClient";
+import type { InstagramDirectMediaKind } from "../../../../integrations/social/adapters/instagram-direct-media";
 import type { InboxReplyOperation } from "./inboxReplyOperation";
 
 export type ReplyDraft = {
   text: string;
   factIds: string[];
   instagramPrivateReply?: true;
-  instagramAttachment?: { kind: "image" | "video"; url: string };
+  instagramAttachment?: { kind: InstagramDirectMediaKind; url: string; file?: File };
 };
 type ReplyState = {
   draft: ReplyDraft;

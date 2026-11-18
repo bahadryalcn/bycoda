@@ -30,6 +30,11 @@ export function contentSupport(
   }
   if (job.payload.facebook && (account.platform !== "facebook" || account.connection === "browser"))
     return "The Facebook Reel destination requires a Facebook Page API connection.";
+  if (
+    job.payload.media.some((item) => item.kind === "audio") &&
+    !(account.platform === "instagram" && account.connection !== "browser" && job.kind === "reply")
+  )
+    return "Audio attachments require an Instagram API conversation.";
   if (account.connection === "browser" && account.platform !== "x")
     return browserContentIssue(account, job);
   if (account.platform === "telegram" && account.accountType === "channel")

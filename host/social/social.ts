@@ -7,6 +7,11 @@ import {
 import { SOCIAL_ACTION_MODULES } from "./core/social-action-modules";
 import { PROGRAM_OPERATION_FIELDS, socialActionRegistry } from "./core/social-actions";
 import { instagramDirectHandle, instagramPrivateReplyTarget } from "./inbox/instagram-reply";
+import { InstagramMessageMedia, instagramLocalMediaAvailable } from "./inbox/instagram-media";
+import {
+  INSTAGRAM_DIRECT_MEDIA_LIMITS,
+  isInstagramDirectMediaKind,
+} from "../../src/integrations/social/adapters/instagram-direct-media";
 import type { AutonomousRequest, SocialServiceApi } from "./core/social-service-api";
 import {
   array,
@@ -227,6 +232,7 @@ const SOCIAL_TICK_MS = 5000;
 const SOCIAL_IDLE_TICK_MS = 30_000;
 export class SocialService implements SocialServiceApi {
   private readonly mediaCustody: SocialMediaCustody;
+  private readonly instagramMedia: InstagramMessageMedia;
   private readonly mediaQuarantine: SocialMediaQuarantine;
   readonly jobArchive: SocialJobArchive;
   readonly audience: SocialAudienceStore;
@@ -582,6 +588,7 @@ export class SocialService implements SocialServiceApi {
     readonly decisionModels?: DecisionService,
   ) {
     this.mediaCustody = new SocialMediaCustody(store, directory);
+    this.instagramMedia = new InstagramMessageMedia(store, this.mediaCustody, directory, this.now);
     this.mediaQuarantine = new SocialMediaQuarantine(store, directory, this.mediaCustody);
     this.jobArchive = new SocialJobArchive(store);
     const audience = (this.audience = new SocialAudienceStore(store));
@@ -3849,7 +3856,7 @@ export class SocialService implements SocialServiceApi {
     };
     return await this.put("campaign", campaign.id, campaign);
   }
-  private parseMedia(raw: unknown, instagramApi = false): CampaignVariant["media"] {
+  private parseMedia(raw: unknown, instagramApi = false, instagramDm = false): CampaignVariant["media"] {
     if (!Array.isArray(raw) || raw.length > (instagramApi ? INSTAGRAM_CAROUSEL_MAX : 4))
       throw new Error(
         instagramApi
@@ -3860,7 +3867,10 @@ export class SocialService implements SocialServiceApi {
       if (!item || typeof item !== "object") throw new Error("Invalid media.");
       const media = item as Record<string, unknown>;
       exact(media, ["kind", "url", "uploadId", "alt", "title"]);
-      if (!["image", "video", "document"].includes(String(media.kind)))
+      if (
+        !["image", "video", "document"].includes(String(media.kind)) &&
+        !(instagramDm && media.kind === "audio")
+      )
         throw new Error("Invalid media kind.");
       if (!media.url && !media.uploadId)
         throw new Error("Media needs an HTTPS URL or a host upload.");
@@ -4032,7 +4042,8 @@ export class SocialService implements SocialServiceApi {
     const factIds = array(input.factIds ?? [], "verified facts");
     if (personal && factIds.length) throw new Error("Personal drafts cannot use project facts.");
     if (projectId) await this.facts([projectId], factIds);
-    const media = input.media === undefined ? [] : this.parseMedia(input.media);
+    const instagramDm = draftAccount.platform === "instagram" && thread?.kind === "message";
+    const media = input.media === undefined ? [] : this.parseMedia(input.media, false, instagramDm);
     if (media.length && (draftAccount.platform !== "instagram" || thread?.kind !== "message"))
       throw new Error("Instagram attachments require an existing Instagram DM.");
     const replyText = media.length && input.text === "" ? "" : str(input.text, "draft text");
@@ -4043,6 +4054,10 @@ export class SocialService implements SocialServiceApi {
         payload: { text: replyText, media, recipientId: contact.platformId },
       });
       if (issue) throw new Error(issue);
+      if (media[0].uploadId) {
+        this.owner(p);
+        await this.instagramMedia.assertOwned(p.actorId, media[0].uploadId);
+      }
     }
     const draft: SocialDraft = {
       id: randomUUID(),
@@ -4184,8 +4199,11 @@ export class SocialService implements SocialServiceApi {
       throw new Error(
         "Conversation assignment changed. Create a new draft for the current recipient/project.",
       );
+    const instagramDm = account.platform === "instagram" && thread?.kind === "message";
     const effectiveMedia =
-      input.media !== undefined ? this.parseMedia(input.media) : (draft.media ?? []);
+      input.media !== undefined
+        ? this.parseMedia(input.media, false, instagramDm)
+        : (draft.media ?? []);
     const attachmentOnly =
       account.connection !== "browser" &&
       ["whatsapp", "telegram", "instagram"].includes(account.platform) &&
@@ -4222,6 +4240,10 @@ export class SocialService implements SocialServiceApi {
         },
       });
       if (issue) throw new Error(issue);
+      if (instagramDm && input.media !== undefined && media[0]?.uploadId) {
+        this.owner(p);
+        await this.instagramMedia.assertOwned(p.actorId, media[0].uploadId);
+      }
       if (input.media !== undefined) draft.media = media;
     }
     draft.factIds = factIds;
@@ -4921,8 +4943,39 @@ export class SocialService implements SocialServiceApi {
         this.store.db.checkAuthorization(),
       );
       await this.store.db.checkAuthorization();
+      if (input.instagramAttachmentThreadId !== undefined || input.instagramAttachmentKind !== undefined) {
+        const threadId = str(input.instagramAttachmentThreadId, "conversation");
+        const kind = input.instagramAttachmentKind;
+        if (!isInstagramDirectMediaKind(kind)) throw new Error("Invalid Instagram attachment type.");
+        if (input.mode === "begin" || input.mode === "finish") {
+          const thread = await this.accessibleThread(p, threadId);
+          const account = await this.access(p, thread.accountId, "reply");
+          if (
+            account.platform !== "instagram" ||
+            account.connection === "browser" ||
+            thread.kind !== "message" ||
+            thread.replyAllowed === false ||
+            (thread.replyUntil ?? 0) <= this.now()
+          )
+            throw new Error("Choose an Instagram API conversation within its reply window.");
+          this.capability(account, "message.reply");
+          if (!instagramLocalMediaAvailable())
+            throw new Error("This Host needs a public HTTPS media origin for Instagram file delivery.");
+          if (input.mode === "begin" && Number(input.size) > INSTAGRAM_DIRECT_MEDIA_LIMITS[kind])
+            throw new Error("Instagram attachment exceeds the supported size.");
+        }
+        return this.videoUploads.call(
+          `instagram:${hash(JSON.stringify([p.actorId, threadId, kind]))}`,
+          input,
+          (id, bytes) => this.instagramMedia.register(p.actorId, id, kind, bytes),
+        );
+      }
       return this.videoUploads.call(p.actorId, input);
     });
+  }
+  async readInstagramAttachment(id: string, query: URLSearchParams) {
+    await this.ready;
+    return this.instagramMedia.serve(id, query);
   }
   private async readMedia(id: string): Promise<Uint8Array> {
     if (!/^[a-f0-9-]{36}$/.test(id)) throw new Error("Invalid media ID.");
@@ -5445,7 +5498,12 @@ export class SocialService implements SocialServiceApi {
           currentAccount.connection !== account.connection
         )
           throw new Error("Account connection changed before dispatch.");
-        if (job.payload.media.length) this.capability(currentAccount, "media");
+        if (job.payload.media.length)
+          this.capability(
+            currentAccount,
+            currentAccount.platform === "instagram" && job.kind === "reply" &&
+              job.payload.recipientId && !job.payload.postId ? "message.reply" : "media",
+          );
         const mediaIssue = contentSupport(currentAccount, job);
         if (mediaIssue) throw new Error(mediaIssue);
         const replyThread = job.draftId
@@ -5603,7 +5661,22 @@ export class SocialService implements SocialServiceApi {
       const credential = await this.credentials.get(account.id);
       if (!credential || (credential.expiresAt !== undefined && credential.expiresAt <= this.now()))
         throw new SocialPlatformError("expired");
-      await check(); // Credential lookup yielded; opt-out/stop can have arrived meanwhile.
+      let providerJob = job;
+      const instagramFile = account.platform === "instagram" && job.kind === "reply"
+        ? job.payload.media[0]
+        : undefined;
+      if (instagramFile?.uploadId) {
+        if (!job.draftId) throw new Error("A reviewed reply is required for an Instagram attachment.");
+        const delivery = await this.instagramMedia.grant(job.draftId, instagramFile.uploadId, instagramFile.kind);
+        providerJob = {
+          ...job,
+          payload: {
+            ...job.payload,
+            media: [{ kind: instagramFile.kind, url: delivery }],
+          },
+        };
+      }
+      await check(); // Credential and attachment lookup yielded; opt-out/stop can have arrived meanwhile.
       await this.transaction(async () => {
         if (!isDeepStrictEqual(await this.job(id), job))
           throw new Error("Job changed before dispatch.");
@@ -5619,7 +5692,7 @@ export class SocialService implements SocialServiceApi {
         async (adapter, target) =>
           await adapter.send(
             target,
-            job,
+            providerJob,
             credential.accessToken,
             async (mediaId) => await this.readMedia(mediaId),
             async (state) => {

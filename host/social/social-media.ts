@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, open, readdir, rename, stat, unlink } from "node:fs/promises";
+import { mkdir, open, readFile, readdir, rename, stat, unlink } from "node:fs/promises";
 import { join } from "node:path";
 
 const MAX_VIDEO = 64 * 1024 * 1024;
@@ -21,6 +21,7 @@ export class SocialVideoUploads {
   async call(
     actor: string,
     input: Record<string, unknown>,
+    registerAttachment?: (uploadId: string, bytes: Uint8Array) => Promise<void>,
   ): Promise<{ uploadId: string; offset?: number }> {
     await this.authorize();
     const staging = join(this.directory, "media", "incoming");
@@ -115,6 +116,13 @@ export class SocialVideoUploads {
         state.offset += bytes.length;
       } else if (input.mode === "finish") {
         if (state.offset !== state.size) throw new Error("Video upload is incomplete.");
+        if (registerAttachment) {
+          const path = join(staging, uploadId);
+          await registerAttachment(uploadId, await readFile(path));
+          this.pending.delete(uploadId);
+          await unlink(path).catch(() => {});
+          return { uploadId, offset: state.offset };
+        }
         const handle = await open(join(staging, uploadId), "r");
         const header = Buffer.alloc(12);
         try {
