@@ -13,7 +13,13 @@ import type { TikTokPanelProps } from "./TikTokAccountTools";
 import type { TikTokChange } from "./TikTokChanges";
 
 type View = "analytics" | "earnings" | "comments" | "mentions" | "messages" | "followers" | "live";
-type Metrics = { views?: number; likes?: number; comments?: number; shares?: number; reach?: number };
+type Metrics = {
+  views?: number;
+  likes?: number;
+  comments?: number;
+  shares?: number;
+  reach?: number;
+};
 type PostMetrics = {
   posts: { id: string; text?: string }[];
   metrics: Record<string, Metrics>;
