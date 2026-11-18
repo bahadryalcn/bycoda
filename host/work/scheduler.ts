@@ -24,7 +24,7 @@ export async function reserveWork(
     if (await limits.reached())
       return wait({ code: "dailyLimit", message: "Daily agent time limit reached." });
     const { maxRunningTasks } = await limits.settings();
-    const active = (await storage.list()).filter((item) => item.reserved);
+    const active = await storage.listReserved();
     const known = new Set(
       active.flatMap((item) =>
         item.receipt ? [JSON.stringify([item.receipt.sessionId, item.receipt.runId])] : [],
