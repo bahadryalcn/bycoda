@@ -17,6 +17,7 @@ export function createAssistantRoomRuntime(
     ServerBindings,
     | "engine"
     | "conversationDesktop"
+    | "liveGames"
     | "conversationDesktopControl"
     | "roomResourceReceipts"
     | "social"

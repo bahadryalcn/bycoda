@@ -6,6 +6,7 @@ import bycodaWork from "./bycoda/references/work.md?raw";
 import bycodaWorkspace from "./bycoda/references/workspace.md?raw";
 import bycodaRuntime from "./bycoda/references/runtime.md?raw";
 import bycodaInboxSocial from "./bycoda/references/inbox-social.md?raw";
+import bycodaLiveGames from "./bycoda/references/live-games.md?raw";
 import bycodaSkillRouter from "./bycoda-skill-router/SKILL.md?raw";
 import bycodaMissingSkills from "./bycoda-skill-router/references/missing-skills.md?raw";
 import { appSkillsRoot } from "../skills/skills";
@@ -18,6 +19,7 @@ export const APP_SKILLS: Record<string, Record<string, string>> = {
     "references/workspace.md": bycodaWorkspace,
     "references/runtime.md": bycodaRuntime,
     "references/inbox-social.md": bycodaInboxSocial,
+    "references/live-games.md": bycodaLiveGames,
   },
   "bycoda-skill-router": {
     "SKILL.md": bycodaSkillRouter,

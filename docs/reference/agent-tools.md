@@ -124,6 +124,30 @@ global send stop. Owner-only operations are never tools. These include people
 deletion and export, audience import, autonomy changes, program activation and
 browser workflow methods.
 
+## Live games
+
+Use the `liveGames` family in scoped Conversation Tools. MCP names follow the
+standard mapping, for example `conversation_liveGames_status`. These tools act
+on the Host serving the conversation and respect its current grant and crew
+tool profile. Assistant Room writes require its Host-wide permission level.
+External MCP credentials do not expose the family.
+
+- `liveGames.status` and `liveGames.report` read connection, settings, scores
+  and session totals. Tool output excludes private overlay and avatar URLs.
+- `liveGames.start`, `liveGames.demo` and `liveGames.stop` manage the game.
+  Read the status before switching channels and check it after the change.
+  Stop ends game intake and cancels retries. Read the report after stopping.
+- `liveGames.setRules` replaces the complete array. Preserve unrelated gift
+  rules. `liveGames.setConfig` patches game settings. Use status to read both
+  back after a change.
+- `liveGames.obsSetup` configures installed OBS. `liveGames.obsScene` switches
+  to the Halay scene. `liveGames.obsStream` with `action: "start"` requires
+  exact Native owner approval. With `action: "stop"` it ends the OBS broadcast.
+  Confirm the stream state in status before retrying or reporting success.
+  The Euler API key and OBS stream credentials are set in the owner UI.
+
+See the [Live games guide](../guides/live-games.md) for the end-to-end workflow.
+
 ## Optional desktop control
 
 `desktop.status` reports readiness and the app names the owner already approved.

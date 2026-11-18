@@ -61,6 +61,11 @@ import {
 } from "../execution/runtime-log-conversation";
 import { scrubRuntimeLogText } from "../execution/runtime-logs";
 import { resolveHostWorktreeAsync } from "../git/git-worktrees";
+import {
+  callLiveGamesConversationTool,
+  isLiveGamesConversationTool,
+  requestLiveGamesStreamApproval,
+} from "../live-games/tools";
 import { HubExternalMcpTools } from "../mcp/hub/external-tools";
 import { managedDiscoveryResult, managedMcpCatalog } from "../mcp/mcp-http";
 import { readHarnessSkill, searchHarnessSkills } from "../skills/harness-skills";
@@ -85,6 +90,7 @@ export async function dispatchConversationTools(
     | "conversationDesktopControl"
     | "conversationWorkspace"
     | "conversationRuntimeReads"
+    | "liveGames"
     | "featureMeta"
     | "inHost"
     | "conversationDesktop"
@@ -148,7 +154,22 @@ export async function dispatchConversationTools(
       const scopedDeviceEffect = { authorized: scopedDeviceAuthorized };
       const projectId = boundPrincipal.projectId;
       const project = await dependencies.engine.store.project(projectId);
-      if (isManagementAction(action)) {
+      if (isLiveGamesConversationTool(action)) {
+        request.result = await callLiveGamesConversationTool(
+          dependencies.liveGames,
+          action,
+          args,
+          scopedDeviceAuthorized,
+          (status, authorized) =>
+            requestLiveGamesStreamApproval(
+              dependencies.conversationDesktop,
+              project.cwd,
+              boundPrincipal,
+              status,
+              authorized,
+            ),
+        );
+      } else if (isManagementAction(action)) {
         request.result = await dependencies.conversationManagement.call(
           action,
           args,

@@ -5,10 +5,38 @@ import {
 } from "../management/assistant-management-dispatch";
 import { MANAGEMENT_CONVERSATION_TOOLS } from "../../conversation/conversation-management-tools";
 import { voiceToolCatalog } from "../../voice/voice-tools";
+import { assistantRoomMutationAllowed } from "../management/assistant-permissions";
 
 const catalog = voiceToolCatalog();
 
 describe("Room management capability contract", () => {
+  it("discovers Live games but reserves Host-wide changes for full Room access", () => {
+    expect(roomManagementToolAllowed("conversation", "liveGames.status")).toBe(true);
+    expect(roomManagementToolAllowed("conversation", "liveGames.obsStream")).toBe(true);
+    expect(roomManagementToolAllowed("conversation", "liveGames.obsCredentials")).toBe(false);
+    const call = {
+      threadId: "thread",
+      requestId: "request",
+      family: "conversation" as const,
+      action: "liveGames.stop",
+      projectId: "project",
+      input: {},
+    };
+    expect(
+      assistantRoomMutationAllowed(
+        { permissionLevel: "projects", permissionProjectIds: ["project"] },
+        call,
+      ),
+    ).toBe(false);
+    expect(assistantRoomMutationAllowed({ permissionLevel: "everything" }, call)).toBe(true);
+    expect(
+      assistantRoomMutationAllowed(
+        { permissionLevel: "watch" },
+        { ...call, action: "liveGames.status" },
+      ),
+    ).toBe(true);
+  });
+
   it("can discover global settings and Servers without a placeholder project", () => {
     const actions = [
       "tools.search",

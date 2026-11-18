@@ -15,6 +15,8 @@ export const CONVERSATION_READ_ACTIONS: ReadonlySet<string> = new Set<string>([
   "remote.grants.list",
   "remote.result",
   "social.send.status",
+  "liveGames.status",
+  "liveGames.report",
   "browser.operation.status",
   "terminals.operation.status",
   "files.operation.status",

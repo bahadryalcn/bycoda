@@ -12,6 +12,7 @@ import {
 import { SOCIAL_TOOLS } from "../../src/features/social/model/social";
 import { socialAuthorizationScope } from "../social/social-tools";
 import { AGENT_TOOL_SCHEMAS } from "../delegation/tools";
+import { LIVE_GAMES_CONVERSATION_TOOLS } from "../live-games/tools";
 import { PULL_REQUEST_WATCH_TOOLS } from "../pull-request-watch/pull-request-watch-tools";
 import { EXTERNAL_MCP_TOOLS } from "./conversation-external-mcp-tools";
 
@@ -105,6 +106,7 @@ for (const action of [
   CONVERSATION_ACTIONS.add(action);
 CONVERSATION_ACTIONS.add("browser.resize");
 for (const action of Object.keys(AGENT_TOOL_SCHEMAS)) CONVERSATION_ACTIONS.add(action);
+for (const action of Object.keys(LIVE_GAMES_CONVERSATION_TOOLS)) CONVERSATION_ACTIONS.add(action);
 for (const action of ["servers.ssh.execute", "servers.ssh.status", "servers.ssh.cancel"])
   CONVERSATION_ACTIONS.add(action);
 for (const action of [
@@ -153,6 +155,7 @@ const READBACKS: Record<string, string[]> = {
   machines: ["machines.list"],
   devices: ["devices.status"],
   logs: ["logs.read", "logs.wait"],
+  liveGames: ["liveGames.status", "liveGames.report"],
   resources: ["resources.read"],
 };
 const CANCELLATIONS: Record<string, string[]> = {
@@ -184,6 +187,9 @@ const CANCELLATIONS: Record<string, string[]> = {
   "browser.preview": ["browser.release"],
   "browser.annotation.start": ["browser.annotation.cancel"],
   "logs.monitors.start": ["logs.monitors.stop"],
+  "liveGames.start": ["liveGames.stop"],
+  "liveGames.demo": ["liveGames.stop"],
+  "liveGames.obsStream": ["liveGames.obsStream"],
 };
 const SOCIAL_READBACKS: Record<string, string[]> = {
   policy: ["policy.get"],
@@ -278,6 +284,9 @@ function effectFor(group: ManagedToolGroup, action: string, read: boolean): Tool
   if (action === "servers.ssh.cancel") return ["execution", "local-state"];
   if (action === "commands.run") return ["execution", "local-state", "external-write"];
   if (action === "commands.run.cancel") return ["execution", "local-state"];
+  if (action === "liveGames.obsStream") return ["execution", "external-write"];
+  if (/^liveGames\.(start|stop|demo|obsSetup|obsScene)$/.test(action))
+    return ["execution", "local-state"];
   if (/^inbox\.(comment|review|prAction)$/.test(action)) return ["external-write"];
   if (
     /^(agents\.(delegate|consult|reply|cancel)|devServers\.(start|stop|restart|kill)|images\.generate|terminals\.(write|interrupt|close|create)|devices\.(start|boot|action|preview)|tasks\.(start|retry|stop|review\.recheck)|crews\.(start|assign|member\.ask|respond|answer|stop)|automations\.(runNow|stopRun)|stewards\.(runNow|stopRun)|logs\.monitors\.(start|stop)|goals\.(create|replan|cancel)|browser\.recording\.(start|stop))$/.test(
@@ -400,7 +409,7 @@ export function createManagedToolCatalog(
           ? "owner-or-active-rule"
           : group === "conversation" &&
               (/^inbox\.(comment|review|prAction)$/.test(action) ||
-                ["tasks.delete", "tasks.transfer", "tasks.notes.resolve"].includes(action))
+                ["tasks.delete", "tasks.transfer", "tasks.notes.resolve", "liveGames.obsStream"].includes(action))
             ? "native-owner-approval"
             : group === "conversation" && action === "secrets.request"
               ? "native-owner-approval"

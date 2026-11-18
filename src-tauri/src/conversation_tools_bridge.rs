@@ -758,6 +758,18 @@ This publishes the listed local commits to the listed remote branch. It never fo
 This merges the listed source branch into the current branch (fast-forward or merge commit only). A conflict aborts the merge and restores the checkout."
     } else if action == "social.send" {
         "\nThis sends the exact reviewed draft to an external recipient. Review the account, recipient, complete message and media above. Approval applies only to this operation; a queued job is not proof of delivery."
+    } else if action == "liveGames.obsStream" {
+        if review_input
+            .as_object()
+            .is_none_or(|input| input.len() != 2)
+            || review_input["action"] != "start"
+            || review_input.get("scene").is_none_or(|scene| {
+                !scene.is_null() && scene.as_str().is_none_or(|name| name.chars().count() > 200)
+            })
+        {
+            return Err("Invalid OBS broadcast approval".into());
+        }
+        "\nThis starts broadcasting the active OBS scene to the destination configured in OBS. It can disclose video and audio outside bycoda."
     } else if action.starts_with("terminals.") {
         "\nThis controls a Host pipe shell. Its launch directory is not a sandbox; accepted input may continue running after Room closes. Command completion is not observed."
     } else {
@@ -2023,6 +2035,13 @@ mod tests {
         assert!(message.contains("git.commit"));
         assert!(message.contains("Commit reviewed changes"));
         assert_eq!(hash, "a".repeat(64));
+        let mut stream = request.clone();
+        stream["input"]["operation"]["action"] = json!("liveGames.obsStream");
+        stream["input"]["operation"]["input"] = json!({"action":"start", "scene":"Bycoda Halay"});
+        let (message, _) = management_approval_message(&stream).unwrap();
+        assert!(message.contains("starts broadcasting") && message.contains("Bycoda Halay"));
+        stream["input"]["operation"]["input"]["streamKey"] = json!("not for approval");
+        assert!(management_approval_message(&stream).is_err());
         let mut note = request.clone();
         note["input"]["operation"]["action"] = json!("notes.update");
         note["input"]["operation"]["input"] = json!({"requestId":"note-request","noteInput":{"id":"note","expectedUpdatedAt":42,"body":"reviewed text"}});

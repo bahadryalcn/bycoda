@@ -9,7 +9,10 @@ export function conversationToolMetadata(action: string, authorizationScope: "re
       readOnlyHint: readOnly,
       destructiveHint: !readOnly,
       idempotentHint: readOnly,
-      openWorldHint: action.startsWith("inbox.") && action !== "inbox.list",
+      openWorldHint:
+        (action.startsWith("inbox.") && action !== "inbox.list") ||
+        action === "liveGames.start" ||
+        action === "liveGames.obsStream",
     },
   };
 }

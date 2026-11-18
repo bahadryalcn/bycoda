@@ -17,6 +17,11 @@ import { threadCrewAction } from "../conversation/conversation-thread-crew-tools
 import { THREAD_WORK_ACTIONS } from "../conversation/conversation-thread-work-tools";
 import type { ConversationTool } from "../conversation/conversation-tools";
 import { validateConversationTool } from "../conversation/conversation-tools";
+import {
+  callLiveGamesConversationTool,
+  isLiveGamesConversationTool,
+  requestLiveGamesStreamApproval,
+} from "../live-games/tools";
 import { managedDiscoveryResult, managedMcpCatalog } from "../mcp/mcp-http";
 import { voiceThreadToolAllowed, voiceToolCatalog } from "../voice/voice-tools";
 import type { ServerBindings } from "./bindings";
@@ -34,6 +39,7 @@ export async function handleAssistantThreadTools(
     | "roomWorkspace"
     | "conversationThreadCrews"
     | "conversationThreadWork"
+    | "liveGames"
     | "conversationManagement"
     | "conversationDesktopControl"
     | "conversationWorkspace"
@@ -92,6 +98,21 @@ export async function handleAssistantThreadTools(
     ports.request.result = await dependencies.engine.store.db.withAuthorization(
       dependencies.conversationAccess.authorization(ports.request.token),
       async () => {
+        if (isLiveGamesConversationTool(action))
+          return await callLiveGamesConversationTool(
+            dependencies.liveGames,
+            action,
+            args,
+            authorized,
+            async (status, current) =>
+              requestLiveGamesStreamApproval(
+                dependencies.conversationDesktop,
+                (await dependencies.engine.store.project(ports.boundPrincipal.projectId)).cwd,
+                ports.boundPrincipal,
+                status,
+                current,
+              ),
+          );
         if (action === "tools.list")
           return {
             environmentId: dependencies.engine.store.environmentId,
