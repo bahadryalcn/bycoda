@@ -354,11 +354,17 @@ export function socialClient(machineId: string) {
         "social.oauth.availability",
         {},
       ),
-    oauthBegin: (accountId: string, resourceId?: string, operations?: SocialOperation[]) =>
+    oauthBegin: (
+      accountId: string,
+      resourceId?: string,
+      operations?: SocialOperation[],
+      linkedinLiveComments?: true,
+    ) =>
       remoteRequest<{ url: string; expiresAt: number }>(machineId, "social.oauth.begin", {
         accountId,
         resourceId,
         operations,
+        ...(linkedinLiveComments ? { linkedinLiveComments } : {}),
       }),
     oauthStatus: (accountId: string) =>
       remoteRequest<{

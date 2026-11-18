@@ -17,6 +17,7 @@ import { TextField } from "../../../../shared/ui/TextField";
 import type { SocialAccount } from "../../model/social";
 import type { SocialClient } from "../../model/socialClient";
 import { useAccountWrite } from "../accounts/useAccountWrite";
+import { LinkedInLiveComments } from "./LinkedInLiveComments";
 
 type Props = {
   account: SocialAccount;
@@ -150,6 +151,9 @@ function LinkedInLiveAccount({ account, client, disabled }: Props) {
         </Button>
       ) : null}
       {error ? <InlineError>{error}</InlineError> : null}
+      {account.accountType === "organization" && account.connection === "oauth" ? (
+        <LinkedInLiveComments accountId={accountId} client={client} disabled={disabled} />
+      ) : null}
     </Disclosure>
   );
 }

@@ -84,6 +84,7 @@ export class SocialTransport {
         String(params.accountId ?? ""),
         typeof params.resourceId === "string" ? params.resourceId : undefined,
         params.operations as SocialOperation[] | undefined,
+        ...(params.linkedinLiveComments === true ? [true as const] : []),
       );
     if (method === "social.oauth.status")
       return this.oauth.status(p, String(params.accountId ?? ""));

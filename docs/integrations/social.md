@@ -230,6 +230,11 @@ questions). Expired, revoked or scope-changed connections require reconnection.
   The Host stores the destination in credential storage. `linkedin.live.status` returns
   the event ID and custody state to authorized callers. Stream ingest and the Go Live
   action require a streaming integration.
+- With an approved OAuth Page connection, the owner can load Live event comments by event
+  ID. Enable **LinkedIn Live comments** in the OAuth permissions to request `r_events`
+  and `r_organization_social_feed`. The Host checks the organizer and Live event type
+  before reading comments on the event post. This read returns data only to the owner's
+  panel and does not add content to auto-reply rules, chat, or the inbox.
 - Browser connection requests, acceptance and personal chat use the same verification and
   challenge handling as other browser recipes.
 - The Accounts browser panel reads the visible connections, invitations and groups page.

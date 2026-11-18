@@ -15,6 +15,7 @@ import type {
   LinkedInAnalyticsResult,
 } from "./adapters/linkedin-analytics";
 import type { LinkedInManagementAction } from "./adapters/linkedin-manage";
+import type { LinkedInLiveCommentsPage } from "./live-linkedin";
 // End LinkedIn operations.
 import { META_RATE_LIMIT_CODES } from "./meta-codes";
 
@@ -113,6 +114,12 @@ export interface SocialAdapter {
     token: string,
     query: LinkedInAnalyticsQuery,
   ): Promise<LinkedInAnalyticsResult>;
+  linkedinLiveComments?(
+    account: SocialAccount,
+    token: string,
+    eventId: string,
+    offset: number,
+  ): Promise<LinkedInLiveCommentsPage>;
   linkedinManage?(
     account: SocialAccount,
     token: string,

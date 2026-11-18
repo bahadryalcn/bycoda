@@ -75,6 +75,7 @@ export function AccountConnection({
   );
   const [browser, setBrowser] = useState<BrowserState>();
   const [oauth, setOAuth] = useState<OAuthState>();
+  const [linkedinLiveComments, setLinkedinLiveComments] = useState(false);
   const [operations, setOperations] = useState<SocialOperation[]>(() =>
     account.platform === "linkedin" &&
     account.accountType === "member" &&
@@ -121,6 +122,7 @@ export function AccountConnection({
         account.id,
         isOrganization ? resourceId : undefined,
         requestedOperations,
+        ...(linkedinLiveComments ? [true as const] : []),
       );
       setOAuth({ status: "waiting", candidates: [] });
       await openExternal(begin.url);
@@ -242,6 +244,14 @@ export function AccountConnection({
                   }
                 />
               ))}
+              {account.platform === "linkedin" && isOrganization ? (
+                <Checkbox
+                  label={t("LinkedIn Live comments")}
+                  checked={linkedinLiveComments}
+                  disabled={locked}
+                  onChange={(event) => setLinkedinLiveComments(event.target.checked)}
+                />
+              ) : null}
             </FieldGroup>
           </Disclosure>
           {!requestedOperations.length ? (

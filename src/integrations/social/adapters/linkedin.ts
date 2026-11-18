@@ -18,6 +18,7 @@ import {
   prepareLinkedInVideo,
 } from "./linkedin-formats";
 import { manageLinkedIn } from "./linkedin-manage";
+import { readLinkedInLiveComments } from "./linkedin-live-comments";
 
 const ownPostUrn = (value: unknown): value is string =>
   typeof value === "string" && /^urn:li:(?:share|ugcPost):[1-9]\d{0,24}$/.test(value);
@@ -45,6 +46,9 @@ export function createLinkedInAdapter(http: SocialHttp, linkedinVersion: string)
     },
     linkedinManage(account, token, action, beforeSubmit) {
       return manageLinkedIn(http, linkedinVersion, account, token, action, beforeSubmit);
+    },
+    linkedinLiveComments(account, token, eventId, offset) {
+      return readLinkedInLiveComments(http, linkedinVersion, account, token, eventId, offset);
     },
     async send(account, job, token, media, checkpoint, beforeSubmit) {
       const headers = {

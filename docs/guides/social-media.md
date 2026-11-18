@@ -63,4 +63,8 @@ For a scheduled LinkedIn Live event, open **Live Studio** and check eligibility 
 selected Page or profile. Copy the destination into **LinkedIn Live** for encrypted storage on
 the account's Host. Start and end the broadcast in LinkedIn Studio with a compatible encoder.
 
+For an OAuth Company Page with Event Management and Community Management access, enable
+**LinkedIn Live comments** in the connection permissions and reconnect. In the **LinkedIn Live**
+panel, enter the event ID and load comments.
+
 For supported platforms, restrictions and Host/API contracts, see [Social integration](../integrations/social.md).

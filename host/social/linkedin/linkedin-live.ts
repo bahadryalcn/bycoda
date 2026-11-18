@@ -1,5 +1,6 @@
 import {
   LINKEDIN_LIVE_CONFIRM,
+  LINKEDIN_LIVE_EVENT_ID,
   LINKEDIN_LIVE_STUDIO,
   type LinkedInLiveStatus,
 } from "../../../src/integrations/social/live-linkedin";
@@ -7,7 +8,7 @@ import type { SocialAccount } from "../../../src/features/social/model/social";
 import { SocialPlatformError } from "../../../src/integrations/social/adapter";
 import type { SecretValueStore } from "../../secrets/secret-store";
 import type { SocialActionContext, SocialActionModule } from "../core/social-actions";
-import { exact, hash, str } from "../core/social-helpers";
+import { exact, finite, hash, str } from "../core/social-helpers";
 
 type Destination = {
   version: 1;
@@ -20,7 +21,7 @@ type Destination = {
 
 /** Account-bound vault ref. The URL can itself contain signed credentials. */
 const vaultRef = (accountId: string) => `social.linkedin.live.${hash(accountId)}`;
-const eventIdPattern = /^[1-9][0-9]{0,24}$/;
+const eventIdPattern = LINKEDIN_LIVE_EVENT_ID;
 
 function vault(ctx: SocialActionContext): SecretValueStore {
   if (!ctx.emailSecrets) throw new Error("LinkedIn Live credential store unavailable.");
@@ -159,7 +160,42 @@ async function clear(ctx: SocialActionContext, input: Record<string, unknown>) {
   return { cleared: true };
 }
 
+async function comments(ctx: SocialActionContext, input: Record<string, unknown>) {
+  exact(input, ["accountId", "eventId", "offset"]);
+  const accountId = str(input.accountId, "account");
+  const eventId = str(input.eventId, "LinkedIn Live event ID", 25);
+  const offset = finite(input.offset ?? 0, "comment offset", 0, 100_000);
+  if (!eventIdPattern.test(eventId) || !Number.isInteger(offset))
+    throw new SocialPlatformError("rejected");
+  const account = await accountFor(ctx, accountId);
+  if (account.connection !== "oauth" || account.accountType !== "organization")
+    throw new SocialPlatformError("unsupported");
+  const binding = await connectionBinding(ctx, account);
+  if (!binding) throw new SocialPlatformError("expired");
+  const adapter = ctx.service.adapterFor(account);
+  if (!adapter.linkedinLiveComments) throw new SocialPlatformError("unsupported");
+  const credential = await ctx.service.credentialFor(accountId);
+  if (!credential || (credential.expiresAt !== undefined && credential.expiresAt <= ctx.now()))
+    throw new SocialPlatformError("expired");
+  const verify = async () => {
+    const current = await accountFor(ctx, accountId);
+    if ((await connectionBinding(ctx, current)) !== binding)
+      throw new SocialPlatformError("denied");
+    return current;
+  };
+  const current = await verify();
+  const result = await adapter.linkedinLiveComments(
+    current,
+    credential.accessToken,
+    eventId,
+    offset,
+  );
+  await verify();
+  return result;
+}
+
 export const linkedinLiveActions: SocialActionModule = {
+  "linkedin.live.comments.read": { readOnly: true, ownerOnly: true, run: comments },
   "linkedin.live.status": { readOnly: true, ownerOnly: false, tool: true, run: status },
   "linkedin.live.credentials.save": { readOnly: false, ownerOnly: true, run: save },
   "linkedin.live.credentials.clear": { readOnly: false, ownerOnly: true, run: clear },
