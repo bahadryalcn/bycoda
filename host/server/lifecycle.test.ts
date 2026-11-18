@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { BOOT_OPTIONAL_READY_MS } from "./boot-phases";
 import { armShutdownDeadline, createLifecycleRuntime, shutdownExitCode } from "./lifecycle";
 
 vi.mock("../assistant/observations/assistant-observation-producers", () => ({
@@ -99,5 +100,28 @@ describe("shutdownExitCode", () => {
     expect(shutdownExitCode("SIGTERM", true)).toBe(1);
     expect(shutdownExitCode("SIGINT", true)).toBe(1);
     expect(shutdownExitCode("SIGTERM", false)).toBe(0);
+  });
+});
+
+describe("host boot recovery", () => {
+  it("does not hold start-up behind a wedged optional service", async () => {
+    vi.useFakeTimers();
+    const wedged = new Promise<void>(() => undefined);
+    const runtime = createLifecycleRuntime(
+      dependenciesWith({
+        social: { ready: wedged, dispose: () => undefined, stop: () => undefined },
+        socialPeers: { ready: Promise.resolve() },
+        providerInbox: { ready: wedged },
+      }) as never,
+      () => undefined,
+    );
+    let booted = false;
+    void runtime.then(() => {
+      booted = true;
+    });
+    await vi.advanceTimersByTimeAsync(BOOT_OPTIONAL_READY_MS - 1);
+    expect(booted).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(booted).toBe(true);
   });
 });
