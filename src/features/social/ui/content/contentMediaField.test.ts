@@ -120,6 +120,18 @@ describe("Instagram public media", () => {
 });
 
 describe("attaching files", () => {
+  it("routes WebM selected for a YouTube API account to its large-video upload path", async () => {
+    const video = new File(["000000000000"], "youtube.webm", { type: "video/webm" });
+    Object.defineProperty(video, "size", { value: 70 * 1024 ** 2 });
+    render({ youtubeAccountId: "youtube-api" });
+    expect(fileInput().accept).toContain("video/webm");
+    choose(video);
+    await flush();
+    expect(uploadVideo).toHaveBeenCalledWith(video, undefined, "youtube-api");
+    expect(onChange).toHaveBeenCalledWith([
+      expect.objectContaining({ youtubeApiOnly: true, media: { kind: "video", uploadId: "v1" } }),
+    ]);
+  });
   it("uploads a PNG and adds it after the media already attached", async () => {
     render({ media: [saved("old")] });
     choose(png());

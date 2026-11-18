@@ -20,6 +20,7 @@ Paths are repository-root relative. Follow current imports and callers; this map
 - `host/decision-models/`: decision gateway for the browser decision layer and AI tools (own skill: `feature-decision-models`).
 - Contracts: `docs/integrations/social.md`, `social-programs.md`, `decision-models.md`.
 - Platform actions: `host/social/{youtube,tiktok,linkedin,facebook-live}/`, `core/facebook-page-actions.ts`, adapters in `src/integrations/social/adapters/`. Live, Business and stream credentials stay in per-account Host vault entries; keep owner mutations and credential setup off session tools.
+- YouTube upload session URLs stay in the Host vault.
 
 ## Preserve
 

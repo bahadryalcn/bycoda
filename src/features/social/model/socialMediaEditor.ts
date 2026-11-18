@@ -163,11 +163,14 @@ export async function uploadForSocialEditor(
   client: SocialClient,
   file: File,
   progress?: (percent: number) => void,
+  youtubeAccountId?: string,
 ): Promise<ManagedSocialUpload> {
   editor.invalidate();
   const version = editor.version();
   const upload = file.type.startsWith("video/")
-    ? await client.uploadVideo(file, progress)
+    ? await (youtubeAccountId
+        ? client.uploadVideo(file, progress, youtubeAccountId)
+        : client.uploadVideo(file, progress))
     : file.type === "application/pdf"
       ? await client.uploadDocument(file)
       : await client.upload(file);

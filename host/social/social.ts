@@ -68,7 +68,7 @@ import { receiveWebhook } from "./inbox/social-webhooks";
 import { runOutreachTick } from "./outreach/outreach-tick";
 import { forEachAsync, mapAsync } from "../async-collections";
 import { randomUUID, randomBytes, timingSafeEqual, createHmac } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { open } from "node:fs/promises";
 import { SocialMediaCustody } from "./media-custody";
 import { SocialMediaQuarantine } from "./media-quarantine";
 import { SocialJobArchive } from "./social-job-archive";
@@ -141,7 +141,8 @@ import {
   parseInstagramPublishOptions,
 } from "../../src/integrations/social/adapters/instagram-publish";
 import type { SocialCredentialStore, SocialCredential } from "./social-credentials";
-import { SocialVideoUploads } from "./social-media";
+import { SOCIAL_BUFFERED_VIDEO_BYTES, SocialVideoUploads } from "./social-media";
+import { youtubeDiskUpload } from "./youtube/youtube-upload-source";
 import { mergeDelivery, type WhatsAppReceipt } from "./social-delivery";
 import {
   DEFAULT_SOCIAL_POLICIES,
@@ -2516,6 +2517,7 @@ export class SocialService implements SocialServiceApi {
           job.preparation?.tiktokPublishId ||
           job.preparation?.youtubeVideoId ||
           job.preparation?.snapchatMedia?.submittedAt !== undefined ||
+          job.preparation?.youtubeUploadPending ||
           job.preparation?.snapchatMedia?.spotlightId ||
           job.preparation?.facebookReel?.stage === "submitted" ||
           job.preparation?.facebookMedia?.stage === "submitted"
@@ -5177,12 +5179,31 @@ export class SocialService implements SocialServiceApi {
         this.store.db.checkAuthorization(),
       );
       await this.store.db.checkAuthorization();
-      return this.videoUploads.call(p.actorId, input);
+      let youtubeApi = false;
+      if (input.mode === "begin" && input.youtubeAccountId !== undefined) {
+        const account = await this.account(str(input.youtubeAccountId, "YouTube account"));
+        youtubeApi =
+          account.platform === "youtube" &&
+          account.connection !== "browser" &&
+          account.connected &&
+          account.accessApproved &&
+          account.executorId === this.store.environmentId;
+        if (!youtubeApi) throw new Error("Large videos require a YouTube API connection.");
+        this.capability(account, "media");
+      }
+      return this.videoUploads.call(p.actorId, input, youtubeApi);
     });
   }
   private async readMedia(id: string): Promise<Uint8Array> {
     if (!/^[a-f0-9-]{36}$/.test(id)) throw new Error("Invalid media ID.");
-    return readFile(join(this.directory, "media", id));
+    const file = await open(join(this.directory, "media", id), "r");
+    try {
+      if ((await file.stat()).size > SOCIAL_BUFFERED_VIDEO_BYTES)
+        throw new SocialPlatformError("unsupported");
+      return await file.readFile();
+    } finally {
+      await file.close();
+    }
   }
   async credentialFor(accountId: string): Promise<SocialCredential | undefined> {
     const initial = await this.credentials.get(accountId);
@@ -5284,9 +5305,26 @@ export class SocialService implements SocialServiceApi {
     for await (const page of this.jobArchive.jobPages("status='running'", [])) {
       if (epoch !== this.backgroundEpoch) return;
       for (const job of page) {
-        job.status = "review";
-        job.error =
-          "Host restarted during a send. Reconcile the platform result before another send.";
+        // Only the same YouTube upload session or accepted video can be reconciled automatically.
+        const youtubeAccount =
+          job.kind === "publish" &&
+          job.payload.youtube &&
+          (job.preparation?.youtubeUploadPending || job.preparation?.youtubeVideoId)
+            ? await this.get<SocialAccount>("account", job.accountId).catch(() => undefined)
+            : undefined;
+        if (
+          youtubeAccount?.platform === "youtube" &&
+          youtubeAccount.connection !== "browser" &&
+          youtubeAccount.executorId === this.store.environmentId
+        ) {
+          job.status = "queued";
+          job.scheduledAt = this.now();
+          delete job.error;
+        } else {
+          job.status = "review";
+          job.error =
+            "Host restarted during a send. Reconcile the platform result before another send.";
+        }
         await this.writeJob(job);
         if (epoch !== this.backgroundEpoch) return;
       }
@@ -5907,6 +5945,11 @@ export class SocialService implements SocialServiceApi {
               await this.writeJob(job);
             },
             check,
+            target.platform === "youtube" &&
+              target.connection !== "browser" &&
+              job.kind === "publish"
+              ? youtubeDiskUpload(this.directory, this.credentials, target, job)
+              : undefined,
           ),
       );
       if (!result.platformId) throw new SocialPlatformError("unknown");
@@ -5988,6 +6031,7 @@ export class SocialService implements SocialServiceApi {
             !job.preparation?.tiktokPublishId &&
             !job.preparation?.youtubeVideoId &&
             job.preparation?.snapchatMedia?.submittedAt === undefined &&
+            !job.preparation?.youtubeUploadPending &&
             !job.preparation?.snapchatMedia?.spotlightId &&
             job.preparation?.facebookReel?.stage !== "submitted" &&
             job.preparation?.facebookMedia?.stage !== "submitted"

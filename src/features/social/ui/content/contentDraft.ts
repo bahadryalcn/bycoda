@@ -20,6 +20,8 @@ export type ContentMedia = {
   name: string;
   media: SocialMedia;
   probe?: MediaProbe;
+  /** Large attachments require disk streaming through the YouTube API. */
+  youtubeApiOnly?: true;
   /** Managed media claim, released when the attachment is removed. */
   mediaId?: string;
 };

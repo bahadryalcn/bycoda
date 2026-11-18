@@ -554,6 +554,8 @@ export type SocialJob = {
       submittedAt?: number;
     };
     tiktokPublishId?: string;
+    /** YouTube session URL is held by the Host credential store. */
+    youtubeUploadPending?: true;
     youtubeVideoId?: string;
     youtubeVisibility?: "private" | "unlisted" | "public";
     xVideo?: { id: string; expiresAt: number };

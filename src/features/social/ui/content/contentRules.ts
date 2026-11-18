@@ -512,6 +512,11 @@ export function draftProblems(input: RuleInput): Problem[] {
           add(t("Attach one image for the article thumbnail."));
       }
     }
+    if (
+      draft.media.some((item) => item.youtubeApiOnly) &&
+      (account.platform !== "youtube" || account.connection === "browser")
+    )
+      add(t("Large videos require a YouTube API connection."));
     if (account.platform === "facebook")
       for (const text of facebookProblems(platform?.facebook, draft, now)) add(text);
     if (account.platform === "tiktok")

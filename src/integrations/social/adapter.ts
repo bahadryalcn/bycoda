@@ -20,6 +20,7 @@ import type { LinkedInLiveCommentsPage } from "./live-linkedin";
 import { META_RATE_LIMIT_CODES } from "./meta-codes";
 import type { InstagramInsightInput, InstagramInsightResult } from "./adapters/instagram-insights";
 import type { CommentAction } from "./adapters/meta-extended";
+import type { YouTubeUploadAccess } from "./youtube-upload";
 
 export type {
   Capability,
@@ -144,6 +145,8 @@ export interface SocialAdapter {
     checkpoint?: (state: NonNullable<SocialJob["preparation"]>) => void | Promise<void>,
     /** Long browser flows must revalidate Stop, policy and grants immediately before submitting. */
     beforeSubmit?: () => Promise<void>,
+    // YouTube uses a disk reader and Host-only resumable session custody.
+    youtubeUpload?: YouTubeUploadAccess,
   ): Promise<SocialSendResult>;
   poll(
     account: SocialAccount,
@@ -366,7 +369,7 @@ export class SocialHttp {
     url: string,
     token: string,
     options: RequestInit = {},
-  ): Promise<{ value: Record<string, any>; headers: Headers }> {
+  ): Promise<{ value: Record<string, any>; headers: Headers; youtubeIncomplete?: true }> {
     const parsed = new URL(url);
     if (
       parsed.protocol !== "https:" ||
@@ -393,12 +396,18 @@ export class SocialHttp {
           !/^\/v\d{1,3}\.\d{1,2}\/[1-9]\d{0,24}\/videos$/.test(parsed.pathname)))
     )
       throw new SocialPlatformError("denied");
+    // YouTube returns 308 without a redirect for incomplete chunk transfers.
+    const youtubeTransfer =
+      parsed.origin === "https://www.googleapis.com" &&
+      parsed.pathname === "/upload/youtube/v3/videos" &&
+      parsed.searchParams.has("upload_id") &&
+      options.method === "PUT";
     let response: Response;
     try {
       response = await this.fetcher(url, {
         ...options,
         headers: { Authorization: `Bearer ${token}`, ...options.headers },
-        redirect: "error",
+        redirect: youtubeTransfer ? "manual" : "error",
         signal: AbortSignal.timeout(
           requestTimeout(
             options.body,
@@ -411,6 +420,15 @@ export class SocialHttp {
       });
     } catch {
       throw new SocialPlatformError("unknown");
+    }
+    // Google resumable YouTube video upload responses.
+    if (youtubeTransfer) {
+      if (response.status === 308 && !response.headers.has("location"))
+        return { value: {}, headers: response.headers, youtubeIncomplete: true };
+      if (response.status === 404 || response.status === 410)
+        throw new SocialPlatformError("unknown", undefined, {
+          reasonCode: "youtube_upload_session_expired",
+        });
     }
     if (response.status === 401) throw new SocialPlatformError("expired");
     if (response.status === 403) {

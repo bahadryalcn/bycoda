@@ -30,6 +30,7 @@ export type ContentMediaFieldProps = {
   instagramMedia?: "public-only" | "mixed";
   onChange: (next: ContentMedia[]) => void;
   onBusyChange?: (busy: boolean) => void;
+  youtubeAccountId?: string;
 };
 
 /** Attach images or one video. Rules per platform are checked in the preview and the publish gate. */
@@ -44,6 +45,7 @@ export function ContentMediaField({
   instagramMedia,
   onChange,
   onBusyChange,
+  youtubeAccountId,
 }: ContentMediaFieldProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -78,12 +80,19 @@ export function ContentMediaField({
       // Refuse the whole pick before any upload, so a batch with one bad file uploads nothing.
       if (instagramMedia && media.length + files.length > INSTAGRAM_CAROUSEL_MAX)
         throw new Error(t("Instagram carousel supports up to 20 images and videos."));
-      const types = [...IMAGE_TYPES, VIDEO_TYPE, ...(allowDocument ? [PDF_TYPE] : [])];
+      const types = [
+        ...IMAGE_TYPES,
+        VIDEO_TYPE,
+        ...(allowDocument ? [PDF_TYPE] : []),
+        ...(youtubeAccountId ? ["video/webm"] : []),
+      ];
       if (files.some((file) => !types.includes(file.type)))
         throw new Error(
           allowDocument
             ? t("Use JPEG or PNG images, one MP4 video, or one PDF document.")
-            : t("Use JPEG or PNG images, or one MP4 video."),
+            : youtubeAccountId
+              ? t("Use JPEG or PNG images, or one MP4 or WebM video.")
+              : t("Use JPEG or PNG images, or one MP4 video."),
         );
       if (
         (files.some((file) => file.type === PDF_TYPE) ||
@@ -93,9 +102,15 @@ export function ContentMediaField({
         throw new Error(t("Attach one PDF document by itself."));
       const added: ContentMedia[] = [];
       for (const file of files) {
-        const upload = await uploadForSocialEditor(editor, client, file);
-        const isVideo = file.type === VIDEO_TYPE;
         const isDocument = file.type === PDF_TYPE;
+        const upload = await uploadForSocialEditor(
+          editor,
+          client,
+          file,
+          undefined,
+          youtubeAccountId,
+        );
+        const isVideo = file.type.startsWith("video/");
         const probe = isVideo ? await probeVideo(file).catch(() => undefined) : undefined;
         added.push({
           localId: upload.uploadId,
@@ -106,6 +121,7 @@ export function ContentMediaField({
             ...(isDocument ? { title: file.name.replace(/\.pdf$/i, "").slice(0, 58) } : {}),
           },
           probe,
+          ...(isVideo && file.size > 64 * 1024 * 1024 ? { youtubeApiOnly: true } : {}),
           mediaId: upload.managed?.mediaId,
         });
       }
@@ -158,7 +174,9 @@ export function ContentMediaField({
           accept={
             allowDocument
               ? "image/jpeg,image/png,video/mp4,application/pdf"
-              : "image/jpeg,image/png,video/mp4"
+              : youtubeAccountId
+                ? "image/jpeg,image/png,video/mp4,video/webm"
+                : "image/jpeg,image/png,video/mp4"
           }
           disabled={disabled || busy || atInstagramLimit}
           description={disabledReason ?? (busy ? t("Uploading…") : undefined)}
@@ -167,7 +185,9 @@ export function ContentMediaField({
               ? t("JPEG, PNG or MP4 files.")
               : allowDocument
                 ? t("Use JPEG or PNG images, one MP4 video, or one PDF document.")
-                : t("JPEG or PNG images, or one MP4 video.")
+                : youtubeAccountId
+                  ? t("Use JPEG or PNG images, or one MP4 or WebM video.")
+                  : t("JPEG or PNG images, or one MP4 video.")
           }
           error={error}
           onFiles={(files) =>

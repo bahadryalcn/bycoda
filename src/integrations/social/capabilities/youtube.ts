@@ -12,7 +12,7 @@ export function youtubeCapabilities(): PlatformCapabilities {
     ),
     media: r(
       [upload, read],
-      "This adapter accepts one host-uploaded MP4/WebM video up to 64 MiB. Platform processing is separate from upload acceptance.",
+      "This adapter streams one host-uploaded MP4 or WebM video up to 256 GiB. Platform processing is separate from upload acceptance.",
     ),
     "comments.read": r(
       [read],

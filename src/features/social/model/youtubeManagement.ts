@@ -12,6 +12,7 @@ export const YOUTUBE_READ_TOOLS = [
   "youtube.liveChat.list",
   "youtube.superChats.list",
   "youtube.operation.status",
+  "youtube.community.list",
 ] as const;
 
 export const YOUTUBE_WRITE_TOOLS = [
@@ -32,6 +33,7 @@ export const YOUTUBE_WRITE_TOOLS = [
   "youtube.liveChat.ban",
   "youtube.liveChat.unban",
   "youtube.community.publish",
+  "youtube.community.edit",
 ] as const;
 
 export const YOUTUBE_OWNER_WRITES = [
@@ -39,6 +41,7 @@ export const YOUTUBE_OWNER_WRITES = [
   "youtube.video.delete",
   "youtube.playlist.delete",
   "youtube.comment.delete",
+  "youtube.community.delete",
 ] as const;
 
 export type YouTubeWriteAction =

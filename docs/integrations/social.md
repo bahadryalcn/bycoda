@@ -344,9 +344,12 @@ Analytics requires the YouTube Analytics API and its activity scope. Estimated
 earnings require the monetary scope and an eligible channel. See the
 [channel report definitions](https://developers.google.com/youtube/analytics/channel_reports).
 
-For standard channels, Studio recipes cover Community text, image and poll
-posts, comment likes and hearts, profile identity fields and the Earn status.
-The public Posts API is in limited preview for eligible partners.
+For standard channels, YouTube's browser creator controls cover publishing and
+scheduling Community text, image and poll posts. List published and scheduled
+posts on the verified channel, edit their text while preserving attachments, and
+delete them with owner confirmation. Browser recipes also handle comment likes
+and hearts, profile identity fields and the Studio Earn status. The Posts API
+is in limited preview for eligible partners and currently publishes immediately.
 [Google Posts API](https://developers.google.com/youtube/data/reference/rest/v3/posts).
 
 The quota status reports the Host adapter's observed shared units, search calls
@@ -377,16 +380,18 @@ Comments and replies use `youtube.force-ssl`. Existing upload-only connections n
 reconnection for the read permission. Google account and Brand-channel choice happens in
 Google's flow; ambiguous channel enumeration is rejected.
 
-Upload: the host receives the file in 1 MiB chunks, verifies the current channel, starts
-a resumable upload and sends one final PUT. As soon as YouTube returns a video ID, the
-host checkpoints that ID. Later attempts never upload the file again. They read
-`videos.list` (`processingDetails,status,snippet`) for the same ID and verify the owning
-channel. Success requires completed processing and the current visibility. Failed,
-rejected or deleted states fail without discarding the ID. Missing or mismatched
-evidence goes to review. The result reports the actual returned privacy. The local
-64 MiB limit is an adapter bound, not YouTube's maximum. Quota errors back off for six
-hours or the supplied Retry-After. The upload-session URI is not persisted, so an
-interruption before a video ID exists is an uncertain outcome for review.
+YouTube API uploads accept one MP4 or WebM file up to 256 GiB. The desktop sends the
+selected file to the Host in 1 MiB chunks. The Host verifies the channel, then reads
+from disk and transfers at most 8 MiB per Google request. Browser video uploads still
+use the 64 MiB staged upload path.
+
+The Host writes the Google session URL to its encrypted credential store before sending
+video bytes. The session is bound to the approved job, channel, executor and exact file.
+After interruption or Host restart, the same job probes the session and resumes from
+Google's acknowledged byte offset. An expired or unidentifiable session goes to review.
+After Google returns a video ID, the Host checkpoints that ID and uses `videos.list`
+to verify ownership, processing and visibility. The job reports the returned visibility.
+Quota errors use the existing backoff.
 
 Polling reads at most four comment or reply pages per account sync with a durable cursor.
 A thread with `canReply=false` cannot receive a reply. Video-change push notifications do

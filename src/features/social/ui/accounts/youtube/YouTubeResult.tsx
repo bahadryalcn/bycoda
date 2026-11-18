@@ -6,6 +6,7 @@ import { EmptyState } from "../../../../../shared/ui/EmptyState";
 import { InlineMessage } from "../../../../../shared/ui/InlineError";
 import { DataTable, DataTableRow } from "../../../../../shared/ui/SortableDataTable";
 import type { YouTubeOperation } from "../../../model/youtubeManagement";
+import { youtubeForms, youtubeSections, type YouTubeSection } from "./youtubeForms";
 
 export function asYoutubeRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -15,6 +16,8 @@ export function asYoutubeRecord(value: unknown): Record<string, unknown> | undef
 
 function label(key: string): string {
   switch (key) {
+    case "action":
+      return t("Action");
     case "title":
       return t("Title");
     case "day":
@@ -26,20 +29,105 @@ function label(key: string): string {
     case "handle":
       return t("Handle");
     case "status":
+    case "moderationStatus":
       return t("Status");
     case "description":
       return t("Description");
     case "channelId":
+    case "authorChannelId":
+    case "targetChannelId":
       return t("Channel ID");
     case "videoId":
       return t("Video ID");
+    case "postId":
+      return t("Community post ID");
+    case "playlistId":
+      return t("Playlist ID");
+    case "playlistItemId":
+      return t("Playlist item ID");
+    case "categoryId":
+      return t("Category ID");
+    case "commentId":
+      return t("Comment ID");
+    case "parentId":
+      return t("Parent comment ID");
+    case "broadcastId":
+      return t("Broadcast ID");
+    case "messageId":
+      return t("Message ID");
+    case "replyToMessageId":
+      return t("Reply to message ID");
+    case "banId":
+      return t("Ban ID");
+    case "streamId":
+      return t("Stream ID");
+    case "chatId":
+      return t("Live chat ID");
     case "privacyStatus":
     case "privacy":
       return t("Privacy");
     case "text":
       return t("Text");
+    case "editedText":
+      return t("Post text");
+    case "message":
+      return t("Message");
     case "authorName":
       return t("Author");
+    case "url":
+      return t("Link");
+    case "links":
+      return t("Links");
+    case "country":
+      return t("Country code");
+    case "keywords":
+      return t("Keywords");
+    case "avatarUrl":
+    case "avatarUploadId":
+      return t("Avatar");
+    case "bannerUrl":
+    case "bannerUploadId":
+      return t("Banner");
+    case "uploadId":
+      return t("Thumbnail");
+    case "imageUploadIds":
+      return t("Images");
+    case "madeForKids":
+      return t("Made for kids");
+    case "containsSyntheticMedia":
+      return t("Contains altered or synthetic content");
+    case "tags":
+      return t("Tags");
+    case "position":
+      return t("Position");
+    case "kind":
+      return t("Format");
+    case "choices":
+      return t("Poll options");
+    case "input":
+      return t("Input");
+    case "patch":
+      return t("Changes");
+    case "reaction":
+      return t("Reaction");
+    case "enabled":
+      return t("Enabled");
+    case "changed":
+      return t("Changed");
+    case "wouldChange":
+      return t("Would change");
+    case "deleted":
+      return t("Deleted");
+    case "subscribed":
+      return t("Subscribed");
+    case "durationSeconds":
+      return t("Duration (seconds)");
+    case "currency":
+      return t("Currency code");
+    case "type":
+      return t("Type");
+    case "replyCount":
+      return t("Replies");
     case "views":
       return t("Views");
     case "estimatedMinutesWatched":
@@ -50,24 +138,123 @@ function label(key: string): string {
       return t("Subscribers lost");
     case "estimatedRevenue":
       return t("Estimated earnings");
+    case "estimatedAdRevenue":
+      return t("Estimated ad revenue");
+    case "monetizedPlaybacks":
+      return t("Monetized playbacks");
+    case "cpm":
+      return t("Ad cost per 1,000 impressions");
+    case "insightTrafficSourceType":
+      return t("Traffic source");
+    case "comments":
+      return t("Comments");
+    case "likes":
+      return t("Likes");
     case "publishedAt":
       return t("Published");
+    case "publishAt":
+      return t("Publish time");
+    case "at":
+    case "createdAt":
+      return t("Created");
     case "scheduledStartTime":
       return t("Start time");
     case "rtmpUrl":
       return t("RTMP URL");
     case "credentialRef":
       return t("Stream credential reference");
+    case "ingest":
+      return t("Encoder setup");
+    case "broadcast":
+      return t("Live broadcast");
+    case "monitorStreamEnabled":
+      return t("Stream monitor enabled");
+    case "displayAmount":
+      return t("Amount");
+    case "amountMicros":
+      return t("Amount (millionths)");
+    case "supporter":
+      return t("Supporter");
+    case "superChat":
+      return t("Super Chat payment");
+    case "isSticker":
+      return t("Super Sticker payment");
+    case "stage":
+      return t("Stage");
+    case "code":
+      return t("Error code");
     case "searchCalls":
       return t("Search calls");
     case "uploadCalls":
       return t("Video uploads");
     case "units":
+    case "writeQuotaUnits":
       return t("Data API units");
     case "limits":
       return t("Limits");
     default:
       return key.replace(/([a-z])([A-Z])/g, "$1 $2");
+  }
+}
+
+function actionText(value: string): string {
+  if (value === "subscribe") return t("Subscribe");
+  if (value === "unsubscribe") return t("Unsubscribe");
+  if (value.startsWith("youtube.")) {
+    for (const browser of [false, true]) {
+      for (const { value: section } of youtubeSections(browser)) {
+        const form = youtubeForms(section as YouTubeSection, browser).find(
+          (item) => item.action === value,
+        );
+        if (form) return form.label;
+      }
+    }
+  }
+  return value;
+}
+
+function statusText(value: unknown): string | undefined {
+  switch (value) {
+    case "ready":
+      return t("Ready");
+    case "testing":
+      return t("Testing");
+    case "testStarting":
+    case "liveStarting":
+      return t("Starting");
+    case "live":
+      return t("Live");
+    case "complete":
+    case "done":
+      return t("Completed");
+    case "rejected":
+      return t("Failed");
+    case "awaiting_approval":
+      return t("Waiting for your approval.");
+    case "submitted":
+      return t("Submitted");
+    case "unknown":
+      return t("Unknown");
+    case "created":
+      return t("Created");
+    case "partial":
+      return t("Partial");
+    case "published":
+      return t("Published");
+    case "scheduled":
+      return t("Scheduled");
+    case "heldForReview":
+      return t("Held for review");
+    case "likelySpam":
+      return t("Likely spam");
+    case "eligible":
+      return t("Eligible for monetization");
+    case "ineligible":
+      return t("Ineligible for monetization");
+    case "active":
+      return t("Active");
+    case "pending":
+      return t("Pending");
   }
 }
 
@@ -77,14 +264,28 @@ function cell(value: unknown, key?: string): string {
     if (value === "private") return t("Private");
     if (value === "unlisted") return t("Unlisted");
   }
-  if (key === "status") {
-    if (value === "ready") return t("Ready");
-    if (value === "testing") return t("Testing");
-    if (value === "live") return t("Live");
-    if (value === "complete" || value === "done") return t("Completed");
-    if (value === "rejected") return t("Failed");
+  if (key === "status" || key === "moderationStatus") {
+    if (key === "moderationStatus" && value === "rejected") return t("Hidden");
+    const localized = statusText(value);
+    if (localized) return localized;
   }
-  if (typeof value === "number") return formatNumber(value);
+  if (key === "action" && typeof value === "string") return actionText(value);
+  if (key === "reaction") {
+    if (value === "like") return t("Like");
+    if (value === "heart") return t("Heart");
+  }
+  if (key === "kind") {
+    if (value === "text") return t("Text");
+    if (value === "image") return t("Image");
+    if (value === "poll") return t("Poll");
+  }
+  if (key === "type") {
+    if (value === "textMessageEvent") return t("Message");
+    if (value === "superChatEvent") return t("Super Chat payment");
+    if (value === "superStickerEvent") return t("Super Sticker payment");
+  }
+  if (typeof value === "number")
+    return key === "createdAt" ? formatDate(new Date(value)) : formatNumber(value);
   if (typeof value === "boolean") return value ? t("Yes") : t("No");
   if (typeof value === "string")
     return /^\d{4}-\d{2}-\d{2}T/.test(value) ? formatDate(new Date(value)) : value;

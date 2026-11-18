@@ -170,6 +170,40 @@ describe("YouTube Host management", () => {
     expect(usedBrowser).toHaveBeenCalledOnce();
   });
 
+  it("holds Community edits for approval and requires explicit owner deletion", async () => {
+    const f = await setup();
+    const account = await f.social.account(f.account.id);
+    await f.social.put<SocialAccount>("account", account.id, {
+      ...account,
+      connection: "browser",
+      platformId: `web:youtube:${channelId}`,
+    });
+    const policy = defaultAutonomyPolicy(account.id);
+    policy.levels.publish = "approve";
+    await f.social.audience.putRecord("autonomy", account.id, policy);
+    const usedBrowser = vi.fn();
+    f.social.youtubeBrowser = async (_account, _run, options) => {
+      usedBrowser();
+      await options?.beforeSubmit?.();
+      return undefined as never;
+    };
+    const input = { accountId: account.id, postId: "UgFixturePost001", status: "scheduled" };
+    await expect(
+      f.call("youtube.community.edit", { ...input, editedText: "Revised text" }, f.principal),
+    ).resolves.toMatchObject({ status: "awaiting_approval" });
+    await expect(
+      f.call("youtube.community.delete", { ...input, confirm: true }, f.principal),
+    ).rejects.toThrow();
+    await expect(
+      f.call("youtube.community.delete", { ...input, confirm: false }, owner),
+    ).rejects.toThrow();
+    expect(usedBrowser).not.toHaveBeenCalled();
+    await expect(
+      f.call("youtube.community.delete", { ...input, confirm: true }, owner),
+    ).resolves.toMatchObject({ status: "done" });
+    expect(usedBrowser).toHaveBeenCalledOnce();
+  });
+
   it("keeps an unknown outcome and prevents blind repeats across request IDs", async () => {
     const f = await setup();
     const respond = f.fetcher.getMockImplementation()!;

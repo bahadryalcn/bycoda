@@ -1,5 +1,7 @@
 import { t } from "../../../shared/i18n";
+import { YOUTUBE_MAX_VIDEO_BYTES } from "../../../integrations/social/youtube-upload";
 import { remoteRequest } from "../../connections/model/connections";
+import { classifyRemoteError } from "../../connections/public/remoteFailure";
 import type {
   SocialBrowserIntent,
   SocialBrowserState,
@@ -634,16 +636,41 @@ export function socialClient(machineId: string) {
         base64: btoa(binary),
       });
     },
-    uploadVideo: async (file: File, progress?: (percent: number) => void) => {
-      if (file.size < 12 || file.size > 64 * 1024 * 1024)
-        throw new Error(t("MP4/WebM videos can be at most 64 MiB."));
+    uploadVideo: async (
+      file: File,
+      progress?: (percent: number) => void,
+      youtubeAccountId?: string,
+    ) => {
+      if (
+        file.size < 12 ||
+        file.size > (youtubeAccountId ? YOUTUBE_MAX_VIDEO_BYTES : 64 * 1024 * 1024)
+      )
+        throw new Error(
+          youtubeAccountId
+            ? t("MP4 or WebM videos for YouTube can be at most 256 GiB.")
+            : t("MP4/WebM videos can be at most 64 MiB."),
+        );
       const upload = (params: Record<string, unknown>) =>
         remoteRequest<{ uploadId: string; offset?: number }>(
           machineId,
           "social.media.upload",
           params,
         );
-      const { uploadId } = await upload({ mode: "begin", size: file.size });
+      const { uploadId } = await upload({
+        mode: "begin",
+        size: file.size,
+        ...(youtubeAccountId ? { youtubeAccountId } : {}),
+      }).catch((error: unknown) => {
+        if (youtubeAccountId) {
+          // YouTube staging can reject a connection that changed after file selection.
+          const { message } = classifyRemoteError(error);
+          if (message === "Large videos require a YouTube API connection.")
+            throw new Error(t("Large videos require a YouTube API connection."));
+          if (message === "MP4 or WebM videos for YouTube can be at most 256 GiB.")
+            throw new Error(t("MP4 or WebM videos for YouTube can be at most 256 GiB."));
+        }
+        throw error;
+      });
       try {
         for (let offset = 0; offset < file.size; offset += 1024 * 1024) {
           const bytes = new Uint8Array(

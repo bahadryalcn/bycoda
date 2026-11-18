@@ -59,6 +59,16 @@ export function ContentEditorFields(props: ContentEditorFieldsProps) {
       ? "public-only"
       : "mixed"
     : undefined;
+  const youtubeUploadAccount = selected.every(
+    (account) =>
+      account.platform === "youtube" &&
+      account.connection !== "browser" &&
+      snapshot?.capabilities[account.id]?.some(
+        (item) => item.operation === "media" && item.status === "available",
+      ),
+  )
+    ? selected[0]?.id
+    : undefined;
   const disabled = !!locked;
   // Uploads may finish after this editor unmounts; update its retained workspace current draft.
   const changeMedia = (media: ContentMedia[]) => onDraft((current) => ({ ...current, media }));
@@ -210,6 +220,7 @@ export function ContentEditorFields(props: ContentEditorFieldsProps) {
         allowDocument={
           selected.length > 0 && selected.every((account) => account.platform === "linkedin")
         }
+        youtubeAccountId={youtubeUploadAccount}
         disabled={disabled || mediaBlocked}
         disabledReason={locked ?? (mediaBlocked ? mediaReason : undefined)}
         instagramMedia={instagramMedia}
