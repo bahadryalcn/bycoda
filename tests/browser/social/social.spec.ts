@@ -163,6 +163,94 @@ for (const theme of ["light", "dark"])
       await expect(page.getByRole("dialog").getByLabel("Hakkında", { exact: true })).toBeVisible();
       await capture("signup");
     });
+    test(`Facebook profile uploads and chat approval ${theme} ${width}`, async ({ page }) => {
+      test.setTimeout(60_000);
+      await page.setViewportSize({ width, height: 900 });
+      const open = async (member: boolean) => {
+        await page.goto(
+          `/tests/browser/social/social.html?facebook-page&facebook-profile-controls${member ? "&facebook-member" : ""}`,
+        );
+        await page.evaluate(
+          (light) => document.documentElement.classList.toggle("theme-light", light),
+          theme === "light",
+        );
+        await sections(page).getByRole("tab", { name: "Hesaplar ve Ayarlar" }).click();
+        const name = member ? "Fixture Facebook Profile" : "Fixture Facebook Page";
+        await page.getByRole("button", { name: new RegExp(name) }).click();
+        return page.getByRole("dialog", { name });
+      };
+      const capture = (name: string) =>
+        page.screenshot({
+          path: `temp/verification/social-facebook/${name}-${theme}-${width}.png`,
+          animations: "disabled",
+        });
+      const photo = {
+        name: "owner-cover.png",
+        mimeType: "image/png",
+        buffer: Buffer.from(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zlll1sAAAAASUVORK5CYII=",
+          "base64",
+        ),
+      };
+      const detail = await open(false);
+      await detail.locator("summary").filter({ hasText: "Facebook profil fotoğrafları" }).click();
+      await detail.getByRole("button", { name: /Facebook fotoğraf türü/ }).click();
+      await page.getByRole("option", { name: "Facebook kapak fotoğrafı" }).click();
+      await detail.locator('input[type="file"]').setInputFiles(photo);
+      await expect(detail.getByText(photo.name)).toBeVisible();
+      await capture("page-photo-upload");
+      await detail.getByRole("button", { name: "Kaydet", exact: true }).click();
+      await page
+        .getByRole("dialog", { name: "Facebook kapak fotoğrafı" })
+        .getByRole("button", { name: "Kaydet", exact: true })
+        .click();
+      await expect
+        .poll(() => requests(page, "facebook.page.uploadPhoto"))
+        .toEqual([
+          {
+            accountId: "fixture-facebook",
+            kind: "cover",
+            uploadId: "fixture-image-1",
+            confirm: "UPLOAD_FACEBOOK_PAGE_PHOTO",
+          },
+        ]);
+      await detail.locator("summary").filter({ hasText: "Facebook profil fotoğrafları" }).click();
+      await detail.locator("summary").filter({ hasText: "Facebook talepleri" }).click();
+      await detail.getByRole("button", { name: "Yenile" }).click();
+      await detail.getByRole("button", { name: "Sohbet için onayla" }).click();
+      await page
+        .getByRole("dialog", { name: "Gönderiyi düzenle" })
+        .getByRole("button", { name: "Sohbet için onayla" })
+        .click();
+      await expect(
+        detail.getByText("Bu Facebook değişikliğini uygulamak için sohbete dönün."),
+      ).toBeVisible();
+      await capture("chat-approval");
+      const member = await open(true);
+      await member.locator("summary").filter({ hasText: "Profili düzenle" }).click();
+      const fields = member.getByRole("button", { name: /Profil bilgileri/ });
+      await fields.click();
+      await page.getByRole("option", { name: "Profil adı" }).click();
+      await member.getByLabel("Facebook ikinci ad").fill("Deniz");
+      await capture("personal-name");
+      await fields.click();
+      await page.getByRole("option", { name: "Web sitesi", exact: true }).click();
+      await expect(member.getByLabel(/Facebook’taki mevcut değer/)).toBeVisible();
+      await capture("personal-website");
+      await member.locator("summary").filter({ hasText: "Profili düzenle" }).click();
+      await member.locator("summary").filter({ hasText: "Facebook profil fotoğrafları" }).click();
+      await member
+        .locator('input[type="file"]')
+        .setInputFiles({ ...photo, name: "owner-avatar.png" });
+      await expect(member.getByText("owner-avatar.png")).toBeVisible();
+      await capture("personal-photo-upload");
+      await member.getByRole("button", { name: "Kaydet", exact: true }).click();
+      await page
+        .getByRole("dialog", { name: "Facebook profil resmi" })
+        .getByRole("button", { name: "Kaydet", exact: true })
+        .click();
+      await expect(member.getByText("Kaydedildi", { exact: true })).toBeVisible();
+    });
   }
 
 for (const theme of ["light", "dark"])

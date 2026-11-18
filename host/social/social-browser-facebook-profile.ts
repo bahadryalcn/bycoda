@@ -7,12 +7,23 @@ import type {
 } from "../../src/features/social/model/socialBrowser";
 import { SocialPlatformError } from "../../src/integrations/social/adapter";
 import { detectChallenge, needsHumanError } from "./browser/challenge";
+import { createHash } from "node:crypto";
 import { hash } from "./core/social-helpers";
 import type { SocialService } from "./social";
 
 type Until = <T>(expression: string, timeout: number) => Promise<T | undefined>;
-const avatarLabels = ["Profil resmi işlemleri", "Profile picture actions"];
-const dialogLabels = ["Profil resmi seç", "Select profile picture"];
+const avatarLabels = [
+  "Profil resmi işlemleri",
+  "Profile picture actions",
+  "Change profile picture",
+  "Profil resmini değiştir",
+];
+const dialogLabels = [
+  "Profil resmi seç",
+  "Select profile picture",
+  "Update profile picture",
+  "Profil resmini güncelle",
+];
 const coverLabels = [
   "Edit cover photo",
   "Add cover photo",
@@ -34,9 +45,12 @@ export async function writeFacebookBrowserProfile(
   actor: string,
   patch: FacebookProfilePatch,
   submit: () => Promise<FacebookProfileState>,
+  photoDigest?: string,
 ) {
   const key = `facebook.browser.profile.unconfirmed:${accountId}`;
-  const fingerprint = hash(JSON.stringify([actor, patch]));
+  const fingerprint = hash(
+    JSON.stringify([actor, photoDigest ? [Object.keys(patch)[0], photoDigest] : patch]),
+  );
   const pending = new Set<string>(JSON.parse((await service.setting(key)) ?? "[]"));
   if (pending.has(fingerprint)) throw new SocialPlatformError("unknown");
   pending.add(fingerprint);
@@ -54,11 +68,31 @@ export async function writeFacebookBrowserProfile(
     throw error;
   }
 }
+
+export function facebookProfilePhotoDigest(bytes: Uint8Array) {
+  return createHash("sha256").update(bytes).digest("hex");
+}
 type SettingsField = "name" | "username";
 const settingsLabels = {
   name: ["Name", "Page name", "New Page name", "Ad", "Sayfa adı", "Yeni Sayfa adı"],
   username: ["Username", "Kullanıcı adı"],
 };
+
+function profileWebsite(input: unknown) {
+  if (typeof input !== "string" || input.length > 2048) return;
+  const url = URL.parse(input.trim());
+  if (url?.protocol === "https:" && !url.username && !url.password) return url.href;
+}
+
+function profileDetail(input: unknown) {
+  if (
+    typeof input === "string" &&
+    input.trim() &&
+    [...input.trim()].length <= 100 &&
+    !/[\p{Cc}\p{Cf}]/u.test(input)
+  )
+    return input.trim();
+}
 
 /** One field per confirmed browser action. */
 export function parseFacebookProfilePatch(
@@ -111,23 +145,27 @@ export function parseFacebookProfilePatch(
       !/[\p{Cc}\p{Cf}]/u.test(input.bio)
     )
       return { bio: input.bio.trim() };
-    if (typeof input.website === "string" && input.website.length <= 2048) {
-      const url = URL.parse(input.website.trim());
-      if (url?.protocol === "https:" && !url.username && !url.password)
-        return { website: url.href };
+    const website = profileWebsite(input.website);
+    if (website) return { website };
+    const websiteUpdate = input.websiteUpdate as
+      | Partial<NonNullable<FacebookProfilePatch["websiteUpdate"]>>
+      | undefined;
+    if (websiteUpdate && Object.keys(websiteUpdate).length === 2) {
+      const current = profileWebsite(websiteUpdate.current);
+      const value = profileWebsite(websiteUpdate.value);
+      if (current && value && current !== value) return { websiteUpdate: { current, value } };
     }
     const detail = input.detail as Partial<FacebookDetail> | undefined;
     if (
-      detail &&
-      Object.keys(detail).length === 2 &&
-      detail.field &&
+      detail?.field &&
       Object.hasOwn(detailLabels, detail.field) &&
-      typeof detail.value === "string" &&
-      detail.value.trim() &&
-      [...detail.value.trim()].length <= 100 &&
-      !/[\p{Cc}\p{Cf}]/u.test(detail.value)
-    )
-      return { detail: { field: detail.field, value: detail.value.trim() } };
+      Object.keys(detail).every((key) => ["field", "value", "current"].includes(key))
+    ) {
+      const value = profileDetail(detail.value);
+      const current = profileDetail(detail.current);
+      if (value && (detail.current === undefined || (current && current !== value)))
+        return { detail: { field: detail.field, value, ...(current ? { current } : {}) } };
+    }
   }
   throw new Error("Choose a supported Facebook profile field and valid value.");
 }
@@ -377,6 +415,7 @@ export class FacebookProfileActions {
   private async updateIntro(
     field: "bio" | "website" | FacebookProfileDetail,
     value: string,
+    current?: string,
   ): Promise<FacebookProfileState> {
     const spec =
       field === "bio"
@@ -401,9 +440,29 @@ export class FacebookProfileActions {
       this.control(this.expression(body, spec.section), attr, scope);
     const button = (labels: string[], selector = buttons) =>
       `[...root.querySelectorAll(${JSON.stringify(selector)})].filter(el=>enabled(el)&&${JSON.stringify(labels)}.includes(label(el)))`;
+    const matches = `
+      const matches=(root,value)=>[...root.querySelectorAll(${JSON.stringify(field === "website" ? "a[href]" : "span,p,a")})].filter(el=>{
+        if(!visible(el))return false;
+        if(${field !== "website"})return el.textContent.trim()===value;
+        const url=new URL(el.href);
+        if(url.origin==='https://l.facebook.com'&&url.pathname==='/l.php') {
+          try{return new URL(url.searchParams.get('u')).href===value;}catch{return false;}
+        }
+        return url.href===value;
+      });`;
     await this.page.click(
-      await control(`const root=document;
-      return mark(${button(spec.add)},${JSON.stringify(attr)});`),
+      await control(
+        current
+          ? `${matches}
+        const main=document.querySelector('[role="main"],main');
+        if(!main||matches(main,${JSON.stringify(value)}).length)return;
+        const rows=new Set(matches(main,${JSON.stringify(current)}).map(el=>el.closest('[role="listitem"],li,[role="group"]')).filter(Boolean));
+        if(rows.size!==1)return;
+        const [root]=rows;
+        return mark(${button(["Edit", "Düzenle", ...(field === "website" ? ["Edit website", "İnternet sitesini düzenle"] : [])])},${JSON.stringify(attr)});`
+          : `const root=document;
+           return mark(${button(spec.add)},${JSON.stringify(attr)});`,
+      ),
     );
     const editor = `
       const editors=[...document.querySelectorAll('textarea,input:not([type]),input[type="text"],input[type="url"]')].filter(el=>
@@ -411,7 +470,13 @@ export class FacebookProfileActions {
         [...el.labels||[]].some(el=>${JSON.stringify(spec.input)}.includes(label(el)))));
       if(editors.length!==1)return;
       const editor=editors[0];`;
-    const input = await control(`${editor} return mark(editors,${JSON.stringify(attr)});`);
+    const input = await control(`${editor}
+      if(${JSON.stringify(current ?? null)}!==null){
+        let existing=editor.value.trim();
+        if(${field === "website"}){try{existing=new URL(existing).href;}catch{return;}}
+        if(existing!==${JSON.stringify(current ?? null)})return;
+      }
+      return mark(editors,${JSON.stringify(attr)});`);
     await this.page.fill(input, value);
     if (field !== "bio" && field !== "website") {
       const result = await control(`${editor}
@@ -429,10 +494,8 @@ export class FacebookProfileActions {
       `
       const root=document.querySelector('[role="main"],main');
       if(!root)return;
-      const value=${JSON.stringify(value)};
-      const matches=[...root.querySelectorAll(${JSON.stringify(field === "website" ? "a[href]" : "span,p,a")})].filter(el=>visible(el)&&
-        ${field === "website" ? "el.href===value" : "el.textContent.trim()===value"});
-      return matches.length>0;`,
+      ${matches}
+      return matches(root,${JSON.stringify(value)}).length>0&&(${JSON.stringify(current ?? null)}===null||!matches(root,${JSON.stringify(current ?? null)}).length);`,
       spec.section,
     );
     try {
@@ -626,7 +689,10 @@ export class FacebookProfileActions {
     }
     if (patch.bio !== undefined) return this.updateIntro("bio", patch.bio);
     if (patch.website) return this.updateIntro("website", patch.website);
-    if (patch.detail) return this.updateIntro(patch.detail.field, patch.detail.value);
+    if (patch.websiteUpdate)
+      return this.updateIntro("website", patch.websiteUpdate.value, patch.websiteUpdate.current);
+    if (patch.detail)
+      return this.updateIntro(patch.detail.field, patch.detail.value, patch.detail.current);
     if (!files.avatar || files.banner) throw new SocialPlatformError("rejected");
     await this.open();
     const before = await this.page.evaluate<string | undefined>(this.logoExpression());

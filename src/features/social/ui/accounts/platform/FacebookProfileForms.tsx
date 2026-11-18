@@ -105,6 +105,7 @@ export function FacebookPersonalProfileForm({ account, client }: Props) {
   const t = useT();
   const [field, setField] = useState("bio");
   const [drafts, setDrafts] = useState<Partial<Record<string, string>>>({});
+  const [existing, setExisting] = useState<Partial<Record<string, string>>>({});
   const [name, setName] = useState<FacebookPersonalName>({ first: "", middle: "", last: "" });
   const [saved, setSaved] = useState(false);
   const { error, is, write } = useAccountWrite(t("Could not save this change. Try again."));
@@ -124,12 +125,13 @@ export function FacebookPersonalProfileForm({ account, client }: Props) {
   };
   const label = fields[field as keyof typeof fields];
   const draft = drafts[field] ?? "";
+  const current = existing[field]?.trim();
   const valid =
     field === "name"
       ? Boolean(name.first.trim() && name.last.trim())
       : field === "bio"
         ? drafts.bio !== undefined
-        : Boolean(draft.trim());
+        : Boolean(draft.trim() && draft.trim() !== current);
   const save = async () => {
     if (
       !valid ||
@@ -139,9 +141,19 @@ export function FacebookPersonalProfileForm({ account, client }: Props) {
     const patch: FacebookBrowserProfilePatch =
       field === "name"
         ? { personalName: name }
-        : field === "bio" || field === "website"
-          ? { [field]: draft }
-          : { detail: { field: field as FacebookProfileDetail, value: draft } };
+        : field === "bio"
+          ? { bio: draft }
+          : field === "website"
+            ? current
+              ? { websiteUpdate: { current, value: draft } }
+              : { website: draft }
+            : {
+                detail: {
+                  field: field as FacebookProfileDetail,
+                  value: draft,
+                  ...(current ? { current } : {}),
+                },
+              };
     const result = await write("profile", () =>
       client.browserProfileUpdate(account.id, "facebook", patch),
     );
@@ -159,6 +171,18 @@ export function FacebookPersonalProfileForm({ account, client }: Props) {
           setSaved(false);
         }}
       />
+      {field !== "name" && field !== "bio" ? (
+        <TextField
+          label={t("Existing Facebook value (optional)")}
+          value={existing[field] ?? ""}
+          maxLength={field === "website" ? 2048 : 100}
+          disabled={is("profile")}
+          onChange={(event) => {
+            setExisting({ ...existing, [field]: event.currentTarget.value });
+            setSaved(false);
+          }}
+        />
+      ) : null}
       {field === "name" ? (
         <div className="social-field-row">
           {(
@@ -185,7 +209,7 @@ export function FacebookPersonalProfileForm({ account, client }: Props) {
         <TextField
           label={label}
           value={draft}
-          maxLength={field === "website" ? 2048 : 101}
+          maxLength={field === "website" ? 2048 : field === "bio" ? 101 : 100}
           disabled={is("profile")}
           onChange={(event) => {
             setDrafts({ ...drafts, [field]: event.currentTarget.value });

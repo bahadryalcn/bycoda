@@ -113,15 +113,22 @@ const snapshot: SocialSnapshot = {
 snapshot.capabilities = { x: accountCapabilities(snapshot.accounts[0]) };
 // Facebook Page controls, using synthetic Graph responses.
 const facebookFixture = new URLSearchParams(location.search).has("facebook-page");
+const facebookProfileFixture = new URLSearchParams(location.search).has(
+  "facebook-profile-controls",
+);
+const facebookMemberFixture = new URLSearchParams(location.search).has("facebook-member");
 if (facebookFixture) {
   const account = {
     ...snapshot.accounts[0],
     id: "fixture-facebook",
     platform: "facebook",
     platformId: "123",
-    accountType: "page",
-    connection: new URLSearchParams(location.search).has("facebook-browser") ? "browser" : "oauth",
-    name: "Fixture Facebook Page",
+    accountType: facebookMemberFixture ? "member" : "page",
+    connection:
+      facebookMemberFixture || new URLSearchParams(location.search).has("facebook-browser")
+        ? "browser"
+        : "oauth",
+    name: facebookMemberFixture ? "Fixture Facebook Profile" : "Fixture Facebook Page",
     connected: true,
     accessApproved: true,
     scopes: [
@@ -170,6 +177,7 @@ let releaseAction: ((reject: boolean) => void) | undefined;
 let configured = false;
 let oauthStatus = "idle";
 let browserWrites = false;
+if (facebookProfileFixture) browserWrites = true;
 const browserFlows: Record<string, { status: "waiting" | "connected"; expiresAt?: number }> = {};
 const mediaUploads = new Map<
   string,
@@ -573,6 +581,9 @@ const shellReads: Record<string, (input: Record<string, unknown>) => unknown> = 
   "inbox.replyOptions": () => ({ canReply: false, reason: "Fixture" }),
   "autonomy.get": (input) => ({
     ...DEFAULT_AUTONOMY,
+    ...(facebookProfileFixture && input.accountId === "fixture-facebook"
+      ? { levels: { ...DEFAULT_AUTONOMY.levels, publish: "approve" } }
+      : {}),
     accountId: input.accountId,
     updatedAt: 1,
     updatedBy: "owner",
@@ -1547,6 +1558,14 @@ Object.assign(window, {
             confirm: string;
             patch: Record<string, string>;
           };
+          if (facebookProfileFixture && input.accountId === "fixture-facebook") {
+            if (input.confirm !== "UPDATE_FACEBOOK_PROFILE")
+              throw new Error("Exact Facebook confirmation required.");
+            const upload = input.patch.avatarUploadId ?? input.patch.bannerUploadId;
+            if (upload && !mediaUploads.has(upload))
+              throw new Error("Owner image upload is required.");
+            return { ...xProfileFixture, ...input.patch };
+          }
           const pageProfile = pageProfileFixtures.get(input.accountId);
           if (pageProfile) {
             const platform = snapshot.accounts.find(
@@ -1839,6 +1858,23 @@ Object.assign(window, {
         if (args.method === "social.request") {
           const params = args.params as { action: string; input?: Record<string, unknown> };
           if (facebookFixture) {
+            if (facebookProfileFixture && params.action === "facebook.page.uploadPhoto") {
+              const { kind, uploadId, confirm } = params.input ?? {};
+              if (
+                (kind !== "avatar" && kind !== "cover") ||
+                !mediaUploads.has(String(uploadId)) ||
+                confirm !== "UPLOAD_FACEBOOK_PAGE_PHOTO"
+              )
+                throw new Error("Expected owner upload and Facebook confirmation.");
+              return {
+                status: "updated",
+                updated: [kind === "avatar" ? "avatarPhotoId" : "coverPhotoId"],
+              };
+            }
+            if (facebookProfileFixture && params.action === "facebook.management.approve") {
+              if (params.input?.forChat !== true) throw new Error("Expected chat approval.");
+              return { ...(params.input.reviewed as Record<string, unknown>), status: "approved" };
+            }
             if (params.action === "facebook.management.list")
               return {
                 requests: [
@@ -1852,6 +1888,20 @@ Object.assign(window, {
                     status: "pending",
                     createdAt: 1763452800000,
                   },
+                  ...(facebookProfileFixture
+                    ? [
+                        {
+                          id: "request-2",
+                          accountId: "fixture-facebook",
+                          pageId: "123",
+                          projectId: "demo",
+                          operation: "facebook.post.edit",
+                          details: { postId: "123_456", text: "Edited studio schedule" },
+                          status: "pending",
+                          createdAt: 1763452800000,
+                        },
+                      ]
+                    : []),
                 ],
               };
             if (params.action === "inbox.unified")

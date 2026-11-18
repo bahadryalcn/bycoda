@@ -22,7 +22,8 @@ export type FacebookProfileDetail = "work" | "school" | "college" | "currentCity
 export type FacebookPersonalName = { first: string; middle: string; last: string };
 export type FacebookBrowserProfilePatch = XProfilePatch & {
   username?: string;
-  detail?: { field: FacebookProfileDetail; value: string };
+  detail?: { field: FacebookProfileDetail; value: string; current?: string };
+  websiteUpdate?: { current: string; value: string };
   personalName?: FacebookPersonalName;
 };
 

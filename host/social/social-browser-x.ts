@@ -26,6 +26,7 @@ import { SOCIAL_BROWSER_RECIPES } from "./social-browser-recipes";
 import { readFacebookMonetization } from "./social-browser-facebook-monetization";
 import {
   FacebookProfileActions,
+  facebookProfilePhotoDigest,
   parseFacebookProfilePatch,
   writeFacebookBrowserProfile,
 } from "./social-browser-facebook-profile";
@@ -263,10 +264,12 @@ export class XBrowserSessions {
       let session: BrowserSession | undefined;
       try {
         const files: { avatar?: string; banner?: string } = {};
+        let facebookPhotoDigest: string | undefined;
         for (const kind of ["avatar", "banner"] as const) {
           const id = patch?.[kind === "avatar" ? "avatarUploadId" : "bannerUploadId"];
           if (!id) continue;
           const bytes = await service.readOwnerMedia(p, id);
+          if (facebook) facebookPhotoDigest = facebookProfilePhotoDigest(bytes);
           const format = xMediaFormat(bytes);
           if (format === "mp4") throw new SocialPlatformError("rejected");
           await mkdir(staging, { recursive: true, mode: 0o700 });
@@ -323,6 +326,7 @@ export class XBrowserSessions {
                 account.platformId,
                 patch!,
                 () => actions.update(patch!, files),
+                facebookPhotoDigest,
               );
         }
         if (linkedIn) {

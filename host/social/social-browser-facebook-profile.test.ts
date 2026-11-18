@@ -4,6 +4,7 @@ import type { BrowserPage } from "./social-browser";
 import {
   FacebookProfileActions,
   parseFacebookProfilePatch,
+  writeFacebookBrowserProfile,
 } from "./social-browser-facebook-profile";
 
 const actor = "61595536696896";
@@ -153,6 +154,58 @@ function memberFixture() {
     ),
   };
 }
+
+it("edits the exact existing website link and verifies the Facebook redirect wrapper on reload", async () => {
+  const f = memberFixture();
+  const oldUrl = "https://example.com/old";
+  const newUrl = "https://example.com/new";
+  let persisted = oldUrl;
+  vi.mocked(f.page.goto).mockImplementation(async (url) => {
+    f.window.location.href = url;
+    const body = f.window.document.body;
+    body.innerHTML = `<main><ul><li><a href="https://l.facebook.com/l.php?u=${encodeURIComponent(persisted)}">Studio</a><button>Edit</button></li><li><a href="https://unrelated.test/">Other</a><button>Edit</button></li></ul></main>`;
+    body.querySelector("li button")!.addEventListener("click", () => {
+      body.insertAdjacentHTML(
+        "beforeend",
+        '<form><input type="url" aria-label="Website"><button type="button">Save</button></form>',
+      );
+      const input = body.querySelector("input")!;
+      input.value = persisted;
+      body.querySelector("form button")!.addEventListener("click", () => {
+        persisted = input.value;
+      });
+    });
+  });
+  await expect(
+    f.actions.update({ websiteUpdate: { current: oldUrl, value: newUrl } }, {}),
+  ).resolves.toMatchObject({ website: newUrl });
+  expect(f.page.click).toHaveBeenCalledTimes(2);
+});
+
+it("holds an uncertain Facebook photo even when the same bytes get a new upload ID", async () => {
+  const settings = new Map<string, string>();
+  const service = {
+    setting: async (key: string) => settings.get(key),
+    setSetting: async (key: string, value: string) => {
+      settings.set(key, value);
+    },
+  };
+  const submit = vi.fn().mockRejectedValue(new Error("Browser lost connection"));
+  await expect(
+    writeFacebookBrowserProfile(service, "a", actor, patch, submit, "same-content"),
+  ).rejects.toThrow("lost connection");
+  await expect(
+    writeFacebookBrowserProfile(
+      service,
+      "a",
+      actor,
+      { avatarUploadId: "44444444-1111-4111-8111-111111111111" },
+      submit,
+      "same-content",
+    ),
+  ).rejects.toMatchObject({ code: "unknown" });
+  expect(submit).toHaveBeenCalledTimes(1);
+});
 
 it.each([true, false])(
   "updates a member bio and requires reload evidence (persist=%s)",
