@@ -63,7 +63,7 @@ export function SendingSettings({ client, snapshot, hostOnline, onChanged }: Sen
     >
       {!snapshot.sendingEnabled ? (
         <Row label={t("Enable approved sends")} stacked>
-          <div className="social-field-row">
+          <div className="social-stack">
             <Checkbox
               checked={confirmed}
               disabled={is("sending.enable") || !!offline}

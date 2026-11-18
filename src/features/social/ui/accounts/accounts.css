@@ -3,9 +3,36 @@
 .social-accounts-screen {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 1.25rem;
   min-width: 0;
-  max-inline-size: 68rem;
+  max-inline-size: 56rem;
+}
+
+/* A control with its explanation below it, at the start edge. */
+.social-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.social-stack > .social-limit-form {
+  align-self: stretch;
+}
+
+/* Dialog footer: a blocked primary action shows its reason beside it, not below. */
+.social-dialog-actions .social-disabled-reason {
+  flex-direction: row-reverse;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.social-dialog-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  flex-basis: 100%;
 }
 
 .social-accounts-section {
@@ -83,6 +110,30 @@
   padding-block-start: 0.5rem;
 }
 
+/* Account drawer: header (mark, identity, status), then Connection, Tools and Account settings sections. */
+.social-detail {
+  max-inline-size: none;
+}
+
+.social-detail-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.social-detail-header-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.social-detail-header .social-screen-header {
+  flex-wrap: nowrap;
+}
+
 .social-detail-status {
   display: flex;
   flex-wrap: wrap;
@@ -109,7 +160,6 @@
   align-items: start;
   gap: var(--space-4);
   min-inline-size: 0;
-  max-inline-size: 52rem;
 }
 
 /* Section inside an account detail: a title above content, separated by spacing and a hairline. */

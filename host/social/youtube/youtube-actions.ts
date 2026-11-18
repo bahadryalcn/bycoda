@@ -74,6 +74,7 @@ import {
   publicYouTubeOperation,
   readYouTubeOperation,
   reconcileYouTubeOperation,
+  requestYouTubeOperation,
   submitYouTubeOperation,
   type YouTubeDispatchPolicy,
 } from "./youtube-dispatch";
@@ -503,6 +504,22 @@ const writes = {
 
 export const youtubeActions: SocialActionModule = {
   ...writes,
+  // Owner-only writes stay owner-executed: the AI only queues the exact input for approval.
+  "youtube.changes.request": {
+    readOnly: false,
+    ownerOnly: false,
+    tool: true,
+    async run(ctx, raw) {
+      const { accountId, action, input } = youtubeInputs["youtube.changes.request"].parse(raw);
+      const exact = youtubeInputs[action].parse({ ...input, accountId, confirm: true });
+      return await requestYouTubeOperation(
+        ctx,
+        action,
+        exact as Record<string, unknown> & { accountId: string },
+        action === "youtube.comment.delete" ? "comment" : "publish",
+      );
+    },
+  },
   "youtube.community.list": read(
     "youtube.community.list",
     async (ctx, account, { status = "published" }) =>

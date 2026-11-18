@@ -21,6 +21,7 @@ export function LinkedInFields({ value, disabled, onChange }: PlatformFieldProps
   return (
     <FieldGroup
       legend="LinkedIn"
+      hideLegend
       {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "content-platform")}
       disabled={disabled}
     >

@@ -73,7 +73,7 @@ export function HalayControls({
   const dirty = Object.keys(patch).length > 0;
   const error = feedback.error("config");
   return (
-    <Disclosure summary={t("Joining and privacy")} variant="row" defaultOpen>
+    <Disclosure summary={t("Joining and privacy")} variant="row">
       <form
         className="flex flex-col gap-3 py-2"
         onSubmit={(event) => {
@@ -125,24 +125,28 @@ export function HalayControls({
         </div>
         <div className="flex flex-wrap gap-x-4 gap-y-2">
           <Checkbox
+            size="secondary"
             label={t("Short names")}
             checked={patch.shortNames ?? config.shortNames}
             onChange={(event) => edit("shortNames", event.target.checked)}
             disabled={busy}
           />
           <Checkbox
+            size="secondary"
             label={t("Join on any comment")}
             checked={patch.joinOnAnyComment ?? config.joinOnAnyComment}
             onChange={(event) => edit("joinOnAnyComment", event.target.checked)}
             disabled={busy}
           />
           <Checkbox
+            size="secondary"
             label={t("Join on like")}
             checked={patch.joinOnLike ?? config.joinOnLike}
             onChange={(event) => edit("joinOnLike", event.target.checked)}
             disabled={busy}
           />
           <Checkbox
+            size="secondary"
             label={t("Join on follow")}
             checked={patch.joinOnFollow ?? config.joinOnFollow}
             onChange={(event) => edit("joinOnFollow", event.target.checked)}
@@ -285,6 +289,7 @@ export function HalayRules({
             <div className="flex flex-wrap gap-x-3 gap-y-2">
               {HALAY_ACTIONS.map((action) => (
                 <Checkbox
+                  size="secondary"
                   key={action}
                   label={t(actionLabel[action])}
                   disabled={busy}

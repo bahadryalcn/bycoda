@@ -3,7 +3,7 @@ import {
   withinWorkingHours,
   type AutonomyAction,
 } from "../../../src/features/social/model/autonomy";
-import type { SocialPermission } from "../../../src/features/social/model/social";
+import type { SocialAccount, SocialPermission } from "../../../src/features/social/model/social";
 import type {
   YouTubeOperation,
   YouTubeWriteAction,
@@ -216,6 +216,62 @@ export async function reconcileYouTubeOperation(
   });
 }
 
+/**
+ * Stores an owner-only write as `awaiting_approval` and never dispatches it. The owner runs it with
+ * `youtube.operation.approve`, which re-checks the account grant, stop switches and the exact input.
+ */
+export async function requestYouTubeOperation(
+  ctx: SocialActionContext,
+  action: YouTubeWriteAction,
+  input: Record<string, unknown> & { accountId: string },
+  permission: SocialPermission,
+) {
+  const account = await youtubeAccount(ctx, input.accountId, permission);
+  if (ctx.principal.kind !== "owner" && (await ctx.service.setting("ai.stopped")) === "true")
+    throw new Error("AI actions are stopped by the owner.");
+  const fingerprint = hash(JSON.stringify([account.platformId, action, input]));
+  const id = hash(
+    JSON.stringify([
+      ctx.principal.actorId,
+      ctx.principal.projectId,
+      ctx.youtubeRequestId ?? fingerprint,
+    ]),
+  );
+  return publicYouTubeOperation(await queueOperation(ctx, account, action, input, id, fingerprint));
+}
+
+async function queueOperation(
+  ctx: SocialActionContext,
+  account: SocialAccount,
+  action: YouTubeWriteAction,
+  input: Record<string, unknown>,
+  id: string,
+  fingerprint: string,
+) {
+  return await ctx.store.transaction(async () => {
+    const current = await ctx.store.getRecord("youtube-operation", id);
+    if (current) {
+      if (current.fingerprint !== fingerprint)
+        throw new Error("Request ID was already used with another YouTube operation.");
+      return current;
+    }
+    if (await ctx.store.unresolvedYouTubeOperation(fingerprint))
+      throw new Error("An identical YouTube operation needs outcome review.");
+    return await ctx.store.putRecord("youtube-operation", id, {
+      id,
+      action,
+      input,
+      fingerprint,
+      accountId: account.id,
+      channelId: account.platformId,
+      actorId: ctx.principal.actorId,
+      projectId: ctx.principal.projectId,
+      status: "awaiting_approval",
+      createdAt: ctx.now(),
+    });
+  });
+}
+
 export async function submitYouTubeOperation(
   ctx: SocialActionContext,
   action: YouTubeWriteAction,
@@ -247,28 +303,7 @@ export async function submitYouTubeOperation(
         });
   if (decision?.mode === "suggest")
     return { accountId: account.id, action, input, status: "suggested" as const };
-  const row = await ctx.store.transaction(async () => {
-    const current = await ctx.store.getRecord("youtube-operation", id);
-    if (current) {
-      if (current.fingerprint !== fingerprint)
-        throw new Error("Request ID was already used with another YouTube operation.");
-      return current;
-    }
-    if (await ctx.store.unresolvedYouTubeOperation(fingerprint))
-      throw new Error("An identical YouTube operation needs outcome review.");
-    return await ctx.store.putRecord("youtube-operation", id, {
-      id,
-      action,
-      input,
-      fingerprint,
-      accountId: account.id,
-      channelId: account.platformId,
-      actorId: ctx.principal.actorId,
-      projectId: ctx.principal.projectId,
-      status: "awaiting_approval",
-      createdAt: ctx.now(),
-    });
-  });
+  const row = await queueOperation(ctx, account, action, input, id, fingerprint);
   if (row.status !== "awaiting_approval") return publicYouTubeOperation(row);
   if (!decision) return await execute(ctx, row, policy, dispatch);
   if (decision.mode === "approve" || policy.ownerMedia?.(input) || decision.scheduledAt > ctx.now())

@@ -6,9 +6,12 @@ import { useConfirm } from "../../../../../shared/ui/ConfirmDialog";
 import { DescriptionItem, DescriptionList } from "../../../../../shared/ui/DescriptionList";
 import { EmptyState } from "../../../../../shared/ui/EmptyState";
 import { InlineError, InlineMessage } from "../../../../../shared/ui/InlineError";
+import { SectionLabel } from "../../../../../shared/ui/SectionLabel";
 import { Select } from "../../../../../shared/ui/Select";
+import { Text } from "../../../../../shared/ui/Text";
 import { useAccountWrite } from "../useAccountWrite";
 import type { TikTokPanelProps } from "./TikTokAccountTools";
+import "./tiktok.css";
 
 const fields = ["comments", "duet", "stitch"] as const;
 const scopes = ["everyone", "followers", "friends", "nobody"] as const;
@@ -72,17 +75,24 @@ export function TikTokPrivacy({
   };
 
   return (
-    <div className="flex min-w-0 flex-col gap-3">
-      <Button
-        className="self-start"
-        variant="secondary"
-        size="sm"
-        loading={is("read")}
-        disabled={disabled || busy || (dirty && !uncertain)}
-        onClick={() => read().catch(() => undefined)}
-      >
-        {t("Read privacy settings")}
-      </Button>
+    <div className="tiktok-panel">
+      <div className="tiktok-head">
+        <SectionLabel as="h3">{t("Privacy")}</SectionLabel>
+        <Button
+          variant="secondary"
+          size="sm"
+          loading={is("read")}
+          disabled={disabled || busy || (dirty && !uncertain)}
+          onClick={() => read().catch(() => undefined)}
+        >
+          {draft ? t("Refresh") : t("Read privacy settings")}
+        </Button>
+      </div>
+      {!draft && !busy && !error && (
+        <Text size="caption" tone="secondary">
+          {t("Nothing loaded yet. Read it from TikTok to see it here.")}
+        </Text>
+      )}
       {uncertain && (
         <InlineMessage tone="warning">
           {t("TikTok did not confirm this change. Check its current state before trying again.")}
@@ -92,10 +102,11 @@ export function TikTokPrivacy({
         <EmptyState context="panel" title={t("Privacy settings unavailable")} />
       )}
       {draft && Object.keys(draft).length > 0 && (
-        <div className="flex flex-col gap-3">
+        <div className="tiktok-panel">
           {draft.privateAccount !== undefined && (
             <Checkbox
               label={t("Private account")}
+              size="secondary"
               checked={draft.privateAccount}
               disabled={disabled || busy}
               onChange={(event) =>
@@ -103,23 +114,25 @@ export function TikTokPrivacy({
               }
             />
           )}
-          {fields.map(
-            (field) =>
-              draft[field] && (
-                <Select
-                  key={field}
-                  label={labels[field]}
-                  value={draft[field]}
-                  options={scopes.map((value) => ({ value, label: scopeLabels[value] }))}
-                  disabled={disabled || busy}
-                  onValueChange={(value) => {
-                    const scope = scopes.find((candidate) => candidate === value);
-                    if (scope) setDraft({ ...draft, [field]: scope });
-                  }}
-                />
-              ),
-          )}
-          <div className="flex flex-wrap gap-2">
+          <div className="tiktok-grid">
+            {fields.map(
+              (field) =>
+                draft[field] && (
+                  <Select
+                    key={field}
+                    label={labels[field]}
+                    value={draft[field]}
+                    options={scopes.map((value) => ({ value, label: scopeLabels[value] }))}
+                    disabled={disabled || busy}
+                    onValueChange={(value) => {
+                      const scope = scopes.find((candidate) => candidate === value);
+                      if (scope) setDraft({ ...draft, [field]: scope });
+                    }}
+                  />
+                ),
+            )}
+          </div>
+          <div className="tiktok-actions">
             <Button
               size="sm"
               variant="primary"

@@ -4,6 +4,7 @@ import { Button } from "../../../../../shared/ui/Button";
 import { useConfirm } from "../../../../../shared/ui/ConfirmDialog";
 import { DescriptionItem, DescriptionList } from "../../../../../shared/ui/DescriptionList";
 import { InlineError, InlineMessage } from "../../../../../shared/ui/InlineError";
+import { SectionLabel } from "../../../../../shared/ui/SectionLabel";
 import { Select } from "../../../../../shared/ui/Select";
 import { TextareaField } from "../../../../../shared/ui/TextareaField";
 import { TextField } from "../../../../../shared/ui/TextField";
@@ -16,6 +17,7 @@ import type {
   SocialJobsPage,
 } from "../../../model/social";
 import { useAccountWrite } from "../useAccountWrite";
+import "./tiktok.css";
 import type { TikTokPanelProps } from "./TikTokAccountTools";
 
 export function TikTokDirectMessage({
@@ -139,41 +141,44 @@ export function TikTokDirectMessage({
   };
 
   return (
-    <div className="flex min-w-0 flex-col gap-3">
+    <div className="tiktok-panel">
+      <SectionLabel as="h3">{t("New direct message")}</SectionLabel>
       {!available.length && (
         <InlineMessage tone="info">
           {t("Choose a project with permission to message from this account.")}
         </InlineMessage>
       )}
       <form
-        className="flex min-w-0 flex-col gap-3"
+        className="tiktok-panel"
         onSubmit={(event) => {
           event.preventDefault();
           if (valid && !disabled && !busy && !draft && !attempted) prepare().catch(() => undefined);
         }}
       >
-        <Select
-          label={t("Project")}
-          value={projectId}
-          disabled={disabled || busy || !!draft || !available.length}
-          options={available.map(({ id, name }) => ({ value: id, label: name }))}
-          onValueChange={(value) => {
-            setProject(value);
-            edit();
-          }}
-        />
-        <TextField
-          label={t("Username")}
-          value={username}
-          disabled={disabled || busy || !!draft}
-          maxLength={24}
-          required
-          pattern="[a-z0-9_.]{2,24}"
-          onChange={(event) => {
-            setUsername(event.currentTarget.value.toLowerCase());
-            edit();
-          }}
-        />
+        <div className="tiktok-grid">
+          <Select
+            label={t("Project")}
+            value={projectId}
+            disabled={disabled || busy || !!draft || !available.length}
+            options={available.map(({ id, name }) => ({ value: id, label: name }))}
+            onValueChange={(value) => {
+              setProject(value);
+              edit();
+            }}
+          />
+          <TextField
+            label={t("Username")}
+            value={username}
+            disabled={disabled || busy || !!draft}
+            maxLength={24}
+            required
+            pattern="[a-z0-9_.]{2,24}"
+            onChange={(event) => {
+              setUsername(event.currentTarget.value.toLowerCase());
+              edit();
+            }}
+          />
+        </div>
         <TextareaField
           label={t("Message")}
           value={message}
@@ -186,7 +191,7 @@ export function TikTokDirectMessage({
             edit();
           }}
         />
-        <div className="flex flex-wrap gap-2">
+        <div className="tiktok-actions">
           {!draft && (
             <Button
               size="sm"

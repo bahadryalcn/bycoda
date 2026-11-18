@@ -28,6 +28,10 @@ export type YouTubeFormField = {
   choices?: { value: string; label: string }[];
   multiple?: boolean;
   whenKind?: "image" | "poll";
+  /** Label of the manual identifier input when `label` names what the identifier points to. */
+  idLabel?: string;
+  /** Rarely needed; shown inside a closed "More options" group. */
+  advanced?: boolean;
   description?: string;
 };
 export type YouTubeForm = {
@@ -70,11 +74,15 @@ export function youtubeForms(section: YouTubeSection, browser: boolean): YouTube
     ...field(key, label, undefined, required),
     choices: options.map(([value, label]) => ({ value: value!, label: label! })),
   });
-  const videoId = field("videoId", t("Video ID"), "text", true);
-  const playlistId = field("playlistId", t("Playlist ID"), "text", true);
-  const playlistItemId = field("playlistItemId", t("Playlist item ID"), "text", true);
+  const named = (key: string, label: string, idLabel: string): YouTubeFormField => ({
+    ...field(key, label, "text", true),
+    idLabel,
+  });
+  const videoId = named("videoId", t("Video"), t("Video ID"));
+  const playlistId = named("playlistId", t("Playlist"), t("Playlist ID"));
+  const playlistItemId = named("playlistItemId", t("Playlist item"), t("Playlist item ID"));
   const commentId = field("commentId", t("Comment ID"), "text", true);
-  const broadcastId = field("broadcastId", t("Broadcast ID"), "text", true);
+  const broadcastId = named("broadcastId", t("Broadcast"), t("Broadcast ID"));
   const channelId = (key: string) => field(key, t("Channel ID"), "text", true);
   const title = (required = false) => field("title", t("Title"), "text", required);
   const description = { ...field("description", t("Description"), "textarea"), emptyAllowed: true };
@@ -99,6 +107,7 @@ export function youtubeForms(section: YouTubeSection, browser: boolean): YouTube
       ],
       required,
     );
+  const later = (item: YouTubeFormField): YouTubeFormField => ({ ...item, advanced: true });
   const madeForKids = (required = false) => yesNo("madeForKids", t("Made for kids"), required);
   const update = (
     action: string,
@@ -143,10 +152,10 @@ export function youtubeForms(section: YouTubeSection, browser: boolean): YouTube
               "channel.profile.update",
               [
                 description,
-                { ...field("keywords", t("Keywords")), emptyAllowed: true },
-                field("country", t("Country code")),
+                later({ ...field("keywords", t("Keywords")), emptyAllowed: true }),
+                later(field("country", t("Country code"))),
                 field("bannerUploadId", t("Banner"), "images"),
-                madeForKids(),
+                later(madeForKids()),
               ],
               {
                 fieldsInPatch: [
@@ -172,11 +181,11 @@ export function youtubeForms(section: YouTubeSection, browser: boolean): YouTube
             title(),
             description,
             privacy(),
-            field("publishAt", t("Publish time"), "datetime"),
-            field("categoryId", t("Category ID")),
-            field("tags", t("Tags"), "lines"),
-            madeForKids(),
-            yesNo("containsSyntheticMedia", t("Contains altered or synthetic content")),
+            later(field("publishAt", t("Publish time"), "datetime")),
+            later(field("categoryId", t("Category ID"))),
+            later(field("tags", t("Tags"), "lines")),
+            later(madeForKids()),
+            later(yesNo("containsSyntheticMedia", t("Contains altered or synthetic content"))),
           ],
           {
             fieldsInPatch: [
@@ -387,13 +396,16 @@ export function youtubeForms(section: YouTubeSection, browser: boolean): YouTube
         update("youtube.liveChat.send", t("Send live chat message"), "live.chat", [
           broadcastId,
           field("message", t("Message"), "textarea", true),
-          field("replyToMessageId", t("Reply to message ID")),
+          {
+            ...field("replyToMessageId", t("Reply to message")),
+            idLabel: t("Reply to message ID"),
+          },
         ]),
         update(
           "youtube.liveChat.delete",
           t("Delete live chat message"),
           "live.chat",
-          [broadcastId, field("messageId", t("Message ID"), "text", true)],
+          [broadcastId, named("messageId", t("Chat message"), t("Message ID"))],
           { danger: true },
         ),
         update(
@@ -415,5 +427,117 @@ export function youtubeForms(section: YouTubeSection, browser: boolean): YouTube
       ];
     case "review":
       return [{ action: "youtube.operations.list", label: t("List YouTube operations") }];
+  }
+}
+
+export type YouTubeView = "videos" | "playlists" | "broadcasts" | "chat" | "superchats";
+
+const viewOf: Record<string, YouTubeView> = {
+  "youtube.videos.list": "videos",
+  "youtube.video.update": "videos",
+  "youtube.thumbnail.set": "videos",
+  "youtube.video.delete": "videos",
+  "youtube.playlists.list": "playlists",
+  "youtube.playlist.create": "playlists",
+  "youtube.playlist.update": "playlists",
+  "youtube.playlist.add": "playlists",
+  "youtube.playlist.remove": "playlists",
+  "youtube.playlist.move": "playlists",
+  "youtube.playlist.delete": "playlists",
+  "youtube.broadcasts.list": "broadcasts",
+  "youtube.broadcast.create": "broadcasts",
+  "youtube.broadcast.transition": "broadcasts",
+  "youtube.liveChat.list": "chat",
+  "youtube.liveChat.send": "chat",
+  "youtube.liveChat.delete": "chat",
+  "youtube.liveChat.ban": "chat",
+  "youtube.liveChat.unban": "chat",
+  "youtube.superChats.list": "superchats",
+};
+
+/** Reads that fill the browse area of a section; every other form is a task the owner runs. */
+const browseActions = new Set([
+  "youtube.channel.read",
+  "youtube.videos.list",
+  "youtube.playlists.list",
+  "youtube.comments.list",
+  "youtube.subscriptions.list",
+  "youtube.broadcasts.list",
+  "youtube.liveChat.list",
+  "youtube.superChats.list",
+  "youtube.community.list",
+  "youtube.quota.status",
+  "youtube.monetization.status",
+  "youtube.operations.list",
+]);
+export const isBrowseForm = (form: YouTubeForm) => !form.write && browseActions.has(form.action);
+
+/** Sub-views of a section that groups unrelated lists (videos and playlists, broadcasts and chat). */
+export function youtubeViews(section: YouTubeSection): { value: YouTubeView; label: string }[] {
+  if (section === "videos")
+    return [
+      { value: "videos", label: t("Videos") },
+      { value: "playlists", label: t("Playlists") },
+    ];
+  if (section === "live")
+    return [
+      { value: "broadcasts", label: t("Broadcasts") },
+      { value: "chat", label: t("Live chat") },
+      { value: "superchats", label: t("Super Chats") },
+    ];
+  return [];
+}
+
+/** The forms of one view of a section; a section without views returns all of its forms. */
+export function youtubeViewForms(
+  section: YouTubeSection,
+  browser: boolean,
+  view: YouTubeView | undefined,
+): YouTubeForm[] {
+  const forms = youtubeForms(section, browser);
+  return view ? forms.filter((form) => viewOf[form.action] === view) : forms;
+}
+
+/** Keys that hold a platform identifier; the owner picks them from a list and types them only as a fallback. */
+export const youtubeIdKeys = new Set([
+  "videoId",
+  "playlistId",
+  "playlistItemId",
+  "commentId",
+  "broadcastId",
+  "messageId",
+  "replyToMessageId",
+  "banId",
+  "channelId",
+  "authorChannelId",
+  "targetChannelId",
+  "postId",
+  "parentId",
+]);
+
+export type YouTubeDraft = Record<string, string | File[]>;
+export type YouTubeRefSource = { action: string; input?: Record<string, string> };
+
+/** The list action whose rows can fill an identifier field, when one exists for the draft so far. */
+export function youtubeRefSource(key: string, draft: YouTubeDraft): YouTubeRefSource | undefined {
+  const text = (name: string) => (typeof draft[name] === "string" ? draft[name] : "");
+  switch (key) {
+    case "videoId":
+      return { action: "youtube.videos.list" };
+    case "playlistId":
+      return { action: "youtube.playlists.list" };
+    case "playlistItemId":
+      return text("playlistId")
+        ? { action: "youtube.playlists.list", input: { playlistId: text("playlistId") } }
+        : undefined;
+    case "broadcastId":
+      return { action: "youtube.broadcasts.list" };
+    case "messageId":
+    case "replyToMessageId":
+      return text("broadcastId")
+        ? { action: "youtube.liveChat.list", input: { broadcastId: text("broadcastId") } }
+        : undefined;
+    default:
+      return undefined;
   }
 }

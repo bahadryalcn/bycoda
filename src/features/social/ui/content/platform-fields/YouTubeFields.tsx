@@ -17,6 +17,7 @@ export function YouTubeFields({ value, disabled, onChange }: PlatformFieldProps)
   return (
     <FieldGroup
       legend={t("YouTube")}
+      hideLegend
       {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "content-platform")}
       disabled={disabled}
     >

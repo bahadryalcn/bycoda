@@ -1,3 +1,5 @@
+import { openExternal } from "../../../../../platform/tauri/openExternal";
+import { Button } from "../../../../../shared/ui/Button";
 import { surfaceAttributes } from "../../../../../shared/ui/Surface";
 import { Text } from "../../../../../shared/ui/Text";
 import { t } from "../../../../../shared/i18n";
@@ -7,6 +9,8 @@ import { SOCIAL_PLATFORM_NAMES } from "../../../model/social";
 import type { FacebookDraft } from "../contentDraft";
 import type { PlatformFieldProps } from "./PlatformFields";
 import { InstagramFields } from "./InstagramFields";
+
+const FACEBOOK_STORY_COMPOSER = "https://www.facebook.com/stories/create";
 
 /** Meta post destinations; carousel rules come from the attachments. */
 export function MetaFields(props: PlatformFieldProps) {
@@ -48,6 +52,18 @@ export function MetaFields(props: PlatformFieldProps) {
         {account.connection !== "browser" ? <option value="video">{t("Video")}</option> : null}
         {account.connection !== "browser" ? <option value="story">{t("Story")}</option> : null}
       </NativeSelect>
+      {account.connection === "browser" ? (
+        // Stories need the Page API connection; a browser-connected Page hands off to the composer.
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => {
+            openExternal(FACEBOOK_STORY_COMPOSER).catch(() => undefined);
+          }}
+        >
+          {t("Create a Story on Facebook")}
+        </Button>
+      ) : null}
     </FieldGroup>
   );
 }

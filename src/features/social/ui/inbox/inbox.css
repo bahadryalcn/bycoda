@@ -247,3 +247,11 @@
     padding-inline-start: 0;
   }
 }
+
+.inbox-new-chat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-width: 28rem;
+  padding-block: 0.5rem;
+}

@@ -18,6 +18,7 @@ export function SnapchatFields({ account, value, disabled, onChange }: PlatformF
   return (
     <FieldGroup
       legend="Snapchat"
+      hideLegend
       {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "content-platform")}
       disabled={disabled}
     >

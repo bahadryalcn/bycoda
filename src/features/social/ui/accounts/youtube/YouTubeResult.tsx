@@ -358,41 +358,70 @@ export function youtubeResultNotice(status: unknown, reason: unknown): string | 
   return undefined;
 }
 
+const listKeys = [
+  "items",
+  "videos",
+  "playlists",
+  "comments",
+  "broadcasts",
+  "events",
+  "rows",
+  "subscriptions",
+];
+
+/** The records of a list result, or undefined when the result is not a list. */
+export function listRows(result: unknown): Record<string, unknown>[] | undefined {
+  const data = asYoutubeRecord(result);
+  const list = data && listKeys.map((key) => data[key]).find(Array.isArray);
+  return list?.map(asYoutubeRecord).filter((row) => row !== undefined);
+}
+
+const titleKeys = ["title", "text", "message", "name", "handle", "authorName"];
+
+/** One readable line for a list row: its title and a few short facts, never raw JSON. */
+export function rowSummary(row: Record<string, unknown>): { title: string; meta: string[] } {
+  const titleKey = titleKeys.find((key) => typeof row[key] === "string" && row[key] !== "");
+  const title = titleKey ? String(row[titleKey]) : String(row.id ?? "");
+  const metaKeys = [
+    "authorName",
+    "privacyStatus",
+    "privacy",
+    "moderationStatus",
+    "status",
+    "displayAmount",
+    "scheduledStartTime",
+    "publishedAt",
+    "views",
+    "likes",
+    "replyCount",
+  ];
+  const meta = metaKeys
+    .filter((key) => key !== titleKey && cell(row[key], key) !== "")
+    .map((key) => cell(row[key], key));
+  return { title, meta: meta.slice(0, 3) };
+}
+
 export function YouTubeResult({
   result,
   busy,
   review,
-  onPickItem,
   reconcile,
 }: {
   result: unknown;
   busy: boolean;
   review?: (operation: YouTubeOperation) => void;
-  onPickItem?: (item: Record<string, unknown>) => void;
   reconcile?: (operation: YouTubeOperation, status: "done" | "rejected") => void;
 }) {
   const data = asYoutubeRecord(result);
   if (!data) return null;
   const notice = youtubeResultNotice(data.status, data.reason);
   const { status: _status, ...facts } = data;
-  const list = [
-    "items",
-    "videos",
-    "playlists",
-    "comments",
-    "broadcasts",
-    "events",
-    "rows",
-    "subscriptions",
-  ]
-    .map((key) => data[key])
-    .find(Array.isArray);
-  const rows = list?.map(asYoutubeRecord).filter((row) => row !== undefined);
+  const rows = listRows(result);
   const columns = Object.keys(rows?.[0] ?? {}).filter(
     (key) => !hiddenKeys.has(key) && rows?.some((row) => cell(row[key]) !== ""),
   );
-  const summarized = onPickItem ? columns.filter((key) => key !== "id").slice(0, 4) : columns;
-  const actionColumn = review || onPickItem;
+  const summarized = columns;
+  const actionColumn = review || reconcile;
   const costs = asYoutubeRecord(data.costs);
   return (
     <>
@@ -424,10 +453,6 @@ export function YouTubeResult({
                             onClick={() => review(row as unknown as YouTubeOperation)}
                           >
                             {t("Review")}
-                          </Button>
-                        ) : onPickItem && typeof row.id === "string" ? (
-                          <Button key="pick" disabled={busy} onClick={() => onPickItem(row)}>
-                            {t("Use")}
                           </Button>
                         ) : reconcile && row.status === "unknown" ? (
                           <div key="reconcile">

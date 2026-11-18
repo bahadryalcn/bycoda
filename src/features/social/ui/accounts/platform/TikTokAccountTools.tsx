@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useT } from "../../../../../shared/i18n";
 import { Disclosure } from "../../../../../shared/ui/Disclosure";
-import { Select } from "../../../../../shared/ui/Select";
+import { SubTabs } from "../../../../../shared/ui/SubTabs";
 import type { HostProject } from "../../../../connections/public/protocol";
 import type { SocialAccount } from "../../../model/social";
 import type { SocialClient } from "../../../model/socialClient";
@@ -10,6 +10,7 @@ import { TikTokBusiness, type TikTokBusinessStatus } from "./TikTokBusiness";
 import { TikTokDirectMessage } from "./TikTokDirectMessage";
 import { TikTokReadouts } from "./TikTokReadouts";
 import { TikTokPrivacy } from "./TikTokPrivacy";
+import "./tiktok.css";
 import { TikTokProfile } from "./TikTokProfile";
 
 export type TikTokPanelProps = {
@@ -54,12 +55,12 @@ export function TikTokAccountTools({
             .catch(() => undefined);
       }}
     >
-      <div className="flex min-w-0 flex-col gap-3">
-        <Select
+      <div className="tiktok-tools">
+        <SubTabs
           label={t("TikTok section")}
           value={section}
           onValueChange={setSection}
-          options={[
+          items={[
             { value: "profile", label: t("Profile") },
             { value: "analytics", label: t("Analytics") },
             ...(browser
@@ -92,6 +93,7 @@ export function TikTokAccountTools({
             </div>
             <div hidden={section !== "changes"}>
               <TikTokChanges
+                active={section === "changes"}
                 {...props}
                 accountName={account.name}
                 draft={changeDraft}

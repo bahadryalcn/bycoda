@@ -18,6 +18,7 @@ import type {
 } from "../../../model/social";
 import type { SocialClient } from "../../../model/socialClient";
 import { socialQueryScope } from "../../../model/socialQuery";
+import "./instagram.css";
 
 type ComposerInput = { handle: string; projectId: string; text: string };
 type Attempt = {
@@ -304,23 +305,25 @@ function Composer({
   };
 
   return (
-    <FieldGroup legend={t("New Instagram message")}>
+    <FieldGroup legend={t("New Instagram message")} hideLegend>
       {options.length || sendAttempted ? (
         <>
-          <SearchableSelect
-            label={t("Project")}
-            options={options}
-            value={project?.value ?? ""}
-            onChange={(projectId) => updateInput({ projectId })}
-            disabled={accountUnavailable || !!state.pending || !!sendAttempted}
-          />
-          <TextField
-            label={t("Instagram username")}
-            value={state.input.handle}
-            maxLength={31}
-            disabled={accountUnavailable || !!state.pending || !!sendAttempted}
-            onChange={(event) => updateInput({ handle: event.currentTarget.value })}
-          />
+          <div className="instagram-grid">
+            <SearchableSelect
+              label={t("Project")}
+              options={options}
+              value={project?.value ?? ""}
+              onChange={(projectId) => updateInput({ projectId })}
+              disabled={accountUnavailable || !!state.pending || !!sendAttempted}
+            />
+            <TextField
+              label={t("Instagram username")}
+              value={state.input.handle}
+              maxLength={31}
+              disabled={accountUnavailable || !!state.pending || !!sendAttempted}
+              onChange={(event) => updateInput({ handle: event.currentTarget.value })}
+            />
+          </div>
           <TextareaField
             label={t("Message")}
             value={state.input.text}

@@ -44,6 +44,9 @@ export const YOUTUBE_OWNER_WRITES = [
   "youtube.community.delete",
 ] as const;
 
+/** Review tool: queues an owner-only write as an `awaiting_approval` operation. The owner approves it. */
+export const YOUTUBE_REQUEST_TOOLS = ["youtube.changes.request"] as const;
+
 export type YouTubeWriteAction =
   | (typeof YOUTUBE_WRITE_TOOLS)[number]
   | (typeof YOUTUBE_OWNER_WRITES)[number];

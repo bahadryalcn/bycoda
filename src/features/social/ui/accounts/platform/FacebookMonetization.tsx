@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useFormat, useT } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
+import { DescriptionItem, DescriptionList } from "../../../../../shared/ui/DescriptionList";
 import { EmptyState } from "../../../../../shared/ui/EmptyState";
 import { InlineError } from "../../../../../shared/ui/InlineError";
 import { Text } from "../../../../../shared/ui/Text";
@@ -8,6 +9,7 @@ import type { readFacebookPageInsights } from "../../../../../integrations/socia
 import type { SocialAccount } from "../../../model/social";
 import type { SocialClient } from "../../../model/socialClient";
 import { useAccountWrite } from "../useAccountWrite";
+import "./facebook.css";
 
 type InsightsPage = Awaited<ReturnType<typeof readFacebookPageInsights>>;
 type Dashboard = Awaited<ReturnType<SocialClient["facebookMonetization"]>>;
@@ -52,40 +54,55 @@ export function FacebookMonetization({
   const values = insights?.metrics[0]?.values ?? [];
   const estimate = values[values.length - 1]?.value;
   return (
-    <section className="social-card" aria-label={t("Monetization")}>
-      <Button
-        size="sm"
-        variant="secondary"
-        className="self-start"
-        loading={work.is("load")}
-        onClick={() => void load().catch(() => undefined)}
-      >
-        {browser ? t("Read monetization status") : t("Read earnings estimates")}
-      </Button>
-      {work.error ? <InlineError>{work.error}</InlineError> : null}
-      {dashboard?.programs.map(({ program, status, earnings }) => (
-        <Text as="p" key={program}>
-          {programLabels[program]} ·{" "}
-          {earnings ?? statusLabels[status ?? "unavailable"] ?? t("Unavailable")}
-        </Text>
-      ))}
-      {typeof estimate === "number" ? (
-        <Text as="p">
-          {t("Provider estimate")} · {format.formatNumber(estimate)}
+    <section className="social-fb-stack" aria-label={t("Monetization")}>
+      <div className="social-fb-toolbar">
+        <Button
+          size="sm"
+          variant={dashboard || insights ? "secondary" : "primary"}
+          loading={work.is("load")}
+          onClick={() => void load().catch(() => undefined)}
+        >
+          {browser ? t("Read monetization status") : t("Read earnings estimates")}
+        </Button>
+      </div>
+      {!dashboard && !insights && !work.is("load") && !work.error ? (
+        <Text as="p" size="secondary" tone="muted">
+          {browser
+            ? t("Read the status of each Facebook monetization program for this account.")
+            : t("Read the earnings Facebook estimates for this Page.")}
         </Text>
       ) : null}
-      {estimate && typeof estimate === "object"
-        ? Object.entries(estimate).map(([name, value]) => (
-            <Text as="p" key={name}>
-              {Object.hasOwnProperty.call(programLabels, name)
-                ? programLabels[name as keyof typeof programLabels]
-                : name}{" "}
-              · {typeof value === "number" ? format.formatNumber(value) : t("Unavailable")}
-            </Text>
-          ))
-        : null}
+      {work.error ? <InlineError>{work.error}</InlineError> : null}
+      {dashboard?.programs.length || typeof estimate === "number" || estimate ? (
+        <DescriptionList size="sm">
+          {dashboard?.programs.map(({ program, status, earnings }) => (
+            <DescriptionItem key={program} term={programLabels[program]}>
+              {earnings ?? statusLabels[status ?? "unavailable"] ?? t("Unavailable")}
+            </DescriptionItem>
+          ))}
+          {typeof estimate === "number" ? (
+            <DescriptionItem term={t("Provider estimate")}>
+              {format.formatNumber(estimate)}
+            </DescriptionItem>
+          ) : null}
+          {estimate && typeof estimate === "object"
+            ? Object.entries(estimate).map(([name, value]) => (
+                <DescriptionItem
+                  key={name}
+                  term={
+                    Object.hasOwnProperty.call(programLabels, name)
+                      ? programLabels[name as keyof typeof programLabels]
+                      : name
+                  }
+                >
+                  {typeof value === "number" ? format.formatNumber(value) : t("Unavailable")}
+                </DescriptionItem>
+              ))
+            : null}
+        </DescriptionList>
+      ) : null}
       {(dashboard && !dashboard.programs.length) || (insights && estimate === undefined) ? (
-        <EmptyState size="inline" description={t("No results")} />
+        <EmptyState size="inline" description={t("Facebook returned no monetization data.")} />
       ) : null}
     </section>
   );

@@ -8,6 +8,7 @@ import { Text } from "../../../../../shared/ui/Text";
 import type { InstagramLiveAction, InstagramLiveState } from "../../../model/instagramLive";
 import type { SocialClient } from "../../../model/socialClient";
 import { useAccountWrite } from "../useAccountWrite";
+import "./instagram.css";
 
 const ACTION_CONFIRMATION = {
   start: "START_INSTAGRAM_LIVE",
@@ -65,8 +66,8 @@ export function InstagramLiveProducer({
               ? t("Instagram Live window is closed.")
               : undefined;
   return (
-    <FieldGroup legend={t("Instagram LIVE")} disabled={disabled}>
-      <div className="social-tag-line">
+    <FieldGroup legend={t("Instagram LIVE")} hideLegend disabled={disabled}>
+      <div className="instagram-actions">
         <Button
           variant="secondary"
           size="sm"
@@ -80,13 +81,11 @@ export function InstagramLiveProducer({
           {t("Read Instagram live status")}
         </Button>
       </div>
-      {status ? (
-        <Text as="p" size="caption" tone="secondary">
-          {status}
-        </Text>
-      ) : null}
+      <Text as="p" size="caption" tone="secondary">
+        {status ?? t("Open the producer, capture the stream credentials, then go live.")}
+      </Text>
       {live?.windowOpen ? (
-        <div className="social-tag-line">
+        <div className="instagram-actions">
           <Button
             variant="secondary"
             size="sm"
@@ -97,7 +96,7 @@ export function InstagramLiveProducer({
             {t("Capture Instagram stream credentials")}
           </Button>
           <Button
-            variant="secondary"
+            variant="primary"
             size="sm"
             loading={is("start")}
             disabled={!live.canStart}

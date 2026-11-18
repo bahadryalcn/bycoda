@@ -2,14 +2,20 @@ import { useState } from "react";
 import { useFormat, useT } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
 import { useConfirm } from "../../../../../shared/ui/ConfirmDialog";
+import { DescriptionItem, DescriptionList } from "../../../../../shared/ui/DescriptionList";
 import { EmptyState } from "../../../../../shared/ui/EmptyState";
-import { InlineError, InlineMessage } from "../../../../../shared/ui/InlineError";
+import { InlineError } from "../../../../../shared/ui/InlineError";
+import { LoadingText } from "../../../../../shared/ui/LoadingText";
+import { StatRow, StatTile } from "../../../../../shared/ui/StatTile";
+import { Surface } from "../../../../../shared/ui/Surface";
 import { Text } from "../../../../../shared/ui/Text";
 import { TextareaField } from "../../../../../shared/ui/TextareaField";
 import type { readFacebookPageInsights } from "../../../../../integrations/social/adapters/facebook-insights";
 import type { SocialAdapter } from "../../../../../integrations/social/adapter";
 import type { SocialClient } from "../../../model/socialClient";
 import { useAccountWrite } from "../useAccountWrite";
+import "../accounts.css";
+import "./facebook.css";
 
 type PostPage = Awaited<ReturnType<NonNullable<SocialAdapter["listPosts"]>>>;
 type InsightsPage = Awaited<ReturnType<typeof readFacebookPageInsights>>;
@@ -100,12 +106,14 @@ export function FacebookPageActivity({
   };
 
   const pageStats = analytics[""] as InsightsPage | undefined;
+  const number = (value?: number) =>
+    typeof value === "number" ? format.formatNumber(value) : t("Unavailable");
   return (
-    <section className="social-card" aria-label={mentions ? t("Mentions") : t("Posts")}>
-      <div className="social-field-row">
+    <section className="social-fb-stack" aria-label={mentions ? t("Mentions") : t("Posts")}>
+      <div className="social-fb-toolbar">
         <Button
           size="sm"
-          variant="secondary"
+          variant={page ? "secondary" : "primary"}
           loading={work.is("list")}
           onClick={() => void load().catch(() => undefined)}
         >
@@ -122,97 +130,118 @@ export function FacebookPageActivity({
           </Button>
         ) : null}
       </div>
-      {pageStats?.metrics.map((metric) => {
-        const value = metric.values[metric.values.length - 1]?.value;
-        return (
-          <Text key={metric.name} as="p">
-            {metric.name === "page_media_view" ? t("Views") : t("Unique viewers")}{" "}
-            {typeof value === "number" ? format.formatNumber(value) : t("Unavailable")}
-          </Text>
-        );
-      })}
-      {page && !page.posts.length ? (
-        <EmptyState size="inline" description={t("No results")} />
+      {pageStats ? (
+        <StatRow label={t("Page insights")}>
+          {pageStats.metrics.map((metric) => (
+            <StatTile
+              key={metric.name}
+              label={metric.name === "page_media_view" ? t("Views") : t("Unique viewers")}
+              value={number(metric.values[metric.values.length - 1]?.value as number | undefined)}
+            />
+          ))}
+        </StatRow>
       ) : null}
-      {page?.posts.map((post) => {
-        const metrics = analytics[post.id] as Record<string, number | undefined> | undefined;
-        return (
-          <div className="social-card" key={post.id}>
-            <Text as="p" className="social-card-description">
-              {post.text || post.id}
-            </Text>
-            {editing?.id === post.id ? (
-              <TextareaField
-                label={t("Edit post")}
-                value={editing.text}
-                onChange={(event) => setEditing({ id: post.id, text: event.currentTarget.value })}
-              />
-            ) : null}
-            {!mentions ? (
-              <div className="social-field-row">
-                {editing?.id === post.id ? (
-                  <>
-                    <Button
-                      size="sm"
-                      disabled={!editing.text.trim()}
-                      loading={work.is(post.id)}
-                      onClick={() => void mutate(post, false).catch(() => undefined)}
-                    >
-                      {t("Save")}
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setEditing(undefined)}>
-                      {t("Cancel")}
-                    </Button>
-                  </>
+      {!page && work.is("list") ? <LoadingText>{t("Loading…")}</LoadingText> : null}
+      {!page && !work.is("list") && !work.error ? (
+        <Text as="p" size="secondary" tone="muted">
+          {mentions
+            ? t("Load mentions to see where people tagged this Page.")
+            : t("Load posts to edit, delete or measure them.")}
+        </Text>
+      ) : null}
+      {page && !page.posts.length ? (
+        <EmptyState
+          size="inline"
+          description={mentions ? t("No mentions yet.") : t("No posts yet.")}
+        />
+      ) : null}
+      {page?.posts.length ? (
+        <ul className="social-fb-list">
+          {page.posts.map((post) => {
+            const metrics = analytics[post.id] as Record<string, number | undefined> | undefined;
+            const isEditing = editing?.id === post.id;
+            return (
+              <Surface key={post.id} as="li" variant="card" padding="sm" className="social-fb-item">
+                {isEditing ? (
+                  <TextareaField
+                    label={t("Edit post")}
+                    value={editing.text}
+                    onChange={(event) =>
+                      setEditing({ id: post.id, text: event.currentTarget.value })
+                    }
+                  />
                 ) : (
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => setEditing({ id: post.id, text: post.text ?? "" })}
-                  >
-                    {t("Edit post")}
-                  </Button>
+                  <Text as="p" className="social-fb-item-title">
+                    {post.text || post.id}
+                  </Text>
                 )}
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  loading={work.is(post.id)}
-                  onClick={() => void mutate(post, true).catch(() => undefined)}
-                >
-                  {t("Delete")}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  loading={work.is(`stats:${post.id}`)}
-                  onClick={() => void stats(post.id).catch(() => undefined)}
-                >
-                  {t("Analytics")}
-                </Button>
-              </div>
-            ) : null}
-            {metrics ? (
-              <InlineMessage tone="info">
-                {[
-                  [t("Views"), metrics.views],
-                  [t("Likes"), metrics.likes],
-                  [t("Comments"), metrics.comments],
-                  [t("Shares"), metrics.shares],
-                ]
-                  .map(
-                    ([label, value]) =>
-                      `${label} ${typeof value === "number" ? format.formatNumber(value) : t("Unavailable")}`,
-                  )
-                  .join(" · ")}
-              </InlineMessage>
-            ) : null}
-          </div>
-        );
-      })}
+                {metrics ? (
+                  <DescriptionList size="sm" columns="auto">
+                    <DescriptionItem term={t("Views")}>{number(metrics.views)}</DescriptionItem>
+                    <DescriptionItem term={t("Likes")}>{number(metrics.likes)}</DescriptionItem>
+                    <DescriptionItem term={t("Comments")}>
+                      {number(metrics.comments)}
+                    </DescriptionItem>
+                    <DescriptionItem term={t("Shares")}>{number(metrics.shares)}</DescriptionItem>
+                  </DescriptionList>
+                ) : null}
+                {!mentions ? (
+                  <div className="social-fb-actions">
+                    {isEditing ? (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="primary"
+                          disabled={!editing.text.trim()}
+                          loading={work.is(post.id)}
+                          onClick={() => void mutate(post, false).catch(() => undefined)}
+                        >
+                          {t("Save")}
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setEditing(undefined)}>
+                          {t("Cancel")}
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => setEditing({ id: post.id, text: post.text ?? "" })}
+                        >
+                          {t("Edit post")}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          loading={work.is(`stats:${post.id}`)}
+                          onClick={() => void stats(post.id).catch(() => undefined)}
+                        >
+                          {t("Analytics")}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          tone="danger"
+                          loading={work.is(post.id)}
+                          onClick={() => void mutate(post, true).catch(() => undefined)}
+                        >
+                          {t("Delete")}
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                ) : null}
+              </Surface>
+            );
+          })}
+        </ul>
+      ) : null}
       {page?.next ? (
         <Button
           size="sm"
           variant="secondary"
+          className="self-start"
           loading={work.is("list")}
           onClick={() => void load(page.next).catch(() => undefined)}
         >

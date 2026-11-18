@@ -8,11 +8,15 @@ import { CopyButton } from "../../../../../shared/ui/CopyButton";
 import { Disclosure } from "../../../../../shared/ui/Disclosure";
 import { EmptyState } from "../../../../../shared/ui/EmptyState";
 import { InlineError, InlineMessage } from "../../../../../shared/ui/InlineError";
+import { LoadingText } from "../../../../../shared/ui/LoadingText";
+import { SectionLabel } from "../../../../../shared/ui/SectionLabel";
+import { Surface } from "../../../../../shared/ui/Surface";
 import { Text } from "../../../../../shared/ui/Text";
 import { TextField } from "../../../../../shared/ui/TextField";
 import type { FacebookLiveComment } from "../../../../../integrations/social/adapters/facebook-live";
 import type { SocialClient } from "../../../model/socialClient";
 import { useAccountWrite } from "../useAccountWrite";
+import "./facebook.css";
 import { FacebookLiveReply } from "./FacebookLiveReply";
 
 type LiveState = {
@@ -107,8 +111,8 @@ export function FacebookLivePanel({
     canStream && broadcast !== undefined && (!broadcast || broadcast.phase === "ended");
 
   return (
-    <section className="social-card" aria-label={t("Live video")}>
-      <div className="social-field-row">
+    <section className="social-fb-stack" aria-label={t("Live video")}>
+      <div className="social-fb-toolbar">
         <Button
           size="sm"
           variant="secondary"
@@ -117,15 +121,87 @@ export function FacebookLivePanel({
         >
           {broadcast === undefined ? t("Load live video") : t("Refresh")}
         </Button>
-        {broadcast ? (
-          <Badge tone={broadcast.phase === "live" ? "success" : "neutral"}>
-            {phases[broadcast.phase]}
-          </Badge>
-        ) : null}
       </div>
-      {broadcast ? <Text as="p">{broadcast.title}</Text> : null}
+      {broadcast === undefined && !work.is("list") && !work.error ? (
+        <Text as="p" size="secondary" tone="muted">
+          {t("Load your latest live video to start it, end it or read its comments.")}
+        </Text>
+      ) : null}
+      {broadcast === undefined && work.is("list") ? (
+        <LoadingText>{t("Loading…")}</LoadingText>
+      ) : null}
+      {broadcast === null ? (
+        <EmptyState size="inline" description={t("No live video yet.")} />
+      ) : null}
+      {broadcast ? (
+        <Surface variant="card" padding="sm" className="social-fb-item">
+          <div className="social-fb-item-head">
+            <Text as="span" weight="medium" className="social-fb-item-title">
+              {broadcast.title}
+            </Text>
+            <Badge tone={broadcast.phase === "live" ? "success" : "neutral"}>
+              {phases[broadcast.phase]}
+            </Badge>
+          </div>
+          {broadcast.id ? (
+            <>
+              {broadcast.encoderReady ? (
+                <Text as="p" size="secondary" tone="muted">
+                  {t("Paste the stream server and key into your streaming software.")}
+                </Text>
+              ) : null}
+              <div className="social-fb-actions">
+                {broadcast.encoderReady ? (
+                  <>
+                    <CopyButton
+                      size="sm"
+                      label={t("Copy stream server")}
+                      onCopy={async () =>
+                        copyText((await client.facebookEncoder(accountId, broadcast.id!)).server)
+                      }
+                    />
+                    <CopyButton
+                      size="sm"
+                      label={t("Copy stream key")}
+                      onCopy={async () =>
+                        copyText((await client.facebookEncoder(accountId, broadcast.id!)).streamKey)
+                      }
+                    />
+                  </>
+                ) : null}
+                {canStream &&
+                broadcast.encoderReady &&
+                (broadcast.phase === "unpublished" || broadcast.phase === "starting") ? (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    loading={work.is("start")}
+                    onClick={() => void mutate("start").catch(() => undefined)}
+                  >
+                    {labels.start}
+                  </Button>
+                ) : null}
+                {canStream && broadcast.phase !== "ended" ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    tone="danger"
+                    loading={work.is("end")}
+                    onClick={() => void mutate("end").catch(() => undefined)}
+                  >
+                    {labels.end}
+                  </Button>
+                ) : null}
+              </div>
+            </>
+          ) : null}
+        </Surface>
+      ) : null}
       {showCreate ? (
-        <>
+        <div className="social-fb-group">
+          <SectionLabel variant="inline" size="secondary" as="h4">
+            {t("New live video")}
+          </SectionLabel>
           <TextField
             label={t("Title")}
             value={title}
@@ -140,6 +216,7 @@ export function FacebookLivePanel({
           />
           <Button
             size="sm"
+            variant="primary"
             className="self-start"
             disabled={!title.trim() || uncertain}
             loading={work.is("create")}
@@ -147,49 +224,10 @@ export function FacebookLivePanel({
           >
             {labels.create}
           </Button>
-        </>
+        </div>
       ) : null}
       {broadcast && liveId ? (
-        <div className="social-field-row">
-          {broadcast.encoderReady ? (
-            <>
-              <CopyButton
-                size="sm"
-                label={t("Copy stream server")}
-                onCopy={async () =>
-                  copyText((await client.facebookEncoder(accountId, liveId)).server)
-                }
-              />
-              <CopyButton
-                size="sm"
-                label={t("Copy stream key")}
-                onCopy={async () =>
-                  copyText((await client.facebookEncoder(accountId, liveId)).streamKey)
-                }
-              />
-            </>
-          ) : null}
-          {canStream &&
-          broadcast.encoderReady &&
-          (broadcast.phase === "unpublished" || broadcast.phase === "starting") ? (
-            <Button
-              size="sm"
-              loading={work.is("start")}
-              onClick={() => void mutate("start").catch(() => undefined)}
-            >
-              {labels.start}
-            </Button>
-          ) : null}
-          {canStream && broadcast.phase !== "ended" ? (
-            <Button
-              size="sm"
-              variant="secondary"
-              loading={work.is("end")}
-              onClick={() => void mutate("end").catch(() => undefined)}
-            >
-              {labels.end}
-            </Button>
-          ) : null}
+        <div className="social-fb-toolbar">
           <Button
             size="sm"
             variant="secondary"
@@ -201,13 +239,23 @@ export function FacebookLivePanel({
         </div>
       ) : null}
       {page && !page.comments.length ? (
-        <EmptyState size="inline" description={t("No results")} />
+        <EmptyState size="inline" description={t("No comments on this live video yet.")} />
       ) : null}
-      {liveId
-        ? page?.comments.map((comment) => (
-            <div className="social-card" key={comment.id}>
-              <Text as="p">
-                {comment.authorName ?? comment.authorId} · {comment.text}
+      {liveId && page?.comments.length ? (
+        <ul className="social-fb-list">
+          {page.comments.map((comment) => (
+            <Surface
+              key={comment.id}
+              as="li"
+              variant="card"
+              padding="sm"
+              className="social-fb-item"
+            >
+              <Text as="span" size="caption" tone="muted">
+                {comment.authorName ?? comment.authorId}
+              </Text>
+              <Text as="p" className="social-fb-item-title">
+                {comment.text}
               </Text>
               {comment.canReply ? (
                 <Disclosure summary={t("Reply")} variant="row">
@@ -220,9 +268,10 @@ export function FacebookLivePanel({
                   />
                 </Disclosure>
               ) : null}
-            </div>
-          ))
-        : null}
+            </Surface>
+          ))}
+        </ul>
+      ) : null}
       {page?.next ? (
         <Button
           size="sm"

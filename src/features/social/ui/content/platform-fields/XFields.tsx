@@ -2,6 +2,7 @@ import { Text } from "../../../../../shared/ui/Text";
 import { t } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
 import { Checkbox } from "../../../../../shared/ui/Checkbox";
+import { Disclosure } from "../../../../../shared/ui/Disclosure";
 import { FieldGroup } from "../../../../../shared/ui/FieldGroup";
 import { NumberField } from "../../../../../shared/ui/NumberField";
 import { TextareaField } from "../../../../../shared/ui/TextareaField";
@@ -15,22 +16,10 @@ export function XFields({ value, disabled, onChange }: PlatformFieldProps) {
   const thread = draft.thread ?? [];
   const update = (patch: XPostDraft) => onChange({ x: { ...draft, ...patch } });
   return (
-    <FieldGroup legend="X" gap="sm" disabled={disabled}>
+    <FieldGroup legend="X" hideLegend gap="sm" disabled={disabled}>
       <Text as="p" size="caption" tone="muted" leading="inherit" className="content-platform-note">
         {t("X posts take either up to four images or one video.")}
       </Text>
-      <TextField
-        label={t("Quote post ID")}
-        numeric
-        value={draft.quotePostId ?? ""}
-        onChange={(event) => update({ quotePostId: event.target.value })}
-      />
-      <TextField
-        label={t("Community ID")}
-        numeric
-        value={draft.communityId ?? ""}
-        onChange={(event) => update({ communityId: event.target.value })}
-      />
       <Checkbox
         label={t("Poll")}
         checked={!!draft.poll}
@@ -86,6 +75,22 @@ export function XFields({ value, disabled, onChange }: PlatformFieldProps) {
           {t("Add thread post")}
         </Button>
       ) : null}
+      <Disclosure summary={t("More X options")} variant="row" size="sm">
+        <div className="content-platform-more">
+          <TextField
+            label={t("Quote post ID")}
+            numeric
+            value={draft.quotePostId ?? ""}
+            onChange={(event) => update({ quotePostId: event.target.value })}
+          />
+          <TextField
+            label={t("Community ID")}
+            numeric
+            value={draft.communityId ?? ""}
+            onChange={(event) => update({ communityId: event.target.value })}
+          />
+        </div>
+      </Disclosure>
     </FieldGroup>
   );
 }

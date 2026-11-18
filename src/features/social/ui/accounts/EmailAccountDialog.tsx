@@ -79,7 +79,7 @@ export function EmailAccountDialog({ client, onClose, onCreated }: EmailAccountD
       }}
       size="md"
       footer={
-        <ModalActions>
+        <ModalActions className="social-dialog-actions">
           <Button variant="ghost" disabled={is("email")} onClick={onClose}>
             {t("Cancel")}
           </Button>

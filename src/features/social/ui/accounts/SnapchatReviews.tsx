@@ -2,14 +2,18 @@ import { useState } from "react";
 import type { SnapchatDeleteInput } from "../../../../integrations/social/snapchat-content";
 import type { SnapchatProfilePatch } from "../../../../integrations/social/snapchat-profile";
 import { t } from "../../../../shared/i18n";
+import { Badge } from "../../../../shared/ui/Badge";
 import { Button } from "../../../../shared/ui/Button";
 import { useConfirm } from "../../../../shared/ui/ConfirmDialog";
+import { DescriptionItem, DescriptionList } from "../../../../shared/ui/DescriptionList";
 import { Disclosure } from "../../../../shared/ui/Disclosure";
 import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
+import { Surface } from "../../../../shared/ui/Surface";
 import { Text } from "../../../../shared/ui/Text";
 import type { SocialClient } from "../../model/socialClient";
 import { useAccountWrite } from "./useAccountWrite";
+import "./platform/snapchat.css";
 
 type Review = {
   id: string;
@@ -127,10 +131,10 @@ export function SnapchatReviews({
   };
   return (
     <Disclosure summary={t("Snapchat reviews")} variant="row">
-      <div className="social-card">
-        <div className="social-field-row">
+      <div className="social-sc-stack">
+        <div className="social-sc-toolbar">
           <Button
-            variant="secondary"
+            variant={reviews ? "secondary" : "primary"}
             size="sm"
             disabled={disabled || is("decision")}
             loading={is("read")}
@@ -138,44 +142,67 @@ export function SnapchatReviews({
           >
             {t("Refresh")}
           </Button>
+          {!reviews && !is("read") && !error ? (
+            <Text as="span" size="caption" tone="muted">
+              {t("Changes the assistant proposes for Snapchat wait here for your approval.")}
+            </Text>
+          ) : null}
         </div>
         {error ? <InlineError>{error}</InlineError> : null}
         {!error && !is("read") && !is("decision") && reviews?.length === 0 ? (
           <EmptyState size="inline" context="list" title={t("Nothing to review.")} />
         ) : null}
-        {reviews?.map((item) => (
-          <Disclosure key={item.id} variant="row" summary={actionLabel(item.action)}>
-            <div className="social-card">
-              {renderDetails(item)}
-              {item.status === "review" ? (
-                <InlineMessage tone="warning">
-                  {t("Snapchat outcome uncertain. Check the account before trying again.")}
-                </InlineMessage>
-              ) : null}
-              <div className="social-field-row">
-                {item.status === "pending" ? (
+        {reviews?.length ? (
+          <ul className="social-sc-list">
+            {reviews.map((item) => (
+              <Surface key={item.id} as="li" variant="card" padding="sm" className="social-sc-item">
+                <div className="social-sc-item-head">
+                  <Text as="span" weight="medium">
+                    {actionLabel(item.action)}
+                  </Text>
+                  <Badge tone={item.status === "review" ? "warning" : "neutral"}>
+                    {item.status === "review" ? t("Needs review") : t("Pending")}
+                  </Badge>
+                </div>
+                <DescriptionList size="sm">
+                  {details(item).map(([label, value]) =>
+                    typeof value === "string" ? (
+                      <DescriptionItem key={label} term={t(label)}>
+                        {value || t("Empty")}
+                      </DescriptionItem>
+                    ) : null,
+                  )}
+                </DescriptionList>
+                {item.status === "review" ? (
+                  <InlineMessage tone="warning">
+                    {t("Snapchat outcome uncertain. Check the account before trying again.")}
+                  </InlineMessage>
+                ) : null}
+                <div className="social-sc-actions">
+                  {item.status === "pending" ? (
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      disabled={disabled || !canApprove || is("read") || is("decision")}
+                      onClick={() => void confirm(item).catch(() => undefined)}
+                    >
+                      {t("Approve")}
+                    </Button>
+                  ) : null}
                   <Button
                     size="sm"
-                    variant="primary"
-                    disabled={disabled || !canApprove || is("read") || is("decision")}
-                    onClick={() => void confirm(item).catch(() => undefined)}
+                    variant="ghost"
+                    disabled={disabled || is("read")}
+                    loading={is("decision")}
+                    onClick={() => void decide(item, false).catch(() => undefined)}
                   >
-                    {t("Approve")}
+                    {t("Dismiss")}
                   </Button>
-                ) : null}
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={disabled || is("read")}
-                  loading={is("decision")}
-                  onClick={() => void decide(item, false).catch(() => undefined)}
-                >
-                  {t("Dismiss")}
-                </Button>
-              </div>
-            </div>
-          </Disclosure>
-        ))}
+                </div>
+              </Surface>
+            ))}
+          </ul>
+        ) : null}
       </div>
       {selected ? confirmation.renderDialog(approval(selected)) : null}
     </Disclosure>

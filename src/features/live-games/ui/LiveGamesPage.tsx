@@ -11,6 +11,8 @@ import { useLiveGames } from "../hooks/useLiveGames";
 import { HalayControls, HalayRules } from "./HalayControls";
 import { LiveGameActivity } from "./LiveGameActivity";
 import { LiveGameConnection } from "./LiveGameConnection";
+import { LiveGoLive } from "./LiveGoLive";
+import { LiveSection } from "./LiveSection";
 import { ObsControls } from "./ObsControls";
 
 export function LiveGamesPage({
@@ -61,16 +63,20 @@ export function LiveGamesPage({
             ) : null}
             <div className="flex min-w-0 flex-col gap-4">
               <LiveGameConnection status={status.data} feedback={feedback} />
-              <Divider />
-              <ObsControls
+              <ObsControls status={status.data} feedback={feedback} live={live} />
+              <LiveGoLive
                 status={status.data}
                 feedback={feedback}
                 live={live}
                 accounts={accounts}
               />
-              <Divider />
-              <HalayControls config={status.data.config} feedback={feedback} />
-              <HalayRules rules={status.data.config.giftRules} feedback={feedback} />
+              <LiveSection step={4} title={t("Game rules")}>
+                <div className="flex flex-col">
+                  <HalayControls config={status.data.config} feedback={feedback} />
+                  <Divider />
+                  <HalayRules rules={status.data.config.giftRules} feedback={feedback} />
+                </div>
+              </LiveSection>
             </div>
             <LiveGameActivity status={status.data} report={report} />
           </div>

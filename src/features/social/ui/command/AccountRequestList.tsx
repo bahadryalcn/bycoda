@@ -171,17 +171,25 @@ export function AccountRequestList({
                     </Text>
                   ) : null}
                 </div>
-                <InfoPopover label={t("Why it is needed")}>
-                  <Text as="p">{item.reason}</Text>
-                  {item.suggestedName || item.suggestedUsername ? (
-                    <Text as="p" tone="muted">
+                {item.suggestedName || item.suggestedUsername ? (
+                  <InfoPopover label={t("Suggested name")}>
+                    <Text as="p">
                       {[item.suggestedName, item.suggestedUsername && `@${item.suggestedUsername}`]
                         .filter(Boolean)
                         .join(" · ")}
                     </Text>
-                  ) : null}
-                </InfoPopover>
+                  </InfoPopover>
+                ) : null}
               </div>
+              <Text
+                as="p"
+                size="caption"
+                tone="secondary"
+                leading="snug"
+                className="account-request-reason"
+              >
+                {item.reason}
+              </Text>
               <div className="account-request-actions">
                 {item.requestedAccountId ? null : (
                   <Button

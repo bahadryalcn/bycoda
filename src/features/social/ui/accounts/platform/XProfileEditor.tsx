@@ -12,7 +12,9 @@ import { DisabledReason, gateProps, type ActionGate } from "../../common/Disable
 import type { XProfilePatch, XProfileState } from "../../../model/socialBrowser";
 import type { SocialClient } from "../../../model/socialClient";
 import { useAccountWrite } from "../useAccountWrite";
+import { SectionLabel } from "../../../../../shared/ui/SectionLabel";
 import "../accounts.css";
+import "./x.css";
 
 export type XProfileEditorProps = {
   client: SocialClient;
@@ -109,7 +111,7 @@ export function XProfileEditor({ client, accountId, accountName }: XProfileEdito
       </Button>
       {values ? (
         <form
-          {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "social-card")}
+          className="social-x-group"
           onSubmit={(event) => {
             event.preventDefault();
             if (!saveGate.disabled) save();
@@ -126,8 +128,10 @@ export function XProfileEditor({ client, accountId, accountName }: XProfileEdito
               setValues((current) => current && { ...current, bio: next });
             }}
           />
-          {field("location", t("Location"), 30)}
-          {field("website", t("Website"), 100)}
+          <div className="social-x-grid">
+            {field("location", t("Location"), 30)}
+            {field("website", t("Website"), 100)}
+          </div>
           <DisabledReason
             type="submit"
             variant="primary"
@@ -139,6 +143,9 @@ export function XProfileEditor({ client, accountId, accountName }: XProfileEdito
           </DisabledReason>
         </form>
       ) : null}
+      <SectionLabel variant="inline" size="secondary" as="h4">
+        {t("Follow an account")}
+      </SectionLabel>
       <div className="social-field-row">
         <TextField
           label={t("X username to follow")}

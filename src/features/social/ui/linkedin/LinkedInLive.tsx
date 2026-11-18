@@ -12,12 +12,16 @@ import { Disclosure } from "../../../../shared/ui/Disclosure";
 import { FieldGroup } from "../../../../shared/ui/FieldGroup";
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { PasswordField } from "../../../../shared/ui/PasswordField";
+import { InfoPopover } from "../../../../shared/ui/InfoPopover";
+import { SectionLabel } from "../../../../shared/ui/SectionLabel";
 import { Text } from "../../../../shared/ui/Text";
 import { TextField } from "../../../../shared/ui/TextField";
 import type { SocialAccount } from "../../model/social";
 import type { SocialClient } from "../../model/socialClient";
 import { useAccountWrite } from "../accounts/useAccountWrite";
+import { LinkedInHandoff } from "./LinkedInHandoff";
 import { LinkedInLiveComments } from "./LinkedInLiveComments";
+import "./linkedin.css";
 
 type Props = {
   account: SocialAccount;
@@ -76,89 +80,116 @@ function LinkedInLiveAccount({ account, client, disabled }: Props) {
 
   return (
     <Disclosure summary={t("LinkedIn Live")} variant="row">
-      <FieldGroup variant="bare" layout="row">
-        <Button
-          variant="secondary"
-          size="sm"
-          loading={is("open")}
-          onClick={() => open(LINKEDIN_LIVE_STUDIO)}
-        >
-          {t("Open Live Studio")}
-        </Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={is("open")}
-          onClick={() => open(LINKEDIN_LIVE_ACCESS)}
-        >
-          {t("Check Live eligibility")}
-        </Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={disabled || pending}
-          loading={is("status")}
-          onClick={() => void refreshStatus().catch(() => undefined)}
-        >
-          {t("Refresh status")}
-        </Button>
-      </FieldGroup>
-      {connectionRequired ? (
-        <Text as="p">{t("Reconnect LinkedIn to save a Live destination.")}</Text>
-      ) : status?.state === "stored" ? (
-        <Text as="p">{t("Credentials stored for event {p0}.", { p0: status.eventId })}</Text>
-      ) : status?.state === "missing" ? (
-        <Text as="p">{t("No LinkedIn Live credentials stored.")}</Text>
-      ) : null}
-      <form onSubmit={save}>
-        <FieldGroup variant="bare" disabled={disabled || pending || connectionRequired}>
-          <TextField
-            label={t("LinkedIn event ID")}
-            name="eventId"
-            inputMode="numeric"
-            pattern="[1-9][0-9]{0,24}"
-            maxLength={25}
-            required
+      <div className="social-li-stack">
+        <div className="social-li-group">
+          <div className="social-li-toolbar">
+            <SectionLabel variant="inline" size="secondary" as="h4">
+              {t("Start on LinkedIn")}
+            </SectionLabel>
+            <InfoPopover label={t("Details")}>
+              <Text as="p">
+                {t(
+                  "LinkedIn only lets you create and start a Live event in its own studio. MonoCode opens the page; you finish it there.",
+                )}
+              </Text>
+            </InfoPopover>
+          </div>
+          <ul className="social-li-list">
+            <LinkedInHandoff
+              description={t("Create the event and copy its stream details.")}
+              action={t("Open Live Studio")}
+              loading={is("open")}
+              onOpen={() => open(LINKEDIN_LIVE_STUDIO)}
+            />
+            <LinkedInHandoff
+              description={t("Check that this account is allowed to go live.")}
+              action={t("Check Live eligibility")}
+              disabled={is("open")}
+              onOpen={() => open(LINKEDIN_LIVE_ACCESS)}
+            />
+          </ul>
+        </div>
+        <div className="social-li-group">
+          <div className="social-li-item-head">
+            <SectionLabel variant="inline" size="secondary" as="h4">
+              {t("Stream destination")}
+            </SectionLabel>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={disabled || pending}
+              loading={is("status")}
+              onClick={() => void refreshStatus().catch(() => undefined)}
+            >
+              {t("Refresh status")}
+            </Button>
+          </div>
+          {connectionRequired ? (
+            <Text as="p">{t("Reconnect LinkedIn to save a Live destination.")}</Text>
+          ) : status?.state === "stored" ? (
+            <Text as="p">{t("Credentials stored for event {p0}.", { p0: status.eventId })}</Text>
+          ) : status?.state === "missing" ? (
+            <Text as="p">{t("No LinkedIn Live credentials stored.")}</Text>
+          ) : (
+            <Text as="p" size="secondary" tone="muted">
+              {t("Paste the event ID, stream URL and stream key from LinkedIn Live Studio.")}
+            </Text>
+          )}
+          <form onSubmit={save}>
+            <FieldGroup variant="bare" disabled={disabled || pending || connectionRequired}>
+              <TextField
+                label={t("LinkedIn event ID")}
+                name="eventId"
+                inputMode="numeric"
+                pattern="[1-9][0-9]{0,24}"
+                maxLength={25}
+                required
+              />
+              <PasswordField
+                label={t("Stream URL")}
+                name="streamUrl"
+                autoComplete="off"
+                maxLength={4096}
+                required
+              />
+              <PasswordField
+                label={t("Stream key")}
+                name="streamKey"
+                autoComplete="off"
+                maxLength={4096}
+                required
+              />
+              <div className="social-li-actions">
+                <Button type="submit" variant="primary" size="sm" loading={is("save")}>
+                  {t("Save Live credentials")}
+                </Button>
+                {status?.state === "stored" || connectionRequired ? (
+                  <Button
+                    variant="ghost"
+                    tone="danger"
+                    size="sm"
+                    disabled={disabled || pending}
+                    loading={is("clear")}
+                    onClick={() => void clear().catch(() => undefined)}
+                  >
+                    {t("Clear Live credentials")}
+                  </Button>
+                ) : null}
+              </div>
+            </FieldGroup>
+          </form>
+          {error ? <InlineError>{error}</InlineError> : null}
+        </div>
+        {account.accountType === "organization" && account.connection === "oauth" ? (
+          <LinkedInLiveComments
+            accountId={accountId}
+            client={client}
+            disabled={disabled}
+            canReply={account.scopes.includes("w_organization_social_feed")}
+            storedEventId={status?.state === "stored" ? status.eventId : undefined}
           />
-          <PasswordField
-            label={t("Stream URL")}
-            name="streamUrl"
-            autoComplete="off"
-            maxLength={4096}
-            required
-          />
-          <PasswordField
-            label={t("Stream key")}
-            name="streamKey"
-            autoComplete="off"
-            maxLength={4096}
-            required
-          />
-          <Button type="submit" variant="primary" size="sm" loading={is("save")}>
-            {t("Save Live credentials")}
-          </Button>
-        </FieldGroup>
-      </form>
-      {status?.state === "stored" || connectionRequired ? (
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={disabled || pending}
-          loading={is("clear")}
-          onClick={() => void clear().catch(() => undefined)}
-        >
-          {t("Clear Live credentials")}
-        </Button>
-      ) : null}
-      {error ? <InlineError>{error}</InlineError> : null}
-      {account.accountType === "organization" && account.connection === "oauth" ? (
-        <LinkedInLiveComments
-          accountId={accountId}
-          client={client}
-          disabled={disabled}
-          canReply={account.scopes.includes("w_organization_social_feed")}
-        />
-      ) : null}
+        ) : null}
+      </div>
     </Disclosure>
   );
 }

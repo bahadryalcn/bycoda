@@ -1,141 +1,74 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { t } from "../../../../../shared/i18n";
-import { isoTimestamp } from "../../../../../shared/lib/time/timestamps";
 import { Button } from "../../../../../shared/ui/Button";
 import { useConfirm } from "../../../../../shared/ui/ConfirmDialog";
-import { DatePicker } from "../../../../../shared/ui/DatePicker";
-import { DateTimePicker } from "../../../../../shared/ui/DateTimePicker";
-import { FieldGroup } from "../../../../../shared/ui/FieldGroup";
-import { FileField } from "../../../../../shared/ui/FileField";
+import { Divider } from "../../../../../shared/ui/Divider";
 import { InlineError, InlineMessage } from "../../../../../shared/ui/InlineError";
-import { NumberField } from "../../../../../shared/ui/NumberField";
+import { SectionLabel } from "../../../../../shared/ui/SectionLabel";
+import { SegmentedControl } from "../../../../../shared/ui/SegmentedControl";
 import { Select } from "../../../../../shared/ui/Select";
+import { SubTabs } from "../../../../../shared/ui/SubTabs";
 import { Text } from "../../../../../shared/ui/Text";
-import { TextareaField } from "../../../../../shared/ui/TextareaField";
-import { TextField } from "../../../../../shared/ui/TextField";
 import type { Capability, SocialAccount } from "../../../model/social";
 import type { SocialClient } from "../../../model/socialClient";
+import { socialQueryScope } from "../../../model/socialQuery";
 import type { YouTubeOperation } from "../../../model/youtubeManagement";
 import { capabilityReasonText } from "../../common/capabilityText";
 import { useAccountWrite } from "../useAccountWrite";
-import { asYoutubeRecord, YouTubeFacts, YouTubeResult } from "./YouTubeResult";
+import { YouTubeBrowse } from "./YouTubeBrowse";
+import { YouTubeFields } from "./YouTubeFields";
+import { withDefaults, youtubePayload } from "./YouTubeFormFields";
+import { YouTubeFacts, YouTubeResult } from "./YouTubeResult";
 import {
-  youtubeForms,
+  isBrowseForm,
+  youtubeIdKeys,
   youtubeSections,
-  type YouTubeForm,
-  type YouTubeFormField,
+  youtubeViewForms,
+  youtubeViews,
+  type YouTubeDraft,
   type YouTubeSection,
+  type YouTubeView,
 } from "./youtubeForms";
+import { youtubePick } from "./youtubeItems";
+import "./youtube.css";
 
-type Draft = Record<string, string | File[]>;
-
-function fieldValue(field: YouTubeFormField, value: string) {
-  if (field.type === "number") return Number(value);
-  if (field.type === "datetime") return value === "" ? null : isoTimestamp(Date.parse(value));
-  if (field.type === "lines")
-    return value
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean);
-  if (field.type === "links")
-    return value
-      .split("\n")
-      .filter((line) => line.trim())
-      .map((line) => {
-        const split = line.indexOf("|");
-        if (split < 0)
-          throw new Error(t("One link per line in Name | https://example.com format."));
-        return { title: line.slice(0, split).trim(), url: line.slice(split + 1).trim() };
-      });
-  return field.choices && (value === "true" || value === "false") ? value === "true" : value;
-}
-
-async function payload(
-  form: YouTubeForm,
-  draft: Draft,
-  accountId: string,
-  upload?: SocialClient["upload"],
-) {
-  const input: Record<string, unknown> = { accountId, ...form.fixed };
-  const patch: Record<string, unknown> = {};
-  for (const field of form.fields ?? []) {
-    const raw = draft[field.key];
-    if (raw === undefined) continue;
-    if (raw === "" && !field.emptyAllowed) continue;
-    const entry = form.fieldsInPatch?.includes(field.key) ? patch : input;
-    if (Array.isArray(raw)) {
-      if (!raw.length) continue;
-      const ids = upload
-        ? await Promise.all(raw.map(async (file) => (await upload(file)).uploadId))
-        : raw.map((file) => file.name);
-      entry[field.key] = field.multiple ? ids : ids[0];
-    } else {
-      entry[field.key] = fieldValue(field, raw);
-    }
+function browseTitle(action: string) {
+  switch (action) {
+    case "youtube.quota.status":
+      return t("Quota usage");
+    case "youtube.monetization.status":
+      return t("Monetization");
+    case "youtube.operations.list":
+      return t("Waiting for review");
+    default:
+      return "";
   }
-  if (form.fieldsInPatch) input.patch = patch;
-  return input;
 }
 
-function FormField({
-  field,
-  value,
-  disabled,
-  set,
-}: {
-  field: YouTubeFormField;
-  value?: string | File[];
-  disabled: boolean;
-  set(value: string | File[]): void;
-}) {
-  const { label, description, required } = field;
-  const input = typeof value === "string" ? value : "";
-  const props = { label, disabled, required };
-  if (field.choices)
-    return (
-      <Select
-        label={label}
-        value={input}
-        disabled={disabled}
-        onValueChange={set}
-        options={field.choices}
-      />
-    );
-  if (field.type === "images")
-    return (
-      <FileField
-        label={label}
-        disabled={disabled}
-        multiple={field.multiple}
-        description={Array.isArray(value) ? value.map((file) => file.name).join(", ") : description}
-        accept="image/png,image/jpeg"
-        onFiles={set}
-      />
-    );
-  if (field.type === "date") return <DatePicker {...props} value={input} onChange={set} />;
-  if (field.type === "datetime") return <DateTimePicker {...props} value={input} onChange={set} />;
-  if (field.type === "number")
-    return (
-      <NumberField {...props} value={input} min={0} onChange={(event) => set(event.target.value)} />
-    );
-  if (field.type === "textarea" || field.type === "lines" || field.type === "links")
-    return (
-      <TextareaField
-        {...props}
-        description={description}
-        value={input}
-        minRows={2}
-        onChange={(event) => set(event.target.value)}
-      />
-    );
-  return (
-    <TextField
-      {...props}
-      description={description}
-      value={input}
-      onChange={(event) => set(event.target.value)}
-    />
-  );
+function emptyText(action: string) {
+  switch (action) {
+    case "youtube.videos.list":
+      return t("No videos found.");
+    case "youtube.playlists.list":
+      return t("No playlists found.");
+    case "youtube.comments.list":
+      return t("No comments to show.");
+    case "youtube.subscriptions.list":
+      return t("No subscriptions to show.");
+    case "youtube.broadcasts.list":
+      return t("No broadcasts found.");
+    case "youtube.liveChat.list":
+      return t("No chat messages yet.");
+    case "youtube.superChats.list":
+      return t("No Super Chats yet.");
+    case "youtube.community.list":
+      return t("No Community posts found.");
+    case "youtube.operations.list":
+      return t("Nothing is waiting for review.");
+    default:
+      return t("No results");
+  }
 }
 
 export function YouTubeManage({
@@ -153,55 +86,74 @@ export function YouTubeManage({
 }) {
   const browser = account.connection === "browser";
   const [section, setSection] = useState(initialSection);
+  const [views, setViews] = useState<Partial<Record<YouTubeSection, YouTubeView>>>({});
   const [operation, setOperation] = useState("");
-  const [drafts, setDrafts] = useState<Partial<Record<YouTubeSection, Draft>>>({});
-  const draft = drafts[section] ?? {};
-  const setField = (key: string, value: string | File[]) =>
-    setDrafts((current) => ({ ...current, [section]: { ...current[section], [key]: value } }));
+  const [drafts, setDrafts] = useState<Partial<Record<YouTubeSection, YouTubeDraft>>>({});
+  const [selection, setSelection] = useState<{
+    section: YouTubeSection;
+    id: string;
+    title: string;
+    keys: string[];
+  }>();
   const [result, setResult] = useState<unknown>();
+  const draft = drafts[section] ?? {};
+  const mergeDraft = (values: YouTubeDraft) =>
+    setDrafts((current) => ({ ...current, [section]: { ...current[section], ...values } }));
+  const setField = (key: string, value: string | File[]) => mergeDraft({ [key]: value });
   const { write, error, is, setError } = useAccountWrite(t("The YouTube operation failed."));
   const confirmation = useConfirm();
-  const forms = youtubeForms(section, browser);
-  const selectedForm = forms.find((item) => item.action === operation) ?? forms[0]!;
-  const form = {
-    ...selectedForm,
-    fields: selectedForm.fields?.filter(
-      (field) => !field.whenKind || field.whenKind === draft.kind,
-    ),
-  };
-  const busy = is("youtube");
-  const connectionBlocked =
-    disabled || (section !== "review" && (account.paused || !account.connected));
-  const capability = capabilities.find((item) => item.operation === form.capability);
-  const unavailable = capability && capability.status !== "available";
-  const incomplete = form.fields?.some(({ key, required }) => required && !draft[key]?.length);
-  const resultRecord = asYoutubeRecord(result);
-  const videoPage = form.action === "youtube.videos.list";
-  const actionLabel =
-    form.action === "youtube.community.publish" && draft.publishAt
-      ? t("Schedule Community post")
-      : form.label;
-  const next =
-    typeof resultRecord?.next === "string"
-      ? { cursor: resultRecord.next }
-      : typeof resultRecord?.nextStartIndex === "number"
-        ? { startIndex: resultRecord.nextStartIndex }
-        : undefined;
+  const queryClient = useQueryClient();
 
-  const run = async (page?: Record<string, unknown>) => {
+  const sectionViews = youtubeViews(section);
+  const view = sectionViews.length ? (views[section] ?? sectionViews[0]!.value) : undefined;
+  const forms = youtubeViewForms(section, browser, view);
+  const browseForm = forms.find(isBrowseForm);
+  const taskForms = forms.filter((item) => !isBrowseForm(item));
+  const form = taskForms.find((item) => item.action === operation) ?? taskForms[0];
+  const busy = is("youtube");
+  const blocked = disabled || (section !== "review" && (account.paused || !account.connected));
+  const taskFields = form?.fields?.filter(
+    (field) => !field.whenKind || field.whenKind === draft.kind,
+  );
+  const effective = form ? withDefaults(form, draft) : draft;
+  const capability = capabilities.find((item) => item.operation === form?.capability);
+  const unavailable = capability && capability.status !== "available";
+  const incomplete = taskFields?.some(({ key, required }) => required && !effective[key]?.length);
+  const needsTarget = taskFields?.some(
+    ({ key, required }) => required && youtubeIdKeys.has(key) && !effective[key]?.length,
+  );
+  const actionLabel =
+    form?.action === "youtube.community.publish" && draft.publishAt
+      ? t("Schedule Community post")
+      : (form?.label ?? "");
+  const selected = selection?.section === section ? selection : undefined;
+  const reviewing = section === "review";
+
+  const refreshLists = () =>
+    queryClient
+      .invalidateQueries({ queryKey: [...socialQueryScope(client), "youtube", account.id] })
+      .catch(() => undefined);
+  const finish = (response: unknown) => {
+    if (response === undefined) return;
+    setResult(response);
+    refreshLists();
+  };
+  const handleError = (cause: unknown) =>
+    setError(cause instanceof Error ? cause.message : t("The YouTube operation failed."));
+
+  const run = async () => {
+    if (!form) return;
     if (!form.write) {
-      const response = await write(
-        "youtube",
-        async () =>
-          await client.request(form.action, {
-            ...(await payload(form, draft, account.id)),
-            ...page,
-          }),
+      finish(
+        await write(
+          "youtube",
+          async () =>
+            await client.request(form.action, await youtubePayload(form, effective, account.id)),
+        ),
       );
-      if (response !== undefined) setResult(response);
       return;
     }
-    const details = await payload(form, draft, account.id);
+    const details = await youtubePayload(form, effective, account.id);
     const confirmed = await confirmation.confirm({
       title: actionLabel,
       message: account.name,
@@ -210,81 +162,67 @@ export function YouTubeManage({
       details: <YouTubeFacts data={details} />,
     });
     if (!confirmed) return;
-    const response = await write(
-      "youtube",
-      async () =>
-        await client.request(form.action, await payload(form, draft, account.id, client.upload)),
+    finish(
+      await write(
+        "youtube",
+        async () =>
+          await client.request(
+            form.action,
+            await youtubePayload(form, effective, account.id, client.upload),
+          ),
+      ),
     );
-    if (response !== undefined) setResult(response);
   };
 
-  const select = (value: string) => {
+  const chooseTask = (value: string) => {
     setOperation(value);
     setResult(undefined);
     setError("");
   };
-  const selectItem = (item: Record<string, unknown>) => {
-    if (typeof item.id !== "string") return;
-    if (section === "community") {
-      setField("postId", item.id);
-      if (typeof item.text === "string") setField("editedText", item.text);
-      if (item.status === "published" || item.status === "scheduled")
-        setField("status", item.status);
-      select("youtube.community.edit");
-      return;
-    }
-    const key = videoPage
-      ? "videoId"
-      : section === "videos"
-        ? draft.playlistId
-          ? "playlistItemId"
-          : "playlistId"
-        : section === "comments"
-          ? "commentId"
-          : section === "subscriptions"
-            ? "targetChannelId"
-            : section === "live" && form.action === "youtube.liveChat.list"
-              ? "messageId"
-              : "broadcastId";
-    const id =
-      key === "targetChannelId" && typeof item.channelId === "string" ? item.channelId : item.id;
-    setField(key, id);
-    const action = videoPage
-      ? "youtube.video.update"
-      : section === "comments"
-        ? "youtube.comment.moderate"
-        : section === "subscriptions"
-          ? "youtube.subscription.preview"
-          : key === "playlistItemId"
-            ? "youtube.playlist.move"
-            : key === "playlistId"
-              ? "youtube.playlists.list"
-              : key === "messageId"
-                ? "youtube.liveChat.delete"
-                : "youtube.liveChat.list";
-    if (action !== form.action) select(action);
+  const pick = (row: Record<string, unknown>) => {
+    const target = youtubePick(section, view, draft, row);
+    if (!target) return;
+    mergeDraft(target.values);
+    setSelection({
+      section,
+      id: String(row.id),
+      title: target.title,
+      keys: Object.keys(target.values),
+    });
+    if (taskForms.some((item) => item.action === target.action)) chooseTask(target.action);
+    else setResult(undefined);
   };
-  const review = async (operation: YouTubeOperation) => {
+  const clearSelection = () => {
+    if (!selected) return;
+    setDrafts((current) => {
+      const next = { ...current[section] };
+      for (const key of selected.keys) delete next[key];
+      return { ...current, [section]: next };
+    });
+    setSelection(undefined);
+  };
+  const review = async (target: YouTubeOperation) => {
     if (
       !(await confirmation.confirm({
         title: t("Approve YouTube operation"),
         message: account.name,
         danger: false,
         confirmLabel: t("Approve"),
-        details: <YouTubeFacts data={{ action: operation.action, ...operation.input }} />,
+        details: <YouTubeFacts data={{ action: target.action, ...target.input }} />,
       }))
     )
       return;
-    const response = await write("youtube", () =>
-      client.request("youtube.operation.approve", {
-        accountId: account.id,
-        id: operation.id,
-        confirm: true,
-      }),
+    finish(
+      await write("youtube", () =>
+        client.request("youtube.operation.approve", {
+          accountId: account.id,
+          id: target.id,
+          confirm: true,
+        }),
+      ),
     );
-    if (response !== undefined) setResult(response);
   };
-  const reconcile = async (operation: YouTubeOperation, status: "done" | "rejected") => {
+  const reconcile = async (target: YouTubeOperation, status: "done" | "rejected") => {
     const label = status === "done" ? t("Completed") : t("Failed");
     if (
       !(await confirmation.confirm({
@@ -292,114 +230,180 @@ export function YouTubeManage({
         message: t("YouTube outcome is uncertain. Verify it on YouTube before trying again."),
         danger: false,
         confirmLabel: label,
-        details: <YouTubeFacts data={{ action: operation.action, ...operation.input }} />,
+        details: <YouTubeFacts data={{ action: target.action, ...target.input }} />,
       }))
     )
       return;
-    const response = await write("youtube", () =>
-      client.request("youtube.operation.reconcile", {
-        accountId: account.id,
-        id: operation.id,
-        status,
-        confirm: true,
-      }),
+    finish(
+      await write("youtube", () =>
+        client.request("youtube.operation.reconcile", {
+          accountId: account.id,
+          id: target.id,
+          status,
+          confirm: true,
+        }),
+      ),
     );
-    if (response !== undefined) setResult(response);
   };
-  const handleError = (error: unknown) =>
-    setError(error instanceof Error ? error.message : t("The YouTube operation failed."));
-  const canSelectItem = [
-    "youtube.videos.list",
-    "youtube.playlists.list",
-    "youtube.comments.list",
-    "youtube.subscriptions.list",
-    "youtube.broadcasts.list",
-    "youtube.liveChat.list",
-    "youtube.community.list",
-  ].includes(form.action);
 
-  return (
-    <FieldGroup disabled={busy || connectionBlocked}>
-      <Select
+  const drilled = view === "playlists" && typeof draft.playlistId === "string" && draft.playlistId;
+  const lead =
+    sectionViews.length > 1 ? (
+      <SegmentedControl
         label={t("YouTube management")}
-        hideLabel
-        value={section}
-        options={youtubeSections(browser)}
+        value={view ?? ""}
+        options={sectionViews}
         onValueChange={(value) => {
-          setSection(value as YouTubeSection);
-          select("");
+          setViews((current) => ({ ...current, [section]: value as YouTubeView }));
+          setOperation("");
+          setResult(undefined);
+          setError("");
         }}
       />
-      {forms.length > 1 ? (
-        <Select
-          label={t("Action")}
-          value={form.action}
-          options={forms.map(({ action, label }) => ({ value: action, label }))}
-          onValueChange={select}
-        />
-      ) : null}
-      {form.fields?.map((field) => (
-        <FormField
-          key={field.key}
-          field={field}
-          value={draft[field.key]}
-          set={(value) => setField(field.key, value)}
-          disabled={busy || connectionBlocked}
-        />
-      ))}
-      {unavailable ? (
-        <InlineMessage tone="warning">{capabilityReasonText(capability)}</InlineMessage>
-      ) : null}
-      {error ? <InlineError>{error}</InlineError> : null}
-      <div>
-        <Button
-          variant="primary"
-          disabled={Boolean(incomplete || unavailable)}
-          loading={busy}
-          onClick={() => {
-            run().catch(handleError);
-          }}
-        >
-          {actionLabel}
-        </Button>
-      </div>
-      {result !== undefined ? (
-        <YouTubeResult
-          result={result}
-          busy={busy}
+    ) : undefined;
+
+  return (
+    <div className="youtube-manage">
+      <SubTabs
+        label={t("YouTube management")}
+        value={section}
+        items={youtubeSections(browser)}
+        onValueChange={(value) => {
+          setSection(value as YouTubeSection);
+          setOperation("");
+          setResult(undefined);
+          setError("");
+        }}
+      />
+      {browseForm ? (
+        <YouTubeBrowse
+          key={`${section}:${view ?? ""}`}
+          client={client}
+          account={account}
+          form={browseForm}
+          title={drilled ? t("Playlist items") : browseTitle(browseForm.action)}
+          lead={lead}
+          draft={draft}
+          setField={setField}
+          blocked={blocked}
+          browser={browser}
+          selectedId={selected?.id}
+          onPick={
+            [
+              "youtube.superChats.list",
+              "youtube.channel.read",
+              "youtube.quota.status",
+              "youtube.monetization.status",
+            ].includes(browseForm.action)
+              ? undefined
+              : pick
+          }
           review={
-            section === "review"
-              ? (operation) => {
-                  review(operation).catch(handleError);
+            reviewing
+              ? (target) => {
+                  review(target).catch(handleError);
                 }
               : undefined
           }
-          onPickItem={canSelectItem ? selectItem : undefined}
           reconcile={
-            section === "review"
-              ? (operation, status) => {
-                  reconcile(operation, status).catch(handleError);
+            reviewing
+              ? (target, status) => {
+                  reconcile(target, status).catch(handleError);
                 }
               : undefined
           }
+          emptyText={emptyText(browseForm.action)}
         />
+      ) : lead ? (
+        <div className="youtube-head">{lead}</div>
       ) : null}
-      {next ? (
-        <Button
-          disabled={busy}
-          onClick={() => {
-            run(next).catch(handleError);
-          }}
-        >
-          {t("Next page")}
-        </Button>
-      ) : null}
+      {form ? (
+        <section className="youtube-task" aria-label={t("Actions")}>
+          <Divider decorative />
+          <div className="youtube-head">
+            <SectionLabel as="h3">
+              {taskForms.length === 1 ? form.label : t("Actions")}
+            </SectionLabel>
+          </div>
+          {taskForms.length > 1 ? (
+            taskForms.length <= 4 ? (
+              <SegmentedControl
+                label={t("Actions")}
+                value={form.action}
+                options={taskForms.map(({ action, label }) => ({ value: action, label }))}
+                onValueChange={chooseTask}
+              />
+            ) : (
+              <Select
+                label={t("Actions")}
+                hideLabel
+                value={form.action}
+                disabled={busy || blocked}
+                options={taskForms.map(({ action, label }) => ({ value: action, label }))}
+                onValueChange={chooseTask}
+              />
+            )
+          ) : null}
+          {selected && selected.keys.some((key) => taskFields?.some((f) => f.key === key)) ? (
+            <div className="youtube-selected">
+              <Text size="caption" tone="secondary">
+                {t("Selected: {p0}", { p0: selected.title })}
+              </Text>
+              <Button size="sm" variant="ghost" onClick={clearSelection}>
+                {t("Clear")}
+              </Button>
+            </div>
+          ) : null}
+          {taskFields?.length ? (
+            <YouTubeFields
+              key={form.action}
+              client={client}
+              accountId={account.id}
+              fields={taskFields}
+              draft={effective}
+              setField={setField}
+              disabled={busy || blocked}
+              enabled={!blocked}
+              unset={t("No change")}
+              listAvailable={Boolean(browseForm)}
+            />
+          ) : null}
+          {unavailable ? (
+            <InlineMessage tone="warning">{capabilityReasonText(capability)}</InlineMessage>
+          ) : null}
+          {needsTarget && !blocked ? (
+            <Text size="caption" tone="secondary">
+              {t("Pick an item in the list above, or enter its ID.")}
+            </Text>
+          ) : null}
+          {error ? <InlineError>{error}</InlineError> : null}
+          <div className="youtube-actions">
+            <Button
+              variant={form.danger ? "secondary" : "primary"}
+              tone={form.danger ? "danger" : undefined}
+              disabled={Boolean(incomplete || unavailable || blocked)}
+              loading={busy}
+              onClick={() => {
+                run().catch(handleError);
+              }}
+            >
+              {actionLabel}
+            </Button>
+          </div>
+          {result !== undefined ? <YouTubeResult result={result} busy={busy} /> : null}
+        </section>
+      ) : (
+        <>
+          {error ? <InlineError>{error}</InlineError> : null}
+          {result !== undefined ? <YouTubeResult result={result} busy={busy} /> : null}
+        </>
+      )}
       {browser && section === "channel" ? (
         <Text size="caption" tone="secondary">
           {t("Connect this channel with the YouTube API to edit its description or banner.")}
         </Text>
       ) : null}
       {confirmation.dialog}
-    </FieldGroup>
+    </div>
   );
 }

@@ -5,12 +5,12 @@ import type {
   LiveGamesStatus,
 } from "../../../shared/model/host-contracts/live-games";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
-import { Divider } from "../../../shared/ui/Divider";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Text } from "../../../shared/ui/Text";
+import { LiveSection } from "./LiveSection";
 
 const eventLabel = {
   comment: "Comment",
@@ -36,8 +36,7 @@ export function LiveGameActivity({
   const leader = status.snapshot.dancers.find((dancer) => dancer.role === "leader");
   return (
     <div className="flex min-w-0 flex-col gap-4">
-      <section className="flex flex-col gap-2" aria-label={t("Live events")}>
-        <SectionLabel>{t("Live events")}</SectionLabel>
+      <LiveSection title={t("Live events")}>
         {leader ? (
           <DescriptionList size="sm">
             <DescriptionItem term={t("Dance leader")}>{leader.name}</DescriptionItem>
@@ -66,10 +65,8 @@ export function LiveGameActivity({
             ))}
           </ul>
         )}
-      </section>
-      <Divider />
-      <section className="flex flex-col gap-2" aria-label={t("Session report")}>
-        <SectionLabel>{t("Session report")}</SectionLabel>
+      </LiveSection>
+      <LiveSection title={t("Session report")}>
         {report.error ? (
           <InlineError
             details={report.error.message}
@@ -90,7 +87,7 @@ export function LiveGameActivity({
         ) : !report.isError ? (
           <EmptyState size="inline" context="list" title={t("No session report yet")} />
         ) : null}
-      </section>
+      </LiveSection>
     </div>
   );
 }

@@ -27,6 +27,8 @@ export type SocialActionContext = {
   youtubeRequestId?: string;
   // TikTok account operations.
   tiktok?: import("../tiktok/tiktok-actions").TikTokRuntime;
+  /** Reads the Instagram professional-dashboard earnings in the account's browser session; read only. */
+  instagramEarnings?: (accountId: string) => Promise<unknown>;
   /** Facebook Live receipts store encoder credentials on the account's executor. */
   facebookLive?: { credentials: SocialCredentialStore; environmentId: string };
 };

@@ -109,59 +109,65 @@ export function SnapchatNewChat({
   };
   return (
     <Disclosure summary={t("New Snapchat chat")} variant="row">
-      <Select
-        label={t("Account")}
-        options={accounts.map((item) => ({ value: item.id, label: item.name }))}
-        value={account.id}
-        onValueChange={setSelected}
-        disabled={!editable}
-      />
-      <TextField
-        label={t("Friend’s Snapchat username")}
-        value={username}
-        disabled={!editable}
-        onChange={(event) => setUsername(event.currentTarget.value)}
-      />
-      <Button
-        variant="secondary"
-        loading={pending.is("friends")}
-        disabled={!editable}
-        onClick={() => void readFriends().catch(() => undefined)}
-      >
-        {t("Read Snapchat friends")}
-      </Button>
-      {friendPage?.usernames.length ? (
+      <div className="inbox-new-chat">
         <Select
-          label={t("Snapchat friends")}
-          value={friendPage.usernames.includes(username) ? username : ""}
-          options={[
-            { value: "", label: t("Choose a friend"), disabled: true },
-            ...friendPage.usernames.map((friend) => ({ value: friend, label: `@${friend}` })),
-          ]}
-          onValueChange={setUsername}
+          label={t("Account")}
+          options={accounts.map((item) => ({ value: item.id, label: item.name }))}
+          value={account.id}
+          onValueChange={setSelected}
           disabled={!editable}
         />
-      ) : friendPage && !friendPage.partial ? (
-        <InlineMessage>{t("No Snapchat friends found.")}</InlineMessage>
-      ) : null}
-      {friendPage?.partial && (
-        <InlineMessage>{t("Only visible Snapchat friends are shown.")}</InlineMessage>
-      )}
-      <TextareaField
-        label={t("Message")}
-        value={text}
-        disabled={!editable}
-        onChange={(event) => setText(event.currentTarget.value)}
-      />
-      <Button
-        disabled={!enabled || !eligible || busy}
-        onClick={() => void confirmation.confirm(confirmRequest).catch(() => undefined)}
-      >
-        {operation ? t("Retry same message") : t("Send message")}
-      </Button>
-      {error && <InlineError>{error}</InlineError>}
-      {job && <StatusText status={job.status} />}
-      {confirmation.renderDialog(confirmRequest)}
+        <div>
+          <Button
+            variant="secondary"
+            loading={pending.is("friends")}
+            disabled={!editable}
+            onClick={() => void readFriends().catch(() => undefined)}
+          >
+            {t("Read Snapchat friends")}
+          </Button>
+        </div>
+        {friendPage?.usernames.length ? (
+          <Select
+            label={t("Snapchat friends")}
+            value={friendPage.usernames.includes(username) ? username : ""}
+            options={[
+              { value: "", label: t("Choose a friend"), disabled: true },
+              ...friendPage.usernames.map((friend) => ({ value: friend, label: `@${friend}` })),
+            ]}
+            onValueChange={setUsername}
+            disabled={!editable}
+          />
+        ) : friendPage && !friendPage.partial ? (
+          <InlineMessage>{t("No Snapchat friends found.")}</InlineMessage>
+        ) : null}
+        {friendPage?.partial && (
+          <InlineMessage>{t("Only visible Snapchat friends are shown.")}</InlineMessage>
+        )}
+        <Disclosure summary={t("Enter a username instead")} variant="plain">
+          <TextField
+            label={t("Friend’s Snapchat username")}
+            value={username}
+            disabled={!editable}
+            onChange={(event) => setUsername(event.currentTarget.value)}
+          />
+        </Disclosure>
+        <TextareaField
+          label={t("Message")}
+          value={text}
+          disabled={!editable}
+          onChange={(event) => setText(event.currentTarget.value)}
+        />
+        <Button
+          disabled={!enabled || !eligible || busy}
+          onClick={() => void confirmation.confirm(confirmRequest).catch(() => undefined)}
+        >
+          {operation ? t("Retry same message") : t("Send message")}
+        </Button>
+        {error && <InlineError>{error}</InlineError>}
+        {job && <StatusText status={job.status} />}
+        {confirmation.renderDialog(confirmRequest)}
+      </div>
     </Disclosure>
   );
 }

@@ -1,6 +1,7 @@
 import { formatNumber, t } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
 import { Checkbox } from "../../../../../shared/ui/Checkbox";
+import { Disclosure } from "../../../../../shared/ui/Disclosure";
 import { FieldGroup } from "../../../../../shared/ui/FieldGroup";
 import { NumberField } from "../../../../../shared/ui/NumberField";
 import { Select } from "../../../../../shared/ui/Select";
@@ -130,7 +131,7 @@ export function InstagramFields({ account, media, value, disabled, onChange }: P
   const change = (next: Partial<InstagramDraft>) =>
     onChange({ ...value, instagram: { ...options, ...next } });
   return (
-    <FieldGroup legend={t("Instagram publishing")} disabled={disabled}>
+    <FieldGroup legend={t("Instagram publishing")} hideLegend disabled={disabled}>
       <Select
         label={t("Instagram format")}
         disabled={disabled}
@@ -154,19 +155,6 @@ export function InstagramFields({ account, media, value, disabled, onChange }: P
         </Text>
       ) : (
         <>
-          <TextField
-            label={t("Instagram collaborators")}
-            description={t("Enter up to three usernames, separated by commas.")}
-            defaultValue={options.collaborators?.join(", ") ?? ""}
-            onChange={(event) =>
-              change({
-                collaborators: event.target.value
-                  .split(",")
-                  .map((value) => value.trim())
-                  .filter(Boolean),
-              })
-            }
-          />
           {media
             .filter((item) => item.media.kind === "image")
             .map((item) => (
@@ -182,12 +170,6 @@ export function InstagramFields({ account, media, value, disabled, onChange }: P
                 }
               />
             ))}
-          <TextField
-            label={t("Instagram location ID")}
-            inputMode="numeric"
-            value={options.locationId ?? ""}
-            onChange={(event) => change({ locationId: event.target.value || undefined })}
-          />
         </>
       )}
       <Checkbox
@@ -195,13 +177,47 @@ export function InstagramFields({ account, media, value, disabled, onChange }: P
         label={t("Label as AI-generated")}
         onChange={(event) => change({ isAiGenerated: event.target.checked })}
       />
-      <InstagramTags
-        media={media}
-        story={story}
-        tags={options.userTags ?? []}
-        disabled={disabled}
-        onChange={(userTags) => change({ userTags })}
-      />
+      {story ? null : (
+        <Disclosure summary={t("More Instagram options")} variant="row" size="sm">
+          <div className="content-platform-more">
+            <TextField
+              label={t("Instagram collaborators")}
+              description={t("Enter up to three usernames, separated by commas.")}
+              defaultValue={options.collaborators?.join(", ") ?? ""}
+              onChange={(event) =>
+                change({
+                  collaborators: event.target.value
+                    .split(",")
+                    .map((value) => value.trim())
+                    .filter(Boolean),
+                })
+              }
+            />
+            <TextField
+              label={t("Instagram location ID")}
+              inputMode="numeric"
+              value={options.locationId ?? ""}
+              onChange={(event) => change({ locationId: event.target.value || undefined })}
+            />
+            <InstagramTags
+              media={media}
+              story={story}
+              tags={options.userTags ?? []}
+              disabled={disabled}
+              onChange={(userTags) => change({ userTags })}
+            />
+          </div>
+        </Disclosure>
+      )}
+      {story ? (
+        <InstagramTags
+          media={media}
+          story={story}
+          tags={options.userTags ?? []}
+          disabled={disabled}
+          onChange={(userTags) => change({ userTags })}
+        />
+      ) : null}
     </FieldGroup>
   );
 }

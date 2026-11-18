@@ -4,10 +4,12 @@ import { Button } from "../../../../shared/ui/Button";
 import { useConfirm } from "../../../../shared/ui/ConfirmDialog";
 import { Disclosure } from "../../../../shared/ui/Disclosure";
 import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
+import { Text } from "../../../../shared/ui/Text";
 import { TextField } from "../../../../shared/ui/TextField";
 import type { SocialAccount } from "../../model/social";
 import type { SocialClient } from "../../model/socialClient";
 import { useAccountWrite } from "./useAccountWrite";
+import "./platform/snapchat.css";
 
 export function SnapchatStoryRemoval({
   client,
@@ -52,7 +54,12 @@ export function SnapchatStoryRemoval({
   };
   return (
     <Disclosure summary={t("Delete Public Story")} variant="row">
-      <div className="social-card">
+      <div className="social-sc-stack">
+        <Text as="p" size="secondary" tone="muted">
+          {t(
+            "Snapchat has no story list for browser accounts, so paste the ID of the story to remove. You confirm it again before anything is deleted.",
+          )}
+        </Text>
         <TextField
           label={t("Public Story ID")}
           value={id}
@@ -65,7 +72,7 @@ export function SnapchatStoryRemoval({
             setError("");
           }}
         />
-        <div className="social-field-row">
+        <div className="social-sc-actions">
           <Button
             variant="secondary"
             tone="danger"

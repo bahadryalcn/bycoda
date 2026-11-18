@@ -185,7 +185,7 @@ export function SignupAccountDialog({
       }}
       size="md"
       footer={
-        <ModalActions>
+        <ModalActions className="social-dialog-actions">
           <Button variant="ghost" disabled={busy} onClick={leave}>
             {live ? t("Stop signup") : t("Close")}
           </Button>

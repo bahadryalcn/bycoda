@@ -8,6 +8,7 @@ import { inboxActions } from "../inbox/inbox-actions";
 import { instagramActions } from "../inbox/instagram-actions";
 import { linkedinActions } from "../linkedin/linkedin-actions";
 import { instagramModerationRequests } from "../inbox/instagram-moderation-requests";
+import { instagramManagementRequests } from "../inbox/instagram-management-requests";
 import { outreachActions } from "../outreach/outreach-actions";
 import { youtubeActions } from "../youtube/youtube-actions";
 import type { SocialActionModule } from "./social-actions";
@@ -43,4 +44,5 @@ export const SOCIAL_ACTION_MODULES: SocialActionModule[] = [
   facebookLiveActions,
   facebookManagementActions,
   instagramModerationRequests,
+  instagramManagementRequests,
 ];

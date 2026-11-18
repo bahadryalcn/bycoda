@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useT } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
 import { useConfirm } from "../../../../../shared/ui/ConfirmDialog";
+import { Disclosure } from "../../../../../shared/ui/Disclosure";
 import { FileField } from "../../../../../shared/ui/FileField";
 import { InlineError, InlineMessage } from "../../../../../shared/ui/InlineError";
 import { Select } from "../../../../../shared/ui/Select";
@@ -14,6 +15,7 @@ import type {
 } from "../../../model/socialBrowser";
 import type { SocialClient } from "../../../model/socialClient";
 import { useAccountWrite } from "../useAccountWrite";
+import "./facebook.css";
 
 type Props = { account: SocialAccount; client: SocialClient };
 
@@ -55,7 +57,7 @@ export function FacebookProfilePhotos({ account, client }: Props) {
     }
   };
   return (
-    <div className="social-card">
+    <div className="social-fb-stack">
       <Select
         label={t("Facebook photo type")}
         value={kind}
@@ -164,7 +166,7 @@ export function FacebookPersonalProfileForm({ account, client }: Props) {
     if (result) setSaved(true);
   };
   return (
-    <div className="social-card">
+    <div className="social-fb-stack">
       <Select
         label={t("Profile details")}
         value={field}
@@ -175,20 +177,8 @@ export function FacebookPersonalProfileForm({ account, client }: Props) {
           setSaved(false);
         }}
       />
-      {field !== "name" && field !== "bio" && field !== "introDetail" ? (
-        <TextField
-          label={t("Existing Facebook value (optional)")}
-          value={existing[field] ?? ""}
-          maxLength={field === "website" ? 2048 : 100}
-          disabled={is("profile")}
-          onChange={(event) => {
-            setExisting({ ...existing, [field]: event.currentTarget.value });
-            setSaved(false);
-          }}
-        />
-      ) : null}
       {field === "name" ? (
-        <div className="social-field-row">
+        <div className="social-fb-grid">
           {(
             [
               ["first", t("First name")],
@@ -221,6 +211,21 @@ export function FacebookPersonalProfileForm({ account, client }: Props) {
           }}
         />
       )}
+      {field !== "name" && field !== "bio" && field !== "introDetail" ? (
+        <Disclosure summary={t("Replace a value already on Facebook")} variant="row">
+          <TextField
+            label={t("Existing Facebook value (optional)")}
+            description={t("Type the current value exactly as Facebook shows it to replace it.")}
+            value={existing[field] ?? ""}
+            maxLength={field === "website" ? 2048 : 100}
+            disabled={is("profile")}
+            onChange={(event) => {
+              setExisting({ ...existing, [field]: event.currentTarget.value });
+              setSaved(false);
+            }}
+          />
+        </Disclosure>
+      ) : null}
       {field === "introDetail" ? (
         <Select
           label={t("Visibility")}

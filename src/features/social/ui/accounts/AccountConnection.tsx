@@ -167,7 +167,6 @@ export function AccountConnection({
             ? t("This account is connected on the selected computer.")
             : t("This account is connected on another computer.")}
       </Text>
-      <CapabilityList capabilities={capabilities} grouped />
       {usesBrowser ? (
         <div className="social-field-row">
           {account.platform === "linkedin" && isOrganization ? (
@@ -237,38 +236,6 @@ export function AccountConnection({
       ) : null}
       {!usesBrowser && !isToken && !isTelegram ? (
         <>
-          <Disclosure summary={t("Permissions")} variant="row" size="sm">
-            <FieldGroup legend={t("What this account can do")} hideLegend layout="row">
-              {operationOptions.map((operation) => (
-                <Checkbox
-                  key={operation}
-                  label={operationText(operation)}
-                  checked={operations.includes(operation)}
-                  disabled={locked}
-                  onChange={(event) =>
-                    setOperations((current) =>
-                      event.target.checked
-                        ? [...current, operation]
-                        : current.filter((item) => item !== operation),
-                    )
-                  }
-                />
-              ))}
-              {account.platform === "linkedin" && isOrganization ? (
-                <Checkbox
-                  label={t("LinkedIn Live comments")}
-                  checked={linkedinLiveComments}
-                  disabled={locked}
-                  onChange={(event) => setLinkedinLiveComments(event.target.checked)}
-                />
-              ) : null}
-            </FieldGroup>
-          </Disclosure>
-          {!requestedOperations.length ? (
-            <Text as="p" size="caption" tone="secondary">
-              {t("Choose at least one permission.")}
-            </Text>
-          ) : null}
           <div className="social-field-row">
             {isOrganization ? (
               <TextField
@@ -308,6 +275,38 @@ export function AccountConnection({
               </Text>
             ) : null}
           </div>
+          <Disclosure summary={t("Permissions")} variant="row" size="sm">
+            <FieldGroup legend={t("What this account can do")} hideLegend layout="row">
+              {operationOptions.map((operation) => (
+                <Checkbox
+                  key={operation}
+                  label={operationText(operation)}
+                  checked={operations.includes(operation)}
+                  disabled={locked}
+                  onChange={(event) =>
+                    setOperations((current) =>
+                      event.target.checked
+                        ? [...current, operation]
+                        : current.filter((item) => item !== operation),
+                    )
+                  }
+                />
+              ))}
+              {account.platform === "linkedin" && isOrganization ? (
+                <Checkbox
+                  label={t("LinkedIn Live comments")}
+                  checked={linkedinLiveComments}
+                  disabled={locked}
+                  onChange={(event) => setLinkedinLiveComments(event.target.checked)}
+                />
+              ) : null}
+            </FieldGroup>
+          </Disclosure>
+          {!requestedOperations.length ? (
+            <Text as="p" size="caption" tone="secondary">
+              {t("Choose at least one permission.")}
+            </Text>
+          ) : null}
         </>
       ) : null}
       {oauth?.candidates.length ? (
@@ -349,6 +348,11 @@ export function AccountConnection({
           onRefresh={onChanged}
         />
       ) : null}
+      {browser?.error || oauth?.error ? (
+        <InlineError>{browser?.error ?? oauth?.error}</InlineError>
+      ) : null}
+      {error ? <InlineError>{error}</InlineError> : null}
+      <CapabilityList capabilities={capabilities} grouped />
       {account.platform === "x" && account.connected ? (
         <XProfileEditor client={client} accountId={account.id} accountName={account.name} />
       ) : null}
@@ -361,10 +365,6 @@ export function AccountConnection({
           disabled={disabled}
         />
       ) : null}
-      {browser?.error || oauth?.error ? (
-        <InlineError>{browser?.error ?? oauth?.error}</InlineError>
-      ) : null}
-      {error ? <InlineError>{error}</InlineError> : null}
     </section>
   );
 }

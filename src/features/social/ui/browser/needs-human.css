@@ -1,4 +1,4 @@
-/* Waiting-for-you rows: platform mark, reason, and compact actions. */
+/* Waiting-for-you rows: platform mark, reason, what to do, and one primary action. */
 .needs-human-list {
   display: flex;
   flex-direction: column;
@@ -12,21 +12,20 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem 0.75rem;
-  padding: 0.5rem 0.75rem;
+  padding: 0.625rem 0.75rem;
   min-width: 0;
 }
 
 .needs-human-text {
   display: flex;
-  flex: 1 1 8rem;
+  flex: 1 1 12rem;
   flex-direction: column;
+  gap: 0.125rem;
   min-width: 0;
 }
 
-.needs-human-reason {
-}
-
 .needs-human-platform,
+.needs-human-hint,
 .needs-human-note {
   margin: 0;
 }

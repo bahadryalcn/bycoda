@@ -145,7 +145,7 @@ export function ConnectAccountDialog({
       }}
       size="md"
       footer={
-        <ModalActions>
+        <ModalActions className="social-dialog-actions">
           <Button variant="ghost" disabled={is("create")} onClick={onClose}>
             {t("Cancel")}
           </Button>
@@ -219,14 +219,16 @@ export function ConnectAccountDialog({
             />
           ))}
         </FieldGroup>
-        {canCreateAccount(platform, method) ? (
-          <Button variant="link" size="sm" onClick={() => setKind("signup")}>
-            {t("Create a new {p0} account instead", { p0: SOCIAL_PLATFORM_NAMES[platform] })}
+        <div className="social-dialog-links">
+          {canCreateAccount(platform, method) ? (
+            <Button variant="link" size="sm" onClick={() => setKind("signup")}>
+              {t("Create a new {p0} account instead", { p0: SOCIAL_PLATFORM_NAMES[platform] })}
+            </Button>
+          ) : null}
+          <Button variant="link" size="sm" onClick={() => setKind("email")}>
+            {t("Add an email account instead")}
           </Button>
-        ) : null}
-        <Button variant="link" size="sm" onClick={() => setKind("email")}>
-          {t("Add an email account instead")}
-        </Button>
+        </div>
         {error ? <InlineError>{error}</InlineError> : null}
       </form>
     </Modal>

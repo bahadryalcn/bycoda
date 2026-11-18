@@ -5,6 +5,8 @@ import { useConfirm } from "../../../../../shared/ui/ConfirmDialog";
 import { Disclosure } from "../../../../../shared/ui/Disclosure";
 import { FieldGroup } from "../../../../../shared/ui/FieldGroup";
 import { InlineError, InlineMessage } from "../../../../../shared/ui/InlineError";
+import { SectionLabel } from "../../../../../shared/ui/SectionLabel";
+import { StatRow, StatTile } from "../../../../../shared/ui/StatTile";
 import { Text } from "../../../../../shared/ui/Text";
 import { TextareaField } from "../../../../../shared/ui/TextareaField";
 import { TextField } from "../../../../../shared/ui/TextField";
@@ -18,6 +20,7 @@ import type { SocialAccount } from "../../../model/social";
 import type { SocialClient } from "../../../model/socialClient";
 import { useAccountWrite } from "../useAccountWrite";
 import { weekdayLabels } from "../accountsModel";
+import "./facebook.css";
 
 type ProfileDraft = Pick<
   FacebookPagePatch,
@@ -137,9 +140,9 @@ export function FacebookProfileEditor({
   );
 
   return (
-    <section className="social-card" aria-label={t("Edit profile")}>
+    <section className="social-fb-stack" aria-label={t("Edit profile")}>
       {browser ? (
-        <div className="social-field-row">
+        <div className="social-fb-grid">
           <TextField
             label={t("Profile name")}
             value={browserPatch.name ?? ""}
@@ -155,54 +158,83 @@ export function FacebookProfileEditor({
         </div>
       ) : (
         <>
-          <Button
-            variant="secondary"
-            size="sm"
-            className="self-start"
-            loading={is("read")}
-            onClick={() => void read().catch(() => undefined)}
-          >
-            {t("Read profile")}
-          </Button>
+          <div className="social-fb-toolbar">
+            <Button
+              variant={profile ? "secondary" : "primary"}
+              size="sm"
+              loading={is("read")}
+              onClick={() => void read().catch(() => undefined)}
+            >
+              {t("Read profile")}
+            </Button>
+            {!profile && !is("read") ? (
+              <Text as="span" size="caption" tone="muted">
+                {t("Read the profile to edit it.")}
+              </Text>
+            ) : null}
+          </div>
           {profile ? (
             <>
-              <Text as="p">
-                {[profile.name, profile.username && `@${profile.username}`, profile.category]
-                  .filter(Boolean)
-                  .join(" · ")}
-              </Text>
-              <div className="social-field-row">
-                <Text as="span">
-                  {t("Followers")}{" "}
-                  {profile.followersCount === undefined
-                    ? t("Unavailable")
-                    : format.formatNumber(profile.followersCount)}
+              <div className="social-fb-group">
+                <Text as="p" weight="medium">
+                  {profile.name}
                 </Text>
-                <Text as="span">
-                  {t("Likes")}{" "}
-                  {profile.fanCount === undefined
-                    ? t("Unavailable")
-                    : format.formatNumber(profile.fanCount)}
+                <Text as="p" size="secondary" tone="muted">
+                  {[profile.username && `@${profile.username}`, profile.category]
+                    .filter(Boolean)
+                    .join(" · ")}
                 </Text>
               </div>
-              {field("about", t("About"), 100)}
-              <TextareaField
-                label={t("Description")}
-                value={patch.description ?? profile.description ?? ""}
-                maxLength={2000}
-                disabled={is("save")}
-                onChange={(event) => setPatch({ ...patch, description: event.currentTarget.value })}
-              />
-              <div className="social-field-row">
-                {field("website", t("Website"), 2048)}
-                {field("phone", t("Phone"), 100)}
+              <StatRow label={t("Profile")}>
+                <StatTile
+                  label={t("Followers")}
+                  value={
+                    profile.followersCount === undefined
+                      ? t("Unavailable")
+                      : format.formatNumber(profile.followersCount)
+                  }
+                />
+                <StatTile
+                  label={t("Likes")}
+                  value={
+                    profile.fanCount === undefined
+                      ? t("Unavailable")
+                      : format.formatNumber(profile.fanCount)
+                  }
+                />
+              </StatRow>
+              <div className="social-fb-group">
+                <SectionLabel variant="inline" size="secondary" as="h4">
+                  {t("About this Page")}
+                </SectionLabel>
+                {field("about", t("About"), 100)}
+                <TextareaField
+                  label={t("Description")}
+                  value={patch.description ?? profile.description ?? ""}
+                  maxLength={2000}
+                  disabled={is("save")}
+                  onChange={(event) =>
+                    setPatch({ ...patch, description: event.currentTarget.value })
+                  }
+                />
               </div>
-              <TextareaField
-                label={t("Email")}
-                value={emails ?? (profile.emails ?? []).join("\n")}
-                disabled={is("save")}
-                onChange={(event) => setEmails(event.currentTarget.value)}
-              />
+              <div className="social-fb-group">
+                <SectionLabel variant="inline" size="secondary" as="h4">
+                  {t("Contact")}
+                </SectionLabel>
+                <div className="social-fb-grid">
+                  {field("website", t("Website"), 2048)}
+                  {field("phone", t("Phone"), 100)}
+                </div>
+                <TextareaField
+                  label={t("Email")}
+                  description={t("One address per line.")}
+                  value={emails ?? (profile.emails ?? []).join("\n")}
+                  minRows={2}
+                  disabled={is("save")}
+                  onChange={(event) => setEmails(event.currentTarget.value)}
+                />
+              </div>
               <Disclosure summary={t("Hours")} variant="row">
                 {weekdayLabels(locale).map(({ day, label }) => (
                   <FieldGroup key={day} legend={label} layout="row">
@@ -213,10 +245,17 @@ export function FacebookProfileEditor({
                   </FieldGroup>
                 ))}
               </Disclosure>
-              <div className="social-field-row">
-                {field("avatarPhotoId", t("Profile photo ID"), 25)}
-                {field("coverPhotoId", t("Cover photo ID"), 25)}
-              </div>
+              <Disclosure summary={t("Use existing Facebook photos")} variant="row">
+                <Text as="p" size="secondary" tone="muted">
+                  {t(
+                    "To upload a new photo use Facebook profile photos. Enter a photo ID only to reuse a photo already on Facebook.",
+                  )}
+                </Text>
+                <div className="social-fb-grid">
+                  {field("avatarPhotoId", t("Profile photo ID"), 25)}
+                  {field("coverPhotoId", t("Cover photo ID"), 25)}
+                </div>
+              </Disclosure>
             </>
           ) : null}
         </>

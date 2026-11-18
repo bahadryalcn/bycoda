@@ -1,6 +1,8 @@
 import { z } from "zod";
 import {
+  YOUTUBE_OWNER_WRITES,
   YOUTUBE_READ_TOOLS,
+  YOUTUBE_REQUEST_TOOLS,
   YOUTUBE_WRITE_TOOLS,
   type YouTubeWriteAction,
 } from "../../../src/features/social/model/youtubeManagement";
@@ -70,6 +72,15 @@ export const youtubeInputs = {
   "youtube.operation.status": z.strictObject({ ...account, id }),
   "youtube.operations.list": z.strictObject(page),
   "youtube.operation.approve": z.strictObject({ ...account, id, ...confirmation }),
+  "youtube.changes.request": z.strictObject({
+    ...account,
+    action: z.enum(YOUTUBE_OWNER_WRITES),
+    input: z
+      .record(z.string(), z.unknown())
+      .describe(
+        "The exact input of that action without accountId or confirm, for example videoId, playlistId, commentId, postId or patch.",
+      ),
+  }),
   "youtube.operation.reconcile": z.strictObject({
     ...account,
     id,
@@ -183,11 +194,13 @@ export type YouTubeAction = keyof typeof youtubeInputs;
 export type YouTubeInput<K extends YouTubeAction> = z.infer<(typeof youtubeInputs)[K]>;
 
 export const youtubeToolSchemas = Object.fromEntries(
-  [...YOUTUBE_READ_TOOLS, ...YOUTUBE_WRITE_TOOLS].map((action) => [
+  [...YOUTUBE_READ_TOOLS, ...YOUTUBE_WRITE_TOOLS, ...YOUTUBE_REQUEST_TOOLS].map((action) => [
     action,
     z.toJSONSchema(youtubeInputs[action], { io: "input" }),
   ]),
 ) as unknown as Record<
-  (typeof YOUTUBE_READ_TOOLS)[number] | (typeof YOUTUBE_WRITE_TOOLS)[number],
+  | (typeof YOUTUBE_READ_TOOLS)[number]
+  | (typeof YOUTUBE_WRITE_TOOLS)[number]
+  | (typeof YOUTUBE_REQUEST_TOOLS)[number],
   Record<string, unknown>
 >;

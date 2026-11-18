@@ -603,6 +603,7 @@ export class SocialService implements SocialServiceApi {
   youtubeBrowser?: YouTubeRuntime["browser"];
   // TikTok account operations.
   tiktokBrowser?: import("./social-browser-platforms").PlatformBrowserSessions["runTikTok"];
+  instagramEarnings?: (accountId: string) => Promise<unknown>;
   constructor(
     readonly store: HostStore,
     readonly credentials: SocialCredentialStore,
@@ -2609,6 +2610,7 @@ export class SocialService implements SocialServiceApi {
               avatar: (id) => this.readOwnerMedia(p, id),
               rename: (account, profile) => this.renameTikTokBrowser(p, account, profile),
             },
+            instagramEarnings: this.instagramEarnings,
             facebookLive: {
               credentials: this.credentials,
               environmentId: this.store.environmentId,

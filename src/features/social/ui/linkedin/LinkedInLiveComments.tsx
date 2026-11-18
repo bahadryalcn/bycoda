@@ -6,25 +6,31 @@ import {
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { useConfirm } from "../../../../shared/ui/ConfirmDialog";
+import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { FieldGroup } from "../../../../shared/ui/FieldGroup";
-import { InlineError } from "../../../../shared/ui/InlineError";
+import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
+import { Surface } from "../../../../shared/ui/Surface";
 import { Text } from "../../../../shared/ui/Text";
 import { TextareaField } from "../../../../shared/ui/TextareaField";
 import { TextField } from "../../../../shared/ui/TextField";
 import type { SocialClient } from "../../model/socialClient";
 import type { LinkedInManagementReview } from "../../../../integrations/social/adapters/linkedin-manage";
 import { useAccountWrite } from "../accounts/useAccountWrite";
+import "./linkedin.css";
 
 export function LinkedInLiveComments({
   accountId,
   client,
   disabled,
   canReply,
+  storedEventId,
 }: {
   accountId: string;
   client: SocialClient;
   disabled: boolean;
   canReply: boolean;
+  /** The event whose stream credentials are saved, offered as a one-tap choice. */
+  storedEventId?: string;
 }) {
   const [eventId, setEventId] = useState("");
   const [page, setPage] = useState<LinkedInLiveCommentsPage>();
@@ -105,7 +111,7 @@ export function LinkedInLiveComments({
   };
   return (
     <>
-      <form onSubmit={submit}>
+      <form onSubmit={submit} className="social-li-group">
         <FieldGroup legend={t("LinkedIn Live comments")} disabled={disabled || busy || !!replyTo}>
           <TextField
             label={t("LinkedIn event ID")}
@@ -118,10 +124,24 @@ export function LinkedInLiveComments({
               setPage(undefined);
             }}
           />
+          {storedEventId && storedEventId !== eventId ? (
+            <Button
+              variant="link"
+              size="sm"
+              className="self-start"
+              onClick={() => {
+                setEventId(storedEventId);
+                setPage(undefined);
+              }}
+            >
+              {t("Use the event with saved credentials")}
+            </Button>
+          ) : null}
           <Button
             type="submit"
             variant="secondary"
             size="sm"
+            className="self-start"
             loading={is("comments")}
             disabled={!LINKEDIN_LIVE_EVENT_ID.test(eventId)}
           >
@@ -131,17 +151,26 @@ export function LinkedInLiveComments({
       </form>
       {error ? <InlineError>{error}</InlineError> : null}
       {page?.comments.length ? (
-        <ul>
+        <ul className="social-li-list">
           {page.comments.map((comment) => (
-            <li key={comment.id}>
-              <Text as="p" size="caption" tone="muted">
+            <Surface
+              key={comment.id}
+              as="li"
+              variant="card"
+              padding="sm"
+              className="social-li-item"
+            >
+              <Text as="span" size="caption" tone="muted">
                 {comment.actor}
               </Text>
-              <Text as="p">{comment.text}</Text>
+              <Text as="p" className="social-li-text">
+                {comment.text}
+              </Text>
               {canReply && !replyTo ? (
                 <Button
                   variant="secondary"
                   size="sm"
+                  className="self-start"
                   disabled={disabled || busy}
                   onClick={() => {
                     setReplyTo(comment);
@@ -151,16 +180,17 @@ export function LinkedInLiveComments({
                   {t("Reply")}
                 </Button>
               ) : null}
-            </li>
+            </Surface>
           ))}
         </ul>
       ) : page ? (
-        <Text as="p">{t("No results")}</Text>
+        <EmptyState size="inline" description={t("No comments on this event yet.")} />
       ) : null}
       {page?.nextOffset !== undefined ? (
         <Button
           variant="secondary"
           size="sm"
+          className="self-start"
           disabled={disabled || busy || !!replyTo}
           onClick={() => void load(page.nextOffset).catch(() => undefined)}
         >
@@ -169,7 +199,7 @@ export function LinkedInLiveComments({
       ) : null}
       {replyTo ? (
         <FieldGroup legend={t("Reply")} disabled={disabled || busy}>
-          <Text as="p" size="secondary">
+          <Text as="p" size="secondary" tone="muted" className="social-li-text">
             {replyTo.text}
           </Text>
           <TextareaField
@@ -181,28 +211,30 @@ export function LinkedInLiveComments({
               setPrepared(undefined);
             }}
           />
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={!text.trim() || (prepared !== undefined && prepared.state !== "review")}
-            onClick={() => void reviewReply().catch(() => undefined)}
-          >
-            {t("Review change")}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setReplyTo(undefined);
-              setText("");
-              setPrepared(undefined);
-            }}
-          >
-            {t("Cancel")}
-          </Button>
+          <div className="social-li-actions">
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={!text.trim() || (prepared !== undefined && prepared.state !== "review")}
+              onClick={() => void reviewReply().catch(() => undefined)}
+            >
+              {t("Review change")}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setReplyTo(undefined);
+                setText("");
+                setPrepared(undefined);
+              }}
+            >
+              {t("Cancel")}
+            </Button>
+          </div>
         </FieldGroup>
       ) : null}
-      {sent ? <Text as="p">{t("Sent")}</Text> : null}
+      {sent ? <InlineMessage tone="success">{t("Sent")}</InlineMessage> : null}
       {prepared?.state === "attempting" || prepared?.state === "inspect" ? (
         <InlineError>{t("Check the result on LinkedIn before trying again.")}</InlineError>
       ) : null}

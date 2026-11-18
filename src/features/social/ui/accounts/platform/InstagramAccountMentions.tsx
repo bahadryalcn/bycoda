@@ -2,12 +2,16 @@ import { useState } from "react";
 import { openExternal } from "../../../../../platform/tauri/openExternal";
 import { formatDate, t } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
+import { EmptyState } from "../../../../../shared/ui/EmptyState";
 import { FieldGroup } from "../../../../../shared/ui/FieldGroup";
 import { InlineError } from "../../../../../shared/ui/InlineError";
+import { LoadingText } from "../../../../../shared/ui/LoadingText";
 import { Text } from "../../../../../shared/ui/Text";
 import type { SocialClient } from "../../../model/socialClient";
 import type { InstagramBrowserMentions } from "../../../model/socialBrowser";
 import { useAccountWrite } from "../useAccountWrite";
+import { InstagramRow, InstagramRows } from "./InstagramRows";
+import "./instagram.css";
 
 type Mention = { mediaId: string; commentId?: string; at: number };
 type Page = { mentions: Mention[]; next?: string; coverage: "webhook_only" };
@@ -42,48 +46,63 @@ export function InstagramAccountMentions({
       }
     }).catch(() => undefined);
   };
+  const loaded = page ?? browserPage;
   return (
-    <FieldGroup legend={t("Instagram mentions")} disabled={disabled}>
-      <Text size="caption" tone="muted">
-        {browser
-          ? t("Only mentions visible in Instagram notifications are included.")
-          : t("Only mentions received by this Host are included.")}
-      </Text>
-      <Button variant="secondary" size="sm" loading={is("read")} onClick={() => read()}>
-        {t("Read Instagram mentions")}
-      </Button>
+    <FieldGroup legend={t("Instagram mentions")} hideLegend disabled={disabled}>
+      <div className="instagram-head">
+        <Text size="caption" tone="secondary">
+          {browser
+            ? t("Only mentions visible in Instagram notifications are included.")
+            : t("Only mentions received by this Host are included.")}
+        </Text>
+        <Button
+          variant="secondary"
+          size="sm"
+          loading={is("read") && !page?.next}
+          onClick={() => read()}
+        >
+          {loaded ? t("Refresh") : t("Read Instagram mentions")}
+        </Button>
+      </div>
+      {is("read") && !loaded ? <LoadingText /> : null}
       {page?.mentions.length ? (
-        <ul>
+        <InstagramRows>
           {page.mentions.map((mention) => (
-            <Text key={mention.commentId ?? mention.mediaId} as="li" size="secondary">
-              {formatDate(mention.at)} · {mention.commentId ?? mention.mediaId}
-            </Text>
+            <InstagramRow
+              key={mention.commentId ?? mention.mediaId}
+              title={mention.commentId ? t("Mention in a comment") : t("Mention in a post")}
+              meta={formatDate(mention.at)}
+            />
           ))}
-        </ul>
+        </InstagramRows>
       ) : null}
       {browserPage?.mentions.length ? (
-        <ul>
+        <InstagramRows>
           {browserPage.mentions.map((mention) => (
-            <li key={`${mention.url}:${mention.username}:${mention.text}`}>
+            <InstagramRow
+              key={`${mention.url}:${mention.username}:${mention.text}`}
+              title={mention.username ? `@${mention.username}` : t("Mention")}
+              meta={mention.at ? formatDate(mention.at) : undefined}
+              body={mention.text}
+            >
               <Button
-                variant="link"
+                variant="ghost"
+                size="sm"
                 onClick={() => {
                   void write("open", () => openExternal(mention.url)).catch(() => undefined);
                 }}
               >
-                {mention.text}
+                {t("Open on Instagram")}
               </Button>
-            </li>
+            </InstagramRow>
           ))}
-        </ul>
+        </InstagramRows>
       ) : null}
-      {(page ?? browserPage)?.mentions.length === 0 ? (
-        <Text size="caption" tone="muted">
-          {t("No Instagram mentions found.")}
-        </Text>
+      {loaded?.mentions.length === 0 ? (
+        <EmptyState size="inline" context="list" title={t("No Instagram mentions found.")} />
       ) : null}
       {page?.next ? (
-        <Button variant="ghost" size="sm" disabled={is("read")} onClick={() => read(page.next)}>
+        <Button variant="ghost" size="sm" loading={is("read")} onClick={() => read(page.next)}>
           {t("Load more")}
         </Button>
       ) : null}

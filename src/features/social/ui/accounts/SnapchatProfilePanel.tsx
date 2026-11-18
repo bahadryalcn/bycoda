@@ -8,15 +8,19 @@ import { formatNumber, t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { useConfirm } from "../../../../shared/ui/ConfirmDialog";
 import { Disclosure } from "../../../../shared/ui/Disclosure";
+import { DescriptionItem, DescriptionList } from "../../../../shared/ui/DescriptionList";
 import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { FileField } from "../../../../shared/ui/FileField";
 import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
+import { SectionLabel } from "../../../../shared/ui/SectionLabel";
+import { Surface } from "../../../../shared/ui/Surface";
 import { Text } from "../../../../shared/ui/Text";
 import { TextareaField } from "../../../../shared/ui/TextareaField";
 import { TextField } from "../../../../shared/ui/TextField";
 import type { Capability, SocialAccount } from "../../model/social";
 import type { SocialClient } from "../../model/socialClient";
 import { useAccountWrite } from "./useAccountWrite";
+import "./platform/snapchat.css";
 import { SnapchatReviews } from "./SnapchatReviews";
 import { SnapchatStoryRemoval } from "./SnapchatStoryRemoval";
 
@@ -147,11 +151,11 @@ export function SnapchatProfilePanel({
   return (
     <>
       <Disclosure summary={t("Snapchat Public Profile")} variant="row">
-        <div className="social-card">
-          <div className="social-field-row">
+        <div className="social-sc-stack">
+          <div className="social-sc-toolbar">
             <Button
               size="sm"
-              variant="secondary"
+              variant={profile ? "secondary" : "primary"}
               disabled={blocked || busy}
               loading={is("read")}
               onClick={() => void read().catch(() => undefined)}
@@ -174,18 +178,25 @@ export function SnapchatProfilePanel({
               </Button>
             ) : null}
           </div>
+          {!profile && !is("read") && !connectionBlocked ? (
+            <Text as="p" size="secondary" tone="muted">
+              {t("Read the profile to see it and edit it here.")}
+            </Text>
+          ) : null}
           {error ? <InlineError>{error}</InlineError> : null}
           {saved ? <InlineMessage tone="success">{t("Changes saved.")}</InlineMessage> : null}
           {status ? (
-            <Text as="p">
-              {t("Snapchat monetization status")} · {monetizationText(status.status)}
-            </Text>
-          ) : null}
-          {status?.dailyRewardsEligible !== undefined ? (
-            <Text as="p">
-              {t("Daily rewards")} ·{" "}
-              {monetizationText(status.dailyRewardsEligible ? "eligible" : "ineligible")}
-            </Text>
+            <Surface variant="inset" padding="sm" className="social-sc-group">
+              <Text as="p">
+                {t("Snapchat monetization status")} · {monetizationText(status.status)}
+              </Text>
+              {status.dailyRewardsEligible !== undefined ? (
+                <Text as="p">
+                  {t("Daily rewards")} ·{" "}
+                  {monetizationText(status.dailyRewardsEligible ? "eligible" : "ineligible")}
+                </Text>
+              ) : null}
+            </Surface>
           ) : null}
           {connectionBlocked ? (
             <InlineMessage tone="warning">
@@ -204,63 +215,80 @@ export function SnapchatProfilePanel({
           ) : null}
           {!browser ? (
             <>
-              {profile && hasProfile
-                ? fields
+              {profile && hasProfile ? (
+                <DescriptionList size="sm">
+                  {fields
                     .filter((field) => profile[field])
                     .map((field) => (
-                      <Text key={field} as="p" wrap="anywhere">
-                        {labels[field]()} · {profile[field]}
-                      </Text>
-                    ))
-                : null}
-              {profile && "username" in profile && typeof profile.username === "string" ? (
-                <Text as="p" wrap="anywhere">
-                  {t("Username")} · {profile.username}
-                </Text>
+                      <DescriptionItem key={field} term={labels[field]()}>
+                        {profile[field]}
+                      </DescriptionItem>
+                    ))}
+                  {"username" in profile && typeof profile.username === "string" ? (
+                    <DescriptionItem term={t("Username")}>{profile.username}</DescriptionItem>
+                  ) : null}
+                  {"subscribers" in profile && typeof profile.subscribers === "number" ? (
+                    <DescriptionItem term={t("Subscribers")}>
+                      {formatNumber(profile.subscribers)}
+                    </DescriptionItem>
+                  ) : null}
+                </DescriptionList>
               ) : null}
-              {profile && "subscribers" in profile && typeof profile.subscribers === "number" ? (
-                <Text as="p">
-                  {t("Subscribers")} · {formatNumber(profile.subscribers)}
-                </Text>
-              ) : null}
-              <Text as="p" tone="muted">
+              <Text as="p" size="secondary" tone="muted">
                 {t("Edit the profile using a connected Snapchat browser account.")}
               </Text>
             </>
           ) : profile && canEdit ? (
             <>
-              {(hasProfile ? fields : fields.slice(0, 1)).map((field) =>
-                field === "bio" ? (
-                  <TextareaField
-                    key={field}
-                    label={labels[field]()}
-                    value={current(field)}
-                    disabled={blocked || busy}
-                    onChange={(event) => setDraft({ ...draft, [field]: event.currentTarget.value })}
-                  />
-                ) : (
-                  <TextField
-                    key={field}
-                    label={labels[field]()}
-                    value={current(field)}
-                    disabled={blocked || busy}
-                    onChange={(event) => setDraft({ ...draft, [field]: event.currentTarget.value })}
-                  />
-                ),
-              )}
-              {hasProfile ? (
-                <FileField
-                  label={t("Profile picture")}
-                  accept="image/jpeg,image/png"
+              <div className="social-sc-group">
+                <SectionLabel variant="inline" size="secondary" as="h4">
+                  {t("Profile details")}
+                </SectionLabel>
+                <TextField
+                  label={labels.name()}
+                  value={current("name")}
                   disabled={blocked || busy}
-                  description={avatar?.file.name}
-                  onFiles={([file]) => {
-                    if (file && ["image/jpeg", "image/png"].includes(file.type))
-                      setAvatar({ file });
-                  }}
+                  onChange={(event) => setDraft({ ...draft, name: event.currentTarget.value })}
                 />
-              ) : null}
-              <div className="social-field-row">
+                {hasProfile ? (
+                  <>
+                    <TextareaField
+                      label={labels.bio()}
+                      value={current("bio")}
+                      disabled={blocked || busy}
+                      onChange={(event) => setDraft({ ...draft, bio: event.currentTarget.value })}
+                    />
+                    <div className="social-sc-grid">
+                      {(["website", "category"] as const).map((field) => (
+                        <TextField
+                          key={field}
+                          label={labels[field]()}
+                          value={current(field)}
+                          disabled={blocked || busy}
+                          onChange={(event) =>
+                            setDraft({ ...draft, [field]: event.currentTarget.value })
+                          }
+                        />
+                      ))}
+                    </div>
+                    <FileField
+                      label={t("Profile picture")}
+                      accept="image/jpeg,image/png"
+                      disabled={blocked || busy}
+                      description={avatar?.file.name}
+                      onFiles={([file]) => {
+                        if (file && ["image/jpeg", "image/png"].includes(file.type))
+                          setAvatar({ file });
+                      }}
+                    />
+                  </>
+                ) : (
+                  <Text as="p" size="secondary" tone="muted">
+                    {t("Add the rest of the profile after it is created.")}
+                  </Text>
+                )}
+              </div>
+              <div className="social-sc-actions">
                 <Button
                   variant="primary"
                   size="sm"
@@ -272,7 +300,7 @@ export function SnapchatProfilePanel({
                 </Button>
                 {avatar ? (
                   <Button
-                    variant="secondary"
+                    variant="ghost"
                     size="sm"
                     disabled={busy}
                     onClick={() => setAvatar(undefined)}

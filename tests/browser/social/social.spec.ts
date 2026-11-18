@@ -29,10 +29,11 @@ test("social YouTube management confirms video edits and shows provider failures
   page,
 }) => {
   await page.goto("/tests/browser/social/social.html?youtube-management");
-  await sections(page).getByRole("tab", { name: "İçerik", exact: true }).click();
-  await page.getByRole("button", { name: "Videolar ve oynatma listeleri", exact: true }).click();
-  await page.getByRole("button", { name: "Videoları listele", exact: true }).click();
-  await page.getByRole("button", { name: "Kullan", exact: true }).click();
+  await sections(page).getByRole("tab", { name: "Hesaplar ve Ayarlar", exact: true }).click();
+  await page.getByRole("button", { name: /YouTube fixture/ }).click();
+  await page.locator("summary").filter({ hasText: "YouTube yönetimi" }).click();
+  await page.getByRole("tab", { name: "Videolar ve oynatma listeleri", exact: true }).click();
+  await page.getByRole("button", { name: /^Summer release/ }).click();
   await page.getByRole("textbox", { name: "Başlık", exact: true }).fill("Renamed in fixture");
   await page.getByRole("button", { name: "Videoyu düzenle", exact: true }).click();
   const edit = page.getByRole("dialog", { name: "Videoyu düzenle" });
@@ -49,8 +50,7 @@ test("social YouTube management confirms video edits and shows provider failures
       },
     ]);
   await expect(edit).toBeHidden();
-  await page.getByRole("button", { name: /^İşlem:/ }).click();
-  await page.getByRole("option", { name: "Videoyu sil", exact: true }).click();
+  await page.getByRole("radio", { name: "Videoyu sil", exact: true }).click();
   await page.getByRole("button", { name: "Videoyu sil", exact: true }).click();
   await page
     .getByRole("dialog", { name: "Videoyu sil" })
@@ -81,15 +81,13 @@ for (const theme of ["light", "dark"])
           animations: "disabled",
         });
       const action = async (name: string) => {
-        await page.getByRole("button", { name: /^İşlem:/ }).click();
-        await page.getByRole("option", { name, exact: true }).click();
+        await page.getByRole("radio", { name, exact: true }).click();
       };
       const studio = "youtube-browser";
       await sections(page).getByRole("tab", { name: "Hesaplar ve Ayarlar", exact: true }).click();
       await page.getByRole("button", { name: /Studio fixture/ }).click();
       await page.locator("summary").filter({ hasText: "YouTube yönetimi" }).click();
-      await page.getByRole("button", { name: /^YouTube yönetimi:/ }).click();
-      await page.getByRole("option", { name: "Topluluk gönderileri", exact: true }).click();
+      await page.getByRole("tab", { name: "Topluluk gönderileri", exact: true }).click();
       await page.getByRole("button", { name: /^Biçim:/ }).click();
       await page.getByRole("option", { name: "Metin", exact: true }).click();
       await page.getByRole("textbox", { name: "Gönderi metni" }).fill("Fixture Community release");
@@ -112,13 +110,10 @@ for (const theme of ["light", "dark"])
           { accountId: studio, kind: "text", text: "Fixture Community release", publishAt },
         ]);
       await expect(confirmation).toBeHidden();
-      await action("Topluluk gönderilerini listele");
       await page.getByRole("button", { name: /^Durum:/ }).click();
       await page.getByRole("option", { name: "Planlandı", exact: true }).click();
-      await page
-        .getByRole("button", { name: "Topluluk gönderilerini listele", exact: true })
-        .click();
-      await page.getByRole("button", { name: "Kullan", exact: true }).click();
+      await page.getByRole("button", { name: "Yükle", exact: true }).click();
+      await page.getByRole("button", { name: /^Fixture Community release/ }).click();
       const editName = "Topluluk gönderisini düzenle";
       const editor = page.getByRole("textbox", { name: "Gönderi metni" });
       await expect(editor).toHaveValue("Fixture Community release");
@@ -166,10 +161,7 @@ for (const theme of ["light", "dark"])
           path: `temp/verification/social-youtube/${surface}-${theme}-${width}.png`,
           animations: "disabled",
         });
-      const chooseSection = async (name: string) => {
-        await page.getByRole("button", { name: /^YouTube yönetimi:/ }).click();
-        await page.getByRole("option", { name, exact: true }).click();
-      };
+      const chooseSection = (name: string) => page.getByRole("tab", { name, exact: true }).click();
       await sections(page).getByRole("tab", { name: "İçerik", exact: true }).click();
       await page.getByRole("button", { name: "Yeni gönderi", exact: true }).click();
       const editor = page.getByRole("dialog", { name: "Yeni gönderi" });
@@ -178,38 +170,28 @@ for (const theme of ["light", "dark"])
       await page.getByRole("option", { name: "Kısa", exact: true }).click();
       await capture("shorts");
       await editor.getByRole("button", { name: "Kapat" }).click();
-      await page
-        .getByRole("button", { name: "Videolar ve oynatma listeleri", exact: true })
-        .click();
-      await page.getByRole("button", { name: "Videoları listele", exact: true }).click();
+      await sections(page).getByRole("tab", { name: "Hesaplar ve Ayarlar", exact: true }).click();
+      await page.getByRole("button", { name: /YouTube fixture/ }).click();
+      await page.locator("summary").filter({ hasText: "YouTube yönetimi" }).click();
+      await chooseSection("Videolar ve oynatma listeleri");
       await expect(page.getByText("Summer release")).toBeVisible();
       await capture("videos");
       await chooseSection("Kanal profili");
-      await page.getByRole("button", { name: "Kanalı yükle", exact: true }).click();
       await expect(page.getByText("@fixture")).toBeVisible();
       await capture("profile");
       await chooseSection("Canlı yayınlar");
-      await page.getByRole("button", { name: "Yayınları listele", exact: true }).click();
       await expect(page.getByText("Friday livestream")).toBeVisible();
       await capture("live");
       await chooseSection("Analiz");
-      await page.getByRole("button", { name: /^İşlem:/ }).click();
-      await page.getByRole("option", { name: "Kota kullanımını göster", exact: true }).click();
-      await page.getByRole("button", { name: "Kota kullanımını göster", exact: true }).click();
       await expect(page.getByText("Data API kota birimleri")).toBeVisible();
       await capture("analytics");
       await chooseSection("Yorumlar");
-      await page.getByRole("button", { name: "Yorumları listele", exact: true }).click();
-      await expect(page.getByText(/Sonuç yok/)).toBeVisible();
+      await expect(page.getByText(/Gösterilecek yorum yok/)).toBeVisible();
       await capture("comments");
       await chooseSection("Abonelikler");
-      await page.getByRole("button", { name: /^Tür:/ }).click();
-      await page.getByRole("option", { name: "Abonelikler", exact: true }).click();
-      await page.getByRole("button", { name: "Abonelikleri listele", exact: true }).click();
       await expect(page.getByText("Fixture subscriber")).toBeVisible();
       await capture("subscriptions");
       await chooseSection("İncele");
-      await page.getByRole("button", { name: "YouTube işlemlerini listele", exact: true }).click();
       await expect(page.getByRole("button", { name: "İncele", exact: true })).toBeVisible();
       await capture("review");
       await page.getByRole("dialog").getByRole("button", { name: "Kapat" }).click();
@@ -218,7 +200,7 @@ for (const theme of ["light", "dark"])
       await chooseSection("Topluluk gönderileri");
       await capture("community");
       await chooseSection("Analiz");
-      await page.getByRole("button", { name: "Para kazanma durumunu göster", exact: true }).click();
+      await page.getByRole("button", { name: "Yükle", exact: true }).click();
       await expect(page.getByText(/YouTube işlem yapmanı bekliyor/)).toBeVisible();
       await capture("needs-human");
     });
@@ -241,39 +223,43 @@ for (const theme of ["light", "dark"])
         );
         if (surface === "browser" || surface === "insights") {
           await frame.getByText(/^(Instagram tools|Instagram araçları)$/i).click();
+          const tool = (name: RegExp) => frame.getByRole("tab", { name }).click();
           if (surface === "browser") {
+            await tool(/^(Profile|Profil)$/);
             await frame
               .getByRole("button", { name: /^(Read Instagram profile|Instagram profilini oku)$/i })
               .click();
+            await tool(/^(Live|Canlı)$/);
             await frame
               .getByRole("button", {
                 name: /^(Open Instagram Live Producer|Instagram Canlı Yayın Yapımcısı’nı aç)$/i,
               })
               .click();
+            await tool(/^(Earnings|Kazançlar)$/);
             await frame
               .getByRole("button", {
                 name: /^(Read Instagram earnings|Instagram kazançlarını oku)$/i,
               })
               .click();
             await expect(frame.getByText(/€321\.40/)).toBeVisible();
+            await tool(/^(Highlights|Öne çıkanlar)$/);
             await frame
               .getByRole("button", {
                 name: /^(Read Instagram Highlights|Instagram Öne Çıkanlar’ı oku)$/i,
               })
               .click();
-            await frame
-              .getByRole("button", { name: /^(Instagram Highlights|Instagram Öne Çıkanlar):/i })
-              .click();
-            await page.getByRole("option", { name: "Studio Stories", exact: true }).click();
+            await frame.getByRole("button", { name: "Studio Stories", exact: true }).click();
             await expect(
               frame.getByRole("textbox", { name: /^(Highlight name|Öne Çıkanlar öğesinin adı)$/i }),
             ).toHaveValue("Studio Stories");
-          } else
+          } else {
+            await tool(/^(Insights|İstatistikler)$/);
             await frame
               .getByRole("button", {
                 name: /^(Read Instagram insights|Instagram istatistiklerini oku)$/i,
               })
               .click();
+          }
         } else if (surface === "inbox") {
           await frame.getByText(/^(Instagram comment actions|Instagram yorum işlemleri)$/i).click();
           await expect(
@@ -536,6 +522,7 @@ for (const theme of ["light", "dark"])
       await page.getByRole("button", { name: "Yenile", exact: true }).click();
       await expect(page.getByText(/Gösterimler/)).toBeVisible();
       await page.getByText("LinkedIn gönderilerini yönet", { exact: true }).click();
+      await page.getByText("Mevcut bir incelemeyi aç", { exact: true }).click();
       await expect(page.getByLabel("LinkedIn inceleme kimliği")).toBeVisible();
       await shot("api-account");
       await page.getByText("LinkedIn Live", { exact: true }).click();
@@ -646,7 +633,9 @@ for (const theme of ["light", "dark"])
         .filter({ hasText: /^Para kazanma$/ })
         .click();
       await detail.getByRole("button", { name: "Tahmini kazançları oku" }).click();
-      await expect(detail.getByText("Sonuç yok", { exact: true })).toBeVisible();
+      await expect(
+        detail.getByText("Facebook gelir elde etme verisi döndürmedi.", { exact: true }),
+      ).toBeVisible();
       await capture("monetization");
       await detail
         .locator("summary")
@@ -799,6 +788,10 @@ for (const theme of ["light", "dark"])
       await capture("personal-name");
       await fields.click();
       await page.getByRole("option", { name: "Web sitesi", exact: true }).click();
+      await member
+        .locator("summary")
+        .filter({ hasText: "Facebook'ta zaten bulunan bir değeri değiştir" })
+        .click();
       await expect(member.getByLabel(/Facebook’taki mevcut değer/)).toBeVisible();
       await capture("personal-website");
       await fields.click();
@@ -1062,8 +1055,7 @@ for (const theme of ["light", "dark"])
         .filter({ hasText: /TikTok araçları|TikTok tools/ })
         .click();
       const select = async (name: RegExp) => {
-        await detail.getByRole("button", { name: /TikTok bölümü|TikTok section/ }).click();
-        await page.getByRole("option", { name }).click();
+        await detail.getByRole("tab", { name }).click();
       };
       const expose = async (button: RegExp, result: string | RegExp, surface: string) => {
         await detail.getByRole("button", { name: button }).click();
@@ -1106,7 +1098,7 @@ for (const theme of ["light", "dark"])
         "messages",
       );
       await select(/^(Takipçiler|Followers)$/);
-      await expose(/Hedef kitleyi oku|Read audience/, "Demo takipçi @demo.fan", "audience");
+      await expose(/Hedef kitleyi oku|Read audience/, "@demo.fan", "audience");
       await detail.getByRole("button", { name: /^(Takip et|Follow)$/ }).click();
       await detail
         .getByRole("button", { name: /İnceleme için sıraya al|Queue for review/ })
@@ -1329,6 +1321,7 @@ for (const theme of ["light", "dark"])
       const editor = page.getByRole("dialog", { name: "Yeni gönderi", exact: true });
       await expect(editor).toBeVisible();
       await editor.getByRole("checkbox", { name: "Demo account" }).check();
+      await editor.getByText("X için diğer seçenekler", { exact: true }).click();
       await expect(
         editor.getByRole("textbox", { name: "Alıntılanacak gönderinin kimliği" }),
       ).toBeVisible();

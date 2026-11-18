@@ -78,6 +78,7 @@ export const SOCIAL_READ_ACTIONS = [
   "facebook.live.comments",
   "facebook.management.list",
   "instagram.comments.requests.list",
+  "instagram.management.list",
 ] as const;
 export type SocialReadAction = (typeof SOCIAL_READ_ACTIONS)[number];
 

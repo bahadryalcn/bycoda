@@ -10,6 +10,7 @@ import { X_DESTINATIONS } from "../../src/integrations/social/x-handoff";
 import { YOUTUBE_READ_TOOLS } from "../../src/features/social/model/youtubeManagement";
 import { youtubeToolSchemas } from "./youtube/youtube-inputs";
 import { FACEBOOK_MANAGEMENT_ACTIONS } from "../../src/features/social/model/facebookManagement";
+import { INSTAGRAM_MANAGEMENT_KINDS } from "../../src/features/social/model/instagramManagement";
 
 /** Credential material is added only in the native/headless backend, after the
  * renderer's ACP frame has crossed the process boundary. SDKs that deliberately
@@ -453,6 +454,19 @@ export const SOCIAL_TOOL_SCHEMAS: Record<SocialTool, Record<string, unknown>> = 
     ["accountId"],
   ),
   "instagram.mentions": object({ accountId: string(), cursor: string() }, ["accountId"]),
+  "instagram.earnings.read": object({ accountId: string() }, ["accountId"]),
+  "instagram.management.request": object(
+    {
+      accountId: string(),
+      kind: { enum: INSTAGRAM_MANAGEMENT_KINDS },
+      details: {
+        type: "object",
+        description:
+          "post.edit: postUrl and caption. post.delete: postUrl. profile.update: patch (name, username, bio, website). highlight.create: name and storyIds. highlight.edit: id, expectedName, name and optional storyIds. highlight.delete: id and expectedName. dm.draft: handle and text.",
+      },
+    },
+    ["accountId", "kind", "details"],
+  ),
   "instagram.comments.request": object(
     { threadId: string(), commentId: string(), action: { enum: ["hide", "unhide", "delete"] } },
     ["threadId", "commentId", "action"],
@@ -666,12 +680,21 @@ export const SOCIAL_TOOL_SCHEMAS: Record<SocialTool, Record<string, unknown>> = 
           "comment.pin",
           "comment.reply",
           "live.reply",
+          "post.delete",
+          "profile.update",
+          "privacy.update",
         ],
       },
       postId: string(),
       commentId: string(),
       recipientId: string(),
       text: string(),
+      mediaType: { enum: ["video", "photo"] },
+      patch: {
+        type: "object",
+        description:
+          "profile.update: name, username, bio, website or avatarUploadId. privacy.update: privateAccount or the account privacy choices.",
+      },
     },
     ["accountId", "kind"],
   ),
@@ -778,6 +801,7 @@ export const SOCIAL_READ_TOOLS: readonly SocialTool[] = [
   // Instagram
   "instagram.insights",
   "instagram.mentions",
+  "instagram.earnings.read",
   // X.
   "x.handoff",
   "x.insights",
@@ -849,6 +873,10 @@ const TOOL_NOTES: Partial<Record<SocialTool, string>> = {
     " Reads account insights or metrics for one owned media ID. For account totals, optional paired since/until use Unix seconds. Missing metrics are returned separately.",
   "instagram.mentions":
     " Reads mention IDs observed by the Host's signed Instagram webhooks. Use next as cursor for older events. History is limited to notifications received here.",
+  "instagram.earnings.read":
+    " Reads the earnings figures the connected Instagram browser account's professional dashboard shows. Read only; it does not establish payout eligibility.",
+  "instagram.management.request":
+    " Files one exact post edit or delete, profile edit, Highlight change or new direct-message draft for the owner's review in the Instagram account. The owner makes the change; this tool changes nothing on Instagram.",
   "instagram.comments.request":
     " Requests hide, unhide or delete for a verified inbound Instagram comment in this project. The owner reviews the exact comment and action in Inbox before any provider write.",
   "replies.draft":
@@ -889,6 +917,10 @@ const TOOL_NOTES: Partial<Record<SocialTool, string>> = {
   "linkedin.creator.handoff":
     " Returns the LinkedIn destination for the owner to open. Publication and newsletter eligibility are decided in LinkedIn.",
   // Facebook Page tools
+  "tiktok.changes.request":
+    " Queues one TikTok change for the owner's review in the account. post.delete, profile.update and privacy.update never run without the owner approving that exact request.",
+  "youtube.changes.request":
+    " Queues one owner-only YouTube change (channel update, or video, comment, playlist or community post deletion) for the owner to approve in the account. Nothing is changed until the owner approves.",
   "facebook.privateReplyDraft":
     " Prepares one private Messenger reply to an eligible comment on a managed Page. Send through replies.send, which requires configured autonomy or exact owner approval.",
   "facebook.live.replyDraft":

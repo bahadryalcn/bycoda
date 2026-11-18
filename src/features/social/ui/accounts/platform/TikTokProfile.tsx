@@ -5,11 +5,14 @@ import { useConfirm } from "../../../../../shared/ui/ConfirmDialog";
 import { DescriptionItem, DescriptionList } from "../../../../../shared/ui/DescriptionList";
 import { FileField } from "../../../../../shared/ui/FileField";
 import { InlineError, InlineMessage } from "../../../../../shared/ui/InlineError";
+import { SectionLabel } from "../../../../../shared/ui/SectionLabel";
+import { StatRow, StatTile } from "../../../../../shared/ui/StatTile";
 import { Text } from "../../../../../shared/ui/Text";
 import { TextareaField } from "../../../../../shared/ui/TextareaField";
 import { TextField } from "../../../../../shared/ui/TextField";
 import type { SocialClient } from "../../../model/socialClient";
 import { useAccountWrite } from "../useAccountWrite";
+import "./tiktok.css";
 
 type Profile = {
   name: string;
@@ -114,75 +117,85 @@ export function TikTokProfile({
   };
 
   return (
-    <div className="flex min-w-0 flex-col gap-3">
-      <Button
-        variant="secondary"
-        size="sm"
-        className="self-start"
-        loading={is("read")}
-        disabled={disabled || busy || (dirty && !unconfirmed)}
-        onClick={() => read().catch(() => undefined)}
-      >
-        {t("Read profile")}
-      </Button>
+    <div className="tiktok-panel">
+      <div className="tiktok-head">
+        <SectionLabel as="h3">{t("Profile")}</SectionLabel>
+        <Button
+          variant="secondary"
+          size="sm"
+          loading={is("read")}
+          disabled={disabled || busy || (dirty && !unconfirmed)}
+          onClick={() => read().catch(() => undefined)}
+        >
+          {draft ? t("Refresh") : t("Read profile")}
+        </Button>
+      </div>
+      {!draft && !busy && !error && (
+        <Text size="caption" tone="secondary">
+          {t("Nothing loaded yet. Read it from TikTok to see it here.")}
+        </Text>
+      )}
       {unconfirmed && (
         <InlineMessage tone="warning">
           {t("TikTok did not confirm this change. Check its current state before trying again.")}
         </InlineMessage>
       )}
-      {draft && (
+      {draft && !browser && (
         <DescriptionList size="sm">
-          {!browser && draft.username && (
+          {draft.username && (
             <DescriptionItem term={labels.username}>@{draft.username}</DescriptionItem>
           )}
-          {!browser && <DescriptionItem term={labels.name}>{draft.name}</DescriptionItem>}
-          {!browser && draft.bio && (
-            <DescriptionItem term={labels.bio}>{draft.bio}</DescriptionItem>
-          )}
-          {draft.followers !== undefined && (
-            <DescriptionItem term={t("Followers")}>
-              {format.formatNumber(draft.followers)}
-            </DescriptionItem>
-          )}
-          {draft.following !== undefined && (
-            <DescriptionItem term={t("Following")}>
-              {format.formatNumber(draft.following)}
-            </DescriptionItem>
-          )}
-          {draft.likes !== undefined && (
-            <DescriptionItem term={t("Likes")}>{format.formatNumber(draft.likes)}</DescriptionItem>
-          )}
-          {draft.posts !== undefined && (
-            <DescriptionItem term={t("Posts")}>{format.formatNumber(draft.posts)}</DescriptionItem>
-          )}
+          <DescriptionItem term={labels.name}>{draft.name}</DescriptionItem>
+          {draft.bio && <DescriptionItem term={labels.bio}>{draft.bio}</DescriptionItem>}
         </DescriptionList>
       )}
+      {draft &&
+        [draft.followers, draft.following, draft.likes, draft.posts].some(
+          (value) => value !== undefined,
+        ) && (
+          <StatRow label={t("Profile")}>
+            {draft.followers !== undefined && (
+              <StatTile label={t("Followers")} value={format.formatNumber(draft.followers)} />
+            )}
+            {draft.following !== undefined && (
+              <StatTile label={t("Following")} value={format.formatNumber(draft.following)} />
+            )}
+            {draft.likes !== undefined && (
+              <StatTile label={t("Likes")} value={format.formatNumber(draft.likes)} />
+            )}
+            {draft.posts !== undefined && (
+              <StatTile label={t("Posts")} value={format.formatNumber(draft.posts)} />
+            )}
+          </StatRow>
+        )}
       {draft && browser && (
         <form
-          className="flex min-w-0 flex-col gap-3"
+          className="tiktok-panel"
           onSubmit={(event) => {
             event.preventDefault();
             if (dirty && !disabled && !busy && !unconfirmed && draft.name.trim())
               save().catch(() => undefined);
           }}
         >
-          <TextField
-            label={labels.name}
-            value={draft.name}
-            maxLength={30}
-            required
-            disabled={disabled || busy}
-            onChange={(event) => update("name", event.currentTarget.value)}
-          />
-          <TextField
-            label={labels.username}
-            value={draft.username ?? ""}
-            maxLength={24}
-            required
-            pattern="[A-Za-z0-9_.]{2,24}"
-            disabled={disabled || busy}
-            onChange={(event) => update("username", event.currentTarget.value)}
-          />
+          <div className="tiktok-grid">
+            <TextField
+              label={labels.name}
+              value={draft.name}
+              maxLength={30}
+              required
+              disabled={disabled || busy}
+              onChange={(event) => update("name", event.currentTarget.value)}
+            />
+            <TextField
+              label={labels.username}
+              value={draft.username ?? ""}
+              maxLength={24}
+              required
+              pattern="[A-Za-z0-9_.]{2,24}"
+              disabled={disabled || busy}
+              onChange={(event) => update("username", event.currentTarget.value)}
+            />
+          </div>
           <TextareaField
             label={labels.bio}
             value={draft.bio ?? ""}
@@ -208,7 +221,7 @@ export function TikTokProfile({
             onFiles={(files) => setAvatar(files[0])}
           />
           {avatar && <Text size="caption">{avatar.name}</Text>}
-          <div className="flex flex-wrap gap-2">
+          <div className="tiktok-actions">
             <Button
               type="submit"
               size="sm"

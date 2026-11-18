@@ -3,8 +3,11 @@ import { useT } from "../../../../../shared/i18n";
 import { Badge } from "../../../../../shared/ui/Badge";
 import { Button } from "../../../../../shared/ui/Button";
 import { useConfirm } from "../../../../../shared/ui/ConfirmDialog";
+import { DescriptionItem, DescriptionList } from "../../../../../shared/ui/DescriptionList";
 import { EmptyState } from "../../../../../shared/ui/EmptyState";
 import { InlineError } from "../../../../../shared/ui/InlineError";
+import { LoadingText } from "../../../../../shared/ui/LoadingText";
+import { Surface } from "../../../../../shared/ui/Surface";
 import { Text } from "../../../../../shared/ui/Text";
 import {
   facebookManagementAutonomy,
@@ -13,6 +16,7 @@ import {
 import type { AutonomyLevel, AutonomyAction } from "../../../model/autonomy";
 import type { SocialClient } from "../../../model/socialClient";
 import { useAccountWrite } from "../useAccountWrite";
+import "./facebook.css";
 
 export function FacebookManagementRequests({
   client,
@@ -80,6 +84,23 @@ export function FacebookManagementRequests({
       ),
     );
   };
+  const detailList = (item: FacebookManagementRequest) => {
+    const patch = item.details.patch;
+    const entries = Object.entries(patch && typeof patch === "object" ? patch : item.details);
+    return entries.length ? (
+      <DescriptionList size="sm">
+        {entries.map(([field, value]) => (
+          <DescriptionItem key={field} term={fields[field] ?? field}>
+            {field === "action"
+              ? actions[String(value)]
+              : typeof value === "string"
+                ? value
+                : JSON.stringify(value)}
+          </DescriptionItem>
+        ))}
+      </DescriptionList>
+    ) : null;
+  };
   const load = async () => {
     const result = await work.write("list", () =>
       Promise.all([
@@ -129,60 +150,76 @@ export function FacebookManagementRequests({
   };
 
   return (
-    <section className="social-card" aria-label={t("Facebook requests")}>
-      <Button
-        variant="secondary"
-        size="sm"
-        className="self-start"
-        loading={work.is("list")}
-        onClick={() => void load().catch(() => undefined)}
-      >
-        {t("Refresh")}
-      </Button>
-      {items?.length === 0 ? <EmptyState size="inline" description={t("No results")} /> : null}
-      {items?.map((item) => (
-        <div key={item.id} className="social-card">
-          <div className="social-field-row">
-            <Text as="span">{titles[item.operation]}</Text>
-            <Badge tone={item.status === "review" ? "warning" : "neutral"}>
-              {labels[item.status]}
-            </Badge>
-          </div>
-          {details(item)}
-          {item.status === "approved" ? (
-            <Text as="p">{t("Return to chat to apply this Facebook change.")}</Text>
-          ) : null}
-          <div className="social-field-row">
-            {item.status === "pending" ? (
-              <Button
-                size="sm"
-                loading={work.is(item.id)}
-                onClick={() => void approve(item).catch(() => undefined)}
-              >
-                {t("Approve")}
-              </Button>
-            ) : null}
-            {canApproveForChat(item) ? (
-              <Button
-                variant="secondary"
-                size="sm"
-                loading={work.is(item.id)}
-                onClick={() => void approve(item, true).catch(() => undefined)}
-              >
-                {t("Approve for chat")}
-              </Button>
-            ) : null}
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={item.status === "submitted" || work.is(item.id)}
-              onClick={() => void dismiss(item).catch(() => undefined)}
-            >
-              {t("Dismiss")}
-            </Button>
-          </div>
-        </div>
-      ))}
+    <section className="social-fb-stack" aria-label={t("Facebook requests")}>
+      <div className="social-fb-toolbar">
+        <Button
+          variant={items ? "secondary" : "primary"}
+          size="sm"
+          loading={work.is("list")}
+          onClick={() => void load().catch(() => undefined)}
+        >
+          {t("Refresh")}
+        </Button>
+        <Text as="span" size="caption" tone="muted">
+          {t("Changes the assistant proposes wait here for your approval.")}
+        </Text>
+      </div>
+      {!items && work.is("list") ? <LoadingText>{t("Loading…")}</LoadingText> : null}
+      {items?.length === 0 ? (
+        <EmptyState size="inline" description={t("No requests waiting.")} />
+      ) : null}
+      {items?.length ? (
+        <ul className="social-fb-list">
+          {items.map((item) => (
+            <Surface key={item.id} as="li" variant="card" padding="sm" className="social-fb-item">
+              <div className="social-fb-item-head">
+                <Text as="span" weight="medium">
+                  {titles[item.operation]}
+                </Text>
+                <Badge tone={item.status === "review" ? "warning" : "neutral"}>
+                  {labels[item.status]}
+                </Badge>
+              </div>
+              {detailList(item)}
+              {item.status === "approved" ? (
+                <Text as="p" size="secondary" tone="muted">
+                  {t("Return to chat to apply this Facebook change.")}
+                </Text>
+              ) : null}
+              <div className="social-fb-actions">
+                {item.status === "pending" ? (
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    loading={work.is(item.id)}
+                    onClick={() => void approve(item).catch(() => undefined)}
+                  >
+                    {t("Approve")}
+                  </Button>
+                ) : null}
+                {canApproveForChat(item) ? (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    loading={work.is(item.id)}
+                    onClick={() => void approve(item, true).catch(() => undefined)}
+                  >
+                    {t("Approve for chat")}
+                  </Button>
+                ) : null}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={item.status === "submitted" || work.is(item.id)}
+                  onClick={() => void dismiss(item).catch(() => undefined)}
+                >
+                  {t("Dismiss")}
+                </Button>
+              </div>
+            </Surface>
+          ))}
+        </ul>
+      ) : null}
       {work.error ? <InlineError>{work.error}</InlineError> : null}
       {confirm.dialog}
     </section>

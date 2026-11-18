@@ -20,6 +20,24 @@ export type PlatformFieldProps = {
   onChange: (next: PlatformDraft) => void;
 };
 
+/** Whether an account has platform options, so the editor shows a section only when there is something in it. */
+export function hasPlatformFields(account: SocialAccount): boolean {
+  switch (account.platform) {
+    case "x":
+    case "instagram":
+    case "facebook":
+    case "tiktok":
+    case "youtube":
+    case "reddit":
+    case "snapchat":
+      return true;
+    case "linkedin":
+      return account.connection === "oauth";
+    default:
+      return false;
+  }
+}
+
 /** The platform-specific options for one selected account. Platforms without options render nothing. */
 export function PlatformFields(props: PlatformFieldProps) {
   switch (props.account.platform) {

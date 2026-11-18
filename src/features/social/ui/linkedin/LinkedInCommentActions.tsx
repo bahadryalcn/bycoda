@@ -3,9 +3,8 @@ import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { useConfirm } from "../../../../shared/ui/ConfirmDialog";
 import { FieldGroup } from "../../../../shared/ui/FieldGroup";
-import { InlineError } from "../../../../shared/ui/InlineError";
+import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
 import { Select } from "../../../../shared/ui/Select";
-import { Text } from "../../../../shared/ui/Text";
 import type { LinkedInManagementReview } from "../../../../integrations/social/adapters/linkedin-manage";
 import type { SocialThread } from "../../model/social";
 import type { SocialClient } from "../../model/socialClient";
@@ -83,8 +82,9 @@ export function LinkedInCommentActions({
           onValueChange={setChoice}
         />
         <Button
-          variant="secondary"
+          variant="primary"
           size="sm"
+          loading={is("prepare")}
           onClick={() => void prepare("react").catch(() => undefined)}
         >
           {t("Add reaction")}
@@ -97,14 +97,17 @@ export function LinkedInCommentActions({
           {t("Remove reaction")}
         </Button>
         <Button
-          variant="secondary"
+          variant="ghost"
+          tone="danger"
           size="sm"
           onClick={() => void prepare("deleteComment").catch(() => undefined)}
         >
           {t("Delete comment")}
         </Button>
       </FieldGroup>
-      {result?.state === "succeeded" ? <Text as="p">{t("Saved")}</Text> : null}
+      {result?.state === "succeeded" ? (
+        <InlineMessage tone="success">{t("Saved")}</InlineMessage>
+      ) : null}
       {result?.state === "attempting" || result?.state === "inspect" ? (
         <InlineError>{t("Check the result on LinkedIn before trying again.")}</InlineError>
       ) : null}

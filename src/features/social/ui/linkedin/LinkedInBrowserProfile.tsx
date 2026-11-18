@@ -6,11 +6,15 @@ import { useConfirm } from "../../../../shared/ui/ConfirmDialog";
 import { Disclosure } from "../../../../shared/ui/Disclosure";
 import { FieldGroup } from "../../../../shared/ui/FieldGroup";
 import { InlineError } from "../../../../shared/ui/InlineError";
+import { SectionLabel } from "../../../../shared/ui/SectionLabel";
 import { Select } from "../../../../shared/ui/Select";
+import { Text } from "../../../../shared/ui/Text";
 import { TextareaField } from "../../../../shared/ui/TextareaField";
 import type { SocialAccount } from "../../model/social";
 import type { SocialClient } from "../../model/socialClient";
 import { useAccountWrite } from "../accounts/useAccountWrite";
+import { LinkedInHandoff } from "./LinkedInHandoff";
+import "./linkedin.css";
 
 type Section = "headline" | "about";
 type ProfileValue = { section: Section; value: string };
@@ -80,26 +84,28 @@ export function LinkedInBrowserProfile({
     });
   return (
     <Disclosure summary={t("Profile")} variant="row">
-      <FieldGroup variant="bare" disabled={disabled || busy}>
+      <div className="social-li-stack">
         {member ? (
-          <>
-            <Select
-              label={t("Profile")}
-              value={section}
-              options={sections}
-              onValueChange={(next) => {
-                setSection(next === "about" ? "about" : "headline");
-                setBefore(undefined);
-              }}
-            />
-            <Button
-              variant="secondary"
-              size="sm"
-              loading={is("read")}
-              onClick={() => void read().catch(() => undefined)}
-            >
-              {t("Read")}
-            </Button>
+          <FieldGroup variant="bare" disabled={disabled || busy}>
+            <div className="social-li-toolbar">
+              <Select
+                label={t("Profile")}
+                value={section}
+                options={sections}
+                onValueChange={(next) => {
+                  setSection(next === "about" ? "about" : "headline");
+                  setBefore(undefined);
+                }}
+              />
+              <Button
+                variant={before?.section === section ? "secondary" : "primary"}
+                size="sm"
+                loading={is("read")}
+                onClick={() => void read().catch(() => undefined)}
+              >
+                {t("Read")}
+              </Button>
+            </div>
             {before?.section === section ? (
               <>
                 <TextareaField
@@ -108,8 +114,9 @@ export function LinkedInBrowserProfile({
                   onChange={(event) => setValue(event.target.value)}
                 />
                 <Button
-                  variant="secondary"
+                  variant="primary"
                   size="sm"
+                  className="self-start"
                   disabled={blocked || before.value === value}
                   loading={is("save")}
                   onClick={() => void save().catch(() => undefined)}
@@ -117,33 +124,66 @@ export function LinkedInBrowserProfile({
                   {t("Save")}
                 </Button>
               </>
-            ) : null}
-          </>
+            ) : (
+              <Text as="p" size="secondary" tone="muted">
+                {t("Read your headline or About text to edit it here.")}
+              </Text>
+            )}
+          </FieldGroup>
         ) : null}
-        <FieldGroup legend={t("Open on LinkedIn")} layout="row">
-          {[
-            { section: "photo", label: t("Photo") },
-            { section: "banner", label: t("Banner") },
-            ...(member
-              ? [
-                  { section: "experience", label: t("Experience") },
-                  { section: "links", label: t("Links") },
-                ]
-              : [{ section: "details", label: t("Page details") }]),
-            { section: "services", label: t("Services") },
-          ].map((item) => (
-            <Button
-              key={item.section}
-              variant="secondary"
-              size="sm"
-              onClick={() => void open(item.section).catch(() => undefined)}
-            >
-              {item.label}
-            </Button>
-          ))}
-        </FieldGroup>
-      </FieldGroup>
-      {error ? <InlineError>{error}</InlineError> : null}
+        <div className="social-li-group">
+          <SectionLabel variant="inline" size="secondary" as="h4">
+            {t("Open on LinkedIn")}
+          </SectionLabel>
+          <Text as="p" size="secondary" tone="muted">
+            {t(
+              "LinkedIn only lets you change these in the browser. MonoCode opens the exact page.",
+            )}
+          </Text>
+          <ul className="social-li-list">
+            {[
+              { section: "photo", label: t("Photo"), hint: t("Change your profile photo.") },
+              { section: "banner", label: t("Banner"), hint: t("Change the banner image.") },
+              ...(member
+                ? [
+                    {
+                      section: "experience",
+                      label: t("Experience"),
+                      hint: t("Add or edit your jobs and education."),
+                    },
+                    {
+                      section: "links",
+                      label: t("Links"),
+                      hint: t("Edit the links on your profile."),
+                    },
+                  ]
+                : [
+                    {
+                      section: "details",
+                      label: t("Page details"),
+                      hint: t("Edit your Page's name, website and description."),
+                    },
+                  ]),
+              {
+                section: "services",
+                label: t("Services"),
+                hint: t("Edit the services you offer."),
+              },
+            ].map((item) => (
+              <LinkedInHandoff
+                key={item.section}
+                title={item.label}
+                description={item.hint}
+                action={t("Open")}
+                ariaLabel={t("Open {p0} on LinkedIn", { p0: item.label })}
+                disabled={disabled || busy}
+                onOpen={() => void open(item.section).catch(() => undefined)}
+              />
+            ))}
+          </ul>
+        </div>
+        {error ? <InlineError>{error}</InlineError> : null}
+      </div>
       {confirm.dialog}
     </Disclosure>
   );

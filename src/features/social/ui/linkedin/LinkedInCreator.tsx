@@ -5,13 +5,16 @@ import { Button } from "../../../../shared/ui/Button";
 import { useConfirm } from "../../../../shared/ui/ConfirmDialog";
 import { Disclosure } from "../../../../shared/ui/Disclosure";
 import { FieldGroup } from "../../../../shared/ui/FieldGroup";
-import { InlineError } from "../../../../shared/ui/InlineError";
+import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
+import { SectionLabel } from "../../../../shared/ui/SectionLabel";
 import { Text } from "../../../../shared/ui/Text";
 import { TextareaField } from "../../../../shared/ui/TextareaField";
 import { TextField } from "../../../../shared/ui/TextField";
 import type { SocialAccount } from "../../model/social";
 import type { SocialClient } from "../../model/socialClient";
 import { useAccountWrite } from "../accounts/useAccountWrite";
+import { LinkedInHandoff } from "./LinkedInHandoff";
+import "./linkedin.css";
 
 type Props = {
   account: SocialAccount;
@@ -73,60 +76,73 @@ function LinkedInCreatorAccount({ account, client, disabled }: Props) {
 
   return (
     <Disclosure summary={t("Articles and newsletters")} variant="row">
-      <FieldGroup variant="bare" disabled={disabled || is("handoff")} layout="row">
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => void open("article").catch(() => undefined)}
-        >
-          {t("Open article publishing")}
-        </Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => void open("newsletter").catch(() => undefined)}
-        >
-          {t("Open newsletter publishing")}
-        </Button>
-      </FieldGroup>
-      {canPrepare ? (
-        <FieldGroup legend={t("Article draft")} disabled={disabledWrite}>
-          <TextField
-            label={t("Title")}
-            value={title}
-            maxLength={100}
-            onChange={(event) => setTitle(event.currentTarget.value)}
-          />
-          <TextareaField
-            label={t("Text")}
-            value={body}
-            maxLength={50_000}
-            onChange={(event) => setBody(event.currentTarget.value)}
-          />
-          <Button
-            variant="primary"
-            size="sm"
-            loading={is("prepare")}
-            disabled={!title.trim() || !body.trim()}
-            onClick={() => void prepare().catch(() => undefined)}
-          >
-            {t("Prepare draft")}
-          </Button>
-        </FieldGroup>
-      ) : null}
-      {result ? (
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() =>
-            void write("handoff", () => openExternal(result.url)).catch(() => undefined)
-          }
-        >
-          {t("Open LinkedIn draft")}
-        </Button>
-      ) : null}
-      {inspect ? <Text as="p">{t("Check the draft on LinkedIn before trying again.")}</Text> : null}
-      {error ? <InlineError>{error}</InlineError> : null}
+      <div className="social-li-stack">
+        <div className="social-li-group">
+          <SectionLabel variant="inline" size="secondary" as="h4">
+            {t("Publish on LinkedIn")}
+          </SectionLabel>
+          <Text as="p" size="secondary" tone="muted">
+            {t("LinkedIn only lets you publish articles and newsletters in its own editor.")}
+          </Text>
+          <ul className="social-li-list">
+            <LinkedInHandoff
+              description={t("Write and publish an article.")}
+              action={t("Open article publishing")}
+              disabled={disabled || is("handoff")}
+              onOpen={() => void open("article").catch(() => undefined)}
+            />
+            <LinkedInHandoff
+              description={t("Create a newsletter or publish an issue.")}
+              action={t("Open newsletter publishing")}
+              disabled={disabled || is("handoff")}
+              onOpen={() => void open("newsletter").catch(() => undefined)}
+            />
+          </ul>
+        </div>
+        {canPrepare ? (
+          <FieldGroup legend={t("Article draft")} disabled={disabledWrite}>
+            <TextField
+              label={t("Title")}
+              value={title}
+              maxLength={100}
+              onChange={(event) => setTitle(event.currentTarget.value)}
+            />
+            <TextareaField
+              label={t("Text")}
+              value={body}
+              maxLength={50_000}
+              onChange={(event) => setBody(event.currentTarget.value)}
+            />
+            <Button
+              variant="primary"
+              size="sm"
+              className="self-start"
+              loading={is("prepare")}
+              disabled={!title.trim() || !body.trim()}
+              onClick={() => void prepare().catch(() => undefined)}
+            >
+              {t("Prepare draft")}
+            </Button>
+          </FieldGroup>
+        ) : null}
+        {result ? (
+          <ul className="social-li-list">
+            <LinkedInHandoff
+              description={t("Your draft is ready. Review and publish it on LinkedIn.")}
+              action={t("Open LinkedIn draft")}
+              onOpen={() =>
+                void write("handoff", () => openExternal(result.url)).catch(() => undefined)
+              }
+            />
+          </ul>
+        ) : null}
+        {inspect ? (
+          <InlineMessage tone="warning">
+            {t("Check the draft on LinkedIn before trying again.")}
+          </InlineMessage>
+        ) : null}
+        {error ? <InlineError>{error}</InlineError> : null}
+      </div>
       {dialog}
     </Disclosure>
   );

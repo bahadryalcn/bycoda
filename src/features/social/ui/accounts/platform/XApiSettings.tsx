@@ -7,6 +7,7 @@ import { openExternal } from "../../../../../platform/tauri/openExternal";
 import type { SocialAccount } from "../../../model/social";
 import type { SocialClient } from "../../../model/socialClient";
 import { useAccountWrite } from "../useAccountWrite";
+import "./x.css";
 
 export function XApiSettings({
   account,
@@ -23,7 +24,7 @@ export function XApiSettings({
     t("The connection could not be started. Try again."),
   );
   return (
-    <div className="social-field-row">
+    <div className="social-x-group">
       <Select
         label={t("X API billing")}
         value={account.xApiProduct ?? "off"}
@@ -50,6 +51,7 @@ export function XApiSettings({
       </Text>
       <Button
         variant="link"
+        className="self-start"
         onClick={() =>
           void write("pricing", () =>
             openExternal("https://docs.x.com/x-api/getting-started/pricing"),

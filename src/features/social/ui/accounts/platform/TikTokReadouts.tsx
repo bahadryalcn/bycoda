@@ -2,15 +2,24 @@ import { useState } from "react";
 import { useFormat, useT } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
 import { DescriptionItem, DescriptionList } from "../../../../../shared/ui/DescriptionList";
+import { Disclosure } from "../../../../../shared/ui/Disclosure";
 import { EmptyState } from "../../../../../shared/ui/EmptyState";
 import { InlineError, InlineMessage } from "../../../../../shared/ui/InlineError";
+import { LoadingText } from "../../../../../shared/ui/LoadingText";
+import { SectionLabel } from "../../../../../shared/ui/SectionLabel";
 import { Select } from "../../../../../shared/ui/Select";
 import { Text } from "../../../../../shared/ui/Text";
 import { TextField } from "../../../../../shared/ui/TextField";
 import type { SocialInbound } from "../../../../../integrations/social/adapter";
+import { openExternal } from "../../../../../platform/tauri/openExternal";
 import { useAccountWrite } from "../useAccountWrite";
 import type { TikTokPanelProps } from "./TikTokAccountTools";
 import type { TikTokChange } from "./TikTokChanges";
+import { TikTokPostSelect } from "./TikTokPostSelect";
+import { TikTokRow, TikTokRows } from "./TikTokRows";
+import "./tiktok.css";
+
+const TIKTOK_STUDIO_COMMENTS = "https://www.tiktok.com/tiktokstudio/comments";
 
 type View = "analytics" | "earnings" | "comments" | "mentions" | "messages" | "followers" | "live";
 type Metrics = {
@@ -68,6 +77,15 @@ export function TikTokReadouts({
     followers: t("Read audience"),
     live: t("Save stream key"),
   };
+  const titles = {
+    analytics: t("Analytics"),
+    earnings: t("Earnings"),
+    comments: t("Comments"),
+    mentions: t("Mentions"),
+    messages: t("Direct messages"),
+    followers: t("Audience"),
+    live: t("TikTok LIVE"),
+  };
   const metrics: Record<string, string> = {
     postViews: t("Post views"),
     profileViews: t("Profile views"),
@@ -121,19 +139,80 @@ export function TikTokReadouts({
     commentId: string,
     recipientId: string,
     kind: TikTokChange["kind"],
-  ) => (
-    <Button
-      size="sm"
-      variant="ghost"
-      disabled={disabled}
-      onClick={() => selectChange({ kind, postId, commentId, recipientId })}
-    >
-      {kind === "comment.reply" ? t("Reply to comment") : t("Manage comment")}
-    </Button>
+  ) =>
+    // Replies need a TikTok for Business connection; without it the owner replies on the exact Studio page.
+    kind === "comment.reply" && !businessConnected ? (
+      <Button
+        size="sm"
+        variant="ghost"
+        disabled={disabled}
+        onClick={() => {
+          openExternal(TIKTOK_STUDIO_COMMENTS).catch(() => undefined);
+        }}
+      >
+        {t("Reply in TikTok Studio")}
+      </Button>
+    ) : (
+      <Button
+        size="sm"
+        variant="ghost"
+        disabled={disabled}
+        onClick={() => selectChange({ kind, postId, commentId, recipientId })}
+      >
+        {kind === "comment.reply" ? t("Reply to comment") : t("Manage comment")}
+      </Button>
+    );
+  const postMetrics = (values: Metrics) =>
+    [
+      values.views !== undefined && `${t("Views")} ${format.formatNumber(values.views)}`,
+      values.likes !== undefined && `${t("Likes")} ${format.formatNumber(values.likes)}`,
+      values.comments !== undefined && `${t("Comments")} ${format.formatNumber(values.comments)}`,
+      values.shares !== undefined && `${t("Shares")} ${format.formatNumber(values.shares)}`,
+      values.reach !== undefined && `${t("Reach")} ${format.formatNumber(values.reach)}`,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  const partial = (
+    <InlineMessage tone="info">{t("TikTok only returned part of the activity.")}</InlineMessage>
   );
 
   return (
-    <div className="flex min-w-0 flex-col gap-3">
+    <div className="tiktok-panel">
+      <div className="tiktok-head">
+        <SectionLabel as="h3">{titles[view]}</SectionLabel>
+        <div className="tiktok-actions">
+          <Button
+            size="sm"
+            variant="secondary"
+            loading={is("read")}
+            disabled={disabled || busy || (businessComments && !/^\d{1,30}$/.test(postId))}
+            onClick={() => read().catch(() => undefined)}
+          >
+            {result && view !== "live" ? t("Refresh") : labels[view]}
+          </Button>
+          {((view === "comments" && !businessConnected) || view === "messages") && (
+            <Button
+              size="sm"
+              variant="ghost"
+              loading={is("sync")}
+              disabled={disabled || busy}
+              onClick={() => sync().catch(() => undefined)}
+            >
+              {t("Sync to inbox")}
+            </Button>
+          )}
+          {view === "live" && (
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={disabled || busy}
+              onClick={() => selectChange({ kind: "live.reply" })}
+            >
+              {t("Reply to LIVE comment")}
+            </Button>
+          )}
+        </div>
+      </div>
       {view === "followers" && (
         <Select
           label={t("Audience")}
@@ -150,50 +229,42 @@ export function TikTokReadouts({
         />
       )}
       {businessComments && (
-        <TextField
-          label={t("TikTok post ID")}
-          value={postId}
-          disabled={disabled || busy}
-          inputMode="numeric"
-          maxLength={30}
-          onChange={(event) => {
-            setPostId(event.currentTarget.value);
-            setResult(undefined);
-          }}
-        />
+        <>
+          <TikTokPostSelect
+            client={client}
+            accountId={accountId}
+            disabled={disabled || busy}
+            value={postId}
+            onChange={(next) => {
+              setPostId(next);
+              setResult(undefined);
+            }}
+          />
+          <Disclosure variant="plain" summary={t("Enter an ID instead")}>
+            <TextField
+              label={t("TikTok post ID")}
+              value={postId}
+              disabled={disabled || busy}
+              inputMode="numeric"
+              maxLength={30}
+              onChange={(event) => {
+                setPostId(event.currentTarget.value);
+                setResult(undefined);
+              }}
+            />
+          </Disclosure>
+        </>
       )}
-      <div className="flex flex-wrap gap-2">
-        <Button
-          size="sm"
-          variant="secondary"
-          loading={is("read")}
-          disabled={disabled || busy || (businessComments && !/^\d{1,30}$/.test(postId))}
-          onClick={() => read().catch(() => undefined)}
-        >
-          {labels[view]}
-        </Button>
-        {((view === "comments" && !businessConnected) || view === "messages") && (
-          <Button
-            size="sm"
-            variant="secondary"
-            loading={is("sync")}
-            disabled={disabled || busy}
-            onClick={() => sync().catch(() => undefined)}
-          >
-            {t("Sync to inbox")}
-          </Button>
-        )}
-        {view === "live" && (
-          <Button
-            size="sm"
-            variant="secondary"
-            disabled={disabled || busy}
-            onClick={() => selectChange({ kind: "live.reply" })}
-          >
-            {t("Reply to LIVE comment")}
-          </Button>
-        )}
-      </div>
+      {is("read") && !result && <LoadingText />}
+      {!result && !busy && !error && (
+        <Text size="caption" tone="secondary">
+          {businessComments && !postId
+            ? t("Choose a post to read its comments.")
+            : view === "live"
+              ? t("Save the stream key from your TikTok LIVE setup to go live from this Host.")
+              : t("Nothing loaded yet. Read it from TikTok to see it here.")}
+        </Text>
+      )}
       {syncCount !== undefined && (
         <InlineMessage tone="success">
           {t("Imported items: {p0}", { p0: format.formatNumber(syncCount) })}
@@ -235,56 +306,28 @@ export function TikTokReadouts({
             )}
           </DescriptionList>
         )}
-      {result && "posts" in result && result.next !== undefined && (
-        <InlineMessage tone="info">{t("TikTok only returned part of the activity.")}</InlineMessage>
-      )}
+      {result && "posts" in result && result.next !== undefined && partial}
       {result &&
         "posts" in result &&
-        (result.posts.length
-          ? result.posts.map((post) => {
-              const values = result.metrics[post.id] ?? {};
-              return (
-                <div key={post.id} className="flex min-w-0 flex-col gap-1">
-                  <Text weight="medium">{post.text || post.id}</Text>
-                  <DescriptionList size="sm">
-                    {values.views !== undefined && (
-                      <DescriptionItem term={t("Views")}>
-                        {format.formatNumber(values.views)}
-                      </DescriptionItem>
-                    )}
-                    {values.likes !== undefined && (
-                      <DescriptionItem term={t("Likes")}>
-                        {format.formatNumber(values.likes)}
-                      </DescriptionItem>
-                    )}
-                    {values.comments !== undefined && (
-                      <DescriptionItem term={t("Comments")}>
-                        {format.formatNumber(values.comments)}
-                      </DescriptionItem>
-                    )}
-                    {values.shares !== undefined && (
-                      <DescriptionItem term={t("Shares")}>
-                        {format.formatNumber(values.shares)}
-                      </DescriptionItem>
-                    )}
-                    {values.reach !== undefined && (
-                      <DescriptionItem term={t("Reach")}>
-                        {format.formatNumber(values.reach)}
-                      </DescriptionItem>
-                    )}
-                  </DescriptionList>
-                </div>
-              );
-            })
-          : empty)}
+        (result.posts.length ? (
+          <TikTokRows>
+            {result.posts.map((post) => (
+              <TikTokRow
+                key={post.id}
+                title={post.text || post.id}
+                meta={postMetrics(result.metrics[post.id] ?? {})}
+              />
+            ))}
+          </TikTokRows>
+        ) : (
+          empty
+        ))}
       {result &&
         "people" in result &&
-        (result.people.length
-          ? result.people.map((person) => (
-              <div key={person.platformId} className="flex flex-wrap items-center gap-2">
-                <Text>
-                  {person.name} @{person.username}
-                </Text>
+        (result.people.length ? (
+          <TikTokRows>
+            {result.people.map((person) => (
+              <TikTokRow key={person.platformId} title={person.name} meta={`@${person.username}`}>
                 <Button
                   size="sm"
                   variant="ghost"
@@ -298,65 +341,64 @@ export function TikTokReadouts({
                 >
                   {relationship === "followers" ? t("Follow") : t("Unfollow")}
                 </Button>
-              </div>
-            ))
-          : empty)}
+              </TikTokRow>
+            ))}
+          </TikTokRows>
+        ) : (
+          empty
+        ))}
       {result && "events" in result && (
         <>
-          {result.coverage?.some(({ status }) => status === "partial") && (
-            <InlineMessage tone="info">
-              {t("TikTok only returned part of the activity.")}
-            </InlineMessage>
+          {result.coverage?.some(({ status }) => status === "partial") && partial}
+          {result.events.length ? (
+            <TikTokRows>
+              {result.events.map((event) => (
+                <TikTokRow
+                  key={event.eventId}
+                  title={event.contactName}
+                  meta={format.formatDate(event.at, { dateStyle: "medium", timeStyle: "short" })}
+                  body={event.text}
+                >
+                  {view === "comments" &&
+                    event.postId &&
+                    commentAction(event.postId, event.threadId, event.contactId, "comment.like")}
+                </TikTokRow>
+              ))}
+            </TikTokRows>
+          ) : (
+            empty
           )}
-          {result.events.length
-            ? result.events.map((event) => (
-                <div key={event.eventId} className="flex min-w-0 flex-col gap-1">
-                  <Text weight="medium">{event.contactName}</Text>
-                  <Text tone="secondary" size="caption">
-                    {format.formatDate(event.at, { dateStyle: "medium", timeStyle: "short" })}
-                  </Text>
-                  <Text>{event.text}</Text>
-                  {view === "comments" && event.postId && (
-                    <div className="flex flex-wrap gap-2">
-                      {commentAction(event.postId, event.threadId, event.contactId, "comment.like")}
-                    </div>
-                  )}
-                </div>
-              ))
-            : empty}
         </>
       )}
       {result && "comments" in result && (
         <>
-          {result.next !== undefined && (
-            <InlineMessage tone="info">
-              {t("TikTok only returned part of the activity.")}
-            </InlineMessage>
+          {result.next !== undefined && partial}
+          {result.comments.length ? (
+            <TikTokRows>
+              {result.comments.map((comment) => (
+                <TikTokRow
+                  key={comment.id}
+                  title={comment.author ?? comment.username ?? comment.id}
+                  body={comment.text}
+                >
+                  {view === "comments" &&
+                    comment.username &&
+                    (["comment.reply", "comment.like"] as const).map((kind) => (
+                      <span key={kind}>
+                        {commentAction(
+                          comment.postId,
+                          comment.id,
+                          `web:tiktok:${comment.username}`,
+                          kind,
+                        )}
+                      </span>
+                    ))}
+                </TikTokRow>
+              ))}
+            </TikTokRows>
+          ) : (
+            empty
           )}
-          {result.comments.length
-            ? result.comments.map((comment) => (
-                <div key={comment.id} className="flex min-w-0 flex-col gap-1">
-                  <Text weight="medium">{comment.author ?? comment.username ?? comment.id}</Text>
-                  <Text>{comment.text}</Text>
-                  {view === "comments" && comment.username && (
-                    <div className="flex flex-wrap gap-2">
-                      {commentAction(
-                        comment.postId,
-                        comment.id,
-                        `web:tiktok:${comment.username}`,
-                        "comment.reply",
-                      )}
-                      {commentAction(
-                        comment.postId,
-                        comment.id,
-                        `web:tiktok:${comment.username}`,
-                        "comment.like",
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))
-            : empty}
         </>
       )}
     </div>

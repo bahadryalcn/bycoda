@@ -3,9 +3,12 @@ import { useT } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
 import { useConfirm } from "../../../../../shared/ui/ConfirmDialog";
 import { InlineError, InlineMessage } from "../../../../../shared/ui/InlineError";
+import { SectionLabel } from "../../../../../shared/ui/SectionLabel";
+import { Text } from "../../../../../shared/ui/Text";
 import { TextField } from "../../../../../shared/ui/TextField";
 import { useAccountWrite } from "../useAccountWrite";
 import type { TikTokPanelProps } from "./TikTokAccountTools";
+import "./tiktok.css";
 
 export type TikTokBusinessStatus = { approved: boolean; connected: boolean };
 
@@ -31,17 +34,24 @@ export function TikTokBusiness({
     if (next) onChanged(next);
   };
   return (
-    <div className="flex min-w-0 flex-col gap-3">
-      <Button
-        size="sm"
-        variant="secondary"
-        className="self-start"
-        disabled={disabled || busy}
-        loading={is("check")}
-        onClick={() => check().catch(() => undefined)}
-      >
-        {t("Check Business API access")}
-      </Button>
+    <div className="tiktok-panel">
+      <div className="tiktok-head">
+        <SectionLabel as="h3">{t("TikTok for Business")}</SectionLabel>
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={disabled || busy}
+          loading={is("check")}
+          onClick={() => check().catch(() => undefined)}
+        >
+          {t("Check Business API access")}
+        </Button>
+      </div>
+      {!status && !busy && !error && (
+        <Text size="caption" tone="secondary">
+          {t("Check access to see whether this Host can connect TikTok for Business.")}
+        </Text>
+      )}
       {status && !status.approved && (
         <InlineMessage tone="info">
           {t("TikTok Business API access unavailable on this Host.")}
@@ -52,7 +62,7 @@ export function TikTokBusiness({
       )}
       {status?.approved && (
         <form
-          className="flex min-w-0 flex-col gap-3"
+          className="tiktok-panel"
           onSubmit={(event) => {
             event.preventDefault();
             if (disabled || busy) return;
@@ -85,33 +95,36 @@ export function TikTokBusiness({
               .catch(() => undefined);
           }}
         >
-          <TextField
-            label={t("TikTok Business ID")}
-            value={businessId}
-            disabled={disabled || busy}
-            required
-            maxLength={300}
-            onChange={(event) => setBusinessId(event.currentTarget.value)}
-          />
-          <TextField
-            label={t("Access token")}
-            type="password"
-            name="tiktokAccessToken"
-            required
-            maxLength={4096}
-            autoComplete="off"
-            disabled={disabled || busy}
-          />
-          <Button
-            size="sm"
-            type="submit"
-            variant="primary"
-            className="self-start"
-            disabled={disabled || busy || !businessId}
-            loading={is("connect")}
-          >
-            {t("Connect TikTok for Business")}
-          </Button>
+          <div className="tiktok-grid">
+            <TextField
+              label={t("TikTok Business ID")}
+              value={businessId}
+              disabled={disabled || busy}
+              required
+              maxLength={300}
+              onChange={(event) => setBusinessId(event.currentTarget.value)}
+            />
+            <TextField
+              label={t("Access token")}
+              type="password"
+              name="tiktokAccessToken"
+              required
+              maxLength={4096}
+              autoComplete="off"
+              disabled={disabled || busy}
+            />
+          </div>
+          <div className="tiktok-actions">
+            <Button
+              size="sm"
+              type="submit"
+              variant="primary"
+              disabled={disabled || busy || !businessId}
+              loading={is("connect")}
+            >
+              {t("Connect TikTok for Business")}
+            </Button>
+          </div>
         </form>
       )}
       {error && <InlineError>{error}</InlineError>}

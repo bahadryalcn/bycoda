@@ -1,8 +1,8 @@
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
-import { Group, Row } from "../../../../shared/ui/settings";
 import { Select } from "../../../../shared/ui/Select";
+import { Text } from "../../../../shared/ui/Text";
 
 import { TextField } from "../../../../shared/ui/TextField";
 import { DisabledReason } from "../common/DisabledReason";
@@ -52,39 +52,34 @@ export function CharacterLimits({ client, policies, onChanged }: CharacterLimits
   // Unsaved edits live here per scope, so switching scope or a saved change elsewhere keeps them.
   const [unsaved, setUnsaved] = useState<Partial<Record<PolicyScope, Drafts>>>({});
   return (
-    <Group
-      title={t("Character limits")}
-      description={t("Leave a field blank to inherit its value.")}
-      action={
-        <Select
-          hideLabel
-          label={t("Apply to")}
-          value={scope}
-          options={[
-            { value: "global", label: t("All accounts") },
-            ...SOCIAL_PLATFORMS.map((platform) => ({
-              value: platform,
-              label: SOCIAL_PLATFORM_NAMES[platform],
-              icon: <PlatformIcon platform={platform} />,
-            })),
-          ]}
-          onValueChange={(value) => setScope(value as PolicyScope)}
-        />
-      }
-    >
-      <Row label={t("Maximum length")} stacked>
-        <LimitFields
-          key={`${scope}:${JSON.stringify(readScope(policies, scope))}`}
-          client={client}
-          policies={policies}
-          scope={scope}
-          unsaved={unsaved[scope]}
-          onUnsavedChange={(drafts) => setUnsaved((current) => ({ ...current, [scope]: drafts }))}
-          onSaved={() => setUnsaved(({ [scope]: _saved, ...rest }) => rest)}
-          onChanged={onChanged}
-        />
-      </Row>
-    </Group>
+    <div className="social-stack">
+      <Text as="p" size="caption" tone="muted">
+        {t("Leave a field blank to inherit its value.")}
+      </Text>
+      <Select
+        label={t("Apply to")}
+        value={scope}
+        options={[
+          { value: "global", label: t("All accounts") },
+          ...SOCIAL_PLATFORMS.map((platform) => ({
+            value: platform,
+            label: SOCIAL_PLATFORM_NAMES[platform],
+            icon: <PlatformIcon platform={platform} />,
+          })),
+        ]}
+        onValueChange={(value) => setScope(value as PolicyScope)}
+      />
+      <LimitFields
+        key={`${scope}:${JSON.stringify(readScope(policies, scope))}`}
+        client={client}
+        policies={policies}
+        scope={scope}
+        unsaved={unsaved[scope]}
+        onUnsavedChange={(drafts) => setUnsaved((current) => ({ ...current, [scope]: drafts }))}
+        onSaved={() => setUnsaved(({ [scope]: _saved, ...rest }) => rest)}
+        onChanged={onChanged}
+      />
+    </div>
   );
 }
 

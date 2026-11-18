@@ -258,6 +258,16 @@ permission grants still determine availability.
 
 **Instagram owner reviews and Live Producer**
 
+- `instagram.earnings.read` reads the professional-dashboard earnings of a connected
+  Instagram browser account (read only). `instagram.management.request` files an
+  exact post edit or delete, profile edit, Highlight change or new direct-message
+  draft. The owner sees these in the account's Instagram Requests tab, makes the
+  change in the matching tab and dismisses the request. The tool never runs a
+  browser write.
+- TikTok `tiktok.changes.request` also accepts `post.delete`, `profile.update` and
+  `privacy.update` from a session. They stay pending until the owner applies them
+  in the TikTok Changes tab and never run on autonomy.
+
 - Chat can file `instagram.comments.request` with an inbound comment ID
   from its project. The owner reviews the exact comment and action in Inbox.
   Approval checks the current account, project grant and comment again. A
@@ -368,6 +378,10 @@ Analytics, earnings, Live and Community operations through Social. Chat tools
 receive a project-scoped account ID. Account creation and connection use the
 existing owner-assisted request and setup flow. Profile changes, deletion of
 videos, playlists and comments, and approval of queued operations are owner-only.
+A session can still prepare those writes with `youtube.changes.request` (channel update,
+video, comment, playlist or Community post deletion). It stores the exact input as an
+`awaiting_approval` operation and never runs it; the owner approves it with
+`youtube.operation.approve`.
 
 API mode uses the bound channel OAuth identity and requests selected scopes.
 Analytics requires the YouTube Analytics API and its activity scope. Estimated

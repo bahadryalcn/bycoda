@@ -55,6 +55,13 @@ export function instagramCapabilities(): PlatformCapabilities {
         "Commenters on one selected owned post and recent DM senders (needs instagram_business_manage_messages). Hashtag, mention and follower sources are unsupported.",
       ),
     },
-    browser: {},
+    // Browser recipes for the verified Instagram owner profile (host/social/social-browser-instagram-*.ts).
+    browser: {
+      "profile.update": "Edit the verified account's name, username, bio and links in the browser.",
+      delete: "Owner-reviewed edit or removal of an exact owned post in the browser.",
+      "message.start":
+        "Owner-composed direct message to an exact recipient in the browser. No AI send path; an existing conversation is the only AI route.",
+      analytics: "Reads the professional dashboard earnings the verified account exposes.",
+    },
   };
 }

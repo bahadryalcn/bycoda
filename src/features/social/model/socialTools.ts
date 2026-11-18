@@ -1,4 +1,8 @@
-import { YOUTUBE_READ_TOOLS, YOUTUBE_WRITE_TOOLS } from "./youtubeManagement";
+import {
+  YOUTUBE_READ_TOOLS,
+  YOUTUBE_REQUEST_TOOLS,
+  YOUTUBE_WRITE_TOOLS,
+} from "./youtubeManagement";
 
 /**
  * MCP identifiers use underscores; host RPC/CLI keeps the dot contract.
@@ -88,6 +92,7 @@ export const SOCIAL_TOOLS = [
   // YouTube management.
   ...YOUTUBE_READ_TOOLS,
   ...YOUTUBE_WRITE_TOOLS,
+  ...YOUTUBE_REQUEST_TOOLS,
   // TikTok account operations.
   "tiktok.profile.read",
   "tiktok.analytics.read",
@@ -125,6 +130,8 @@ export const SOCIAL_TOOLS = [
   "facebook.live.replyDraft",
   "facebook.management.request",
   "instagram.comments.request",
+  "instagram.management.request",
+  "instagram.earnings.read",
   "facebook.management.execute",
 ] as const;
 export type SocialTool = (typeof SOCIAL_TOOLS)[number];

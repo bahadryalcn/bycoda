@@ -21,6 +21,8 @@ import { tiktokMessages } from "./browser-dm";
 import { tiktokMentions } from "./browser-mentions";
 import {
   readTikTokProfile,
+  parseTikTokPrivacyPatch,
+  parseTikTokProfilePatch,
   readTikTokPrivacy,
   updateTikTokProfile,
   updateTikTokPrivacy,
@@ -172,10 +174,20 @@ const changeKinds = [
   "comment.reply",
   "post.edit",
   "post.delete",
+  "profile.update",
+  "privacy.update",
   "live.reply",
 ] as const;
 type ChangeKind = (typeof changeKinds)[number];
-const ownerChanges = new Set<ChangeKind>(["comment.delete", "post.edit", "post.delete"]);
+const ownerChanges = new Set<ChangeKind>([
+  "comment.delete",
+  "post.edit",
+  "post.delete",
+  "profile.update",
+  "privacy.update",
+]);
+/** Owner-executed kinds an AI session may still queue for review. They never dispatch without the owner. */
+const aiQueuedChanges = new Set<ChangeKind>(["post.delete", "profile.update", "privacy.update"]);
 type Change = {
   kind: ChangeKind;
   postId?: string;
@@ -183,6 +195,7 @@ type Change = {
   recipientId?: string;
   text?: string;
   mediaType?: "video" | "photo";
+  patch?: Record<string, unknown>;
 };
 type Review = {
   id: string;
@@ -233,6 +246,10 @@ function parseChange(input: Record<string, unknown>): Change {
   if (!kind) throw new SocialPlatformError("rejected");
   if (kind === "follow" || kind === "unfollow")
     return { kind, recipientId: id(input.recipientId, recipientIdentifier) };
+  if (kind === "profile.update")
+    return { kind, patch: { ...parseTikTokProfilePatch(patch(input.patch)) } };
+  if (kind === "privacy.update")
+    return { kind, patch: { ...parseTikTokPrivacyPatch(patch(input.patch)) } };
   if (kind === "live.reply")
     return {
       kind,
@@ -262,7 +279,7 @@ function parseChange(input: Record<string, unknown>): Change {
 }
 
 function actionKind(change: Change): SocialJob["kind"] {
-  if (change.kind.startsWith("post.")) return "publish";
+  if (change.kind.startsWith("post.") || change.patch) return "publish";
   return change.kind === "live.reply" || change.kind === "comment.reply" ? "reply" : "comment";
 }
 
@@ -303,6 +320,17 @@ async function applyChange(
   ownerApproved: boolean,
 ) {
   const change = review.change;
+  // Defense in depth: the apply action is owner-only, and owner-executed kinds never run on autonomy.
+  if (ownerChanges.has(change.kind) && !ownerApproved) throw new SocialPlatformError("denied");
+  if (change.kind === "profile.update" || change.kind === "privacy.update") {
+    if (!ownerApproved) throw new SocialPlatformError("denied");
+    const beforeSubmit = () => ownerEditAllowed(ctx, true);
+    await beforeSubmit();
+    const fields = change.patch ?? {};
+    return change.kind === "profile.update"
+      ? await updateProfile(ctx, account, fields, beforeSubmit)
+      : await updatePrivacy(ctx, account, fields, beforeSubmit);
+  }
   const kind = actionKind(change);
   const authority = { accountId: account.id, action: kind, principal: ctx.principal };
   const decision = await ctx.service.authorizeAutonomous(authority);
@@ -569,38 +597,9 @@ export const tiktokActions: SocialActionModule = {
     ownerOnly: true,
     run: async (ctx, input) => {
       const account = await getAccount(ctx, input.accountId);
-      const fields = patch(input.patch);
       const beforeSubmit = () => ownerEditAllowed(ctx, input.confirm);
       await beforeSubmit();
-      if (
-        typeof fields.username === "string" &&
-        (await ctx.service.accounts(ctx.principal)).some(
-          (other) =>
-            other.id !== account.id &&
-            other.platform === "tiktok" &&
-            other.platformId === `web:tiktok:${fields.username}`,
-        )
-      )
-        throw new SocialPlatformError("denied");
-      const avatar =
-        fields.avatarUploadId === undefined
-          ? undefined
-          : await ctx.tiktok!.avatar(id(fields.avatarUploadId));
-      const result = await unknownReceipt(
-        browser(ctx, account, (page) => updateTikTokProfile(page, fields), {
-          avatar,
-          beforeSubmit,
-        }),
-      );
-      if ("status" in result) return result;
-      if (result.platformId !== account.platformId) {
-        try {
-          await ctx.tiktok!.rename(account, result);
-        } catch {
-          return { status: "unknown" };
-        }
-      }
-      return result;
+      return await updateProfile(ctx, account, patch(input.patch), beforeSubmit);
     },
   },
   "tiktok.privacy.update": {
@@ -610,11 +609,7 @@ export const tiktokActions: SocialActionModule = {
       const account = await getAccount(ctx, input.accountId);
       const beforeSubmit = () => ownerEditAllowed(ctx, input.confirm);
       await beforeSubmit();
-      return unknownReceipt(
-        browser(ctx, account, (page) => updateTikTokPrivacy(page, patch(input.patch)), {
-          beforeSubmit,
-        }),
-      );
+      return await updatePrivacy(ctx, account, patch(input.patch), beforeSubmit);
     },
   },
   "tiktok.changes.list": read((ctx, account) => listReviews(ctx, account.id), true),
@@ -624,9 +619,15 @@ export const tiktokActions: SocialActionModule = {
     tool: true,
     run: async (ctx, input) => {
       const change = parseChange(input);
-      const account = await getAccount(ctx, input.accountId, actionKind(change));
+      const account = await getAccount(
+        ctx,
+        input.accountId,
+        change.patch ? "draft" : actionKind(change),
+      );
       if (account.connection !== "browser") throw new SocialPlatformError("unsupported");
-      if (ownerChanges.has(change.kind) && ctx.principal.kind !== "owner")
+      const aiQueued = ownerChanges.has(change.kind) && ctx.principal.kind !== "owner";
+      if (aiQueued && !aiQueuedChanges.has(change.kind)) throw new SocialPlatformError("denied");
+      if (aiQueued && (await ctx.service.setting("ai.stopped")) === "true")
         throw new SocialPlatformError("denied");
       if (change.kind === "comment.reply" && !(await business(ctx, account)))
         throw new SocialPlatformError("unsupported");
@@ -666,7 +667,9 @@ export const tiktokActions: SocialActionModule = {
         rows.push(item);
         return item;
       });
-      return decision.mode === "autonomous" && decision.scheduledAt <= ctx.now()
+      return !ownerChanges.has(change.kind) &&
+        decision.mode === "autonomous" &&
+        decision.scheduledAt <= ctx.now()
         ? await dispatchReview(ctx, account, item.id, false)
         : item;
     },
@@ -702,6 +705,54 @@ export const tiktokActions: SocialActionModule = {
     },
   },
 };
+
+async function updateProfile(
+  ctx: SocialActionContext,
+  account: SocialAccount,
+  fields: Record<string, unknown>,
+  beforeSubmit: () => Promise<void>,
+) {
+  if (
+    typeof fields.username === "string" &&
+    (await ctx.service.accounts(ctx.principal)).some(
+      (other) =>
+        other.id !== account.id &&
+        other.platform === "tiktok" &&
+        other.platformId === `web:tiktok:${fields.username}`,
+    )
+  )
+    throw new SocialPlatformError("denied");
+  const avatar =
+    fields.avatarUploadId === undefined
+      ? undefined
+      : await ctx.tiktok!.avatar(id(fields.avatarUploadId));
+  const result = await unknownReceipt(
+    browser(ctx, account, (page) => updateTikTokProfile(page, fields), {
+      avatar,
+      beforeSubmit,
+    }),
+  );
+  if ("status" in result) return result;
+  if (result.platformId !== account.platformId) {
+    try {
+      await ctx.tiktok!.rename(account, result);
+    } catch {
+      return { status: "unknown" };
+    }
+  }
+  return result;
+}
+
+async function updatePrivacy(
+  ctx: SocialActionContext,
+  account: SocialAccount,
+  fields: Record<string, unknown>,
+  beforeSubmit: () => Promise<void>,
+) {
+  return unknownReceipt(
+    browser(ctx, account, (page) => updateTikTokPrivacy(page, fields), { beforeSubmit }),
+  );
+}
 
 async function dispatchReview(
   ctx: SocialActionContext,

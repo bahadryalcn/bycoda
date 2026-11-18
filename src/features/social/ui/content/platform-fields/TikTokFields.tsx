@@ -51,6 +51,7 @@ export function TikTokFields({
   return (
     <FieldGroup
       legend={t("TikTok")}
+      hideLegend
       {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "content-platform")}
       disabled={disabled}
     >

@@ -4,6 +4,7 @@ import { t } from "../../../../shared/i18n";
 import { wallClockNow } from "../../../../shared/lib/time/wallClock";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { DateTimePicker } from "../../../../shared/ui/DateTimePicker";
+import { Divider } from "../../../../shared/ui/Divider";
 import { FieldGroup } from "../../../../shared/ui/FieldGroup";
 import { RadioGroup } from "../../../../shared/ui/RadioGroup";
 import { TextareaField } from "../../../../shared/ui/TextareaField";
@@ -20,7 +21,7 @@ import { ContentMediaField } from "./ContentMediaField";
 import { setPlatform, toggleAccount, type ContentDraft, type ContentMedia } from "./contentDraft";
 import { accountAvailability, selectedAccounts, usesInstagramApi } from "./contentRules";
 import { dayKey } from "./calendarModel";
-import { PlatformFields } from "./platform-fields/PlatformFields";
+import { PlatformFields, hasPlatformFields } from "./platform-fields/PlatformFields";
 
 export type ContentEditorFieldsProps = {
   client: SocialClient;
@@ -124,7 +125,7 @@ export function ContentEditorFields(props: ContentEditorFieldsProps) {
       </div>
       <FieldGroup
         legend={t("Accounts")}
-        layout="row"
+        layout="stack"
         gap="sm"
         className="content-accounts"
         disabled={disabled}
@@ -227,8 +228,15 @@ export function ContentEditorFields(props: ContentEditorFieldsProps) {
         onChange={changeMedia}
         onBusyChange={onMediaBusyChange}
       />
-      {selected.map((account) => (
+      {selected.filter(hasPlatformFields).map((account) => (
         <section key={account.id} className="content-platform-section" aria-label={account.name}>
+          <Divider decorative />
+          <div className="content-platform-heading">
+            <PlatformIcon platform={account.platform} className="icon-sm" />
+            <Text size="body" weight="medium" leading="inherit">
+              {t("{p0} options", { p0: account.name })}
+            </Text>
+          </div>
           <PlatformFields
             account={account}
             value={draft.platform[account.id] ?? {}}

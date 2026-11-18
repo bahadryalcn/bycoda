@@ -10,6 +10,7 @@ export function RedditFields({ value, disabled, onChange }: PlatformFieldProps) 
   return (
     <FieldGroup
       legend={t("Reddit")}
+      hideLegend
       {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "content-platform")}
       disabled={disabled}
     >

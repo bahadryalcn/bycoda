@@ -4,6 +4,7 @@ import { createYouTubeAdapter } from "../../../src/integrations/social/youtube";
 import {
   YOUTUBE_OWNER_WRITES,
   YOUTUBE_READ_TOOLS,
+  YOUTUBE_REQUEST_TOOLS,
   YOUTUBE_WRITE_TOOLS,
 } from "../../../src/features/social/model/youtubeManagement";
 import type { SocialAccount } from "../../../src/features/social/model/social";
@@ -83,6 +84,12 @@ describe("YouTube Host management", () => {
         readOnly: false,
         ownerOnly: false,
       });
+    for (const action of YOUTUBE_REQUEST_TOOLS)
+      expect(youtubeActions[action]).toMatchObject({
+        tool: true,
+        readOnly: false,
+        ownerOnly: false,
+      });
     for (const action of YOUTUBE_OWNER_WRITES)
       expect(youtubeActions[action]).toMatchObject({ tool: false, ownerOnly: true });
   });
@@ -111,6 +118,55 @@ describe("YouTube Host management", () => {
       status: "done",
     });
     expect(pending.writes()).toHaveLength(1);
+  });
+
+  it("queues owner-only writes for approval and never lets the session run them", async () => {
+    expect(youtubeActions["youtube.changes.request"]).toMatchObject({
+      tool: true,
+      readOnly: false,
+      ownerOnly: false,
+    });
+    const f = await setup("autonomous");
+    const cases = [
+      ["youtube.video.delete", { videoId: "abcdefghijk" }],
+      ["youtube.playlist.delete", { playlistId: "PLfixture" }],
+      ["youtube.comment.delete", { commentId: "UgFixtureComment" }],
+      ["youtube.community.delete", { postId: "UgFixturePost001" }],
+      ["youtube.channel.update", { patch: { description: "New description" } }],
+    ] as const;
+    for (const [action, input] of cases) {
+      const queued = await f.call<{ id: string; status: string; action: string }>(
+        "youtube.changes.request",
+        { accountId: f.account.id, action, input },
+        f.principal,
+        action,
+      );
+      expect(queued).toMatchObject({ status: "awaiting_approval", action });
+      // The session cannot approve its own request.
+      await expect(
+        f.call(
+          "youtube.operation.approve",
+          { accountId: f.account.id, id: queued.id, confirm: true },
+          f.principal,
+        ),
+      ).rejects.toThrow();
+    }
+    expect(f.fetcher).not.toHaveBeenCalled();
+    // Only owner-only actions can be requested and the exact input is validated.
+    await expect(
+      f.call(
+        "youtube.changes.request",
+        { accountId: f.account.id, action: "youtube.video.update", input: {} },
+        f.principal,
+      ),
+    ).rejects.toThrow();
+    await expect(
+      f.call(
+        "youtube.changes.request",
+        { accountId: f.account.id, action: "youtube.video.delete", input: { videoId: "x" } },
+        f.principal,
+      ),
+    ).rejects.toThrow();
   });
 
   it("uses the verified target in suppression and charges only actual dispatch", async () => {

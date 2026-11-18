@@ -27,6 +27,7 @@ import type { SocialAccount, SocialCampaign } from "../../src/features/social/mo
 import { SOCIAL_TOOLS } from "../../src/features/social/model/socialTools";
 import {
   YOUTUBE_READ_TOOLS,
+  YOUTUBE_REQUEST_TOOLS,
   YOUTUBE_WRITE_TOOLS,
 } from "../../src/features/social/model/youtubeManagement";
 import { SOCIAL_ACTION_MODULES } from "./core/social-action-modules";
@@ -441,6 +442,7 @@ describe("Real local CLI and MCP transport", () => {
         "browser.recipeSuggestions.list",
         // Instagram
         "instagram.insights",
+        "instagram.earnings.read",
         "instagram.mentions",
         // X.
         "x.handoff",
@@ -476,7 +478,9 @@ describe("Real local CLI and MCP transport", () => {
       ];
       const writes = [
         ...YOUTUBE_WRITE_TOOLS,
+        ...YOUTUBE_REQUEST_TOOLS,
         "instagram.comments.request",
+        "instagram.management.request",
         "accounts.request",
         "campaigns.create",
         "campaigns.schedule",

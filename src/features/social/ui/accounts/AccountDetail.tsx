@@ -1,4 +1,6 @@
 import { InlineError } from "../../../../shared/ui/InlineError";
+import { surfaceAttributes } from "../../../../shared/ui/Surface";
+import { Heading } from "../../../../shared/ui/Heading";
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { useConfirm } from "../../../../shared/ui/ConfirmDialog";
@@ -124,23 +126,41 @@ export function AccountDetail({
     },
   ];
 
+  const hasPlatformTools =
+    account.platform === "x" ||
+    account.platform === "youtube" ||
+    (account.platform === "tiktok" && account.connected) ||
+    (account.platform === "snapchat" &&
+      (account.accountType === "public_profile" || account.connection === "browser")) ||
+    (account.platform === "linkedin" && account.connected) ||
+    (account.platform === "facebook" &&
+      (account.accountType === "page" ||
+        (account.accountType === "member" && account.connection === "browser")) &&
+      account.connected &&
+      onThisComputer &&
+      !disabled);
+
   return (
-    <div className="social-accounts-screen">
-      <ScreenHeader
-        title={SOCIAL_PLATFORM_NAMES[account.platform]}
-        description={`${accountModeText(account)} · ${onThisComputer ? t("On this computer") : t("On another computer")}`}
-        secondary={menu}
-      />
-      <div className="social-detail-status">
+    <div className="social-accounts-screen social-detail">
+      <div className="social-detail-header">
         <PlatformMark platform={account.platform} size="lg" />
-        <Badge tone={HEALTH_TONE[health.status]} size="sm">
-          {health.text}
-        </Badge>
-        {account.paused ? (
-          <Badge tone="warning" size="sm">
-            {t("Paused")}
-          </Badge>
-        ) : null}
+        <div className="social-detail-header-main">
+          <ScreenHeader
+            title={SOCIAL_PLATFORM_NAMES[account.platform]}
+            description={`${accountModeText(account)} · ${onThisComputer ? t("On this computer") : t("On another computer")}`}
+            secondary={menu}
+          />
+          <div className="social-detail-status">
+            <Badge tone={HEALTH_TONE[health.status]} size="sm">
+              {health.text}
+            </Badge>
+            {account.paused ? (
+              <Badge tone="warning" size="sm">
+                {t("Paused")}
+              </Badge>
+            ) : null}
+          </div>
+        </div>
       </div>
       {disabled ? (
         <InlineMessage tone="warning" live="off">
@@ -160,206 +180,229 @@ export function AccountDetail({
         disabled={disabled}
         onChanged={onChanged}
       />
-      {account.platform === "x" ? (
-        <XAccountActions key={account.id} account={account} client={client} disabled={disabled} />
-      ) : null}
-      {account.platform === "youtube" ? (
-        <Disclosure
-          summary={t("YouTube management")}
-          variant="row"
-          defaultOpen={Boolean(youtubeSection)}
+      {hasPlatformTools ? (
+        <section
+          {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "social-card")}
+          aria-label={t("Tools")}
         >
-          <YouTubeManage
-            client={client}
-            account={account}
-            capabilities={capabilities}
-            disabled={disabled || !onThisComputer}
-            initialSection={youtubeSection}
-          />
-        </Disclosure>
-      ) : null}
-      {account.platform === "tiktok" && account.connected ? (
-        <TikTokAccountTools
-          key={`${account.executorId}:${account.id}:${account.platformId}:${account.connection}`}
-          client={client}
-          account={account}
-          projects={projects}
-          disabled={disabled || account.paused || !onThisComputer}
-          onChanged={onChanged}
-        />
-      ) : null}
-      {account.platform === "snapchat" &&
-      (account.accountType === "public_profile" || account.connection === "browser") ? (
-        <SnapchatProfilePanel
-          key={snapchatAccountKey(client, account)}
-          client={client}
-          account={account}
-          capabilities={capabilities}
-          disabled={disabled}
-          onThisComputer={onThisComputer}
-          onChanged={onChanged}
-        />
-      ) : null}
-      {account.platform === "linkedin" && account.connected ? (
-        <LinkedInAnalytics
-          key={JSON.stringify([account.id, account.platformId, account.connection])}
-          account={account}
-          client={client}
-          disabled={disabled}
-        />
-      ) : null}
-      {account.platform === "linkedin" && account.connected && account.connection === "oauth" ? (
-        <LinkedInPostManagement
-          key={JSON.stringify([account.id, account.platformId])}
-          account={account}
-          client={client}
-          disabled={disabled || !onThisComputer}
-        />
-      ) : null}
-      {account.platform === "linkedin" && account.connected ? (
-        <LinkedInLive
-          key={JSON.stringify([account.id, account.platformId, account.connection])}
-          account={account}
-          client={client}
-          disabled={disabled || !onThisComputer}
-        />
-      ) : null}
-      {account.platform === "linkedin" && account.connected ? (
-        <LinkedInBrowserProfile
-          key={JSON.stringify([account.id, account.platformId, account.connection])}
-          account={account}
-          client={client}
-          disabled={disabled || !onThisComputer}
-        />
-      ) : null}
-      {account.platform === "linkedin" && account.connected && account.connection === "browser" ? (
-        <LinkedInNetwork
-          key={JSON.stringify([account.id, account.platformId])}
-          account={account}
-          client={client}
-          disabled={disabled || !onThisComputer}
-        />
-      ) : null}
-      {account.platform === "linkedin" && account.connected ? (
-        <LinkedInCreator
-          key={JSON.stringify([account.id, account.platformId, account.connection])}
-          account={account}
-          client={client}
-          disabled={disabled || !onThisComputer}
-        />
-      ) : null}
-      {/* Facebook Page and personal profile management */}
-      {account.platform === "facebook" &&
-      (account.accountType === "page" ||
-        (account.accountType === "member" && account.connection === "browser")) &&
-      account.connected &&
-      onThisComputer &&
-      !disabled ? (
-        <div key={`${socialQueryScope(client).join(":")}:${account.id}:${account.connection}`}>
-          <Disclosure summary={t("Edit profile")} variant="row">
-            {account.accountType === "member" ? (
-              <FacebookPersonalProfileForm client={client} account={account} />
-            ) : (
-              <FacebookProfileEditor client={client} account={account} />
-            )}
-          </Disclosure>
-          <Disclosure summary={t("Facebook profile photos")} variant="row">
-            <FacebookProfilePhotos client={client} account={account} />
-          </Disclosure>
-          {account.accountType === "page" && account.connection !== "browser" ? (
-            <>
-              <Disclosure summary={t("Posts")} variant="row">
-                <FacebookPageActivity client={client} accountId={account.id} />
-              </Disclosure>
-              <Disclosure summary={t("Facebook requests")} variant="row">
-                <FacebookManagementRequests client={client} accountId={account.id} />
-              </Disclosure>
-              <Disclosure summary={t("Mentions")} variant="row">
-                <FacebookPageActivity client={client} accountId={account.id} mentions />
-              </Disclosure>
-              <Disclosure summary={t("Live video")} variant="row">
-                <FacebookLivePanel
-                  client={client}
-                  accountId={account.id}
-                  canStream={capabilities.some(
-                    ({ operation, status }) =>
-                      operation === "live.transmit" && status === "available",
-                  )}
-                />
-              </Disclosure>
-            </>
+          <Heading size="item">{t("Tools")}</Heading>
+          {account.platform === "x" ? (
+            <XAccountActions
+              key={account.id}
+              account={account}
+              client={client}
+              disabled={disabled}
+            />
           ) : null}
-          {account.accountType === "page" ? (
-            <Disclosure summary={t("Monetization")} variant="row">
-              <FacebookMonetization client={client} account={account} />
+          {account.platform === "youtube" ? (
+            <Disclosure
+              summary={t("YouTube management")}
+              variant="row"
+              defaultOpen={Boolean(youtubeSection)}
+            >
+              <YouTubeManage
+                client={client}
+                account={account}
+                capabilities={capabilities}
+                disabled={disabled || !onThisComputer}
+                initialSection={youtubeSection}
+              />
             </Disclosure>
           ) : null}
-        </div>
+          {account.platform === "tiktok" && account.connected ? (
+            <TikTokAccountTools
+              key={`${account.executorId}:${account.id}:${account.platformId}:${account.connection}`}
+              client={client}
+              account={account}
+              projects={projects}
+              disabled={disabled || account.paused || !onThisComputer}
+              onChanged={onChanged}
+            />
+          ) : null}
+          {account.platform === "snapchat" &&
+          (account.accountType === "public_profile" || account.connection === "browser") ? (
+            <SnapchatProfilePanel
+              key={snapchatAccountKey(client, account)}
+              client={client}
+              account={account}
+              capabilities={capabilities}
+              disabled={disabled}
+              onThisComputer={onThisComputer}
+              onChanged={onChanged}
+            />
+          ) : null}
+          {account.platform === "linkedin" && account.connected ? (
+            <LinkedInAnalytics
+              key={JSON.stringify([account.id, account.platformId, account.connection])}
+              account={account}
+              client={client}
+              disabled={disabled}
+            />
+          ) : null}
+          {account.platform === "linkedin" &&
+          account.connected &&
+          account.connection === "oauth" ? (
+            <LinkedInPostManagement
+              key={JSON.stringify([account.id, account.platformId])}
+              account={account}
+              client={client}
+              disabled={disabled || !onThisComputer}
+            />
+          ) : null}
+          {account.platform === "linkedin" && account.connected ? (
+            <LinkedInLive
+              key={JSON.stringify([account.id, account.platformId, account.connection])}
+              account={account}
+              client={client}
+              disabled={disabled || !onThisComputer}
+            />
+          ) : null}
+          {account.platform === "linkedin" && account.connected ? (
+            <LinkedInBrowserProfile
+              key={JSON.stringify([account.id, account.platformId, account.connection])}
+              account={account}
+              client={client}
+              disabled={disabled || !onThisComputer}
+            />
+          ) : null}
+          {account.platform === "linkedin" &&
+          account.connected &&
+          account.connection === "browser" ? (
+            <LinkedInNetwork
+              key={JSON.stringify([account.id, account.platformId])}
+              account={account}
+              client={client}
+              disabled={disabled || !onThisComputer}
+            />
+          ) : null}
+          {account.platform === "linkedin" && account.connected ? (
+            <LinkedInCreator
+              key={JSON.stringify([account.id, account.platformId, account.connection])}
+              account={account}
+              client={client}
+              disabled={disabled || !onThisComputer}
+            />
+          ) : null}
+          {/* Facebook Page and personal profile management */}
+          {account.platform === "facebook" &&
+          (account.accountType === "page" ||
+            (account.accountType === "member" && account.connection === "browser")) &&
+          account.connected &&
+          onThisComputer &&
+          !disabled ? (
+            <div key={`${socialQueryScope(client).join(":")}:${account.id}:${account.connection}`}>
+              <Disclosure summary={t("Edit profile")} variant="row">
+                {account.accountType === "member" ? (
+                  <FacebookPersonalProfileForm client={client} account={account} />
+                ) : (
+                  <FacebookProfileEditor client={client} account={account} />
+                )}
+              </Disclosure>
+              <Disclosure summary={t("Facebook profile photos")} variant="row">
+                <FacebookProfilePhotos client={client} account={account} />
+              </Disclosure>
+              {account.accountType === "page" && account.connection !== "browser" ? (
+                <>
+                  <Disclosure summary={t("Posts")} variant="row">
+                    <FacebookPageActivity client={client} accountId={account.id} />
+                  </Disclosure>
+                  <Disclosure summary={t("Facebook requests")} variant="row">
+                    <FacebookManagementRequests client={client} accountId={account.id} />
+                  </Disclosure>
+                  <Disclosure summary={t("Mentions")} variant="row">
+                    <FacebookPageActivity client={client} accountId={account.id} mentions />
+                  </Disclosure>
+                  <Disclosure summary={t("Live video")} variant="row">
+                    <FacebookLivePanel
+                      client={client}
+                      accountId={account.id}
+                      canStream={capabilities.some(
+                        ({ operation, status }) =>
+                          operation === "live.transmit" && status === "available",
+                      )}
+                    />
+                  </Disclosure>
+                </>
+              ) : null}
+              {account.accountType === "page" ? (
+                <Disclosure summary={t("Monetization")} variant="row">
+                  <FacebookMonetization client={client} account={account} />
+                </Disclosure>
+              ) : null}
+            </div>
+          ) : null}
+        </section>
       ) : null}
-      <Disclosure
-        summary={
-          <span className="social-detail-topic">
-            <Shield className="icon-sm" aria-hidden />
-            {t("Who can use this account")}
-          </span>
-        }
-        variant="row"
+      <section
+        {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "social-card")}
+        aria-label={t("Account settings")}
       >
-        <AccountPermissions
-          client={client}
-          account={account}
-          projects={projects}
-          disabled={disabled}
-          onChanged={onChanged}
-        />
-      </Disclosure>
-      <Disclosure
-        summary={
-          <span className="social-detail-topic">
-            <SlidersHorizontal className="icon-sm" aria-hidden />
-            {t("Autonomy")}
-          </span>
-        }
-        variant="row"
-      >
-        <AutonomySettings
-          client={client}
-          account={account}
-          disabled={disabled}
-          onChanged={onChanged}
-        />
-      </Disclosure>
-      {account.connection === "browser" ? (
+        <Heading size="item">{t("Account settings")}</Heading>
         <Disclosure
           summary={
             <span className="social-detail-topic">
-              <Globe className="icon-sm" aria-hidden />
-              {t("Browser")}
+              <Shield className="icon-sm" aria-hidden />
+              {t("Who can use this account")}
             </span>
           }
           variant="row"
-          defaultOpen={needsHuman === true}
         >
-          <BrowserSettings
+          <AccountPermissions
             client={client}
-            accountId={account.id}
-            accountName={account.name}
-            needsHuman={needsHuman === true}
+            account={account}
+            projects={projects}
             disabled={disabled}
+            onChanged={onChanged}
           />
         </Disclosure>
-      ) : null}
-      <Disclosure
-        summary={
-          <span className="social-detail-topic">
-            <MessageSquare className="icon-sm" aria-hidden />
-            {t("Reply rules")}
-          </span>
-        }
-        variant="row"
-      >
-        <ReplyRules client={client} account={account} projects={projects} disabled={disabled} />
-      </Disclosure>
+        <Disclosure
+          summary={
+            <span className="social-detail-topic">
+              <SlidersHorizontal className="icon-sm" aria-hidden />
+              {t("Autonomy")}
+            </span>
+          }
+          variant="row"
+        >
+          <AutonomySettings
+            client={client}
+            account={account}
+            disabled={disabled}
+            onChanged={onChanged}
+          />
+        </Disclosure>
+        {account.connection === "browser" ? (
+          <Disclosure
+            summary={
+              <span className="social-detail-topic">
+                <Globe className="icon-sm" aria-hidden />
+                {t("Browser")}
+              </span>
+            }
+            variant="row"
+            defaultOpen={needsHuman === true}
+          >
+            <BrowserSettings
+              client={client}
+              accountId={account.id}
+              accountName={account.name}
+              needsHuman={needsHuman === true}
+              disabled={disabled}
+            />
+          </Disclosure>
+        ) : null}
+        <Disclosure
+          summary={
+            <span className="social-detail-topic">
+              <MessageSquare className="icon-sm" aria-hidden />
+              {t("Reply rules")}
+            </span>
+          }
+          variant="row"
+        >
+          <ReplyRules client={client} account={account} projects={projects} disabled={disabled} />
+        </Disclosure>
+      </section>
       {confirmation.dialog}
     </div>
   );

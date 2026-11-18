@@ -264,6 +264,29 @@
   padding-block-start: 0.5rem;
 }
 
+/* One consistent block per chosen account: icon and name, then that platform's fields. */
+.content-platform-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+  padding-block-start: 0.75rem;
+}
+
+.content-platform-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.content-platform-more {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-block-start: 0.5rem;
+  min-width: 0;
+}
+
 .content-check {
   display: flex;
   align-items: center;
