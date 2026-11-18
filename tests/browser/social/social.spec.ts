@@ -53,7 +53,9 @@ for (const theme of ["light", "dark"])
       await shot("api-account");
       await page.getByText("LinkedIn Live", { exact: true }).click();
       await expect(page.getByText("Live Studio’yu aç", { exact: true })).toBeVisible();
-      await page.getByRole("button", { name: "Yayın bilgilerini kaydet", exact: true }).scrollIntoViewIfNeeded();
+      await page
+        .getByRole("button", { name: "Yayın bilgilerini kaydet", exact: true })
+        .scrollIntoViewIfNeeded();
       await shot("live-credentials");
       await page.getByRole("dialog").getByRole("button", { name: "Kapat", exact: true }).click();
       await page.getByRole("button", { name: /Fixture LinkedIn Browser/ }).click();
@@ -77,7 +79,9 @@ for (const theme of ["light", "dark"])
         .locator("summary")
         .filter({ hasText: /^Makaleler ve bültenler$/ })
         .click();
-      await page.getByRole("button", { name: "Taslak hazırla", exact: true }).scrollIntoViewIfNeeded();
+      await page
+        .getByRole("button", { name: "Taslak hazırla", exact: true })
+        .scrollIntoViewIfNeeded();
       await shot("creator");
       await page.getByRole("dialog").getByRole("button", { name: "Kapat", exact: true }).click();
       await sections(page).getByRole("tab", { name: "İçerik", exact: true }).click();
