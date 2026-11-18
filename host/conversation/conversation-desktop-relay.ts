@@ -10,6 +10,7 @@ import { isRoomWorkspaceAction } from "../assistant/room/assistant-room-workspac
  * when idle and backs off to 30 s after failures, so the window must cover that gap plus latency.
  */
 export const DESKTOP_RELAY_STALE_MS = 45_000;
+const CLAIM_SWEEP_MS = 5_000;
 
 /** Owner-authenticated desktop relay. Requests expire without replaying mutations. */
 export class ConversationDesktopRelay {
@@ -18,6 +19,9 @@ export class ConversationDesktopRelay {
     private readonly requireAssistantApproval?: (operation: unknown) => Promise<boolean>,
   ) {}
   private lastSeen = 0;
+  /** Last poll per desktop; a claimed request is only as alive as the desktop that claimed it. */
+  private readonly ownerSeen = new Map<string, number>();
+  private sweeper: ReturnType<typeof setTimeout> | undefined;
   private pending = new Map<
     string,
     {
@@ -250,6 +254,7 @@ export class ConversationDesktopRelay {
       throw new Error(
         "Desktop relay is offline. Open the updated bycoda desktop connected to this host.",
       );
+    this.failStaleClaims();
     if (this.pending.size >= 64) throw new Error("Desktop relay is busy.");
     if (
       !policyPrepared &&
@@ -392,8 +397,35 @@ export class ConversationDesktopRelay {
     return { accepted: true as const };
   }
 
+  /** A claimed request cannot be re-offered, so one whose desktop went silent fails now, not at its deadline. */
+  private failStaleClaims() {
+    const now = Date.now();
+    for (const [id, entry] of this.pending) {
+      if (
+        !entry.claimed ||
+        now - (this.ownerSeen.get(entry.claimed) ?? 0) <= DESKTOP_RELAY_STALE_MS
+      )
+        continue;
+      clearTimeout(entry.timer);
+      this.pending.delete(id);
+      entry.reject(
+        new Error(
+          "Desktop disconnected while handling this request. Check the desktop connection; inspect state before retrying mutations.",
+        ),
+      );
+    }
+    if (this.sweeper) clearTimeout(this.sweeper);
+    this.sweeper = undefined;
+    if ([...this.pending.values()].some((entry) => entry.claimed)) {
+      // Nothing else wakes the relay once the desktop is gone, so a claim re-checks itself.
+      this.sweeper = setTimeout(() => this.failStaleClaims(), CLAIM_SWEEP_MS);
+      this.sweeper.unref();
+    }
+  }
   async take(owner = "desktop") {
     this.lastSeen = Date.now();
+    this.ownerSeen.set(owner, this.lastSeen);
+    this.failStaleClaims();
     const requests: Record<string, unknown>[] = [];
     for (const [id, entry] of this.pending)
       if (
@@ -412,6 +444,7 @@ export class ConversationDesktopRelay {
         entry.claimed = owner;
         requests.push(entry.request);
       }
+    if (requests.length && !this.sweeper) this.failStaleClaims();
     return requests;
   }
   /** Native owner rechecks after a dialog and immediately before an effect. */
@@ -503,6 +536,8 @@ export class ConversationDesktopRelay {
     return { accepted: true };
   }
   close() {
+    clearTimeout(this.sweeper);
+    this.sweeper = undefined;
     for (const entry of this.pending.values()) {
       clearTimeout(entry.timer);
       entry.reject(new Error("Host stopped."));

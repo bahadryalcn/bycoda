@@ -1,4 +1,5 @@
 import { type RunLease } from "../../src/features/sync/model/runLease";
+import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps";
 import type { ServerBindings } from "./bindings";
 export function createSessionLeasesRuntime(
   dependencies: Pick<
@@ -16,6 +17,9 @@ export function createSessionLeasesRuntime(
   // there; the beat that reports it idle (or its silence) ends the lease.
   /** When each window last reported a conversation busy: a lease granted after that is a newer turn's. */
   const lastBusy = new Map<string, number>();
+  const WORKSPACE_TOUCH_INTERVAL_MS = 30_000;
+  /** When a busy session's workspace activity was last recorded from a beat. */
+  const lastWorkspaceTouch = new Map<string, number>();
   let heartbeatEffects = Promise.resolve();
   dependencies.desktop.live.onBusy = (id, clientId) => {
     const acceptedAt = Date.now();
@@ -24,7 +28,16 @@ export function createSessionLeasesRuntime(
         // Workspace bookkeeping runs before taking the store queue: it lists every
         // workspace and writes one, which is no reason to hold the other requests back.
         if (dependencies.desktop.live.busyClient(id) !== clientId) return;
-        await dependencies.touchSessionWorkspace(id);
+        // Workspace activity needs no beat resolution; one touch per interval keeps a busy
+        // turn's beats from rewriting its workspace every few seconds.
+        const touched = lastWorkspaceTouch.get(id);
+        if (touched === undefined || elapsedSince(touched) >= WORKSPACE_TOUCH_INTERVAL_MS) {
+          lastWorkspaceTouch.delete(id);
+          lastWorkspaceTouch.set(id, monotonicNow());
+          while (lastWorkspaceTouch.size > 1024)
+            lastWorkspaceTouch.delete(lastWorkspaceTouch.keys().next().value!);
+          await dependencies.touchSessionWorkspace(id);
+        }
         await dependencies.engine.store.db.scope(async () => {
           // A later heartbeat may already have released or replaced this owner.
           if (dependencies.desktop.live.busyClient(id) !== clientId) return;
@@ -66,8 +79,11 @@ export function createSessionLeasesRuntime(
         `desktop:${clientId}`,
         lastBusy.get(`${id}\0${clientId}`) ?? 0,
       );
-    if (reason !== "gone")
+    if (reason !== "gone") {
+      // The idle touch records the turn's end, and the next turn's first beat touches again.
+      lastWorkspaceTouch.delete(id);
       heartbeatEffects = heartbeatEffects.then(() => dependencies.touchSessionWorkspace(id));
+    }
   };
   /**
    * A heartbeat answer is built from memory plus a bounded wait on the store: the window

@@ -127,6 +127,55 @@ it("reads non-image files only after session acceptance and ignores client-suppl
     readAttachmentChunk(store, { sessionId: "owner", id: "../secret", offset: 0 }),
   ).rejects.toThrow("not found");
 });
+it("loads the session once per download and again when a download restarts", async () => {
+  const { store, id } = fixture();
+  const bytes = Buffer.alloc(1_200_000, 7);
+  await writeAttachmentChunk(store, {
+    id,
+    size: bytes.length,
+    offset: 0,
+    data: bytes.subarray(0, 300_000).toString("base64"),
+  });
+  for (let offset = 300_000; offset < bytes.length; offset += 300_000)
+    await writeAttachmentChunk(store, {
+      id,
+      size: bytes.length,
+      offset,
+      data: bytes.subarray(offset, offset + 300_000).toString("base64"),
+    });
+  const sessionFor = vi.fn(
+    async () =>
+      ({
+        session: {
+          blocks: [
+            {
+              attachments: [
+                { id, name: "a.bin", kind: "file", mimeType: "x/y", size: bytes.length },
+              ],
+            },
+          ],
+        },
+      }) as unknown as Awaited<ReturnType<HostStore["session"]>>,
+  );
+  let offset = 0;
+  while (offset < bytes.length) {
+    const chunk = await readAttachmentChunk(store, { sessionId: "s", id, offset }, sessionFor);
+    offset = chunk.offset;
+  }
+  expect(sessionFor).toHaveBeenCalledTimes(1);
+  await readAttachmentChunk(store, { sessionId: "s", id, offset: 0 }, sessionFor);
+  expect(sessionFor).toHaveBeenCalledTimes(2);
+  await expect(
+    readAttachmentChunk(
+      store,
+      { sessionId: "other", id, offset: 3 },
+      async () =>
+        ({
+          session: { blocks: [] },
+        }) as unknown as Awaited<ReturnType<HostStore["session"]>>,
+    ),
+  ).rejects.toThrow("not found");
+});
 it("preserves generated-image ownership and metadata size bounds", async () => {
   const { store, id } = fixture();
   const image = {
