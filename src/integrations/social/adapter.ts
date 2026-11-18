@@ -204,6 +204,27 @@ function requestTimeout(
   return Math.min(15 * 60_000, minimum + Math.ceil(bytes / (128 * 1024)) * 1000);
 }
 
+export function isSnapchatPermissionError(code: unknown): boolean {
+  return (
+    typeof code === "string" &&
+    /^(?:AUTHORIZATION_PERMISSION_DENIED|AUTHORIZATION_ERROR|PERMISSION_(?:DENIED|ERROR)|INSUFFICIENT_(?:PERMISSIONS|SCOPE)|ACCESS_DENIED|FORBIDDEN|UNAUTHORIZED)$/.test(
+      code,
+    )
+  );
+}
+
+// Snapchat Public Profile API reports some actionable errors in JSON even on HTTP 200.
+function snapchatResponseError(value: { error_code?: unknown } | null | undefined) {
+  if (isSnapchatPermissionError(value?.error_code)) throw new SocialPlatformError("denied");
+  switch (value?.error_code) {
+    case "VALIDATION_ERROR_CAPTIONS_NOT_ALLOWED":
+    case "VALIDATION_ERROR_LINK_STICKER_REQUIRES_OVERLAY":
+      throw new SocialPlatformError("denied");
+    case "MEDIA_POSTING_ALREADY_IN_PROGRESS":
+      throw new SocialPlatformError("unknown");
+  }
+}
+
 /** Requests never follow redirects or return platform error bodies containing secrets. */
 export class SocialHttp {
   constructor(
@@ -336,6 +357,8 @@ export class SocialHttp {
       throw new SocialPlatformError("rate_limit", retryAfter(response.headers, this.now()));
     if (response.status >= 500) throw new SocialPlatformError("unknown");
     if (!response.ok) {
+      if (parsed.hostname === "businessapi.snapchat.com")
+        snapchatResponseError(await response.json().catch(() => undefined));
       if (["graph.instagram.com", "graph.facebook.com"].includes(parsed.hostname)) {
         // Meta frequently returns auth/permission errors as HTTP 400. Inspect
         // numeric codes only; never expose its error message or trace payload.
@@ -375,6 +398,8 @@ export class SocialHttp {
       if (value?.error?.code === "rate_limit_exceeded")
         throw new SocialPlatformError("rate_limit", retryAfter(response.headers, this.now()));
     }
+    if (parsed.hostname === "businessapi.snapchat.com" && value?.request_status === "ERROR")
+      snapchatResponseError(value);
     if (
       (value.error && !(parsed.hostname === "open.tiktokapis.com" && value.error.code === "ok")) ||
       value.errors?.length ||
