@@ -304,8 +304,10 @@ export interface AssistantPorts {
     knownSessionIds?: string[],
     job?: AssistantJob,
   ): Promise<AssistantGoalStatus>;
-  setGoalBudgetHeld?(goalId: string, held: boolean): Promise<void>;
-  setGoalHoursHeld?(goalId: string, held: boolean): Promise<void>;
+  syncGoalHolds?(
+    reason: "assistant-budget" | "assistant-hours",
+    goalIds: readonly string[],
+  ): Promise<void>;
   hasRunningChildren?(goalIds: string[]): Promise<boolean>;
   readPresence?(): Promise<{ supported: boolean; locked: boolean; idleMs?: number }>;
   controlGoal?(
@@ -5637,18 +5639,22 @@ export class HostAssistant {
           }),
         "critical",
       );
-    if (this.ports.setGoalBudgetHeld)
-      for (const job of await this.repository.list<AssistantJob>("jobs", 10000))
-        if (job.kind !== "quick" && job.goalId)
-          await this.ports.setGoalBudgetHeld(job.goalId, hold && !terminal.has(job.status));
+    await this.syncGoalHolds("assistant-budget", hold);
+  }
+  private async syncGoalHolds(reason: "assistant-budget" | "assistant-hours", hold: boolean) {
+    if (!this.ports.syncGoalHolds) return;
+    const jobs = hold ? await this.repository.list<AssistantJob>("jobs", -1) : [];
+    await this.ports.syncGoalHolds(
+      reason,
+      jobs.flatMap((job) =>
+        job.kind !== "quick" && job.goalId && !terminal.has(job.status) ? [job.goalId] : [],
+      ),
+    );
   }
   private async syncHoursHolds(profile: AssistantProfile): Promise<void> {
     const closed =
       !profile.enabled || !profile.setupComplete || !assistantActiveHours(profile, this.now());
-    if (this.ports.setGoalHoursHeld)
-      for (const job of await this.repository.list<AssistantJob>("jobs", 10000))
-        if (job.kind !== "quick" && job.goalId)
-          await this.ports.setGoalHoursHeld(job.goalId, closed && !terminal.has(job.status));
+    await this.syncGoalHolds("assistant-hours", closed);
     if (closed) {
       this.queue.abortTurns();
       this.ports.onPause?.();
