@@ -227,7 +227,7 @@ export function FacebookPersonalProfileForm({ account, client }: Props) {
           value={visibility}
           options={[
             { value: "show", label: t("Show") },
-            { value: "hide", label: t("Hide") },
+            { value: "hide", label: t("Hide from intro") },
           ]}
           disabled={is("profile")}
           onValueChange={(value) => {
