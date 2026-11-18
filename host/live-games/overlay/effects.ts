@@ -72,7 +72,12 @@ function drawParticles(context: Context, burst: Burst, seconds: number): void {
       context.fillRect(-width / 2, -particle.size / 2, width, particle.size);
       if (money) {
         context.strokeStyle = "#48794a";
-        context.strokeRect(-width / 2 + 2, -particle.size / 2 + 2, Math.max(0, width - 4), Math.max(0, particle.size - 4));
+        context.strokeRect(
+          -width / 2 + 2,
+          -particle.size / 2 + 2,
+          Math.max(0, width - 4),
+          Math.max(0, particle.size - 4),
+        );
       }
       context.restore();
     }
@@ -82,7 +87,10 @@ function drawParticles(context: Context, burst: Burst, seconds: number): void {
 export class Effects {
   private bursts: Burst[] = [];
 
-  constructor(private readonly width: number, private readonly height: number) {}
+  constructor(
+    private readonly width: number,
+    private readonly height: number,
+  ) {}
 
   add(cue: HalayCue, at: number): void {
     const { effect } = cue;
@@ -92,7 +100,9 @@ export class Effects {
   }
 
   draw(context: Context, now: number): void {
-    this.bursts = this.bursts.filter((burst) => elapsedSince(burst.at, now) < duration[burst.effect]);
+    this.bursts = this.bursts.filter(
+      (burst) => elapsedSince(burst.at, now) < duration[burst.effect],
+    );
     for (const burst of this.bursts) {
       const age = elapsedSince(burst.at, now);
       const progress = age / duration[burst.effect];
@@ -111,7 +121,15 @@ export class Effects {
     context.lineWidth = 9 * (1 - progress) + 1;
     for (const factor of [0.75, 1, 1.25]) {
       context.beginPath();
-      context.ellipse(this.width * (this.width > this.height ? 0.56 : 0.5), this.height * 0.53, radius * factor, radius * factor * 0.51, 0, 0, Math.PI * 2);
+      context.ellipse(
+        this.width * (this.width > this.height ? 0.56 : 0.5),
+        this.height * 0.53,
+        radius * factor,
+        radius * factor * 0.51,
+        0,
+        0,
+        Math.PI * 2,
+      );
       context.stroke();
     }
   }

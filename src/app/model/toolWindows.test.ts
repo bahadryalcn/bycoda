@@ -13,12 +13,16 @@ describe("tool window boot routing", () => {
       });
     },
   );
-  it.each(["", "?tool=crews", "?tool=live-games", "?tool=settings", "?tool=__proto__", "?hostTools=x"])(
-    "ignores unrelated window URLs: %s",
-    (search) => {
-      expect(readToolWindow(search)).toBeNull();
-    },
-  );
+  it.each([
+    "",
+    "?tool=crews",
+    "?tool=live-games",
+    "?tool=settings",
+    "?tool=__proto__",
+    "?hostTools=x",
+  ])("ignores unrelated window URLs: %s", (search) => {
+    expect(readToolWindow(search)).toBeNull();
+  });
   it("defaults a missing project without changing its tool", () => {
     expect(readToolWindow("?tool=notes")).toEqual({ active: "notes", cwd: "~", grouped: false });
   });

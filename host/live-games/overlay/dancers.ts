@@ -56,10 +56,7 @@ function pose(dancer: Dancer, phase: number): Pose {
 }
 
 function handBetween(first: Pose, second: Pose): Point {
-  return [
-    (first.dancer.x + second.dancer.x) / 2,
-    (first.right[1] + second.left[1]) / 2,
-  ];
+  return [(first.dancer.x + second.dancer.x) / 2, (first.right[1] + second.left[1]) / 2];
 }
 
 function drawDancer(context: Context, frame: Pose, left: Point, right: Point): void {
@@ -91,8 +88,16 @@ function drawDancer(context: Context, frame: Pose, left: Point, right: Point): v
   context.save();
   context.translate(x, y - lift);
   context.scale(scale, scale);
-  line(context, 8, "#162323", [[-7, -21], [-13 - 6 * step, -9], [-14 - 8 * step, 0]]);
-  line(context, 8, "#162323", [[7, -21], [11 + 7 * step, -10], [13 + 8 * step, 0]]);
+  line(context, 8, "#162323", [
+    [-7, -21],
+    [-13 - 6 * step, -9],
+    [-14 - 8 * step, 0],
+  ]);
+  line(context, 8, "#162323", [
+    [7, -21],
+    [11 + 7 * step, -10],
+    [13 + 8 * step, 0],
+  ]);
   context.fillStyle = costume;
   context.beginPath();
   context.moveTo(-12, -44);
@@ -101,8 +106,16 @@ function drawDancer(context: Context, frame: Pose, left: Point, right: Point): v
   context.quadraticCurveTo(0, -9, -17, -16);
   context.closePath();
   context.fill();
-  line(context, 4, "#ebca89", [[-14, -22], [0, -20], [14, -22]]);
-  line(context, 3, "#f8dcaa", [[-7, -43], [2, -36], [8, -42]]);
+  line(context, 4, "#ebca89", [
+    [-14, -22],
+    [0, -20],
+    [14, -22],
+  ]);
+  line(context, 3, "#f8dcaa", [
+    [-7, -43],
+    [2, -36],
+    [8, -42],
+  ]);
   context.beginPath();
   context.arc(0, headY, radius, 0, Math.PI * 2);
   context.fillStyle = skin;
@@ -112,7 +125,17 @@ function drawDancer(context: Context, frame: Pose, left: Point, right: Point): v
     const side = Math.min(avatar.naturalWidth, avatar.naturalHeight);
     context.save();
     context.clip();
-    context.drawImage(avatar, (avatar.naturalWidth - side) / 2, (avatar.naturalHeight - side) / 2, side, side, -radius, headY - radius, diameter, diameter);
+    context.drawImage(
+      avatar,
+      (avatar.naturalWidth - side) / 2,
+      (avatar.naturalHeight - side) / 2,
+      side,
+      side,
+      -radius,
+      headY - radius,
+      diameter,
+      diameter,
+    );
     context.restore();
   } else {
     context.fillStyle = "#1a2523";
@@ -126,7 +149,16 @@ function drawDancer(context: Context, frame: Pose, left: Point, right: Point): v
   context.stroke();
   if (leader) {
     const top = headY - radius - 4;
-    line(context, 3, "#ffd26d", [[-10, top - 9], [-7, top], [7, top], [10, top - 9], [4, top - 6], [0, top - 14], [-4, top - 6], [-10, top - 9]]);
+    line(context, 3, "#ffd26d", [
+      [-10, top - 9],
+      [-7, top],
+      [7, top],
+      [10, top - 9],
+      [4, top - 6],
+      [0, top - 14],
+      [-4, top - 6],
+      [-10, top - 9],
+    ]);
     context.fillStyle = "#fbe2a1";
     context.beginPath();
     context.moveTo(18, -40);
@@ -142,7 +174,10 @@ export class Dancers {
   private dancers: Dancer[] = [];
   private avatars = new Map<string, HTMLImageElement>();
 
-  constructor(private readonly width: number, private readonly height: number) {}
+  constructor(
+    private readonly width: number,
+    private readonly height: number,
+  ) {}
 
   update(viewers: HalaySnapshotDancer[]): void {
     const positions = formation(viewers.length, this.width, this.height);
@@ -165,7 +200,9 @@ export class Dancers {
           }
         }
       }
-      const colorIndex = Array.from(id).reduce((sum, character) => sum * 31 + character.charCodeAt(0) | 0, 0) >>> 0;
+      const colorIndex =
+        Array.from(id).reduce((sum, character) => (sum * 31 + character.charCodeAt(0)) | 0, 0) >>>
+        0;
       return {
         ...position,
         phaseOffset: position.index * 0.31 + position.ring * 0.5,
@@ -187,13 +224,19 @@ export class Dancers {
     context.lineCap = "round";
     context.lineJoin = "round";
     const frames = this.dancers.map((dancer) => pose(dancer, phase));
-    const rings = [frames.filter(({ dancer }) => dancer.ring === 0), frames.filter(({ dancer }) => dancer.ring === 1)];
+    const rings = [
+      frames.filter(({ dancer }) => dancer.ring === 0),
+      frames.filter(({ dancer }) => dancer.ring === 1),
+    ];
     frames.sort((a, b) => a.dancer.y - b.dancer.y);
     for (const frame of frames) {
       const { ring, index } = frame.dancer;
       const row = rings[ring];
       const left = row.length > 1 ? handBetween(row[(index + 1) % row.length], frame) : frame.left;
-      const right = row.length > 1 ? handBetween(frame, row[(index + row.length - 1) % row.length]) : frame.right;
+      const right =
+        row.length > 1
+          ? handBetween(frame, row[(index + row.length - 1) % row.length])
+          : frame.right;
       drawDancer(context, frame, left, right);
     }
     for (const { dancer, lift } of frames) {

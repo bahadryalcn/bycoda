@@ -280,7 +280,11 @@ export function registerRoomManagement(
               authorized,
               (status, current) =>
                 requestLiveGamesStreamApproval(
-                  dependencies.conversationDesktop, undefined, principal, status, current,
+                  dependencies.conversationDesktop,
+                  undefined,
+                  principal,
+                  status,
+                  current,
                 ),
             );
           if (isRoomFileAction(call.action) || isRoomFolderAction(call.action))

@@ -12,20 +12,20 @@ The shared `liveGames.v1` schemas and result types live in
 [`live-games.ts`](../../src/shared/model/host-contracts/live-games.ts).
 All arguments are validated at the Host boundary.
 
-| Method | Contract |
-| --- | --- |
-| `liveGames.status` | Return connection, settings, OBS state, overlay URL and a bounded event snapshot. |
-| `liveGames.start` | Connect to the public TikTok LIVE identified by `channel`. |
-| `liveGames.stop` | Disconnect the current connector and cancel reconnects. |
-| `liveGames.demo` | Run the simulated connector. |
-| `liveGames.setRules` | Replace gift rules with `rules`. |
-| `liveGames.setConfig` | Patch only the supplied settings in `patch`. |
-| `liveGames.report` | Read the current or latest report, or null when no report exists. |
-| `liveGames.obsSetup` | Configure the installed OBS and the Halay scene, using the requested aspect and overlay options. |
-| `liveGames.obsScene` | Switch OBS to Bycoda Halay. |
-| `liveGames.obsStream` | Start or stop the configured OBS broadcast. |
-| `liveGames.obsCredentials` | Apply the owner-supplied server and key to OBS. |
-| `liveGames.eulerKey` | Save or clear the optional Euler API key. |
+| Method                     | Contract                                                                                         |
+| -------------------------- | ------------------------------------------------------------------------------------------------ |
+| `liveGames.status`         | Return connection, settings, OBS state, overlay URL and a bounded event snapshot.                |
+| `liveGames.start`          | Connect to the public TikTok LIVE identified by `channel`.                                       |
+| `liveGames.stop`           | Disconnect the current connector and cancel reconnects.                                          |
+| `liveGames.demo`           | Run the simulated connector.                                                                     |
+| `liveGames.setRules`       | Replace gift rules with `rules`.                                                                 |
+| `liveGames.setConfig`      | Patch only the supplied settings in `patch`.                                                     |
+| `liveGames.report`         | Read the current or latest report, or null when no report exists.                                |
+| `liveGames.obsSetup`       | Configure the installed OBS and the Halay scene, using the requested aspect and overlay options. |
+| `liveGames.obsScene`       | Switch OBS to Bycoda Halay.                                                                      |
+| `liveGames.obsStream`      | Start or stop the configured OBS broadcast.                                                      |
+| `liveGames.obsCredentials` | Apply the owner-supplied server and key to OBS.                                                  |
+| `liveGames.eulerKey`       | Save or clear the optional Euler API key.                                                        |
 
 Conversation Tools reuse the schemas for the finite game and OBS operations.
 A session or Room thread must still be authorized. Room writes need Host-wide

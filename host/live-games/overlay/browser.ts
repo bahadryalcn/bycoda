@@ -106,22 +106,28 @@ function main(): void {
 
   function renderSnapshot(snapshot: HalaySnapshot): void {
     latest = snapshot;
-    const key = JSON.stringify(snapshot.dancers.map(({ id, name, role, avatarUrl }) => [id, name, role, avatarUrl]));
+    const key = JSON.stringify(
+      snapshot.dancers.map(({ id, name, role, avatarUrl }) => [id, name, role, avatarUrl]),
+    );
     if (roster !== key) {
       roster = key;
       dancers.update(snapshot.dancers);
     }
-    const nextScoreKey = JSON.stringify(snapshot.topGifters.map(({ id, name, diamonds }) => [id, name, diamonds]));
+    const nextScoreKey = JSON.stringify(
+      snapshot.topGifters.map(({ id, name, diamonds }) => [id, name, diamonds]),
+    );
     if (scoreKey !== nextScoreKey) {
       scoreKey = nextScoreKey;
-      leaders.replaceChildren(...snapshot.topGifters.map(({ name, diamonds }) => {
-        const line = document.createElement("li");
-        const value = document.createElement("span");
-        value.textContent = format.format(diamonds);
-        value.setAttribute("aria-label", `${value.textContent} ${copy.diamonds}`);
-        line.append(value, name);
-        return line;
-      }));
+      leaders.replaceChildren(
+        ...snapshot.topGifters.map(({ name, diamonds }) => {
+          const line = document.createElement("li");
+          const value = document.createElement("span");
+          value.textContent = format.format(diamonds);
+          value.setAttribute("aria-label", `${value.textContent} ${copy.diamonds}`);
+          line.append(value, name);
+          return line;
+        }),
+      );
       score.hidden = snapshot.topGifters.length === 0;
     }
     const recent = snapshot.feed[snapshot.feed.length - 1];

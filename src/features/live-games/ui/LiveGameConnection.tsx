@@ -48,7 +48,9 @@ export function LiveGameConnection({
       <SectionLabel>{t("Live source")}</SectionLabel>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <StatusText tone={connectionTone[connection.status]}>
-          {connection.platform === "demo" && connected ? t("Demo running") : t(connectionLabel[connection.status])}
+          {connection.platform === "demo" && connected
+            ? t("Demo running")
+            : t(connectionLabel[connection.status])}
         </StatusText>
         {connected ? (
           <Text size="caption" tone="secondary">
@@ -76,7 +78,10 @@ export function LiveGameConnection({
           placeholder="@kanal"
           value={channel}
           disabled={connected || feedback.busy}
-          onChange={(event) => { feedback.clear(); setChannelDraft(event.target.value); }}
+          onChange={(event) => {
+            feedback.clear();
+            setChannelDraft(event.target.value);
+          }}
           maxLength={2048}
           autoComplete="off"
         />
@@ -86,7 +91,12 @@ export function LiveGameConnection({
               variant="secondary"
               disabled={feedback.busy}
               loading={feedback.pending("disconnect")}
-              onClick={() => feedback.run({ action: "disconnect", request: () => liveGamesRequest("liveGames.stop", {}) })}
+              onClick={() =>
+                feedback.run({
+                  action: "disconnect",
+                  request: () => liveGamesRequest("liveGames.stop", {}),
+                })
+              }
             >
               {t("Disconnect")}
             </Button>
@@ -106,14 +116,23 @@ export function LiveGameConnection({
             startIcon={<Play />}
             disabled={connected || feedback.busy}
             loading={feedback.pending("demo")}
-            onClick={() => feedback.run({ action: "demo", request: () => liveGamesRequest("liveGames.demo", {}) })}
+            onClick={() =>
+              feedback.run({
+                action: "demo",
+                request: () => liveGamesRequest("liveGames.demo", {}),
+              })
+            }
           >
             {t("Run demo")}
           </Button>
         </div>
       </form>
-      {detail ? <InlineError details={detail}>{t("Could not update the live source")}</InlineError> : null}
-      {connection.detail ? <InlineMessage tone="neutral">{t(connection.detail)}</InlineMessage> : null}
+      {detail ? (
+        <InlineError details={detail}>{t("Could not update the live source")}</InlineError>
+      ) : null}
+      {connection.detail ? (
+        <InlineMessage tone="neutral">{t(connection.detail)}</InlineMessage>
+      ) : null}
     </section>
   );
 }

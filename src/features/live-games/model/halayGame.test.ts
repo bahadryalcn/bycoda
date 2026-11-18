@@ -15,7 +15,13 @@ import { normalizeChannel, type LiveEvent, type LiveViewer } from "./liveEvents"
 
 const viewer = (n: number): LiveViewer => ({ id: `u${n}`, handle: `user${n}`, name: `User ${n}` });
 let seq = 0;
-const comment = (n: number, text: string): LiveEvent => ({ id: `e${seq++}`, at: 0, kind: "comment", viewer: viewer(n), text });
+const comment = (n: number, text: string): LiveEvent => ({
+  id: `e${seq++}`,
+  at: 0,
+  kind: "comment",
+  viewer: viewer(n),
+  text,
+});
 const gift = (n: number, diamonds: number, count = 1, giftName = "Rose"): LiveEvent => ({
   id: `e${seq++}`,
   at: 0,
@@ -27,11 +33,24 @@ const gift = (n: number, diamonds: number, count = 1, giftName = "Rose"): LiveEv
   count,
 });
 
-function run(events: LiveEvent[], config: HalayConfig = DEFAULT_HALAY_CONFIG, now = 1_000): HalayState {
-  return events.reduce((state, event) => reduceHalay(state, event, config, now).state, emptyHalayState(now));
+function run(
+  events: LiveEvent[],
+  config: HalayConfig = DEFAULT_HALAY_CONFIG,
+  now = 1_000,
+): HalayState {
+  return events.reduce(
+    (state, event) => reduceHalay(state, event, config, now).state,
+    emptyHalayState(now),
+  );
 }
 
 describe("halay game", () => {
+  it("honors lowered capacity when the next viewer joins", () => {
+    const previous = run([comment(1, "HALAY"), comment(2, "HALAY"), comment(3, "HALAY")]);
+    const config = { ...DEFAULT_HALAY_CONFIG, capacity: 1 };
+    const { state } = reduceHalay(previous, comment(4, "HALAY"), config, 2_000);
+    expect(state.dancers.map(({ viewer }) => viewer.id)).toEqual(["u4"]);
+  });
   it("joins on the keyword in any case and ignores other comments", () => {
     const state = run([comment(1, "HALAY!"), comment(2, "selam"), comment(3, "Halaya gel")]);
     expect(state.dancers.map((d) => d.viewer.id)).toEqual(["u1", "u3"]);
@@ -51,7 +70,11 @@ describe("halay game", () => {
   });
 
   it("evicts the lowest gifter, then the longest idle, when full", () => {
-    const config = { ...DEFAULT_HALAY_CONFIG, capacity: 2, giftRules: [{ minDiamonds: 1, actions: ["join" as const] }] };
+    const config = {
+      ...DEFAULT_HALAY_CONFIG,
+      capacity: 2,
+      giftRules: [{ minDiamonds: 1, actions: ["join" as const] }],
+    };
     let state = emptyHalayState(0);
     state = reduceHalay(state, gift(1, 5), config, 1).state;
     state = reduceHalay(state, comment(2, "halay"), config, 2).state;
@@ -72,11 +95,21 @@ describe("halay game", () => {
   });
 
   it("counts a gift streak by value times count and makes a big gifter the leader", () => {
-    const { state, cues } = reduceHalay(emptyHalayState(0), gift(7, 33, 3), DEFAULT_HALAY_CONFIG, 1_000);
+    const { state, cues } = reduceHalay(
+      emptyHalayState(0),
+      gift(7, 33, 3),
+      DEFAULT_HALAY_CONFIG,
+      1_000,
+    );
     expect(state.totals.diamonds).toBe(99);
     expect(state.leader?.id).toBe("u7");
-    expect(cues.map((c) => c.effect)).toEqual(expect.arrayContaining(["gift", "leader", "money-rain"]));
-    expect(halaySnapshot(state, DEFAULT_HALAY_CONFIG, 2_000).dancers[0]).toMatchObject({ id: "u7", role: "leader" });
+    expect(cues.map((c) => c.effect)).toEqual(
+      expect.arrayContaining(["gift", "leader", "money-rain"]),
+    );
+    expect(halaySnapshot(state, DEFAULT_HALAY_CONFIG, 2_000).dancers[0]).toMatchObject({
+      id: "u7",
+      role: "leader",
+    });
   });
 
   it("falls back to the biggest gifter in the circle when the leader hold expires", () => {
@@ -92,14 +125,21 @@ describe("halay game", () => {
 
   it("raises tempo with likes, caps it and lets it decay", () => {
     let state = emptyHalayState(0);
-    state = reduceHalay(state, { id: "l1", at: 0, kind: "like", viewer: viewer(1), count: 10_000 }, DEFAULT_HALAY_CONFIG, 0).state;
+    state = reduceHalay(
+      state,
+      { id: "l1", at: 0, kind: "like", viewer: viewer(1), count: 10_000 },
+      DEFAULT_HALAY_CONFIG,
+      0,
+    ).state;
     expect(state.tempo).toBe(MAX_TEMPO);
     expect(tickHalay(state, 10_000_000).tempo).toBe(MIN_TEMPO);
   });
 
   it("shortens names when asked", () => {
     const state = run([comment(1, "halay")]);
-    expect(halaySnapshot(state, { ...DEFAULT_HALAY_CONFIG, shortNames: true }, 1_000).dancers[0].name).toBe("Use…");
+    expect(
+      halaySnapshot(state, { ...DEFAULT_HALAY_CONFIG, shortNames: true }, 1_000).dancers[0].name,
+    ).toBe("Use…");
   });
 
   it("normalizes channel input", () => {

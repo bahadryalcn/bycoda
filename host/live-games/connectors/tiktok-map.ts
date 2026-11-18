@@ -7,11 +7,17 @@ import { truncateGraphemes } from "../../../src/shared/lib/text/truncate";
 
 type Raw = Record<string, unknown>;
 
-const asRecord = (value: unknown): Raw => (value && typeof value === "object" ? (value as Raw) : {});
+const asRecord = (value: unknown): Raw =>
+  value && typeof value === "object" ? (value as Raw) : {};
 const asString = (value: unknown): string | undefined =>
-  typeof value === "string" && value ? value : typeof value === "number" || typeof value === "bigint" ? String(value) : undefined;
+  typeof value === "string" && value
+    ? value
+    : typeof value === "number" || typeof value === "bigint"
+      ? String(value)
+      : undefined;
 const asNumber = (value: unknown): number | undefined => {
-  const n = typeof value === "string" ? Number(value) : typeof value === "bigint" ? Number(value) : value;
+  const n =
+    typeof value === "string" ? Number(value) : typeof value === "bigint" ? Number(value) : value;
   return typeof n === "number" && Number.isSafeInteger(n) && n >= 0 ? n : undefined;
 };
 const firstUrl = (image: unknown): string | undefined => {
@@ -35,12 +41,23 @@ export function mapViewer(raw: unknown): LiveViewer | undefined {
     id,
     handle,
     name: truncateGraphemes(asString(user.nickname) ?? handle, 60),
-    avatarUrl: firstUrl(user.profilePicture) ?? firstUrl(user.avatarThumb) ?? firstUrl(user.avatarMedium),
+    avatarUrl:
+      firstUrl(user.profilePicture) ?? firstUrl(user.avatarThumb) ?? firstUrl(user.avatarMedium),
   };
 }
-function messageId(data: Raw, kind: string, viewer: LiveViewer | undefined, fallbackAt: number): string {
-  const id = asString(asRecord(data.common).msgId) ?? asString(asRecord(data.event).msgId) ?? asString(data.msgId);
-  return id ? `${kind}:${id}` : `${kind}:${viewer?.id ?? "room"}:${fallbackAt}:${Math.random().toString(36).slice(2, 8)}`;
+function messageId(
+  data: Raw,
+  kind: string,
+  viewer: LiveViewer | undefined,
+  fallbackAt: number,
+): string {
+  const id =
+    asString(asRecord(data.common).msgId) ??
+    asString(asRecord(data.event).msgId) ??
+    asString(data.msgId);
+  return id
+    ? `${kind}:${id}`
+    : `${kind}:${viewer?.id ?? "room"}:${fallbackAt}:${Math.random().toString(36).slice(2, 8)}`;
 }
 
 /** Translates one connector event into a normalized live event, or undefined when it should be ignored. */
@@ -60,7 +77,11 @@ export function mapTikTokEvent(kind: string, payload: unknown, now: number): Liv
       const details = asRecord(data.giftDetails);
       const extended = asRecord(data.extendedGiftInfo);
       const gift = asRecord(data.gift);
-      const giftType = asNumber(gift.type) ?? asNumber(details.giftType) ?? asNumber(data.giftType) ?? asNumber(extended.type);
+      const giftType =
+        asNumber(gift.type) ??
+        asNumber(details.giftType) ??
+        asNumber(data.giftType) ??
+        asNumber(extended.type);
       const repeatEnd = data.repeatEnd === true || asNumber(data.repeatEnd) === 1;
       // A streakable gift (type 1) fires on every step of the streak; count it once, when it ends.
       if (giftType === 1 && !repeatEnd) return undefined;
@@ -71,19 +92,36 @@ export function mapTikTokEvent(kind: string, payload: unknown, now: number): Liv
         viewer,
         giftId,
         giftName: truncateGraphemes(
-          asString(gift.name) ?? asString(details.giftName) ?? asString(extended.name) ?? asString(data.giftName) ?? `#${giftId}`,
+          asString(gift.name) ??
+            asString(details.giftName) ??
+            asString(extended.name) ??
+            asString(data.giftName) ??
+            `#${giftId}`,
           60,
         ),
-        diamonds: Math.min(1_000_000, asNumber(gift.diamondCount) ?? asNumber(details.diamondCount) ??
-          asNumber(extended.diamond_count) ?? asNumber(data.diamondCount) ?? 0),
+        diamonds: Math.min(
+          1_000_000,
+          asNumber(gift.diamondCount) ??
+            asNumber(details.diamondCount) ??
+            asNumber(extended.diamond_count) ??
+            asNumber(data.diamondCount) ??
+            0,
+        ),
         count: Math.min(10_000, Math.max(1, asNumber(data.repeatCount) ?? 1)),
       };
     }
     case "like":
-      return viewer ? {
-        ...base, kind: "like", viewer,
-        count: Math.min(100_000, Math.max(1, asNumber(data.count) ?? asNumber(data.likeCount) ?? 1)),
-      } : undefined;
+      return viewer
+        ? {
+            ...base,
+            kind: "like",
+            viewer,
+            count: Math.min(
+              100_000,
+              Math.max(1, asNumber(data.count) ?? asNumber(data.likeCount) ?? 1),
+            ),
+          }
+        : undefined;
     case "member":
       return viewer ? { ...base, kind: "join", viewer } : undefined;
     case "follow":

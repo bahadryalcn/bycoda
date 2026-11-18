@@ -2,7 +2,10 @@ import { startTransition, useCallback, useEffect, type Dispatch, type SetStateAc
 import { loadNotesEnabled } from "../../../features/settings/model/settings";
 import { OPEN_NOTE_LIBRARY_EVENT } from "../../../features/notes/noteNavigation";
 import { OPEN_CREWS_PAGE_EVENT, setCrewsPageOpen } from "../../../features/crews/model/crewsPage";
-import { OPEN_LIVE_GAMES_EVENT, setLiveGamesPageOpen } from "../../../features/live-games/public/liveGamesPage";
+import {
+  OPEN_LIVE_GAMES_EVENT,
+  setLiveGamesPageOpen,
+} from "../../../features/live-games/public/liveGamesPage";
 import { OPEN_USAGE_GUIDE_EVENT } from "../../../features/onboarding/model/usageGuide";
 import { START_TOUR_EVENT } from "../../../features/onboarding/model/tourState";
 import { subscribeInboxItemRequests } from "../../../features/inbox/public/workItemMentions";
@@ -54,28 +57,34 @@ export function useSurfaceOpeners({
     setFilePickerOpen,
     setNotesViewOpen,
   ]);
-  const openLocalTool = useCallback((reveal: () => void) => {
-    startTransition(() => {
-      setFilePickerOpen(false);
-      setSettingsOpen(false);
-      setSearchViewOpen(false);
-      setInboxViewOpen(false);
-      setNotesViewOpen(false);
-      setAutomationsViewOpen(false);
-      // Clear the previous tool before opening its replacement.
-      setServersViewOpen?.(false);
-      reveal();
-    });
-  }, [
-    setFilePickerOpen,
-    setSettingsOpen,
-    setSearchViewOpen,
-    setInboxViewOpen,
-    setNotesViewOpen,
-    setAutomationsViewOpen,
-    setServersViewOpen,
-  ]);
-  const onOpenCrews = useCallback(() => openLocalTool(() => setCrewsPageOpen(true)), [openLocalTool]);
+  const openLocalTool = useCallback(
+    (reveal: () => void) => {
+      startTransition(() => {
+        setFilePickerOpen(false);
+        setSettingsOpen(false);
+        setSearchViewOpen(false);
+        setInboxViewOpen(false);
+        setNotesViewOpen(false);
+        setAutomationsViewOpen(false);
+        // Clear the previous tool before opening its replacement.
+        setServersViewOpen?.(false);
+        reveal();
+      });
+    },
+    [
+      setFilePickerOpen,
+      setSettingsOpen,
+      setSearchViewOpen,
+      setInboxViewOpen,
+      setNotesViewOpen,
+      setAutomationsViewOpen,
+      setServersViewOpen,
+    ],
+  );
+  const onOpenCrews = useCallback(
+    () => openLocalTool(() => setCrewsPageOpen(true)),
+    [openLocalTool],
+  );
   // The rail routes these requests to the main window's tool state.
   useEffect(() => {
     const onLiveGames = () => openLocalTool(() => setLiveGamesPageOpen(true));

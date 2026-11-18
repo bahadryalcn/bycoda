@@ -6,7 +6,10 @@ import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 import OBSWebSocket from "obs-websocket-js";
 import { z } from "zod";
-import type { LiveGamesObsSetupOptions, LiveGamesStatus } from "../../src/shared/model/host-contracts/live-games";
+import type {
+  LiveGamesObsSetupOptions,
+  LiveGamesStatus,
+} from "../../src/shared/model/host-contracts/live-games";
 import type { SecretValueStore } from "../secrets/secret-store";
 import { readStateFile, writeFileAtomic } from "../storage/atomic-write";
 
@@ -29,15 +32,26 @@ async function obsPath() {
   for (const root of new Set([process.env.ProgramFiles, process.env["ProgramW6432"]])) {
     if (!root) continue;
     const executable = join(root, "obs-studio", "bin", "64bit", "obs64.exe");
-    if (await access(executable).then(() => true, () => false)) return executable;
+    if (
+      await access(executable).then(
+        () => true,
+        () => false,
+      )
+    )
+      return executable;
   }
   throw new Error("OBS Studio was not found. Install OBS Studio and try setup again.");
 }
 
 async function isObsRunning() {
-  const { stdout } = await exec("tasklist.exe", ["/FI", "IMAGENAME eq obs64.exe", "/FO", "CSV", "/NH"], {
-    windowsHide: true, timeout: 4_000,
-  });
+  const { stdout } = await exec(
+    "tasklist.exe",
+    ["/FI", "IMAGENAME eq obs64.exe", "/FO", "CSV", "/NH"],
+    {
+      windowsHide: true,
+      timeout: 4_000,
+    },
+  );
   return /^"obs64\.exe",/im.test(stdout);
 }
 
@@ -56,9 +70,13 @@ export class LiveGamesObs {
   view() {
     if (this.observed.configured && this.nextProbe <= Date.now() && !this.pendingProbe) {
       this.nextProbe = Date.now() + 5_000;
-      this.pendingProbe = this.withObs(this.readBack.bind(this)).catch(() => {
-        this.observed = { ...this.observed, streaming: undefined, scene: undefined };
-      }).finally(() => { this.pendingProbe = undefined; });
+      this.pendingProbe = this.withObs(this.readBack.bind(this))
+        .catch(() => {
+          this.observed = { ...this.observed, streaming: undefined, scene: undefined };
+        })
+        .finally(() => {
+          this.pendingProbe = undefined;
+        });
     }
     return this.observed;
   }
@@ -69,9 +87,13 @@ export class LiveGamesObs {
   }
 
   private async config() {
-    const state = await readStateFile(this.configPath(), (raw) => configSchema.parse(JSON.parse(raw)), {
-      quarantine: false,
-    });
+    const state = await readStateFile(
+      this.configPath(),
+      (raw) => configSchema.parse(JSON.parse(raw)),
+      {
+        quarantine: false,
+      },
+    );
     if (state.status === "corrupt") throw new Error("OBS WebSocket settings could not be read.");
     return state.value ?? configSchema.parse({});
   }
@@ -100,7 +122,9 @@ export class LiveGamesObs {
       ]);
     } catch (error) {
       if (error instanceof LiveGamesObsActionError) throw error;
-      throw new Error("OBS did not complete the request. Open OBS and check its WebSocket settings.");
+      throw new Error(
+        "OBS did not complete the request. Open OBS and check its WebSocket settings.",
+      );
     } finally {
       expired = true;
       controller.abort();
@@ -115,22 +139,41 @@ export class LiveGamesObs {
     await authorize();
     if (running) {
       if (!config.server_enabled || !config.auth_required || !config.server_password)
-        throw new Error("Close OBS before enabling its authenticated WebSocket server, then run setup again.");
+        throw new Error(
+          "Close OBS before enabling its authenticated WebSocket server, then run setup again.",
+        );
       await this.secrets.set(PASSWORD, config.server_password);
     } else {
-      const password = config.server_enabled && config.auth_required && config.server_password
-        ? config.server_password
-        : randomBytes(30).toString("base64url");
+      const password =
+        config.server_enabled && config.auth_required && config.server_password
+          ? config.server_password
+          : randomBytes(30).toString("base64url");
       await this.secrets.set(PASSWORD, password);
       const path = this.configPath();
       await mkdir(dirname(path), { recursive: true });
       await authorize();
       if (await isObsRunning())
         throw new Error("OBS opened during setup. Close it and run setup again.");
-      await writeFileAtomic(path, JSON.stringify({
-        ...config, first_load: false, server_enabled: true, auth_required: true, server_password: password,
-      }, null, 2));
-      const child = spawn(executable, [], { cwd: dirname(executable), detached: true, stdio: "ignore", windowsHide: true });
+      await writeFileAtomic(
+        path,
+        JSON.stringify(
+          {
+            ...config,
+            first_load: false,
+            server_enabled: true,
+            auth_required: true,
+            server_password: password,
+          },
+          null,
+          2,
+        ),
+      );
+      const child = spawn(executable, [], {
+        cwd: dirname(executable),
+        detached: true,
+        stdio: "ignore",
+        windowsHide: true,
+      });
       await new Promise<void>((resolve, reject) => {
         child.once("spawn", resolve);
         child.once("error", () => reject(new Error("OBS Studio could not be launched.")));
@@ -148,8 +191,12 @@ export class LiveGamesObs {
     if (options.mute) url.searchParams.set("mute", "");
     const landscape = options.aspect === "16:9";
     const settings = {
-      url: url.href, width: landscape ? 1920 : 1080, height: landscape ? 1080 : 1920,
-      is_local_file: false, reroute_audio: true, shutdown: false,
+      url: url.href,
+      width: landscape ? 1920 : 1080,
+      height: landscape ? 1080 : 1920,
+      is_local_file: false,
+      reroute_audio: true,
+      shutdown: false,
     };
     await this.withObs(async (client) => {
       await authorize();
@@ -160,16 +207,29 @@ export class LiveGamesObs {
       const source = inputs.find((input) => input.inputName === SOURCE);
       if (!source) {
         await client.call("CreateInput", {
-          sceneName: HALAY_SCENE, inputName: SOURCE, inputKind: "browser_source",
-          inputSettings: settings, sceneItemEnabled: true,
+          sceneName: HALAY_SCENE,
+          inputName: SOURCE,
+          inputKind: "browser_source",
+          inputSettings: settings,
+          sceneItemEnabled: true,
         });
       } else {
         if (source.inputKind !== "browser_source")
-          throw new LiveGamesObsActionError(`An OBS source named "${SOURCE}" already uses a different input type.`);
-        await client.call("SetInputSettings", { inputName: SOURCE, inputSettings: settings, overlay: true });
+          throw new LiveGamesObsActionError(
+            `An OBS source named "${SOURCE}" already uses a different input type.`,
+          );
+        await client.call("SetInputSettings", {
+          inputName: SOURCE,
+          inputSettings: settings,
+          overlay: true,
+        });
         const { sceneItems } = await client.call("GetSceneItemList", { sceneName: HALAY_SCENE });
         if (!sceneItems.some((item) => item.sourceName === SOURCE))
-          await client.call("CreateSceneItem", { sceneName: HALAY_SCENE, sourceName: SOURCE, sceneItemEnabled: true });
+          await client.call("CreateSceneItem", {
+            sceneName: HALAY_SCENE,
+            sourceName: SOURCE,
+            sceneItemEnabled: true,
+          });
       }
       this.configureView(options);
       await this.readBack(client);
@@ -197,14 +257,23 @@ export class LiveGamesObs {
 
   async credentials(server: string, key: string) {
     const url = URL.parse(server);
-    if (!url || !["rtmp:", "rtmps:"].includes(url.protocol) || !url.hostname || url.username || url.password || url.hash)
+    if (
+      !url ||
+      !["rtmp:", "rtmps:"].includes(url.protocol) ||
+      !url.hostname ||
+      url.username ||
+      url.password ||
+      url.hash
+    )
       throw new Error("Enter a valid RTMP or RTMPS server URL.");
     await this.withObs(async (client) => {
       const { outputActive } = await client.call("GetStreamStatus");
-      if (outputActive) throw new LiveGamesObsActionError("Stop streaming before changing the stream destination.");
+      if (outputActive)
+        throw new LiveGamesObsActionError("Stop streaming before changing the stream destination.");
       await this.secrets.set(STREAM_KEY, key);
       await client.call("SetStreamServiceSettings", {
-        streamServiceType: "rtmp_custom", streamServiceSettings: { server, key },
+        streamServiceType: "rtmp_custom",
+        streamServiceSettings: { server, key },
       });
       await this.readBack(client);
     });
@@ -212,9 +281,14 @@ export class LiveGamesObs {
 
   private async readBack(client: OBSWebSocket) {
     const [stream, scene] = await Promise.all([
-      client.call("GetStreamStatus"), client.call("GetCurrentProgramScene"),
+      client.call("GetStreamStatus"),
+      client.call("GetCurrentProgramScene"),
     ]);
-    this.observed = { ...this.observed, streaming: stream.outputActive, scene: scene.currentProgramSceneName };
+    this.observed = {
+      ...this.observed,
+      streaming: stream.outputActive,
+      scene: scene.currentProgramSceneName,
+    };
     this.nextProbe = Date.now() + 5_000;
   }
 }

@@ -1,7 +1,10 @@
 import { useCallback, useState, type Dispatch, type SetStateAction } from "react";
 import { loadNotesEnabled } from "../../../features/settings/model/settings";
 import { setCrewsPageOpen, useCrewsPageOpen } from "../../../features/crews/model/crewsPage";
-import { setLiveGamesPageOpen, useLiveGamesPageOpen } from "../../../features/live-games/public/liveGamesPage";
+import {
+  setLiveGamesPageOpen,
+  useLiveGamesPageOpen,
+} from "../../../features/live-games/public/liveGamesPage";
 import type { AuxiliaryToolId, ToolWindow } from "../../model/toolWindows";
 
 export interface SurfaceViewStateDeps {

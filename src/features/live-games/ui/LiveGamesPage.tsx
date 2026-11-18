@@ -44,7 +44,9 @@ export function LiveGamesPage({
             context="page"
             title={t("Could not load live games")}
             error={status.error}
-            onRetry={async () => { await status.refetch(); }}
+            onRetry={async () => {
+              await status.refetch();
+            }}
           />
         ) : (
           <LoadingText layout="fill" />

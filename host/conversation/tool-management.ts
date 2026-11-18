@@ -409,7 +409,12 @@ export function createManagedToolCatalog(
           ? "owner-or-active-rule"
           : group === "conversation" &&
               (/^inbox\.(comment|review|prAction)$/.test(action) ||
-                ["tasks.delete", "tasks.transfer", "tasks.notes.resolve", "liveGames.obsStream"].includes(action))
+                [
+                  "tasks.delete",
+                  "tasks.transfer",
+                  "tasks.notes.resolve",
+                  "liveGames.obsStream",
+                ].includes(action))
             ? "native-owner-approval"
             : group === "conversation" && action === "secrets.request"
               ? "native-owner-approval"

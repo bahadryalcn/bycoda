@@ -9,9 +9,6 @@ export type LiveGamesParams<M extends LiveGamesMethod> = z.input<
 type LiveGamesResult<M extends LiveGamesMethod> = z.output<(typeof LIVE_GAMES_RPC)[M]["result"]>;
 
 /** The broadcast and OBS belong to this computer, independent of the open project. */
-export function liveGamesRequest<M extends LiveGamesMethod>(
-  method: M,
-  params: LiveGamesParams<M>,
-) {
+export function liveGamesRequest<M extends LiveGamesMethod>(method: M, params: LiveGamesParams<M>) {
   return hostToolRequest<LiveGamesResult<M>>("", "liveGames.v1", method, params, { kind: "local" });
 }

@@ -386,7 +386,9 @@ pub(super) fn live_games_credential_allowed(method: &str, local_host: bool) -> b
 
 #[cfg(test)]
 mod tests {
-    use super::{decision_model_key_allowed, live_games_credential_allowed, supported_remote_method};
+    use super::{
+        decision_model_key_allowed, live_games_credential_allowed, supported_remote_method,
+    };
 
     #[test]
     fn live_games_admits_exact_names_and_keeps_credentials_local() {
@@ -395,7 +397,11 @@ mod tests {
             assert!(!live_games_credential_allowed(method, false));
             assert!(live_games_credential_allowed(method, true));
         }
-        for method in ["liveGames.status", "liveGames.obsStream", "liveGames.report"] {
+        for method in [
+            "liveGames.status",
+            "liveGames.obsStream",
+            "liveGames.report",
+        ] {
             assert!(supported_remote_method(method));
             assert!(live_games_credential_allowed(method, false));
         }

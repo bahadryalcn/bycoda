@@ -6,8 +6,17 @@ const statusKey = ["liveGames.status"];
 const reportKey = ["liveGames.report"];
 
 type LiveGamesAction =
-  | "connect" | "disconnect" | "demo" | "config" | "rules" | "obs-setup"
-  | "obs-scene" | "obs-start" | "obs-stop" | "obs-credentials" | "euler-key";
+  | "connect"
+  | "disconnect"
+  | "demo"
+  | "config"
+  | "rules"
+  | "obs-setup"
+  | "obs-scene"
+  | "obs-start"
+  | "obs-stop"
+  | "obs-credentials"
+  | "euler-key";
 type Command = {
   action: LiveGamesAction;
   request: () => Promise<LiveGamesStatus>;

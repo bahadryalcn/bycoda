@@ -9,6 +9,8 @@ export function createLiveGamesRuntime(
 ) {
   const directory = join(dependencies.featureDirectory, "live-games");
   return new LiveGamesService({
-    directory, port, secrets: osSecretValues(directory, dependencies.engine.store.environmentId),
+    directory,
+    port,
+    secrets: osSecretValues(directory, dependencies.engine.store.environmentId),
   });
 }

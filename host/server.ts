@@ -356,7 +356,8 @@ export async function createHostServer(
   const decisionRuntime = createDecisionModelsRuntime(dependencies);
   const liveGames = createLiveGamesRuntime(dependencies, (): number => {
     const address = httpRuntime.server.address();
-    if (!address || typeof address === "string") throw new Error("Live games requires a TCP Host listener.");
+    if (!address || typeof address === "string")
+      throw new Error("Live games requires a TCP Host listener.");
     return address.port;
   });
   const developmentRuntime = createDevelopmentRuntime(dependencies);

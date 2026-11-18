@@ -3062,7 +3062,9 @@ pub async fn social_authority_connect(
 
 #[path = "remote/method_catalog.rs"]
 mod method_catalog;
-use method_catalog::{decision_model_key_allowed, live_games_credential_allowed, supported_remote_method};
+use method_catalog::{
+    decision_model_key_allowed, live_games_credential_allowed, supported_remote_method,
+};
 #[path = "remote/social_endpoint.rs"]
 mod social_endpoint;
 use social_endpoint::social_peer_endpoint;

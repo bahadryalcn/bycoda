@@ -23,7 +23,10 @@ import { memo, useMemo, useState } from "react";
 import { useAssistantRoomRequests } from "./useAssistantRoomRequests";
 import { workspaceActiveTool } from "./workspaceActiveTool";
 import { setCrewsPageOpen, useCrewsPageOpen } from "../../../features/crews/model/crewsPage";
-import { setLiveGamesPageOpen, useLiveGamesPageOpen } from "../../../features/live-games/public/liveGamesPage";
+import {
+  setLiveGamesPageOpen,
+  useLiveGamesPageOpen,
+} from "../../../features/live-games/public/liveGamesPage";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import type { ConversationTools } from "../../../features/host-tools/SessionHostTools";
 import { lazySurface } from "../../../shared/ui/lazySurface";

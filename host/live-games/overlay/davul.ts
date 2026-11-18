@@ -13,7 +13,11 @@ export class Davul {
       this.volume = this.context.createGain();
       this.volume.gain.value = 0.66;
       this.volume.connect(this.context.destination);
-      this.noise = this.context.createBuffer(1, Math.round(this.context.sampleRate * 0.14), this.context.sampleRate);
+      this.noise = this.context.createBuffer(
+        1,
+        Math.round(this.context.sampleRate * 0.14),
+        this.context.sampleRate,
+      );
       const samples = this.noise.getChannelData(0);
       for (let index = 0; index < samples.length; index++) samples[index] = 2 * Math.random() - 1;
     }

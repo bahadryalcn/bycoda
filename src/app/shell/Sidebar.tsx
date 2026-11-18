@@ -371,7 +371,10 @@ import {
 import { parseRemotePath, remotePath } from "../../features/connections/model/remoteProjects";
 import { newRequestId } from "../../shared/lib/id/requestId";
 import { requestOpenCrewsPage } from "../../features/crews/model/crewsPage";
-import { requestOpenLiveGamesPage, useLiveGamesPageOpen } from "../../features/live-games/public/liveGamesPage";
+import {
+  requestOpenLiveGamesPage,
+  useLiveGamesPageOpen,
+} from "../../features/live-games/public/liveGamesPage";
 
 const EMPTY_SESSIONS: SessionSummary[] = [];
 const EMPTY_REMINDERS: SessionReminder[] = [];

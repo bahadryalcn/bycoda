@@ -132,13 +132,20 @@ export function emptyHalayState(now: number): HalayState {
 export function tickHalay(state: HalayState, now: number): HalayState {
   const seconds = Math.max(0, (now - state.updatedAt) / 1000);
   const tempo = Math.max(MIN_TEMPO, state.tempo - seconds * TEMPO_DECAY_PER_SECOND);
-  const leader = state.leader?.until !== undefined && state.leader.until <= now ? undefined : state.leader;
+  const leader =
+    state.leader?.until !== undefined && state.leader.until <= now ? undefined : state.leader;
   return { ...state, tempo, leader, updatedAt: now };
 }
 
 /** Picks the rule a gift triggers: a name match first, then the highest value threshold reached. */
-export function matchGiftRule(rules: HalayGiftRule[], giftName: string, totalDiamonds: number): HalayGiftRule | undefined {
-  const byName = rules.find((rule) => rule.giftName && rule.giftName.toLowerCase() === giftName.toLowerCase());
+export function matchGiftRule(
+  rules: HalayGiftRule[],
+  giftName: string,
+  totalDiamonds: number,
+): HalayGiftRule | undefined {
+  const byName = rules.find(
+    (rule) => rule.giftName && rule.giftName.toLowerCase() === giftName.toLowerCase(),
+  );
   if (byName) return byName;
   return rules
     .filter((rule) => !rule.giftName && totalDiamonds >= rule.minDiamonds)
@@ -153,7 +160,9 @@ export function isBlocked(config: HalayConfig, viewer: LiveViewer): boolean {
 function wantsToJoin(config: HalayConfig, text: string): boolean {
   if (config.joinOnAnyComment) return true;
   const lower = text.toLocaleLowerCase("tr");
-  return config.joinKeywords.some((word) => word.trim() && lower.includes(word.trim().toLocaleLowerCase("tr")));
+  return config.joinKeywords.some(
+    (word) => word.trim() && lower.includes(word.trim().toLocaleLowerCase("tr")),
+  );
 }
 
 function pushFeed(feed: HalayState["feed"], item: HalayState["feed"][number]): HalayState["feed"] {
@@ -161,35 +170,60 @@ function pushFeed(feed: HalayState["feed"], item: HalayState["feed"][number]): H
 }
 
 /** Adds or refreshes a dancer; when the circle is full the least valuable, longest-idle dancer leaves. */
-function upsertDancer(dancers: HalayDancer[], viewer: LiveViewer, now: number, capacity: number): { dancers: HalayDancer[]; joined: boolean } {
+function upsertDancer(
+  dancers: HalayDancer[],
+  viewer: LiveViewer,
+  now: number,
+  capacity: number,
+): { dancers: HalayDancer[]; joined: boolean } {
   const index = dancers.findIndex((dancer) => dancer.viewer.id === viewer.id);
   if (index >= 0) {
     const next = [...dancers];
-    next[index] = { ...next[index], viewer: { ...next[index].viewer, ...viewer }, lastActiveAt: now };
+    next[index] = {
+      ...next[index],
+      viewer: { ...next[index].viewer, ...viewer },
+      lastActiveAt: now,
+    };
     return { dancers: next, joined: false };
   }
   let next = [...dancers, { viewer, joinedAt: now, lastActiveAt: now, diamonds: 0 }];
   if (capacity > 0 && next.length > capacity) {
-    const evict = next
-      .slice(0, -1)
-      .filter((dancer) => !(dancer.frontUntil && dancer.frontUntil > now))
-      .sort((a, b) => a.diamonds - b.diamonds || a.lastActiveAt - b.lastActiveAt)[0];
-    next = next.filter((dancer) => dancer !== (evict ?? next[0]));
+    const held = (dancer: HalayDancer) => Number((dancer.frontUntil ?? 0) > now);
+    const evicted = new Set(
+      [...dancers]
+        .sort(
+          (a, b) =>
+            held(a) - held(b) ||
+            (held(a) ? 0 : a.diamonds - b.diamonds || a.lastActiveAt - b.lastActiveAt),
+        )
+        .slice(0, next.length - capacity),
+    );
+    next = next.filter((dancer) => !evicted.has(dancer));
   }
   return { dancers: next, joined: true };
 }
 
 function touchDancer(dancers: HalayDancer[], viewerId: string, now: number): HalayDancer[] {
-  return dancers.map((dancer) => (dancer.viewer.id === viewerId ? { ...dancer, lastActiveAt: now } : dancer));
+  return dancers.map((dancer) =>
+    dancer.viewer.id === viewerId ? { ...dancer, lastActiveAt: now } : dancer,
+  );
 }
 
 /**
  * Applies one live event to the halay. Pure: returns the next state and the cues the overlay should
  * play. Repeated event ids are ignored so a reconnect that replays messages does not double-count.
  */
-export function reduceHalay(state: HalayState, event: LiveEvent, config: HalayConfig, now: number): { state: HalayState; cues: HalayCue[] } {
+export function reduceHalay(
+  state: HalayState,
+  event: LiveEvent,
+  config: HalayConfig,
+  now: number,
+): { state: HalayState; cues: HalayCue[] } {
   if (state.seen.includes(event.id)) return { state, cues: [] };
-  let next: HalayState = { ...tickHalay(state, now), seen: [...state.seen, event.id].slice(-SEEN_SIZE) };
+  let next: HalayState = {
+    ...tickHalay(state, now),
+    seen: [...state.seen, event.id].slice(-SEEN_SIZE),
+  };
   const cues: HalayCue[] = [];
   if ("viewer" in event && isBlocked(config, event.viewer)) return { state: next, cues };
 
@@ -231,11 +265,28 @@ export function reduceHalay(state: HalayState, event: LiveEvent, config: HalayCo
       const gift = `${event.count}x ${event.giftName}`;
       next = {
         ...next,
-        totals: { ...next.totals, diamonds: next.totals.diamonds + total, gifts: next.totals.gifts + event.count },
-        gifters: { ...next.gifters, [event.viewer.id]: { viewer: event.viewer, diamonds: previous + total } },
-        feed: pushFeed(next.feed, { id: event.id, at: now, text: `${event.viewer.name}: ${gift}`, viewer: event.viewer, gift }),
+        totals: {
+          ...next.totals,
+          diamonds: next.totals.diamonds + total,
+          gifts: next.totals.gifts + event.count,
+        },
+        gifters: {
+          ...next.gifters,
+          [event.viewer.id]: { viewer: event.viewer, diamonds: previous + total },
+        },
+        feed: pushFeed(next.feed, {
+          id: event.id,
+          at: now,
+          text: `${event.viewer.name}: ${gift}`,
+          viewer: event.viewer,
+          gift,
+        }),
       };
-      cues.push({ effect: "gift", viewerId: event.viewer.id, label: `${event.count}x ${event.giftName}` });
+      cues.push({
+        effect: "gift",
+        viewerId: event.viewer.id,
+        label: `${event.count}x ${event.giftName}`,
+      });
       const rule = matchGiftRule(config.giftRules, event.giftName, total);
       for (const action of rule?.actions ?? []) {
         if (action === "join") join(event.viewer);
@@ -244,24 +295,38 @@ export function reduceHalay(state: HalayState, event: LiveEvent, config: HalayCo
           next = {
             ...next,
             dancers: next.dancers.map((dancer) =>
-              dancer.viewer.id === event.viewer.id ? { ...dancer, frontUntil: now + config.frontHoldSeconds * 1000 } : dancer,
+              dancer.viewer.id === event.viewer.id
+                ? { ...dancer, frontUntil: now + config.frontHoldSeconds * 1000 }
+                : dancer,
             ),
           };
         } else if (action === "leader") {
           join(event.viewer);
-          next = { ...next, leader: { id: event.viewer.id, until: now + config.leaderHoldSeconds * 1000 } };
+          next = {
+            ...next,
+            leader: { id: event.viewer.id, until: now + config.leaderHoldSeconds * 1000 },
+          };
           cues.push({ effect: "leader", viewerId: event.viewer.id });
-        } else if (action === "tempo") next = { ...next, tempo: Math.min(MAX_TEMPO, next.tempo + GIFT_TEMPO) };
+        } else if (action === "tempo")
+          next = { ...next, tempo: Math.min(MAX_TEMPO, next.tempo + GIFT_TEMPO) };
         else cues.push({ effect: action, viewerId: event.viewer.id });
       }
       next = {
         ...next,
-        dancers: next.dancers.map((dancer) => (dancer.viewer.id === event.viewer.id ? { ...dancer, diamonds: dancer.diamonds + total } : dancer)),
+        dancers: next.dancers.map((dancer) =>
+          dancer.viewer.id === event.viewer.id
+            ? { ...dancer, diamonds: dancer.diamonds + total }
+            : dancer,
+        ),
       };
       break;
     }
     case "viewers":
-      next = { ...next, viewers: event.count, totals: { ...next.totals, peakViewers: Math.max(next.totals.peakViewers, event.count) } };
+      next = {
+        ...next,
+        viewers: event.count,
+        totals: { ...next.totals, peakViewers: Math.max(next.totals.peakViewers, event.count) },
+      };
       break;
     case "join":
     case "share":
@@ -301,11 +366,17 @@ export function displayName(name: string, short: boolean): string {
 export function halaySnapshot(state: HalayState, config: HalayConfig, now: number): HalaySnapshot {
   const ticked = tickHalay(state, now);
   const visible = ticked.dancers.filter((dancer) => !isBlocked(config, dancer.viewer));
-  const topInCircle = [...visible].filter((dancer) => dancer.diamonds > 0).sort((a, b) => b.diamonds - a.diamonds)[0];
+  const topInCircle = [...visible]
+    .filter((dancer) => dancer.diamonds > 0)
+    .sort((a, b) => b.diamonds - a.diamonds)[0];
   const holdsLead = visible.some((dancer) => dancer.viewer.id === ticked.leader?.id);
   const leaderId = holdsLead ? ticked.leader?.id : topInCircle?.viewer.id;
   const role = (dancer: HalayDancer): HalaySnapshotDancer["role"] =>
-    dancer.viewer.id === leaderId ? "leader" : dancer.frontUntil && dancer.frontUntil > now ? "front" : "dancer";
+    dancer.viewer.id === leaderId
+      ? "leader"
+      : dancer.frontUntil && dancer.frontUntil > now
+        ? "front"
+        : "dancer";
   const rank = { leader: 0, front: 1, dancer: 2 } as const;
   const dancers = visible
     .map((dancer) => ({ dancer, role: role(dancer) }))
@@ -323,11 +394,25 @@ export function halaySnapshot(state: HalayState, config: HalayConfig, now: numbe
     .filter(({ viewer }) => !isBlocked(config, viewer))
     .sort((a, b) => b.diamonds - a.diamonds)
     .slice(0, 5)
-    .map(({ viewer, diamonds }) => ({ id: viewer.id, name: displayName(viewer.name, config.shortNames), avatarUrl: viewer.avatarUrl, diamonds }));
-  const feed = ticked.feed
-    .filter(({ viewer }) => viewer ? !isBlocked(config, viewer) : !config.shortNames)
-    .map(({ id, at, text, viewer, gift }) => ({
-      id, at, text: viewer && gift ? `${displayName(viewer.name, config.shortNames)}: ${gift}` : text,
+    .map(({ viewer, diamonds }) => ({
+      id: viewer.id,
+      name: displayName(viewer.name, config.shortNames),
+      avatarUrl: viewer.avatarUrl,
+      diamonds,
     }));
-  return { dancers, tempo: ticked.tempo, viewers: ticked.viewers, totals: ticked.totals, topGifters, feed };
+  const feed = ticked.feed
+    .filter(({ viewer }) => (viewer ? !isBlocked(config, viewer) : !config.shortNames))
+    .map(({ id, at, text, viewer, gift }) => ({
+      id,
+      at,
+      text: viewer && gift ? `${displayName(viewer.name, config.shortNames)}: ${gift}` : text,
+    }));
+  return {
+    dancers,
+    tempo: ticked.tempo,
+    viewers: ticked.viewers,
+    totals: ticked.totals,
+    topGifters,
+    feed,
+  };
 }

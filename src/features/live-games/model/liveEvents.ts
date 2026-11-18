@@ -38,7 +38,13 @@ export type LiveEvent =
   | (LiveEventBase & { kind: "viewers"; count: number })
   | (LiveEventBase & { kind: "stream-end" });
 
-export type LiveConnectionStatus = "idle" | "connecting" | "connected" | "reconnecting" | "offline" | "error";
+export type LiveConnectionStatus =
+  | "idle"
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "offline"
+  | "error";
 
 export interface LiveConnectionState {
   platform: LivePlatform;

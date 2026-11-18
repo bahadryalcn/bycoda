@@ -1,7 +1,10 @@
 import { useLayoutEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { loadNotesEnabled } from "../../../features/settings/model/settings";
 import { setCrewsPageOpen, useCrewsPageOpen } from "../../../features/crews/model/crewsPage";
-import { setLiveGamesPageOpen, useLiveGamesPageOpen } from "../../../features/live-games/public/liveGamesPage";
+import {
+  setLiveGamesPageOpen,
+  useLiveGamesPageOpen,
+} from "../../../features/live-games/public/liveGamesPage";
 import type { AuxiliaryToolId } from "../../model/toolWindows";
 
 export interface SettingsReturnView {
@@ -71,7 +74,9 @@ export function useRailNavigation(d: RailNavigationDeps) {
       : d.serversViewOpen
         ? crewsOpen
           ? "crews"
-          : liveGamesOpen ? "live-games" : "servers"
+          : liveGamesOpen
+            ? "live-games"
+            : "servers"
         : d.inboxViewOpen
           ? "inbox"
           : d.notesViewOpen

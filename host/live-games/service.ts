@@ -1,15 +1,28 @@
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import {
-  DEFAULT_HALAY_CONFIG, displayName, emptyHalayState, halaySnapshot, isBlocked, reduceHalay,
-  type HalayConfig, type HalayCue, type HalayState,
+  DEFAULT_HALAY_CONFIG,
+  displayName,
+  emptyHalayState,
+  halaySnapshot,
+  isBlocked,
+  reduceHalay,
+  type HalayConfig,
+  type HalayCue,
+  type HalayState,
 } from "../../src/features/live-games/model/halayGame";
 import {
-  normalizeChannel, type LiveConnectionState, type LiveEvent, type LivePlatform,
+  normalizeChannel,
+  type LiveConnectionState,
+  type LiveEvent,
+  type LivePlatform,
 } from "../../src/features/live-games/model/liveEvents";
 import {
-  LiveGamesConfigPatchSchema, LiveGamesRulesSchema, type LiveGamesObsSetupOptions,
-  type LiveGamesReport, type LiveGamesStatus,
+  LiveGamesConfigPatchSchema,
+  LiveGamesRulesSchema,
+  type LiveGamesObsSetupOptions,
+  type LiveGamesReport,
+  type LiveGamesStatus,
 } from "../../src/shared/model/host-contracts/live-games";
 import type { SecretValueStore } from "../secrets/secret-store";
 import { readStateFile, writeFileAtomic } from "../storage/atomic-write";
@@ -29,7 +42,11 @@ type Saved = {
   obs?: LiveGamesObsSetupOptions;
 };
 type Authority = () => Promise<boolean>;
-type GameListener = (snapshot: LiveGamesStatus["snapshot"], cues: HalayCue[], active: boolean) => void;
+type GameListener = (
+  snapshot: LiveGamesStatus["snapshot"],
+  cues: HalayCue[],
+  active: boolean,
+) => void;
 type Dependencies = {
   directory: string;
   secrets: SecretValueStore;
@@ -39,18 +56,29 @@ type Dependencies = {
 
 function readSaved(text: string): Saved {
   const state = JSON.parse(text) as Saved;
-  if (state.version !== 1 || !/^[A-Za-z0-9_-]{43}$/.test(state.token) ||
-      !state.game || !Array.isArray(state.game.dancers) || !Array.isArray(state.game.seen) ||
-      !Array.isArray(state.game.feed) || !state.game.gifters || !state.game.totals)
+  if (
+    state.version !== 1 ||
+    !/^[A-Za-z0-9_-]{43}$/.test(state.token) ||
+    !state.game ||
+    !Array.isArray(state.game.dancers) ||
+    !Array.isArray(state.game.seen) ||
+    !Array.isArray(state.game.feed) ||
+    !state.game.gifters ||
+    !state.game.totals
+  )
     throw new Error("Invalid Live games state.");
   const { giftRules, ...patch } = state.config;
-  state.config = { ...DEFAULT_HALAY_CONFIG, ...LiveGamesConfigPatchSchema.parse(patch),
-    giftRules: LiveGamesRulesSchema.parse(giftRules) };
+  state.config = {
+    ...DEFAULT_HALAY_CONFIG,
+    ...LiveGamesConfigPatchSchema.parse(patch),
+    giftRules: LiveGamesRulesSchema.parse(giftRules),
+  };
   return state;
 }
 
 async function check(authorize?: Authority) {
-  if (authorize && !(await authorize())) throw new Error("Live games permission is no longer available.");
+  if (authorize && !(await authorize()))
+    throw new Error("Live games permission is no longer available.");
 }
 
 export class LiveGamesService {
@@ -60,10 +88,17 @@ export class LiveGamesService {
   private readonly listeners = new Set<GameListener>();
   private readonly closer = new Set<() => void>();
   private state: Saved = {
-    version: 1, token: randomBytes(32).toString("base64url"), config: DEFAULT_HALAY_CONFIG,
+    version: 1,
+    token: randomBytes(32).toString("base64url"),
+    config: DEFAULT_HALAY_CONFIG,
     game: emptyHalayState(Date.now()),
   };
-  private connection: LiveConnectionState = { platform: "demo", channel: "", status: "idle", attempts: 0 };
+  private connection: LiveConnectionState = {
+    platform: "demo",
+    channel: "",
+    status: "idle",
+    attempts: 0,
+  };
   private feed: LiveEvent[] = [];
   private cues: HalayCue[] = [];
   private initialized?: Promise<void>;
@@ -90,13 +125,18 @@ export class LiveGamesService {
 
   private async load() {
     const saved = await readStateFile(this.file, readSaved);
-    if (saved.status === "corrupt") throw new Error("Live games state is damaged. Restore a backup to continue.");
+    if (saved.status === "corrupt")
+      throw new Error("Live games state is damaged. Restore a backup to continue.");
     if (saved.value) {
       this.state = saved.value;
       if (this.state.session) {
         const { channel, platform, endedAt } = this.state.session;
         this.connection = { platform, channel, status: "idle", attempts: 0 };
-        if (!endedAt) this.state.session.endedAt = Math.max(this.state.session.startedAt, this.state.game.updatedAt);
+        if (!endedAt)
+          this.state.session.endedAt = Math.max(
+            this.state.session.startedAt,
+            this.state.game.updatedAt,
+          );
       }
       this.obs.configureView(this.state.obs);
     }
@@ -107,7 +147,11 @@ export class LiveGamesService {
       this.broadcast();
       if (++cycle % 8 === 0 && this.dirty && !this.pendingSave) {
         this.pendingSave = true;
-        void this.serial(() => this.save()).catch(() => {}).finally(() => { this.pendingSave = false; });
+        void this.serial(() => this.save())
+          .catch(() => {})
+          .finally(() => {
+            this.pendingSave = false;
+          });
       }
     }, 250);
     this.timer.unref();
@@ -145,13 +189,17 @@ export class LiveGamesService {
     return this.state.token;
   }
 
-  avatar(key: string) { return this.avatars.read(key); }
+  avatar(key: string) {
+    return this.avatars.read(key);
+  }
 
   private snapshot(absolute: boolean) {
     const snapshot = halaySnapshot(this.state.game, this.state.config, Date.now());
     for (const viewer of [...snapshot.dancers, ...snapshot.topGifters]) {
       const avatar = this.avatars.get(viewer.id, viewer.avatarUrl);
-      viewer.avatarUrl = avatar ? `${absolute ? this.overlayUrl() : ""}avatar/${avatar}` : undefined;
+      viewer.avatarUrl = avatar
+        ? `${absolute ? this.overlayUrl() : ""}avatar/${avatar}`
+        : undefined;
     }
     return snapshot;
   }
@@ -181,9 +229,16 @@ export class LiveGamesService {
     for (const event of this.feed) {
       if ("viewer" in event && isBlocked(config, event.viewer)) continue;
       result.push({
-        id: event.id, at: event.at, kind: event.kind,
+        id: event.id,
+        at: event.at,
+        kind: event.kind,
         name: "viewer" in event ? displayName(event.viewer.name, config.shortNames) : undefined,
-        text: event.kind === "gift" ? event.giftName : event.kind === "comment" ? event.text : undefined,
+        text:
+          event.kind === "gift"
+            ? event.giftName
+            : event.kind === "comment"
+              ? event.text
+              : undefined,
         count: "count" in event ? event.count : undefined,
       });
     }
@@ -197,8 +252,12 @@ export class LiveGamesService {
     await check(authorize);
     return {
       connection: { ...this.connection, detail: this.persistenceError ?? this.connection.detail },
-      config: this.state.config, snapshot: this.snapshot(true), overlayUrl: this.overlayUrl(),
-      obs: this.obs.view(), eulerKeyConfigured, events: this.events(),
+      config: this.state.config,
+      snapshot: this.snapshot(true),
+      overlayUrl: this.overlayUrl(),
+      obs: this.obs.view(),
+      eulerKeyConfigured,
+      events: this.events(),
     };
   }
 
@@ -233,47 +292,85 @@ export class LiveGamesService {
     const fail = (error?: unknown) => {
       if (!active()) return;
       this.currentAttempt++;
-      const failure = error ? tiktokConnectionError(error) : {
-        offline: false, detail: "TikTok LIVE disconnected. Reconnecting shortly.",
-      };
+      const failure = error
+        ? tiktokConnectionError(error)
+        : {
+            offline: false,
+            detail: "TikTok LIVE disconnected. Reconnecting shortly.",
+          };
       const attempts = this.connection.attempts + 1;
-      this.connection = { ...this.connection, attempts, roomId: undefined, connectedAt: undefined,
-        detail: failure.detail, status: failure.offline ? "offline" : "reconnecting" };
-      this.retry = setTimeout(() => this.connect(generation, key),
-        Math.min(60_000, 2_000 * 2 ** Math.min(attempts - 1, 5)));
+      this.connection = {
+        ...this.connection,
+        attempts,
+        roomId: undefined,
+        connectedAt: undefined,
+        detail: failure.detail,
+        status: failure.offline ? "offline" : "reconnecting",
+      };
+      this.retry = setTimeout(
+        () => this.connect(generation, key),
+        Math.min(60_000, 2_000 * 2 ** Math.min(attempts - 1, 5)),
+      );
       this.retry.unref();
     };
     try {
       this.disconnect = (this.dependencies.tiktok ?? connectTikTok)(this.connection.channel, key, {
-        event: (event) => { if (active()) this.accept(event); },
+        event: (event) => {
+          if (active()) this.accept(event);
+        },
         connected: (roomId) => {
           if (!active()) return;
-          this.connection = { ...this.connection, status: "connected", attempts: 0, detail: undefined,
-            roomId, connectedAt: Date.now() };
+          this.connection = {
+            ...this.connection,
+            status: "connected",
+            attempts: 0,
+            detail: undefined,
+            roomId,
+            connectedAt: Date.now(),
+          };
         },
         disconnected: fail,
       });
-    } catch (error) { fail(error); }
+    } catch (error) {
+      fail(error);
+    }
   }
 
   private begin(platform: LivePlatform, channel: string, authorize?: Authority) {
     return this.serial(async () => {
-      if (this.connection.status !== "idle" && this.connection.platform === platform &&
-          this.connection.channel === channel) return this.status(authorize);
-      const key = platform === "tiktok" ? await this.dependencies.secrets.get(EULER_KEY) : undefined;
+      if (
+        this.connection.status !== "idle" &&
+        this.connection.platform === platform &&
+        this.connection.channel === channel
+      )
+        return this.status(authorize);
+      const key =
+        platform === "tiktok" ? await this.dependencies.secrets.get(EULER_KEY) : undefined;
       const startedAt = Date.now();
       await check(authorize);
-      const next: Saved = { ...this.state, game: emptyHalayState(startedAt), session: { channel, platform, startedAt } };
+      const next: Saved = {
+        ...this.state,
+        game: emptyHalayState(startedAt),
+        session: { channel, platform, startedAt },
+      };
       await this.save(next);
       this.stopConnector();
       this.state = next;
       this.dirty = false;
       this.feed = [];
       this.cues = [];
-      this.connection = { channel, platform, attempts: 0, status: platform === "demo" ? "connected" : "connecting" };
+      this.connection = {
+        channel,
+        platform,
+        attempts: 0,
+        status: platform === "demo" ? "connected" : "connecting",
+      };
       if (platform === "demo") {
         this.connection.connectedAt = Date.now();
-        this.disconnect = connectDemo((event) => this.accept(event), this.state.config.joinKeywords[0] ?? "HALAY");
+        this.disconnect = connectDemo(
+          (event) => this.accept(event),
+          this.state.config.joinKeywords[0] ?? "HALAY",
+        );
       } else {
         this.connect(this.generation, key);
       }
@@ -284,17 +381,26 @@ export class LiveGamesService {
 
   start(channel: string, authorize?: Authority) {
     const handle = normalizeChannel(channel).toLowerCase();
-    if (!/^[a-z0-9_.]{1,32}$/.test(handle)) throw new Error("Enter a TikTok handle or profile link.");
+    if (!/^[a-z0-9_.]{1,32}$/.test(handle))
+      throw new Error("Enter a TikTok handle or profile link.");
     return this.begin("tiktok", handle, authorize);
   }
 
-  demo(authorize?: Authority) { return this.begin("demo", "demo", authorize); }
+  demo(authorize?: Authority) {
+    return this.begin("demo", "demo", authorize);
+  }
 
   stop(authorize?: Authority) {
     return this.serial(async () => {
       this.stopConnector();
-      this.connection = { platform: this.connection.platform, channel: this.connection.channel, status: "idle", attempts: 0 };
-      if (this.state.session && !this.state.session.endedAt) this.state.session.endedAt = Date.now();
+      this.connection = {
+        platform: this.connection.platform,
+        channel: this.connection.channel,
+        status: "idle",
+        attempts: 0,
+      };
+      if (this.state.session && !this.state.session.endedAt)
+        this.state.session.endedAt = Date.now();
       this.cues = [];
       this.broadcast();
       await this.save();
@@ -329,7 +435,12 @@ export class LiveGamesService {
       this.eulerKeyState = Promise.resolve(Boolean(key));
       if (this.connection.platform === "tiktok" && this.connection.status !== "idle") {
         this.stopConnector();
-        this.connection = { platform: "tiktok", channel: this.connection.channel, status: "connecting", attempts: 0 };
+        this.connection = {
+          platform: "tiktok",
+          channel: this.connection.channel,
+          status: "connecting",
+          attempts: 0,
+        };
         this.connect(this.generation, key || undefined);
       }
       return this.status();
@@ -348,7 +459,11 @@ export class LiveGamesService {
 
   obsSetup(options: LiveGamesObsSetupOptions = {}, authorize?: Authority) {
     return this.serial(async () => {
-      const selected = { aspect: "9:16", ...this.state.obs, ...options } as LiveGamesObsSetupOptions;
+      const selected = {
+        aspect: "9:16",
+        ...this.state.obs,
+        ...options,
+      } as LiveGamesObsSetupOptions;
       await this.obs.setup(this.overlayUrl(), selected, () => check(authorize));
       this.state.obs = selected;
       await this.save();
@@ -384,8 +499,15 @@ export class LiveGamesService {
     for (const close of this.closer) close();
     await this.queue;
     this.stopConnector();
-    if (this.initialized && await this.initialized.then(() => true, () => false)) {
-      if (this.state.session && !this.state.session.endedAt) this.state.session.endedAt = Date.now();
+    if (
+      this.initialized &&
+      (await this.initialized.then(
+        () => true,
+        () => false,
+      ))
+    ) {
+      if (this.state.session && !this.state.session.endedAt)
+        this.state.session.endedAt = Date.now();
       await this.save();
     }
   }

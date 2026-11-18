@@ -20,7 +20,9 @@ export function LiveGamesSurface({
   return (
     <LiveGamesPage
       chromeInset={!besideRail ? true : compactRail ? "compact" : false}
-      leading={besideRail ? undefined : <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />}
+      leading={
+        besideRail ? undefined : <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />
+      }
       trailing={IS_MAC ? undefined : <WindowControls />}
       navigation={grouped ? <ToolNavigation /> : undefined}
     />

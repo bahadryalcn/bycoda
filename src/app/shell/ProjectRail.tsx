@@ -13,7 +13,10 @@ import { Tooltip } from "../../shared/ui/Tooltip";
 import { Sash } from "../../shared/ui/Sash";
 import { WindowChromeInset } from "../../shared/ui/PaneHeader";
 import { useWorkspaceFeatures } from "../../features/settings/model/workspaceFeatures";
-import { requestOpenLiveGamesPage, useLiveGamesPageOpen } from "../../features/live-games/public/liveGamesPage";
+import {
+  requestOpenLiveGamesPage,
+  useLiveGamesPageOpen,
+} from "../../features/live-games/public/liveGamesPage";
 import { useFormat, useLocale, useT } from "../../shared/i18n";
 import { SOCIAL_PANEL_EVENT } from "../../features/social/ui/SocialShortcut";
 import {

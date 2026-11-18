@@ -1,6 +1,9 @@
 import type { UseQueryResult } from "@tanstack/react-query";
 import { useFormat, useT } from "../../../shared/i18n";
-import type { LiveGamesReport, LiveGamesStatus } from "../../../shared/model/host-contracts/live-games";
+import type {
+  LiveGamesReport,
+  LiveGamesStatus,
+} from "../../../shared/model/host-contracts/live-games";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { Divider } from "../../../shared/ui/Divider";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -47,9 +50,13 @@ export function LiveGameActivity({
             {latestEvents.map((event) => (
               <li className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2" key={event.id}>
                 <Text size="caption" weight="medium">
-                  {event.name ? t("{p0} · {p1}", { p0: event.name, p1: t(eventLabel[event.kind]) }) : t(eventLabel[event.kind])}
+                  {event.name
+                    ? t("{p0} · {p1}", { p0: event.name, p1: t(eventLabel[event.kind]) })
+                    : t(eventLabel[event.kind])}
                 </Text>
-                <Text size="caption" tone="secondary">{formatDate(event.at, { timeStyle: "short" })}</Text>
+                <Text size="caption" tone="secondary">
+                  {formatDate(event.at, { timeStyle: "short" })}
+                </Text>
                 {event.text || event.count !== undefined ? (
                   <Text size="caption" tone="secondary" className="break-words">
                     {event.text ?? formatNumber(event.count ?? 0)}
@@ -64,10 +71,17 @@ export function LiveGameActivity({
       <section className="flex flex-col gap-2" aria-label={t("Session report")}>
         <SectionLabel>{t("Session report")}</SectionLabel>
         {report.error ? (
-          <InlineError details={report.error.message} retry={{
-            onRetry: () => { void report.refetch().catch(() => undefined); },
-            pending: report.isFetching,
-          }}>{t("Could not load the session report")}</InlineError>
+          <InlineError
+            details={report.error.message}
+            retry={{
+              onRetry: () => {
+                void report.refetch().catch(() => undefined);
+              },
+              pending: report.isFetching,
+            }}
+          >
+            {t("Could not load the session report")}
+          </InlineError>
         ) : null}
         {report.data ? (
           <LiveGameReportDetails report={report.data} />
@@ -98,9 +112,13 @@ function LiveGameReportDetails({ report }: { report: LiveGamesReport }) {
             {formatDate(report.endedAt, { dateStyle: "medium", timeStyle: "short" })}
           </DescriptionItem>
         ) : null}
-        <DescriptionItem term={t("Dance joins")}>{formatNumber(report.totals.joins)}</DescriptionItem>
+        <DescriptionItem term={t("Dance joins")}>
+          {formatNumber(report.totals.joins)}
+        </DescriptionItem>
         <DescriptionItem term={t("Gifts")}>{formatNumber(report.totals.gifts)}</DescriptionItem>
-        <DescriptionItem term={t("Diamonds")}>{formatNumber(report.totals.diamonds)}</DescriptionItem>
+        <DescriptionItem term={t("Diamonds")}>
+          {formatNumber(report.totals.diamonds)}
+        </DescriptionItem>
       </DescriptionList>
       {report.topGifters.length > 0 ? (
         <>

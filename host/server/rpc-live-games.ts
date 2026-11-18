@@ -1,20 +1,30 @@
 import {
-  LIVE_GAMES_RPC, LiveGamesConfigParamsSchema, LiveGamesEulerKeyParamsSchema,
-  LiveGamesObsCredentialsParamsSchema, LiveGamesObsSetupParamsSchema, LiveGamesObsStreamParamsSchema,
-  LiveGamesRulesParamsSchema, LiveGamesStartParamsSchema,
+  LIVE_GAMES_RPC,
+  LiveGamesConfigParamsSchema,
+  LiveGamesEulerKeyParamsSchema,
+  LiveGamesObsCredentialsParamsSchema,
+  LiveGamesObsSetupParamsSchema,
+  LiveGamesObsStreamParamsSchema,
+  LiveGamesRulesParamsSchema,
+  LiveGamesStartParamsSchema,
 } from "../../src/shared/model/host-contracts/live-games";
 import type { ServerBindings } from "./bindings";
 import type { OwnerRpcRequest } from "./owner-rpc-context";
 
 function assertLocalSecret(request: OwnerRpcRequest) {
   const { socket, headers } = request.request;
-  if (headers.origin || headers.forwarded || headers["x-forwarded-for"] ||
-      !["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(socket.remoteAddress ?? ""))
+  if (
+    headers.origin ||
+    headers.forwarded ||
+    headers["x-forwarded-for"] ||
+    !["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(socket.remoteAddress ?? "")
+  )
     throw new Error("Live games credentials can only be changed locally.");
 }
 
 export async function handleLiveGamesRpc(
-  { liveGames }: Pick<ServerBindings, "liveGames">, request: OwnerRpcRequest,
+  { liveGames }: Pick<ServerBindings, "liveGames">,
+  request: OwnerRpcRequest,
 ) {
   const { method } = request.input;
   const { params } = request;
@@ -48,7 +58,9 @@ export async function handleLiveGamesRpc(
       request.result = await liveGames.obsSetup(LiveGamesObsSetupParamsSchema.parse(params));
       return;
     case "liveGames.obsStream":
-      request.result = await liveGames.obsStream(LiveGamesObsStreamParamsSchema.parse(params).action);
+      request.result = await liveGames.obsStream(
+        LiveGamesObsStreamParamsSchema.parse(params).action,
+      );
       return;
     case "liveGames.obsScene":
       LIVE_GAMES_RPC[method].params.parse(params);

@@ -28,14 +28,19 @@ async function avatar(url: URL): Promise<Buffer> {
     reader.releaseLock();
   }
   const bytes = Buffer.concat(chunks);
-  const isPng = bytes.length >= 24 && bytes.subarray(0, 8).equals(Buffer.from("89504e470d0a1a0a", "hex"));
+  const isPng =
+    bytes.length >= 24 && bytes.subarray(0, 8).equals(Buffer.from("89504e470d0a1a0a", "hex"));
   if (isPng && (bytes.readUInt32BE(16) > 1024 || bytes.readUInt32BE(20) > 1024))
     throw new Error("Avatar dimensions are too large.");
-  const image = await Image.fromBuffer(bytes, { "image/jpeg": { maxMemoryUsageInMB: 8, maxResolutionInMP: 2 } });
-  const scale = Math.min(1, 96 / Math.max(image.width, image.height));
-  if (scale < 1) image.resize({
-    w: Math.max(1, Math.round(image.width * scale)), h: Math.max(1, Math.round(image.height * scale)),
+  const image = await Image.fromBuffer(bytes, {
+    "image/jpeg": { maxMemoryUsageInMB: 8, maxResolutionInMP: 2 },
   });
+  const scale = Math.min(1, 96 / Math.max(image.width, image.height));
+  if (scale < 1)
+    image.resize({
+      w: Math.max(1, Math.round(image.width * scale)),
+      h: Math.max(1, Math.round(image.height * scale)),
+    });
   return image.getBuffer("image/png");
 }
 
@@ -49,19 +54,34 @@ export class AvatarCache {
   get(id: string, source: string | undefined): string | undefined {
     if (!source) return undefined;
     const url = URL.parse(source);
-    if (!url || url.protocol !== "https:" || url.port || url.username || url.password || !CDN.test(url.hostname))
+    if (
+      !url ||
+      url.protocol !== "https:" ||
+      url.port ||
+      url.username ||
+      url.password ||
+      !CDN.test(url.hostname)
+    )
       return undefined;
     const key = createHash("sha256").update(id).digest("hex");
     const entry = this.entries.get(key);
     if (entry?.source === source && entry.bytes) return key;
-    if (this.pending >= 5 || (entry?.source === source && entry.retryAt > Date.now())) return undefined;
+    if (this.pending >= 5 || (entry?.source === source && entry.retryAt > Date.now()))
+      return undefined;
     const next: Entry = { source, retryAt: Date.now() + 60_000 };
     this.entries.delete(key);
     this.entries.set(key, next);
     const oldest = this.entries.keys().next().value;
     if (this.entries.size > 300 && oldest !== undefined) this.entries.delete(oldest);
     this.pending++;
-    void avatar(url).then((bytes) => { next.bytes = bytes; }).catch(() => {}).finally(() => { this.pending--; });
+    void avatar(url)
+      .then((bytes) => {
+        next.bytes = bytes;
+      })
+      .catch(() => {})
+      .finally(() => {
+        this.pending--;
+      });
     return undefined;
   }
 
