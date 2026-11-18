@@ -146,3 +146,37 @@ it("keeps the question inside the window when the screen has no room beside it",
   expect(host.querySelector("aside")).toBeNull();
   expect(host.querySelector("main")?.textContent).toContain("Which folder?");
 });
+
+const unreachable = "The app window did not receive that. Return to the app and try again.";
+
+it("shows a failure when a command cannot reach the owner window", async () => {
+  const { emitTo } = await import("@tauri-apps/api/event");
+  await act(async () => root.render(createElement(VoiceOverlayWindow, { owner: "main" })));
+  await show({});
+  expect(host.textContent).not.toContain(unreachable);
+  vi.mocked(emitTo).mockRejectedValue(new Error("window gone"));
+  const disconnect = [...host.querySelectorAll("button")].find(
+    (button) => button.getAttribute("aria-label") === "Disconnect voice",
+  )!;
+  await act(async () => disconnect.click());
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain(unreachable);
+  vi.mocked(emitTo).mockResolvedValue(undefined);
+});
+
+it("keeps a question answerable and says so when the answer cannot be delivered", async () => {
+  const { emitTo } = await import("@tauri-apps/api/event");
+  room = { left: 100, right: 100 };
+  await act(async () => root.render(createElement(VoiceOverlayWindow, { owner: "main" })));
+  await show({ choice });
+  vi.mocked(emitTo).mockRejectedValue(new Error("window gone"));
+  const option = host.querySelector<HTMLElement>('input[type="radio"]')!;
+  await act(async () => option.click());
+  const send = [...host.querySelectorAll("button")].find((b) => b.textContent === "Send answer")!;
+  await act(async () => send.click());
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  expect(host.textContent).toContain(unreachable);
+  expect(host.textContent).toContain("Answer was not sent. Your answer is kept; try again.");
+  vi.mocked(emitTo).mockResolvedValue(undefined);
+});

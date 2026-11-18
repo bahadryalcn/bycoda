@@ -8397,6 +8397,7 @@
   "Unmute speaker": "取消扬声器静音",
   "Microphone is receiving sound": "麦克风正在接收声音",
   "Voice window could not connect. Return to the app and retry.": "语音窗口无法连接。请返回应用并重试。",
+  "The app window did not receive that. Return to the app and try again.": "应用窗口没有收到该操作。请返回应用后重试。",
   "No recent session updates": "会话最近没有更新",
   "Say “start” to approve or “cancel” to close.": "说“开始”以批准，或说“取消”以关闭。",
   "Taking action…": "正在执行操作…",

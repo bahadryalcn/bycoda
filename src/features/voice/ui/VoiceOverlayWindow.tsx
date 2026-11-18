@@ -63,6 +63,9 @@ const MOVES: Record<string, [number, number]> = {
   ArrowDown: [0, 16],
 };
 
+const OWNER_UNREACHABLE = () =>
+  t("The app window did not receive that. Return to the app and try again.");
+
 /**
  * Always-on-top mirror of one workspace window's voice companion. It owns no
  * audio: every action is a command the workspace window carries out. Native
@@ -187,8 +190,29 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
     return () => observer.disconnect();
   }, [compact, beside]);
 
+  /** Every overlay action is an event to the owner window; a closed or reloaded owner rejects it. */
+  function emitOwner(event: string, payload: unknown, onFailure?: () => void) {
+    void emitTo(owner, event, payload).catch(() => {
+      onFailure?.();
+      setMenuError(OWNER_UNREACHABLE());
+    });
+  }
   function send(command: VoiceOverlayCommand) {
-    void emitTo(owner, VOICE_OVERLAY_COMMAND_EVENT, command).catch(() => undefined);
+    emitOwner(VOICE_OVERLAY_COMMAND_EVENT, command);
+  }
+  /** Marks the open question as not sent, so the card keeps the typed answer and allows sending again. */
+  function choiceNotSent(id: string) {
+    setState((current) =>
+      current?.choice?.id === id
+        ? {
+            ...current,
+            choice: {
+              ...current.choice,
+              prompt: { ...current.choice.prompt, delivery: "failed" },
+            },
+          }
+        : current,
+    );
   }
   function showApp() {
     void invoke("voice_overlay_show_owner").catch(() => undefined);
@@ -251,16 +275,11 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
         <VoiceChoiceCard
           choice={state.choice}
           onRetry={() => {
-            void emitTo(owner, VOICE_OVERLAY_CHOICE_EVENT, {
-              id: state.choice!.id,
-              action: "retry",
-            }).catch(() => undefined);
+            emitOwner(VOICE_OVERLAY_CHOICE_EVENT, { id: state.choice!.id, action: "retry" });
           }}
           onReply={(reply) => {
-            void emitTo(owner, VOICE_OVERLAY_CHOICE_EVENT, {
-              id: state.choice!.id,
-              reply,
-            }).catch(() => undefined);
+            const id = state.choice!.id;
+            emitOwner(VOICE_OVERLAY_CHOICE_EVENT, { id, reply }, () => choiceNotSent(id));
           }}
         />
       ) : null}
@@ -269,24 +288,13 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
           key={state.jobReview.id}
           review={state.jobReview}
           onChange={(rows) => {
-            void emitTo(owner, VOICE_OVERLAY_JOB_EVENT, {
-              id: state.jobReview!.id,
-              action: "change",
-              rows,
-            }).catch(() => undefined);
+            emitOwner(VOICE_OVERLAY_JOB_EVENT, { id: state.jobReview!.id, action: "change", rows });
           }}
           onStart={(rows) => {
-            void emitTo(owner, VOICE_OVERLAY_JOB_EVENT, {
-              id: state.jobReview!.id,
-              action: "start",
-              rows,
-            }).catch(() => undefined);
+            emitOwner(VOICE_OVERLAY_JOB_EVENT, { id: state.jobReview!.id, action: "start", rows });
           }}
           onCancel={() => {
-            void emitTo(owner, VOICE_OVERLAY_JOB_EVENT, {
-              id: state.jobReview!.id,
-              action: "cancel",
-            }).catch(() => undefined);
+            emitOwner(VOICE_OVERLAY_JOB_EVENT, { id: state.jobReview!.id, action: "cancel" });
           }}
         />
       ) : null}
@@ -436,9 +444,7 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
             <VoiceToolActivityPanel
               entries={state?.activity ?? []}
               onStopWaiting={(id) => {
-                void emitTo(owner, VOICE_OVERLAY_ACTIVITY_EVENT, id).catch(() =>
-                  setMenuError(t("Voice window could not connect. Return to the app and retry.")),
-                );
+                emitOwner(VOICE_OVERLAY_ACTIVITY_EVENT, id);
               }}
             />
           )}

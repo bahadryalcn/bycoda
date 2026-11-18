@@ -8397,6 +8397,7 @@
   "Unmute speaker": "スピーカーのミュートを解除",
   "Microphone is receiving sound": "マイクが音声を受信中",
   "Voice window could not connect. Return to the app and retry.": "音声ウィンドウに接続できませんでした。アプリに戻って再試行してください。",
+  "The app window did not receive that. Return to the app and try again.": "アプリのウィンドウに届きませんでした。アプリに戻ってもう一度お試しください。",
   "No recent session updates": "セッションの新しい情報はありません",
   "Say “start” to approve or “cancel” to close.": "承認するには「開始」、閉じるには「キャンセル」と話してください。",
   "Taking action…": "アクションを実行中…",

@@ -8400,6 +8400,7 @@
   "Unmute speaker": "Hoparlörü aç",
   "Microphone is receiving sound": "Mikrofon ses alıyor",
   "Voice window could not connect. Return to the app and retry.": "Ses penceresi bağlanamadı. Uygulamaya dönüp tekrar deneyin.",
+  "The app window did not receive that. Return to the app and try again.": "Uygulama penceresi bunu almadı. Uygulamaya dönüp yeniden deneyin.",
   "No recent session updates": "Oturumdan yeni bilgi yok",
   "Say “start” to approve or “cancel” to close.": "Onaylamak için “başlat”, kapatmak için “iptal” deyin.",
   "Taking action…": "İşlem yapılıyor…",

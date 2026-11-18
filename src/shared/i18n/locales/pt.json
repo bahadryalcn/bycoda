@@ -8397,6 +8397,7 @@
   "Unmute speaker": "Ativar alto-falante",
   "Microphone is receiving sound": "O microfone está recebendo som",
   "Voice window could not connect. Return to the app and retry.": "Não foi possível conectar a janela de voz. Volte ao aplicativo e tente novamente.",
+  "The app window did not receive that. Return to the app and try again.": "A janela do app não recebeu isso. Volte ao app e tente novamente.",
   "No recent session updates": "Sem atualizações recentes da sessão",
   "Say “start” to approve or “cancel” to close.": "Diga “iniciar” para aprovar ou “cancelar” para fechar.",
   "Taking action…": "Executando ação…",
