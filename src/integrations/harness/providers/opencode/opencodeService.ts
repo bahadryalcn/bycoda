@@ -14,7 +14,7 @@ export type OpenCodeV2Service = {
 
 const ownedSources = new WeakMap<
   NativeSessionCapability,
-  Map<string, Promise<OpenCodeV2Service>>
+  Map<string, { operationId: string; pending?: Promise<OpenCodeV2Service> }>
 >();
 const catalogSources = new Map<string, Promise<OpenCodeV2Service>>();
 const catalogRetryOperations = new Map<string, string>();
@@ -117,15 +117,15 @@ export async function resolveOwnedOpenCodeUtility(
 }
 
 /** Release only the original capability's references after its native cohort
- * has physically retired. Unknown acquisition/release stays retained. */
+ * has physically retired. Failed acquires have no confirmed reference to release. */
 export async function releaseOwnedOpenCodeForCapability(
   capability: NativeSessionCapability,
 ): Promise<void> {
   const sources = ownedSources.get(capability);
   if (!sources) return;
-  for (const [key, pending] of sources) {
-    const source = await pending;
-    const handle = source.nativeOwnedService;
+  for (const [key, acquisition] of sources) {
+    const source = await acquisition.pending?.catch(() => undefined);
+    const handle = source?.nativeOwnedService;
     if (!handle) continue;
     const released = await invoke<boolean>("owned_opencode_release", {
       ...handle,
@@ -134,7 +134,7 @@ export async function releaseOwnedOpenCodeForCapability(
     });
     if (!released)
       throw new Error("Original OpenCode service reference retirement is unconfirmed.");
-    if (sources.get(key) === pending) sources.delete(key);
+    if (sources.get(key) === acquisition) sources.delete(key);
   }
   if (sources.size === 0 && ownedSources.get(capability) === sources)
     ownedSources.delete(capability);
@@ -220,11 +220,8 @@ export async function resolveOpenCodeV2Service(
       sources = new Map();
       ownedSources.set(capability, sources);
     }
-    const existing = sources.get(key);
-    if (existing) return existing;
-    // Keep the original promise on unknown outcomes; issuing another operation
-    // ID could lose an accepted native reference.
-    const operationId = newRequestId();
+    const acquisition = sources.get(key) ?? { operationId: newRequestId() };
+    if (acquisition.pending) return acquisition.pending;
     const pending = invoke<{ serviceId: string; referenceId: string; endpoint: string }>(
       "owned_opencode_acquire",
       {
@@ -233,14 +230,18 @@ export async function resolveOpenCodeV2Service(
         cwd,
         pageToken: capability.pageToken,
         capability,
-        operationId,
+        operationId: acquisition.operationId,
       },
     ).then(({ serviceId, referenceId, endpoint }) => ({
       url: endpoint,
       nativeOwnedService: Object.freeze({ serviceId, referenceId }),
     }));
-    void pending.catch(() => undefined);
-    sources.set(key, pending);
+    acquisition.pending = pending;
+    sources.set(key, acquisition);
+    // Retry with the original ID to recover a reference accepted before an unknown outcome.
+    void pending.catch(() => {
+      delete acquisition.pending;
+    });
     return pending;
   }
   const url = await resolveOpenCodeV2ServiceUrl(path, cwd);
