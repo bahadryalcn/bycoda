@@ -60,7 +60,7 @@ describe("TikTok API capability map", () => {
     expect(row(caps, "search").reasonCode).toBe("tiktok.search_requires_research_api");
   });
 
-  it("leaves commenter collection, deletion and profile reads NOT_SUPPORTED on the API", () => {
+  it("allows basic profile reads and keeps collection and deletion unsupported on Display API", () => {
     const caps = accountCapabilities(account());
     expect(row(caps, "audience.collect")).toMatchObject({
       status: "unsupported",
@@ -71,8 +71,8 @@ describe("TikTok API capability map", () => {
       reasonCode: "unsupported.not_yet",
     });
     expect(row(caps, "profile.read")).toMatchObject({
-      status: "unsupported",
-      reasonCode: "unsupported.not_yet",
+      status: "available",
+      reasonCode: "api.ready",
     });
   });
 });
@@ -91,15 +91,16 @@ describe("TikTok browser capability map", () => {
     expect(row(ready, "comment").status).toBe("available");
   });
 
-  it("does not show API scope names or analytics/search on the browser connection", () => {
+  it("offers Studio analytics and browser DMs while keeping search unsupported", () => {
     const caps = accountCapabilities(browser({ connected: true, accessApproved: true }));
     for (const item of caps)
       expect(item.reason, item.operation).not.toMatch(/video\.list|video\.publish|OAuth/);
-    expect(row(caps, "analytics")).toMatchObject({ status: "unsupported" });
+    expect(row(caps, "analytics")).toMatchObject({ status: "available" });
     expect(row(caps, "search")).toMatchObject({
       status: "unsupported",
       reasonCode: "browser.no_recipe",
     });
-    expect(row(caps, "inbox.read")).toMatchObject({ status: "unsupported" });
+    expect(row(caps, "inbox.read")).toMatchObject({ status: "available" });
+    expect(row(caps, "message.start")).toMatchObject({ status: "available" });
   });
 });

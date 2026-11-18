@@ -22,6 +22,8 @@ export type BrowserRecipeContext = {
   waitFor<T>(expression: string, timeoutMs?: number): Promise<T | undefined>;
   /** Rechecks the connected web identity; call immediately before every submission and after acknowledgement. */
   verifyIdentity(): Promise<void>;
+  /** TikTok account actions recheck Host authority after resolving the exact submission target. */
+  beforeSubmit?(): Promise<void>;
   /** Call immediately before the final external Post/Send click. Errors after this point are uncertain delivery. */
   markSubmitted?(): void;
 };

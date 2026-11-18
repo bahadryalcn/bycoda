@@ -24,18 +24,23 @@ export async function tiktokMentions(ctx: BrowserRecipeContext): Promise<Browser
   await ctx.page.goto(NOTIFICATIONS_URL);
   await guardTikTokEngagement(ctx);
   // shortcut: Studio notification selectors are fixture-verified. Revalidate with a signed-in account.
-  const state = await readTikTokSurface<"open" | "select" | "selected">(ctx, `(() => {
+  const state = await readTikTokSurface<"open" | "select" | "selected">(
+    ctx,
+    `(() => {
     ${mentionsDom}
     if (selected) return 'selected';
     if (mark(tab, 'mentions-tab')) return 'select';
     if (!tray && mark(one('button[data-e2e="studio-notifications-button"]'), 'mentions-open')) return 'open';
-  })()`);
+  })()`,
+  );
   if (state === "open") {
     await ctx.page.click(tiktokEngagementControl("mentions-open"));
     await readTikTokSurface(ctx, `(() => { ${mentionsDom} return mark(tab, 'mentions-tab'); })()`);
   }
   if (state !== "selected") await ctx.page.click(tiktokEngagementControl("mentions-tab"));
-  const snapshot = await readTikTokSurface<{ events: SocialInbound[]; partial: boolean }>(ctx, String.raw`(() => {
+  const snapshot = await readTikTokSurface<{ events: SocialInbound[]; partial: boolean }>(
+    ctx,
+    String.raw`(() => {
     ${mentionsDom}
     if (!selected) return;
     const list = one('[data-e2e="notifications-mention-list"]', tray);
@@ -61,7 +66,8 @@ export async function tiktokMentions(ctx: BrowserRecipeContext): Promise<Browser
     if (cards.length && mapped.every(value => value === undefined)) return;
     return { events: mapped.filter(Boolean), partial: mapped.length !== cards.length ||
       mapped.some(value => value === undefined) || !!one('[data-e2e="notifications-next-page"]', tray) };
-  })()`);
+  })()`,
+  );
   return {
     events: [...new Map(snapshot.events.map((event) => [event.eventId, event])).values()],
     coverage: [{ channel: "mentions", status: snapshot.partial ? "partial" : "read" }],

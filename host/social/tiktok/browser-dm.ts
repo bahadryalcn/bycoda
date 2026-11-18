@@ -31,7 +31,9 @@ export async function tiktokMessages(ctx: BrowserRecipeContext): Promise<Browser
   await ctx.page.goto(MESSAGES_URL);
   await guardMessages(ctx);
   // shortcut: inbox previews only until TikTok web thread history has live selector evidence.
-  const snapshot = await readTikTokSurface<{ events: SocialInbound[]; complete: boolean }>(ctx, String.raw`(() => {
+  const snapshot = await readTikTokSurface<{ events: SocialInbound[]; complete: boolean }>(
+    ctx,
+    String.raw`(() => {
     ${inboxDom}
     if (!conversations.length) return one('[data-e2e="no-messages"]', list) ? {events: [], complete: true} : undefined;
     const recent = conversations.slice(0, 50).map(row => {
@@ -47,7 +49,8 @@ export async function tiktokMessages(ctx: BrowserRecipeContext): Promise<Browser
     });
     if (recent.every(value => value === undefined)) return;
     return { events: recent.filter(Boolean), complete: false };
-  })()`);
+  })()`,
+  );
   await guardMessages(ctx);
   return {
     events: [...new Map(snapshot.events.map((event) => [event.eventId, event])).values()],
@@ -90,14 +93,17 @@ async function openThread(ctx: BrowserRecipeContext, peer: string, thread?: stri
   if (thread) throw denied();
   await ctx.page.goto(`${TIKTOK_WEB}/@${peer}`);
   await guardMessages(ctx);
-  await readTikTokSurface<boolean>(ctx, String.raw`(() => {
+  await readTikTokSurface<boolean>(
+    ctx,
+    String.raw`(() => {
     ${TIKTOK_DOM}
     if (handle(location.href) !== ${JSON.stringify(peer)}) return;
     const profile = one('[data-e2e="user-page"] main,main[data-e2e="user-page"],[data-e2e="user-profile"]');
     if (!profile) return;
     const button = one('button[data-e2e="message-button"],a[data-e2e="message-button"]', profile);
     return mark(button, 'dm-new');
-  })()`);
+  })()`,
+  );
   await guardMessages(ctx);
   await ctx.page.click(tiktokEngagementControl("dm-new"));
 }
@@ -119,7 +125,13 @@ function threadDom(peer: string, thread?: string) {
   `;
 }
 
-function messageEvidence(peer: string, thread: string | undefined, body: string, existing: string[], exact?: string) {
+function messageEvidence(
+  peer: string,
+  thread: string | undefined,
+  body: string,
+  existing: string[],
+  exact?: string,
+) {
   return String.raw`(() => {
     ${threadDom(peer, thread)}
     if (!id(conversationId)) return;
@@ -145,19 +157,29 @@ export async function tiktokDirectMessage(
   const thread = job.payload.threadId && messageThreadId.exec(job.payload.threadId)?.[1];
   if (!authorize || !peer || owner === peer || (job.payload.threadId && !thread)) throw denied();
   const body = job.payload.text.replaceAll("\r\n", "\n").trim();
-  if ((job.kind !== "message" && job.kind !== "reply") || job.payload.postId ||
-      job.payload.objectPostId || !body || ctx.files.length || job.payload.media.length ||
-      job.payload.link) throw unsupported();
+  if (
+    (job.kind !== "message" && job.kind !== "reply") ||
+    job.payload.postId ||
+    job.payload.objectPostId ||
+    !body ||
+    ctx.files.length ||
+    job.payload.media.length ||
+    job.payload.link
+  )
+    throw unsupported();
   await openThread(ctx, peer, thread);
   await guardMessages(ctx);
-  const before = await readTikTokSurface<{ ids: string[]; draft: string; thread: string | null }>(ctx, String.raw`(() => {
+  const before = await readTikTokSurface<{ ids: string[]; draft: string; thread: string | null }>(
+    ctx,
+    String.raw`(() => {
     ${threadDom(peer, thread)}
     const editor = one('[data-e2e="chat-input"][contenteditable="true"]', panel);
     if ((conversationId !== null && !id(conversationId)) || !mark(editor, 'dm-editor')) return;
     const existing = all('[data-message-id]', history);
     if (existing.some(el => !id(el.getAttribute('data-message-id')))) return;
     return { ids: existing.map(el => el.getAttribute('data-message-id')), draft: text(editor), thread: conversationId };
-  })()`);
+  })()`,
+  );
   if (before.draft) throw denied();
   await guardMessages(ctx);
   await ctx.page.fill(tiktokEngagementControl("dm-editor"), body);

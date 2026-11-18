@@ -44,13 +44,19 @@ describe("TikTok Organic Accounts API", () => {
   it("requests only the opted-in profile fields, verifies the handle and uses a credential header", async () => {
     const fetcher = mockFetch()
       .mockResolvedValueOnce(ok({ display_name: "Merchant", username: "Merchant.One" }))
-      .mockResolvedValueOnce(ok({ display_name: "Merchant", username: "Merchant.One", followers_count: 1 }))
+      .mockResolvedValueOnce(
+        ok({ display_name: "Merchant", username: "Merchant.One", followers_count: 1 }),
+      )
       .mockResolvedValueOnce(ok({ display_name: "Merchant" }));
     const organic = new TikTokOrganic(true, fetcher);
     await expect(organic.profile(credential)).resolves.toMatchObject({
-      name: "Merchant", username: "merchant.one", followers: undefined,
+      name: "Merchant",
+      username: "merchant.one",
+      followers: undefined,
     });
-    await expect(organic.profile(credential, { stats: true })).resolves.toMatchObject({ followers: 1 });
+    await expect(organic.profile(credential, { stats: true })).resolves.toMatchObject({
+      followers: 1,
+    });
     await expect(organic.profile(credential)).rejects.toMatchObject({ code: "denied" });
     const [url, init] = fetcher.mock.calls[0];
     const request = new URL(String(url));
@@ -59,7 +65,9 @@ describe("TikTok Organic Accounts API", () => {
     expect(request.searchParams.get("fields")).toBe('["display_name","username"]');
     expect(request.href).not.toContain(credential.accessToken);
     expect(init).toMatchObject({
-      method: "GET", redirect: "error", headers: { "Access-Token": credential.accessToken },
+      method: "GET",
+      redirect: "error",
+      headers: { "Access-Token": credential.accessToken },
     });
   });
 
@@ -67,10 +75,17 @@ describe("TikTok Organic Accounts API", () => {
     const fetcher = mockFetch().mockResolvedValueOnce(page([target], 5));
     const organic = new TikTokOrganic(true, fetcher);
     await expect(organic.comments(credential, postId, 2)).resolves.toMatchObject({
-      comments: [{
-        postId, id: commentId, username: "creator.one", author: "Creator One",
-        at: 1627617835000, hidden: false, owned: false,
-      }],
+      comments: [
+        {
+          postId,
+          id: commentId,
+          username: "creator.one",
+          author: "Creator One",
+          at: 1627617835000,
+          hidden: false,
+          owned: false,
+        },
+      ],
       next: 5,
     });
     const url = new URL(String(fetcher.mock.calls[0][0]));
@@ -81,10 +96,17 @@ describe("TikTok Organic Accounts API", () => {
   it("returns Business video reach, counts and a continuation without inventing metrics", async () => {
     const fetcher = mockFetch().mockResolvedValueOnce(
       ok({
-        videos: [{
-          item_id: postId, caption: "Post", create_time: "1627617835",
-          likes: 0, video_views: 1234, reach: 996, shares: -1,
-        }],
+        videos: [
+          {
+            item_id: postId,
+            caption: "Post",
+            create_time: "1627617835",
+            likes: 0,
+            video_views: 1234,
+            reach: 996,
+            shares: -1,
+          },
+        ],
         cursor: 1627617835000,
         has_more: true,
       }),
@@ -100,12 +122,16 @@ describe("TikTok Organic Accounts API", () => {
     const url = new URL(String(fetcher.mock.calls[0][0]));
     expect(url.pathname).toBe("/open_api/v1.3/business/video/list/");
     expect(url.searchParams.get("cursor")).toBe("1627617836000");
-    expect(JSON.parse(url.searchParams.get("fields")!)).toEqual(expect.arrayContaining(["item_id", "reach"]));
+    expect(JSON.parse(url.searchParams.get("fields")!)).toEqual(
+      expect.arrayContaining(["item_id", "reach"]),
+    );
   });
 
   it("rejects an ambiguous post ID or a stalled video continuation", async () => {
     const fetcher = mockFetch()
-      .mockResolvedValueOnce(ok({ videos: [{ item_id: 1, create_time: "1627617835" }], has_more: false }))
+      .mockResolvedValueOnce(
+        ok({ videos: [{ item_id: 1, create_time: "1627617835" }], has_more: false }),
+      )
       .mockResolvedValueOnce(ok({ videos: [], has_more: true, cursor: 1000 }));
     const organic = new TikTokOrganic(true, fetcher);
     await expect(organic.videos(credential)).rejects.toMatchObject({ code: "unknown" });
@@ -115,16 +141,23 @@ describe("TikTok Organic Accounts API", () => {
   it("requests the explicit mention fields needed to parse provider results", async () => {
     const fetcher = mockFetch().mockResolvedValueOnce(
       ok({
-        comments: [{
-          item_id: postId, comment_id: commentId, commenter_display_name: "Mention.Author",
-          comment_text: "@merchant", comment_create_time: "1698616575",
-        }],
+        comments: [
+          {
+            item_id: postId,
+            comment_id: commentId,
+            commenter_display_name: "Mention.Author",
+            comment_text: "@merchant",
+            comment_create_time: "1698616575",
+          },
+        ],
         has_more: false,
       }),
     );
     const organic = new TikTokOrganic(true, fetcher);
     await expect(organic.mentions(credential)).resolves.toMatchObject({
-      comments: [{ id: commentId, postId, username: "mention.author", text: "@merchant", at: 1698616575000 }],
+      comments: [
+        { id: commentId, postId, username: "mention.author", text: "@merchant", at: 1698616575000 },
+      ],
     });
     const url = new URL(String(fetcher.mock.calls[0][0]));
     expect(url.pathname).toBe("/open_api/v1.3/business/mention/comment/list/");
@@ -136,28 +169,39 @@ describe("TikTok Organic Accounts API", () => {
     { action: "hide", path: "hide", expected: { action: "HIDE", video_id: postId } },
     { action: "delete", path: "delete", expected: {} },
     { action: "reply", path: "reply/create", expected: { video_id: postId, text: "Thanks!" } },
-  ] as const)("rechecks the exact comment and author before $action", async ({ action, path, expected }) => {
-    const fetcher = mockFetch()
-      .mockResolvedValueOnce(page())
-      .mockResolvedValueOnce(ok(action === "reply" ? { comment_id: replyId } : undefined));
-    const beforeSubmit = vi.fn(async () => {
-      expect(fetcher).toHaveBeenCalledTimes(1);
-    });
-    const organic = new TikTokOrganic(true, fetcher);
-    await expect(
-      organic.mutateComment(credential, { postId, commentId, action, text: "Thanks!" }, beforeSubmit),
-    ).resolves.toEqual({ platformId: action === "reply" ? replyId : commentId });
-    expect(beforeSubmit).toHaveBeenCalledWith(expect.objectContaining({ username: "creator.one" }));
-    expect(new URL(String(fetcher.mock.calls[0][0])).searchParams.get("comment_ids")).toBe(
-      JSON.stringify([commentId]),
-    );
-    const [url, init] = fetcher.mock.calls[1];
-    expect(new URL(String(url)).pathname).toBe(`/open_api/v1.3/business/comment/${path}/`);
-    expect(init?.method).toBe("POST");
-    expect(JSON.parse(String(init?.body))).toEqual({
-      ...expected, comment_id: commentId, business_id: credential.businessId,
-    });
-  });
+  ] as const)(
+    "rechecks the exact comment and author before $action",
+    async ({ action, path, expected }) => {
+      const fetcher = mockFetch()
+        .mockResolvedValueOnce(page())
+        .mockResolvedValueOnce(ok(action === "reply" ? { comment_id: replyId } : undefined));
+      const beforeSubmit = vi.fn(async () => {
+        expect(fetcher).toHaveBeenCalledTimes(1);
+      });
+      const organic = new TikTokOrganic(true, fetcher);
+      await expect(
+        organic.mutateComment(
+          credential,
+          { postId, commentId, action, text: "Thanks!" },
+          beforeSubmit,
+        ),
+      ).resolves.toEqual({ platformId: action === "reply" ? replyId : commentId });
+      expect(beforeSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({ username: "creator.one" }),
+      );
+      expect(new URL(String(fetcher.mock.calls[0][0])).searchParams.get("comment_ids")).toBe(
+        JSON.stringify([commentId]),
+      );
+      const [url, init] = fetcher.mock.calls[1];
+      expect(new URL(String(url)).pathname).toBe(`/open_api/v1.3/business/comment/${path}/`);
+      expect(init?.method).toBe("POST");
+      expect(JSON.parse(String(init?.body))).toEqual({
+        ...expected,
+        comment_id: commentId,
+        business_id: credential.businessId,
+      });
+    },
+  );
 
   it("blocks a wrong target and a failed Host authorization before submission", async () => {
     const fetcher = mockFetch()
@@ -166,9 +210,13 @@ describe("TikTok Organic Accounts API", () => {
     const organic = new TikTokOrganic(true, fetcher);
     const authorize = vi.fn().mockRejectedValue(new Error("Recipient suppressed"));
     const change = { postId, commentId, action: "like" } as const;
-    await expect(organic.mutateComment(credential, change, authorize)).rejects.toMatchObject({ code: "denied" });
+    await expect(organic.mutateComment(credential, change, authorize)).rejects.toMatchObject({
+      code: "denied",
+    });
     expect(authorize).not.toHaveBeenCalled();
-    await expect(organic.mutateComment(credential, change, authorize)).rejects.toThrow("Recipient suppressed");
+    await expect(organic.mutateComment(credential, change, authorize)).rejects.toThrow(
+      "Recipient suppressed",
+    );
     expect(fetcher.mock.calls.map(([, init]) => init?.method)).toEqual(["GET", "GET"]);
   });
 
@@ -180,15 +228,20 @@ describe("TikTok Organic Accounts API", () => {
     { status: 429, provider: undefined, code: "rate_limit", retryAt: 8000 },
     { status: 200, provider: 40002, code: "rejected" },
     { status: 503, provider: undefined, code: "unknown" },
-  ])("maps HTTP $status and provider $provider without exposing diagnostics", async ({ status, provider, code, retryAt }) => {
-    const fetcher = mockFetch().mockResolvedValueOnce(
-      response({ code: provider, message: credential.accessToken }, status, { "retry-after": "7" }),
-    );
-    const organic = new TikTokOrganic(true, fetcher, () => 1000);
-    const error: unknown = await organic.profile(credential).catch((cause: unknown) => cause);
-    expect(error).toMatchObject({ code, retryAt });
-    expect(String(error)).not.toContain(credential.accessToken);
-  });
+  ])(
+    "maps HTTP $status and provider $provider without exposing diagnostics",
+    async ({ status, provider, code, retryAt }) => {
+      const fetcher = mockFetch().mockResolvedValueOnce(
+        response({ code: provider, message: credential.accessToken }, status, {
+          "retry-after": "7",
+        }),
+      );
+      const organic = new TikTokOrganic(true, fetcher, () => 1000);
+      const error: unknown = await organic.profile(credential).catch((cause: unknown) => cause);
+      expect(error).toMatchObject({ code, retryAt });
+      expect(String(error)).not.toContain(credential.accessToken);
+    },
+  );
 
   it("treats a torn reply acknowledgment as uncertain after one submission", async () => {
     const fetcher = mockFetch()
@@ -196,7 +249,11 @@ describe("TikTok Organic Accounts API", () => {
       .mockRejectedValueOnce(new Error(credential.accessToken));
     const organic = new TikTokOrganic(true, fetcher);
     const error: unknown = await organic
-      .mutateComment(credential, { postId, commentId, action: "reply", text: "Thanks" }, async () => {})
+      .mutateComment(
+        credential,
+        { postId, commentId, action: "reply", text: "Thanks" },
+        async () => {},
+      )
       .catch((cause: unknown) => cause);
     expect(error).toMatchObject({ code: "unknown" });
     expect(String(error)).not.toContain(credential.accessToken);
@@ -209,12 +266,24 @@ describe("TikTok Display profile", () => {
     const fetcher = mockFetch().mockResolvedValueOnce(
       response({
         error: { code: "ok" },
-        data: { user: { open_id: "saved", username: "ignored", display_name: "Member", follower_count: 0 } },
+        data: {
+          user: {
+            open_id: "saved",
+            username: "ignored",
+            display_name: "Member",
+            follower_count: 0,
+          },
+        },
       }),
     );
     const http = new SocialHttp(fetcher);
-    await expect(readTikTokDisplay(http, "mock-login-token", "saved", ["user.info.stats"])).resolves.toMatchObject({
-      name: "Member", username: undefined, followers: 0, posts: undefined,
+    await expect(
+      readTikTokDisplay(http, "mock-login-token", "saved", ["user.info.stats"]),
+    ).resolves.toMatchObject({
+      name: "Member",
+      username: undefined,
+      followers: 0,
+      posts: undefined,
     });
     const url = new URL(String(fetcher.mock.calls[0][0]));
     expect(url.searchParams.get("fields")?.split(",")).toContain("follower_count");
@@ -223,9 +292,14 @@ describe("TikTok Display profile", () => {
 
   it("rejects a token bound to a different user", async () => {
     const fetcher = mockFetch().mockResolvedValueOnce(
-      response({ error: { code: "ok" }, data: { user: { open_id: "other", display_name: "Member" } } }),
+      response({
+        error: { code: "ok" },
+        data: { user: { open_id: "other", display_name: "Member" } },
+      }),
     );
-    await expect(readTikTokDisplay(new SocialHttp(fetcher), "mock-login-token", "saved", [])).rejects.toMatchObject({
+    await expect(
+      readTikTokDisplay(new SocialHttp(fetcher), "mock-login-token", "saved", []),
+    ).rejects.toMatchObject({
       code: "denied",
     });
   });

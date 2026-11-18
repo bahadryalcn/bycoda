@@ -16,6 +16,8 @@ export type SocialActionContext = {
   decisions?: DecisionService;
   /** Host vault for email credentials; undefined makes every email action refuse before sending. */
   emailSecrets?: SecretValueStore;
+  // TikTok account operations.
+  tiktok?: import("../tiktok/tiktok-actions").TikTokRuntime;
 };
 
 export type SocialActionSpec = {

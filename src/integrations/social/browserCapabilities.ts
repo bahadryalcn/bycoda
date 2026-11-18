@@ -55,7 +55,22 @@ export const BROWSER_PLATFORM_OPERATIONS: Record<
     "poll",
   ],
   youtube: ["publish", "media", "comments.read", "reply", "comment", "poll"],
-  tiktok: ["publish", "media", "comments.read", "reply", "comment", "poll", "audience.collect"],
+  // TikTok account recipes.
+  tiktok: [
+    "publish",
+    "media",
+    "comments.read",
+    "reply",
+    "comment",
+    "poll",
+    "audience.collect",
+    "inbox.read",
+    "message.reply",
+    "message.start",
+    "profile.read",
+    "analytics",
+    "delete",
+  ],
   snapchat: ["publish", "media", "inbox.read", "message.reply", "poll", "audience.collect"],
   // No WhatsApp chat-sender reader is wired (dm_senders), so audience.collect is not offered here.
   whatsapp: ["inbox.read", "message.reply", "message.start", "poll", "media"],
@@ -185,9 +200,22 @@ export function browserContentIssue(
   if (["youtube", "tiktok"].includes(account.platform) && job.kind === "publish") {
     if (account.platform === "tiktok" && job.payload.tiktok?.mode === "inbox")
       return "Inbox drafts need the API connection.";
-    if (account.platform === "tiktok" && job.payload.tiktok?.mediaType === "photo")
-      return "TikTok browser publishing currently supports video only. Photo publishing requires the API connection.";
-    if (media.length !== 1 || media[0].kind !== "video")
+    // TikTok Studio photo publishing requires its own photo controls and explicit music selection.
+    if (account.platform === "tiktok" && job.payload.tiktok?.mediaType === "photo") {
+      const options = job.payload.tiktok;
+      if (
+        !media.length ||
+        media.some(({ kind }) => kind !== "image") ||
+        !Number.isSafeInteger(options.photoCoverIndex ?? 0) ||
+        (options.photoCoverIndex ?? 0) < 0 ||
+        (options.photoCoverIndex ?? 0) >= media.length ||
+        typeof options.autoAddMusic !== "boolean" ||
+        !options.consent ||
+        options.allowDuet ||
+        options.allowStitch
+      )
+        return "Use one to four uploaded photos and review the cover, privacy and music settings.";
+    } else if (media.length !== 1 || media[0].kind !== "video")
       return "This publishing screen requires one uploaded video.";
     if (account.platform === "youtube") {
       const options = job.payload.youtube;

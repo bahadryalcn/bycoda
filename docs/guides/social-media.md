@@ -50,3 +50,21 @@ AI planning preserves text entered after a request started. Conflicting plan ope
 An unconfirmed reply is not shown as definitely unsent. **Retry same reply** checks or resumes the original operation with its original identity rather than creating another reply. The draft and unresolved operation survive conversation switches and component remounts within the current app session. They are not a new disk-persistence guarantee across app reloads. Jobs that require review remain visible as requiring review.
 
 For supported platforms, restrictions and Host/API contracts, see [Social integration](../integrations/social.md).
+
+## TikTok account tools
+
+Open a connected TikTok account from **Accounts** and expand **TikTok tools**.
+Choose the section for profile, privacy, comments, mentions, messages, followers,
+analytics, earnings or LIVE. Browser lists cover the entries TikTok exposes to
+that desktop session. Refresh supported inbox entries and assign a project before
+asking AI to use them in a project chat.
+
+Use **TikTok changes** to review the exact target and content of an account
+change. Verify the result on TikTok before dismissing an uncertain change.
+An eligible account can save its existing LIVE stream key to the Host vault.
+Complete sign-in, verification and any required LIVE setup in TikTok.
+
+In **Content**, choose a video or photo post. Browser photo uploads depend on
+the Studio photo picker. API photos use URLs on a verified domain or URL prefix.
+Choose direct publication or, with the required OAuth scope, send a draft to
+the TikTok inbox. Scheduled work stays in Bycoda until its scheduled time.

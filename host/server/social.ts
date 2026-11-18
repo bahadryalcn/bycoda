@@ -135,6 +135,8 @@ export async function createSocialRuntime(
       dependencies.decisionModels,
     );
   await social.ready;
+  // TikTok account operations.
+  social.tiktokBrowser ??= xBrowser.runTikTok;
   social.setSessionAuthorityResolver(
     createSessionAuthorityResolver(
       dependencies.engine.store,

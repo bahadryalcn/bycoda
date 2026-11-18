@@ -205,8 +205,10 @@ describe("TikTokFields", () => {
     render(createElement(TikTokFields, props("tiktok")));
     expect(element.textContent).toContain("Loading your TikTok options…");
     expect(tikTokPrivacy()).toBeNull();
-    expect(element.querySelector<HTMLButtonElement>('button[aria-label^="TikTok post format:"]')?.disabled)
-      .toBe(false);
+    expect(
+      element.querySelector<HTMLButtonElement>('button[aria-label^="TikTok post format:"]')
+        ?.disabled,
+    ).toBe(false);
   });
 
   it("offers only the privacy choices the creator allows, with none selected", () => {
@@ -214,8 +216,15 @@ describe("TikTokFields", () => {
     expect(tikTokPrivacy()?.textContent).toContain("Choose who can see this video");
     const options = openTikTokPrivacy();
     expect(options[0]!.disabled).toBe(true);
-    expect(options.map((option) => option.getAttribute("aria-selected"))).toEqual(["true", "false", "false"]);
-    expect(options.slice(1).map((option) => option.textContent?.trim())).toEqual(["Only me", "Everyone"]);
+    expect(options.map((option) => option.getAttribute("aria-selected"))).toEqual([
+      "true",
+      "false",
+      "false",
+    ]);
+    expect(options.slice(1).map((option) => option.textContent?.trim())).toEqual([
+      "Only me",
+      "Everyone",
+    ]);
     expect(element.querySelector("fieldset")?.disabled).toBe(false);
   });
 

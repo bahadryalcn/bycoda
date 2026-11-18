@@ -19,6 +19,9 @@ Full paths are repository-root relative; adjacent abbreviated names share the pr
 - `host/social/browser*` and `browser-layers/`: sessions, recipes, layered driver, NEEDS_HUMAN, live view. `host/social/social-programs.ts` and `social-program-*.ts`: campaign programs.
 - `host/decision-models/`: decision gateway for the browser decision layer and AI tools (own skill: `feature-decision-models`).
 - Contracts: `docs/integrations/social.md`, `social-programs.md`, `decision-models.md`.
+- TikTok account actions live in `host/social/tiktok/`. Business OAuth
+  credentials and LIVE setup credentials are separate vault entries scoped to
+  the verified account. Keep owner mutations and credential setup off session tools.
 
 ## Preserve
 

@@ -14,7 +14,7 @@ import {
   browserOperations,
 } from "../../src/integrations/social/browserCapabilities";
 import { xMediaFormat } from "../../src/integrations/social/xMedia";
-import { challengeError, detectChallenge } from "./browser/challenge";
+import { challengeError, detectChallenge, needsHumanError } from "./browser/challenge";
 import { BrowserSendLimiter } from "./browser/limiter";
 import { UnexpectedScreen } from "./browser-layers/types";
 import { runLayered, visibilityOf, type BrowserWiring } from "./browser-layers/wiring";
@@ -261,6 +261,7 @@ export class PlatformBrowserSessions {
       account,
       files,
       now: this.now,
+      beforeSubmit,
       markSubmitted,
       waitFor: async <T>(expression: string, timeoutMs = 30_000) => {
         const deadline = this.now() + Math.min(120_000, Math.max(0, timeoutMs));
@@ -293,6 +294,97 @@ export class PlatformBrowserSessions {
         await beforeSubmit?.();
       },
     };
+  }
+
+  // TikTok account operations. Secret capture uses an isolated, untracked session.
+  async runTikTok<T>(
+    account: SocialAccount,
+    operation: (context: BrowserRecipeContext) => Promise<T>,
+    options: {
+      check: () => Promise<void>;
+      beforeSubmit?: () => Promise<void>;
+      secret?: boolean;
+      avatar?: Uint8Array;
+    },
+  ): Promise<T> {
+    return await this.exclusive(account.id, async () => {
+      if (
+        this.stopped ||
+        this.waiting(account.id) ||
+        !this.launcher ||
+        account.platform !== "tiktok" ||
+        account.connection !== "browser"
+      )
+        throw new SocialPlatformError("unsupported");
+      await options.check();
+      const recipe = this.recipe(account);
+      const staging = join(this.directory, "browser-uploads", randomUUID());
+      const files: BrowserRecipeContext["files"] = [];
+      let session: BrowserSession | undefined;
+      let submitted = false;
+      try {
+        if (options.avatar) {
+          const format = xMediaFormat(options.avatar);
+          if (format === "mp4") throw new SocialPlatformError("rejected");
+          await mkdir(staging, { recursive: true, mode: 0o700 });
+          const path = join(staging, `avatar.${format}`);
+          await writeFile(path, options.avatar, { mode: 0o600, flag: "wx" });
+          files.push({ path, kind: "image" });
+        }
+        session = options.secret
+          ? await this.launcher(this.profile(account.id), true, "hidden")
+          : await this.open(account);
+        const page = session.page;
+        await page.goto(recipe.connectionUrl?.(account) ?? recipe.loginUrl);
+        const verifyIdentity = async () => {
+          await options.check();
+          for (let attempt = 0; attempt < 30; attempt++) {
+            const hit = await detectChallenge(page);
+            if (hit) throw needsHumanError(hit);
+            const identity = await recipe.identity(page, account);
+            if (identity) {
+              if (
+                identity.platformId !== account.platformId ||
+                (identity.accountType && identity.accountType !== account.accountType)
+              )
+                throw new SocialPlatformError("denied");
+              return;
+            }
+            await this.wait(250);
+          }
+          throw new SocialPlatformError("expired");
+        };
+        const beforeSubmit =
+          options.beforeSubmit &&
+          (async () => {
+            if (!submitted) await this.limiter.reserve(account.id);
+            await options.beforeSubmit!();
+            if (!submitted) await this.limiter.record(account.id);
+          });
+        const context = {
+          ...this.context(page, account, files),
+          verifyIdentity,
+          beforeSubmit,
+          markSubmitted: () => {
+            submitted = true;
+          },
+        };
+        await verifyIdentity();
+        const result = await operation(context);
+        await options.check();
+        return result;
+      } catch (error) {
+        if (submitted) throw new SocialPlatformError("unknown");
+        if (options.secret && !(error instanceof SocialPlatformError))
+          throw new SocialPlatformError("unknown");
+        throw error;
+      } finally {
+        await session?.close().catch(() => undefined);
+        await session?.profileReleased?.().catch(() => undefined);
+        if (options.avatar)
+          await rm(staging, { recursive: true, force: true }).catch(() => undefined);
+      }
+    });
   }
   adapter(): SocialAdapter {
     return {

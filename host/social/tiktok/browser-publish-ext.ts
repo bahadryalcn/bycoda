@@ -17,18 +17,22 @@ const TIKTOK = "https://www.tiktok.com";
 const CAPTION_EDITOR =
   '[data-e2e="caption-editor"][contenteditable="true"],[data-e2e="caption-editor"] [contenteditable="true"],textarea[data-e2e="edit-post-caption"]';
 
-/** Stories are available in the TikTok mobile app. This desktop recipe handles videos and photos. */
-export const TIKTOK_STORIES_UNSUPPORTED = "tiktok.stories_mobile_only";
-
 export async function checkTikTokPublishingChallenge(ctx: BrowserRecipeContext): Promise<void> {
   const challenge = await detectChallenge(ctx.page);
   if (challenge) throw needsHumanError(challenge);
 }
 
-function postPath(ctx: BrowserRecipeContext, target: { postId: string; mediaType?: "video" | "photo" }) {
+function postPath(
+  ctx: BrowserRecipeContext,
+  target: { postId: string; mediaType?: "video" | "photo" },
+) {
   const handle = /^web:tiktok:([\w.]{2,24})$/.exec(ctx.account.platformId)?.[1];
   if (!handle || !/^\d{1,30}$/.test(target.postId)) throw denied();
-  if (target.mediaType !== undefined && target.mediaType !== "video" && target.mediaType !== "photo")
+  if (
+    target.mediaType !== undefined &&
+    target.mediaType !== "video" &&
+    target.mediaType !== "photo"
+  )
     throw unsupported();
   return `/@${handle}/${target.mediaType ?? "video"}/${target.postId}`;
 }
@@ -36,14 +40,22 @@ function postPath(ctx: BrowserRecipeContext, target: { postId: string; mediaType
 async function verifyPostPage(ctx: BrowserRecipeContext, path: string) {
   await checkTikTokPublishingChallenge(ctx);
   await ctx.verifyIdentity();
-  if (!(await ctx.page.evaluate(`location.origin === ${json(TIKTOK)} && location.pathname === ${json(path)}`)))
+  if (
+    !(await ctx.page.evaluate(
+      `location.origin === ${json(TIKTOK)} && location.pathname === ${json(path)}`,
+    ))
+  )
     throw denied();
 }
 
 async function openPostMenu(ctx: BrowserRecipeContext, path: string) {
   await ctx.page.goto(TIKTOK + path);
   await verifyPostPage(ctx, path);
-  await click(ctx, 'button[data-e2e="browse-more-menu"],button[data-e2e="post-more-menu"]', "post-menu");
+  await click(
+    ctx,
+    'button[data-e2e="browse-more-menu"],button[data-e2e="post-more-menu"]',
+    "post-menu",
+  );
   await checkTikTokPublishingChallenge(ctx);
 }
 
@@ -76,7 +88,10 @@ export async function tiktokEditPost(
   beforeSubmit: () => Promise<void>,
 ) {
   const path = postPath(ctx, target);
-  if (typeof target.caption !== "string" || target.caption.length > (target.mediaType === "photo" ? 4000 : 2200))
+  if (
+    typeof target.caption !== "string" ||
+    target.caption.length > (target.mediaType === "photo" ? 4000 : 2200)
+  )
     throw unsupported();
   await openPostMenu(ctx, path);
   await click(ctx, '[data-e2e="post-edit"],[data-e2e="browse-edit"]', "post-edit");
@@ -133,7 +148,11 @@ export async function tiktokDeletePost(
 }
 
 /** Studio photo actions are limited to sessions that expose an accessible image uploader. */
-export async function selectTikTokPostMedia(ctx: BrowserRecipeContext, job: SocialJob, photo: boolean) {
+export async function selectTikTokPostMedia(
+  ctx: BrowserRecipeContext,
+  job: SocialJob,
+  photo: boolean,
+) {
   await checkTikTokPublishingChallenge(ctx);
   if (!photo) {
     await files(ctx, 'input[type="file"][accept*="video"]');
@@ -143,11 +162,21 @@ export async function selectTikTokPostMedia(ctx: BrowserRecipeContext, job: Soci
   const cover = options.photoCoverIndex!;
   await files(ctx, 'input[type="file"][accept*="image"]');
   if (options.photoTitle)
-    await fill(ctx, 'input[data-e2e="photo-title"],textarea[data-e2e="photo-title"]', "photo-title", options.photoTitle, true);
+    await fill(
+      ctx,
+      'input[data-e2e="photo-title"],textarea[data-e2e="photo-title"]',
+      "photo-title",
+      options.photoTitle,
+      true,
+    );
   if (ctx.files.length > 1) {
     const coverSelector = `button[data-e2e="photo-cover-option"][data-index="${cover}"]`;
     await click(ctx, coverSelector, "photo-cover");
-    if (!(await ctx.page.evaluate(`document.querySelector(${json(coverSelector)})?.getAttribute('aria-pressed') === 'true'`)))
+    if (
+      !(await ctx.page.evaluate(
+        `document.querySelector(${json(coverSelector)})?.getAttribute('aria-pressed') === 'true'`,
+      ))
+    )
       throw unsupported();
   }
 }

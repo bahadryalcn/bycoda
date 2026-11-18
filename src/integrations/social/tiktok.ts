@@ -21,6 +21,7 @@ export const TIKTOK_PRIVACY = [
 ] as const;
 /** `direct` posts publicly under the visibility rules; `inbox` uploads a draft to the creator's TikTok inbox. */
 export const TIKTOK_MODES = ["direct", "inbox"] as const;
+export const TIKTOK_STORIES_UNSUPPORTED = "tiktok.stories_mobile_only";
 /**
  * A publication still processing after this long is uncertain. The host reconciles it once and sends the job
  * to review when TikTok still reports processing. shortcut: no documented TikTok limit; upgrade from measured processing times.
@@ -40,6 +41,10 @@ export function parseTikTokOptions(raw: unknown): TikTokVideoOptions {
   if (!raw || typeof raw !== "object" || Array.isArray(raw))
     throw new Error("Invalid TikTok video options.");
   const value = raw as Record<string, unknown>;
+  if (value.mediaType === "story")
+    throw new SocialPlatformError("unsupported", undefined, {
+      reasonCode: TIKTOK_STORIES_UNSUPPORTED,
+    });
   const photo = value.mediaType === "photo";
   const durationSeconds = photo && value.durationSeconds === undefined ? 0 : value.durationSeconds;
   if (
@@ -247,10 +252,10 @@ export function createTikTokAdapter(http: SocialHttp, now = Date.now): SocialAda
               photo_images: job.payload.media.map((item) => new URL(item.url!).toString()),
               photo_cover_index: options.photoCoverIndex,
             }
-          : plan?.sourceInfo ?? {
+          : (plan?.sourceInfo ?? {
               source: "PULL_FROM_URL",
               video_url: new URL(job.payload.media[0].url!).toString(),
-            };
+            });
         const body = inbox
           ? photo
             ? {

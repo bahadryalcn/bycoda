@@ -117,7 +117,7 @@ continue to apply.
 | Facebook  | Managed Page text/link, up to four HTTPS photos, Reels from an uploaded MP4 with durable verification, comments, Messenger text replies in the response window.                                                                                             | Personal or Page actor, text and media publishing, saved-post comments, recognized existing-thread Messenger replies.                                                                                        | Ordinary Page video publishing, Stories, Page post edit, comment hide/delete through the host (helper only).                                                                              |
 | LinkedIn  | Member text, Page text, Page images (one to four, alt text, readiness verification), Page PDF documents, comments on known posts, token refresh hook. Single-image Page uploads verify byte content.                                                        | Verified member or organization text, images or video, one titled PDF, comments and replies, existing personal chats, first-degree connection requests and acceptance (exports exist; no operation row yet). | Organization inbox, InMail, video through the API (multipart ETag handling is blocked), carousel, polls, analytics, groups and newsletters.                                               |
 | YouTube   | Verified channel upload with resumable upload and processing checks, comments and replies, analytics, profile and health checks, owner-video and keyword commenter collection (search costs quota).                                                         | Studio upload with metadata and declarations, saved-video comments and replies.                                                                                                                              | Community posts, Shorts settings, live chat, captions, thumbnail/playlist/moderation (adapter functions without operation rows).                                                          |
-| TikTok    | Direct Post of one video or up to four photo URLs on a verified domain, inbox (draft) upload, creator settings, status polling to completion, video list, metrics, health check.                                                                            | Studio upload of one local video, saved-video comments and replies, commenter collection on own videos.                                                                                                      | Comment management through Business API, browser comment delete, hashtag and keyword search (research API), browser inbox, scheduling, DM, Live.                                          |
+| TikTok    | Direct Post and inbox upload, Display profile and metrics, and approved Business comments, mentions and reporting.                                                                                                                                          | Studio publishing and post management, comments, visible DM previews and sending, profile and privacy, audience, insights, earnings and LIVE setup/replies.                                                  | Stories, public keyword/hashtag search and mobile-only controls. Browser and Business availability depend on account eligibility.                                                         |
 | Snapchat  | Public Profile API: encrypted Spotlight MP4 upload with exact Spotlight ID tracking until LIVE, health check.                                                                                                                                               | Member chat text replies in existing chats; Public Profile uploader for Spotlight or 24-hour Story video. Current Story acceptance lacks a durable Snap ID and is held for review.                           | Public Story through the API, Marketing API, Creative Kit, metrics, Story interactions, API audience collection.                                                                          |
 | WhatsApp  | Business Cloud API: signed incoming text, text or one image/video reply within the 24-hour window, delivery receipts. Business-initiated free text is refused before I/O.                                                                                   | Personal Web session: bounded visible direct chats, text and one image or video per send. Audience collection from chat senders is not offered (no sender reader is wired).                                  | Templates and interactive messages (exported, not reachable from jobs), catalog, Status and Channels, group messages, bulk messaging for personal accounts, auto-reply, quality webhooks. |
 | Telegram  | Bot token: bounded text polling, text and one image or video send, webhook parser, bot-sender collection. Channel: administrator bot publishing with receipts.                                                                                              | Personal Web session: direct chats only, stable cursor, text and one image or video per send.                                                                                                                | Polls, inline buttons, edit and pin (functions only, no host path), webhook route, moderation, MTProto, stories, channel settings.                                                        |
@@ -265,13 +265,35 @@ Contracts: [OAuth](https://developers.google.com/youtube/v3/guides/auth/server-s
   Callback: `/social/oauth/tiktok/callback`. Existing profile-only accounts must reconnect.
   The campaign editor loads current creator settings and offers only the returned privacy
   choices, with no default. Explicit music and content consent is required; editing clears
-  it. Media is one HTTPS video or one to four HTTPS photos on a verified domain
-  (`PULL_FROM_URL`). Local API uploads are not implemented.
+  it. Use one local video (`FILE_UPLOAD`) or verified HTTPS URLs for one video or
+  up to four photos (`PULL_FROM_URL`). Inbox mode also needs the `video.upload` grant.
+  For app-approved optional scopes, set `BYCODA_SOCIAL_TIKTOK_PROFILE_APPROVED=true`,
+  `BYCODA_SOCIAL_TIKTOK_STATS_APPROVED=true` or `BYCODA_SOCIAL_TIKTOK_UPLOAD_APPROVED=true`
+  and reconnect. Approval flags request scopes. TikTok grants them.
 - Processing keeps the publish ID and reports success only at `PUBLISH_COMPLETE`. An
   accepted post cannot be recalled through the queue. Unaudited clients are limited to
   TikTok's private-viewing rules. This document does not establish that bycoda has an app
   audit.
-- Comment management requires TikTok Business or Organic products. These are not installed.
+- Approved Business Accounts and Mentions APIs use a separate creator token.
+  Set `BYCODA_SOCIAL_TIKTOK_BUSINESS_APPROVED=true` on the Host only after TikTok
+  approves the app. Link the Business open ID and creator token to the same
+  verified TikTok handle. The Host verifies the match and stores the token in
+  the credential vault. Business comments, replies, like, hide, delete, mentions
+  and reporting use the API when linked. An API failure stops that operation.
+- Browser recipes require the exact signed-in identity and exposed controls.
+  Owner-reviewed changes go through the existing sending stop and recipient
+  suppression gate. AI follow, comment and LIVE reply requests obey the account's
+  autonomy, hours and limits. An uncertain change stays in review.
+- Studio earnings show observed values. LIVE setup saves the displayed RTMP
+  credentials to the vault and reports eligibility without returning the key.
+  LIVE reply uses an already-open eligible stream. Event intake belongs to Live.
+- Scheduling uses the Bycoda queue. TikTok Stories and public keyword or
+  hashtag search are unsupported. Research Tools access is for eligible research.
+
+[Content Posting API](https://developers.tiktok.com/docs/en/content-posting-api-get-started),
+[Display profile fields](https://developers.tiktok.com/doc/tiktok-api-v2-get-user-info),
+[Business access](https://business-api.tiktok.com/portal/docs/accounts-api-overview/v1.3),
+[Research Tools eligibility](https://developers.tiktok.com/docs/en/research-api-faq).
 
 #### Snapchat
 

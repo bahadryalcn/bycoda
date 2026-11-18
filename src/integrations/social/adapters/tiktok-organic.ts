@@ -29,7 +29,9 @@ export async function readTikTokDisplay(
   const profile = scopes.includes(TIKTOK_PROFILE_SCOPE);
   const stats = scopes.includes(TIKTOK_STATS_SCOPE);
   const fields = [
-    "open_id", "display_name", "avatar_url",
+    "open_id",
+    "display_name",
+    "avatar_url",
     ...(profile ? ["username", "bio_description", "profile_deep_link"] : []),
     ...(stats ? ["follower_count", "following_count", "likes_count", "video_count"] : []),
   ];
@@ -110,7 +112,10 @@ export class TikTokOrganic {
     mutation?: Mutation,
   ) {
     if (!this.approved) throw new SocialPlatformError("unsupported");
-    if (!/^[\w-]{1,300}$/.test(credential.businessId) || !/^[!-~]{1,4096}$/.test(credential.accessToken))
+    if (
+      !/^[\w-]{1,300}$/.test(credential.businessId) ||
+      !/^[!-~]{1,4096}$/.test(credential.accessToken)
+    )
       throw new SocialPlatformError("denied");
     const url = new URL(path, "https://business-api.tiktok.com/open_api/v1.3/business/");
     const headers: Record<string, string> = { "Access-Token": credential.accessToken };
@@ -165,12 +170,23 @@ export class TikTokOrganic {
   async videos(credential: TikTokBusinessCredential, cursor?: number) {
     const data = await this.request("video/list/", credential, {
       fields: JSON.stringify([
-        "item_id", "caption", "create_time", "likes", "comments", "shares", "video_views", "reach",
+        "item_id",
+        "caption",
+        "create_time",
+        "likes",
+        "comments",
+        "shares",
+        "video_views",
+        "reach",
       ]),
       max_count: "20",
       ...(cursor === undefined ? {} : { cursor: cursorParam(cursor) }),
     });
-    if (!Array.isArray(data?.videos) || data.videos.length > 20 || typeof data.has_more !== "boolean")
+    if (
+      !Array.isArray(data?.videos) ||
+      data.videos.length > 20 ||
+      typeof data.has_more !== "boolean"
+    )
       throw new SocialPlatformError("unknown");
     const next = nextCursor(data);
     if (next !== undefined && next === cursor) throw new SocialPlatformError("unknown");
@@ -201,14 +217,18 @@ export class TikTokOrganic {
   async comments(credential: TikTokBusinessCredential, postId: string, cursor = 0) {
     if (!ITEM_ID.test(postId)) throw new SocialPlatformError("rejected");
     const page = await this.request("comment/list/", credential, {
-      video_id: postId, cursor: cursorParam(cursor), max_count: "20",
-      sort_field: "create_time", sort_order: "desc",
+      video_id: postId,
+      cursor: cursorParam(cursor),
+      max_count: "20",
+      sort_field: "create_time",
+      sort_order: "desc",
     });
     return commentPage(page, postId);
   }
 
   async comment(credential: TikTokBusinessCredential, postId: string, commentId: string) {
-    if (!ITEM_ID.test(postId) || !ITEM_ID.test(commentId)) throw new SocialPlatformError("rejected");
+    if (!ITEM_ID.test(postId) || !ITEM_ID.test(commentId))
+      throw new SocialPlatformError("rejected");
     const page = await this.request("comment/list/", credential, {
       video_id: postId,
       comment_ids: JSON.stringify([commentId]),
@@ -221,10 +241,18 @@ export class TikTokOrganic {
   }
 
   async mentions(credential: TikTokBusinessCredential, cursor = 0) {
-    return commentPage(await this.request("mention/comment/list/", credential, {
-      cursor: cursorParam(cursor),
-      fields: JSON.stringify(["item_id", "commenter_display_name", "comment_id", "comment_text", "comment_create_time"]),
-    }));
+    return commentPage(
+      await this.request("mention/comment/list/", credential, {
+        cursor: cursorParam(cursor),
+        fields: JSON.stringify([
+          "item_id",
+          "commenter_display_name",
+          "comment_id",
+          "comment_text",
+          "comment_create_time",
+        ]),
+      }),
+    );
   }
 
   /** Resolve the owned comment before the Host rechecks identity, policy and suppression. */
@@ -260,10 +288,15 @@ export class TikTokOrganic {
         throw new SocialPlatformError("unsupported");
     }
     const target = await this.comment(credential, postId, commentId);
-    const data = await this.request(route, credential, {}, {
-      body,
-      beforeSubmit: () => beforeSubmit(target),
-    });
+    const data = await this.request(
+      route,
+      credential,
+      {},
+      {
+        body,
+        beforeSubmit: () => beforeSubmit(target),
+      },
+    );
     if (action !== "reply") return { platformId: commentId };
     const reply = data?.comment_id;
     if (typeof reply !== "string" || !ITEM_ID.test(reply) || reply === commentId)
@@ -284,15 +317,25 @@ function nextCursor(data: Record<string, unknown>) {
 }
 
 function commentPage(data: Record<string, unknown> | undefined, postId?: string) {
-  if (!Array.isArray(data?.comments) || data.comments.length > 100 || typeof data.has_more !== "boolean")
+  if (
+    !Array.isArray(data?.comments) ||
+    data.comments.length > 100 ||
+    typeof data.has_more !== "boolean"
+  )
     throw new SocialPlatformError("unknown");
   const next = nextCursor(data);
   const comments = data.comments.map((item: unknown): TikTokOrganicComment => {
     const row = object(item);
     const id = row?.comment_id;
     const video = postId ? row?.video_id : row?.item_id;
-    if (!row || typeof id !== "string" || !ITEM_ID.test(id) ||
-      typeof video !== "string" || !ITEM_ID.test(video) || (postId && video !== postId))
+    if (
+      !row ||
+      typeof id !== "string" ||
+      !ITEM_ID.test(id) ||
+      typeof video !== "string" ||
+      !ITEM_ID.test(video) ||
+      (postId && video !== postId)
+    )
       throw new SocialPlatformError("unknown");
     return {
       id,

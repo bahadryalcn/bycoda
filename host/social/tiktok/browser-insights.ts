@@ -1,6 +1,10 @@
 import { json } from "../social-browser-publishing-shared";
 import type { BrowserRecipeContext } from "../social-browser-recipe";
-import { creatorExpression, openTikTokCreatorPage, readTikTokCreatorPage } from "./browser-creator-page";
+import {
+  creatorExpression,
+  openTikTokCreatorPage,
+  readTikTokCreatorPage,
+} from "./browser-creator-page";
 
 const analyticsMetrics = {
   postViews: ["Post views", "Video views", "Gönderi görüntülemeleri", "Video görüntülemeleri"],
@@ -41,7 +45,9 @@ const ANALYTICS = "/tiktokstudio/analytics";
 const MONETIZATION = "/tiktokstudio/monetization";
 
 function studioMetrics(path: string, names: Record<string, readonly string[]>, earnings: boolean) {
-  return creatorExpression(path, String.raw`
+  return creatorExpression(
+    path,
+    String.raw`
     const root = one(document, 'main,[role="main"]');
     if (!root) return;
     const titles = ${json(earnings ? ["Monetization", "Creator Rewards Program", "Para kazanma", "İçerik Üreticisi Ödülleri Programı"] : ["Analytics", "Analizler"])};
@@ -64,10 +70,13 @@ function studioMetrics(path: string, names: Record<string, readonly string[]>, e
     const periodText = period ? label(period).slice(0,80) : undefined;
     if (!metrics.length && !${earnings}) return;
     return {source:'studio',period:periodText,metrics${earnings ? ",status:metrics.length ? 'available' : 'unavailable'" : ""}};
-  `);
+  `,
+  );
 }
 
-export async function readTikTokAnalytics(ctx: BrowserRecipeContext): Promise<TikTokStudioAnalytics> {
+export async function readTikTokAnalytics(
+  ctx: BrowserRecipeContext,
+): Promise<TikTokStudioAnalytics> {
   await openTikTokCreatorPage(ctx, ANALYTICS);
   return readTikTokCreatorPage(ctx, studioMetrics(ANALYTICS, analyticsMetrics, false));
 }

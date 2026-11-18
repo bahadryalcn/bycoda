@@ -75,6 +75,13 @@ export const SOCIAL_TOOLS = [
   // Browser layers (4H)
   "browser.needsHuman.list",
   "browser.recipeSuggestions.list",
+  // TikTok account operations.
+  "tiktok.profile.read",
+  "tiktok.analytics.read",
+  "tiktok.earnings.read",
+  "tiktok.audience.list",
+  "tiktok.mentions.list",
+  "tiktok.changes.request",
 ] as const;
 export type SocialTool = (typeof SOCIAL_TOOLS)[number];
 export function socialToolName(tool: SocialTool): string {

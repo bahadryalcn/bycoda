@@ -196,10 +196,11 @@ export function ContentEditorFields(props: ContentEditorFieldsProps) {
         client={client}
         editor={editor}
         media={draft.media}
-        allowTikTokPhotoUrls={selected.some((account) =>
-          account.platform === "tiktok" &&
-          account.connection !== "browser" &&
-          draft.platform[account.id]?.tiktok?.mediaType === "photo"
+        allowTikTokPhotoUrls={selected.some(
+          (account) =>
+            account.platform === "tiktok" &&
+            account.connection !== "browser" &&
+            draft.platform[account.id]?.tiktok?.mediaType === "photo",
         )}
         disabled={disabled || mediaBlocked}
         disabledReason={locked ?? (mediaBlocked ? mediaReason : undefined)}

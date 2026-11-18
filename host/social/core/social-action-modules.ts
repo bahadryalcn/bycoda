@@ -6,6 +6,7 @@ import { browserLayerActions } from "../browser-layers/browser-layer-actions";
 import { inboxActions } from "../inbox/inbox-actions";
 import { outreachActions } from "../outreach/outreach-actions";
 import type { SocialActionModule } from "./social-actions";
+import { tiktokActions } from "../tiktok/tiktok-actions";
 
 /** Every registry action module. Phase 4 adds an action by editing its own module, not this list. */
 export const SOCIAL_ACTION_MODULES: SocialActionModule[] = [
@@ -16,4 +17,6 @@ export const SOCIAL_ACTION_MODULES: SocialActionModule[] = [
   browserLayerActions,
   autonomyActions,
   accountRequestActions,
+  // TikTok account operations.
+  tiktokActions,
 ];

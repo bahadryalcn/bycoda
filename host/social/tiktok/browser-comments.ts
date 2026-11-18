@@ -1,6 +1,11 @@
 import type { SocialSendResult } from "../../../src/integrations/social/adapter";
 import type { BrowserPollResult, BrowserRecipeContext } from "../social-browser-recipe";
-import { type CommentRow, denied, rowsToInbound, unknown } from "../social-browser-publishing-shared";
+import {
+  type CommentRow,
+  denied,
+  rowsToInbound,
+  unknown,
+} from "../social-browser-publishing-shared";
 import {
   guardTikTokEngagement,
   readTikTokSurface,
@@ -38,7 +43,9 @@ export async function tiktokStudioComments(ctx: BrowserRecipeContext): Promise<B
   const owner = requireTikTokBrowser(ctx);
   await ctx.page.goto(COMMENTS_URL);
   await guardTikTokEngagement(ctx);
-  const snapshot = await readTikTokSurface<{ rows: CommentRow[]; partial: boolean }>(ctx, String.raw`(() => {
+  const snapshot = await readTikTokSurface<{ rows: CommentRow[]; partial: boolean }>(
+    ctx,
+    String.raw`(() => {
     ${commentsDom(owner)}
     if (!rows.length && !empty()) return;
     const result = rows.slice(0, 100).map(row => {
@@ -51,7 +58,8 @@ export async function tiktokStudioComments(ctx: BrowserRecipeContext): Promise<B
     const valid = result.filter(Boolean);
     if (result.length && !valid.length) return;
     return { rows: valid, partial: valid.length !== rows.length || !!one('[data-e2e="comments-next-page"]') };
-  })()`);
+  })()`,
+  );
   return {
     events: rowsToInbound(snapshot.rows, ctx.account),
     coverage: [{ channel: "comments", status: snapshot.partial ? "partial" : "read" }],
@@ -92,8 +100,14 @@ export async function tiktokManageComment(
 ): Promise<SocialSendResult> {
   const owner = requireTikTokBrowser(ctx);
   const peer = TIKTOK_CONTACT.exec(input.contactId)?.[1];
-  if (!authorize || !peer || !TIKTOK_ID.test(input.postId) || !TIKTOK_ID.test(input.commentId) ||
-      !Object.hasOwn(actions, input.action)) throw denied();
+  if (
+    !authorize ||
+    !peer ||
+    !TIKTOK_ID.test(input.postId) ||
+    !TIKTOK_ID.test(input.commentId) ||
+    !Object.hasOwn(actions, input.action)
+  )
+    throw denied();
   const dom = mutationDom(owner, input, peer);
   const candidate = `(() => { ${dom} if (!target) return; return applied ? 'applied' : mark(control, 'comment-action') ? 'ready' : undefined; })()`;
   const receipt = { platformId: input.commentId };

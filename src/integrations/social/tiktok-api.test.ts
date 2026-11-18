@@ -183,34 +183,53 @@ describe("TikTok file upload", () => {
       sequence.push("put");
       const range = new Headers(options?.headers).get("Content-Range")!;
       const final = /-(\d+)\/(\d+)$/.exec(range)!;
-      return new Response(null, { status: uploadStatus ?? (Number(final[1]) + 1 === Number(final[2]) ? 201 : 206) });
+      return new Response(null, {
+        status: uploadStatus ?? (Number(final[1]) + 1 === Number(final[2]) ? 201 : 206),
+      });
     });
     const urlForUpload = url;
     const adapter = createTikTokAdapter(new SocialHttp(fetcher), () => 1000);
-    const checkpoint = vi.fn(async () => { sequence.push("checkpoint"); });
+    const checkpoint = vi.fn(async () => {
+      sequence.push("checkpoint");
+    });
     return { adapter, checkpoint, fetcher, sequence };
   };
   it.each([false, true])("uploads a Host-owned video with inbox mode %s", async (inbox) => {
     const { adapter, checkpoint, fetcher, sequence } = setup();
     const read = vi.fn(async () => media(24));
-    const beforeSubmit = vi.fn(async () => { sequence.push("authorize"); });
+    const beforeSubmit = vi.fn(async () => {
+      sequence.push("authorize");
+    });
     const granted = { ...account, scopes: [...account.scopes, "video.upload"] };
     const outgoing = request(inbox);
     expect(tiktokContentIssue(outgoing)).toBeUndefined();
-    await expect(adapter.send(granted, outgoing, "oauth-secret", read, checkpoint, beforeSubmit)).resolves.toMatchObject({ platformId: publishId });
+    await expect(
+      adapter.send(granted, outgoing, "oauth-secret", read, checkpoint, beforeSubmit),
+    ).resolves.toMatchObject({ platformId: publishId });
     expect(read).toHaveBeenCalledExactlyOnceWith(uploadId);
     expect(checkpoint).toHaveBeenCalledExactlyOnceWith({ tiktokPublishId: publishId });
     expect(sequence).toEqual(["authorize", "init", "checkpoint", "authorize", "put", "status"]);
     const [initUrl, init] = fetcher.mock.calls.find(([url]) => String(url).includes("/init/"))!;
-    expect(new URL(String(initUrl)).pathname).toBe(`/v2/post/publish/${inbox ? "inbox/" : ""}video/init/`);
+    expect(new URL(String(initUrl)).pathname).toBe(
+      `/v2/post/publish/${inbox ? "inbox/" : ""}video/init/`,
+    );
     expect(JSON.parse(init!.body as string).source_info).toEqual({
-      source: "FILE_UPLOAD", video_size: 24, chunk_size: 24, total_chunk_count: 1,
+      source: "FILE_UPLOAD",
+      video_size: 24,
+      chunk_size: 24,
+      total_chunk_count: 1,
     });
     const [url, put] = fetcher.mock.calls.find(([, input]) => input?.method === "PUT")!;
     expect(url).toBe(signedUrl);
-    expect(put).toMatchObject({ method: "PUT", redirect: "error", headers: {
-      "Content-Type": "video/mp4", "Content-Length": "24", "Content-Range": "bytes 0-23/24",
-    } });
+    expect(put).toMatchObject({
+      method: "PUT",
+      redirect: "error",
+      headers: {
+        "Content-Type": "video/mp4",
+        "Content-Length": "24",
+        "Content-Range": "bytes 0-23/24",
+      },
+    });
     expect(new Headers(put?.headers).has("Authorization")).toBe(false);
   });
   it("uploads sequentially and merges the short tail into the final chunk", async () => {
@@ -219,9 +238,12 @@ describe("TikTok file upload", () => {
     const transfers = fetcher.mock.calls.filter(([, init]) => init?.method === "PUT");
     expect(sequence).toEqual(["init", "put", "put", "put", "put", "put", "put", "status"]);
     expect(transfers.map(([, init]) => new Headers(init?.headers).get("Content-Range"))).toEqual([
-      "bytes 0-9999999/64000123", "bytes 10000000-19999999/64000123",
-      "bytes 20000000-29999999/64000123", "bytes 30000000-39999999/64000123",
-      "bytes 40000000-49999999/64000123", "bytes 50000000-64000122/64000123",
+      "bytes 0-9999999/64000123",
+      "bytes 10000000-19999999/64000123",
+      "bytes 20000000-29999999/64000123",
+      "bytes 30000000-39999999/64000123",
+      "bytes 40000000-49999999/64000123",
+      "bytes 50000000-64000122/64000123",
     ]);
   });
   it.each([
@@ -230,7 +252,9 @@ describe("TikTok file upload", () => {
   ] as const)("stops on an invalid URL or uncertain transfer (%s)", async (url, status, puts) => {
     const { adapter, fetcher } = setup(url, status);
     const incoming = request(false);
-    await expect(adapter.send(account, incoming, "oauth-secret", async () => media(24))).rejects.toMatchObject({ code: "unknown" });
+    await expect(
+      adapter.send(account, incoming, "oauth-secret", async () => media(24)),
+    ).rejects.toMatchObject({ code: "unknown" });
     expect(incoming.preparation).toEqual({ tiktokPublishId: publishId });
     await adapter.send(account, incoming, "oauth-secret", async () => media(24));
     expect(fetcher.mock.calls.filter(([, init]) => init?.method === "PUT")).toHaveLength(puts);

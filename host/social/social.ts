@@ -5,6 +5,11 @@ import {
   readSocialRecord,
 } from "./store/social-audience-store";
 import { SOCIAL_ACTION_MODULES } from "./core/social-action-modules";
+import {
+  boundTikTokBusiness,
+  tiktokBusinessSecretId,
+  tiktokLiveSecretId,
+} from "./tiktok/tiktok-actions";
 import { PROGRAM_OPERATION_FIELDS, socialActionRegistry } from "./core/social-actions";
 import type { AutonomousRequest, SocialServiceApi } from "./core/social-service-api";
 import {
@@ -561,6 +566,8 @@ export class SocialService implements SocialServiceApi {
   readonly ready: Promise<void>;
   /** Host operations registered outside this class; see core/social-action-modules.ts. */
   private readonly actions = socialActionRegistry(SOCIAL_ACTION_MODULES);
+  // TikTok account operations.
+  tiktokBrowser?: import("./social-browser-platforms").PlatformBrowserSessions["runTikTok"];
   constructor(
     readonly store: HostStore,
     readonly credentials: SocialCredentialStore,
@@ -1063,6 +1070,40 @@ export class SocialService implements SocialServiceApi {
   adapterFor(account: SocialAccount): SocialAdapter {
     if (account.connection !== "browser") return this.adapters[account.platform];
     if (!this.browserAdapter) throw new SocialPlatformError("unsupported");
+    // TikTok Business replies take precedence for accounts with a verified Organic grant.
+    if (account.platform === "tiktok") {
+      const browser = this.browserAdapter;
+      return {
+        ...browser,
+        send: async (target, job, token, media, checkpoint, beforeSubmit) => {
+          const { threadId, postId } = job.payload;
+          if (job.kind === "reply" && postId && threadId && job.contactId) {
+            const business = await boundTikTokBusiness(target, this.credentials);
+            if (business) {
+              const { api, credential } = business;
+              const contact = await this.contact(job.contactId);
+              if (!beforeSubmit || contact?.accountId !== target.id)
+                throw new SocialPlatformError("denied");
+              return await api.mutateComment(
+                credential,
+                {
+                  postId,
+                  commentId: threadId,
+                  action: "reply",
+                  text: job.payload.text,
+                },
+                async (comment) => {
+                  if (!comment.username || `web:tiktok:${comment.username}` !== contact.platformId)
+                    throw new SocialPlatformError("denied");
+                  await beforeSubmit();
+                },
+              );
+            }
+          }
+          return browser.send(target, job, token, media, checkpoint, beforeSubmit);
+        },
+      };
+    }
     return this.browserAdapter;
   }
   capability(account: SocialAccount, operation: SocialOperation) {
@@ -1988,6 +2029,11 @@ export class SocialService implements SocialServiceApi {
         await this.changeCredentials(account.id, async () => {
           await this.store.db.checkAuthorization();
           await this.credentials.delete(account.id);
+          // TikTok credentials belong to the same connected account lifecycle.
+          if (account.platform === "tiktok") {
+            await this.credentials.delete(tiktokLiveSecretId(account.id));
+            await this.credentials.delete(tiktokBusinessSecretId(account.id));
+          }
         });
         // Browser cleanup can await a connection holding the browser lock and waiting for credentials.
         // Release the credential lock first; the connection epoch already revokes pending commits.
@@ -2427,6 +2473,31 @@ export class SocialService implements SocialServiceApi {
             operationId,
             decisions: this.decisionModels,
             emailSecrets: osSecretValues(this.directory, this.store.environmentId),
+            // TikTok account operations.
+            tiktok: {
+              runBrowser: this.tiktokBrowser,
+              executorId: this.store.environmentId,
+              secrets: this.credentials,
+              storeSecret: async (expected, key, value) => {
+                this.owner(p);
+                await this.changeCredentials(expected.id, async () => {
+                  const current = await this.accountForOAuth(p, expected.id);
+                  if (
+                    !current.connected ||
+                    current.paused ||
+                    current.platform !== "tiktok" ||
+                    current.connection !== expected.connection ||
+                    current.platformId !== expected.platformId ||
+                    current.executorId !== expected.executorId
+                  )
+                    throw new SocialPlatformError("denied");
+                  await this.store.db.checkAuthorization();
+                  await this.credentials.set(key, { accessToken: value });
+                });
+              },
+              avatar: (id) => this.readOwnerMedia(p, id),
+              rename: (account, profile) => this.renameTikTokBrowser(p, account, profile),
+            },
           },
           input,
         );
@@ -4767,6 +4838,40 @@ export class SocialService implements SocialServiceApi {
     if (writing && (await this.setting("stopped")) === "true")
       throw new Error("Social automation is stopped.");
     return account;
+  }
+  // TikTok username updates are committed only after the browser acknowledges the same account.
+  private async renameTikTokBrowser(
+    p: SocialPrincipal,
+    expected: SocialAccount,
+    profile: { platformId: string; name: string },
+  ) {
+    this.owner(p);
+    await this.transaction(async () => {
+      const current = await this.accountForOAuth(p, expected.id);
+      if (
+        current.platform !== "tiktok" ||
+        current.connection !== "browser" ||
+        !current.connected ||
+        current.platformId !== expected.platformId ||
+        current.executorId !== expected.executorId ||
+        !/^web:tiktok:[a-z0-9_.]{2,24}$/.test(profile.platformId)
+      )
+        throw new SocialPlatformError("denied");
+      if (
+        (await this.list<SocialAccount>("account")).some(
+          (other) =>
+            other.id !== current.id &&
+            other.platform === "tiktok" &&
+            other.platformId === profile.platformId,
+        )
+      )
+        throw new SocialPlatformError("denied");
+      await this.put("account", current.id, {
+        ...current,
+        platformId: profile.platformId,
+        name: str(profile.name, "account name", 300),
+      });
+    });
   }
   /** Internal owner connection reviews must be invalidated by an explicit disconnect. */
   async connectionReviewEpoch(p: SocialPrincipal, accountId: string) {

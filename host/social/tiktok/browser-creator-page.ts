@@ -66,7 +66,7 @@ export async function submitTikTokCreatorAction<T>(
   beforeSubmit?: () => Promise<void>,
 ): Promise<T> {
   await readTikTokCreatorPage<boolean>(ctx, expression);
-  await beforeSubmit?.();
+  await (beforeSubmit ?? ctx.beforeSubmit)?.();
   await verifyTikTokCreatorPage(ctx);
   if (!(await ctx.page.evaluate<boolean>(expression))) throw unsupported();
   ctx.markSubmitted?.();
@@ -74,7 +74,10 @@ export async function submitTikTokCreatorAction<T>(
     await ctx.page.click(markedTikTokCreatorControl(token));
     return await acknowledge();
   } catch (error) {
-    if (error instanceof SocialPlatformError && error.detail?.reasonCode === "TIKTOK_PROFILE_COOLDOWN")
+    if (
+      error instanceof SocialPlatformError &&
+      error.detail?.reasonCode === "TIKTOK_PROFILE_COOLDOWN"
+    )
       throw error;
     throw unknown();
   }

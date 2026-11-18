@@ -41,6 +41,17 @@ export const SOCIAL_READ_ACTIONS = [
   "browser.settings.get",
   "browser.recipeSuggestions.list",
   "accounts.requests.list",
+  // TikTok account operations.
+  "tiktok.profile.read",
+  "tiktok.analytics.read",
+  "tiktok.audience.list",
+  "tiktok.mentions.list",
+  "tiktok.comments.list",
+  "tiktok.messages.list",
+  "tiktok.earnings.read",
+  "tiktok.privacy.read",
+  "tiktok.changes.list",
+  "tiktok.business.status",
 ] as const;
 export type SocialReadAction = (typeof SOCIAL_READ_ACTIONS)[number];
 

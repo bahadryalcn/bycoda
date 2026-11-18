@@ -44,7 +44,8 @@ export function parseTikTokProfilePatch(raw: unknown): TikTokProfilePatch {
     else if (key === "bio" && [...value].length <= 80) patch.bio = value;
     else if (key === "website" && value.length <= 250 && (!value || allowedWebsite(value)))
       patch.website = value;
-    else if (key === "avatarUploadId" && /^[a-f0-9-]{36}$/i.test(value)) patch.avatarUploadId = value;
+    else if (key === "avatarUploadId" && /^[a-f0-9-]{36}$/i.test(value))
+      patch.avatarUploadId = value;
     else throw denied();
   }
   if (!Object.keys(patch).length) throw denied();
@@ -61,7 +62,9 @@ function allowedWebsite(value: string) {
 }
 
 function profileSnapshot(handle: string, avatarChangedFrom?: string) {
-  return creatorExpression(`/@${handle}`, String.raw`
+  return creatorExpression(
+    `/@${handle}`,
+    String.raw`
     const title = one(document, '[data-e2e="user-title"]');
     const name = one(document, '[data-e2e="user-subtitle"]');
     if (!title || !name || label(title).replace(/^@/, '').toLowerCase() !== ${json(handle)}) return;
@@ -73,7 +76,8 @@ function profileSnapshot(handle: string, avatarChangedFrom?: string) {
     if (previous !== null && (!avatarUrl || avatarUrl.split('?')[0] === previous.split('?')[0])) return;
     return {name:label(name),username:${json(handle)},bio:bio?.textContent?.trim() || '',website:website?.getAttribute('href'),
       avatarUrl,platformId:${json(`web:tiktok:${handle}`)}};
-  `);
+  `,
+  );
 }
 
 function publicProfile(snapshot: TikTokProfileState): TikTokProfileState {
@@ -83,7 +87,8 @@ function publicProfile(snapshot: TikTokProfileState): TikTokProfileState {
     bio: snapshot.bio,
     platformId: snapshot.platformId,
     website: snapshot.website && allowedWebsite(snapshot.website) ? snapshot.website : undefined,
-    avatarUrl: snapshot.avatarUrl && allowedWebsite(snapshot.avatarUrl) ? snapshot.avatarUrl : undefined,
+    avatarUrl:
+      snapshot.avatarUrl && allowedWebsite(snapshot.avatarUrl) ? snapshot.avatarUrl : undefined,
   };
 }
 
@@ -95,12 +100,17 @@ export async function readTikTokProfile(ctx: BrowserRecipeContext): Promise<TikT
 
 const fieldSelectors = {
   name: 'input[name="nickname"],input[data-e2e="edit-profile-nickname"],input[aria-label="Name"]',
-  username: 'input[name="username"],input[data-e2e="edit-profile-username"],input[aria-label="Username"]',
+  username:
+    'input[name="username"],input[data-e2e="edit-profile-username"],input[aria-label="Username"]',
   bio: 'textarea[name="bio"],textarea[data-e2e="edit-profile-bio"],textarea[aria-label="Bio"]',
-  website: 'input[name="website"],input[data-e2e="edit-profile-website"],input[aria-label="Website"]',
+  website:
+    'input[name="website"],input[data-e2e="edit-profile-website"],input[aria-label="Website"]',
 };
 
-const profileDialog = (path: string, body: string) => creatorExpression(path, String.raw`
+const profileDialog = (path: string, body: string) =>
+  creatorExpression(
+    path,
+    String.raw`
   const dialogs = all(document, '[role="dialog"],dialog[open]');
   const editor = dialogs.filter(el => one(el, ${json(fieldSelectors.username)}) && one(el, ${json(fieldSelectors.name)}));
   if (editor.length !== 1 || dialogs.length !== 1) return;
@@ -108,7 +118,8 @@ const profileDialog = (path: string, body: string) => creatorExpression(path, St
   const cooldown = all(root, '[role="alert"],[data-e2e="profile-edit-error"]').some(el =>
     /(?:\b(?:7|30)\s*days?\b|(?:7|30)\s*gün|too soon)/i.test(label(el)));
   ${body}
-`);
+`,
+  );
 
 const cooldownError = () =>
   new SocialPlatformError("rejected", undefined, { reasonCode: "TIKTOK_PROFILE_COOLDOWN" });
@@ -120,10 +131,13 @@ export async function updateTikTokProfile(ctx: BrowserRecipeContext, rawPatch: u
     throw denied();
   const current = await readTikTokProfile(ctx);
   const path = `/@${current.username}`;
-  const edit = creatorExpression(path, `
+  const edit = creatorExpression(
+    path,
+    `
     const matches = all(document, 'main button,main [role="button"]').filter(el => enabled(el) && ${json(EDIT)}.includes(label(el)));
     if (matches.length !== 1) return;
-    return mark(matches[0], 'edit-profile');`);
+    return mark(matches[0], 'edit-profile');`,
+  );
   await readTikTokCreatorPage<boolean>(ctx, edit);
   await ctx.page.click(markedTikTokCreatorControl("edit-profile"));
 
@@ -132,12 +146,15 @@ export async function updateTikTokProfile(ctx: BrowserRecipeContext, rawPatch: u
   );
   for (const key of changed) {
     const value = patch[key]!;
-    const field = profileDialog(path, `
+    const field = profileDialog(
+      path,
+      `
       const input = one(root, ${json(fieldSelectors[key])});
       if (!input || !enabled(input) || (input.maxLength > 0 && ${value.length} > input.maxLength)) {
         return cooldown ? 'cooldown' : 'missing';
       }
-      return mark(input, 'profile-field') && 'ready';`);
+      return mark(input, 'profile-field') && 'ready';`,
+    );
     const state = await readTikTokCreatorPage<string>(ctx, field);
     if (state === "cooldown") throw cooldownError();
     if (state !== "ready") throw unsupported();
@@ -148,39 +165,56 @@ export async function updateTikTokProfile(ctx: BrowserRecipeContext, rawPatch: u
   let uploadAttempted = false;
   try {
     if (hasAvatar) {
-      await readTikTokCreatorPage<boolean>(ctx, profileDialog(path, String.raw`
+      await readTikTokCreatorPage<boolean>(
+        ctx,
+        profileDialog(
+          path,
+          String.raw`
         const inputs = root.querySelectorAll('input[type="file"]');
         if (inputs.length !== 1 || inputs[0].multiple || inputs[0].disabled ||
             !/(^|,)\s*image\//.test(inputs[0].accept)) return;
-        return mark(inputs[0], 'profile-avatar');`));
+        return mark(inputs[0], 'profile-avatar');`,
+        ),
+      );
       uploadAttempted = true;
+      await ctx.verifyIdentity();
       await ctx.page.setFiles(markedTikTokCreatorControl("profile-avatar"), [ctx.files[0].path]);
     }
-    const save = profileDialog(path, `
+    const save = profileDialog(
+      path,
+      `
       const buttons = all(root, 'button,[role="button"]').filter(el => enabled(el) && ${json(SAVE)}.includes(label(el)));
       if (cooldown || buttons.length !== 1) return;
-      return mark(buttons[0], 'save-profile');`);
-    if (await ctx.page.evaluate<boolean>(profileDialog(path, "return cooldown;"))) throw cooldownError();
+      return mark(buttons[0], 'save-profile');`,
+    );
+    if (await ctx.page.evaluate<boolean>(profileDialog(path, "return cooldown;")))
+      throw cooldownError();
     return await submitTikTokCreatorAction(ctx, save, "save-profile", async () => {
       const handle = patch.username ?? current.username;
       const expectedPath = `/@${handle}`;
       if (handle !== current.username) {
         // Require the authenticated navigation identity to change before returning a rebind candidate.
-        const changedIdentity = creatorExpression(expectedPath, String.raw`
+        const changedIdentity = creatorExpression(
+          expectedPath,
+          String.raw`
           const links = all(document, 'a[data-e2e="nav-profile"],[data-e2e="profile-icon"] a[href^="/@"]');
           const paths = new Set(links.map(el => new URL(el.getAttribute('href'),location.origin).pathname.replace(/\/$/, '').toLowerCase()));
-          return paths.size === 1 && paths.has(${json(expectedPath)});`);
+          return paths.size === 1 && paths.has(${json(expectedPath)});`,
+        );
         if (!(await ctx.waitFor<boolean>(changedIdentity, 12_000))) throw unknown();
         await assertNoTikTokChallenge(ctx);
       } else {
         await verifyTikTokCreatorPage(ctx);
       }
       const proof = profileSnapshot(handle, hasAvatar ? (current.avatarUrl ?? "") : undefined);
-      const saved = await ctx.waitFor<TikTokProfileState>(`(() => {
+      const saved = await ctx.waitFor<TikTokProfileState>(
+        `(() => {
         const profile = ${proof};
         if (!profile || document.querySelector('[role="dialog"],dialog[open]')) return;
         return ${json(changed)}.every(key => (profile[key] ?? '') === ${json(patch)}[key]) ? profile : undefined;
-      })()`, 12_000);
+      })()`,
+        12_000,
+      );
       if (!saved) throw unknown();
       await assertNoTikTokChallenge(ctx);
       return publicProfile(saved);
@@ -208,8 +242,11 @@ export function parseTikTokPrivacyPatch(raw: unknown): TikTokPrivacyState {
   const patch: TikTokPrivacyState = {};
   for (const [key, value] of Object.entries(raw)) {
     if (key === "privateAccount" && typeof value === "boolean") patch.privateAccount = value;
-    else if (privacyFields.some((field) => field === key) && typeof value === "string" &&
-      Object.hasOwn(privacyValues, value))
+    else if (
+      privacyFields.some((field) => field === key) &&
+      typeof value === "string" &&
+      Object.hasOwn(privacyValues, value)
+    )
       patch[key as (typeof privacyFields)[number]] = value as keyof typeof privacyValues;
     else throw denied();
   }
@@ -217,7 +254,10 @@ export function parseTikTokPrivacyPatch(raw: unknown): TikTokPrivacyState {
   return patch;
 }
 
-const privacyExpression = (body: string) => creatorExpression(PRIVACY, String.raw`
+const privacyExpression = (body: string) =>
+  creatorExpression(
+    PRIVACY,
+    String.raw`
   const root = one(document, 'main,[role="main"]');
   if (!root) return;
   const privacyNames = ${json(privacyValues)};
@@ -237,7 +277,8 @@ const privacyExpression = (body: string) => creatorExpression(PRIVACY, String.ra
     return Object.keys(result).length ? result : undefined;
   };
   ${body}
-`);
+`,
+  );
 
 export async function readTikTokPrivacy(ctx: BrowserRecipeContext): Promise<TikTokPrivacyState> {
   await openTikTokCreatorPage(ctx, PRIVACY);
@@ -247,8 +288,10 @@ export async function readTikTokPrivacy(ctx: BrowserRecipeContext): Promise<TikT
 export async function updateTikTokPrivacy(ctx: BrowserRecipeContext, rawPatch: unknown) {
   const patch = parseTikTokPrivacyPatch(rawPatch);
   let current = await readTikTokPrivacy(ctx);
-  const changes = (Object.keys(patch) as (keyof TikTokPrivacyState)[]).filter(key => patch[key] !== current[key]);
-  if (changes.some(key => current[key] === undefined)) throw unsupported();
+  const changes = (Object.keys(patch) as (keyof TikTokPrivacyState)[]).filter(
+    (key) => patch[key] !== current[key],
+  );
+  if (changes.some((key) => current[key] === undefined)) throw unsupported();
   let applied = false;
   try {
     for (const key of changes) {
@@ -256,10 +299,13 @@ export async function updateTikTokPrivacy(ctx: BrowserRecipeContext, rawPatch: u
         if (!privateSwitch || !enabled(privateSwitch)) return;
         return mark(privateSwitch, 'privacy-setting');`);
       if (key !== "privateAccount") {
-        await readTikTokCreatorPage<boolean>(ctx, privacyExpression(`
+        await readTikTokCreatorPage<boolean>(
+          ctx,
+          privacyExpression(`
           const control = field(${json(key)});
           if (!control || !enabled(control) || control.getAttribute('aria-expanded') === 'true') return;
-          return mark(control, 'privacy-dropdown');`));
+          return mark(control, 'privacy-dropdown');`),
+        );
         await ctx.page.click(markedTikTokCreatorControl("privacy-dropdown"));
         expression = privacyExpression(`
           const control = field(${json(key)});
@@ -271,9 +317,13 @@ export async function updateTikTokPrivacy(ctx: BrowserRecipeContext, rawPatch: u
           return mark(options[0], 'privacy-setting');`);
       }
       current = await submitTikTokCreatorAction(ctx, expression, "privacy-setting", () =>
-        readTikTokCreatorPage<TikTokPrivacyState>(ctx, privacyExpression(`
+        readTikTokCreatorPage<TikTokPrivacyState>(
+          ctx,
+          privacyExpression(`
           const state = snapshot();
-          return state?.[${json(key)}] === ${json(patch[key])} ? state : undefined;`)));
+          return state?.[${json(key)}] === ${json(patch[key])} ? state : undefined;`),
+        ),
+      );
       applied = true;
     }
   } catch (error) {

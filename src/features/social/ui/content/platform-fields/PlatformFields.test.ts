@@ -171,7 +171,9 @@ describe("TikTok options", () => {
 
   it("offers only the privacy choices the creator's account allows", () => {
     render("tiktok", { creator });
-    const options = openSelect("Who can see this video").map((option) => option.textContent?.trim());
+    const options = openSelect("Who can see this video").map((option) =>
+      option.textContent?.trim(),
+    );
     expect(options).toEqual(["Choose who can see this video", "Everyone", "Only me"]);
   });
 
@@ -204,9 +206,13 @@ describe("TikTok options", () => {
     expect(text()).not.toContain("Allow duets");
     expect(text()).not.toContain("Allow stitches");
     pick("TikTok cover photo", "Photo 2");
-    expect(onChange).toHaveBeenLastCalledWith({ tiktok: { mediaType: "photo", photoCoverIndex: 1 } });
+    expect(onChange).toHaveBeenLastCalledWith({
+      tiktok: { mediaType: "photo", photoCoverIndex: 1 },
+    });
     act(() => checkbox("Add TikTok-recommended music").click());
-    expect(onChange).toHaveBeenLastCalledWith({ tiktok: { mediaType: "photo", autoAddMusic: true } });
+    expect(onChange).toHaveBeenLastCalledWith({
+      tiktok: { mediaType: "photo", autoAddMusic: true },
+    });
   });
 
   it("offers a TikTok inbox handoff only for an API account with video.upload", () => {
@@ -223,9 +229,11 @@ describe("TikTok options", () => {
     render("tiktok", { value: { tiktok: { mode: "inbox" } } });
     expect(text()).not.toContain("I confirm the consent");
     expect(element.querySelector("fieldset")!.disabled).toBe(false);
-    expect(openSelect("TikTok publishing mode").find((option) =>
-      option.textContent?.trim() === "Send draft to TikTok inbox",
-    )?.disabled).toBe(true);
+    expect(
+      openSelect("TikTok publishing mode").find(
+        (option) => option.textContent?.trim() === "Send draft to TikTok inbox",
+      )?.disabled,
+    ).toBe(true);
   });
 });
 
