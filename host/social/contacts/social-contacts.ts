@@ -12,6 +12,14 @@ export async function upsertSocialContact(
   p: SocialPrincipal,
   input: Record<string, unknown>,
 ): Promise<SocialContact> {
+  return await s.transaction(() => writeSocialContact(s, p, input));
+}
+
+async function writeSocialContact(
+  s: SocialServiceInternals,
+  p: SocialPrincipal,
+  input: Record<string, unknown>,
+): Promise<SocialContact> {
   exact(input, [
     "id",
     "accountId",
@@ -26,10 +34,34 @@ export async function upsertSocialContact(
     "replyEligible",
     "commentEligible",
     "optedOut",
+    "instagramRecipientProjectId",
   ]);
   const accountId = str(input.accountId, "account");
-  await s.access(p, accountId, "draft");
+  const account = await s.access(p, accountId, "draft");
   const platformId = str(input.platformId, "platform identity", 300);
+  // Instagram DM preparation adds one project without replacing existing contact permissions.
+  let instagramRecipient: { projectId: string; handle: string } | undefined;
+  if (Object.hasOwn(input, "instagramRecipientProjectId")) {
+    exact(input, ["accountId", "platformId", "name", "instagramRecipientProjectId"]);
+    s.owner(p);
+    const projectId = str(input.instagramRecipientProjectId, "project");
+    const handle = str(input.name, "Instagram username", 30).toLowerCase();
+    if (
+      account.platform !== "instagram" ||
+      account.connection !== "browser" ||
+      !/^[a-z0-9._]{1,30}$/.test(handle) ||
+      handle.startsWith(".") ||
+      handle.endsWith(".") ||
+      handle.includes("..") ||
+      !/^\d{1,30}$/.test(platformId) ||
+      !account.grants[projectId]?.includes("message")
+    )
+      throw new Error(
+        "Instagram recipient requires a verified browser account and project message permission.",
+      );
+    s.capability(account, "message.start");
+    instagramRecipient = { projectId, handle };
+  }
   const previous = (await s.list<SocialContact>("contact")).find(
     (contact) => contact.accountId === accountId && contact.platformId === platformId,
   );
@@ -46,8 +78,13 @@ export async function upsertSocialContact(
     throw new Error(
       "Only the owner or verified inbound events can establish communication eligibility.",
     );
-  const projectIds = array(input.projectIds ?? previous?.projectIds ?? [p.projectId], "projects");
-  await forEachAsync(projectIds, async (id) => await s.project(p, id));
+  const projectIds = instagramRecipient
+    ? [...new Set([...(previous?.projectIds ?? []), instagramRecipient.projectId])]
+    : array(input.projectIds ?? previous?.projectIds ?? [p.projectId], "projects");
+  await forEachAsync(
+    instagramRecipient ? [instagramRecipient.projectId] : projectIds,
+    async (id) => await s.project(p, id),
+  );
   let consent = previous?.consent;
   if (input.consent !== undefined) {
     s.owner(p);
@@ -70,8 +107,18 @@ export async function upsertSocialContact(
     id: previous?.id ?? randomUUID(),
     accountId,
     platformId,
-    name: str(input.name ?? previous?.name ?? platformId, "contact name", 300),
-    profileUrl: input.profileUrl ? url(input.profileUrl, "profile URL") : previous?.profileUrl,
+    name: str(
+      (instagramRecipient ? previous?.name ?? instagramRecipient.handle : input.name) ??
+        previous?.name ??
+        platformId,
+      "contact name",
+      300,
+    ),
+    profileUrl: instagramRecipient
+      ? `https://www.instagram.com/${instagramRecipient.handle}/`
+      : input.profileUrl
+        ? url(input.profileUrl, "profile URL")
+        : previous?.profileUrl,
     source,
     tags: array(input.tags ?? previous?.tags ?? [], "explicit labels", 30),
     language: input.language ? str(input.language, "language", 30) : previous?.language,
