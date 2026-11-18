@@ -81,9 +81,35 @@ it("uses catalog, disabled preferences, account auth and quota without picker fa
   expect(providerAuthStatus).toHaveBeenCalledTimes(2);
   vi.mocked(providerAuthStatus).mockResolvedValue("unknown");
   vi.mocked(readDisabledModels).mockResolvedValue([]);
-  const unknown = await ports.signals({ ...EMPTY_MODEL_ROUTING, entries });
+  const unknown = await ports.signals({ ...EMPTY_MODEL_ROUTING, entries }, { awaitQuota: true });
   expect(unknown.signedIn(entries[1]!)).toBe(true);
   expect(unknown.available(entries[0]!)).toBe(true);
+});
+
+it("probes each account once for run-start resolutions and again for the settings read", async () => {
+  vi.mocked(providerAuthStatus).mockClear();
+  vi.mocked(providerAuthStatus).mockResolvedValue("signedOut");
+  createHostModelRoutingService({
+    store: {} as never,
+    catalog: async () => ({ models: {} }),
+    command: async () => "cli",
+    readLimits: vi.fn(),
+  });
+  const ports = vi.mocked(createModelRoutingService).mock.calls.at(-1)![0] as ModelRoutingPorts;
+  const entry = {
+    id: "a",
+    harness: "codex" as const,
+    providerAccountId: "work",
+    model: "m",
+    modelSettings: {},
+    unknownLimit: "use" as const,
+  };
+  const state = { ...EMPTY_MODEL_ROUTING, entries: [entry] };
+  expect((await ports.signals(state)).signedIn(entry)).toBe(false);
+  expect((await ports.signals(state)).signedIn(entry)).toBe(false);
+  expect(providerAuthStatus).toHaveBeenCalledTimes(1);
+  await ports.signals(state, { awaitQuota: true });
+  expect(providerAuthStatus).toHaveBeenCalledTimes(2);
 });
 
 it("awaits one bounded quota warm-up for the settings status read only", async () => {
