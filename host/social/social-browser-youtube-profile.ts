@@ -16,7 +16,12 @@ export type YouTubeBrowserProfilePatch = {
   links?: ProfileLink[];
   avatarUploadId?: string;
 };
-export type YouTubeBrowserProfile = { name: string; handle: string; links: ProfileLink[]; avatarUrl?: string };
+export type YouTubeBrowserProfile = {
+  name: string;
+  handle: string;
+  links: ProfileLink[];
+  avatarUrl?: string;
+};
 
 const root = "ytcp-channel-customization";
 const nameField = `${root} #channel-name input`;
@@ -31,7 +36,12 @@ const record = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === "object" && !Array.isArray(value);
 
 function boundedText(value: unknown, max: number): string {
-  if (typeof value !== "string" || !value.trim() || [...value].length > max || /[\p{Cc}]/u.test(value))
+  if (
+    typeof value !== "string" ||
+    !value.trim() ||
+    [...value].length > max ||
+    /[\p{Cc}]/u.test(value)
+  )
     throw invalid();
   return value.trim();
 }
@@ -54,7 +64,11 @@ export function parseYouTubeBrowserProfilePatch(value: unknown): YouTubeBrowserP
       const handle = boundedText(field, 31).replace(/^@/, "");
       if (!/^[\p{L}\p{N}\p{M}_.·-]{1,30}$/u.test(handle)) throw invalid();
       patch.handle = `@${handle}`;
-    } else if (key === "avatarUploadId" && typeof field === "string" && /^[a-f0-9-]{36}$/i.test(field)) {
+    } else if (
+      key === "avatarUploadId" &&
+      typeof field === "string" &&
+      /^[a-f0-9-]{36}$/i.test(field)
+    ) {
       patch.avatarUploadId = field;
     } else if (key === "links" && Array.isArray(field) && field.length <= 14) {
       patch.links = field.map(profileLink);
@@ -107,15 +121,27 @@ export async function youtubeBrowserProfile(ctx: BrowserRecipeContext) {
   return value;
 }
 
-async function replaceProfileLinks(ctx: BrowserRecipeContext, snapshot: string, before: ProfileLink[], next: ProfileLink[]) {
+async function replaceProfileLinks(
+  ctx: BrowserRecipeContext,
+  snapshot: string,
+  before: ProfileLink[],
+  next: ProfileLink[],
+) {
   for (let index = before.length; index > next.length; index--) {
-    await click(ctx, `${linksRoot} ${linkRow}:nth-of-type(${index}) #remove-link`, "profile-remove-link", ["Remove link", "Bağlantıyı kaldır"]);
-    if ((await readProfile(ctx, snapshot)).links.length !== index - 1) throw await youtubeBrowserScreenError(ctx);
+    await click(
+      ctx,
+      `${linksRoot} ${linkRow}:nth-of-type(${index}) #remove-link`,
+      "profile-remove-link",
+      ["Remove link", "Bağlantıyı kaldır"],
+    );
+    if ((await readProfile(ctx, snapshot)).links.length !== index - 1)
+      throw await youtubeBrowserScreenError(ctx);
   }
   for (let index = 0; index < next.length; index++) {
     if (index >= before.length) {
       await click(ctx, `${linksRoot} #add-link`, "profile-add-link", ["Add link", "Bağlantı ekle"]);
-      if ((await readProfile(ctx, snapshot)).links.length !== index + 1) throw await youtubeBrowserScreenError(ctx);
+      if ((await readProfile(ctx, snapshot)).links.length !== index + 1)
+        throw await youtubeBrowserScreenError(ctx);
     }
     const row = `${linksRoot} ${linkRow}:nth-of-type(${index + 1})`;
     const link = next[index];
@@ -124,35 +150,52 @@ async function replaceProfileLinks(ctx: BrowserRecipeContext, snapshot: string, 
   }
 }
 
-function matchesPatch(value: YouTubeBrowserProfile, patch: YouTubeBrowserProfilePatch, before: YouTubeBrowserProfile) {
+function matchesPatch(
+  value: YouTubeBrowserProfile,
+  patch: YouTubeBrowserProfilePatch,
+  before: YouTubeBrowserProfile,
+) {
   return (
     (patch.name === undefined || value.name === patch.name) &&
     (patch.handle === undefined || value.handle === patch.handle) &&
     (patch.links === undefined || json(value.links) === json(patch.links)) &&
-    (patch.avatarUploadId === undefined || (!!value.avatarUrl && value.avatarUrl !== before.avatarUrl))
+    (patch.avatarUploadId === undefined ||
+      (!!value.avatarUrl && value.avatarUrl !== before.avatarUrl))
   );
 }
 
 export async function youtubeUpdateBrowserProfile(ctx: BrowserRecipeContext, raw: unknown) {
   const patch = parseYouTubeBrowserProfilePatch(raw);
-  if (ctx.files.length !== (patch.avatarUploadId ? 1 : 0) || ctx.files.some((item) => item.kind !== "image")) throw invalid();
+  if (
+    ctx.files.length !== (patch.avatarUploadId ? 1 : 0) ||
+    ctx.files.some((item) => item.kind !== "image")
+  )
+    throw invalid();
   const { value: before, snapshot, url } = await openProfile(ctx);
   if (matchesPatch(before, patch, before)) return before;
   if (patch.name !== undefined) await fill(ctx, nameField, "profile-name", patch.name, true);
-  if (patch.handle !== undefined) await fill(ctx, handleField, "profile-handle", patch.handle.replace(/^@/, ""), true);
-  if (patch.links !== undefined) await replaceProfileLinks(ctx, snapshot, before.links, patch.links);
+  if (patch.handle !== undefined)
+    await fill(ctx, handleField, "profile-handle", patch.handle.replace(/^@/, ""), true);
+  if (patch.links !== undefined)
+    await replaceProfileLinks(ctx, snapshot, before.links, patch.links);
   if (patch.avatarUploadId) {
     await files(ctx, `${avatarSection} input[type="file"][accept*="image"]`);
-    await click(ctx, 'ytcp-image-cropper-dialog #done-button', "profile-avatar-crop", ["Done", "Bitti"]);
+    await click(ctx, "ytcp-image-cropper-dialog #done-button", "profile-avatar-crop", [
+      "Done",
+      "Bitti",
+    ]);
   }
   const prepared = await readProfile(ctx, snapshot);
   if (!matchesPatch(prepared, patch, before)) throw await youtubeBrowserScreenError(ctx);
   const target = await control(ctx, publish, "profile-publish", ["Publish", "Yayınla"]);
   return commitYouTubeBrowser(ctx, target, async () => {
-    const saved = await ctx.waitFor<boolean>(String.raw`(() => {
+    const saved = await ctx.waitFor<boolean>(
+      String.raw`(() => {
       const matches=[...document.querySelectorAll(${json(publish)})].filter(el=>el.getClientRects().length&&!el.hidden);
       return matches.length===1&&(matches[0].disabled||matches[0].getAttribute('aria-disabled')==='true');
-    })()`, 20_000);
+    })()`,
+      20_000,
+    );
     if (!saved) return;
     await ctx.page.goto(url);
     await verifyYouTubeBrowser(ctx);

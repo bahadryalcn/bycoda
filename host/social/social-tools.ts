@@ -6,6 +6,8 @@ import {
   type SocialTool,
 } from "../../src/features/social/model/social";
 import { HOST_PROTOCOL_VERSION } from "../../src/features/connections/model/protocol";
+import { YOUTUBE_READ_TOOLS } from "../../src/features/social/model/youtubeManagement";
+import { youtubeToolSchemas } from "./youtube/youtube-inputs";
 
 /** Credential material is added only in the native/headless backend, after the
  * renderer's ACP frame has crossed the process boundary. SDKs that deliberately
@@ -40,6 +42,8 @@ export function authorizeSocialAcpFrame(line: string, env: NodeJS.ProcessEnv): s
 }
 
 export const SOCIAL_TOOL_SCHEMAS: Record<SocialTool, Record<string, unknown>> = {
+  // YouTube management.
+  ...youtubeToolSchemas,
   "programs.list": object({ projectId: string() }, []),
   "programs.configure": object(
     {
@@ -141,6 +145,7 @@ export const SOCIAL_TOOL_SCHEMAS: Record<SocialTool, Record<string, unknown>> = 
                 privacy: { enum: ["private", "unlisted", "public"] },
                 madeForKids: { type: "boolean" },
                 containsSyntheticMedia: { type: "boolean" },
+                format: { enum: ["video", "short"] },
               },
               ["title", "privacy", "madeForKids", "containsSyntheticMedia"],
             ),
@@ -406,6 +411,8 @@ export const SOCIAL_READ_TOOLS: readonly SocialTool[] = [
   "ai.report",
   "browser.needsHuman.list",
   "browser.recipeSuggestions.list",
+  // YouTube management.
+  ...YOUTUBE_READ_TOOLS,
 ];
 const socialReads = new Set<string>(SOCIAL_READ_TOOLS);
 const SOCIAL_REQUEST_ID_PATTERN = "^[A-Za-z0-9._:-]+$";

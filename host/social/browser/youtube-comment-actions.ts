@@ -19,20 +19,31 @@ export type YouTubeCommentReaction = {
 };
 
 const reactionControls = {
-  like: { selectors: "#like-button button,button#like-button,ytcp-icon-button#like-button", labels: ["Like", "Unlike", "Remove like", "Beğen", "Beğenmekten vazgeç"] },
-  heart: { selectors: "#heart-button button,button#heart-button,ytcp-icon-button#heart-button", labels: ["Heart", "Remove heart", "Kalp bırak", "Kalbi kaldır"] },
+  like: {
+    selectors: "#like-button button,button#like-button,ytcp-icon-button#like-button",
+    labels: ["Like", "Unlike", "Remove like", "Beğen", "Beğenmekten vazgeç"],
+  },
+  heart: {
+    selectors: "#heart-button button,button#heart-button,ytcp-icon-button#heart-button",
+    labels: ["Heart", "Remove heart", "Kalp bırak", "Kalbi kaldır"],
+  },
 };
-const marker = '[data-bycoda-youtube-reaction]';
+const marker = "[data-bycoda-youtube-reaction]";
 
-export async function youtubeCommentReaction(ctx: BrowserRecipeContext, input: YouTubeCommentReaction) {
+export async function youtubeCommentReaction(
+  ctx: BrowserRecipeContext,
+  input: YouTubeCommentReaction,
+) {
   const channel = youtubeBrowserChannel(ctx);
   const { commentId, reaction, enabled, videoId, authorChannelId } = input;
   if (
     !/^[\w-]{10,200}$/.test(commentId) ||
-    (reaction !== "like" && reaction !== "heart") || typeof enabled !== "boolean" ||
+    (reaction !== "like" && reaction !== "heart") ||
+    typeof enabled !== "boolean" ||
     (videoId !== undefined && !/^[\w-]{11}$/.test(videoId)) ||
     (authorChannelId !== undefined && !/^UC[\w-]{22}$/.test(authorChannelId))
-  ) throw new SocialPlatformError("rejected");
+  )
+    throw new SocialPlatformError("rejected");
   const watch = reaction === "like" && !!videoId;
   const url = watch
     ? `${youtubePublicOrigin}/watch?${new URLSearchParams({ v: videoId!, lc: commentId })}`

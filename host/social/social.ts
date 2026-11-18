@@ -6,6 +6,7 @@ import {
 } from "./store/social-audience-store";
 import { SOCIAL_ACTION_MODULES } from "./core/social-action-modules";
 import { PROGRAM_OPERATION_FIELDS, socialActionRegistry } from "./core/social-actions";
+import type { YouTubeRuntime } from "./youtube/youtube-runtime";
 import type { AutonomousRequest, SocialServiceApi } from "./core/social-service-api";
 import {
   array,
@@ -561,6 +562,7 @@ export class SocialService implements SocialServiceApi {
   readonly ready: Promise<void>;
   /** Host operations registered outside this class; see core/social-action-modules.ts. */
   private readonly actions = socialActionRegistry(SOCIAL_ACTION_MODULES);
+  youtubeBrowser?: YouTubeRuntime["browser"];
   constructor(
     readonly store: HostStore,
     readonly credentials: SocialCredentialStore,
@@ -1733,7 +1735,7 @@ export class SocialService implements SocialServiceApi {
             : operationId,
           actorScope: JSON.stringify([principal.actorId, principal.sessionId, action]),
         },
-        () => this.dispatch(principal, action, input, operationId),
+        () => this.dispatch(principal, action, input, operationId, requestId),
       );
       if (principal.assistantAccountId) await this.validate(principal);
       await this.audit(principal, action, operationId, accountId, "success", result);
@@ -1775,6 +1777,7 @@ export class SocialService implements SocialServiceApi {
     action: string,
     input: Record<string, unknown>,
     operationId: string,
+    requestId?: string,
   ): Promise<unknown> {
     if (
       p.assistantAccountId &&
@@ -2427,6 +2430,15 @@ export class SocialService implements SocialServiceApi {
             operationId,
             decisions: this.decisionModels,
             emailSecrets: osSecretValues(this.directory, this.store.environmentId),
+            // YouTube management.
+            youtubeRequestId: requestId,
+            youtube: {
+              environmentId: this.store.environmentId,
+              credentials: this.credentials,
+              browser: this.youtubeBrowser,
+              media: (principal, id) => this.readOwnerMedia(principal, id),
+              assertAuthorized: () => this.store.db.checkAuthorization(),
+            },
           },
           input,
         );
@@ -3757,11 +3769,14 @@ export class SocialService implements SocialServiceApi {
         )
           throw new Error("YouTube metadata requires a YouTube channel.");
         const metadata = value.youtube as Record<string, unknown>;
-        exact(metadata, ["title", "privacy", "madeForKids", "containsSyntheticMedia"]);
+        exact(metadata, ["title", "privacy", "madeForKids", "containsSyntheticMedia", "format"]);
         if (
           !["private", "unlisted", "public"].includes(String(metadata.privacy)) ||
           typeof metadata.madeForKids !== "boolean" ||
-          typeof metadata.containsSyntheticMedia !== "boolean"
+          typeof metadata.containsSyntheticMedia !== "boolean" ||
+          (metadata.format !== undefined &&
+            metadata.format !== "video" &&
+            metadata.format !== "short")
         )
           throw new Error(
             "Choose video privacy and explicit audience/synthetic-media declarations.",
@@ -3771,6 +3786,7 @@ export class SocialService implements SocialServiceApi {
           privacy: metadata.privacy as NonNullable<CampaignVariant["youtube"]>["privacy"],
           madeForKids: metadata.madeForKids,
           containsSyntheticMedia: metadata.containsSyntheticMedia,
+          ...(metadata.format !== undefined ? { format: metadata.format } : {}),
         };
       }
       const media = this.parseMedia(value.media ?? []);

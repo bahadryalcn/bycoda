@@ -1,0 +1,170 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { SocialHttp, SocialPlatformError } from "../../../src/integrations/social/adapter";
+import { createYouTubeAdapter } from "../../../src/integrations/social/youtube";
+import {
+  YOUTUBE_OWNER_WRITES,
+  YOUTUBE_READ_TOOLS,
+  YOUTUBE_WRITE_TOOLS,
+} from "../../../src/features/social/model/youtubeManagement";
+import type { SocialAccount } from "../../../src/features/social/model/social";
+import { defaultAutonomyPolicy } from "../autonomy/autonomy-policy";
+import { suppress } from "../autonomy/suppression";
+import { fixture, owner, runCleanups } from "../social-test-support";
+import type { SocialPrincipal } from "../social";
+import { youtubeActions } from "./youtube-actions";
+
+const channelId = "UC" + "d".repeat(22);
+const targetChannelId = "UC" + "a".repeat(22);
+const now = "2026-10-10T09:00:00Z";
+const subscribe = "youtube.subscription.change";
+
+afterEach(runCleanups);
+
+async function setup(mode: "suggest" | "approve" | "autonomous" = "autonomous") {
+  const f = await fixture();
+  const fetcher = vi.fn<typeof fetch>(async (input, options) => {
+    const url = new URL(String(input));
+    if (url.pathname.endsWith("/channels"))
+      return Response.json({
+        items: [
+          {
+            id: url.searchParams.has("mine") ? channelId : targetChannelId,
+            snippet: { title: "Target" },
+          },
+        ],
+      });
+    if (options?.method === "POST")
+      return Response.json({
+        id: "subscription-id",
+        snippet: { channelId, resourceId: { channelId: targetChannelId } },
+      });
+    return Response.json({ items: [] });
+  });
+  vi.spyOn(f.social, "adapterFor").mockReturnValue(
+    createYouTubeAdapter(new SocialHttp(fetcher), () => Date.parse(now)),
+  );
+  const account = await f.account("youtube");
+  await f.social.put<SocialAccount>("account", account.id, {
+    ...(await f.social.account(account.id)),
+    platformId: channelId,
+  });
+  const policy = defaultAutonomyPolicy(account.id);
+  policy.levels.comment = mode;
+  await f.social.audience.putRecord("autonomy", account.id, policy);
+  await f.social.setSetting("sending", "true");
+  const principal: SocialPrincipal = {
+    ...owner,
+    kind: "external",
+    actorId: "agent",
+    projectId: f.a.id,
+  };
+  const input = { accountId: account.id, targetChannelId, action: "subscribe" };
+  return {
+    ...f,
+    account,
+    input,
+    principal,
+    fetcher,
+    writes: () => fetcher.mock.calls.filter(([, opts]) => opts?.method === "POST"),
+  };
+}
+
+describe("YouTube Host management", () => {
+  it("keeps tool catalog and registry permissions in agreement", () => {
+    for (const action of YOUTUBE_READ_TOOLS)
+      expect(youtubeActions[action]).toMatchObject({
+        tool: true,
+        readOnly: true,
+        ownerOnly: false,
+      });
+    for (const action of YOUTUBE_WRITE_TOOLS)
+      expect(youtubeActions[action]).toMatchObject({
+        tool: true,
+        readOnly: false,
+        ownerOnly: false,
+      });
+    for (const action of YOUTUBE_OWNER_WRITES)
+      expect(youtubeActions[action]).toMatchObject({ tool: false, ownerOnly: true });
+  });
+
+  it("keeps suggestions local and only dispatches the exact approved input", async () => {
+    const suggested = await setup("suggest");
+    await expect(
+      suggested.call(subscribe, suggested.input, suggested.principal, "suggest"),
+    ).resolves.toMatchObject({ status: "suggested" });
+    expect(suggested.fetcher).not.toHaveBeenCalled();
+
+    const pending = await setup("approve");
+    const result = await pending.call<{ id: string; status: string }>(
+      subscribe,
+      pending.input,
+      pending.principal,
+      "proposal",
+    );
+    expect(result.status).toBe("awaiting_approval");
+    expect(pending.fetcher).not.toHaveBeenCalled();
+    const approval = { accountId: pending.account.id, id: result.id, confirm: true };
+    await expect(
+      pending.call("youtube.operation.approve", approval, pending.principal),
+    ).rejects.toThrow();
+    await expect(pending.call("youtube.operation.approve", approval)).resolves.toMatchObject({
+      status: "done",
+    });
+    expect(pending.writes()).toHaveLength(1);
+  });
+
+  it("uses the verified target in suppression and charges only actual dispatch", async () => {
+    const f = await setup();
+    await suppress(f.social, {
+      handle: { platform: "youtube", platformId: targetChannelId },
+      channel: "all",
+      reason: "manual",
+      source: "test",
+    });
+    await expect(f.call(subscribe, f.input, f.principal, "blocked")).rejects.toThrow(/suppressed/i);
+    expect(f.writes()).toHaveLength(0);
+  });
+
+  it("honors the channel's Pacific-day subscription cap for owner-approved writes", async () => {
+    const f = await setup();
+    await f.social.audience.incrementCounter(channelId, "youtube.subscription", "2026-10-10", 10);
+    await expect(f.call(subscribe, f.input, owner, "capped")).rejects.toThrow(
+      /subscription limit/i,
+    );
+    expect(f.writes()).toHaveLength(0);
+  });
+
+  it("keeps an unknown outcome and prevents blind repeats across request IDs", async () => {
+    const f = await setup();
+    const respond = f.fetcher.getMockImplementation()!;
+    f.fetcher.mockImplementation(async (input, options) => {
+      if (options?.method === "POST") throw new SocialPlatformError("unknown");
+      return await respond(input, options);
+    });
+    const result = await f.call<{ id: string; status: string }>(
+      subscribe,
+      f.input,
+      f.principal,
+      "first",
+    );
+    expect(result.status).toBe("unknown");
+    await expect(
+      f.call("youtube.operation.status", { id: result.id, accountId: f.account.id }, f.principal),
+    ).resolves.toMatchObject({ status: "unknown" });
+    await expect(f.call(subscribe, f.input, f.principal, "another")).rejects.toThrow(
+      /outcome review/,
+    );
+    expect(f.writes()).toHaveLength(1);
+    const reconciled = {
+      accountId: f.account.id,
+      id: result.id,
+      status: "rejected",
+      confirm: true,
+    };
+    await expect(f.call("youtube.operation.reconcile", reconciled, f.principal)).rejects.toThrow();
+    await expect(f.call("youtube.operation.reconcile", reconciled)).resolves.toMatchObject({
+      status: "rejected",
+      reason: "owner_verified",
+    });
+  });
+});

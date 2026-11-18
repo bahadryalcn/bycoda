@@ -5,7 +5,9 @@ import type { SocialCredentialStore } from "../social-credentials";
 const referencePattern = /^youtube-live:[a-f0-9]{64}$/;
 
 function reference(accountId: string, streamId: string): string {
-  const id = createHash("sha256").update(JSON.stringify([accountId, streamId])).digest("hex");
+  const id = createHash("sha256")
+    .update(JSON.stringify([accountId, streamId]))
+    .digest("hex");
   return `youtube-live:${id}`;
 }
 

@@ -1,5 +1,6 @@
 /** Public host contract. OAuth credentials and tool grants never belong here. */
 import type { RemoteProvider } from "../../connections/model/protocol";
+import type { YouTubeCapability } from "../../../integrations/social/capabilities/youtube-operations";
 // Payload shapes are owned by the adapters; type-only imports keep one source of truth.
 import type { RedditPayload } from "../../../integrations/social/adapters/reddit-rules";
 import type { XPostExtras } from "../../../integrations/social/adapters/x";
@@ -99,7 +100,7 @@ export const SOCIAL_ACCOUNT_TYPES = {
 export const PROFILE_ONLY_PLATFORMS: readonly SocialPlatform[] = [];
 export const TOKEN_PLATFORMS: readonly SocialPlatform[] = ["whatsapp", "telegram"];
 export type SocialPermission = "read" | "draft" | "publish" | "reply" | "message" | "comment";
-export type SocialOperation =
+export type BaseSocialOperation =
   | "publish"
   | "media"
   | "comments.read"
@@ -115,6 +116,7 @@ export type SocialOperation =
   | "analytics"
   | "audience.collect"
   | "profile.read";
+export type SocialOperation = BaseSocialOperation | YouTubeCapability;
 export type Capability = {
   operation: SocialOperation;
   status: "available" | "unsupported" | "pending" | "expired";
@@ -241,6 +243,7 @@ export type TikTokVideoOptions = {
   mode?: "direct" | "inbox";
 };
 export type YouTubeVideoOptions = {
+  format?: "video" | "short";
   title: string;
   privacy: "private" | "unlisted" | "public";
   madeForKids: boolean;

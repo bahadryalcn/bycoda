@@ -150,17 +150,31 @@ export class SocialOAuth {
     const state = randomBytes(32).toString("base64url");
     const verifier = randomBytes(48).toString("base64url");
     const requirements = platformRequirements(account.platform, account.accountType);
+    // YouTube's management permissions are selected as ordinary OAuth operations.
+    const youtube = account.platform === "youtube";
+    const maxOperations = youtube ? Object.keys(requirements).length : 11;
     if (
       !Array.isArray(operations) ||
       (!operations.length && !profileOnly) ||
-      operations.length > 11 ||
+      operations.length > maxOperations ||
       operations.some(
         (operation) => !requirements[operation] || requirements[operation].unsupported,
       )
     )
       throw new Error("Choose supported OAuth operations for this account.");
     // Closed read permissions must not prevent an otherwise permitted login.
-    const scopes = [...new Set(operations.flatMap((operation) => requirements[operation].scopes))];
+    const requestedScopes = operations.flatMap(
+      (operation) => requirements[operation]?.scopes ?? [],
+    );
+    // Google supports incremental authorization. Preserve the connected token's
+    // YouTube grants in the request. Only the response establishes actual grants.
+    const previousYouTubeScopes =
+      youtube && account.connected && account.connection !== "browser"
+        ? account.scopes.filter((scope) =>
+            /^https:\/\/www\.googleapis\.com\/auth\/(youtube|yt-analytics)[\w.-]*$/.test(scope),
+          )
+        : [];
+    const scopes = [...new Set([...requestedScopes, ...previousYouTubeScopes])];
     scopes.push(...definition.extraScopes(account.accountType, scopes));
     const flow: Flow = {
       accountId,

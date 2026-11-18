@@ -1,8 +1,10 @@
 import { SocialHttp, SocialPlatformError } from "./adapter";
+import { utcDay } from "../../shared/lib/time/timestamps";
 
 export const YOUTUBE_READ_SCOPE = "https://www.googleapis.com/auth/youtube.readonly";
 export const YOUTUBE_ANALYTICS_SCOPE = "https://www.googleapis.com/auth/yt-analytics.readonly";
-export const YOUTUBE_MONETARY_SCOPE = "https://www.googleapis.com/auth/yt-analytics-monetary.readonly";
+export const YOUTUBE_MONETARY_SCOPE =
+  "https://www.googleapis.com/auth/yt-analytics-monetary.readonly";
 
 const activityMetrics = [
   "views",
@@ -54,9 +56,7 @@ export type YouTubeAnalyticsReport =
 
 const pageSize = 200;
 const isDate = (value: string): boolean =>
-  /^\d{4}-\d{2}-\d{2}$/.test(value) &&
-  Number.isFinite(Date.parse(value)) &&
-  new Date(value).toISOString().slice(0, 10) === value;
+  /^\d{4}-\d{2}-\d{2}$/.test(value) && utcDay(value) === value;
 
 /** Queries only the selected OAuth-bound channel and normalizes the allowlisted report columns. */
 export async function queryYouTubeAnalytics(
@@ -91,7 +91,9 @@ export async function queryYouTubeAnalytics(
     return {
       status: "needs_scope",
       reasonCode:
-        kind === "earnings" ? "youtube_monetary_scope_required" : "youtube_analytics_scope_required",
+        kind === "earnings"
+          ? "youtube_monetary_scope_required"
+          : "youtube_analytics_scope_required",
       requiredScopes: missing,
     };
 
@@ -116,7 +118,10 @@ export async function queryYouTubeAnalytics(
   const columnNames = headers.map((header) =>
     header && typeof header === "object" && "name" in header ? header.name : undefined,
   );
-  if (columnNames.length !== expected.length || expected.some((name) => !columnNames.includes(name)))
+  if (
+    columnNames.length !== expected.length ||
+    expected.some((name) => !columnNames.includes(name))
+  )
     throw new SocialPlatformError("unknown");
   const columns = expected.map((name) => ({
     name,

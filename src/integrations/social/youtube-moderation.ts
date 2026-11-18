@@ -9,7 +9,7 @@ const channelIdPattern = /^UC[\w-]{22}$/;
 const videoIdPattern = /^[\w-]{11}$/;
 const listStatuses = ["published", "heldForReview", "likelySpam"] as const;
 const writeStatuses: readonly YouTubeCommentStatus[] = ["published", "heldForReview", "rejected"];
-type YouTubeCommentFilter = typeof listStatuses[number];
+type YouTubeCommentFilter = (typeof listStatuses)[number];
 type YouTubeComment = {
   id: string;
   authorChannelId?: string;
@@ -42,7 +42,12 @@ function commentRow(item: Record<string, any>): YouTubeComment | undefined {
   };
 }
 
-async function commentById(http: SocialHttp, token: string, quota: YouTubeQuota, commentId: string) {
+async function commentById(
+  http: SocialHttp,
+  token: string,
+  quota: YouTubeQuota,
+  commentId: string,
+) {
   const query = new URLSearchParams({ id: commentId, part: "snippet", textFormat: "plainText" });
   quota.charge("comments.list");
   const { value } = await http.request(`${comments}?${query}`, token);
@@ -51,18 +56,37 @@ async function commentById(http: SocialHttp, token: string, quota: YouTubeQuota,
   return item;
 }
 
-export async function getYouTubeCommentTarget(http: SocialHttp, token: string, quota: YouTubeQuota, channelId: string, commentId: string) {
-  if (!matching(channelId, channelIdPattern) || !matching(commentId, commentIdPattern)) throw new SocialPlatformError("rejected");
+export async function getYouTubeCommentTarget(
+  http: SocialHttp,
+  token: string,
+  quota: YouTubeQuota,
+  channelId: string,
+  commentId: string,
+) {
+  if (!matching(channelId, channelIdPattern) || !matching(commentId, commentIdPattern))
+    throw new SocialPlatformError("rejected");
   const item = await commentById(http, token, quota, commentId);
   const authorChannelId = matching(item.snippet?.authorChannelId?.value, channelIdPattern);
-  if (!authorChannelId || item.snippet?.channelId !== channelId) throw new SocialPlatformError("denied");
+  if (!authorChannelId || item.snippet?.channelId !== channelId)
+    throw new SocialPlatformError("denied");
   const parentId = matching(item.snippet.parentId, commentIdPattern);
   const rootId = parentId ?? commentId;
   quota.charge("commentThreads.list");
-  const { value } = await http.request(`${commentThreads}?${new URLSearchParams({ id: rootId, part: "snippet" })}`, token);
-  const thread = Array.isArray(value.items) && value.items.length === 1 ? value.items[0]?.snippet : undefined;
-  if (thread && (thread.channelId !== channelId || thread.topLevelComment?.id !== rootId)) throw new SocialPlatformError("denied");
-  return { commentId, authorChannelId, channelId, videoId: matching(thread?.videoId, videoIdPattern), parentId };
+  const { value } = await http.request(
+    `${commentThreads}?${new URLSearchParams({ id: rootId, part: "snippet" })}`,
+    token,
+  );
+  const thread =
+    Array.isArray(value.items) && value.items.length === 1 ? value.items[0]?.snippet : undefined;
+  if (thread && (thread.channelId !== channelId || thread.topLevelComment?.id !== rootId))
+    throw new SocialPlatformError("denied");
+  return {
+    commentId,
+    authorChannelId,
+    channelId,
+    videoId: matching(thread?.videoId, videoIdPattern),
+    parentId,
+  };
 }
 
 export async function listYouTubeComments(
@@ -70,17 +94,29 @@ export async function listYouTubeComments(
   token: string,
   quota: YouTubeQuota,
   channelId: string,
-  options: { cursor?: string; status?: YouTubeCommentFilter; videoId?: string; parentId?: string } = {},
+  options: {
+    cursor?: string;
+    status?: YouTubeCommentFilter;
+    videoId?: string;
+    parentId?: string;
+  } = {},
 ): Promise<{ comments: YouTubeComment[]; next?: string }> {
   const { cursor, status, videoId, parentId } = options;
-  if (!matching(channelId, channelIdPattern) || (cursor !== undefined && (typeof cursor !== "string" || !cursor || cursor.length > 1_000)) ||
-    (videoId !== undefined && !matching(videoId, videoIdPattern)) || (parentId !== undefined && (!matching(parentId, commentIdPattern) || status !== undefined || videoId !== undefined)) ||
-    (status !== undefined && !listStatuses.includes(status))) throw new SocialPlatformError("rejected");
+  if (
+    !matching(channelId, channelIdPattern) ||
+    (cursor !== undefined && (typeof cursor !== "string" || !cursor || cursor.length > 1_000)) ||
+    (videoId !== undefined && !matching(videoId, videoIdPattern)) ||
+    (parentId !== undefined &&
+      (!matching(parentId, commentIdPattern) || status !== undefined || videoId !== undefined)) ||
+    (status !== undefined && !listStatuses.includes(status))
+  )
+    throw new SocialPlatformError("rejected");
   const query = new URLSearchParams({ part: "snippet", maxResults: "50", textFormat: "plainText" });
   if (cursor) query.set("pageToken", cursor);
   if (parentId) {
     const parent = await commentById(http, token, quota, parentId);
-    if (parent.snippet?.channelId !== channelId || parent.snippet?.parentId !== undefined) throw new SocialPlatformError("denied");
+    if (parent.snippet?.channelId !== channelId || parent.snippet?.parentId !== undefined)
+      throw new SocialPlatformError("denied");
     query.set("parentId", parentId);
     quota.charge("comments.list");
     const { value } = await http.request(`${comments}?${query}`, token);
@@ -103,7 +139,16 @@ export async function listYouTubeComments(
       const snippet = item?.snippet;
       if (snippet?.channelId !== channelId || (videoId && snippet.videoId !== videoId)) return [];
       const row = commentRow(snippet.topLevelComment);
-      return row ? [{ ...row, videoId: matching(snippet.videoId, videoIdPattern), replyCount: typeof snippet.totalReplyCount === "number" ? snippet.totalReplyCount : undefined }] : [];
+      return row
+        ? [
+            {
+              ...row,
+              videoId: matching(snippet.videoId, videoIdPattern),
+              replyCount:
+                typeof snippet.totalReplyCount === "number" ? snippet.totalReplyCount : undefined,
+            },
+          ]
+        : [];
     }),
     next: typeof value.nextPageToken === "string" ? value.nextPageToken : undefined,
   };
@@ -118,10 +163,20 @@ export async function moderateYouTubeComment(
   banAuthor = false,
   beforeWrite?: () => Promise<void>,
 ): Promise<void> {
-  if (typeof banAuthor !== "boolean" || !matching(commentId, commentIdPattern) || !writeStatuses.includes(status) || (banAuthor && status !== "rejected")) throw new SocialPlatformError("rejected");
+  if (
+    typeof banAuthor !== "boolean" ||
+    !matching(commentId, commentIdPattern) ||
+    !writeStatuses.includes(status) ||
+    (banAuthor && status !== "rejected")
+  )
+    throw new SocialPlatformError("rejected");
   await beforeWrite?.();
   if (!banAuthor) return setYouTubeCommentModeration(http, token, quota, commentId, status);
-  const params = new URLSearchParams({ id: commentId, moderationStatus: status, banAuthor: "true" });
+  const params = new URLSearchParams({
+    id: commentId,
+    moderationStatus: status,
+    banAuthor: "true",
+  });
   quota.charge("comments.setModerationStatus");
   await http.request(`${comments}/setModerationStatus?${params}`, token, { method: "POST" });
 }
@@ -136,11 +191,14 @@ export async function deleteYouTubeComment(
   confirmed: boolean,
   beforeWrite?: () => Promise<void>,
 ): Promise<void> {
-  if (confirmed !== true || !matching(channelId, channelIdPattern) || !matching(commentId, commentIdPattern))
+  if (
+    confirmed !== true ||
+    !matching(channelId, channelIdPattern) ||
+    !matching(commentId, commentIdPattern)
+  )
     throw new SocialPlatformError("rejected");
   const item = await commentById(http, token, quota, commentId);
-  if (item.snippet?.authorChannelId?.value !== channelId)
-    throw new SocialPlatformError("denied");
+  if (item.snippet?.authorChannelId?.value !== channelId) throw new SocialPlatformError("denied");
   await beforeWrite?.();
   quota.charge("comments.delete");
   await http.request(`${comments}?${new URLSearchParams({ id: commentId })}`, token, {

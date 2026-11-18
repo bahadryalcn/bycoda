@@ -141,11 +141,14 @@ export function parseProgramConfig(raw: unknown): ProgramConfig {
   if (c.youtube) {
     if (
       Object.keys(c.youtube).some(
-        (k) => !["title", "privacy", "madeForKids", "containsSyntheticMedia"].includes(k),
+        (k) => !["title", "privacy", "madeForKids", "containsSyntheticMedia", "format"].includes(k),
       ) ||
       !["private", "unlisted", "public"].includes(c.youtube.privacy) ||
       typeof c.youtube.madeForKids !== "boolean" ||
-      typeof c.youtube.containsSyntheticMedia !== "boolean"
+      typeof c.youtube.containsSyntheticMedia !== "boolean" ||
+      (c.youtube.format !== undefined &&
+        c.youtube.format !== "video" &&
+        c.youtube.format !== "short")
     )
       throw new Error("Set explicit YouTube declarations.");
     youtube = { ...c.youtube, title: text(c.youtube.title, 100, true) };

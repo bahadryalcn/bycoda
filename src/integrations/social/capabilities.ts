@@ -22,6 +22,7 @@ import { tiktokCapabilities } from "./capabilities/tiktok";
 import { whatsappCapabilities } from "./capabilities/whatsapp";
 import { X_BROWSER_SCOPES, xCapabilities } from "./capabilities/x";
 import { youtubeCapabilities } from "./capabilities/youtube";
+import { YOUTUBE_CAPABILITIES } from "./capabilities/youtube-operations";
 
 export { SOCIAL_DOCUMENTS, X_BROWSER_OPERATIONS, X_BROWSER_SCOPES };
 export type { CapabilityOperation, CapabilityRequirement, OperationRequirements, SocialCapability };
@@ -92,7 +93,11 @@ function browserCapabilities(account: SocialAccount, now: number): SocialCapabil
   const notes = PLATFORM_TABLES[account.platform](account.accountType).browser;
   const source = SOCIAL_DOCUMENTS[account.platform];
   const expired = account.expiresAt !== undefined && account.expiresAt <= now;
-  return CAPABILITY_OPERATIONS.map((operation): SocialCapability => {
+  const operations =
+    account.platform === "youtube"
+      ? [...CAPABILITY_OPERATIONS, ...YOUTUBE_CAPABILITIES]
+      : CAPABILITY_OPERATIONS;
+  return operations.map((operation): SocialCapability => {
     const row = { operation, scopes: [] as string[], source };
     if (isNotYet(operation) && !supported.includes(operation))
       return {
@@ -101,7 +106,7 @@ function browserCapabilities(account: SocialAccount, now: number): SocialCapabil
         reason: NOT_YET[operation as keyof typeof NOT_YET].reason,
         reasonCode: "unsupported.not_yet",
       };
-    if (!supported.includes(operation))
+    if (!supported.includes(operation) && !(account.platform === "youtube" && notes[operation]))
       return {
         ...row,
         status: "unsupported",
@@ -139,8 +144,17 @@ function apiCapabilities(account: SocialAccount, now: number): SocialCapability[
     account.accountType,
   );
   const expired = account.expiresAt !== undefined && account.expiresAt <= now;
-  return CAPABILITY_OPERATIONS.map((operation): SocialCapability => {
-    const requirement: CapabilityRequirement = requirements[operation];
+  const operations =
+    account.platform === "youtube"
+      ? [...CAPABILITY_OPERATIONS, ...YOUTUBE_CAPABILITIES]
+      : CAPABILITY_OPERATIONS;
+  return operations.map((operation): SocialCapability => {
+    const requirement = requirements[operation] ?? {
+      scopes: [],
+      unsupported: true,
+      reason: "This operation requires a verified YouTube browser connection.",
+      reasonCode: "youtube.browser_required",
+    };
     let status: SocialCapability["status"] = "available";
     let reason = requirement.reason;
     let reasonCode = "api.ready";

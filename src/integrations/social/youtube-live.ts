@@ -1,4 +1,5 @@
 import { SocialHttp, SocialPlatformError } from "./adapter";
+import { isoTimestamp } from "../../shared/lib/time/timestamps";
 import type { YouTubeQuota, YouTubeQuotaOperation } from "./youtube-quota";
 
 const endpoint = "https://www.googleapis.com/youtube/v3/";
@@ -92,7 +93,12 @@ function pageToken(cursor?: string): Record<string, string> {
 
 type BroadcastResource = {
   id?: unknown;
-  snippet?: { channelId?: unknown; title?: unknown; scheduledStartTime?: unknown; liveChatId?: unknown };
+  snippet?: {
+    channelId?: unknown;
+    title?: unknown;
+    scheduledStartTime?: unknown;
+    liveChatId?: unknown;
+  };
   contentDetails?: { boundStreamId?: unknown; monitorStream?: { enableMonitorStream?: unknown } };
   status?: { privacyStatus?: unknown; lifeCycleStatus?: unknown };
 };
@@ -108,7 +114,8 @@ function normalizeBroadcast(value: BroadcastResource): YouTubeLiveBroadcast {
     status: optionalString(value.status?.lifeCycleStatus),
     streamId: safeId(value.contentDetails?.boundStreamId),
     chatId: safeId(value.snippet?.liveChatId),
-    monitorStreamEnabled: typeof monitorStreamEnabled === "boolean" ? monitorStreamEnabled : undefined,
+    monitorStreamEnabled:
+      typeof monitorStreamEnabled === "boolean" ? monitorStreamEnabled : undefined,
   };
 }
 
@@ -181,13 +188,14 @@ export async function createYouTubeLiveBroadcast(
 ): Promise<YouTubeLiveCreateResult> {
   const now = (options.now ?? Date.now)();
   const scheduledAt = Date.parse(input.scheduledStartTime);
+  const scheduledStartTime = isoTimestamp(scheduledAt);
   const title = typeof input.title === "string" ? input.title.trim() : "";
   if (
     !title ||
     title.length > 100 ||
     (input.description !== undefined &&
       (typeof input.description !== "string" || input.description.length > 5000)) ||
-    !Number.isFinite(scheduledAt) ||
+    !scheduledStartTime ||
     scheduledAt <= now ||
     !privacyStatuses.includes(input.privacyStatus) ||
     typeof input.madeForKids !== "boolean"
@@ -208,7 +216,7 @@ export async function createYouTubeLiveBroadcast(
         snippet: {
           title,
           description: input.description,
-          scheduledStartTime: new Date(scheduledAt).toISOString(),
+          scheduledStartTime,
         },
         status: {
           privacyStatus: input.privacyStatus,
@@ -348,7 +356,11 @@ export type YouTubeLiveChatEvent = {
   superChat?: SuperChatAmount;
 };
 
-type ApiSuperChatAmount = { amountMicros?: unknown; currency?: unknown; amountDisplayString?: unknown };
+type ApiSuperChatAmount = {
+  amountMicros?: unknown;
+  currency?: unknown;
+  amountDisplayString?: unknown;
+};
 type LiveChatResource = {
   id?: unknown;
   snippet?: {
@@ -476,19 +488,27 @@ export async function banYouTubeLiveChatUser(
       (!Number.isSafeInteger(durationSeconds) || durationSeconds < 1 || durationSeconds > 86_400))
   )
     throw new SocialPlatformError("rejected");
-  const value = await requestLive(http, token, quota, "liveChatBans.insert", "liveChat/bans", {
-    part: "snippet",
-  }, {
-    method: "POST",
-    body: {
-      snippet: {
-        liveChatId: chatId,
-        type: durationSeconds === undefined ? "permanent" : "temporary",
-        banDurationSeconds: durationSeconds,
-        bannedUserDetails: { channelId: userChannelId },
+  const value = await requestLive(
+    http,
+    token,
+    quota,
+    "liveChatBans.insert",
+    "liveChat/bans",
+    {
+      part: "snippet",
+    },
+    {
+      method: "POST",
+      body: {
+        snippet: {
+          liveChatId: chatId,
+          type: durationSeconds === undefined ? "permanent" : "temporary",
+          banDurationSeconds: durationSeconds,
+          bannedUserDetails: { channelId: userChannelId },
+        },
       },
     },
-  });
+  );
   return { id: resourceId(value.id) };
 }
 

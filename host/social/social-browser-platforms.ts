@@ -321,14 +321,23 @@ export class PlatformBrowserSessions {
     options: YouTubeBrowserOperationOptions = {},
   ): Promise<T> {
     const uploads = options.uploads ?? [];
-    if (account.platform !== "youtube" || account.connection !== "browser" || !account.connected || !/^web:youtube:UC[\w-]{22}$/.test(account.platformId))
+    if (
+      account.platform !== "youtube" ||
+      account.connection !== "browser" ||
+      !account.connected ||
+      !/^web:youtube:UC[\w-]{22}$/.test(account.platformId)
+    )
       throw new SocialPlatformError("unsupported");
     if (!this.launcher || this.stopped || (options.outbound && !options.beforeSubmit))
       throw new SocialPlatformError("denied");
-    if (uploads.length > 10 || new Set(uploads).size !== uploads.length || uploads.some((id) => !/^[a-f0-9-]{36}$/i.test(id)) || (uploads.length && !options.media))
+    if (
+      uploads.length > 10 ||
+      new Set(uploads).size !== uploads.length ||
+      uploads.some((id) => !/^[a-f0-9-]{36}$/i.test(id)) ||
+      (uploads.length && !options.media)
+    )
       throw new SocialPlatformError("rejected");
     return this.exclusive(account.id, async () => {
-      await options.beforeSubmit?.();
       if (options.outbound) await this.limiter.reserve(account.id);
       const staging = join(this.directory, "browser-uploads", randomUUID());
       try {
@@ -344,29 +353,28 @@ export class PlatformBrowserSessions {
         const session = await this.open(account);
         try {
           let submitted = false;
-          const base = this.context(session.page, account, files, options.beforeSubmit, () => {
+          const base = this.context(session.page, account, files, undefined, () => {
             submitted = true;
           });
           const context: YouTubeBrowserRecipeContext = {
             ...base,
             verifyIdentity: async () => {
               const hit = await detectChallenge(session.page);
-              if (hit) throw await challengeError(session.page, this.directory) ?? needsHumanError(hit);
+              if (hit)
+                throw (await challengeError(session.page, this.directory)) ?? needsHumanError(hit);
               await base.verifyIdentity();
             },
             beforeYouTubeSubmission: async () => {
+              if (options.outbound) await this.limiter.record(account.id);
               await options.beforeSubmit?.();
-              if (options.outbound) {
-                await this.limiter.record(account.id);
-                await options.beforeSubmit?.();
-              }
             },
           };
           try {
             return await run(context);
           } catch (error) {
             if (submitted) throw new SocialPlatformError("unknown");
-            if (isNeedsHuman(error)) throw await challengeError(session.page, this.directory) ?? error;
+            if (isNeedsHuman(error))
+              throw (await challengeError(session.page, this.directory)) ?? error;
             throw error;
           }
         } finally {

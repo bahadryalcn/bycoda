@@ -1,4 +1,5 @@
 import { refreshWithRefreshToken, type OAuthPlatformConfig } from "./oauth-platform";
+import { YOUTUBE_READ_SCOPE } from "../../../src/integrations/social/youtube-analytics";
 
 export const youtubeOAuth: OAuthPlatformConfig = {
   platform: "youtube",
@@ -6,7 +7,10 @@ export const youtubeOAuth: OAuthPlatformConfig = {
   authorizeUrl: () => "https://accounts.google.com/o/oauth2/v2/auth",
   tokenUrl: () => "https://oauth2.googleapis.com/token",
   scopeSeparator: " ",
-  extraScopes: () => ["https://www.googleapis.com/auth/youtube.readonly"],
+  // The selected operations request Analytics or monetary scopes on demand.
+  // Channel identity and Analytics reports also require the Data API read scope.
+  extraScopes: (_accountType, current) =>
+    current.includes(YOUTUBE_READ_SCOPE) ? [] : [YOUTUBE_READ_SCOPE],
   authorizeParams: () => ({
     access_type: "offline",
     prompt: "consent",
@@ -18,7 +22,7 @@ export const youtubeOAuth: OAuthPlatformConfig = {
   pkce: false,
   refresh: (runtime, account, credential) =>
     refreshWithRefreshToken(youtubeOAuth, runtime, account, credential),
-  async identity({ http }, { credential }) {
+  async identity({ http }, { credential, token }) {
     const { value } = await http.request(
       "https://www.googleapis.com/youtube/v3/channels?part=id,snippet&mine=true&maxResults=50",
       credential.accessToken,
@@ -34,6 +38,8 @@ export const youtubeOAuth: OAuthPlatformConfig = {
       throw new Error(
         "OAuth must identify exactly one selected YouTube channel. Reauthorize for the intended channel.",
       );
-    return { candidates };
+    const scopes =
+      typeof token.scope === "string" ? [...new Set(token.scope.split(/\s+/).filter(Boolean))] : [];
+    return { candidates, scopes };
   },
 };

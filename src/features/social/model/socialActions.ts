@@ -18,7 +18,12 @@ import type { SocialPlatform } from "./social";
 export type ListPage<T> = { items: T[]; next?: string };
 
 /** Read-only actions (section 3, RO = yes or list RO). The client sends no requestId for these. */
+import { YOUTUBE_READ_TOOLS } from "./youtubeManagement";
+
 export const SOCIAL_READ_ACTIONS = [
+  // YouTube management.
+  ...YOUTUBE_READ_TOOLS,
+  "youtube.operations.list",
   "people.list",
   "people.get",
   "people.matchSuggestions",
