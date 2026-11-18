@@ -9,7 +9,13 @@ import {
   HostDomainRefusalError,
 } from "../domains/context";
 import { SessionReadError } from "../domains/sessions/read-errors";
-import { dispatchOwnerRpc, rpcFailureFields, slowRpcThresholdMs } from "./owner-rpc";
+import {
+  dispatchOwnerRpc,
+  OwnerRpcDeadlineError,
+  ownerRpcDeadlineMs,
+  rpcFailureFields,
+  slowRpcThresholdMs,
+} from "./owner-rpc";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -77,6 +83,59 @@ it("keeps the plain threshold for calls that do not hold", () => {
   expect(slowRpcThresholdMs("machine.changes", { waitMs: "soon" })).toBe(2_000);
   expect(slowRpcThresholdMs("workspace.run", {})).toBe(Infinity);
   expect(slowRpcThresholdMs("assistant.request", {})).toBe(Infinity);
+});
+
+/** Dispatches `machine.changes` whose reader never settles, under the given request signal. */
+function stuckCall(signal: AbortSignal): { call: Promise<void> } {
+  const dependencies = {
+    heldPolls: new Map(),
+    engine: { store: { authenticated: async () => true } },
+    remoteChanges: { read: () => new Promise(() => undefined) },
+  };
+  const request = {
+    input: { method: "machine.changes" },
+    params: {},
+    result: undefined,
+    token: "token",
+    pollState: { revoked: false },
+    response: { once: () => undefined },
+    domainContext: { signal, authorized: async () => true },
+  };
+  return { call: dispatchOwnerRpc(dependencies as never, request as never) };
+}
+
+it("answers a handler that never settles with a deadline error once the deadline passes", async () => {
+  const abort = new AbortController();
+  const { call } = stuckCall(abort.signal);
+  abort.abort(new DOMException("Host RPC deadline", "TimeoutError"));
+  const failure = await call.catch((error: unknown) => error);
+  expect(failure).toBeInstanceOf(OwnerRpcDeadlineError);
+  expect(failure).toBeInstanceOf(HostDomainOutcomeError);
+  expect(failure).toMatchObject({
+    code: "HOST_RPC_DEADLINE",
+    delivery: "unknown",
+    message: "Host did not answer machine.changes within 120 s.",
+  });
+});
+
+it("stops waiting on a stuck handler when the client disconnects", async () => {
+  const abort = new AbortController();
+  const { call } = stuckCall(abort.signal);
+  abort.abort();
+  await expect(call).rejects.toThrow("Request cancelled");
+  const already = stuckCall(abort.signal);
+  await expect(already.call).rejects.toThrow("Request cancelled");
+});
+
+it("gives long-running methods a deadline beyond their client's and owner commands none", () => {
+  expect(ownerRpcDeadlineMs("sessions.get", {})).toBe(120_000);
+  expect(ownerRpcDeadlineMs("machine.changes", { waitMs: 10_000 })).toBe(120_000);
+  expect(ownerRpcDeadlineMs("git.action", {})).toBe(480_000);
+  expect(ownerRpcDeadlineMs("browser.setup", {})).toBe(1_260_000);
+  expect(ownerRpcDeadlineMs("workspace.run", {})).toBe(Infinity);
+  expect(ownerRpcDeadlineMs("assistant.request", {})).toBe(Infinity);
+  // A prototype key is not a method name.
+  expect(ownerRpcDeadlineMs("constructor", {})).toBe(120_000);
 });
 
 it("logs a pre-execution refusal at debug with its code, not as a handler failure", async () => {
