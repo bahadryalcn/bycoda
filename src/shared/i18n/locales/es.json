@@ -12116,5 +12116,12 @@
   "YouTube declined this operation. Check permissions and settings.": "YouTube ha rechazado esta acción. Revisa los permisos y la configuración.",
   "YouTube management": "Gestión de YouTube",
   "YouTube needs your attention. Complete verification in YouTube, then check the account again.": "YouTube requiere tu intervención. Completa la verificación en YouTube y vuelve a comprobar la cuenta.",
-  "YouTube outcome is uncertain. Verify it on YouTube before trying again.": "No se ha podido confirmar el resultado. Compruébalo en YouTube antes de volver a intentarlo."
+  "YouTube outcome is uncertain. Verify it on YouTube before trying again.": "No se ha podido confirmar el resultado. Compruébalo en YouTube antes de volver a intentarlo.",
+  "Edit Community post": "Editar la publicación de la comunidad",
+  "Delete Community post": "Eliminar la publicación de la comunidad",
+  "Community post ID": "ID de la publicación de la comunidad",
+  "List Community posts": "Ver las publicaciones de la comunidad",
+  "MP4 or WebM videos for YouTube can be at most 256 GiB.": "Los vídeos MP4 o WebM para YouTube pueden ocupar hasta 256 GiB.",
+  "Use JPEG or PNG images, or one MP4 or WebM video.": "Usa imágenes JPEG o PNG, o un solo vídeo MP4 o WebM.",
+  "Large videos require a YouTube API connection.": "Los vídeos de gran tamaño requieren una conexión con la API de YouTube."
 }

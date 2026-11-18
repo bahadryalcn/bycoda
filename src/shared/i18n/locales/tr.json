@@ -12116,5 +12116,12 @@
   "YouTube declined this operation. Check permissions and settings.": "YouTube işlemi reddetti. İzinleri ve ayarları kontrol et.",
   "YouTube management": "YouTube yönetimi",
   "YouTube needs your attention. Complete verification in YouTube, then check the account again.": "YouTube işlem yapmanı bekliyor. YouTube’da doğrulamayı tamamla, ardından hesabı yeniden kontrol et.",
-  "YouTube outcome is uncertain. Verify it on YouTube before trying again.": "YouTube işleminin sonucu belirsiz. Tekrar denemeden önce YouTube’da doğrula."
+  "YouTube outcome is uncertain. Verify it on YouTube before trying again.": "YouTube işleminin sonucu belirsiz. Tekrar denemeden önce YouTube’da doğrula.",
+  "Edit Community post": "Topluluk gönderisini düzenle",
+  "Delete Community post": "Topluluk gönderisini sil",
+  "Community post ID": "Topluluk gönderisi kimliği",
+  "List Community posts": "Topluluk gönderilerini listele",
+  "MP4 or WebM videos for YouTube can be at most 256 GiB.": "YouTube için MP4 veya WebM videolar en fazla 256 GiB olabilir.",
+  "Use JPEG or PNG images, or one MP4 or WebM video.": "JPEG veya PNG görseller ya da tek bir MP4 veya WebM video kullan.",
+  "Large videos require a YouTube API connection.": "Büyük videolar için YouTube API bağlantısı gerekir."
 }

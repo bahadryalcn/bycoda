@@ -12116,5 +12116,12 @@
   "YouTube declined this operation. Check permissions and settings.": "YouTube declined this operation. Check permissions and settings.",
   "YouTube management": "YouTube management",
   "YouTube needs your attention. Complete verification in YouTube, then check the account again.": "YouTube needs your attention. Complete verification in YouTube, then check the account again.",
-  "YouTube outcome is uncertain. Verify it on YouTube before trying again.": "YouTube outcome is uncertain. Verify it on YouTube before trying again."
+  "YouTube outcome is uncertain. Verify it on YouTube before trying again.": "YouTube outcome is uncertain. Verify it on YouTube before trying again.",
+  "Edit Community post": "Edit Community post",
+  "Delete Community post": "Delete Community post",
+  "Community post ID": "Community post ID",
+  "List Community posts": "List Community posts",
+  "MP4 or WebM videos for YouTube can be at most 256 GiB.": "MP4 or WebM videos for YouTube can be at most 256 GiB.",
+  "Use JPEG or PNG images, or one MP4 or WebM video.": "Use JPEG or PNG images, or one MP4 or WebM video.",
+  "Large videos require a YouTube API connection.": "Large videos require a YouTube API connection."
 }

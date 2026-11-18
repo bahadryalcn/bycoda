@@ -12116,5 +12116,12 @@
   "YouTube declined this operation. Check permissions and settings.": "YouTube が操作を拒否しました。権限と設定を確認してください。",
   "YouTube management": "YouTube の管理",
   "YouTube needs your attention. Complete verification in YouTube, then check the account again.": "YouTube での対応が必要です。YouTube で確認を完了してから、アカウントを再確認してください。",
-  "YouTube outcome is uncertain. Verify it on YouTube before trying again.": "YouTube での処理結果を確認できませんでした。再試行する前に、YouTube で結果を確認してください。"
+  "YouTube outcome is uncertain. Verify it on YouTube before trying again.": "YouTube での処理結果を確認できませんでした。再試行する前に、YouTube で結果を確認してください。",
+  "Edit Community post": "コミュニティ投稿を編集",
+  "Delete Community post": "コミュニティ投稿を削除",
+  "Community post ID": "コミュニティ投稿 ID",
+  "List Community posts": "コミュニティ投稿一覧を表示",
+  "MP4 or WebM videos for YouTube can be at most 256 GiB.": "YouTube にアップロードする MP4 または WebM 動画の上限は 256 GiB です。",
+  "Use JPEG or PNG images, or one MP4 or WebM video.": "JPEG または PNG の画像、あるいは MP4 または WebM の動画 1 本を使用してください。",
+  "Large videos require a YouTube API connection.": "サイズの大きい動画には YouTube API での接続が必要です。"
 }

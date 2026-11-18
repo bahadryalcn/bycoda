@@ -12116,5 +12116,12 @@
   "YouTube declined this operation. Check permissions and settings.": "YouTube 拒绝了此操作。请检查权限和设置。",
   "YouTube management": "YouTube 管理",
   "YouTube needs your attention. Complete verification in YouTube, then check the account again.": "YouTube 需要你处理。请在 YouTube 完成验证，然后重新检查账号。",
-  "YouTube outcome is uncertain. Verify it on YouTube before trying again.": "无法确认 YouTube 操作结果。请先在 YouTube 上核实，再重试。"
+  "YouTube outcome is uncertain. Verify it on YouTube before trying again.": "无法确认 YouTube 操作结果。请先在 YouTube 上核实，再重试。",
+  "Edit Community post": "编辑社区帖子",
+  "Delete Community post": "删除社区帖子",
+  "Community post ID": "社区帖子 ID",
+  "List Community posts": "查看社区帖子列表",
+  "MP4 or WebM videos for YouTube can be at most 256 GiB.": "用于上传到 YouTube 的 MP4 或 WebM 视频不得超过 256 GiB。",
+  "Use JPEG or PNG images, or one MP4 or WebM video.": "请使用 JPEG 或 PNG 图片，或一个 MP4 或 WebM 视频。",
+  "Large videos require a YouTube API connection.": "上传大型视频需要通过 YouTube API 连接。"
 }
