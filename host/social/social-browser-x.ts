@@ -32,6 +32,11 @@ import {
   parseInstagramProfilePatch,
 } from "./social-browser-instagram-profile";
 import type { BrowserRecipe } from "./social-browser-recipe";
+import { hash } from "./core/social-helpers";
+import {
+  parseSnapchatProfilePatch,
+  SnapchatProfileActions,
+} from "./social-browser-snapchat-profile";
 import { xIdentity, xUserId, type XBrowserDeps } from "./social-browser-x-page";
 import { pollX } from "./social-browser-x-inbox";
 import { publishX } from "./social-browser-x-compose";
@@ -187,6 +192,10 @@ export class XBrowserSessions {
     input: Record<string, unknown>,
   ) {
     const account = await service.accountForBrowserManagement(p, accountId, action !== "read");
+    if (account.platform === "snapchat") {
+      if (action === "follow") throw new SocialPlatformError("unsupported");
+      return await this.snapchatProfileAction(service, p, accountId, action, input);
+    }
     const linkedIn = account.platform === "linkedin" && account.accountType === "organization";
     const facebook = account.platform === "facebook" && account.accountType === "page";
     const instagram =
@@ -328,6 +337,126 @@ export class XBrowserSessions {
           : action === "update"
             ? await actions.update(patch!, files)
             : await actions.follow(input.handle as string);
+      } finally {
+        await session?.close().catch(() => undefined);
+        await rm(staging, { recursive: true, force: true }).catch(() => undefined);
+      }
+    });
+  }
+  /** Snapchat browser reads use the current grant; profile mutations stay owner-authorized. */
+  async snapchatProfileAction(
+    service: SocialService,
+    principal: SocialPrincipal,
+    accountId: string,
+    action: "read" | "update" | "create" | "monetization" | "delete-story",
+    input: Record<string, unknown> = {},
+  ) {
+    const writing = action !== "read" && action !== "monetization";
+    const authorized = () =>
+      writing
+        ? service.accountForBrowserManagement(principal, accountId, true)
+        : service.access(principal, accountId, "read");
+    const account = await authorized();
+    const check = async () => {
+      const current = await authorized();
+      if (
+        current.platform !== "snapchat" ||
+        current.connection !== "browser" ||
+        !current.connected ||
+        !current.accessApproved ||
+        (current.expiresAt !== undefined && current.expiresAt <= this.now()) ||
+        current.paused ||
+        current.executorId !== service.store.environmentId ||
+        current.platformId !== account.platformId ||
+        current.accountType !== account.accountType ||
+        !["public_profile", "member"].includes(current.accountType)
+      )
+        throw new SocialPlatformError("denied");
+      if (
+        this.workflows.hasActive(accountId) ||
+        ["waiting", "checking"].includes(this.logins.get(accountId)?.status ?? "")
+      )
+        throw new Error("Finish the account's active browser operation first.");
+    };
+    await check();
+    if (!this.launcher) throw new SocialPlatformError("unsupported");
+    if (writing) {
+      const confirmation = {
+        update: "UPDATE_SNAPCHAT_PROFILE",
+        create: "CREATE_SNAPCHAT_PROFILE",
+        "delete-story": "DELETE_SNAPCHAT_STORY",
+      };
+      if (input.confirm !== confirmation[action]) throw new SocialPlatformError("denied");
+    }
+    const patch =
+      action === "update" || action === "create"
+        ? parseSnapchatProfilePatch(input.patch)
+        : undefined;
+    const storyId = typeof input.storyId === "string" ? input.storyId : undefined;
+    if (action === "delete-story" && !storyId) throw new SocialPlatformError("denied");
+    const mutationKey = `snapchat:browser-mutation:${hash(
+      JSON.stringify([
+        account.platformId,
+        action,
+        patch
+          ? Object.entries(patch).sort(([left], [right]) => left.localeCompare(right))
+          : storyId,
+      ]),
+    )}`;
+    return this.exclusive(accountId, async () => {
+      await check();
+      if (writing && (await service.setting(mutationKey))) throw new SocialPlatformError("unknown");
+      let marked = false;
+      const beforeMutation = async () => {
+        await check();
+        await service.store.transaction(async () => {
+          if (await service.setting(mutationKey)) throw new SocialPlatformError("unknown");
+          await service.setSetting(mutationKey, "submitted");
+        });
+        marked = true;
+      };
+      const staging = join(this.directory, "snapchat-profile-uploads", randomUUID());
+      let session: BrowserSession | undefined;
+      try {
+        let avatar: string | undefined;
+        if (patch?.avatarUploadId) {
+          const bytes = await service.readOwnerMedia(principal, patch.avatarUploadId);
+          const format = xMediaFormat(bytes);
+          if (format === "mp4") throw new SocialPlatformError("rejected");
+          await mkdir(staging, { recursive: true, mode: 0o700 });
+          avatar = join(staging, `avatar.${format}`);
+          await writeFileAtomic(avatar, bytes, { mode: 0o600 });
+        }
+        session = await this.launchAt(
+          accountId,
+          this.profile(accountId, "browser-profiles"),
+          this.background,
+        );
+        const { page } = session;
+        const actions = new SnapchatProfileActions(
+          page,
+          account,
+          check,
+          (expression, timeout) => this.until(page, expression, timeout),
+          beforeMutation,
+        );
+        if (action === "read") return await actions.read();
+        if (action === "monetization") return await actions.monetization();
+        let result;
+        try {
+          result =
+            action === "create"
+              ? await actions.create(patch!, avatar)
+              : action === "update"
+                ? await actions.update(patch!, avatar)
+                : await actions.deleteStory(storyId!);
+        } catch (error) {
+          if (marked && !(error instanceof SocialPlatformError && error.code === "unknown"))
+            await service.setSetting(mutationKey, "");
+          throw error;
+        }
+        if (marked) await service.setSetting(mutationKey, "");
+        return result;
       } finally {
         await session?.close().catch(() => undefined);
         await rm(staging, { recursive: true, force: true }).catch(() => undefined);
