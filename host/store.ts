@@ -1502,8 +1502,12 @@ export class HostStore {
     return this.remember(value);
   }
   /** Cold cancellable reads parse outside the SQL queue; see `prefetchColdSession`. */
-  private prefetchCold(id: string, signal: AbortSignal): Promise<void> {
-    return prefetchColdSession({
+  private async cancellableSessionRead<T>(
+    id: string,
+    signal: AbortSignal,
+    work: () => Promise<T>,
+  ): Promise<T> {
+    const oversized = await prefetchColdSession({
       id,
       signal,
       path: this.sessionReadPath,
@@ -1512,12 +1516,12 @@ export class HostStore {
       resident: (key) => this.pending.has(key) || this.cache.has(key),
       admit: (value) => this.remember(value),
     });
+    // A transcript over the child's reply budget is parsed in the queue, as an
+    // unsignalled read is; the signal still cancels the queued work.
+    return oversized ? this.db.scope(work, signal) : this.withReadCancellation(signal, work);
   }
   async session(id: string, signal?: AbortSignal): Promise<HostSession> {
-    if (signal)
-      return this.prefetchCold(id, signal).then(() =>
-        this.withReadCancellation(signal, () => this.session(id)),
-      );
+    if (signal) return this.cancellableSessionRead(id, signal, () => this.session(id));
     return this.db.storeScope(async () => {
       const value = await this.find(id);
       if (!value) throw new Error("Session not found on this machine");
@@ -1724,10 +1728,7 @@ export class HostStore {
     });
   }
   async sync(id: string, revision?: number, signal?: AbortSignal): Promise<SessionSync> {
-    if (signal)
-      return this.prefetchCold(id, signal).then(() =>
-        this.withReadCancellation(signal, () => this.sync(id, revision)),
-      );
+    if (signal) return this.cancellableSessionRead(id, signal, () => this.sync(id, revision));
     return this.db.storeScope(async () => {
       const value = await this.session(id);
       const { blockRevisions, ...snapshot } = value;
