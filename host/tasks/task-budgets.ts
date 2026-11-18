@@ -45,6 +45,8 @@ type LedgerRun = BudgetRunRegistration & {
   durationUncertain?: boolean;
   awaitingFinishCheckpoint?: boolean;
   settledAt?: number;
+  /** Session revision last observed after settlement; unchanged means nothing to re-read. */
+  observedRevision?: number;
   tokens: number | null;
   costBaseline: number | null;
   costUsd: number | null;
@@ -256,6 +258,15 @@ export class HostTaskBudgets {
       const run = JSON.parse(String(row.value)) as LedgerRun;
       // Isolated helpers own durable settlement; no project session exists to observe.
       if (run.receiptKind === "helper") continue;
+      // A settled run's numbers only change when its session changes (late usage, a missing
+      // finish checkpoint). Skip loading the transcript while the indexed revision is unchanged.
+      if (
+        run.settledAt !== undefined &&
+        !run.awaitingFinishCheckpoint &&
+        run.confirmedElapsedMs !== undefined &&
+        (await this.store.sessionRevision(run.sessionId)) === run.observedRevision
+      )
+        continue;
       const previous = JSON.stringify(run);
       const previousTokens = run.tokens;
       const previousCost = run.costUsd;
@@ -315,7 +326,9 @@ export class HostTaskBudgets {
         // A later turn's cumulative bill must not be charged to an earlier retained turn.
         if (session.runId === run.runId && finite(cost) && run.costBaseline !== null)
           run.costUsd = Math.max(run.costUsd ?? 0, cost - run.costBaseline, 0);
+        if (run.settledAt !== undefined) run.observedRevision = session.revision;
       } catch {
+        delete run.observedRevision;
         // Keep the last durable measurements after history deletion. Missing metrics remain unknown.
         if (run.settledAt === undefined) {
           run.settledAt = now;
