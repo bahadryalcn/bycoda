@@ -1,6 +1,13 @@
 import { SocialPlatformError, type SocialErrorCode, type SocialHttp } from "../adapter";
 import { facebookPageEndpoint } from "./facebook-page";
 
+/** Creating an unpublished upload needs Page Photos permissions in addition to profile editing. */
+export const FACEBOOK_PAGE_PHOTO_SCOPES = [
+  "pages_read_engagement",
+  "pages_manage_posts",
+  "pages_show_list",
+] as const;
+
 export type FacebookPagePatch = {
   about?: string;
   description?: string;

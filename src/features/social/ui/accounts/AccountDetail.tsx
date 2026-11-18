@@ -38,6 +38,10 @@ import { FacebookManagementRequests } from "./platform/FacebookManagementRequest
 import { FacebookMonetization } from "./platform/FacebookMonetization";
 import { FacebookPageActivity } from "./platform/FacebookPageActivity";
 import { FacebookProfileEditor } from "./platform/FacebookProfileEditor";
+import {
+  FacebookPersonalProfileForm,
+  FacebookProfilePhotos,
+} from "./platform/FacebookProfileForms";
 import "./accounts.css";
 
 const HEALTH_TONE: Record<"ok" | "warn" | "error", BadgeTone> = {
@@ -244,16 +248,25 @@ export function AccountDetail({
           disabled={disabled || !onThisComputer}
         />
       ) : null}
+      {/* Facebook Page and personal profile management */}
       {account.platform === "facebook" &&
-      account.accountType === "page" &&
+      (account.accountType === "page" ||
+        (account.accountType === "member" && account.connection === "browser")) &&
       account.connected &&
       onThisComputer &&
       !disabled ? (
         <div key={`${socialQueryScope(client).join(":")}:${account.id}:${account.connection}`}>
           <Disclosure summary={t("Edit profile")} variant="row">
-            <FacebookProfileEditor client={client} account={account} />
+            {account.accountType === "member" ? (
+              <FacebookPersonalProfileForm client={client} account={account} />
+            ) : (
+              <FacebookProfileEditor client={client} account={account} />
+            )}
           </Disclosure>
-          {account.connection !== "browser" ? (
+          <Disclosure summary={t("Facebook profile photos")} variant="row">
+            <FacebookProfilePhotos client={client} account={account} />
+          </Disclosure>
+          {account.accountType === "page" && account.connection !== "browser" ? (
             <>
               <Disclosure summary={t("Posts")} variant="row">
                 <FacebookPageActivity client={client} accountId={account.id} />
@@ -276,9 +289,11 @@ export function AccountDetail({
               </Disclosure>
             </>
           ) : null}
-          <Disclosure summary={t("Monetization")} variant="row">
-            <FacebookMonetization client={client} account={account} />
-          </Disclosure>
+          {account.accountType === "page" ? (
+            <Disclosure summary={t("Monetization")} variant="row">
+              <FacebookMonetization client={client} account={account} />
+            </Disclosure>
+          ) : null}
         </div>
       ) : null}
       <Disclosure

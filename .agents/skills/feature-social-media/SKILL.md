@@ -46,7 +46,7 @@ Paths are repository-root relative. Follow current imports and callers; this map
 
 ## Focused checks
 
-Listing a command here is not a passing result.
+Listing a command is not a result.
 
 - `pnpm exec vitest run src/features/social/ui/SocialView.test.ts src/features/social/model`
 - `pnpm exec vitest run src/features/social/ui`

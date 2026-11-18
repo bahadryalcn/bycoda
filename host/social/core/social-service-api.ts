@@ -74,6 +74,8 @@ export interface SocialServiceApi {
     action: "read" | "update" | "create" | "monetization" | "delete-story" | "friends",
     input: Record<string, unknown>,
   ) => Promise<unknown>;
+  // Facebook Page photo uploads reuse owner-only media custody.
+  readOwnerMedia(p: SocialPrincipal, id: string): Promise<Uint8Array>;
   capability(account: SocialAccount, operation: SocialOperation): void;
   createDraft(
     p: SocialPrincipal,

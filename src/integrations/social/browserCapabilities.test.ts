@@ -174,6 +174,7 @@ describe("browser operations come from the recipe table", () => {
     const wired: Partial<Record<SocialPlatform, string[]>> = {
       tiktok: ["delete", "analytics", "audience.collect", "profile.read"],
       snapchat: ["audience.collect", "profile.read"],
+      facebook: ["profile.read", "profile.update"],
     };
     for (const platform of SOCIAL_PLATFORMS) {
       const operations = browserOperations({

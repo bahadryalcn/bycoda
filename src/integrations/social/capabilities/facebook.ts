@@ -96,6 +96,9 @@ export function facebookCapabilities(): PlatformCapabilities {
         "Owner-managed live streams on eligible Pages.",
       ),
     },
-    browser: {},
+    browser: {
+      "profile.read": "Read profile photos from the verified Facebook actor.",
+      "profile.update": "Owner-confirmed edits to the verified Facebook Page or personal profile.",
+    },
   };
 }

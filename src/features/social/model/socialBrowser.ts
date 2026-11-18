@@ -30,6 +30,17 @@ export const SOCIAL_BROWSER_INTENTS = [
   "instagram-monetization",
   "instagram-live",
 ] as const;
+// Facebook browser profile fields are scoped to the verified Page or personal actor.
+export type FacebookProfileDetail = "work" | "school" | "college" | "currentCity" | "hometown";
+export type FacebookPersonalName = { first: string; middle: string; last: string };
+export type FacebookBrowserProfilePatch = XProfilePatch & {
+  username?: string;
+  detail?: { field: FacebookProfileDetail; value: string; current?: string };
+  websiteUpdate?: { current: string; value: string };
+  personalName?: FacebookPersonalName;
+  introDetail?: { label: string; visible: boolean };
+};
+
 export type SocialBrowserIntent = (typeof SOCIAL_BROWSER_INTENTS)[number];
 // Instagram browser operations.
 export type InstagramProfilePatch = Pick<

@@ -125,6 +125,7 @@ export const SOCIAL_TOOLS = [
   "facebook.live.replyDraft",
   "facebook.management.request",
   "instagram.comments.request",
+  "facebook.management.execute",
 ] as const;
 export type SocialTool = (typeof SOCIAL_TOOLS)[number];
 export function socialToolName(tool: SocialTool): string {

@@ -715,6 +715,7 @@ export const SOCIAL_TOOL_SCHEMAS: Record<SocialTool, Record<string, unknown>> = 
     },
     ["accountId", "operation", "details"],
   ),
+  "facebook.management.execute": object({ accountId: string(), id: string() }, ["accountId", "id"]),
 };
 function pageLimit() {
   return { type: "integer", minimum: 1, maximum: 200 };
@@ -894,6 +895,8 @@ const TOOL_NOTES: Partial<Record<SocialTool, string>> = {
     " Prepares a public reply to a verified live comment. Send through replies.send, subject to normal approval.",
   "facebook.management.request":
     " Files the exact Facebook change for owner review in the Page account. It does not edit, delete, moderate, or start a broadcast.",
+  "facebook.management.execute":
+    " Applies an existing Facebook request by ID. Post edits and reversible comment moderation run under the account's autonomous policy or after the owner selects Approve for chat. A submitted or review result must be checked before another send.",
   "accounts.request":
     " Use when this project's social work needs a platform account the project does not have (check accounts.list first). It only asks the owner to create or sign in an account; it creates nothing on any platform, and the owner approves it in Social Command. Never retry a pending request.",
 };

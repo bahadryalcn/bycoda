@@ -64,7 +64,9 @@ import { SOCIAL_BROWSER_RECIPES } from "./social-browser-recipes";
 import { readFacebookMonetization } from "./social-browser-facebook-monetization";
 import {
   FacebookProfileActions,
+  facebookProfilePhotoDigest,
   parseFacebookProfilePatch,
+  writeFacebookBrowserProfile,
 } from "./social-browser-facebook-profile";
 import {
   InstagramProfileActions,
@@ -288,7 +290,12 @@ export class XBrowserSessions {
       return await this.snapchatProfileAction(service, p, accountId, action, input);
     }
     const linkedIn = account.platform === "linkedin" && account.accountType === "organization";
-    const facebook = account.platform === "facebook" && account.accountType === "page";
+    // Facebook profile management uses the selected browser actor for both account types.
+    const facebookType =
+      account.accountType === "page" || account.accountType === "member"
+        ? account.accountType
+        : undefined;
+    const facebook = account.platform === "facebook" && facebookType !== undefined;
     const instagram =
       account.platform === "instagram" && ["member", "professional"].includes(account.accountType);
     const check = async () => {
@@ -302,7 +309,7 @@ export class XBrowserSessions {
             current.platform === "linkedin" &&
             current.accountType === "organization"
           ) &&
-          !(facebook && current.platform === "facebook" && current.accountType === "page") &&
+          !facebook &&
           !instagram) ||
         current.connection !== "browser" ||
         !current.connected ||
@@ -340,7 +347,7 @@ export class XBrowserSessions {
         ? linkedIn
           ? parseLinkedInProfilePatch(input.patch)
           : facebook
-            ? parseFacebookProfilePatch(input.patch)
+            ? parseFacebookProfilePatch(input.patch, facebookType)
             : instagram
               ? parseInstagramProfilePatch(input.patch)
               : parseXProfilePatch(input.patch)
@@ -356,6 +363,7 @@ export class XBrowserSessions {
       let session: BrowserSession | undefined;
       try {
         const files: { avatar?: string; banner?: string } = {};
+        let facebookPhotoDigest: string | undefined;
         for (const kind of ["avatar", "banner"] as const) {
           const id =
             kind === "avatar"
@@ -365,6 +373,7 @@ export class XBrowserSessions {
                 : undefined;
           if (!id) continue;
           const bytes = await service.readOwnerMedia(p, id);
+          if (facebook) facebookPhotoDigest = facebookProfilePhotoDigest(bytes);
           const format = xMediaFormat(bytes);
           if (format === "mp4") throw new SocialPlatformError("rejected");
           await mkdir(staging, { recursive: true, mode: 0o700 });
@@ -398,18 +407,33 @@ export class XBrowserSessions {
         if (facebook) {
           const recipe = this.recipes.find((entry) => entry.platform === "facebook");
           if (!recipe) throw new SocialPlatformError("unsupported");
-          const actions = new FacebookProfileActions(
-            page,
-            account.platformId,
-            check,
-            async () => {
-              const identity = await recipe.identity(page, account);
-              if (identity?.platformId !== account.platformId || identity.accountType !== "page")
-                throw new SocialPlatformError("denied");
-            },
-            async (expression, timeout) => await this.until(page, expression, timeout),
-          );
-          return action === "read" ? await actions.read() : await actions.update(patch!, files);
+          const actions = (recordSubmission?: () => void) =>
+            new FacebookProfileActions(
+              page,
+              account.platformId,
+              check,
+              async () => {
+                const identity = await recipe.identity(page, account);
+                if (
+                  identity?.platformId !== account.platformId ||
+                  identity.accountType !== facebookType
+                )
+                  throw new SocialPlatformError("denied");
+              },
+              async (expression, timeout) => await this.until(page, expression, timeout),
+              facebookType,
+              recordSubmission,
+            );
+          return action === "read"
+            ? await actions().read()
+            : await writeFacebookBrowserProfile(
+                service,
+                accountId,
+                account.platformId,
+                patch!,
+                (recordSubmission) => actions(recordSubmission).update(patch!, files),
+                facebookPhotoDigest,
+              );
         }
         if (linkedIn) {
           const actions = new LinkedInProfileActions(

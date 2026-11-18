@@ -6,7 +6,11 @@ import { useConfirm } from "../../../../../shared/ui/ConfirmDialog";
 import { EmptyState } from "../../../../../shared/ui/EmptyState";
 import { InlineError } from "../../../../../shared/ui/InlineError";
 import { Text } from "../../../../../shared/ui/Text";
-import type { FacebookManagementRequest } from "../../../model/facebookManagement";
+import {
+  facebookManagementAutonomy,
+  type FacebookManagementRequest,
+} from "../../../model/facebookManagement";
+import type { AutonomyLevel, AutonomyAction } from "../../../model/autonomy";
 import type { SocialClient } from "../../../model/socialClient";
 import { useAccountWrite } from "../useAccountWrite";
 
@@ -20,6 +24,7 @@ export function FacebookManagementRequests({
   const t = useT();
   const confirm = useConfirm();
   const [items, setItems] = useState<FacebookManagementRequest[]>();
+  const [levels, setLevels] = useState<Partial<Record<AutonomyAction, AutonomyLevel>>>({});
   const work = useAccountWrite(t("Could not save this change. Try again."));
   const titles = {
     "facebook.page.update": t("Edit profile"),
@@ -32,6 +37,7 @@ export function FacebookManagementRequests({
   };
   const labels = {
     pending: t("Pending"),
+    approved: t("Approved"),
     submitted: t("Submitted"),
     completed: t("Completed"),
     review: t("Needs review"),
@@ -76,19 +82,28 @@ export function FacebookManagementRequests({
   };
   const load = async () => {
     const result = await work.write("list", () =>
-      client.request<{ requests: FacebookManagementRequest[] }>("facebook.management.list", {
-        accountId,
-      }),
+      Promise.all([
+        client.request<{ requests: FacebookManagementRequest[] }>("facebook.management.list", {
+          accountId,
+        }),
+        client.request<{ levels: Partial<Record<AutonomyAction, AutonomyLevel>> }>("autonomy.get", {
+          accountId,
+        }),
+      ]),
     );
-    if (result) setItems(result.requests);
+    if (result) {
+      setItems(result[0].requests);
+      setLevels(result[1]?.levels ?? {});
+    }
   };
-  const approve = async (item: FacebookManagementRequest) => {
+  const approve = async (item: FacebookManagementRequest, forChat = false) => {
+    const confirmLabel = forChat ? t("Approve for chat") : t("Approve");
     if (
       !(await confirm.confirm({
         title: titles[item.operation],
         message: `Facebook · ${item.pageId}`,
         details: details(item),
-        confirmLabel: t("Approve"),
+        confirmLabel,
         danger: item.operation === "facebook.post.delete" || item.details.action === "delete",
       }))
     )
@@ -97,9 +112,14 @@ export function FacebookManagementRequests({
       client.request<FacebookManagementRequest>("facebook.management.approve", {
         accountId,
         reviewed: item,
+        ...(forChat ? { forChat } : {}),
       }),
     );
     if (result) setItems((current) => current?.map((row) => (row.id === result.id ? result : row)));
+  };
+  const canApproveForChat = (item: FacebookManagementRequest) => {
+    const action = facebookManagementAutonomy(item);
+    return item.status === "pending" && action && levels[action] === "approve";
   };
   const dismiss = async (item: FacebookManagementRequest) => {
     const result = await work.write(item.id, () =>
@@ -129,6 +149,9 @@ export function FacebookManagementRequests({
             </Badge>
           </div>
           {details(item)}
+          {item.status === "approved" ? (
+            <Text as="p">{t("Return to chat to apply this Facebook change.")}</Text>
+          ) : null}
           <div className="social-field-row">
             {item.status === "pending" ? (
               <Button
@@ -137,6 +160,16 @@ export function FacebookManagementRequests({
                 onClick={() => void approve(item).catch(() => undefined)}
               >
                 {t("Approve")}
+              </Button>
+            ) : null}
+            {canApproveForChat(item) ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                loading={work.is(item.id)}
+                onClick={() => void approve(item, true).catch(() => undefined)}
+              >
+                {t("Approve for chat")}
               </Button>
             ) : null}
             <Button

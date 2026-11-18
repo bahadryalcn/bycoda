@@ -101,4 +101,20 @@ describe("Meta capability map", () => {
       }
     }
   });
+  it.each(["member", "page"] as const)(
+    "reports the verified Facebook %s browser profile operations",
+    (accountType) => {
+      const connected = { ...account("facebook", [], "browser"), accountType };
+      const operations = ["profile.read", "profile.update"];
+      for (const operation of operations) {
+        expect(row(accountCapabilities(connected), operation)).toMatchObject({
+          status: "available",
+          reasonCode: "browser.ready",
+        });
+        expect(
+          row(accountCapabilities({ ...connected, connected: false }), operation),
+        ).toMatchObject({ status: "pending", reasonCode: "browser.reconnect" });
+      }
+    },
+  );
 });

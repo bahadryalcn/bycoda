@@ -501,7 +501,7 @@ describe("Facebook Page logo Host routing", () => {
     ).rejects.toThrow("confirmation");
     expect(s.fake.launcher).not.toHaveBeenCalled();
   });
-  it.each([{ accountType: "member" as const }, { connection: "api" as const }])(
+  it.each([{ connection: "api" as const }])(
     "rejects unsupported identities/connections: %j",
     async (options) => {
       const s = await facebookProfileFixture(options);
@@ -524,7 +524,7 @@ describe("Facebook Page logo Host routing", () => {
         patch: { bio: "Use the Page settings API" },
         confirm: "UPDATE_FACEBOOK_PROFILE",
       }),
-    ).rejects.toThrow("valid Facebook Page");
+    ).rejects.toThrow("supported Facebook profile field");
     expect(s.fake.launcher).not.toHaveBeenCalled();
   });
   it("stages exact owner logo bytes in the separate Page profile and cleans them after one Save", async () => {
