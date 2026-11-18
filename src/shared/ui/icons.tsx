@@ -16,6 +16,7 @@ import {
   Quote as LucideBlockQuote,
   Bold as LucideBold,
   Bot as LucideBot,
+  BookOpen as LucideBookOpen,
   Briefcase as LucideBriefcase,
   Brain as LucideBrain,
   ListChecks as LucideCheckList,
@@ -504,6 +505,7 @@ export const RotateCcw = wrap(LucideRotateCcw, "RotateCcw");
 export const Save = wrap(LucideSave, "Save");
 export const Search = wrap(LucideSearch, "Search");
 export const Settings = wrap(LucideSettings, "Settings");
+export const BookOpen = wrap(LucideBookOpen, "BookOpen");
 export const Briefcase = wrap(LucideBriefcase, "Briefcase");
 export const UserRound = wrap(LucideUserRound, "UserRound");
 export const UsersRound = wrap(LucideUsersRound, "UsersRound");

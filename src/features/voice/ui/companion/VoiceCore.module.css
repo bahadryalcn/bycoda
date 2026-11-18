@@ -74,6 +74,15 @@
 .avatar:empty::before {
   content: attr(data-initial);
 }
+/* The stage core keeps the ring-to-avatar ratio of the small one. */
+.core[data-size="stage"] {
+  inline-size: 136px;
+  block-size: 136px;
+}
+.core[data-size="stage"] .avatar {
+  inline-size: 56px;
+  block-size: 56px;
+}
 .core:is([data-state="off"], [data-state="muted"]) .avatar {
   opacity: 0.6;
 }

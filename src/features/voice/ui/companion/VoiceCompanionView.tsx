@@ -1,6 +1,6 @@
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { Text } from "../../../../shared/ui/Text";
-import type { HTMLAttributes, ReactNode, RefObject } from "react";
+import { useState, type HTMLAttributes, type ReactNode, type RefObject } from "react";
 import { Button } from "../../../../shared/ui/Button";
 import { LiveText } from "../../../../shared/ui/LiveText";
 import { SectionLabel } from "../../../../shared/ui/SectionLabel";
@@ -97,6 +97,10 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
     canTalk ? (p.status === "idle" ? "Start voice" : "Talk") : p.muted ? "Resume" : "Pause mic",
   );
   const toggleLabel = t(p.compact ? "Expand voice companion" : "Compact voice companion");
+  // Like the phone call screen: a large stage by default, the transcript on request. Kept here,
+  // above the compact switch, so the choice survives collapsing the panel.
+  const [chatShown, setChatShown] = useState(false);
+  const caption = p.chatTurns[p.chatTurns.length - 1]?.text ?? "";
   return (
     <>
       <header
@@ -230,11 +234,13 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
               globalScope={p.globalScope}
               name={p.name}
               avatar={p.avatar}
+              stage={!chatShown}
+              caption={caption}
               onScopeChange={p.onScopeChange}
               onStopWork={p.onStopWork}
             />
             {p.sessionPicker}
-            <VoiceChatTranscript turns={p.chatTurns} />
+            {chatShown ? <VoiceChatTranscript turns={p.chatTurns} /> : null}
             {p.error ? <VoiceErrorNotice error={p.error} onDismiss={p.onDismissError} /> : null}
             <LiveText
               mode="assertive"
@@ -263,6 +269,8 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
               muted={p.muted}
               speakerMuted={p.speakerMuted}
               manual={p.manual}
+              chatShown={chatShown}
+              onToggleChat={() => setChatShown(!chatShown)}
               onStart={p.onStart}
               onClose={p.onClose}
               onToggleMute={p.onToggleMute}

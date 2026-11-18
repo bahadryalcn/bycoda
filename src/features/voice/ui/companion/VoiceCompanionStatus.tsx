@@ -1,7 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { surfaceAttributes } from "../../../../shared/ui/Surface";
+import { useEffect, useRef } from "react";
 import { Button } from "../../../../shared/ui/Button";
-import { Meter } from "../../../../shared/ui/Meter";
 import { LiveText } from "../../../../shared/ui/LiveText";
 import { Text } from "../../../../shared/ui/Text";
 import { SegmentedControl } from "../../../../shared/ui/SegmentedControl";
@@ -16,12 +14,11 @@ import { VoiceCore } from "./VoiceCore";
 import { voiceStatusTone } from "./VoiceLauncher";
 import styles from "./VoiceCompanionParts.module.css";
 
-const METER_SEGMENTS = 10;
-
 /**
- * The stage of the expanded panel. Row one: the voice core (avatar inside state rings) beside
- * what voice is doing, what it applies to and live readouts. Row two holds the scope choice, so
- * no state moves another control.
+ * The stage of the expanded panel, tinted by who has the floor. With the transcript hidden it
+ * is a call screen: a large voice core, the status, the engine and session clock, and the words
+ * in flight. With the transcript shown it shrinks to a strip: the small core beside the status.
+ * The scope choice sits under both, so no state moves another control.
  */
 export function VoiceCompanionStatus({
   visualState,
@@ -36,6 +33,8 @@ export function VoiceCompanionStatus({
   globalScope,
   name,
   avatar,
+  stage,
+  caption,
   onScopeChange,
   onStopWork,
 }: {
@@ -44,26 +43,36 @@ export function VoiceCompanionStatus({
   audioLevel: { readonly current: number };
   statusText: string;
   sessionStatusText: string;
-  /** Connected and capturing; shows the input meter and session clock. */
+  /** Connected and capturing; shows the session clock. */
   live: boolean;
   /** Who runs the voice: the realtime provider or this computer. */
   engine: string;
-  /** Where audio goes; shown with the engine readout. */
+  /** Where audio goes; the engine's tooltip. */
   privacy: string;
   workspace: boolean;
   globalScope: boolean;
   /** Assistant name; empty before setup, when there is no avatar to show. */
   name: string;
   avatar: string | undefined;
+  /** The transcript is hidden: show the large call stage. */
+  stage: boolean;
+  /** The latest spoken line, shown under the status on the large stage. */
+  caption: string;
   onScopeChange: (global: boolean) => void;
   onStopWork: () => void;
 }) {
   const tone = voiceStatusTone(visualState);
-  const caption = working ? sessionStatusText : "";
+  const work = working ? sessionStatusText : "";
   return (
-    <div className={styles.stage}>
+    <div className={styles.stage} data-layout={stage ? "stage" : "strip"} data-state={visualState}>
       <div className={styles.status}>
-        <VoiceCore state={visualState} level={audioLevel} name={name} avatar={avatar} />
+        <VoiceCore
+          state={visualState}
+          level={audioLevel}
+          name={name}
+          avatar={avatar}
+          size={stage ? "stage" : undefined}
+        />
         <div className={styles.statusText}>
           <div className={styles.statusLine}>
             {tone && <StatusDot tone={tone} size="fixed" appearance="solid" />}
@@ -81,16 +90,21 @@ export function VoiceCompanionStatus({
               </Button>
             )}
           </div>
-          {caption ? (
-            <OverflowTooltip label={caption}>
+          {work ? (
+            <OverflowTooltip label={work}>
               <Text as="span" size="caption" tone="secondary" leading="snug" truncate>
-                {caption}
+                {work}
               </Text>
             </OverflowTooltip>
           ) : null}
-          <VoiceReadouts live={live} engine={engine} privacy={privacy} level={audioLevel} />
+          <VoiceMeta live={live} engine={engine} privacy={privacy} />
         </div>
       </div>
+      {stage && caption ? (
+        <Text as="p" size="secondary" tone="secondary" leading="normal" className={styles.spoken}>
+          {caption}
+        </Text>
+      ) : null}
       {workspace && (
         <div className={styles.scope}>
           <SegmentedControl
@@ -113,84 +127,33 @@ export function VoiceCompanionStatus({
 }
 
 /**
- * Live facts under the status line: the engine (with where audio goes), and while connected the
- * measured input level and how long this voice session has run. Both live readouts are painted
- * from timers, so the meter does not re-render the panel.
+ * One quiet line under the status: the engine (its tooltip says where audio goes) and, while
+ * connected, how long this voice session has run. The clock is painted from a timer, so it does
+ * not re-render the panel; the voice core already shows the input level.
  */
-function VoiceReadouts({
-  live,
-  engine,
-  privacy,
-  level,
-}: {
-  live: boolean;
-  engine: string;
-  privacy: string;
-  level: { readonly current: number };
-}) {
-  const meter = useRef<HTMLSpanElement>(null);
+function VoiceMeta({ live, engine, privacy }: { live: boolean; engine: string; privacy: string }) {
   const clock = useRef<HTMLSpanElement>(null);
-  const [inputLevel, setInputLevel] = useState(0);
-  // oxlint-disable-next-line bycoda/effect-names-its-sync -- session clock and input meter timers run only while voice is live
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- session clock timer runs only while voice is live
   useEffect(() => {
     if (!live) return;
     const start = monotonicNow();
-    const paint = () => {
-      const measured = level.current;
-      const input = Number.isFinite(measured) ? Math.max(0, Math.min(1, measured)) : 0;
-      const lit = Math.round(input * METER_SEGMENTS);
-      setInputLevel(lit * 10);
-      meter.current?.querySelectorAll("i").forEach((segment, index) => {
-        segment.toggleAttribute("data-on", index < lit);
-      });
-    };
     const tick = () => {
       if (clock.current)
         clock.current.textContent = formatDuration(elapsedSince(start), { style: "clock" });
     };
     tick();
-    paint();
-    const meterTimer = setInterval(paint, 120);
-    const clockTimer = setInterval(tick, 1000);
-    return () => {
-      clearInterval(meterTimer);
-      clearInterval(clockTimer);
-    };
-  }, [live, level]);
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, [live]);
   return (
-    <div className={styles.readouts}>
-      <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, styles.readout)}>
-        <Text size="caption" tone="muted" leading="none">
-          {t("Voice engine")}
+    <div className={styles.meta}>
+      <Tooltip asChild label={privacy}>
+        <Text size="caption" tone="muted" leading="none" truncate tabIndex={0}>
+          {engine}
         </Text>
-        <Tooltip asChild label={privacy}>
-          <Text size="caption" tone="primary" weight="medium" leading="none" truncate tabIndex={0}>
-            {engine}
-          </Text>
-        </Tooltip>
-      </div>
+      </Tooltip>
       {live ? (
-        <>
-          <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, styles.readout)}>
-            <Text size="caption" tone="muted" leading="none">
-              {t("Input")}
-            </Text>
-            <>
-              <Meter className="sr-only" label={t("Input")} value={inputLevel} />
-              <span ref={meter} className={styles.meter} aria-hidden="true">
-                {Array.from({ length: METER_SEGMENTS }, (_, index) => (
-                  <i key={index} />
-                ))}
-              </span>
-            </>
-          </div>
-          <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, styles.readout)}>
-            <Text size="caption" tone="muted" leading="none">
-              {t("Session")}
-            </Text>
-            <Text ref={clock} size="caption" tone="primary" weight="medium" leading="none" />
-          </div>
-        </>
+        <Text ref={clock} size="caption" tone="muted" leading="none" className={styles.clock} />
       ) : null}
     </div>
   );

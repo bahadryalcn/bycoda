@@ -25,7 +25,16 @@ import {
 } from "../../../shared/i18n";
 import { Select } from "../../../shared/ui/Select";
 import { Progress } from "../../../shared/ui/Progress";
-import { ArrowDownCircle, MessageSquare, RefreshCw } from "../../../shared/ui/icons";
+import {
+  ArrowDownCircle,
+  BookOpen,
+  Download,
+  MessageSquare,
+  Play,
+  RefreshCw,
+  Settings,
+  Sparkles,
+} from "../../../shared/ui/icons";
 import { OPEN_ONBOARDING_EVENT } from "../../onboarding/model/onboarding";
 import { openUsageGuide } from "../../onboarding/model/usageGuide";
 import { getTourSnapshot, startTour, subscribeTour } from "../../onboarding/model/tourState";
@@ -284,6 +293,7 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
         >
           <Button
             className="general-action shrink-0"
+            startIcon={<Download strokeWidth={1.75} aria-hidden />}
             onClick={() => window.dispatchEvent(new Event(OPEN_SESSION_IMPORT_EVENT))}
           >
             {t("Import…")}
@@ -298,11 +308,16 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
         >
           <div className="flex shrink-0 items-center gap-2">
             {/* The tour request closes Settings and points at the workspace controls. */}
-            <Button className="general-action shrink-0" onClick={() => startTour("first-run")}>
+            <Button
+              className="general-action shrink-0"
+              startIcon={<Play strokeWidth={1.75} aria-hidden />}
+              onClick={() => startTour("first-run")}
+            >
               {tourState.startsWith("paused:") ? t("Resume tour") : t("Take the tour")}
             </Button>
             <Button
               className="general-action shrink-0"
+              startIcon={<Settings strokeWidth={1.75} aria-hidden />}
               onClick={() => window.dispatchEvent(new Event(OPEN_ONBOARDING_EVENT))}
             >
               {t("Open setup…")}
@@ -315,7 +330,11 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
           description={t("Learn chat, queue, stop and essential shortcuts.")}
         >
           {/* The guide request closes Settings and walks through the workspace. */}
-          <Button className="general-action shrink-0" onClick={openUsageGuide}>
+          <Button
+            className="general-action shrink-0"
+            startIcon={<BookOpen strokeWidth={1.75} aria-hidden />}
+            onClick={openUsageGuide}
+          >
             {t("Open guide…")}
           </Button>
         </Row>
@@ -494,6 +513,7 @@ export function UpdateRow({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string
       >
         <Button
           className="shrink-0"
+          startIcon={<Sparkles strokeWidth={1.75} aria-hidden />}
           onClick={() => onOpenWhatsNew(snapshot.currentVersion)}
           disabled={snapshot.currentVersion === "…"}
         >

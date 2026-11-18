@@ -137,6 +137,9 @@ it("opens a question in its own panel beside the companion, keeping the transcri
   expect(side.dataset.side).toBe("right");
   expect(side.style.getPropertyValue("--voice-side-left")).toBe("384px");
   expect(side.querySelector("#question")).not.toBeNull();
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('button[aria-label="Conversation"]')!.click(),
+  );
   expect(host.querySelector('[role="list"]')?.contains(side)).toBe(false);
   expect(host.querySelector("#resize")).not.toBeNull();
 });

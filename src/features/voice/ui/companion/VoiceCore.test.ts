@@ -76,17 +76,25 @@ it("shows the engine always and the session clock only while live", () => {
     globalScope: true,
     name: "Arif",
     avatar: undefined,
+    stage: true,
+    caption: "Latest spoken line",
     onScopeChange: () => {},
     onStopWork: () => {},
   };
   act(() => root.render(createElement(VoiceCompanionStatus, props)));
   expect(host.textContent).toContain("OpenAI");
-  expect(host.querySelectorAll("i[data-on]").length).toBe(5);
+  expect(host.querySelector('[data-layout="stage"] [data-size="stage"]')).not.toBeNull();
+  expect(host.textContent).toContain("Latest spoken line");
   expect(host.textContent).toContain("0:00");
   act(() => vi.advanceTimersByTime(3_000));
   expect(host.textContent).toContain("0:03");
 
-  act(() => root.render(createElement(VoiceCompanionStatus, { ...props, live: false })));
+  act(() =>
+    root.render(createElement(VoiceCompanionStatus, { ...props, live: false, stage: false })),
+  );
   expect(host.textContent).toContain("OpenAI");
   expect(host.textContent).not.toContain("0:03");
+  // The strip beside the transcript leaves the spoken line to the transcript.
+  expect(host.querySelector('[data-layout="strip"] [data-size="stage"]')).toBeNull();
+  expect(host.textContent).not.toContain("Latest spoken line");
 });

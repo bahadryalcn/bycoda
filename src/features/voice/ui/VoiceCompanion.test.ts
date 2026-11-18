@@ -835,6 +835,7 @@ it("delivers the prepared local brief to the onset target while retaining origin
   await render("b");
   await speech("Bu sorunu düzelt, ayarları da koru", binding);
   expect(onSubmit).toHaveBeenCalledExactlyOnceWith("a", brief);
+  await click("Conversation");
   expect(container.textContent).toContain("Bu sorunu düzelt, ayarları da koru");
   await render("a");
   mock.converse.mockResolvedValueOnce({ action: "reply", reply: "Hangi kontrol?" });

@@ -61,12 +61,15 @@ export function VoiceCore({
   level,
   name,
   avatar,
+  size,
 }: {
   state: VoiceVisualState;
   level: { readonly current: number };
   /** Assistant name; empty before setup, when the centre shows a plain dot. */
   name: string;
   avatar: string | undefined;
+  /** "stage": the large centred core of the expanded companion while the transcript is hidden. */
+  size?: "stage";
 }) {
   const root = useRef<HTMLSpanElement>(null);
   const motion = useAudioFeedbackMotionEnabled();
@@ -144,7 +147,7 @@ export function VoiceCore({
 
   const broken = state === "error";
   return (
-    <span ref={root} className={styles.core} data-state={state} aria-hidden="true">
+    <span ref={root} className={styles.core} data-state={state} data-size={size} aria-hidden="true">
       <svg className={styles.art} viewBox="0 0 100 100" fill="none" focusable="false">
         {TICKS.map((tick, index) => (
           <line

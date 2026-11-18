@@ -327,7 +327,7 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
         leading="inherit"
         {...surfaceAttributes(
           {
-            variant: state?.error ? "danger" : "card",
+            variant: state?.error ? "danger" : "floating",
             frame: state?.error ? "danger" : "pane",
             radius: compact ? "pill" : "panel",
           },
@@ -578,6 +578,8 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
                 <>
                   <Button
                     iconOnly
+                    shape="pill"
+                    size="lg"
                     label={t(muted ? "Resume" : "Pause mic")}
                     variant={muted ? "secondary" : "primary"}
                     tone={muted ? "danger" : undefined}
@@ -587,11 +589,25 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
                   >
                     {muted ? <MicOff className="icon-sm" /> : <Mic className="icon-sm" />}
                   </Button>
-                  <Button iconOnly label={t("Silence")} onClick={() => send("silence")}>
+                  <Button
+                    iconOnly
+                    shape="pill"
+                    size="lg"
+                    label={t("Silence")}
+                    onClick={() => send("silence")}
+                  >
                     <Pause className="icon-sm" />
                   </Button>
                   {speakerButton}
-                  <Button iconOnly label={t("Disconnect voice")} onClick={() => send("disconnect")}>
+                  <Button
+                    iconOnly
+                    shape="pill"
+                    size="lg"
+                    variant="primary"
+                    tone="danger"
+                    label={t("Disconnect voice")}
+                    onClick={() => send("disconnect")}
+                  >
                     <Square className="icon-sm" />
                   </Button>
                 </>
@@ -608,7 +624,7 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
           ref={sideScroller}
           aria-label={t("Question")}
           {...surfaceAttributes(
-            { frame: "card", edge: "all", radius: "panel", variant: "card" },
+            { frame: "card", edge: "all", radius: "panel", variant: "floating" },
             styles.side,
           )}
         >

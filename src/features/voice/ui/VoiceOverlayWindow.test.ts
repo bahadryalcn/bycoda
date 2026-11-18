@@ -91,6 +91,9 @@ it("shares the expanded voice core and conversation while preserving header keyb
     transcript: "Do not duplicate this snapshot",
   });
   expect(host.querySelectorAll("[data-spoke]")).toHaveLength(40);
+  // The native window is transparent, so the panel must paint an opaque floating fill:
+  // the card fill is transparent on most canvases and let the desktop show through.
+  expect(host.querySelector("main")?.getAttribute("data-surface-variant")).toBe("floating");
   expect(host.querySelectorAll('[role="listitem"]')).toHaveLength(3);
   expect(host.textContent).not.toContain("Do not duplicate this snapshot");
   expect(host.querySelector("header button[aria-label^='Move voice']")).toBeNull();

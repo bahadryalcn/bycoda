@@ -94,15 +94,14 @@
 .caption {
   margin: 0;
 }
+/* A centred, phone-style dock, like the expanded companion in the app. */
 .actions {
   display: flex;
   align-items: center;
+  justify-content: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
   padding: 10px 14px;
-}
-.actions > :first-child {
-  margin-inline-end: auto;
 }
 .actions > * {
   flex-shrink: 0;

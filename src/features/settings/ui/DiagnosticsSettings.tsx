@@ -9,8 +9,8 @@ import {
   savePerformanceTraceEnabled,
 } from "../../../shared/lib/performanceTraceSettings";
 import { Button } from "../../../shared/ui/Button";
+import { Trash2 } from "../../../shared/ui/icons";
 import { CopyButton } from "../../../shared/ui/CopyButton";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Group, Row, Toggle, SettingsFeedback } from "../../../shared/ui/settings";
 
 /**
@@ -81,11 +81,7 @@ export function DiagnosticsGroup() {
         id="performance-trace"
         label={t("Performance trace")}
         description={t("Record startup timing, rendering stalls and long main-thread tasks.")}
-        info={
-          <InfoPopover className="shrink-0">
-            <p>{t("Only durations are kept, never message text, paths or script names.")}</p>
-          </InfoPopover>
-        }
+        info={t("Only durations are kept, never message text, paths or script names.")}
         feedback={
           unsaved ? (
             <SettingsFeedback
@@ -121,7 +117,11 @@ export function DiagnosticsGroup() {
           text={traceJson}
           onClick={() => setResult(null)}
         />
-        <Button className="shrink-0" onClick={onClear}>
+        <Button
+          className="shrink-0"
+          startIcon={<Trash2 strokeWidth={1.75} aria-hidden />}
+          onClick={onClear}
+        >
           {t("Clear")}
         </Button>
       </Row>

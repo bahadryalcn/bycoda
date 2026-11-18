@@ -73,7 +73,21 @@
 /* Dependent sub-row: indented under its parent; dimmed and inert (with a tooltip reason) when the
    parent is off. The reason is never repeated as visible text. */
 .settings-row[data-dependent] {
+  position: relative;
   padding-inline-start: 40px;
+}
+/* An elbow in the indent ties the sub-row to its parent row above. */
+.settings-row[data-dependent]::before {
+  content: "";
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 22px;
+  inline-size: 10px;
+  block-size: 50%;
+  border-inline-start: 1px solid var(--ui-settings-hairline);
+  border-block-end: 1px solid var(--ui-settings-hairline);
+  border-end-start-radius: 4px;
+  pointer-events: none;
 }
 .settings-row[data-disabled] {
   cursor: not-allowed;
