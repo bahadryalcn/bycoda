@@ -73,11 +73,12 @@ export async function crewSessionRuns(
       )
       .all(projectId))
       owned.set(String(row.coordinator_session_id), String(row.run_id));
+    // Strip the subquery column's TEXT affinity so SQLite can seek the JSON expression index.
     for (const row of await store.db
       .prepare(
         `SELECT t.value FROM tasks t
          WHERE CASE WHEN json_valid(t.value) THEN json_extract(t.value,'$.crewRunId') END IN
-           (SELECT run_id FROM crew_runs_v2 WHERE project_id=?)`,
+           (SELECT +run_id FROM crew_runs_v2 WHERE project_id=?)`,
       )
       .all(projectId)) {
       let task: HostTask;

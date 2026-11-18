@@ -56,13 +56,13 @@ export async function holdForDependency(
     after(id: string): Promise<{ after: string } | null>;
     queueNotification(value: Notice): Promise<unknown>;
     now(): number;
+    getJob(id: string): Promise<AssistantJob | undefined>;
   },
   job: AssistantJob,
-  jobs: readonly AssistantJob[],
 ): Promise<boolean> {
   const link = await deps.after(job.id);
   if (!link) return false;
-  const target = jobs.find((item) => item.id === link.after);
+  const target = await deps.getJob(link.after);
   if (target?.status === "done") return false;
   const ended =
     !target || target.status === "cancelled"

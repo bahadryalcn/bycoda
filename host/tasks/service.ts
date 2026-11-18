@@ -187,12 +187,11 @@ export class HostTasks {
   }
 
   /** Automatic admission holds remain independent of the owner's manual pause. */
-  setGoalPauseReason(
-    goalId: string,
+  syncGoalPauseReason(
     reason: "assistant-budget" | "assistant-hours",
-    paused: boolean,
+    goalIds: readonly string[],
   ): Promise<void> {
-    return goalBudget.setGoalPauseReason(this.context, goalId, reason, paused);
+    return goalBudget.syncGoalPauseReason(this.context, reason, goalIds);
   }
 
   protected publishGoalPause(goalId: string): Promise<void> {

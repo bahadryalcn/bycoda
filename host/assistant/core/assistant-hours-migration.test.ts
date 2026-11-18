@@ -17,11 +17,11 @@ it("migrates the prior reason constraint atomically while retaining saved budget
   const tasks = new HostTasks(store, engine);
   try {
     await tasks.ready;
-    await tasks.setGoalPauseReason("retained-goal", "assistant-hours", true);
+    await tasks.syncGoalPauseReason("assistant-hours", ["retained-goal"]);
     expect(
       await store.db.prepare("SELECT reason FROM task_goal_reason_holds ORDER BY reason").all(),
     ).toEqual([{ reason: "assistant-budget" }, { reason: "assistant-hours" }]);
-    await tasks.setGoalPauseReason("retained-goal", "assistant-hours", false);
+    await tasks.syncGoalPauseReason("assistant-hours", []);
     expect(await store.db.prepare("SELECT reason FROM task_goal_reason_holds").all()).toEqual([
       { reason: "assistant-budget" },
     ]);

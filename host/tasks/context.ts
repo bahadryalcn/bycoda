@@ -35,7 +35,6 @@ export interface TaskContext {
   assertAssistantDeletionSourceStable: HostTasks["assertAssistantDeletionSourceStable"];
   restoreAssistantDeletedTask: HostTasks["restoreAssistantDeletedTask"];
   setGoalPaused: HostTasks["setGoalPaused"];
-  setGoalPauseReason: HostTasks["setGoalPauseReason"];
   publishGoalPause: HostTasks["publishGoalPause"];
   hasRunningGoalWork: HostTasks["hasRunningGoalWork"];
   timer: HostTasks["timer"];

@@ -63,7 +63,12 @@ import {
   ASSISTANT_MIN_DAILY_TOKEN_BUDGET,
   ASSISTANT_PRESENCE_FRESH_MS,
 } from "../../src/shared/model/host-contracts/assistant";
-import { AssistantRepository, type AssistantTable, type RecordValue } from "./repository";
+import {
+  AssistantRepository,
+  terminalAssistantJobs as terminal,
+  type AssistantTable,
+  type RecordValue,
+} from "./repository";
 import { tokenBudgetMode } from "./cost";
 import {
   assistantCacheMeasurement,
@@ -304,8 +309,10 @@ export interface AssistantPorts {
     knownSessionIds?: string[],
     job?: AssistantJob,
   ): Promise<AssistantGoalStatus>;
-  setGoalBudgetHeld?(goalId: string, held: boolean): Promise<void>;
-  setGoalHoursHeld?(goalId: string, held: boolean): Promise<void>;
+  syncGoalHolds?(
+    reason: "assistant-budget" | "assistant-hours",
+    goalIds: readonly string[],
+  ): Promise<void>;
   hasRunningChildren?(goalIds: string[]): Promise<boolean>;
   readPresence?(): Promise<{ supported: boolean; locked: boolean; idleMs?: number }>;
   controlGoal?(
@@ -448,7 +455,6 @@ type ChiefIntent = {
   estimated?: boolean;
 };
 const DAY = 86400000;
-const terminal = new Set<AssistantJobStatus>(["done", "failed", "cancelled"]);
 
 /** One Host-owned supervisor. All requests and ticks share admission. SQLite
  * transactions contain only local durable work; external effects use durable
@@ -2795,6 +2801,7 @@ export class HostAssistant {
   private afterDeps = () => ({
     ...this.reminderDeps(),
     after: (id: string) => this.runtime<{ after: string } | null>(jobAfter.jobAfterKey(id), null),
+    getJob: (id: string) => this.repository.get<AssistantJob>("jobs", id),
   });
   private stamp() {
     const now = this.now();
@@ -5637,18 +5644,16 @@ export class HostAssistant {
           }),
         "critical",
       );
-    if (this.ports.setGoalBudgetHeld)
-      for (const job of await this.repository.list<AssistantJob>("jobs", 10000))
-        if (job.kind !== "quick" && job.goalId)
-          await this.ports.setGoalBudgetHeld(job.goalId, hold && !terminal.has(job.status));
+    await this.syncGoalHolds("assistant-budget", hold);
+  }
+  private async syncGoalHolds(reason: "assistant-budget" | "assistant-hours", hold: boolean) {
+    if (!this.ports.syncGoalHolds) return;
+    await this.ports.syncGoalHolds(reason, hold ? await this.repository.projectGoalIds(true) : []);
   }
   private async syncHoursHolds(profile: AssistantProfile): Promise<void> {
     const closed =
       !profile.enabled || !profile.setupComplete || !assistantActiveHours(profile, this.now());
-    if (this.ports.setGoalHoursHeld)
-      for (const job of await this.repository.list<AssistantJob>("jobs", 10000))
-        if (job.kind !== "quick" && job.goalId)
-          await this.ports.setGoalHoursHeld(job.goalId, closed && !terminal.has(job.status));
+    await this.syncGoalHolds("assistant-hours", closed);
     if (closed) {
       this.queue.abortTurns();
       this.ports.onPause?.();
@@ -5747,9 +5752,7 @@ export class HostAssistant {
           status: "running",
         };
         const ownerInstructions = await this.instructions("all");
-        const currentJobs = (await this.repository.list<AssistantJob>("jobs", 10000))
-            .filter((job) => job.kind !== "quick" && !terminal.has(job.status))
-            .slice(0, 100),
+        const currentJobs = await this.repository.scheduledJobs(true),
           questions: Array<AssistantQuestionStatus & { jobId: string }> = [];
         for (const job of currentJobs)
           for (const question of await this.runtime<AssistantQuestionStatus[]>(
@@ -6073,7 +6076,6 @@ export class HostAssistant {
   private async syncKeepAwake() {
     if (!this.ports.keepAwake) return;
     const profile = await this.profile();
-    const jobs = await this.repository.list<AssistantJob>("jobs", 10000);
     const eligible =
       !this.closing &&
       !this.emergencyStop &&
@@ -6086,17 +6088,14 @@ export class HostAssistant {
       (await this.effectivePresence()) === "away";
     const working = eligible && !!profile.keepAwakeWhileWorking;
     let running = false;
+    let queuedJobs = false;
     if (working && !away) {
       try {
         running = this.ports.hasRunningChildren
-          ? await this.ports.hasRunningChildren(
-              jobs.flatMap((job) => (job.goalId ? [job.goalId] : [])),
-            )
-          : jobs.some(
-              (job) =>
-                job.kind !== "quick" && ["planning", "running", "stalled"].includes(job.status),
-            );
+          ? await this.ports.hasRunningChildren(await this.repository.projectGoalIds())
+          : await this.repository.hasProjectJob("working");
         if (!running) running = await this.hasRunningManualTurn();
+        if (!running) queuedJobs = await this.repository.hasProjectJob("queued");
       } catch (error) {
         this.keepAwakeStatus = {
           ...(this.keepAwakeStatus ?? { supported: false, requested: false, active: false }),
@@ -6113,7 +6112,7 @@ export class HostAssistant {
       keepAwakeDemand({
         away,
         running: working && running,
-        queuedJobs: working && jobs.some((job) => job.kind !== "quick" && job.status === "queued"),
+        queuedJobs,
         canStartJobs: profile.autonomy !== "report" && !!profile.execution,
         policy: profile,
         now: this.now(),
@@ -6372,9 +6371,7 @@ export class HostAssistant {
     let usage = await this.usage(profile);
     let incompleteUsage = false;
     const events: AssistantActivity[] = [];
-    const jobs = (await this.repository.list<AssistantJob>("jobs", 10000)).sort(
-      compareAssistantJobPriority,
-    );
+    const jobs = (await this.repository.scheduledJobs()).sort(compareAssistantJobPriority);
     for (const original of jobs) {
       if (this.closing || this.emergencyStop) break;
       if (original.kind === "quick") {
@@ -6383,10 +6380,7 @@ export class HostAssistant {
       }
       let job: AssistantProjectJob = { ...original, projectIds: assistantJobProjectIds(original) };
       if (terminal.has(job.status) && job.tokensComplete !== false) continue;
-      if (
-        job.status === "queued" &&
-        (await jobAfter.holdForDependency(this.afterDeps(), job, jobs))
-      )
+      if (job.status === "queued" && (await jobAfter.holdForDependency(this.afterDeps(), job)))
         continue;
       if (
         job.status === "queued" &&
@@ -6605,16 +6599,12 @@ export class HostAssistant {
       }, "critical");
     }
     if (events.length) await this.appendDailyNote(profile, events);
-    const reviewJobs = (await this.repository.list<AssistantJob>("jobs", 10000)).filter(
-      (job) =>
-        job.kind !== "quick" && job.goalId && !terminal.has(job.status) && job.status !== "paused",
-    );
     const reviewWindow = Math.floor(this.now() / 1800000);
     if (
-      (reviewJobs.length || manualState.digest.length) &&
       profile.autonomy === "chief" &&
       (await this.runtime<number>("chiefReviewWindow", -1)) !== reviewWindow &&
-      !(await this.pendingChiefEvents()).length
+      !(await this.pendingChiefEvents()).length &&
+      (manualState.digest.length || (await this.repository.hasProjectJob("reviewable")))
     )
       await this.store.transaction(async () => {
         await this.setRuntime("chiefReviewWindow", reviewWindow);

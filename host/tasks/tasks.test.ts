@@ -261,12 +261,19 @@ it("releases assistant hours and budget holds independently while preserving an 
   await f.store.db
     .prepare("UPDATE tasks SET value=json_set(value,'$.goalId','assistant-goal') WHERE id='main'")
     .run();
-  await f.tasks.setGoalPauseReason("assistant-goal", "assistant-budget", true);
-  await f.tasks.setGoalPauseReason("assistant-goal", "assistant-hours", true);
+  await f.tasks.syncGoalPauseReason("assistant-budget", ["assistant-goal"]);
+  await f.tasks.syncGoalPauseReason("assistant-hours", ["assistant-goal", "historical-goal"]);
+  const transaction = vi.spyOn(f.store, "transaction");
+  await f.tasks.syncGoalPauseReason("assistant-hours", ["assistant-goal", "historical-goal"]);
+  expect(transaction).not.toHaveBeenCalled();
   await f.tasks.setGoalPaused("assistant-goal", true);
-  await f.tasks.setGoalPauseReason("assistant-goal", "assistant-budget", false);
+  await f.tasks.syncGoalPauseReason("assistant-budget", []);
   await expect(f.tasks.startTask("main")).rejects.toThrow("goal is paused");
-  await f.tasks.setGoalPauseReason("assistant-goal", "assistant-hours", false);
+  transaction.mockClear();
+  await f.tasks.syncGoalPauseReason("assistant-hours", []);
+  expect(transaction).toHaveBeenCalledTimes(1);
+  expect(await f.tasks.goalExecutionAllowed("historical-goal")).toBe(true);
+  transaction.mockRestore();
   await expect(f.tasks.startTask("main")).rejects.toThrow("goal is paused");
   expect(
     await f.store.db

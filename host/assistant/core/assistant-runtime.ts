@@ -377,8 +377,7 @@ export function assistantExecutionPorts(
       }
       return found ? { goalId: found.id } : undefined;
     },
-    setGoalBudgetHeld: (id, held) => tasks.setGoalPauseReason(id, "assistant-budget", held),
-    setGoalHoursHeld: (id, held) => tasks.setGoalPauseReason(id, "assistant-hours", held),
+    syncGoalHolds: (reason, goalIds) => tasks.syncGoalPauseReason(reason, goalIds),
     hasRunningChildren: async (ids) => {
       if (await tasks.hasRunningGoalWork(ids)) return true;
       const selected = new Set(ids),

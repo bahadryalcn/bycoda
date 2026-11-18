@@ -31,26 +31,38 @@ export async function setGoalPaused(
   }, "critical");
 }
 
-export async function setGoalPauseReason(
+export async function syncGoalPauseReason(
   context: TaskContext,
-  goalId: string,
   reason: "assistant-budget" | "assistant-hours",
-  paused: boolean,
+  goalIds: readonly string[],
 ): Promise<void> {
   if (reason !== "assistant-budget" && reason !== "assistant-hours")
     throw new Error("Unsupported goal pause reason.");
   await context.ready;
-  await context.store.transaction(async () => {
-    if (paused)
-      await context.store.db
-        .prepare("INSERT OR IGNORE INTO task_goal_reason_holds(goal_id,reason) VALUES (?,?)")
-        .run(goalId, reason);
-    else
-      await context.store.db
-        .prepare("DELETE FROM task_goal_reason_holds WHERE goal_id=? AND reason=?")
-        .run(goalId, reason);
-    await context.publishGoalPause(goalId);
-  }, "critical");
+  await context.store.db.scope(async () => {
+    const current = new Set(
+      (
+        await context.store.db
+          .prepare("SELECT goal_id FROM task_goal_reason_holds WHERE reason=?")
+          .all(reason)
+      ).map((row) => String(row.goal_id)),
+    );
+    const desired = new Set(goalIds);
+    const added = [...desired].filter((id) => !current.has(id));
+    const removed = [...current].filter((id) => !desired.has(id));
+    if (!added.length && !removed.length) return;
+    await context.store.transaction(async () => {
+      const insert = context.store.db.prepare(
+        "INSERT INTO task_goal_reason_holds(goal_id,reason) VALUES (?,?)",
+      );
+      const remove = context.store.db.prepare(
+        "DELETE FROM task_goal_reason_holds WHERE goal_id=? AND reason=?",
+      );
+      for (const id of added) await insert.run(id, reason);
+      for (const id of removed) await remove.run(id, reason);
+      for (const id of [...added, ...removed]) await context.publishGoalPause(id);
+    }, "critical");
+  });
 }
 
 export async function publishGoalPause(context: TaskContext, goalId: string): Promise<void> {
