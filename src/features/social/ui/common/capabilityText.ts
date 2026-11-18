@@ -79,8 +79,6 @@ export function operationText(operation: SocialOperation): string {
       return t("Edit post");
     case "post.schedule":
       return t("Facebook scheduling");
-    case "comment.moderate":
-      return t("Comment moderation");
     case "comment.privateReply":
       return t("Private reply");
     case "mentions.read":

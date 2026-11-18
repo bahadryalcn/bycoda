@@ -59,10 +59,6 @@ function setSelect(select: HTMLSelectElement, value: string) {
   });
 }
 
-function select(label: string): HTMLSelectElement {
-  return element.querySelector<HTMLSelectElement>(`select[aria-label="${label}"]`)!;
-}
-
 function tikTokPrivacy() {
   return element.querySelector<HTMLButtonElement>('button[aria-label^="Who can see this video:"]');
 }

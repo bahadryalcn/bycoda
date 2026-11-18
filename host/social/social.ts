@@ -4257,7 +4257,9 @@ export class SocialService implements SocialServiceApi {
       draft.reviewReason = thread.reviewReason;
     await this.assertLength(
       await this.get<SocialAccount>("account", accountId),
-      privateReply || facebookPrivateReply || kind === "message" || thread?.kind === "message" ? "message" : "comment",
+      privateReply || facebookPrivateReply || kind === "message" || thread?.kind === "message"
+        ? "message"
+        : "comment",
       draft.text,
     );
     return await this.put("draft", draft.id, draft);
@@ -4720,7 +4722,10 @@ export class SocialService implements SocialServiceApi {
     if (instagramPrivateReply) this.capability(account, "message.reply");
     await this.assertLength(
       account,
-      instagramPrivateReply || draft.facebookPrivateReply || kind === "message" || thread?.kind === "message"
+      instagramPrivateReply ||
+        draft.facebookPrivateReply ||
+        kind === "message" ||
+        thread?.kind === "message"
         ? "message"
         : "comment",
       draft.text,

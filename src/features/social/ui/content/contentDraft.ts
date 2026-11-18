@@ -292,21 +292,22 @@ export function draftFromCampaign(
     campaign.variants.find((variant) => variant.facebook?.target === "reel") ??
     campaign.variants.find((variant) => variant.tiktok);
   const snapchat = campaign.variants.find((variant) => variant.snapchat)?.snapchat;
-  const probe: MediaProbe | undefined = sized?.facebook?.target === "reel"
-    ? {
-        durationSeconds: sized.facebook.durationSeconds,
-        width: sized.facebook.width,
-        height: sized.facebook.height,
-      }
-    : sized?.tiktok
-      ? { durationSeconds: sized.tiktok.durationSeconds }
-      : snapchat
-        ? {
-            durationSeconds: snapchat.durationSeconds,
-            width: snapchat.width,
-            height: snapchat.height,
-          }
-        : undefined;
+  const probe: MediaProbe | undefined =
+    sized?.facebook?.target === "reel"
+      ? {
+          durationSeconds: sized.facebook.durationSeconds,
+          width: sized.facebook.width,
+          height: sized.facebook.height,
+        }
+      : sized?.tiktok
+        ? { durationSeconds: sized.tiktok.durationSeconds }
+        : snapchat
+          ? {
+              durationSeconds: snapchat.durationSeconds,
+              width: snapchat.width,
+              height: snapchat.height,
+            }
+          : undefined;
   const scheduled = first?.scheduledAt;
   return {
     campaignId: campaign.id,
