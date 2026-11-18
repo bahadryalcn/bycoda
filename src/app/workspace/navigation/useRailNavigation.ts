@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { loadNotesEnabled } from "../../../features/settings/model/settings";
 import { setCrewsPageOpen, useCrewsPageOpen } from "../../../features/crews/model/crewsPage";
+import { setLiveGamesPageOpen, useLiveGamesPageOpen } from "../../../features/live-games/public/liveGamesPage";
 import type { AuxiliaryToolId } from "../../model/toolWindows";
 
 export interface SettingsReturnView {
@@ -17,6 +18,7 @@ type View =
   | "search"
   | "servers"
   | "crews"
+  | "live-games"
   | "inbox"
   | "notes"
   | "social"
@@ -61,6 +63,7 @@ const sameVisit = (a: Visit, b: Visit) =>
 /** One chronological history per mounted window. Never share or persist this stack. */
 export function useRailNavigation(d: RailNavigationDeps) {
   const crewsOpen = useCrewsPageOpen();
+  const liveGamesOpen = useLiveGamesPageOpen();
   const view: View = d.settingsOpen
     ? "settings"
     : d.searchViewOpen
@@ -68,7 +71,7 @@ export function useRailNavigation(d: RailNavigationDeps) {
       : d.serversViewOpen
         ? crewsOpen
           ? "crews"
-          : "servers"
+          : liveGamesOpen ? "live-games" : "servers"
         : d.inboxViewOpen
           ? "inbox"
           : d.notesViewOpen
@@ -135,6 +138,7 @@ export function useRailNavigation(d: RailNavigationDeps) {
     d.setServersViewOpen(visit.view === "servers");
     // Closing Servers closed Crews; reopen it only for a Crews visit.
     setCrewsPageOpen(visit.view === "crews");
+    setLiveGamesPageOpen(visit.view === "live-games");
     d.setInboxViewOpen(visit.view === "inbox");
     d.setNotesViewOpen(visit.view === "notes");
     d.setAutomationsViewOpen(

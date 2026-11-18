@@ -13,6 +13,7 @@ import { Tooltip } from "../../shared/ui/Tooltip";
 import { Sash } from "../../shared/ui/Sash";
 import { WindowChromeInset } from "../../shared/ui/PaneHeader";
 import { useWorkspaceFeatures } from "../../features/settings/model/workspaceFeatures";
+import { requestOpenLiveGamesPage, useLiveGamesPageOpen } from "../../features/live-games/public/liveGamesPage";
 import { useFormat, useLocale, useT } from "../../shared/i18n";
 import { SOCIAL_PANEL_EVENT } from "../../features/social/ui/SocialShortcut";
 import {
@@ -40,6 +41,7 @@ import {
   Pin,
   PinOff,
   CircleAlert,
+  CircleDot,
   FileDiff,
   StickyNote,
   Sparkles,
@@ -354,6 +356,7 @@ export function ProjectRail({
       : undefined;
   const t = useT();
   const navigator = presentation === "navigator";
+  const liveGamesOpen = useLiveGamesPageOpen();
   const workspaceFeatures = useWorkspaceFeatures();
   const inboxShortcut = useKeybindingShortcut("App: Open Inbox");
   const notesShortcut = useKeybindingShortcut("App: Open Notes");
@@ -1124,8 +1127,15 @@ export function ProjectRail({
                         id: "servers",
                         label: t("Servers"),
                         icon: <Server className="icon-sm" />,
-                        active: serversActive,
+                        active: serversActive && !liveGamesOpen,
                         onSelect: onOpenServers,
+                      },
+                      {
+                        id: "live-games",
+                        label: t("Live games"),
+                        icon: <CircleDot className="icon-sm" />,
+                        active: liveGamesOpen,
+                        onSelect: requestOpenLiveGamesPage,
                       },
                       ...(workspaceFeatures.inbox || inboxActive
                         ? [

@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { crewsPageOpen } from "../../../features/crews/model/crewsPage";
+import { liveGamesPageOpen } from "../../../features/live-games/public/liveGamesPage";
 import { recordNavigation } from "../../../features/diagnostics";
 import type { AppUiControlDeps } from "./useAppUiControl";
 
@@ -10,7 +11,10 @@ export function currentViewName(surface: AppUiControlDeps["surface"]): string {
   if (surface.automationsViewOpen) return "automations";
   if (surface.notesViewOpen) return "notes";
   if (surface.searchViewOpen) return "search";
-  if (surface.serversViewOpen) return crewsPageOpen() ? "crews" : "servers";
+  if (surface.serversViewOpen) {
+    if (liveGamesPageOpen()) return "live-games";
+    return crewsPageOpen() ? "crews" : "servers";
+  }
   if (surface.socialBoardShown) return "social";
   if (surface.taskBoardShown) return "tasks";
   return "conversation";

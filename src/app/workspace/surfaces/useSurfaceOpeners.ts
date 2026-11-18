@@ -2,6 +2,7 @@ import { startTransition, useCallback, useEffect, type Dispatch, type SetStateAc
 import { loadNotesEnabled } from "../../../features/settings/model/settings";
 import { OPEN_NOTE_LIBRARY_EVENT } from "../../../features/notes/noteNavigation";
 import { OPEN_CREWS_PAGE_EVENT, setCrewsPageOpen } from "../../../features/crews/model/crewsPage";
+import { OPEN_LIVE_GAMES_EVENT, setLiveGamesPageOpen } from "../../../features/live-games/public/liveGamesPage";
 import { OPEN_USAGE_GUIDE_EVENT } from "../../../features/onboarding/model/usageGuide";
 import { START_TOUR_EVENT } from "../../../features/onboarding/model/tourState";
 import { subscribeInboxItemRequests } from "../../../features/inbox/public/workItemMentions";
@@ -53,7 +54,7 @@ export function useSurfaceOpeners({
     setFilePickerOpen,
     setNotesViewOpen,
   ]);
-  const onOpenCrews = useCallback(() => {
+  const openLocalTool = useCallback((reveal: () => void) => {
     startTransition(() => {
       setFilePickerOpen(false);
       setSettingsOpen(false);
@@ -61,9 +62,9 @@ export function useSurfaceOpeners({
       setInboxViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
-      // Closing Servers also closes Crews, so it comes first.
+      // Clear the previous tool before opening its replacement.
       setServersViewOpen?.(false);
-      setCrewsPageOpen(true);
+      reveal();
     });
   }, [
     setFilePickerOpen,
@@ -74,10 +75,17 @@ export function useSurfaceOpeners({
     setAutomationsViewOpen,
     setServersViewOpen,
   ]);
+  const onOpenCrews = useCallback(() => openLocalTool(() => setCrewsPageOpen(true)), [openLocalTool]);
+  // The rail routes these requests to the main window's tool state.
   useEffect(() => {
+    const onLiveGames = () => openLocalTool(() => setLiveGamesPageOpen(true));
     window.addEventListener(OPEN_CREWS_PAGE_EVENT, onOpenCrews);
-    return () => window.removeEventListener(OPEN_CREWS_PAGE_EVENT, onOpenCrews);
-  }, [onOpenCrews]);
+    window.addEventListener(OPEN_LIVE_GAMES_EVENT, onLiveGames);
+    return () => {
+      window.removeEventListener(OPEN_CREWS_PAGE_EVENT, onOpenCrews);
+      window.removeEventListener(OPEN_LIVE_GAMES_EVENT, onLiveGames);
+    };
+  }, [onOpenCrews, openLocalTool]);
   const onLeaveServers = useCallback(() => setServersViewOpen?.(false), [setServersViewOpen]);
   const onOpenInbox = useCallback(async (_routed = false) => {
     setPullRequestsOnly(false);

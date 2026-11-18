@@ -13,6 +13,7 @@ import { invoke } from "@tauri-apps/api/core";
 import {
   AppWindow,
   Bot,
+  CircleDot,
   DashboardSquare,
   Globe,
   Inbox,
@@ -76,6 +77,7 @@ const labels = {
   tasks: "Tasks",
   automations: "Automations",
   crews: "Crews",
+  "live-games": "Live games",
   inbox: "Inbox",
   notes: "Notes",
   "conversation-tools": "Conversation tools",
@@ -88,6 +90,7 @@ const icons = {
   tasks: DashboardSquare,
   automations: Zap,
   crews: Bot,
+  "live-games": CircleDot,
   inbox: Inbox,
   notes: StickyNote,
   "conversation-tools": Wrench,
@@ -173,8 +176,8 @@ export function ToolNavigation() {
               ? navigation.notesEnabled
               : id === "servers"
                 ? navigation.includeServers || navigation.active === "servers"
-                : id === "crews"
-                  ? navigation.includeCrews || navigation.active === "crews"
+                : id === "crews" || id === "live-games"
+                  ? navigation.includeCrews || navigation.active === id
                   : id === "conversation-tools" || id === "assistant"
                     ? navigation.includeAuxiliaryTools
                     : true,
@@ -265,7 +268,7 @@ export function ToolNavigation() {
           })}
         </TabList>
       </Tabs>
-      {navigation.active === "crews" ? null : (
+      {navigation.active === "crews" || navigation.active === "live-games" ? null : (
         <div className="tool-window-actions">
           <Button
             variant="ghost"
