@@ -122,13 +122,137 @@ it("accepts one valid Page name, username or uploaded logo", () => {
     { name: "Bycoda\nPage" },
     { username: "@bycoda" },
     { bio: "test" },
-    { bannerUploadId: patch.avatarUploadId },
     { ...patch, name: "Bycoda" },
     { avatarUploadId: "C:/secret.png" },
     null,
   ])
     expect(() => parseFacebookProfilePatch(value)).toThrow();
+  expect(parseFacebookProfilePatch({ bannerUploadId: patch.avatarUploadId })).toEqual({
+    bannerUploadId: patch.avatarUploadId,
+  });
 });
+
+function memberFixture() {
+  const f = fixture({ english: true });
+  f.page.fill = vi.fn(async (selector, value) => {
+    f.window.document.querySelector<HTMLInputElement>(selector)!.value = value;
+  });
+  f.page.cookies = vi.fn(async () => [
+    { name: "c_user", value: actor },
+    { name: "xs", value: "test-session" },
+  ]);
+  return {
+    ...f,
+    actions: new FacebookProfileActions(
+      f.page,
+      actor,
+      f.authorize,
+      f.identity,
+      async <T>(expression: string) => f.page.evaluate<T>(expression),
+      "member",
+    ),
+  };
+}
+
+it.each([true, false])(
+  "updates a member bio and requires reload evidence (persist=%s)",
+  async (persist) => {
+    const f = memberFixture();
+    let stored = "Original";
+    vi.mocked(f.page.goto).mockImplementation(async (url) => {
+      f.window.location.href = url;
+      const body = f.window.document.body;
+      body.innerHTML = "<main><p></p><button>Edit bio</button></main>";
+      body.querySelector("p")!.textContent = stored;
+      body.querySelector("button")!.addEventListener("click", () => {
+        body.insertAdjacentHTML(
+          "beforeend",
+          '<form><textarea aria-label="Bio"></textarea><button type="button">Save</button></form>',
+        );
+        body.querySelector("form button")!.addEventListener("click", () => {
+          if (persist) stored = body.querySelector("textarea")!.value;
+        });
+      });
+    });
+    const result = f.actions.update({ bio: "Yeni biyografi" }, {});
+    if (persist) await expect(result).resolves.toMatchObject({ bio: "Yeni biyografi" });
+    else await expect(result).rejects.toMatchObject({ code: "unknown" });
+    expect(f.page.click).toHaveBeenCalledTimes(2);
+  },
+);
+
+it.each([true, false])(
+  "stops for a name-change password prompt before final submission (prompt=%s)",
+  async (password) => {
+    const f = memberFixture();
+    let name = "Old";
+    const original = vi.mocked(f.page.goto).getMockImplementation()!;
+    vi.mocked(f.page.goto).mockImplementation(async (url) => {
+      if (url.startsWith("https://www.facebook.com/")) return original(url);
+      f.window.location.href = url;
+      const body = f.window.document.body;
+      body.innerHTML =
+        '<main><input aria-label="First name"><input aria-label="Middle name"><input aria-label="Last name" value="Person"><button>Review change</button></main>';
+      const input = body.querySelector("input")!;
+      input.value = name;
+      body.querySelector("button")!.addEventListener("click", () => {
+        body.insertAdjacentHTML(
+          "beforeend",
+          `<div role="dialog"><p>New Person</p>${password ? '<input type="password">' : ""}<button>Save changes</button></div>`,
+        );
+        body.querySelector('[role="dialog"] button')!.addEventListener("click", () => {
+          name = input.value;
+        });
+      });
+    });
+    const result = f.actions.update(
+      { personalName: { first: "New", middle: "", last: "Person" } },
+      {},
+    );
+    if (password) await expect(result).rejects.toMatchObject({ code: "needs_human" });
+    else await expect(result).resolves.toMatchObject({ name: "New Person" });
+    expect(f.page.click).toHaveBeenCalledTimes(password ? 1 : 2);
+  },
+);
+
+it.each(["page", "member"] as const)(
+  "persists only the cover preview selected from a local file for a %s",
+  async (actorType) => {
+    const f = actorType === "page" ? fixture({ english: true }) : memberFixture();
+    let stored = oldLogo;
+    const original = vi.mocked(f.page.goto).getMockImplementation()!;
+    vi.mocked(f.page.goto).mockImplementation(async (url) => {
+      await original(url);
+      const body = f.window.document.body;
+      body.insertAdjacentHTML(
+        "beforeend",
+        '<img alt="Cover photo"><button>Edit cover photo</button>',
+      );
+      body.querySelector("img")!.src = stored;
+      body.querySelector("button")!.addEventListener("click", () => {
+        body.insertAdjacentHTML(
+          "beforeend",
+          '<div role="menu"><label for="cover">Upload photo</label><input id="cover" type="file" accept="image/*"></div>',
+        );
+      });
+    });
+    vi.mocked(f.page.setFiles).mockImplementation(async () => {
+      const body = f.window.document.body;
+      body.querySelector("img")!.src = newLogo;
+      body.insertAdjacentHTML("beforeend", "<button>Save changes</button>");
+      body.querySelector("button:last-child")!.addEventListener("click", () => {
+        stored = newLogo;
+      });
+    });
+    await expect(
+      f.actions.update({ bannerUploadId: patch.avatarUploadId }, { banner: "/owner/cover.png" }),
+    ).resolves.toMatchObject({ bannerUrl: newLogo });
+    expect(f.page.setFiles).toHaveBeenCalledExactlyOnceWith('[data-bycoda-fb-cover="true"]', [
+      "/owner/cover.png",
+    ]);
+    expect(f.page.click).toHaveBeenCalledTimes(2);
+  },
+);
 
 function settingsFixture(field: "name" | "username", passwordRequired = false, persist = true) {
   const f = fixture();
