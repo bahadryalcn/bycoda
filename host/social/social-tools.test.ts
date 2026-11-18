@@ -433,6 +433,11 @@ describe("Real local CLI and MCP transport", () => {
         "ai.report",
         "browser.needsHuman.list",
         "browser.recipeSuggestions.list",
+        // LinkedIn.
+        "linkedin.analytics",
+        "linkedin.accounts.setupStatus",
+        "linkedin.live.status",
+        "linkedin.creator.handoff",
       ];
       const writes = [
         "accounts.request",
@@ -471,6 +476,8 @@ describe("Real local CLI and MCP transport", () => {
         "inbox.setStatus",
         "ai.actions.undo",
         "ai.stop",
+        // LinkedIn.
+        "linkedin.management.prepare",
       ];
       const method = (action: string) => `social_${action.replaceAll(/[.-]/g, "_")}`;
       // Draft inspection/editing is a concurrent additive capability. Keep the
