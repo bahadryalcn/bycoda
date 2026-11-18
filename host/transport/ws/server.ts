@@ -77,8 +77,7 @@ export type HostWebSocketOptions = {
    * A function is read on every upgrade so a learned proxy name (Tailscale Serve) applies live. */
   allowedHosts?: readonly string[] | (() => readonly string[]);
   limits?: Partial<
-    Pick<
-      typeof WS_LIMITS,
+    Record<
       | "maxPendingRpc"
       | "maxAuthenticatedSockets"
       | "maxSocketsPerDevice"
@@ -94,7 +93,8 @@ export type HostWebSocketOptions = {
       | "heartbeatIntervalMs"
       | "heartbeatResponseTimeoutMs"
       | "defaultResponseTimeoutMs"
-      | "maxSocketQueuedBytes"
+      | "maxSocketQueuedBytes",
+      number
     >
   >;
 };
@@ -961,10 +961,12 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
         })
         .catch((error: unknown) => {
           if (
-            error instanceof HostDispatchError &&
-            ["overloaded", "service-unavailable"].includes(error.code)
+            controller.signal.reason instanceof RequestExpired ||
+            (error instanceof HostDispatchError &&
+              ["overloaded", "service-unavailable"].includes(error.code))
           ) {
-            // Health admission is unavailable, not evidence of revocation.
+            // A slow or unavailable authorization store is not evidence of
+            // revocation; closing here would drop every peer in the same tick.
             // Keep transport liveness checked; work still requires authorization.
             ping(peer);
             return;
