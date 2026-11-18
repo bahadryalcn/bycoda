@@ -66,6 +66,24 @@ export type InstagramCommentLike = {
   commentId: string;
   confirm: "LIKE_INSTAGRAM_COMMENT";
 };
+export type InstagramEarningsKind = "total" | "estimated" | "available" | "pending" | "last";
+export type InstagramEarnings = {
+  values: { kind: InstagramEarningsKind; amount: string }[];
+  observedAt: number;
+};
+export type InstagramHighlight = { id: string; name: string };
+export type InstagramHighlights = { items: InstagramHighlight[]; partial: boolean };
+export type InstagramHighlightChange =
+  | { action: "create"; name: string; storyIds: string[]; confirm: "CREATE_INSTAGRAM_HIGHLIGHT" }
+  | {
+      action: "edit";
+      id: string;
+      expectedName: string;
+      name: string;
+      storyIds?: string[];
+      confirm: "EDIT_INSTAGRAM_HIGHLIGHT";
+    }
+  | { action: "delete"; id: string; expectedName: string; confirm: "DELETE_INSTAGRAM_HIGHLIGHT" };
 export type SocialRegistrationField =
   | "email"
   | "displayName"
