@@ -23,6 +23,8 @@ import { XAccountActions } from "./platform/XAccountActions";
 import { YouTubeManage } from "./youtube/YouTubeManage";
 import type { YouTubeSection } from "./youtube/youtubeForms";
 import { TikTokAccountTools } from "./platform/TikTokAccountTools";
+import { SnapchatProfilePanel } from "./SnapchatProfilePanel";
+import { snapchatAccountKey } from "../common/snapchatAccount";
 import "./accounts.css";
 
 const HEALTH_TONE: Record<"ok" | "warn" | "error", BadgeTone> = {
@@ -166,6 +168,18 @@ export function AccountDetail({
           account={account}
           projects={projects}
           disabled={disabled || account.paused || !onThisComputer}
+          onChanged={onChanged}
+        />
+      ) : null}
+      {account.platform === "snapchat" &&
+      (account.accountType === "public_profile" || account.connection === "browser") ? (
+        <SnapchatProfilePanel
+          key={snapchatAccountKey(client, account)}
+          client={client}
+          account={account}
+          capabilities={capabilities}
+          disabled={disabled}
+          onThisComputer={onThisComputer}
           onChanged={onChanged}
         />
       ) : null}

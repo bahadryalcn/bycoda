@@ -73,7 +73,8 @@ export type SocialRegistrationField =
   | "givenName"
   | "familyName"
   | "birthdate"
-  | "category";
+  | "category"
+  | "phone";
 export type SocialRegistrationProfile = Partial<Record<SocialRegistrationField, string>> & {
   accountKind?: "brand" | "person";
 };

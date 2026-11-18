@@ -453,6 +453,13 @@ describe("Real local CLI and MCP transport", () => {
         "tiktok.earnings.read",
         "tiktok.audience.list",
         "tiktok.mentions.list",
+        // Snapchat
+        "snapchat.profile.read",
+        "snapchat.friends.list",
+        "snapchat.content.list",
+        "snapchat.analytics.get",
+        "snapchat.earnings.get",
+        "snapchat.monetization.get",
       ];
       const writes = [
         ...YOUTUBE_WRITE_TOOLS,
@@ -494,6 +501,12 @@ describe("Real local CLI and MCP transport", () => {
         "ai.stop",
         // TikTok account operations.
         "tiktok.changes.request",
+        // Snapchat
+        "snapchat.signup.request",
+        "snapchat.chat.draft",
+        "snapchat.profile.create.request",
+        "snapchat.profile.update.request",
+        "snapchat.content.delete.request",
       ];
       const method = (action: string) => `social_${action.replaceAll(/[.-]/g, "_")}`;
       // Draft inspection/editing is a concurrent additive capability. Keep the

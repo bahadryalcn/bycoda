@@ -37,6 +37,10 @@ export class SocialTransport {
   ) {
     this.oauth = new SocialOAuth(service);
     this.tokens = new SocialTokenConnections(service);
+    // Snapchat owner reviews and account-scoped browser reads use the same verified session.
+    if (browser)
+      service.snapchatBrowserProfile = (principal, accountId, action, input) =>
+        browser.snapchatProfileAction(service, principal, accountId, action, input);
   }
   async rpc(p: SocialPrincipal, method: string, params: Record<string, unknown>): Promise<unknown> {
     if (method === "social.tools.call") {

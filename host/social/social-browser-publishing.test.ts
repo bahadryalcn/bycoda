@@ -8,7 +8,7 @@ it("does not advertise arbitrary DM initiation for publishing surfaces", () => {
   expect(recipe("tiktok").operations).toEqual(
     expect.arrayContaining(["inbox.read", "message.reply", "message.start"]),
   );
-  expect(recipe("snapchat").operations).not.toContain("message.start");
+  expect(recipe("snapchat").operations).toContain("message.start");
   expect(
     linkedInCreatedId(JSON.stringify({ value: { entityUrn: "urn:li:person:123" } })),
   ).toBeUndefined();

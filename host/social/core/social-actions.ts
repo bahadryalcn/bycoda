@@ -8,6 +8,8 @@ import type { SocialServiceApi } from "./social-service-api";
 import type { YouTubeRuntime } from "../youtube/youtube-runtime";
 
 export type SocialActionContext = {
+  /** Executor of provider operations bound to this Host. */
+  environmentId?: string;
   service: SocialServiceApi;
   store: SocialAudienceStore;
   now: () => number;

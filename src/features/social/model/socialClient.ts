@@ -142,6 +142,41 @@ export function socialClient(machineId: string) {
         "social.browser.instagram.comment-like",
         { accountId, ...input },
       ),
+    // Snapchat
+    snapchatProfileRead: (accountId: string) =>
+      request<import("../../../integrations/social/snapchat-profile").SnapchatProfileState>(
+        "snapchat.profile.read",
+        { accountId },
+      ),
+    snapchatProfileCreate: (
+      accountId: string,
+      patch: import("../../../integrations/social/snapchat-profile").SnapchatProfilePatch,
+    ) =>
+      request<import("../../../integrations/social/snapchat-profile").SnapchatProfileState>(
+        "snapchat.profile.create",
+        { accountId, patch, confirm: "CREATE_SNAPCHAT_PROFILE" },
+      ),
+    snapchatProfileUpdate: (
+      accountId: string,
+      patch: import("../../../integrations/social/snapchat-profile").SnapchatProfilePatch,
+    ) =>
+      remoteRequest<import("../../../integrations/social/snapchat-profile").SnapchatProfileState>(
+        machineId,
+        "social.browser.profile.update",
+        { accountId, patch, confirm: "UPDATE_SNAPCHAT_PROFILE" },
+      ),
+    snapchatMonetization: (accountId: string) =>
+      request<import("../../../integrations/social/snapchat-profile").SnapchatMonetizationStatus>(
+        "snapchat.monetization.get",
+        { accountId },
+      ),
+    snapchatStoryDelete: (accountId: string, storyId: string) =>
+      request<{ id: string; target: "story" }>("snapchat.content.delete", {
+        accountId,
+        target: "story",
+        id: storyId,
+        confirmId: storyId,
+      }),
     browserProfileRead: (accountId: string) =>
       remoteRequest<import("./socialBrowser").XProfileState>(
         machineId,

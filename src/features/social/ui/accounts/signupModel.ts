@@ -21,6 +21,8 @@ const HOST_SIGNUP_PLATFORMS: readonly SocialPlatform[] = [
   "youtube",
   "reddit",
   "x",
+  // Snapchat signup stays owner-assisted.
+  "snapchat",
 ];
 
 /** Signup is offered for browser accounts of a platform with a signup route the Host can drive. */
@@ -45,6 +47,7 @@ export const SIGNUP_FIELD_ORDER: readonly SocialRegistrationField[] = [
   "username",
   "birthdate",
   "category",
+  "phone",
 ];
 
 export function registrationFieldLabel(field: SocialRegistrationField): string {
@@ -63,6 +66,8 @@ export function registrationFieldLabel(field: SocialRegistrationField): string {
       return t("Birth date");
     case "category":
       return t("Category");
+    case "phone":
+      return t("Phone number");
   }
 }
 
@@ -77,6 +82,7 @@ export function registrationFieldProblem(
     return t("Enter a valid email address.");
   if (field === "username" && !/^[A-Za-z0-9._-]{2,64}$/.test(text))
     return t("Use 2 to 64 letters, digits, dots, dashes or underscores, without @.");
+  if (field === "phone" && !/^\+?[0-9]{7,15}$/.test(text)) return t("Enter a valid phone number.");
   return undefined;
 }
 

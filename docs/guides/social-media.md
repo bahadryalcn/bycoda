@@ -113,3 +113,25 @@ In **Content**, choose a video or photo post. Browser photo uploads depend on
 the Studio photo picker. API photos use URLs on a verified domain or URL prefix.
 Choose direct publication or, with the required OAuth scope, send a draft to
 the TikTok inbox. Scheduled work stays in Bycoda until its scheduled time.
+
+## Snapchat
+
+Choose **Snapchat** in **Accounts & Settings** to create or sign in to a member
+account. Complete password, verification and terms in the browser. Connect a
+Public Profile through the Public Profile API for publishing, publications and
+insights. Connect its verified browser account to manage the profile and read
+monetization status. To start a text chat, open **New Snapchat chat** in Inbox.
+Read the visible friends list or enter the exact username. The Host verifies the
+friend and the chat before sending.
+
+Choose **Spotlight**, **Public Story**, or **Saved Story** in Content. For a
+Saved Story, enter its title in the post field and attach media or enter source
+IDs. Pick a date and time to schedule the post. Review uncertain publication
+outcomes before publishing again. Delete a Spotlight or Saved Story from its
+publications list after confirming the exact item.
+
+Ask AI in bycoda chat for granted Snapchat insights, subscriber totals,
+publications or earnings. AI can prepare campaigns and messages under the
+account's existing autonomy settings. Signup requests appear in Command.
+Profile changes and deletion requests appear on the Snapchat account for owner
+review.

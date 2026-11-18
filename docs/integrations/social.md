@@ -126,6 +126,8 @@ The Instagram row below reflects the earlier adapter matrix.
 | Telegram  | Bot token: bounded text polling, text and one image or video send, webhook parser, bot-sender collection. Channel: administrator bot publishing with receipts.                                                                                              | Personal Web session: direct chats only, stable cursor, text and one image or video per send.                                                                                                                | Polls, inline buttons, edit and pin (functions only, no host path), webhook route, moderation, MTProto, stories, channel settings.                                                        |
 | Reddit    | Script or web app OAuth, text and link posts to one subreddit per item, subreddit rules and required flair, comments and replies, inbox polling, private message start and reply, keyword search, own-post commenters, delete.                              | Member web session: text and link posts to one subreddit (flair when required), comments, replies, inbox poll of comment replies and username mentions. Chat and private messages are not offered.           | Image, video and gallery posts; edit; account commenters; moderation and chat; upvote and save.                                                                                           |
 
+See [current Snapchat coverage](#snapchat) for the updated Snapchat operation list.
+
 Which operations are free depends on each platform's current pricing, which this document
 does not verify. The rule is fixed in the Host: the free official API is the default driver,
 and paid products are never selected automatically.
@@ -403,6 +405,35 @@ Contracts: [OAuth](https://developers.google.com/youtube/v3/guides/auth/server-s
 
 #### Snapchat
 
+**Current Snapchat coverage.** The Public Profile API handles Spotlight, Public
+Stories, Saved Stories, publication listings, Spotlight and Saved Story deletion,
+profile metadata, insights, subscriber totals and creator earnings. The Host queue
+schedules publications. Public Story submissions stay in review until the Host
+can verify an exact posted Snap ID. Receipt recovery does not upload or submit
+the Story again. Snap controls partner access to Story links and captions. Creator
+earnings require a creator token with profile Manager or organization Admin access.
+Earnings represent amounts recorded by Snap. Subscriber metrics are aggregate.
+
+Browser member sessions support existing friends and text chats. Public Profile
+browser sessions support profile management and can report visible monetization
+status. Unrecognized layouts and mismatched identities stop the operation.
+Signup leaves credentials, verification, and terms to the owner. AI tools can
+request signup, profile changes and content deletion for owner review. Publishing
+and messages use the existing campaign and draft queues. Organic content comments
+and LIVE have no documented Public Profile API. Marketing API advertising and
+mobile Creative Kit are outside this integration.
+
+For Public Profile OAuth, configure `BYCODA_SOCIAL_SNAPCHAT_CLIENT_ID`,
+`_CLIENT_SECRET`, `_REDIRECT_URI` and `_APPROVED=1` on the executor. The
+callback is `/social/oauth/snapchat/callback`. The Host uses the
+`snapchat-profile-api` scope and verifies the Public Profile UUID through
+`my_profile`. Browser member sessions use `web.snapchat.com`. Browser profile
+management uses `my.snapchat.com`. Friends are read from the verified visible
+list. Partial friend results indicate that more entries may exist.
+
+<details>
+<summary>Previous Snapchat adapter coverage</summary>
+
 - API: Public Profile OAuth (`snapchat-profile-api`) with `BYCODA_SOCIAL_SNAPCHAT_CLIENT_ID`,
   `_CLIENT_SECRET`, `_REDIRECT_URI` and `_APPROVED=1`. Callback:
   `/social/oauth/snapchat/callback`. The host verifies `my_profile` and the Public Profile
@@ -414,6 +445,8 @@ Contracts: [OAuth](https://developers.google.com/youtube/v3/guides/auth/server-s
   conversation text replies. Public Profile connections use `my.snapchat.com`. The uploader's
   automatically selected Saved Story target is cleared. Current `PostProfileMedia`
   acceptance has no durable Snap ID and is held for review.
+
+</details>
 
 #### Telegram
 

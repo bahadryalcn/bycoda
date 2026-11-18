@@ -7,6 +7,8 @@ import {
   instagramStoryAccountIssue,
   type InstagramPublishOptions,
 } from "../../../../integrations/social/adapters/instagram-publish";
+import { browserContentIssue } from "../../../../integrations/social/browserCapabilities";
+import { snapchatContentIssue } from "../../../../integrations/social/snapchat";
 import {
   SOCIAL_PLATFORM_NAMES,
   type CampaignVariant,
@@ -153,6 +155,31 @@ function isInstagramStory(account: SocialAccount, draft: ContentDraft): boolean 
 
 function videoProbe(media: ContentMedia[]): MediaProbe | undefined {
   return media.find((item) => item.media.kind === "video")?.probe;
+}
+
+function snapchatOptions(draft: ContentDraft, accountId: string): CampaignVariant["snapchat"] {
+  const options = draft.platform[accountId]?.snapchat;
+  if (!options) return undefined;
+  const probe = videoProbe(draft.media);
+  const { sourceText, ...publish } = options;
+  const sources = sourceText
+    ?.split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const match = /^(snap|spotlight):(.+)$/.exec(entry);
+      return {
+        kind: match?.[1] === "spotlight" ? ("spotlight" as const) : ("snap" as const),
+        id: match?.[2].trim() ?? "",
+      };
+    });
+  return {
+    ...publish,
+    ...(sources ? { savedStorySources: sources } : {}),
+    durationSeconds: probe?.durationSeconds ?? 0,
+    width: probe?.width ?? 0,
+    height: probe?.height ?? 0,
+  };
 }
 
 /** Attachment rules per platform. Platforms without rules here return no problem. */
@@ -421,6 +448,26 @@ export function draftProblems(input: RuleInput): Problem[] {
       for (const text of youtubeProblems(platform?.youtube, videoProbe(draft.media))) add(text);
     if (account.platform === "reddit")
       for (const text of redditProblems(platform?.reddit)) add(text);
+    if (account.platform === "snapchat") {
+      const snapchat = snapchatOptions(draft, account.id);
+      if (!snapchat) add(t("Choose a Snapchat publishing format."));
+      else {
+        const job = {
+          kind: "publish" as const,
+          payload: {
+            snapchat,
+            text: draft.text.trim(),
+            media: mediaOf(draft.media),
+            link: withUtm(link, draft.utm) || undefined,
+          },
+        };
+        const issue =
+          account.connection === "browser"
+            ? browserContentIssue(account, job)
+            : snapchatContentIssue(account, job);
+        if (issue) add(t(issue));
+      }
+    }
   }
   return problems;
 }
@@ -455,6 +502,7 @@ export function buildVariants(input: RuleInput): CampaignVariant[] {
       const x = xPostExtras(platform?.x);
       if (x) variant.x = x;
     }
+    if (account.platform === "snapchat") variant.snapchat = snapchatOptions(draft, account.id);
     // Spread the saved options first so fields without a form control (category, publish time,
     // TikTok mode and photo fields) survive an edit; the normalized fields below then override.
     if (account.platform === "youtube" && platform?.youtube) {

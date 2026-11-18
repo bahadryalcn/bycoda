@@ -182,6 +182,66 @@ describe("Instagram API publication drafts", () => {
   });
 });
 
+describe("Snapchat publication formats", () => {
+  const snapchat = account({
+    id: "snapchat-1",
+    platform: "snapchat",
+    accountType: "public_profile",
+    platformId: "c3a5321a-1a0a-4f01-8603-b8473750cd9d",
+  });
+
+  it("builds a scheduled Public Story photo with its selected expiry", () => {
+    const post = input(
+      {
+        text: "",
+        media: [image("photo")],
+        when: "later",
+        scheduledAt: "2026-12-01T12:00",
+        platform: { [snapchat.id]: { snapchat: { target: "story", storyTtl: "TWO_DAYS" } } },
+      },
+      [snapchat],
+    );
+    expect(draftProblems(post)).toEqual([]);
+    expect(buildVariants(post)[0]).toMatchObject({
+      scheduledAt: new Date("2026-12-01T12:00").getTime(),
+      text: "",
+      snapchat: { target: "story", storyTtl: "TWO_DAYS" },
+    });
+  });
+
+  it("keeps exact Saved Story sources in the draft and strips the editable input from the wire", () => {
+    const post = input(
+      {
+        platform: {
+          [snapchat.id]: {
+            snapchat: {
+              target: "saved_story",
+              sourceText: "snap:story_12345, spotlight:spotlight_12345",
+            },
+          },
+        },
+      },
+      [snapchat],
+    );
+    expect(draftProblems(post)).toEqual([]);
+    const variant = buildVariants(post)[0]!;
+    expect(variant.snapchat).toMatchObject({
+      target: "saved_story",
+      savedStorySources: [
+        { kind: "snap", id: "story_12345" },
+        { kind: "spotlight", id: "spotlight_12345" },
+      ],
+    });
+    expect(variant.snapchat).not.toHaveProperty("sourceText");
+    expect(
+      draftFromCampaign({ variants: [variant] } as SocialCampaign).platform[snapchat.id]?.snapchat,
+    ).toMatchObject({
+      target: "saved_story",
+      savedStorySources: variant.snapchat?.savedStorySources,
+    });
+  });
+});
+
 describe("media rules per platform", () => {
   it("allows up to four X images or one video, never a mix", () => {
     const x = account({ id: "x1", platform: "x" });

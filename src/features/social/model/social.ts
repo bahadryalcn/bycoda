@@ -221,11 +221,16 @@ export type FacebookReelOptions = {
   frameRate: number;
 };
 export type SnapchatPublishOptions = {
-  target: "spotlight" | "story";
+  target: "spotlight" | "story" | "saved_story";
   locale?: string;
   durationSeconds: number;
   width: number;
   height: number;
+  storyTtl?: "ONE_DAY" | "TWO_DAYS" | "THREE_DAYS" | "ONE_WEEK";
+  linkStickerText?: string;
+  linkStickerPlacement?: { centerX: number; centerY: number };
+  captionCenterY?: number;
+  savedStorySources?: { kind: "spotlight" | "snap"; id: string }[];
 };
 export type TikTokCreatorInfo = {
   nickname: string;
@@ -504,10 +509,14 @@ export type SocialJob = {
     snapchatMedia?: {
       actorId: string;
       signature: string;
-      mediaId: string;
+      mediaId?: string;
       createdAt: number;
       spotlightId?: string;
-      /** Set before the Spotlight submit call; a retry after it is refused as uncertain. */
+      storyId?: string;
+      storySnapId?: string;
+      savedStoryId?: string;
+      mediaIds?: string[];
+      /** Persisted before submit so a lost response never triggers a second publication. */
       submittedAt?: number;
     };
     tiktokPublishId?: string;

@@ -122,6 +122,7 @@ import {
   type SocialInbound,
 } from "../../src/integrations/social/adapter";
 import { contentSupport } from "../../src/integrations/social/platformAdapters";
+import { parseSnapchatPublishOptions } from "./execution/snapchat-publish-options";
 import { validatePublishingText } from "../../src/integrations/social/publishingFormats";
 import { xPostExtrasIssue, type XPostExtras } from "../../src/integrations/social/x-publish";
 import { parseTikTokOptions } from "../../src/integrations/social/tiktok";
@@ -235,6 +236,7 @@ const permissions: SocialPermission[] = ["read", "draft", "publish", "reply", "m
 const SOCIAL_TICK_MS = 5000;
 const SOCIAL_IDLE_TICK_MS = 30_000;
 export class SocialService implements SocialServiceApi {
+  snapchatBrowserProfile?: SocialServiceApi["snapchatBrowserProfile"];
   private readonly mediaCustody: SocialMediaCustody;
   private readonly mediaQuarantine: SocialMediaQuarantine;
   readonly jobArchive: SocialJobArchive;
@@ -2496,6 +2498,7 @@ export class SocialService implements SocialServiceApi {
           job.status === "running" ||
           job.preparation?.tiktokPublishId ||
           job.preparation?.youtubeVideoId ||
+          job.preparation?.snapchatMedia?.submittedAt !== undefined ||
           job.preparation?.snapchatMedia?.spotlightId ||
           job.preparation?.facebookReel?.stage === "submitted"
         )
@@ -2532,6 +2535,7 @@ export class SocialService implements SocialServiceApi {
         return await registered.run(
           {
             service: this,
+            environmentId: this.store.environmentId,
             store: this.audience,
             now: this.now,
             principal: p,
@@ -3848,51 +3852,8 @@ export class SocialService implements SocialServiceApi {
           frameRate: Number(metadata.frameRate),
         };
       }
-      if (value.snapchat !== undefined) {
-        if (
-          account.platform !== "snapchat" ||
-          account.accountType !== "public_profile" ||
-          !value.snapchat ||
-          typeof value.snapchat !== "object" ||
-          Array.isArray(value.snapchat)
-        )
-          throw new Error("Snapchat publishing metadata requires a Public Profile.");
-        const metadata = value.snapchat as Record<string, unknown>;
-        exact(metadata, ["target", "durationSeconds", "width", "height", "locale"]);
-        if (
-          !["spotlight", "story"].includes(String(metadata.target)) ||
-          ![metadata.durationSeconds, metadata.width, metadata.height].every(
-            (item) => typeof item === "number" && Number.isFinite(item),
-          ) ||
-          Number(metadata.durationSeconds) < (account.connection === "browser" ? 5 : 6) ||
-          Number(metadata.durationSeconds) > 60 ||
-          Number(metadata.width) < 540 ||
-          Number(metadata.height) < 960
-        )
-          throw new Error(
-            account.connection === "browser"
-              ? "Choose Story or Spotlight and a 5–60 second video of at least 540 × 960 pixels."
-              : "Choose Spotlight and a 6–60 second video of at least 540 × 960 pixels.",
-          );
-        if (
-          account.connection !== "browser" &&
-          (metadata.target !== "spotlight" ||
-            typeof metadata.locale !== "string" ||
-            !/^[a-z]{2}_[A-Z]{2}$/.test(metadata.locale))
-        )
-          throw new Error(
-            "Snapchat API publishing requires Spotlight and an explicit locale such as tr_TR.",
-          );
-        snapchat = {
-          target: metadata.target as "spotlight" | "story",
-          durationSeconds: Number(metadata.durationSeconds),
-          width: Number(metadata.width),
-          height: Number(metadata.height),
-          ...(metadata.locale !== undefined
-            ? { locale: str(metadata.locale, "Spotlight locale", 5) }
-            : {}),
-        };
-      }
+      if (value.snapchat !== undefined)
+        snapchat = parseSnapchatPublishOptions(account, value.snapchat);
       if (value.tiktok !== undefined) {
         if (account.platform !== "tiktok")
           throw new Error("TikTok metadata requires a TikTok account.");
@@ -5916,6 +5877,7 @@ export class SocialService implements SocialServiceApi {
           if (
             !job.preparation?.tiktokPublishId &&
             !job.preparation?.youtubeVideoId &&
+            job.preparation?.snapchatMedia?.submittedAt === undefined &&
             !job.preparation?.snapchatMedia?.spotlightId &&
             job.preparation?.facebookReel?.stage !== "submitted"
           )

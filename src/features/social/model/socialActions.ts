@@ -60,6 +60,14 @@ export const SOCIAL_READ_ACTIONS = [
   "tiktok.privacy.read",
   "tiktok.changes.list",
   "tiktok.business.status",
+  // Snapchat
+  "snapchat.profile.read",
+  "snapchat.friends.list",
+  "snapchat.content.list",
+  "snapchat.analytics.get",
+  "snapchat.earnings.get",
+  "snapchat.monetization.get",
+  "snapchat.review.list",
 ] as const;
 export type SocialReadAction = (typeof SOCIAL_READ_ACTIONS)[number];
 

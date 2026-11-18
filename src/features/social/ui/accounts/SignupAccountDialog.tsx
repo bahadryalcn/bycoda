@@ -110,6 +110,8 @@ export function SignupAccountDialog({
     registration?.requiredFields.includes(field),
   );
   const missing = missingFields(required, draft);
+  // Snapchat web signup creates a member account. A Public Profile is a separate step.
+  const signupAccountType = platform === "snapchat" && !existingAccountId ? "member" : accountType;
   const update = (field: SocialRegistrationField, value: string) =>
     setDraft((current) => ({ ...current, [field]: value }));
 
@@ -121,7 +123,7 @@ export function SignupAccountDialog({
         const created = await client.request<SocialAccount>("accounts.create", {
           platform,
           name: name.trim(),
-          accountType,
+          accountType: signupAccountType,
           connection: hostConnection(platform, "browser"),
           projectIds,
         });
@@ -133,7 +135,7 @@ export function SignupAccountDialog({
           id,
           "signup",
           undefined,
-          registrationProfile(accountType, draft),
+          registrationProfile(signupAccountType, draft),
         ),
       );
     }).catch(() => undefined);
@@ -274,6 +276,7 @@ export function SignupAccountDialog({
                   key={field}
                   label={registrationFieldLabel(field)}
                   value={draft[field] ?? ""}
+                  type={field === "phone" ? "tel" : "text"}
                   maxLength={field === "email" ? 254 : 100}
                   error={registrationFieldProblem(field, draft[field] ?? "")}
                   disabled={busy}

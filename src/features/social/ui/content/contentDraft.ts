@@ -1,4 +1,5 @@
 import type {
+  SnapchatPublishOptions,
   SocialCampaign,
   SocialAccount,
   SocialMedia,
@@ -43,6 +44,9 @@ export type XPostDraft = {
 
 /** Platform options the owner sets per account. Only fields the Host accepts reach a variant. */
 export type PlatformDraft = {
+  snapchat?: Omit<SnapchatPublishOptions, "durationSeconds" | "width" | "height"> & {
+    sourceText?: string;
+  };
   tiktok?: Partial<Omit<TikTokVideoOptions, "durationSeconds">>;
   youtube?: Partial<YouTubeVideoOptions>;
   facebook?: FacebookDraft;
@@ -251,6 +255,15 @@ export function draftFromCampaign(
         },
         thread: variant.x.thread && [...variant.x.thread],
       };
+    if (variant.snapchat) {
+      const {
+        durationSeconds: _duration,
+        width: _width,
+        height: _height,
+        ...options
+      } = variant.snapchat;
+      entry.snapchat = options;
+    }
     platform[variant.accountId] = entry;
   }
   // The media is one file shared by every variant, so its size and length come from whichever
@@ -258,6 +271,7 @@ export function draftFromCampaign(
   const sized =
     campaign.variants.find((variant) => variant.facebook) ??
     campaign.variants.find((variant) => variant.tiktok);
+  const snapchat = campaign.variants.find((variant) => variant.snapchat)?.snapchat;
   const probe: MediaProbe | undefined = sized?.facebook
     ? {
         durationSeconds: sized.facebook.durationSeconds,
@@ -266,7 +280,13 @@ export function draftFromCampaign(
       }
     : sized?.tiktok
       ? { durationSeconds: sized.tiktok.durationSeconds }
-      : undefined;
+      : snapchat
+        ? {
+            durationSeconds: snapchat.durationSeconds,
+            width: snapchat.width,
+            height: snapchat.height,
+          }
+        : undefined;
   const scheduled = first?.scheduledAt;
   return {
     campaignId: campaign.id,

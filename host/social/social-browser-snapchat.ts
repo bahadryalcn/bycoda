@@ -11,9 +11,15 @@ import {
   unsupported,
 } from "./social-browser-publishing-shared";
 import type { SocialAccount, SocialJob } from "../../src/features/social/model/social";
+import { BROWSER_PLATFORM_OPERATIONS } from "../../src/integrations/social/browserCapabilities";
 import type { SocialInbound, SocialSendResult } from "../../src/integrations/social/adapter";
 import type { BrowserPage } from "./social-browser";
 import { needsHumanError } from "./browser/challenge";
+import {
+  openSnapchatFriend,
+  proveSnapchatMessagingScreen,
+  snapchatConversation,
+} from "./social-browser-snapchat-messaging";
 import {
   readSnapchatPublicProfileIdentity,
   selectSnapchatPublishDestination,
@@ -22,7 +28,7 @@ import {
 } from "./social-browser-snapchat-extended";
 import {
   guardSnapchatStep,
-  snapchatChallenge,
+  snapchatProtectedScreen,
   unexpectedSnapchatScreen,
 } from "./social-browser-snapchat-guard";
 import type {
@@ -103,11 +109,10 @@ async function snapchatIdentityOrChallenge(
   page: BrowserPage,
   account?: SocialAccount,
 ): Promise<BrowserIdentity | undefined> {
-  const identity = await snapchatIdentity(page, account);
-  if (identity) return identity;
-  const hit = await snapchatChallenge(page);
+  const hit = await snapchatProtectedScreen(page);
+  if (hit?.kind === "login") return undefined;
   if (hit) throw needsHumanError(hit);
-  return undefined;
+  return snapchatIdentity(page, account);
 }
 
 export type SnapPost = { id: string; owner: string; text: string; at: number; url: string };
@@ -172,7 +177,7 @@ async function snapchatUploadCurrent(
     ctx.files.length !== 1 ||
     ctx.files[0].kind !== "video" ||
     job.payload.media.length !== 1 ||
-    !["story", "spotlight"].includes(options.target)
+    (options.target !== "story" && options.target !== "spotlight")
   )
     throw unsupported();
   if (options.target === "story" && content(job).trim()) throw unsupported();
@@ -350,23 +355,38 @@ export function snapchatChatsExpression(): string {
   })()`;
 }
 
-function snapchatMessagesExpression(threadId: string, owner: string, recipient: string): string {
+const composer =
+  '[data-testid="chat-input"][contenteditable="true"],textarea[aria-label="Send a chat"]';
+
+function snapchatMessagesExpression(
+  threadId: string,
+  owner: string,
+  recipient: string,
+  draft?: string,
+): string {
   return String.raw`(() => {
-    const thread = [...document.querySelectorAll('[data-conversation-id]')].find(el => el.getAttribute('data-conversation-id') === ${json(threadId)});
-    if(!thread) return;
-    const participants = [...thread.querySelectorAll('[data-participant-username]')].map(el => 'web:snapchat:' + el.getAttribute('data-participant-username').toLowerCase());
-    if(!participants.includes(${json(owner)}) || !participants.includes(${json(recipient)})) return;
-    const elements = [...thread.querySelectorAll('[data-message-id]')].slice(-100);
-    if(!elements.length && !thread.querySelector('[data-testid="empty-conversation"]')) return;
+    ${snapchatConversation(owner, recipient, threadId)}
+    const elements = [...thread.querySelectorAll('[data-message-id]')].filter(visible).slice(-100);
+    if(!elements.length && ![...thread.querySelectorAll('[data-testid="empty-conversation"]')].some(visible)) return;
     const rows=elements.map(el => {
       const id = el.getAttribute('data-message-id'), body = el.querySelector('[data-testid="message-text"],[data-message-text]');
       const sender = el.getAttribute('data-sender-username'), to = el.getAttribute('data-recipient-username');
       const time = el.querySelector('time[datetime]');
       if(!/^[\w-]{8,160}$/.test(id || '') || !body || !time || !/^[a-zA-Z][\w.-]{1,30}$/.test(sender || '') || !/^[a-zA-Z][\w.-]{1,30}$/.test(to || '')) return null;
       const at=Date.parse(time.getAttribute('datetime'));if(!Number.isFinite(at)||at<=0)return null;
-      return {id,threadId:${json(threadId)},sender:'web:snapchat:' + sender.toLowerCase(),recipient:'web:snapchat:' + to.toLowerCase(),text:body.textContent,at};
+      return {id,threadId,sender:'web:snapchat:' + sender.toLowerCase(),recipient:'web:snapchat:' + to.toLowerCase(),text:body.textContent,at};
     });
-    return rows.some(row=>!row)?undefined:rows;
+    if(rows.some(row=>!row)||new Set(rows.map(row=>row.id)).size!==rows.length)return;
+    const draft=${json(draft ?? null)};
+    if(draft!==null){
+      const inputs=[...thread.querySelectorAll(${json(composer)})].filter(visible);
+      const buttons=[...thread.querySelectorAll('button[data-testid="send-chat"],button[aria-label="Send"]')].filter(visible);
+      if(inputs.length!==1||(inputs[0].value??inputs[0].textContent)!==draft||
+        buttons.length!==1||buttons[0].matches(':disabled,[aria-disabled="true"]'))return;
+      document.querySelectorAll('[data-bycoda-snap-send]').forEach(el=>el.removeAttribute('data-bycoda-snap-send'));
+      buttons[0].setAttribute('data-bycoda-snap-send','true');
+    }
+    return rows;
   })()`;
 }
 
@@ -431,52 +451,57 @@ async function snapchatSend(ctx: BrowserRecipeContext, job: SocialJob): Promise<
     ) ||
     job.payload.media.length ||
     ctx.files.length ||
+    job.payload.link ||
     !job.payload.text.trim()
   )
     throw unsupported();
-  const threadId = inputId(job.payload.threadId, /^[\w-]{8,100}$/);
-  const recipient = inputId(job.payload.recipientId, /^web:snapchat:[a-zA-Z][\w.-]{1,30}$/);
+  const recipient = inputId(job.payload.recipientId, /^web:snapchat:[a-z][\w.-]{1,30}$/);
+  if (recipient === ctx.account.platformId) throw denied();
+  if (job.payload.threadId !== undefined) inputId(job.payload.threadId, /^[\w-]{8,100}$/);
   await ctx.page.goto(SNAP);
-  await ctx.verifyIdentity();
-  const chats = await ctx.waitFor<SnapchatChat[]>(snapchatChatsExpression(), 30_000);
-  const matching = chats?.filter(
-    (chat) => chat.threadId === threadId && chat.recipient === recipient,
-  );
-  if (matching?.length !== 1) throw denied();
-  await ctx.page.goto(matching[0].href);
-  await ctx.verifyIdentity();
-  const before = await ctx.waitFor<SnapchatMessage[]>(
-    snapchatMessagesExpression(threadId, ctx.account.platformId, recipient),
-    20_000,
+  await proveSnapchatMessagingScreen(ctx);
+  const chat = await (async () => {
+    if (job.kind === "message") return openSnapchatFriend(ctx, recipient, job.payload.threadId);
+    const threadId = inputId(job.payload.threadId, /^[\w-]{8,100}$/);
+    const chats = await ctx.waitFor<SnapchatChat[]>(snapchatChatsExpression(), 30_000);
+    const matching = chats?.filter(
+      (row) => row.threadId === threadId && row.recipient === recipient,
+    );
+    if (matching?.length !== 1) throw denied();
+    await ctx.page.goto(matching[0].href);
+    return matching[0];
+  })();
+  const { threadId } = chat;
+  const messages = snapchatMessagesExpression(threadId, ctx.account.platformId, recipient);
+  const ready = await ctx.waitFor<SnapchatMessage[]>(messages, 20_000);
+  await proveSnapchatMessagingScreen(ctx);
+  if (!ready) throw denied();
+  const input = '[data-bycoda-snap-draft="true"]';
+  const draft = await ctx.page.evaluate<"empty" | "same" | undefined>(String.raw`(() => {
+    ${snapchatConversation(ctx.account.platformId, recipient, threadId)}
+    const inputs=[...thread.querySelectorAll(${json(composer)})].filter(visible);
+    if(inputs.length!==1||inputs[0].matches(':disabled,[readonly],[aria-disabled="true"]')||inputs[0].form)return;
+    const value=inputs[0].value??inputs[0].textContent;
+    if(value&&value!==${json(job.payload.text)})return;
+    document.querySelectorAll('[data-bycoda-snap-draft]').forEach(el=>el.removeAttribute('data-bycoda-snap-draft'));
+    inputs[0].setAttribute('data-bycoda-snap-draft','true');
+    return value?'same':'empty';
+  })()`);
+  if (!draft) throw denied();
+  if (draft === "empty") await ctx.page.fill(input, job.payload.text);
+  await proveSnapchatMessagingScreen(ctx);
+  const before = await ctx.page.evaluate<SnapchatMessage[] | undefined>(
+    snapchatMessagesExpression(threadId, ctx.account.platformId, recipient, job.payload.text),
   );
   if (!before) throw denied();
-  await guardSnapchatStep(ctx.page, () =>
-    fill(
-      ctx,
-      '[data-conversation-id] [data-testid="chat-input"][contenteditable="true"],[data-conversation-id] textarea[aria-label="Send a chat"]',
-      "chat-text",
-      job.payload.text,
-    ),
-  );
-  const button = await guardSnapchatStep(ctx.page, () =>
-    control(
-      ctx,
-      '[data-conversation-id] button[data-testid="send-chat"],[data-conversation-id] button[aria-label="Send"]',
-      "send-chat",
-    ),
-  );
   const at = ctx.now();
   try {
-    await ctx.verifyIdentity();
     ctx.markSubmitted?.();
-    await ctx.page.click(button);
+    await ctx.page.click('[data-bycoda-snap-send="true"]');
     // Reopen the exact chat. A newly rendered optimistic bubble is not sufficient.
-    await ctx.page.goto(matching[0].href);
-    const after = await ctx.waitFor<SnapchatMessage[]>(
-      snapchatMessagesExpression(threadId, ctx.account.platformId, recipient),
-      30_000,
-    );
-    await ctx.verifyIdentity();
+    await ctx.page.goto(chat.href);
+    const after = await ctx.waitFor<SnapchatMessage[]>(messages, 30_000);
+    await proveSnapchatMessagingScreen(ctx);
     const candidates = after?.filter(
       (row) =>
         row.threadId === threadId &&
@@ -484,6 +509,7 @@ async function snapchatSend(ctx: BrowserRecipeContext, job: SocialJob): Promise<
         row.recipient === recipient &&
         row.text === job.payload.text &&
         row.at >= at - 5000 &&
+        row.at <= ctx.now() + 60_000 &&
         !before.some((old) => old.id === row.id),
     );
     if (candidates?.length !== 1) throw unknown();
@@ -497,7 +523,7 @@ export const snapchatBrowserRecipe: BrowserRecipe = {
   platform: "snapchat",
   loginUrl: SNAP,
   connectionUrl: snapchatBrowserConnectionUrl,
-  operations: ["publish", "media", "inbox.read", "message.reply", "poll", "audience.collect"],
+  operations: BROWSER_PLATFORM_OPERATIONS.snapchat,
   identity: snapchatIdentityOrChallenge,
   send: (ctx, job) => (job.kind === "publish" ? snapchatUpload(ctx, job) : snapchatSend(ctx, job)),
   poll: snapchatPoll,

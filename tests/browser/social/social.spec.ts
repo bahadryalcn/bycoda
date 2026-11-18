@@ -1,5 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { test, expect, type Page } from "@playwright/test";
+import { spotlightId, storyId } from "./snapchat-data";
 
 type FixtureCall = { command: string; args: { params?: { action?: string; input?: unknown } } };
 
@@ -175,6 +176,186 @@ for (const theme of ["light", "dark"])
       }
     });
   }
+
+async function openSnapchatFixture(page: Page, theme = "light", width = 1280) {
+  await page.setViewportSize({ width, height: 1000 });
+  await page.goto("/tests/browser/social/social.html?snapchat-ui");
+  await page.evaluate(
+    (light) => document.documentElement.classList.toggle("theme-light", light),
+    theme === "light",
+  );
+  await expect(page.getByRole("tab", { name: "Command", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+}
+
+for (const theme of ["light", "dark"])
+  for (const width of [1280, 800])
+    test(`Snapchat routed panels ${theme} ${width}`, async ({ page }) => {
+      await openSnapchatFixture(page, theme, width);
+      const shot = (surface: string) =>
+        page.screenshot({
+          path: `temp/verification/social-snapchat/${surface}-${theme}-${width}.png`,
+          animations: "disabled",
+        });
+      await page.getByText("Snapchat insights", { exact: true }).click();
+      await page.getByText("Insights", { exact: true }).click();
+      await page.getByRole("button", { name: "Read insights" }).click();
+      await expect(page.getByText("SUBSCRIBERS · 2,345")).toBeVisible();
+      await expect(page.getByText("Some Snapchat results are unavailable.")).toBeVisible();
+      await page.getByText("Creator earnings", { exact: true }).click();
+      await page.getByRole("button", { name: "Read earnings" }).click();
+      const earnings = page.getByText(/12\.345.*SPOTLIGHT/);
+      await earnings.scrollIntoViewIfNeeded();
+      await expect(earnings).toBeInViewport();
+      await expect(page.getByText(/Data through .*UTC/)).toBeVisible();
+      await shot("command");
+
+      await page.getByRole("tab", { name: "Content", exact: true }).click();
+      await page.getByText("Snapchat publications", { exact: true }).click();
+      await page.getByRole("button", { name: "Read publications" }).click();
+      await expect(page.getByText("Fixture launch clip")).toBeVisible();
+      await page.getByText("Fixture launch clip").click();
+      await expect(page.getByRole("button", { name: "Delete", exact: true })).toBeEnabled();
+      await shot("content");
+
+      await page.getByRole("tab", { name: "Accounts & Settings" }).click();
+      await page.getByRole("button", { name: /Fixture Snapchat Browser/ }).click();
+      const account = page.getByRole("dialog", { name: "Fixture Snapchat Browser" });
+      await account.getByText("Snapchat Public Profile", { exact: true }).click();
+      await account.getByRole("button", { name: "Read profile", exact: true }).click();
+      await expect(account.getByLabel("Profile name", { exact: true })).toHaveValue(
+        "Fixture Studio",
+      );
+      await account.getByRole("button", { name: "Snapchat monetization status" }).click();
+      await expect(account.getByText("Daily rewards · Eligible")).toBeVisible();
+      await account
+        .getByRole("button", { name: "Save changes", exact: true })
+        .scrollIntoViewIfNeeded();
+      await shot("account-profile");
+      await account.getByText("Delete Public Story", { exact: true }).click();
+      await account.getByLabel("Public Story ID").fill(storyId);
+      await account.getByRole("button", { name: "Delete", exact: true }).click();
+      const storyConfirm = page.getByRole("dialog", { name: "Delete this Snapchat publication?" });
+      const confirmStory = storyConfirm.getByRole("button", { name: "Delete", exact: true });
+      await expect(confirmStory).toBeDisabled();
+      await storyConfirm.getByRole("textbox").fill(storyId);
+      await shot("account-story-confirmation");
+      await confirmStory.click();
+      await expect(account.getByText("Public Story deleted.")).toBeVisible();
+      await account.getByText("Snapchat Public Profile", { exact: true }).click();
+      await account.getByText("Snapchat reviews", { exact: true }).click();
+      await account.getByRole("button", { name: "Refresh" }).click();
+      await account.getByText("Save changes?", { exact: true }).click();
+      await expect(account.getByText(/New behind-the-scenes series/)).toBeVisible();
+      await shot("account-reviews");
+
+      await page.keyboard.press("Escape");
+      await page.getByRole("tab", { name: "Inbox", exact: true }).click();
+      await page.getByText("New Snapchat chat", { exact: true }).click();
+      await page.getByRole("button", { name: "Read Snapchat friends" }).click();
+      await page.getByRole("button", { name: /^Snapchat friends:/ }).click();
+      await page.getByRole("option", { name: "@fixture.friend", exact: true }).click();
+      await expect(page.getByLabel("Friend’s Snapchat username")).toHaveValue("fixture.friend");
+      await page.getByLabel("Message", { exact: true }).fill("Fixture message draft");
+      await shot("inbox-new-chat");
+
+      await page.getByRole("tab", { name: "Content", exact: true }).click();
+      await page.getByRole("button", { name: "New post", exact: true }).click();
+      const composer = page.getByRole("dialog", { name: "New post" });
+      await composer.getByRole("checkbox", { name: /Fixture Snapchat API/ }).click();
+      for (const [format, field, file] of [
+        ["Spotlight", "Spotlight locale", "spotlight"],
+        ["Public Story", "Story expiry", "public-story"],
+        ["Saved Story", "Saved Story source IDs", "saved-story"],
+      ]) {
+        await composer.getByRole("button", { name: /^Snapchat publishing format:/ }).click();
+        await page.getByRole("option", { name: format, exact: true }).click();
+        const optionsField =
+          field === "Story expiry"
+            ? composer.getByRole("button", { name: /^Story expiry:/ })
+            : composer.getByLabel(field, { exact: true });
+        await optionsField.scrollIntoViewIfNeeded();
+        await shot(`composer-${file}`);
+      }
+      await page.keyboard.press("Escape");
+
+      await page.getByRole("tab", { name: "Accounts & Settings" }).click();
+      await page.getByRole("button", { name: "Connect account", exact: true }).click();
+      await page.getByRole("button", { name: /^Platform:/ }).click();
+      await page.getByRole("option", { name: "Snapchat", exact: true }).click();
+      await page.getByRole("button", { name: /^How to connect:/ }).click();
+      await page.getByRole("option", { name: "Browser sign-in", exact: true }).click();
+      await page.getByRole("button", { name: /Create a new Snapchat account instead/ }).click();
+      const signup = page.getByRole("dialog", { name: "Create a Snapchat account" });
+      await signup.getByLabel("Name", { exact: true }).fill("Fixture Snapchat signup");
+      await shot("signup-start");
+      await signup.getByRole("button", { name: "Open sign-up window" }).click();
+      await expect(signup.getByLabel("Phone number")).toBeVisible();
+      await expect(signup.locator('input[type="password"]')).toHaveCount(0);
+      expect(await requests(page, "accounts.create")).toEqual([
+        expect.objectContaining({
+          platform: "snapchat",
+          accountType: "member",
+          connection: "browser",
+        }),
+      ]);
+      await shot("signup-fields");
+    });
+
+test("Snapchat routed loading, project permission, empty, denied and exact deletion", async ({
+  page,
+}) => {
+  await openSnapchatFixture(page);
+  await page.getByText("Snapchat insights", { exact: true }).click();
+  await page.getByRole("button", { name: /^Account:/ }).click();
+  await page.getByRole("option", { name: "Fixture Snapchat Read Only" }).click();
+  await page.getByText("Creator earnings", { exact: true }).click();
+  await page.getByRole("button", { name: "Read earnings" }).click();
+  await expect(page.getByText(/Fixture creator access denied/)).toBeVisible();
+  await expect(page.getByText("No Snapchat earnings found.")).toHaveCount(0);
+
+  await page.getByRole("tab", { name: "Content", exact: true }).click();
+  await page.getByText("Snapchat publications", { exact: true }).click();
+  await page.evaluate(() =>
+    (window as unknown as { socialFixtureHold(action: string): void }).socialFixtureHold(
+      "snapchat.content.list",
+    ),
+  );
+  const read = page.getByRole("button", { name: "Read publications" });
+  await read.click();
+  await expect(read).toHaveAttribute("aria-busy", "true");
+  await expect.poll(() => requests(page, "snapchat.content.list")).toHaveLength(1);
+  await page.evaluate(() =>
+    (window as unknown as { socialFixtureRelease(): void }).socialFixtureRelease(),
+  );
+  await expect(page.getByText("Fixture launch clip")).toBeVisible();
+  await page.getByRole("button", { name: "Load more", exact: true }).click();
+  await expect(page.getByText("Fixture studio tour")).toBeVisible();
+  await page.getByText("Fixture launch clip").click();
+  const remove = page.getByRole("button", { name: "Delete", exact: true });
+  await remove.click();
+  const confirmation = page.getByRole("dialog", { name: "Delete this Snapchat publication?" });
+  const confirm = confirmation.getByRole("button", { name: "Delete", exact: true });
+  await expect(confirm).toBeDisabled();
+  await confirmation.getByRole("textbox").fill(spotlightId);
+  await confirm.click();
+  await expect(page.getByText("Fixture launch clip")).toHaveCount(0);
+  expect(await requests(page, "snapchat.content.delete")).toEqual([
+    { accountId: "snapchat-api", target: "spotlight", id: spotlightId, confirmId: spotlightId },
+  ]);
+
+  await page.getByRole("button", { name: /^Account:/ }).click();
+  await page.getByRole("option", { name: "Fixture Snapchat Read Only" }).click();
+  await page.getByRole("button", { name: "Read publications" }).click();
+  await page.getByText("Fixture launch clip").click();
+  await expect(remove).toBeDisabled();
+  await page.getByRole("button", { name: /^Format:/ }).click();
+  await page.getByRole("option", { name: "Public Stories" }).click();
+  await page.getByRole("button", { name: "Read publications" }).click();
+  await expect(page.getByText("No Snapchat publications found.")).toBeVisible();
+});
 
 for (const theme of ["light", "dark"])
   for (const width of [800, 1280]) {
@@ -826,8 +1007,11 @@ test("automatic audience labels stay on one line", async ({ page }, testInfo) =>
 });
 
 // Assertions below use the Turkish catalog, so every test starts in Turkish.
-test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem("bycoda.language", "tr"));
+test.beforeEach(async ({ page }, testInfo) => {
+  await page.addInitScript(
+    (locale) => localStorage.setItem("bycoda.language", locale),
+    testInfo.title.startsWith("Snapchat ") ? "en" : "tr",
+  );
 });
 
 test("empty reply rules explain the disabled review once", async ({ page }, testInfo) => {

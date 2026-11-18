@@ -3,6 +3,7 @@ import type { ContentMedia, PlatformDraft } from "../contentDraft";
 import { FacebookReelFields } from "./FacebookReelFields";
 import { MetaFields } from "./MetaFields";
 import { RedditFields } from "./RedditFields";
+import { SnapchatFields } from "./SnapchatFields";
 import { TikTokFields } from "./TikTokFields";
 import { XFields } from "./XFields";
 import { YouTubeFields } from "./YouTubeFields";
@@ -38,6 +39,8 @@ export function PlatformFields(props: PlatformFieldProps) {
       return <YouTubeFields {...props} />;
     case "reddit":
       return <RedditFields {...props} />;
+    case "snapchat":
+      return <SnapchatFields {...props} />;
     default:
       return null;
   }

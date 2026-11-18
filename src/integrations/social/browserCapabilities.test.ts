@@ -173,7 +173,7 @@ describe("browser operations come from the recipe table", () => {
     // audience.collect: TikTok Studio commenters and Snapchat chat contacts (member accounts).
     const wired: Partial<Record<SocialPlatform, string[]>> = {
       tiktok: ["delete", "analytics", "audience.collect", "profile.read"],
-      snapchat: ["audience.collect"],
+      snapchat: ["audience.collect", "profile.read"],
     };
     for (const platform of SOCIAL_PLATFORMS) {
       const operations = browserOperations({

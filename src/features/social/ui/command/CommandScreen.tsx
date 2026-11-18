@@ -16,6 +16,8 @@ import { SummaryCards } from "./SummaryCards";
 import { useCommandScreen } from "./useCommandScreen";
 import { useCommandTarget } from "./useCommandTarget";
 import { WaitingForYou } from "./WaitingForYou";
+import { SnapchatInsights } from "./SnapchatInsights";
+import { socialQueryScope } from "../../model/socialQuery";
 import "./command.css";
 
 /**
@@ -26,6 +28,7 @@ export function CommandScreen({
   client,
   machineId,
   projectId,
+  shellState,
   active,
   target,
   onNavigate,
@@ -89,6 +92,13 @@ export function CommandScreen({
             onRetry={() => {
               void (state.moreError ? state.loadMore() : state.refresh()).catch(() => undefined);
             }}
+          />
+          <SnapchatInsights
+            key={`${socialQueryScope(client)[1]}:${projectId ?? ""}`}
+            client={client}
+            projectId={projectId}
+            active={active}
+            disabled={!active || !shellState.hostOnline || shellState.unreachable}
           />
         </div>
         <aside className="command-side">

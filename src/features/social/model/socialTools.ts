@@ -95,6 +95,18 @@ export const SOCIAL_TOOLS = [
   "tiktok.audience.list",
   "tiktok.mentions.list",
   "tiktok.changes.request",
+  // Snapchat
+  "snapchat.profile.read",
+  "snapchat.friends.list",
+  "snapchat.content.list",
+  "snapchat.analytics.get",
+  "snapchat.earnings.get",
+  "snapchat.monetization.get",
+  "snapchat.signup.request",
+  "snapchat.chat.draft",
+  "snapchat.profile.create.request",
+  "snapchat.profile.update.request",
+  "snapchat.content.delete.request",
 ] as const;
 export type SocialTool = (typeof SOCIAL_TOOLS)[number];
 export function socialToolName(tool: SocialTool): string {
