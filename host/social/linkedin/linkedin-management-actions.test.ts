@@ -108,6 +108,85 @@ async function setup() {
 }
 
 describe("LinkedIn management Host approvals", () => {
+  it("rechecks the exact Live comment and suppression before an owner reply", async () => {
+    const { f, principal, manage } = await setup();
+    const page = await f.call<SocialAccount>("accounts.create", {
+      platform: "linkedin",
+      connection: "oauth",
+      accountType: "organization",
+      name: "Fixture Live Page",
+      projectIds: [f.a.id],
+    });
+    await f.social.connectAccount(
+      page.id,
+      {
+        platformId: "urn:li:organization:123",
+        name: page.name,
+        connection: "oauth",
+        accessApproved: true,
+        scopes: ["r_events", "r_organization_social_feed", "w_organization_social_feed"],
+      },
+      { accessToken: "page-token" },
+    );
+    const recipient = "urn:li:person:viewer";
+    const eventId = "7246559654799892480";
+    const read = vi.fn<NonNullable<SocialAdapter["linkedinLiveComments"]>>();
+    let incoming = "Question";
+    read.mockImplementation(async () => ({
+      postId,
+      eventId,
+      comments: [{ id: commentId, actor: recipient, text: incoming }],
+    }));
+    f.adapters.linkedin.linkedinLiveComments = read;
+    const input = {
+      accountId: page.id,
+      eventId,
+      offset: 0,
+      commentId,
+      expectedComment: incoming,
+      text: "Owner reply",
+    };
+    await expect(
+      f.call("linkedin.live.comments.read", { accountId: page.id, eventId }, principal),
+    ).rejects.toThrow("owner");
+    await expect(f.call("linkedin.live.comments.prepareReply", input, principal)).rejects.toThrow(
+      "owner",
+    );
+    await expect(
+      f.call("linkedin.management.prepare", { accountId: page.id, kind: "replyLive" }),
+    ).rejects.toMatchObject({ code: "unsupported" });
+    const review = await f.call<LinkedInManagementReview>(
+      "linkedin.live.comments.prepareReply",
+      input,
+    );
+    expect(manage).not.toHaveBeenCalled();
+    const submit = () =>
+      f.call("linkedin.management.submit", { accountId: page.id, id: review.id, reviewed: review });
+    await expect(submit()).rejects.toMatchObject({ code: "denied" });
+    await f.enable();
+    incoming = "Edited question";
+    await expect(submit()).rejects.toMatchObject({ code: "denied" });
+    incoming = "Question";
+    const suppression = vi
+      .spyOn(f.social, "assertSendable")
+      .mockRejectedValueOnce(new Error("Recipient is suppressed."));
+    await expect(submit()).rejects.toThrow("suppressed");
+    expect(suppression).toHaveBeenCalledWith(
+      { platform: "linkedin", platformId: recipient },
+      "comment",
+    );
+    expect(manage).not.toHaveBeenCalled();
+    await expect(submit()).resolves.toMatchObject({ state: "succeeded" });
+    await expect(submit()).rejects.toThrow("review changed");
+    expect(manage).toHaveBeenCalledTimes(1);
+    expect(manage).toHaveBeenCalledWith(
+      expect.objectContaining({ id: page.id }),
+      "page-token",
+      { kind: "replyLive", postId, commentId, text: "Owner reply" },
+      expect.any(Function),
+    );
+  });
+
   it("keeps mutation and review access owner-only, rejects a changed review, and audits an accepted delete", async () => {
     const test = await setup();
     const { f, account, job, principal, prepare, submit, providerWrite, manage } = test;

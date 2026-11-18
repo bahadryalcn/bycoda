@@ -234,7 +234,10 @@ questions). Expired, revoked or scope-changed connections require reconnection.
   ID. Enable **LinkedIn Live comments** in the OAuth permissions to request `r_events`
   and `r_organization_social_feed`. The Host checks the organizer and Live event type
   before reading comments on the event post. This read returns data only to the owner's
-  panel and does not add content to auto-reply rules, chat, or the inbox.
+  panel and stays outside auto-reply rules, chat, and the inbox. A token with
+  `w_organization_social_feed` also supports manual replies. The Host rechecks the event,
+  comment and recipient against the exact owner review, checks the shared suppression and
+  sending gates, and records the attempt before dispatch.
 - Browser connection requests, acceptance and personal chat use the same verification and
   challenge handling as other browser recipes.
 - The Accounts browser panel reads the visible connections, invitations and groups page.

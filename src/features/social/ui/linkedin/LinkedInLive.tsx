@@ -152,7 +152,12 @@ function LinkedInLiveAccount({ account, client, disabled }: Props) {
       ) : null}
       {error ? <InlineError>{error}</InlineError> : null}
       {account.accountType === "organization" && account.connection === "oauth" ? (
-        <LinkedInLiveComments accountId={accountId} client={client} disabled={disabled} />
+        <LinkedInLiveComments
+          accountId={accountId}
+          client={client}
+          disabled={disabled}
+          canReply={account.scopes.includes("w_organization_social_feed")}
+        />
       ) : null}
     </Disclosure>
   );

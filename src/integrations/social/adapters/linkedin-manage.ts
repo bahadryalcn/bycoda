@@ -21,6 +21,7 @@ export type LinkedInManagementAction =
   | { kind: "deletePost"; postId: string }
   | { kind: "react"; entityId: string; reaction: (typeof linkedInReactions)[number] }
   | { kind: "removeReaction"; entityId: string }
+  | { kind: "replyLive"; postId: string; commentId: string; text: string }
   | { kind: "deleteComment"; postId: string; commentId: string };
 
 export type LinkedInManagementReview = {
@@ -32,6 +33,7 @@ export type LinkedInManagementReview = {
   action: LinkedInManagementAction;
   source:
     | { kind: "publication"; id: string }
+    | { kind: "live"; eventId: string; offset: number; recipient: string; commentDigest: string }
     | { kind: "thread"; id: string; postId: string; projectId?: string };
   connectionEpoch?: string;
   contactId?: string;
@@ -75,6 +77,32 @@ export async function manageLinkedIn(
   if (!account.scopes.includes(linkedInManagementScope(account, action.kind)))
     throw new SocialPlatformError("denied");
   const headers = { "LinkedIn-Version": version, "X-Restli-Protocol-Version": "2.0.0" };
+  if (action.kind === "replyLive") {
+    if (
+      account.accountType !== "organization" ||
+      !postUrn.test(action.postId) ||
+      !commentUrn.test(action.commentId) ||
+      !action.text.trim() ||
+      action.text.length > LINKEDIN_COMMENTARY_LIMIT
+    )
+      throw new SocialPlatformError("rejected");
+    await beforeSubmit();
+    const { value, headers: receipt } = await http.json(
+      `${root}/socialActions/${resourceId(action.commentId)}/comments`,
+      token,
+      {
+        actor,
+        object: action.postId,
+        parentComment: action.commentId,
+        message: { text: action.text },
+      },
+      headers,
+    );
+    const replyId = value.commentUrn ?? value.id ?? receipt.get("x-restli-id");
+    if (typeof replyId !== "string" || (!commentUrn.test(replyId) && !idValue.test(replyId)))
+      throw new SocialPlatformError("unknown");
+    return { platformId: replyId };
+  }
   if (action.kind === "editPost" || action.kind === "deletePost") {
     if (typeof action.postId !== "string" || !postUrn.test(action.postId))
       throw new SocialPlatformError("rejected");

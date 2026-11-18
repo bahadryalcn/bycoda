@@ -25,7 +25,7 @@ afterEach(() => {
   element.remove();
 });
 
-const fixtureAccount = {
+const fixtureAccount: SocialAccount = {
   id: "account-1",
   platform: "linkedin",
   platformId: "urn:li:organization:890",
@@ -33,7 +33,13 @@ const fixtureAccount = {
   connection: "oauth",
   name: "Example",
   connected: true,
-} as SocialAccount;
+  scopes: [],
+  paused: false,
+  accessApproved: true,
+  executorId: "host",
+  grants: {},
+  createdAt: 0,
+};
 
 function render(request: SocialClient["request"], account = fixtureAccount) {
   act(() =>

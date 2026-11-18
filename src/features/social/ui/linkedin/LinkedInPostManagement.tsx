@@ -72,6 +72,7 @@ export function LinkedInPostManagement({
       editPost: t("Edit post"),
       deletePost: t("Delete post"),
       deleteComment: t("Delete comment"),
+      replyLive: t("Reply"),
       react: t("Add reaction"),
       removeReaction: t("Remove reaction"),
     };
@@ -80,8 +81,12 @@ export function LinkedInPostManagement({
       message: [
         account.name,
         "postId" in action ? action.postId : action.entityId,
-        action.kind === "deleteComment" ? action.commentId : null,
-        action.kind === "editPost" ? action.text : action.kind === "react" ? action.reaction : null,
+        action.kind === "deleteComment" || action.kind === "replyLive" ? action.commentId : null,
+        action.kind === "editPost" || action.kind === "replyLive"
+          ? action.text
+          : action.kind === "react"
+            ? action.reaction
+            : null,
       ]
         .filter(Boolean)
         .join("\n"),

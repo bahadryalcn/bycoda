@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { SocialHttp, type SocialAccount } from "../adapter";
 import { readLinkedInLiveComments } from "./linkedin-live-comments";
+import { manageLinkedIn } from "./linkedin-manage";
 
 const eventId = "7246559654799892480";
 const postId = "urn:li:ugcPost:7246780305028571136";
@@ -24,6 +25,32 @@ const comment = {
 };
 
 describe("LinkedIn Live comments", () => {
+  it("posts an approved nested reply with the verified Live post and parent comment", async () => {
+    const commentId = `urn:li:comment:(${comment.object},${comment.id})`;
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ id: "6636062862760562689" }));
+    const beforeSubmit = vi.fn(async () => expect(fetcher).not.toHaveBeenCalled());
+    const result = await manageLinkedIn(
+      new SocialHttp(fetcher),
+      "202609",
+      { ...account, scopes: [...account.scopes, "w_organization_social_feed"] },
+      "fixture",
+      { kind: "replyLive", postId, commentId, text: "Yes" },
+      beforeSubmit,
+    );
+    expect(beforeSubmit).toHaveBeenCalledOnce();
+    const [url, options] = fetcher.mock.calls[0]!;
+    expect(String(url)).toContain("/rest/socialActions/urn%3Ali%3Acomment%3A%28");
+    expect(JSON.parse(String(options?.body))).toEqual({
+      actor: account.platformId,
+      object: postId,
+      parentComment: commentId,
+      message: { text: "Yes" },
+    });
+    expect(result.platformId).toBe("6636062862760562689");
+  });
+
   it("reads a bounded page from the exact Live event post without rounding provider identifiers", async () => {
     const fetcher = vi
       .fn<typeof fetch>()

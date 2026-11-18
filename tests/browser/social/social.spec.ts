@@ -26,6 +26,35 @@ const sections = (page: Page) => page.getByRole("tablist", { name: "Social böl�
 
 for (const theme of ["light", "dark"])
   for (const width of [800, 1280]) {
+    test(`LinkedIn Live comments panel ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/tests/browser/social/social.html?linkedin-live-comments");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await sections(page).getByRole("tab", { name: "Hesaplar ve Ayarlar" }).click();
+      await page.getByRole("button", { name: /Fixture LinkedIn Live Page/ }).click();
+      await page.getByText("LinkedIn Live", { exact: true }).click();
+      const comments = page.getByRole("group", { name: "LinkedIn Live yorumları" });
+      await comments.getByLabel("LinkedIn etkinlik kimliği").fill("7246559654799892480");
+      await comments.getByRole("button", { name: "Yorumları yükle" }).click();
+      await expect(page.getByText("Bir ürün demosu olacak mı?")).toBeVisible();
+      await page.getByRole("button", { name: "Yanıtla", exact: true }).click();
+      await page
+        .getByRole("textbox", { name: "Yanıtla", exact: true })
+        .fill("Evet, yayın sonunda.");
+      await page.getByRole("button", { name: "Değişikliği incele" }).scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: `temp/verification/social-linkedin/live-comments-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+      expect(await requests(page, "linkedin.management.submit")).toEqual([]);
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
     test(`LinkedIn desktop surfaces ${theme} ${width}`, async ({ page }) => {
       const errors: string[] = [];
       page.on("pageerror", (error) => errors.push(error.message));

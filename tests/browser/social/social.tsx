@@ -290,6 +290,23 @@ if (new URLSearchParams(location.search).has("linkedin-support")) {
   for (const account of snapshot.accounts)
     snapshot.capabilities[account.id] = accountCapabilities(account);
 }
+if (new URLSearchParams(location.search).has("linkedin-live-comments")) {
+  snapshot.accounts = [
+    {
+      ...snapshot.accounts[0]!,
+      id: "linkedin-live-page",
+      platform: "linkedin",
+      accountType: "organization",
+      connection: "oauth",
+      name: "Fixture LinkedIn Live Page",
+      platformId: "urn:li:organization:42",
+      connected: true,
+      accessApproved: true,
+      scopes: ["r_events", "r_organization_social_feed", "w_organization_social_feed"],
+    },
+  ];
+  snapshot.capabilities["linkedin-live-page"] = accountCapabilities(snapshot.accounts[0]!);
+}
 if (new URLSearchParams(location.search).has("browser-monitor")) {
   snapshot.accounts[0].connected = true;
   snapshot.accounts[0].connection = "browser";
@@ -1837,6 +1854,18 @@ Object.assign(window, {
             return { source: "api", metrics: { impressions: 1247, reactions: 46, comments: 12 } };
           if (params.action === "linkedin.live.status")
             return { state: "missing", studioUrl: "https://www.linkedin.com/video/golive/manage/" };
+          if (params.action === "linkedin.live.comments.read")
+            return {
+              eventId: params.input?.eventId,
+              postId: "urn:li:ugcPost:123",
+              comments: [
+                {
+                  id: "urn:li:comment:(urn:li:activity:123,456)",
+                  actor: "urn:li:person:demo",
+                  text: "Bir ürün demosu olacak mı?",
+                },
+              ],
+            };
           if (params.action === heldAction)
             await new Promise<void>((resolve, reject) => {
               releaseAction = (fail) =>

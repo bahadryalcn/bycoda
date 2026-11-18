@@ -65,6 +65,7 @@ the account's Host. Start and end the broadcast in LinkedIn Studio with a compat
 
 For an OAuth Company Page with Event Management and Community Management access, enable
 **LinkedIn Live comments** in the connection permissions and reconnect. In the **LinkedIn Live**
-panel, enter the event ID and load comments.
+panel, enter the event ID and load comments. With reply permission, choose **Reply**,
+write the response, and review the exact change before sending.
 
 For supported platforms, restrictions and Host/API contracts, see [Social integration](../integrations/social.md).
