@@ -116,7 +116,7 @@ continue to apply.
 | Instagram | Professional account: HTTPS image, feed Reel, mixed carousel up to four assets, owned-media comments and replies, text inbox replies in the supported window.                                                                                               | Image, carousel or one video publishing, saved-post comments and replies, recognized existing-thread text replies.                                                                                           | Stories, cold or new DMs, DM attachments, hashtag discovery (author field unverified), post delete (no path found).                                                                       |
 | Facebook  | Managed Page text/link, up to four HTTPS photos, Reels from an uploaded MP4 with durable verification, comments, Messenger text replies in the response window.                                                                                             | Personal or Page actor, text and media publishing, saved-post comments, recognized existing-thread Messenger replies.                                                                                        | Ordinary Page video publishing, Stories, Page post edit, comment hide/delete through the host (helper only).                                                                              |
 | LinkedIn  | Member text, Page text, Page images (one to four, alt text, readiness verification), Page PDF documents, comments on known posts, token refresh hook. Single-image Page uploads verify byte content.                                                        | Verified member or organization text, images or video, one titled PDF, comments and replies, existing personal chats, first-degree connection requests and acceptance (exports exist; no operation row yet). | Organization inbox, InMail, video through the API (multipart ETag handling is blocked), carousel, polls, analytics, groups and newsletters.                                               |
-| YouTube   | Verified channel upload with resumable upload and processing checks, comments and replies, analytics, profile and health checks, owner-video and keyword commenter collection (search costs quota).                                                         | Studio upload with metadata and declarations, saved-video comments and replies.                                                                                                                              | Community posts, Shorts settings, live chat, captions, thumbnail/playlist/moderation (adapter functions without operation rows).                                                          |
+| YouTube   | Resumable video and Shorts upload, video metadata, thumbnails, playlists, comments and moderation, subscriptions, channel branding, Analytics and eligible earnings, Live and Super Chats.                                                                  | Studio upload, comments and replies, likes and hearts, Community text/image/poll posts, channel profile fields and Earn status.                                                                              | Platform verification and eligibility. General DMs unavailable. See the YouTube section for scope, quota and file limits.                                                                 |
 | TikTok    | Direct Post of one video or up to four photo URLs on a verified domain, inbox (draft) upload, creator settings, status polling to completion, video list, metrics, health check.                                                                            | Studio upload of one local video, saved-video comments and replies, commenter collection on own videos.                                                                                                      | Comment management through Business API, browser comment delete, hashtag and keyword search (research API), browser inbox, scheduling, DM, Live.                                          |
 | Snapchat  | Public Profile API: encrypted Spotlight MP4 upload with exact Spotlight ID tracking until LIVE, health check.                                                                                                                                               | Member chat text replies in existing chats; Public Profile uploader for Spotlight or 24-hour Story video. Current Story acceptance lacks a durable Snap ID and is held for review.                           | Public Story through the API, Marketing API, Creative Kit, metrics, Story interactions, API audience collection.                                                                          |
 | WhatsApp  | Business Cloud API: signed incoming text, text or one image/video reply within the 24-hour window, delivery receipts. Business-initiated free text is refused before I/O.                                                                                   | Personal Web session: bounded visible direct chats, text and one image or video per send. Audience collection from chat senders is not offered (no sender reader is wired).                                  | Templates and interactive messages (exported, not reachable from jobs), catalog, Status and Channels, group messages, bulk messaging for personal accounts, auto-reply, quality webhooks. |
@@ -224,6 +224,43 @@ questions). Expired, revoked or scope-changed connections require reconnection.
   content from automatic reply rules. See Autonomy policy and Open questions.
 
 #### YouTube
+
+##### YouTube management
+
+The YouTube registry exposes channel, video, playlist, comment, subscription,
+Analytics, earnings, Live and Community operations through Social. Chat tools
+receive a project-scoped account ID. Account creation and connection use the
+existing owner-assisted request and setup flow. Profile changes, deletion of
+videos, playlists and comments, and approval of queued operations are owner-only.
+
+API mode uses the bound channel OAuth identity and requests selected scopes.
+Analytics requires the YouTube Analytics API and its activity scope. Estimated
+earnings require the monetary scope and an eligible channel. See the
+[channel report definitions](https://developers.google.com/youtube/analytics/channel_reports).
+
+For standard channels, Studio recipes cover Community text, image and poll
+posts, comment likes and hearts, profile identity fields and the Earn status.
+The public Posts API is in limited preview for eligible partners.
+[Google Posts API](https://developers.google.com/youtube/data/reference/rest/v3/posts).
+
+The quota status reports the Host adapter's observed shared units, search calls
+and upload calls. Google applies separate daily
+search and upload allocations. Other calls consume units such as 50 for a
+typical write, 5 for a chat page, 20 for a chat message write and 200 for a chat
+ban. Browser operations use the existing browser pacing, and subscriptions
+have a Host limit of ten changes per channel account per Pacific day.
+[Official quota costs](https://developers.google.com/youtube/v3/determine_quota_cost).
+
+Live creates a broadcast, creates an RTMP stream and binds them. If a later step
+fails after the broadcast was created, the result keeps known resource IDs for
+reconciliation. The credential store holds the ingestion key and endpoint under
+the channel account and stream identity. RPC and tools return the endpoint and
+an opaque reference. Encoder handoff consumes the reference inside the Host.
+
+YouTube management writes use exact-input operation records. Outbound actions
+recheck account and project authority, the Social stop, AI autonomy when
+applicable, and the shared suppression gate at submission. Browser challenges
+require the owner. Unknown submissions are held for outcome review.
 
 For API mode, enable YouTube Data API v3 in the Google Cloud project, configure a Web
 application OAuth client with the exact `/social/oauth/youtube/callback` redirect, and set

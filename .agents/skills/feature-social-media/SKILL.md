@@ -19,6 +19,7 @@ Full paths are repository-root relative; adjacent abbreviated names share the pr
 - `host/social/browser*` and `browser-layers/`: sessions, recipes, layered driver, NEEDS_HUMAN, live view. `host/social/social-programs.ts` and `social-program-*.ts`: campaign programs.
 - `host/decision-models/`: decision gateway for the browser decision layer and AI tools (own skill: `feature-decision-models`).
 - Contracts: `docs/integrations/social.md`, `social-programs.md`, `decision-models.md`.
+- YouTube management: `host/social/youtube/`, `src/integrations/social/youtube-*.ts` and `src/features/social/ui/accounts/youtube/`. Keep Live ingestion credentials in the Host vault. Consult the YouTube management section in the Social integration guide for scope and quota contracts.
 
 ## Preserve
 

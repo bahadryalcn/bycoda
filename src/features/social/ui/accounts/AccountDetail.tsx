@@ -18,6 +18,8 @@ import { BrowserSettings } from "./BrowserSettings";
 import { ReplyRules } from "./ReplyRules";
 import { accountHealth, accountModeText } from "./accountsModel";
 import { useAccountWrite } from "./useAccountWrite";
+import { YouTubeManage } from "./youtube/YouTubeManage";
+import type { YouTubeSection } from "./youtube/youtubeForms";
 import "./accounts.css";
 
 const HEALTH_TONE: Record<"ok" | "warn" | "error", BadgeTone> = {
@@ -35,6 +37,7 @@ export type AccountDetailProps = {
   now?: number;
   hostOnline: boolean;
   onChanged(): void;
+  youtubeSection?: YouTubeSection;
 };
 
 /**
@@ -50,6 +53,7 @@ export function AccountDetail({
   now,
   hostOnline,
   onChanged,
+  youtubeSection,
 }: AccountDetailProps) {
   const [openedAt] = useState(Date.now);
   const { error, is, write } = useAccountWrite(t("The account could not be changed. Try again."));
@@ -130,6 +134,21 @@ export function AccountDetail({
         disabled={disabled}
         onChanged={onChanged}
       />
+      {account.platform === "youtube" ? (
+        <Disclosure
+          summary={t("YouTube management")}
+          variant="row"
+          defaultOpen={Boolean(youtubeSection)}
+        >
+          <YouTubeManage
+            client={client}
+            account={account}
+            capabilities={capabilities}
+            disabled={disabled || !onThisComputer}
+            initialSection={youtubeSection}
+          />
+        </Disclosure>
+      ) : null}
       <Disclosure
         summary={
           <span className="social-detail-topic">

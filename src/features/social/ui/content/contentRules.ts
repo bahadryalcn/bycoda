@@ -169,7 +169,7 @@ export function tiktokProblems(
   return problems;
 }
 
-export function youtubeProblems(options: PlatformDraft["youtube"]): string[] {
+export function youtubeProblems(options: PlatformDraft["youtube"], probe?: MediaProbe): string[] {
   const problems: string[] = [];
   const title = options?.title?.trim() ?? "";
   if (!title) problems.push(t("Enter a YouTube title."));
@@ -178,6 +178,13 @@ export function youtubeProblems(options: PlatformDraft["youtube"]): string[] {
   if (!options?.privacy) problems.push(t("Choose YouTube privacy."));
   if (options?.madeForKids === undefined)
     problems.push(t("Say whether the video is made for kids."));
+  if (options?.format === "short") {
+    if (!probe?.durationSeconds || !probe.width || !probe.height) {
+      problems.push(t("Shorts need readable video dimensions and duration."));
+    } else if (probe.durationSeconds > 180 || probe.width > probe.height) {
+      problems.push(t("Shorts need a square or vertical video up to 3 minutes."));
+    }
+  }
   return problems;
 }
 
@@ -264,7 +271,7 @@ export function draftProblems(input: RuleInput): Problem[] {
       for (const text of tiktokProblems(platform?.tiktok, draft.media, input.creator?.[account.id]))
         add(text);
     if (account.platform === "youtube")
-      for (const text of youtubeProblems(platform?.youtube)) add(text);
+      for (const text of youtubeProblems(platform?.youtube, videoProbe(draft.media))) add(text);
     if (account.platform === "reddit")
       for (const text of redditProblems(platform?.reddit)) add(text);
   }

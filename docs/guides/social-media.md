@@ -50,3 +50,13 @@ AI planning preserves text entered after a request started. Conflicting plan ope
 An unconfirmed reply is not shown as definitely unsent. **Retry same reply** checks or resumes the original operation with its original identity rather than creating another reply. The draft and unresolved operation survive conversation switches and component remounts within the current app session. They are not a new disk-persistence guarantee across app reloads. Jobs that require review remain visible as requiring review.
 
 For supported platforms, restrictions and Host/API contracts, see [Social integration](../integrations/social.md).
+
+## Manage a YouTube channel
+
+Open **Social > Accounts**, choose your YouTube channel and expand **YouTube management**. Connect through Google OAuth for videos, playlists, comment moderation, subscriptions, Analytics, earnings reports and Live. Use a verified browser connection for Studio profile fields, Community posts, comment reactions and the Studio Earn status.
+
+- In **Content**, choose **Video** or **Short**. A Short must be square or vertical and up to three minutes. YouTube decides the final classification. Review the publication or schedule before sending.
+- Use **Videos and playlists** to edit metadata and visibility, upload a thumbnail, organize playlist items or delete eligible content. Use **Comments** to moderate a comment. Read and reply to ordinary comments from the shared Inbox.
+- Select **Analytics** for channel activity, traffic sources and estimated earnings. If a report requests more permission, reconnect the channel and select the matching report permission. Google must make the report available to the channel.
+- Select **Live broadcasts** to create and bind a broadcast and stream, view chat and Super Chats, and transition the broadcast after an encoder starts sending. The creation result displays the RTMP URL and credential reference. The stream key stays in the Host vault.
+- Select **Review** for YouTube operations pending owner approval. Verify uncertain outcomes on YouTube, then record the result before resubmitting.

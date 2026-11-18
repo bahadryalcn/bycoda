@@ -180,6 +180,27 @@ describe("TikTok privacy and consent", () => {
 });
 
 describe("YouTube and Reddit", () => {
+  it("accepts square and portrait Shorts up to three minutes", () => {
+    const options = {
+      title: "Launch",
+      privacy: "public",
+      madeForKids: false,
+      format: "short",
+    } as const;
+    expect(youtubeProblems(options, { width: 1080, height: 1080, durationSeconds: 180 })).toEqual(
+      [],
+    );
+    expect(youtubeProblems(options, { width: 1080, height: 1920, durationSeconds: 150 })).toEqual(
+      [],
+    );
+    expect(
+      youtubeProblems(options, { width: 1920, height: 1080, durationSeconds: 20 }),
+    ).toHaveLength(1);
+    expect(
+      youtubeProblems(options, { width: 1080, height: 1920, durationSeconds: 181 }),
+    ).toHaveLength(1);
+    expect(youtubeProblems(options)).toHaveLength(1);
+  });
   it("requires a title up to 100 characters, privacy and an answer on made-for-kids", () => {
     expect(youtubeProblems({})).toHaveLength(3);
     expect(

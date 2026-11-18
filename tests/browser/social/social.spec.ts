@@ -26,6 +26,68 @@ const sections = (page: Page) => page.getByRole("tablist", { name: "Social böl�
 
 for (const theme of ["light", "dark"])
   for (const width of [800, 1280]) {
+    test(`social YouTube management ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.goto("/tests/browser/social/social.html?youtube-management");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const capture = (surface: string) =>
+        page.screenshot({
+          path: `temp/verification/social-youtube/${surface}-${theme}-${width}.png`,
+          animations: "disabled",
+        });
+      const chooseSection = async (name: string) => {
+        await page.getByRole("button", { name: /^YouTube yönetimi:/ }).click();
+        await page.getByRole("option", { name, exact: true }).click();
+      };
+      await sections(page).getByRole("tab", { name: "İçerik", exact: true }).click();
+      await page.getByRole("button", { name: "Yeni gönderi", exact: true }).click();
+      const editor = page.getByRole("dialog", { name: "Yeni gönderi" });
+      await editor.getByRole("checkbox", { name: /YouTube fixture/ }).check();
+      await editor.getByRole("button", { name: /^Biçim:/ }).click();
+      await page.getByRole("option", { name: "Kısa", exact: true }).click();
+      await capture("shorts");
+      await editor.getByRole("button", { name: "Kapat" }).click();
+      await page
+        .getByRole("button", { name: "Videolar ve oynatma listeleri", exact: true })
+        .click();
+      await page.getByRole("button", { name: "Videoları listele", exact: true }).click();
+      await expect(page.getByText("Summer release")).toBeVisible();
+      await capture("videos");
+      await chooseSection("Kanal profili");
+      await page.getByRole("button", { name: "Kanalı yükle", exact: true }).click();
+      await expect(page.getByText("@fixture")).toBeVisible();
+      await capture("profile");
+      await chooseSection("Canlı yayınlar");
+      await page.getByRole("button", { name: "Yayınları listele", exact: true }).click();
+      await expect(page.getByText("Friday livestream")).toBeVisible();
+      await capture("live");
+      await chooseSection("Analiz");
+      await page.getByRole("button", { name: /^İşlem:/ }).click();
+      await page.getByRole("option", { name: "Kota kullanımını göster", exact: true }).click();
+      await page.getByRole("button", { name: "Kota kullanımını göster", exact: true }).click();
+      await expect(page.getByText("Data API kota birimleri")).toBeVisible();
+      await capture("analytics");
+      await chooseSection("Yorumlar");
+      await page.getByRole("button", { name: "Yorumları listele", exact: true }).click();
+      await expect(page.getByText(/Sonuç yok/)).toBeVisible();
+      await capture("comments");
+      await page.getByRole("dialog").getByRole("button", { name: "Kapat" }).click();
+      await page.getByRole("button", { name: /Studio fixture/ }).click();
+      await page.locator("summary").filter({ hasText: "YouTube yönetimi" }).click();
+      await chooseSection("Topluluk gönderileri");
+      await capture("community");
+      await chooseSection("Analiz");
+      await page.getByRole("button", { name: "Para kazanma durumunu göster", exact: true }).click();
+      await expect(page.getByText(/YouTube işlem yapmanı bekliyor/)).toBeVisible();
+      await capture("needs-human");
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
     test(`social audience shared surfaces ${theme} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto("/tests/browser/social/social.html?extra-seeded&audience-surfaces");
