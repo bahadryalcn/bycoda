@@ -986,15 +986,6 @@ export class XBrowserSessions {
   /** Cancels an open login and removes the logged-in profile, which logs this host out of X. */
   async forget(accountId: string): Promise<void> {
     this.chromeReviews.delete(accountId);
-    await this.exclusive(
-      accountId,
-      async () => {
-        await this.closeInstagramLive(accountId);
-        await this.instagramLiveVault?.delete(instagramStreamRef(accountId));
-      },
-      false,
-      true,
-    );
     await this.platforms.forget(accountId);
     const flow = this.logins.get(accountId);
     this.logins.delete(accountId);
@@ -1003,16 +994,23 @@ export class XBrowserSessions {
       await flow.session?.close().catch(() => undefined);
     }
     // Browser helper processes can hold profile files briefly after closing.
-    return this.exclusive(accountId, async () => {
-      await this.chrome.set(accountId, undefined);
-      for (const folder of ["x-browser", "browser-profiles"])
-        await rm(this.profile(accountId, folder), {
-          recursive: true,
-          force: true,
-          maxRetries: 10,
-          retryDelay: 200,
-        });
-    });
+    return this.exclusive(
+      accountId,
+      async () => {
+        await this.closeInstagramLive(accountId);
+        await this.instagramLiveVault?.delete(instagramStreamRef(accountId));
+        await this.chrome.set(accountId, undefined);
+        for (const folder of ["x-browser", "browser-profiles"])
+          await rm(this.profile(accountId, folder), {
+            recursive: true,
+            force: true,
+            maxRetries: 10,
+            retryDelay: 200,
+          });
+      },
+      false,
+      true,
+    );
   }
   /** Stop owner login/workflow windows without deleting persistent signed-in profiles. */
   async stop(service: SocialService): Promise<void> {
