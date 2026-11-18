@@ -646,6 +646,8 @@ const DESKTOP_LIVE_PART_NAMES: readonly string[] = [
 export const perfMetrics = new PerfMetrics([
   ...RPC_METHOD_NAMES,
   ...DESKTOP_LIVE_PART_NAMES,
+  // How often a heartbeat part answered its "no news" fallback instead of the store's answer.
+  ...[...DESKTOP_LIVE_PART_NAMES, "desktopLive.hostPush"].map((name) => `${name}.fallback`),
   "mcp.all",
   "mcp.conversation",
   "mcp.runtime-logs",

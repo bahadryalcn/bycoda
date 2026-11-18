@@ -1,4 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
+import { perfMetrics } from "../diagnostics/perf-metrics";
 import { RunLeases } from "../execution/run-lease";
 import { createSessionLeasesRuntime } from "./session-leases";
 
@@ -84,4 +85,32 @@ it("does not grant a lease the engine's memory says the host runs", async () => 
   const pending = renew(["s1"]);
   await vi.advanceTimersByTimeAsync(runtime.BEAT_STORE_WAIT_MS);
   expect((await pending)?.s1).toBeNull();
+});
+
+const fallbackCount = (stage: string) =>
+  perfMetrics.snapshot().metrics.find((metric) => metric.name === `${stage}.fallback`)?.count ?? 0;
+
+it("runs one copy of a slow heartbeat stage per window and counts each fallback", async () => {
+  vi.useFakeTimers();
+  const { runtime } = setup();
+  const stage = { name: "desktopLive.inbox", owner: "device:win1" };
+  const before = fallbackCount(stage.name);
+  let finish!: (value: string) => void;
+  const work = vi.fn(() => new Promise<string>((resolve) => (finish = resolve)));
+  const first = runtime.withinBeat(work, "no news", stage);
+  await vi.advanceTimersByTimeAsync(runtime.BEAT_STORE_WAIT_MS);
+  expect(await first).toBe("no news");
+  // The next beat finds the first copy still running and does not start another.
+  expect(await runtime.withinBeat(work, "no news", stage)).toBe("no news");
+  expect(work).toHaveBeenCalledTimes(1);
+  // Another window's stage is independent.
+  const other = runtime.withinBeat(async () => "answer", "no news", { ...stage, owner: "w2" });
+  expect(await other).toBe("answer");
+  expect(fallbackCount(stage.name)).toBe(before + 2);
+  // Once the copy settles, the next beat runs the work again.
+  finish("late");
+  await vi.advanceTimersByTimeAsync(0);
+  const fresh = vi.fn(async () => "fresh");
+  expect(await runtime.withinBeat(fresh, "no news", stage)).toBe("fresh");
+  expect(fresh).toHaveBeenCalledTimes(1);
 });
