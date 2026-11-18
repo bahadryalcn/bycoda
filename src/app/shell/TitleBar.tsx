@@ -559,7 +559,7 @@ function TabStripChevron({ side, onClick }: { side: "left" | "right"; onClick: (
       data-tauri-drag-region="false"
       onPointerDown={(event) => event.stopPropagation()}
       onClick={onClick}
-      className={`absolute top-1/2 z-1 -translate-y-1/2 ${side === "left" ? "left-1" : "right-1"}`}
+      className="shrink-0"
     >
       <Icon className="icon-sm" strokeWidth={1.75} />
     </Button>
@@ -1286,7 +1286,9 @@ function TitleBarComponent({
         )}
       >
         <div
-          className="relative h-full min-w-0 flex-1 overflow-hidden"
+          // The chevrons are flex siblings of the strip, never an overlay: a tab or its
+          // close button can not sit underneath one.
+          className="flex h-full min-w-0 flex-1 items-center gap-0.5 overflow-hidden px-0.5"
           onWheel={(event) => {
             const el = tabStripRef.current;
             if (!el || el.scrollWidth <= el.clientWidth) return;
@@ -1306,7 +1308,7 @@ function TitleBarComponent({
             scrollbar="hidden"
             ref={setTabStripRef}
             data-title-tab-strip
-            className="flex h-full min-w-0 cursor-default items-center gap-0.5 overscroll-none pl-1.5 pr-2.5"
+            className="flex h-full min-w-0 flex-1 cursor-default items-center gap-0.5 overscroll-none pl-1 pr-2"
           >
             {displayed.map((entry) => {
               const tab = entry.item;
