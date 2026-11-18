@@ -32137,6 +32137,243 @@
       "retry": "never",
       "scope": "device"
     },
+    "liveGames.live.accounts": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "query",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "query",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "requiredCapability": "liveGames.v1",
+      "responseTimeoutMs": 12000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "accounts": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "accountId": { "type": "string" },
+                "label": { "type": "string" },
+                "platform": {
+                  "enum": ["youtube", "tiktok", "instagram", "facebook", "linkedin", "x"],
+                  "type": "string"
+                }
+              },
+              "required": ["accountId", "platform", "label"],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": ["accounts"],
+        "type": "object"
+      },
+      "retry": "safe-query",
+      "scope": "device"
+    },
+    "liveGames.live.start": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "accountId": { "maxLength": 256, "minLength": 1, "type": "string" },
+          "scene": { "maxLength": 256, "minLength": 1, "type": "string" }
+        },
+        "required": ["accountId"],
+        "type": "object"
+      },
+      "requiredCapability": "liveGames.v1",
+      "responseTimeoutMs": 120000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "accountId": { "type": "string" },
+          "canStop": { "type": "boolean" },
+          "managedDestination": { "type": "boolean" },
+          "needsPlatformConfirmation": { "type": "boolean" },
+          "obsStreaming": { "type": "boolean" },
+          "platform": {
+            "enum": ["youtube", "tiktok", "instagram", "facebook", "linkedin", "x"],
+            "type": "string"
+          },
+          "reason": {
+            "enum": [
+              "OBS_NOT_CONFIGURED",
+              "OBS_UNAVAILABLE",
+              "OBS_ALREADY_STREAMING",
+              "SCENE_NOT_FOUND",
+              "ACCOUNT_UNAVAILABLE",
+              "AUTHORITY_DENIED",
+              "LIVE_CREDENTIALS_MISSING",
+              "OWNER_STEP_REQUIRED",
+              "PLATFORM_FAILED",
+              "START_UNCERTAIN",
+              "STOP_UNCERTAIN",
+              "CANCELED"
+            ],
+            "type": "string"
+          },
+          "scene": { "type": "string" },
+          "state": {
+            "enum": [
+              "idle",
+              "starting",
+              "streaming",
+              "stopping",
+              "uncertain",
+              "owner_step",
+              "failed"
+            ],
+            "type": "string"
+          }
+        },
+        "required": ["state", "canStop"],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "liveGames.live.status": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "query",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "query",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "requiredCapability": "liveGames.v1",
+      "responseTimeoutMs": 12000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "accountId": { "type": "string" },
+          "canStop": { "type": "boolean" },
+          "managedDestination": { "type": "boolean" },
+          "needsPlatformConfirmation": { "type": "boolean" },
+          "obsStreaming": { "type": "boolean" },
+          "platform": {
+            "enum": ["youtube", "tiktok", "instagram", "facebook", "linkedin", "x"],
+            "type": "string"
+          },
+          "reason": {
+            "enum": [
+              "OBS_NOT_CONFIGURED",
+              "OBS_UNAVAILABLE",
+              "OBS_ALREADY_STREAMING",
+              "SCENE_NOT_FOUND",
+              "ACCOUNT_UNAVAILABLE",
+              "AUTHORITY_DENIED",
+              "LIVE_CREDENTIALS_MISSING",
+              "OWNER_STEP_REQUIRED",
+              "PLATFORM_FAILED",
+              "START_UNCERTAIN",
+              "STOP_UNCERTAIN",
+              "CANCELED"
+            ],
+            "type": "string"
+          },
+          "scene": { "type": "string" },
+          "state": {
+            "enum": [
+              "idle",
+              "starting",
+              "streaming",
+              "stopping",
+              "uncertain",
+              "owner_step",
+              "failed"
+            ],
+            "type": "string"
+          }
+        },
+        "required": ["state", "canStop"],
+        "type": "object"
+      },
+      "retry": "safe-query",
+      "scope": "device"
+    },
+    "liveGames.live.stop": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "platformEnded": { "const": true, "type": "boolean" } },
+        "type": "object"
+      },
+      "requiredCapability": "liveGames.v1",
+      "responseTimeoutMs": 120000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "accountId": { "type": "string" },
+          "canStop": { "type": "boolean" },
+          "managedDestination": { "type": "boolean" },
+          "needsPlatformConfirmation": { "type": "boolean" },
+          "obsStreaming": { "type": "boolean" },
+          "platform": {
+            "enum": ["youtube", "tiktok", "instagram", "facebook", "linkedin", "x"],
+            "type": "string"
+          },
+          "reason": {
+            "enum": [
+              "OBS_NOT_CONFIGURED",
+              "OBS_UNAVAILABLE",
+              "OBS_ALREADY_STREAMING",
+              "SCENE_NOT_FOUND",
+              "ACCOUNT_UNAVAILABLE",
+              "AUTHORITY_DENIED",
+              "LIVE_CREDENTIALS_MISSING",
+              "OWNER_STEP_REQUIRED",
+              "PLATFORM_FAILED",
+              "START_UNCERTAIN",
+              "STOP_UNCERTAIN",
+              "CANCELED"
+            ],
+            "type": "string"
+          },
+          "scene": { "type": "string" },
+          "state": {
+            "enum": [
+              "idle",
+              "starting",
+              "streaming",
+              "stopping",
+              "uncertain",
+              "owner_step",
+              "failed"
+            ],
+            "type": "string"
+          }
+        },
+        "required": ["state", "canStop"],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
     "liveGames.obsCredentials": {
       "admissionTimeoutMs": 5000,
       "cancellation": "wait-only",
@@ -66975,6 +67212,74 @@
               "type": "string"
             },
             "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "liveGames.live.accounts", "type": "string" },
+            "params": { "additionalProperties": false, "properties": {}, "type": "object" }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "liveGames.live.status", "type": "string" },
+            "params": { "additionalProperties": false, "properties": {}, "type": "object" }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "liveGames.live.start", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "accountId": { "maxLength": 256, "minLength": 1, "type": "string" },
+                "scene": { "maxLength": 256, "minLength": 1, "type": "string" }
+              },
+              "required": ["accountId"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "liveGames.live.stop", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": { "platformEnded": { "const": true, "type": "boolean" } },
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
             "method": { "const": "secrets.owner.list", "type": "string" },
             "params": { "additionalProperties": false, "properties": {}, "type": "object" }
           },
@@ -83990,5 +84295,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "62f131160df6bf56de41b9345c23a17c89372684fdd33577de322456d1776781"
+  "schemaHash": "ec7971572d4194e8436677bcd23ce2f40323fc7a72c3e1b101c919700f655603"
 }

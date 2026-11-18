@@ -8,7 +8,6 @@ import type {
 } from "../../../shared/model/host-contracts/live-games";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
-import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { PasswordField } from "../../../shared/ui/PasswordField";
@@ -17,10 +16,15 @@ import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { StatusText } from "../../../shared/ui/StatusText";
 import { Text } from "../../../shared/ui/Text";
 import { TextField } from "../../../shared/ui/TextField";
-import { Copy, ExternalLink, MonitorSmartphone, Play, Square } from "../../../shared/ui/icons";
-import type { LiveGamesFeedback } from "../hooks/useLiveGames";
+import { Copy, ExternalLink, MonitorSmartphone } from "../../../shared/ui/icons";
+import type {
+  LiveGamesAccountsQuery,
+  LiveGamesFeedback,
+  LiveGamesLiveQuery,
+} from "../hooks/useLiveGames";
 import { liveGamesRequest } from "../model/liveGamesClient";
 import { overlayLink } from "../model/overlayLink";
+import { LiveStreamControls } from "./LiveStreamControls";
 
 const aspects = [
   { value: "9:16", label: "9:16" },
@@ -30,12 +34,15 @@ const aspects = [
 export function ObsControls({
   status,
   feedback,
+  live,
+  accounts,
 }: {
   status: LiveGamesStatus;
   feedback: LiveGamesFeedback;
+  live: LiveGamesLiveQuery;
+  accounts: LiveGamesAccountsQuery;
 }) {
   const t = useT();
-  const { confirm, dialog } = useConfirm();
   const [draft, setDraft] = useState<LiveGamesObsSetupOptions>();
   const options = draft ?? {
     aspect: status.obs.aspect,
@@ -60,23 +67,11 @@ export function ObsControls({
       setLinkResult({ url, kind, state: "error" });
     }
   };
-  const startStream = () => {
-    void confirm({
-      title: t("Start streaming"),
-      message: t("OBS will go live on its configured streaming server."),
-      confirmLabel: t("Start streaming"),
-      danger: false,
-      onConfirm: () => {
-        feedback.run({
-          action: "obs-start",
-          request: () => liveGamesRequest("liveGames.obsStream", { action: "start" }),
-        });
-      },
-    }).catch(() => undefined);
-  };
   const operationError = feedback.error("obs-setup", "obs-scene", "obs-start", "obs-stop");
   const setupPending = feedback.pending("obs-setup");
   const linkPending = linkResult?.state === "pending";
+  const managed =
+    live.data?.canStop || live.data?.state === "starting" || live.data?.state === "stopping";
 
   return (
     <section className="flex min-w-0 flex-col gap-2" aria-label={t("Overlay and OBS")}>
@@ -146,9 +141,11 @@ export function ObsControls({
       ) : null}
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
         <StatusText
-          tone={status.obs.streaming ? "done" : status.obs.configured ? "idle" : "needs-you"}
+          tone={
+            status.obs.streaming && !managed ? "done" : status.obs.configured ? "idle" : "needs-you"
+          }
         >
-          {status.obs.streaming
+          {status.obs.streaming && !managed
             ? t("OBS streaming")
             : status.obs.configured
               ? t("OBS configured")
@@ -164,7 +161,7 @@ export function ObsControls({
         <Button
           variant="secondary"
           startIcon={<MonitorSmartphone />}
-          disabled={feedback.busy || !url}
+          disabled={feedback.busy || managed || !url}
           loading={setupPending}
           success={feedback.succeeded("obs-setup")}
           successLabel={t("Scene saved")}
@@ -180,7 +177,7 @@ export function ObsControls({
         </Button>
         <Button
           variant="secondary"
-          disabled={feedback.busy || !status.obs.configured}
+          disabled={feedback.busy || managed || !status.obs.configured}
           loading={feedback.pending("obs-scene")}
           onClick={() =>
             feedback.run({
@@ -191,38 +188,12 @@ export function ObsControls({
         >
           {t("Switch to Halay")}
         </Button>
-        {status.obs.streaming ? (
-          <Button
-            variant="secondary"
-            startIcon={<Square />}
-            disabled={feedback.busy}
-            loading={feedback.pending("obs-stop")}
-            onClick={() =>
-              feedback.run({
-                action: "obs-stop",
-                request: () => liveGamesRequest("liveGames.obsStream", { action: "stop" }),
-              })
-            }
-          >
-            {t("Stop streaming")}
-          </Button>
-        ) : (
-          <Button
-            variant="secondary"
-            startIcon={<Play />}
-            disabled={feedback.busy || !status.obs.configured}
-            loading={feedback.pending("obs-start")}
-            onClick={startStream}
-          >
-            {t("Start streaming")}
-          </Button>
-        )}
       </div>
       {operationError ? (
         <InlineError details={operationError}>{t("Could not control OBS")}</InlineError>
       ) : null}
-      <LiveGameCredentials feedback={feedback} status={status} />
-      {dialog}
+      <LiveStreamControls obs={status.obs} live={live} accounts={accounts} feedback={feedback} />
+      <LiveGameCredentials feedback={feedback} status={status} streamLocked={Boolean(managed)} />
     </section>
   );
 }
@@ -230,9 +201,11 @@ export function ObsControls({
 function LiveGameCredentials({
   status,
   feedback,
+  streamLocked,
 }: {
   status: LiveGamesStatus;
   feedback: LiveGamesFeedback;
+  streamLocked: boolean;
 }) {
   const t = useT();
   const server = useRef<HTMLInputElement>(null);
@@ -260,7 +233,7 @@ function LiveGameCredentials({
             event.preventDefault();
             const address = server.current?.value.trim();
             const secret = key.current?.value.trim();
-            if (feedback.busy || !address || !secret) return;
+            if (feedback.busy || streamLocked || !address || !secret) return;
             feedback.run({
               action: "obs-credentials",
               request: () =>
@@ -277,7 +250,7 @@ function LiveGameCredentials({
             required
             placeholder="rtmps://"
             maxLength={2048}
-            disabled={streamPending}
+            disabled={streamPending || streamLocked}
             autoComplete="off"
           />
           <PasswordField
@@ -285,14 +258,14 @@ function LiveGameCredentials({
             ref={key}
             required
             maxLength={2048}
-            disabled={streamPending}
+            disabled={streamPending || streamLocked}
             autoComplete="off"
           />
           <div>
             <Button
               variant="secondary"
               type="submit"
-              disabled={feedback.busy || !status.obs.configured}
+              disabled={feedback.busy || streamLocked || !status.obs.configured}
               loading={streamPending}
               success={feedback.succeeded("obs-credentials")}
               successLabel={t("Saved")}

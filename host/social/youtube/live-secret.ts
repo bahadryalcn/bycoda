@@ -20,12 +20,12 @@ export function youTubeLiveSecretWriter(credentials: SocialCredentialStore, acco
   };
 }
 
-/** Only for a future, authorized encoder handoff inside Host. Keep this out of RPC and tool output. */
+/** Authorized encoder handoff inside Host. Keep this out of RPC and tool output. */
 export async function loadYouTubeLiveIngest(
   credentials: SocialCredentialStore,
   accountId: string,
   streamId: string,
-  credentialRef: string,
+  credentialRef = reference(accountId, streamId),
 ): Promise<YouTubeLiveIngestSecret | undefined> {
   if (!referencePattern.test(credentialRef) || credentialRef !== reference(accountId, streamId))
     return undefined;

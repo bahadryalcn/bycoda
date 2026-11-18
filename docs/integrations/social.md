@@ -177,9 +177,12 @@ relationships, lists and post deletion. Profile edits, encrypted Chat,
 creator earnings and Live Studio have owner browser handoffs.
 Hosting Spaces requires the X mobile app. [X Spaces](https://help.x.com/en/using-x/spaces)
 
-X prohibits scripting its website. A key copied from Live Studio can be stored
-in the executor Host's credential store. The key is absent from account
-snapshots and chat results. [X automation rules](https://help.x.com/en/rules-and-policies/x-automation)
+X prohibits scripting its website. Save the exact ingest server URL and stream
+key from the same Live Studio source on the executor Host. Older key-only entries
+need the server URL before they can be used in **Live games**. Both values stay in
+the Host credential store. Finish starting or ending the public broadcast in X.
+[X Producer setup](https://help.x.com/en/using-x/how-to-use-live-producer)
+[X automation rules](https://help.x.com/en/rules-and-policies/x-automation)
 
 Chat tools `x.handoff`, `x.insights`, `x.spaces` and `x.lists` return a browser
 destination or a permitted readout. Enterprise API insights sample up to 100
@@ -274,8 +277,8 @@ permission grants still determine availability.
   video**, and capture the URL and key when Instagram displays the two fields.
   The Host saves both in its OS-backed vault. The private window is excluded
   from browser tracking and live view. The owner can start or end the broadcast
-  on a recognized Producer screen. Connect an external encoder to supply the
-  stream. Inbox receives signed Live comments, and eligible comment replies
+  on a recognized Producer screen. Select the account in **Live games** to send
+  the feed from OBS. Inbox receives signed Live comments, and eligible comment replies
   follow the existing review queue. Meta permits private replies to Live
   comments during the broadcast.
   [Meta Live comments and replies](https://developers.facebook.com/docs/graph-api/changelog/ooc-changes/nov-9-2021)
@@ -323,8 +326,9 @@ permission grants still determine availability.
   `linkedin.accounts.setupStatus` reports project-scoped progress.
 - LinkedIn Live credentials come from the owner's scheduled event in Live Studio.
   The Host stores the destination in credential storage. `linkedin.live.status` returns
-  the event ID and custody state to authorized callers. Stream ingest and the Go Live
-  action require a streaming integration.
+  the event ID and custody state to authorized callers. Select the account in
+  **Live games** to send the feed from OBS, then use Live Studio to put the event
+  on air or end it.
 - With an approved OAuth Page connection, the owner can load Live event comments by event
   ID. Enable **LinkedIn Live comments** in the OAuth permissions to request `r_events`
   and `r_organization_social_feed`. The Host checks the organizer and Live event type
@@ -391,6 +395,14 @@ fails after the broadcast was created, the result keeps known resource IDs for
 reconciliation. The credential store holds the ingestion key and endpoint under
 the channel account and stream identity. RPC and tools return the endpoint and
 an opaque reference. Encoder handoff consumes the reference inside the Host.
+
+The **Live games** start operation can reuse a matching public broadcast with
+stored encoder credentials. To create a new public broadcast, it uses the
+channel owner's explicit made-for-kids setting. Set that preference on YouTube
+or prepare the broadcast in Social if the channel has no setting. OBS supplies
+the feed first. The Host waits for YouTube to detect it before requesting the
+public transition. An uncertain creation or transition needs outcome review in
+the provider. [YouTube broadcast lifecycle](https://developers.google.com/youtube/data/live/life-of-a-broadcast)
 
 YouTube management writes use exact-input operation records. Outbound actions
 recheck account and project authority, the Social stop, AI autonomy when

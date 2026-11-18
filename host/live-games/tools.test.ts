@@ -52,6 +52,18 @@ const report: LiveGamesReport = {
   totals,
   topGifters: [gifter],
 };
+const principal = {
+  kind: "session" as const,
+  sessionId: "s",
+  projectId: "p",
+  provider: "codex",
+};
+const account = { accountId: "yt", platform: "youtube" as const, label: "Studio channel" };
+const target = {
+  ...account,
+  binding: { accountId: account.accountId, platform: account.platform, platformId: "channel-1" },
+};
+const liveStatus = { state: "idle" as const, canStop: false };
 
 function setup() {
   const service = {
@@ -65,11 +77,16 @@ function setup() {
     obsSetup: vi.fn(async () => status),
     obsScene: vi.fn(async () => status),
     obsStream: vi.fn(async () => status),
+    liveAccount: vi.fn(async () => target),
+    liveAccounts: vi.fn(async () => ({ accounts: [account] })),
+    liveStatus: vi.fn(async () => liveStatus),
+    liveStart: vi.fn(async () => liveStatus),
+    liveStop: vi.fn(async () => liveStatus),
   };
   const authorized = vi.fn(async () => true);
   const approve = vi.fn(async () => {});
   const call = (action: Parameters<typeof callLiveGamesConversationTool>[1], input = {}) =>
-    callLiveGamesConversationTool(service, action, input, authorized, approve);
+    callLiveGamesConversationTool(service, action, input, authorized, approve, principal);
   return { service, authorized, approve, call };
 }
 
@@ -78,7 +95,7 @@ describe("Live games Conversation Tools", () => {
     const catalog = mcpCatalog("conversation").filter((tool) =>
       tool.action.startsWith("liveGames."),
     );
-    expect(catalog).toHaveLength(10);
+    expect(catalog).toHaveLength(14);
     expect(catalog.find((tool) => tool.action === "liveGames.status")).toMatchObject({
       name: "conversation_liveGames_status",
       annotations: { readOnlyHint: true },
@@ -107,6 +124,14 @@ describe("Live games Conversation Tools", () => {
     expect(() =>
       validateSessionConversationTool("liveGames.obsStream", { action: "send" }),
     ).toThrow();
+    expect(() =>
+      validateSessionConversationTool("liveGames.goLive", { accountId: "yt", scene: "Stage" }),
+    ).not.toThrow();
+    for (const field of ["projectId", "streamKey", "approved"]) {
+      expect(() =>
+        validateSessionConversationTool("liveGames.goLive", { accountId: "yt", [field]: "forged" }),
+      ).toThrow();
+    }
   });
 
   it("provides readback and explicit stops in managed discovery", () => {
@@ -121,6 +146,16 @@ describe("Live games Conversation Tools", () => {
       authorization: { requirement: "native-owner-approval" },
       effects: ["execution", "external-write"],
       cancellation: ["conversation:liveGames.obsStream"],
+    });
+    expect(catalog.find((tool) => tool.action === "liveGames.goLive")).toMatchObject({
+      authorization: { requirement: "native-owner-approval" },
+      effects: ["execution", "external-write"],
+      readback: ["conversation:liveGames.liveStatus"],
+      cancellation: ["conversation:liveGames.endLive"],
+      retry: { instruction: expect.stringContaining("Never automatically retry") },
+    });
+    expect(catalog.find((tool) => tool.action === "liveGames.liveAccounts")).toMatchObject({
+      annotations: { readOnlyHint: true },
     });
   });
 
@@ -162,18 +197,12 @@ describe("Live games Conversation Tools", () => {
 
   it("requires the native reply to match the approved OBS operation", async () => {
     const call = vi.fn(async () => ({ approved: true, operationHash: "wrong" }));
-    const principal = {
-      kind: "session" as const,
-      sessionId: "s",
-      projectId: "p",
-      provider: "codex",
-    };
     await expect(
       requestLiveGamesStreamApproval(
         { call, callAssistantThread: vi.fn() },
         "C:/project",
         principal,
-        status,
+        { action: "liveGames.obsStream", input: { action: "start", scene: "Bycoda Halay" } },
         async () => true,
       ),
     ).rejects.toThrow("The owner did not approve starting the OBS broadcast.");
@@ -191,5 +220,96 @@ describe("Live games Conversation Tools", () => {
       principal,
       expect.any(Function),
     );
+  });
+
+  it("binds the approved Social account and scene to the original session's project", async () => {
+    const { call, approve, service } = setup();
+    await call("liveGames.goLive", { accountId: "yt" });
+    expect(approve).toHaveBeenCalledWith(
+      { action: "liveGames.goLive", input: { ...account, scene: "Bycoda Halay" } },
+      expect.any(Function),
+    );
+    expect(service.liveStart).toHaveBeenCalledWith(
+      { accountId: "yt", scene: "Bycoda Halay" },
+      { ...principal, actorId: "session:s" },
+      expect.any(Function),
+      target,
+    );
+    await call("liveGames.endLive");
+    expect(approve).toHaveBeenCalledOnce();
+    expect(service.liveStop).toHaveBeenCalledWith(
+      { ...principal, actorId: "session:s" },
+      expect.any(Function),
+    );
+  });
+
+  it("requires a fresh native reply for each Social broadcast approval", async () => {
+    let oldHash: string | undefined;
+    const call = vi.fn(async (_action: string, input: Record<string, unknown>) => {
+      oldHash ??= (input.operation as { operationHash: string }).operationHash;
+      return { approved: true, operationHash: oldHash };
+    });
+    const desktop = { call, callAssistantThread: vi.fn() };
+    const operation = {
+      action: "liveGames.goLive" as const,
+      input: { ...account, scene: "Stage" },
+    };
+    const request = () =>
+      requestLiveGamesStreamApproval(desktop, "C:/project", principal, operation, async () => true);
+    await expect(request()).resolves.toBeUndefined();
+    await expect(request()).rejects.toThrow("The owner did not approve");
+    expect(call.mock.calls[0]?.[1]).toMatchObject({
+      operation: { ...operation, operationHash: expect.stringMatching(/^[a-f0-9]{64}$/) },
+      requireOwnerApproval: true,
+    });
+  });
+
+  it("drops a Social start if access changes or the owner declines", async () => {
+    const { call, approve, authorized, service } = setup();
+    approve.mockRejectedValueOnce(new Error("Owner declined."));
+    await expect(call("liveGames.goLive", { accountId: "yt" })).rejects.toThrow("Owner declined.");
+    approve.mockImplementationOnce(async () => {
+      authorized.mockResolvedValue(false);
+    });
+    await expect(call("liveGames.goLive", { accountId: "yt" })).rejects.toThrow(
+      "Session authority revoked.",
+    );
+    expect(service.liveStart).not.toHaveBeenCalled();
+  });
+
+  it("keeps external platform confirmation on the owner RPC", async () => {
+    const { call, service } = setup();
+    expect(() =>
+      validateSessionConversationTool("liveGames.endLive", { platformEnded: true }),
+    ).toThrow();
+    await expect(call("liveGames.endLive", { platformEnded: true })).rejects.toThrow();
+    expect(service.liveStop).not.toHaveBeenCalled();
+  });
+
+  it("validates Social readbacks before returning Host data to the agent", async () => {
+    const { call, service } = setup();
+    await expect(call("liveGames.liveAccounts")).resolves.toEqual({ accounts: [account] });
+    await expect(call("liveGames.liveStatus")).resolves.toEqual(liveStatus);
+    const unexpectedAccount = { ...account, streamKey: "sentinel-secret" };
+    service.liveAccounts.mockResolvedValueOnce({ accounts: [unexpectedAccount] });
+    await expect(call("liveGames.liveAccounts")).rejects.toThrow("Unrecognized key");
+    service.liveAccounts.mockResolvedValueOnce({ accounts: [unexpectedAccount] });
+    await expect(call("liveGames.liveAccounts")).rejects.not.toThrow("sentinel-secret");
+  });
+
+  it("rejects projectless Social starts before asking for approval", async () => {
+    const { approve, authorized, service } = setup();
+    await expect(
+      callLiveGamesConversationTool(
+        service,
+        "liveGames.goLive",
+        { accountId: "yt" },
+        authorized,
+        approve,
+        { kind: "assistant-thread", threadId: "room", environmentId: "host" },
+      ),
+    ).rejects.toThrow("Social broadcasting requires a project");
+    expect(service.liveAccount).not.toHaveBeenCalled();
+    expect(approve).not.toHaveBeenCalled();
   });
 });

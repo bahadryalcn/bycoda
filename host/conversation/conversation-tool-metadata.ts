@@ -12,7 +12,9 @@ export function conversationToolMetadata(action: string, authorizationScope: "re
       openWorldHint:
         (action.startsWith("inbox.") && action !== "inbox.list") ||
         action === "liveGames.start" ||
-        action === "liveGames.obsStream",
+        action === "liveGames.obsStream" ||
+        action === "liveGames.goLive" ||
+        action === "liveGames.endLive",
     },
   };
 }

@@ -25,7 +25,7 @@ export function LiveGamesPage({
   navigation?: ReactNode;
 }) {
   const t = useT();
-  const { status, report, feedback } = useLiveGames();
+  const { status, report, live, accounts, feedback } = useLiveGames();
   return (
     <Surface variant="canvas" className="flex min-h-0 min-w-0 flex-1 flex-col">
       <PaneHeader
@@ -62,7 +62,12 @@ export function LiveGamesPage({
             <div className="flex min-w-0 flex-col gap-4">
               <LiveGameConnection status={status.data} feedback={feedback} />
               <Divider />
-              <ObsControls status={status.data} feedback={feedback} />
+              <ObsControls
+                status={status.data}
+                feedback={feedback}
+                live={live}
+                accounts={accounts}
+              />
               <Divider />
               <HalayControls config={status.data.config} feedback={feedback} />
               <HalayRules rules={status.data.config.giftRules} feedback={feedback} />

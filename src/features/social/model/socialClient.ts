@@ -150,8 +150,12 @@ export function socialClient(machineId: string) {
   };
   return {
     // The Host's owner-only vault endpoint returns status without the key.
-    saveXLiveKey: (accountId: string, key: string) =>
-      remoteRequest<{ stored: true }>(machineId, "social.x.liveKey.store", { accountId, key }),
+    saveXLiveKey: (accountId: string, key: string, server?: string) =>
+      remoteRequest<{ stored: true }>(machineId, "social.x.liveKey.store", {
+        accountId,
+        key,
+        ...(server ? { server } : {}),
+      }),
     request,
     browserInstagramLive: (
       accountId: string,

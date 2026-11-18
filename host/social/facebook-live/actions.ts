@@ -102,18 +102,21 @@ function definitive(error: unknown): boolean {
   );
 }
 
-export function createFacebookLiveActions(
-  api: () => ReturnType<typeof facebookLiveApi>,
-): SocialActionModule {
+export function createFacebookLiveOperations(api: () => ReturnType<typeof facebookLiveApi>) {
   const transition =
     (change: "start" | "end") =>
-    async (ctx: SocialActionContext, input: Record<string, unknown>) => {
+    async (
+      ctx: SocialActionContext,
+      input: Record<string, unknown>,
+      beforeWrite?: () => Promise<void>,
+    ) => {
       exact(input, ["accountId", "liveId", "confirm"]);
-      requireOwnerConfirmation(
-        ctx,
-        input.confirm,
-        change === "start" ? "START_FACEBOOK_LIVE" : "END_FACEBOOK_LIVE",
-      );
+      if (!beforeWrite)
+        requireOwnerConfirmation(
+          ctx,
+          input.confirm,
+          change === "start" ? "START_FACEBOOK_LIVE" : "END_FACEBOOK_LIVE",
+        );
       const accountId = str(input.accountId, "account");
       const liveId = facebookLiveId(input.liveId);
       return await locked(ctx, accountId, async () => {
@@ -160,6 +163,7 @@ export function createFacebookLiveActions(
         await writeLiveReceipt(ctx.service, accountId, { ...current, phase: pending });
         try {
           if (change === "start") await assertStartAllowed(ctx, latest);
+          await beforeWrite?.();
         } catch (error) {
           await writeLiveReceipt(ctx.service, accountId, current);
           throw error;
@@ -174,56 +178,74 @@ export function createFacebookLiveActions(
       });
     };
 
+  const create = async (
+    ctx: SocialActionContext,
+    input: Record<string, unknown>,
+    beforeWrite?: () => Promise<void>,
+  ) => {
+    exact(input, ["accountId", "title", "description", "confirm"]);
+    if (!beforeWrite) requireOwnerConfirmation(ctx, input.confirm, "CREATE_FACEBOOK_LIVE");
+    const accountId = str(input.accountId, "account");
+    const title = str(input.title, "title", 254);
+    const description =
+      input.description === undefined ? undefined : str(input.description, "description", 8000);
+    return await locked(ctx, accountId, async () => {
+      const account = await livePage(ctx, accountId, { grant: "publish", scopes: LIVE_SCOPES });
+      const current = await readLiveReceipt(ctx.service, accountId, account.platformId);
+      if (current && current.phase !== "ended") return view(current);
+      const accessToken = await token(ctx, accountId);
+      const provider = api();
+      const latest = await livePage(ctx, accountId, { grant: "publish", scopes: LIVE_SCOPES });
+      if (latest.platformId !== account.platformId) throw new SocialPlatformError("denied");
+      const receipt: FacebookLiveReceipt = {
+        accountId,
+        pageId: account.platformId,
+        title,
+        phase: "creating",
+        createdAt: ctx.now(),
+        encoderReady: false,
+      };
+      await writeLiveReceipt(ctx.service, accountId, receipt);
+      try {
+        await beforeWrite?.();
+      } catch (error) {
+        await writeLiveReceipt(ctx.service, accountId, current);
+        throw error;
+      }
+      let created: Awaited<ReturnType<ReturnType<typeof facebookLiveApi>["create"]>>;
+      try {
+        created = await provider.create(account.platformId, accessToken, title, description);
+      } catch (error) {
+        if (definitive(error)) await writeLiveReceipt(ctx.service, accountId, current);
+        throw error;
+      }
+      const accepted: FacebookLiveReceipt = {
+        ...receipt,
+        id: created.id,
+        phase: "unpublished",
+      };
+      await writeLiveReceipt(ctx.service, accountId, accepted);
+      if (!created.encoderUrl) return view(accepted);
+      await ctx.facebookLive!.credentials.set(liveSecretKey(accountId, created.id), {
+        accessToken: created.encoderUrl,
+      });
+      const ready = { ...accepted, encoderReady: true };
+      await writeLiveReceipt(ctx.service, accountId, ready);
+      return view(ready);
+    });
+  };
+  return { create, transition };
+}
+
+export function createFacebookLiveActions(
+  api: () => ReturnType<typeof facebookLiveApi>,
+): SocialActionModule {
+  const { create, transition } = createFacebookLiveOperations(api);
   return {
     "facebook.live.create": {
       readOnly: false,
       ownerOnly: true,
-      run: async (ctx, input) => {
-        exact(input, ["accountId", "title", "description", "confirm"]);
-        requireOwnerConfirmation(ctx, input.confirm, "CREATE_FACEBOOK_LIVE");
-        const accountId = str(input.accountId, "account");
-        const title = str(input.title, "title", 254);
-        const description =
-          input.description === undefined ? undefined : str(input.description, "description", 8000);
-        return await locked(ctx, accountId, async () => {
-          const account = await livePage(ctx, accountId, { grant: "publish", scopes: LIVE_SCOPES });
-          const current = await readLiveReceipt(ctx.service, accountId, account.platformId);
-          if (current && current.phase !== "ended") return view(current);
-          const accessToken = await token(ctx, accountId);
-          const provider = api();
-          const latest = await livePage(ctx, accountId, { grant: "publish", scopes: LIVE_SCOPES });
-          if (latest.platformId !== account.platformId) throw new SocialPlatformError("denied");
-          const receipt: FacebookLiveReceipt = {
-            accountId,
-            pageId: account.platformId,
-            title,
-            phase: "creating",
-            createdAt: ctx.now(),
-            encoderReady: false,
-          };
-          await writeLiveReceipt(ctx.service, accountId, receipt);
-          let created: Awaited<ReturnType<ReturnType<typeof facebookLiveApi>["create"]>>;
-          try {
-            created = await provider.create(account.platformId, accessToken, title, description);
-          } catch (error) {
-            if (definitive(error)) await writeLiveReceipt(ctx.service, accountId, current);
-            throw error;
-          }
-          const accepted: FacebookLiveReceipt = {
-            ...receipt,
-            id: created.id,
-            phase: "unpublished",
-          };
-          await writeLiveReceipt(ctx.service, accountId, accepted);
-          if (!created.encoderUrl) return view(accepted);
-          await ctx.facebookLive!.credentials.set(liveSecretKey(accountId, created.id), {
-            accessToken: created.encoderUrl,
-          });
-          const ready = { ...accepted, encoderReady: true };
-          await writeLiveReceipt(ctx.service, accountId, ready);
-          return view(ready);
-        });
-      },
+      run: create,
     },
     "facebook.live.list": {
       readOnly: true,
@@ -310,6 +332,7 @@ export function createFacebookLiveActions(
   };
 }
 
-export const facebookLiveActions = createFacebookLiveActions(() =>
-  facebookLiveApi(new SocialHttp(), process.env.BYCODA_SOCIAL_GRAPH_VERSION ?? "v25.0"),
-);
+const defaultApi = () =>
+  facebookLiveApi(new SocialHttp(), process.env.BYCODA_SOCIAL_GRAPH_VERSION ?? "v25.0");
+export const facebookLiveActions = createFacebookLiveActions(defaultApi);
+export const facebookLiveOperations = createFacebookLiveOperations(defaultApi);

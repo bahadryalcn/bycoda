@@ -7,6 +7,7 @@ import {
   LiveGamesObsStreamParamsSchema,
   LiveGamesRulesParamsSchema,
   LiveGamesStartParamsSchema,
+  parseLiveGamesLiveStart,
 } from "../../src/shared/model/host-contracts/live-games";
 import type { ServerBindings } from "./bindings";
 import type { OwnerRpcRequest } from "./owner-rpc-context";
@@ -29,6 +30,33 @@ export async function handleLiveGamesRpc(
   const { method } = request.input;
   const { params } = request;
   switch (method) {
+    case "liveGames.live.accounts":
+      LIVE_GAMES_RPC[method].params.parse(params);
+      request.result = await liveGames.liveAccounts();
+      return;
+    case "liveGames.live.status":
+      LIVE_GAMES_RPC[method].params.parse(params);
+      request.result = await liveGames.liveStatus();
+      return;
+    case "liveGames.live.start":
+      assertLocalSecret(request);
+      request.result = await liveGames.liveStart(
+        parseLiveGamesLiveStart(params),
+        undefined,
+        async () =>
+          !request.closing && !request.response.destroyed && request.domainContext.authorized(),
+      );
+      return;
+    case "liveGames.live.stop": {
+      assertLocalSecret(request);
+      const { platformEnded } = LIVE_GAMES_RPC[method].params.parse(params);
+      request.result = await liveGames.liveStop(
+        undefined,
+        () => request.domainContext.authorized(),
+        platformEnded,
+      );
+      return;
+    }
     case "liveGames.status":
       LIVE_GAMES_RPC[method].params.parse(params);
       request.result = await liveGames.status();

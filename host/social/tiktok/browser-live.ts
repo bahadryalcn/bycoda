@@ -72,6 +72,19 @@ function validIngestServer(value: string): boolean {
   }
 }
 
+export function parseTikTokLiveCredential(value: unknown): TikTokLiveCredential {
+  const entry = value as Partial<TikTokLiveCredential> | null;
+  if (
+    typeof entry?.serverUrl !== "string" ||
+    typeof entry.streamKey !== "string" ||
+    entry.serverUrl.length > 300 ||
+    !validIngestServer(entry.serverUrl) ||
+    !/^[!-~]{16,2048}$/.test(entry.streamKey)
+  )
+    throw unsupported();
+  return { serverUrl: entry.serverUrl, streamKey: entry.streamKey };
+}
+
 export async function saveTikTokLiveSetup(
   ctx: BrowserRecipeContext,
   persist: (credential: TikTokLiveCredential) => Promise<void>,
@@ -102,17 +115,10 @@ export async function saveTikTokLiveSetup(
       throw new SocialPlatformError("needs_human", undefined, {
         reasonCode: "TIKTOK_LIVE_SETUP_REQUIRED",
       });
-    if (
-      typeof snapshot.serverUrl !== "string" ||
-      typeof snapshot.streamKey !== "string" ||
-      snapshot.serverUrl.length > 300 ||
-      !validIngestServer(snapshot.serverUrl) ||
-      !/^[!-~]{16,2048}$/.test(snapshot.streamKey)
-    )
-      throw unsupported();
+    const credential = parseTikTokLiveCredential(snapshot);
     // The callback writes directly to the Host credential vault. Redact any vault error.
     try {
-      await persist({ serverUrl: snapshot.serverUrl, streamKey: snapshot.streamKey });
+      await persist(credential);
     } catch {
       throw unknown();
     }

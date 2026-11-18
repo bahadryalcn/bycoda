@@ -120,6 +120,57 @@ export const LiveGamesStatusSchema = z.strictObject({
 export type LiveGamesStatus = z.infer<typeof LiveGamesStatusSchema>;
 export type LiveGamesReport = z.infer<typeof LiveGamesReportSchema>;
 
+export const LIVE_GAMES_DEFAULT_SCENE = "Bycoda Halay";
+const liveTargetText = z.string().min(1).max(256);
+export const LiveGamesLiveStartParamsSchema = z.strictObject({
+  accountId: liveTargetText,
+  scene: liveTargetText.optional(),
+});
+const livePlatform = z.enum(["youtube", "tiktok", "instagram", "facebook", "linkedin", "x"]);
+const liveAccount = z.strictObject({
+  accountId: z.string(),
+  platform: livePlatform,
+  label: z.string(),
+});
+const liveAccounts = z.strictObject({ accounts: z.array(liveAccount) });
+export const LiveGamesLiveStatusSchema = z.strictObject({
+  state: z.enum(["idle", "starting", "streaming", "stopping", "uncertain", "owner_step", "failed"]),
+  canStop: z.boolean(),
+  accountId: z.string().optional(),
+  platform: livePlatform.optional(),
+  scene: z.string().optional(),
+  obsStreaming: z.boolean().optional(),
+  managedDestination: z.boolean().optional(),
+  needsPlatformConfirmation: z.boolean().optional(),
+  reason: z
+    .enum([
+      "OBS_NOT_CONFIGURED",
+      "OBS_UNAVAILABLE",
+      "OBS_ALREADY_STREAMING",
+      "SCENE_NOT_FOUND",
+      "ACCOUNT_UNAVAILABLE",
+      "AUTHORITY_DENIED",
+      "LIVE_CREDENTIALS_MISSING",
+      "OWNER_STEP_REQUIRED",
+      "PLATFORM_FAILED",
+      "START_UNCERTAIN",
+      "STOP_UNCERTAIN",
+      "CANCELED",
+    ])
+    .optional(),
+});
+export type LiveGamesLiveAccount = z.infer<typeof liveAccount>;
+export type LiveGamesLiveStatus = z.infer<typeof LiveGamesLiveStatusSchema>;
+export type LiveGamesLiveStartParams = z.infer<typeof LiveGamesLiveStartParamsSchema>;
+
+export function parseLiveGamesLiveStart(input: unknown): LiveGamesLiveStartParams {
+  const params = LiveGamesLiveStartParamsSchema.parse(input);
+  return LiveGamesLiveStartParamsSchema.parse({
+    accountId: params.accountId.trim(),
+    scene: params.scene?.trim(),
+  });
+}
+
 export const LIVE_GAMES_RPC = {
   "liveGames.status": { params: empty, result: LiveGamesStatusSchema, query: true },
   "liveGames.start": { params: LiveGamesStartParamsSchema, result: LiveGamesStatusSchema },
@@ -136,6 +187,16 @@ export const LIVE_GAMES_RPC = {
     result: LiveGamesStatusSchema,
   },
   "liveGames.eulerKey": { params: LiveGamesEulerKeyParamsSchema, result: LiveGamesStatusSchema },
+  "liveGames.live.accounts": { params: empty, result: liveAccounts, query: true },
+  "liveGames.live.status": { params: empty, result: LiveGamesLiveStatusSchema, query: true },
+  "liveGames.live.start": {
+    params: LiveGamesLiveStartParamsSchema,
+    result: LiveGamesLiveStatusSchema,
+  },
+  "liveGames.live.stop": {
+    params: z.strictObject({ platformEnded: z.literal(true).optional() }),
+    result: LiveGamesLiveStatusSchema,
+  },
 } as const;
 
 export function liveGamesMethods(
@@ -151,7 +212,11 @@ export function liveGamesMethods(
       name,
       {
         ...workflow("liveGames.v1", definition.params, definition.result, "query" in definition),
-        ...(name === "liveGames.obsSetup" ? { responseTimeoutMs: 60_000 } : {}),
+        ...(name === "liveGames.live.start" || name === "liveGames.live.stop"
+          ? { responseTimeoutMs: 120_000 }
+          : name === "liveGames.obsSetup"
+            ? { responseTimeoutMs: 60_000 }
+            : {}),
       },
     ]),
   ) as Record<keyof typeof LIVE_GAMES_RPC, HostRpcMethodDefinition>;

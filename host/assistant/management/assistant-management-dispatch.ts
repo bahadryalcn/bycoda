@@ -32,7 +32,7 @@ import { isRoomDevServerAction } from "../room/assistant-room-dev-servers";
 import { isRoomTerminalAction } from "../room/assistant-room-terminals";
 import { isRoomBrowserAction } from "../room/assistant-room-browser";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { isLiveGamesConversationTool } from "../../live-games/tools";
+import { isLiveGamesConversationTool, isSocialLiveGamesTool } from "../../live-games/tools";
 import { unwrapRoomNativeResult } from "../native/assistant-native-library-proof";
 
 const projectCaptures = new AsyncLocalStorage<{ open: boolean; projects: Map<string, string> }>();
@@ -79,7 +79,8 @@ const targetActions = new Set([
   "sessions.read",
 ]);
 export function roomManagementToolAllowed(family: string, action: string, projectId?: string) {
-  if (family === "conversation" && isLiveGamesConversationTool(action)) return true;
+  if (family === "conversation" && isLiveGamesConversationTool(action))
+    return !isSocialLiveGamesTool(action) || !!projectId;
   if (
     family === "conversation" &&
     ["remote.grants.list", "remote.call", "remote.result"].includes(action)
