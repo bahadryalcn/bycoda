@@ -450,6 +450,13 @@ export const CONVERSATION_TOOLS = {
       item: inboxItem,
       body: { type: "string", minLength: 1, maxLength: 30000 },
       inReplyTo: string,
+      imagePaths: {
+        type: "array",
+        minItems: 1,
+        maxItems: 4,
+        uniqueItems: true,
+        items: { type: "string", minLength: 1, maxLength: 1000 },
+      },
     },
     ["requestId", "item", "body"],
   ),
@@ -870,6 +877,8 @@ function conversationToolDescription(action: string) {
     return "Read the workflow transitions available for one issue on a board snapshot from inbox.jira.board. Poll inbox.result. Choose a transitionId from this list; never guess one.";
   if (action === "inbox.jira.transition" || action === "inbox.jira.move")
     return "Change a Jira issue on a board snapshot: transition applies a transitionId from inbox.jira.transitions; move sends the issue to board, backlog or sprint (with sprintId), or ranks it (target rank with exactly one of beforeKey/afterKey from the same snapshot). The desktop shows the owner a native approval of the exact issue and change; tool input cannot grant it. Poll inbox.result with the same requestId: outcome not-submitted means nothing changed; queued is not done. Never resend an uncertain change under a new requestId; reread the board first.";
+  if (action === "inbox.comment")
+    return "Post a comment to an issue discovered with inbox.providers.list. For Jira in a focused session, optionally pass imagePaths for up to four PNG, JPEG, GIF or WebP screenshots already saved in this session's checkout (10 MiB total). The desktop asks the owner to approve the exact comment and file paths. Wait for inbox.result with the same requestId; queued means nothing has been sent yet. If a write is uncertain, check the Jira issue and attachments before retrying.";
   if (action.startsWith("inbox."))
     return "Host attention Inbox plus connected GitHub/GitLab/Azure DevOps/Linear/Jira APIs. Check inbox.providers.connections before claiming a provider is unreachable; never ask for separate credentials for a connected provider. Provider operations return durable queued/running/completed/failed/uncertain receipts: poll inbox.result with the SAME requestId, never report queued as done. Copy only provider/kind/number/repo/id/identifier into item. Comment/PR mutations require in-app owner approval of the exact target/content; tool input cannot grant approval. Reuse requestId for the exact payload after uncertain replies. Provider credentials remain in the desktop. Social Media Inbox uses bycoda-social and its own policy.";
   if (action.startsWith("devices."))

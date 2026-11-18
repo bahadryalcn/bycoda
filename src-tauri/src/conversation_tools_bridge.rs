@@ -1093,8 +1093,10 @@ pub(crate) fn inbox_approval_message(operation: &Value, cwd: &str) -> Result<Str
     let action = operation["action"]
         .as_str()
         .ok_or("Invalid inbox approval")?;
-    if !matches!(action, "comment" | "pr-action" | "review")
-        || operation["cwd"].as_str() != Some(cwd)
+    if !matches!(
+        action,
+        "comment" | "jira-comment-images" | "pr-action" | "review"
+    ) || operation["cwd"].as_str() != Some(cwd)
     {
         return Err("Invalid inbox approval scope".into());
     }
@@ -1108,12 +1110,19 @@ pub(crate) fn inbox_approval_message(operation: &Value, cwd: &str) -> Result<Str
         .as_str()
         .or_else(|| item["id"].as_str())
         .unwrap_or("");
-    let content = if action == "comment" {
-        operation["body"]
+    let content = if matches!(action, "comment" | "jira-comment-images") {
+        let body = operation["body"]
             .as_str()
             .filter(|body| !body.is_empty() && body.len() <= 120000)
-            .ok_or("Invalid inbox comment")?
-            .to_owned()
+            .ok_or("Invalid inbox comment")?;
+        if action == "jira-comment-images" {
+            if provider != "jira" || item["kind"] != "jira" || !operation["inReplyTo"].is_null() {
+                return Err("Invalid Jira image comment approval".into());
+            }
+            crate::jira::agent_comment::approval_content(operation, body)?
+        } else {
+            body.to_owned()
+        }
     } else if action == "review" {
         if provider != "github" || item["kind"] != "pr" {
             return Err("Invalid PR review approval".into());

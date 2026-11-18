@@ -7,6 +7,8 @@ import {
   type RemoteJiraOperation,
 } from "./jiraBoardProtocol";
 export const REMOTE_INBOX_VERSION = 1;
+export const JIRA_COMMENT_IMAGE_COUNT = 4;
+export const JIRA_COMMENT_IMAGE_BYTES = 10 * 1024 * 1024;
 export const REMOTE_INBOX_PROVIDERS = [
   "github",
   "gitlab",
@@ -117,6 +119,15 @@ export type RemoteInboxOperation =
   | { action: "list"; projects: { path: string }[]; query: RemoteInboxQuery }
   | { action: "details" | "thread" | "checks"; item: RemoteInboxTarget; cwd: string }
   | { action: "comment"; item: RemoteInboxTarget; cwd: string; body: string; inReplyTo?: string }
+  | {
+      action: "jira-comment-images";
+      item: RemoteInboxTarget;
+      cwd: string;
+      imageRoot: string;
+      body: string;
+      images: { path: string; sha256: string }[];
+      permit?: string;
+    }
   | { action: "review-context"; item: RemoteInboxTarget; cwd: string }
   | {
       action: "reviewers";
@@ -193,6 +204,7 @@ const text = (value: unknown, label: string, maximum = 500, empty = false): stri
 export function inboxOperationWrites(operation: RemoteInboxOperation): boolean {
   return (
     operation.action === "comment" ||
+    operation.action === "jira-comment-images" ||
     operation.action === "pr-action" ||
     operation.action === "review" ||
     operation.action === "reaction" ||
@@ -440,6 +452,8 @@ export function parseRemoteInboxOperation(
   }
   if (action === "details" || action === "thread") return { action, item, cwd };
   if (action === "comment") {
+    if (input.imagePaths !== undefined)
+      throw new Error("Jira comment images require a focused conversation session.");
     const inReplyTo =
       input.inReplyTo === undefined ? undefined : text(input.inReplyTo, "reply ID", 200);
     if (inReplyTo && provider !== "github" && provider !== "linear")
@@ -481,6 +495,8 @@ export function nativeInboxCommand(
 ): { command: string; args: Record<string, unknown> } {
   if (isRemoteJiraOperation(operation))
     throw new Error("Jira board operations require the scoped desktop board owner");
+  if (operation.action === "jira-comment-images")
+    throw new Error("Jira comment images require desktop owner approval.");
   const { item } = operation;
   if (
     operation.action === "reviewers" ||

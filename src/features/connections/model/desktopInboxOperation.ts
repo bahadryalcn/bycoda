@@ -34,6 +34,9 @@ export async function executeDesktopInboxOperation(
     if (!runner.jira) throw new Error("Update the desktop for scoped Jira board access");
     return runner.jira(operation, deadline);
   }
+  if (operation.action === "jira-comment-images") {
+    return runner.invoke("jira_agent_comment_with_images", { permit: operation.permit, deadline });
+  }
   if (operation.action === "review") {
     if (
       !Number.isSafeInteger(deadline) ||

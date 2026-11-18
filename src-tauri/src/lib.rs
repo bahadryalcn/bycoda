@@ -877,6 +877,7 @@ pub fn run() {
             jira::jira_issue_details,
             jira::jira_issue_thread,
             jira::jira_issue_comment,
+            jira::agent_comment::jira_agent_comment_with_images,
             jira::comments::jira_issue_attachment,
             jira::board::jira_list_boards,
             jira::board::jira_board_configuration,

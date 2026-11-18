@@ -20,6 +20,13 @@ Provider items:
 3. Write with `inbox.review` (inline, full 40-char `commitId`), `inbox.comment` or
    `inbox.prAction` (merge, squash, rebase, draft, ready, close, reopen).
 
+From a focused session, include up to four Jira screenshots in `inbox.comment`
+using `imagePaths` (PNG, JPEG, GIF or WebP, 10 MiB total). Save them in the
+session's checkout and pass their paths with the comment. The desktop approval
+shows the files and issue. Wait for a `submitted` outcome from `inbox.result`
+before reporting success or moving the issue. If submission is uncertain,
+check the Jira issue and its attachments before trying again.
+
 Jira boards: `inbox.jira.boards` → `inbox.jira.board` (scope board, backlog or sprint;
 returns a `snapshotId`) → `inbox.jira.transitions` for an issue key → `inbox.jira.transition`
 or `inbox.jira.move` (board, backlog, sprint or rank). Only boards enabled in desktop

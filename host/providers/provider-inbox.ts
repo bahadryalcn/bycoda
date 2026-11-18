@@ -33,6 +33,11 @@ type JobRow = {
 };
 /** A job as delivered to the desktop; `requestedBy` is the remote device's name. */
 type DeliveredInboxJob = DesktopInboxJob & { requestedBy?: string };
+function operationSignature(operation: RemoteInboxOperation): string {
+  const payload =
+    operation.action === "jira-comment-images" ? { ...operation, permit: undefined } : operation;
+  return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+}
 /** Durable receipts with short dispatch leases. Credentials never enter this table.
  * A dispatched write is never replayed, even across a host/desktop restart. */
 export class ProviderInboxBridge {
@@ -96,7 +101,7 @@ export class ProviderInboxBridge {
       if (typeof requestId !== "string" || !/^[A-Za-z0-9_-]{1,200}$/.test(requestId))
         throw new Error("Invalid inbox request ID.");
       const encoded = JSON.stringify(operation);
-      const signature = createHash("sha256").update(encoded).digest("hex");
+      const signature = operationSignature(operation);
       const available = await this.availability();
       if (!available.available) throw new Error(available.reason);
       const count = (await this.db
@@ -168,7 +173,7 @@ export class ProviderInboxBridge {
         .prepare("SELECT * FROM remote_inbox_jobs WHERE owner_hash=? AND request_id=?")
         .get(ownerHash, requestId)) as JobRow | undefined;
       if (!row) return null;
-      if (row.signature !== createHash("sha256").update(JSON.stringify(operation)).digest("hex"))
+      if (row.signature !== operationSignature(operation))
         throw new Error("This inbox request ID already belongs to another operation.");
       return this.receipt(row);
     });

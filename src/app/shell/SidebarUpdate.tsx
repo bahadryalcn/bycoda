@@ -1,5 +1,5 @@
 import { Text } from "../../shared/ui/Text";
-import { OutputBlock } from "../../shared/ui/OutputBlock";
+import { AgentMarkdown } from "../../features/sessions/ui/AgentMarkdown";
 import { useT } from "../../shared/i18n";
 import { Button } from "../../shared/ui/Button";
 import { Modal, ModalActions } from "../../shared/ui/Modal";
@@ -164,15 +164,10 @@ export function SidebarUpdateFooter({
             </Text>
             {snapshot.error ? <InlineError>{snapshot.error}</InlineError> : null}
             {notes ? (
-              <Disclosure summary={t("Release notes")}>
-                <OutputBlock
-                  face="sans"
-                  size="secondary"
-                  scroll
-                  className="max-h-48 [margin-block-start:0.5rem]"
-                >
-                  {notes}
-                </OutputBlock>
+              <Disclosure summary={t("Release notes")} defaultOpen>
+                <div className="max-h-64 overflow-y-auto [margin-block-start:0.5rem]">
+                  <AgentMarkdown className="whats-new-md" text={notes} streaming={false} />
+                </div>
               </Disclosure>
             ) : null}
           </div>

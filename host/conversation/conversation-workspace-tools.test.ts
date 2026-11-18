@@ -324,6 +324,64 @@ describe("direct application workspace tools", () => {
       s.call("inbox.jira.move", { requestId: "rank", snapshotId, key: "ENG-12", target: "rank" }),
     ).rejects.toThrow("rank anchor");
   });
+  it("approves scoped Jira comment images and binds the receipt to the approved bytes", async () => {
+    const s = await setup();
+    const jiraItem = {
+      provider: "jira",
+      kind: "jira",
+      number: 12,
+      repo: "",
+      id: "10012",
+      identifier: "ENG-12",
+    };
+    await s.inbox.beat("native", "desktop", { version: 1 });
+    const listed = (await s.call("inbox.providers.list", { requestId: "jira-images-list" })) as {
+      id: string;
+    };
+    await s.inbox.beat("native", "desktop", { version: 1 });
+    await s.inbox.beat("native", "desktop", {
+      version: 1,
+      replies: [
+        { id: listed.id, result: { items: [{ ...jiraItem, projectPath: s.project.cwd }] } },
+      ],
+    });
+    const input = {
+      requestId: "jira-images",
+      item: jiraItem,
+      body: "Verified",
+      imagePaths: ["screen.png"],
+    };
+    writeFileSync(join(s.project.cwd, "screen.png"), "fixture bytes");
+    await expect(
+      s.call("inbox.comment", { ...input, imagePaths: ["../screen.png"] }),
+    ).rejects.toThrow("outside");
+    expect(s.approval).not.toHaveBeenCalled();
+    s.approval.mockResolvedValueOnce({ approved: false });
+    await expect(s.call("inbox.comment", input)).rejects.toThrow("declined");
+    expect((await s.inbox.beat("native", "desktop", { version: 1 })).jobs).toEqual([]);
+
+    const permit = "0f8fad5b-d9cb-469f-a165-70867728950e";
+    s.approval.mockResolvedValueOnce({ approved: true, permit } as {
+      approved: boolean;
+      permit: string;
+    });
+    const receipt = await s.call("inbox.comment", input);
+    const approved = s.approval.mock.calls.at(-1)?.[0];
+    expect(approved).toMatchObject({
+      action: "jira-comment-images",
+      body: "Verified",
+      item: jiraItem,
+      images: [{ path: "screen.png", sha256: expect.stringMatching(/^[a-f0-9]{64}$/) }],
+    });
+    expect(await s.call("inbox.comment", input)).toEqual(receipt);
+    expect((await s.inbox.beat("native", "desktop", { version: 1 })).jobs[0].operation).toEqual({
+      ...approved,
+      permit,
+    });
+    writeFileSync(join(s.project.cwd, "screen.png"), "changed bytes");
+    await expect(s.call("inbox.comment", input)).rejects.toThrow("another operation");
+    expect(s.approval).toHaveBeenCalledTimes(2);
+  });
   it("exposes run history and cancellation while preventing an automation from controlling itself", async () => {
     const s = await setup(true);
     await s.call("automations.create", automation);

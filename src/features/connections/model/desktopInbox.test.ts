@@ -7,6 +7,36 @@ import {
 import type { Session } from "../../sessions/model/session";
 
 describe("native desktop inbox heartbeat runner", () => {
+  it("dispatches Jira images only through the native approval permit", async () => {
+    const invoke = vi.fn().mockResolvedValue({ outcome: "submitted" });
+    const permit = "0f8fad5b-d9cb-469f-a165-70867728950e";
+    const deadline = Date.now() + 30_000;
+    const result = await executeDesktopInboxOperation(
+      {
+        action: "jira-comment-images",
+        item: {
+          provider: "jira",
+          kind: "jira",
+          number: 7,
+          repo: "",
+          projectPath: "/project",
+          identifier: "ENG-7",
+        },
+        cwd: "/project",
+        imageRoot: "/worktree",
+        body: "Verified",
+        images: [{ path: "screen.png", sha256: "a".repeat(64) }],
+        permit,
+      },
+      { invoke, list: vi.fn() },
+      deadline,
+    );
+    expect(result).toEqual({ outcome: "submitted" });
+    expect(invoke).toHaveBeenCalledExactlyOnceWith("jira_agent_comment_with_images", {
+      permit,
+      deadline,
+    });
+  });
   it("reuses existing provider commands and returns only connection state", async () => {
     const invoke = vi.fn().mockResolvedValue({ connected: true, token: "never-forward" });
     const result = await executeDesktopInboxOperation(

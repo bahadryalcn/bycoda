@@ -573,9 +573,9 @@ describe("settings pages", () => {
     const developerContact = productLink("info@bahadrhllyalcn.com");
     expect(contact.closest(".settings-row")?.textContent).toContain("Contact");
     expect(developerContact.closest(".settings-row")?.textContent).toContain("Developer contact");
-    const openWebsite = Array.from(
-      website.closest(".settings-row")!.querySelectorAll<HTMLButtonElement>("button"),
-    ).find((button) => button.textContent?.trim() === "Open website")!;
+    const openWebsite = website
+      .closest(".settings-row")!
+      .querySelector<HTMLButtonElement>('button[aria-label="Open website"]')!;
     expect(openWebsite).toBeTruthy();
     await act(async () => openWebsite.click());
     expect(openUrl).toHaveBeenLastCalledWith("https://bycoda.codes");

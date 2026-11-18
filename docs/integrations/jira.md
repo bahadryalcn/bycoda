@@ -14,6 +14,12 @@ to them. Text and images remain in the window's draft after an error. Completed
 uploads are reused on retry; removing a preview does not delete an attachment
 already uploaded to Jira. Credentials stay in the existing native Jira backend.
 
+In a focused session, the agent can pass `imagePaths` with `inbox.comment` using
+files in its working checkout. The desktop asks for approval of the issue,
+comment and file paths. It verifies the approved contents before uploading and
+links each Jira attachment from the comment. After an uncertain result, inspect
+the issue for uploaded files before retrying.
+
 Select the Jira source in Inbox to browse issues, read descriptions and comments,
 post comments, ask about a ticket, or start work in a local project. Starting work
 and asking about a ticket include its description and Jira identifier.

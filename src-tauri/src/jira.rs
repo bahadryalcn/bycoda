@@ -1,4 +1,5 @@
 use crate::integrations::http::string_field;
+pub(crate) mod agent_comment;
 mod attachments;
 pub(crate) use attachments::direct_download_url as attachment_download_url;
 pub mod board;
@@ -280,19 +281,27 @@ pub async fn jira_issue_comment(
             }
             None => text_to_adf(body),
         };
-        let data = jira_post(
-            &config,
-            &format!("/rest/api/3/issue/{key}/comment"),
-            &json!({ "body": document }),
-        )?;
-        let id = string_field(&data, "id").unwrap_or_default();
-        if id.is_empty() {
-            return Err("Could not post Jira comment".into());
-        }
-        Ok(comment_url(&config.site, key, &id))
+        post_comment_document(&config, key, document)
     })
     .await
     .map_err(|error| error.to_string())?
+}
+
+fn post_comment_document(
+    config: &JiraConfig,
+    key: &str,
+    document: Value,
+) -> Result<String, String> {
+    let data = jira_post(
+        config,
+        &format!("/rest/api/3/issue/{key}/comment"),
+        &json!({ "body": document }),
+    )?;
+    let id = string_field(&data, "id").unwrap_or_default();
+    if id.is_empty() {
+        return Err("Could not post Jira comment".into());
+    }
+    Ok(comment_url(&config.site, key, &id))
 }
 
 fn status_for(config: Option<&JiraConfig>) -> JiraStatus {

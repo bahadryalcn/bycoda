@@ -100,6 +100,11 @@ issue. It survives reopening and takes precedence over every default. These choi
 use the same local settings storage as Jira scope preferences and do not change Jira
 access or agent permissions.
 
+To include screenshots in an agent's Jira comment, save the images in the
+session's working folder and ask the agent to post them with its comment. The
+desktop approval lists the Jira issue and file paths. Up to four PNG, JPEG, GIF or
+WebP images can be attached per comment, with a combined limit of 10 MiB.
+
 ## Email
 
 Add as many accounts as you need. Pick a preset (Gmail, Yahoo, iCloud) or **Other

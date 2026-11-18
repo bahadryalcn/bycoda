@@ -43,6 +43,10 @@ fn inbox_approval_details(operation: &Value, cwd: &str, thread: &str) -> Result<
             details["review"] = crate::github_review::ReviewInput::approval_details(operation)?
         }
         Some("comment") => details["body"] = operation["body"].clone(),
+        Some("jira-comment-images") => {
+            details["action"] = json!("comment");
+            details["body"] = operation["body"].clone();
+        }
         _ => {
             details["prAction"] = operation["prAction"].clone();
             details["headSha"] = operation["expectedHeadOid"].clone();
@@ -352,6 +356,9 @@ pub(super) fn call(
         {
             return Err("Inbox approval expired; no operation was submitted".into());
         }
+        let issue_permit = (input["operation"]["action"] == "jira-comment-images")
+            .then(|| crate::jira::agent_comment::authorize(app, &input["operation"]))
+            .transpose()?;
         let approved = crate::control::owner_approval::ask_conversation_detailed(
             app,
             request,
@@ -373,6 +380,11 @@ pub(super) fn call(
             .is_none_or(|deadline| deadline <= at)
         {
             return Err("Inbox approval expired; no operation was submitted".into());
+        }
+        if approved {
+            if let Some(issue_permit) = issue_permit {
+                return Ok(json!({ "approved": true, "permit": issue_permit()? }));
+            }
         }
         if approved && input["operation"]["action"] == "review" {
             // The desktop submit step consumes this instead of asking the owner a second time.
