@@ -20,6 +20,7 @@ Full paths are repository-root relative; adjacent abbreviated names share the pr
 - `host/decision-models/`: decision gateway for the browser decision layer and AI tools (own skill: `feature-decision-models`).
 - Contracts: `docs/integrations/social.md`, `social-programs.md`, `decision-models.md`.
 - YouTube management: `host/social/youtube/`, `src/integrations/social/youtube-*.ts` and `src/features/social/ui/accounts/youtube/`. Keep Live ingestion credentials in the Host vault. Consult the YouTube management section in the Social integration guide for scope and quota contracts.
+- YouTube resumable video uploads keep the Google session URL in the Host vault. Job recovery probes that session or the accepted video identity before dispatching more bytes.
 
 ## Preserve
 

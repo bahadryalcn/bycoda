@@ -238,9 +238,12 @@ Analytics requires the YouTube Analytics API and its activity scope. Estimated
 earnings require the monetary scope and an eligible channel. See the
 [channel report definitions](https://developers.google.com/youtube/analytics/channel_reports).
 
-For standard channels, Studio recipes cover Community text, image and poll
-posts, comment likes and hearts, profile identity fields and the Earn status.
-The public Posts API is in limited preview for eligible partners.
+For standard channels, YouTube's browser creator controls cover publishing and
+scheduling Community text, image and poll posts. List published and scheduled
+posts on the verified channel, edit their text while preserving attachments, and
+delete them with owner confirmation. Browser recipes also handle comment likes
+and hearts, profile identity fields and the Studio Earn status. The Posts API
+is in limited preview for eligible partners and currently publishes immediately.
 [Google Posts API](https://developers.google.com/youtube/data/reference/rest/v3/posts).
 
 The quota status reports the Host adapter's observed shared units, search calls
