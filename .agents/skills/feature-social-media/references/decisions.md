@@ -42,3 +42,9 @@ The owner's chat answer to the redesign list, recorded in the redesign's owner-d
 - Email uses an SMTP library plus HTTP providers, with mandatory unsubscribe link and header (D5, answered A).
 - Locales: every locale gets real translations, not copied English (D14, owner: "translate the languages fully too" (translated)).
 - Cross-platform person merge: automatic only on an exact email match; other matches are suggestions (D6, answered B).
+
+## Platform-prohibited website automation stays an owner handoff
+
+Owner instruction, 2026-11-18, asked whether bycoda should automate LinkedIn newsletters, wide profile and Page editing, invitation withdraw, X profile editing and X browser deletion although LinkedIn's and X's terms forbid unauthorized website automation. Owner answer: "Leave as handoff (Recommended)".
+
+Recorded decision: where a platform's terms forbid scripting its website and no official API is available to the account, bycoda opens the exact page and the owner completes the step (status `needs_human`). Tools never claim such a step completed. Existing browser recipes keep their current behavior; new website automation for these platforms needs a new owner decision.
