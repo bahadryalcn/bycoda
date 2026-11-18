@@ -18,7 +18,14 @@ import type { LinkedInManagementAction } from "./adapters/linkedin-manage";
 // End LinkedIn operations.
 import { META_RATE_LIMIT_CODES } from "./meta-codes";
 
-export type { Capability, SocialAccount, SocialJob, SocialMedia, SocialOperation, SocialPermission };
+export type {
+  Capability,
+  SocialAccount,
+  SocialJob,
+  SocialMedia,
+  SocialOperation,
+  SocialPermission,
+};
 
 /** WhatsApp Cloud API throughput codes on graph.facebook.com. Unverified: from general knowledge, not re-checked live. */
 const WHATSAPP_RATE_LIMIT_CODES: readonly number[] = [80007, 130429, 131056];

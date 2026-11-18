@@ -30,7 +30,9 @@ export type LinkedInManagementReview = {
   projectId?: string;
   permission: SocialPermission;
   action: LinkedInManagementAction;
-  source: { kind: "publication"; id: string } | { kind: "thread"; id: string; postId: string; projectId?: string };
+  source:
+    | { kind: "publication"; id: string }
+    | { kind: "thread"; id: string; postId: string; projectId?: string };
   connectionEpoch?: string;
   contactId?: string;
   expiresAt: number;

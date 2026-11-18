@@ -88,6 +88,24 @@ export function socialClient(machineId: string) {
     });
   return {
     request,
+    linkedInBrowserManage: <T>(accountId: string, input: Record<string, unknown>) =>
+      remoteRequest<T>(machineId, "social.browser.linkedin.manage", { ...input, accountId }),
+    linkedInArticlePrepare: (
+      accountId: string,
+      draft: { title: string; body: string },
+      requestId: string,
+    ) =>
+      remoteRequest<{ state: "draft"; url: string }>(machineId, "social.browser.linkedin.manage", {
+        accountId,
+        operation: "article.prepare",
+        draft,
+        requestId,
+        confirm: "CONFIRM_LINKEDIN_BROWSER_WRITE",
+      }),
+    linkedInProfileAnalytics: (accountId: string) =>
+      remoteRequest<
+        import("../../../integrations/social/adapters/linkedin-analytics").LinkedInAnalyticsResult
+      >(machineId, "social.browser.linkedin.analytics.profile", { accountId }),
     browserProfileRead: (accountId: string) =>
       remoteRequest<import("./socialBrowser").XProfileState>(
         machineId,

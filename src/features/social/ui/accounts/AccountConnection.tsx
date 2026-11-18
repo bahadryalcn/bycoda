@@ -68,10 +68,18 @@ export function AccountConnection({
   disabled,
   onChanged,
 }: AccountConnectionProps) {
-  const [resourceId, setResourceId] = useState("");
+  const [resourceId, setResourceId] = useState(
+    account.platform === "linkedin" && account.connection === "oauth"
+      ? (/^urn:li:organization:(\d+)$/.exec(account.platformId)?.[1] ?? "")
+      : "",
+  );
   const [browser, setBrowser] = useState<BrowserState>();
   const [oauth, setOAuth] = useState<OAuthState>();
-  const [operations, setOperations] = useState<SocialOperation[]>(["publish"]);
+  const [operations, setOperations] = useState<SocialOperation[]>(() =>
+    account.platform === "linkedin" && account.scopes.includes("r_member_postAnalytics")
+      ? ["publish", "analytics"]
+      : ["publish"],
+  );
   const operationOptions = capabilities.length
     ? capabilities.filter((item) => item.status !== "unsupported").map((item) => item.operation)
     : ["publish" as const];

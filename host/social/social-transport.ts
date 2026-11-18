@@ -104,6 +104,15 @@ export class SocialTransport {
         return liveViewFrame(String(params.accountId ?? ""));
       if (method === "social.browser.view.input")
         return liveViewInput(String(params.accountId ?? ""), params.event);
+      // LinkedIn owner-only browser analytics.
+      if (method === "social.browser.linkedin.analytics.profile")
+        return this.browser.linkedInProfileAnalytics(
+          this.service,
+          p,
+          String(params.accountId ?? ""),
+        );
+      if (method === "social.browser.linkedin.manage")
+        return this.browser.linkedInBrowserManagement(this.service, p, params);
       if (
         [
           "social.browser.profile.read",

@@ -4,6 +4,7 @@ import { audienceActions } from "../audience/audience-actions";
 import { autonomyActions } from "../autonomy/autonomy-actions";
 import { browserLayerActions } from "../browser-layers/browser-layer-actions";
 import { inboxActions } from "../inbox/inbox-actions";
+import { linkedinActions } from "../linkedin/linkedin-actions";
 import { outreachActions } from "../outreach/outreach-actions";
 import type { SocialActionModule } from "./social-actions";
 
@@ -16,4 +17,5 @@ export const SOCIAL_ACTION_MODULES: SocialActionModule[] = [
   browserLayerActions,
   autonomyActions,
   accountRequestActions,
+  linkedinActions,
 ];

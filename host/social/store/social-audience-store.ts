@@ -22,7 +22,9 @@ import type {
 } from "../../../src/features/social/model/outreach";
 import type { AiAction, AutonomyPolicy } from "../../../src/features/social/model/autonomy";
 import type { SocialAccountRequest } from "../../../src/features/social/model/accountRequests";
+import type { SocialBrowserWorkflow } from "../../../src/features/social/model/socialBrowser";
 import type { InboxStatusRecord } from "../inbox/inbox-types";
+import type { LinkedInManagementReview } from "../../../src/integrations/social/adapters/linkedin-manage";
 
 /** Generic `social_records` kinds. Person and list have dedicated typed methods below. */
 export type AudienceRecordKind =
@@ -33,7 +35,8 @@ export type AudienceRecordKind =
   | "email-account"
   | "autonomy"
   | "inbox-status"
-  | "account-request";
+  | "account-request"
+  | "linkedin-management-review";
 
 export type AudienceRecordValue = {
   person: SocialPerson;
@@ -44,6 +47,7 @@ export type AudienceRecordValue = {
   autonomy: AutonomyPolicy;
   "inbox-status": InboxStatusRecord;
   "account-request": SocialAccountRequest;
+  "linkedin-management-review": LinkedInManagementReview;
 };
 
 export type Page<T> = { items: T[]; next?: string };
@@ -105,6 +109,10 @@ function parse<T>(row: StoreRow): T {
 export class SocialAudienceStore {
   constructor(private readonly store: HostStore) {}
 
+  get environmentId(): string {
+    return this.store.environmentId;
+  }
+
   async initialize(): Promise<void> {
     await this.store.ready;
     await this.store.db.scope(() => this.store.db.exec(AUDIENCE_DDL));
@@ -120,6 +128,16 @@ export class SocialAudienceStore {
       .prepare("SELECT value FROM social_records WHERE kind=? AND id=?")
       .get(kind, id);
     return row ? parse<AudienceRecordValue[K]>(row) : undefined;
+  }
+
+  /** Stored signup progress only. Reading it never opens or inspects a browser. */
+  async latestBrowserSignup(accountId: string): Promise<SocialBrowserWorkflow | undefined> {
+    const row = await this.store.db
+      .prepare(
+        "SELECT value FROM social_records WHERE kind='browser-workflow' AND json_extract(value,'$.accountId')=? AND json_extract(value,'$.intent')='signup' ORDER BY json_extract(value,'$.createdAt') DESC,rowid DESC LIMIT 1",
+      )
+      .get(accountId);
+    return row ? parse<SocialBrowserWorkflow>(row) : undefined;
   }
 
   async putRecord<K extends AudienceRecordKind>(

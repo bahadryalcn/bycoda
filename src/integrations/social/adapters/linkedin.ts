@@ -21,6 +21,21 @@ import { manageLinkedIn } from "./linkedin-manage";
 
 const ownPostUrn = (value: unknown): value is string =>
   typeof value === "string" && /^urn:li:(?:share|ugcPost):[1-9]\d{0,24}$/.test(value);
+const commentObjectUrn = /^urn:li:(?:activity|share|ugcPost):[1-9]\d{0,24}$/;
+const commentUrn =
+  /^urn:li:comment:\((urn:li:(?:activity|share|ugcPost):[1-9]\d{0,24}),[1-9]\d{0,24}\)$/;
+
+function acceptedCommentUrn(comment: { commentUrn?: string; object?: string; id?: string }) {
+  if (comment.commentUrn) return requireId(comment.commentUrn);
+  if (
+    typeof comment.object !== "string" ||
+    !commentObjectUrn.test(comment.object) ||
+    typeof comment.id !== "string" ||
+    !/^[1-9]\d{0,24}$/.test(comment.id)
+  )
+    throw new SocialPlatformError("rejected");
+  return `urn:li:comment:(${comment.object},${comment.id})`;
+}
 
 export function createLinkedInAdapter(http: SocialHttp, linkedinVersion: string): SocialAdapter {
   return {
@@ -42,6 +57,7 @@ export function createLinkedInAdapter(http: SocialHttp, linkedinVersion: string)
       if (job.kind === "message") throw new SocialPlatformError("unsupported");
       if (job.kind !== "publish") {
         const nested = job.kind === "reply";
+        const commentObject = nested ? commentUrn.exec(job.payload.postId ?? "")?.[1] : undefined;
         if (
           nested &&
           (!job.payload.postId?.startsWith("urn:li:comment:") || !job.payload.objectPostId)
@@ -54,7 +70,7 @@ export function createLinkedInAdapter(http: SocialHttp, linkedinVersion: string)
           {
             actor: author,
             message: { text: text(job) },
-            object: job.payload.objectPostId ?? job.payload.postId,
+            object: commentObject ?? job.payload.objectPostId ?? job.payload.postId,
             ...(nested ? { parentComment: job.payload.postId } : {}),
           },
           headers,
@@ -231,18 +247,20 @@ export function createLinkedInAdapter(http: SocialHttp, linkedinVersion: string)
           { headers },
         );
         if (!Array.isArray(value.elements)) throw new SocialPlatformError("unsupported");
-        for (const comment of value.elements)
-          if (comment.actor !== account.platformId)
-            events.push({
-              eventId: requireId(comment.commentUrn),
-              threadId: requireId(comment.commentUrn),
-              postId: comment.object ?? post,
-              contactId: requireId(comment.actor),
-              contactName: comment.actor,
-              text: String(comment.message?.text ?? ""),
-              kind: "comment",
-              at: at(comment.created?.time),
-            });
+        for (const comment of value.elements) {
+          if (comment.actor === account.platformId) continue;
+          const commentId = acceptedCommentUrn(comment);
+          events.push({
+            eventId: commentId,
+            threadId: commentId,
+            postId: post,
+            contactId: requireId(comment.actor),
+            contactName: comment.actor,
+            text: String(comment.message?.text ?? ""),
+            kind: "comment",
+            at: at(comment.created?.time),
+          });
+        }
         if (
           (value.elements?.length ?? 0) === 100 &&
           (!Number.isFinite(value.paging?.total) || start + 100 < value.paging.total)

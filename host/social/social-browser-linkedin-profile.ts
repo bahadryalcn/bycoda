@@ -1,6 +1,7 @@
 import type { BrowserPage } from "./social-browser";
 import type { XProfilePatch, XProfileState } from "../../src/features/social/model/socialBrowser";
 import { SocialPlatformError } from "../../src/integrations/social/adapter";
+import { detectChallenge, needsHumanError } from "./browser/challenge";
 
 type Until = <T>(expression: string, timeout: number) => Promise<T | undefined>;
 const fields = { name: "#organization-name-field", bio: "#organization-tagline-field" } as const;
@@ -52,16 +53,25 @@ export class LinkedInProfileActions {
   }
   private async verify() {
     await this.authorize();
+    await this.rejectChallenge();
     if (!(await this.page.evaluate<boolean>(this.expression("return true;"))))
       throw new SocialPlatformError("denied");
+  }
+  private async rejectChallenge() {
+    const hit = await detectChallenge(this.page);
+    if (hit) throw needsHumanError(hit);
   }
   private async open() {
     await this.authorize();
     await this.page.goto(
       `https://www.linkedin.com/company/${this.company}/admin/edit/?editPageActiveTab=info`,
     );
-    if (!(await this.until<boolean>(this.expression("return true;"), 20_000)))
+    await this.rejectChallenge();
+    const loaded = await this.until<boolean>(this.expression("return true;"), 20_000);
+    if (!loaded) {
+      await this.rejectChallenge();
       throw new SocialPlatformError("unsupported");
+    }
     await this.verify();
   }
   private async values(): Promise<XProfileState> {
@@ -118,30 +128,34 @@ export class LinkedInProfileActions {
     );
     if (!ready) throw new SocialPlatformError("unsupported");
     await this.verify();
-    await this.page.click(saveButton);
-    const saved = await this.until<boolean>(
-      this.expression(`
+    try {
+      await this.page.click(saveButton);
+      const saved = await this.until<boolean>(
+        this.expression(`
       return !!save&&document.querySelectorAll('#org-page-edit-modal-banner__save-button').length===1&&save.disabled&&[...document.querySelectorAll('p')].some(el=>el.getClientRects().length&&['Değişiklikler kaydedildi.','Changes saved.','Changes saved'].includes(el.textContent.trim()));`),
-      20_000,
-    );
-    if (!saved) throw new SocialPlatformError("unknown");
-    await this.verify();
-    await this.open();
-    const value = await this.values();
-    if (
-      (patch.name !== undefined && value.name !== patch.name) ||
-      (patch.bio !== undefined && value.bio !== patch.bio)
-    )
+        20_000,
+      );
+      if (!saved) throw new SocialPlatformError("unknown");
+      await this.verify();
+      await this.open();
+      const value = await this.values();
+      if (
+        (patch.name !== undefined && value.name !== patch.name) ||
+        (patch.bio !== undefined && value.bio !== patch.bio)
+      )
+        throw new SocialPlatformError("unknown");
+      const avatarUrl = files.avatar
+        ? await this.until<string>(this.logoExpression(), 20_000)
+        : undefined;
+      if (
+        files.avatar &&
+        (!avatarUrl || (before && new URL(avatarUrl).pathname === new URL(before).pathname))
+      )
+        throw new SocialPlatformError("unknown");
+      await this.verify();
+      return { ...value, ...(avatarUrl ? { avatarUrl } : {}) };
+    } catch {
       throw new SocialPlatformError("unknown");
-    const avatarUrl = files.avatar
-      ? await this.until<string>(this.logoExpression(), 20_000)
-      : undefined;
-    if (
-      files.avatar &&
-      (!avatarUrl || (before && new URL(avatarUrl).pathname === new URL(before).pathname))
-    )
-      throw new SocialPlatformError("unknown");
-    await this.verify();
-    return { ...value, ...(avatarUrl ? { avatarUrl } : {}) };
+    }
   }
 }

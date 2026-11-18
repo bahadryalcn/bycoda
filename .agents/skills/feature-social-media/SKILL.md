@@ -20,6 +20,9 @@ Full paths are repository-root relative; adjacent abbreviated names share the pr
 - `host/decision-models/`: decision gateway for the browser decision layer and AI tools (own skill: `feature-decision-models`).
 - Contracts: `docs/integrations/social.md`, `social-programs.md`, `decision-models.md`.
 
+- LinkedIn-specific Host actions and reviewed browser operations live in
+  `host/social/linkedin/`. LinkedIn API adapters live in `src/integrations/social/adapters/`.
+
 ## Preserve
 
 - The full invariant list is in [Social contracts](references/contracts.md). Keep these summaries true when editing.

@@ -1,4 +1,9 @@
-import { SocialPlatformError, type SocialAccount, type SocialHttp, type SocialJob } from "../adapter";
+import {
+  SocialPlatformError,
+  type SocialAccount,
+  type SocialHttp,
+  type SocialJob,
+} from "../adapter";
 
 const videosUrl = "https://api.linkedin.com/rest/videos";
 const videoUrn = /^urn:li:video:[A-Za-z0-9_-]{1,150}$/;

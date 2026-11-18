@@ -3,8 +3,48 @@ import { afterEach, expect, it, vi } from "vitest";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { SocialTransport } from "./social-transport";
 import type { SocialService } from "./social";
+import type { XBrowserSessions } from "./social-browser-x";
 
 afterEach(() => vi.unstubAllEnvs());
+
+it("routes browser LinkedIn profile analytics only from the owner transport", async () => {
+  const response = { source: "browser", metrics: { profileViews: 4 } };
+  const linkedInProfileAnalytics = vi.fn(async () => response);
+  const service = {} as SocialService;
+  const browser = { linkedInProfileAnalytics } as unknown as XBrowserSessions;
+  const transport = new SocialTransport(service, browser);
+  const method = "social.browser.linkedin.analytics.profile";
+  const input = { accountId: "member-fixture" };
+  const owner = { kind: "owner", actorId: "test-device", provider: "owner" } as const;
+  await expect(transport.rpc({ ...owner, kind: "session" }, method, input)).rejects.toThrow(
+    "Social administration requires an owner device credential.",
+  );
+  await expect(transport.rpc(owner, method, input)).resolves.toEqual(response);
+  expect(linkedInProfileAnalytics).toHaveBeenCalledExactlyOnceWith(
+    service,
+    owner,
+    "member-fixture",
+  );
+});
+
+it("keeps LinkedIn browser operations on owner transport", async () => {
+  const linkedInBrowserManagement = vi.fn(async () => ({ groups: [], complete: false }));
+  const service = {} as SocialService;
+  const transport = new SocialTransport(service, {
+    linkedInBrowserManagement,
+  } as unknown as XBrowserSessions);
+  const owner = { kind: "owner", actorId: "test-device", provider: "owner" } as const;
+  const input = { accountId: "linkedin-member", operation: "groups.list" };
+  const method = "social.browser.linkedin.manage";
+  await expect(transport.rpc({ ...owner, kind: "session" }, method, input)).rejects.toThrow(
+    "Social administration requires an owner device credential.",
+  );
+  await expect(transport.rpc(owner, method, input)).resolves.toEqual({
+    groups: [],
+    complete: false,
+  });
+  expect(linkedInBrowserManagement).toHaveBeenCalledExactlyOnceWith(service, owner, input);
+});
 
 async function post(webhook: (...args: unknown[]) => Promise<unknown>) {
   vi.stubEnv("BYCODA_SOCIAL_INSTAGRAM_CLIENT_SECRET", "secret");

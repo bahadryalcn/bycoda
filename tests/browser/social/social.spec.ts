@@ -26,6 +26,77 @@ const sections = (page: Page) => page.getByRole("tablist", { name: "Social böl�
 
 for (const theme of ["light", "dark"])
   for (const width of [800, 1280]) {
+    test(`LinkedIn desktop surfaces ${theme} ${width}`, async ({ page }) => {
+      const errors: string[] = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/tests/browser/social/social.html?linkedin-support");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const shot = (name: string) =>
+        page.screenshot({
+          path: `temp/verification/social-linkedin/${name}-${theme}-${width}.png`,
+          animations: "disabled",
+        });
+      await sections(page).getByRole("tab", { name: "Hesaplar ve Ayarlar" }).click();
+      await page.getByRole("button", { name: /Fixture LinkedIn API/ }).click();
+      await page
+        .locator("summary")
+        .filter({ hasText: /^Analiz$/ })
+        .click();
+      await page.getByRole("button", { name: "Yenile", exact: true }).click();
+      await expect(page.getByText(/Gösterimler/)).toBeVisible();
+      await page.getByText("LinkedIn gönderilerini yönet", { exact: true }).click();
+      await expect(page.getByLabel("LinkedIn inceleme kimliği")).toBeVisible();
+      await shot("api-account");
+      await page.getByText("LinkedIn Live", { exact: true }).click();
+      await expect(page.getByText("Live Studio’yu aç", { exact: true })).toBeVisible();
+      await page.getByText("Live Studio’yu aç", { exact: true }).scrollIntoViewIfNeeded();
+      await shot("live-credentials");
+      await page.getByRole("dialog").getByRole("button", { name: "Kapat", exact: true }).click();
+      await page.getByRole("button", { name: /Fixture LinkedIn Browser/ }).click();
+      await page
+        .locator("summary")
+        .filter({ hasText: /^Profil$/ })
+        .click();
+      await page.getByRole("button", { name: "Okuma", exact: true }).click();
+      await expect(page.getByRole("textbox", { name: "Profil başlığı" })).toHaveValue(
+        "Fixture product studio",
+      );
+      await shot("browser-profile");
+      await page
+        .locator("summary")
+        .filter({ hasText: /^Bağlantılar$/ })
+        .click();
+      await page.getByRole("button", { name: "Yenile", exact: true }).click();
+      await expect(page.getByRole("button", { name: "Ada Fixture" })).toBeVisible();
+      await shot("network");
+      await page
+        .locator("summary")
+        .filter({ hasText: /^Makaleler ve bültenler$/ })
+        .click();
+      await page.getByText("Makale taslağı", { exact: true }).scrollIntoViewIfNeeded();
+      await shot("creator");
+      await page.getByRole("dialog").getByRole("button", { name: "Kapat", exact: true }).click();
+      await sections(page).getByRole("tab", { name: "İçerik", exact: true }).click();
+      await page.getByRole("button", { name: "Yeni gönderi", exact: true }).click();
+      const editor = page.getByRole("dialog", { name: "Yeni gönderi" });
+      const linkedin = editor.getByRole("checkbox", { name: /Fixture LinkedIn API/ });
+      if (!(await linkedin.isChecked())) await linkedin.check();
+      await editor.getByRole("button", { name: /^Gönderi biçimi/ }).click();
+      await page.getByText("Anket", { exact: true }).click();
+      await editor.getByLabel("Anket sorusu").fill("Hangi özelliği önce çıkaralım?");
+      await editor.getByLabel("1. seçenek").fill("Analizler");
+      await editor.getByLabel("2. seçenek").fill("Yayın");
+      await shot("poll-composer");
+      expect(errors).toEqual([]);
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
     test(`social audience shared surfaces ${theme} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto("/tests/browser/social/social.html?extra-seeded&audience-surfaces");

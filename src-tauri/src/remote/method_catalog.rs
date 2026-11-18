@@ -86,6 +86,8 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "social.browser.registration.reconcile"
             | "social.browser.view.frame"
             | "social.browser.view.input"
+            | "social.browser.linkedin.analytics.profile"
+            | "social.browser.linkedin.manage"
             | "social.monitoring.status"
             | "social.media.upload"
             | "social.media.claim"

@@ -4,6 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 import { SocialPlatformError } from "../../src/integrations/social/adapter";
 import {
   linkedInAcceptInvitation,
+  linkedInNetworkAction,
+  linkedInReadNetwork,
   linkedInSendConnectionRequest,
   type LinkedInConnectionLimiter,
 } from "./social-browser-linkedin-connections";
@@ -18,9 +20,11 @@ const recipient = "web:linkedin:in:ada-example";
 const limiter = (): LinkedInConnectionLimiter & {
   reserve: ReturnType<typeof vi.fn>;
   record: ReturnType<typeof vi.fn>;
+  beforeSubmit: ReturnType<typeof vi.fn>;
 } => ({
   reserve: vi.fn(async () => undefined),
   record: vi.fn(async () => undefined),
+  beforeSubmit: vi.fn(async () => undefined),
 });
 
 describe("LinkedIn connection invitations", () => {
@@ -45,6 +49,7 @@ describe("LinkedIn connection invitations", () => {
       url: "https://www.linkedin.com/in/ada-example/",
     });
     expect(gate.reserve).toHaveBeenCalledWith("synthetic");
+    expect(gate.beforeSubmit).toHaveBeenCalledWith("synthetic", recipient);
     expect(gate.record).toHaveBeenCalledWith("synthetic");
     expect(f.ctx.markSubmitted).toHaveBeenCalled();
   });
@@ -90,7 +95,7 @@ describe("LinkedIn connection invitations", () => {
       fixtureHtml("invitation-manager.html"),
       {
         click: (element) => {
-          if (element.getAttribute("data-bycoda-li-accept") === "true")
+          if (element.getAttribute("data-bycoda-li-invitation") === "accept")
             element.ownerDocument.body.innerHTML = `${owner}<main><div><div><a href="/in/grace-example/">Grace Example</a></div></div></main>`;
         },
       },
@@ -151,5 +156,77 @@ describe("LinkedIn connection invitations", () => {
       linkedInSendConnectionRequest(f.ctx, { recipientId: "urn:li:person:x" }, gate),
     ).rejects.toMatchObject({ code: "denied" });
     expect(gate.reserve).not.toHaveBeenCalled();
+  });
+
+  it("stops before click and daily charge when the target becomes suppressed", async () => {
+    const gate = limiter();
+    gate.beforeSubmit.mockRejectedValueOnce(new SocialPlatformError("denied"));
+    const f = fixture(
+      linkedinBrowserRecipe,
+      memberAccount(),
+      fixtureHtml("profile-connectable.html"),
+    );
+    await expect(
+      linkedInNetworkAction(f.ctx, { kind: "invite", targetId: recipient }, gate),
+    ).rejects.toMatchObject({ code: "denied" });
+    expect(gate.beforeSubmit).toHaveBeenCalledWith("synthetic", recipient);
+    expect(gate.record).not.toHaveBeenCalled();
+    expect(f.ctx.markSubmitted).not.toHaveBeenCalled();
+    expect(f.page.click).not.toHaveBeenCalled();
+  });
+
+  it("asks the owner to add a note without clicking the potentially submitting Connect control", async () => {
+    const gate = limiter();
+    const f = fixture(
+      linkedinBrowserRecipe,
+      memberAccount(),
+      fixtureHtml("profile-connectable.html"),
+    );
+    await expect(
+      linkedInSendConnectionRequest(f.ctx, { recipientId: recipient, note: "Hello" }, gate),
+    ).rejects.toMatchObject({ code: "needs_human" });
+    expect(f.page.click).not.toHaveBeenCalled();
+    expect(gate.record).not.toHaveBeenCalled();
+  });
+
+  it("reads only identity-bound invitation cards without clicking", async () => {
+    const f = fixture(
+      linkedinBrowserRecipe,
+      memberAccount(),
+      fixtureHtml("invitation-manager.html"),
+      {
+        render: () =>
+          fixtureHtml("invitation-manager.html").replace(
+            "</main>",
+            '<a href="/in/unrelated/">Suggested member</a></main>',
+          ),
+      },
+    );
+    await expect(linkedInReadNetwork(f.ctx, "invitations.received")).resolves.toEqual({
+      complete: false,
+      people: [
+        {
+          platformId: recipient,
+          url: "https://www.linkedin.com/in/ada-example/",
+          name: "Ada Example",
+        },
+        {
+          platformId: "web:linkedin:in:grace-example",
+          url: "https://www.linkedin.com/in/grace-example/",
+          name: "Grace Example",
+        },
+      ],
+    });
+    expect(f.page.click).not.toHaveBeenCalled();
+  });
+
+  it("holds on a challenge without inspecting or clicking invitation controls", async () => {
+    const gate = limiter();
+    const f = fixture(linkedinBrowserRecipe, memberAccount(), fixtureHtml("captcha-feed.html"));
+    await expect(
+      linkedInNetworkAction(f.ctx, { kind: "ignore", targetId: recipient }, gate),
+    ).rejects.toMatchObject({ code: "needs_human" });
+    expect(gate.beforeSubmit).not.toHaveBeenCalled();
+    expect(f.page.click).not.toHaveBeenCalled();
   });
 });

@@ -19,6 +19,10 @@ const PAGE = 200;
 const optional = (value: unknown, field: string, max: number) =>
   value === undefined ? undefined : str(value, field, max);
 
+function linkedinConnectionReady(account: SocialAccount, now: number): boolean {
+  return account.connected && (account.expiresAt === undefined || account.expiresAt > now);
+}
+
 async function allRequests(ctx: SocialActionContext): Promise<SocialAccountRequest[]> {
   const items: SocialAccountRequest[] = [];
   let cursor: string | undefined;
@@ -48,6 +52,7 @@ async function file(
     "reason",
     "suggestedName",
     "suggestedUsername",
+    "accountId",
   ]);
   const platform = input.platform as SocialPlatform;
   if (!(SOCIAL_PLATFORMS as readonly unknown[]).includes(platform))
@@ -56,9 +61,6 @@ async function file(
   const types = SOCIAL_BROWSER_ACCOUNT_TYPES[platform] as readonly string[];
   if (!SOCIAL_BROWSER_SITES[platform].origins.length)
     throw new Error(`${label} accounts cannot be opened in browser mode.`);
-  const accountType = (input.accountType ?? types[0]) as SocialAccount["accountType"];
-  if (!types.includes(accountType))
-    throw new Error(`Choose a ${label} account type: ${types.join(", ")}.`);
   const projectId = str(input.projectId, "project", 200);
   // Owner or the project's own session; another project's data is refused here.
   await ctx.service.project(ctx.principal, projectId);
@@ -66,9 +68,34 @@ async function file(
   const suggestedName = optional(input.suggestedName, "suggested name", NAME_MAX);
   const suggestedUsername = optional(input.suggestedUsername, "suggested username", USERNAME_MAX);
 
+  // LinkedIn reconnect keeps the original OAuth or browser account and its project grants.
+  const requestedAccountId = optional(input.accountId, "account", 200);
+  const reconnect = requestedAccountId
+    ? await ctx.service.access(ctx.principal, requestedAccountId, "read")
+    : undefined;
+  if (reconnect) {
+    if (platform !== "linkedin" || reconnect.platform !== "linkedin")
+      throw new Error("Account reconnect requests are supported for LinkedIn.");
+    if (!reconnect.grants[projectId]?.includes("read"))
+      throw new Error("This project has no permission for this social account.");
+    if (input.accountType !== undefined && input.accountType !== reconnect.accountType)
+      throw new Error("The request must use the LinkedIn account's existing type.");
+    if (linkedinConnectionReady(reconnect, ctx.now()))
+      throw new Error("This LinkedIn account is already connected.");
+  }
+  const accountType = (reconnect?.accountType ??
+    input.accountType ??
+    types[0]) as SocialAccount["accountType"];
+  if (!types.includes(accountType))
+    throw new Error(`Choose a ${label} account type: ${types.join(", ")}.`);
+
   const existing = (await ctx.service.accounts(ctx.principal)).find(
     (account) =>
-      account.platform === platform && account.connected && account.grants[projectId]?.length,
+      !reconnect &&
+      account.platform === platform &&
+      (platform !== "linkedin" || account.accountType === accountType) &&
+      account.connected &&
+      account.grants[projectId]?.length,
   );
   if (existing)
     throw new Error(
@@ -81,6 +108,7 @@ async function file(
         item.projectId === projectId &&
         item.platform === platform &&
         item.accountType === accountType &&
+        item.requestedAccountId === requestedAccountId &&
         (item.status === "pending" || item.status === "approved"),
     );
     if (open) return open;
@@ -94,6 +122,7 @@ async function file(
       reason,
       ...(suggestedName ? { suggestedName } : {}),
       ...(suggestedUsername ? { suggestedUsername: suggestedUsername.replace(/^@/, "") } : {}),
+      ...(requestedAccountId ? { requestedAccountId } : {}),
       requestedBy: { provider, actorId, ...(sessionId ? { sessionId } : {}) },
       status: "pending",
       createdAt: now,
@@ -117,7 +146,12 @@ async function list(
     let current = item;
     if (item.status === "approved" && item.accountId) {
       const account = await ctx.service.account(item.accountId).catch(() => undefined);
-      if (account?.connected)
+      if (
+        account &&
+        (item.platform === "linkedin"
+          ? linkedinConnectionReady(account, ctx.now())
+          : account.connected)
+      )
         current = await ctx.store.putRecord("account-request", item.id, {
           ...item,
           status: "fulfilled",
@@ -148,6 +182,25 @@ async function approve(
     return { request: found, accountId: found.accountId };
   if (found.status !== "pending") throw new Error("This request is no longer open.");
   const project = await ctx.service.project(ctx.principal, found.projectId);
+  if (found.requestedAccountId) {
+    if (mode !== "signin")
+      throw new Error("Use sign in to reconnect an existing LinkedIn account.");
+    const account = await ctx.service.access(ctx.principal, found.requestedAccountId, "read");
+    if (
+      account.platform !== "linkedin" ||
+      account.accountType !== found.accountType ||
+      !account.grants[project.id]?.includes("read")
+    )
+      throw new Error("The original LinkedIn account is no longer shared with this project.");
+    const saved = await ctx.store.putRecord("account-request", found.id, {
+      ...found,
+      status: "approved",
+      mode,
+      accountId: account.id,
+      updatedAt: ctx.now(),
+    });
+    return { request: saved, accountId: account.id };
+  }
   const name =
     optional(input.name, "name", 200) ??
     found.suggestedName ??
@@ -183,6 +236,50 @@ async function dismiss(
   });
 }
 
+/** LinkedIn request status for the requesting project. Never return profile fields or provider text. */
+async function linkedInSetupStatus(ctx: SocialActionContext, input: Record<string, unknown>) {
+  exact(input, ["id"]);
+  const found = await ctx.store.getRecord("account-request", str(input.id, "request", 200));
+  if (
+    found?.platform !== "linkedin" ||
+    (ctx.principal.kind !== "owner" && ctx.principal.projectId !== found.projectId)
+  )
+    throw new Error("Account request not found.");
+  await ctx.service.project(ctx.principal, found.projectId);
+  if (!found.accountId) return { status: found.status };
+  const account = await ctx.service.access(ctx.principal, found.accountId, "read");
+  const connected = linkedinConnectionReady(account, ctx.now());
+  const signup =
+    found.mode === "create" ? await ctx.store.latestBrowserSignup(account.id) : undefined;
+  return {
+    status: connected ? "fulfilled" : found.status,
+    mode: found.mode,
+    accountId: account.id,
+    connection: connected ? "connected" : "needs_sign_in",
+    ...(signup?.platform === "linkedin"
+      ? {
+          signup: {
+            status:
+              (signup.status === "queued" || signup.status === "awaiting_owner") &&
+              signup.expiresAt <= ctx.now()
+                ? "expired"
+                : signup.status,
+            ...(signup.registration
+              ? {
+                  registrationStatus: signup.registration.status,
+                  step: signup.registration.step,
+                  blockers: signup.registration.blockers,
+                }
+              : {}),
+            ...(signup.registrationSubmission
+              ? { submission: signup.registrationSubmission.state }
+              : {}),
+          },
+        }
+      : {}),
+  };
+}
+
 /**
  * Project-driven account requests. The AI files one (`tool`), the owner approves or dismisses it;
  * approval is the only step that creates an account record, and it never contacts a platform.
@@ -192,4 +289,11 @@ export const accountRequestActions: SocialActionModule = {
   "accounts.requests.list": { readOnly: true, ownerOnly: true, run: list },
   "accounts.requests.approve": { readOnly: false, ownerOnly: true, run: approve },
   "accounts.requests.dismiss": { readOnly: false, ownerOnly: true, run: dismiss },
+  // LinkedIn account setup.
+  "linkedin.accounts.setupStatus": {
+    readOnly: true,
+    ownerOnly: false,
+    tool: true,
+    run: linkedInSetupStatus,
+  },
 };

@@ -371,6 +371,38 @@ describe("LinkedIn API adapter", () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
 
+  it("keeps the polled post root for moderation and the canonical comment object for replies", async () => {
+    const postId = "urn:li:ugcPost:999";
+    const object = "urn:li:activity:732";
+    const commentId = `urn:li:comment:(${object},462)`;
+    const fetcher = vi.fn(async (raw: string | URL | Request, request?: RequestInit) => {
+      if (request?.method === "POST") {
+        expect(String(raw)).toContain(encodeURIComponent(commentId));
+        expect(JSON.parse(String(request.body))).toMatchObject({
+          object,
+          parentComment: commentId,
+        });
+        return new Response(null, { status: 201, headers: { "x-restli-id": "192" } });
+      }
+      return json({
+        elements: [
+          { actor: "urn:li:person:commenter", id: "462", object, created: { time: 1790000000000 } },
+        ],
+      });
+    });
+    const adapter = createLinkedInAdapter(new SocialHttp(fetcher), version);
+    const account = memberAccount();
+    const { events } = await adapter.poll(account, "t", [postId]);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ eventId: commentId, threadId: commentId, postId });
+    const job = publishJob({ postId: commentId, objectPostId: postId });
+    await expect(
+      adapter.send(account, { ...job, kind: "reply" }, "t", async () => new Uint8Array()),
+    ).resolves.toMatchObject({
+      platformId: "192",
+    });
+  });
+
   it("collects organization post commenters with the actor URN and a next cursor", async () => {
     const fetcher = vi.fn(async () =>
       json({

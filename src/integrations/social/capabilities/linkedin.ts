@@ -56,6 +56,15 @@ export function linkedinCapabilities(type: SocialAccount["accountType"]): Platfo
     api: {
       ...api,
       ...NOT_YET,
+      // LinkedIn management and analytics.
+      analytics: r(
+        org ? ["rw_organization_admin"] : ["r_member_postAnalytics", "r_member_profileAnalytics"],
+        "LinkedIn Community Management product access. Page and member metrics require different scopes.",
+      ),
+      delete: r(
+        [org ? "w_organization_social" : "w_member_social"],
+        "Delete a bycoda publication after exact owner review.",
+      ),
       "audience.collect": r(
         org ? ["r_organization_social_feed"] : [],
         "Organization post commenters and reactors only, from the owner's own posts (postRef required). Reactions endpoint shape not verified live. Member, mention, keyword and follower sources are unsupported.",
