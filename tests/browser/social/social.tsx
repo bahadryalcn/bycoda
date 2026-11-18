@@ -266,19 +266,41 @@ if (new URLSearchParams(location.search).has("browser-monitor")) {
   snapshot.accounts[0].scopes = [...X_BROWSER_SCOPES];
   snapshot.capabilities.x = accountCapabilities(snapshot.accounts[0]);
 }
-if (new URLSearchParams(location.search).has("tiktok")) {
+const fixtureTikTokBrowser = new URLSearchParams(location.search).has("tiktok-browser");
+const fixtureTikTokProfile = {
+  name: "Demo TikTok",
+  username: "demo.creator",
+  bio: "Kısa videolar ve ürün hikâyeleri.",
+  website: "https://example.com",
+  followers: 12400,
+  following: 120,
+  likes: 32800,
+  posts: 83,
+};
+let fixtureTikTokReviews: {
+  id: string;
+  change: Record<string, unknown>;
+  at: number;
+  state: "pending" | "done";
+}[] = [];
+if (fixtureTikTokBrowser || new URLSearchParams(location.search).has("tiktok")) {
   snapshot.accounts.push({
     id: "tiktok",
     platform: "tiktok",
-    platformId: "creator",
+    platformId: fixtureTikTokBrowser ? "web:tiktok:demo.creator" : "creator",
     name: "Demo TikTok",
     accountType: "member",
-    scopes: ["user.info.basic", "video.publish"],
+    connection: fixtureTikTokBrowser ? "browser" : undefined,
+    scopes: fixtureTikTokBrowser ? browserScopes("tiktok") : ["user.info.basic", "video.publish"],
     connected: true,
     accessApproved: true,
     paused: false,
     executorId: "fixture",
-    grants: { demo: ["read", "draft", "publish"] },
+    grants: {
+      demo: fixtureTikTokBrowser
+        ? ["read", "draft", "publish", "message", "reply", "comment"]
+        : ["read", "draft", "publish"],
+    },
     createdAt: 1,
   });
   snapshot.capabilities.tiktok = accountCapabilities(
@@ -1790,6 +1812,98 @@ Object.assign(window, {
               releaseAction = (fail) =>
                 fail ? reject(new Error("Fixture request rejected.")) : resolve();
             });
+          // TikTok account fixture. No provider or real credentials are used.
+          if (fixtureTikTokBrowser && params.input?.accountId === "tiktok") {
+            const input = params.input;
+            switch (params.action) {
+              case "tiktok.profile.read":
+                return fixtureTikTokProfile;
+              case "tiktok.profile.update":
+                if (input.confirm !== true) throw new Error("Expected profile confirmation.");
+                Object.assign(fixtureTikTokProfile, input.patch);
+                return fixtureTikTokProfile;
+              case "tiktok.privacy.read":
+                return {
+                  privateAccount: false,
+                  comments: "everyone",
+                  duet: "friends",
+                  stitch: "followers",
+                };
+              case "tiktok.analytics.read":
+                return {
+                  source: "studio",
+                  period: "Son 28 gün",
+                  metrics: [
+                    { key: "postViews", displayValue: "128.450" },
+                    { key: "profileViews", displayValue: "1.240" },
+                  ],
+                };
+              case "tiktok.earnings.read":
+                return {
+                  source: "studio",
+                  status: "available",
+                  period: "Kasım 2026",
+                  metrics: [
+                    { key: "estimatedRewards", displayValue: "₺ 450,50" },
+                    { key: "diamonds", displayValue: "120" },
+                  ],
+                };
+              case "tiktok.audience.list":
+                return {
+                  people: [
+                    {
+                      platformId: "web:tiktok:demo.fan",
+                      username: "demo.fan",
+                      name: "Demo takipçi",
+                    },
+                  ],
+                };
+              case "tiktok.comments.list":
+              case "tiktok.mentions.list":
+              case "tiktok.messages.list":
+                return {
+                  events: [
+                    {
+                      eventId: "tiktok-fixture-event",
+                      threadId: "185001",
+                      postId: "746001",
+                      contactId: "web:tiktok:demo.fan",
+                      contactName: "Demo takipçi",
+                      text: "Yeni video ne zaman geliyor?",
+                      kind: "comment",
+                      at: 1786978800000,
+                    },
+                  ],
+                  coverage: [{ status: "partial" }],
+                };
+              case "tiktok.comments.sync":
+              case "tiktok.messages.sync":
+                return { ingested: 1 };
+              case "tiktok.changes.request": {
+                const { accountId: _, ...change } = input;
+                const row = {
+                  id: `review-${fixtureTikTokReviews.length + 1}`,
+                  change,
+                  at: 1786978800000,
+                  state: "pending" as const,
+                };
+                fixtureTikTokReviews.push(row);
+                return row;
+              }
+              case "tiktok.changes.list":
+                return fixtureTikTokReviews;
+              case "tiktok.changes.apply":
+                if (input.confirm !== true) throw new Error("Expected exact approval.");
+                fixtureTikTokReviews = fixtureTikTokReviews.map((row) =>
+                  row.id === input.reviewId ? { ...row, state: "done" } : row,
+                );
+                return { followed: true };
+              case "tiktok.live.setup":
+                return { credentialSaved: true, eligible: true };
+              case "tiktok.business.status":
+                return { approved: false, connected: false };
+            }
+          }
           if (params.action === "programs.media-preview") {
             const uploadId = String(params.input?.uploadId ?? "");
             const upload = mediaUploads.get(uploadId);

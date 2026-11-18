@@ -172,7 +172,7 @@ export function tiktokProblems(
       problems.push(t("Choose a cover from your TikTok photos."));
     if (
       connection !== undefined &&
-      media.some((item) => connection === "browser" ? !item.media.uploadId : !item.media.url)
+      media.some((item) => (connection === "browser" ? !item.media.uploadId : !item.media.url))
     )
       problems.push(
         connection === "browser"
@@ -186,7 +186,10 @@ export function tiktokProblems(
     if (connection === "browser") problems.push(t("TikTok inbox drafts need the API connection."));
     return problems;
   }
-  if (!options?.privacy) problems.push(t("Choose who can see the TikTok video."));
+  if (!options?.privacy)
+    problems.push(
+      photo ? t("Choose who can see this post") : t("Choose who can see the TikTok video."),
+    );
   else if (creator && !creator.privacyOptions.includes(options.privacy))
     problems.push(t("Choose a privacy option your TikTok account offers."));
   if (options?.consent !== true) problems.push(t("Confirm the TikTok content consent."));
@@ -290,7 +293,12 @@ export function draftProblems(input: RuleInput): Problem[] {
     if (account.platform === "facebook")
       for (const text of reelProblems(platform?.facebook, draft.media)) add(text);
     if (account.platform === "tiktok")
-      for (const text of tiktokProblems(platform?.tiktok, draft.media, input.creator?.[account.id], account.connection ?? "oauth"))
+      for (const text of tiktokProblems(
+        platform?.tiktok,
+        draft.media,
+        input.creator?.[account.id],
+        account.connection ?? "oauth",
+      ))
         add(text);
     if (account.platform === "youtube")
       for (const text of youtubeProblems(platform?.youtube)) add(text);

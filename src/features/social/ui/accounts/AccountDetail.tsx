@@ -18,6 +18,7 @@ import { BrowserSettings } from "./BrowserSettings";
 import { ReplyRules } from "./ReplyRules";
 import { accountHealth, accountModeText } from "./accountsModel";
 import { useAccountWrite } from "./useAccountWrite";
+import { TikTokAccountTools } from "./platform/TikTokAccountTools";
 import "./accounts.css";
 
 const HEALTH_TONE: Record<"ok" | "warn" | "error", BadgeTone> = {
@@ -130,6 +131,16 @@ export function AccountDetail({
         disabled={disabled}
         onChanged={onChanged}
       />
+      {account.platform === "tiktok" && account.connected ? (
+        <TikTokAccountTools
+          key={`${account.executorId}:${account.id}:${account.platformId}:${account.connection}`}
+          client={client}
+          account={account}
+          projects={projects}
+          disabled={disabled || account.paused || !onThisComputer}
+          onChanged={onChanged}
+        />
+      ) : null}
       <Disclosure
         summary={
           <span className="social-detail-topic">

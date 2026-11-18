@@ -101,7 +101,9 @@ describe("media limits per platform", () => {
   });
 
   it("allows a TikTok carousel, keeps YouTube video-only, and rejects mixed attachments", () => {
-    expect(mediaProblems("youtube", [video(), video({}, "v2")])).toEqual(["Attach exactly one video."]);
+    expect(mediaProblems("youtube", [video(), video({}, "v2")])).toEqual([
+      "Attach exactly one video.",
+    ]);
     expect(mediaProblems("youtube", [video(), image("a")])).toEqual(["Attach exactly one video."]);
     expect(mediaProblems("youtube", [video()])).toEqual([]);
     expect(mediaProblems("tiktok", [video(), image("a")])).toEqual([
@@ -215,6 +217,12 @@ describe("TikTok rules", () => {
     expect(
       tiktokProblems({ privacy: "SELF_ONLY", consent: false }, [video({ durationSeconds: 10 })]),
     ).toEqual(["Confirm the TikTok content consent."]);
+  });
+
+  it("names the post when a TikTok photo is missing its visibility selection", () => {
+    expect(tiktokProblems({ mediaType: "photo", consent: true }, [image("a")])).toEqual([
+      "Choose who can see this post",
+    ]);
   });
 
   it("allows a video exactly as long as the creator limit and rejects one second more", () => {
