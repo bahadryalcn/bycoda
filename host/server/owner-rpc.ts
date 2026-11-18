@@ -30,6 +30,7 @@ import { handlePullRequestsRpc } from "./rpc-pull-requests";
 import { handleUsageRpc } from "./rpc-usage";
 import { handleActivityOwnerRpc, handleSessionLifecycleRpc } from "./rpc-account-platform";
 import { handleDecisionModelsRpc } from "./rpc-decision-models";
+import { handleLiveGamesRpc } from "./rpc-live-games";
 import { handleSecretsOwnerRpc, handleSecretInputRpc } from "./rpc-secrets";
 import { handleVoiceRpc } from "./rpc-voice";
 import { handlePushRpc } from "./rpc-push";
@@ -215,6 +216,7 @@ type Dependencies = Pick<
   | "gitService"
   | "fileService"
   | "decisionModels"
+  | "liveGames"
   | "conversationSecrets"
   | "accountPlatform"
 >;
@@ -505,6 +507,18 @@ const handlers: Record<
   "sessions.taskLink.unlink": handleSessionLifecycleRpc,
   "sessions.taskLink.listForTask": handleSessionLifecycleRpc,
   "decisionModels.sources.list": handleDecisionModelsRpc,
+  "liveGames.status": handleLiveGamesRpc,
+  "liveGames.start": handleLiveGamesRpc,
+  "liveGames.stop": handleLiveGamesRpc,
+  "liveGames.demo": handleLiveGamesRpc,
+  "liveGames.setRules": handleLiveGamesRpc,
+  "liveGames.setConfig": handleLiveGamesRpc,
+  "liveGames.report": handleLiveGamesRpc,
+  "liveGames.obsSetup": handleLiveGamesRpc,
+  "liveGames.obsStream": handleLiveGamesRpc,
+  "liveGames.obsScene": handleLiveGamesRpc,
+  "liveGames.obsCredentials": handleLiveGamesRpc,
+  "liveGames.eulerKey": handleLiveGamesRpc,
   "decisionModels.sources.add": handleDecisionModelsRpc,
   "decisionModels.sources.update": handleDecisionModelsRpc,
   "decisionModels.sources.remove": handleDecisionModelsRpc,

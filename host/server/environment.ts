@@ -65,6 +65,7 @@ export function createEnvironmentRuntime(
         ]),
       ],
       capabilities: [
+        "liveGames.v1",
         "models.routing.v1",
         "browser.sessionScopes.v1",
         "browser.ownerPresentationScopes.v1",

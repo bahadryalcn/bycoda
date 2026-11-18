@@ -1,4 +1,5 @@
 import type { LiveEvent, LiveViewer } from "./liveEvents";
+import { truncateGraphemes } from "../../../shared/lib/text/truncate";
 
 /** Visual or audio moments the overlay plays once. */
 export type HalayEffect = "confetti" | "drum" | "fireworks" | "money-rain" | "handkerchief";
@@ -104,7 +105,7 @@ export interface HalayState {
   totals: HalayTotals;
   /** Diamonds per viewer for the whole session, including viewers who left the circle. */
   gifters: Record<string, { viewer: LiveViewer; diamonds: number }>;
-  feed: HalayFeedItem[];
+  feed: (HalayFeedItem & { viewer?: LiveViewer; gift?: string })[];
   seen: string[];
 }
 
@@ -144,7 +145,7 @@ export function matchGiftRule(rules: HalayGiftRule[], giftName: string, totalDia
     .sort((a, b) => b.minDiamonds - a.minDiamonds)[0];
 }
 
-function isBlocked(config: HalayConfig, viewer: LiveViewer): boolean {
+export function isBlocked(config: HalayConfig, viewer: LiveViewer): boolean {
   const handle = viewer.handle.toLowerCase();
   return config.blocked.some((blocked) => blocked.replace(/^@/, "").toLowerCase() === handle);
 }
@@ -155,7 +156,7 @@ function wantsToJoin(config: HalayConfig, text: string): boolean {
   return config.joinKeywords.some((word) => word.trim() && lower.includes(word.trim().toLocaleLowerCase("tr")));
 }
 
-function pushFeed(feed: HalayFeedItem[], item: HalayFeedItem): HalayFeedItem[] {
+function pushFeed(feed: HalayState["feed"], item: HalayState["feed"][number]): HalayState["feed"] {
   return [...feed, item].slice(-FEED_SIZE);
 }
 
@@ -224,12 +225,15 @@ export function reduceHalay(state: HalayState, event: LiveEvent, config: HalayCo
     }
     case "gift": {
       const total = Math.max(0, event.diamonds) * Math.max(1, event.count);
-      const previous = next.gifters[event.viewer.id]?.diamonds ?? 0;
+      const previous = Object.prototype.hasOwnProperty.call(next.gifters, event.viewer.id)
+        ? next.gifters[event.viewer.id].diamonds
+        : 0;
+      const gift = `${event.count}x ${event.giftName}`;
       next = {
         ...next,
         totals: { ...next.totals, diamonds: next.totals.diamonds + total, gifts: next.totals.gifts + event.count },
         gifters: { ...next.gifters, [event.viewer.id]: { viewer: event.viewer, diamonds: previous + total } },
-        feed: pushFeed(next.feed, { id: event.id, at: now, text: `${event.viewer.name}: ${event.count}x ${event.giftName}` }),
+        feed: pushFeed(next.feed, { id: event.id, at: now, text: `${event.viewer.name}: ${gift}`, viewer: event.viewer, gift }),
       };
       cues.push({ effect: "gift", viewerId: event.viewer.id, label: `${event.count}x ${event.giftName}` });
       const rule = matchGiftRule(config.giftRules, event.giftName, total);
@@ -285,9 +289,9 @@ export interface HalaySnapshot {
   feed: HalayFeedItem[];
 }
 
-function displayName(name: string, short: boolean): string {
+export function displayName(name: string, short: boolean): string {
   const clean = name.trim() || "?";
-  return short ? `${Array.from(clean).slice(0, 3).join("")}…` : clean;
+  return short ? truncateGraphemes(clean, 4) : clean;
 }
 
 /**
@@ -296,25 +300,34 @@ function displayName(name: string, short: boolean): string {
  */
 export function halaySnapshot(state: HalayState, config: HalayConfig, now: number): HalaySnapshot {
   const ticked = tickHalay(state, now);
-  const topInCircle = [...ticked.dancers].filter((dancer) => dancer.diamonds > 0).sort((a, b) => b.diamonds - a.diamonds)[0];
-  const leaderId = ticked.leader?.id ?? topInCircle?.viewer.id;
+  const visible = ticked.dancers.filter((dancer) => !isBlocked(config, dancer.viewer));
+  const topInCircle = [...visible].filter((dancer) => dancer.diamonds > 0).sort((a, b) => b.diamonds - a.diamonds)[0];
+  const holdsLead = visible.some((dancer) => dancer.viewer.id === ticked.leader?.id);
+  const leaderId = holdsLead ? ticked.leader?.id : topInCircle?.viewer.id;
   const role = (dancer: HalayDancer): HalaySnapshotDancer["role"] =>
     dancer.viewer.id === leaderId ? "leader" : dancer.frontUntil && dancer.frontUntil > now ? "front" : "dancer";
   const rank = { leader: 0, front: 1, dancer: 2 } as const;
-  const dancers = ticked.dancers
+  const dancers = visible
     .map((dancer) => ({ dancer, role: role(dancer) }))
     .sort((a, b) => rank[a.role] - rank[b.role] || a.dancer.joinedAt - b.dancer.joinedAt)
+    .slice(0, config.capacity)
     .map(({ dancer, role }) => ({
       id: dancer.viewer.id,
-      handle: dancer.viewer.handle,
+      handle: config.shortNames ? "" : dancer.viewer.handle,
       name: displayName(dancer.viewer.name, config.shortNames),
       avatarUrl: dancer.viewer.avatarUrl,
       role,
       diamonds: dancer.diamonds,
     }));
   const topGifters = Object.values(ticked.gifters)
+    .filter(({ viewer }) => !isBlocked(config, viewer))
     .sort((a, b) => b.diamonds - a.diamonds)
     .slice(0, 5)
     .map(({ viewer, diamonds }) => ({ id: viewer.id, name: displayName(viewer.name, config.shortNames), avatarUrl: viewer.avatarUrl, diamonds }));
-  return { dancers, tempo: ticked.tempo, viewers: ticked.viewers, totals: ticked.totals, topGifters, feed: ticked.feed };
+  const feed = ticked.feed
+    .filter(({ viewer }) => viewer ? !isBlocked(config, viewer) : !config.shortNames)
+    .map(({ id, at, text, viewer, gift }) => ({
+      id, at, text: viewer && gift ? `${displayName(viewer.name, config.shortNames)}: ${gift}` : text,
+    }));
+  return { dancers, tempo: ticked.tempo, viewers: ticked.viewers, totals: ticked.totals, topGifters, feed };
 }

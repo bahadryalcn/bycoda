@@ -2014,6 +2014,9 @@ fn remote_request_blocking(
     ) {
         return Err("Decision model keys are available only on this computer.".into());
     }
+    if !live_games_credential_allowed(&method, machine.local_host && is_local_sync(&machine, "")) {
+        return Err("Live games credentials can only be changed locally.".into());
+    }
     if expected_fingerprint
         .as_deref()
         .is_some_and(|expected| ws_fingerprint(&machine) != expected)
@@ -3059,7 +3062,7 @@ pub async fn social_authority_connect(
 
 #[path = "remote/method_catalog.rs"]
 mod method_catalog;
-use method_catalog::{decision_model_key_allowed, supported_remote_method};
+use method_catalog::{decision_model_key_allowed, live_games_credential_allowed, supported_remote_method};
 #[path = "remote/social_endpoint.rs"]
 mod social_endpoint;
 use social_endpoint::social_peer_endpoint;

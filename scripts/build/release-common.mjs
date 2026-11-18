@@ -104,6 +104,7 @@ export function validateCommonArtifact(candidate, artifact) {
     "build/build-info.json",
     "build/host/host.mjs",
     "build/host/bycoda-host.mjs",
+    "build/host/live-games-overlay.js",
     "build/host/provider-guard.mjs",
     "build/host/host-notes-worker.mjs",
     "build/host/store-worker.mjs",

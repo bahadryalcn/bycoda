@@ -3,6 +3,7 @@ import { activityMethods } from "./activity";
 import { approvalsMethods } from "./approvals";
 import { decisionModelsMethods } from "./decision-models";
 import { diagnosticsLogsMethods } from "./diagnostics-logs";
+import { liveGamesMethods } from "./live-games";
 import type { HostRpcMethodDefinition } from "./methods";
 import { secretsOwnerMethods } from "./secrets-owner";
 import { sessionLifecycleMethods } from "./session-lifecycle";
@@ -21,6 +22,7 @@ export function featureMethods(
     ...activityMethods(workflow),
     ...approvalsMethods(workflow),
     ...diagnosticsLogsMethods(workflow),
+    ...liveGamesMethods(workflow),
     ...secretsOwnerMethods(workflow),
     ...sessionLifecycleMethods(workflow),
   };

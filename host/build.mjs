@@ -15,6 +15,15 @@ const options = {
   sourcemap: true,
 };
 await build({
+  bundle: true,
+  platform: "browser",
+  format: "iife",
+  target: "es2020",
+  minify: true,
+  entryPoints: ["host/live-games/overlay/browser.ts"],
+  outfile: "build/host/live-games-overlay.js",
+});
+await build({
   ...options,
   entryPoints: ["host/cli.ts"],
   outfile: "build/host/bycoda-host.mjs",

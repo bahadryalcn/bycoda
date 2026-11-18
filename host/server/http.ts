@@ -11,6 +11,7 @@ import { mcpMetricName, perfMetrics } from "../diagnostics/perf-metrics";
 import { HostDomainAuthorizationError, HostDomainOutcomeError } from "../domains/context";
 import { requestingDeviceName } from "../desktop/remoteActivity";
 import { memoized } from "../desktop/requester-name";
+import { handleLiveGamesHttp } from "../live-games/http";
 import { RequestAuthorizationError } from "../store-db";
 import { serializedResponse } from "../sync/sync-transfer";
 import { HostVoiceToolDisclosure } from "../voice/voice-tool-disclosure";
@@ -31,6 +32,7 @@ export function createHttpRuntime(
     | "mcpHttp"
     | "mcpHub"
     | "socialTransport"
+    | "liveGames"
     | "webControl"
     | "lifecycle"
     | "controls"
@@ -200,6 +202,7 @@ export function createHttpRuntime(
         }
         if (await dependencies.mcpHttp.handle(request, response, server)) return;
         if (await dependencies.socialTransport.http(request, response)) return;
+        if (await handleLiveGamesHttp(dependencies.liveGames, request, response)) return;
         if (dependencies.webControl?.handle(request, response)) return;
         if (request.url === "/lifecycle" && dependencies.lifecycle) {
           dependencies.lifecycle(request, response);

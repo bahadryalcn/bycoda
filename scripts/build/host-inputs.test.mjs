@@ -83,3 +83,23 @@ test("isolated readonly session helper is an explicit packaged build input", asy
     ),
   );
 });
+
+test("live games overlay is built for browsers and copied to the packaged Host", async () => {
+  const plans = hostBuildPlans(
+    await readFile(new URL("../../host/build.mjs", import.meta.url), "utf8"),
+  );
+  assert.ok(
+    plans.some(
+      (plan) =>
+        plan.entryPoints.includes("host/live-games/overlay/browser.ts") &&
+        plan.platform === "browser" &&
+        plan.outfile === "build/host/live-games-overlay.js",
+    ),
+  );
+  const packaging = await readFile(new URL("../../host/package.mjs", import.meta.url), "utf8");
+  assert.ok(
+    packaging.includes(
+      'copyFile("build/host/live-games-overlay.js", join(folder, "live-games-overlay.js"))',
+    ),
+  );
+});

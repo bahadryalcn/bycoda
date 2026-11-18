@@ -41,6 +41,15 @@ describe("TikTok event mapping", () => {
     });
   });
 
+  it("uses connector 2.5 raw gift and like fields", () => {
+    const gift = { user: v3User, gift: { id: "8", type: 1, diamondCount: 50, name: "Balloon" }, repeatCount: 3 };
+    expect(mapTikTokEvent("gift", gift, 1)).toBeUndefined();
+    expect(mapTikTokEvent("gift", { ...gift, repeatEnd: 1 }, 1)).toMatchObject({
+      giftId: 8, giftName: "Balloon", diamonds: 50, count: 3,
+    });
+    expect(mapTikTokEvent("like", { user: v3User, count: 27 }, 1)).toMatchObject({ count: 27 });
+  });
+
   it("maps likes, viewers and stream end", () => {
     expect(mapTikTokEvent("like", { user: legacyUser, likeCount: 15 }, 1)).toMatchObject({ kind: "like", count: 15 });
     expect(mapTikTokEvent("roomUser", { viewerCount: 321 }, 1)).toMatchObject({ kind: "viewers", count: 321 });
