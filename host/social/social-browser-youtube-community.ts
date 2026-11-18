@@ -1,5 +1,18 @@
 import { SocialPlatformError, type SocialSendResult } from "../../src/integrations/social/adapter";
 import {
+  communityNotice,
+  communityPath,
+  communityRows,
+  selectScheduledCommunity,
+  youtubeCommunityDialog as dialog,
+  youtubeCommunityEditor as editor,
+  youtubeCommunitySubmit as submit,
+} from "./browser/youtube-community-posts";
+import {
+  communityScheduleTime,
+  prepareCommunitySchedule,
+} from "./browser/youtube-community-schedule";
+import {
   commitYouTubeBrowser,
   verifyYouTubeBrowser,
   youtubeBrowserChannel,
@@ -14,22 +27,23 @@ export type YouTubeCommunityPost = {
   text: string;
   choices?: string[];
   imageUploadIds?: string[];
+  publishAt?: string;
 };
 
-const dialog = "ytd-backstage-post-dialog-renderer";
-const editor = `${dialog} #contenteditable-root[contenteditable="true"]`;
 const poll = `${dialog} ytd-backstage-poll-editor-renderer`;
-const submit = `${dialog} #submit-button button,${dialog} button#submit-button`;
 const invalid = () => new SocialPlatformError("rejected");
 
 export function parseYouTubeCommunityPost(raw: unknown): YouTubeCommunityPost {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw invalid();
   const value = raw as Record<string, unknown>;
   if (
-    Object.keys(value).some((key) => !["kind", "text", "choices", "imageUploadIds"].includes(key))
+    Object.keys(value).some(
+      (key) => !["kind", "text", "choices", "imageUploadIds", "publishAt"].includes(key),
+    )
   )
     throw invalid();
   const { kind, text, choices, imageUploadIds } = value;
+  const publishAt = communityScheduleTime(value.publishAt);
   if (
     (kind !== "text" && kind !== "image" && kind !== "poll") ||
     typeof text !== "string" ||
@@ -55,7 +69,7 @@ export function parseYouTubeCommunityPost(raw: unknown): YouTubeCommunityPost {
       throw invalid();
     const normalized = choices.map((choice: string) => choice.trim());
     if (new Set(normalized).size !== normalized.length) throw invalid();
-    return { kind, text: text.trim(), choices: normalized };
+    return { kind, text: text.trim(), choices: normalized, ...(publishAt ? { publishAt } : {}) };
   }
   if (choices !== undefined) throw invalid();
   if (kind === "image") {
@@ -67,10 +81,10 @@ export function parseYouTubeCommunityPost(raw: unknown): YouTubeCommunityPost {
       new Set(imageUploadIds).size !== imageUploadIds.length
     )
       throw invalid();
-    return { kind, text: text.trim(), imageUploadIds };
+    return { kind, text: text.trim(), imageUploadIds, ...(publishAt ? { publishAt } : {}) };
   }
   if (imageUploadIds !== undefined) throw invalid();
-  return { kind, text: text.trim() };
+  return { kind, text: text.trim(), ...(publishAt ? { publishAt } : {}) };
 }
 
 function currentPostIds(path: string) {
@@ -164,23 +178,51 @@ function communityReceipt(path: string, channel: string, text: string, previous:
 export async function youtubePublishCommunity(
   ctx: BrowserRecipeContext,
   raw: unknown,
-): Promise<SocialSendResult> {
+): Promise<SocialSendResult & { publishAt?: string }> {
   const post = parseYouTubeCommunityPost(raw);
+  if (post.publishAt && Date.parse(post.publishAt) <= ctx.now()) throw invalid();
   const expectedImages = post.imageUploadIds?.length ?? 0;
   if (ctx.files.length !== expectedImages || ctx.files.some((item) => item.kind !== "image"))
     throw invalid();
   const channel = youtubeBrowserChannel(ctx);
-  const path = `/channel/${channel}/posts`;
+  const path = communityPath(channel);
   const url = `${youtubePublicOrigin}${path}`;
   await ctx.page.goto(url);
   await verifyYouTubeBrowser(ctx);
   try {
+    const publishAt = post.publishAt;
+    const scheduledView = publishAt ? await selectScheduledCommunity(ctx, true) : false;
     const previous = await ctx.waitFor<string[]>(currentPostIds(path), 20_000);
     if (!previous) throw await youtubeBrowserScreenError(ctx);
     await openComposer(ctx);
     if (post.choices) await prepareCommunityPoll(ctx, post.choices);
     if (expectedImages) await prepareCommunityImage(ctx, expectedImages);
     if (post.text) await fill(ctx, editor, "community-text", post.text);
+    if (publishAt) {
+      const target = await prepareCommunitySchedule(ctx, publishAt);
+      return await commitYouTubeBrowser(ctx, target, async () => {
+        const acknowledged = await ctx.waitFor<boolean>(
+          `(${communityNotice(["Post scheduled", "Your post was scheduled", "Gönderi planlandı", "Gönderiniz planlandı"])})`,
+          30_000,
+        );
+        if (!acknowledged) return;
+        if (!scheduledView) await selectScheduledCommunity(ctx);
+        const id = await ctx.waitFor<string>(
+          String.raw`(() => {
+            const rows=${communityRows(path, channel)};
+            if(!rows)return;
+            const prior=new Set(${json(previous)});
+            const matches=rows.filter(row=>!prior.has(row.id)&&row.text===${json(post.text)}&&
+              (!row.publishAt||Date.parse(row.publishAt)===${Date.parse(publishAt)}));
+            if(matches.length===1)return matches[0].id;
+          })()`,
+          30_000,
+        );
+        return id
+          ? { platformId: id, url: `${youtubePublicOrigin}/post/${id}`, publishAt }
+          : undefined;
+      });
+    }
     const controlSelector = await control(ctx, submit, "community-submit", ["Post", "Yayınla"]);
     return await commitYouTubeBrowser(ctx, controlSelector, async () => {
       const id = await ctx.waitFor<string>(

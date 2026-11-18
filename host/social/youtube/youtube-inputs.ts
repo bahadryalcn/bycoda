@@ -25,6 +25,12 @@ const playlistPatch = {
   privacy: privacy.optional(),
 };
 const confirmation = { confirm: z.literal(true) };
+const communityStatus = z.enum(["published", "scheduled"]).optional();
+const communityTarget = {
+  ...account,
+  postId: z.string().regex(/^[\w-]{10,150}$/),
+  status: communityStatus,
+};
 
 export const youtubeInputs = {
   "youtube.quota.status": z.strictObject(account),
@@ -163,7 +169,14 @@ export const youtubeInputs = {
     text,
     choices: z.array(text.max(65)).min(2).max(4).optional(),
     imageUploadIds: z.array(id).min(1).max(5).optional(),
+    publishAt: z.iso
+      .datetime()
+      .optional()
+      .describe("Future publication time at minute precision in UTC."),
   }),
+  "youtube.community.list": z.strictObject({ ...account, status: communityStatus }),
+  "youtube.community.edit": z.strictObject({ ...communityTarget, editedText: text.max(1500) }),
+  "youtube.community.delete": z.strictObject({ ...communityTarget, ...confirmation }),
 } satisfies Record<YouTubeWriteAction, z.ZodType> & Record<string, z.ZodType>;
 
 export type YouTubeAction = keyof typeof youtubeInputs;

@@ -1860,6 +1860,24 @@ Object.assign(window, {
               ],
             };
           if (params.action === "youtube.comments.list") return { comments: [] };
+          if (params.action === "youtube.community.list")
+            return {
+              items: [
+                {
+                  id: "UgFixturePost001",
+                  text: "Fixture Community release",
+                  status: params.input?.status ?? "published",
+                  url: "https://www.youtube.com/post/UgFixturePost001",
+                },
+              ],
+            };
+          if (
+            params.action === "youtube.community.publish" ||
+            params.action === "youtube.community.edit"
+          )
+            return { status: "done" };
+          if (params.action === "youtube.community.delete")
+            return { status: "done", result: { id: params.input?.postId, deleted: true } };
           if (params.action === "youtube.operations.list")
             return {
               items: [

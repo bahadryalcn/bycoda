@@ -274,7 +274,17 @@ export function youtubeForms(section: YouTubeSection, browser: boolean): YouTube
             ]),
             remove("youtube.comment.delete", t("Delete comment"), "comment.moderate", [commentId]),
           ];
-    case "community":
+    case "community": {
+      const postId = field("postId", t("Community post ID"), "text", true);
+      const status = choice(
+        "status",
+        t("Status"),
+        [
+          ["published", t("Published")],
+          ["scheduled", t("Scheduled")],
+        ],
+        false,
+      );
       return [
         update("youtube.community.publish", t("Publish Community post"), "community.publish", [
           choice("kind", t("Format"), [
@@ -283,6 +293,7 @@ export function youtubeForms(section: YouTubeSection, browser: boolean): YouTube
             ["poll", t("Poll")],
           ]),
           field("text", t("Post text"), "textarea", true),
+          field("publishAt", t("Publish time"), "datetime"),
           {
             ...field("choices", t("Poll options"), "lines", true),
             whenKind: "poll",
@@ -294,7 +305,18 @@ export function youtubeForms(section: YouTubeSection, browser: boolean): YouTube
             whenKind: "image",
           },
         ]),
+        { action: "youtube.community.list", label: t("List Community posts"), fields: [status] },
+        update("youtube.community.edit", t("Edit Community post"), "community.publish", [
+          postId,
+          status,
+          field("editedText", t("Post text"), "textarea", true),
+        ]),
+        remove("youtube.community.delete", t("Delete Community post"), "community.publish", [
+          postId,
+          status,
+        ]),
       ];
+    }
     case "subscriptions": {
       const target = [
         channelId("targetChannelId"),

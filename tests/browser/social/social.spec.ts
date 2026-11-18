@@ -67,6 +67,92 @@ test("social YouTube management confirms video edits and shows provider failures
 
 for (const theme of ["light", "dark"])
   for (const width of [800, 1280]) {
+    test(`social YouTube Community management ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.goto("/tests/browser/social/social.html?youtube-management");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const capture = (surface: string) =>
+        page.screenshot({
+          path: `temp/verification/social-youtube/community-${surface}-${theme}-${width}.png`,
+          animations: "disabled",
+        });
+      const action = async (name: string) => {
+        await page.getByRole("button", { name: /^İşlem:/ }).click();
+        await page.getByRole("option", { name, exact: true }).click();
+      };
+      const studio = "youtube-browser";
+      await sections(page).getByRole("tab", { name: "Hesaplar ve Ayarlar", exact: true }).click();
+      await page.getByRole("button", { name: /Studio fixture/ }).click();
+      await page.locator("summary").filter({ hasText: "YouTube yönetimi" }).click();
+      await page.getByRole("button", { name: /^YouTube yönetimi:/ }).click();
+      await page.getByRole("option", { name: "Topluluk gönderileri", exact: true }).click();
+      await page.getByRole("button", { name: /^Biçim:/ }).click();
+      await page.getByRole("option", { name: "Metin", exact: true }).click();
+      await page.getByRole("textbox", { name: "Gönderi metni" }).fill("Fixture Community release");
+      await page.getByRole("button", { name: "Yayın zamanı", exact: true }).click();
+      const calendar = page.getByRole("dialog", { name: "Yayın zamanı" });
+      const date = calendar.getByRole("textbox", { name: "Tarih ve saat" });
+      await date.fill("2026-12-01 12:30");
+      await date.press("Enter");
+      await calendar.getByRole("button", { name: "Uygula" }).click();
+      const scheduleName = "Topluluk gönderisini planla";
+      await capture("schedule");
+      await page.getByRole("button", { name: scheduleName, exact: true }).click();
+      const confirmation = page.getByRole("dialog", { name: scheduleName });
+      expect(await requests(page, "youtube.community.publish")).toEqual([]);
+      await confirmation.getByRole("button", { name: scheduleName }).click();
+      const publishAt = await page.evaluate(() => new Date("2026-12-01T12:30:00").toISOString());
+      await expect
+        .poll(() => requests(page, "youtube.community.publish"))
+        .toEqual([
+          { accountId: studio, kind: "text", text: "Fixture Community release", publishAt },
+        ]);
+      await expect(confirmation).toBeHidden();
+      await action("Topluluk gönderilerini listele");
+      await page.getByRole("button", { name: /^Durum:/ }).click();
+      await page.getByRole("option", { name: "Planlandı", exact: true }).click();
+      await page
+        .getByRole("button", { name: "Topluluk gönderilerini listele", exact: true })
+        .click();
+      await page.getByRole("button", { name: "Kullan", exact: true }).click();
+      const editName = "Topluluk gönderisini düzenle";
+      const editor = page.getByRole("textbox", { name: "Gönderi metni" });
+      await expect(editor).toHaveValue("Fixture Community release");
+      await editor.fill("Edited Community release");
+      await capture("edit");
+      await page.getByRole("button", { name: editName, exact: true }).click();
+      await page
+        .getByRole("dialog", { name: editName })
+        .getByRole("button", { name: editName })
+        .click();
+      await expect
+        .poll(() => requests(page, "youtube.community.edit"))
+        .toEqual([
+          {
+            accountId: studio,
+            postId: "UgFixturePost001",
+            status: "scheduled",
+            editedText: "Edited Community release",
+          },
+        ]);
+      const deleteName = "Topluluk gönderisini sil";
+      await action(deleteName);
+      await page.getByRole("button", { name: deleteName, exact: true }).click();
+      const deletion = page.getByRole("dialog", { name: deleteName });
+      await expect(deletion).toBeVisible();
+      expect(await requests(page, "youtube.community.delete")).toEqual([]);
+      await capture("delete");
+      await deletion.getByRole("button", { name: deleteName }).click();
+      await expect
+        .poll(() => requests(page, "youtube.community.delete"))
+        .toEqual([
+          { accountId: studio, postId: "UgFixturePost001", status: "scheduled", confirm: true },
+        ]);
+    });
+
     test(`social YouTube management ${theme} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 1000 });
       await page.goto("/tests/browser/social/social.html?youtube-management");

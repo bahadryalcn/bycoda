@@ -53,6 +53,11 @@ import {
   updateYouTubeVideo,
 } from "../../../src/integrations/social/youtube-videos";
 import { youtubeCommentReaction } from "../browser/youtube-comment-actions";
+import {
+  youtubeDeleteCommunity,
+  youtubeEditCommunity,
+  youtubeListCommunity,
+} from "../browser/youtube-community-posts";
 import type {
   SocialActionContext,
   SocialActionModule,
@@ -470,10 +475,41 @@ const writes = {
         },
       ),
   ),
+  "youtube.community.edit": mutation(
+    "youtube.community.edit",
+    publish,
+    async (ctx, account, { postId, editedText, status = "published" }, guard) =>
+      await youtubeBrowser(
+        ctx,
+        account,
+        "community.publish",
+        (recipe) => youtubeEditCommunity(recipe, postId, editedText, status),
+        { beforeSubmit: guard, outbound: true },
+      ),
+  ),
+  "youtube.community.delete": mutation(
+    "youtube.community.delete",
+    modify,
+    async (ctx, account, { postId, status = "published" }, guard) =>
+      await youtubeBrowser(
+        ctx,
+        account,
+        "community.publish",
+        (recipe) => youtubeDeleteCommunity(recipe, postId, status),
+        { beforeSubmit: guard },
+      ),
+  ),
 } satisfies Record<YouTubeWriteAction, SocialActionSpec>;
 
 export const youtubeActions: SocialActionModule = {
   ...writes,
+  "youtube.community.list": read(
+    "youtube.community.list",
+    async (ctx, account, { status = "published" }) =>
+      await youtubeBrowser(ctx, account, "community.publish", (recipe) =>
+        youtubeListCommunity(recipe, status),
+      ),
+  ),
   "youtube.quota.status": read("youtube.quota.status", async (ctx, account) => ({
     ...(await youtubeApi(ctx, account)).quota.usedToday(),
     limits: {

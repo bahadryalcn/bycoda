@@ -177,6 +177,10 @@ export function YouTubeManage({
   const incomplete = form.fields?.some(({ key, required }) => required && !draft[key]?.length);
   const resultRecord = asYoutubeRecord(result);
   const videoPage = form.action === "youtube.videos.list";
+  const actionLabel =
+    form.action === "youtube.community.publish" && draft.publishAt
+      ? t("Schedule Community post")
+      : form.label;
   const next =
     typeof resultRecord?.next === "string"
       ? { cursor: resultRecord.next }
@@ -199,10 +203,10 @@ export function YouTubeManage({
     }
     const details = await payload(form, draft, account.id);
     const confirmed = await confirmation.confirm({
-      title: form.label,
+      title: actionLabel,
       message: account.name,
       danger: form.danger ?? false,
-      confirmLabel: form.label,
+      confirmLabel: actionLabel,
       details: <YouTubeFacts data={details} />,
     });
     if (!confirmed) return;
@@ -221,6 +225,14 @@ export function YouTubeManage({
   };
   const selectItem = (item: Record<string, unknown>) => {
     if (typeof item.id !== "string") return;
+    if (section === "community") {
+      setField("postId", item.id);
+      if (typeof item.text === "string") setField("editedText", item.text);
+      if (item.status === "published" || item.status === "scheduled")
+        setField("status", item.status);
+      select("youtube.community.edit");
+      return;
+    }
     const key = videoPage
       ? "videoId"
       : section === "videos"
@@ -303,6 +315,7 @@ export function YouTubeManage({
     "youtube.subscriptions.list",
     "youtube.broadcasts.list",
     "youtube.liveChat.list",
+    "youtube.community.list",
   ].includes(form.action);
 
   return (
@@ -347,7 +360,7 @@ export function YouTubeManage({
             run().catch(handleError);
           }}
         >
-          {form.label}
+          {actionLabel}
         </Button>
       </div>
       {result !== undefined ? (
