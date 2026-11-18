@@ -1,4 +1,3 @@
-import { type HostSession } from "../../src/features/connections/model/protocol";
 import { LeaseHeldError } from "../../src/features/sync/model/runLease";
 import { refuseHost } from "../domains/context";
 import { QueueDrainer, queueRowCommands } from "../sessions/queue-drainer";
@@ -95,12 +94,18 @@ export async function createSessionQueueRuntime(
    * desktop-only session, or for an adopted one the app is running a turn in. */
   const desktopWatch = async (id: string, polling = false, signal?: AbortSignal) => {
     if (!id) return undefined;
-    let hosted: HostSession | undefined;
+    const { store } = dependencies.engine;
+    signal?.throwIfAborted();
+    let hosted: Awaited<ReturnType<typeof store.sessionStateMetadata>>;
     try {
-      hosted = await dependencies.engine.store.session(id, signal);
+      const metadata = await store.sessionStateMetadata(id);
+      if (metadata?.authorityGeneration !== undefined)
+        await store.assertAuthority(id, metadata.authorityGeneration);
+      hosted = metadata;
     } catch {
       /* desktop-only */
     }
+    signal?.throwIfAborted();
     if (hosted && (!hosted.desktop || hosted.status === "running")) return undefined;
     const stamp = await dependencies.desktop.stampAsync(id, polling ? WATCH_STAMP_MS : 0, signal);
     if (!stamp) return undefined;

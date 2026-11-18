@@ -129,7 +129,11 @@ export async function createSessionListRuntime(
         .update(JSON.stringify([sessionListEpoch, "desktop", overlay?.sourceEpoch ?? null]))
         .digest("hex");
     }
-    const session = await dependencies.engine.store.session(id);
+    const { store } = dependencies.engine;
+    const session = await store.sessionStateMetadata(id);
+    if (!session) throw new Error("Session not found on this machine");
+    if (session.authorityGeneration !== undefined)
+      await store.assertAuthority(id, session.authorityGeneration);
     return createHash("sha256")
       .update(
         JSON.stringify([

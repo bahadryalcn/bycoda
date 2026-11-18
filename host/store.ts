@@ -236,6 +236,23 @@ export type HostAuthorityChange = Readonly<{
   phase: "host-active" | "aborted";
   projectId?: string;
 }>;
+
+type SessionStateMetadata = Pick<
+  HostSession,
+  "projectId" | "revision" | "status" | "authorityGeneration" | "createdAt"
+> & { desktop: boolean };
+
+function stateMetadataOf(value: HostSession): SessionStateMetadata {
+  return {
+    projectId: value.projectId,
+    revision: value.revision,
+    status: value.status,
+    desktop: value.desktop != null,
+    authorityGeneration: value.authorityGeneration,
+    createdAt: value.createdAt ?? value.updatedAt,
+  };
+}
+
 export class HostStore {
   private readonly desktopCommandInstance = randomUUID();
   private readonly authorityContexts = new AsyncLocalStorage<ReadonlyMap<string, number>>();
@@ -309,10 +326,7 @@ export class HostStore {
   // treat returned values as immutable.
   private cache = new Map<string, HostSession>();
   private cacheWeights = new Map<string, number>();
-  private stateMetadata = new Map<
-    string,
-    { revision: number; status: HostSession["status"]; desktop: boolean }
-  >();
+  private stateMetadata = new Map<string, SessionStateMetadata>();
   private receiptWrites = 0;
   // token -> data_version at the moment its device row was last seen.
   private authCache = new Map<string, { version: number; expires: number }>();
@@ -1938,24 +1952,10 @@ export class HostStore {
       return (await this.sessionStateMetadata(id))?.revision;
     });
   }
-  async sessionStateMetadata(
-    id: string,
-  ): Promise<{ revision: number; status: HostSession["status"]; desktop: boolean } | undefined> {
+  async sessionStateMetadata(id: string): Promise<SessionStateMetadata | undefined> {
     return this.db.storeScope(async () => {
-      const pending = this.pending.get(id)?.value;
-      if (pending)
-        return {
-          revision: pending.revision,
-          status: pending.status,
-          desktop: pending.desktop != null,
-        };
-      const cached = this.cache.get(id);
-      if (cached)
-        return {
-          revision: cached.revision,
-          status: cached.status,
-          desktop: cached.desktop != null,
-        };
+      const resident = this.pending.get(id)?.value ?? this.cache.get(id);
+      if (resident) return stateMetadataOf(resident);
       const known = this.stateMetadata.get(id);
       if (known) {
         this.stateMetadata.delete(id);
@@ -1963,34 +1963,35 @@ export class HostStore {
         return known;
       }
       const row = await this.db
-        .prepare("SELECT revision,status,has_desktop FROM session_state WHERE id=?")
+        .prepare(
+          `SELECT project_id, revision, status, has_desktop,
+            json_extract(summary, '$.authorityGeneration') AS authority_generation,
+            COALESCE(json_extract(summary, '$.createdAt'), updated_at) AS created_at
+          FROM session_state WHERE id=?`,
+        )
         .get(id);
       if (!row) return undefined;
-      const value = {
+      const value: SessionStateMetadata = {
+        projectId: String(row.project_id),
         revision: Number(row.revision),
         status: row.status as HostSession["status"],
         desktop: !!Number(row.has_desktop),
+        authorityGeneration:
+          row.authority_generation == null ? undefined : Number(row.authority_generation),
+        createdAt: row.created_at == null ? undefined : Number(row.created_at),
       };
       this.rememberStateMetadata(id, value);
       return value;
     });
   }
-  private rememberStateMetadata(
-    id: string,
-    value: { revision: number; status: HostSession["status"]; desktop: boolean },
-  ) {
+  private rememberStateMetadata(id: string, value: SessionStateMetadata) {
     this.stateMetadata.delete(id);
     this.stateMetadata.set(id, value);
     while (this.stateMetadata.size > 4096)
       this.stateMetadata.delete(this.stateMetadata.keys().next().value!);
   }
   private updateStateMetadata(value: HostSession) {
-    const update = () =>
-      this.rememberStateMetadata(value.session.id, {
-        revision: value.revision,
-        status: value.status,
-        desktop: value.desktop != null,
-      });
+    const update = () => this.rememberStateMetadata(value.session.id, stateMetadataOf(value));
     if (this.inTransaction) this.transactionEffects.commit.push(update);
     else update();
   }

@@ -107,6 +107,36 @@ async function setup() {
   };
 }
 
+it("reads Host change cursors without loading the transcript", async () => {
+  const s = await setup();
+  const created = await s.engine.command({
+    type: "create",
+    workspaceMode: "current",
+    commandId: "metadata-only-cursor",
+    projectId: s.project.id,
+    harness: "codex",
+    model: "codex:test",
+    runtimeMode: "supervised",
+  });
+  const readTranscript = vi.spyOn(s.store, "session");
+  try {
+    const { status, value } = await s.call("machine.changes", {
+      sessions: [{ sessionId: created.sessionId, revision: 0 }],
+    });
+    expect(status).toBe(200);
+    expect(value.result.sessions).toEqual([
+      {
+        sessionId: created.sessionId,
+        revision: expect.any(Number),
+        sourceEpoch: expect.any(String),
+      },
+    ]);
+    expect(readTranscript).not.toHaveBeenCalled();
+  } finally {
+    readTranscript.mockRestore();
+  }
+});
+
 it("coalesces unchanged list materialization without invalidating another project's list", async () => {
   const s = await setup();
   const summaries = vi.spyOn(s.store, "summaries");

@@ -1,10 +1,11 @@
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HostDomainRefusalError } from "../domains/context";
 import { HostStore } from "../store";
 import type { ServerBindings } from "./bindings";
+import { createSessionQueueRuntime } from "./session-queue";
 import { createSessionsRuntime } from "./sessions";
 
 const cleanup: (() => void | Promise<void>)[] = [];
@@ -53,4 +54,30 @@ it("refuses a queue existence check for a session nobody stores as not sent", as
       delivery: "not-sent",
     });
   }
+});
+
+it("checks the desktop run holder for an adopted session without loading its transcript", async () => {
+  const store = {
+    session: vi.fn(async () => ({ projectId: "project", desktop: {}, status: "idle" })),
+    sessionStateMetadata: vi.fn(async () => ({
+      projectId: "project",
+      desktop: true,
+      status: "idle",
+    })),
+  };
+  const stampAsync = vi.fn(async () => ({ updatedAt: 1, running: true }));
+  const runtime = await createSessionQueueRuntime(
+    {
+      engine: { store, recoveredInterrupted: [] },
+      desktop: { stampAsync, live: { overlay: () => undefined, runningClient: () => undefined } },
+      runLeases: { holder: () => undefined },
+      sessionQueues: {},
+    } as unknown as Parameters<typeof createSessionQueueRuntime>[0],
+    () => {},
+  );
+  expect(await runtime.desktopRunHolder("adopted")).toBe("desktop");
+  expect(await runtime.desktopWatch("adopted")).toMatchObject({ projectId: "project" });
+  stampAsync.mockResolvedValue({ updatedAt: 2, running: false });
+  expect(await runtime.desktopRunHolder("adopted")).toBeUndefined();
+  expect(store.session).not.toHaveBeenCalled();
 });

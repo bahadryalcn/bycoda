@@ -1161,6 +1161,8 @@ it("keeps session revisions in bounded metadata memory after the first indexed r
   cleanups.push(async () => await reopened.close());
   const prepare = vi.spyOn(reopened.db, "prepare");
   expect(await reopened.sessionStateMetadata("metadata")).toEqual({
+    projectId: project.id,
+    createdAt: saved.createdAt,
     revision: saved.revision,
     status: "idle",
     desktop: false,
