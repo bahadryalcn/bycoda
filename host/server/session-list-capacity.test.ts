@@ -47,3 +47,43 @@ it("serves a second pass over many projects from cache with one project-table re
   expect(projects).toHaveBeenCalledTimes(ids.length);
   expect(project).toHaveBeenCalledTimes(ids.length * 2);
 }, 60_000);
+
+/** A phone polling many sessions must not take the SQLite write lock per unchanged session. */
+it("reads an unchanged session source epoch without opening a write transaction", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "bycoda-session-epoch-"));
+  const store = new HostStore(join(directory, "host.db"));
+  cleanups.push(async () => {
+    await store.close();
+    rmSync(directory, { recursive: true, force: true });
+  });
+  let sourceEpoch = "a";
+  let runtime!: Awaited<ReturnType<typeof createSessionListRuntime>>;
+  await createSessionListRuntime(
+    {
+      engine: { store },
+      desktop: {
+        listSnapshotAsync: async () => ({ sessions: [], fingerprint: "fixed" }),
+        samePath: (a: string, b: string) => a === b,
+        live: { overlay: () => ({ sourceEpoch }) },
+      },
+      desktopWatch: async () => true,
+      catchUp: async () => undefined,
+      tasks: { changeEtag: async () => "tasks" },
+      providers: [],
+      pullRequestWatch: { wakeSources: () => new Map() },
+    } as never,
+    (value) => {
+      runtime = value;
+    },
+  );
+  const transaction = vi.spyOn(store, "transaction");
+  const first = await runtime.sessionSourceEpoch("s1");
+  expect(transaction).toHaveBeenCalledTimes(1);
+  expect(await runtime.sessionSourceEpoch("s1")).toBe(first);
+  expect(await runtime.sessionSourceEpoch("s1")).toBe(first);
+  expect(transaction).toHaveBeenCalledTimes(1);
+  sourceEpoch = "b";
+  const changed = await runtime.sessionSourceEpoch("s1");
+  expect(changed).not.toBe(first);
+  expect(transaction).toHaveBeenCalledTimes(2);
+});

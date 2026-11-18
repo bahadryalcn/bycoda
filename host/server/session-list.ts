@@ -145,23 +145,30 @@ export async function createSessionListRuntime(
     while (sourceInvalidations.has(id))
       await settleSourceInvalidation(id, sourceInvalidations.get(id)!);
     const source = await sessionSourceKey(id);
-    const epoch = await dependencies.engine.store.transaction(async () => {
-      const known = await dependencies.engine.store.db
+    const readKnown = () =>
+      dependencies.engine.store.db
         .prepare("SELECT source_key, epoch FROM session_read_sources WHERE session_id=?")
         .get(id);
-      if (known && known.source_key === source) return String(known.epoch);
-      await dependencies.engine.store.db
-        .prepare(`INSERT INTO session_read_sources (session_id, source_key, epoch)
+    // The steady state is a match; only a changed source takes the write lock.
+    const stored = await readKnown();
+    const epoch =
+      stored && stored.source_key === source
+        ? String(stored.epoch)
+        : await dependencies.engine.store.transaction(async () => {
+            const known = await readKnown();
+            if (known && known.source_key === source) return String(known.epoch);
+            await dependencies.engine.store.db
+              .prepare(`INSERT INTO session_read_sources (session_id, source_key, epoch)
         VALUES (?, ?, ?) ON CONFLICT(session_id) DO UPDATE SET
         source_key=excluded.source_key, epoch=excluded.epoch
         WHERE session_read_sources.source_key <> excluded.source_key`)
-        .run(id, source, randomUUID());
-      const row = await dependencies.engine.store.db
-        .prepare("SELECT epoch FROM session_read_sources WHERE session_id=?")
-        .get(id);
-      if (!row) throw new Error("Session read source is unavailable");
-      return String(row.epoch);
-    });
+              .run(id, source, randomUUID());
+            const row = await dependencies.engine.store.db
+              .prepare("SELECT epoch FROM session_read_sources WHERE session_id=?")
+              .get(id);
+            if (!row) throw new Error("Session read source is unavailable");
+            return String(row.epoch);
+          });
     if (source !== (await sessionSourceKey(id)))
       throw new Error("Session read owner changed; retry");
     return epoch;
