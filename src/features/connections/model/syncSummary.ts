@@ -13,6 +13,9 @@ export type SyncSummaryInput = {
 
 export type SyncSummary = { tone: "muted" | "warning" | "danger"; text: string };
 
+/** Prefix of a sync error caused by held room privacy protection, not by the machine. */
+export const ROOM_PRIVACY_NOT_CONFIRMED = "Room privacy protection is not confirmed";
+
 function core(status: SyncSummaryInput, now: number): SyncSummary {
   switch (status.state) {
     case "ok":
@@ -29,6 +32,13 @@ function core(status: SyncSummaryInput, now: number): SyncSummary {
     // "unlinked" (capabilities not read yet: a cold start, a Host still starting) falls to the
     // quiet default; the machine's own connection status explains a lasting outage.
     case "error": {
+      if (status.lastError?.startsWith(ROOM_PRIVACY_NOT_CONFIRMED))
+        return {
+          tone: "warning",
+          text: t(
+            "Sync is paused until room privacy protection is confirmed. It retries automatically.",
+          ),
+        };
       const kind = status.lastError ? classifyRemoteError(status.lastError).kind : "other";
       if (kind === "unreachable" || kind === "temporary") {
         return {

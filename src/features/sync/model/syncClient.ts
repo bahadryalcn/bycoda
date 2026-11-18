@@ -1,4 +1,8 @@
-import { withRoomPrivacyMutation } from "../../group-lock/model/roomPrivacyProjection";
+import {
+  getRoomPrivacyStatus,
+  settleHeldRoomPrivacyProjection,
+  withRoomPrivacyMutation,
+} from "../../group-lock/public/roomPrivacy";
 import { applyRemoteAppearanceRecords, captureLocalAppearanceChanges } from "./syncAppearance";
 import { applyRemoteGroupRecords, captureLocalGroupChanges } from "./syncGroups";
 import { applyRemoteLockRecords, captureLocalLockChanges } from "./syncLock";
@@ -26,6 +30,7 @@ import {
   takeOutbox,
 } from "./syncPeerState";
 import { remoteErrorText } from "../../connections/model/remoteFailure";
+import { ROOM_PRIVACY_NOT_CONFIRMED } from "../../connections/model/syncSummary";
 import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
 import { parseSyncRecord, syncPushBatches } from "./syncProtocol";
 import type { SyncPushResult, SyncRecord } from "./syncProtocol";
@@ -180,9 +185,22 @@ export async function runSyncCycle(
   try {
     if (environmentId && !adoptPeerEnvironment(machineId, environmentId))
       throw new Error("Library sync progress could not be saved. Free storage and retry.");
+    // A held privacy failure (say a Host deadline while it restarted) refuses every local
+    // write until an explicit retry. A cycle is that retry, so one stale outage cannot
+    // pause sync until the app restarts.
+    if (getRoomPrivacyStatus().error) {
+      await settleHeldRoomPrivacyProjection();
+      requireCurrent(current);
+    }
     await runSyncCycleInner(machineId, tracked, current);
-  } catch (error) {
-    if (!current()) throw error;
+  } catch (caught) {
+    if (!current()) throw caught;
+    const held = getRoomPrivacyStatus().error;
+    // The held privacy text is a Host error of its own; naming it here keeps the
+    // machine row from blaming this machine's connection.
+    const error = held
+      ? new Error(`${ROOM_PRIVACY_NOT_CONFIRMED}: ${remoteErrorText(caught)}`)
+      : caught;
     console.warn(
       "[sync]",
       machineId,
