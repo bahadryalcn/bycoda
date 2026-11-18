@@ -1,7 +1,8 @@
 import type { SocialAccount, SocialHttp } from "../adapter";
+import { uploadFacebookPhoto } from "../metaMedia";
 import { moderateFacebookComment, type FacebookCommentAction } from "./facebook-engagement";
 import { readFacebookPageInsights } from "./facebook-insights";
-import { listFacebookPageMentions, readFacebookPage } from "./facebook-page";
+import { facebookPageEndpoint, listFacebookPageMentions, readFacebookPage } from "./facebook-page";
 import { updateFacebookPage } from "./facebook-page-edit";
 import { updateFacebookPost } from "./facebook-schedule";
 
@@ -18,6 +19,25 @@ export function createFacebookPageOperations(http: SocialHttp, version: string) 
     ) => readFacebookPageInsights(http, version, account.platformId, token, options),
     updateProfile: (account: SocialAccount, token: string, patch: unknown) =>
       updateFacebookPage(http, version, account.platformId, token, patch),
+    uploadProfilePhoto: (
+      account: SocialAccount,
+      token: string,
+      field: "avatarPhotoId" | "coverPhotoId",
+      uploadId: string,
+      bytes: Uint8Array,
+      recheck: () => Promise<void>,
+    ) =>
+      uploadFacebookPhoto(
+        http,
+        `${facebookPageEndpoint(version, account.platformId)}/photos`,
+        token,
+        { kind: "image", uploadId, url: "" },
+        async () => bytes,
+        recheck,
+      ).then(async (photoId) => {
+        await recheck();
+        return updateFacebookPage(http, version, account.platformId, token, { [field]: photoId });
+      }),
     editPost: (
       account: SocialAccount,
       token: string,

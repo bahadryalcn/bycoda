@@ -67,6 +67,8 @@ export interface SocialServiceApi {
   project(p: SocialPrincipal, projectId: string): Promise<HostProject>;
   adapterFor(account: SocialAccount): SocialAdapter;
   credentialFor(accountId: string): Promise<SocialCredential | undefined>;
+  // Facebook Page photo uploads reuse owner-only media custody.
+  readOwnerMedia(p: SocialPrincipal, id: string): Promise<Uint8Array>;
   capability(account: SocialAccount, operation: SocialOperation): void;
   createDraft(
     p: SocialPrincipal,

@@ -97,7 +97,9 @@ export function socialClient(machineId: string) {
     browserProfileUpdate: (
       accountId: string,
       platform: "x" | "linkedin" | "facebook" | "instagram",
-      patch: import("./socialBrowser").XProfilePatch & { username?: string },
+      patch:
+        | import("./socialBrowser").XProfilePatch
+        | import("./socialBrowser").FacebookBrowserProfilePatch,
     ) =>
       remoteRequest<import("./socialBrowser").XProfileState>(
         machineId,

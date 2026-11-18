@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type {
   SocialAccount,
   SocialOperation,
@@ -180,6 +181,46 @@ export const facebookPageActions: SocialActionModule = {
         "profile.update",
         input.patch,
         (current) => current.operations.updateProfile(current.account, current.token, input.patch),
+        (result) => result.status === "partial" && result.failure.code === "unknown",
+      );
+    },
+  },
+  "facebook.page.uploadPhoto": {
+    readOnly: false,
+    ownerOnly: true,
+    async run(ctx, input) {
+      exact(input, ["accountId", "kind", "uploadId", "confirm"]);
+      if (input.confirm !== "UPLOAD_FACEBOOK_PAGE_PHOTO")
+        throw new Error("Photo upload confirmation required.");
+      const field =
+        input.kind === "avatar"
+          ? "avatarPhotoId"
+          : input.kind === "cover"
+            ? "coverPhotoId"
+            : undefined;
+      if (!field) throw new SocialPlatformError("rejected");
+      const { account } = await page(ctx, input.accountId, "profile.update");
+      const uploadId = str(input.uploadId, "media upload");
+      const bytes = await ctx.service.readOwnerMedia(ctx.principal, uploadId);
+      const digest = createHash("sha256").update(bytes).digest("hex");
+      return writePage(
+        ctx,
+        account,
+        "profile.update",
+        { field, digest },
+        (current) =>
+          current.operations.uploadProfilePhoto(
+            current.account,
+            current.token,
+            field,
+            uploadId,
+            bytes,
+            async () => {
+              const latest = await page(ctx, account.id, "profile.update");
+              if (latest.account.platformId !== current.account.platformId || latest.account.paused)
+                throw new SocialPlatformError("denied");
+            },
+          ),
         (result) => result.status === "partial" && result.failure.code === "unknown",
       );
     },

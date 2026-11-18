@@ -17,6 +17,15 @@ export type XProfileState = {
   bannerUrl?: string;
 };
 
+// Facebook browser profile fields are scoped to the verified Page or personal actor.
+export type FacebookProfileDetail = "work" | "school" | "college" | "currentCity" | "hometown";
+export type FacebookPersonalName = { first: string; middle: string; last: string };
+export type FacebookBrowserProfilePatch = XProfilePatch & {
+  username?: string;
+  detail?: { field: FacebookProfileDetail; value: string };
+  personalName?: FacebookPersonalName;
+};
+
 export const SOCIAL_BROWSER_INTENTS = ["login", "signup", "inbox", "publish", "comments"] as const;
 export type SocialBrowserIntent = (typeof SOCIAL_BROWSER_INTENTS)[number];
 export type SocialRegistrationField =

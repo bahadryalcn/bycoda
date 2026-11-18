@@ -1,5 +1,10 @@
 import type { BrowserPage } from "./social-browser";
-import type { XProfilePatch, XProfileState } from "../../src/features/social/model/socialBrowser";
+import type {
+  FacebookBrowserProfilePatch as FacebookProfilePatch,
+  FacebookPersonalName as PersonalName,
+  FacebookProfileDetail,
+  XProfileState,
+} from "../../src/features/social/model/socialBrowser";
 import { SocialPlatformError } from "../../src/integrations/social/adapter";
 import { detectChallenge, needsHumanError } from "./browser/challenge";
 import { hash } from "./core/social-helpers";
@@ -18,18 +23,9 @@ const uploadLabels = ["Upload photo", "Upload Photo", "Fotoğraf yükle"];
 const saveLabels = ["Save", "Save changes", "Save Changes", "Kaydet", "Değişiklikleri kaydet"];
 const buttons = 'button,[role="button"],a';
 
-export type FacebookProfilePatch = XProfilePatch & {
-  username?: string;
-  detail?: FacebookDetail;
-  personalName?: PersonalName;
-};
 type FacebookProfileState = XProfileState & { username?: string };
-type FacebookDetail = {
-  field: "work" | "school" | "college" | "currentCity" | "hometown";
-  value: string;
-};
+type FacebookDetail = NonNullable<FacebookProfilePatch["detail"]>;
 type ActorType = "page" | "member";
-type PersonalName = { first: string; middle: string; last: string };
 
 /** Called inside the account's exclusive browser session. */
 export async function writeFacebookBrowserProfile(
@@ -137,7 +133,7 @@ export function parseFacebookProfilePatch(
 }
 
 const detailLabels: Record<
-  FacebookDetail["field"],
+  FacebookProfileDetail,
   { add: string[]; input: string[]; section: string }
 > = {
   work: {
@@ -379,7 +375,7 @@ export class FacebookProfileActions {
   }
 
   private async updateIntro(
-    field: "bio" | "website" | FacebookDetail["field"],
+    field: "bio" | "website" | FacebookProfileDetail,
     value: string,
   ): Promise<FacebookProfileState> {
     const spec =
