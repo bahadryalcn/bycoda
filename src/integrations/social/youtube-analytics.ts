@@ -67,7 +67,7 @@ export async function queryYouTubeAnalytics(
 ): Promise<YouTubeAnalyticsReport> {
   const { kind, startDate, endDate, startIndex = 1 } = input;
   if (
-    !Object.hasOwn(reportDefinitions, kind) ||
+    !Object.prototype.hasOwnProperty.call(reportDefinitions, kind) ||
     !/^UC[\w-]{22}$/.test(account.channelId) ||
     !isDate(startDate) ||
     !isDate(endDate) ||
