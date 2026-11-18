@@ -54,9 +54,11 @@ async function fixture() {
   const input = { threadId: "thread", commentId: "202", action: "hide" };
   const request = () => tools["instagram.comments.request"].run(ctx, input);
   const list = async () => (await store.instagramModerationRequests("thread")).requests;
+  const reviewList = () =>
+    tools["instagram.comments.requests.list"].run(owner, { threadId: "thread" });
   const decide = (reviewed: unknown, id: string) =>
     tools["instagram.comments.requests.decide"].run(owner, { id, reviewed, decision: "approve" });
-  return { event, thread, apply, request, list, decide, store };
+  return { event, thread, apply, request, list, reviewList, decide, store };
 }
 
 it("files a deduplicated project request and runs the provider once after exact review", async () => {
@@ -66,6 +68,8 @@ it("files a deduplicated project request and runs the provider once after exact 
   expect(filed).not.toHaveProperty("commentText");
   expect(f.apply).not.toHaveBeenCalled();
   const [request] = await f.list();
+  expect(request).not.toHaveProperty("commentText");
+  await expect(f.reviewList()).resolves.toMatchObject({ requests: [{ commentText: "A comment" }] });
   await expect(f.decide({ ...request, action: "delete" }, request.id)).rejects.toThrow("Review");
   const results = await Promise.allSettled([
     f.decide(request, request.id),
@@ -87,6 +91,7 @@ it("refuses a session from another project and rechecks comment identity before 
   await f.request();
   const [request] = await f.list();
   f.event.text = "Edited comment";
+  await expect(f.reviewList()).resolves.toEqual({ requests: [request] });
   await expect(f.decide(request, request.id)).rejects.toThrow("changed after review");
   expect(f.apply).not.toHaveBeenCalled();
 });

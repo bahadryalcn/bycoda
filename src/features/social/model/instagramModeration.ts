@@ -8,8 +8,10 @@ export type InstagramModerationRequest = {
   threadId: string;
   commentId: string;
   eventId: string;
-  commentText: string;
+  commentDigest: string;
   action: InstagramModerationAction;
   status: "pending" | "attempting" | "applied" | "dismissed" | "uncertain";
   createdAt: number;
 };
+
+export type InstagramModerationReview = InstagramModerationRequest & { commentText?: string };

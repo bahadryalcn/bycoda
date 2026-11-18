@@ -69,6 +69,7 @@ const client = {
             eventId: comment.events[0].id,
             commentId: comment.events[0].platformId,
             commentText: comment.events[0].text,
+            commentDigest: "synthetic-review-digest",
             action: "hide",
             status: "pending",
             createdAt: Date.UTC(2026, 10, 16),

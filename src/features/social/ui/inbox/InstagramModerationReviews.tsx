@@ -8,6 +8,7 @@ import { Text } from "../../../../shared/ui/Text";
 import type {
   InstagramModerationAction,
   InstagramModerationRequest,
+  InstagramModerationReview,
 } from "../../model/instagramModeration";
 import type { SocialClient } from "../../model/socialClient";
 import { useAccountWrite } from "../accounts/useAccountWrite";
@@ -23,7 +24,7 @@ const actionLabel = (action: InstagramModerationAction) => {
   }
 };
 
-type Page = { requests: InstagramModerationRequest[]; next?: string };
+type Page = { requests: InstagramModerationReview[]; next?: string };
 
 export function InstagramModerationReviews({
   client,
@@ -49,12 +50,14 @@ export function InstagramModerationReviews({
   const read = (before?: string) => {
     void write("read", () => load(before)).catch(() => undefined);
   };
-  const decide = (request: InstagramModerationRequest, decision: "approve" | "dismiss") => {
+  const decide = (review: InstagramModerationReview, decision: "approve" | "dismiss") => {
+    const { commentText, ...request } = review;
+    if (decision === "approve" && commentText === undefined) return;
     const approved =
       decision === "approve"
         ? confirmation.confirm({
             title: actionLabel(request.action),
-            message: request.commentText,
+            message: commentText,
             confirmLabel: t("Approve"),
             danger: request.action === "delete",
           })
@@ -76,7 +79,9 @@ export function InstagramModerationReviews({
               (current) =>
                 current && {
                   ...current,
-                  requests: current.requests.map((item) => (item.id === result.id ? result : item)),
+                  requests: current.requests.map((item) =>
+                    item.id === result.id ? { ...item, status: result.status } : item,
+                  ),
                 },
             );
           }
@@ -100,15 +105,18 @@ export function InstagramModerationReviews({
           {page.requests.map((request) => (
             <li key={request.id}>
               <Text as="p">{actionLabel(request.action)}</Text>
-              <Text as="p" tone="secondary">
-                {request.commentText}
-              </Text>
+              {request.commentText !== undefined ? (
+                <Text as="p" tone="secondary">
+                  {request.commentText}
+                </Text>
+              ) : null}
               {request.status === "pending" ? (
                 <div className="social-tag-line">
                   <Button
                     variant="secondary"
                     size="sm"
                     loading={is(request.id)}
+                    disabled={request.commentText === undefined}
                     onClick={() => decide(request, "approve")}
                   >
                     {t("Approve")}

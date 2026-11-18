@@ -5,7 +5,7 @@ import type {
 } from "../../../src/features/social/model/instagramModeration";
 import { SocialPlatformError } from "../../../src/integrations/social/adapter";
 import type { SocialActionContext, SocialActionModule } from "../core/social-actions";
-import { exact, str } from "../core/social-helpers";
+import { exact, hash, str } from "../core/social-helpers";
 
 const kind = "instagram-moderation";
 
@@ -58,7 +58,7 @@ async function decide(ctx: SocialActionContext, input: Record<string, unknown>) 
       account.id !== request.accountId ||
       account.platformId !== request.platformAccountId ||
       event.id !== request.eventId ||
-      event.text !== request.commentText ||
+      hash(event.text) !== request.commentDigest ||
       projectId !== request.projectId
     )
       throw new Error("The Instagram comment changed after review.");
@@ -111,7 +111,7 @@ export const instagramModerationRequests: SocialActionModule = {
           threadId,
           commentId,
           eventId: event.id,
-          commentText: event.text,
+          commentDigest: hash(event.text),
           action,
           status: "pending",
           createdAt,
@@ -126,10 +126,24 @@ export const instagramModerationRequests: SocialActionModule = {
     ownerOnly: true,
     async run(ctx, input) {
       exact(input, ["threadId", "before"]);
-      return ctx.store.instagramModerationRequests(
-        str(input.threadId, "conversation", 200),
+      const threadId = str(input.threadId, "conversation", 200);
+      const thread = await ctx.service.thread(threadId);
+      const page = await ctx.store.instagramModerationRequests(
+        threadId,
         input.before === undefined ? undefined : str(input.before, "cursor", 500),
       );
+      return {
+        ...page,
+        requests: page.requests.map((request) => {
+          const event = thread?.events.find(
+            (event) =>
+              event.id === request.eventId &&
+              event.platformId === request.commentId &&
+              hash(event.text) === request.commentDigest,
+          );
+          return { ...request, ...(event ? { commentText: event.text } : {}) };
+        }),
+      };
     },
   },
   "instagram.comments.requests.decide": { readOnly: false, ownerOnly: true, run: decide },
