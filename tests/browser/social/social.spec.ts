@@ -27,8 +27,8 @@ const sections = (page: Page) => page.getByRole("tablist", { name: "Social bÃ¶lÃ
 for (const theme of ["light", "dark"])
   for (const width of [800, 1280]) {
     test(`Instagram surfaces ${theme} ${width}`, async ({ page }) => {
-      await page.setViewportSize({ width, height: 900 });
       for (const surface of ["publishing", "story", "inbox", "browser", "insights"]) {
+        await page.setViewportSize({ width, height: surface === "browser" ? 1600 : 900 });
         await page.goto(`/tests/browser/social/social.html?instagram-surface=${surface}`);
         const frame = page.locator("[data-instagram-surface]");
         await expect(frame).toBeVisible();

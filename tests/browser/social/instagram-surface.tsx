@@ -115,7 +115,11 @@ export function InstagramSurface({ surface }: { surface: string }) {
         <InstagramAccountTools
           client={client}
           account={surface === "browser" ? { ...account, connection: "browser" } : account}
-          capabilities={capabilities}
+          capabilities={
+            surface === "browser"
+              ? capabilities.filter((item) => item.operation === "message.start")
+              : capabilities
+          }
           disabled={false}
           projects={[{ id: "demo", name: "Demo", cwd: "/demo" }]}
         />

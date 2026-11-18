@@ -2450,6 +2450,11 @@ Object.assign(window, {
 });
 document.body.style.cssText =
   "height:100vh;margin:0;background:var(--color-background-base);color:var(--color-content)";
+if (new URLSearchParams(location.search).has("instagram-surface")) {
+  document.documentElement.style.overflowY = "auto";
+  document.body.style.height = "auto";
+  document.body.style.overflow = "visible";
+}
 function SocialFixture() {
   const [shown, setShown] = useState(true);
   Object.assign(window, { socialFixtureShow: setShown });

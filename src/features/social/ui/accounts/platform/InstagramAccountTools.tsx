@@ -117,7 +117,7 @@ export function InstagramAccountTools({
   return (
     <Disclosure summary={t("Instagram tools")}>
       {account.connection === "browser" ? (
-        <FieldGroup legend={t("Instagram in browser")} disabled={disabled}>
+        <FieldGroup legend={t("Instagram in browser")} layout="row" gap="sm" disabled={disabled}>
           {workflows.map(({ intent, label }) => (
             <Button
               key={intent}
