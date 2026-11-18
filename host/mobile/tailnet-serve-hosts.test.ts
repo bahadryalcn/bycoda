@@ -31,13 +31,19 @@ describe("tailnet serve hosts", () => {
       .fn()
       .mockResolvedValueOnce({ state: "ready", endpoint: "https://bab.tail1.ts.net" })
       .mockRejectedValueOnce(new Error("cli busy"))
-      .mockResolvedValueOnce({ state: "unavailable" });
+      .mockResolvedValueOnce({ state: "unavailable" })
+      .mockResolvedValueOnce({ state: "permission-required" })
+      .mockResolvedValueOnce({ state: "setup-required" });
     const hosts = createTailnetServeHosts(read);
     expect(hosts.current()).toEqual([]);
     await vi.advanceTimersByTimeAsync(0);
     expect(hosts.current()).toEqual(["bab.tail1.ts.net"]);
-    await vi.advanceTimersByTimeAsync(60_000);
-    expect(hosts.current()).toEqual(["bab.tail1.ts.net"]);
+    // A throw, `unavailable` (how a failed CLI call is reported) and a permission
+    // problem are not proof that Serve stopped.
+    for (let probe = 0; probe < 3; probe++) {
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(hosts.current()).toEqual(["bab.tail1.ts.net"]);
+    }
     await vi.advanceTimersByTimeAsync(60_000);
     expect(hosts.current()).toEqual([]);
     hosts.dispose();
