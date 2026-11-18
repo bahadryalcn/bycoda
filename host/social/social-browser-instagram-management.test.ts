@@ -1,4 +1,4 @@
-import { Window } from "happy-dom";
+import { type HTMLElement, type HTMLTextAreaElement, Window } from "happy-dom";
 import { afterEach, expect, it, vi } from "vitest";
 import type { SocialAccount, SocialJob } from "../../src/features/social/model/social";
 import { socialBrowserUrl } from "../../src/features/social/model/socialBrowser";
@@ -235,7 +235,13 @@ it("resolves only a visible exact Instagram profile with a different account ID"
   });
 });
 
-const directJob = {
+const directJob: SocialJob = {
+  id: "instagram-direct-job",
+  operationId: "instagram-direct-operation",
+  dedupeKey: "instagram-direct-attempt",
+  accountId: "111",
+  projectIds: [],
+  provider: "owner",
   kind: "message",
   payload: {
     text: "Approved message",
@@ -243,7 +249,12 @@ const directJob = {
     recipientId: "222",
     instagramRecipientHandle: "example",
   },
-} satisfies Pick<SocialJob, "kind" | "payload">;
+  status: "running",
+  scheduledAt: 0,
+  attempts: 1,
+  createdAt: 0,
+  actorId: "owner",
+};
 
 function directFixture(options: { wrongRecipient?: boolean; persisting?: boolean } = {}) {
   const f = fixture();
@@ -303,7 +314,7 @@ function directFixture(options: { wrongRecipient?: boolean; persisting?: boolean
 it("sends a verified new single-recipient DM once and confirms the persisted exact message", async () => {
   const f = directFixture();
   const recipe = metaBrowserRecipes.find(({ platform }) => platform === "instagram")!;
-  await expect(recipe.send(f.context, directJob as SocialJob)).resolves.toEqual({
+  await expect(recipe.send(f.context, directJob)).resolves.toEqual({
     platformId: "5566",
   });
   expect(f.submitted).toHaveBeenCalledTimes(1);
@@ -318,7 +329,7 @@ it("sends a verified new single-recipient DM once and confirms the persisted exa
 it("rejects a changed recipient or changed approval and holds a missing DM receipt", async () => {
   const recipe = metaBrowserRecipes.find(({ platform }) => platform === "instagram")!;
   const wrong = directFixture({ wrongRecipient: true });
-  await expect(recipe.send(wrong.context, directJob as SocialJob)).rejects.toMatchObject({
+  await expect(recipe.send(wrong.context, directJob)).rejects.toMatchObject({
     code: "denied",
   });
   expect(wrong.page.fill).not.toHaveBeenCalled();
@@ -327,10 +338,10 @@ it("rejects a changed recipient or changed approval and holds a missing DM recei
   revoked.sendCheck.mockImplementation(() => {
     throw new Error("Suppressed");
   });
-  await expect(recipe.send(revoked.context, directJob as SocialJob)).rejects.toThrow("Suppressed");
+  await expect(recipe.send(revoked.context, directJob)).rejects.toThrow("Suppressed");
   expect(revoked.submitted).not.toHaveBeenCalled();
   const unknown = directFixture({ persisting: false });
-  await expect(recipe.send(unknown.context, directJob as SocialJob)).rejects.toMatchObject({
+  await expect(recipe.send(unknown.context, directJob)).rejects.toMatchObject({
     code: "unknown",
   });
   expect(unknown.submitted).toHaveBeenCalledTimes(1);

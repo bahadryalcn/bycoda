@@ -1,4 +1,10 @@
-import { Window } from "happy-dom";
+import {
+  type HTMLButtonElement,
+  type HTMLElement,
+  type HTMLInputElement,
+  type HTMLTextAreaElement,
+  Window,
+} from "happy-dom";
 import { afterEach, expect, it, vi } from "vitest";
 import type { BrowserPage } from "./social-browser";
 import {
