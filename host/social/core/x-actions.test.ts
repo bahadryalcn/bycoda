@@ -52,6 +52,15 @@ function fixture({ paid = true, suppress = false, unknown = false } = {}) {
 }
 
 describe("X account actions", () => {
+  it("refuses historical insights on self-serve before requesting credentials or metrics", async () => {
+    const { actions, ctx, fetcher } = fixture();
+    const credentialFor = vi.spyOn(ctx.service, "credentialFor");
+    await expect(actions["x.insights"].run(ctx, { accountId: "account" })).rejects.toThrow(
+      "Enterprise",
+    );
+    expect(credentialFor).not.toHaveBeenCalled();
+    expect(fetcher).not.toHaveBeenCalled();
+  });
   it("returns fixed browser destinations without contacting X", async () => {
     const { actions, ctx, fetcher } = fixture({ paid: false });
     await expect(
@@ -61,6 +70,9 @@ describe("X account actions", () => {
         target: "123",
       }),
     ).resolves.toEqual({ status: "needs_human", url: "https://x.com/i/web/status/123" });
+    await expect(
+      actions["x.handoff"].run(ctx, { accountId: "account", destination: "spaces" }),
+    ).resolves.toEqual({ status: "needs_human", url: "https://help.x.com/en/using-x/spaces" });
     await expect(
       actions["x.handoff"].run(ctx, {
         accountId: "account",

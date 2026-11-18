@@ -43,7 +43,11 @@ export function XAccountActions({ account, client, disabled }: Props) {
             { value: "live", label: "X Live Studio" },
             { value: "spaces", label: t("Spaces") },
           ]}
-          onValueChange={(value) => setDestination(value as XDestination)}
+          onValueChange={(value) => {
+            setDestination(value as XDestination);
+            setStreamKey("");
+            setKeySaved(false);
+          }}
         />
         {needsTarget ? (
           <TextField
@@ -74,6 +78,7 @@ export function XAccountActions({ account, client, disabled }: Props) {
               type="password"
               value={streamKey}
               autoComplete="off"
+              disabled={disabled || is("key")}
               onChange={(event) => {
                 setStreamKey(event.currentTarget.value);
                 setKeySaved(false);

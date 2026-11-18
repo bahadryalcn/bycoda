@@ -169,17 +169,20 @@ when using Browser. [X post API](https://docs.x.com/x-api/posts/create-post)
 
 The X actions panel supports individually confirmed API engagement,
 relationships, lists and post deletion. Profile edits, encrypted Chat,
-creator earnings, Live Studio and Spaces hosting have owner browser handoffs.
+creator earnings and Live Studio have owner browser handoffs.
+Hosting Spaces requires the X mobile app. [X Spaces](https://help.x.com/en/using-x/spaces)
+
 X prohibits scripting its website. A key copied from Live Studio can be stored
 in the executor Host's credential store. The key is absent from account
 snapshots and chat results. [X automation rules](https://help.x.com/en/rules-and-policies/x-automation)
 
 Chat tools `x.handoff`, `x.insights`, `x.spaces` and `x.lists` return a browser
-destination or a permitted readout. API insights sample up to 100 owned posts
-over seven days and report coverage. Legacy X DMs support one-to-one starts
+destination or a permitted readout. Enterprise API insights sample up to 100
+owned posts over seven days and report coverage. Legacy X DMs support one-to-one starts
 and replies with one supported attachment. Encrypted Chat requires a separate
 API and provider enrollment. Creator Studio shows Subscriptions and Original
-Content Rewards, the successor to Creator Revenue Sharing.
+Content Rewards, the successor to Creator Revenue Sharing. X excludes posts
+created or published through automated means from Original Content Rewards.
 [X Creator Rewards](https://help.x.com/en/using-x/original-content-rewards)
 
 - Browser mode uses the owner's own X web session and automates x.com. It is unofficial,

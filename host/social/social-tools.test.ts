@@ -434,6 +434,11 @@ describe("Real local CLI and MCP transport", () => {
         "ai.report",
         "browser.needsHuman.list",
         "browser.recipeSuggestions.list",
+        // X.
+        "x.handoff",
+        "x.insights",
+        "x.lists",
+        "x.spaces",
       ];
       const writes = [
         "accounts.request",

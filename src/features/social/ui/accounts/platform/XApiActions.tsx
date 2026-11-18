@@ -171,18 +171,20 @@ function XReadouts({ account, client, disabled }: Props) {
   const read = (operation: string, fetch: () => Promise<void>) => void write(operation, fetch);
   return (
     <div className="social-field-row">
-      <Button
-        disabled={disabled}
-        loading={is("analytics")}
-        onClick={() =>
-          read("analytics", async () => {
-            setInsights(await client.request("x.insights", { accountId: account.id }));
-          })
-        }
-      >
-        {t("Analytics")}
-      </Button>
-      {insights ? (
+      {account.xApiProduct === "enterprise" ? (
+        <Button
+          disabled={disabled}
+          loading={is("analytics")}
+          onClick={() =>
+            read("analytics", async () => {
+              setInsights(await client.request("x.insights", { accountId: account.id }));
+            })
+          }
+        >
+          {t("Analytics")}
+        </Button>
+      ) : null}
+      {account.xApiProduct === "enterprise" && insights ? (
         <Text as="p" size="caption">
           {t("Posts measured: {p0}", {
             p0: formatNumber(insights.coverage.requestedPosts),

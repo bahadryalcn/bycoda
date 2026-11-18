@@ -480,7 +480,7 @@ const TOOL_NOTES: Partial<Record<SocialTool, string>> = {
   "x.handoff":
     " Returns a fixed X page with status needs_human. The owner completes the action on X. Never claim it was completed.",
   "x.insights":
-    " Reads seven days of metrics from a bounded sample of recent owned posts. Requires paid X API opt-in.",
+    " Reads seven days of metrics from a bounded sample of recent owned posts. Requires X Enterprise.",
   "x.spaces": " Looks up this account's Spaces. Requires paid X API opt-in.",
   "x.lists": " Lists owned X lists or individual list members. Requires paid X API opt-in.",
   "accounts.request":

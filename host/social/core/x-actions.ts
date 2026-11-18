@@ -91,9 +91,16 @@ function assertPaid(account: SocialAccount) {
     throw new Error("Connect and enable this X API account first.");
 }
 
-async function paidRead(ctx: SocialActionContext, id: unknown, operation: SocialOperation) {
+async function paidRead(
+  ctx: SocialActionContext,
+  id: unknown,
+  operation: SocialOperation,
+  product?: SocialAccount["xApiProduct"],
+) {
   const account = await xAccount(ctx, id);
   assertPaid(account);
+  if (product && account.xApiProduct !== product)
+    throw new Error("X historical post analytics requires Enterprise.");
   ctx.service.capability(account, operation);
   const token = await xToken(ctx, account.id);
   const current = await xAccount(ctx, account.id);
@@ -272,7 +279,7 @@ export function createXActions(http = new SocialHttp()): SocialActionModule {
         const startTime = isoTimestamp(end - 7 * 86_400_000);
         const endTime = isoTimestamp(end);
         if (!startTime || !endTime) throw new Error("The Host clock is unavailable.");
-        const { account, token } = await paidRead(ctx, input.accountId, "analytics");
+        const { account, token } = await paidRead(ctx, input.accountId, "analytics", "enterprise");
         return await xReadInsights(http, account, token, { startTime, endTime });
       },
     },

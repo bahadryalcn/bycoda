@@ -18,7 +18,7 @@ export const X_DESTINATIONS = [
 
 export type XDestination = (typeof X_DESTINATIONS)[number];
 
-const paths: Record<XDestination, string> = {
+const paths: Record<Exclude<XDestination, "spaces">, string> = {
   signup: "/i/flow/signup",
   connect: "/i/flow/login",
   profile: "/settings/profile",
@@ -30,7 +30,6 @@ const paths: Record<XDestination, string> = {
   analytics: "/i/jf/creators/studio",
   earnings: "/i/jf/creators/studio",
   live: "/i/live-studio",
-  spaces: "/i/spaces/start",
 };
 
 export function xHandoff(destination: unknown, target?: unknown, accountId?: unknown) {
@@ -40,6 +39,8 @@ export function xHandoff(destination: unknown, target?: unknown, accountId?: unk
   )
     throw new Error("Choose an X destination.");
   const name = destination as XDestination;
+  if (name === "spaces")
+    return { status: "needs_human" as const, url: "https://help.x.com/en/using-x/spaces" };
   let path = paths[name];
   if (name === "post") path = `/i/web/status/${xResourceId(target)}`;
   if (name === "audience" && target) path = `/i/user/${xResourceId(target)}`;
