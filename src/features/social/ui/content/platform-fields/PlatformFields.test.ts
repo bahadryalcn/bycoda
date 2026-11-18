@@ -82,10 +82,17 @@ afterEach(() => {
 });
 
 describe("platforms without options", () => {
-  it("shows the media rule for X and Instagram and nothing for other platforms", () => {
+  it("shows the media rule for X and Instagram browser accounts and nothing for LinkedIn", () => {
     render("x");
     expect(text()).toContain("X posts take either up to four images or one video.");
-    render("instagram");
+    render("instagram", {
+      account: {
+        id: "a1",
+        platform: "instagram",
+        name: "Studio",
+        connection: "browser",
+      } as SocialAccount,
+    });
     expect(text()).toContain("Attach either one video or up to four images.");
     render("linkedin");
     expect(element.textContent).toBe("");

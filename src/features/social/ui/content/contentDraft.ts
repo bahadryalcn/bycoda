@@ -1,9 +1,11 @@
 import type {
   SocialCampaign,
+  SocialAccount,
   SocialMedia,
   TikTokVideoOptions,
   YouTubeVideoOptions,
 } from "../../model/social";
+import type { InstagramPublishOptions } from "../../../../integrations/social/adapters/instagram-publish";
 
 /** Read from the local file before upload (video only). Never sent to the Host. */
 export type MediaProbe = { durationSeconds?: number; width?: number; height?: number };
@@ -20,12 +22,24 @@ export type ContentMedia = {
 
 export type FacebookDraft = { target: "feed" | "reel"; frameRate?: number };
 export type RedditDraft = { subreddit: string; flair: string };
+export type InstagramTagDraft = {
+  id: string;
+  localMediaId?: string;
+  username: string;
+  x?: number;
+  y?: number;
+};
+export type InstagramDraft = Omit<InstagramPublishOptions, "userTags"> & {
+  userTags?: InstagramTagDraft[];
+  altText?: Record<string, string>;
+};
 
 /** Platform options the owner sets per account. Only fields the Host accepts reach a variant. */
 export type PlatformDraft = {
   tiktok?: Partial<Omit<TikTokVideoOptions, "durationSeconds">>;
   youtube?: Partial<YouTubeVideoOptions>;
   facebook?: FacebookDraft;
+  instagram?: InstagramDraft;
   /** Kept in the draft for review; the Host has no Reddit variant field yet (see contentRules). */
   reddit?: RedditDraft;
 };
@@ -125,11 +139,70 @@ function withoutDuration(
 }
 
 /** Maps a saved campaign to an editable draft. Media keeps its upload identity and metadata. */
-export function draftFromCampaign(campaign: SocialCampaign): ContentDraft {
+export function draftFromCampaign(
+  campaign: SocialCampaign,
+  accounts: SocialAccount[] = [],
+): ContentDraft {
   const first = campaign.variants[0];
+  const caption =
+    campaign.variants.find((variant) => variant.instagram?.format !== "story") ?? first;
+  const firstAccount = accounts.find((account) => account.id === first?.accountId);
+  const igFirst =
+    first?.instagram !== undefined ||
+    (firstAccount?.platform === "instagram" && firstAccount.connection !== "browser");
+  const media: ContentMedia[] = (first?.media ?? []).map((asset, index, items) => {
+    const identity = asset.uploadId ?? asset.url;
+    const duplicate =
+      identity && items.findIndex((item) => (item.uploadId ?? item.url) === identity) !== index;
+    const baseAsset = { ...asset };
+    if (igFirst) delete baseAsset.alt;
+    return {
+      localId: identity && !duplicate ? identity : `saved-${index}`,
+      name: asset.title ?? asset.url ?? asset.kind,
+      media: baseAsset,
+    };
+  });
   const platform: Record<string, PlatformDraft> = {};
   for (const variant of campaign.variants) {
     const entry: PlatformDraft = {};
+    const account = accounts.find((account) => account.id === variant.accountId);
+    if (
+      variant.instagram ||
+      (account?.platform === "instagram" && account.connection !== "browser")
+    ) {
+      const { userTags, collaborators, ...options } = variant.instagram ?? {};
+      const mediaKey = (index: number) => {
+        const asset = variant.media[index];
+        const shared = media[index];
+        if (!asset || !shared) return undefined;
+        if (asset.uploadId === shared.media.uploadId && asset.url === shared.media.url)
+          return shared.localId;
+        return media.find(
+          (item) => item.media.uploadId === asset.uploadId && item.media.url === asset.url,
+        )?.localId;
+      };
+      entry.instagram = {
+        ...options,
+        ...(collaborators ? { collaborators: [...collaborators] } : {}),
+        ...(userTags
+          ? {
+              userTags: userTags.map(({ username, x, y, mediaIndex }, index) => ({
+                id: `saved-tag-${index}`,
+                localMediaId: mediaKey(mediaIndex ?? 0),
+                username,
+                x,
+                y,
+              })),
+            }
+          : {}),
+        altText: Object.fromEntries(
+          variant.media.flatMap((asset, index) => {
+            const key = mediaKey(index);
+            return key && asset.alt ? [[key, asset.alt]] : [];
+          }),
+        ),
+      };
+    }
     if (variant.youtube) entry.youtube = { ...variant.youtube };
     if (variant.tiktok) entry.tiktok = withoutDuration(variant.tiktok);
     if (variant.facebook)
@@ -155,14 +228,12 @@ export function draftFromCampaign(campaign: SocialCampaign): ContentDraft {
     campaignId: campaign.id,
     revision: campaign.revision,
     name: campaign.name,
-    text: first?.text ?? "",
-    link: first?.link ?? "",
+    text: caption?.text ?? "",
+    link: caption?.link ?? "",
     accountIds: campaign.variants.map((variant) => variant.accountId),
-    media: (first?.media ?? []).map((media, index) => ({
-      localId: media.uploadId ?? media.url ?? `saved-${index}`,
-      name: media.title ?? media.url ?? media.kind,
-      media: { ...media },
-      probe: media.kind === "video" ? probe : undefined,
+    media: media.map((item) => ({
+      ...item,
+      probe: item.media.kind === "video" ? probe : undefined,
     })),
     // A saved time that has passed reopens as "Now"; the owner picks a new time before scheduling.
     when: scheduled && scheduled > Date.now() ? "later" : "now",

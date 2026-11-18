@@ -79,6 +79,46 @@ afterEach(() => {
   element.remove();
 });
 
+describe("Instagram public media", () => {
+  function attach(address: string) {
+    const input = element.querySelector<HTMLInputElement>('input[type="url"]')!;
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(
+        input,
+        address,
+      );
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const button = [...element.querySelectorAll("button")].find(
+      (node) => node.textContent === "Attach media URL",
+    )!;
+    act(() => button.click());
+  }
+
+  it("attaches a public HTTPS asset with no local upload", () => {
+    render({ instagramMedia: "public-only" });
+    expect(fileInput()).toBeNull();
+    attach("https://cdn.example.com/cover.jpg");
+    expect(onChange).toHaveBeenCalledWith([
+      expect.objectContaining({
+        name: "cover.jpg",
+        media: { kind: "image", url: "https://cdn.example.com/cover.jpg" },
+      }),
+    ]);
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  it("rejects an address with credentials without losing the typed value", () => {
+    render({ instagramMedia: "public-only" });
+    attach("https://user:pass@cdn.example.com/cover.jpg");
+    expect(text()).toContain("Enter a public HTTPS media URL without credentials.");
+    expect(element.querySelector<HTMLInputElement>('input[type="url"]')?.value).toContain(
+      "cdn.example.com/cover.jpg",
+    );
+    expect(onChange).not.toHaveBeenCalled();
+  });
+});
+
 describe("attaching files", () => {
   it("uploads a PNG and adds it after the media already attached", async () => {
     render({ media: [saved("old")] });

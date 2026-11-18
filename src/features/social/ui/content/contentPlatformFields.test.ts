@@ -97,10 +97,46 @@ afterEach(() => {
 });
 
 describe("MetaFields", () => {
-  it("shows only the attachment hint for Instagram", () => {
-    render(createElement(MetaFields, props("instagram")));
+  it("shows only the attachment hint for Instagram browser accounts", () => {
+    render(
+      createElement(
+        MetaFields,
+        props("instagram", { account: { ...account("instagram"), connection: "browser" } }),
+      ),
+    );
     expect(element.querySelector("select")).toBeNull();
     expect(element.textContent).toContain("Attach either one video or up to four images.");
+  });
+
+  it("offers Story and Instagram publishing options for professional API accounts", () => {
+    render(
+      createElement(MetaFields, props("instagram", { value: { instagram: { format: "story" } } })),
+    );
+    expect(element.textContent).toContain("Instagram format");
+    expect(element.textContent).toContain("Stories use one image or video");
+    expect(element.textContent).toContain("Label as AI-generated");
+  });
+
+  it("edits image alternative text and starts a tag bound to the only attachment", () => {
+    const media: ContentMedia[] = [
+      {
+        localId: "cover",
+        name: "cover.jpg",
+        media: { kind: "image", url: "https://cdn.example.com/cover.jpg" },
+      },
+    ];
+    render(createElement(MetaFields, props("instagram", { media })));
+    setInput(textInput("Alt text for cover.jpg")!, "A yellow kite.");
+    expect(onChange).toHaveBeenLastCalledWith({
+      instagram: { altText: { cover: "A yellow kite." } },
+    });
+    const add = [...element.querySelectorAll("button")].find(
+      (node) => node.textContent === "Add Instagram tag",
+    )!;
+    act(() => add.click());
+    expect(onChange).toHaveBeenLastCalledWith({
+      instagram: { userTags: [{ id: expect.any(String), localMediaId: "cover", username: "" }] },
+    });
   });
 
   it("defaults Facebook to a page post and offers the explicit Reel choice", () => {
