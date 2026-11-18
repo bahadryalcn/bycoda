@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ApprovalMirrorEntry } from "../../src/shared/model/host-contracts/approvals";
 import { ownerApprovalSignature } from "../../src/shared/model/ownerApprovalSignature";
 import { ApprovalRegistry, APPROVAL_KEEP_MS } from "./approval-registry";
+import type { ApprovalStore } from "./approval-store";
 
 const DESKTOP = "desktop-hash";
 const PHONE = "phone-hash";
@@ -185,6 +186,34 @@ describe("approval registry", () => {
       remove: [{ id: "a", outcome: "answered", approved: true }],
     });
     expect(registry.list()[0]).toMatchObject({ status: "approved", decidedBy: "desktop" });
+  });
+
+  it("does not rewrite an answered approval on later reads once its deadline passed", async () => {
+    let now = 1_000;
+    const save = vi.fn(async () => undefined);
+    const store = {
+      load: async () => [],
+      save,
+      remove: async () => undefined,
+    } as unknown as ApprovalStore;
+    const registry = new ApprovalRegistry(() => now, store);
+    await registry.ready;
+    registry.noteDesktop(DESKTOP);
+    await registry.mirror(DESKTOP, { upsert: [await entry("a")], remove: [] });
+    await registry.mirror(DESKTOP, {
+      upsert: [],
+      remove: [{ id: "a", outcome: "answered", approved: true }],
+    });
+    now += 300_000;
+    registry.noteDesktop(DESKTOP);
+    registry.list();
+    await registry.flush();
+    const saved = save.mock.calls.length;
+    registry.list();
+    registry.list();
+    await registry.flush();
+    expect(save.mock.calls.length).toBe(saved);
+    expect(registry.list()[0]).toMatchObject({ status: "approved" });
   });
 
   it("offers each remote approval for a push once", async () => {
