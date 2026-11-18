@@ -69,6 +69,76 @@ export function slowRpcThresholdMs(method: string, params: Record<string, unknow
   return SLOW_RPC_MS + (Object.hasOwn(RPC_HOLD_MS, method) ? RPC_HOLD_MS[method]!(params) : 0);
 }
 
+/**
+ * Server-side backstop for an owner call that never settles. Each value outlasts the desktop
+ * client's own deadline for the method (`rpc_timeout` in `src-tauri/src/remote.rs`) by 30 s,
+ * so a healthy call is never cut before its caller gives up. Held polls end at their 10 s cap.
+ */
+const RPC_DEADLINE_MS = 120_000;
+const GIT_MUTATION_DEADLINE_MS = 480_000;
+const LONG_RPC_DEADLINE_MS: Record<string, number> = {
+  "git.action": GIT_MUTATION_DEADLINE_MS,
+  "git.switch": GIT_MUTATION_DEADLINE_MS,
+  "git.createBranch": GIT_MUTATION_DEADLINE_MS,
+  "git.worktreeCreate": GIT_MUTATION_DEADLINE_MS,
+  "workspaces.close": GIT_MUTATION_DEADLINE_MS,
+  "workspaces.finish": GIT_MUTATION_DEADLINE_MS,
+  "workspaces.cleanup.plan": GIT_MUTATION_DEADLINE_MS,
+  "workspaces.cleanup.status": GIT_MUTATION_DEADLINE_MS,
+  "workspaces.cleanup.apply": GIT_MUTATION_DEADLINE_MS,
+  "git.generateText": 160_000,
+  "sessions.sideQuestion": 190_000,
+  "voice.local.start": 210_000,
+  "devices.action": 210_000,
+  "devices.boot": 270_000,
+  "assistant.builder.avatarGenerate": 280_000,
+  "projects.clone": 660_000,
+  "browser.setup": 1_260_000,
+  "devices.setup": 1_260_000,
+};
+/** Owner commands and assistant turns carry their own deadline, so the dispatcher adds none. */
+export function ownerRpcDeadlineMs(method: string, params: Record<string, unknown>): number {
+  if (slowRpcThresholdMs(method, params) === Infinity) return Infinity;
+  return Object.hasOwn(LONG_RPC_DEADLINE_MS, method)
+    ? LONG_RPC_DEADLINE_MS[method]!
+    : RPC_DEADLINE_MS;
+}
+
+/** The dispatcher stopped waiting; the handler may still finish, so the outcome is unknown. */
+export class OwnerRpcDeadlineError extends HostDomainOutcomeError {
+  readonly code = "HOST_RPC_DEADLINE";
+  constructor(method: string, ms: number) {
+    super(`Host did not answer ${method} within ${Math.round(ms / 1000)} s.`, "unknown");
+    this.name = "OwnerRpcDeadlineError";
+  }
+}
+
+/**
+ * Settles with the handler, or rejects when the request signal aborts: on the deadline with
+ * `OwnerRpcDeadlineError`, on a client disconnect with a cancellation. Either way the HTTP
+ * request leaves the drain set instead of waiting on a handler that never settles.
+ */
+function untilAborted(
+  work: Promise<void>,
+  signal: AbortSignal,
+  method: string,
+  deadlineMs: number,
+): Promise<void> {
+  const reason = () =>
+    signal.reason instanceof DOMException && signal.reason.name === "TimeoutError"
+      ? new OwnerRpcDeadlineError(method, deadlineMs)
+      : new Error("Request cancelled");
+  if (signal.aborted) {
+    work.catch(() => undefined);
+    return Promise.reject(reason());
+  }
+  return new Promise<void>((resolve, reject) => {
+    const abort = () => reject(reason());
+    signal.addEventListener("abort", abort, { once: true });
+    work.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+  });
+}
+
 /** Client-supplied identifiers reach the log only when they look like identifiers. */
 const correlationId = (value: unknown): string | number | undefined =>
   (typeof value === "string" && /^[\w.:-]{1,128}$/.test(value)) || Number.isSafeInteger(value)
@@ -720,8 +790,17 @@ export async function dispatchOwnerRpc(
   // Only the desktop app sends this heartbeat; it is how the Host recognizes the desktop principal.
   if (method === "sessions.desktopLive") dependencies.approvals.noteDesktop(request.tokenHash);
   const startedAt = performance.now();
+  const signal = request.domainContext?.signal;
   try {
-    await handler(dependencies, request);
+    const work = handler(dependencies, request);
+    await (signal
+      ? untilAborted(
+          work,
+          signal,
+          String(method),
+          ownerRpcDeadlineMs(String(method), request.params),
+        )
+      : work);
   } catch (error) {
     const fields = {
       ...rpcFailureFields(error, request),

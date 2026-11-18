@@ -17,7 +17,7 @@ import { HostVoiceToolDisclosure } from "../voice/voice-tool-disclosure";
 import type { ServerBindings } from "./bindings";
 import { endResponseAndAwaitWrite } from "./http-response-write";
 import type { HttpToolRequest } from "./http-tool-context";
-import { dispatchOwnerRpc } from "./owner-rpc";
+import { dispatchOwnerRpc, OwnerRpcDeadlineError, ownerRpcDeadlineMs } from "./owner-rpc";
 import { body } from "./support";
 import { handleAssistantObservationTools } from "./tools-assistant-observation";
 import { handleConversationTools } from "./tools-conversation-redacted";
@@ -233,6 +233,7 @@ export function createHttpRuntime(
         let releaseVoiceTool: (() => void) | undefined;
         let voiceDisclosure: HostVoiceToolDisclosure | undefined;
         let voiceBrowserOwner: string | undefined;
+        let deadline: ReturnType<typeof setTimeout> | undefined;
         const resultScopeReleases: Array<() => void> = [];
         const resultScopeSettlements: Promise<void>[] = [];
         let voiceToolLog:
@@ -339,6 +340,21 @@ export function createHttpRuntime(
               : {};
           const transportToken = token;
           const resultAuthorities: Array<() => Promise<boolean>> = [];
+          // Handlers see one signal for both ends of the request: the client hanging up
+          // before its answer was written, and the dispatcher's per-method deadline.
+          const requestAbort = new AbortController();
+          const signal = requestAbort.signal;
+          if (response.destroyed) requestAbort.abort();
+          else
+            response.once("close", () => {
+              if (!response.writableEnded) requestAbort.abort();
+            });
+          const deadlineMs = ownerRpcDeadlineMs(String(input.method), params);
+          if (Number.isFinite(deadlineMs))
+            deadline = setTimeout(
+              () => requestAbort.abort(new DOMException("Host RPC deadline", "TimeoutError")),
+              deadlineMs,
+            );
           const domainContext = {
             deviceEffectAdmitted: () => {
               deviceEffectAdmitted = true;
@@ -389,6 +405,7 @@ export function createHttpRuntime(
                 dependencies.tasks.retarget(id, target, autoMerge, owner),
               ),
             authorized: async () => await dependencies.engine.store.authenticated(transportToken),
+            signal,
             closing: () => closing || response.destroyed,
           };
           // Scope the timer to dispatch, including all early returns and failures.
@@ -722,22 +739,26 @@ export function createHttpRuntime(
           if (!response.destroyed && !response.headersSent)
             response
               .writeHead(
-                error instanceof RequestAuthorizationError ||
-                  error instanceof HostDomainAuthorizationError ||
-                  (error instanceof HostDomainOutcomeError &&
-                    (error.cause instanceof RequestAuthorizationError ||
-                      error.cause instanceof HostDomainAuthorizationError))
-                  ? 401
-                  : 400,
+                error instanceof OwnerRpcDeadlineError
+                  ? 504
+                  : error instanceof RequestAuthorizationError ||
+                      error instanceof HostDomainAuthorizationError ||
+                      (error instanceof HostDomainOutcomeError &&
+                        (error.cause instanceof RequestAuthorizationError ||
+                          error.cause instanceof HostDomainAuthorizationError))
+                    ? 401
+                    : 400,
               )
               .end(
                 JSON.stringify({
                   error: error instanceof Error ? error.message : "Host request failed",
                   ...(deviceEffectAdmitted
                     ? { code: "HOST_DEVICE_OPERATION_UNCONFIRMED", delivery: "unknown" }
-                    : error instanceof HostDomainOutcomeError
-                      ? { delivery: error.delivery }
-                      : {}),
+                    : error instanceof OwnerRpcDeadlineError
+                      ? { code: error.code, delivery: error.delivery }
+                      : error instanceof HostDomainOutcomeError
+                        ? { delivery: error.delivery }
+                        : {}),
                   ...(typeof error === "object" &&
                   error !== null &&
                   "code" in error &&
@@ -750,6 +771,7 @@ export function createHttpRuntime(
               );
           else if (!response.destroyed && !response.writableEnded) response.destroy();
         } finally {
+          clearTimeout(deadline);
           for (const release of resultScopeReleases) release();
           await Promise.allSettled(resultScopeSettlements);
           if (voiceToolLog)
