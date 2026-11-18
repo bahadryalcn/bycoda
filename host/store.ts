@@ -2081,6 +2081,8 @@ export class HostStore {
                   accepted,
                   previous,
                   (event as { type?: string } | null)?.type === "session.metadata",
+                  options.blockChanges,
+                  previousIndex?.positions,
                 ),
                 ...(authorityGeneration === undefined ? {} : { authorityGeneration }),
                 // Older snapshots have no creation time. Preserve their last recorded
