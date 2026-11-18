@@ -2047,6 +2047,7 @@ describe("collapsed rail Inbox actions", () => {
       "Search",
       "Inbox",
       "Crews",
+      "Live games",
       "Notes",
       "Automations",
       "Social Media",
@@ -2077,7 +2078,15 @@ describe("collapsed rail Inbox actions", () => {
 
     expect(rail.querySelector('button[aria-label="Tools"]')).toBeNull();
     expect(rail.querySelector('button[aria-label="Notes"]')).not.toBeNull();
-    for (const label of ["Crews", "Notes", "Automations", "Social Media", "Tasks", "Assistant"]) {
+    for (const label of [
+      "Crews",
+      "Live games",
+      "Notes",
+      "Automations",
+      "Social Media",
+      "Tasks",
+      "Assistant",
+    ]) {
       expect(rail.querySelector(`button[aria-label="${label}"]`)?.textContent).toBe("");
     }
     // The Projects flyout searches its own list; it never opens a second project picker.
