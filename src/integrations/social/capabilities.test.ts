@@ -195,20 +195,20 @@ describe("capability table shape", () => {
         platform === "snapchat"
           ? ["delete", "analytics", "profile.read"]
           : platform === "youtube"
-          ? ["analytics", "audience.collect", "profile.read"]
-          : platform === "tiktok"
-            ? ["analytics"]
-            : platform === "telegram"
-              ? ["delete", "audience.collect"]
-              : platform === "facebook"
-                ? ["delete", "analytics", "audience.collect"]
-                : platform === "instagram"
-                  ? ["analytics", "audience.collect"]
-                  : platform === "x"
-                    ? ["delete", "analytics", "audience.collect", "profile.read"]
-                    : platform === "reddit"
-                      ? ["delete", "audience.collect", "profile.read"]
-                      : [];
+            ? ["analytics", "audience.collect", "profile.read"]
+            : platform === "tiktok"
+              ? ["analytics"]
+              : platform === "telegram"
+                ? ["delete", "audience.collect"]
+                : platform === "facebook"
+                  ? ["delete", "analytics", "audience.collect"]
+                  : platform === "instagram"
+                    ? ["analytics", "audience.collect"]
+                    : platform === "x"
+                      ? ["delete", "analytics", "audience.collect", "profile.read"]
+                      : platform === "reddit"
+                        ? ["delete", "audience.collect", "profile.read"]
+                        : [];
       // Browser recipes that open a not-yet operation (browserCapabilities.ts). The row is then "available".
       const openedByBrowser = browserOperations(browserAccount(platform)) as readonly string[];
       for (const operation of NOT_YET_OPERATIONS) {

@@ -5,11 +5,7 @@ import { NOT_YET, r, type CapabilityRequirement, type PlatformCapabilities } fro
  * Public Profile API actions and verified browser-only Snapchat surfaces.
  */
 export function snapchatCapabilities(): PlatformCapabilities {
-  const unsupported = r(
-    [],
-    "The Public Profile API does not offer this Snapchat operation.",
-    true,
-  );
+  const unsupported = r([], "The Public Profile API does not offer this Snapchat operation.", true);
   const api: Record<SocialOperation, CapabilityRequirement> = {
     ...NOT_YET,
     publish: r(
@@ -34,9 +30,18 @@ export function snapchatCapabilities(): PlatformCapabilities {
     api: {
       ...api,
       // Snapchat Public Profile API
-      delete: r(["snapchat-profile-api"], "Delete an exact Spotlight or Saved Story after owner review."),
-      analytics: r(["snapchat-profile-api"], "Read Public Profile, content, and aggregate subscriber metrics. Earnings require creator access."),
-      "profile.read": r(["snapchat-profile-api"], "Read the connected Public Profile and list its published content."),
+      delete: r(
+        ["snapchat-profile-api"],
+        "Delete an exact Spotlight or Saved Story after owner review.",
+      ),
+      analytics: r(
+        ["snapchat-profile-api"],
+        "Read Public Profile, content, and aggregate subscriber metrics. Earnings require creator access.",
+      ),
+      "profile.read": r(
+        ["snapchat-profile-api"],
+        "Read the connected Public Profile and list its published content.",
+      ),
       "audience.collect": r(
         [],
         "The Public Profile API exposes no audience source in this adapter. Existing chat contacts are collected through the browser connection of a member account.",
@@ -53,7 +58,10 @@ export function snapchatCapabilities(): PlatformCapabilities {
       "message.reply":
         "Replies in an existing chat only: the exact thread and recipient are verified before typing, and the sent message is read back. Text only.",
       // Snapchat member chats
-      "message.start": "Start a text chat only after the exact username is verified in the connected member's friends list.",
+      "message.start":
+        "Start a text chat only after the exact username is verified in the connected member's friends list.",
+      "profile.read":
+        "Read the verified profile from the connected Snapchat browser session.",
       poll: "Bounded visible snapshots of up to two existing chats per run. An unrecognized layout is handed to the layered browser driver instead of reporting an empty inbox.",
       "audience.collect":
         "Contacts of existing chats on the signed-in member account, limited to what the chat list shows.",

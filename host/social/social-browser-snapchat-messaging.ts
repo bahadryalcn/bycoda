@@ -1,10 +1,13 @@
-import { denied, json } from "./social-browser-publishing-shared";
+import { denied, json, unsupported } from "./social-browser-publishing-shared";
 import type { BrowserRecipeContext } from "./social-browser-recipe";
 import { snapchatProtectedScreen } from "./social-browser-snapchat-guard";
 import { needsHumanError } from "./browser/challenge";
 
 type FriendChat = { threadId: string; href: string; recipient: string };
 export const snapChatLocation = String.raw`((location.origin==='https://web.snapchat.com'&&location.pathname==='/') || (location.origin==='https://www.snapchat.com'&&/^\/web\/?$/.test(location.pathname)))`;
+const friendsList = '[data-testid="my-friends-list"],[aria-label="My Friends"],[aria-label="Arkadaşlarım"]';
+type ChatReader = Pick<BrowserRecipeContext, "page" | "verifyIdentity" | "waitFor">;
+const visibleElement = "el=>!el.closest('[hidden],[aria-hidden=\"true\"]')&&el.getClientRects().length>0&&getComputedStyle(el).visibility!=='hidden'";
 
 export function snapchatConversation(
   owner: string,
@@ -25,10 +28,54 @@ export function snapchatConversation(
   `;
 }
 
-export async function proveSnapchatMessagingScreen(ctx: BrowserRecipeContext): Promise<void> {
+export async function proveSnapchatMessagingScreen(ctx: ChatReader): Promise<void> {
   const challenge = await snapchatProtectedScreen(ctx.page);
   if (challenge) throw needsHumanError(challenge);
   await ctx.verifyIdentity();
+}
+
+async function showFriends(ctx: ChatReader) {
+  await proveSnapchatMessagingScreen(ctx);
+  const trigger = String.raw`(() => {
+    if(!${snapChatLocation})return false;
+    const visible=${visibleElement};
+    const lists=[...document.querySelectorAll(${json(friendsList)})].filter(el=>visible(el)&&!el.matches('button,[role="button"]'));
+    if(lists.length)return false;
+    const buttons=[...document.querySelectorAll('button[data-testid="my-friends"],button[aria-label="My Friends"],button[aria-label="Arkadaşlarım"]')]
+      .filter(el=>visible(el)&&!el.disabled&&el.getAttribute('aria-disabled')!=='true');
+    if(buttons.length!==1)return false;
+    document.querySelectorAll('[data-bycoda-snap-friends]').forEach(el=>el.removeAttribute('data-bycoda-snap-friends'));
+    buttons[0].setAttribute('data-bycoda-snap-friends','true');return true;
+  })()`;
+  if (await ctx.page.evaluate<boolean>(trigger)) {
+    await proveSnapchatMessagingScreen(ctx);
+    if (await ctx.page.evaluate<boolean>(trigger)) await ctx.page.click('[data-bycoda-snap-friends="true"]');
+  }
+}
+
+export async function readSnapchatFriends(ctx: ChatReader, owner: string) {
+  await showFriends(ctx);
+  const snapshot = await ctx.waitFor<{ usernames: string[]; partial: boolean }>(
+    String.raw`(() => {
+      if(!${snapChatLocation})return;
+      const visible=${visibleElement};
+      const lists=[...document.querySelectorAll(${json(friendsList)})].filter(el=>visible(el)&&!el.matches('button,[role="button"]'));
+      if(lists.length!==1||lists[0].getAttribute('aria-busy')==='true')return;
+      const list=lists[0],rows=[...list.querySelectorAll('[data-username]')].filter(visible);
+      const usernames=[...new Set(rows.flatMap(row=>{
+        const username=row.getAttribute('data-username')?.toLowerCase(),relationship=row.getAttribute('data-relationship');
+        if(!username||!/^[a-z][\w.-]{1,30}$/.test(username)||'web:snapchat:'+username===${json(owner)}||
+          (relationship&&relationship!=='friend')||row.querySelector('[data-testid="add-friend"],[data-testid="invite-friend"],[data-testid="friend-request-pending"]'))return [];
+        return [username];
+      }))];
+      if(!rows.length&&list.getAttribute('data-complete')!=='true')return;
+      return {usernames:usernames.slice(0,100),partial:usernames.length>100||list.getAttribute('data-complete')!=='true'};
+    })()`,
+    12_000,
+  );
+  await proveSnapchatMessagingScreen(ctx);
+  if (!snapshot) throw unsupported();
+  return snapshot;
 }
 
 /** Opens a verified friend entry only. Arbitrary search, Add Friend and invites are never used. */
@@ -40,25 +87,11 @@ export async function openSnapchatFriend(
   if (!/^web:snapchat:[a-z][\w.-]{1,30}$/.test(recipient) || recipient === ctx.account.platformId)
     throw denied();
   const username = recipient.slice("web:snapchat:".length);
-  const friends =
-    '[data-testid="my-friends-list"],[aria-label="My Friends"],[aria-label="Arkadaşlarım"]';
-  await proveSnapchatMessagingScreen(ctx);
-  const friendsControl = String.raw`(() => {
-    if(!${snapChatLocation})return false;
-    const visible=el=>!el.closest('[hidden],[aria-hidden="true"]')&&el.getClientRects().length>0&&getComputedStyle(el).visibility!=='hidden';
-    const controls=[...document.querySelectorAll('button[data-testid="my-friends"],button[aria-label="My Friends"],button[aria-label="Arkadaşlarım"]')]
-      .filter(el=>visible(el)&&!el.disabled&&el.getAttribute('aria-disabled')!=='true');
-    if([...document.querySelectorAll(${json(friends)})].some(el=>visible(el)&&!el.matches('button,[role="button"]'))||controls.length!==1)return false;
-    document.querySelectorAll('[data-bycoda-snap-friends]').forEach(el=>el.removeAttribute('data-bycoda-snap-friends'));
-    controls[0].setAttribute('data-bycoda-snap-friends','true');return true;
-  })()`;
-  if (await ctx.page.evaluate<boolean>(friendsControl)) {
-    await ctx.page.click('[data-bycoda-snap-friends="true"]');
-  }
+  await showFriends(ctx);
   const friendControl = String.raw`(() => {
     if(!${snapChatLocation})return false;
     const visible=el=>!el.closest('[hidden],[aria-hidden="true"]')&&el.getClientRects().length>0&&getComputedStyle(el).visibility!=='hidden';
-    const lists=[...document.querySelectorAll(${json(friends)})].filter(el=>visible(el)&&!el.matches('button,[role="button"]'));
+    const lists=[...document.querySelectorAll(${json(friendsList)})].filter(el=>visible(el)&&!el.matches('button,[role="button"]'));
     if(lists.length!==1)return false;
     const rows=[...lists[0].querySelectorAll('[data-username]')].filter(el=>visible(el)&&el.getAttribute('data-username')?.toLowerCase()===${json(username)});
     if(rows.length!==1)return false;

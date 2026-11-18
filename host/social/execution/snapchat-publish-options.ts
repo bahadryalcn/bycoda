@@ -1,4 +1,7 @@
-import type { SnapchatPublishOptions, SocialAccount } from "../../../src/features/social/model/social";
+import type {
+  SnapchatPublishOptions,
+  SocialAccount,
+} from "../../../src/features/social/model/social";
 import { exact, finite, str } from "../core/social-helpers";
 
 function fields(value: unknown): Record<string, unknown> {
@@ -29,20 +32,34 @@ export function parseSnapchatPublishOptions(
     exact(input, ["target", ...dimensions, "locale", "linkStickerText", "linkStickerPlacement"]);
     if (!browser || input.locale !== undefined) {
       const locale = str(input.locale, "Spotlight locale", 5);
-      if (!/^[a-z]{2}_[A-Z]{2}$/.test(locale)) throw new Error("Use a Spotlight locale such as tr_TR.");
+      if (!/^[a-z]{2}_[A-Z]{2}$/.test(locale))
+        throw new Error("Use a Spotlight locale such as tr_TR.");
       result.locale = locale;
     }
   } else if (target === "story") {
-    exact(input, ["target", ...dimensions, "storyTtl", "linkStickerText", "linkStickerPlacement", "captionCenterY"]);
+    exact(input, [
+      "target",
+      ...dimensions,
+      "storyTtl",
+      "linkStickerText",
+      "linkStickerPlacement",
+      "captionCenterY",
+    ]);
     const { storyTtl, captionCenterY } = input;
     if (browser && [storyTtl, captionCenterY].some((item) => item !== undefined))
       throw new Error("These Snapchat Story options require the Public Profile API.");
     if (storyTtl !== undefined) {
-      if (storyTtl !== "ONE_DAY" && storyTtl !== "TWO_DAYS" && storyTtl !== "THREE_DAYS" && storyTtl !== "ONE_WEEK")
+      if (
+        storyTtl !== "ONE_DAY" &&
+        storyTtl !== "TWO_DAYS" &&
+        storyTtl !== "THREE_DAYS" &&
+        storyTtl !== "ONE_WEEK"
+      )
         throw new Error("Invalid Snapchat Story duration.");
       result.storyTtl = storyTtl;
     }
-    if (captionCenterY !== undefined) result.captionCenterY = finite(captionCenterY, "caption placement", 0, 1);
+    if (captionCenterY !== undefined)
+      result.captionCenterY = finite(captionCenterY, "caption placement", 0, 1);
   } else {
     exact(input, ["target", ...dimensions, "savedStorySources"]);
     if (browser) throw new Error("Saved Stories require the Snapchat Public Profile API.");
@@ -61,7 +78,8 @@ export function parseSnapchatPublishOptions(
   const { linkStickerText, linkStickerPlacement } = input;
   if (browser && (linkStickerText !== undefined || linkStickerPlacement !== undefined))
     throw new Error("Snapchat link stickers require the Public Profile API.");
-  if (linkStickerText !== undefined) result.linkStickerText = str(linkStickerText, "link sticker", 40);
+  if (linkStickerText !== undefined)
+    result.linkStickerText = str(linkStickerText, "link sticker", 40);
   if (linkStickerPlacement !== undefined) {
     const placement = fields(linkStickerPlacement);
     exact(placement, ["centerX", "centerY"]);

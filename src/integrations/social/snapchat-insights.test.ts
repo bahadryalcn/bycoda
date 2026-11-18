@@ -103,9 +103,9 @@ describe("Snapchat insights", () => {
     await expect(
       getSnapchatInsights(ctx, {
         ...query,
-        fields: "fields" in query ? [...query.fields] : undefined,
+        fields: query.fields ? [...query.fields] : undefined,
         breakdownDimensions:
-          "breakdownDimensions" in query ? [...query.breakdownDimensions] : undefined,
+          query.breakdownDimensions ? [...query.breakdownDimensions] : undefined,
       }),
     ).rejects.toMatchObject({ code: "rejected" });
     expect(fetch).not.toHaveBeenCalled();

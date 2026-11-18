@@ -65,6 +65,7 @@ export const BROWSER_PLATFORM_OPERATIONS: Record<
     "poll",
     "audience.collect",
     "message.start",
+    "profile.read",
   ],
   // No WhatsApp chat-sender reader is wired (dm_senders), so audience.collect is not offered here.
   whatsapp: ["inbox.read", "message.reply", "message.start", "poll", "media"],
@@ -85,9 +86,9 @@ export function browserOperations(
   if (account.platform === "snapchat")
     return operations.filter((operation) =>
       account.accountType === "public_profile"
-        ? operation === "publish" || operation === "media"
+        ? ["publish", "media", "profile.read"].includes(operation)
         : account.accountType === "member" &&
-          ["inbox.read", "message.reply", "poll", "audience.collect", "message.start"].includes(
+          ["inbox.read", "message.reply", "poll", "audience.collect", "message.start", "profile.read"].includes(
             operation,
           ),
     );

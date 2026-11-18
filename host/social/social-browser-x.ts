@@ -37,6 +37,8 @@ import {
   parseSnapchatProfilePatch,
   SnapchatProfileActions,
 } from "./social-browser-snapchat-profile";
+import { readSnapchatFriends } from "./social-browser-snapchat-messaging";
+import { SNAP, snapchatBrowserRecipe } from "./social-browser-snapchat";
 import { xIdentity, xUserId, type XBrowserDeps } from "./social-browser-x-page";
 import { pollX } from "./social-browser-x-inbox";
 import { publishX } from "./social-browser-x-compose";
@@ -348,15 +350,17 @@ export class XBrowserSessions {
     service: SocialService,
     principal: SocialPrincipal,
     accountId: string,
-    action: "read" | "update" | "create" | "monetization" | "delete-story",
+    action: "read" | "update" | "create" | "monetization" | "delete-story" | "friends",
     input: Record<string, unknown> = {},
   ) {
-    const writing = action !== "read" && action !== "monetization";
+    const writing = action !== "read" && action !== "monetization" && action !== "friends";
     const authorized = () =>
       writing
         ? service.accountForBrowserManagement(principal, accountId, true)
         : service.access(principal, accountId, "read");
     const account = await authorized();
+    if (action === "friends" && account.accountType !== "member")
+      throw new SocialPlatformError("unsupported");
     const check = async () => {
       const current = await authorized();
       if (
@@ -433,6 +437,19 @@ export class XBrowserSessions {
           this.background,
         );
         const { page } = session;
+        if (action === "friends") {
+          await page.goto(SNAP);
+          return await readSnapchatFriends({
+            page,
+            waitFor: (expression, timeout = 12_000) => this.until(page, expression, timeout),
+            verifyIdentity: async () => {
+              await check();
+              const verified = await snapchatBrowserRecipe.identity(page, account);
+              if (verified?.platformId !== account.platformId || verified.accountType !== "member")
+                throw new SocialPlatformError("denied");
+            },
+          }, account.platformId);
+        }
         const actions = new SnapchatProfileActions(
           page,
           account,

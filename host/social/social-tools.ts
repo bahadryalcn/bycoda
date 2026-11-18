@@ -42,6 +42,7 @@ export function authorizeSocialAcpFrame(line: string, env: NodeJS.ProcessEnv): s
 export const SOCIAL_TOOL_SCHEMAS: Record<SocialTool, Record<string, unknown>> = {
   // Snapchat
   "snapchat.profile.read": object({ accountId: string() }, ["accountId"]),
+  "snapchat.friends.list": object({ accountId: string() }, ["accountId"]),
   "snapchat.monetization.get": object({ accountId: string() }, ["accountId"]),
   "snapchat.content.list": object(
     {
@@ -68,14 +69,25 @@ export const SOCIAL_TOOL_SCHEMAS: Record<SocialTool, Record<string, unknown>> = 
       cursor: string(),
       limit: { type: "integer", minimum: 1 },
       snapParent: object(
-        { type: { enum: ["STORY", "SAVED_STORY"] }, id: string(), createdAt: string(), endedAt: string() },
+        {
+          type: { enum: ["STORY", "SAVED_STORY"] },
+          id: string(),
+          createdAt: string(),
+          endedAt: string(),
+        },
         ["type", "id"],
       ),
     },
     ["accountId"],
   ),
   "snapchat.earnings.get": object(
-    { accountId: string(), startDate: string(), endDate: string(), cursor: string(), limit: { type: "integer", minimum: 1 } },
+    {
+      accountId: string(),
+      startDate: string(),
+      endDate: string(),
+      cursor: string(),
+      limit: { type: "integer", minimum: 1 },
+    },
     ["accountId"],
   ),
   "snapchat.signup.request": object(
@@ -90,7 +102,13 @@ export const SOCIAL_TOOL_SCHEMAS: Record<SocialTool, Record<string, unknown>> = 
     {
       accountId: string(),
       patch: object(
-        { name: string(), bio: string(), website: string(), category: string(), avatarUploadId: string() },
+        {
+          name: string(),
+          bio: string(),
+          website: string(),
+          category: string(),
+          avatarUploadId: string(),
+        },
         ["name"],
       ),
     },
@@ -99,12 +117,26 @@ export const SOCIAL_TOOL_SCHEMAS: Record<SocialTool, Record<string, unknown>> = 
   "snapchat.profile.update.request": object(
     {
       accountId: string(),
-      patch: object({ name: string(), bio: string(), website: string(), category: string(), avatarUploadId: string() }, []),
+      patch: object(
+        {
+          name: string(),
+          bio: string(),
+          website: string(),
+          category: string(),
+          avatarUploadId: string(),
+        },
+        [],
+      ),
     },
     ["accountId", "patch"],
   ),
   "snapchat.content.delete.request": object(
-    { accountId: string(), target: { enum: ["spotlight", "saved_story", "story"] }, id: string(), confirmId: string() },
+    {
+      accountId: string(),
+      target: { enum: ["spotlight", "saved_story", "story"] },
+      id: string(),
+      confirmId: string(),
+    },
     ["accountId", "target", "id", "confirmId"],
   ),
   "programs.list": object({ projectId: string() }, []),
@@ -188,7 +220,10 @@ export const SOCIAL_TOOL_SCHEMAS: Record<SocialTool, Record<string, unknown>> = 
                 captionCenterY: { type: "number" },
                 savedStorySources: {
                   type: "array",
-                  items: object({ kind: { enum: ["spotlight", "snap"] }, id: string() }, ["kind", "id"]),
+                  items: object({ kind: { enum: ["spotlight", "snap"] }, id: string() }, [
+                    "kind",
+                    "id",
+                  ]),
                 },
               },
               ["target", "durationSeconds", "width", "height"],
@@ -467,6 +502,7 @@ function byId() {
 export const SOCIAL_READ_TOOLS: readonly SocialTool[] = [
   // Snapchat
   "snapchat.profile.read",
+  "snapchat.friends.list",
   "snapchat.content.list",
   "snapchat.analytics.get",
   "snapchat.earnings.get",
@@ -541,14 +577,23 @@ export function normalizeSocialToolRequest(
 
 /** Extra guidance for tools whose use is not obvious from their name. */
 const TOOL_NOTES: Partial<Record<SocialTool, string>> = {
+  "snapchat.friends.list":
+    " Read verified friend usernames visible on the connected member account. A partial result is not the full friends list.",
   // Snapchat
-  "snapchat.analytics.get": " Read Snapchat Public Profile metrics, including aggregate SUBSCRIBERS, SUBSCRIBES and UNSUBSCRIBES. Date inputs use YYYY-MM-DD. The stats end date is exclusive.",
-  "snapchat.earnings.get": " Read recorded creator earnings in USD millis for an authorized Public Profile. Date inputs use YYYY-MM-DD and both ends are inclusive. Earnings are distinct from payout and eligibility.",
-  "snapchat.profile.create.request": " Prepare owner review in Social Accounts before creating a Snapchat Public Profile.",
-  "snapchat.profile.update.request": " Prepare exact field changes for owner review in Social Accounts. Public Profile editing requires a verified Snapchat browser account.",
-  "snapchat.content.delete.request": " Prepare permanent deletion of an exact Snapchat publication ID for owner review in Social Accounts. Public Story deletion requires its connected browser profile.",
-  "snapchat.signup.request": " Ask the owner to begin Snapchat signup. Credentials, verification and terms stay in the owner's browser session.",
-  "snapchat.chat.draft": " Draft a text message to an exact existing Snapchat friend. Use a member browser account. Sending uses messages.send and checks the friend's identity, suppression and account autonomy.",
+  "snapchat.analytics.get":
+    " Read Snapchat Public Profile metrics, including aggregate SUBSCRIBERS, SUBSCRIBES and UNSUBSCRIBES. Date inputs use YYYY-MM-DD. The stats end date is exclusive.",
+  "snapchat.earnings.get":
+    " Read recorded creator earnings in USD millis for an authorized Public Profile. Date inputs use YYYY-MM-DD and both ends are inclusive. Earnings are distinct from payout and eligibility.",
+  "snapchat.profile.create.request":
+    " Prepare owner review in Social Accounts before creating a Snapchat Public Profile.",
+  "snapchat.profile.update.request":
+    " Prepare exact field changes for owner review in Social Accounts. Public Profile editing requires a verified Snapchat browser account.",
+  "snapchat.content.delete.request":
+    " Prepare permanent deletion of an exact Snapchat publication ID for owner review in Social Accounts. Public Story deletion requires its connected browser profile.",
+  "snapchat.signup.request":
+    " Ask the owner to begin Snapchat signup. Credentials, verification and terms stay in the owner's browser session.",
+  "snapchat.chat.draft":
+    " Draft a text message to an exact existing Snapchat friend. Use a member browser account. Sending uses messages.send and checks the friend's identity, suppression and account autonomy.",
   "accounts.request":
     " Use when this project's social work needs a platform account the project does not have (check accounts.list first). It only asks the owner to create or sign in an account; it creates nothing on any platform, and the owner approves it in Social Command. Never retry a pending request.",
 };

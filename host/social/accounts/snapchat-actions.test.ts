@@ -1,5 +1,11 @@
 import { afterEach, expect, it, vi } from "vitest";
-import type { SocialAccount, SocialCampaign, SocialContact, SocialDraft, SocialJob } from "../../../src/features/social/model/social";
+import type {
+  SocialAccount,
+  SocialCampaign,
+  SocialContact,
+  SocialDraft,
+  SocialJob,
+} from "../../../src/features/social/model/social";
 import { SocialPlatformError } from "../../../src/integrations/social/adapter";
 import { fixture, owner, runCleanups } from "../social-test-support";
 
@@ -12,19 +18,26 @@ it("resolves the host-bound Snapchat profile and denies another project before n
   const f = await fixture();
   const account = await f.account("snapchat");
   const other = await f.session(f.b.id);
-  const fetch = vi.fn(async () => Response.json({
-    request_status: "SUCCESS",
-    public_profiles: [{
-      sub_request_status: "SUCCESS",
-      public_profile: { id: account.id, display_name: "Example creator", subscriber_count: 0 },
-    }],
-  }));
+  const fetch = vi.fn(async () =>
+    Response.json({
+      request_status: "SUCCESS",
+      public_profiles: [
+        {
+          sub_request_status: "SUCCESS",
+          public_profile: { id: account.id, display_name: "Example creator", subscriber_count: 0 },
+        },
+      ],
+    }),
+  );
   vi.stubGlobal("fetch", fetch);
-  await expect(f.call("snapchat.profile.read", { accountId: account.id }, other.principal))
-    .rejects.toThrow("This project has no permission");
+  await expect(
+    f.call("snapchat.profile.read", { accountId: account.id }, other.principal),
+  ).rejects.toThrow("This project has no permission");
   expect(fetch).not.toHaveBeenCalled();
   await expect(f.call("snapchat.profile.read", { accountId: account.id })).resolves.toMatchObject({
-    profileId: account.id, name: "Example creator", subscribers: 0,
+    profileId: account.id,
+    name: "Example creator",
+    subscribers: 0,
   });
 });
 
@@ -41,13 +54,17 @@ it("puts an AI deletion behind owner approval and never repeats an ambiguous del
   vi.stubGlobal("fetch", fetch);
   await expect(f.call("snapchat.content.delete", deletion, session.principal)).rejects.toThrow();
   const request = await f.call<{ id: string; status: string }>(
-    "snapchat.content.delete.request", deletion, session.principal,
+    "snapchat.content.delete.request",
+    deletion,
+    session.principal,
   );
   expect(request.status).toBe("pending");
   expect(fetch).not.toHaveBeenCalled();
   const review = { accountId: account.id, id: request.id, approve: true };
   await expect(f.call("snapchat.review.decide", review, session.principal)).rejects.toThrow();
-  await expect(f.call("snapchat.review.decide", review)).rejects.toBeInstanceOf(SocialPlatformError);
+  await expect(f.call("snapchat.review.decide", review)).rejects.toBeInstanceOf(
+    SocialPlatformError,
+  );
   await expect(f.call("snapchat.review.list", { accountId: account.id })).resolves.toMatchObject([
     { id: request.id, status: "review" },
   ]);
@@ -62,11 +79,14 @@ it("queues a Snapchat Saved Story and dispatches the exact approved publication 
   const scheduledAt = f.clock.value + 60_000;
   const snapchat = {
     target: "saved_story",
-    durationSeconds: 0, width: 0, height: 0,
+    durationSeconds: 0,
+    width: 0,
+    height: 0,
     savedStorySources: [{ kind: "spotlight", id: "spotlight-exact-123" }],
   };
   const campaign = await f.call<SocialCampaign>("campaigns.create", {
-    name: "Saved Story", projectIds: [f.a.id],
+    name: "Saved Story",
+    projectIds: [f.a.id],
     variants: [{ accountId: account.id, text: "A collection", media: [], scheduledAt, snapchat }],
   });
   await f.call("campaigns.approve", { id: campaign.id });
@@ -85,22 +105,47 @@ it("queues a Snapchat Saved Story and dispatches the exact approved publication 
 it("drafts a new Snapchat chat by exact canonical username without sending", async () => {
   const f = await fixture();
   const member = await f.call<SocialAccount>("accounts.create", {
-    platform: "snapchat", accountType: "member", connection: "browser",
-    name: "Member", projectIds: [f.a.id],
-  });
-  await f.social.connectAccount(member.id, {
-    platformId: "web:snapchat:owner", name: "Member", scopes: [], accessApproved: true,
+    platform: "snapchat",
+    accountType: "member",
     connection: "browser",
-  }, { accessToken: "synthetic-browser-token" });
+    name: "Member",
+    projectIds: [f.a.id],
+  });
+  await f.social.connectAccount(
+    member.id,
+    {
+      platformId: "web:snapchat:owner",
+      name: "Member",
+      scopes: [],
+      accessApproved: true,
+      connection: "browser",
+    },
+    { accessToken: "synthetic-browser-token" },
+  );
   await f.call("accounts.grants", {
-    accountId: member.id, projectId: f.a.id, permissions: ["read", "draft", "message"],
+    accountId: member.id,
+    projectId: f.a.id,
+    permissions: ["read", "draft", "message"],
   });
   const session = await f.session();
   const inputs = { accountId: member.id, username: "@Friend_A", text: "Hello" };
-  const draft = await f.call<SocialDraft>("snapchat.chat.draft", inputs, session.principal, "new-chat");
-  await expect(f.call("snapchat.chat.draft", inputs, session.principal, "new-chat")).resolves.toEqual(draft);
-  const [contact] = await f.call<SocialContact[]>("contacts.search", { query: "web:snapchat:friend_a" });
-  expect(contact).toMatchObject({ id: draft.contactId, platformId: "web:snapchat:friend_a", accountId: member.id });
+  const draft = await f.call<SocialDraft>(
+    "snapchat.chat.draft",
+    inputs,
+    session.principal,
+    "new-chat",
+  );
+  await expect(
+    f.call("snapchat.chat.draft", inputs, session.principal, "new-chat"),
+  ).resolves.toEqual(draft);
+  const [contact] = await f.call<SocialContact[]>("contacts.search", {
+    query: "web:snapchat:friend_a",
+  });
+  expect(contact).toMatchObject({
+    id: draft.contactId,
+    platformId: "web:snapchat:friend_a",
+    accountId: member.id,
+  });
   expect(draft).toMatchObject({ kind: "message", text: "Hello", projectId: f.a.id });
   expect(f.send).not.toHaveBeenCalled();
 });

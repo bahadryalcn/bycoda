@@ -435,6 +435,7 @@ describe("Real local CLI and MCP transport", () => {
         "browser.recipeSuggestions.list",
         // Snapchat
         "snapchat.profile.read",
+        "snapchat.friends.list",
         "snapchat.content.list",
         "snapchat.analytics.get",
         "snapchat.earnings.get",

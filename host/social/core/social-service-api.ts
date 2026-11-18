@@ -69,7 +69,7 @@ export interface SocialServiceApi {
   snapchatBrowserProfile?: (
     principal: SocialPrincipal,
     accountId: string,
-    action: "read" | "update" | "create" | "monetization" | "delete-story",
+    action: "read" | "update" | "create" | "monetization" | "delete-story" | "friends",
     input: Record<string, unknown>,
   ) => Promise<unknown>;
   capability(account: SocialAccount, operation: SocialOperation): void;

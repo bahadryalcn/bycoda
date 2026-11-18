@@ -43,6 +43,7 @@ export const SOCIAL_READ_ACTIONS = [
   "accounts.requests.list",
   // Snapchat
   "snapchat.profile.read",
+  "snapchat.friends.list",
   "snapchat.content.list",
   "snapchat.analytics.get",
   "snapchat.earnings.get",

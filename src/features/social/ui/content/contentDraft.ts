@@ -1,4 +1,5 @@
 import type {
+  SnapchatPublishOptions,
   SocialCampaign,
   SocialMedia,
   TikTokVideoOptions,
@@ -23,6 +24,9 @@ export type RedditDraft = { subreddit: string; flair: string };
 
 /** Platform options the owner sets per account. Only fields the Host accepts reach a variant. */
 export type PlatformDraft = {
+  snapchat?: Omit<SnapchatPublishOptions, "durationSeconds" | "width" | "height"> & {
+    sourceText?: string;
+  };
   tiktok?: Partial<Omit<TikTokVideoOptions, "durationSeconds">>;
   youtube?: Partial<YouTubeVideoOptions>;
   facebook?: FacebookDraft;
@@ -134,6 +138,15 @@ export function draftFromCampaign(campaign: SocialCampaign): ContentDraft {
     if (variant.tiktok) entry.tiktok = withoutDuration(variant.tiktok);
     if (variant.facebook)
       entry.facebook = { target: "reel", frameRate: variant.facebook.frameRate };
+    if (variant.snapchat) {
+      const {
+        durationSeconds: _duration,
+        width: _width,
+        height: _height,
+        ...options
+      } = variant.snapchat;
+      entry.snapchat = options;
+    }
     platform[variant.accountId] = entry;
   }
   // The media is one file shared by every variant, so its size and length come from whichever
@@ -141,6 +154,7 @@ export function draftFromCampaign(campaign: SocialCampaign): ContentDraft {
   const sized =
     campaign.variants.find((variant) => variant.facebook) ??
     campaign.variants.find((variant) => variant.tiktok);
+  const snapchat = campaign.variants.find((variant) => variant.snapchat)?.snapchat;
   const probe: MediaProbe | undefined = sized?.facebook
     ? {
         durationSeconds: sized.facebook.durationSeconds,
@@ -149,7 +163,13 @@ export function draftFromCampaign(campaign: SocialCampaign): ContentDraft {
       }
     : sized?.tiktok
       ? { durationSeconds: sized.tiktok.durationSeconds }
-      : undefined;
+      : snapchat
+        ? {
+            durationSeconds: snapchat.durationSeconds,
+            width: snapchat.width,
+            height: snapchat.height,
+          }
+        : undefined;
   const scheduled = first?.scheduledAt;
   return {
     campaignId: campaign.id,
