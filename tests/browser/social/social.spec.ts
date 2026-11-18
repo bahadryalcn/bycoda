@@ -115,6 +115,16 @@ for (const theme of ["light", "dark"])
       await page.getByRole("button", { name: "Yorumları listele", exact: true }).click();
       await expect(page.getByText(/Sonuç yok/)).toBeVisible();
       await capture("comments");
+      await chooseSection("Abonelikler");
+      await page.getByRole("button", { name: /^Tür:/ }).click();
+      await page.getByRole("option", { name: "Abonelikler", exact: true }).click();
+      await page.getByRole("button", { name: "Abonelikleri listele", exact: true }).click();
+      await expect(page.getByText("Fixture subscriber")).toBeVisible();
+      await capture("subscriptions");
+      await chooseSection("İncele");
+      await page.getByRole("button", { name: "YouTube işlemlerini listele", exact: true }).click();
+      await expect(page.getByRole("button", { name: "İncele", exact: true })).toBeVisible();
+      await capture("review");
       await page.getByRole("dialog").getByRole("button", { name: "Kapat" }).click();
       await page.getByRole("button", { name: /Studio fixture/ }).click();
       await page.locator("summary").filter({ hasText: "YouTube yönetimi" }).click();

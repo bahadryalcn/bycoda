@@ -1860,6 +1860,22 @@ Object.assign(window, {
               ],
             };
           if (params.action === "youtube.comments.list") return { comments: [] };
+          if (params.action === "youtube.operations.list")
+            return {
+              items: [
+                {
+                  id: "fixture-review",
+                  accountId: "youtube-api",
+                  action: "youtube.video.update",
+                  input: {
+                    accountId: "youtube-api",
+                    videoId: "shortDemo01",
+                    patch: { title: "Summer release" },
+                  },
+                  status: "awaiting_approval",
+                },
+              ],
+            };
           if (params.action === "youtube.monetization.status") return { status: "needs_human" };
           if (params.action === heldAction)
             await new Promise<void>((resolve, reject) => {
