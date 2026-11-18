@@ -134,6 +134,42 @@ describe("YouTube Host management", () => {
     expect(f.writes()).toHaveLength(0);
   });
 
+  it("uses publish autonomy for text posts and checks sending before browser preparation", async () => {
+    const f = await setup();
+    const account = await f.social.account(f.account.id);
+    await f.social.put<SocialAccount>("account", account.id, {
+      ...account,
+      connection: "browser",
+      platformId: `web:youtube:${channelId}`,
+    });
+    const policy = defaultAutonomyPolicy(account.id);
+    policy.levels.publish = "autonomous";
+    await f.social.audience.putRecord("autonomy", account.id, policy);
+    const usedBrowser = vi.fn();
+    f.social.youtubeBrowser = async (_account, _run, options) => {
+      usedBrowser();
+      await options?.beforeSubmit?.();
+      return undefined as never;
+    };
+    const input = { accountId: account.id, kind: "text", text: "Fixture post" };
+    await expect(
+      f.call("youtube.community.publish", input, f.principal, "text"),
+    ).resolves.toMatchObject({ status: "done" });
+    await expect(
+      f.call(
+        "youtube.community.publish",
+        { ...input, kind: "image", imageUploadIds: ["upload-id"] },
+        f.principal,
+        "image",
+      ),
+    ).resolves.toMatchObject({ status: "awaiting_approval" });
+    await f.social.setSetting("sending", "false");
+    await expect(f.call("youtube.community.publish", input, owner, "owner")).rejects.toThrow(
+      /sending is stopped/,
+    );
+    expect(usedBrowser).toHaveBeenCalledOnce();
+  });
+
   it("keeps an unknown outcome and prevents blind repeats across request IDs", async () => {
     const f = await setup();
     const respond = f.fetcher.getMockImplementation()!;

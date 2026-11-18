@@ -198,7 +198,7 @@ const writes = {
   ),
   "youtube.thumbnail.set": mutation(
     "youtube.thumbnail.set",
-    { ...modify, ownerMedia: true },
+    { ...modify, ownerMedia: () => true },
     async (ctx, account, input, beforeWrite) => {
       const api = await youtubeApi(ctx, account, "thumbnail.set");
       const bytes = await youtubeRuntime(ctx).media(ctx.principal, input.uploadId);
@@ -453,7 +453,10 @@ const writes = {
   ),
   "youtube.community.publish": mutation(
     "youtube.community.publish",
-    { ...publish, ownerMedia: true },
+    {
+      ...publish,
+      ownerMedia: (input) => Array.isArray(input.imageUploadIds) && input.imageUploadIds.length > 0,
+    },
     async (ctx, account, { accountId: _accountId, ...input }, guard) =>
       await youtubeBrowser(
         ctx,

@@ -24,7 +24,7 @@ export type YouTubeDispatchPolicy = {
   permission: SocialPermission;
   autonomy: AutonomyAction;
   outbound?: boolean;
-  ownerMedia?: boolean;
+  ownerMedia?: (input: Record<string, unknown>) => boolean;
   subscription?: boolean;
 };
 
@@ -71,9 +71,9 @@ async function execute(
   autonomyVersion?: number,
 ) {
   let submitted = false;
-  const guard = async () => {
+  const assertDispatchAllowed = async () => {
     await youtubeRuntime(ctx).assertAuthorized();
-    const { permission, autonomy, outbound, subscription } = policy;
+    const { permission, outbound } = policy;
     const account = await youtubeAccount(ctx, row.accountId, permission);
     if (
       account.platformId !== row.channelId ||
@@ -99,6 +99,11 @@ async function execute(
         },
         "comment",
       );
+    return account;
+  };
+  const guard = async () => {
+    const account = await assertDispatchAllowed();
+    const { autonomy, subscription } = policy;
     await ctx.store.transaction(async () => {
       const current = await ctx.store.getRecord("youtube-operation", row.id);
       if (!current || current.status !== (submitted ? "submitted" : "awaiting_approval"))
@@ -150,6 +155,7 @@ async function execute(
     submitted = true;
   };
   try {
+    await assertDispatchAllowed();
     const result = await dispatch(guard);
     return await ctx.store.transaction(async () => {
       const current = await ctx.store.getRecord("youtube-operation", row.id);
@@ -265,7 +271,7 @@ export async function submitYouTubeOperation(
   });
   if (row.status !== "awaiting_approval") return publicYouTubeOperation(row);
   if (!decision) return await execute(ctx, row, policy, dispatch);
-  if (decision.mode === "approve" || policy.ownerMedia || decision.scheduledAt > ctx.now())
+  if (decision.mode === "approve" || policy.ownerMedia?.(input) || decision.scheduledAt > ctx.now())
     return publicYouTubeOperation(row);
   return await execute(ctx, row, policy, dispatch, decision.approval.version);
 }
