@@ -1,0 +1,14 @@
+<header><a data-e2e="nav-profile" href="/@bycoda">Profile</a></header>
+<article>
+  <button data-e2e="browse-more-menu">More options</button>
+  <p data-e2e="browse-video-desc">Original caption</p>
+  <button data-e2e="browse-edit" hidden>Edit post</button>
+  <button data-e2e="browse-delete" hidden>Delete post</button>
+  <div role="dialog" data-fixture="edit" hidden>
+    <div data-e2e="caption-editor" contenteditable="true">Original caption</div>
+    <button data-e2e="edit-post-save">Save</button>
+  </div>
+  <div role="dialog" data-fixture="delete" hidden>
+    <button data-e2e="confirm-delete">Delete</button>
+  </div>
+</article>

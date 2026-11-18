@@ -100,14 +100,17 @@ describe("media limits per platform", () => {
     expect(mediaProblems("instagram", five.slice(0, 4))).toEqual([]);
   });
 
-  it("asks TikTok and YouTube for exactly one video, never two or a video with an image", () => {
-    for (const platform of ["tiktok", "youtube"] as const) {
-      expect(mediaProblems(platform, [video(), video({}, "v2")])).toEqual([
-        "Attach exactly one video.",
-      ]);
-      expect(mediaProblems(platform, [video(), image("a")])).toEqual(["Attach exactly one video."]);
-      expect(mediaProblems(platform, [video()])).toEqual([]);
-    }
+  it("allows a TikTok carousel, keeps YouTube video-only, and rejects mixed attachments", () => {
+    expect(mediaProblems("youtube", [video(), video({}, "v2")])).toEqual([
+      "Attach exactly one video.",
+    ]);
+    expect(mediaProblems("youtube", [video(), image("a")])).toEqual(["Attach exactly one video."]);
+    expect(mediaProblems("youtube", [video()])).toEqual([]);
+    expect(mediaProblems("tiktok", [video(), image("a")])).toEqual([
+      "Attach one video or up to four TikTok photos.",
+    ]);
+    expect(mediaProblems("tiktok", [image("a"), image("b")])).toEqual([]);
+    expect(mediaProblems("tiktok", [video()])).toEqual([]);
   });
 
   it("has no attachment rule of its own for the other platforms", () => {
@@ -214,6 +217,12 @@ describe("TikTok rules", () => {
     expect(
       tiktokProblems({ privacy: "SELF_ONLY", consent: false }, [video({ durationSeconds: 10 })]),
     ).toEqual(["Confirm the TikTok content consent."]);
+  });
+
+  it("names the post when a TikTok photo is missing its visibility selection", () => {
+    expect(tiktokProblems({ mediaType: "photo", consent: true }, [image("a")])).toEqual([
+      "Choose who can see this post",
+    ]);
   });
 
   it("allows a video exactly as long as the creator limit and rejects one second more", () => {

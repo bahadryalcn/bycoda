@@ -9,6 +9,7 @@ import { outreachActions } from "../outreach/outreach-actions";
 import { youtubeActions } from "../youtube/youtube-actions";
 import type { SocialActionModule } from "./social-actions";
 import { createXActions } from "./x-actions";
+import { tiktokActions } from "../tiktok/tiktok-actions";
 
 /** Every registry action module. Phase 4 adds an action by editing its own module, not this list. */
 export const SOCIAL_ACTION_MODULES: SocialActionModule[] = [
@@ -25,4 +26,6 @@ export const SOCIAL_ACTION_MODULES: SocialActionModule[] = [
   createXActions(),
   // YouTube management.
   youtubeActions,
+  // TikTok account operations.
+  tiktokActions,
 ];

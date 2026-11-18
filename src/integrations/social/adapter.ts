@@ -225,6 +225,32 @@ export class SocialHttp {
     private readonly fetcher: typeof fetch = fetch,
     private readonly now = Date.now,
   ) {}
+  // TikTok: the upload URL is validated by transferTikTokVideo and carries its own credential.
+  async tiktokUploadChunk(
+    signedUrl: string,
+    mime: string,
+    bytes: Uint8Array,
+    range: { start: number; end: number; total: number },
+  ): Promise<number> {
+    try {
+      const response = await this.fetcher(signedUrl, {
+        method: "PUT",
+        headers: {
+          "Content-Type": mime,
+          "Content-Length": String(bytes.byteLength),
+          "Content-Range": `bytes ${range.start}-${range.end - 1}/${range.total}`,
+        },
+        body: bytes as BodyInit,
+        redirect: "error",
+        signal: AbortSignal.timeout(requestTimeout(bytes)),
+      });
+      await response.body?.cancel().catch(() => {});
+      return response.status;
+    } catch {
+      throw new SocialPlatformError("unknown");
+    }
+  }
+
   /** Bot tokens occur in Telegram paths. Never expose fetch errors or response bodies. */
   async telegram(
     method:

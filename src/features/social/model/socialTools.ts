@@ -88,6 +88,13 @@ export const SOCIAL_TOOLS = [
   // YouTube management.
   ...YOUTUBE_READ_TOOLS,
   ...YOUTUBE_WRITE_TOOLS,
+  // TikTok account operations.
+  "tiktok.profile.read",
+  "tiktok.analytics.read",
+  "tiktok.earnings.read",
+  "tiktok.audience.list",
+  "tiktok.mentions.list",
+  "tiktok.changes.request",
 ] as const;
 export type SocialTool = (typeof SOCIAL_TOOLS)[number];
 export function socialToolName(tool: SocialTool): string {

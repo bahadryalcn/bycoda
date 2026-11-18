@@ -842,6 +842,10 @@ export class XBrowserSessions {
           : platforms.poll(account, token, posts, cursor),
     };
   }
+  // TikTok uses the same account lock as sign-in and the normal publishing adapter.
+  get runTikTok() {
+    return this.platforms.runTikTok.bind(this.platforms);
+  }
   private async identity(page: BrowserPage, account: SocialAccount) {
     await xIdentity(page, account, this.directory);
   }

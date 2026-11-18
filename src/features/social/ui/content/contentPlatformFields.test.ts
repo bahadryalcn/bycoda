@@ -63,6 +63,15 @@ function select(label: string): HTMLSelectElement {
   return element.querySelector<HTMLSelectElement>(`select[aria-label="${label}"]`)!;
 }
 
+function tikTokPrivacy() {
+  return element.querySelector<HTMLButtonElement>('button[aria-label^="Who can see this video:"]');
+}
+
+function openTikTokPrivacy() {
+  act(() => tikTokPrivacy()!.click());
+  return [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')];
+}
+
 function checkbox(label: string): HTMLInputElement | undefined {
   const row = [...element.querySelectorAll("label.content-check")].find((item) =>
     item.textContent?.includes(label),
@@ -228,23 +237,30 @@ describe("FacebookReelFields", () => {
 });
 
 describe("TikTokFields", () => {
-  it("waits for the creator options and keeps the form locked until they load", () => {
+  it("waits for the creator options while keeping the format choice available", () => {
     render(createElement(TikTokFields, props("tiktok")));
     expect(element.textContent).toContain("Loading your TikTok options…");
-    expect(element.querySelector("fieldset")?.disabled).toBe(true);
+    expect(tikTokPrivacy()).toBeNull();
+    expect(
+      element.querySelector<HTMLButtonElement>('button[aria-label^="TikTok post format:"]')
+        ?.disabled,
+    ).toBe(false);
   });
 
   it("offers only the privacy choices the creator allows, with none selected", () => {
     render(createElement(TikTokFields, props("tiktok", { creator })));
-    const privacy = select("Who can see this video");
-    expect(privacy.value).toBe("");
-    const options = [...privacy.options];
+    expect(tikTokPrivacy()?.textContent).toContain("Choose who can see this video");
+    const options = openTikTokPrivacy();
     expect(options[0]!.disabled).toBe(true);
-    expect(options.slice(1).map((option) => option.value)).toEqual([
-      "SELF_ONLY",
-      "PUBLIC_TO_EVERYONE",
+    expect(options.map((option) => option.getAttribute("aria-selected"))).toEqual([
+      "true",
+      "false",
+      "false",
     ]);
-    expect(options.slice(1).map((option) => option.textContent)).toEqual(["Only me", "Everyone"]);
+    expect(options.slice(1).map((option) => option.textContent?.trim())).toEqual([
+      "Only me",
+      "Everyone",
+    ]);
     expect(element.querySelector("fieldset")?.disabled).toBe(false);
   });
 
@@ -255,7 +271,9 @@ describe("TikTokFields", () => {
         props("tiktok", { creator, value: { tiktok: { allowComment: true } } }),
       ),
     );
-    setSelect(select("Who can see this video"), "SELF_ONLY");
+    const onlyMe = openTikTokPrivacy().find((option) => option.textContent?.trim() === "Only me");
+    expect(onlyMe).toBeDefined();
+    act(() => onlyMe!.click());
     expect(onChange).toHaveBeenLastCalledWith({
       tiktok: { allowComment: true, privacy: "SELF_ONLY" },
     });
@@ -377,7 +395,7 @@ describe("XFields and PlatformFields", () => {
     expect(element.textContent).toContain("X posts take either up to four images or one video.");
     render(createElement(PlatformFields, props("tiktok", { creator })));
     expect(element.textContent).toContain("TikTok");
-    expect(element.querySelector('select[aria-label="Who can see this video"]')).not.toBeNull();
+    expect(tikTokPrivacy()).not.toBeNull();
     render(createElement(PlatformFields, props("youtube")));
     expect(element.querySelector('button[aria-label^="Privacy:"]')).not.toBeNull();
     render(createElement(PlatformFields, props("reddit")));

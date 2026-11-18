@@ -21,6 +21,7 @@ export type ContentMediaFieldProps = {
   client: SocialClient;
   editor: SocialMediaEditor;
   media: ContentMedia[];
+  allowTikTokPhotoUrls?: boolean;
   disabled: boolean;
   /** Why attaching is off (for example the account cannot upload media). */
   disabledReason?: string;
@@ -34,6 +35,7 @@ export function ContentMediaField({
   client,
   editor,
   media,
+  allowTikTokPhotoUrls,
   disabled,
   disabledReason,
   instagramMedia,
@@ -46,6 +48,25 @@ export function ContentMediaField({
   const [remoteKind, setRemoteKind] = useState<"image" | "video">("image");
   const [urlError, setUrlError] = useState<string>();
   const atInstagramLimit = !!instagramMedia && media.length >= INSTAGRAM_CAROUSEL_MAX;
+  const [photoUrl, setPhotoUrl] = useState("");
+  const [photoUrlError, setPhotoUrlError] = useState<string>();
+  const addTikTokPhotoUrl = () => {
+    const url = URL.parse(photoUrl.trim());
+    if (!url || url.protocol !== "https:" || url.username || url.password) {
+      setPhotoUrlError(t("Enter a public HTTPS photo URL."));
+      return;
+    }
+    if (media.some((item) => item.media.url === url.href)) {
+      setPhotoUrlError(t("This TikTok photo is already attached."));
+      return;
+    }
+    onChange([
+      ...media,
+      { localId: crypto.randomUUID(), name: url.hostname, media: { kind: "image", url: url.href } },
+    ]);
+    setPhotoUrl("");
+    setPhotoUrlError(undefined);
+  };
   const add = async (files: File[]) => {
     setBusy(true);
     onBusyChange?.(true);
@@ -160,6 +181,30 @@ export function ContentMediaField({
             {t("Attach media URL")}
           </Button>
         </FieldGroup>
+      ) : null}
+      {allowTikTokPhotoUrls ? (
+        <>
+          <TextField
+            label={t("TikTok photo URL")}
+            description={t("Use photo URLs on a TikTok-verified domain or URL prefix.")}
+            type="url"
+            value={photoUrl}
+            disabled={disabled || busy || media.length >= 4}
+            error={photoUrlError}
+            onChange={(event) => {
+              setPhotoUrl(event.target.value);
+              setPhotoUrlError(undefined);
+            }}
+          />
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={disabled || busy || media.length >= 4 || !photoUrl.trim()}
+            onClick={addTikTokPhotoUrl}
+          >
+            {t("Add")}
+          </Button>
+        </>
       ) : null}
       {media.length ? (
         <ul className="content-media-list">

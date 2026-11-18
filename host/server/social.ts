@@ -136,6 +136,8 @@ export async function createSocialRuntime(
     );
   await social.ready;
   social.youtubeBrowser = xBrowser.youtubeOperation.bind(xBrowser);
+  // TikTok account operations.
+  social.tiktokBrowser ??= xBrowser.runTikTok;
   social.setSessionAuthorityResolver(
     createSessionAuthorityResolver(
       dependencies.engine.store,

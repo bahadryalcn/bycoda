@@ -143,6 +143,12 @@ export const SOCIAL_TOOL_SCHEMAS: Record<SocialTool, Record<string, unknown>> = 
                 brandOrganic: { type: "boolean" },
                 isAigc: { type: "boolean" },
                 consent: { type: "boolean" },
+                // TikTok photo and inbox posting.
+                mode: { enum: ["direct", "inbox"] },
+                mediaType: { enum: ["video", "photo"] },
+                photoTitle: { type: "string", maxLength: 90 },
+                photoCoverIndex: { type: "integer", minimum: 0, maximum: 3 },
+                autoAddMusic: { type: "boolean" },
               },
               [
                 "privacy",
@@ -436,6 +442,36 @@ export const SOCIAL_TOOL_SCHEMAS: Record<SocialTool, Record<string, unknown>> = 
   "x.insights": object({ accountId: string() }, ["accountId"]),
   "x.spaces": object({ accountId: string() }, ["accountId"]),
   "x.lists": object({ accountId: string(), listId: string(), cursor: string() }, ["accountId"]),
+  // TikTok account operations.
+  "tiktok.profile.read": object({ accountId: string() }, ["accountId"]),
+  "tiktok.analytics.read": object({ accountId: string() }, ["accountId"]),
+  "tiktok.earnings.read": object({ accountId: string() }, ["accountId"]),
+  "tiktok.audience.list": object(
+    { accountId: string(), kind: { enum: ["followers", "following"] } },
+    ["accountId", "kind"],
+  ),
+  "tiktok.mentions.list": object({ accountId: string() }, ["accountId"]),
+  "tiktok.changes.request": object(
+    {
+      accountId: string(),
+      kind: {
+        enum: [
+          "follow",
+          "unfollow",
+          "comment.like",
+          "comment.hide",
+          "comment.pin",
+          "comment.reply",
+          "live.reply",
+        ],
+      },
+      postId: string(),
+      commentId: string(),
+      recipientId: string(),
+      text: string(),
+    },
+    ["accountId", "kind"],
+  ),
 };
 function pageLimit() {
   return { type: "integer", minimum: 1, maximum: 200 };
@@ -498,6 +534,12 @@ export const SOCIAL_READ_TOOLS: readonly SocialTool[] = [
   "x.lists",
   // YouTube management.
   ...YOUTUBE_READ_TOOLS,
+  // TikTok account operations.
+  "tiktok.profile.read",
+  "tiktok.analytics.read",
+  "tiktok.earnings.read",
+  "tiktok.audience.list",
+  "tiktok.mentions.list",
 ];
 const socialReads = new Set<string>(SOCIAL_READ_TOOLS);
 const SOCIAL_REQUEST_ID_PATTERN = "^[A-Za-z0-9._:-]+$";

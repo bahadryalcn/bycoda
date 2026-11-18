@@ -201,13 +201,13 @@ describe("capability table shape", () => {
       // YouTube: delete, analytics, audience.collect, profile.read.
       // Telegram bot: delete, audience.collect (capabilities/telegram.test.ts).
       // Meta: Facebook delete, analytics, audience.collect; Instagram analytics, audience.collect.
-      // TikTok: analytics only (capabilities/tiktok.test.ts). X: delete, analytics, audience.collect, profile.read.
+      // TikTok: analytics and profile.read. X: delete, analytics, audience.collect, profile.read.
       // Reddit: delete, audience.collect, profile.read (capabilities/reddit.ts).
       const openedByApi =
         platform === "youtube"
           ? ["delete", "analytics", "audience.collect", "profile.read"]
           : platform === "tiktok"
-            ? ["analytics"]
+            ? ["analytics", "profile.read"]
             : platform === "telegram"
               ? ["delete", "audience.collect"]
               : platform === "facebook"

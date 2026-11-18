@@ -367,6 +367,131 @@ for (const theme of ["light", "dark"])
     });
   }
 
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    const capture = async (page: Page, surface: string) => {
+      await page.screenshot({
+        path: `temp/verification/social-tiktok/${surface}-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+    };
+    const toggleTheme = (page: Page) =>
+      page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+
+    test(`TikTok composer visual fixture ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/tests/browser/social/social.html?tiktok");
+      await toggleTheme(page);
+      await sections(page).getByRole("tab", { name: "İçerik", exact: true }).click();
+      await page.getByRole("button", { name: "Yeni gönderi", exact: true }).click();
+      const editor = page.getByRole("dialog", { name: "Yeni gönderi" });
+      await editor.getByText("Demo TikTok", { exact: true }).click();
+      await editor
+        .getByRole("button", { name: /TikTok gönderi biçimi|TikTok post format/ })
+        .click();
+      await page.getByRole("option", { name: /^(Fotoğraflar|Photos)$/ }).click();
+      await editor
+        .getByRole("textbox", { name: /TikTok fotoğraf URL’si|TikTok photo URL/ })
+        .fill("https://example.com/tiktok-photo.jpg");
+      await editor.getByRole("button", { name: /^(Ekle|Add)$/ }).click();
+      const cover = editor.getByText(/TikTok kapak fotoğrafı|TikTok cover photo/);
+      await expect(cover).toBeVisible();
+      await capture(page, "composer");
+      await cover.scrollIntoViewIfNeeded();
+      await capture(page, "composer-options");
+    });
+
+    test(`TikTok account visual fixture ${theme} ${width}`, async ({ page }) => {
+      test.setTimeout(90_000);
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/tests/browser/social/social.html?tiktok-browser");
+      await toggleTheme(page);
+      await sections(page).getByRole("tab", { name: "Hesaplar ve Ayarlar" }).click();
+      await page.getByRole("button", { name: /Demo TikTok/ }).click();
+      const detail = page.getByRole("dialog", { name: "Demo TikTok" });
+      await detail
+        .locator("summary")
+        .filter({ hasText: /TikTok araçları|TikTok tools/ })
+        .click();
+      const select = async (name: RegExp) => {
+        await detail.getByRole("button", { name: /TikTok bölümü|TikTok section/ }).click();
+        await page.getByRole("option", { name }).click();
+      };
+      const expose = async (button: RegExp, result: string | RegExp, surface: string) => {
+        await detail.getByRole("button", { name: button }).click();
+        const value = detail
+          .getByText(result, { exact: typeof result === "string" })
+          .filter({ visible: true });
+        await expect(value).toBeVisible();
+        await value.scrollIntoViewIfNeeded();
+        await capture(page, surface);
+      };
+      await detail.getByRole("button", { name: /Profili oku|Read profile/i }).click();
+      await expect(detail.getByRole("textbox", { name: /Kullanıcı adı|Username/i })).toHaveValue(
+        "demo.creator",
+      );
+      await capture(page, "profile");
+      await detail
+        .getByRole("button", { name: /Profili kaydet|Save profile/i })
+        .scrollIntoViewIfNeeded();
+      await capture(page, "profile-options");
+      await select(/^(Gizlilik|Privacy)$/);
+      await detail
+        .getByRole("button", { name: /Gizlilik ayarlarını oku|Read privacy settings/ })
+        .click();
+      await expect(
+        detail.getByRole("checkbox", { name: /Gizli hesap|Private account/ }),
+      ).toBeVisible();
+      await capture(page, "privacy");
+      await select(/^(Analiz|Analizler|Analitik|Analytics)$/);
+      await expose(/Analizleri oku|Read analytics/, "128.450", "analytics");
+      await select(/^(Kazançlar|Earnings)$/);
+      await expose(/Kazançları oku|Read earnings/, "₺ 450,50", "earnings");
+      await select(/^(Yorumlar|Comments)$/);
+      await expose(/Yorumları oku|Read comments/, "Yeni video ne zaman geliyor?", "comments");
+      await select(/^(Bahsetmeler|Bahsedilenler|Mentions)$/);
+      await expose(/Bahsetmeleri oku|Read mentions/, "Yeni video ne zaman geliyor?", "mentions");
+      await select(/^(Doğrudan mesajlar|Direct messages)$/i);
+      await expose(
+        /Doğrudan mesajları oku|Read direct messages/,
+        "Yeni video ne zaman geliyor?",
+        "messages",
+      );
+      await select(/^(Takipçiler|Followers)$/);
+      await expose(/Hedef kitleyi oku|Read audience/, "Demo takipçi @demo.fan", "audience");
+      await detail.getByRole("button", { name: /^(Takip et|Follow)$/ }).click();
+      await detail
+        .getByRole("button", { name: /İnceleme için sıraya al|Queue for review/ })
+        .click();
+      await expect(detail.getByText(/Onay bekliyor|Awaiting approval/)).toBeVisible();
+      expect(await requests(page, "tiktok.changes.apply")).toEqual([]);
+      await capture(page, "review");
+      await detail.getByRole("button", { name: /İncele ve uygula|Review and apply/ }).click();
+      const exactReview = page.getByRole("dialog", { name: /^(Takip et|Follow)$/ });
+      await expect(exactReview.getByText("@demo.fan", { exact: true })).toBeVisible();
+      await capture(page, "confirmation");
+      await exactReview.getByRole("button", { name: /^(Takip et|Follow)$/ }).click();
+      await expect
+        .poll(() => requests(page, "tiktok.changes.apply"))
+        .toEqual([{ accountId: "tiktok", reviewId: "review-1", confirm: true }]);
+      await select(/^TikTok LIVE$/);
+      await expose(
+        /Yayın anahtarını kaydet|Save stream key/,
+        /Yayın anahtarı bu Host’a kaydedildi|Stream key saved on this Host/,
+        "live",
+      );
+      await select(/^TikTok for Business$/);
+      await expose(
+        /Business API erişimini kontrol et|Check Business API access/,
+        /Bu Host’ta TikTok Business API erişimi yok|TikTok Business API access unavailable/,
+        "business",
+      );
+    });
+  }
+
 test("social extra caller visual matrix", async ({ page }) => {
   for (const theme of ["light", "dark"])
     for (const width of [800, 1280]) {

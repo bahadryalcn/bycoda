@@ -23,7 +23,14 @@ export const TIKTOK_SEARCH_REQUIREMENT: CapabilityRequirement & { reasonCode: st
 
 const BROWSER_NOTES: BrowserNotes = {
   publish:
-    "Browser publishing uploads one video through TikTok Studio. Photo posts and inbox drafts need the API connection.",
+    "TikTok Studio guarded upload supports video and, when the photo picker is present, uploaded photos. Inbox drafts use the API connection.",
+  // TikTok desktop account recipes.
+  "inbox.read": "Refresh visible TikTok message previews from the account screen.",
+  "message.reply": "Replies to a verified conversation in the connected TikTok browser account.",
+  "message.start": "Starts a direct message when TikTok exposes the recipient's Message control.",
+  "profile.read": "Reads the profile of the verified TikTok browser account.",
+  analytics: "Reads analytics TikTok Studio exposes to this account.",
+  delete: "Owner-reviewed removal of an exact owned TikTok post in the browser.",
   "audience.collect":
     "Collects commenters from this account's own recent videos in TikTok Studio, bounded to videos already published here.",
 };
@@ -38,11 +45,11 @@ export function tiktokCapabilities(): PlatformCapabilities {
     ...NOT_YET,
     publish: r(
       ["user.info.basic", "video.publish"],
-      "Direct Post video or photo publishing from TikTok-verified HTTPS URLs. Current creator settings, explicit visibility, media previews, music consent and app audit/access are required. Inbox draft mode also needs the video.upload permission. Processing is tracked until PUBLISH_COMPLETE; a publication that never completes goes to review.",
+      "Direct Post with an uploaded video or TikTok-verified HTTPS media URLs. Current creator settings, explicit visibility, media previews, music consent and app audit/access are required. Inbox draft mode also needs the video.upload permission. Processing is tracked until PUBLISH_COMPLETE; a publication that never completes goes to review.",
     ),
     media: r(
       ["video.publish"],
-      "One video or up to four photo URLs from a domain or URL prefix verified in the TikTok developer app. Local API uploads are not implemented; browser video uploads are separate.",
+      "One uploaded video, one verified video URL, or up to four photo URLs from a domain or URL prefix verified in the TikTok developer app.",
     ),
     "comments.read": unsupported,
     reply: unsupported,
@@ -61,6 +68,11 @@ export function tiktokCapabilities(): PlatformCapabilities {
       [],
       "The TikTok API does not give this app commenter lists. Collect from your own video comments through the browser connection instead.",
       true,
+    ),
+    // TikTok Display API profile. Detailed fields are returned only with the granted scopes.
+    "profile.read": r(
+      ["user.info.basic"],
+      "Reads the authorized TikTok profile. Profile details and totals require separate scope grants.",
     ),
   };
   return { api, browser: BROWSER_NOTES };

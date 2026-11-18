@@ -20,6 +20,9 @@ Full paths are repository-root relative; adjacent abbreviated names share the pr
 - `host/decision-models/`: decision gateway for the browser decision layer and AI tools (own skill: `feature-decision-models`).
 - Contracts: `docs/integrations/social.md`, `social-programs.md`, `decision-models.md`.
 - YouTube management: `host/social/youtube/`, `src/integrations/social/youtube-*.ts` and `src/features/social/ui/accounts/youtube/`. Keep Live ingestion credentials in the Host vault. Consult the YouTube management section in the Social integration guide for scope and quota contracts.
+- TikTok account actions live in `host/social/tiktok/`. Business OAuth
+  credentials and LIVE setup credentials are separate vault entries scoped to
+  the verified account. Keep owner mutations and credential setup off session tools.
 
 ## Preserve
 

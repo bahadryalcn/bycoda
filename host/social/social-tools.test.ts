@@ -447,6 +447,12 @@ describe("Real local CLI and MCP transport", () => {
         "x.insights",
         "x.lists",
         "x.spaces",
+        // TikTok account operations.
+        "tiktok.profile.read",
+        "tiktok.analytics.read",
+        "tiktok.earnings.read",
+        "tiktok.audience.list",
+        "tiktok.mentions.list",
       ];
       const writes = [
         ...YOUTUBE_WRITE_TOOLS,
@@ -486,6 +492,8 @@ describe("Real local CLI and MCP transport", () => {
         "inbox.setStatus",
         "ai.actions.undo",
         "ai.stop",
+        // TikTok account operations.
+        "tiktok.changes.request",
       ];
       const method = (action: string) => `social_${action.replaceAll(/[.-]/g, "_")}`;
       // Draft inspection/editing is a concurrent additive capability. Keep the

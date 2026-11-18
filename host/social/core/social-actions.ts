@@ -22,6 +22,8 @@ export type SocialActionContext = {
   /** YouTube management uses the verified account's executor and its credential vault. */
   youtube?: YouTubeRuntime;
   youtubeRequestId?: string;
+  // TikTok account operations.
+  tiktok?: import("../tiktok/tiktok-actions").TikTokRuntime;
 };
 
 export type SocialActionSpec = {

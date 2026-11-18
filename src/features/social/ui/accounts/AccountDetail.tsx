@@ -22,6 +22,7 @@ import { XApiSettings } from "./platform/XApiSettings";
 import { XAccountActions } from "./platform/XAccountActions";
 import { YouTubeManage } from "./youtube/YouTubeManage";
 import type { YouTubeSection } from "./youtube/youtubeForms";
+import { TikTokAccountTools } from "./platform/TikTokAccountTools";
 import "./accounts.css";
 
 const HEALTH_TONE: Record<"ok" | "warn" | "error", BadgeTone> = {
@@ -157,6 +158,16 @@ export function AccountDetail({
             initialSection={youtubeSection}
           />
         </Disclosure>
+      ) : null}
+      {account.platform === "tiktok" && account.connected ? (
+        <TikTokAccountTools
+          key={`${account.executorId}:${account.id}:${account.platformId}:${account.connection}`}
+          client={client}
+          account={account}
+          projects={projects}
+          disabled={disabled || account.paused || !onThisComputer}
+          onChanged={onChanged}
+        />
       ) : null}
       <Disclosure
         summary={

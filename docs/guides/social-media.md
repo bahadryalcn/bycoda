@@ -95,3 +95,21 @@ Open **Social > Accounts**, choose your YouTube channel and expand **YouTube man
 - Select **Analytics** for channel activity, traffic sources and estimated earnings. If a report requests more permission, reconnect the channel and select the matching report permission. Google must make the report available to the channel.
 - Select **Live broadcasts** to create and bind a broadcast and stream, view chat and Super Chats, and transition the broadcast after an encoder starts sending. The creation result displays the RTMP URL and credential reference. The stream key stays in the Host vault.
 - Select **Review** for YouTube operations pending owner approval. Verify uncertain outcomes on YouTube, then record the result before resubmitting.
+
+## TikTok account tools
+
+Open a connected TikTok account from **Accounts** and expand **TikTok tools**.
+Choose the section for profile, privacy, comments, mentions, messages, followers,
+analytics, earnings or LIVE. Browser lists cover the entries TikTok exposes to
+that desktop session. Refresh supported inbox entries and assign a project before
+asking AI to use them in a project chat.
+
+Use **TikTok changes** to review the exact target and content of an account
+change. Verify the result on TikTok before dismissing an uncertain change.
+An eligible account can save its existing LIVE stream key to the Host vault.
+Complete sign-in, verification and any required LIVE setup in TikTok.
+
+In **Content**, choose a video or photo post. Browser photo uploads depend on
+the Studio photo picker. API photos use URLs on a verified domain or URL prefix.
+Choose direct publication or, with the required OAuth scope, send a draft to
+the TikTok inbox. Scheduled work stays in Bycoda until its scheduled time.
