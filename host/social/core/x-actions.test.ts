@@ -22,6 +22,7 @@ function fixture({ paid = true, suppress = false, unknown = false } = {}) {
   const settings = new Map<string, string>([["sending", "true"]]);
   const account = {
     id: "account",
+    executorId: "host",
     platform: "x",
     platformId: "234",
     connection: "oauth",
@@ -35,6 +36,7 @@ function fixture({ paid = true, suppress = false, unknown = false } = {}) {
   });
   const ctx = {
     principal: { kind: "owner" },
+    executorId: "host",
     now: () => 100_000,
     service: {
       owner: (principal: { kind: string }) => {
@@ -59,6 +61,14 @@ describe("X account actions", () => {
       "Enterprise",
     );
     expect(credentialFor).not.toHaveBeenCalled();
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("refuses paid X operations outside the account's active executor", async () => {
+    const { actions, ctx, fetcher } = fixture();
+    await expect(actions["x.apply"].run({ ...ctx, executorId: "other" }, request)).rejects.toThrow(
+      "active executor Host",
+    );
     expect(fetcher).not.toHaveBeenCalled();
   });
   it("returns fixed browser destinations without contacting X", async () => {

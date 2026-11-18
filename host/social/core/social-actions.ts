@@ -12,6 +12,8 @@ export type SocialActionContext = {
   now: () => number;
   principal: SocialPrincipal;
   operationId: string;
+  /** Executor identity for X API actions that contact the provider directly. */
+  executorId?: string;
   /** Decision-model service from the Host composition; undefined when no model is configured. */
   decisions?: DecisionService;
   /** Host vault for email credentials; undefined makes every email action refuse before sending. */

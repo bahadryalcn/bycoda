@@ -84,11 +84,13 @@ async function xAccount(ctx: SocialActionContext, id: unknown): Promise<SocialAc
   return account;
 }
 
-function assertPaid(account: SocialAccount) {
+function assertPaid(ctx: SocialActionContext, account: SocialAccount) {
   if (account.connection === "browser" || !account.xApiProduct)
     throw new Error("The owner must enable a paid X API product.");
   if (!account.connected || !account.accessApproved || account.paused)
     throw new Error("Connect and enable this X API account first.");
+  if (account.executorId !== ctx.executorId)
+    throw new Error("Use the X account on its active executor Host.");
 }
 
 async function paidRead(
@@ -98,13 +100,13 @@ async function paidRead(
   product?: SocialAccount["xApiProduct"],
 ) {
   const account = await xAccount(ctx, id);
-  assertPaid(account);
+  assertPaid(ctx, account);
   if (product && account.xApiProduct !== product)
     throw new Error("X historical post analytics requires Enterprise.");
   ctx.service.capability(account, operation);
   const token = await xToken(ctx, account.id);
   const current = await xAccount(ctx, account.id);
-  assertPaid(current);
+  assertPaid(ctx, current);
   ctx.service.capability(current, operation);
   if (current.platformId !== account.platformId || current.xApiProduct !== account.xApiProduct)
     throw new Error("The X account changed. Request the readout again.");
@@ -127,7 +129,7 @@ async function applyXWrite(
 ) {
   ctx.service.owner(ctx.principal);
   const account = await xAccount(ctx, input.accountId);
-  assertPaid(account);
+  assertPaid(ctx, account);
   const action = parseWrite(input);
   if (input.confirm !== "APPLY_X_ACTION")
     throw new Error("Confirm the exact X action before sending.");
@@ -181,7 +183,7 @@ async function assertXWriteCurrent(
 ) {
   const latestToken = await xToken(ctx, account.id);
   const latest = await xAccount(ctx, account.id);
-  assertPaid(latest);
+  assertPaid(ctx, latest);
   if (
     latest.xApiProduct !== account.xApiProduct ||
     latest.platformId !== account.platformId ||

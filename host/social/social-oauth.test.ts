@@ -62,7 +62,11 @@ describe("Social OAuth trust boundary", () => {
       accountType: "member",
     });
     expect(browser).toMatchObject({ connection: "browser" });
-    await s.social.call(owner, "x.api.setProduct", { accountId: s.account.id, product: null });
+    const disabled = (await s.social.call(owner, "x.api.setProduct", {
+      accountId: s.account.id,
+      product: null,
+    })) as SocialAccount;
+    expect(() => s.social.adapterFor(disabled)).toThrow("unsupported");
     const fetcher = vi.fn();
     const oauth = new SocialOAuth(s.social, { x: s.config }, fetcher);
     await expect(oauth.begin(owner, s.account.id)).rejects.toThrow("owner opt-in");

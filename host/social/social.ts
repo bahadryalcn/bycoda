@@ -1063,6 +1063,8 @@ export class SocialService implements SocialServiceApi {
   forgetBrowserSession?: (accountId: string) => Promise<void>;
   cancelBrowserWorkflow?: (accountId: string) => Promise<void>;
   adapterFor(account: SocialAccount): SocialAdapter {
+    if (account.platform === "x" && account.connection !== "browser" && !account.xApiProduct)
+      throw new SocialPlatformError("unsupported", undefined, { reasonCode: "x.api.paid_product" });
     if (account.connection !== "browser") return this.adapters[account.platform];
     if (!this.browserAdapter) throw new SocialPlatformError("unsupported");
     return this.browserAdapter;
@@ -2460,6 +2462,7 @@ export class SocialService implements SocialServiceApi {
             now: this.now,
             principal: p,
             operationId,
+            executorId: this.store.environmentId,
             decisions: this.decisionModels,
             emailSecrets: osSecretValues(this.directory, this.store.environmentId),
           },
@@ -4906,9 +4909,6 @@ export class SocialService implements SocialServiceApi {
     return readFile(join(this.directory, "media", id));
   }
   async credentialFor(accountId: string): Promise<SocialCredential | undefined> {
-    const saved = await this.account(accountId);
-    if (saved.platform === "x" && saved.connection !== "browser" && !saved.xApiProduct)
-      return undefined;
     const initial = await this.credentials.get(accountId);
     if (
       !initial ||
