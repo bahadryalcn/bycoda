@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { t } from "../../../../../shared/i18n";
+import { hasControlCharacters } from "../../../../../shared/lib/controlCharacters";
 import { Button } from "../../../../../shared/ui/Button";
 import { useConfirm } from "../../../../../shared/ui/ConfirmDialog";
 import { FieldGroup } from "../../../../../shared/ui/FieldGroup";
@@ -36,7 +37,7 @@ export function InstagramHighlightsPanel({
     new Set(storyIds).size === storyIds.length &&
     storyIds.every((value) => /^\d{1,30}$/.test(value));
   const validName =
-    name.trim().length > 0 && [...name.trim()].length <= 100 && !/[\u0000-\u001f\u007f]/.test(name);
+    name.trim().length > 0 && [...name.trim()].length <= 100 && !hasControlCharacters(name);
 
   const refresh = async () => {
     const result = await client.browserInstagramHighlights(accountId);

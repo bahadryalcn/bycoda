@@ -174,14 +174,16 @@ it("keeps the chosen Instagram PDF after an upload failure and queues only the r
   const fake = fakeClient({
     replyOptions: { canReply: true, instagram: { attachment: true, localAttachment: true } },
   });
-  const upload = vi.fn<SocialClient["uploadInstagramAttachment"]>()
+  const upload = vi
+    .fn<SocialClient["uploadInstagramAttachment"]>()
     .mockRejectedValueOnce(new Error("Upload interrupted"))
     .mockResolvedValueOnce({ uploadId: "attachment-1" });
   fake.client.uploadInstagramAttachment = upload;
   await mount(fake.client);
   await click(button("None"));
-  const option = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="option"]'))
-    .find((item) => item.textContent?.trim() === "PDF");
+  const option = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="option"]')).find(
+    (item) => item.textContent?.trim() === "PDF",
+  );
   expect(option).toBeDefined();
   await click(option!);
   const input = element.querySelector<HTMLInputElement>('input[type="file"]')!;
@@ -199,7 +201,12 @@ it("keeps the chosen Instagram PDF after an upload failure and queues only the r
   expect(upload).toHaveBeenLastCalledWith(thread.id, "document", file);
   expect(fake.writes()[0]).toEqual({
     action: "replies.draft",
-    input: { threadId: thread.id, text: "", factIds: [], media: [{ kind: "document", uploadId: "attachment-1" }] },
+    input: {
+      threadId: thread.id,
+      text: "",
+      factIds: [],
+      media: [{ kind: "document", uploadId: "attachment-1" }],
+    },
   });
   expect(fake.writes().map((item) => item.action)).toEqual(WRITE_ACTIONS);
 });

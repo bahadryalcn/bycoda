@@ -154,7 +154,11 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
         const selected = current.draft.instagramAttachment;
         let media: SocialMedia[] | undefined;
         if (selected?.file) {
-          const result = await client.uploadInstagramAttachment(thread.id, selected.kind, selected.file);
+          const result = await client.uploadInstagramAttachment(
+            thread.id,
+            selected.kind,
+            selected.file,
+          );
           media = [{ kind: selected.kind, uploadId: result.uploadId }];
         } else if (selected?.url.trim()) {
           media = [{ kind: selected.kind, url: selected.url.trim() }];
@@ -231,10 +235,9 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
             onValueChange={(kind) =>
               changeDraft({
                 ...draft,
-                instagramAttachment:
-                  isInstagramDirectMediaKind(kind)
-                    ? { kind, url: attachment?.url ?? "" }
-                    : undefined,
+                instagramAttachment: isInstagramDirectMediaKind(kind)
+                  ? { kind, url: attachment?.url ?? "" }
+                  : undefined,
               })
             }
           />
@@ -258,10 +261,12 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
               accept={INSTAGRAM_DIRECT_FILE_ACCEPT[attachment.kind]}
               disabled={!!busy || !!operation}
               hint={attachment.file?.name}
-              onFiles={([file]) => changeDraft({
-                ...draft,
-                instagramAttachment: { kind: attachment.kind, url: "", file },
-              })}
+              onFiles={([file]) =>
+                changeDraft({
+                  ...draft,
+                  instagramAttachment: { kind: attachment.kind, url: "", file },
+                })
+              }
             />
           ) : null}
           {attachment && !options.data?.instagram?.localAttachment && !attachment.file ? (

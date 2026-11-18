@@ -4,6 +4,7 @@ import type {
   InstagramHighlights,
 } from "../../src/features/social/model/socialBrowser";
 import { SocialPlatformError } from "../../src/integrations/social/adapter";
+import { hasControlCharacters } from "../../src/shared/lib/controlCharacters";
 import {
   checkInstagramOwner,
   INSTAGRAM_ORIGIN,
@@ -38,7 +39,7 @@ function nameOf(value: unknown): string {
     typeof value !== "string" ||
     !value.trim() ||
     [...value.trim()].length > 100 ||
-    /[\u0000-\u001f\u007f]/.test(value)
+    hasControlCharacters(value)
   )
     throw new SocialPlatformError("rejected");
   return value.replace(/\s+/g, " ").trim();

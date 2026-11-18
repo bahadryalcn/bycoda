@@ -58,7 +58,9 @@ export async function inboxReplyOptions(
         canReply: true,
         instagram: {
           attachment: true,
-          ...(ctx.principal.kind === "owner" && instagramLocalMediaAvailable() ? { localAttachment: true } : {}),
+          ...(ctx.principal.kind === "owner" && instagramLocalMediaAvailable()
+            ? { localAttachment: true }
+            : {}),
         },
       };
     if (

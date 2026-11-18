@@ -20,7 +20,9 @@ function origin(raw: unknown): string {
   return parsed.origin;
 }
 
-export function instagramLocalMediaAvailable(raw = process.env.BYCODA_SOCIAL_PUBLIC_MEDIA_BASE_URL) {
+export function instagramLocalMediaAvailable(
+  raw = process.env.BYCODA_SOCIAL_PUBLIC_MEDIA_BASE_URL,
+) {
   try {
     origin(raw);
     return true;
@@ -78,16 +80,21 @@ export class InstagramMessageMedia {
     private readonly now: () => number,
   ) {}
 
-  async register(actorId: string, uploadId: string, kind: InstagramDirectMediaKind, data: Uint8Array) {
+  async register(
+    actorId: string,
+    uploadId: string,
+    kind: InstagramDirectMediaKind,
+    data: Uint8Array,
+  ) {
     instagramAttachmentMime(kind, data);
     await this.store.db.checkAuthorization();
     await this.custody.registerManagedUpload({ accountId: `owner:${actorId}` }, uploadId, data);
   }
 
   async assertOwned(actorId: string, uploadId: string) {
-    const row = await this.store.db.prepare(
-      "SELECT 1 FROM social_media_files WHERE id=? AND account_id=? AND state='active'",
-    ).get(uploadId, `owner:${actorId}`);
+    const row = await this.store.db
+      .prepare("SELECT 1 FROM social_media_files WHERE id=? AND account_id=? AND state='active'")
+      .get(uploadId, `owner:${actorId}`);
     if (!row) throw new Error("Attach a file uploaded by this owner.");
   }
 
@@ -97,9 +104,11 @@ export class InstagramMessageMedia {
 
   async grant(draftId: string, id: string, kind: InstagramDirectMediaKind): Promise<string> {
     const base = origin(process.env.BYCODA_SOCIAL_PUBLIC_MEDIA_BASE_URL);
-    const claim = await this.store.db.prepare(
-      "SELECT 1 FROM social_media_claims WHERE media_id=? AND owner_kind='record:draft' AND owner_id=? AND state='active'",
-    ).get(id, draftId);
+    const claim = await this.store.db
+      .prepare(
+        "SELECT 1 FROM social_media_claims WHERE media_id=? AND owner_kind='record:draft' AND owner_id=? AND state='active'",
+      )
+      .get(id, draftId);
     if (!claim) throw new Error("The reviewed reply no longer holds this file.");
     await this.readVerified(id, kind);
     const expires = this.now() + GRANT_LIFETIME_MS;
@@ -125,9 +134,9 @@ export class InstagramMessageMedia {
 
   private async readVerified(id: string, kind: InstagramDirectMediaKind) {
     if (!uploadIdPattern.test(id)) throw new Error("Invalid Instagram attachment.");
-    const registered = await this.store.db.prepare(
-      "SELECT sha256 FROM social_media_files WHERE id=? AND state='active'",
-    ).get(id);
+    const registered = await this.store.db
+      .prepare("SELECT sha256 FROM social_media_files WHERE id=? AND state='active'")
+      .get(id);
     if (!registered) throw new Error("Instagram attachment unavailable.");
     const file = await open(join(this.directory, "media", id), "r");
     try {
