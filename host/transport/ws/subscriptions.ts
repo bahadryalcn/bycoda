@@ -49,6 +49,12 @@ type Retained = { event: Event; bytes: number; at: number };
 type Read = { connectionId: string; held: boolean; abandoned: boolean; settled: boolean };
 // Physical loads may exceed the logical read cap by this much while abandoned loads drain.
 const abandonedReadAllowance = 4;
+// Consecutive failed reads a stream absorbs before its consumers must resync.
+const maxQuietStreamFailures = 3;
+const streamRetryBaseMs = 500;
+const streamRetryMaxMs = 30_000;
+/** Data no retry can fix; consumers resync at once. */
+class StreamResyncRequired extends Error {}
 type Consumer = {
   owner: HostStreamConsumer;
   id: string;
@@ -82,6 +88,7 @@ type Stream = {
   reading?: AbortController;
   readingBaseline?: boolean;
   refreshAt?: number;
+  failures: number;
   consumers: Map<string, Consumer>;
 };
 
@@ -194,6 +201,7 @@ export class HostSubscriptionHub {
         dirty: true,
         deleted: false,
         forceSnapshot: true,
+        failures: 0,
         consumers: new Map(),
       };
       this.streams.set(key, stream);
@@ -516,11 +524,7 @@ export class HostSubscriptionHub {
         const generation = stream.generation;
         const deadline = setTimeout(() => {
           controller.abort();
-          if (this.stopped || stream.deleted || generation !== stream.generation) return;
-          for (const consumer of stream.consumers.values()) {
-            this.deliver(stream, consumer, this.event(stream, "resync-required"));
-            consumer.active = false;
-          }
+          this.failed(stream, generation, false);
         }, this.limits.defaultResponseTimeoutMs);
         deadline.unref();
         void this.refresh(stream, generation, controller, owner).finally(() => {
@@ -626,7 +630,7 @@ export class HostSubscriptionHub {
       const dataWire = readNormalizedJsonWire(dataCapture);
       const text = dataWire.serialized;
       if (dataWire.byteLength + 1024 > this.limits.streamChunkBytes)
-        throw new Error("Stream snapshot requires a bounded bulk descriptor.");
+        throw new StreamResyncRequired("Stream snapshot requires a bounded bulk descriptor.");
       const fingerprint = createHash("sha256").update(text).digest("hex");
       if (
         !forceSnapshot &&
@@ -659,6 +663,7 @@ export class HostSubscriptionHub {
       stream.fingerprint = fingerprint;
       stream.revision = revision;
       stream.sourceEpoch = snapshot.sourceEpoch;
+      stream.failures = 0;
       stream.touched = this.now();
       this.prune();
       for (const consumer of stream.consumers.values()) {
@@ -668,15 +673,27 @@ export class HostSubscriptionHub {
         if (consumer.replaying) this.replay(stream, consumer);
         else this.deliver(stream, consumer, event);
       }
-    } catch {
-      if (!this.stopped && !stream.deleted && generation === stream.generation) {
-        stream.forceSnapshot = true;
-        stream.dirty = true;
-        for (const consumer of stream.consumers.values()) {
-          this.deliver(stream, consumer, this.event(stream, "resync-required"));
-          consumer.active = false;
-        }
-      }
+    } catch (error) {
+      // An aborted read was already settled by whoever aborted it (deadline,
+      // deletion, resnapshot or the last consumer leaving).
+      if (!controller.signal.aborted)
+        this.failed(stream, generation, error instanceof StreamResyncRequired);
+    }
+  }
+
+  // A failed read retries a fresh baseline with backoff while consumers stay
+  // live; only repeated failures, or data no retry can fix, cost a resync.
+  private failed(stream: Stream, generation: number, terminal: boolean): void {
+    if (this.stopped || stream.deleted || generation !== stream.generation) return;
+    stream.forceSnapshot = true;
+    stream.dirty = true;
+    stream.failures++;
+    stream.refreshAt =
+      Date.now() + Math.min(streamRetryMaxMs, streamRetryBaseMs * 2 ** (stream.failures - 1));
+    if (!terminal && stream.failures < maxQuietStreamFailures) return;
+    for (const consumer of stream.consumers.values()) {
+      this.deliver(stream, consumer, this.event(stream, "resync-required"));
+      consumer.active = false;
     }
   }
 

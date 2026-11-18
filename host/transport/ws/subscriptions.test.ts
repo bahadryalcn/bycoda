@@ -376,6 +376,34 @@ it("close aborts reads, prevents late delivery and refuses new subscriptions", a
   expect(() => subscribe(hub, client("two").owner)).toThrow("unavailable");
 });
 
+it("retries a failed read while consumers stay live and resyncs only after repeated failures", async () => {
+  let failures = 2;
+  const load = vi.fn(async () => {
+    if (failures-- > 0) throw new Error("store stalled");
+    return { revision: 1, data: { revision: 1 } };
+  });
+  const { hub } = fixture({ load });
+  const first = client("first"),
+    second = client("second");
+  subscribe(hub, first.owner);
+  subscribe(hub, second.owner);
+  await vi.waitFor(() => expect(snapshots(first.events)).toHaveLength(1), { timeout: 5_000 });
+  await expectSnapshots(second.events, 1);
+  expect(load).toHaveBeenCalledTimes(3);
+  for (const events of [first.events, second.events])
+    expect(events.map((event) => event.params.kind)).toEqual(["snapshot"]);
+
+  failures = 3;
+  hub.acknowledge("first", "subscription", cursor(first.events[0]));
+  hub.acknowledge("second", "subscription", cursor(second.events[0]));
+  hub.invalidate(target);
+  await vi.waitFor(() => expect(first.events.at(-1)?.params.kind).toBe("resync-required"), {
+    timeout: 5_000,
+  });
+  expect(load).toHaveBeenCalledTimes(6);
+  expect(second.events.at(-1)?.params.kind).toBe("resync-required");
+});
+
 it("sends explicit resync instead of unbounded oversize snapshot data", async () => {
   const load = vi.fn(async () => ({ data: { text: "x".repeat(65_536) } }));
   const { hub } = fixture({ load });
