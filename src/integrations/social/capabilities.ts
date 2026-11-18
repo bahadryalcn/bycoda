@@ -64,7 +64,9 @@ const isNotYet = (operation: CapabilityOperation): boolean =>
 
 function capabilityOperations(platform: SocialPlatform) {
   if (platform === "x") return [...CAPABILITY_OPERATIONS, ...X_CAPABILITY_OPERATIONS];
-  if (platform === "youtube") return [...CAPABILITY_OPERATIONS, ...YOUTUBE_CAPABILITIES];
+  // YouTube management shares comment.moderate with the Facebook Page operations; list it once.
+  if (platform === "youtube")
+    return [...new Set<CapabilityOperation>([...CAPABILITY_OPERATIONS, ...YOUTUBE_CAPABILITIES])];
   return CAPABILITY_OPERATIONS;
 }
 
@@ -102,7 +104,11 @@ function browserCapabilities(account: SocialAccount, now: number): SocialCapabil
   const expired = account.expiresAt !== undefined && account.expiresAt <= now;
   return capabilityOperations(account.platform).map((operation): SocialCapability => {
     const row = { operation, scopes: [] as string[], source };
-    if (isNotYet(operation) && !supported.includes(operation))
+    if (
+      isNotYet(operation) &&
+      !supported.includes(operation) &&
+      !(account.platform === "youtube" && notes[operation])
+    )
       return {
         ...row,
         status: "unsupported",

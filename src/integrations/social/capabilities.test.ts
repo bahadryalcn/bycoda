@@ -174,7 +174,11 @@ describe("capability table shape", () => {
           [
             ...CAPABILITY_OPERATIONS,
             ...(platform === "x" ? X_CAPABILITY_OPERATIONS : []),
-            ...(platform === "youtube" ? YOUTUBE_CAPABILITIES : []),
+            ...(platform === "youtube"
+              ? YOUTUBE_CAPABILITIES.filter(
+                  (operation) => !(CAPABILITY_OPERATIONS as readonly string[]).includes(operation),
+                )
+              : []),
           ].sort(),
         );
         for (const item of caps) expect(item.reasonCode.length, platform).toBeGreaterThan(0);
@@ -235,6 +239,8 @@ describe("capability table shape", () => {
                         ? ["delete", "audience.collect", "profile.read"]
                         : [];
       if (platform === "linkedin") openedByApi.push("analytics", "delete");
+      // YouTube management owns comment moderation through its own requirement row.
+      if (platform === "youtube") openedByApi.push("comment.moderate");
       // Browser recipes that open a not-yet operation (browserCapabilities.ts). The row is then "available".
       const openedByBrowser = browserOperations(browserAccount(platform)) as readonly string[];
       for (const operation of NOT_YET_OPERATIONS) {
