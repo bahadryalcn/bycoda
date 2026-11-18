@@ -50,11 +50,19 @@ export type RemoteChangesValue = {
 
 /** A repeated question about the same missing session waits this long for its answer. */
 const DELETED_REPEAT_MS = 2_000;
-type SessionRead = number | { revision: number; sourceEpoch: string } | undefined;
+const INITIAL_SAFETY_MS = 1000;
+const MAX_SAFETY_MS = 5000;
+type SessionRead =
+  | number
+  | { revision: number; sourceEpoch: string; desktopRunning?: boolean }
+  | undefined;
 
 /** One bounded metadata poll for a set of session and project cursors. */
 export class RemoteChanges {
-  constructor(private readonly signal = new ChangeSignal()) {}
+  constructor(
+    private readonly signal = new ChangeSignal(),
+    private readonly desktopRecheckMs = Infinity,
+  ) {}
   readonly instanceId = randomUUID();
   private active = 0;
   private sessionCache = new Map<string, { at: number; revision: SessionRead }>();
@@ -76,7 +84,6 @@ export class RemoteChanges {
     cancelled: () => boolean = () => false,
     readTasks?: () => Promise<string>,
     readGit?: (cwd: string) => Promise<{ etag: string; watching: boolean }>,
-    recheckMs: () => number | Promise<number> = () => 1000,
     owner?: string,
     authorized?: () => Promise<boolean>,
   ): Promise<RemoteChangesValue> {
@@ -103,7 +110,6 @@ export class RemoteChanges {
         cancelled,
         readTasks,
         readGit,
-        recheckMs,
         state,
         authorized,
       );
@@ -122,7 +128,6 @@ export class RemoteChanges {
     cancelled: () => boolean,
     readTasks: (() => Promise<string>) | undefined,
     readGit: ((cwd: string) => Promise<{ etag: string; watching: boolean }>) | undefined,
-    recheckMs: () => number | Promise<number>,
     owner: { signal: ChangeSignal } | undefined,
     authorized?: () => Promise<boolean>,
   ): Promise<RemoteChangesValue> {
@@ -169,10 +174,6 @@ export class RemoteChanges {
     if (input.demandChanged === true) owner?.signal.notify();
     const ownerVersion = owner?.signal.version;
     const reset = input.instanceId !== this.instanceId;
-    if (this.cacheVersion !== this.signal.version) {
-      this.sessionCache.clear();
-      this.cacheVersion = this.signal.version;
-    }
     const readCachedSession = async (id: string) => {
       if (this.cacheVersion !== this.signal.version) {
         this.sessionCache.clear();
@@ -199,12 +200,19 @@ export class RemoteChanges {
         this.sessionCache.delete(this.sessionCache.keys().next().value!);
       return revision;
     };
-    const changed = async (): Promise<RemoteChangesValue> => {
+    const runningDesktop = new Set<string>();
+    const changed = async (desktopOnly = false): Promise<RemoteChangesValue> => {
       if (authorized && !(await authorized())) throw new Error("Device authorization was revoked");
+      const cursors = desktopOnly
+        ? sessions.filter(({ sessionId }) => runningDesktop.has(sessionId))
+        : sessions;
       const sessionValues = (
         await Promise.all(
-          sessions.map(async ({ sessionId, revision, sourceEpoch }) => {
+          cursors.map(async ({ sessionId, revision, sourceEpoch }) => {
             const current = await readCachedSession(sessionId);
+            if (typeof current === "object" && current.desktopRunning)
+              runningDesktop.add(sessionId);
+            else runningDesktop.delete(sessionId);
             if (current === undefined) {
               if (reset) return [{ sessionId, revision: 0, deleted: true }];
               const key = `${sessionId}\0${revision}`;
@@ -233,6 +241,9 @@ export class RemoteChanges {
           }),
         )
       ).flat();
+      if (desktopOnly)
+        return { instanceId: this.instanceId, reset, sessions: sessionValues, projects: [] };
+
       const projectValues: ProjectRef[] = [];
       // Independent project reads may touch transcripts. Bound IO concurrency
       // while keeping the response in subscription order.
@@ -356,9 +367,14 @@ export class RemoteChanges {
     this.active++;
     const deadline = Date.now() + Math.min(10_000, Math.max(0, Number(input.waitMs) || 0));
     let latest = first;
+    let safetyMs = INITIAL_SAFETY_MS;
+    let nextSafety = Date.now() + safetyMs;
+    let nextDesktop = Date.now() + this.desktopRecheckMs;
     try {
       while (!cancelled() && Date.now() < deadline) {
-        const waitUntil = Math.min(deadline, Date.now() + (await recheckMs()));
+        const safetyAt = Math.min(deadline, nextSafety);
+        const desktopAt = runningDesktop.size ? nextDesktop : Infinity;
+        const waitUntil = Math.min(safetyAt, desktopAt);
         if (owner) {
           const pending = new AbortController();
           try {
@@ -374,12 +390,22 @@ export class RemoteChanges {
           if (owner.signal.version !== ownerVersion) return latest;
         } else await this.signal.wait(waitUntil, cancelled, version);
         if (cancelled()) return latest;
-        // Keep the safety-tick recheck: some changes reach readers without a signal bump.
-        version = this.signal.version;
-        this.sessionCache.clear();
-        latest = await changed();
+        const currentVersion = this.signal.version;
+        const signalled = currentVersion !== version;
+        const now = Date.now();
+        const full = signalled || now >= safetyAt;
+        // ChangeSignal also wakes to check cancellation before the next scheduled read.
+        if (!full && now < desktopAt) continue;
+        version = currentVersion;
+        latest = await changed(!full);
         if (latest.sessions.length || latest.projects.length || latest.tasks || latest.git)
           return latest;
+        nextDesktop = Date.now() + this.desktopRecheckMs;
+        // External desktop writes and unwatched checkouts still need a bounded safety read.
+        if (full) {
+          safetyMs = signalled ? INITIAL_SAFETY_MS : Math.min(safetyMs * 2, MAX_SAFETY_MS);
+          nextSafety = Date.now() + safetyMs;
+        }
       }
       return latest;
     } finally {

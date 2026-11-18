@@ -87,7 +87,6 @@ it("wakes only the changed owner and immediately resumes continuous new-demand u
         () => false,
         undefined,
         undefined,
-        () => 1000,
         owner,
       );
     let oldCompleted = false;
@@ -160,6 +159,81 @@ it("does not repeat metadata IO after a long poll reaches its deadline", async (
     expect((await pending).projects).toEqual([]);
     // Initial read and one deadline check; no third, identical read.
     expect(project).toHaveBeenCalledTimes(2);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("backs off idle sweeps and still detects a change without a signal", async () => {
+  vi.useFakeTimers();
+  try {
+    const changes = new RemoteChanges();
+    const session = vi.fn(() => 1);
+    const project = vi.fn(async () => ({ etag: "p1", sessions: [] }));
+    const tasks = vi.fn(async () => "t1");
+    const git = vi.fn(async () => ({ etag: "1.1", watching: true }));
+    const pending = changes.read(
+      {
+        instanceId: changes.instanceId,
+        sessions: [{ sessionId: "s", revision: 1 }],
+        projects: [{ projectId: "p", known: "p1" }],
+        tasksKnown: "t1",
+        git: [{ cwd: "/repo", known: "1.1" }],
+        waitMs: 10_000,
+      },
+      session,
+      project,
+      undefined,
+      tasks,
+      git,
+    );
+    await vi.advanceTimersByTimeAsync(6999);
+    for (const read of [session, project, tasks, git]) expect(read).toHaveBeenCalledTimes(3);
+    project.mockResolvedValue({ etag: "p2", sessions: [] });
+    await vi.advanceTimersByTimeAsync(1);
+    expect((await pending).projects).toMatchObject([{ projectId: "p", etag: "p2" }]);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("rechecks only running desktop cursors at the fast interval", async () => {
+  vi.useFakeTimers();
+  try {
+    const changes = new RemoteChanges(undefined, 200);
+    let revision = 1;
+    const session = vi.fn((id: string) =>
+      id === "desktop" ? { revision, sourceEpoch: "desktop", desktopRunning: true } : 1,
+    );
+    const project = vi.fn(async () => ({ etag: "p1", sessions: [] }));
+    const tasks = vi.fn(async () => "t1");
+    const git = vi.fn(async () => ({ etag: "1.1", watching: true }));
+    const pending = changes.read(
+      {
+        instanceId: changes.instanceId,
+        sessions: [
+          { sessionId: "host", revision: 1 },
+          { sessionId: "desktop", revision: 1 },
+        ],
+        projects: [{ projectId: "p", known: "p1" }],
+        tasksKnown: "t1",
+        git: [{ cwd: "/repo", known: "1.1" }],
+        waitMs: 10_000,
+      },
+      session,
+      project,
+      undefined,
+      tasks,
+      git,
+    );
+    await vi.advanceTimersByTimeAsync(400);
+    expect(session.mock.calls).toEqual([["host"], ["desktop"], ["desktop"], ["desktop"]]);
+    for (const read of [project, tasks, git]) expect(read).toHaveBeenCalledTimes(1);
+    revision = 2;
+    await vi.advanceTimersByTimeAsync(200);
+    expect((await pending).sessions).toEqual([
+      { sessionId: "desktop", revision: 2, sourceEpoch: "desktop" },
+    ]);
   } finally {
     vi.useRealTimers();
   }

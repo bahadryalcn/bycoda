@@ -105,7 +105,7 @@ export function createProjectsRuntime(
   dependencies.tasks.onChange = () => signal.notify();
   const revisionWaits = new RevisionWaits(64, signal);
   const transcriptPages = new TranscriptPages();
-  const remoteChanges = new RemoteChanges(signal);
+  const remoteChanges = new RemoteChanges(signal, WATCH_STAMP_MS);
   const gitWatches = new GitWatches({
     onChange: (cwd, change) => {
       if (!change || change.refs) branchCache.clear(cwd);

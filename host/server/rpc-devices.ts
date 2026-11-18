@@ -41,7 +41,6 @@ export async function handleDevicesRpc(
     | "projectChangeSnapshot"
     | "taskChangeEtag"
     | "gitWatches"
-    | "desktopRecheckMs"
     | "desktopWatch"
     | "desktopSigningSecret"
     | "scopedDesktopCall"
@@ -271,24 +270,12 @@ export async function handleDevicesRpc(
           );
           if (epoch !== (await dependencies.sessionSourceEpoch(sessionId)))
             throw new Error("Session read owner changed; retry");
-          return { revision, sourceEpoch: epoch };
+          return { revision, sourceEpoch: epoch, desktopRunning: stamp?.running };
         },
         dependencies.projectChangeSnapshot,
         () => request.closing || request.response.destroyed || request.pollState.revoked,
         dependencies.taskChangeEtag,
         async (cwd) => await dependencies.gitWatches.read(cwd),
-        async () =>
-          Array.isArray(request.params.sessions) &&
-          (
-            await Promise.all(
-              request.params.sessions.map(
-                async (entry: { sessionId: string }) =>
-                  await dependencies.desktopRecheckMs(entry.sessionId),
-              ),
-            )
-          ).some((duration) => duration === WATCH_STAMP_MS)
-            ? WATCH_STAMP_MS
-            : 1000,
         request.tokenHash,
         () => dependencies.engine.store.authenticated(request.token),
       );
