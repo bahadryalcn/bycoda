@@ -232,7 +232,11 @@ describe("Snapchat profile manager contracts", () => {
         throw new Error("Connection closed after dispatch");
       },
     );
-    const launch = vi.fn(async () => ({ page: f.page, close: async () => {} }));
+    const launch = vi.fn(async () => ({
+      page: f.page,
+      closed: Promise.resolve(),
+      close: async () => {},
+    }));
     const settings = new Map<string, string>();
     const service = {
       accountForBrowserManagement: async () => subject,
