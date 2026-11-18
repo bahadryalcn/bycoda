@@ -10,6 +10,7 @@ import {
   delegatedAgentBlock,
   delegatedBlockId,
   delegatedChildren,
+  delegatedChildrenRunning,
   delegatedDockAgents,
   crewMemberOf,
   delegationParentOf,
@@ -149,6 +150,16 @@ describe("delegatedChildren", () => {
     const plain = newSession("codex", "/repo");
     const ids = delegatedChildren([late, plain, other, early], PARENT).map((session) => session.id);
     expect(ids).toEqual(["early", "late"]);
+  });
+});
+
+describe("delegatedChildrenRunning", () => {
+  it("is true only while one of this parent's children still works", () => {
+    const done = child("done");
+    const running = child("running", { busy: true });
+    const otherRunning = child("other", { busy: true }, { parentSessionId: "parent-2" });
+    expect(delegatedChildrenRunning([done, otherRunning], PARENT)).toBe(false);
+    expect(delegatedChildrenRunning([done, running], PARENT)).toBe(true);
   });
 });
 

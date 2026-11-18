@@ -22,6 +22,7 @@ import {
   restoreQueuedMessage,
   runningTargetOf,
 } from "../../../features/sessions/model/messageQueue";
+import { delegatedChildrenRunning } from "../../../features/sessions/model/delegatedAgents";
 import { createQueuedUndoOrder } from "../../../features/sessions/model/queuedUndoOrder";
 import { repairStaleHandoff } from "../../../features/sessions/model/activeSubmits";
 import { isPreparingHandoff } from "../../../features/sessions/model/handoff";
@@ -93,9 +94,16 @@ const HOST_WAIT_NOTICE_MS = 8_000;
  * How the queue may send its head now: as a new turn, as a steer into a turn
  * only background commands keep open, or not yet. A head queued for another
  * model waits for the turn to end, since joining it cannot change the model.
+ * After the turn, the head also waits for the session's delegated subagents:
+ * they report back to it, and a new turn meanwhile would race their work.
+ * The row's own Send stays available to send it earlier.
  */
-function autoSendMode(session: Session): "dispatch" | "steer" | undefined {
-  if (canDispatchQueuedHead(session)) return "dispatch";
+export function autoSendMode(
+  session: Session,
+  sessions: readonly Session[],
+): "dispatch" | "steer" | undefined {
+  if (canDispatchQueuedHead(session))
+    return delegatedChildrenRunning(sessions, session.id) ? undefined : "dispatch";
   const head = session.queuedMessages?.[0];
   if (
     head &&
@@ -228,11 +236,11 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
       // A handoff no running submit owns would hold the queue forever; the
       // repair changes the sessions, which runs this effect again.
       if (isPreparingHandoff(session) && repairStaleHandoff(session.id)) continue;
-      if (autoSendMode(session) && retiringTurns.current.has(session.id)) {
+      if (autoSendMode(session, sessions) && retiringTurns.current.has(session.id)) {
         waitingForCleanup = true;
         continue;
       }
-      if (autoSendMode(session) && !sharedLocalQueueReady(session.id)) {
+      if (autoSendMode(session, sessions) && !sharedLocalQueueReady(session.id)) {
         // The Host that coordinates this queue is not answering. Sending stays
         // refused (two windows could send the same row), but say why.
         if (!sharedLocalQueueLeaseHeld(session.id) && !lateSettlementPossible(session.id)) {
@@ -263,7 +271,7 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
       }
       hostWaitSince.current.delete(session.id);
       if (
-        !autoSendMode(session) ||
+        !autoSendMode(session, sessions) ||
         !sharedLocalQueueReady(session.id) ||
         retiringTurns.current.has(session.id) ||
         queueDispatchingRef.current.has(session.id) ||
@@ -292,7 +300,7 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
           }
           const latest = sessionsRef.current.find((entry) => entry.id === session.id);
           const head = latest?.queuedMessages?.[0];
-          const mode = latest ? autoSendMode(latest) : undefined;
+          const mode = latest ? autoSendMode(latest, sessionsRef.current) : undefined;
           if (
             !latest ||
             !head ||

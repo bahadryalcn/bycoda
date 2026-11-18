@@ -271,6 +271,30 @@ describe("Shift+Tab queues while a turn runs", () => {
     );
   });
 
+  it.each(["shortcut", "button"])(
+    "queues behind running subagents after the turn through the %s",
+    async (action) => {
+      const onSubmit = vi.fn(() => true);
+      const textarea = await renderComposer({ busy: false, subagentsRunning: true }, onSubmit);
+      await type(textarea, "extend the todo list");
+      const button = container.querySelector<HTMLButtonElement>(
+        '[data-usage-guide="queue-button"]',
+      );
+      expect(button).not.toBeNull();
+      expect(container.querySelector('[aria-label="Stop"]')).toBeNull();
+      await act(async () => {
+        if (action === "shortcut") press(textarea, shiftTab);
+        else button!.click();
+      });
+      expect(onSubmit).toHaveBeenCalledTimes(1);
+      expect(onSubmit).toHaveBeenCalledWith(
+        "extend the todo list",
+        [],
+        expect.objectContaining({ followUpBehavior: "queue" }),
+      );
+    },
+  );
+
   it("keeps Shift+Tab in the composer without sending when idle or empty", async () => {
     const onSubmit = vi.fn(() => true);
     const idle = await renderComposer({ busy: false }, onSubmit);

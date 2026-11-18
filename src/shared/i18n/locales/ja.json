@@ -2131,6 +2131,8 @@
   "Cancel edit": "編集をキャンセルする",
   "Chat workspace": "チャットワークスペース",
   "Queue message for when this turn finishes": "このターン終了時のメッセージをキューに入れる",
+  "Queue message for when the subagents finish": "サブエージェントの完了後に送るメッセージをキューに入れる",
+  "Sends when the subagents finish": "サブエージェントの完了後に送信",
   "Queue message": "キューメッセージ",
   "Context usage": "コンテキストの使用法",
   "API time": "API時間",
@@ -11999,9 +12001,9 @@
   "Fix the highlighted limit before saving.": "保存する前に、強調表示された上限を修正してください。",
   "Group \"{p0}\" would be empty. Remove it or keep one of its models.": "グループ「{p0}」が空になります。グループを削除するか、モデルを1つ残してください。",
   "{p0} (provider)": "{p0}（プロバイダー）",
-  "Not sent yet. The message stays queued and is retried automatically.": "まだ送信されていません。メッセージはキューに残り、自動的に再試行されます。",
+  "Not sent yet. The message stays queued and is retried automatically.": "まだ送信されていません。",
   "Show delivery notice": "配信通知を表示",
-  "This device's local storage is full. Old queue records are being cleaned up; the message stays queued.": "この端末のローカルストレージがいっぱいです。古いキューの記録を整理しています。メッセージはキューに残ります。",
+  "This device's local storage is full, so the queue could not be saved.": "この端末のローカルストレージがいっぱいのため、キューを保存できませんでした。",
   "The connection to the Host dropped before the result was known. The queue checks again automatically.": "結果が確認される前に Host への接続が切断されました。キューは自動的に再確認します。",
   "The message was not sent. The technical reason is in the details.": "メッセージは送信されませんでした。技術的な理由は詳細を確認してください。"
 }

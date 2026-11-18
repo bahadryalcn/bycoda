@@ -9,7 +9,11 @@ import {
 import { trackLateSettlement } from "../../../features/sessions/model/deliveryReview";
 import { CONTINUE_PROMPT } from "../../../features/sessions/model/inFlight";
 import type { DeliverySettlement } from "../../../shared/lib/deliveryUnknown";
-import { useQueuedMessageActions } from "./useQueuedMessageActions";
+import { autoSendMode, useQueuedMessageActions } from "./useQueuedMessageActions";
+import {
+  DELEGATION_PARENT_KEY,
+  type DelegationParent,
+} from "../../../shared/model/host-contracts/delegation";
 import { requeueQueuedRowHead } from "./submit/submitBusySteer";
 import { gateUsageBudget } from "./submit/submitUsageBudget";
 import type { SubmitDeps, SubmitPreflight } from "./submit/submitTypes";
@@ -857,3 +861,27 @@ it.each([false, true])(
     }
   },
 );
+
+it("holds the queued head while a delegated subagent of the idle parent still runs", () => {
+  const parent = {
+    ...newSession("claude", "/repo"),
+    id: "parent",
+    queuedMessages: [{ id: "head", text: "Next step", attachments: [] }],
+  } satisfies Session;
+  const base = newSession("claude", "/repo");
+  const link: DelegationParent = {
+    parentSessionId: "parent",
+    runId: "run-1",
+    kind: "subagent",
+    model: "claude:opus",
+    startedAt: 1,
+  };
+  const child = {
+    ...base,
+    id: "child",
+    busy: true,
+    modelSettings: { ...base.modelSettings, [DELEGATION_PARENT_KEY]: JSON.stringify(link) },
+  } satisfies Session;
+  expect(autoSendMode(parent, [parent, child])).toBeUndefined();
+  expect(autoSendMode(parent, [parent, { ...child, busy: false }])).toBe("dispatch");
+});

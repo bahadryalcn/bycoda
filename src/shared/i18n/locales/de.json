@@ -2131,6 +2131,8 @@
   "Cancel edit": "Bearbeitung abbrechen",
   "Chat workspace": "Chat-Arbeitsbereich",
   "Queue message for when this turn finishes": "Warteschlangennachricht für das Ende dieser Runde",
+  "Queue message for when the subagents finish": "Nachricht einreihen, bis die Subagenten fertig sind",
+  "Sends when the subagents finish": "Wird gesendet, wenn die Subagenten fertig sind",
   "Queue message": "Warteschlangennachricht",
   "Context usage": "Kontextverwendung",
   "API time": "API-Zeit",
@@ -11999,9 +12001,9 @@
   "Fix the highlighted limit before saving.": "Korrigiere das markierte Limit vor dem Speichern.",
   "Group \"{p0}\" would be empty. Remove it or keep one of its models.": "Die Gruppe \"{p0}\" wäre leer. Entferne sie oder behalte eines ihrer Modelle.",
   "{p0} (provider)": "{p0} (Anbieter)",
-  "Not sent yet. The message stays queued and is retried automatically.": "Noch nicht gesendet. Die Nachricht bleibt in der Warteschlange und wird automatisch erneut versucht.",
+  "Not sent yet. The message stays queued and is retried automatically.": "Noch nicht gesendet.",
   "Show delivery notice": "Zustellungshinweis anzeigen",
-  "This device's local storage is full. Old queue records are being cleaned up; the message stays queued.": "Der lokale Speicher dieses Geräts ist voll. Alte Warteschlangeneinträge werden bereinigt; die Nachricht bleibt in der Warteschlange.",
+  "This device's local storage is full, so the queue could not be saved.": "Der lokale Speicher dieses Geräts ist voll, deshalb konnte die Warteschlange nicht gespeichert werden.",
   "The connection to the Host dropped before the result was known. The queue checks again automatically.": "Die Verbindung zum Host ist abgebrochen, bevor das Ergebnis bekannt war. Die Warteschlange prüft automatisch erneut.",
   "The message was not sent. The technical reason is in the details.": "Die Nachricht wurde nicht gesendet. Der technische Grund steht in den Details."
 }

@@ -32,11 +32,13 @@ function persistableAttachment(file: Attachment): Attachment {
   if (file.path) {
     return { ...base, path: file.path, ...(file.missing ? { missing: true } : {}) };
   }
-  // The caller keeps the payload elsewhere (a store with room for it) and loads it back.
-  if (file.externalPayload && !file.missing) return { ...base, externalPayload: true };
+  // Bytes in hand are saved. A caller that keeps them elsewhere (a store with room
+  // for them) hands in the marker without the bytes and loads them back.
   if (file.data && file.data.length <= MAX_PERSISTED_ATTACHMENT_CHARS) {
     return { ...base, data: file.data };
   }
+  if (file.externalPayload && !file.data && !file.missing)
+    return { ...base, externalPayload: true };
   // Nothing on disk and nothing small enough to keep: it cannot come back.
   return { ...base, missing: true };
 }

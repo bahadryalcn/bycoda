@@ -34,6 +34,8 @@ export const LEASE_HELD = /drain lease/i;
 /** The host's refusal of a conversation it does not store: nothing was read or changed. */
 const SESSION_UNKNOWN = /\bSession not found on this machine\b/;
 const CLAIM_RACE_RETRIES = 3;
+/** A pasted payload the payload store refused stays inline in the saved record up to this size. */
+const MAX_INLINE_PAYLOAD_CHARS = 512 * 1024;
 /** The host answered that it has no `sessions.queue.release`. */
 let releaseUnsupported = false;
 
@@ -75,7 +77,9 @@ export class SharedQueueClient {
   /** Pasted payloads this client knows are in the payload store, so polling rewrites nothing. */
   private storedPayloads = new Set<string>();
   private payloadWrites = Promise.resolve();
-  private payloadsLoaded?: Promise<void>;
+  private payloadsLoading?: Promise<void>;
+  /** Pasted payloads the payload store refused, kept inside the saved record instead. */
+  private inlinePayloads = new Set<string>();
   private attachmentFingerprint?: string;
   private attachments() {
     if (!cachedRemoteCapabilities(this.environmentId)?.includes(ATTACHMENT_OWNERSHIP_CAPABILITY))
@@ -104,14 +108,16 @@ export class SharedQueueClient {
       const shared = this.storageKey;
       this.storageKey = `bycoda:shared-queue:v2:${JSON.stringify([environmentId, sessionId, clientId])}`;
       // The first window to start adopts what the single shared key held and
-      // removes it, so no other window adopts the same copy. A copy that cannot be
-      // written leaves the old keys in place.
+      // removes it, so no other window adopts the same copy. A record an older build
+      // already marked as adopted is a frozen snapshot (its rows may be sent since):
+      // it is deleted, never copied. A copy that cannot be written leaves the old keys.
       try {
-        for (const suffix of ["", ":send"]) {
-          const old = localStorage.getItem(shared + suffix);
-          if (old !== null && localStorage.getItem(this.storageKey + suffix) === null)
-            writeQueueStorage(this.storageKey + suffix, old);
-        }
+        if (localStorage.getItem(`${shared}:adopted`) === null)
+          for (const suffix of ["", ":send"]) {
+            const old = localStorage.getItem(shared + suffix);
+            if (old !== null && localStorage.getItem(this.storageKey + suffix) === null)
+              writeQueueStorage(this.storageKey + suffix, old);
+          }
         for (const suffix of ["", ":send", ":adopted"]) localStorage.removeItem(shared + suffix);
       } catch {
         // shortcut: adoption retries on the next start, and the sweep removes it once adopted.
@@ -176,11 +182,15 @@ export class SharedQueueClient {
    * is marked missing only when the store answered and the payload is gone; a store
    * that cannot be read fails this call so nothing is uploaded without its bytes.
    */
-  private loadPayloads(): Promise<void> {
-    return (this.payloadsLoaded ??= this.hydratePayloads().catch((error: unknown) => {
-      this.payloadsLoaded = undefined;
-      throw error;
-    }));
+  private async loadPayloads(): Promise<void> {
+    // A marker-only row can arrive later (a restored legacy queue): look again until
+    // none waits, sharing one read between callers.
+    for (let round = 0; round < 3; round++) {
+      if (!this.desired.messages.some((row) => row.attachments.some(this.awaitsPayload))) return;
+      await (this.payloadsLoading ??= this.hydratePayloads().finally(() => {
+        this.payloadsLoading = undefined;
+      }));
+    }
   }
   private async hydratePayloads(): Promise<void> {
     const wanted = this.desired.messages.flatMap((row) =>
@@ -197,7 +207,7 @@ export class SharedQueueClient {
           if (!this.awaitsPayload(file)) return file;
           const data = found.get(file.id);
           return data
-            ? { ...file, data }
+            ? { ...file, data, externalPayload: undefined }
             : { ...file, externalPayload: undefined, missing: true as const };
         }),
       })),
@@ -207,23 +217,24 @@ export class SharedQueueClient {
   }
   /**
    * Writes the pasted payloads of the saved queue to the payload store and drops the
-   * ones no row refers to any more (sent, removed, or uploaded to the host). It runs
-   * after the localStorage record, so a record never points at a payload that was
-   * never started; a crash in between leaves the row marked missing on restore.
+   * ones this client wrote that no row refers to any more (sent, removed, or uploaded
+   * to the host). It runs after the localStorage record, so a crash in between leaves
+   * a marker whose payload never arrived: that row is marked missing on restore. A
+   * store that refuses a small payload gets it back inline in the record instead.
    */
   private savePayloads() {
     const keep = new Set<string>();
     const fresh: [string, string][] = [];
     for (const row of this.desired.messages)
       for (const file of row.attachments) {
-        if (file.path || file.missing) continue;
+        if (file.path || file.missing || this.inlinePayloads.has(file.id)) continue;
         if (file.data) {
           keep.add(file.id);
           if (!this.storedPayloads.has(file.id)) fresh.push([file.id, file.data]);
         } else if (file.externalPayload) keep.add(file.id);
       }
-    const stale = [...this.storedPayloads].some((id) => !keep.has(id));
-    if (!fresh.length && !stale) return;
+    const stale = [...this.storedPayloads].filter((id) => !keep.has(id));
+    if (!fresh.length && !stale.length) return;
     const owner = this.storageKey;
     this.payloadWrites = this.payloadWrites.then(async () => {
       const store = queuePayloads();
@@ -232,14 +243,23 @@ export class SharedQueueClient {
           await store.put(owner, id, data);
           this.storedPayloads.add(id);
         }
-        await store.prune(owner, keep);
-        for (const id of [...this.storedPayloads])
-          if (!keep.has(id)) this.storedPayloads.delete(id);
+        // Only what this client wrote: panes of one origin can share a record key.
+        if (stale.length) await store.remove(owner, stale);
+        for (const id of stale) this.storedPayloads.delete(id);
       } catch (error) {
-        this.emit(
-          this.state.loaded,
-          `Could not keep a pasted image of a queued message on this device: ${String(error).replace(/^Error: /, "")}`,
+        const small = fresh.filter(
+          ([id, data]) => !this.storedPayloads.has(id) && data.length <= MAX_INLINE_PAYLOAD_CHARS,
         );
+        for (const [id] of small) this.inlinePayloads.add(id);
+        try {
+          if (!small.length) throw error;
+          this.persist();
+        } catch {
+          this.emit(
+            this.state.loaded,
+            `Could not keep a pasted image of a queued message on this device: ${String(error).replace(/^Error: /, "")}`,
+          );
+        }
       }
     });
   }
@@ -248,7 +268,7 @@ export class SharedQueueClient {
     const desiredRows = this.desired.messages.map((row) => ({
       ...row,
       attachments: row.attachments.map((file) =>
-        file.data && !file.path
+        file.data && !file.path && !this.inlinePayloads.has(file.id)
           ? { ...file, data: undefined, externalPayload: true as const }
           : file,
       ),
@@ -621,7 +641,16 @@ export class SharedQueueClient {
     // A dropped connection can lose the reply of a write the host did apply: the
     // retry then looks like a conflict, but the host already holds exactly this
     // window's queue. Nothing was changed by anyone else, so nothing is paused.
-    if (sameQueueValue(this.fields(value), this.fields(this.desired))) {
+    // Compared by what the upload keeps (ids, order, text, status), not by the local
+    // bytes or previews that the host copy replaces with its own file reference.
+    const shape = (queue: RemoteQueue) => ({
+      ...this.fields(queue),
+      messages: queue.messages.map((row) => ({
+        ...row,
+        attachments: row.attachments.map((file) => file.id),
+      })),
+    });
+    if (sameQueueValue(shape(value), shape(this.desired))) {
       this.base = value;
       this.desired = value;
       this.conflict = false;

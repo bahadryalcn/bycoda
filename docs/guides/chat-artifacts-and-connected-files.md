@@ -83,7 +83,10 @@ While a turn is open, **Queue message** or **Shift+Tab** saves your message for
 after that turn finishes, including while the AI waits for background commands.
 **Steer** sends a follow-up to the current turn instead. If a server or watcher
 keeps the turn open, queued messages keep waiting; use the queued row's **Steer**
-action to send one immediately. Each queued row shows its saved model, account and
+action to send one immediately. After the turn, while subagents it delegated still
+run, **Queue message** and **Shift+Tab** stay available: queued messages show
+"Sends when the subagents finish" and go out once the last one ends, while plain
+Send still starts a new turn at once. Each queued row shows its saved model, account and
 reasoning effort beside the provider icon. The drag handle stays visible for a
 single message, but reordering is disabled until another message is queued.
 Remove takes a message out immediately. A small **Message removed · Undo** notice

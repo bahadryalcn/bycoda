@@ -2131,6 +2131,8 @@
   "Cancel edit": "Cancelar edición",
   "Chat workspace": "Espacio de trabajo de chat",
   "Queue message for when this turn finishes": "Mensaje de cola para cuando termine este turno",
+  "Queue message for when the subagents finish": "Poner el mensaje en cola hasta que terminen los subagentes",
+  "Sends when the subagents finish": "Se envía cuando terminen los subagentes",
   "Queue message": "Mensaje de cola",
   "Context usage": "Uso del contexto",
   "API time": "Tiempo de API",
@@ -11999,9 +12001,9 @@
   "Fix the highlighted limit before saving.": "Corrige el límite resaltado antes de guardar.",
   "Group \"{p0}\" would be empty. Remove it or keep one of its models.": "El grupo \"{p0}\" quedaría vacío. Elimínalo o conserva uno de sus modelos.",
   "{p0} (provider)": "{p0} (proveedor)",
-  "Not sent yet. The message stays queued and is retried automatically.": "Aún no enviado. El mensaje sigue en cola y se reintenta automáticamente.",
+  "Not sent yet. The message stays queued and is retried automatically.": "Aún no enviado.",
   "Show delivery notice": "Mostrar aviso de entrega",
-  "This device's local storage is full. Old queue records are being cleaned up; the message stays queued.": "El almacenamiento local de este dispositivo está lleno. Se están limpiando registros antiguos de la cola; el mensaje sigue en cola.",
+  "This device's local storage is full, so the queue could not be saved.": "El almacenamiento local de este dispositivo está lleno, por lo que no se pudo guardar la cola.",
   "The connection to the Host dropped before the result was known. The queue checks again automatically.": "La conexión con el Host se cortó antes de conocer el resultado. La cola vuelve a comprobarlo automáticamente.",
   "The message was not sent. The technical reason is in the details.": "El mensaje no se envió. El motivo técnico está en los detalles."
 }

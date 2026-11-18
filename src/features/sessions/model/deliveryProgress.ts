@@ -32,6 +32,19 @@ export const readDeliveryProgress = (sessionId: string, messageId?: string) =>
   messageId ? operations.get(sessionId)?.get(messageId) : values.get(sessionId);
 const pending = (value: DeliveryProgress) =>
   !["accepted", "rejected", "unknown", "waiting"].includes(value.stage);
+/**
+ * The last "waiting" outcome per session. Every automatic retry of the row starts a new,
+ * pending operation; the notice keeps showing this record until that retry settles. It is
+ * dropped when the message settles otherwise, its progress is cleared, or another message
+ * starts sending.
+ */
+export type WaitingDelivery = { messageId: string; detail?: string };
+const waiting = new Map<string, WaitingDelivery>();
+export const readWaitingDelivery = (sessionId: string) => waiting.get(sessionId);
+function forgetWaiting(sessionId: string, messageId?: string) {
+  if (messageId === undefined || waiting.get(sessionId)?.messageId === messageId)
+    waiting.delete(sessionId);
+}
 function publish(sessionId: string) {
   const rows = [...(operations.get(sessionId)?.values() ?? [])];
   // Keep the oldest blocked send visible even when a newer composer submission arrives.
@@ -61,6 +74,7 @@ export function beginDeliveryProgress(sessionId: string, messageId: string, stag
       rows.delete(id);
   rows.set(messageId, value);
   operations.set(sessionId, rows);
+  if (waiting.get(sessionId)?.messageId !== messageId) forgetWaiting(sessionId);
   publish(sessionId);
   return value;
 }
@@ -80,10 +94,16 @@ export function updateDeliveryProgress(
     noticeOnly,
     ...(stage === "unknown" ? { reconcileUntil: Date.now() + 6 * 60_000 } : {}),
   });
+  if (stage === "waiting") {
+    const last = waiting.get(sessionId);
+    if (last?.messageId !== owner.messageId || last.detail !== detail)
+      waiting.set(sessionId, { messageId: owner.messageId, detail });
+  } else if (!pending({ ...current, stage })) forgetWaiting(sessionId, owner.messageId);
   publish(sessionId);
 }
 export function clearDeliveryProgress(sessionId: string, owner: DeliveryProgress) {
   if (operations.get(sessionId)?.get(owner.messageId)?.operationId !== owner.operationId) return;
   operations.get(sessionId)!.delete(owner.messageId);
+  forgetWaiting(sessionId, owner.messageId);
   publish(sessionId);
 }

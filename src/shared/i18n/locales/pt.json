@@ -2131,6 +2131,8 @@
   "Cancel edit": "Cancelar edição",
   "Chat workspace": "Espaço de trabalho de bate-papo",
   "Queue message for when this turn finishes": "Mensagem de fila para quando este turno terminar",
+  "Queue message for when the subagents finish": "Colocar a mensagem na fila até os subagentes terminarem",
+  "Sends when the subagents finish": "Enviada quando os subagentes terminarem",
   "Queue message": "Mensagem de fila",
   "Context usage": "Uso de contexto",
   "API time": "Tempo de API",
@@ -12001,7 +12003,7 @@
   "{p0} (provider)": "{p0} (provedor)",
   "Not sent yet. The message stays queued and is retried automatically.": "Ainda não enviado. A mensagem continua na fila e é tentada novamente automaticamente.",
   "Show delivery notice": "Mostrar aviso de entrega",
-  "This device's local storage is full. Old queue records are being cleaned up; the message stays queued.": "O armazenamento local deste dispositivo está cheio. Registros antigos da fila estão sendo limpos; a mensagem continua na fila.",
+  "This device's local storage is full, so the queue could not be saved.": "O armazenamento local deste dispositivo está cheio, então a fila não pôde ser salva.",
   "The connection to the Host dropped before the result was known. The queue checks again automatically.": "A conexão com o Host foi interrompida antes de o resultado ser conhecido. A fila verifica novamente automaticamente.",
   "The message was not sent. The technical reason is in the details.": "A mensagem não foi enviada. O motivo técnico está nos detalhes."
 }

@@ -19,6 +19,7 @@ import { newSession } from "../model/session";
 import {
   registerDeliveryResolver,
   requestDeliveryReview,
+  setQueueHoldReason,
   trackLateSettlement,
   type DeliveryReviewOutcome,
 } from "../model/deliveryReview";
@@ -141,7 +142,7 @@ it("keeps a dismissed notice closed across remounts, re-opens it from the header
   );
   expect(host.querySelector("[data-delivery-progress]")).toBeNull();
   const next = beginDeliveryProgress("progress-chat", row.id, "preparing");
-  await act(async () => updateDeliveryProgress("progress-chat", next, "waiting", "again"));
+  await act(async () => updateDeliveryProgress("progress-chat", next, "rejected", "again"));
   expect(host.querySelector("[data-delivery-progress]")).not.toBeNull();
   await act(async () => hostRoot.unmount());
 });
@@ -485,5 +486,66 @@ it("shows only authoritative acceptance and clears the compact indicator", async
     await vi.advanceTimersByTimeAsync(1800);
   });
   expect(container.querySelector("[data-delivery-accepted]")).toBeNull();
+  await act(async () => root.unmount());
+});
+
+it("keeps one waiting notice across automatic retries and honours its dismissal", async () => {
+  resetDeliveryNoticeDismissals();
+  const first = beginDeliveryProgress("progress-chat", row.id, "preparing");
+  updateDeliveryProgress("progress-chat", first, "waiting", "RPC_WS_INTERRUPTED: ended");
+  const { container, root } = await renderNotice([row]);
+  const waitingCard = () => container.querySelector('[data-delivery-progress="waiting"]');
+  expect(waitingCard()).not.toBeNull();
+  // A retry is a new pending operation: the card must stay, not hide and re-show.
+  const retry = beginDeliveryProgress("progress-chat", row.id, "claiming");
+  await act(async () => {});
+  expect(waitingCard()).not.toBeNull();
+  await act(async () =>
+    updateDeliveryProgress("progress-chat", retry, "waiting", "RPC_WS_INTERRUPTED: ended"),
+  );
+  expect(waitingCard()).not.toBeNull();
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label^="Dismiss"]')!.click(),
+  );
+  expect(waitingCard()).toBeNull();
+  const again = beginDeliveryProgress("progress-chat", row.id, "claiming");
+  await act(async () => {});
+  await act(async () =>
+    updateDeliveryProgress("progress-chat", again, "waiting", "RPC_WS_INTERRUPTED: ended"),
+  );
+  expect(waitingCard()).toBeNull();
+  await act(async () => root.unmount());
+});
+
+it("clears a waiting notice whose row left the queue", async () => {
+  resetDeliveryNoticeDismissals();
+  const progress = beginDeliveryProgress("progress-chat", row.id, "preparing");
+  updateDeliveryProgress("progress-chat", progress, "waiting", "RPC_WS_INTERRUPTED: ended");
+  const { container, root, render } = await renderNotice([row]);
+  expect(container.querySelector("[data-delivery-progress]")).not.toBeNull();
+  await render([]);
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  });
+  expect(readDeliveryProgress("progress-chat")).toBeUndefined();
+  expect(container.querySelector("[data-delivery-progress]")).toBeNull();
+  await act(async () => root.unmount());
+});
+
+it("shows a pause reason as its own warning notice and re-shows it for a different reason", async () => {
+  resetDeliveryNoticeDismissals();
+  setQueueHoldReason("progress-chat", "Another computer changed the queue. Review it first.");
+  const { container, root } = await renderNotice([row]);
+  const card = container.querySelector('[data-delivery-progress="paused"]')!;
+  expect(card.getAttribute("role")).toBe("status");
+  expect(card.querySelector("strong")?.textContent).toBe("Queue paused");
+  expect(card.textContent).toContain("Another computer changed the queue.");
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label^="Dismiss"]')!.click(),
+  );
+  expect(container.querySelector("[data-delivery-progress]")).toBeNull();
+  await act(async () => setQueueHoldReason("progress-chat", "Provider paused the queue."));
+  expect(container.querySelector('[data-delivery-progress="paused"]')).not.toBeNull();
+  await act(async () => setQueueHoldReason("progress-chat", undefined));
   await act(async () => root.unmount());
 });

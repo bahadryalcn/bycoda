@@ -33,6 +33,13 @@ describe("queueShortcutApplies", () => {
     expect(queueShortcutApplies({ ...running, busy: false })).toBe(false);
   });
 
+  it("queues behind delegated subagents after the turn has ended", () => {
+    expect(queueShortcutApplies({ ...running, busy: false, subagentsRunning: true })).toBe(true);
+    expect(
+      queueShortcutApplies({ ...running, busy: false, subagentsRunning: true, draftMode: true }),
+    ).toBe(false);
+  });
+
   it("leaves it alone with nothing to queue", () => {
     expect(queueShortcutApplies({ ...running, text: "  " })).toBe(false);
   });

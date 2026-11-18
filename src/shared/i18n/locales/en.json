@@ -2517,6 +2517,8 @@
   "Cancel edit": "Cancel edit",
   "Chat workspace": "Chat workspace",
   "Queue message for when this turn finishes": "Queue message for when this turn finishes",
+  "Queue message for when the subagents finish": "Queue message for when the subagents finish",
+  "Sends when the subagents finish": "Sends when the subagents finish",
   "Queue message": "Queue message",
   "Context usage": "Context usage",
   "Response speed": "Response speed",
@@ -12001,7 +12003,7 @@
   "{p0} (provider)": "{p0} (provider)",
   "Not sent yet. The message stays queued and is retried automatically.": "Not sent yet. The message stays queued and is retried automatically.",
   "Show delivery notice": "Show delivery notice",
-  "This device's local storage is full. Old queue records are being cleaned up; the message stays queued.": "This device's local storage is full. Old queue records are being cleaned up; the message stays queued.",
+  "This device's local storage is full, so the queue could not be saved.": "This device's local storage is full, so the queue could not be saved.",
   "The connection to the Host dropped before the result was known. The queue checks again automatically.": "The connection to the Host dropped before the result was known. The queue checks again automatically.",
   "The message was not sent. The technical reason is in the details.": "The message was not sent. The technical reason is in the details."
 }

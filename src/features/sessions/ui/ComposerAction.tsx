@@ -119,21 +119,40 @@ export function ComposerAction({
   }
 
   return (
-    <Button
-      variant="primary"
-      tone="accent"
-      motion="none"
-      iconOnly
-      label={blockedReason ? `${label}. ${blockedReason}` : label}
-      tooltip={blockedReason}
-      shortcut={blockedReason ? null : "Enter"}
-      disabled={!hasValue && !submitting}
-      loading={submitting !== null}
-      loadingLabel={t("Sending…")}
-      onClick={onSend}
-      aria-description={blockedReason}
-    >
-      <ArrowUp className="icon-sm" strokeWidth={2} />
-    </Button>
+    <>
+      {/* After the turn, delegated subagents may still run: Queue waits for them. */}
+      {onQueue && hasValue ? (
+        <Button
+          motion="none"
+          iconOnly
+          label={t("Queue message")}
+          tooltip={t("Queue message for when the subagents finish")}
+          shortcut={queueShortcut}
+          data-usage-guide="queue-button"
+          loading={submitting === "queue"}
+          loadingLabel={t("Sending…")}
+          disabled={submitting === "send"}
+          onClick={onQueue}
+        >
+          <ListEnd className="icon-sm" strokeWidth={1.75} />
+        </Button>
+      ) : null}
+      <Button
+        variant="primary"
+        tone="accent"
+        motion="none"
+        iconOnly
+        label={blockedReason ? `${label}. ${blockedReason}` : label}
+        tooltip={blockedReason}
+        shortcut={blockedReason ? null : "Enter"}
+        disabled={(!hasValue && !submitting) || submitting === "queue"}
+        loading={submitting === "send"}
+        loadingLabel={t("Sending…")}
+        onClick={onSend}
+        aria-description={blockedReason}
+      >
+        <ArrowUp className="icon-sm" strokeWidth={2} />
+      </Button>
+    </>
   );
 }

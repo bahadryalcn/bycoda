@@ -2131,6 +2131,8 @@
   "Cancel edit": "取消编辑",
   "Chat workspace": "聊天工作区",
   "Queue message for when this turn finishes": "本轮结束时的队列消息",
+  "Queue message for when the subagents finish": "将消息排队，待子代理完成后发送",
+  "Sends when the subagents finish": "子代理完成后发送",
   "Queue message": "队列消息",
   "Context usage": "上下文使用",
   "API time": "API 耗时",
@@ -12001,7 +12003,7 @@
   "{p0} (provider)": "{p0}（提供方）",
   "Not sent yet. The message stays queued and is retried automatically.": "尚未发送。消息会保留在队列中，并自动重试。",
   "Show delivery notice": "显示投递通知",
-  "This device's local storage is full. Old queue records are being cleaned up; the message stays queued.": "此设备的本地存储已满。正在清理旧的队列记录；消息会保留在队列中。",
+  "This device's local storage is full, so the queue could not be saved.": "此设备的本地存储已满，无法保存队列。",
   "The connection to the Host dropped before the result was known. The queue checks again automatically.": "在得知结果之前，与 Host 的连接已断开。队列会自动重新检查。",
   "The message was not sent. The technical reason is in the details.": "消息未发送。技术原因见详细信息。"
 }

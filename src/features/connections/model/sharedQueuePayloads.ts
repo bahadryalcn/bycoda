@@ -9,6 +9,8 @@ export type QueuePayloadStore = {
   put(owner: string, id: string, data: string): Promise<void>;
   /** The payloads that exist; an id that is gone is absent from the result. */
   read(owner: string, ids: string[]): Promise<Map<string, string>>;
+  /** Deletes the named payloads of the owner. */
+  remove(owner: string, ids: string[]): Promise<void>;
   /** Deletes every payload of the owner whose id is not in `keep`. */
   prune(owner: string, keep: ReadonlySet<string>): Promise<void>;
   owners(): Promise<string[]>;
@@ -75,6 +77,10 @@ const indexedStore: QueuePayloadStore = {
         if (typeof record?.data === "string") found.set(id, record.data);
       }
       return found;
+    }),
+  remove: (owner, ids) =>
+    transact("readwrite", async (store) => {
+      for (const id of ids) await wrap(store.delete(keyOf(owner, id)));
     }),
   prune: (owner, keep) =>
     transact("readwrite", async (store) => {

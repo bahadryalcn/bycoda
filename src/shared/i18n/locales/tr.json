@@ -2305,6 +2305,8 @@
   "Cancel edit": "Düzenlemeyi iptal et",
   "Chat workspace": "Sohbet çalışma alanı",
   "Queue message for when this turn finishes": "Yanıt tamamlandığında gönderilmek üzere mesajı sıraya al",
+  "Queue message for when the subagents finish": "Alt ajanlar bitince gönderilmek üzere mesajı sıraya al",
+  "Sends when the subagents finish": "Alt ajanlar bitince gönderilir",
   "Queue message": "Mesajı sıraya al",
   "Context usage": "Bağlam kullanımı",
   "Response speed": "Yanıt hızı",
@@ -11999,9 +12001,9 @@
   "Fix the highlighted limit before saving.": "Kaydetmeden önce vurgulanan sınırı düzeltin.",
   "Group \"{p0}\" would be empty. Remove it or keep one of its models.": "Grup \"{p0}\" boş kalırdı. Grubu kaldırın ya da modellerinden birini tutun.",
   "{p0} (provider)": "{p0} (sağlayıcı)",
-  "Not sent yet. The message stays queued and is retried automatically.": "Henüz gönderilmedi. Mesaj kuyrukta kalır ve otomatik olarak yeniden denenir.",
+  "Not sent yet. The message stays queued and is retried automatically.": "Henüz gönderilmedi.",
   "Show delivery notice": "Teslim bildirimini göster",
-  "This device's local storage is full. Old queue records are being cleaned up; the message stays queued.": "Bu cihazın yerel depolaması dolu. Eski kuyruk kayıtları temizleniyor; mesaj kuyrukta kalır.",
+  "This device's local storage is full, so the queue could not be saved.": "Bu cihazın yerel depolaması dolu, bu yüzden kuyruk kaydedilemedi.",
   "The connection to the Host dropped before the result was known. The queue checks again automatically.": "Sonuç öğrenilmeden önce Host bağlantısı kesildi. Kuyruk otomatik olarak yeniden kontrol eder.",
   "The message was not sent. The technical reason is in the details.": "Mesaj gönderilmedi. Teknik neden ayrıntılarda."
 }

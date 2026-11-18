@@ -114,6 +114,7 @@ export function MessageQueue({
   canAttach,
   remote = false,
   busy = false,
+  waitingOnSubagents = false,
   runningTarget,
   steerSupported = false,
   account: conversationAccount,
@@ -339,6 +340,14 @@ export function MessageQueue({
   });
   const leaseHeld = !paused && hold.kind === "held" && hold.reason === "lease";
   const restored = status === "restored" && messages.length > 0;
+  // The reopen button sits in the first header that shows, so it never appears twice.
+  const reopenIn = paused
+    ? "paused"
+    : leaseHeld && sessionId
+      ? "lease"
+      : restored
+        ? "restored"
+        : "summary";
   const canSend = (message: QueuedMessage) =>
     canSendQueueMessage(message, {
       blocked:
@@ -394,7 +403,9 @@ export function MessageQueue({
                       ? t("Queue paused because you interrupted")
                       : t("Queue paused")}
             </Text>
-            <DeliveryNoticeReopen sessionId={sessionId} messages={messages} />
+            {reopenIn === "paused" ? (
+              <DeliveryNoticeReopen sessionId={sessionId} messages={messages} />
+            ) : null}
             <Button
               variant="ghost"
               type="button"
@@ -430,7 +441,9 @@ export function MessageQueue({
                 ? activeFeedback.text
                 : t("Queue held by another window, which sends it")}
             </Text>
-            <DeliveryNoticeReopen sessionId={sessionId} messages={messages} />
+            {reopenIn === "lease" ? (
+              <DeliveryNoticeReopen sessionId={sessionId} messages={messages} />
+            ) : null}
             <Button
               variant="ghost"
               type="button"
@@ -453,7 +466,9 @@ export function MessageQueue({
                 ? t("1 queued message restored")
                 : t("{p0} queued messages restored", { p0: messages.length })}
             </Text>
-            <DeliveryNoticeReopen sessionId={sessionId} messages={messages} />
+            {reopenIn === "restored" ? (
+              <DeliveryNoticeReopen sessionId={sessionId} messages={messages} />
+            ) : null}
             <Button
               variant="ghost"
               type="button"
@@ -494,8 +509,14 @@ export function MessageQueue({
               <Text size="inherit" tone="inherit" truncate>
                 {activeFeedback.text}
               </Text>
+            ) : waitingOnSubagents ? (
+              <Text size="inherit" tone="inherit" truncate>
+                {t("Sends when the subagents finish")}
+              </Text>
             ) : null}
-            <DeliveryNoticeReopen sessionId={sessionId} messages={messages} />
+            {reopenIn === "summary" ? (
+              <DeliveryNoticeReopen sessionId={sessionId} messages={messages} />
+            ) : null}
           </Text>
         ) : null}
         <div

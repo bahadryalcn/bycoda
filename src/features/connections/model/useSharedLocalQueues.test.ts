@@ -406,6 +406,22 @@ it("records a wait when the full local storage stops the claim, and the next sen
   expect(readDeliveryProgress("chat")?.stage).toBe("accepted");
 });
 
+it("does not hold the queue when a plain error stops a send after the claim but before the hand-over", async () => {
+  await mount();
+  const send = vi.fn(() => true);
+  await expect(
+    submitSharedLocalQueue("chat", "a", false, send, () => {
+      throw new Error("preparation failed");
+    }),
+  ).rejects.toBeInstanceOf(QueueNotReadyError);
+  expect(send).not.toHaveBeenCalled();
+  await tick();
+  expect(readDeliveryProgress("chat")?.stage).toBe("waiting");
+  expect(queue.claim).toBeUndefined();
+  expect(queue.messages).toEqual([row("a")]);
+  expect(queue.status).not.toBe("paused");
+});
+
 it("durably releases a paused shared queue without sending a message", async () => {
   await mount();
   sessionsRef.current = [{ ...sessionsRef.current[0], queueStatus: "resuming", busy: true }];
@@ -688,6 +704,9 @@ function useRealHostQueue(
     pathToFileURL(resolve(__dirname, "../../../../host/store-worker.mjs")),
   );
   databases.push(db);
+  // The worker answers in real time while the fake clock jumps whole lease spans:
+  // its reply deadline must not fire on the jump (it stays below setTimeout's 2^31 cap).
+  db.boundaryDeadlineMs = 2_000_000_000;
   const queues = new SessionQueues(db);
   mocks.request.mockImplementation(async (_machine, method, params) => {
     await onCall?.(method, params);

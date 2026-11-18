@@ -8,7 +8,7 @@ describe("deliveryFailureSentence", () => {
     const raw =
       "QuotaExceededError: Failed to execute 'setItem' on 'Storage': Setting the value of 'bycoda:shared-queue:v2:[…]' exceeded the quota.";
     expect(deliveryFailureSentence(raw, t)).toBe(
-      "This device's local storage is full. Old queue records are being cleaned up; the message stays queued.",
+      "This device's local storage is full, so the queue could not be saved.",
     );
   });
 

@@ -155,6 +155,13 @@ export function delegatedDockAgents(
   });
 }
 
+/** A delegated child of this parent still works; the parent's queued messages wait for it. */
+export function delegatedChildrenRunning(sessions: readonly Session[], parentId: string): boolean {
+  return delegatedChildren(sessions, parentId).some(
+    (child) => delegatedStatus(child) === "running",
+  );
+}
+
 export function delegatedStatus(child: Session): DockAgentStatus {
   if (child.busy || child.continuingElsewhere) return "running";
   if (sessionIssue(child) === "failed") return "failed";

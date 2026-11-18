@@ -363,6 +363,8 @@ type Props = {
   busy?: boolean;
   /** The agent is done and only background commands keep the turn open. */
   backgroundOnly?: boolean;
+  /** The turn has ended and delegated subagents still run; Queue waits for them. */
+  subagentsRunning?: boolean;
   backgroundTaskCount?: number;
   worktreePreparing?: boolean;
   /** Allow typed text to be sent alongside Stop while a turn is running. */
@@ -566,6 +568,7 @@ export const Composer = memo(function Composer({
   question,
   busy = false,
   backgroundOnly = false,
+  subagentsRunning = false,
   backgroundTaskCount = 0,
   worktreePreparing = false,
   allowBusySubmit = true,
@@ -2687,6 +2690,7 @@ export const Composer = memo(function Composer({
         queueShortcutApplies({
           busy,
           backgroundOnly,
+          subagentsRunning: subagentsRunning && !remote,
           allowBusySubmit,
           disabled: disabled || worktreeRemoved,
           popupOpen: false,
@@ -3107,6 +3111,7 @@ export const Composer = memo(function Composer({
         canAttach={attachmentsSupported}
         remote={remote && !remoteFeatures?.steer}
         busy={busy}
+        waitingOnSubagents={!busy && !remote && subagentsRunning}
         runningTarget={remote ? undefined : { harness, model, modelSettings, runningModelTarget }}
         account={{ harness, providerAccountId }}
         steerSupported={
@@ -3921,6 +3926,7 @@ export const Composer = memo(function Composer({
                   queueShortcutApplies({
                     busy,
                     backgroundOnly,
+                    subagentsRunning: subagentsRunning && !remote,
                     allowBusySubmit,
                     disabled: disabled || worktreeRemoved || workspaceSendBlocked,
                     popupOpen: false,

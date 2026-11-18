@@ -67,8 +67,6 @@ export function useLocalSharedQueueClient(sessionId: string) {
 const IDLE_SYNC_MS = 60_000;
 /** Retry of a queue whose last look failed while the host is reachable: it doubles up to the safety pass. */
 const ERROR_RETRY_MS = 1_500;
-/** Saved queue records are swept this long after start, when the conversations have loaded. */
-const SWEEP_DELAY_MS = 30_000;
 /** How long a claimed send may wait for the provider before Resume gives up on it. */
 export const HUNG_CLAIM_MS = 30_000;
 /** Queues another computer changed, to be read at once even if idle or hidden. */
@@ -283,6 +281,8 @@ export async function submitSharedLocalQueue(
     // another computer changed is a coordination wait, not a failed delivery.
     if (!handedOver && !(error instanceof DeliveryUnknownError)) {
       waiting = !caughtDeferred;
+      // The claim (if any) goes back as it was: a wait never holds the queue.
+      transientHold = true;
       if (!(error instanceof QueueNotReadyError)) error = new QueueNotReadyError(failure);
     }
     if (error instanceof DeliveryUnknownError && token) {
@@ -869,9 +869,19 @@ export function useSharedLocalQueues(
       }
     };
     window.addEventListener("pagehide", releaseAll);
+    // Saved records of closed windows and gone conversations are cleaned once, on the
+    // first idle pass (conversations have loaded by then); a full store runs the same
+    // sweep on demand. It rides the idle interval so an idle window keeps one timer.
+    let swept = false;
     const timer = setInterval(() => {
       safety = true;
       void tick();
+      if (swept) return;
+      swept = true;
+      void refreshLiveDesktopInstances(desktopQueueClientId)
+        .then(() => sweepQueueStorage())
+        .then(() => sweepOrphanQueuePayloads())
+        .catch((error) => console.warn("Saved queue cleanup failed", error));
     }, IDLE_SYNC_MS);
     runTick = () => void tick();
     // Back on screen, focused, or the host reachable again: catch up at once.
@@ -914,20 +924,11 @@ export function useSharedLocalQueues(
       if (attention) void tick();
     });
     void tick();
-    // Saved records of closed windows and gone conversations are cleaned once the
-    // conversations have loaded; a full store runs the same sweep on demand.
     setQueueStorageOwner({
       hasSession: (id) => !sessionsRef.current.length || !!sessionById(sessionsRef.current, id),
       clientId: desktopQueueClientId,
     });
-    const sweepTimer = setTimeout(() => {
-      void refreshLiveDesktopInstances(desktopQueueClientId)
-        .then(() => sweepQueueStorage())
-        .then(() => sweepOrphanQueuePayloads())
-        .catch((error) => console.warn("Saved queue cleanup failed", error));
-    }, SWEEP_DELAY_MS);
     return () => {
-      clearTimeout(sweepTimer);
       stopped = true;
       window.removeEventListener("pagehide", releaseAll);
       clearInterval(timer);

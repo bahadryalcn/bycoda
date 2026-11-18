@@ -25,3 +25,11 @@ Owner decision, 2026-11-08, chat citations, source: owner chat:
 > like an image for the chat, I should have been able to mention it easily inside a conversation sentence (translated)
 
 Recorded decision: Add citation writes a `[quoteN]` token at the composer caret (or the end) so a quote can be named inside a sentence, the way `[imageN]` tokens work. The snapshot itself still lives outside the textarea; quote chips show their `quoteN` label, removing one renumbers the remaining tokens, and sent messages show the token as a pill that highlights or jumps to the source. The provider projection labels each snapshot with its `ref` token. This supersedes the earlier rule that the editable text carries no citation content.
+
+## Delivery notice as a dismissible pane card
+
+Owner decision, 2026-11-18, queued-message delivery status, source: owner chat:
+
+> durum bildirimini burdan kaldır chatin üst ortasında kart şeklinde gelsin … alert ile gösterelim warn error şeklinde kapatılabilir olsunlar … tıklayıp geri açabilelim
+
+Recorded decision: the delivery status notice no longer renders in the queue card or the composer notices. `DeliveryProgressNotice` renders one shared `Alert` (warning or danger, dismissible) as an overlay at the top centre of the chat pane in `SessionPane`, so local and remote panes share it. The queue card header keeps only short state labels plus an icon button that re-opens a dismissed card. Dismissal lives in `deliveryNoticeDismissal.ts` per notice (a waiting notice per message, so automatic retries do not re-show it), and a delivery review request re-opens it. This is a deliberate in-pane exception to the Alert note that floating notices are Toast.

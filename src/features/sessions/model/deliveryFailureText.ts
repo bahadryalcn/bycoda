@@ -13,9 +13,7 @@ const TECHNICAL = /^\s*(?:[A-Z][A-Z0-9_]{2,}|[A-Za-z]*Error|[A-Za-z]*Exception)\
  */
 export function deliveryFailureSentence(raw: string, t: ReturnType<typeof useT>): string {
   if (STORAGE_FULL.test(raw))
-    return t(
-      "This device's local storage is full. Old queue records are being cleaned up; the message stays queued.",
-    );
+    return t("This device's local storage is full, so the queue could not be saved.");
   if (WS_INTERRUPTED.test(raw))
     return t(
       "The connection to the Host dropped before the result was known. The queue checks again automatically.",

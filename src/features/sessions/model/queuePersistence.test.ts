@@ -267,3 +267,19 @@ describe("withoutMissingAttachments", () => {
     expect(edited.text).toBe(`compare and ${tok("File", 1, "3 B")}`);
   });
 });
+
+describe("pasted bytes next to an external-payload marker", () => {
+  it("saves the bytes, not only the marker, for file-backed callers", () => {
+    const rows = [
+      message({ attachments: [file({ kind: "image", data: "AAAA", externalPayload: true })] }),
+    ];
+    const saved = persistableQueue(rows)![0].attachments[0];
+    expect(saved.data).toBe("AAAA");
+    expect(saved).not.toHaveProperty("missing");
+  });
+
+  it("keeps a marker that has no bytes yet", () => {
+    const rows = [message({ attachments: [file({ kind: "image", externalPayload: true })] })];
+    expect(persistableQueue(rows)![0].attachments[0]).toMatchObject({ externalPayload: true });
+  });
+});

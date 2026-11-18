@@ -53,6 +53,8 @@ export type MessageQueueProps = {
   /** The turn runs on another machine: it cannot be steered, and the queue is this app's. */
   remote?: boolean;
   busy?: boolean;
+  /** The turn has ended and the queue waits for the conversation's delegated subagents. */
+  waitingOnSubagents?: boolean;
   /** The running turn's model and settings, for rows that must wait for their own turn. */
   runningTarget?: {
     harness: HarnessId;

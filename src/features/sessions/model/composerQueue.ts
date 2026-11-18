@@ -29,6 +29,8 @@ export function queueShortcutApplies(input: {
   busy: boolean;
   /** Only background commands keep the turn open; the agent has yielded. */
   backgroundOnly: boolean;
+  /** The turn has ended but delegated subagents still run: a queued message waits for them. */
+  subagentsRunning?: boolean;
   allowBusySubmit: boolean;
   disabled: boolean;
   popupOpen: boolean;
@@ -36,7 +38,7 @@ export function queueShortcutApplies(input: {
   text: string;
   attachmentCount: number;
 }): boolean {
-  if (!input.busy || !input.allowBusySubmit) return false;
+  if (input.busy ? !input.allowBusySubmit : !input.subagentsRunning) return false;
   if (input.disabled || input.popupOpen || input.draftMode) {
     return false;
   }

@@ -1466,6 +1466,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       busy={!!session.busy || !!session.continuingElsewhere}
       backgroundOnly={isBackgroundOnly(turnOpen, session.backgroundTasks, session.backgroundAgents)}
       backgroundTaskCount={session.backgroundTasks?.length ?? 0}
+      subagentsRunning={delegatedAgents.some((agent) => agent.status === "running")}
       worktreePreparing={session.worktreePreparing}
       editLastTurnSupported={editLastTurnSupported}
       lastTurnRecall={turnRecall}

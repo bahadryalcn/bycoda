@@ -36,3 +36,10 @@ export function resetDeliveryNoticeDismissals(): void {
   dismissed.clear();
   store.notify();
 }
+
+/** Short stable token of a reason text, so a different pause reason is a different notice. */
+export function reasonToken(text: string): string {
+  let hash = 0;
+  for (let i = 0; i < text.length; i++) hash = (hash * 31 + text.charCodeAt(i)) | 0;
+  return (hash >>> 0).toString(36);
+}
