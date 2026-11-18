@@ -974,6 +974,8 @@ export const Composer = memo(function Composer({
   const [createError, setCreateError] = useState<string | null>(null);
   const [createBusy, setCreateBusy] = useState(false);
   const remote = remoteSession;
+  // Remote panes cannot see the delegated subagents, so only local sessions wait on them.
+  const localSubagentsRunning = subagentsRunning && !remote;
   // Workspace APIs route remote:// paths to their owning machine.
   const localCwd = executionCwd;
   const notesEnabled = useSyncExternalStore(subscribeNotesEnabled, loadNotesEnabled, () => true);
@@ -2690,7 +2692,7 @@ export const Composer = memo(function Composer({
         queueShortcutApplies({
           busy,
           backgroundOnly,
-          subagentsRunning: subagentsRunning && !remote,
+          subagentsRunning: localSubagentsRunning,
           allowBusySubmit,
           disabled: disabled || worktreeRemoved,
           popupOpen: false,
@@ -3111,7 +3113,7 @@ export const Composer = memo(function Composer({
         canAttach={attachmentsSupported}
         remote={remote && !remoteFeatures?.steer}
         busy={busy}
-        waitingOnSubagents={!busy && !remote && subagentsRunning}
+        waitingOnSubagents={!busy && localSubagentsRunning}
         runningTarget={remote ? undefined : { harness, model, modelSettings, runningModelTarget }}
         account={{ harness, providerAccountId }}
         steerSupported={
@@ -3926,7 +3928,7 @@ export const Composer = memo(function Composer({
                   queueShortcutApplies({
                     busy,
                     backgroundOnly,
-                    subagentsRunning: subagentsRunning && !remote,
+                    subagentsRunning: localSubagentsRunning,
                     allowBusySubmit,
                     disabled: disabled || worktreeRemoved || workspaceSendBlocked,
                     popupOpen: false,

@@ -118,8 +118,11 @@ test("device help remains keyboard accessible and preserves input drafts", async
   );
   await page.keyboard.press("Escape");
   await fixture(page, "hold", "press");
-  await page.getByRole("img", { name: "Current device screen" }).click();
-  await expect(page.getByRole("progressbar", { name: "Working on the host…" })).toBeVisible();
+  const screen = page.getByRole("img", { name: "Current device screen" });
+  await screen.click();
+  // Screen gestures are sent like a remote screen: the panel never turns busy while one is held.
+  await expect(page.getByRole("progressbar", { name: "Working on the host…" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Device options", exact: true })).toBeEnabled();
   await fixture(page, "finish", "press");
   await expect(page.getByRole("progressbar", { name: "Working on the host…" })).toHaveCount(0);
 });

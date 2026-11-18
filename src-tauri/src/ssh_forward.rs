@@ -1256,6 +1256,8 @@ mod tests {
             let deadline = Instant::now() + Duration::from_secs(30);
             while Instant::now() < deadline {
                 if let Ok((mut stream, _)) = target.accept() {
+                    // BSD/macOS accepted sockets inherit the listener's non-blocking mode.
+                    stream.set_nonblocking(false).unwrap();
                     stream
                         .set_read_timeout(Some(Duration::from_secs(2)))
                         .unwrap();

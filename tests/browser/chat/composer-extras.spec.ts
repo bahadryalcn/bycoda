@@ -414,9 +414,17 @@ test("Steer explains a prolonged wait and preserves the paused queue at narrow w
     );
     await page.clock.runFor(1000);
     await expect(progress).toHaveAttribute("data-delivery-progress", "rejected");
-    await expect(card.getByRole("alert")).toHaveText(
-      "The send was cancelled or rejected. The message remains queued and the queue is paused.",
-    );
+    // The outcome is a dismissible pane card, not part of the queue card.
+    await expect(progress).toHaveAttribute("role", "alert");
+    await expect(
+      progress.getByText("Queue paused: the last message was not accepted"),
+    ).toBeVisible();
+    await expect(
+      progress.getByText(
+        "The send was cancelled or rejected. The message remains queued and the queue is paused.",
+        { exact: true },
+      ),
+    ).toBeVisible();
     await expect(card.getByRole("button", { name: "Resume", exact: true })).toBeEnabled();
     await expect(
       card

@@ -193,6 +193,7 @@ import {
   updateDeliveryProgress,
   clearDeliveryProgress,
 } from "../../../src/features/sessions/model/deliveryProgress";
+import { DeliveryProgressNotice } from "../../../src/features/sessions/ui/DeliveryProgressNotice";
 
 function Fixture() {
   const queueVisual = new URLSearchParams(location.search).get("queue-state");
@@ -284,6 +285,15 @@ function Fixture() {
           />
         </div>
       </div>
+      {deliveryProgress ? (
+        // The notice is a pane overlay owned by SessionPane; mirror that mount here.
+        <div data-session-body className="relative">
+          <DeliveryProgressNotice
+            sessionId="composer-layout-fixture"
+            messages={[{ id: "queued", text: "Queued task", attachments: [] }]}
+          />
+        </div>
+      ) : null}
       <Composer
         onReorderQueuedMessages={queueVisual ? (ids) => setFixtureRows(ids) : undefined}
         queuedMessages={

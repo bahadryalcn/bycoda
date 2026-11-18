@@ -330,6 +330,8 @@ mod tests {
             let deadline = Instant::now() + Duration::from_secs(10);
             while Instant::now() < deadline {
                 if let Ok((mut stream, _)) = listener.accept() {
+                    // BSD/macOS accepted sockets inherit the listener's non-blocking mode.
+                    stream.set_nonblocking(false).unwrap();
                     stream
                         .write_all(b"SSH-2.0-bycoda-disposable-test\r\n")
                         .unwrap();

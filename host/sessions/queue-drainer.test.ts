@@ -34,6 +34,18 @@ const settle = async () => {
   await Promise.all(drainers.map(async (drainer) => await drainer.idle()));
 };
 
+/**
+ * The database's own deadline timers are faked too, and a reply from its worker thread
+ * arrives over real IO. A round trip after the drainer settles drains that FIFO, so only
+ * the drainer's timers are left to count, however slow the machine.
+ */
+const timerCount = async (queues: SessionQueues) => {
+  await settle();
+  await queues.get("chat");
+  await settle();
+  return vi.getTimerCount();
+};
+
 it("drains immediately when a mobile client returns its own legacy lease on resume", async () => {
   const { queues, world, enqueue } = setup();
   const before = await enqueue("chat", "mobile:one", "paused");
@@ -122,7 +134,7 @@ it("leaves a queue with a live lease to its holder and takes over once the lease
   await enqueue("chat", "desktop:a");
   await settle();
   expect(world.sent).toEqual([]);
-  expect(vi.getTimerCount()).toBe(1);
+  expect(await timerCount(queues)).toBe(1);
   await vi.advanceTimersByTimeAsync(QUEUE_LEASE_TTL_MS - 1_000);
   expect(world.sent).toEqual([]);
   // The holder keeps it alive on its heartbeat: the timer moves, nothing is sent.
@@ -132,7 +144,7 @@ it("leaves a queue with a live lease to its holder and takes over once the lease
   await vi.advanceTimersByTimeAsync(2_000);
   await settle();
   expect(world.sent).toEqual(["a"]);
-  expect(vi.getTimerCount()).toBe(0);
+  expect(await timerCount(queues)).toBe(0);
 });
 
 it("does not drain a paused queue, a row being edited or an unconfirmed head", async () => {
@@ -331,7 +343,7 @@ it("waits while a desktop window runs the conversation and sends when its run le
   await vi.advanceTimersByTimeAsync(RUN_LEASE_TTL_MS + 1_000);
   await settle();
   expect(sent).toEqual(["a"]);
-  expect(vi.getTimerCount()).toBe(0);
+  expect(await timerCount(queues)).toBe(0);
 });
 
 // H1: a steer or "send now" claim carries no lease; the drainer must not mistake it for a dead sender.
@@ -352,8 +364,7 @@ it("leaves a fresh leaseless claim alone and gives up on it only after the grace
   // A sender that never answers is given up on, by the one timer, past the grace.
   const stuck = await queues.claim("chat", "b", "desktop:a", done.revision, true);
   expect(stuck.claim).toBeDefined();
-  await settle();
-  expect(vi.getTimerCount()).toBe(1);
+  expect(await timerCount(queues)).toBe(1);
   await vi.advanceTimersByTimeAsync(CLAIM_GRACE_MS + 10);
   await settle();
   expect(await queues.get("chat")).toMatchObject({ status: "paused" });

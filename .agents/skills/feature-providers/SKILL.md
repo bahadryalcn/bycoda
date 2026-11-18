@@ -12,7 +12,7 @@ Order, groups, roles and delegation belong to [model routing](../feature-model-r
 ## Source starts
 
 - `src/features/providers/`
-- `src/features/settings/ui/ProviderSettings.tsx`: Models tabs (Background work, Defaults, Providers).
+- `src/features/settings/ui/ProviderSettings.tsx`: Models tabs (Providers, Background work, Defaults).
 - `src/features/providers/ui/ProviderStatusGroup.tsx`: CLI version/update actions per provider header.
 - `src/features/settings/model/providerDefaultsMapping.ts` and `providerDefaultsSave.ts`: portable provider scope and multi-target saves.
 - `src/integrations/harness/providers/`

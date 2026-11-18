@@ -12,7 +12,7 @@ for (const theme of ["light", "dark"])
       );
       await expect(page.locator(".settings-page-title")).toHaveText("Models");
       const tabs = page.locator(".provider-tabs");
-      await expect(tabs.getByRole("tab")).toHaveText(["Background work", "Defaults", "Providers"]);
+      await expect(tabs.getByRole("tab")).toHaveText(["Providers", "Background work", "Defaults"]);
       await tabs.getByRole("tab", { name: "Defaults", exact: true }).click();
       await expect(tabs.getByRole("tab", { name: "Defaults", exact: true })).toHaveAttribute(
         "aria-selected",
