@@ -649,15 +649,13 @@ export function createManagedWorkspaceRegistry(
       });
     },
     async touchOwnerActivity(owner) {
-      for (const workspace of await store.managedWorkspaces()) {
+      for (const workspace of await store.managedWorkspaces({
+        ownerKind: owner.kind,
+        ownerId: owner.id,
+      })) {
         // A blocked or removed directory has no activity to record; its owner keeps
         // heartbeating, so touching it would only fail on every beat.
-        if (
-          workspace.owner.kind === owner.kind &&
-          workspace.owner.id === owner.id &&
-          workspace.directoryState === "present"
-        )
-          await registry.touchActivity(workspace.id);
+        if (workspace.directoryState === "present") await registry.touchActivity(workspace.id);
       }
     },
   };

@@ -624,6 +624,7 @@ export class HostStore {
         UNIQUE(repository_id, branch_ref)
       );
       CREATE INDEX IF NOT EXISTS managed_workspaces_project ON managed_workspaces(project_id, environment_id);
+      CREATE INDEX IF NOT EXISTS managed_workspaces_owner ON managed_workspaces(owner_kind, owner_id);
       CREATE TABLE IF NOT EXISTS workspace_operations (
         id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, kind TEXT NOT NULL,
         idempotency_key TEXT NOT NULL, phase TEXT NOT NULL, payload TEXT NOT NULL,
@@ -913,6 +914,8 @@ export class HostStore {
       projectId?: string;
       repositoryId?: string;
       environmentId?: string;
+      ownerKind?: string;
+      ownerId?: string;
       states?: WorkspaceState[];
     } = {},
   ): Promise<ManagedWorkspace[]> {
@@ -923,6 +926,8 @@ export class HostStore {
         ["project_id", filter.projectId],
         ["repository_id", filter.repositoryId],
         ["environment_id", filter.environmentId],
+        ["owner_kind", filter.ownerKind],
+        ["owner_id", filter.ownerId],
       ])
         if (value !== undefined) {
           clauses.push(`${column}=?`);

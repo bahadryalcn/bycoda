@@ -85,3 +85,46 @@ it("does not grant a lease the engine's memory says the host runs", async () => 
   await vi.advanceTimersByTimeAsync(runtime.BEAT_STORE_WAIT_MS);
   expect((await pending)?.s1).toBeNull();
 });
+
+it("records a busy session's workspace activity once per interval, not on every beat", async () => {
+  vi.useFakeTimers();
+  const touch = vi.fn(async () => undefined);
+  const live = {
+    busyClient: () => "win1" as string | undefined,
+    onBusy: undefined as ((id: string, clientId: string) => void) | undefined,
+    onIdle: undefined as ((id: string, clientId: string, reason: string) => void) | undefined,
+  };
+  createSessionLeasesRuntime({
+    desktop: { live },
+    touchSessionWorkspace: touch,
+    engine: {
+      hasRetainedProviderWriter: () => false,
+      store: { db: { scope: (work: () => unknown) => Promise.resolve(work()) } },
+    },
+    runLeases: new RunLeases(),
+    hostRuns: async () => false,
+    sessionQueues: {},
+    queueDrainer: {},
+  } as never);
+  const beat = async (id = "s1") => {
+    live.onBusy!(id, "win1");
+    await vi.advanceTimersByTimeAsync(0);
+  };
+  await beat();
+  await vi.advanceTimersByTimeAsync(5_000);
+  await beat();
+  await vi.advanceTimersByTimeAsync(5_000);
+  await beat();
+  expect(touch).toHaveBeenCalledTimes(1);
+  await beat("s2");
+  expect(touch).toHaveBeenCalledTimes(2);
+  await vi.advanceTimersByTimeAsync(30_000);
+  await beat();
+  expect(touch).toHaveBeenCalledTimes(3);
+  // A turn that ends records its end, and its next turn's first beat records again.
+  live.onIdle!("s1", "win1", "idle");
+  await vi.advanceTimersByTimeAsync(0);
+  expect(touch).toHaveBeenCalledTimes(4);
+  await beat();
+  expect(touch).toHaveBeenCalledTimes(5);
+});
