@@ -774,6 +774,7 @@ export class HostStore {
     );
     CREATE INDEX IF NOT EXISTS session_state_project ON session_state(project_id);
     CREATE INDEX IF NOT EXISTS session_state_project_recent ON session_state(project_id, updated_at DESC, id);
+    CREATE INDEX IF NOT EXISTS session_state_running ON session_state(status) WHERE status='running';
     CREATE INDEX IF NOT EXISTS session_state_workspace_probe ON session_state(json_extract(summary, '$.workspaceId')) WHERE json_valid(summary);
     CREATE INDEX IF NOT EXISTS session_state_worktree_probe ON session_state(json_extract(summary, '$.worktreeCwd')) WHERE json_valid(summary) AND json_extract(summary, '$.worktreeCwd') IS NOT NULL;`);
     await initializeWorkspaceSessionProbe(this.db);
@@ -1676,6 +1677,31 @@ export class HostStore {
         .all(projectId))
         if (!this.pending.has(String(row.id))) return true;
       return false;
+    });
+  }
+  /** Exact run identities for admission, with unwritten state taking precedence. */
+  async runningSessionRuns(): Promise<{ sessionId: string; projectId: string; runId: string }[]> {
+    return this.db.storeScope(async () => {
+      // Only legacy rows without a summary need to extract the ID from the snapshot in SQLite.
+      const rows = await this.db
+        .prepare(
+          `SELECT id, project_id, CASE WHEN summary IS NULL THEN
+            (SELECT json_extract(snapshot, '$.runId') FROM sessions WHERE sessions.id=st.id)
+            ELSE json_extract(summary, '$.runId') END AS run_id
+          FROM session_state st WHERE status='running'`,
+        )
+        .all();
+      const runs: { sessionId: string; projectId: string; runId: string }[] = [];
+      for (const row of rows) {
+        const sessionId = String(row.id);
+        if (!this.pending.has(sessionId) && typeof row.run_id === "string" && row.run_id)
+          runs.push({ sessionId, projectId: String(row.project_id), runId: row.run_id });
+      }
+      for (const [sessionId, { value }] of this.pending) {
+        if (value.status === "running" && value.runId)
+          runs.push({ sessionId, projectId: value.projectId, runId: value.runId });
+      }
+      return runs;
     });
   }
   async sync(id: string, revision?: number, signal?: AbortSignal): Promise<SessionSync> {
