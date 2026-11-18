@@ -9,21 +9,17 @@ Use for Social product workflows and their Host operations. Distinguish platform
 
 ## Source starts
 
-Full paths are repository-root relative; adjacent abbreviated names share the preceding directory. Follow current imports and callers; this map is not a completeness claim.
+Paths are repository-root relative. Follow current imports and callers; this map is not complete.
 
 - `src/features/social/ui/SocialView.tsx` mounts the shell; `ui/shell/` holds the frame and screen map; `ui/command|content|audience|inbox|accounts/` hold the five screens; `ui/browser/` holds NEEDS_HUMAN and live view; `ui/common/` shared pieces.
 - `src/features/social/model/`: `socialTools.ts` (AI-callable actions), `autonomy.ts` (levels and defaults), `audience.ts`, `outreach.ts`, `socialActions.ts` (RPC names). Hooks, `ui/socialBulk.ts` and draft/program models hold workflow state.
 - `src/integrations/social/`: platform adapters, capabilities, reason codes, messaging, media and OAuth helpers. It must not import `features`.
 - `host/social/core/`: action registry (`social-actions.ts`) and service API. `social.ts` only composes; add operations through the registry.
-- Facebook Page-specific reads and management register in `host/social/core/facebook-page-actions.ts`. Live receipts and encoder custody live in `host/social/facebook-live/`. Facebook publication and engagement adapters live under `src/integrations/social/adapters/`.
 - `host/social/accounts/` (project account requests), `audience/`, `outreach/`, `inbox/`, `ai/`, `autonomy/`, `contacts/`, `rules/`, `execution/`, `store/`, `oauth/`, `token-connections/`, `email/`.
 - `host/social/browser*` and `browser-layers/`: sessions, recipes, layered driver, NEEDS_HUMAN, live view. `host/social/social-programs.ts` and `social-program-*.ts`: campaign programs.
 - `host/decision-models/`: decision gateway for the browser decision layer and AI tools (own skill: `feature-decision-models`).
 - Contracts: `docs/integrations/social.md`, `social-programs.md`, `decision-models.md`.
-- Platform actions: `host/social/youtube/`, `host/social/tiktok/`, `ui/accounts/youtube/`. Live and Business credentials stay in per-account Host vault entries; keep owner mutations and credential setup off session tools.
-
-- LinkedIn-specific Host actions and reviewed browser operations live in
-  `host/social/linkedin/`. LinkedIn API adapters live in `src/integrations/social/adapters/`.
+- Platform actions: `host/social/{youtube,tiktok,linkedin,facebook-live}/`, `core/facebook-page-actions.ts`, adapters in `src/integrations/social/adapters/`. Live, Business and stream credentials stay in per-account Host vault entries; keep owner mutations and credential setup off session tools.
 
 ## Preserve
 
@@ -52,7 +48,7 @@ Full paths are repository-root relative; adjacent abbreviated names share the pr
 Listing a command here is not a passing result.
 
 - `pnpm exec vitest run src/features/social/ui/SocialView.test.ts src/features/social/model`
-- `pnpm exec vitest run src/features/social/ui/shell src/features/social/ui/command src/features/social/ui/content src/features/social/ui/audience src/features/social/ui/inbox src/features/social/ui/accounts`
+- `pnpm exec vitest run src/features/social/ui`
 - `pnpm exec vitest run src/integrations/social`
 - `pnpm exec vitest run --config host/vitest.config.ts host/social`
 
@@ -60,13 +56,9 @@ Inspect populated, empty and long content, account switches during requests, rec
 
 ## References
 
-- Snapchat: API publishing and receipt recovery in `src/integrations/social/snapchat.ts`,
-  account actions in `host/social/accounts/snapchat-actions.ts`, and protected browser
-  profile and messaging workflows in `host/social/social-browser-snapchat-profile.ts`
-  and `host/social/social-browser-snapchat-messaging.ts`.
-
+- Snapchat: `src/integrations/social/snapchat.ts`, `host/social/accounts/snapchat-actions.ts`, `host/social/social-browser-snapchat-*.ts`.
 - [Social contracts](references/contracts.md) for the full preserve list: autonomy, grants, credentials, indexed queries and polling cursors.
-- [Instagram Login and browser coverage](../../../docs/integrations/social.md#instagram-facebook-and-meta) for Instagram permissions, publishing formats, reviewed Inbox actions and owner workflow boundaries.
+- [Instagram and Meta coverage](../../../docs/integrations/social.md#instagram-facebook-and-meta) for permissions, formats and reviewed Inbox actions.
 - [Decisions](references/decisions.md) for owner decisions that set autonomy, consent, driver and browser rules.
 - [Social integration](../../../docs/integrations/social.md) for screens, account modes, platforms, audience, outreach, email, suppression, autonomy and browser layers.
 - [AI programs](../../../docs/integrations/social-programs.md) when changing campaigns, models, schedules or program dispatch.
