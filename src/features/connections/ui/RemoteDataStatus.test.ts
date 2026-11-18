@@ -112,6 +112,8 @@ it.each(["ready", "empty", "loading", "refreshing", "stale", "error"] as const)(
       `button[aria-label="${phase === "error" ? "Retry loading conversation" : "Refresh conversation"}"]`,
     )!;
     expect(button.disabled).toBe(phase === "loading" || phase === "refreshing");
+    // The toast button stays short; the data name lives in the aria-label and the copy.
+    if (attention) expect(button.textContent).toBe(phase === "error" ? "Retry" : "Refresh");
     if (phase === "error")
       expect(document.body.querySelector("[data-toast-region]")?.textContent).toContain(
         "Read failed",

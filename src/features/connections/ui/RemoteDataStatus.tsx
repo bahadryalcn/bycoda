@@ -191,7 +191,7 @@ export function RemoteDataStatus({
         action={
           onRefresh
             ? {
-                label: retryLabel,
+                label: state.phase === "error" ? t("Retry") : t("Refresh"),
                 ariaLabel: retryLabel,
                 onClick: onRefresh,
                 pending: busy,

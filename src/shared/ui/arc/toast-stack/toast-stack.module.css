@@ -76,11 +76,18 @@
   }
   .copy {
     flex: 1;
-    min-inline-size: 0;
+    /* The copy keeps priority width: the action truncates (below) before the copy squeezes. */
+    min-inline-size: min(10rem, 100%);
     font-size: var(--ui-font-secondary);
     line-height: var(--ui-leading-secondary);
-    overflow-wrap: anywhere;
+    overflow-wrap: break-word;
     user-select: text;
+  }
+  /* A long action label ends in an ellipsis (its aria-label keeps the full text) instead of taking
+     the row from the copy. */
+  .actionSlot {
+    min-inline-size: 0;
+    max-inline-size: 40%;
   }
   .title {
     display: block;
