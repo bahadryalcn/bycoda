@@ -616,7 +616,7 @@ jobs:
     # Playwright 1.64's WebKit fails at launch ("libicudata.so.74: cannot open shared object file").
     # Upgrade the image deliberately, together with a Playwright release that supports it.
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 75
     strategy:
       fail-fast: false
       max-parallel: 6
