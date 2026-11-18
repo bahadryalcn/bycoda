@@ -18,6 +18,20 @@ const events = [
   WebcastEvent.STREAM_END,
 ] as const;
 
+type TikTokCookieJar = TikTokLiveConnection["webClient"]["cookieJar"];
+
+/** Signing and gallery routes may read the jar without a destination. Keep those calls anonymous. */
+export function restrictTikTokCookies(jar: TikTokCookieJar): void {
+  const getGuestCookies = jar.getAnonymousCookieString.bind(jar);
+  jar.getCookieString = async (destination = "") => {
+    const target = URL.parse(destination);
+    return target?.protocol === "https:" && /(?:^|\.)tiktokv?\.com$/i.test(target.hostname)
+      ? getGuestCookies()
+      : "";
+  };
+  jar.getSessionBundle = async () => null;
+}
+
 export function tiktokConnectionError(error: unknown): { detail: string; offline: boolean } {
   const name = error instanceof Error ? error.name : "";
   const message = error instanceof Error ? error.message : "";
@@ -58,6 +72,7 @@ export function connectTikTok(
     fetchRoomInfoOnConnect: true,
     enableExtendedGiftInfo: true,
   });
+  restrictTikTokCookies(client.webClient.cookieJar);
   let closed = false;
   const deadline = setTimeout(() => fail(new Error("TikTok connection timed out")), 20_000);
   deadline.unref();
