@@ -50,3 +50,24 @@ AI planning preserves text entered after a request started. Conflicting plan ope
 An unconfirmed reply is not shown as definitely unsent. **Retry same reply** checks or resumes the original operation with its original identity rather than creating another reply. The draft and unresolved operation survive conversation switches and component remounts within the current app session. They are not a new disk-persistence guarantee across app reloads. Jobs that require review remain visible as requiring review.
 
 For supported platforms, restrictions and Host/API contracts, see [Social integration](../integrations/social.md).
+
+## Snapchat
+
+Choose **Snapchat** in **Accounts & Settings** to create or sign in to a member
+account. Complete password, verification and terms in the browser. Connect a
+Public Profile through the Public Profile API for publishing, publications and
+insights. Connect its verified browser account to manage the profile and read
+monetization status. Member browser connections can read and reply to chats and
+start a text chat after the Host verifies the exact friend.
+
+Choose **Spotlight**, **Public Story**, or **Saved Story** in Content. For a
+Saved Story, enter its title in the post field and attach media or enter source
+IDs. Pick a date and time to schedule the post. Review uncertain publication
+outcomes before publishing again. Delete a Spotlight or Saved Story from its
+publications list after confirming the exact item.
+
+Ask AI in bycoda chat for granted Snapchat insights, subscriber totals,
+publications or earnings. AI can prepare campaigns and messages under the
+account's existing autonomy settings. Signup requests appear in Command.
+Profile changes and deletion requests appear on the Snapchat account for owner
+review.

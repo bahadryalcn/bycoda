@@ -275,6 +275,26 @@ Contracts: [OAuth](https://developers.google.com/youtube/v3/guides/auth/server-s
 
 #### Snapchat
 
+**Current Snapchat coverage.** The Public Profile API handles Spotlight, Public
+Stories, Saved Stories, publication listings, Spotlight and Saved Story deletion,
+profile metadata, insights, subscriber totals and creator earnings. The Host queue
+schedules publications. Public Story submissions stay in review until the Host
+can verify an exact posted Snap ID. Receipt recovery does not upload or submit
+the Story again. Snap controls partner access to Story links and captions. Creator
+earnings require a creator token with profile Manager or organization Admin access.
+Earnings represent amounts recorded by Snap. Subscriber metrics are aggregate.
+
+Browser member sessions support existing friends and text chats. Public Profile
+browser sessions support profile management and can report visible monetization
+status. Unrecognized layouts and mismatched identities stop the operation.
+Signup leaves credentials, verification, and terms to the owner. AI tools can
+request signup, profile changes and content deletion for owner review. Publishing
+and messages use the existing campaign and draft queues. Organic content comments
+and LIVE have no documented Public Profile API. Marketing API advertising and
+mobile Creative Kit are outside this integration.
+
+The connection setup and original browser uploader behavior follow.
+
 - API: Public Profile OAuth (`snapchat-profile-api`) with `BYCODA_SOCIAL_SNAPCHAT_CLIENT_ID`,
   `_CLIENT_SECRET`, `_REDIRECT_URI` and `_APPROVED=1`. Callback:
   `/social/oauth/snapchat/callback`. The host verifies `my_profile` and the Public Profile

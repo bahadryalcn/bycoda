@@ -54,6 +54,11 @@ Inspect populated, empty and long content, account switches during requests, rec
 
 ## References
 
+- Snapchat: API publishing and receipt recovery in `src/integrations/social/snapchat.ts`,
+  account actions in `host/social/accounts/snapchat-actions.ts`, and protected browser
+  profile and messaging workflows in `host/social/social-browser-snapchat-profile.ts`
+  and `host/social/social-browser-snapchat-messaging.ts`.
+
 - [Social contracts](references/contracts.md) for the full preserve list: autonomy, grants, credentials, indexed queries and polling cursors.
 - [Decisions](references/decisions.md) for owner decisions that set autonomy, consent, driver and browser rules.
 - [Social integration](../../../docs/integrations/social.md) for screens, account modes, platforms, audience, outreach, email, suppression, autonomy and browser layers.
