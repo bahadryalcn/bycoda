@@ -141,6 +141,7 @@ if (facebookFixture) {
   snapshot.accounts = [account];
   snapshot.capabilities = { [account.id]: accountCapabilities(account) };
   snapshot.sendingEnabled = true;
+  const commentAt = Date.now() - 60_000;
   snapshot.threads = [
     {
       id: "facebook-comment",
@@ -149,14 +150,14 @@ if (facebookFixture) {
       platformPostId: "123_789",
       contactId: "facebook-viewer",
       kind: "comment",
-      lastInboundAt: 1763452800000,
+      lastInboundAt: commentAt,
       replyAllowed: true,
       events: [
         {
           id: "comment-1",
           direction: "inbound",
           text: "When is the next workshop?",
-          at: 1763452800000,
+          at: commentAt,
           platformId: "789_456",
         },
       ],
@@ -1863,7 +1864,7 @@ Object.assign(window, {
                     kind: "comment",
                     title: "Fixture viewer",
                     preview: "When is the next workshop?",
-                    at: 1763452800000,
+                    at: snapshot.threads[0].lastInboundAt,
                     status: "unread",
                     tags: [],
                   },

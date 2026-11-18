@@ -44,6 +44,7 @@ import {
   sendWithFallback,
 } from "./execution/social-job-gates";
 import { enabledOAuthPlatform } from "./oauth/registry";
+import { FACEBOOK_PRIVATE_REPLY_WINDOW_MS } from "../../src/integrations/social/adapters/facebook-engagement";
 import { readInboxSettings } from "./inbox/inbox-settings";
 import { holdForHuman, requeueJobForHuman } from "./execution/social-human-review";
 import { osSecretValues } from "../secrets/secret-store";
@@ -4013,6 +4014,8 @@ export class SocialService implements SocialServiceApi {
     if (facebookPrivateReply) {
       if (draftAccount.platform !== "facebook" || thread?.kind !== "comment")
         throw new Error("Choose a Facebook Page comment.");
+      if (this.now() - thread.lastInboundAt >= FACEBOOK_PRIVATE_REPLY_WINDOW_MS)
+        throw new Error("The Facebook private reply window has closed.");
       this.capability(draftAccount, "comment.privateReply");
     }
     const personal =

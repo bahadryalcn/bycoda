@@ -36,6 +36,44 @@ export function FacebookManagementRequests({
     completed: t("Completed"),
     review: t("Needs review"),
   };
+  const fields: Record<string, string> = {
+    about: t("About"),
+    description: t("Description"),
+    website: t("Website"),
+    phone: t("Phone"),
+    emails: t("Email"),
+    hours: t("Hours"),
+    avatarPhotoId: t("Profile photo ID"),
+    coverPhotoId: t("Cover photo ID"),
+    postId: t("Post"),
+    threadId: t("Comments"),
+    action: t("Action"),
+    title: t("Title"),
+    text: t("Text"),
+    liveId: t("Live video"),
+  };
+  const actions: Record<string, string> = {
+    hide: t("Hide comment"),
+    unhide: t("Unhide comment"),
+    delete: t("Delete comment"),
+    like: t("Like comment"),
+    unlike: t("Unlike comment"),
+  };
+  const details = (item: FacebookManagementRequest) => {
+    const patch = item.details.patch;
+    return Object.entries(patch && typeof patch === "object" ? patch : item.details).map(
+      ([field, value]) => (
+        <Text key={field} as="p" className="social-card-description">
+          {fields[field] ?? field} ·{" "}
+          {field === "action"
+            ? actions[String(value)]
+            : typeof value === "string"
+              ? value
+              : JSON.stringify(value)}
+        </Text>
+      ),
+    );
+  };
   const load = async () => {
     const result = await work.write("list", () =>
       client.request<{ requests: FacebookManagementRequest[] }>("facebook.management.list", {
@@ -48,7 +86,8 @@ export function FacebookManagementRequests({
     if (
       !(await confirm.confirm({
         title: titles[item.operation],
-        message: JSON.stringify(item.details, null, 2),
+        message: `Facebook · ${item.pageId}`,
+        details: details(item),
         confirmLabel: t("Approve"),
         danger: item.operation === "facebook.post.delete" || item.details.action === "delete",
       }))
@@ -89,9 +128,7 @@ export function FacebookManagementRequests({
               {labels[item.status]}
             </Badge>
           </div>
-          <Text as="p" className="social-card-description">
-            {JSON.stringify(item.details)}
-          </Text>
+          {details(item)}
           <div className="social-field-row">
             {item.status === "pending" ? (
               <Button

@@ -1,5 +1,6 @@
 import { Text } from "../../../../shared/ui/Text";
-import { useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore } from "react";
+import { FACEBOOK_PRIVATE_REPLY_WINDOW_MS } from "../../../../integrations/social/adapters/facebook-engagement";
 import { t } from "../../../../shared/i18n";
 import { useConfirm } from "../../../../shared/ui/ConfirmDialog";
 import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
@@ -52,6 +53,7 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
   const setError = (error: string) => state.update({ error });
   const setQueued = (queued: boolean) => state.update({ queued });
   const confirmation = useConfirm();
+  const [openedAt] = useState(Date.now);
   const facebookCapabilities =
     thread.kind === "comment" &&
     snapshot.data?.accounts.some(
@@ -59,9 +61,11 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
     )
       ? (snapshot.data.capabilities[thread.accountId] ?? [])
       : [];
-  const canPrivateReply = facebookCapabilities.some(
-    ({ operation, status }) => operation === "comment.privateReply" && status === "available",
-  );
+  const canPrivateReply =
+    openedAt - thread.lastInboundAt < FACEBOOK_PRIVATE_REPLY_WINDOW_MS &&
+    facebookCapabilities.some(
+      ({ operation, status }) => operation === "comment.privateReply" && status === "available",
+    );
   const canModerate = facebookCapabilities.some(
     ({ operation, status }) => operation === "comment.moderate" && status === "available",
   );

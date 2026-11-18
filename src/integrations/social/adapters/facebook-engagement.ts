@@ -23,7 +23,7 @@ export async function moderateFacebookComment(
   if (value.success !== true) throw new SocialPlatformError("unknown");
 }
 
-const PRIVATE_REPLY_WINDOW = 7 * 24 * 60 * 60_000;
+export const FACEBOOK_PRIVATE_REPLY_WINDOW_MS = 7 * 24 * 60 * 60_000;
 
 export async function sendFacebookPrivateReply(
   http: SocialHttp,
@@ -50,14 +50,14 @@ export async function sendFacebookPrivateReply(
     comment.can_reply_privately !== true ||
     !Number.isFinite(createdAt) ||
     createdAt > currentTime ||
-    currentTime - createdAt >= PRIVATE_REPLY_WINDOW
+    currentTime - createdAt >= FACEBOOK_PRIVATE_REPLY_WINDOW_MS
   ) {
     throw new SocialPlatformError("rejected", undefined, {
       reasonCode: "facebook.private_reply_unavailable",
     });
   }
   await beforeSubmit?.();
-  if (now() - createdAt >= PRIVATE_REPLY_WINDOW)
+  if (now() - createdAt >= FACEBOOK_PRIVATE_REPLY_WINDOW_MS)
     throw new SocialPlatformError("rejected", undefined, {
       reasonCode: "facebook.private_reply_unavailable",
     });

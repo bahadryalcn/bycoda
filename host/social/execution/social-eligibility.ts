@@ -22,7 +22,7 @@ export function checkEligibility(
   // suppression are enforced by assertSendable at the send and execution gates.
   if (kind === "message") s.capability(account, "message.start");
   if (kind === "reply") {
-    if (thread?.replyAllowed === false)
+    if (!facebookPrivateReply && thread?.replyAllowed === false)
       throw new Error("Platform does not permit replies to this comment thread.");
     if (
       !thread ||

@@ -4,6 +4,20 @@ import { fixture, owner, runCleanups } from "./social-test-support";
 
 afterEach(runCleanups);
 
+it("refuses an expired comment before creating a private reply draft", async () => {
+  const s = await fixture();
+  const account = await s.account("facebook");
+  const thread = await s.thread(account, "old-comment", "Question", "comment");
+  s.clock.value += 7 * 24 * 60 * 60_000;
+  await expect(
+    s.call("facebook.privateReplyDraft", {
+      threadId: thread.id,
+      text: "Private answer",
+    }),
+  ).rejects.toThrow("private reply window has closed");
+  expect(s.send).not.toHaveBeenCalled();
+});
+
 it("queues an approved Facebook private reply and keeps its text out of the public thread", async () => {
   const s = await fixture();
   const account = await s.account("facebook");
