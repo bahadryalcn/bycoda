@@ -88,6 +88,52 @@ export function socialClient(machineId: string) {
     });
   return {
     request,
+    // Instagram owner-only browser operations.
+    browserInstagramRecipient: (accountId: string, handle: string) =>
+      remoteRequest<import("./socialBrowser").InstagramRecipient>(
+        machineId,
+        "social.browser.instagram.recipient",
+        { accountId, handle },
+      ),
+    browserInstagramPost: (
+      accountId: string,
+      input: import("./socialBrowser").InstagramPostChange,
+    ) =>
+      remoteRequest<import("./socialBrowser").InstagramPostChangeResult>(
+        machineId,
+        "social.browser.instagram.post",
+        { accountId, ...input },
+      ),
+    browserInstagramFollowers: (accountId: string, handle: string) =>
+      remoteRequest<import("./socialBrowser").InstagramFollowerSample>(
+        machineId,
+        "social.browser.instagram.followers",
+        { accountId, handle },
+      ),
+    browserInstagramFollow: (
+      accountId: string,
+      input: import("./socialBrowser").InstagramFollowChange,
+    ) =>
+      remoteRequest<import("./socialBrowser").InstagramFollowResult>(
+        machineId,
+        "social.browser.instagram.follow",
+        { accountId, ...input },
+      ),
+    browserInstagramMentions: (accountId: string) =>
+      remoteRequest<import("./socialBrowser").InstagramBrowserMentions>(
+        machineId,
+        "social.browser.instagram.mentions",
+        { accountId },
+      ),
+    browserInstagramLikeComment: (
+      accountId: string,
+      input: import("./socialBrowser").InstagramCommentLike,
+    ) =>
+      remoteRequest<{ liked: true; changed: boolean }>(
+        machineId,
+        "social.browser.instagram.comment-like",
+        { accountId, ...input },
+      ),
     browserProfileRead: (accountId: string) =>
       remoteRequest<import("./socialBrowser").XProfileState>(
         machineId,
@@ -97,7 +143,9 @@ export function socialClient(machineId: string) {
     browserProfileUpdate: (
       accountId: string,
       platform: "x" | "linkedin" | "facebook" | "instagram",
-      patch: import("./socialBrowser").XProfilePatch,
+      patch:
+        | import("./socialBrowser").XProfilePatch
+        | import("./socialBrowser").InstagramProfilePatch,
     ) =>
       remoteRequest<import("./socialBrowser").XProfileState>(
         machineId,

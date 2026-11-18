@@ -17,8 +17,55 @@ export type XProfileState = {
   bannerUrl?: string;
 };
 
-export const SOCIAL_BROWSER_INTENTS = ["login", "signup", "inbox", "publish", "comments"] as const;
+export const SOCIAL_BROWSER_INTENTS = [
+  "login",
+  "signup",
+  "inbox",
+  "publish",
+  "comments",
+  // Instagram owner-assisted workflows.
+  "instagram-professional",
+  "instagram-profile",
+  "instagram-highlights",
+  "instagram-monetization",
+  "instagram-live",
+] as const;
 export type SocialBrowserIntent = (typeof SOCIAL_BROWSER_INTENTS)[number];
+// Instagram browser operations.
+export type InstagramProfilePatch = Pick<
+  XProfilePatch,
+  "name" | "bio" | "website" | "avatarUploadId"
+> & { username?: string };
+export type InstagramProfileState = XProfileState & { username?: string };
+export type InstagramPostChange =
+  | { action: "caption"; postUrl: string; caption: string; confirm: "EDIT_INSTAGRAM_CAPTION" }
+  | { action: "delete"; postUrl: string; confirm: "DELETE_INSTAGRAM_POST" };
+export type InstagramPostChangeResult = { postUrl: string; changed: boolean };
+export type InstagramRecipient = { handle: string; platformId: string };
+export type InstagramFollowerSample = {
+  followers: { username: string }[];
+  partial: true;
+};
+export type InstagramFollowChange = {
+  handle: string;
+  follow: boolean;
+  confirm: "FOLLOW_INSTAGRAM_ACCOUNT" | "UNFOLLOW_INSTAGRAM_ACCOUNT";
+};
+export type InstagramFollowResult = {
+  handle: string;
+  following: boolean;
+  requested: boolean;
+  changed: boolean;
+};
+export type InstagramBrowserMentions = {
+  mentions: { url: string; username?: string; text: string; at?: number }[];
+  coverage: "visible_notifications";
+};
+export type InstagramCommentLike = {
+  postId: string;
+  commentId: string;
+  confirm: "LIKE_INSTAGRAM_COMMENT";
+};
 export type SocialRegistrationField =
   | "email"
   | "displayName"
@@ -113,6 +160,22 @@ export const SOCIAL_BROWSER_LABELS: Record<SocialBrowserIntent, string> = {
   get comments() {
     return t("Open comments");
   },
+  // Instagram owner-assisted workflows.
+  get "instagram-professional"() {
+    return t("Switch to professional account");
+  },
+  get "instagram-profile"() {
+    return t("Open Instagram profile settings");
+  },
+  get "instagram-highlights"() {
+    return t("Manage Instagram Highlights");
+  },
+  get "instagram-monetization"() {
+    return t("Open Instagram monetization");
+  },
+  get "instagram-live"() {
+    return t("Open Instagram Live Producer");
+  },
 };
 
 type Site = {
@@ -137,6 +200,12 @@ export const SOCIAL_BROWSER_SITES: Record<SocialPlatform, Site> = {
       signup: "https://www.instagram.com/accounts/emailsignup/",
       inbox: "https://www.instagram.com/direct/inbox/",
       publish: "https://www.instagram.com/",
+      // Instagram owner-assisted workflows.
+      "instagram-professional": "https://www.instagram.com/accounts/edit/",
+      "instagram-profile": "https://www.instagram.com/accounts/edit/",
+      "instagram-highlights": "https://www.instagram.com/",
+      "instagram-monetization": "https://www.instagram.com/",
+      "instagram-live": "https://www.instagram.com/",
     },
   },
   facebook: {

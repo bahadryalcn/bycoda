@@ -5,6 +5,8 @@ import {
   type SocialSendResult,
 } from "../../src/integrations/social/adapter";
 import type { BrowserRecipeContext, BrowserPollResult } from "./social-browser-recipe";
+import { detectChallenge, needsHumanError } from "./browser/challenge";
+import { openInstagramDirectThread } from "./social-browser-instagram-dm";
 import {
   numeric,
   object,
@@ -19,7 +21,7 @@ import {
   type Value,
 } from "./social-browser-meta-shared";
 
-function instagramPost(raw: unknown): { code: string; id?: string; url: string } {
+export function instagramPost(raw: unknown): { code: string; id?: string; url: string } {
   if (typeof raw !== "string") throw new SocialPlatformError("unsupported");
   const stored = /^ig:([A-Za-z0-9_-]{1,64}):(\d{1,30})$/.exec(raw);
   if (stored)
@@ -318,17 +320,24 @@ export async function instagramComment(context: BrowserRecipeContext, job: Socia
   );
 }
 
-export async function instagramMessage(context: BrowserRecipeContext, job: SocialJob) {
+export async function instagramMessage(baseContext: BrowserRecipeContext, job: SocialJob) {
+  const context: BrowserRecipeContext = {
+    ...baseContext,
+    verifyIdentity: async () => {
+      const challenge = await detectChallenge(baseContext.page);
+      if (challenge) throw needsHumanError(challenge);
+      await baseContext.verifyIdentity();
+    },
+  };
   const text = validateText(job),
-    recipient = job.payload.recipientId,
-    threadId = job.payload.threadId;
-  if (
-    !numeric(recipient) ||
-    !numeric(threadId) ||
-    recipient === context.account.platformId ||
-    job.payload.media.length
-  )
+    recipient = job.payload.recipientId;
+  if (!numeric(recipient) || recipient === context.account.platformId || job.payload.media.length)
     throw new SocialPlatformError("unsupported");
+  const threadId =
+    job.kind === "message" && !job.payload.threadId
+      ? await openInstagramDirectThread(context, job.payload.instagramRecipientHandle, recipient)
+      : job.payload.threadId;
+  if (!numeric(threadId)) throw new SocialPlatformError("unsupported");
   const url = `https://www.instagram.com/direct/t/${threadId}/`;
   const threadPath = new RegExp(`/api/v1/direct_v2/threads/${threadId}/(?:\\?|$)`);
   const before = values(await readResponse(context, url, threadPath), true)[0];
@@ -344,6 +353,7 @@ export async function instagramMessage(context: BrowserRecipeContext, job: Socia
     context,
     'main [contenteditable="true"][role="textbox"],main textarea[placeholder="Message..."],main textarea[placeholder="Mesaj..."]',
   );
+  await context.verifyIdentity();
   await context.page.fill(editor, text);
   const submit = await mark(context, 'main button,main [role="button"]', ["Send", "Gönder"]);
   let itemId = "";
@@ -455,5 +465,6 @@ export const instagramOperations: SocialOperation[] = [
   "comments.read",
   "inbox.read",
   "message.reply",
+  "message.start",
   "poll",
 ];

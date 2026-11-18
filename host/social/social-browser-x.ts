@@ -12,6 +12,21 @@ import { xMediaFormat } from "../../src/integrations/social/xMedia";
 import type { SocialPrincipal, SocialService } from "./social";
 import { SocialBrowserWorkflows } from "./social-browser-workflows";
 import type { SocialBrowserIntent } from "../../src/features/social/model/socialBrowser";
+// Instagram bounded browser operations.
+import {
+  instagramFollow,
+  instagramFollowers,
+  instagramHandle,
+  openInstagramRecipientProfile,
+  parseInstagramFollowChange,
+} from "./social-browser-instagram-audience";
+import { changeInstagramPost, parseInstagramPostChange } from "./social-browser-instagram-posts";
+import { instagramBrowserMentions } from "./social-browser-instagram-mentions";
+import {
+  instagramLikeComment,
+  parseInstagramCommentLike,
+} from "./social-browser-instagram-comment-like";
+import type { BrowserRecipeContext } from "./social-browser-recipe";
 import { XProfileActions, parseXProfilePatch } from "./social-browser-profile";
 import {
   LinkedInProfileActions,
@@ -257,7 +272,12 @@ export class XBrowserSessions {
       try {
         const files: { avatar?: string; banner?: string } = {};
         for (const kind of ["avatar", "banner"] as const) {
-          const id = patch?.[kind === "avatar" ? "avatarUploadId" : "bannerUploadId"];
+          const id =
+            kind === "avatar"
+              ? patch?.avatarUploadId
+              : patch && "bannerUploadId" in patch
+                ? patch.bannerUploadId
+                : undefined;
           if (!id) continue;
           const bytes = await service.readOwnerMedia(p, id);
           const format = xMediaFormat(bytes);
@@ -331,6 +351,99 @@ export class XBrowserSessions {
       } finally {
         await session?.close().catch(() => undefined);
         await rm(staging, { recursive: true, force: true }).catch(() => undefined);
+      }
+    });
+  }
+  // Instagram owner-only browser operations share the account lock and identity check.
+  async instagramAction(
+    service: SocialService,
+    principal: SocialPrincipal,
+    accountId: string,
+    action: "post" | "followers" | "follow" | "mentions" | "comment-like" | "recipient",
+    input: Record<string, unknown>,
+  ) {
+    const writing = action !== "followers" && action !== "mentions" && action !== "recipient";
+    const account = await service.accountForBrowserManagement(principal, accountId, writing);
+    const check = async () => {
+      const current = await service.accountForBrowserManagement(principal, accountId, writing);
+      if (
+        current.platform !== "instagram" ||
+        current.connection !== "browser" ||
+        !current.connected ||
+        current.paused ||
+        !current.platformId ||
+        current.platformId !== account.platformId ||
+        current.accountType !== account.accountType ||
+        current.executorId !== service.store.environmentId ||
+        this.stopped
+      )
+        throw new SocialPlatformError("denied");
+      if (this.workflows.hasActive(accountId) || this.platforms.waiting(accountId))
+        throw new SocialPlatformError("denied");
+    };
+    await check();
+    const recipe = this.recipes.find((entry) => entry.platform === "instagram");
+    if (!this.launcher || !recipe) throw new SocialPlatformError("unsupported");
+    const patch = action === "post" ? parseInstagramPostChange(input) : undefined;
+    const handle =
+      action === "followers" || action === "recipient" ? instagramHandle(input.handle) : undefined;
+    const follow = action === "follow" ? parseInstagramFollowChange(input) : undefined;
+    const like = action === "comment-like" ? parseInstagramCommentLike(input) : undefined;
+    return this.exclusive(accountId, async () => {
+      await check();
+      const session = await this.launchAt(
+        accountId,
+        this.profile(accountId, "browser-profiles"),
+        this.background,
+      );
+      try {
+        const page = session.page;
+        const context: BrowserRecipeContext = {
+          page,
+          account,
+          files: [],
+          now: this.now,
+          waitFor: <T>(expression: string, timeout = 15_000) =>
+            this.until<T>(page, expression, timeout),
+          verifyIdentity: async () => {
+            await check();
+            const identity = await recipe.identity(page, account);
+            if (identity?.platformId !== account.platformId)
+              throw new SocialPlatformError("denied");
+            await check();
+          },
+        };
+        const authorizeOutbound = async (
+          recipientId: string,
+          channel: "comment" | "mention",
+          recordAttempt: boolean,
+        ) => {
+          if ((await service.setting("sending")) !== "true")
+            throw new SocialPlatformError("denied");
+          await service.assertSendable({ platform: "instagram", platformId: recipientId }, channel);
+          if (recordAttempt) {
+            await this.limiter.reserve(accountId);
+            await this.limiter.record(accountId);
+          }
+        };
+        if (patch) return await changeInstagramPost(context, patch);
+        if (follow)
+          return await instagramFollow(context, follow, (recipientId, recordAttempt) =>
+            authorizeOutbound(recipientId, "mention", recordAttempt),
+          );
+        if (like)
+          return await instagramLikeComment(context, like, (recipientId) =>
+            authorizeOutbound(recipientId, "comment", true),
+          );
+        if (action === "mentions") return await instagramBrowserMentions(context);
+        if (action === "recipient")
+          return {
+            handle: handle!,
+            platformId: await openInstagramRecipientProfile(context, handle!),
+          };
+        return await instagramFollowers(context, handle!);
+      } finally {
+        await session.close().catch(() => undefined);
       }
     });
   }

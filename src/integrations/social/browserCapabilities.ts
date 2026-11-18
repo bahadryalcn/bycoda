@@ -31,6 +31,7 @@ export const BROWSER_PLATFORM_OPERATIONS: Record<
     "comment",
     "inbox.read",
     "message.reply",
+    "message.start",
     "poll",
   ],
   facebook: [

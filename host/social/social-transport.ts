@@ -104,6 +104,28 @@ export class SocialTransport {
         return liveViewFrame(String(params.accountId ?? ""));
       if (method === "social.browser.view.input")
         return liveViewInput(String(params.accountId ?? ""), params.event);
+      // Instagram owner-only browser operations.
+      switch (method) {
+        case "social.browser.instagram.post":
+        case "social.browser.instagram.followers":
+        case "social.browser.instagram.follow":
+        case "social.browser.instagram.mentions":
+        case "social.browser.instagram.comment-like":
+        case "social.browser.instagram.recipient":
+          return this.browser.instagramAction(
+            this.service,
+            p,
+            String(params.accountId ?? ""),
+            method.slice("social.browser.instagram.".length) as
+              | "post"
+              | "followers"
+              | "follow"
+              | "mentions"
+              | "comment-like"
+              | "recipient",
+            params,
+          );
+      }
       if (
         [
           "social.browser.profile.read",
