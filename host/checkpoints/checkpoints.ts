@@ -851,7 +851,8 @@ export class HostCheckpoints {
       let prefixLookup: Promise<string> | undefined;
       const prefix = () => (prefixLookup ??= repositoryPrefix(record.cwd));
       const entries = Object.entries(record.files);
-      const files: CheckpointStatus["files"] = new Array(entries.length);
+      // Filled by index so the result keeps the record's file order under concurrency.
+      const files: CheckpointStatus["files"] = [];
       await forEachConcurrent(entries, STATUS_CONCURRENCY, async ([path, pair], index) => {
         const diff = await this.diff(record.cwd, path, pair, prefix);
         files[index] = {
