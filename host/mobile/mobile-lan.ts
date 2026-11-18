@@ -268,6 +268,12 @@ async function listenStablePort(
   await listen(0);
 }
 
+/** The check reads the OS interface list only, so a short period costs nothing and a
+ * restored address is served again within one tick. The listener is closed only after
+ * this many consecutive polls without the address. */
+const ADDRESS_POLL_MS = 5_000;
+const ADDRESS_MISSES_BEFORE_CLOSE = 3;
+
 type SavedAccess = {
   key: string;
   enabled: boolean;
@@ -293,6 +299,7 @@ export class MobileLanAccess {
   private loading?: Promise<void>;
   private operation?: Promise<MobileAccessStatus>;
   private addressTimer?: ReturnType<typeof setInterval>;
+  private missedPolls = 0;
   private addressCheck?: Promise<void>;
   private notice?: string;
   private disposed = false;
@@ -420,9 +427,17 @@ export class MobileLanAccess {
         const available = !!current && this.addresses().includes(current);
         const active = this.gateway?.address();
         if (!available) {
-          this.notice = "The selected mobile network interface is unavailable.";
-          if (active) await this.closeGateway();
-        } else if (
+          // A Wi-Fi roam or DHCP renewal drops the address for a moment. Closing the
+          // listener ends every phone's WebSocket, so wait for a few polls in a row.
+          this.missedPolls++;
+          if (this.missedPolls >= ADDRESS_MISSES_BEFORE_CLOSE) {
+            this.notice = "The selected mobile network interface is unavailable.";
+            if (active) await this.closeGateway();
+          }
+          return;
+        }
+        this.missedPolls = 0;
+        if (
           available &&
           (!active || (typeof active !== "string" && active.address !== current)) &&
           !this.disposed
@@ -435,7 +450,7 @@ export class MobileLanAccess {
         .finally(() => {
           if (this.addressCheck === check) this.addressCheck = undefined;
         });
-    }, 15_000);
+    }, ADDRESS_POLL_MS);
     this.addressTimer.unref?.();
   }
   enable(address?: unknown): Promise<MobileAccessStatus> {
