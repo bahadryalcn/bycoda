@@ -15,6 +15,10 @@ export type InboxReplyInput = {
 /** One owner action, including retries. Never change its input or its request IDs. */
 export type InboxReplyOperation = {
   input: InboxReplyInput;
+  facebookDraft?: {
+    action: "facebook.privateReplyDraft" | "facebook.live.replyDraft";
+    input: Record<string, unknown>;
+  };
   requests: { draft: string; approve: string; send: string; status: string };
   draft?: SocialDraft;
   approved?: boolean;
@@ -24,9 +28,13 @@ export type InboxReplyOperation = {
   pending?: Promise<void>;
 };
 
-export function createInboxReplyOperation(input: InboxReplyInput): InboxReplyOperation {
+export function createInboxReplyOperation(
+  input: InboxReplyInput,
+  facebookDraft?: InboxReplyOperation["facebookDraft"],
+): InboxReplyOperation {
   return {
     input: { ...input, factIds: [...input.factIds] },
+    ...(facebookDraft ? { facebookDraft } : {}),
     requests: {
       draft: crypto.randomUUID(),
       approve: crypto.randomUUID(),
@@ -51,8 +59,8 @@ export function resumeInboxReply(call: RequestFn, operation: InboxReplyOperation
   const run = async () => {
     if (!operation.draft) {
       operation.draft = await call<SocialDraft>(
-        "replies.draft",
-        operation.input,
+        operation.facebookDraft?.action ?? "replies.draft",
+        operation.facebookDraft?.input ?? operation.input,
         operation.requests.draft,
       );
     }
@@ -80,7 +88,7 @@ export function resumeInboxReply(call: RequestFn, operation: InboxReplyOperation
     operation.queued = true;
     await call(
       "inbox.setStatus",
-      { threadId: operation.input.threadId, status: "replied" },
+      { threadId: operation.draft.threadId ?? operation.input.threadId, status: "replied" },
       operation.requests.status,
     ).catch(() => undefined);
   };

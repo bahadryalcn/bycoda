@@ -433,6 +433,14 @@ describe("Real local CLI and MCP transport", () => {
         "ai.report",
         "browser.needsHuman.list",
         "browser.recipeSuggestions.list",
+        // Facebook Page reads
+        "facebook.page.read",
+        "facebook.mentions.list",
+        "facebook.insights.read",
+        "facebook.earnings.read",
+        "facebook.posts.list",
+        "facebook.live.list",
+        "facebook.live.comments",
       ];
       const writes = [
         "accounts.request",
@@ -471,6 +479,10 @@ describe("Real local CLI and MCP transport", () => {
         "inbox.setStatus",
         "ai.actions.undo",
         "ai.stop",
+        // Facebook preparations
+        "facebook.privateReplyDraft",
+        "facebook.live.replyDraft",
+        "facebook.management.request",
       ];
       const method = (action: string) => `social_${action.replaceAll(/[.-]/g, "_")}`;
       // Draft inspection/editing is a concurrent additive capability. Keep the

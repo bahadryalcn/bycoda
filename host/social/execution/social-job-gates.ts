@@ -90,6 +90,7 @@ export async function sendWithFallback(
   try {
     return await send(primary, account);
   } catch (error) {
+    if (job.payload.facebookPrivateReply) throw error;
     // The adapter failed before submit, so the dispatch marker set by the caller is not a submit.
     const notSubmitted = { ...job, dispatchedAt: undefined };
     const browserSupports =

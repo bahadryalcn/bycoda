@@ -738,3 +738,47 @@ live captcha page was checked. Installed host builds need the shared
 [local update workflow](../local-update.md). Real acceptance for each platform, each driver
 and each delivery path stays separate from source checks. Scheduling a job, activating a
 plan or connecting an account is not evidence that it was sent.
+
+## Facebook Page API additions
+
+The managed Page adapter also accepts ordinary MP4 video and photo or video Stories.
+Feed and video variants can carry `scheduledPublishAt` as epoch milliseconds. The Host
+accepts times 10 minutes to 75 days after dispatch, inside Meta's documented Feed
+window. The campaign approval covers the destination, media and native schedule.
+Reconciliation checks the exact provider ID after an accepted upload. An unknown
+submission goes to review and never falls back to browser publishing.
+
+Page details read `followers_count` and `fan_count` separately. Meta may return the
+follower count as `fan_count` for a New Page Experience Page. Mentions use the
+Page's `tagged` edge. Page insights read `page_media_view` and
+`page_total_media_view_unique`. Post views use `post_media_view` after removal of
+`post_impressions_unique`. A missing metric is unavailable, while a returned zero
+is a measured value. Earnings are provider estimates and the earnings breakdown
+excludes bonuses.
+
+The session catalog exposes Page reads, posts, mentions, insights, Graph earnings estimates and Live reads. Private
+Messenger replies and Live comment replies prepare drafts which use the normal
+`replies.send` path. Private replies address one verified comment, match its author,
+expire after seven days and run through message suppression before submission.
+
+The owner confirms Page updates, post edit/delete, comment moderation and Live management.
+Sessions can file these exact changes with `facebook.management.request`. A request has no
+platform effect until the owner reviews it in the Page account. Approval rechecks the original
+project grant and Page identity and calls the existing owner operation.
+The saved browser Page actor handles name and username when the corresponding official Page
+update is unavailable. Browser registration can prefill supported Page fields and
+hands verification and agreements to the owner. The Facebook reconnect flow uses
+the Page OAuth selection and checks the Page identity before retaining a token.
+
+The Live Video API also requires Meta approval and Page eligibility. Bycoda retains the
+current broadcast receipt and places encoder credentials in the Host vault. The owner
+encoder endpoint bypasses Social tool results, audit payloads and request receipts.
+Business Suite monetization is read-only for the verified browser Page and excludes tax
+and payout settings.
+
+Unsolicited messages are unavailable. Meta removed the general Facebook Groups API
+and its publishing and member-info scopes on April 22, 2024.
+[Page Insights](https://developers.facebook.com/docs/graph-api/reference/insights/)
+[Messenger private replies](https://developers.facebook.com/docs/messenger-platform/discovery/private-replies/)
+[Live Video](https://developers.facebook.com/docs/graph-api/reference/page/live_videos/)
+[Graph API 19 changelog](https://developers.facebook.com/docs/graph-api/changelog/version19.0/)

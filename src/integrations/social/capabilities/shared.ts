@@ -6,6 +6,15 @@ export const NOT_YET_OPERATIONS = [
   "analytics",
   "audience.collect",
   "profile.read",
+  // Facebook Page operations
+  "profile.update",
+  "post.edit",
+  "post.schedule",
+  "comment.moderate",
+  "comment.privateReply",
+  "mentions.read",
+  "live.read",
+  "live.transmit",
 ] as const;
 export type NotYetOperation = (typeof NOT_YET_OPERATIONS)[number];
 export type CapabilityOperation = SocialOperation | NotYetOperation;
@@ -57,6 +66,15 @@ export const NOT_YET: Record<NotYetOperation, CapabilityRequirement> = {
   analytics: r([], "Post analytics are not implemented yet.", true),
   "audience.collect": r([], "Audience collection is not implemented yet.", true),
   "profile.read": r([], "Profile reading is not implemented yet.", true),
+  // Facebook Page operations
+  "profile.update": r([], "Profile editing is unavailable.", true),
+  "post.edit": r([], "Post editing is unavailable.", true),
+  "post.schedule": r([], "Native scheduling is unavailable.", true),
+  "comment.moderate": r([], "Comment moderation is unavailable.", true),
+  "comment.privateReply": r([], "Private replies to comments are unavailable.", true),
+  "mentions.read": r([], "Mention reading is unavailable.", true),
+  "live.read": r([], "Live video reading is unavailable.", true),
+  "live.transmit": r([], "Live video management is unavailable.", true),
 };
 
 export const SOCIAL_DOCUMENTS = {

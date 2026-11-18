@@ -51,13 +51,22 @@ export async function readFacebookPageInsights(
       const values = Array.isArray(row?.values)
         ? row.values.flatMap((entry: { value?: unknown; end_time?: unknown }) => {
             const number = count(entry?.value);
-            const breakdown = options.earnings && entry?.value && typeof entry.value === "object"
-              ? Object.fromEntries(Object.entries(entry.value).filter(
-                  ([key, amount]) => /^[A-Za-z0-9_]{1,80}$/.test(key) && count(amount) !== undefined,
-                ))
-              : undefined;
+            const breakdown =
+              options.earnings && entry?.value && typeof entry.value === "object"
+                ? Object.fromEntries(
+                    Object.entries(entry.value).filter(
+                      ([key, amount]) =>
+                        /^[A-Za-z0-9_]{1,80}$/.test(key) && count(amount) !== undefined,
+                    ),
+                  )
+                : undefined;
             return number !== undefined || (breakdown && Object.keys(breakdown).length)
-              ? [{ value: number ?? breakdown, endsAt: typeof entry.end_time === "string" ? entry.end_time : undefined }]
+              ? [
+                  {
+                    value: number ?? breakdown,
+                    endsAt: typeof entry.end_time === "string" ? entry.end_time : undefined,
+                  },
+                ]
               : [];
           })
         : [];

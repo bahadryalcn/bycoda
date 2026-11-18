@@ -23,6 +23,7 @@ import { connectExistingChrome } from "./browser/existing-chrome-connect";
 import { runLayered, visibilityOf, type BrowserWiring } from "./browser-layers/wiring";
 import { PlatformBrowserSessions } from "./social-browser-platforms";
 import { SOCIAL_BROWSER_RECIPES } from "./social-browser-recipes";
+import { readFacebookMonetization } from "./social-browser-facebook-monetization";
 import {
   FacebookProfileActions,
   parseFacebookProfilePatch,
@@ -334,6 +335,43 @@ export class XBrowserSessions {
       }
     });
   }
+  // Facebook Monetization browser read.
+  async facebookMonetization(service: SocialService, p: SocialPrincipal, accountId: string) {
+    const verify = async () => {
+      const account = await service.accountForBrowserManagement(p, accountId, false);
+      if (
+        account.platform !== "facebook" ||
+        account.accountType !== "page" ||
+        !account.connected ||
+        account.paused ||
+        account.executorId !== service.store.environmentId
+      )
+        throw new SocialPlatformError("denied");
+      if (this.workflows.hasActive(accountId) || this.platforms.waiting(accountId))
+        throw new Error("Finish the account's active browser operation first.");
+      return account;
+    };
+    await verify();
+    if (!this.launcher) throw new SocialPlatformError("unsupported");
+    return await this.exclusive(accountId, async () => {
+      const account = await verify();
+      const session = await this.launchAt(
+        accountId,
+        this.profile(accountId, "browser-profiles"),
+        this.background,
+      );
+      try {
+        const result = await readFacebookMonetization(session.page, account.platformId, this.wait);
+        if ((await verify()).platformId !== account.platformId)
+          throw new SocialPlatformError("denied");
+        return result;
+      } finally {
+        await session.close();
+        await session.profileReleased?.();
+      }
+    });
+  }
+
   /** Opens an account browser with its visibility setting and tracks its page for the layers and live view. */
   private async launchAt(
     accountId: string,

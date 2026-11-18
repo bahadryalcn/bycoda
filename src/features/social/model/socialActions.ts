@@ -41,6 +41,15 @@ export const SOCIAL_READ_ACTIONS = [
   "browser.settings.get",
   "browser.recipeSuggestions.list",
   "accounts.requests.list",
+  // Facebook Page reads
+  "facebook.page.read",
+  "facebook.mentions.list",
+  "facebook.insights.read",
+  "facebook.earnings.read",
+  "facebook.posts.list",
+  "facebook.live.list",
+  "facebook.live.comments",
+  "facebook.management.list",
 ] as const;
 export type SocialReadAction = (typeof SOCIAL_READ_ACTIONS)[number];
 

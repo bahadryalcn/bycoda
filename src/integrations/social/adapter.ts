@@ -124,6 +124,10 @@ export interface SocialAdapter {
     token: string,
   ): Promise<SocialSendResult | undefined>;
   /** Optional operations below are opened per platform by capabilities/<platform>.ts (4E). */
+  /** Managed Facebook Page operations use the same Graph version and transport as publishing. */
+  facebook?: ReturnType<
+    typeof import("./adapters/facebook-page-operations").createFacebookPageOperations
+  >;
   deletePost?(account: SocialAccount, token: string, platformId: string): Promise<void>;
   listPosts?(
     account: SocialAccount,
@@ -275,12 +279,19 @@ export class SocialHttp {
         "api.x.com",
         "graph.instagram.com",
         "graph.facebook.com",
+        "graph-video.facebook.com",
         "api.linkedin.com",
         "www.googleapis.com",
         "open.tiktokapis.com",
         "businessapi.snapchat.com",
         "oauth.reddit.com",
-      ].includes(parsed.hostname)
+      ].includes(parsed.hostname) ||
+      (parsed.hostname === "graph-video.facebook.com" &&
+        (parsed.port ||
+          parsed.search ||
+          parsed.hash ||
+          options.method !== "POST" ||
+          !/^\/v\d{1,3}\.\d{1,2}\/[1-9]\d{0,24}\/videos$/.test(parsed.pathname)))
     )
       throw new SocialPlatformError("denied");
     let response: Response;
@@ -336,7 +347,11 @@ export class SocialHttp {
       throw new SocialPlatformError("rate_limit", retryAfter(response.headers, this.now()));
     if (response.status >= 500) throw new SocialPlatformError("unknown");
     if (!response.ok) {
-      if (["graph.instagram.com", "graph.facebook.com"].includes(parsed.hostname)) {
+      if (
+        ["graph.instagram.com", "graph.facebook.com", "graph-video.facebook.com"].includes(
+          parsed.hostname,
+        )
+      ) {
         // Meta frequently returns auth/permission errors as HTTP 400. Inspect
         // numeric codes only; never expose its error message or trace payload.
         const value = await response.json().catch(() => ({}));

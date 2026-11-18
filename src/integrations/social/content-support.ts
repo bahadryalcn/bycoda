@@ -1,6 +1,7 @@
 import type { SocialAccount, SocialJob } from "./adapter";
 import { browserContentIssue } from "./browserCapabilities";
 import { facebookReelContentIssue } from "./facebookReels";
+import { facebookPublishingIssue } from "./adapters/facebook-publishing";
 import { messagingContentIssue } from "./adapters/messaging-shared";
 import { linkedInMultiImageIssue } from "./linkedinMedia";
 import { metaPublishingIssue } from "./metaMedia";
@@ -14,13 +15,15 @@ export function contentSupport(
   job: Pick<SocialJob, "payload" | "kind">,
 ): string | undefined {
   if (job.payload.facebook && (account.platform !== "facebook" || account.connection === "browser"))
-    return "The Facebook Reel destination requires a Facebook Page API connection.";
+    return "Facebook publishing options require a Facebook Page API connection.";
   if (account.connection === "browser" && account.platform !== "x")
     return browserContentIssue(account, job);
   if (account.platform === "telegram" && account.accountType === "channel")
     return telegramChannelContentIssue(account, job);
   if (account.platform === "facebook" && job.payload.facebook)
-    return facebookReelContentIssue(account, job);
+    return job.payload.facebook.target === "reel"
+      ? facebookReelContentIssue(account, job)
+      : facebookPublishingIssue(account, job);
   if (job.payload.media.some((item) => item.kind === "document"))
     return "PDF document publishing requires a LinkedIn browser connection.";
   if (account.platform === "tiktok") return tiktokContentIssue(job);

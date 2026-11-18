@@ -1,0 +1,120 @@
+import { useState } from "react";
+import { useT } from "../../../../../shared/i18n";
+import { Badge } from "../../../../../shared/ui/Badge";
+import { Button } from "../../../../../shared/ui/Button";
+import { useConfirm } from "../../../../../shared/ui/ConfirmDialog";
+import { EmptyState } from "../../../../../shared/ui/EmptyState";
+import { InlineError } from "../../../../../shared/ui/InlineError";
+import { Text } from "../../../../../shared/ui/Text";
+import type { FacebookManagementRequest } from "../../../model/facebookManagement";
+import type { SocialClient } from "../../../model/socialClient";
+import { useAccountWrite } from "../useAccountWrite";
+
+export function FacebookManagementRequests({
+  client,
+  accountId,
+}: {
+  client: SocialClient;
+  accountId: string;
+}) {
+  const t = useT();
+  const confirm = useConfirm();
+  const [items, setItems] = useState<FacebookManagementRequest[]>();
+  const work = useAccountWrite(t("Could not save this change. Try again."));
+  const titles = {
+    "facebook.page.update": t("Edit profile"),
+    "facebook.post.edit": t("Edit post"),
+    "facebook.post.delete": t("Delete post"),
+    "facebook.comment.moderate": t("Comment moderation"),
+    "facebook.live.create": t("Create live video"),
+    "facebook.live.start": t("Go live"),
+    "facebook.live.end": t("End live video"),
+  };
+  const labels = {
+    pending: t("Pending"),
+    submitted: t("Submitted"),
+    completed: t("Completed"),
+    review: t("Needs review"),
+  };
+  const load = async () => {
+    const result = await work.write("list", () =>
+      client.request<{ requests: FacebookManagementRequest[] }>("facebook.management.list", {
+        accountId,
+      }),
+    );
+    if (result) setItems(result.requests);
+  };
+  const approve = async (item: FacebookManagementRequest) => {
+    if (
+      !(await confirm.confirm({
+        title: titles[item.operation],
+        message: JSON.stringify(item.details, null, 2),
+        confirmLabel: t("Approve"),
+        danger: item.operation === "facebook.post.delete" || item.details.action === "delete",
+      }))
+    )
+      return;
+    const result = await work.write(item.id, () =>
+      client.request<FacebookManagementRequest>("facebook.management.approve", {
+        accountId,
+        reviewed: item,
+      }),
+    );
+    if (result) setItems((current) => current?.map((row) => (row.id === result.id ? result : row)));
+  };
+  const dismiss = async (item: FacebookManagementRequest) => {
+    const result = await work.write(item.id, () =>
+      client.request("facebook.management.dismiss", { accountId, id: item.id }),
+    );
+    if (result) setItems((current) => current?.filter((row) => row.id !== item.id));
+  };
+
+  return (
+    <section className="social-card" aria-label={t("Facebook requests")}>
+      <Button
+        variant="secondary"
+        size="sm"
+        className="self-start"
+        loading={work.is("list")}
+        onClick={() => void load().catch(() => undefined)}
+      >
+        {t("Refresh")}
+      </Button>
+      {items?.length === 0 ? <EmptyState size="inline" description={t("No results")} /> : null}
+      {items?.map((item) => (
+        <div key={item.id} className="social-card">
+          <div className="social-field-row">
+            <Text as="span">{titles[item.operation]}</Text>
+            <Badge tone={item.status === "review" ? "warning" : "neutral"}>
+              {labels[item.status]}
+            </Badge>
+          </div>
+          <Text as="p" className="social-card-description">
+            {JSON.stringify(item.details)}
+          </Text>
+          <div className="social-field-row">
+            {item.status === "pending" ? (
+              <Button
+                size="sm"
+                loading={work.is(item.id)}
+                onClick={() => void approve(item).catch(() => undefined)}
+              >
+                {t("Approve")}
+              </Button>
+            ) : null}
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={item.status === "submitted" || work.is(item.id)}
+              onClick={() => void dismiss(item).catch(() => undefined)}
+            >
+              {t("Dismiss")}
+            </Button>
+          </div>
+        </div>
+      ))}
+      {work.error ? <InlineError>{work.error}</InlineError> : null}
+      {confirm.dialog}
+    </section>
+  );
+}

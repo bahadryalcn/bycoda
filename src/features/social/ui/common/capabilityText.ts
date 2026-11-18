@@ -36,6 +36,23 @@ export function operationText(operation: SocialOperation): string {
       return t("Audience collection");
     case "profile.read":
       return t("Profile reading");
+    // Facebook Page operations
+    case "profile.update":
+      return t("Edit profile");
+    case "post.edit":
+      return t("Edit post");
+    case "post.schedule":
+      return t("Facebook scheduling");
+    case "comment.moderate":
+      return t("Comment moderation");
+    case "comment.privateReply":
+      return t("Private reply");
+    case "mentions.read":
+      return t("Mentions");
+    case "live.read":
+      return t("Live comments");
+    case "live.transmit":
+      return t("Live video");
   }
 }
 

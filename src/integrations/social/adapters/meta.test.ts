@@ -202,9 +202,11 @@ describe("Meta adapter contracts (mocked Graph)", () => {
 
   it("preserves zero Facebook counts and leaves unavailable views absent", async () => {
     const fetcher = vi.fn(async (raw: string | URL | Request) =>
-      json(new URL(String(raw)).pathname.endsWith("/insights")
-        ? { data: [] }
-        : { likes: { summary: { total_count: 0 } }, shares: { count: 0 } }),
+      json(
+        new URL(String(raw)).pathname.endsWith("/insights")
+          ? { data: [] }
+          : { likes: { summary: { total_count: 0 } }, shares: { count: 0 } },
+      ),
     );
     const adapter = createSocialAdapters(new SocialHttp(fetcher)).facebook;
     await expect(adapter.getAnalytics!(account("facebook"), "synthetic", ["p1"])).resolves.toEqual({

@@ -1,4 +1,5 @@
 import type {
+  FacebookPublishOptions,
   SocialCampaign,
   SocialMedia,
   TikTokVideoOptions,
@@ -18,7 +19,12 @@ export type ContentMedia = {
   mediaId?: string;
 };
 
-export type FacebookDraft = { target: "feed" | "reel"; frameRate?: number };
+export type FacebookDraft = {
+  target: FacebookPublishOptions["target"];
+  frameRate?: number;
+  /** Local datetime field. Empty delegates timing to the bycoda queue. */
+  scheduledPublishAt?: string;
+};
 export type RedditDraft = { subreddit: string; flair: string };
 
 /** Platform options the owner sets per account. Only fields the Host accepts reach a variant. */
@@ -132,24 +138,36 @@ export function draftFromCampaign(campaign: SocialCampaign): ContentDraft {
     const entry: PlatformDraft = {};
     if (variant.youtube) entry.youtube = { ...variant.youtube };
     if (variant.tiktok) entry.tiktok = withoutDuration(variant.tiktok);
-    if (variant.facebook)
-      entry.facebook = { target: "reel", frameRate: variant.facebook.frameRate };
+    if (variant.facebook) {
+      const options = variant.facebook;
+      entry.facebook =
+        options.target === "reel"
+          ? { target: "reel", frameRate: options.frameRate }
+          : {
+              target: options.target,
+              ...((options.target === "feed" || options.target === "video") &&
+              options.scheduledPublishAt !== undefined
+                ? { scheduledPublishAt: toLocalInput(options.scheduledPublishAt) }
+                : {}),
+            };
+    }
     platform[variant.accountId] = entry;
   }
   // The media is one file shared by every variant, so its size and length come from whichever
   // variant carries them, not necessarily the first (a YouTube variant carries none).
   const sized =
-    campaign.variants.find((variant) => variant.facebook) ??
+    campaign.variants.find((variant) => variant.facebook?.target === "reel") ??
     campaign.variants.find((variant) => variant.tiktok);
-  const probe: MediaProbe | undefined = sized?.facebook
-    ? {
-        durationSeconds: sized.facebook.durationSeconds,
-        width: sized.facebook.width,
-        height: sized.facebook.height,
-      }
-    : sized?.tiktok
-      ? { durationSeconds: sized.tiktok.durationSeconds }
-      : undefined;
+  const probe: MediaProbe | undefined =
+    sized?.facebook?.target === "reel"
+      ? {
+          durationSeconds: sized.facebook.durationSeconds,
+          width: sized.facebook.width,
+          height: sized.facebook.height,
+        }
+      : sized?.tiktok
+        ? { durationSeconds: sized.tiktok.durationSeconds }
+        : undefined;
   const scheduled = first?.scheduledAt;
   return {
     campaignId: campaign.id,

@@ -4,6 +4,7 @@ import type { DecisionService } from "../../decision-models/decision-types";
 import type { SecretValueStore } from "../../secrets/secret-store";
 import type { SocialAudienceStore } from "../store/social-audience-store";
 import type { SocialPrincipal } from "../social";
+import type { SocialCredentialStore } from "../social-credentials";
 import type { SocialServiceApi } from "./social-service-api";
 
 export type SocialActionContext = {
@@ -16,6 +17,8 @@ export type SocialActionContext = {
   decisions?: DecisionService;
   /** Host vault for email credentials; undefined makes every email action refuse before sending. */
   emailSecrets?: SecretValueStore;
+  /** Facebook Live receipts store encoder credentials on the account's executor. */
+  facebookLive?: { credentials: SocialCredentialStore; environmentId: string };
 };
 
 export type SocialActionSpec = {

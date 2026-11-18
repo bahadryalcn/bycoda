@@ -114,7 +114,16 @@ export type SocialOperation =
   | "delete"
   | "analytics"
   | "audience.collect"
-  | "profile.read";
+  | "profile.read"
+  // Facebook Page operations
+  | "profile.update"
+  | "post.edit"
+  | "post.schedule"
+  | "comment.moderate"
+  | "comment.privateReply"
+  | "mentions.read"
+  | "live.read"
+  | "live.transmit";
 export type Capability = {
   operation: SocialOperation;
   status: "available" | "unsupported" | "pending" | "expired";
@@ -198,7 +207,7 @@ export type CampaignVariant = {
   youtube?: YouTubeVideoOptions;
   tiktok?: TikTokVideoOptions;
   snapchat?: SnapchatPublishOptions;
-  facebook?: FacebookReelOptions;
+  facebook?: FacebookPublishOptions;
 };
 /** Explicit Reel destination; omission preserves ordinary Page feed publishing. */
 export type FacebookReelOptions = {
@@ -208,6 +217,11 @@ export type FacebookReelOptions = {
   height: number;
   frameRate: number;
 };
+export type FacebookPublishOptions =
+  | FacebookReelOptions
+  | { target: "feed"; scheduledPublishAt: number }
+  | { target: "video"; scheduledPublishAt?: number }
+  | { target: "story" };
 export type SnapchatPublishOptions = {
   target: "spotlight" | "story";
   locale?: string;
@@ -349,6 +363,8 @@ export type SocialDraft = {
   /** Absent for a personal draft bound to an unassigned account conversation. */
   projectId?: string;
   kind: "reply" | "message" | "comment";
+  /** An eligible Page comment answered privately in Messenger. */
+  facebookPrivateReply?: true;
   threadId?: string;
   contactId: string;
   postId?: string;
@@ -429,12 +445,13 @@ export type SocialJob = {
     youtube?: YouTubeVideoOptions;
     tiktok?: TikTokVideoOptions;
     snapchat?: SnapchatPublishOptions;
-    facebook?: FacebookReelOptions;
+    facebook?: FacebookPublishOptions;
     reddit?: RedditPayload;
     x?: XPostExtras;
     whatsapp?: { template?: WhatsAppTemplateMessage; interactive?: WhatsAppInteractive };
     /** Meta 24-hour messaging window end (epoch ms), set from the thread when the draft is created. */
     replyUntil?: number;
+    facebookPrivateReply?: true;
   };
   contactId?: string;
   status: "queued" | "running" | "succeeded" | "failed" | "review" | "cancelled";
@@ -474,6 +491,13 @@ export type SocialJob = {
       videoId: string;
       stage: "created" | "uploading" | "uploaded" | "submitted";
       createdAt: number;
+    };
+    facebookMedia?: {
+      actorId: string;
+      signature: string;
+      mediaId?: string;
+      stage: "created" | "uploading" | "uploaded" | "submitted";
+      postId?: string;
     };
     linkedinMedia?: {
       actorId: string;

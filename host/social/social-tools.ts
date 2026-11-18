@@ -6,6 +6,7 @@ import {
   type SocialTool,
 } from "../../src/features/social/model/social";
 import { HOST_PROTOCOL_VERSION } from "../../src/features/connections/model/protocol";
+import { FACEBOOK_MANAGEMENT_ACTIONS } from "../../src/features/social/model/facebookManagement";
 
 /** Credential material is added only in the native/headless backend, after the
  * renderer's ACP frame has crossed the process boundary. SDKs that deliberately
@@ -144,6 +145,31 @@ export const SOCIAL_TOOL_SCHEMAS: Record<SocialTool, Record<string, unknown>> = 
               },
               ["title", "privacy", "madeForKids", "containsSyntheticMedia"],
             ),
+            // Facebook Page publishing metadata. Host time controls dispatch; this time belongs to Meta.
+            facebook: {
+              description:
+                "Optional for Page feed posts. Select Video, Reel, or Story explicitly. scheduledPublishAt is Unix epoch milliseconds for Facebook-native scheduling 10 minutes to 75 days after dispatch.",
+              oneOf: [
+                object({ target: { const: "feed" }, scheduledPublishAt: { type: "integer" } }, [
+                  "target",
+                  "scheduledPublishAt",
+                ]),
+                object({ target: { const: "video" }, scheduledPublishAt: { type: "integer" } }, [
+                  "target",
+                ]),
+                object({ target: { const: "story" } }, ["target"]),
+                object(
+                  {
+                    target: { const: "reel" },
+                    durationSeconds: { type: "number" },
+                    width: { type: "integer" },
+                    height: { type: "integer" },
+                    frameRate: { type: "number" },
+                  },
+                  ["target", "durationSeconds", "width", "height", "frameRate"],
+                ),
+              ],
+            },
           },
           ["accountId", "text"],
         ),
@@ -354,6 +380,46 @@ export const SOCIAL_TOOL_SCHEMAS: Record<SocialTool, Record<string, unknown>> = 
   "browser.needsHuman.list": object({}, []),
   "browser.recipeSuggestions.list": object({}, []),
   "people.score": object({ personId: string() }, ["personId"]),
+  // Facebook Page tools
+  "facebook.page.read": object({ accountId: string() }, ["accountId"]),
+  "facebook.mentions.list": object({ accountId: string(), cursor: string() }, ["accountId"]),
+  "facebook.insights.read": object({ accountId: string(), cursor: string(), postIds: strings() }, [
+    "accountId",
+  ]),
+  "facebook.posts.list": object({ accountId: string(), cursor: string() }, ["accountId"]),
+  "facebook.earnings.read": object({ accountId: string(), cursor: string() }, ["accountId"]),
+  "facebook.privateReplyDraft": object({ threadId: string(), text: string(), factIds: strings() }, [
+    "threadId",
+    "text",
+  ]),
+  "facebook.live.list": object({ accountId: string() }, ["accountId"]),
+  "facebook.live.comments": object({ accountId: string(), liveId: string(), cursor: string() }, [
+    "accountId",
+    "liveId",
+  ]),
+  "facebook.live.replyDraft": object(
+    {
+      accountId: string(),
+      liveId: string(),
+      commentId: string(),
+      cursor: string(),
+      text: string(),
+    },
+    ["accountId", "liveId", "commentId", "text"],
+  ),
+  "facebook.management.request": object(
+    {
+      accountId: string(),
+      projectId: string(),
+      operation: { enum: FACEBOOK_MANAGEMENT_ACTIONS },
+      details: {
+        type: "object",
+        description:
+          "Page update: patch. Post edit: postId and text. Post delete: postId. Comment moderation: threadId and action. Live create: title and optional description. Live start or end: liveId.",
+      },
+    },
+    ["accountId", "operation", "details"],
+  ),
 };
 function pageLimit() {
   return { type: "integer", minimum: 1, maximum: 200 };
@@ -406,6 +472,14 @@ export const SOCIAL_READ_TOOLS: readonly SocialTool[] = [
   "ai.report",
   "browser.needsHuman.list",
   "browser.recipeSuggestions.list",
+  // Facebook Page reads
+  "facebook.page.read",
+  "facebook.mentions.list",
+  "facebook.insights.read",
+  "facebook.earnings.read",
+  "facebook.posts.list",
+  "facebook.live.list",
+  "facebook.live.comments",
 ];
 const socialReads = new Set<string>(SOCIAL_READ_TOOLS);
 const SOCIAL_REQUEST_ID_PATTERN = "^[A-Za-z0-9._:-]+$";
@@ -446,6 +520,13 @@ export function normalizeSocialToolRequest(
 
 /** Extra guidance for tools whose use is not obvious from their name. */
 const TOOL_NOTES: Partial<Record<SocialTool, string>> = {
+  // Facebook Page tools
+  "facebook.privateReplyDraft":
+    " Prepares one private Messenger reply to an eligible comment on a managed Page. Send through replies.send, which requires configured autonomy or exact owner approval.",
+  "facebook.live.replyDraft":
+    " Prepares a public reply to a verified live comment. Send through replies.send, subject to normal approval.",
+  "facebook.management.request":
+    " Files the exact Facebook change for owner review in the Page account. It does not edit, delete, moderate, or start a broadcast.",
   "accounts.request":
     " Use when this project's social work needs a platform account the project does not have (check accounts.list first). It only asks the owner to create or sign in an account; it creates nothing on any platform, and the owner approves it in Social Command. Never retry a pending request.",
 };

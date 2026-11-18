@@ -103,11 +103,16 @@ describe("MetaFields", () => {
     expect(element.textContent).toContain("Attach either one video or up to four images.");
   });
 
-  it("defaults Facebook to a page post and offers the explicit Reel choice", () => {
+  it("defaults Facebook to a Page post and offers explicit API formats", () => {
     render(createElement(MetaFields, props("facebook")));
     const destination = element.querySelector("select")!;
     expect(destination.value).toBe("feed");
-    expect([...destination.options].map((option) => option.value)).toEqual(["feed", "reel"]);
+    expect([...destination.options].map((option) => option.value)).toEqual([
+      "feed",
+      "reel",
+      "video",
+      "story",
+    ]);
   });
 
   it("switches to Reel and back while keeping the entered frame rate", () => {

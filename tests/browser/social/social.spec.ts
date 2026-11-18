@@ -26,6 +26,120 @@ const sections = (page: Page) => page.getByRole("tablist", { name: "Social böl�
 
 for (const theme of ["light", "dark"])
   for (const width of [800, 1280]) {
+    test(`Facebook Page controls ${theme} ${width}`, async ({ page }) => {
+      test.setTimeout(60_000);
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/tests/browser/social/social.html?facebook-page");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await sections(page).getByRole("tab", { name: "Hesaplar ve Ayarlar" }).click();
+      await page.getByRole("button", { name: /Fixture Facebook Page/ }).click();
+      const detail = page.getByRole("dialog", { name: "Fixture Facebook Page" });
+      const capture = (name: string) =>
+        page.screenshot({
+          path: `temp/verification/social-facebook/${name}-${theme}-${width}.png`,
+          animations: "disabled",
+        });
+      const profile = detail.locator("summary").filter({ hasText: "Profili düzenle" });
+      await profile.click();
+      await detail.getByRole("button", { name: "Profili oku", exact: true }).click();
+      await expect(detail.getByText(/@fixturepage/)).toBeVisible();
+      await capture("profile");
+      await detail
+        .getByRole("button", { name: "Profili kaydet", exact: true })
+        .scrollIntoViewIfNeeded();
+      await capture("profile-settings");
+      await profile.click();
+      await detail
+        .locator("summary")
+        .filter({ hasText: /^Gönderiler$/ })
+        .click();
+      await detail.getByRole("button", { name: "Gönderileri yükle" }).click();
+      await detail.getByRole("button", { name: "Sayfa istatistikleri" }).click();
+      await expect(detail.getByText("Fixture studio announcement")).toBeVisible();
+      await expect(detail.getByText(/240/)).toBeVisible();
+      await capture("posts");
+      await detail
+        .locator("summary")
+        .filter({ hasText: /^Gönderiler$/ })
+        .click();
+      await detail
+        .locator("summary")
+        .filter({ hasText: /^Canlı video$/ })
+        .click();
+      await detail.getByRole("button", { name: "Canlı videoyu yükle" }).click();
+      await detail.getByRole("button", { name: "Canlı yayın yorumları" }).click();
+      await expect(detail.getByText(/When does it begin/)).toBeVisible();
+      await capture("live");
+      await detail
+        .locator("summary")
+        .filter({ hasText: /^Canlı video$/ })
+        .click();
+      await detail
+        .locator("summary")
+        .filter({ hasText: /^Para kazanma$/ })
+        .click();
+      await detail.getByRole("button", { name: "Tahmini kazançları oku" }).click();
+      await expect(detail.getByText("Sonuç yok", { exact: true })).toBeVisible();
+      await capture("monetization");
+      await detail
+        .locator("summary")
+        .filter({ hasText: /^Para kazanma$/ })
+        .click();
+      await detail
+        .locator("summary")
+        .filter({ hasText: /^Bahsetmeler$/ })
+        .click();
+      await detail.getByRole("button", { name: "Bahsetmeleri yükle" }).click();
+      await expect(
+        detail
+          .getByRole("region", { name: "Bahsetmeler" })
+          .getByText("Fixture studio announcement"),
+      ).toBeVisible();
+      await capture("mentions");
+      await detail
+        .locator("summary")
+        .filter({ hasText: /^Bahsetmeler$/ })
+        .click();
+      await detail
+        .locator("summary")
+        .filter({ hasText: /^Facebook talepleri$/ })
+        .click();
+      const proposals = detail.getByRole("region", { name: "Facebook talepleri" });
+      await proposals.getByRole("button", { name: "Yenile" }).click();
+      await expect(proposals.getByText(/More studio workshops/)).toBeVisible();
+      await capture("requests");
+      await page.keyboard.press("Escape");
+      await expect(detail).toBeHidden();
+
+      await sections(page).getByRole("tab", { name: "İçerik", exact: true }).click();
+      await page.getByRole("button", { name: "Yeni gönderi", exact: true }).click();
+      const editor = page.getByRole("dialog", { name: "Yeni gönderi" });
+      await editor.getByRole("checkbox", { name: /Fixture Facebook Page/ }).check();
+      await expect(editor.getByLabel("Facebook yayın zamanı")).toBeVisible();
+      await capture("composer");
+      const destination = editor.getByRole("combobox", { name: "Facebook hedefi" });
+      await destination.selectOption("video");
+      await capture("composer-video");
+      await destination.selectOption("story");
+      await expect(editor.getByLabel("Facebook yayın zamanı")).toHaveCount(0);
+      await capture("composer-story");
+      await page.keyboard.press("Escape");
+      await sections(page).getByRole("tab", { name: "Gelen kutusu", exact: true }).click();
+      await page.getByRole("button", { name: /Fixture viewer/ }).click();
+      await page
+        .locator("summary")
+        .filter({ hasText: /^Yorum moderasyonu$/ })
+        .click();
+      await expect(page.getByRole("button", { name: "Özel yanıt gönder" })).toBeVisible();
+      await capture("moderation");
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
     test(`social audience shared surfaces ${theme} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto("/tests/browser/social/social.html?extra-seeded&audience-surfaces");

@@ -17,15 +17,38 @@ type PageUpdateFailure = { code: SocialErrorCode; retryAt?: number; reasonCode?:
 
 export type FacebookPageUpdate =
   | { status: "updated"; updated: PageField[] }
-  | { status: "partial"; updated: PageField[]; unconfirmed: PageField[]; failure: PageUpdateFailure };
+  | {
+      status: "partial";
+      updated: PageField[];
+      unconfirmed: PageField[];
+      failure: PageUpdateFailure;
+    };
 
-const fields = ["about", "description", "website", "phone", "emails", "hours", "avatarPhotoId", "coverPhotoId"] as const;
-const stringLimits = { about: 100, description: 2000, website: 2048, phone: 100, avatarPhotoId: 25, coverPhotoId: 25 } as const;
+const fields = [
+  "about",
+  "description",
+  "website",
+  "phone",
+  "emails",
+  "hours",
+  "avatarPhotoId",
+  "coverPhotoId",
+] as const;
+const stringLimits = {
+  about: 100,
+  description: 2000,
+  website: 2048,
+  phone: 100,
+  avatarPhotoId: 25,
+  coverPhotoId: 25,
+} as const;
 const hoursKey = /^(mon|tue|wed|thu|fri|sat|sun)_[12]_(open|close)$/;
 const time = /^(?:[01]?\d|2[0-3]):[0-5]\d$/;
 
 function invalid(): never {
-  throw new SocialPlatformError("rejected", undefined, { reasonCode: "facebook.page_invalid_settings" });
+  throw new SocialPlatformError("rejected", undefined, {
+    reasonCode: "facebook.page_invalid_settings",
+  });
 }
 
 function pageHours(value: unknown): Record<string, string> {
@@ -37,7 +60,8 @@ function pageHours(value: unknown): Record<string, string> {
       !hoursKey.test(key) ||
       typeof hour !== "string" ||
       (!time.test(hour) && !(key.endsWith("_close") && hour === "24:00"))
-    ) return invalid();
+    )
+      return invalid();
     hours[key] = hour.padStart(5, "0");
   }
   for (const key of Object.keys(hours)) {
@@ -62,7 +86,11 @@ export function parseFacebookPagePatch(raw: unknown): FacebookPagePatch {
     if (key === "emails") {
       if (!Array.isArray(value) || value.length > 20) return invalid();
       patch.emails = value.map((email: unknown) => {
-        if (typeof email !== "string" || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+        if (
+          typeof email !== "string" ||
+          email.length > 254 ||
+          !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+        )
           return invalid();
         return email;
       });
@@ -96,7 +124,9 @@ async function confirmedWrite(
 ) {
   const { value } = await http.json(endpoint, token, body).catch((error: unknown) => {
     if (error instanceof SocialPlatformError && error.code === "denied")
-      throw new SocialPlatformError("denied", undefined, { reasonCode: "facebook.page_update_permissions" });
+      throw new SocialPlatformError("denied", undefined, {
+        reasonCode: "facebook.page_update_permissions",
+      });
     throw error;
   });
   if (value.success !== true) throw new SocialPlatformError("unknown");
@@ -121,7 +151,10 @@ export async function updateFacebookPage(
     });
   if (avatarPhotoId) {
     try {
-      await confirmedWrite(http, `${endpoint}/picture`, token, { photo: avatarPhotoId, suppress_stories: true });
+      await confirmedWrite(http, `${endpoint}/picture`, token, {
+        photo: avatarPhotoId,
+        suppress_stories: true,
+      });
     } catch (error) {
       if (!updated.length || !(error instanceof SocialPlatformError)) throw error;
       return {

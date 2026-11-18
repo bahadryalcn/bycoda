@@ -1,4 +1,4 @@
-import { Window } from "happy-dom";
+import { Window, type HTMLElement, type HTMLInputElement } from "happy-dom";
 import { afterEach, expect, it, vi } from "vitest";
 import type { BrowserPage } from "./social-browser";
 import {

@@ -6,6 +6,10 @@ import { browserLayerActions } from "../browser-layers/browser-layer-actions";
 import { inboxActions } from "../inbox/inbox-actions";
 import { outreachActions } from "../outreach/outreach-actions";
 import type { SocialActionModule } from "./social-actions";
+// Facebook Page actions
+import { facebookPageActions } from "./facebook-page-actions";
+import { facebookLiveActions } from "../facebook-live/actions";
+import { facebookManagementActions } from "./facebook-management-actions";
 
 /** Every registry action module. Phase 4 adds an action by editing its own module, not this list. */
 export const SOCIAL_ACTION_MODULES: SocialActionModule[] = [
@@ -16,4 +20,8 @@ export const SOCIAL_ACTION_MODULES: SocialActionModule[] = [
   browserLayerActions,
   autonomyActions,
   accountRequestActions,
+  // Facebook Page actions
+  facebookPageActions,
+  facebookLiveActions,
+  facebookManagementActions,
 ];

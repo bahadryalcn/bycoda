@@ -18,6 +18,13 @@ import { BrowserSettings } from "./BrowserSettings";
 import { ReplyRules } from "./ReplyRules";
 import { accountHealth, accountModeText } from "./accountsModel";
 import { useAccountWrite } from "./useAccountWrite";
+// Facebook Page panels
+import { socialQueryScope } from "../../model/socialQuery";
+import { FacebookLivePanel } from "./platform/FacebookLivePanel";
+import { FacebookManagementRequests } from "./platform/FacebookManagementRequests";
+import { FacebookMonetization } from "./platform/FacebookMonetization";
+import { FacebookPageActivity } from "./platform/FacebookPageActivity";
+import { FacebookProfileEditor } from "./platform/FacebookProfileEditor";
 import "./accounts.css";
 
 const HEALTH_TONE: Record<"ok" | "warn" | "error", BadgeTone> = {
@@ -130,6 +137,43 @@ export function AccountDetail({
         disabled={disabled}
         onChanged={onChanged}
       />
+      {account.platform === "facebook" &&
+      account.accountType === "page" &&
+      account.connected &&
+      onThisComputer &&
+      !disabled ? (
+        <div key={`${socialQueryScope(client).join(":")}:${account.id}:${account.connection}`}>
+          <Disclosure summary={t("Edit profile")} variant="row">
+            <FacebookProfileEditor client={client} account={account} />
+          </Disclosure>
+          {account.connection !== "browser" ? (
+            <>
+              <Disclosure summary={t("Posts")} variant="row">
+                <FacebookPageActivity client={client} accountId={account.id} />
+              </Disclosure>
+              <Disclosure summary={t("Facebook requests")} variant="row">
+                <FacebookManagementRequests client={client} accountId={account.id} />
+              </Disclosure>
+              <Disclosure summary={t("Mentions")} variant="row">
+                <FacebookPageActivity client={client} accountId={account.id} mentions />
+              </Disclosure>
+              <Disclosure summary={t("Live video")} variant="row">
+                <FacebookLivePanel
+                  client={client}
+                  accountId={account.id}
+                  canStream={capabilities.some(
+                    ({ operation, status }) =>
+                      operation === "live.transmit" && status === "available",
+                  )}
+                />
+              </Disclosure>
+            </>
+          ) : null}
+          <Disclosure summary={t("Monetization")} variant="row">
+            <FacebookMonetization client={client} account={account} />
+          </Disclosure>
+        </div>
+      ) : null}
       <Disclosure
         summary={
           <span className="social-detail-topic">

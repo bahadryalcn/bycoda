@@ -4,9 +4,10 @@ import { t } from "../../../../../shared/i18n";
 import { FieldGroup } from "../../../../../shared/ui/FieldGroup";
 import { NativeSelect } from "../../../../../shared/ui/Select";
 import { SOCIAL_PLATFORM_NAMES } from "../../../model/social";
+import type { FacebookDraft } from "../contentDraft";
 import type { PlatformFieldProps } from "./PlatformFields";
 
-/** Instagram and Facebook: feed or Reel for Facebook; carousel rules come from the attachment. */
+/** Meta post destinations; carousel rules come from the attachments. */
 export function MetaFields({ account, value, disabled, onChange }: PlatformFieldProps) {
   const name = SOCIAL_PLATFORM_NAMES[account.platform];
   if (account.platform !== "facebook")
@@ -29,14 +30,19 @@ export function MetaFields({ account, value, disabled, onChange }: PlatformField
           onChange({
             ...value,
             facebook: {
-              target: event.target.value === "reel" ? "reel" : "feed",
+              target: event.target.value as FacebookDraft["target"],
               frameRate: value.facebook?.frameRate,
+              ...(value.facebook?.scheduledPublishAt
+                ? { scheduledPublishAt: value.facebook.scheduledPublishAt }
+                : {}),
             },
           })
         }
       >
         <option value="feed">{t("Page post")}</option>
         <option value="reel">{t("Reel")}</option>
+        {account.connection !== "browser" ? <option value="video">{t("Video")}</option> : null}
+        {account.connection !== "browser" ? <option value="story">{t("Story")}</option> : null}
       </NativeSelect>
     </FieldGroup>
   );

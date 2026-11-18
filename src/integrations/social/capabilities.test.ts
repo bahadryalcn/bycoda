@@ -188,7 +188,7 @@ describe("capability table shape", () => {
       // API opens (per platform table; each platform test confirms it):
       // YouTube: analytics, audience.collect, profile.read (youtube-capabilities.test.ts).
       // Telegram bot: delete, audience.collect (capabilities/telegram.test.ts).
-      // Meta: Facebook delete, analytics, audience.collect; Instagram analytics, audience.collect.
+      // Meta: Facebook Page management and reads; Instagram analytics and audience collection.
       // TikTok: analytics only (capabilities/tiktok.test.ts). X: delete, analytics, audience.collect, profile.read.
       // Reddit: delete, audience.collect, profile.read (capabilities/reddit.ts).
       const openedByApi =
@@ -199,7 +199,20 @@ describe("capability table shape", () => {
             : platform === "telegram"
               ? ["delete", "audience.collect"]
               : platform === "facebook"
-                ? ["delete", "analytics", "audience.collect"]
+                ? [
+                    "delete",
+                    "analytics",
+                    "audience.collect",
+                    "profile.read",
+                    "profile.update",
+                    "post.edit",
+                    "post.schedule",
+                    "comment.moderate",
+                    "comment.privateReply",
+                    "mentions.read",
+                    "live.read",
+                    "live.transmit",
+                  ]
                 : platform === "instagram"
                   ? ["analytics", "audience.collect"]
                   : platform === "x"

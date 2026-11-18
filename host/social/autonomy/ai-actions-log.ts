@@ -10,6 +10,8 @@ const READ_ACTION =
 
 /** Names that do not change state. Everything else is a write and is recorded for AI principals. */
 export function isWriteAction(action: string): boolean {
+  // Facebook Live comment pagination is read-only.
+  if (action === "facebook.live.comments") return false;
   return !READ_ACTION.test(action);
 }
 

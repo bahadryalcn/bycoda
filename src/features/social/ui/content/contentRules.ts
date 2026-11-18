@@ -1,4 +1,5 @@
 import { t } from "../../../../shared/i18n";
+import { facebookScheduleTime } from "../../../../integrations/social/adapters/facebook-schedule";
 import {
   SOCIAL_PLATFORM_NAMES,
   type CampaignVariant,
@@ -152,6 +153,55 @@ export function reelProblems(options: FacebookDraft | undefined, media: ContentM
   return problems;
 }
 
+function facebookProblems(
+  options: FacebookDraft | undefined,
+  draft: ContentDraft,
+  now: number,
+): string[] {
+  const target = options?.target ?? "feed";
+  if (target === "reel") return reelProblems(options, draft.media);
+  const [attachment] = draft.media;
+  const problems: string[] = [];
+  if (target === "story") {
+    if (draft.media.length !== 1 || !attachment || attachment.media.kind === "document")
+      problems.push(t("Attach one photo or video for a Facebook Story."));
+    if (draft.text.trim() || draft.link.trim())
+      problems.push(t("Facebook Stories accept only the attached photo or video."));
+    const probe = attachment?.probe;
+    if (
+      attachment?.media.kind === "video" &&
+      (!probe?.durationSeconds ||
+        probe.durationSeconds < 3 ||
+        probe.durationSeconds > 60 ||
+        !probe.width ||
+        !probe.height ||
+        probe.width < 540 ||
+        probe.height < 960 ||
+        probe.width * 16 !== probe.height * 9)
+    )
+      problems.push(
+        t("Facebook Story videos need a 3–60 second vertical MP4 of at least 540 × 960 pixels."),
+      );
+  }
+  if (target === "video" && (draft.media.length !== 1 || attachment?.media.kind !== "video"))
+    problems.push(t("Attach exactly one video."));
+  if (
+    target === "feed" &&
+    options?.scheduledPublishAt &&
+    draft.media.some((item) => item.media.kind === "video")
+  )
+    problems.push(t("Choose Facebook Video, Reel, or Story for a video attachment."));
+  if (options?.scheduledPublishAt && (target === "feed" || target === "video")) {
+    const scheduled = new Date(options.scheduledPublishAt).getTime();
+    const dispatchAt = Math.max(now, scheduledMs(draft) ?? now);
+    if (draft.repeat.enabled)
+      problems.push(t("Facebook scheduling is supported for one-off campaigns only."));
+    else if (facebookScheduleTime(scheduled, dispatchAt) === undefined)
+      problems.push(t("Facebook scheduling requires 10 minutes to 75 days after dispatch."));
+  }
+  return problems;
+}
+
 export function tiktokProblems(
   options: PlatformDraft["tiktok"],
   media: ContentMedia[],
@@ -259,7 +309,7 @@ export function draftProblems(input: RuleInput): Problem[] {
     for (const text of mediaProblems(account.platform, draft.media)) add(text);
     const platform = draft.platform[account.id];
     if (account.platform === "facebook")
-      for (const text of reelProblems(platform?.facebook, draft.media)) add(text);
+      for (const text of facebookProblems(platform?.facebook, draft, now)) add(text);
     if (account.platform === "tiktok")
       for (const text of tiktokProblems(platform?.tiktok, draft.media, input.creator?.[account.id]))
         add(text);
@@ -330,11 +380,31 @@ export function buildVariants(input: RuleInput): CampaignVariant[] {
         frameRate: platform.facebook.frameRate ?? 0,
       };
     }
+    if (account.platform === "facebook" && platform?.facebook?.target === "story")
+      variant.facebook = { target: "story" };
+    if (account.platform === "facebook" && platform?.facebook?.target === "video")
+      variant.facebook = { target: "video" };
+    const native = platform?.facebook?.scheduledPublishAt;
+    const target = platform?.facebook?.target;
+    if (account.platform === "facebook" && native && (target === "feed" || target === "video"))
+      variant.facebook = { target, scheduledPublishAt: new Date(native).getTime() };
     return variant;
   });
 }
 
+export function isScheduledDraft(draft: ContentDraft): boolean {
+  return (
+    draft.when === "later" ||
+    draft.accountIds.some((id) => {
+      const facebook = draft.platform[id]?.facebook;
+      return (
+        facebook?.scheduledPublishAt && (facebook.target === "feed" || facebook.target === "video")
+      );
+    })
+  );
+}
+
 /** Button label for the single publish action. */
 export function publishLabel(draft: ContentDraft): string {
-  return draft.when === "now" ? t("Publish") : t("Schedule");
+  return isScheduledDraft(draft) ? t("Schedule") : t("Publish");
 }

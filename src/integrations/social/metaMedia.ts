@@ -1,9 +1,11 @@
 import type { SocialAccount, SocialJob } from "../../features/social/model/social";
 import { SocialHttp, SocialPlatformError, type SocialSendResult } from "./adapter";
+import { facebookScheduleTime } from "./adapters/facebook-schedule";
 
 type Platform = "instagram" | "facebook";
 type Preparation = NonNullable<SocialJob["preparation"]>;
 type Checkpoint = (state: Preparation) => void | Promise<void>;
+type ReadMedia = (id: string) => Promise<Uint8Array>;
 const lifetime = 24 * 60 * 60_000;
 const content = (job: Pick<SocialJob, "payload">) =>
   [job.payload.text, job.payload.link].filter(Boolean).join("\n");
@@ -28,16 +30,17 @@ export function metaPublishingIssue(
   if (items.length > 4 || (platform === "instagram" && !items.length))
     return "Instagram requires one to four media items; Facebook accepts up to four images.";
   if (
-    items.some(
-      (item) =>
-        !https(item.url) || !!item.uploadId || (item.kind !== "image" && item.kind !== "video"),
+    items.some((item) =>
+      platform === "facebook" && item.kind === "image" && item.uploadId
+        ? false
+        : !https(item.url) || !!item.uploadId || (item.kind !== "image" && item.kind !== "video"),
     )
   )
     return "Meta API publishing requires public HTTPS image or video URLs.";
   if (items.some((item) => item.alt && (item.kind !== "image" || item.alt.length > 1000)))
     return "Meta alternative text accepts images and up to 1000 characters.";
   if (platform === "facebook" && items.some((item) => item.kind !== "image"))
-    return "Facebook API media publishing currently accepts images; video publication is unavailable.";
+    return "Choose Facebook Video, Reel, or Story for a video attachment.";
   if (platform === "instagram" && content(job).length > 2200)
     return "Instagram captions, including links, must fit 2200 characters.";
   if (platform === "facebook" && content(job).length > 63_206)
@@ -71,10 +74,51 @@ async function signature(
       job.payload.text,
       job.payload.link ?? null,
       job.payload.media.map((item) => [item.kind, item.url, item.alt ?? null]),
+      ...(platform === "facebook" && job.payload.facebook?.target === "feed"
+        ? [job.payload.facebook.scheduledPublishAt]
+        : []),
+      ...(platform === "facebook" && job.payload.media.some((item) => item.uploadId)
+        ? [job.payload.media.map((item) => item.uploadId ?? null)]
+        : []),
     ]),
   );
   const hash = await crypto.subtle.digest("SHA-256", bytes);
   return [...new Uint8Array(hash)].map((value) => value.toString(16).padStart(2, "0")).join("");
+}
+
+/** The Page Photos edge accepts either an HTTPS URL or multipart JPEG/PNG media. */
+export async function uploadFacebookPhoto(
+  http: SocialHttp,
+  endpoint: string,
+  token: string,
+  image: SocialJob["payload"]["media"][number],
+  read: ReadMedia | undefined,
+  beforeSubmit?: () => Promise<void>,
+): Promise<string> {
+  const fields = { published: false, ...(image.alt ? { alt_text_custom: image.alt } : {}) };
+  if (!image.uploadId) {
+    await beforeSubmit?.();
+    const { value } = await http.json(endpoint, token, { ...fields, url: image.url });
+    return identifier(value.id);
+  }
+  if (!read) throw new SocialPlatformError("unsupported");
+  const bytes = await read(image.uploadId);
+  const jpeg = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  const png = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every(
+    (byte, index) => bytes[index] === byte,
+  );
+  if ((!jpeg && !png) || bytes.length > 10_000_000) throw new SocialPlatformError("unsupported");
+  const mime = jpeg ? "image/jpeg" : "image/png";
+  const form = new FormData();
+  for (const [key, value] of Object.entries(fields)) form.set(key, String(value));
+  form.set(
+    "source",
+    new Blob([new Uint8Array(bytes)], { type: mime }),
+    jpeg ? "photo.jpg" : "photo.png",
+  );
+  await beforeSubmit?.();
+  const { value } = await http.request(endpoint, token, { method: "POST", body: form });
+  return identifier(value.id);
 }
 
 /**
@@ -93,6 +137,7 @@ export async function publishMetaMedia(
   checkpoint?: Checkpoint,
   beforeSubmit?: () => Promise<void>,
   now = Date.now,
+  read?: ReadMedia,
 ): Promise<SocialSendResult> {
   if (
     account.platform !== platform ||
@@ -147,6 +192,7 @@ export async function publishMetaMedia(
   };
   const result = async (publishedId: string): Promise<SocialSendResult> => {
     const platformId = identifier(publishedId);
+    if (platform === "facebook" && job.payload.facebook?.target === "feed") return { platformId };
     if (platform === "facebook")
       return { platformId, url: `https://www.facebook.com/${pathId(platformId)}` };
     const details = await http
@@ -155,6 +201,12 @@ export async function publishMetaMedia(
     return { platformId, url: permalink(platform, details?.value.permalink) };
   };
   if (previous?.publishedId) return result(previous.publishedId);
+  const nativeSchedule =
+    platform === "facebook" && job.payload.facebook?.target === "feed"
+      ? job.payload.facebook.scheduledPublishAt
+      : undefined;
+  if (nativeSchedule !== undefined && facebookScheduleTime(nativeSchedule, startedAt) === undefined)
+    throw new SocialPlatformError("rejected");
   await save();
   const ready = async (containerId: string) => {
     const { value } = await http.request(
@@ -225,23 +277,32 @@ export async function publishMetaMedia(
   if (ids.length > items.length) throw new SocialPlatformError("unknown");
   for (let index = ids.length; index < items.length; index++) {
     const item = items[index];
-    const { value } = await http.json(endpoint(`${actor}/photos`), token, {
-      url: item.url,
-      published: false,
-      ...(item.alt ? { alt_text_custom: item.alt } : {}),
-    });
-    ids.push(identifier(value.id));
+    ids.push(
+      await uploadFacebookPhoto(
+        http,
+        endpoint(`${actor}/photos`),
+        token,
+        item,
+        read,
+        item.uploadId ? beforeSubmit : undefined,
+      ),
+    );
     state.mediaIds = [...ids];
     await save();
   }
   await beforeSubmit?.();
-  const { value } = await http.json(
-    endpoint(`${actor}/feed`),
-    token,
-    items.length
+  const scheduledPublishTime =
+    nativeSchedule === undefined ? undefined : facebookScheduleTime(nativeSchedule, now());
+  if (nativeSchedule !== undefined && scheduledPublishTime === undefined)
+    throw new SocialPlatformError("rejected");
+  const { value } = await http.json(endpoint(`${actor}/feed`), token, {
+    ...(items.length
       ? { message: content(job), attached_media: ids.map((media_fbid) => ({ media_fbid })) }
-      : { message: job.payload.text, ...(job.payload.link ? { link: job.payload.link } : {}) },
-  );
+      : { message: job.payload.text, ...(job.payload.link ? { link: job.payload.link } : {}) }),
+    ...(scheduledPublishTime !== undefined
+      ? { published: false, scheduled_publish_time: scheduledPublishTime }
+      : {}),
+  });
   const publishedId = identifier(value.id);
   state = { ...state, metaMedia: { ...state.metaMedia!, publishedId } };
   try {

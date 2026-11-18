@@ -15,6 +15,7 @@ export function checkEligibility(
   kind: SocialJob["kind"],
   thread?: SocialThread,
   allowPersonal = false,
+  facebookPrivateReply?: true,
 ): void {
   if (contact.optedOut) throw new Error("Contact opted out. Pending outreach is stopped.");
   // Consent is recorded data only (owner decision D2): it never blocks a send. Opt-out and
@@ -30,7 +31,11 @@ export function checkEligibility(
       !contact.replyEligible
     )
       throw new Error("Reply requires an eligible, assigned conversation.");
-    s.capability(account, thread.kind === "message" ? "message.reply" : "reply");
+    if (facebookPrivateReply) {
+      if (account.platform !== "facebook" || thread.kind !== "comment")
+        throw new Error("Choose a Facebook Page comment.");
+      s.capability(account, "comment.privateReply");
+    } else s.capability(account, thread.kind === "message" ? "message.reply" : "reply");
     if (
       thread.kind === "message" &&
       account.connection !== "browser" &&
