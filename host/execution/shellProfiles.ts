@@ -161,6 +161,7 @@ export function chosenProfileId(path = choicePath()): string | null {
 }
 
 export function setChosenProfile(id: string | null, path = choicePath()): void {
+  choice = undefined;
   if (!id) {
     if (existsSync(path)) rmSync(path, { force: true });
     return;
@@ -205,10 +206,51 @@ export function setReviewedProfile(
   return listShellProfiles(path);
 }
 
+/** Installed shells change rarely; every command start resolves one, so detection is reused. */
+const DETECTION_TTL_MS = 60_000;
+const DETECTION_ENV = [
+  "PATH",
+  "Path",
+  "SystemRoot",
+  "ProgramW6432",
+  "ProgramFiles",
+  "ProgramFiles(x86)",
+  "COMSPEC",
+  "LOCALAPPDATA",
+  "SHELL",
+];
+let detection: { key: string; at: number; profiles: ShellProfile[] } | undefined;
+let choice: { path: string; stamp: string; id: string | null } | undefined;
+
+function cachedShellProfiles(): ShellProfile[] {
+  // A changed PATH or shell variable is a different machine state, so it misses the cache.
+  const key = DETECTION_ENV.map((name) => process.env[name] ?? "").join("\0");
+  if (detection?.key === key && Date.now() - detection.at < DETECTION_TTL_MS)
+    return detection.profiles;
+  const profiles = detectShellProfiles();
+  detection = { key, at: Date.now(), profiles };
+  return profiles;
+}
+
+/** The desktop app writes this file too, so the saved choice is re-read whenever the file changes. */
+function cachedChosenProfileId(path: string): string | null {
+  let stamp = "missing";
+  try {
+    const info = statSync(path);
+    stamp = `${info.mtimeMs}:${info.size}`;
+  } catch {
+    /* no saved choice */
+  }
+  if (choice?.path === path && choice.stamp === stamp) return choice.id;
+  const id = chosenProfileId(path);
+  choice = { path, stamp, id };
+  return id;
+}
+
 /** The chosen profile while its shell is installed, else the system default. */
 export function resolveShellProfile(path = choicePath()): ShellProfile | undefined {
-  const profiles = detectShellProfiles();
-  const chosen = chosenProfileId(path);
+  const profiles = cachedShellProfiles();
+  const chosen = cachedChosenProfileId(path);
   return (
     (chosen ? profiles.find((profile) => profile.id === chosen) : undefined) ??
     defaultProfile(profiles)
