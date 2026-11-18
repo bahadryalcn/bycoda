@@ -140,6 +140,35 @@ it("passes an exact opaque Public Story ID to the browser and holds an ambiguous
   });
 });
 
+it("requires the owner and explicit confirmation to create a Snapchat Public Profile", async () => {
+  const f = await fixture();
+  const member = await f.call<SocialAccount>("accounts.create", {
+    platform: "snapchat",
+    accountType: "member",
+    connection: "browser",
+    name: "Member",
+    projectIds: [f.a.id],
+  });
+  const session = await f.session();
+  const browser = vi.fn(async () => ({ hasPublicProfile: true }));
+  f.social.snapchatBrowserProfile = browser;
+  const input = {
+    accountId: member.id,
+    patch: { name: "Example" },
+    confirm: "CREATE_SNAPCHAT_PROFILE",
+  };
+  await expect(f.call("snapchat.profile.create", input, session.principal)).rejects.toThrow();
+  await expect(f.call("snapchat.profile.create", { ...input, confirm: "" })).rejects.toMatchObject({
+    code: "denied",
+  });
+  expect(browser).not.toHaveBeenCalled();
+  await expect(f.call("snapchat.profile.create", input)).resolves.toEqual({ hasPublicProfile: true });
+  expect(browser).toHaveBeenCalledExactlyOnceWith(owner, member.id, "create", {
+    patch: input.patch,
+    confirm: input.confirm,
+  });
+});
+
 it("drafts a new Snapchat chat by exact canonical username without sending", async () => {
   const f = await fixture();
   const member = await f.call<SocialAccount>("accounts.create", {

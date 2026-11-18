@@ -96,11 +96,10 @@ export function socialClient(machineId: string) {
       ),
     snapchatProfileCreate: (
       accountId: string,
-      patch?: import("../../../integrations/social/snapchat-profile").SnapchatProfilePatch,
+      patch: import("../../../integrations/social/snapchat-profile").SnapchatProfilePatch,
     ) =>
-      remoteRequest<import("../../../integrations/social/snapchat-profile").SnapchatProfileState>(
-        machineId,
-        "social.browser.profile.create",
+      request<import("../../../integrations/social/snapchat-profile").SnapchatProfileState>(
+        "snapchat.profile.create",
         { accountId, patch, confirm: "CREATE_SNAPCHAT_PROFILE" },
       ),
     snapchatProfileUpdate: (
@@ -118,11 +117,12 @@ export function socialClient(machineId: string) {
         { accountId },
       ),
     snapchatStoryDelete: (accountId: string, storyId: string) =>
-      remoteRequest<{ storyId: string; deleted: true }>(
-        machineId,
-        "social.browser.profile.delete-story",
-        { accountId, storyId, confirm: "DELETE_SNAPCHAT_STORY" },
-      ),
+      request<{ id: string; target: "story" }>("snapchat.content.delete", {
+        accountId,
+        target: "story",
+        id: storyId,
+        confirmId: storyId,
+      }),
     browserProfileRead: (accountId: string) =>
       remoteRequest<import("./socialBrowser").XProfileState>(
         machineId,

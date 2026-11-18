@@ -122,35 +122,6 @@ export class SocialTransport {
           method.split(".").at(-1) as "read" | "update" | "follow",
           params,
         );
-      // Snapchat profile manager
-      if (method === "social.browser.profile.create")
-        return this.browser.snapchatProfileAction(
-          this.service,
-          p,
-          String(params.accountId ?? ""),
-          "create",
-          params,
-        );
-      if (method === "social.browser.profile.monetization")
-        return this.browser.snapchatProfileAction(
-          this.service,
-          p,
-          String(params.accountId ?? ""),
-          "monetization",
-          params,
-        );
-      if (method === "social.browser.profile.delete-story") {
-        if (params.confirm !== "DELETE_SNAPCHAT_STORY")
-          throw new Error("Explicit profile action confirmation required.");
-        const result = await this.service.call(p, "snapchat.content.delete", {
-          accountId: params.accountId,
-          target: "story",
-          id: params.storyId,
-          confirmId: params.storyId,
-        });
-        if (!result) throw new Error("Snapchat Story deletion requires review.");
-        return { storyId: params.storyId, deleted: true };
-      }
       if (method === "social.browser.workflow.begin")
         return this.browser.workflowBegin(
           this.service,

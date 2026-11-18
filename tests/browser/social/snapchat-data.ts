@@ -113,6 +113,11 @@ export function snapchatFixtureResult(action: string, input: Record<string, unkn
         partial: true,
       } satisfies SnapchatContentPage;
     case "snapchat.content.delete":
+      if (
+        input.target === "story" &&
+        (input.accountId !== "snapchat-browser" || input.id !== storyId || input.confirmId !== storyId)
+      )
+        throw new Error("Wrong Snapchat Story target.");
       return { id: input.id, target: input.target };
     case "snapchat.analytics.get":
       return {

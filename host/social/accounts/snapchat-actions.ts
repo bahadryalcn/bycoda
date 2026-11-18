@@ -278,6 +278,27 @@ async function removeContent(ctx: SocialActionContext, input: Record<string, unk
 
 export const snapchatActions: SocialActionModule = {
   "snapchat.profile.read": { readOnly: true, ownerOnly: false, tool: true, run: profile },
+  "snapchat.profile.create": {
+    readOnly: false,
+    ownerOnly: true,
+    run: async (ctx, input) => {
+      exact(input, ["accountId", "patch", "confirm"]);
+      const selected = await account(ctx, input, "draft");
+      if (
+        selected.accountType !== "member" ||
+        selected.connection !== "browser" ||
+        !ctx.service.snapchatBrowserProfile
+      )
+        throw new SocialPlatformError("unsupported");
+      if (input.confirm !== "CREATE_SNAPCHAT_PROFILE") throw new SocialPlatformError("denied");
+      const patch = parseSnapchatProfilePatch(input.patch);
+      if (!patch.name) throw new Error("Enter the Snapchat Public Profile name.");
+      return await ctx.service.snapchatBrowserProfile(ctx.principal, selected.id, "create", {
+        patch,
+        confirm: input.confirm,
+      });
+    },
+  },
   "snapchat.friends.list": {
     readOnly: true,
     ownerOnly: false,

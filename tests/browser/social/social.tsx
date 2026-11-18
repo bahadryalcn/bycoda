@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { surfaceCaptureRules, surfaceSequences } from "./social-surface-data";
-import { snapchatFixtureAccounts, snapchatFixtureResult, storyId } from "./snapchat-data";
+import { snapchatFixtureAccounts, snapchatFixtureResult } from "./snapchat-data";
 import { createRoot } from "react-dom/client";
 import {
   LOCAL_MODEL_SOURCE,
@@ -1308,16 +1308,6 @@ Object.assign(window, {
       if (command === "plugin:event|listen") return 1;
       if (command === "social_authority_status") return null;
       if (command === "remote_request") {
-        if (snapchatUiFixture && args.method === "social.browser.profile.delete-story") {
-          const input = args.params as { accountId: string; storyId: string; confirm: string };
-          if (
-            input.accountId !== "snapchat-browser" ||
-            input.storyId !== storyId ||
-            input.confirm !== "DELETE_SNAPCHAT_STORY"
-          )
-            throw new Error("Wrong Snapchat Story target.");
-          return { storyId, deleted: true };
-        }
         if (args.method === "environment.describe")
           return {
             protocolVersion: 1,
