@@ -4817,7 +4817,8 @@ export class SocialService implements SocialServiceApi {
       throw new Error("Social automation is stopped.");
     return account;
   }
-  // X Live custody. The owner copies the key from X Live Studio.
+  // X Live custody. Share one vault queue across saves and isolate it from email credentials.
+  private xLiveVault?: ReturnType<typeof osSecretValues>;
   async saveXLiveKey(p: SocialPrincipal, accountId: string, key: unknown) {
     await this.ready;
     this.owner(p);
@@ -4829,7 +4830,11 @@ export class SocialService implements SocialServiceApi {
     )
       throw new Error("Connect the X account on this Host before saving its stream key.");
     await this.store.db.checkAuthorization();
-    return storeXLiveKey(osSecretValues(this.directory, this.store.environmentId), account.id, key);
+    this.xLiveVault ??= osSecretValues(
+      join(this.directory, "x-live"),
+      `${this.store.environmentId}.x-live`,
+    );
+    return storeXLiveKey(this.xLiveVault, account.id, key);
   }
   /** Internal owner connection reviews must be invalidated by an explicit disconnect. */
   async connectionReviewEpoch(p: SocialPrincipal, accountId: string) {
