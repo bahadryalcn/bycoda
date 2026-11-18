@@ -183,15 +183,16 @@ export class HostGoals {
   tick(): Promise<void> {
     return this.tasks.tick();
   }
-  /** Oldest first, with their progress brought up to date. */
+  /** Oldest first, with the last scheduler-observed progress and usage. */
   async list(): Promise<HostGoal[]> {
     await this.ready;
 
     return await this.store.db.scope(async () => {
-      await this.follow(this.now());
-      return await mapAsync(await this.all(), async (goal) => ({
+      const goals = await this.all();
+      const usage = await this.tasks.budgets.readGoalUsage(goals.map((goal) => goal.id));
+      return goals.map((goal) => ({
         ...goal,
-        budgetUsage: await this.tasks.budgets.read({ goalId: goal.id }),
+        budgetUsage: usage.get(goal.id),
       }));
     });
   }
@@ -535,13 +536,15 @@ export class HostGoals {
         console.error("Could not settle a goal planner:", errorMessage(error));
       }
     }
-    await this.follow(now);
-    for (const goal of await this.all(true)) {
+    const following = await this.follow(await this.all(true), now);
+    for (const goal of following) {
+      if (goal.status !== "running" && goal.status !== "blocked") continue;
       if (goal.finalReview && goal.finalAcceptance?.status === "pending")
         await this.startFinalReview(goal, now);
       else if (goal.finalReview && goal.finalAcceptance?.status === "running")
         await this.settleFinalReview(goal, now);
     }
+    await this.tasks.budgets.syncGoalUsage();
   }
   private async all(followOnly = false, planningOnly = false): Promise<HostGoal[]> {
     return await this.store.db.scope(async () => {
@@ -1080,12 +1083,12 @@ export class HostGoals {
     });
   }
   /** Brings the status of every goal with tasks in line with them. */
-  private async follow(now: number): Promise<void> {
-    const goals = (await this.all(true)).filter((goal) => goal.taskIds.length);
-    if (!goals.length) return;
+  private async follow(goals: HostGoal[], now: number): Promise<HostGoal[]> {
+    if (!goals.some((goal) => goal.taskIds.length)) return goals;
     let tasks = await this.tasks.taskIndex(goals.flatMap((goal) => goal.taskIds));
     let recoveredTasks: Map<string, HostTask> | undefined;
-    for (const goal of goals) {
+    return await mapAsync(goals, async (goal) => {
+      if (!goal.taskIds.length) return goal;
       for (const id of goal.taskIds) {
         const task = tasks.get(id);
         if (task?.status !== "blocked" || task.repairAttempts !== undefined) continue;
@@ -1097,34 +1100,42 @@ export class HostGoals {
         }
       }
       const state = goalStateFromTasks(goal, tasks);
-      if (
-        goal.finalReview &&
-        goal.finalAcceptance?.status === "pending" &&
-        (await this.attachFinalReceipt(goal, now))
-      )
-        continue;
+      if (goal.finalReview && goal.finalAcceptance?.status === "pending") {
+        const attached = await this.attachFinalReceipt(goal, now);
+        if (attached) return attached;
+      }
       if (goalPlanReviews(goal).final && state.status === "done") {
         const fingerprint = finalTaskFingerprint(goal, tasks);
         const final = goal.finalAcceptance;
         if (final?.taskFingerprint === fingerprint && final.status === "passed") {
-          await this.write({ ...goal, status: "done", error: undefined, updatedAt: now });
+          return await this.write({ ...goal, status: "done", error: undefined, updatedAt: now });
         } else if (
           final?.status === "failed" &&
           (final.taskFingerprint === fingerprint ||
             final.invalidatedTaskFingerprint === fingerprint)
         ) {
           if (goal.status !== "blocked" || goal.error !== final.note)
-            await this.write({ ...goal, status: "blocked", error: final.note, updatedAt: now });
+            return await this.write({
+              ...goal,
+              status: "blocked",
+              error: final.note,
+              updatedAt: now,
+            });
         } else if (final?.status === "running") {
           // The owning tick settles or rejects this exact review; reads never launch a run.
           if (goal.status !== "running")
-            await this.write({ ...goal, status: "running", error: undefined, updatedAt: now });
+            return await this.write({
+              ...goal,
+              status: "running",
+              error: undefined,
+              updatedAt: now,
+            });
         } else if (
           final?.status !== "pending" ||
           final.taskFingerprint !== fingerprint ||
           goal.status !== "running"
         ) {
-          await this.write({
+          return await this.write({
             ...goal,
             status: "running",
             error: undefined,
@@ -1139,7 +1150,7 @@ export class HostGoals {
             updatedAt: now,
           });
         }
-        continue;
+        return goal;
       }
       if (
         goal.finalReview &&
@@ -1147,16 +1158,16 @@ export class HostGoals {
         state.status !== "done"
       ) {
         // Retained until the tick can cancel its owned session and reject stale results.
-        continue;
+        return goal;
       }
-      if (state.status === goal.status && state.error === goal.error) continue;
-      await this.write({
+      if (state.status === goal.status && state.error === goal.error) return goal;
+      return await this.write({
         ...goal,
         status: state.status,
         error: state.error,
         updatedAt: now,
       });
-    }
+    });
   }
   /** The owner can request a fresh final check without rerunning implementation. */
   async recheckFinalReview(id: string, expectedUpdatedAt: unknown): Promise<HostGoal> {

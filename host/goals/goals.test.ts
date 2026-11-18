@@ -1076,7 +1076,7 @@ describe("editing goal settings", () => {
     expect(task.providerAccountId).toBe("account-work");
     expect((await f.turnOf(task.sessionId!)).input.providerAccountId).toBe("account-work");
   });
-  it("reuses the task index across goal polls and refreshes it after task writes", async () => {
+  it("lists goals and budget snapshots without reconciling tasks or transcripts", async () => {
     const { store, tasks, goals, input, lead } = await setup();
     await tasks.save({ ...input(), id: "waiting", projectId: lead.id, status: "todo" });
     await store.db.prepare("INSERT INTO goals VALUES (?, ?)").run(
@@ -1089,24 +1089,31 @@ describe("editing goal settings", () => {
         updatedAt: 1,
       }),
     );
+    await store.db.prepare("INSERT INTO goals VALUES (?, ?)").run(
+      "older-work",
+      JSON.stringify({
+        ...input({ id: "older-work" }),
+        status: "done",
+        taskIds: [],
+        createdAt: 2,
+        updatedAt: 2,
+      }),
+    );
+    await tasks.budgets.markUnknownHistory({ goalId: "older-work" });
     const prepare = vi.spyOn(store.db, "prepare");
-    const pointReads = () =>
-      prepare.mock.calls.filter(([sql]) => sql === "SELECT value FROM tasks WHERE id=?").length;
-    expect((await goals.list())[0].status).toBe("running");
-    expect((await goals.list())[0].status).toBe("running");
-    expect(pointReads()).toBe(1);
-    await tasks.save({ ...input(), id: "waiting", projectId: lead.id, title: "Changed" });
-    // save() independently reads current tasks to validate dependency cycles.
-    // Count goal polling itself: one refresh after a write, then shared reads.
-    prepare.mockClear();
-    await goals.list();
-    await goals.list();
-    expect(pointReads()).toBe(1);
     await tasks.delete("waiting");
     prepare.mockClear();
+    expect(await goals.list()).toMatchObject([
+      { status: "running", budgetUsage: { attempts: 0, tokensComplete: true } },
+      { status: "done", budgetUsage: { attempts: 0, tokensComplete: false } },
+    ]);
+    const statements = prepare.mock.calls.map(([sql]) => sql);
+    expect(statements.some((sql) => /\b(?:UPDATE|INSERT|DELETE|FROM tasks)\b/i.test(sql))).toBe(
+      false,
+    );
+    expect(statements.filter((sql) => sql.includes("task_run_budget_ledger"))).toHaveLength(1);
+    await goals.tick();
     expect((await goals.list())[0].status).toBe("blocked");
-    await goals.list();
-    expect(pointReads()).toBe(1);
     prepare.mockRestore();
   });
   async function seeded() {
@@ -1885,9 +1892,9 @@ describe("goal tasks", () => {
     });
     // Retrying the blocked task takes the goal up again.
     await tasks.move(a.id, "queued");
+    await tasks.tick();
     expect((await goal()).status).toBe("running");
     expect((await goal()).error).toBeUndefined();
-    await tasks.tick();
     await vi.waitFor(() => expect(turns).toHaveLength(3));
     expect((await planned()).a.status).toBe("running");
   });
@@ -1925,6 +1932,8 @@ describe("goal tasks", () => {
         .prepare("UPDATE tasks SET value=? WHERE id=?")
         .run(JSON.stringify(legacy), legacy.id);
       await tasks.tick();
+      // Takeover starts after goal reconciliation, so the next tick observes it.
+      if (!cancelled) await tasks.tick();
       expect((await goal()).status).toBe(cancelled ? "cancelled" : "running");
       const recovered = (await planned()).a;
       expect(
@@ -1954,7 +1963,7 @@ describe("goal tasks", () => {
     await advance();
     expect((await goal()).status).toBe("running");
     await approve(b.id);
-    // Listing brings progress up to date without waiting for a tick.
+    await advance();
     expect((await goal()).status).toBe("done");
   });
   it("runs tasks of different projects at once, within the machine's cap", async () => {

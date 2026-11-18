@@ -866,7 +866,7 @@ export const HOST_RPC_METHODS = Object.freeze({
     devDto.DevServersBridgeStreamParamsSchema,
     devDto.DevServersBridgeCloseResultSchema,
   ),
-  // list reconciles progress/reviews and can write; it is not a retryable read.
+  // Keep the Goals RPC family's wait-only transport policy for snapshot reads.
   "goals.list": goalOperation(goalsDto.GoalsEmptyParamsSchema, goalsDto.GoalsListResultSchema),
   "goals.create": goalOperation(goalsDto.GoalsCreateParamsSchema, goalsDto.HostGoalSchema),
   "goals.finalReview.recheck": goalOperation(

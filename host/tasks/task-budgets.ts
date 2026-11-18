@@ -406,42 +406,89 @@ export class HostTaskBudgets {
       const history = await this.store.db
         .prepare("SELECT complete FROM task_run_budget_history WHERE scope=? AND id=?")
         .get(scopeKind, scope.taskId ?? scope.goalId);
-      const knownHistory = history?.complete !== 0;
-      const historyComplete = knownHistory && rows.every((run) => !run.durationUncertain);
-      let elapsedMs = 0,
-        reportedTokens = 0,
-        knownCost = 0,
-        unknownTokenRuns = 0,
-        unknownCosts = 0,
-        runningRuns = 0;
-      for (const run of rows) {
-        elapsedMs += run.elapsedMs;
-        if (run.settledAt === undefined) runningRuns++;
-        if (run.tokens === null) unknownTokenRuns++;
-        else reportedTokens += run.tokens;
-        if (run.costUsd === null) unknownCosts++;
-        else knownCost += run.costUsd;
-      }
-      const tokensComplete =
-        knownHistory &&
-        unknownTokenRuns === 0 &&
-        runningRuns === 0 &&
-        Number.isSafeInteger(reportedTokens);
-      return {
-        historyComplete,
-        agentMinutes: elapsedMs / 60_000,
-        attempts: rows.length,
-        completedRuns: rows.length - runningRuns,
-        runningRuns,
-        reportedTokens,
-        tokens: tokensComplete ? reportedTokens : null,
-        tokensComplete,
-        unknownTokenRuns,
-        reportedCostUsd: unknownCosts || !knownHistory ? null : knownCost,
-        estimatedCostUsd: null,
-        measuredAt: this.now(),
-      };
+      return this.summarize(rows, history?.complete !== 0);
     });
+  }
+
+  /** Refresh goal ledger receipts on the scheduler, off the list request path. */
+  async syncGoalUsage(): Promise<void> {
+    await this.ready;
+    await this.store.db.scope(async () => {
+      const rows = await this.store.db
+        .prepare(
+          `SELECT ledger.value FROM task_run_budget_ledger ledger
+         LEFT JOIN session_state session ON session.id=ledger.session_id
+         WHERE ledger.goal_id IS NOT NULL AND json_extract(ledger.value,'$.receiptKind') IS NOT 'helper'
+           AND (json_extract(ledger.value,'$.settledAt') IS NULL
+             OR json_extract(ledger.value,'$.confirmedElapsedMs') IS NULL
+             OR json_extract(ledger.value,'$.awaitingFinishCheckpoint')=1
+             OR json_extract(ledger.value,'$.observedRevision') IS NOT session.revision)`,
+        )
+        .all();
+      await this.syncRows(rows);
+    });
+  }
+
+  async readGoalUsage(goalIds: string[]): Promise<Map<string, TaskRunBudgetUsage>> {
+    await this.ready;
+    const rows = await this.store.db
+      .prepare(
+        `SELECT ids.value AS goal_id, history.complete, ledger.value
+       FROM json_each(?) ids
+       LEFT JOIN task_run_budget_history history ON history.scope='goal' AND history.id=ids.value
+       LEFT JOIN task_run_budget_ledger ledger ON ledger.goal_id=ids.value`,
+      )
+      .all(JSON.stringify(goalIds));
+    const grouped = new Map<string, { runs: LedgerRun[]; knownHistory: boolean }>();
+    for (const row of rows) {
+      const id = String(row.goal_id);
+      let group = grouped.get(id);
+      if (!group) {
+        group = { runs: [], knownHistory: row.complete !== 0 };
+        grouped.set(id, group);
+      }
+      if (row.value !== null) group.runs.push(JSON.parse(String(row.value)) as LedgerRun);
+    }
+    return new Map(
+      Array.from(grouped, ([id, group]) => [id, this.summarize(group.runs, group.knownHistory)]),
+    );
+  }
+
+  private summarize(rows: LedgerRun[], knownHistory: boolean): TaskRunBudgetUsage {
+    const historyComplete = knownHistory && rows.every((run) => !run.durationUncertain);
+    let elapsedMs = 0,
+      reportedTokens = 0,
+      knownCost = 0,
+      unknownTokenRuns = 0,
+      unknownCosts = 0,
+      runningRuns = 0;
+    for (const run of rows) {
+      elapsedMs += run.elapsedMs;
+      if (run.settledAt === undefined) runningRuns++;
+      if (run.tokens === null) unknownTokenRuns++;
+      else reportedTokens += run.tokens;
+      if (run.costUsd === null) unknownCosts++;
+      else knownCost += run.costUsd;
+    }
+    const tokensComplete =
+      knownHistory &&
+      unknownTokenRuns === 0 &&
+      runningRuns === 0 &&
+      Number.isSafeInteger(reportedTokens);
+    return {
+      historyComplete,
+      agentMinutes: elapsedMs / 60_000,
+      attempts: rows.length,
+      completedRuns: rows.length - runningRuns,
+      runningRuns,
+      reportedTokens,
+      tokens: tokensComplete ? reportedTokens : null,
+      tokensComplete,
+      unknownTokenRuns,
+      reportedCostUsd: unknownCosts || !knownHistory ? null : knownCost,
+      estimatedCostUsd: null,
+      measuredAt: this.now(),
+    };
   }
 
   async evaluate(
