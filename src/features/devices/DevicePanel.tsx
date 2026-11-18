@@ -103,6 +103,9 @@ type AnnotationDraft = {
 };
 // Layout/tool switches unmount the surface. Keep unfinished image edits in the
 // source conversation and machine scope, without retaining a device permission.
+/** Consecutive failed control-status reads before the UI treats control as lost (10 s apart). */
+const CONTROL_STATUS_MAX_FAILURES = 3;
+
 const annotationDraftCache = new Map<string, Record<string, AnnotationDraft>>();
 type DeviceInputs = Record<string, { app: string; text: string }>;
 const inputDraftCache = new Map<string, DeviceInputs>();
@@ -839,6 +842,8 @@ function DevicePanelSurface({
     if (!visible || !selected || status?.controlProtocol !== 1 || !api.controlStatus) return;
     let current = true;
     let reading = false;
+    // A rejected read is "unknown", not "not held": only a run of failures drops control.
+    let failures = 0;
     const refresh = () => {
       if (document.hidden || pending.current || reading) return;
       reading = true;
@@ -847,6 +852,7 @@ function DevicePanelSurface({
         .then(
           (value) => {
             if (!current) return;
+            failures = 0;
             setControlStatus(value);
             if (controlLeaseRef.current === leaseAtRead) {
               if (!value.busy) {
@@ -857,10 +863,11 @@ function DevicePanelSurface({
             }
           },
           () => {
-            if (current) {
-              setControl(false);
-              setControlStatus(undefined);
-            }
+            if (!current) return;
+            failures += 1;
+            if (failures < CONTROL_STATUS_MAX_FAILURES) return;
+            setControl(false);
+            setControlStatus(undefined);
           },
         )
         .finally(() => {

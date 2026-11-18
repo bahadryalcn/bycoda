@@ -1464,3 +1464,26 @@ it("labels a competing controller visibly and disables the switch until ownershi
   expect(container.querySelector(".device-panel-bar")?.textContent).toContain("Control in use");
   expect(api.claimControl).not.toHaveBeenCalled();
 });
+
+it("keeps device control through transient control-status failures and drops it after consecutive ones", async () => {
+  vi.useFakeTimers();
+  const api = makeApi();
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  await clickButton("Allow device control");
+  const controlEnabled = () => !button("Home").matches(':disabled, [aria-disabled="true"]');
+  const poll = () => act(async () => vi.advanceTimersByTimeAsync(10000));
+  expect(controlEnabled()).toBe(true);
+  vi.mocked(api.controlStatus!).mockRejectedValue(new Error("transient"));
+  await poll();
+  await poll();
+  expect(controlEnabled()).toBe(true);
+  // A successful read resets the failure run.
+  vi.mocked(api.controlStatus!).mockResolvedValue({ deviceId: device.id, busy: true });
+  await poll();
+  vi.mocked(api.controlStatus!).mockRejectedValue(new Error("transient"));
+  await poll();
+  await poll();
+  expect(controlEnabled()).toBe(true);
+  await poll();
+  expect(controlEnabled()).toBe(false);
+});
