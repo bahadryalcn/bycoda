@@ -47,13 +47,18 @@ function createComposerStore() {
     },
     subscribe(listener: () => void) {
       listeners.add(listener);
-      return () => { listeners.delete(listener); };
+      return () => {
+        listeners.delete(listener);
+      };
     },
   };
 }
 
 // Switching accounts or leaving Accounts retains in-flight reviews and typed drafts on their Host.
-const composerStores = new WeakMap<SocialClient, Map<string, ReturnType<typeof createComposerStore>>>();
+const composerStores = new WeakMap<
+  SocialClient,
+  Map<string, ReturnType<typeof createComposerStore>>
+>();
 
 function composerStore(client: SocialClient, key: string) {
   let accounts = composerStores.get(client);
@@ -89,13 +94,19 @@ async function prepareDraft(
 ) {
   if (attempt.draft) return attempt.draft;
   const { handle, projectId, text } = attempt.input;
-  const recipient = attempt.recipient ?? await client.browserInstagramRecipient(accountId, handle);
+  const recipient =
+    attempt.recipient ?? (await client.browserInstagramRecipient(accountId, handle));
   if (recipient.handle !== handle || !/^\d{1,30}$/.test(recipient.platformId))
     throw new Error(t("Could not verify this Instagram recipient."));
   store.update({ attempt: { ...attempt, recipient } });
   const contact = await client.request<SocialContact>(
     "contacts.upsert",
-    { accountId, platformId: recipient.platformId, name: recipient.handle, instagramRecipientProjectId: projectId },
+    {
+      accountId,
+      platformId: recipient.platformId,
+      name: recipient.handle,
+      instagramRecipientProjectId: projectId,
+    },
     attempt.requestIds.contact,
   );
   if (
@@ -109,8 +120,13 @@ async function prepareDraft(
     { accountId, projectId, contactId: contact.id, text },
     attempt.requestIds.draft,
   );
-  if (draft.kind !== "message" || draft.accountId !== accountId || draft.projectId !== projectId ||
-      draft.contactId !== contact.id || draft.text !== text)
+  if (
+    draft.kind !== "message" ||
+    draft.accountId !== accountId ||
+    draft.projectId !== projectId ||
+    draft.contactId !== contact.id ||
+    draft.text !== text
+  )
     throw new Error(t("The message could not be prepared."));
   store.update({ attempt: { ...attempt, recipient, draft } });
   return draft;
@@ -121,19 +137,24 @@ async function checkMessage(
   accountId: string,
   attempt: Attempt,
 ): Promise<SocialJob | undefined> {
-  if (attempt.job)
-    return await client.request<SocialJob>("jobs.status", { id: attempt.job.id });
-  const { jobs } = await client.request<SocialJobsPage>("jobs.status", { page: true, offset: 0, limit: 100 });
+  if (attempt.job) return await client.request<SocialJob>("jobs.status", { id: attempt.job.id });
+  const { jobs } = await client.request<SocialJobsPage>("jobs.status", {
+    page: true,
+    offset: 0,
+    limit: 100,
+  });
   return jobs.find((job) => job.accountId === accountId && job.draftId === attempt.draft?.id);
 }
 
-function showReceipt(
-  store: ReturnType<typeof createComposerStore>,
-  job: SocialJob | undefined,
-) {
+function showReceipt(store: ReturnType<typeof createComposerStore>, job: SocialJob | undefined) {
   const { attempt, input } = store.read();
-  if (!job || !attempt?.draft || job.draftId !== attempt.draft.id ||
-      job.accountId !== attempt.draft.accountId || job.kind !== "message") {
+  if (
+    !job ||
+    !attempt?.draft ||
+    job.draftId !== attempt.draft.id ||
+    job.accountId !== attempt.draft.accountId ||
+    job.kind !== "message"
+  ) {
     store.update({ feedback: "uncertain" });
     return;
   }
@@ -155,9 +176,17 @@ type InstagramDirectComposerProps = {
 
 export function InstagramDirectComposer(props: InstagramDirectComposerProps) {
   const accountKey = JSON.stringify([
-    props.account.id, props.account.platformId, props.account.executorId,
+    props.account.id,
+    props.account.platformId,
+    props.account.executorId,
   ]);
-  return <Composer key={`${socialQueryScope(props.client).join(":")}:${accountKey}`} {...props} accountKey={accountKey} />;
+  return (
+    <Composer
+      key={`${socialQueryScope(props.client).join(":")}:${accountKey}`}
+      {...props}
+      accountKey={accountKey}
+    />
+  );
 }
 
 function Composer({
@@ -171,50 +200,85 @@ function Composer({
   const state = useSyncExternalStore(store.subscribe, store.read);
   const confirmation = useConfirm();
   const mounted = useRef(false);
-  // Omit the confirmation if the owner leaves Accounts while recipient verification is in flight.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Track the mounted confirmation dialog so late recipient verification cannot open it after leaving Accounts.
   useEffect(() => {
     mounted.current = true;
-    return () => { mounted.current = false; };
+    return () => {
+      mounted.current = false;
+    };
   }, []);
   const options = projects
     .filter(({ id }) => account.grants[id]?.includes("message"))
     .map(({ id, name }) => ({ value: id, label: name }));
   const project = state.input.projectId
     ? options.find(({ value }) => value === state.input.projectId)
-    : options.length === 1 ? options[0] : undefined;
+    : options.length === 1
+      ? options[0]
+      : undefined;
   const handle = state.input.handle.trim().replace(/^@/, "").toLowerCase();
   const text = state.input.text.trim();
   const sendAttempted = state.attempt?.sendAttempted;
-  const accountUnavailable = disabled || account.paused || !account.connected || !account.accessApproved;
+  const accountUnavailable =
+    disabled || account.paused || !account.connected || !account.accessApproved;
   const updateInput = (patch: Partial<ComposerInput>) => {
     const current = store.read();
     if (current.pending || current.attempt?.sendAttempted) return;
-    store.update({ input: { ...current.input, ...patch }, attempt: undefined, feedback: undefined, error: undefined });
+    store.update({
+      input: { ...current.input, ...patch },
+      attempt: undefined,
+      feedback: undefined,
+      error: undefined,
+    });
   };
 
   const review = async () => {
     const current = store.read();
-    if (accountUnavailable || !project || !handle || !text || current.pending || current.attempt?.sendAttempted) return;
+    if (
+      accountUnavailable ||
+      !project ||
+      !handle ||
+      !text ||
+      current.pending ||
+      current.attempt?.sendAttempted
+    )
+      return;
     const input = { handle, projectId: project.value, text };
     const saved = current.attempt;
-    const attempt = saved && saved.input.handle === handle && saved.input.text === text &&
-      saved.input.projectId === project.value ? saved : newAttempt(input);
+    const attempt =
+      saved &&
+      saved.input.handle === handle &&
+      saved.input.text === text &&
+      saved.input.projectId === project.value
+        ? saved
+        : newAttempt(input);
     store.update({ attempt, pending: "review", feedback: undefined, error: undefined });
     try {
       const draft = await prepareDraft(client, account.id, store, attempt);
       if (!mounted.current) return;
       const approved = await confirmation.confirm({
         title: t("Review Instagram message"),
-        message: t("Queue this message from {p0} to @{p1} for {p2}?", { p0: account.name, p1: handle, p2: project.label }),
+        message: t("Queue this message from {p0} to @{p1} for {p2}?", {
+          p0: account.name,
+          p1: handle,
+          p2: project.label,
+        }),
         details: <TextareaField label={t("Message")} value={draft.text} readOnly rows={3} />,
         confirmLabel: t("Queue Instagram message"),
         danger: false,
       });
       if (!approved || !mounted.current) return;
       store.update({ pending: "send" });
-      await client.request("drafts.approve", { id: draft.id, reviewedDraft: draft }, attempt.requestIds.approve);
+      await client.request(
+        "drafts.approve",
+        { id: draft.id, reviewedDraft: draft },
+        attempt.requestIds.approve,
+      );
       store.update({ attempt: { ...store.read().attempt!, sendAttempted: true } });
-      const job = await client.request<SocialJob>("messages.send", { id: draft.id }, attempt.requestIds.send);
+      const job = await client.request<SocialJob>(
+        "messages.send",
+        { id: draft.id },
+        attempt.requestIds.send,
+      );
       showReceipt(store, job);
     } catch (cause) {
       store.update({
@@ -265,29 +329,49 @@ function Composer({
             onChange={(event) => updateInput({ text: event.currentTarget.value })}
           />
           {sendAttempted ? (
-            <Button variant="secondary" size="sm" loading={state.pending === "status"}
-              disabled={disabled || !!state.pending} onClick={() => void checkStatus().catch(() => undefined)}>
+            <Button
+              variant="secondary"
+              size="sm"
+              loading={state.pending === "status"}
+              disabled={disabled || !!state.pending}
+              onClick={() => void checkStatus().catch(() => undefined)}
+            >
               {t("Check status")}
             </Button>
           ) : (
-            <Button variant="primary" size="sm"
-              loading={state.pending === "send" || (state.pending === "review" && !state.attempt?.draft)}
+            <Button
+              variant="primary"
+              size="sm"
+              loading={
+                state.pending === "send" || (state.pending === "review" && !state.attempt?.draft)
+              }
               disabled={accountUnavailable || !!state.pending || !project || !handle || !text}
-              onClick={() => void review().catch(() => undefined)}>
+              onClick={() => void review().catch(() => undefined)}
+            >
               {t("Review Instagram message")}
             </Button>
           )}
         </>
-      ) : <InlineMessage live="off">{t("Grant a project permission to send new messages.")}</InlineMessage>}
+      ) : (
+        <InlineMessage live="off">
+          {t("Grant a project permission to send new messages.")}
+        </InlineMessage>
+      )}
       {state.error ? <InlineError>{state.error}</InlineError> : null}
       {state.feedback === "queued" ? (
-        <InlineMessage tone="success">{t("Instagram message queued. Check Activity for delivery.")}</InlineMessage>
+        <InlineMessage tone="success">
+          {t("Instagram message queued. Check Activity for delivery.")}
+        </InlineMessage>
       ) : null}
       {state.feedback === "uncertain" ? (
-        <InlineMessage tone="warning">{t("The send result is uncertain. Check Activity for the original message.")}</InlineMessage>
+        <InlineMessage tone="warning">
+          {t("The send result is uncertain. Check Activity for the original message.")}
+        </InlineMessage>
       ) : null}
       {state.feedback === "notQueued" ? (
-        <InlineMessage tone="warning">{t("The Instagram message did not leave the queue.")}</InlineMessage>
+        <InlineMessage tone="warning">
+          {t("The Instagram message did not leave the queue.")}
+        </InlineMessage>
       ) : null}
       {confirmation.dialog}
     </FieldGroup>

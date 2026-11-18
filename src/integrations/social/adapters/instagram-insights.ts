@@ -141,7 +141,10 @@ export async function readInstagramInsights(
   input: InstagramInsightInput = {},
 ): Promise<InstagramInsightResult> {
   const { mediaId, demographics, since, until } = input;
-  if (demographics !== undefined && (mediaId !== undefined || !INSTAGRAM_DEMOGRAPHICS.includes(demographics)))
+  if (
+    demographics !== undefined &&
+    (mediaId !== undefined || !INSTAGRAM_DEMOGRAPHICS.includes(demographics))
+  )
     throw new SocialPlatformError("rejected");
   const hasRange = since !== undefined || until !== undefined;
   if (
@@ -163,29 +166,54 @@ export async function readInstagramInsights(
   if (mediaId !== undefined) {
     const { value } = await http.request(`${resource}?fields=media_product_type`, token);
     const product = typeof value.media_product_type === "string" ? value.media_product_type : "";
-    const common = product === "STORY"
-      ? MEDIA_METRICS.filter((metric) => metric !== "comments" && metric !== "likes" && metric !== "saved")
-      : MEDIA_METRICS;
+    const common =
+      product === "STORY"
+        ? MEDIA_METRICS.filter(
+            (metric) => metric !== "comments" && metric !== "likes" && metric !== "saved",
+          )
+        : MEDIA_METRICS;
     const productMetrics = Object.prototype.hasOwnProperty.call(MEDIA_PRODUCT_METRICS, product)
       ? (MEDIA_PRODUCT_METRICS[product] ?? [])
       : [];
     groups = [{ metrics: [...common, ...productMetrics] }];
   } else if (demographics !== undefined) {
-    groups = [{
-      metrics: ["follower_demographics", "engaged_audience_demographics", "reached_audience_demographics"],
-      parameters: { period: "lifetime", metric_type: "total_value", timeframe: "this_month", breakdown: demographics },
-    }];
+    groups = [
+      {
+        metrics: [
+          "follower_demographics",
+          "engaged_audience_demographics",
+          "reached_audience_demographics",
+        ],
+        parameters: {
+          period: "lifetime",
+          metric_type: "total_value",
+          timeframe: "this_month",
+          breakdown: demographics,
+        },
+      },
+    ];
   } else {
     const range: Record<string, string> = hasRange
       ? { since: String(since), until: String(until) }
       : {};
     groups = [
-      { metrics: ACCOUNT_METRICS, parameters: { ...range, period: "day", metric_type: "total_value" } },
+      {
+        metrics: ACCOUNT_METRICS,
+        parameters: { ...range, period: "day", metric_type: "total_value" },
+      },
       {
         metrics: ["follows_and_unfollows"],
-        parameters: { ...range, period: "day", metric_type: "total_value", breakdown: "follow_type" },
+        parameters: {
+          ...range,
+          period: "day",
+          metric_type: "total_value",
+          breakdown: "follow_type",
+        },
       },
-      { metrics: ["follower_count"], parameters: { ...range, period: "day", metric_type: "time_series" } },
+      {
+        metrics: ["follower_count"],
+        parameters: { ...range, period: "day", metric_type: "time_series" },
+      },
     ];
   }
   for (const group of groups)

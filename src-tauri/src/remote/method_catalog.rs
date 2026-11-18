@@ -432,7 +432,11 @@ mod tests {
         ] {
             assert!(supported_remote_method(method));
         }
-        assert!(!supported_remote_method("social.browser.instagram.stream-key"));
-        assert!(!supported_remote_method("social.browser.instagram.recipient.anything"));
+        assert!(!supported_remote_method(
+            "social.browser.instagram.stream-key"
+        ));
+        assert!(!supported_remote_method(
+            "social.browser.instagram.recipient.anything"
+        ));
     }
 }

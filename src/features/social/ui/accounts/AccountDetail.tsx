@@ -126,6 +126,7 @@ export function AccountDetail({
         client={client}
         account={account}
         capabilities={capabilities}
+        projects={projects}
         onThisComputer={onThisComputer}
         disabled={disabled}
         onChanged={onChanged}

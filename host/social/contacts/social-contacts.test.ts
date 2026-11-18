@@ -85,7 +85,10 @@ describe("Instagram browser recipient update", () => {
     const { existing, internals, service, put } = fixture();
     const result = await upsertSocialContact(internals, owner, input);
     expect(service.transaction).toHaveBeenCalledOnce();
-    expect(service.capability).toHaveBeenCalledWith(expect.objectContaining({ platform: "instagram" }), "message.start");
+    expect(service.capability).toHaveBeenCalledWith(
+      expect.objectContaining({ platform: "instagram" }),
+      "message.start",
+    );
     expect(service.project).toHaveBeenCalledExactlyOnceWith(owner, "new-project");
     expect(result).toEqual({
       ...existing,
@@ -101,9 +104,14 @@ describe("Instagram browser recipient update", () => {
     await expect(
       upsertSocialContact(browser.internals, { kind: "session" } as SocialPrincipal, input),
     ).rejects.toThrow("Owner only.");
-    await expect(upsertSocialContact(oauth.internals, owner, input)).rejects.toThrow("verified browser");
+    await expect(upsertSocialContact(oauth.internals, owner, input)).rejects.toThrow(
+      "verified browser",
+    );
     await expect(
-      upsertSocialContact(browser.internals, owner, { ...input, projectIds: ["different-project"] }),
+      upsertSocialContact(browser.internals, owner, {
+        ...input,
+        projectIds: ["different-project"],
+      }),
     ).rejects.toThrow();
     expect(browser.put).not.toHaveBeenCalled();
     expect(oauth.put).not.toHaveBeenCalled();

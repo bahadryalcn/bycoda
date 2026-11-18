@@ -18,7 +18,13 @@ import { statusText, statusTone, type MessageLine } from "./inboxModel";
 import { MessageTimeline } from "./MessageTimeline";
 import { INBOX_STATUSES, type InboxItem, type InboxStatus } from "./inboxTypes";
 import { ReplyBox } from "./ReplyBox";
-import { useInboxInvalidate, useInboxThread, useInboxTimeline } from "./useInboxData";
+import { InstagramCommentActions } from "./InstagramCommentActions";
+import {
+  useInboxInvalidate,
+  useInboxSnapshot,
+  useInboxThread,
+  useInboxTimeline,
+} from "./useInboxData";
 import "./inbox.css";
 import { isImeComposition } from "../../../../shared/lib/keyboard";
 
@@ -41,6 +47,7 @@ export function ConversationView({
   const api = inboxApi(client);
   const thread = useInboxThread(client, threadId);
   const timeline = useInboxTimeline(client, item?.person?.id);
+  const snapshot = useInboxSnapshot(client);
   const invalidate = useInboxInvalidate(client);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -66,6 +73,9 @@ export function ConversationView({
     );
 
   const conversation = thread.data;
+  const instagram = snapshot.data?.accounts.find(
+    (account) => account.id === conversation.accountId && account.platform === "instagram",
+  );
   const lines: MessageLine[] = item?.person
     ? (timeline.data?.events ?? []).map((event) => ({
         id: event.id,
@@ -255,6 +265,19 @@ export function ConversationView({
         </Text>
       ) : null}
 
+      {conversation.instagramSource === "live_comment" ? (
+        <Text size="caption" tone="muted">
+          {t("Instagram Live comment")}
+        </Text>
+      ) : null}
+      {instagram && conversation.kind === "comment" ? (
+        <InstagramCommentActions
+          key={conversation.id}
+          client={client}
+          account={instagram}
+          thread={conversation}
+        />
+      ) : null}
       <ReplyBox key={conversation.id} client={client} thread={conversation} />
     </article>
   );

@@ -1,7 +1,12 @@
 import type { SocialClient } from "../../model/socialClient";
 import type { InboxReplyOperation } from "./inboxReplyOperation";
 
-type ReplyDraft = { text: string; factIds: string[] };
+export type ReplyDraft = {
+  text: string;
+  factIds: string[];
+  instagramPrivateReply?: true;
+  instagramAttachment?: { kind: "image" | "video"; url: string };
+};
 type ReplyState = {
   draft: ReplyDraft;
   operation?: InboxReplyOperation;

@@ -10,6 +10,7 @@ const READ_ACTION =
 
 /** Names that do not change state. Everything else is a write and is recorded for AI principals. */
 export function isWriteAction(action: string): boolean {
+  if (action === "instagram.insights" || action === "instagram.mentions") return false;
   return !READ_ACTION.test(action);
 }
 

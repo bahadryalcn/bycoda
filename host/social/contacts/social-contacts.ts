@@ -108,7 +108,7 @@ async function writeSocialContact(
     accountId,
     platformId,
     name: str(
-      (instagramRecipient ? previous?.name ?? instagramRecipient.handle : input.name) ??
+      (instagramRecipient ? (previous?.name ?? instagramRecipient.handle) : input.name) ??
         previous?.name ??
         platformId,
       "contact name",
