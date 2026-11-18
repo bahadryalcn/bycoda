@@ -770,6 +770,24 @@ update is unavailable. Browser registration can prefill supported Page fields an
 hands verification and agreements to the owner. The Facebook reconnect flow uses
 the Page OAuth selection and checks the Page identity before retaining a token.
 
+### Facebook profile files and chat execution
+
+Recognized personal profile editors run in the selected owner's browser. Name requests
+use Accounts Center. The profile flow handles the intro, website links, work and
+education, places lived, profile pictures and cover photos. It checks the selected
+actor before changing fields and stops for Facebook authentication or verification.
+Owner-confirmed local files on OAuth Pages go through the unpublished Page Photos edge
+and the Page profile-picture or cover operation. Browser accounts apply local photos
+through the verified profile controls.
+
+For Page post edits and reversible comment moderation, `facebook.management.execute`
+can apply the exact `facebook.management.request` ID. The originating project needs
+the corresponding grant. The account must permit autonomous execution, or the owner
+must choose **Approve for chat** with the action set to **Approve**. The Host checks
+the policy version, work hours, limits, stops and applicable suppression before the
+write. The owner applies Page administration, deletion and Live controls. Requests
+held for review retain their receipt after a restart.
+
 The Live Video API also requires Meta approval and Page eligibility. Bycoda retains the
 current broadcast receipt and places encoder credentials in the Host vault. The owner
 encoder endpoint bypasses Social tool results, audit payloads and request receipts.

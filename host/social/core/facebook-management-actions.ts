@@ -2,9 +2,15 @@ import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import {
   FACEBOOK_MANAGEMENT_ACTIONS,
+  facebookManagementAutonomy,
   type FacebookManagementAction,
   type FacebookManagementRequest,
 } from "../../../src/features/social/model/facebookManagement";
+import {
+  autonomyLevel,
+  nextWorkingStart,
+  withinWorkingHours,
+} from "../../../src/features/social/model/autonomy";
 import type {
   SocialAccount,
   SocialPermission,
@@ -12,8 +18,16 @@ import type {
 } from "../../../src/features/social/model/social";
 import { parseFacebookPagePatch } from "../../../src/integrations/social/adapters/facebook-page-edit";
 import { facebookLiveId } from "../../../src/integrations/social/adapters/facebook-live";
+import { assertAiRunnable, AutonomyDeferred } from "../autonomy/autonomy-gate";
+import {
+  autonomyLimit,
+  nextPolicyDayStart,
+  policyDay,
+  readAutonomyPolicy,
+} from "../autonomy/autonomy-policy";
 import { exact, str } from "./social-helpers";
 import type { SocialActionContext, SocialActionModule } from "./social-actions";
+import { editFacebookPagePost, moderateFacebookPageComment } from "./facebook-page-actions";
 
 const confirmations: Record<FacebookManagementAction, string> = {
   "facebook.page.update": "UPDATE_FACEBOOK_PAGE",
@@ -128,6 +142,94 @@ async function authorize(
   return account;
 }
 
+async function saveStatus(
+  ctx: SocialActionContext,
+  item: FacebookManagementRequest,
+  status: FacebookManagementRequest["status"],
+) {
+  await ctx.store.transaction(async () => {
+    const items = await requests(ctx, item.accountId);
+    await put(
+      ctx,
+      item.accountId,
+      items.map((row) => (row.id === item.id ? { ...row, status } : row)),
+    );
+  });
+  return { ...item, status };
+}
+
+async function execute(ctx: SocialActionContext, accountId: string, id: string) {
+  const item = (await requests(ctx, accountId)).find((row) => row.id === id);
+  if (!item || (ctx.principal.kind !== "owner" && item.projectId !== ctx.principal.projectId))
+    throw new Error("Facebook request was not found in this project.");
+  const account = await authorize(ctx, accountId, item.projectId, item.operation);
+  if (account.platformId !== item.pageId) throw new Error("Facebook Page identity changed.");
+  if (["completed", "submitted", "review"].includes(item.status)) return item;
+  const action = facebookManagementAutonomy(item);
+  if (!action) throw new Error("This Facebook operation requires the owner to apply it.");
+  const approved = item.status === "approved";
+  if (ctx.principal.kind === "owner")
+    throw new Error("Apply Facebook changes through owner review.");
+  const details = await normalize(ctx, account, item.projectId, item.operation, item.details);
+  const mode = approved ? "approve" : "autonomous";
+  const readPolicy = () => readAutonomyPolicy(ctx.store, accountId);
+  const version = item.approvalVersion ?? (await readPolicy()).version;
+  const check = async () => {
+    await assertAiRunnable({
+      audience: ctx.store,
+      setting: (key) => ctx.service.setting(key),
+      now: ctx.now,
+    });
+    const policy = await readPolicy();
+    if (policy.version !== version || autonomyLevel(policy, action) !== mode)
+      throw new Error("Facebook action needs a current autonomy policy or owner approval.");
+    const now = ctx.now();
+    if (!withinWorkingHours(policy, now)) throw new AutonomyDeferred(nextWorkingStart(policy, now));
+    const day = policyDay(policy, now);
+    if ((await ctx.store.getCounter(accountId, action, day)) >= autonomyLimit(policy, action))
+      throw new AutonomyDeferred(nextPolicyDayStart(policy, now));
+    return day;
+  };
+  await check();
+  let submitted = false;
+  const beforeWrite = async (current: SocialAccount) => {
+    if (current.id !== accountId || current.platformId !== item.pageId || current.paused)
+      throw new Error("Facebook Page is paused or its identity changed.");
+    await ctx.store.transaction(async () => {
+      const items = await requests(ctx, accountId);
+      if (
+        !isDeepStrictEqual(
+          items.find((row) => row.id === id),
+          item,
+        )
+      )
+        throw new Error("Facebook request changed before submission.");
+      const latest = await authorize(ctx, accountId, item.projectId, item.operation);
+      if (latest.paused || latest.platformId !== item.pageId)
+        throw new Error("Facebook Page is paused or its identity changed.");
+      await normalize(ctx, latest, item.projectId, item.operation, details);
+      const day = await check();
+      await ctx.store.incrementCounter(accountId, action, day);
+      await put(
+        ctx,
+        accountId,
+        items.map((row) => (row.id === id ? { ...row, status: "submitted" } : row)),
+      );
+    });
+    submitted = true;
+  };
+  try {
+    if (item.operation === "facebook.post.edit")
+      await editFacebookPagePost(ctx, { accountId, ...details }, beforeWrite);
+    else await moderateFacebookPageComment(ctx, details, beforeWrite);
+    if (!submitted) throw new Error("Facebook operation lacked a dispatch receipt.");
+  } catch (error) {
+    if (submitted) await saveStatus(ctx, item, "review");
+    throw error;
+  }
+  return saveStatus(ctx, item, "completed");
+}
+
 export const facebookManagementActions: SocialActionModule = {
   "facebook.management.request": {
     readOnly: false,
@@ -145,7 +247,7 @@ export const facebookManagementActions: SocialActionModule = {
         const items = await requests(ctx, accountId);
         const pending = items.find(
           (item) =>
-            item.status === "pending" &&
+            item.status !== "completed" &&
             item.pageId === account.platformId &&
             item.projectId === projectId &&
             item.operation === operation &&
@@ -167,6 +269,15 @@ export const facebookManagementActions: SocialActionModule = {
         await put(ctx, accountId, [item, ...items]);
         return item;
       });
+    },
+  },
+  "facebook.management.execute": {
+    readOnly: false,
+    ownerOnly: false,
+    tool: true,
+    async run(ctx, input) {
+      exact(input, ["accountId", "id"]);
+      return execute(ctx, str(input.accountId, "account"), str(input.id, "request"));
     },
   },
   "facebook.management.list": {
@@ -212,7 +323,9 @@ export const facebookManagementActions: SocialActionModule = {
     readOnly: false,
     ownerOnly: true,
     async run(ctx, input) {
-      exact(input, ["accountId", "reviewed"]);
+      exact(input, ["accountId", "reviewed", "forChat"]);
+      if (input.forChat !== undefined && typeof input.forChat !== "boolean")
+        throw new Error("Invalid Facebook approval option.");
       const accountId = str(input.accountId, "account");
       const reviewed = record(input.reviewed);
       const item = await ctx.store.transaction(async () => {
@@ -224,6 +337,25 @@ export const facebookManagementActions: SocialActionModule = {
         if (account.platformId !== current.pageId)
           throw new Error("Facebook Page identity changed.");
         await normalize(ctx, account, current.projectId, current.operation, current.details);
+        if (input.forChat === true) {
+          const action = facebookManagementAutonomy(current);
+          const policy = await readAutonomyPolicy(ctx.store, accountId);
+          if (!action || autonomyLevel(policy, action) !== "approve")
+            throw new Error(
+              "Set this Facebook action's autonomy to approval to let chat apply it.",
+            );
+          const approved: FacebookManagementRequest = {
+            ...current,
+            status: "approved",
+            approvalVersion: policy.version,
+          };
+          await put(
+            ctx,
+            accountId,
+            items.map((row) => (row.id === current.id ? approved : row)),
+          );
+          return approved;
+        }
         await put(
           ctx,
           accountId,
@@ -231,6 +363,7 @@ export const facebookManagementActions: SocialActionModule = {
         );
         return current;
       });
+      if (item.status === "approved") return item;
       let status: FacebookManagementRequest["status"] = "review";
       try {
         const result = await ctx.service.call(ctx.principal, item.operation, {
@@ -250,14 +383,7 @@ export const facebookManagementActions: SocialActionModule = {
           status = "completed";
         return { ...item, status };
       } finally {
-        await ctx.store.transaction(async () => {
-          const items = await requests(ctx, accountId);
-          await put(
-            ctx,
-            accountId,
-            items.map((row) => (row.id === item.id ? { ...row, status } : row)),
-          );
-        });
+        await saveStatus(ctx, item, status);
       }
     },
   },

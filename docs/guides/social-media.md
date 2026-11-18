@@ -77,3 +77,13 @@ AI can prepare and schedule Facebook campaigns through the existing campaign too
 setup, Page edits, post moderation, the browser monetization overview and Live setup require the owner.
 AI can file changes to the Page, posts, moderation and Live under **Facebook requests** on the
 account. Review the exact request there before approving.
+
+With a personal Facebook browser connection, open **Edit profile** to request a
+name change, update the intro, or manage supported links and details. Use
+**Facebook profile photos** to upload a profile picture or cover from your computer
+for a connected personal profile or Page.
+
+Set post edits or comment moderation to **Approve** in the Page's autonomy settings.
+In **Facebook requests**, choose **Approve for chat**, then tell AI to apply the
+request. Under **Autonomous**, AI can apply eligible post edits and reversible
+moderation directly. Both modes obey the account's work hours and limits.

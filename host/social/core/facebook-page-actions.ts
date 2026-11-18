@@ -61,6 +61,12 @@ async function assertSending(ctx: SocialActionContext, account: SocialAccount) {
 
 const pendingPageWrites = new WeakMap<SocialActionContext["service"], Set<string>>();
 
+class PageWriteUnsubmittedError extends Error {
+  constructor(cause: unknown) {
+    super("Facebook write stopped before submission.", { cause });
+  }
+}
+
 /** A disconnected caller or Host restart must not replay an unconfirmed Graph write. */
 async function writePage<T>(
   ctx: SocialActionContext,
@@ -95,12 +101,88 @@ async function writePage<T>(
       if (!uncertain?.(result)) await clear();
       return result;
     } catch (error) {
+      if (error instanceof PageWriteUnsubmittedError) {
+        await clear();
+        throw error.cause;
+      }
       if (error instanceof SocialPlatformError && error.code !== "unknown") await clear();
       throw error;
     }
   } finally {
     pending.delete(account.id);
   }
+}
+
+type BeforePageWrite = (account: SocialAccount) => Promise<void>;
+
+export async function editFacebookPagePost(
+  ctx: SocialActionContext,
+  input: Record<string, unknown>,
+  beforeWrite?: BeforePageWrite,
+) {
+  const { account } = await page(ctx, input.accountId, "post.edit");
+  const target = postId(account, input.postId);
+  const text = str(input.text, "post text");
+  await assertSending(ctx, account);
+  return writePage(ctx, account, "post.edit", { target, text }, async (current) => {
+    await assertSending(ctx, current.account);
+    await current.operations.editPost(current.account, current.token, target, text, async () => {
+      try {
+        const { account: latest } = await page(ctx, account.id, "post.edit");
+        if (
+          latest.platformId !== current.account.platformId ||
+          latest.connection !== current.account.connection
+        )
+          throw new SocialPlatformError("denied");
+        await assertSending(ctx, latest);
+        await ctx.service.assertSendable(
+          { platform: "facebook", platformId: latest.platformId },
+          "comment",
+        );
+        await beforeWrite?.(latest);
+      } catch (error) {
+        throw new PageWriteUnsubmittedError(error);
+      }
+    });
+    return { accountId: account.id, postId: target, edited: true };
+  });
+}
+
+export async function moderateFacebookPageComment(
+  ctx: SocialActionContext,
+  input: Record<string, unknown>,
+  beforeWrite?: BeforePageWrite,
+) {
+  const { action } = input;
+  if (
+    action !== "hide" &&
+    action !== "unhide" &&
+    action !== "delete" &&
+    action !== "like" &&
+    action !== "unlike"
+  )
+    throw new SocialPlatformError("rejected");
+  const thread = await commentThread(ctx, input.threadId);
+  const { account } = await page(ctx, thread.accountId, "comment.moderate");
+  await writePage(
+    ctx,
+    account,
+    "comment.moderate",
+    { comment: thread.platformThreadId, action },
+    async (current) => {
+      try {
+        if (action === "like") {
+          await assertSending(ctx, current.account);
+          await ctx.service.assertSendable({ contactId: thread.contactId }, "comment");
+        }
+        await beforeWrite?.(current.account);
+      } catch (error) {
+        throw new PageWriteUnsubmittedError(error);
+      }
+      await current.operations.moderateComment(current.token, thread.platformThreadId, action);
+    },
+  );
+  return { accountId: account.id, threadId: thread.id, action };
 }
 
 export const facebookPageActions: SocialActionModule = {
@@ -231,32 +313,7 @@ export const facebookPageActions: SocialActionModule = {
     async run(ctx, input) {
       exact(input, ["accountId", "postId", "text", "confirm"]);
       if (input.confirm !== "EDIT_FACEBOOK_POST") throw new Error("Edit confirmation required.");
-      const { account } = await page(ctx, input.accountId, "post.edit");
-      const target = postId(account, input.postId);
-      const text = str(input.text, "post text");
-      await assertSending(ctx, account);
-      return writePage(ctx, account, "post.edit", { target, text }, async (current) => {
-        await assertSending(ctx, current.account);
-        await current.operations.editPost(
-          current.account,
-          current.token,
-          target,
-          text,
-          async () => {
-            const latest = await ctx.service.access(ctx.principal, account.id, "read");
-            if (
-              !latest.connected ||
-              !latest.accessApproved ||
-              latest.platformId !== current.account.platformId ||
-              latest.connection !== current.account.connection ||
-              latest.executorId !== current.account.executorId
-            )
-              throw new SocialPlatformError("denied");
-            ctx.service.capability(latest, "post.edit");
-            await assertSending(ctx, latest);
-          },
-        );
-      });
+      return editFacebookPagePost(ctx, input);
     },
   },
   "facebook.post.delete": {
@@ -282,35 +339,7 @@ export const facebookPageActions: SocialActionModule = {
       exact(input, ["threadId", "action", "confirm"]);
       if (input.confirm !== "MODERATE_FACEBOOK_COMMENT")
         throw new Error("Comment confirmation required.");
-      const action = input.action;
-      if (
-        action !== "hide" &&
-        action !== "unhide" &&
-        action !== "delete" &&
-        action !== "like" &&
-        action !== "unlike"
-      )
-        throw new SocialPlatformError("rejected");
-      const thread = await commentThread(ctx, input.threadId);
-      const { account } = await page(ctx, thread.accountId, "comment.moderate");
-      if (action === "like") {
-        await assertSending(ctx, account);
-        await ctx.service.assertSendable({ contactId: thread.contactId }, "comment");
-      }
-      await writePage(
-        ctx,
-        account,
-        "comment.moderate",
-        { comment: thread.platformThreadId, action },
-        async (current) => {
-          if (action === "like") {
-            await assertSending(ctx, current.account);
-            await ctx.service.assertSendable({ contactId: thread.contactId }, "comment");
-          }
-          await current.operations.moderateComment(current.token, thread.platformThreadId, action);
-        },
-      );
-      return { accountId: account.id, threadId: thread.id, action };
+      return moderateFacebookPageComment(ctx, input);
     },
   },
   "facebook.privateReplyDraft": {

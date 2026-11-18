@@ -483,6 +483,7 @@ describe("Real local CLI and MCP transport", () => {
         "facebook.privateReplyDraft",
         "facebook.live.replyDraft",
         "facebook.management.request",
+        "facebook.management.execute",
       ];
       const method = (action: string) => `social_${action.replaceAll(/[.-]/g, "_")}`;
       // Draft inspection/editing is a concurrent additive capability. Keep the
