@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.13]
+
+### Improved
+
+- Route models by saved order with usage failover, smart setup and clearer model order limits.
+- Show working sessions in the sidebar and device hosts in the device panel.
+- Queue a message while delegated subagents still run; it sends when the last one finishes.
+- Recover remote sessions and shared queues more reliably after reconnects.
+
+### Fixed
+
+- A `/goal` mention inside a message no longer creates a bycoda Epic; only an explicit Epic request does.
+- An idle window keeps a single shared-queue timer.
+
 ## [0.7.12]
 
 ### Improved
