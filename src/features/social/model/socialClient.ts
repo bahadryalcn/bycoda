@@ -1,5 +1,9 @@
 import { t } from "../../../shared/i18n";
 import { YOUTUBE_MAX_VIDEO_BYTES } from "../../../integrations/social/youtube-upload";
+import {
+  INSTAGRAM_DIRECT_MEDIA_LIMITS,
+  type InstagramDirectMediaKind,
+} from "../../../integrations/social/adapters/instagram-direct-media";
 import { remoteRequest } from "../../connections/model/connections";
 import { classifyRemoteError } from "../../connections/public/remoteFailure";
 import type {
@@ -93,12 +97,93 @@ export function socialClient(machineId: string) {
       input,
       ...(NO_REQUEST_ID_ACTIONS.has(action) ? {} : { requestId }),
     });
+  const uploadChunks = async (
+    file: File,
+    instagram?: { threadId: string; kind: InstagramDirectMediaKind },
+    progress?: (percent: number) => void,
+    youtubeAccountId?: string,
+  ) => {
+    const upload = (params: Record<string, unknown>) =>
+      remoteRequest<{ uploadId: string; offset?: number }>(machineId, "social.media.upload", {
+        ...params,
+        ...(instagram
+          ? {
+              instagramAttachmentThreadId: instagram.threadId,
+              instagramAttachmentKind: instagram.kind,
+            }
+          : {}),
+      });
+    const { uploadId } = await upload({
+      mode: "begin",
+      size: file.size,
+      ...(youtubeAccountId ? { youtubeAccountId } : {}),
+    }).catch((error: unknown) => {
+      if (youtubeAccountId) {
+        // YouTube staging can reject a connection that changed after file selection.
+        const { message } = classifyRemoteError(error);
+        if (message === "Large videos require a YouTube API connection.")
+          throw new Error(t("Large videos require a YouTube API connection."));
+        if (message === "MP4 or WebM videos for YouTube can be at most 256 GiB.")
+          throw new Error(t("MP4 or WebM videos for YouTube can be at most 256 GiB."));
+      }
+      throw error;
+    });
+    try {
+      for (let offset = 0; offset < file.size; offset += 1024 * 1024) {
+        const bytes = new Uint8Array(await file.slice(offset, offset + 1024 * 1024).arrayBuffer());
+        let binary = "";
+        for (const byte of bytes) binary += String.fromCharCode(byte);
+        const result = await upload({ mode: "chunk", uploadId, offset, base64: btoa(binary) });
+        if (result.offset !== offset + bytes.length)
+          throw new Error(
+            instagram
+              ? t("Instagram attachment upload order could not be verified.")
+              : t("Video upload order could not be verified."),
+          );
+        progress?.(Math.round(((offset + bytes.length) / file.size) * 100));
+      }
+      return await upload({ mode: "finish", uploadId });
+    } catch (error) {
+      await upload({ mode: "cancel", uploadId }).catch(() => {});
+      throw error;
+    }
+  };
   return {
     // The Host's owner-only vault endpoint returns status without the key.
     saveXLiveKey: (accountId: string, key: string) =>
       remoteRequest<{ stored: true }>(machineId, "social.x.liveKey.store", { accountId, key }),
     request,
+    browserInstagramLive: (
+      accountId: string,
+      action: import("./instagramLive").InstagramLiveAction,
+      confirm?: string,
+    ) =>
+      remoteRequest<import("./instagramLive").InstagramLiveState>(
+        machineId,
+        "social.browser.instagram.live",
+        { accountId, action, ...(confirm ? { confirm } : {}) },
+      ),
     // Instagram owner-only browser operations.
+    browserInstagramEarnings: (accountId: string) =>
+      remoteRequest<import("./socialBrowser").InstagramEarnings>(
+        machineId,
+        "social.browser.instagram.earnings",
+        { accountId },
+      ),
+    browserInstagramHighlights: (accountId: string) =>
+      remoteRequest<import("./socialBrowser").InstagramHighlights>(
+        machineId,
+        "social.browser.instagram.highlights",
+        { accountId },
+      ),
+    browserInstagramHighlightChange: (
+      accountId: string,
+      input: import("./socialBrowser").InstagramHighlightChange,
+    ) =>
+      remoteRequest<{ changed: boolean }>(machineId, "social.browser.instagram.highlight-change", {
+        accountId,
+        ...input,
+      }),
     browserInstagramRecipient: (accountId: string, handle: string) =>
       remoteRequest<import("./socialBrowser").InstagramRecipient>(
         machineId,
@@ -650,49 +735,17 @@ export function socialClient(machineId: string) {
             ? t("MP4 or WebM videos for YouTube can be at most 256 GiB.")
             : t("MP4/WebM videos can be at most 64 MiB."),
         );
-      const upload = (params: Record<string, unknown>) =>
-        remoteRequest<{ uploadId: string; offset?: number }>(
-          machineId,
-          "social.media.upload",
-          params,
-        );
-      const { uploadId } = await upload({
-        mode: "begin",
-        size: file.size,
-        ...(youtubeAccountId ? { youtubeAccountId } : {}),
-      }).catch((error: unknown) => {
-        if (youtubeAccountId) {
-          // YouTube staging can reject a connection that changed after file selection.
-          const { message } = classifyRemoteError(error);
-          if (message === "Large videos require a YouTube API connection.")
-            throw new Error(t("Large videos require a YouTube API connection."));
-          if (message === "MP4 or WebM videos for YouTube can be at most 256 GiB.")
-            throw new Error(t("MP4 or WebM videos for YouTube can be at most 256 GiB."));
-        }
-        throw error;
-      });
-      try {
-        for (let offset = 0; offset < file.size; offset += 1024 * 1024) {
-          const bytes = new Uint8Array(
-            await file.slice(offset, offset + 1024 * 1024).arrayBuffer(),
-          );
-          let binary = "";
-          for (const byte of bytes) binary += String.fromCharCode(byte);
-          const result = await upload({
-            mode: "chunk",
-            uploadId,
-            offset,
-            base64: btoa(binary),
-          });
-          if (result.offset !== offset + bytes.length)
-            throw new Error(t("Video upload order could not be verified."));
-          progress?.(Math.round(((offset + bytes.length) / file.size) * 100));
-        }
-        return await upload({ mode: "finish", uploadId });
-      } catch (error) {
-        await upload({ mode: "cancel", uploadId }).catch(() => {});
-        throw error;
-      }
+      return uploadChunks(file, undefined, progress, youtubeAccountId);
+    },
+    // Instagram Direct uses the same owner-scoped upload transport.
+    uploadInstagramAttachment: async (
+      threadId: string,
+      kind: InstagramDirectMediaKind,
+      file: File,
+    ) => {
+      if (file.size < 12 || file.size > INSTAGRAM_DIRECT_MEDIA_LIMITS[kind])
+        throw new Error(t("Instagram attachment exceeds the supported size."));
+      return uploadChunks(file, { threadId, kind });
     },
   };
 }

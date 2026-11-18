@@ -201,7 +201,7 @@ export type SocialProjectProfile = {
   facts: PublicFact[];
 };
 export type SocialMedia = {
-  kind: "image" | "video" | "document";
+  kind: "image" | "video" | "document" | "audio";
   url?: string;
   uploadId?: string;
   alt?: string;

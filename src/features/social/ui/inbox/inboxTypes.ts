@@ -39,7 +39,7 @@ export type InboxReplyOptions = {
   reason?: string;
   reasonCode?: string;
   templatesOnly?: boolean;
-  instagram?: { privateReply?: true; attachment?: true };
+  instagram?: { privateReply?: true; attachment?: true; localAttachment?: true };
 };
 
 export type InboxTimelineEvent = {

@@ -69,3 +69,21 @@ it("rejects an expired window or an attachment URL containing credentials withou
   ).rejects.toMatchObject({ code: "unsupported" });
   expect(json).not.toHaveBeenCalled();
 });
+
+it.each([
+  ["audio", "audio"],
+  ["document", "file"],
+] as const)("sends %s under Meta's %s attachment type", async (kind, type) => {
+  const { json, http } = fixture();
+  const url = "https://media.example/attachment";
+  const job = draft({
+    media: [{ kind, url }],
+    recipientId: "200",
+    replyUntil: Date.now() + 60_000,
+  });
+  await sendInstagramMessage(http, endpoint, account, job, "credential");
+  expect(json).toHaveBeenCalledWith(`${endpoint}/100/messages`, "credential", {
+    recipient: { id: "200" },
+    message: { attachment: { type, payload: { url } } },
+  });
+});

@@ -21,6 +21,9 @@ import { useAccountWrite } from "../useAccountWrite";
 import { InstagramAccountMentions } from "./InstagramAccountMentions";
 import { InstagramProfileEditor } from "./InstagramProfileEditor";
 import { InstagramDirectComposer } from "./InstagramDirectComposer";
+import { InstagramEarningsPanel } from "./InstagramEarningsPanel";
+import { InstagramHighlightsPanel } from "./InstagramHighlightsPanel";
+import { InstagramLiveProducer } from "./InstagramLiveProducer";
 
 export function InstagramAccountTools({
   client,
@@ -112,7 +115,9 @@ export function InstagramAccountTools({
     { intent: "instagram-profile", label: t("Open Instagram profile settings") },
     { intent: "instagram-highlights", label: t("Manage Instagram Highlights") },
     { intent: "instagram-monetization", label: t("Open Instagram monetization") },
-    { intent: "instagram-live", label: t("Open Instagram Live Producer") },
+    ...(browser
+      ? []
+      : [{ intent: "instagram-live" as const, label: t("Open Instagram Live Producer") }]),
   ];
   return (
     <Disclosure summary={t("Instagram tools")}>
@@ -130,6 +135,14 @@ export function InstagramAccountTools({
             </Button>
           ))}
         </FieldGroup>
+      ) : null}
+      {browser ? (
+        <InstagramLiveProducer
+          key={account.id}
+          client={client}
+          accountId={account.id}
+          disabled={disabled}
+        />
       ) : null}
       {analytics ? (
         <FieldGroup legend={t("Instagram insights")} disabled={disabled || is("insights")}>
@@ -212,6 +225,18 @@ export function InstagramAccountTools({
       ) : null}
       {browser ? (
         <>
+          <InstagramEarningsPanel
+            key={`earnings:${account.id}`}
+            client={client}
+            accountId={account.id}
+            disabled={disabled}
+          />
+          <InstagramHighlightsPanel
+            key={`highlights:${account.id}`}
+            client={client}
+            accountId={account.id}
+            disabled={disabled}
+          />
           <InstagramProfileEditor client={client} accountId={account.id} disabled={disabled} />
           {messageStart ? (
             <InstagramDirectComposer

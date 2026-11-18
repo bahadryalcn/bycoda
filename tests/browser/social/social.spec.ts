@@ -228,7 +228,10 @@ for (const theme of ["light", "dark"])
   for (const width of [800, 1280]) {
     test(`Instagram surfaces ${theme} ${width}`, async ({ page }) => {
       for (const surface of ["publishing", "story", "inbox", "browser", "insights"]) {
-        await page.setViewportSize({ width, height: surface === "browser" ? 1600 : 900 });
+        await page.setViewportSize({
+          width,
+          height: surface === "browser" ? 2200 : surface === "inbox" ? 1100 : 900,
+        });
         await page.goto(`/tests/browser/social/social.html?instagram-surface=${surface}`);
         const frame = page.locator("[data-instagram-surface]");
         await expect(frame).toBeVisible();
@@ -238,11 +241,34 @@ for (const theme of ["light", "dark"])
         );
         if (surface === "browser" || surface === "insights") {
           await frame.getByText(/^(Instagram tools|Instagram araçları)$/i).click();
-          if (surface === "browser")
+          if (surface === "browser") {
             await frame
               .getByRole("button", { name: /^(Read Instagram profile|Instagram profilini oku)$/i })
               .click();
-          else
+            await frame
+              .getByRole("button", {
+                name: /^(Open Instagram Live Producer|Instagram Canlı Yayın Yapımcısı’nı aç)$/i,
+              })
+              .click();
+            await frame
+              .getByRole("button", {
+                name: /^(Read Instagram earnings|Instagram kazançlarını oku)$/i,
+              })
+              .click();
+            await expect(frame.getByText(/€321\.40/)).toBeVisible();
+            await frame
+              .getByRole("button", {
+                name: /^(Read Instagram Highlights|Instagram Öne Çıkanlar’ı oku)$/i,
+              })
+              .click();
+            await frame
+              .getByRole("button", { name: /^(Instagram Highlights|Instagram Öne Çıkanlar):/i })
+              .click();
+            await page.getByRole("option", { name: "Studio Stories", exact: true }).click();
+            await expect(
+              frame.getByRole("textbox", { name: /^(Highlight name|Öne Çıkanlar öğesinin adı)$/i }),
+            ).toHaveValue("Studio Stories");
+          } else
             await frame
               .getByRole("button", {
                 name: /^(Read Instagram insights|Instagram istatistiklerini oku)$/i,
@@ -253,9 +279,22 @@ for (const theme of ["light", "dark"])
           await expect(
             frame.getByText(/Send privately on Instagram|Instagram’da özel yanıt gönder/),
           ).toBeVisible();
+          await frame
+            .getByRole("button", {
+              name: /^(Review Instagram moderation requests|Instagram moderasyon isteklerini incele)$/i,
+            })
+            .click();
+          await expect(
+            frame.getByText("When is the next live stream?", { exact: true }),
+          ).toBeVisible();
+          await frame
+            .getByRole("button", { name: /^(Instagram attachment|Instagram eki):/i })
+            .click();
+          await page.getByRole("option", { name: /^(Audio|Ses)$/i }).click();
+          await expect(frame.getByText(/^(Local file|Yerel dosya)$/i)).toBeVisible();
         }
         await page.screenshot({
-          path: `temp/verification/social-instagram/${surface}-${theme}-${width}.png`,
+          path: `temp/verification/social-instagram-followup/${surface}-${theme}-${width}.png`,
           fullPage: true,
           animations: "disabled",
         });

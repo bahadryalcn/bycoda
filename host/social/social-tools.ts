@@ -431,7 +431,7 @@ export const SOCIAL_TOOL_SCHEMAS: Record<SocialTool, Record<string, unknown>> = 
         maxItems: 1,
         items: object(
           {
-            kind: { enum: ["image", "video"] },
+            kind: { enum: ["image", "video", "audio", "document"] },
             url: string(),
           },
           ["kind", "url"],
@@ -453,6 +453,10 @@ export const SOCIAL_TOOL_SCHEMAS: Record<SocialTool, Record<string, unknown>> = 
     ["accountId"],
   ),
   "instagram.mentions": object({ accountId: string(), cursor: string() }, ["accountId"]),
+  "instagram.comments.request": object(
+    { threadId: string(), commentId: string(), action: { enum: ["hide", "unhide", "delete"] } },
+    ["threadId", "commentId", "action"],
+  ),
   "contacts.upsert": object(
     {
       accountId: string(),
@@ -844,8 +848,10 @@ const TOOL_NOTES: Partial<Record<SocialTool, string>> = {
     " Reads account insights or metrics for one owned media ID. For account totals, optional paired since/until use Unix seconds. Missing metrics are returned separately.",
   "instagram.mentions":
     " Reads mention IDs observed by the Host's signed Instagram webhooks. Use next as cursor for older events. History is limited to notifications received here.",
+  "instagram.comments.request":
+    " Requests hide, unhide or delete for a verified inbound Instagram comment in this project. The owner reviews the exact comment and action in Inbox before any provider write.",
   "replies.draft":
-    " For an Instagram comment, set instagramPrivateReply to prepare a private rather than public reply. For an existing Instagram DM, attach one HTTPS image or video with empty text.",
+    " For an Instagram comment, set instagramPrivateReply to prepare a private reply. For an existing Instagram DM, attach one HTTPS image, video, audio file or PDF with empty text; use kind document for a PDF.",
   // X.
   "x.handoff":
     " Returns a fixed X page with status needs_human. The owner completes the action on X. Never claim it was completed.",

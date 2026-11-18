@@ -51,6 +51,11 @@ export function contentSupport(
       return "Give the LinkedIn document a title.";
     return undefined;
   }
+  if (
+    job.payload.media.some((item) => item.kind === "audio") &&
+    !(account.platform === "instagram" && account.connection !== "browser" && job.kind === "reply")
+  )
+    return "Audio attachments require an Instagram API conversation.";
   if (account.connection === "browser" && account.platform !== "x")
     return browserContentIssue(account, job);
   if (account.platform === "telegram" && account.accountType === "channel")

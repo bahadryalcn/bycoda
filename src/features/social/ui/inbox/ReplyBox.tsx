@@ -6,12 +6,17 @@ import { useConfirm } from "../../../../shared/ui/ConfirmDialog";
 import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
 import { Button } from "../../../../shared/ui/Button";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
+import { FileField } from "../../../../shared/ui/FileField";
 import { Sparkles } from "../../../../shared/ui/icons";
 import { PromptField } from "../../../../shared/ui/PromptField";
 import { Select } from "../../../../shared/ui/Select";
 import { TextField } from "../../../../shared/ui/TextField";
 import type { ActionGate } from "../common/DisabledReason";
-import type { SocialThread } from "../../model/social";
+import {
+  INSTAGRAM_DIRECT_FILE_ACCEPT,
+  isInstagramDirectMediaKind,
+} from "../../../../integrations/social/adapters/instagram-direct-media";
+import type { SocialMedia, SocialThread } from "../../model/social";
 import type { SocialClient } from "../../model/socialClient";
 import { socialQueryScope } from "../../model/socialQuery";
 import { inboxApi } from "./inboxApi";
@@ -50,7 +55,9 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
   );
   const { text } = draft;
   const attachment = draft.instagramAttachment;
-  const hasContent = !!text.trim() || !!attachment?.url.trim();
+  const hasAttachment = !!attachment?.url.trim() || !!attachment?.file;
+  const hasContent = !!text.trim() || hasAttachment;
+  const uploading = !!attachment?.file && busy === "send" && !operation;
   const changeDraft = (next: ReplyDraft) => state.update({ draft: next });
   const setBusy = (busy: "" | "suggest" | "send") => state.update({ busy });
   const setError = (error: string) => state.update({ error });
@@ -104,7 +111,7 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
       ? { disabled: true, disabledReason: busy === "send" ? t("Sending…") : t("Working…") }
       : !hasContent
         ? { disabled: true, disabledReason: t("Write a reply first.") }
-        : text.trim() && attachment?.url.trim()
+        : text.trim() && hasAttachment
           ? {
               disabled: true,
               disabledReason: t("Send Instagram attachments separately from text."),
@@ -173,30 +180,34 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
     setBusy("send");
     setError("");
     setQueued(false);
-    const input = {
-      threadId: thread.id,
-      text: current.draft.text.trim(),
-      factIds: current.draft.factIds,
-      ...(current.draft.instagramPrivateReply ? { instagramPrivateReply: true as const } : {}),
-      ...(current.draft.instagramAttachment?.url.trim()
-        ? {
-            media: [
-              {
-                ...current.draft.instagramAttachment,
-                url: current.draft.instagramAttachment.url.trim(),
-              },
-            ],
-          }
-        : {}),
-    };
-    const attempt =
-      current.operation ??
-      createInboxReplyOperation(
-        input,
-        privateReply ? { action: "facebook.privateReplyDraft", input } : undefined,
-      );
-    state.update({ operation: attempt });
+    let attempt = current.operation;
     try {
+      if (!attempt) {
+        const selected = current.draft.instagramAttachment;
+        let media: SocialMedia[] | undefined;
+        if (selected?.file) {
+          const result = await client.uploadInstagramAttachment(
+            thread.id,
+            selected.kind,
+            selected.file,
+          );
+          media = [{ kind: selected.kind, uploadId: result.uploadId }];
+        } else if (selected?.url.trim()) {
+          media = [{ kind: selected.kind, url: selected.url.trim() }];
+        }
+        const input = {
+          threadId: thread.id,
+          text: current.draft.text.trim(),
+          factIds: current.draft.factIds,
+          ...(current.draft.instagramPrivateReply ? { instagramPrivateReply: true as const } : {}),
+          ...(media ? { media } : {}),
+        };
+        attempt = createInboxReplyOperation(
+          input,
+          privateReply ? { action: "facebook.privateReplyDraft", input } : undefined,
+        );
+        state.update({ operation: attempt });
+      }
       await api.sendReply(attempt);
       if (attempt.job && ["failed", "cancelled", "review"].includes(attempt.job.status)) {
         setError(t("Reply requires review in Activity. Its original draft has been kept."));
@@ -213,7 +224,7 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
       });
     } catch (cause) {
       setError(
-        (attempt.sendAttempted
+        (attempt?.sendAttempted
           ? t(
               "Reply result is unconfirmed. Retry the same reply to check its status; do not send a separate copy.",
             )
@@ -254,14 +265,15 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
               { value: "", label: t("None") },
               { value: "image", label: t("Image") },
               { value: "video", label: t("Video") },
+              { value: "audio", label: t("Audio") },
+              { value: "document", label: t("PDF") },
             ]}
             onValueChange={(kind) =>
               changeDraft({
                 ...draft,
-                instagramAttachment:
-                  kind === "image" || kind === "video"
-                    ? { kind, url: attachment?.url ?? "" }
-                    : undefined,
+                instagramAttachment: isInstagramDirectMediaKind(kind)
+                  ? { kind, url: attachment?.url ?? "" }
+                  : undefined,
               })
             }
           />
@@ -274,10 +286,29 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
               onChange={(event) =>
                 changeDraft({
                   ...draft,
-                  instagramAttachment: { ...attachment, url: event.target.value },
+                  instagramAttachment: { kind: attachment.kind, url: event.target.value },
                 })
               }
             />
+          ) : null}
+          {attachment && (options.data?.instagram?.localAttachment || attachment.file) ? (
+            <FileField
+              label={t("Local file")}
+              accept={INSTAGRAM_DIRECT_FILE_ACCEPT[attachment.kind]}
+              disabled={!!busy || !!operation}
+              hint={attachment.file?.name}
+              onFiles={([file]) =>
+                changeDraft({
+                  ...draft,
+                  instagramAttachment: { kind: attachment.kind, url: "", file },
+                })
+              }
+            />
+          ) : null}
+          {attachment && !options.data?.instagram?.localAttachment && !attachment.file ? (
+            <Text as="p" size="caption" tone="muted">
+              {t("Local files require a public HTTPS media origin on this Host.")}
+            </Text>
           ) : null}
         </div>
       ) : null}
@@ -322,7 +353,7 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
               size="sm"
               onClick={() => void send().catch(() => undefined)}
               loading={busy === "send"}
-              loadingLabel={t("Sending…")}
+              loadingLabel={uploading ? t("Uploading…") : t("Sending…")}
               {...sendGate}
             >
               {operation && !busy ? t("Retry same reply") : t("Send")}

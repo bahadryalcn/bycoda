@@ -28,7 +28,7 @@ export function instagramCapabilities(): PlatformCapabilities {
     ),
     "message.reply": r(
       ["instagram_business_manage_messages"],
-      "Existing conversations support text and image/video URL attachments within the response window. Eligible comments support one private reply.",
+      "Existing conversations support text and image, video, audio or PDF attachments within the response window. Local files need the Host's HTTPS media origin. Eligible comments support one private reply.",
     ),
     "message.start": r(
       [],

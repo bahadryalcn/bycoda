@@ -535,6 +535,7 @@ export class PlatformBrowserSessions {
           try {
             const files: BrowserRecipeContext["files"] = [];
             for (const [index, attachment] of job.payload.media.entries()) {
+              if (attachment.kind === "audio") throw new SocialPlatformError("unsupported");
               const bytes = await media(attachment.uploadId!);
               const webm =
                 account.platform === "youtube" &&

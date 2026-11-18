@@ -136,6 +136,13 @@ export class SocialTransport {
         return liveViewFrame(String(params.accountId ?? ""));
       if (method === "social.browser.view.input")
         return liveViewInput(String(params.accountId ?? ""), params.event);
+      if (method === "social.browser.instagram.live")
+        return this.browser.instagramLiveAction(
+          this.service,
+          p,
+          String(params.accountId ?? ""),
+          params,
+        );
       // Instagram owner-only browser operations.
       switch (method) {
         case "social.browser.instagram.post":
@@ -144,6 +151,9 @@ export class SocialTransport {
         case "social.browser.instagram.mentions":
         case "social.browser.instagram.comment-like":
         case "social.browser.instagram.recipient":
+        case "social.browser.instagram.earnings":
+        case "social.browser.instagram.highlights":
+        case "social.browser.instagram.highlight-change":
           return this.browser.instagramAction(
             this.service,
             p,
@@ -154,7 +164,10 @@ export class SocialTransport {
               | "follow"
               | "mentions"
               | "comment-like"
-              | "recipient",
+              | "recipient"
+              | "earnings"
+              | "highlights"
+              | "highlight-change",
             params,
           );
       }
@@ -269,6 +282,30 @@ export class SocialTransport {
   }
   async http(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
     const parsed = new URL(request.url ?? "/", "http://localhost");
+    const instagramAttachment = parsed.pathname.match(
+      /^\/social\/media\/instagram-direct\/([a-f0-9-]{36})$/,
+    );
+    if (instagramAttachment) {
+      response.setHeader("Cache-Control", "no-store");
+      response.setHeader("X-Content-Type-Options", "nosniff");
+      response.setHeader("Referrer-Policy", "no-referrer");
+      response.setHeader("Content-Security-Policy", "sandbox; default-src 'none'");
+      try {
+        if (request.method !== "GET" && request.method !== "HEAD")
+          throw new Error("Unsupported media method.");
+        const { bytes, mime } = await this.service.readInstagramAttachment(
+          instagramAttachment[1],
+          parsed.searchParams,
+        );
+        response.setHeader("Content-Type", mime);
+        response.setHeader("Content-Length", bytes.length);
+        response.end(request.method === "GET" ? bytes : undefined);
+      } catch {
+        response.statusCode = 404;
+        response.end("Media unavailable.");
+      }
+      return true;
+    }
     const media = parsed.pathname.match(/^\/social\/media\/([a-f0-9-]{36})$/);
     if (media) {
       response.setHeader("Cache-Control", "no-store");

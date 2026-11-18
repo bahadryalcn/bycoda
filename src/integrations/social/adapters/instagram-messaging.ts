@@ -6,6 +6,7 @@ import {
   type SocialSendResult,
 } from "../adapter";
 import { id, requireId, text } from "./common";
+import { isInstagramDirectMediaKind } from "./instagram-direct-media";
 
 export function instagramMessageContentIssue(
   job: Pick<SocialJob, "kind" | "payload">,
@@ -16,15 +17,15 @@ export function instagramMessageContentIssue(
     !recipientId ||
     postId ||
     media.length !== 1 ||
-    !["image", "video"].includes(media[0].kind) ||
-    !media[0].url ||
-    media[0].uploadId ||
+    !isInstagramDirectMediaKind(media[0].kind) ||
+    Boolean(media[0].url) === Boolean(media[0].uploadId) ||
     job.payload.text.trim() ||
     job.payload.link
   )
-    return "Choose one HTTPS image or video in an existing Instagram DM. Send text separately.";
+    return "Choose one image, video, audio file or PDF in an existing Instagram DM. Send text separately.";
+  if (media[0].uploadId) return undefined;
   try {
-    const url = new URL(media[0].url);
+    const url = new URL(media[0].url!);
     if (url.protocol === "https:" && !url.username && !url.password) return undefined;
   } catch {
     // A malformed URL is rejected before the request.
@@ -48,10 +49,15 @@ export async function sendInstagramMessage(
     ? { comment_id: instagramPrivateReply.commentId }
     : { id: recipientId };
   id(instagramPrivateReply?.commentId ?? recipientId);
-  if (media.length && instagramMessageContentIssue(job))
+  if (media.length && (!media[0].url || instagramMessageContentIssue(job)))
     throw new SocialPlatformError("unsupported");
   const message = media.length
-    ? { attachment: { type: media[0].kind, payload: { url: media[0].url } } }
+    ? {
+        attachment: {
+          type: media[0].kind === "document" ? "file" : media[0].kind,
+          payload: { url: media[0].url },
+        },
+      }
     : { text: text(job) };
   await beforeSubmit?.();
   const { value } = await http.json(`${endpoint}/${id(account.platformId)}/messages`, token, {
