@@ -271,16 +271,18 @@ Comments and replies use `youtube.force-ssl`. Existing upload-only connections n
 reconnection for the read permission. Google account and Brand-channel choice happens in
 Google's flow; ambiguous channel enumeration is rejected.
 
-Upload: the host receives the file in 1 MiB chunks, verifies the current channel, starts
-a resumable upload and sends one final PUT. As soon as YouTube returns a video ID, the
-host checkpoints that ID. Later attempts never upload the file again. They read
-`videos.list` (`processingDetails,status,snippet`) for the same ID and verify the owning
-channel. Success requires completed processing and the current visibility. Failed,
-rejected or deleted states fail without discarding the ID. Missing or mismatched
-evidence goes to review. The result reports the actual returned privacy. The local
-64 MiB limit is an adapter bound, not YouTube's maximum. Quota errors back off for six
-hours or the supplied Retry-After. The upload-session URI is not persisted, so an
-interruption before a video ID exists is an uncertain outcome for review.
+YouTube API uploads accept one MP4 or WebM file up to 256 GiB. The desktop sends the
+selected file to the Host in 1 MiB chunks. The Host verifies the channel, then reads
+from disk and transfers at most 8 MiB per Google request. Browser video uploads still
+use the 64 MiB staged upload path.
+
+The Host writes the Google session URL to its encrypted credential store before sending
+video bytes. The session is bound to the approved job, channel, executor and exact file.
+After interruption or Host restart, the same job probes the session and resumes from
+Google's acknowledged byte offset. An expired or unidentifiable session goes to review.
+After Google returns a video ID, the Host checkpoints that ID and uses `videos.list`
+to verify ownership, processing and visibility. The job reports the returned visibility.
+Quota errors use the existing backoff.
 
 Polling reads at most four comment or reply pages per account sync with a durable cursor.
 A thread with `canReply=false` cannot receive a reply. Video-change push notifications do

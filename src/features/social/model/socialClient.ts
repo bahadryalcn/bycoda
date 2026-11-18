@@ -1,4 +1,5 @@
 import { t } from "../../../shared/i18n";
+import { YOUTUBE_MAX_VIDEO_BYTES } from "../../../integrations/social/youtube-upload";
 import { remoteRequest } from "../../connections/model/connections";
 import type {
   SocialBrowserIntent,
@@ -501,16 +502,31 @@ export function socialClient(machineId: string) {
         base64: btoa(binary),
       });
     },
-    uploadVideo: async (file: File, progress?: (percent: number) => void) => {
-      if (file.size < 12 || file.size > 64 * 1024 * 1024)
-        throw new Error(t("MP4/WebM videos can be at most 64 MiB."));
+    uploadVideo: async (
+      file: File,
+      progress?: (percent: number) => void,
+      youtubeAccountId?: string,
+    ) => {
+      if (
+        file.size < 12 ||
+        file.size > (youtubeAccountId ? YOUTUBE_MAX_VIDEO_BYTES : 64 * 1024 * 1024)
+      )
+        throw new Error(
+          youtubeAccountId
+            ? t("MP4 or WebM videos for YouTube can be at most 256 GiB.")
+            : t("MP4/WebM videos can be at most 64 MiB."),
+        );
       const upload = (params: Record<string, unknown>) =>
         remoteRequest<{ uploadId: string; offset?: number }>(
           machineId,
           "social.media.upload",
           params,
         );
-      const { uploadId } = await upload({ mode: "begin", size: file.size });
+      const { uploadId } = await upload({
+        mode: "begin",
+        size: file.size,
+        ...(youtubeAccountId ? { youtubeAccountId } : {}),
+      });
       try {
         for (let offset = 0; offset < file.size; offset += 1024 * 1024) {
           const bytes = new Uint8Array(

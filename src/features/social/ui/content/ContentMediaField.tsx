@@ -21,6 +21,7 @@ export type ContentMediaFieldProps = {
   disabledReason?: string;
   onChange: (next: ContentMedia[]) => void;
   onBusyChange?: (busy: boolean) => void;
+  youtubeAccountId?: string;
 };
 
 /** Attach images or one video. Rules per platform are checked in the preview and the publish gate. */
@@ -32,6 +33,7 @@ export function ContentMediaField({
   disabledReason,
   onChange,
   onBusyChange,
+  youtubeAccountId,
 }: ContentMediaFieldProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -41,12 +43,23 @@ export function ContentMediaField({
     setError(undefined);
     try {
       // Refuse the whole pick before any upload, so a batch with one bad file uploads nothing.
-      if (files.some((file) => ![...IMAGE_TYPES, VIDEO_TYPE].includes(file.type)))
-        throw new Error(t("Use JPEG or PNG images, or one MP4 video."));
+      const types = [...IMAGE_TYPES, VIDEO_TYPE, ...(youtubeAccountId ? ["video/webm"] : [])];
+      if (files.some((file) => !types.includes(file.type)))
+        throw new Error(
+          youtubeAccountId
+            ? t("Use JPEG or PNG images, or one MP4 or WebM video.")
+            : t("Use JPEG or PNG images, or one MP4 video."),
+        );
       const added: ContentMedia[] = [];
       for (const file of files) {
-        const upload = await uploadForSocialEditor(editor, client, file);
-        const isVideo = file.type === VIDEO_TYPE;
+        const upload = await uploadForSocialEditor(
+          editor,
+          client,
+          file,
+          undefined,
+          youtubeAccountId,
+        );
+        const isVideo = file.type.startsWith("video/");
         const probe = isVideo ? await probeVideo(file).catch(() => undefined) : undefined;
         added.push({
           localId: upload.uploadId,
@@ -56,6 +69,7 @@ export function ContentMediaField({
             uploadId: upload.uploadId,
           },
           probe,
+          ...(isVideo && file.size > 64 * 1024 * 1024 ? { youtubeApiOnly: true } : {}),
           mediaId: upload.managed?.mediaId,
         });
       }
@@ -80,10 +94,18 @@ export function ContentMediaField({
       <FileField
         label={t("Images or one video")}
         multiple
-        accept="image/jpeg,image/png,video/mp4"
+        accept={
+          youtubeAccountId
+            ? "image/jpeg,image/png,video/mp4,video/webm"
+            : "image/jpeg,image/png,video/mp4"
+        }
         disabled={disabled || busy}
         description={disabledReason ?? (busy ? t("Uploading…") : undefined)}
-        hint={t("JPEG or PNG images, or one MP4 video.")}
+        hint={
+          youtubeAccountId
+            ? t("Use JPEG or PNG images, or one MP4 or WebM video.")
+            : t("JPEG or PNG images, or one MP4 video.")
+        }
         error={error}
         onFiles={(files) =>
           void add(files).catch(() => setError(t("The file could not be attached.")))

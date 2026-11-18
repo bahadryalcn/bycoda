@@ -49,7 +49,7 @@ export function contentSupport(
       !job.payload.media[0].uploadId ||
       job.payload.media[0].url
     )
-      return "YouTube requires one host-uploaded MP4/WebM video up to 64 MiB. Text-only Community posts are not supported.";
+      return "YouTube video publishing requires one host-uploaded MP4 or WebM video. Create Community posts from YouTube management.";
     if (
       !options?.title?.trim() ||
       options.title.length > 100 ||

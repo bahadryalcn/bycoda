@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, open, readdir, rename, stat, unlink } from "node:fs/promises";
 import { join } from "node:path";
+import { YOUTUBE_MAX_VIDEO_BYTES } from "../../src/integrations/social/youtube-upload";
 
-const MAX_VIDEO = 64 * 1024 * 1024;
+export const SOCIAL_BUFFERED_VIDEO_BYTES = 64 * 1024 * 1024;
 type Upload = {
   actor: string;
   size: number;
@@ -21,6 +22,7 @@ export class SocialVideoUploads {
   async call(
     actor: string,
     input: Record<string, unknown>,
+    youtubeApi = false,
   ): Promise<{ uploadId: string; offset?: number }> {
     await this.authorize();
     const staging = join(this.directory, "media", "incoming");
@@ -32,8 +34,13 @@ export class SocialVideoUploads {
       }
     if (input.mode === "begin") {
       const size = Number(input.size);
-      if (!Number.isSafeInteger(size) || size < 12 || size > MAX_VIDEO)
-        throw new Error("Select an MP4/WebM video up to 64 MiB.");
+      const maximum = youtubeApi ? YOUTUBE_MAX_VIDEO_BYTES : SOCIAL_BUFFERED_VIDEO_BYTES;
+      if (!Number.isSafeInteger(size) || size < 12 || size > maximum)
+        throw new Error(
+          youtubeApi
+            ? "Select an MP4/WebM video up to 256 GiB."
+            : "Select an MP4/WebM video up to 64 MiB.",
+        );
       if (
         this.pending.size >= 8 ||
         [...this.pending.values()].filter((s) => s.actor === actor).length >= 2

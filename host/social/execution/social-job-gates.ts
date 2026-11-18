@@ -90,6 +90,8 @@ export async function sendWithFallback(
   try {
     return await send(primary, account);
   } catch (error) {
+    // YouTube video uploads have an official API. A resumable session stays on that API.
+    if (account.platform === "youtube" && job.kind === "publish") throw error;
     // The adapter failed before submit, so the dispatch marker set by the caller is not a submit.
     const notSubmitted = { ...job, dispatchedAt: undefined };
     const browserSupports =

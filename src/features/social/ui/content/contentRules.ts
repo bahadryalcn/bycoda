@@ -264,6 +264,11 @@ export function draftProblems(input: RuleInput): Problem[] {
     if (limit !== undefined && count > limit)
       add(t("Content for this account can be at most {p0} characters.", { p0: limit }));
     for (const text of mediaProblems(account.platform, draft.media)) add(text);
+    if (
+      draft.media.some((item) => item.youtubeApiOnly) &&
+      (account.platform !== "youtube" || account.connection === "browser")
+    )
+      add(t("Large videos require a YouTube API connection."));
     const platform = draft.platform[account.id];
     if (account.platform === "facebook")
       for (const text of reelProblems(platform?.facebook, draft.media)) add(text);
