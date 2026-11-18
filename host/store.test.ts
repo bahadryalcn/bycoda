@@ -1196,6 +1196,37 @@ function session(id: string, projectId: string, extra: Partial<HostSession> = {}
     ...extra,
   } as unknown as HostSession;
 }
+it("uses pending run identities ahead of checkpointed session metadata", async () => {
+  const directory = open();
+  const store = new HostStore(join(directory, "host.db"));
+  cleanups.push(() => store.close());
+  const { id: projectId } = await store.addProject(directory, "Test");
+  const event = { type: "test" };
+  await store.save(session("finishing", projectId), event);
+  await store.save(session("starting", projectId), event);
+  await store.save(
+    session("finishing", projectId, { revision: 2, status: "running", runId: "checkpointed" }),
+    event,
+    { journal: true },
+  );
+  await store.save(session("no-run-id", projectId, { status: "running" }), event);
+  expect(await store.runningSessionRuns()).toEqual([
+    { sessionId: "finishing", projectId, runId: "checkpointed" },
+  ]);
+
+  await store.transaction(async () => {
+    await store.save(session("finishing", projectId, { revision: 3 }), event, { deferred: true });
+    await store.save(
+      session("starting", projectId, { revision: 2, status: "running", runId: "pending" }),
+      event,
+      { deferred: true },
+    );
+    expect(await store.runningSessionRuns()).toEqual([
+      { sessionId: "starting", projectId, runId: "pending" },
+    ]);
+  });
+});
+
 describe("HostStore.adopted", () => {
   it("lists only desktop-shared sessions and tracks updates", async () => {
     const directory = open();
@@ -1351,6 +1382,7 @@ describe("HostStore.adopted", () => {
             revision: 9,
             updatedAt: 90,
             status: "running",
+            runId: "legacy-run",
           }),
         ),
       );
@@ -1362,6 +1394,9 @@ describe("HostStore.adopted", () => {
     await raw.close();
     const store = new HostStore(path);
     cleanups.push(async () => await store.close());
+    expect(await store.runningSessionRuns()).toEqual([
+      { sessionId: "late", projectId: project.id, runId: "legacy-run" },
+    ]);
     expect((await store.summaries(project.id)).map((entry) => entry.id).sort()).toEqual([
       "a",
       "b",
