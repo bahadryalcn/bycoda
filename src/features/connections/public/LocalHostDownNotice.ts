@@ -4,4 +4,5 @@ export {
   LocalHostStartButton,
   useLocalHostDownNotice,
 } from "../ui/LocalHostDownNotice";
+export { LocalHostRevokedNotice } from "../ui/LocalHostRevoked";
 export { LocalHostVersionPrompt } from "../ui/LocalHostVersionPrompt";

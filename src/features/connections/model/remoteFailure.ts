@@ -42,6 +42,11 @@ export function remoteErrorText(error: unknown): string {
   return String(error);
 }
 
+/** Whether the Host refused this computer's credential (`Host rejected request [RPC_AUTHORIZATION]`). */
+export function isHostAuthorizationRefusal(error: unknown): boolean {
+  return /\[RPC_AUTHORIZATION\]/.test(remoteErrorText(error));
+}
+
 /** Native failures retain a code; persisted view errors may retain only its prefix. */
 export function nativeConnectionFailureCode(error: unknown): string | undefined {
   const code = error && typeof error === "object" && "code" in error ? error.code : undefined;

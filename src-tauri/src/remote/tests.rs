@@ -2263,3 +2263,60 @@ fn http_fallback_is_allowed_only_when_the_request_was_not_sent() {
         );
     }
 }
+
+fn local_link_record(id: &str, environment_id: &str, token: &str) -> StoredMachine {
+    StoredMachine {
+        id: id.into(),
+        name: "This computer (local sync)".into(),
+        endpoint: "http://127.0.0.1:3774".into(),
+        environment_id: environment_id.into(),
+        token: token.into(),
+        ssh: None,
+        local_host: true,
+    }
+}
+
+const LOCAL_NAME: &str = "This computer (local sync)";
+
+#[test]
+fn a_repaired_local_pairing_replaces_the_token_and_keeps_the_machine_id() {
+    let mut machines = vec![
+        saved("mac", "me@192.168.1.5"),
+        local_link_record("local", "env-1", "old-token"),
+    ];
+    let repaired =
+        apply_local_repair(&mut machines, "local", "env-1", "new-token", LOCAL_NAME).unwrap();
+    assert_eq!(repaired.id, "local");
+    assert_eq!(repaired.token, "new-token");
+    assert_eq!(machines.len(), 2);
+    assert_eq!(
+        machines.iter().find(|m| m.id == "local").unwrap().token,
+        "new-token"
+    );
+}
+
+#[test]
+fn a_repair_that_reaches_another_host_replaces_the_record() {
+    let mut machines = vec![local_link_record("local", "env-1", "old-token")];
+    let repaired =
+        apply_local_repair(&mut machines, "local", "env-2", "new-token", LOCAL_NAME).unwrap();
+    assert_ne!(repaired.id, "local");
+    assert_eq!(repaired.environment_id, "env-2");
+    assert!(repaired.local_host);
+    assert_eq!(machines.len(), 1);
+    assert_eq!(machines[0].id, repaired.id);
+}
+
+#[test]
+fn non_local_and_ssh_machines_are_never_repaired() {
+    let mut remote = local_link_record("remote", "env-r", "old-token");
+    remote.name = "Office".into();
+    remote.local_host = false;
+    remote.endpoint = "http://192.168.1.5:3774".into();
+    let mut machines = vec![saved("mac", "me@127.0.0.1"), remote];
+    let before = serde_json::to_value(&machines).unwrap();
+    for id in ["mac", "remote", "missing"] {
+        assert!(apply_local_repair(&mut machines, id, "env-r", "new-token", LOCAL_NAME).is_err());
+    }
+    assert_eq!(serde_json::to_value(&machines).unwrap(), before);
+}

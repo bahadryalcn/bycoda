@@ -34,6 +34,7 @@ export type * as modelSessionExecutionBindingApi from "./public/sessionExecution
 export type * as modelUseRemoteSessionBindingApi from "./public/useRemoteSessionBinding";
 export type * as modelUseHostSessionBindingApi from "./public/useHostSessionBinding";
 export type * as modelSessionExecutionClientApi from "./public/sessionExecutionClient";
+export type * as uiSettingsHostsApi from "./public/settingsHosts";
 export type * as modelUseSharedLocalQueuesApi from "./public/useSharedLocalQueues";
 export type * as modelWorkspaceUrlsApi from "./public/workspaceUrls";
 export type * as uiAdoptedSessionNoticeApi from "./public/AdoptedSessionNotice";

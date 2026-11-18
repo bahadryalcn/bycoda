@@ -12014,5 +12014,17 @@
   "The connection to the Host dropped before the result was known. The queue checks again automatically.": "Die Verbindung zum Host ist abgebrochen, bevor das Ergebnis bekannt war. Die Warteschlange prüft automatisch erneut.",
   "The message was not sent. The technical reason is in the details.": "Die Nachricht wurde nicht gesendet. Der technische Grund steht in den Details.",
   "Sync is paused until room privacy protection is confirmed. It retries automatically.": "Synchronisierung ist pausiert, bis der Raum-Datenschutz bestätigt ist. Sie wird automatisch erneut versucht.",
-  "Automatic reconnect paused": "Automatisches Wiederverbinden pausiert"
+  "Automatic reconnect paused": "Automatisches Wiederverbinden pausiert",
+  "Applying settings to": "Einstellungen anwenden auf",
+  "This computer's Host is not connected.": "Der Host dieses Computers ist nicht verbunden.",
+  "This computer's connection to its Host was revoked.": "Die Verbindung dieses Computers zu seinem Host wurde widerrufen.",
+  "Tasks, sessions and sync on this computer are unavailable until you reconnect.": "Aufgaben, Sitzungen und Synchronisierung auf diesem Computer sind erst nach dem erneuten Verbinden verfügbar.",
+  "Pair again": "Erneut koppeln",
+  "Update needed": "Update erforderlich",
+  "Unavailable machine": "Nicht verfügbarer Computer",
+  "Use this computer": "Diesen Computer verwenden",
+  "This machine is no longer available.": "Dieser Computer ist nicht mehr verfügbar.",
+  "{p0} is offline.": "{p0} ist offline.",
+  "{p0} needs a Host update.": "{p0} benötigt ein Host-Update.",
+  "{p0} no longer accepts this computer. Pair it again from Settings > Connections.": "{p0} akzeptiert diesen Computer nicht mehr. Koppeln Sie ihn in den Einstellungen unter Verbindungen erneut."
 }

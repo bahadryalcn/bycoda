@@ -15,6 +15,17 @@ export async function startLocalHost(): Promise<void> {
   notifyRemoteRecovered(machine?.environmentId);
 }
 
+/** The owner's "Reconnect" after this computer's Host revoked its link: pairs again through the
+ * local launcher, then lets every view reload. Never called on its own; rejects with the reason
+ * when this is not the local link or the Host did not issue a pairing. */
+export async function reconnectLocalHost(machine: RemoteMachine): Promise<RemoteMachine> {
+  const repaired = await invoke<RemoteMachine>("local_host_reconnect", { machineId: machine.id });
+  // The environment can change when the new pairing reaches another Host.
+  for (const environmentId of new Set([machine.environmentId, repaired.environmentId]))
+    notifyRemoteRecovered(environmentId);
+  return repaired;
+}
+
 type LocalHostListener = (state: LocalHostState | undefined) => void;
 
 // One poller serves every consumer. It runs only while the document is visible and

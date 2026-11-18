@@ -12014,5 +12014,17 @@
   "The connection to the Host dropped before the result was known. The queue checks again automatically.": "The connection to the Host dropped before the result was known. The queue checks again automatically.",
   "The message was not sent. The technical reason is in the details.": "The message was not sent. The technical reason is in the details.",
   "Sync is paused until room privacy protection is confirmed. It retries automatically.": "Sync is paused until room privacy protection is confirmed. It retries automatically.",
-  "Automatic reconnect paused": "Automatic reconnect paused"
+  "Automatic reconnect paused": "Automatic reconnect paused",
+  "Applying settings to": "Applying settings to",
+  "This computer's Host is not connected.": "This computer's Host is not connected.",
+  "This computer's connection to its Host was revoked.": "This computer's connection to its Host was revoked.",
+  "Tasks, sessions and sync on this computer are unavailable until you reconnect.": "Tasks, sessions and sync on this computer are unavailable until you reconnect.",
+  "Pair again": "Pair again",
+  "Update needed": "Update needed",
+  "Unavailable machine": "Unavailable machine",
+  "Use this computer": "Use this computer",
+  "This machine is no longer available.": "This machine is no longer available.",
+  "{p0} is offline.": "{p0} is offline.",
+  "{p0} needs a Host update.": "{p0} needs a Host update.",
+  "{p0} no longer accepts this computer. Pair it again from Settings > Connections.": "{p0} no longer accepts this computer. Pair it again from Settings > Connections."
 }

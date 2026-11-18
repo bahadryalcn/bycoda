@@ -644,6 +644,7 @@ pub fn run() {
             remote::remote_connect,
             inline_visual::inline_visual_read,
             local_host::local_host_connect,
+            local_host::local_host_reconnect,
             local_host::local_host_status,
             local_host::local_host_start,
             bundled_host::local_host_bundle_status,

@@ -1301,15 +1301,7 @@ pub(crate) fn local_host_pair(
     connect_host(app, state, name, url, token, true)
 }
 
-fn connect_host(
-    app: AppHandle,
-    state: State<'_, RemoteConnections>,
-    name: String,
-    url: String,
-    token: String,
-    local_host: bool,
-) -> Result<Machine, String> {
-    let endpoint = endpoint(&url)?;
+fn normalize_device_token(token: &str) -> Result<String, String> {
     let token = token.trim().to_string();
     if token.len() != 43
         || !token
@@ -1318,7 +1310,12 @@ fn connect_host(
     {
         return Err("Enter the device token issued by bycoda-host pair".into());
     }
-    let descriptor = rpc(&endpoint, &token, None, "environment.describe", json!({}))?;
+    Ok(token)
+}
+
+/// Verifies a fresh pairing with the Host and returns its descriptor and identity.
+fn describe_for_pairing(endpoint: &str, token: &str) -> Result<(Value, String), String> {
+    let descriptor = rpc(endpoint, token, None, "environment.describe", json!({}))?;
     if descriptor.get("protocolVersion").and_then(Value::as_u64) != Some(1) {
         return Err("This host uses an incompatible protocol version".into());
     }
@@ -1328,6 +1325,20 @@ fn connect_host(
         .filter(|s| !s.is_empty())
         .ok_or("Host identity is missing")?
         .to_string();
+    Ok((descriptor, environment_id))
+}
+
+fn connect_host(
+    app: AppHandle,
+    state: State<'_, RemoteConnections>,
+    name: String,
+    url: String,
+    token: String,
+    local_host: bool,
+) -> Result<Machine, String> {
+    let endpoint = endpoint(&url)?;
+    let token = normalize_device_token(&token)?;
+    let (descriptor, environment_id) = describe_for_pairing(&endpoint, &token)?;
     let name = if name.trim().is_empty() {
         descriptor
             .get("name")
@@ -1539,6 +1550,128 @@ pub(crate) fn prune_stale_local_sync(
         state.tunnels.remove(&machine.id);
     }
     Ok(())
+}
+
+/// The saved automatic link to this computer's Host, or `None` for any other
+/// machine (an SSH link, a remote address, a missing record).
+pub(crate) fn local_link(
+    app: &AppHandle,
+    state: &RemoteConnections,
+    machine_id: &str,
+) -> Option<Machine> {
+    let _guard = state.store.lock().ok()?;
+    let machines = read(&store_path(app).ok()?).ok()?;
+    let local_name = crate::local_host::local_device_name();
+    machines
+        .iter()
+        .find(|m| m.id == machine_id && is_local_sync(m, &local_name))
+        .map(StoredMachine::public)
+}
+
+/// Cheap authenticated call with the saved local link's own token, for the
+/// once-per-launch revocation check. `Err` carries the RPC error text; refuses
+/// any machine that is not the automatic loopback link.
+pub(crate) fn probe_local_link_token(
+    app: &AppHandle,
+    state: &RemoteConnections,
+    machine_id: &str,
+) -> Result<(), String> {
+    let local_name = crate::local_host::local_device_name();
+    let (endpoint, token) = {
+        let _guard = state
+            .store
+            .lock()
+            .map_err(|_| "Connection store is locked")?;
+        let machine = read(&store_path(app)?)?
+            .into_iter()
+            .find(|m| m.id == machine_id && is_local_sync(m, &local_name))
+            .ok_or("This connection is not the local host")?;
+        (machine.endpoint, machine.token)
+    };
+    rpc(&endpoint, &token, None, "environment.describe", json!({})).map(|_| ())
+}
+
+/// Swaps in a fresh token for the saved local link, in place: the machine id
+/// frontend state is keyed by survives. A pairing that reaches a different Host
+/// replaces the record the way `connect_host` would (that Host's own record when
+/// saved, else a new id). Only the automatic loopback link is ever touched.
+fn apply_local_repair(
+    machines: &mut Vec<StoredMachine>,
+    machine_id: &str,
+    environment_id: &str,
+    token: &str,
+    local_name: &str,
+) -> Result<StoredMachine, String> {
+    let index = machines
+        .iter()
+        .position(|m| m.id == machine_id && is_local_sync(m, local_name))
+        .ok_or("This connection is not the local host")?;
+    if machines[index].environment_id == environment_id {
+        let machine = &mut machines[index];
+        machine.token = token.to_string();
+        machine.local_host = true;
+        return Ok(machine.clone());
+    }
+    let old = machines.remove(index);
+    let id = machines
+        .iter()
+        .find(|m| m.environment_id == environment_id)
+        .map(|m| m.id.clone())
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    machines.retain(|m| m.id != id);
+    let machine = StoredMachine {
+        id,
+        name: old.name,
+        endpoint: old.endpoint,
+        environment_id: environment_id.to_string(),
+        token: token.to_string(),
+        ssh: None,
+        local_host: true,
+    };
+    machines.push(machine.clone());
+    Ok(machine)
+}
+
+/// Stores a token freshly issued by this computer's launcher on the saved
+/// local link, after the Host confirmed it.
+pub(crate) fn replace_local_pairing(
+    app: &AppHandle,
+    state: &RemoteConnections,
+    machine_id: &str,
+    token: &str,
+) -> Result<Machine, String> {
+    let token = normalize_device_token(token)?;
+    let local_name = crate::local_host::local_device_name();
+    let endpoint = {
+        let _guard = state
+            .store
+            .lock()
+            .map_err(|_| "Connection store is locked")?;
+        read(&store_path(app)?)?
+            .into_iter()
+            .find(|m| m.id == machine_id && is_local_sync(m, &local_name))
+            .ok_or("This connection is not the local host")?
+            .endpoint
+    };
+    let (descriptor, environment_id) = describe_for_pairing(&endpoint, &token)?;
+    let _guard = state
+        .store
+        .lock()
+        .map_err(|_| "Connection store is locked")?;
+    let path = store_path(app)?;
+    let mut machines = read(&path)?;
+    let machine = apply_local_repair(
+        &mut machines,
+        machine_id,
+        &environment_id,
+        &token,
+        &local_name,
+    )?;
+    write(&path, &machines)?;
+    state.invalidate_ws(machine_id);
+    state.invalidate_ws(&machine.id);
+    state.observe_ws_capability(&machine, &descriptor);
+    Ok(machine.public())
 }
 
 #[tauri::command(async)]

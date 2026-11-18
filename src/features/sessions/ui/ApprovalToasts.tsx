@@ -61,8 +61,10 @@ import {
 import "./notification-sheet.css";
 import {
   LocalHostDownNotice,
+  LocalHostRevokedNotice,
   useLocalHostDownNotice,
 } from "../../connections/public/LocalHostDownNotice";
+import { useRevokedLocalMachine } from "../../connections/public/localHostService";
 
 export type Notice = PendingApprovalNotice & { session: Session };
 type Props = {
@@ -143,6 +145,7 @@ export function ApprovalToasts({
 }: Props) {
   const t = useT();
   const localHostNotice = useLocalHostDownNotice();
+  const revokedLocalMachine = useRevokedLocalMachine();
   useProjectNotificationPreferences();
   const lock = useLockSnapshot();
   const ownerRequests = useOwnerNotifications();
@@ -190,7 +193,11 @@ export function ApprovalToasts({
     setDismissed(new Set([...dismissed].filter((key) => liveKeys.has(key))));
   }
   const count =
-    open.length + ownerRequests.length + (hasLocked ? 1 : 0) + (localHostNotice.visible ? 1 : 0);
+    open.length +
+    ownerRequests.length +
+    (hasLocked ? 1 : 0) +
+    (localHostNotice.visible ? 1 : 0) +
+    (revokedLocalMachine ? 1 : 0);
   const liveRequests = new Set(notices.map(noticeKey));
   const historyIds = historyOccurrenceIds(visibleHistory);
   // A request that is still pending is answered in the pending card, so Recent skips it.
@@ -286,6 +293,14 @@ export function ApprovalToasts({
   const pendingRows = [
     ...(localHostNotice.visible
       ? [{ key: "local-host", node: <LocalHostDownNotice notice={localHostNotice} /> }]
+      : []),
+    ...(revokedLocalMachine
+      ? [
+          {
+            key: "local-host-revoked",
+            node: <LocalHostRevokedNotice machine={revokedLocalMachine} />,
+          },
+        ]
       : []),
     ...ownerRequests.map((row) => ({
       key: row.key,

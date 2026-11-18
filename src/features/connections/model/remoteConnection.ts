@@ -70,6 +70,11 @@ const ROUTE_REJECTED =
 const PAIRING_REFUSED =
   "This machine no longer accepts this computer’s pairing. Add it again in Connections.";
 
+/** The machine refused this computer's credential, as opposed to a changed Host identity. */
+export function isPairingRefused(state: RemoteConnectionState): boolean {
+  return state.status === "identity-mismatch" && state.error === PAIRING_REFUSED;
+}
+
 /** A short reason for a status, for banners and tooltips. */
 export function connectionReason(status: RemoteConnectionStatus, raw: string): string {
   if (status === "outdated-host") return "bycoda Host on the machine needs an update.";

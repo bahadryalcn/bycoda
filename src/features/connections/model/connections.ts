@@ -106,6 +106,10 @@ export function adoptRemoteMachineInventory(machines: RemoteMachine[]) {
   cachedMachines = machines;
   machinesLoaded = true;
 }
+/** The saved machine with this Host identity, as last read from the native store. */
+export function savedMachineForEnvironment(environmentId: string): RemoteMachine | undefined {
+  return cachedMachines.find((entry) => entry.environmentId === environmentId);
+}
 export const OPEN_CONNECTIONS_EVENT = "bycoda:open-connections";
 export const OPEN_REMOTE_PROJECT_EVENT = "bycoda:open-remote-project";
 export const refreshRemoteMachines = () => window.dispatchEvent(new Event(CHANGE));

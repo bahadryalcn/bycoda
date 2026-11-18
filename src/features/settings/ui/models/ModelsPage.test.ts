@@ -16,6 +16,7 @@ import { saveAccountSessionDefaults } from "../../../sessions/model/accountSessi
 import { loadProjectProviderSettings } from "../../../sessions/model/projectProviders";
 import { machineCapabilities } from "../../../automations/model/machineSnapshot";
 import { remoteRequest } from "../../../connections/public/connections";
+import { applyRemoteConnection, resetRemoteHealth } from "../../../connections/model/remoteHealth";
 import {
   EMPTY_MODEL_ROUTING,
   type ModelRoutingState,
@@ -59,10 +60,12 @@ beforeEach(() => {
   vi.mocked(invoke).mockReset().mockResolvedValue(undefined);
   vi.mocked(remoteRequest).mockReset();
   vi.mocked(machineCapabilities).mockReset();
+  resetRemoteHealth();
 });
 
 afterEach(async () => {
   await act(async () => root.unmount());
+  resetRemoteHealth();
   queryClient.clear();
   container.remove();
   localStorage.clear();
@@ -81,28 +84,104 @@ async function render(view: ModelsView = "defaults") {
   );
 }
 
+const withEnvironment = (machine: Record<string, unknown>) => ({
+  environmentId: `env-${String(machine.id)}`,
+  ...machine,
+});
+const mockLocalHost = (input: Record<string, unknown>, others: Record<string, unknown>[] = []) => {
+  const machine = withEnvironment(input);
+  return vi
+    .mocked(invoke)
+    .mockImplementation(async (command) =>
+      command === "local_host_connect"
+        ? machine
+        : command === "remote_machines"
+          ? [machine, ...others.map(withEnvironment)]
+          : undefined,
+    );
+};
+
 describe("model defaults scope inheritance", () => {
-  it("waits for the Host identity before offering an editable defaults draft", async () => {
-    let finish!: (value: unknown) => void;
-    vi.mocked(invoke).mockImplementation(async (command) =>
-      command === "remote_machines"
-        ? new Promise((resolve) => {
-            finish = resolve;
-          })
-        : undefined,
-    );
-    vi.mocked(machineCapabilities).mockResolvedValue([]);
+  it("keeps chat defaults editable while this computer's Host is rejected", async () => {
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === "local_host_connect")
+        throw new Error("Host rejected request [RPC_AUTHORIZATION] (environment.describe)");
+      return [];
+    });
     await render();
-    expect(container.querySelector("[data-settings-save-bar]")).toBeNull();
-    await act(async () =>
-      finish([{ id: "initial-host", localHost: true, endpoint: "http://127.0.0.1:7777" }]),
-    );
     await vi.waitFor(() =>
       expect(container.querySelector("[data-settings-save-bar]")).not.toBeNull(),
     );
+    expect(container.textContent).not.toContain("RPC_AUTHORIZATION");
+  });
+
+  it("shows one error with Retry, and no 'not available' message, when the Host cannot be read", async () => {
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === "local_host_connect")
+        throw new Error("Host rejected request [RPC_AUTHORIZATION] (environment.describe)");
+      return [];
+    });
+    await render("work");
+    await vi.waitFor(() => expect(container.textContent).toContain("RPC_AUTHORIZATION"));
+    expect(container.textContent).not.toContain("Model routing is not available on this Host.");
+    expect(container.textContent?.match(/RPC_AUTHORIZATION/g)).toHaveLength(1);
+    expect(
+      [...container.querySelectorAll("button")].filter((node) => node.textContent === "Retry"),
+    ).toHaveLength(1);
+  });
+
+  it("shows one error when the capability probe fails", async () => {
+    mockLocalHost({ id: "local", localHost: true, endpoint: "http://127.0.0.1:7777" });
+    vi.mocked(machineCapabilities).mockRejectedValue(new Error("synthetic probe failure"));
+    await render("work");
+    await vi.waitFor(() => expect(container.textContent).toContain("synthetic probe failure"));
+    expect(container.textContent).not.toContain("Model routing is not available on this Host.");
+    expect(container.querySelector('[data-testid="model-order"]')).toBeNull();
+  });
+
+  it("offers Reconnect when this computer's Host revoked its link, and reloads after it", async () => {
+    const local = withEnvironment({
+      id: "local",
+      localHost: true,
+      endpoint: "http://127.0.0.1:7777",
+    });
+    vi.mocked(invoke).mockImplementation(async (command) =>
+      command === "local_host_connect" || command === "local_host_reconnect"
+        ? local
+        : command === "remote_machines"
+          ? [local]
+          : undefined,
+    );
+    let revoked = true;
+    vi.mocked(machineCapabilities).mockImplementation(async () => {
+      if (revoked)
+        throw new Error("Host rejected request [RPC_AUTHORIZATION] (environment.describe)");
+      return ["models.routing.v1"];
+    });
+    await render("work");
+    await vi.waitFor(() =>
+      expect(container.textContent).toContain(
+        "This computer's connection to its Host was revoked.",
+      ),
+    );
+    expect(container.textContent).not.toContain("RPC_AUTHORIZATION");
+    expect(invoke).not.toHaveBeenCalledWith("local_host_reconnect", expect.anything());
+    expect(container.querySelector('[data-testid="model-order"]')).toBeNull();
+    const reconnect = [...container.querySelectorAll("button")].find(
+      (node) => node.textContent === "Reconnect",
+    )!;
+    revoked = false;
+    await act(async () => reconnect.click());
+    expect(invoke).toHaveBeenCalledWith("local_host_reconnect", { machineId: "local" });
+    await vi.waitFor(() =>
+      expect(container.querySelector('[data-testid="model-order"]')).not.toBeNull(),
+    );
+    expect(container.textContent).not.toContain("was revoked");
   });
 
   it("keeps work routing and chat defaults in their respective views", async () => {
+    mockLocalHost({ id: "local", localHost: true, endpoint: "http://127.0.0.1:7777" });
+    vi.mocked(machineCapabilities).mockResolvedValue(["models.routing.v1"]);
     const visible = (id: string) =>
       container.querySelector(`[data-testid="${id}"]`)?.closest("[hidden]") === null;
     await render("work");
@@ -370,9 +449,7 @@ describe("model defaults scope inheritance", () => {
       defaultMaxRunMinutes: 75,
     };
     hostState.delegation.global = { crossSubagentMaxEffort: "high" };
-    vi.mocked(invoke).mockResolvedValue([
-      { id: "local", localHost: true, endpoint: "http://127.0.0.1:7777" },
-    ]);
+    mockLocalHost({ id: "local", localHost: true, endpoint: "http://127.0.0.1:7777" });
     vi.mocked(machineCapabilities).mockResolvedValue(["models.routing.v1"]);
     let rejectSave = true;
     vi.mocked(remoteRequest).mockImplementation(async (_id, method, params) => {
@@ -416,9 +493,7 @@ describe("model defaults scope inheritance", () => {
       version: 5,
       updatedAt: 1,
     };
-    vi.mocked(invoke).mockResolvedValue([
-      { id: "local", localHost: true, endpoint: "http://127.0.0.1:7777" },
-    ]);
+    mockLocalHost({ id: "local", localHost: true, endpoint: "http://127.0.0.1:7777" });
     vi.mocked(machineCapabilities).mockResolvedValue(["models.routing.v1"]);
     let finish!: (value: unknown) => void;
     vi.mocked(remoteRequest).mockImplementation(async (_id, method) =>
@@ -471,9 +546,7 @@ describe("model defaults scope inheritance", () => {
       version: 5,
       updatedAt: 1,
     };
-    vi.mocked(invoke).mockResolvedValue([
-      { id: hostId, localHost: true, endpoint: "http://127.0.0.1:7777" },
-    ]);
+    mockLocalHost({ id: hostId, localHost: true, endpoint: "http://127.0.0.1:7777" });
     vi.mocked(machineCapabilities).mockResolvedValue(["models.routing.v1"]);
     let reject!: (error: Error) => void;
     let resolve!: (value: unknown) => void;
@@ -575,20 +648,101 @@ describe("model defaults scope inheritance", () => {
 
   it("shows loading while Host capabilities are pending", async () => {
     let finish!: (value: string[]) => void;
-    vi.mocked(invoke).mockResolvedValue([
-      { id: "pending", localHost: true, endpoint: "http://127.0.0.1:7777" },
-    ]);
+    mockLocalHost({ id: "pending", localHost: true, endpoint: "http://127.0.0.1:7777" });
     vi.mocked(machineCapabilities).mockImplementation(
       () =>
         new Promise((resolve) => {
           finish = resolve;
         }),
     );
-    await render();
+    await render("work");
     await vi.waitFor(() => expect(finish).toBeDefined());
     await vi.waitFor(() => expect(container.textContent).toContain("Loading"));
     expect(container.textContent).not.toContain("unavailable on this Host");
     await act(async () => finish(["models.routing.v1"]));
+  });
+
+  const office = { id: "office", name: "Office", endpoint: "https://office.invalid" };
+  const optionLabels = async () => {
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label^="Applying settings to"]')!.click(),
+    );
+    return [...document.querySelectorAll<HTMLElement>('[role="option"]')].map((node) =>
+      node.textContent?.trim(),
+    );
+  };
+
+  it("lists every saved machine at once, before any of them answers", async () => {
+    mockLocalHost({ id: "local", localHost: true, endpoint: "http://127.0.0.1:7777" }, [office]);
+    vi.mocked(machineCapabilities).mockImplementation(() => new Promise(() => {}));
+    await render("work");
+    await vi.waitFor(() =>
+      expect(container.querySelector('[aria-label^="Applying settings to"]')).not.toBeNull(),
+    );
+    expect(await optionLabels()).toEqual(["This computer · Checking…", "Office · Checking…"]);
+    expect(container.querySelector('[data-testid="model-order"]')).toBeNull();
+  });
+
+  it("selects an offline machine without editing it or switching to another one", async () => {
+    mockLocalHost({ id: "local", localHost: true, endpoint: "http://127.0.0.1:7777" }, [office]);
+    applyRemoteConnection("env-office", {
+      type: "failure",
+      error: "Machine is unreachable",
+      at: Date.now(),
+    });
+    vi.mocked(machineCapabilities).mockImplementation(async (machine) => {
+      if (machine.id === "office") throw new Error("Machine is unreachable");
+      return ["models.routing.v1"];
+    });
+    await render("work");
+    await vi.waitFor(() =>
+      expect(container.querySelector('[data-testid="model-order"]')).not.toBeNull(),
+    );
+    expect(await optionLabels()).toEqual(["This computer", "Office · Offline"]);
+    await act(async () =>
+      [...document.querySelectorAll<HTMLElement>('[role="option"]')]
+        .find((node) => node.textContent?.includes("Office"))!
+        .click(),
+    );
+    await vi.waitFor(() => expect(container.textContent).toContain("Office is offline."));
+    expect(container.querySelector('[data-testid="model-order"]')).toBeNull();
+    expect(
+      [...container.querySelectorAll("button")].filter((node) => node.textContent === "Retry"),
+    ).toHaveLength(1);
+  });
+
+  it("says a removed machine is gone and returns to this computer only when asked", async () => {
+    mockLocalHost({ id: "local", localHost: true, endpoint: "http://127.0.0.1:7777" }, [office]);
+    vi.mocked(machineCapabilities).mockResolvedValue(["models.routing.v1"]);
+    await render("work");
+    await vi.waitFor(() =>
+      expect(container.querySelector('[data-testid="model-order"]')).not.toBeNull(),
+    );
+    await optionLabels();
+    await act(async () =>
+      [...document.querySelectorAll<HTMLElement>('[role="option"]')]
+        .find((node) => node.textContent?.includes("Office"))!
+        .click(),
+    );
+    await vi.waitFor(() =>
+      expect(container.querySelector('[data-testid="model-order"]')).not.toBeNull(),
+    );
+    mockLocalHost({ id: "local", localHost: true, endpoint: "http://127.0.0.1:7777" });
+    await act(async () => {
+      window.dispatchEvent(new Event("bycoda:remote-machines"));
+    });
+    await vi.waitFor(() =>
+      expect(container.textContent).toContain("This machine is no longer available."),
+    );
+    expect(container.querySelector('[data-testid="model-order"]')).toBeNull();
+    await act(async () =>
+      [...container.querySelectorAll("button")]
+        .find((node) => node.textContent === "Use this computer")!
+        .click(),
+    );
+    await vi.waitFor(() =>
+      expect(container.querySelector('[data-testid="model-order"]')).not.toBeNull(),
+    );
   });
 
   it("keeps originating account payload and the saved state when the provider changes during save", async () => {

@@ -20,8 +20,8 @@ use crate::bundled_host::{
 };
 
 use crate::remote::{
-    local_host_pair, mark_local_host, prune_stale_local_sync, remote_machines, Machine,
-    RemoteConnections,
+    local_host_pair, local_link, mark_local_host, probe_local_link_token, prune_stale_local_sync,
+    remote_machines, replace_local_pairing, Machine, RemoteConnections,
 };
 
 pub(crate) fn host_data_dir() -> Option<PathBuf> {
@@ -184,8 +184,117 @@ fn connection_port(data_dir: &Path, program: &str, base_args: &[String]) -> Opti
 
 /// How this desktop appears in its own host's device list, distinct from
 /// an SSH-paired desktop's name (`remote_ssh::device_name`).
-fn local_device_name() -> String {
+pub(crate) fn local_device_name() -> String {
     "This computer (local sync)".to_string()
+}
+
+/// One reconnect at a time, so a double click cannot issue two pairings.
+static REPAIR_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Owner action: pairs again through this computer's launcher after the Host
+/// revoked the saved link's token, and replaces that token on the existing record
+/// (same machine id). Never runs on its own — a revocation stays in force until
+/// the owner asks for this. Fails for any machine that is not the automatic local
+/// link.
+pub(crate) fn repair_local_pairing(app: &AppHandle, machine_id: &str) -> Result<Machine, String> {
+    let _serial = REPAIR_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let state: State<'_, RemoteConnections> = app.state();
+    local_link(app, &state, machine_id)
+        .ok_or_else(|| "This connection is not the local host".to_string())?;
+    let (program, base_args) = host_data_dir()
+        .and_then(|dir| launcher_command(&dir))
+        .ok_or("The local Host is not installed on this computer")?;
+    let pair = run_launcher(
+        &program,
+        &base_args,
+        &["pair", "--name", &local_device_name(), "--json"],
+        Duration::from_secs(45),
+    )
+    .ok_or("The local Host did not issue a new pairing")?;
+    let token = pair
+        .get("token")
+        .and_then(Value::as_str)
+        .ok_or("The local Host did not issue a new pairing")?;
+    replace_local_pairing(app, &state, machine_id, token)
+}
+
+/// Once-per-launch token check state: 0 unchecked, 1 check running, 2 done.
+static STARTUP_CHECK: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+const CHECK_UNCHECKED: u8 = 0;
+const CHECK_RUNNING: u8 = 1;
+const CHECK_DONE: u8 = 2;
+
+#[derive(Debug, PartialEq, Eq)]
+enum StartupDecision {
+    /// Already checked (or being checked) in this launch: touch nothing.
+    Skip,
+    /// The Host answered: the token is valid; the launch check is finished.
+    Done,
+    /// The Host revoked the token: re-pair once; the launch check is finished.
+    Repair,
+    /// Host down, timeout or any other failure: do nothing, check again later.
+    LeaveUnset,
+}
+
+/// Decides the launch check. `probe` runs only when no check happened yet.
+fn startup_decision(
+    already_started: bool,
+    probe: impl FnOnce() -> Result<(), String>,
+) -> StartupDecision {
+    if already_started {
+        return StartupDecision::Skip;
+    }
+    match probe() {
+        Ok(()) => StartupDecision::Done,
+        Err(error) if error.contains("[RPC_AUTHORIZATION]") => StartupDecision::Repair,
+        Err(_) => StartupDecision::LeaveUnset,
+    }
+}
+
+/// First reuse of the saved local link in this launch: if the Host revoked its
+/// token, pair again once. Never runs again afterwards, so a mid-session
+/// revocation waits for the owner's Reconnect.
+fn startup_token_check(app: &AppHandle, machine: Machine) -> Machine {
+    use std::sync::atomic::Ordering;
+    let claimed = STARTUP_CHECK
+        .compare_exchange(
+            CHECK_UNCHECKED,
+            CHECK_RUNNING,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        )
+        .is_ok();
+    let state: State<'_, RemoteConnections> = app.state();
+    let decision = startup_decision(!claimed, || {
+        probe_local_link_token(app, &state, &machine.id)
+    });
+    match decision {
+        StartupDecision::Skip => machine,
+        StartupDecision::LeaveUnset => {
+            STARTUP_CHECK.store(CHECK_UNCHECKED, Ordering::Release);
+            machine
+        }
+        StartupDecision::Done => {
+            STARTUP_CHECK.store(CHECK_DONE, Ordering::Release);
+            machine
+        }
+        StartupDecision::Repair => {
+            let repaired = repair_local_pairing(app, &machine.id).unwrap_or(machine);
+            STARTUP_CHECK.store(CHECK_DONE, Ordering::Release);
+            repaired
+        }
+    }
+}
+
+/// The owner's "Reconnect" for a revoked link to this computer's Host. Refuses
+/// every machine other than the automatic loopback link. Runs the launcher and
+/// Host RPC, so it uses the blocking pool.
+#[tauri::command]
+pub async fn local_host_reconnect(app: AppHandle, machine_id: String) -> Result<Machine, String> {
+    crate::harness::run_blocking("local_host_reconnect", move || {
+        repair_local_pairing(&app, &machine_id)
+    })
+    .await
 }
 
 /// Links this desktop to a host running on this same machine, if there is
@@ -226,7 +335,8 @@ pub(crate) fn local_host_connect_blocking(app: AppHandle) -> Result<Option<Machi
         .find(|machine| machine.endpoint == url && machine.ssh.is_none())
     {
         let state: State<'_, RemoteConnections> = app.state();
-        return mark_local_host(&app, &state, &machine.id, &url).map(Some);
+        let marked = mark_local_host(&app, &state, &machine.id, &url)?;
+        return Ok(Some(startup_token_check(&app, marked)));
     }
 
     let Some(pair) = run_launcher(
@@ -497,6 +607,29 @@ fn wait_for_host_with(
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn startup_check_repairs_only_a_revoked_token_once() {
+        let revoked =
+            || Err("Host rejected request [RPC_AUTHORIZATION] (environment.describe).".to_string());
+        assert_eq!(startup_decision(false, || Ok(())), StartupDecision::Done);
+        assert_eq!(startup_decision(false, revoked), StartupDecision::Repair);
+        for failure in [
+            "RPC_HOST_UNAVAILABLE",
+            "RPC_TIMEOUT",
+            "[RPC_ROUTE_REJECTED]",
+        ] {
+            assert_eq!(
+                startup_decision(false, || Err(failure.to_string())),
+                StartupDecision::LeaveUnset
+            );
+        }
+        // After the first check the probe never runs, even for a revoked token.
+        assert_eq!(
+            startup_decision(true, || panic!("must not probe")),
+            StartupDecision::Skip
+        );
+    }
 
     #[test]
     fn reports_a_stopped_host_only_when_installed_idle_and_silent() {

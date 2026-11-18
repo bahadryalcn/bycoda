@@ -10,6 +10,7 @@ import {
 } from "./remoteFailure";
 import {
   INITIAL_CONNECTION,
+  isPairingRefused,
   reduceConnection,
   type RemoteConnectionEvent,
   type RemoteConnectionState,
@@ -106,6 +107,15 @@ export function listRemoteOutages(): string[] {
         state.status !== "outdated-host",
     )
     .map(([environmentId]) => environmentId);
+}
+
+/** Machines that answered 401 to this computer's credential, as one stable string for a store snapshot. */
+export function pairingRefusalKey(): string {
+  return [...connections]
+    .filter(([, state]) => isPairingRefused(state))
+    .map(([environmentId]) => environmentId)
+    .sort()
+    .join("\n");
 }
 
 export function readRemoteConnection(environmentId: string): RemoteConnectionState {

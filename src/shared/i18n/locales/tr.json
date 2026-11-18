@@ -12014,5 +12014,17 @@
   "The connection to the Host dropped before the result was known. The queue checks again automatically.": "Sonuç öğrenilmeden önce Host bağlantısı kesildi. Kuyruk otomatik olarak yeniden kontrol eder.",
   "The message was not sent. The technical reason is in the details.": "Mesaj gönderilmedi. Teknik neden ayrıntılarda.",
   "Sync is paused until room privacy protection is confirmed. It retries automatically.": "Oda gizlilik koruması doğrulanana kadar senkronizasyon duraklatıldı. Otomatik olarak yeniden denenir.",
-  "Automatic reconnect paused": "Otomatik yeniden bağlanma duraklatıldı"
+  "Automatic reconnect paused": "Otomatik yeniden bağlanma duraklatıldı",
+  "Applying settings to": "Ayarların uygulanacağı",
+  "This computer's Host is not connected.": "Bu bilgisayarın Host'u bağlı değil.",
+  "This computer's connection to its Host was revoked.": "Bu bilgisayarın Host'a bağlantısı iptal edildi.",
+  "Tasks, sessions and sync on this computer are unavailable until you reconnect.": "Yeniden bağlanana kadar bu bilgisayardaki görevler, oturumlar ve senkronizasyon kullanılamaz.",
+  "Pair again": "Yeniden eşleştir",
+  "Update needed": "Güncelleme gerekli",
+  "Unavailable machine": "Kullanılamayan bilgisayar",
+  "Use this computer": "Bu bilgisayarı kullan",
+  "This machine is no longer available.": "Bu bilgisayar artık kullanılamıyor.",
+  "{p0} is offline.": "{p0} çevrimdışı.",
+  "{p0} needs a Host update.": "{p0} için Host güncellemesi gerekiyor.",
+  "{p0} no longer accepts this computer. Pair it again from Settings > Connections.": "{p0} artık bu bilgisayarı kabul etmiyor. Ayarlar > Bağlantılar bölümünden yeniden eşleştirin."
 }

@@ -12014,5 +12014,17 @@
   "The connection to the Host dropped before the result was known. The queue checks again automatically.": "在得知结果之前，与 Host 的连接已断开。队列会自动重新检查。",
   "The message was not sent. The technical reason is in the details.": "消息未发送。技术原因见详细信息。",
   "Sync is paused until room privacy protection is confirmed. It retries automatically.": "在确认房间隐私保护之前，同步已暂停。将自动重试。",
-  "Automatic reconnect paused": "自动重新连接已暂停"
+  "Automatic reconnect paused": "自动重新连接已暂停",
+  "Applying settings to": "设置应用于",
+  "This computer's Host is not connected.": "这台电脑的 Host 未连接。",
+  "This computer's connection to its Host was revoked.": "这台电脑与其 Host 的连接已被撤销。",
+  "Tasks, sessions and sync on this computer are unavailable until you reconnect.": "重新连接前，此电脑上的任务、会话和同步不可用。",
+  "Pair again": "重新配对",
+  "Update needed": "需要更新",
+  "Unavailable machine": "不可用的计算机",
+  "Use this computer": "使用此计算机",
+  "This machine is no longer available.": "此计算机已不可用。",
+  "{p0} is offline.": "{p0} 已离线。",
+  "{p0} needs a Host update.": "{p0} 需要更新 Host。",
+  "{p0} no longer accepts this computer. Pair it again from Settings > Connections.": "{p0} 不再接受此计算机。请在“设置 > 连接”中重新配对。"
 }

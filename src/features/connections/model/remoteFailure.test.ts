@@ -3,6 +3,7 @@ import { TimeoutError } from "../../../shared/lib/withTimeout";
 import {
   classifyRemoteError,
   isConnectionFailure,
+  isHostAuthorizationRefusal,
   isTimeoutFailure,
   isTransientTransportError,
   presentRemoteError,
@@ -233,5 +234,20 @@ describe("isTimeoutFailure", () => {
     "Not a working copy",
   ])("is false for %j", (error) => {
     expect(isTimeoutFailure(error)).toBe(false);
+  });
+});
+
+describe("isHostAuthorizationRefusal", () => {
+  it("is true only for the Host's authorization refusal", () => {
+    expect(
+      isHostAuthorizationRefusal(
+        new Error("Host rejected request [RPC_AUTHORIZATION] (environment.describe)."),
+      ),
+    ).toBe(true);
+    expect(isHostAuthorizationRefusal("Host rejected request [RPC_AUTHORIZATION]")).toBe(true);
+    expect(
+      isHostAuthorizationRefusal(new Error("The host request did not complete [RPC_TIMEOUT]")),
+    ).toBe(false);
+    expect(isHostAuthorizationRefusal(undefined)).toBe(false);
   });
 });

@@ -2,6 +2,7 @@
 export {
   classifyRemoteError,
   isConnectionFailure,
+  isHostAuthorizationRefusal,
   isTransientTransportError,
   presentRemoteError,
 } from "../model/remoteFailure";
