@@ -14,7 +14,7 @@ import {
   browserOperations,
 } from "../../src/integrations/social/browserCapabilities";
 import { xMediaFormat } from "../../src/integrations/social/xMedia";
-import { challengeError, detectChallenge } from "./browser/challenge";
+import { challengeError, detectChallenge, needsHumanError } from "./browser/challenge";
 import { BrowserSendLimiter } from "./browser/limiter";
 import { UnexpectedScreen } from "./browser-layers/types";
 import { runLayered, visibilityOf, type BrowserWiring } from "./browser-layers/wiring";
@@ -26,6 +26,26 @@ import type {
 } from "./social-browser";
 import type { BrowserRecipe, BrowserRecipeContext } from "./social-browser-recipe";
 import type { SocialPrincipal, SocialService } from "./social";
+import type { YouTubeBrowserRecipeContext } from "./browser/youtube-recipe-guards";
+
+export type YouTubeBrowserOperationOptions = {
+  uploads?: readonly string[];
+  media?: (id: string) => Promise<Uint8Array>;
+  beforeSubmit?: () => Promise<void>;
+  outbound?: boolean;
+};
+
+function youtubeBrowserImageFormat(bytes: Uint8Array) {
+  if (bytes.length > 16 * 1024 * 1024) throw new SocialPlatformError("rejected");
+  const magic = (offset: number, text: string) =>
+    [...text].every((character, index) => bytes[offset + index] === character.charCodeAt(0));
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "jpg";
+  if ([137, 80, 78, 71, 13, 10, 26, 10].every((byte, index) => bytes[index] === byte)) return "png";
+  if (magic(0, "GIF87a") || magic(0, "GIF89a")) return "gif";
+  if (magic(0, "RIFF") && magic(8, "WEBP")) return "webp";
+  if (magic(0, "BM") && bytes.length >= 14) return "bmp";
+  throw new SocialPlatformError("rejected");
+}
 
 type Login = {
   status: "waiting" | "checking" | "connected" | "failed";
@@ -293,6 +313,69 @@ export class PlatformBrowserSessions {
         await beforeSubmit?.();
       },
     };
+  }
+  /** YouTube mutations use deterministic recipes inside the account's locked browser session. */
+  async youtubeOperation<T>(
+    account: SocialAccount,
+    run: (context: YouTubeBrowserRecipeContext) => Promise<T>,
+    options: YouTubeBrowserOperationOptions = {},
+  ): Promise<T> {
+    const uploads = options.uploads ?? [];
+    if (account.platform !== "youtube" || account.connection !== "browser" || !account.connected || !/^web:youtube:UC[\w-]{22}$/.test(account.platformId))
+      throw new SocialPlatformError("unsupported");
+    if (!this.launcher || this.stopped || (options.outbound && !options.beforeSubmit))
+      throw new SocialPlatformError("denied");
+    if (uploads.length > 10 || new Set(uploads).size !== uploads.length || uploads.some((id) => !/^[a-f0-9-]{36}$/i.test(id)) || (uploads.length && !options.media))
+      throw new SocialPlatformError("rejected");
+    return this.exclusive(account.id, async () => {
+      await options.beforeSubmit?.();
+      if (options.outbound) await this.limiter.reserve(account.id);
+      const staging = join(this.directory, "browser-uploads", randomUUID());
+      try {
+        const files: BrowserRecipeContext["files"] = [];
+        for (const [index, upload] of uploads.entries()) {
+          const bytes = await options.media!(upload);
+          const format = youtubeBrowserImageFormat(bytes);
+          await mkdir(staging, { recursive: true, mode: 0o700 });
+          const path = join(staging, `${index}.${format}`);
+          await writeFile(path, bytes, { mode: 0o600, flag: "wx" });
+          files.push({ path, kind: "image" });
+        }
+        const session = await this.open(account);
+        try {
+          let submitted = false;
+          const base = this.context(session.page, account, files, options.beforeSubmit, () => {
+            submitted = true;
+          });
+          const context: YouTubeBrowserRecipeContext = {
+            ...base,
+            verifyIdentity: async () => {
+              const hit = await detectChallenge(session.page);
+              if (hit) throw await challengeError(session.page, this.directory) ?? needsHumanError(hit);
+              await base.verifyIdentity();
+            },
+            beforeYouTubeSubmission: async () => {
+              await options.beforeSubmit?.();
+              if (options.outbound) {
+                await this.limiter.record(account.id);
+                await options.beforeSubmit?.();
+              }
+            },
+          };
+          try {
+            return await run(context);
+          } catch (error) {
+            if (submitted) throw new SocialPlatformError("unknown");
+            if (isNeedsHuman(error)) throw await challengeError(session.page, this.directory) ?? error;
+            throw error;
+          }
+        } finally {
+          await session.close().catch(() => undefined);
+        }
+      } finally {
+        await rm(staging, { recursive: true, force: true }).catch(() => undefined);
+      }
+    });
   }
   adapter(): SocialAdapter {
     return {

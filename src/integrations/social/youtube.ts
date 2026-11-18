@@ -12,6 +12,7 @@ import {
   setYouTubeCommentModeration,
   setYouTubeThumbnail,
   type YouTubeCommentStatus,
+  type YouTubeManagementContext,
 } from "./youtube-manage";
 import { createYouTubeQuota, type YouTubeQuota } from "./youtube-quota";
 import { checkYouTubeSession, getYouTubeProfile, getYouTubeStatistics } from "./youtube-read";
@@ -22,6 +23,7 @@ export type YouTubeSendOptions = YouTubeVideoOptions & { categoryId?: string; pu
 /** Adapter with the YouTube-only operations that have no generic SocialAdapter method yet. */
 export type YouTubeAdapter = SocialAdapter & {
   quota: YouTubeQuota;
+  management(token: string, channelId: string): YouTubeManagementContext;
   setThumbnail(token: string, videoId: string, bytes: Uint8Array): Promise<void>;
   addToPlaylist(token: string, playlistId: string, videoId: string): Promise<string>;
   moderateComment(token: string, commentId: string, status: YouTubeCommentStatus): Promise<void>;
@@ -130,6 +132,7 @@ export function createYouTubeAdapter(http: SocialHttp, now = Date.now): YouTubeA
   };
   return {
     quota,
+    management: (token, channelId) => ({ http, quota, token, channelId }),
     async send(account, job, token, media, checkpoint, beforeSubmit) {
       const content = [job.payload.text, job.payload.link].filter(Boolean).join("\n");
       if (job.kind === "publish") {
