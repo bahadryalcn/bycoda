@@ -38,7 +38,7 @@ export class SocialVideoUploads {
       if (!Number.isSafeInteger(size) || size < 12 || size > maximum)
         throw new Error(
           youtubeApi
-            ? "Select an MP4/WebM video up to 256 GiB."
+            ? "MP4 or WebM videos for YouTube can be at most 256 GiB."
             : "Select an MP4/WebM video up to 64 MiB.",
         );
       if (
