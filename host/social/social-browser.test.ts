@@ -329,7 +329,7 @@ async function instagramProfileFixture(
         path: "/accounts/edit/",
         authenticated: true,
       } as T;
-    if (expression.includes("return bio.value;")) return bio as T;
+    if (expression.includes("bio: bio.value")) return { bio, name: "", website: "" } as T;
     if (expression.includes("const url=new URL(images[0]"))
       return `https://instagram.example.fbcdn.net/v/t51.2885-19/${uploaded ? "new" : "old"}_n.jpg` as T;
     if (expression.includes("Synced profile photo"))
@@ -392,7 +392,7 @@ describe("Instagram profile Host routing", () => {
       expect(s.fake.page.fill).not.toHaveBeenCalled();
     },
   );
-  it("rejects an API connection, X follow and unobserved desktop fields", async () => {
+  it("rejects an API connection, X follow and unsupported profile fields", async () => {
     const s = await instagramProfileFixture();
     await expect(
       s.browser.profileAction(s.social, owner, s.account.id, "follow", {
@@ -402,7 +402,7 @@ describe("Instagram profile Host routing", () => {
     ).rejects.toMatchObject({ code: "unsupported" });
     await expect(
       s.browser.profileAction(s.social, owner, s.account.id, "update", {
-        patch: { website: "https://example.com" },
+        patch: { category: "Example" },
         confirm: "UPDATE_INSTAGRAM_PROFILE",
       }),
     ).rejects.toThrow("Unsupported Instagram profile field");
