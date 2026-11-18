@@ -25,6 +25,7 @@ import type {
   PlainBrowserLauncher,
 } from "./social-browser";
 import type { BrowserRecipe, BrowserRecipeContext } from "./social-browser-recipe";
+import { readLinkedInBrowserProfileAnalytics } from "./social-browser-linkedin-analytics";
 import type { SocialPrincipal, SocialService } from "./social";
 import type { YouTubeBrowserRecipeContext } from "./browser/youtube-recipe-guards";
 
@@ -477,6 +478,30 @@ export class PlatformBrowserSessions {
       }
     });
   }
+
+  readLinkedInProfileAnalytics(account: SocialAccount, verifyAccount: () => Promise<void>) {
+    return this.withLinkedInBrowser(account, verifyAccount, readLinkedInBrowserProfileAnalytics);
+  }
+
+  /** Serializes owner-reviewed LinkedIn work with the existing login, poll and send sessions. */
+  withLinkedInBrowser<T>(
+    account: SocialAccount,
+    verifyAccount: () => Promise<void>,
+    use: (context: BrowserRecipeContext, limiter: BrowserSendLimiter) => Promise<T>,
+  ): Promise<T> {
+    return this.exclusive(account.id, async () => {
+      await verifyAccount();
+      if (!this.launcher || this.stopped) throw new SocialPlatformError("unsupported");
+      const session = await this.open(account);
+      try {
+        const context = this.context(session.page, account, [], verifyAccount);
+        return await use(context, this.limiter);
+      } finally {
+        await session.close().catch(() => undefined);
+      }
+    });
+  }
+
   adapter(): SocialAdapter {
     return {
       creatorInfo: (account) =>

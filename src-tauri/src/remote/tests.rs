@@ -1559,6 +1559,8 @@ fn desktop_forwards_supported_host_operations() {
         "social.browser.availability",
         "social.browser.begin",
         "social.browser.status",
+        "social.browser.linkedin.analytics.profile",
+        "social.browser.linkedin.manage",
         "social.token.connect",
         "social.tiktok.creator",
     ] {

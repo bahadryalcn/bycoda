@@ -108,11 +108,30 @@ it("approves as create and opens the signup window at once, bound to the new acc
 });
 
 it("starts the existing browser sign-in and opens the account when the owner already has one", async () => {
-  const client = setup();
+  const client = setup([{ ...request, accountType: "member" }]);
   const { onNavigate } = await render(client);
   await act(async () => button("I already have one")?.click());
   expect(client.accountRequests.approve).toHaveBeenCalledWith({ id: "r1", mode: "signin" });
   expect(client.browserBegin).toHaveBeenCalledWith("acc-1");
+  expect(onNavigate).toHaveBeenCalledWith("accounts", { accountId: "acc-1" });
+});
+
+it("opens LinkedIn Page settings to select the Page before connecting", async () => {
+  const client = setup();
+  const { onNavigate } = await render(client);
+  await act(async () => button("I already have one")?.click());
+  expect(client.accountRequests.approve).toHaveBeenCalledWith({ id: "r1", mode: "signin" });
+  expect(client.browserBegin).not.toHaveBeenCalled();
+  expect(onNavigate).toHaveBeenCalledWith("accounts", { accountId: "acc-1" });
+});
+
+it("reopens the existing account's connection settings for a LinkedIn reconnect request", async () => {
+  const client = setup([{ ...request, requestedAccountId: "acc-1" }]);
+  const { onNavigate } = await render(client);
+  expect(button("Create account")).toBeUndefined();
+  await act(async () => button("Reconnect")?.click());
+  expect(client.accountRequests.approve).toHaveBeenCalledWith({ id: "r1", mode: "signin" });
+  expect(client.browserBegin).not.toHaveBeenCalled();
   expect(onNavigate).toHaveBeenCalledWith("accounts", { accountId: "acc-1" });
 });
 
@@ -127,7 +146,7 @@ it("dismisses a request and shows a Host failure", async () => {
 });
 
 it("keeps a way to the approved account when the sign-in window cannot open", async () => {
-  const client = setup();
+  const client = setup([{ ...request, accountType: "member" }]);
   client.browserBegin = vi.fn(async () => {
     throw new Error("Install Chrome or Edge");
   });

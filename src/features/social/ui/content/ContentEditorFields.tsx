@@ -207,6 +207,9 @@ export function ContentEditorFields(props: ContentEditorFieldsProps) {
             account.connection !== "browser" &&
             draft.platform[account.id]?.tiktok?.mediaType === "photo",
         )}
+        allowDocument={
+          selected.length > 0 && selected.every((account) => account.platform === "linkedin")
+        }
         disabled={disabled || mediaBlocked}
         disabledReason={locked ?? (mediaBlocked ? mediaReason : undefined)}
         instagramMedia={instagramMedia}

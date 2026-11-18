@@ -13,7 +13,13 @@ afterEach(async () => {
   await Promise.all(windows.splice(0).map((window) => window.happyDOM.close()));
 });
 function fixture(
-  options: { persist?: boolean; logo?: string; ack?: boolean; redirect?: string } = {},
+  options: {
+    persist?: boolean;
+    logo?: string;
+    ack?: boolean;
+    redirect?: string;
+    clickError?: boolean;
+  } = {},
 ) {
   const window = new Window({ url: "https://www.linkedin.com/" });
   windows.push(window);
@@ -55,6 +61,7 @@ function fixture(
       enable();
     }),
     click: vi.fn(async () => {
+      if (options.clickError) throw new Error("Browser lost after dispatch.");
       if (options.persist !== false)
         stored = {
           name: window.document.querySelector<HTMLInputElement>("#organization-name-field")!.value,
@@ -147,13 +154,29 @@ it("uploads to the observed logo input and verifies text and a new persisted com
 });
 it.each([
   "https://www.linkedin.com/company/99/admin/edit/",
-  "https://www.linkedin.com/login",
   "https://example.com/company/145372363/admin/edit/",
 ])("does not mutate a redirected editor: %s", async (redirect) => {
   const s = fixture({ redirect });
   await expect(s.actions.update({ bio: "New" }, {})).rejects.toMatchObject({ code: "unsupported" });
   expect(s.page.fill).not.toHaveBeenCalled();
   expect(s.page.click).not.toHaveBeenCalled();
+});
+it.each(["https://www.linkedin.com/login", "https://www.linkedin.com/checkpoint/challenge/"])(
+  "holds a human-only Page screen without browser input: %s",
+  async (redirect) => {
+    const s = fixture({ redirect });
+    await expect(s.actions.update({ bio: "New" }, {})).rejects.toMatchObject({
+      code: "needs_human",
+    });
+    expect(s.page.fill).not.toHaveBeenCalled();
+    expect(s.page.click).not.toHaveBeenCalled();
+  },
+);
+it("holds an uncertain Save click for inspection", async () => {
+  const s = fixture({ clickError: true });
+  await expect(s.actions.update({ bio: "New" }, {})).rejects.toMatchObject({ code: "unknown" });
+  expect(s.page.click).toHaveBeenCalledTimes(1);
+  expect(s.page.goto).toHaveBeenCalledTimes(1);
 });
 it("reauthorizes immediately before Save and never clicks after authorization is revoked", async () => {
   const s = fixture();

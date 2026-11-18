@@ -20,6 +20,7 @@ import {
   accountLabel,
   buildVariants,
   draftProblems,
+  hasPostContent,
   publishLabel,
   selectedAccounts,
 } from "./contentRules";
@@ -138,7 +139,7 @@ export function ContentEditor(props: ContentEditorProps) {
   const save = draftGate({
     ...common,
     hasAccounts: draft.accountIds.length > 0,
-    hasContent: draft.text.trim() !== "" || draft.media.length > 0,
+    hasContent: hasPostContent(draft, selected),
   });
   const variantsNow = () =>
     buildVariants({

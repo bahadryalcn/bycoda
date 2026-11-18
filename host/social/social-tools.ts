@@ -176,6 +176,7 @@ export const SOCIAL_TOOL_SCHEMAS: Record<SocialTool, Record<string, unknown>> = 
       reason: string(),
       suggestedName: string(),
       suggestedUsername: string(),
+      accountId: string(),
     },
     ["projectId", "platform", "reason"],
   ),
@@ -197,10 +198,11 @@ export const SOCIAL_TOOL_SCHEMAS: Record<SocialTool, Record<string, unknown>> = 
               type: "array",
               items: object(
                 {
-                  kind: { enum: ["image", "video"] },
+                  kind: { enum: ["image", "video", "document"] },
                   url: string(),
                   uploadId: string(),
                   alt: string(),
+                  title: string(),
                 },
                 ["kind"],
               ),
@@ -319,12 +321,59 @@ export const SOCIAL_TOOL_SCHEMAS: Record<SocialTool, Record<string, unknown>> = 
               },
               [],
             ),
+            // LinkedIn publishing formats.
+            linkedinFormat: {
+              oneOf: [
+                object(
+                  {
+                    kind: { const: "poll" },
+                    question: string(),
+                    options: { ...strings(), minItems: 2, maxItems: 4 },
+                    duration: { enum: ["ONE_DAY", "THREE_DAYS", "SEVEN_DAYS", "FOURTEEN_DAYS"] },
+                  },
+                  ["kind", "question", "options", "duration"],
+                ),
+                object(
+                  {
+                    kind: { const: "article" },
+                    source: string(),
+                    title: string(),
+                    description: string(),
+                  },
+                  ["kind", "source", "title"],
+                ),
+              ],
+            },
           },
           ["accountId", "text"],
         ),
       },
     },
     ["name", "projectIds", "variants"],
+  ),
+  // LinkedIn analytics uses a bycoda publication job when reading an individual post.
+  "linkedin.analytics": object(
+    { accountId: string(), kind: { enum: ["posts", "page", "followers"] }, jobId: string() },
+    ["accountId", "kind"],
+  ),
+  "linkedin.accounts.setupStatus": byId(),
+  "linkedin.live.status": object({ accountId: string() }, ["accountId"]),
+  "linkedin.creator.handoff": object(
+    { accountId: string(), format: { enum: ["article", "newsletter"] } },
+    ["accountId", "format"],
+  ),
+  "linkedin.management.prepare": object(
+    {
+      accountId: string(),
+      kind: { enum: ["editPost", "deletePost", "deleteComment", "react", "removeReaction"] },
+      jobId: string(),
+      threadId: string(),
+      text: string(),
+      reaction: {
+        enum: ["LIKE", "PRAISE", "EMPATHY", "INTEREST", "APPRECIATION", "ENTERTAINMENT"],
+      },
+    },
+    ["accountId", "kind"],
   ),
   "campaigns.preview": byId(),
   "campaigns.schedule": byId(),
@@ -671,6 +720,11 @@ export const SOCIAL_READ_TOOLS: readonly SocialTool[] = [
   "tiktok.earnings.read",
   "tiktok.audience.list",
   "tiktok.mentions.list",
+  // LinkedIn
+  "linkedin.analytics",
+  "linkedin.accounts.setupStatus",
+  "linkedin.live.status",
+  "linkedin.creator.handoff",
 ];
 const socialReads = new Set<string>(SOCIAL_READ_TOOLS);
 const SOCIAL_REQUEST_ID_PATTERN = "^[A-Za-z0-9._:-]+$";
@@ -742,6 +796,17 @@ const TOOL_NOTES: Partial<Record<SocialTool, string>> = {
     " Ask the owner to begin Snapchat signup. Credentials, verification and terms stay in the owner's browser session.",
   "snapchat.chat.draft":
     " Draft a text message to an exact existing Snapchat friend. Use a member browser account. Sending uses messages.send and checks the friend's identity, suppression and account autonomy.",
+  // LinkedIn.
+  "linkedin.management.prepare":
+    " Returns the exact change and a review ID. Ask the owner to load that ID in the LinkedIn account and confirm. This tool submits no provider change.",
+  "linkedin.analytics":
+    " An individual post requires the ID of a succeeded bycoda publication job on this account. LinkedIn product approval and scopes control access.",
+  "linkedin.accounts.setupStatus":
+    " Pass the ID returned by accounts.request. The owner completes signup, reconnect and verification.",
+  "linkedin.live.status":
+    " Reports event credential custody only. It does not establish eligibility or broadcast status.",
+  "linkedin.creator.handoff":
+    " Returns the LinkedIn destination for the owner to open. Publication and newsletter eligibility are decided in LinkedIn.",
   "accounts.request":
     " Use when this project's social work needs a platform account the project does not have (check accounts.list first). It only asks the owner to create or sign in an account; it creates nothing on any platform, and the owner approves it in Social Command. Never retry a pending request.",
 };

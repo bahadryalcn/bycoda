@@ -342,7 +342,8 @@ export function draftProblems(input: RuleInput): Problem[] {
   const { draft, now } = input;
   const problems: Problem[] = [];
   if (!input.projectId) problems.push({ text: t("Choose a project first.") });
-  if (!draft.text.trim() && !draft.media.length)
+  const accounts = selectedAccounts(draft, input.accounts);
+  if (!hasPostContent(draft, accounts))
     problems.push({ text: t("Write the post or attach media.") });
   if (!draft.accountIds.length) problems.push({ text: t("Choose at least one account.") });
   const link = draft.link.trim();
@@ -367,9 +368,8 @@ export function draftProblems(input: RuleInput): Problem[] {
         accountId: id,
       });
   }
-  const selected = selectedAccounts(draft, input.accounts);
-  const hasCaptionTarget = selected.some((account) => !isInstagramStory(account, draft));
-  for (const account of selected) {
+  const hasCaptionTarget = accounts.some((account) => !isInstagramStory(account, draft));
+  for (const account of accounts) {
     const name = accountLabel(account);
     const add = (text: string) =>
       problems.push({ text: `${name}: ${text}`, accountId: account.id });
@@ -434,6 +434,34 @@ export function draftProblems(input: RuleInput): Problem[] {
         if (draft.repeat.enabled) add(t("Schedule this X format as a single campaign."));
       }
     }
+    if (draft.media.some((item) => item.media.kind === "document")) {
+      if (account.platform !== "linkedin") add(t("PDF documents require a LinkedIn account."));
+      else if (draft.media.length !== 1) add(t("Attach one PDF document by itself."));
+      else if (!draft.media[0]?.media.title?.trim()) add(t("Enter a document title."));
+    }
+    if (account.platform === "linkedin") {
+      const format = platform?.linkedinFormat;
+      if (format && draft.repeat.enabled)
+        add(t("Turn off repeat for LinkedIn polls and article links."));
+      if (format && (link || (format.kind === "poll" && draft.media.length)))
+        add(t("Remove attachments and the separate link for this LinkedIn format."));
+      if (format?.kind === "poll") {
+        const options = format.options.map((option) => option.trim()).filter(Boolean);
+        if (
+          !format.question.trim() ||
+          options.length < 2 ||
+          new Set(options.map((option) => option.toLowerCase())).size !== options.length
+        )
+          add(t("Enter a poll question and two to four distinct options."));
+      }
+      if (format?.kind === "article") {
+        if (!isHttpUrl(format.source) || !format.source.trim().startsWith("https://"))
+          add(t("Enter a link that starts with https://."));
+        if (!format.title.trim()) add(t("Enter a title."));
+        if (draft.media.length > 1 || draft.media.some((item) => item.media.kind !== "image"))
+          add(t("Attach one image for the article thumbnail."));
+      }
+    }
     if (account.platform === "facebook")
       for (const text of reelProblems(platform?.facebook, draft.media)) add(text);
     if (account.platform === "tiktok")
@@ -476,6 +504,20 @@ export function selectedAccounts(draft: ContentDraft, accounts: SocialAccount[])
   return draft.accountIds
     .map((id) => accounts.find((account) => account.id === id))
     .filter((account): account is SocialAccount => account !== undefined);
+}
+
+export function hasPostContent(draft: ContentDraft, accounts: SocialAccount[]): boolean {
+  return (
+    !!draft.text.trim() ||
+    !!draft.media.length ||
+    (accounts.length > 0 &&
+      accounts.every(
+        (account) =>
+          account.platform === "linkedin" &&
+          account.connection === "oauth" &&
+          !!draft.platform[account.id]?.linkedinFormat,
+      ))
+  );
 }
 
 /** The Host variants for a valid draft. Call only when `draftProblems` returned nothing. */
@@ -553,6 +595,22 @@ export function buildVariants(input: RuleInput): CampaignVariant[] {
         variant.text = "";
         delete variant.link;
       }
+    }
+    if (account.platform === "linkedin" && account.connection === "oauth") {
+      const format = platform?.linkedinFormat;
+      if (format?.kind === "poll")
+        variant.linkedinFormat = {
+          ...format,
+          question: format.question.trim(),
+          options: format.options.map((option) => option.trim()).filter(Boolean),
+        };
+      if (format?.kind === "article")
+        variant.linkedinFormat = {
+          kind: format.kind,
+          source: format.source.trim(),
+          title: format.title.trim(),
+          ...(format.description?.trim() ? { description: format.description.trim() } : {}),
+        };
     }
     return variant;
   });

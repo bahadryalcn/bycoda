@@ -460,6 +460,11 @@ describe("Real local CLI and MCP transport", () => {
         "snapchat.analytics.get",
         "snapchat.earnings.get",
         "snapchat.monetization.get",
+        // LinkedIn.
+        "linkedin.analytics",
+        "linkedin.accounts.setupStatus",
+        "linkedin.live.status",
+        "linkedin.creator.handoff",
       ];
       const writes = [
         ...YOUTUBE_WRITE_TOOLS,
@@ -507,6 +512,8 @@ describe("Real local CLI and MCP transport", () => {
         "snapchat.profile.create.request",
         "snapchat.profile.update.request",
         "snapchat.content.delete.request",
+        // LinkedIn.
+        "linkedin.management.prepare",
       ];
       const method = (action: string) => `social_${action.replaceAll(/[.-]/g, "_")}`;
       // Draft inspection/editing is a concurrent additive capability. Keep the

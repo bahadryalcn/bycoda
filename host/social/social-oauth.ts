@@ -129,6 +129,7 @@ export class SocialOAuth {
     accountId: string,
     resourceId?: string,
     operations: SocialOperation[] = ["publish"],
+    linkedinLiveComments = false,
   ): Promise<{ url: string; expiresAt: number }> {
     const account = await this.social.accountForOAuth(p, accountId);
     assertXOAuthBilling(account);
@@ -192,6 +193,15 @@ export class SocialOAuth {
     )
       scopes.push("block.write");
     scopes.push(...definition.extraScopes(account.accountType, scopes));
+    // LinkedIn Live comments are an explicit opt-in to an additional API product.
+    if (
+      linkedinLiveComments &&
+      account.platform === "linkedin" &&
+      account.accountType === "organization"
+    ) {
+      for (const scope of ["r_events", "r_organization_social_feed"])
+        if (!scopes.includes(scope)) scopes.push(scope);
+    }
     const flow: Flow = {
       accountId,
       platform: account.platform,

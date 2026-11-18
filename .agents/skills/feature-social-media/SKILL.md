@@ -21,6 +21,9 @@ Full paths are repository-root relative; adjacent abbreviated names share the pr
 - Contracts: `docs/integrations/social.md`, `social-programs.md`, `decision-models.md`.
 - Platform actions: `host/social/youtube/`, `host/social/tiktok/`, `ui/accounts/youtube/`. Live and Business credentials stay in per-account Host vault entries; keep owner mutations and credential setup off session tools.
 
+- LinkedIn-specific Host actions and reviewed browser operations live in
+  `host/social/linkedin/`. LinkedIn API adapters live in `src/integrations/social/adapters/`.
+
 ## Preserve
 
 - X API operations need owner billing opt-in; keep X actions and stream-key custody in X modules ([X integration](../../../docs/integrations/social.md#x)).

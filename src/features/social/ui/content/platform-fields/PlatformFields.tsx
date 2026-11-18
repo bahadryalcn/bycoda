@@ -1,6 +1,7 @@
 import type { SocialAccount, TikTokCreatorInfo } from "../../../model/social";
 import type { ContentMedia, PlatformDraft } from "../contentDraft";
 import { FacebookReelFields } from "./FacebookReelFields";
+import { LinkedInFields } from "./LinkedInFields";
 import { MetaFields } from "./MetaFields";
 import { RedditFields } from "./RedditFields";
 import { SnapchatFields } from "./SnapchatFields";
@@ -41,6 +42,8 @@ export function PlatformFields(props: PlatformFieldProps) {
       return <RedditFields {...props} />;
     case "snapchat":
       return <SnapchatFields {...props} />;
+    case "linkedin":
+      return props.account.connection === "oauth" ? <LinkedInFields {...props} /> : null;
     default:
       return null;
   }

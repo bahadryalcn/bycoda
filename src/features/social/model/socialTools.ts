@@ -107,6 +107,12 @@ export const SOCIAL_TOOLS = [
   "snapchat.profile.create.request",
   "snapchat.profile.update.request",
   "snapchat.content.delete.request",
+  // LinkedIn
+  "linkedin.analytics",
+  "linkedin.accounts.setupStatus",
+  "linkedin.management.prepare",
+  "linkedin.live.status",
+  "linkedin.creator.handoff",
 ] as const;
 export type SocialTool = (typeof SOCIAL_TOOLS)[number];
 export function socialToolName(tool: SocialTool): string {

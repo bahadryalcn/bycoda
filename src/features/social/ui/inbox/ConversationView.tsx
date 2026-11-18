@@ -13,6 +13,7 @@ import type { SocialClient } from "../../model/socialClient";
 import { EmptyHint } from "../common/EmptyHint";
 import { channelName, PlatformIcon } from "../common/PlatformIcon";
 import { SocialAvatar } from "../common/SocialAvatar";
+import { LinkedInCommentActions } from "../linkedin/LinkedInCommentActions";
 import { inboxApi } from "./inboxApi";
 import { statusText, statusTone, type MessageLine } from "./inboxModel";
 import { MessageTimeline } from "./MessageTimeline";
@@ -193,6 +194,11 @@ export function ConversationView({
           ) : null}
         </div>
       </header>
+      {item?.platform === "linkedin" &&
+      conversation.kind === "comment" &&
+      conversation.platformThreadId.startsWith("urn:li:comment:") ? (
+        <LinkedInCommentActions key={conversation.id} client={client} thread={conversation} />
+      ) : null}
 
       {item ? (
         <div className="inbox-tag-editor">

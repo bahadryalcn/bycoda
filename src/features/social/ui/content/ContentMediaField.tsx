@@ -16,6 +16,7 @@ import { presentRemoteError } from "../../../connections/public/remoteFailure";
 
 const IMAGE_TYPES = ["image/jpeg", "image/png"];
 const VIDEO_TYPE = "video/mp4";
+const PDF_TYPE = "application/pdf";
 
 export type ContentMediaFieldProps = {
   client: SocialClient;
@@ -23,6 +24,7 @@ export type ContentMediaFieldProps = {
   media: ContentMedia[];
   allowTikTokPhotoUrls?: boolean;
   disabled: boolean;
+  allowDocument?: boolean;
   /** Why attaching is off (for example the account cannot upload media). */
   disabledReason?: string;
   instagramMedia?: "public-only" | "mixed";
@@ -37,6 +39,7 @@ export function ContentMediaField({
   media,
   allowTikTokPhotoUrls,
   disabled,
+  allowDocument,
   disabledReason,
   instagramMedia,
   onChange,
@@ -73,21 +76,34 @@ export function ContentMediaField({
     setError(undefined);
     try {
       // Refuse the whole pick before any upload, so a batch with one bad file uploads nothing.
-      if (files.some((file) => ![...IMAGE_TYPES, VIDEO_TYPE].includes(file.type)))
-        throw new Error(t("Use JPEG or PNG images, or one MP4 video."));
       if (instagramMedia && media.length + files.length > INSTAGRAM_CAROUSEL_MAX)
         throw new Error(t("Instagram carousel supports up to 20 images and videos."));
+      const types = [...IMAGE_TYPES, VIDEO_TYPE, ...(allowDocument ? [PDF_TYPE] : [])];
+      if (files.some((file) => !types.includes(file.type)))
+        throw new Error(
+          allowDocument
+            ? t("Use JPEG or PNG images, one MP4 video, or one PDF document.")
+            : t("Use JPEG or PNG images, or one MP4 video."),
+        );
+      if (
+        (files.some((file) => file.type === PDF_TYPE) ||
+          media.some((item) => item.media.kind === "document")) &&
+        files.length + media.length !== 1
+      )
+        throw new Error(t("Attach one PDF document by itself."));
       const added: ContentMedia[] = [];
       for (const file of files) {
         const upload = await uploadForSocialEditor(editor, client, file);
         const isVideo = file.type === VIDEO_TYPE;
+        const isDocument = file.type === PDF_TYPE;
         const probe = isVideo ? await probeVideo(file).catch(() => undefined) : undefined;
         added.push({
           localId: upload.uploadId,
           name: file.name,
           media: {
-            kind: isVideo ? "video" : "image",
+            kind: isDocument ? "document" : isVideo ? "video" : "image",
             uploadId: upload.uploadId,
+            ...(isDocument ? { title: file.name.replace(/\.pdf$/i, "").slice(0, 58) } : {}),
           },
           probe,
           mediaId: upload.managed?.mediaId,
@@ -131,15 +147,27 @@ export function ContentMediaField({
     <div className="content-media">
       {instagramMedia !== "public-only" ? (
         <FileField
-          label={instagramMedia ? t("Images and videos") : t("Images or one video")}
+          label={
+            instagramMedia
+              ? t("Images and videos")
+              : allowDocument
+                ? t("Images, video or PDF")
+                : t("Images or one video")
+          }
           multiple
-          accept="image/jpeg,image/png,video/mp4"
+          accept={
+            allowDocument
+              ? "image/jpeg,image/png,video/mp4,application/pdf"
+              : "image/jpeg,image/png,video/mp4"
+          }
           disabled={disabled || busy || atInstagramLimit}
           description={disabledReason ?? (busy ? t("Uploading…") : undefined)}
           hint={
             instagramMedia
               ? t("JPEG, PNG or MP4 files.")
-              : t("JPEG or PNG images, or one MP4 video.")
+              : allowDocument
+                ? t("Use JPEG or PNG images, one MP4 video, or one PDF document.")
+                : t("JPEG or PNG images, or one MP4 video.")
           }
           error={error}
           onFiles={(files) =>
@@ -225,6 +253,27 @@ export function ContentMediaField({
           ))}
         </ul>
       ) : null}
+      {media.map((item) =>
+        item.media.kind === "document" ? (
+          <TextField
+            key={item.localId}
+            label={t("Document title")}
+            required
+            maxLength={58}
+            disabled={disabled || busy}
+            value={item.media.title ?? ""}
+            onChange={(event) =>
+              onChange(
+                media.map((other) =>
+                  other.localId === item.localId
+                    ? { ...other, media: { ...other.media, title: event.target.value } }
+                    : other,
+                ),
+              )
+            }
+          />
+        ) : null,
+      )}
     </div>
   );
 }

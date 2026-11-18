@@ -72,10 +72,21 @@ export function AccountConnection({
   disabled,
   onChanged,
 }: AccountConnectionProps) {
-  const [resourceId, setResourceId] = useState("");
+  const [resourceId, setResourceId] = useState(
+    account.platform === "linkedin" && account.connection === "oauth"
+      ? (/^urn:li:organization:(\d+)$/.exec(account.platformId)?.[1] ?? "")
+      : "",
+  );
   const [browser, setBrowser] = useState<BrowserState>();
   const [oauth, setOAuth] = useState<OAuthState>();
-  const [operations, setOperations] = useState<SocialOperation[]>(["publish"]);
+  const [linkedinLiveComments, setLinkedinLiveComments] = useState(false);
+  const [operations, setOperations] = useState<SocialOperation[]>(() =>
+    account.platform === "linkedin" &&
+    account.accountType === "member" &&
+    account.scopes.includes("r_member_postAnalytics")
+      ? ["publish", "analytics"]
+      : ["publish"],
+  );
   const operationOptions = capabilities.length
     ? capabilities.filter((item) => item.status !== "unsupported").map((item) => item.operation)
     : ["publish" as const];
@@ -121,6 +132,7 @@ export function AccountConnection({
         account.id,
         isOrganization ? resourceId : undefined,
         requestedOperations,
+        ...(linkedinLiveComments ? [true as const] : []),
       );
       setOAuth({ status: "waiting", candidates: [] });
       await openExternal(begin.url);
@@ -242,6 +254,14 @@ export function AccountConnection({
                   }
                 />
               ))}
+              {account.platform === "linkedin" && isOrganization ? (
+                <Checkbox
+                  label={t("LinkedIn Live comments")}
+                  checked={linkedinLiveComments}
+                  disabled={locked}
+                  onChange={(event) => setLinkedinLiveComments(event.target.checked)}
+                />
+              ) : null}
             </FieldGroup>
           </Disclosure>
           {!requestedOperations.length ? (

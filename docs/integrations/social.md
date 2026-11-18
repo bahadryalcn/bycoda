@@ -118,7 +118,7 @@ The Instagram row below reflects the earlier adapter matrix.
 | X         | OAuth posts, text plus up to four JPEG/PNG images or one MP4, replies, delete, mentions and comments on own posts, profile read, metrics, rate-limit pause. DM read and reply with DM scopes. Likes/reposts are adapter functions without an operation row. | Posts, images or one video, mentions and saved-post comments, legacy web DM text, owner profile and follow controls.                                                                                         | Threads (not implemented), quote posts and polls (no model field, not reachable), encrypted Chat, DM attachments, search-based discovery on the API (product tier dependent).             |
 | Instagram | Professional account: HTTPS image, feed Reel, mixed carousel up to four assets, owned-media comments and replies, text inbox replies in the supported window.                                                                                               | Image, carousel or one video publishing, saved-post comments and replies, recognized existing-thread text replies.                                                                                           | Stories, cold or new DMs, DM attachments, hashtag discovery (author field unverified), post delete (no path found).                                                                       |
 | Facebook  | Managed Page text/link, up to four HTTPS photos, Reels from an uploaded MP4 with durable verification, comments, Messenger text replies in the response window.                                                                                             | Personal or Page actor, text and media publishing, saved-post comments, recognized existing-thread Messenger replies.                                                                                        | Ordinary Page video publishing, Stories, Page post edit, comment hide/delete through the host (helper only).                                                                              |
-| LinkedIn  | Member text, Page text, Page images (one to four, alt text, readiness verification), Page PDF documents, comments on known posts, token refresh hook. Single-image Page uploads verify byte content.                                                        | Verified member or organization text, images or video, one titled PDF, comments and replies, existing personal chats, first-degree connection requests and acceptance (exports exist; no operation row yet). | Organization inbox, InMail, video through the API (multipart ETag handling is blocked), carousel, polls, analytics, groups and newsletters.                                               |
+| LinkedIn  | Member and Page posts with text, images, PDF, MP4, polls and article links. Known-post management, comment actions and scoped analytics.                                                                                                                    | Verified member or Page publishing and comments, personal chats, mentions and account setup.                                                                                                       | Native newsletters, Page messaging, InMail and stream start require provider-side workflows.                                                                                              |
 | YouTube   | Resumable video and Shorts upload, video metadata, thumbnails, playlists, comments and moderation, subscriptions, channel branding, Analytics and eligible earnings, Live and Super Chats.                                                                  | Studio upload, comments and replies, likes and hearts, Community text/image/poll posts, channel profile fields and Earn status.                                                                              | Platform verification and eligibility. General DMs unavailable. See the YouTube section for scope, quota and file limits.                                                                 |
 | TikTok    | Direct Post and inbox upload, Display profile and metrics, and approved Business comments, mentions and reporting.                                                                                                                                          | Studio publishing and post management, comments, visible DM previews and sending, profile and privacy, audience, insights, earnings and LIVE setup/replies.                                                  | Stories, public keyword/hashtag search and mobile-only controls. Browser and Business availability depend on account eligibility.                                                         |
 | Snapchat  | Public Profile API: encrypted Spotlight MP4 upload with exact Spotlight ID tracking until LIVE, health check.                                                                                                                                               | Member chat text replies in existing chats; Public Profile uploader for Spotlight or 24-hour Story video. Current Story acceptance lacks a durable Snap ID and is held for review.                           | Public Story through the API, Marketing API, Creative Kit, metrics, Story interactions, API audience collection.                                                                          |
@@ -278,19 +278,56 @@ permission grants still determine availability.
   a numeric organization ID and verified administrative access. Browser organization setup
   requires the owner to supply the Company Page ID or URL name. The host verifies the
   selected actor and never derives it from the display label.
-- Publishing limits are checked before submission: Page commentary (3000 units in source,
-  not compared with current docs), images with byte checks, PDF documents through the
-  Documents API (title 200, 100 MB API limit in source), and browser PDFs up to 5 MiB.
+- Publishing checks apply to both member and Page commentary (3,000 UTF-16 code units).
+  Bycoda accepts four images per variant, one titled PDF up to 5 MiB, or one uploaded MP4
+  up to 64 MiB. A document post can serve as a slide carousel. Sponsored Carousel
+  API posts are separate. A poll accepts two to four distinct options. An article link
+  requires a title and accepts one optional image thumbnail.
+- The Videos API uploads the exact byte ranges returned by LinkedIn and uses each response
+  ETag in order to finalize the video. The Host checks media and authorization before
+  publishing. An unknown outcome requires inspection.
+- `linkedin.analytics` reads posts, Page or follower metrics. An individual post is tied
+  to a bycoda publication job. Account permissions and provider scopes are checked separately.
+  Member profile analytics is an owner-only browser read.
+- `linkedin.management.prepare` creates an exact review for a known bycoda post or comment.
+  Only the owner can submit the review. The Host records the attempt before calling LinkedIn.
+  The owner can load the review ID in Accounts to approve the change or check its outcome.
+- `accounts.request` accepts an optional LinkedIn reconnect account ID. The existing
+  owner workflow handles registration, Company Page approval and reconnect.
+  `linkedin.accounts.setupStatus` reports project-scoped progress.
+- LinkedIn Live credentials come from the owner's scheduled event in Live Studio.
+  The Host stores the destination in credential storage. `linkedin.live.status` returns
+  the event ID and custody state to authorized callers. Stream ingest and the Go Live
+  action require a streaming integration.
+- With an approved OAuth Page connection, the owner can load Live event comments by event
+  ID. Enable **LinkedIn Live comments** in the OAuth permissions to request `r_events`
+  and `r_organization_social_feed`. The Host checks the organizer and Live event type
+  before reading comments on the event post. This read returns data only to the owner's
+  panel and stays outside auto-reply rules, chat, and the inbox. A token with
+  `w_organization_social_feed` also supports manual replies. The Host rechecks the event,
+  comment and recipient against the exact owner review, checks the shared suppression and
+  sending gates, and records the attempt before dispatch.
 - Browser connection requests, acceptance and personal chat use the same verification and
   challenge handling as other browser recipes.
+- The Accounts browser panel reads the visible connections, invitations and groups page.
+  Invitation, follow and group writes are owner-reviewed, paced and checked for suppression
+  before dispatch. The provider may require manual completion of a restricted or unrecognized
+  screen. Group membership and moderation can remain pending.
+- The browser member editor checks the original headline or About value before saving and
+  reads back the requested value after the save. Profile media, experience, links, Page details,
+  Services and Page Inbox use account-specific owner handoffs. LinkedIn limits Page Inbox
+  replies to inbound conversations. Premium InMail uses the provider's credit and recipient rules.
+- A verified browser member can prepare a native article draft. `linkedin.creator.handoff`
+  points chat to the account's article or newsletter workflow. The owner completes final
+  publishing and newsletter management in LinkedIn.
 - Browser member posts and PDF documents open the composer through `/feed/?shareActive=true`
   and find controls by role and EN/TR label inside `dialog[open]`; `data-view-name` is only an
   optional first choice, because LinkedIn serves variants without it.
 - A post with no comments reports `comments` as read only on a positive signal: the comment box
   is loaded, the comment list holds no content, and the social counts have no comments item.
   Anything else stays unavailable.
-- **AI exclusion:** the current rule code still blocks LinkedIn inbound third-party
-  content from automatic reply rules. See Autonomy policy and Open questions.
+- LinkedIn uses the shared inbound reply and program autonomy policy. App approval
+  and LinkedIn developer permissions are separate requirements.
 
 #### YouTube
 
@@ -750,7 +787,7 @@ dispatched content is not edited in place.
 - Under the Publish autonomy level, a program's occurrences can dispatch without per-item
   approval. The dispatch check skips the approval-content check when the caller marks the
   dispatch as autonomous. Source supports this path. End-to-end use is not verified.
-- LinkedIn program content still requires final publication review in the current code. This differs from the owner decision that LinkedIn follows the same autonomy policy. See Open questions.
+- LinkedIn program publication uses the shared Publish autonomy level and program review setting.
 
 ## Project account requests
 
@@ -874,10 +911,6 @@ exact-ID reads. `jobs.archive-status` reports the counts. Archival is not deleti
 These points are known to differ between owner decisions, source and platform reality.
 They are not verified as fixed.
 
-- **LinkedIn AI exclusion.** The owner decided LinkedIn follows the same
-  autonomy policy. Source still excludes LinkedIn inbound third-party content from automatic
-  reply rules, and LinkedIn program content still requires review. This document describes
-  the current source. It does not describe that decision as implemented.
 - **Owner-run autonomous plan steps.** The owner principal never takes the autonomy path. A
   plan step that is autonomous and run by the owner is refused. The owner must choose how
   such steps are authorized.

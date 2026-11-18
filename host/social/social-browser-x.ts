@@ -11,6 +11,10 @@ import { X_BROWSER_SCOPES } from "../../src/integrations/social/capabilities";
 import { xMediaFormat } from "../../src/integrations/social/xMedia";
 import type { SocialPrincipal, SocialService } from "./social";
 import { SocialBrowserWorkflows } from "./social-browser-workflows";
+import {
+  parseLinkedInBrowserManagement,
+  runLinkedInBrowserManagement,
+} from "./linkedin/linkedin-browser-management";
 import type { SocialBrowserIntent } from "../../src/features/social/model/socialBrowser";
 // Instagram bounded browser operations.
 import {
@@ -205,6 +209,46 @@ export class XBrowserSessions {
     await this.platforms.forget(accountId);
     return { status: "idle" as const };
   }
+  // LinkedIn owner-only browser analytics.
+  async linkedInProfileAnalytics(
+    service: SocialService,
+    principal: SocialPrincipal,
+    accountId: string,
+  ) {
+    const account = await service.accountForBrowserManagement(principal, accountId, false);
+    const verifyAccount = async () => {
+      const current = await service.accountForBrowserManagement(principal, accountId, false);
+      if (
+        this.stopped ||
+        current.platform !== "linkedin" ||
+        current.accountType !== "member" ||
+        current.connection !== "browser" ||
+        !current.connected ||
+        current.paused ||
+        current.platformId !== account.platformId ||
+        current.executorId !== service.store.environmentId
+      )
+        throw new SocialPlatformError("denied");
+      if (this.workflows.hasActive(accountId) || this.platforms.waiting(accountId))
+        throw new Error("Finish the account's active browser operation first.");
+      await service.store.db.checkAuthorization();
+    };
+    return this.platforms.readLinkedInProfileAnalytics(account, verifyAccount);
+  }
+
+  linkedInBrowserManagement(
+    service: SocialService,
+    principal: SocialPrincipal,
+    raw: Record<string, unknown>,
+  ) {
+    const input = parseLinkedInBrowserManagement(raw);
+    return runLinkedInBrowserManagement(service, principal, input, this.platforms, () => {
+      if (this.stopped) throw new SocialPlatformError("denied");
+      if (this.workflows.hasActive(input.accountId) || this.platforms.waiting(input.accountId))
+        throw new Error("Finish the account's active browser operation first.");
+    });
+  }
+
   async profileAction(
     service: SocialService,
     p: SocialPrincipal,

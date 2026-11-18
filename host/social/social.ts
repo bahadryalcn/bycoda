@@ -125,6 +125,7 @@ import { contentSupport } from "../../src/integrations/social/platformAdapters";
 import { parseSnapchatPublishOptions } from "./execution/snapchat-publish-options";
 import { validatePublishingText } from "../../src/integrations/social/publishingFormats";
 import { xPostExtrasIssue, type XPostExtras } from "../../src/integrations/social/x-publish";
+import { parseLinkedInPostFormat } from "./linkedin/linkedin-format-input";
 import { parseTikTokOptions } from "../../src/integrations/social/tiktok";
 import {
   INSTAGRAM_CAROUSEL_MAX,
@@ -668,6 +669,7 @@ export class SocialService implements SocialServiceApi {
                 "snapchat",
                 "facebook",
                 "instagram",
+                "linkedinFormat",
               ]);
               const account = await this.get<SocialAccount>("account", variant.accountId);
               await this.assertLength(
@@ -677,6 +679,10 @@ export class SocialService implements SocialServiceApi {
               );
               if (
                 !variant.text?.trim() &&
+                !(
+                  account.platform === "linkedin" &&
+                  (variant.linkedinFormat || variant.media.length)
+                ) &&
                 !(account.platform === "snapchat" && variant.snapchat?.target === "story") &&
                 !(account.platform === "instagram" && variant.media.length > 0) &&
                 !(
@@ -3751,6 +3757,7 @@ export class SocialService implements SocialServiceApi {
             facebook: variant.facebook,
             instagram: variant.instagram,
             ...(variant.x ? { x: variant.x } : {}),
+            linkedinFormat: variant.linkedinFormat,
           },
           ...approvalJobFields(automated, this.now()),
           attempts: 0,
@@ -3798,6 +3805,7 @@ export class SocialService implements SocialServiceApi {
         "facebook",
         "instagram",
         "x",
+        "linkedinFormat",
       ]);
       const accountId = str(value.accountId, "account");
       const account = await this.access(p, accountId, "draft");
@@ -3904,6 +3912,12 @@ export class SocialService implements SocialServiceApi {
         x = value.x as XPostExtras;
       }
       const xMediaOnly = account.platform === "x" && media.length > 0 && value.text === "";
+      const linkedinFormat =
+        value.linkedinFormat === undefined
+          ? undefined
+          : parseLinkedInPostFormat(value.linkedinFormat);
+      if (linkedinFormat && (account.platform !== "linkedin" || account.connection !== "oauth"))
+        throw new Error("LinkedIn polls and article links require a LinkedIn API connection.");
       const telegramChannelMedia =
         account.platform === "telegram" &&
         account.accountType === "channel" &&
@@ -3915,6 +3929,10 @@ export class SocialService implements SocialServiceApi {
           xMediaOnly ||
           (snapchat?.target === "story" && value.text === "") ||
           (account.platform === "instagram" && media.length > 0 && value.text === "") ||
+          (account.platform === "linkedin" &&
+            (linkedinFormat || media.length) &&
+            typeof value.text === "string" &&
+            !value.text.trim()) ||
           (facebook?.target === "reel" &&
             media.length === 1 &&
             typeof value.text === "string" &&
@@ -3932,6 +3950,7 @@ export class SocialService implements SocialServiceApi {
         ...(facebook ? { facebook } : {}),
         ...(instagram ? { instagram } : {}),
         ...(x ? { x } : {}),
+        ...(linkedinFormat ? { linkedinFormat } : {}),
       };
     });
     if (new Set(variants.map((variant) => variant.accountId)).size !== variants.length)
@@ -4079,6 +4098,7 @@ export class SocialService implements SocialServiceApi {
               facebook: variant.facebook,
               instagram: variant.instagram,
               ...(variant.x ? { x: variant.x } : {}),
+              linkedinFormat: variant.linkedinFormat,
             },
             ...approvalJobFields(decision, variant.scheduledAt),
             attempts: 0,

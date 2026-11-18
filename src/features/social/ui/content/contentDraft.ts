@@ -1,5 +1,6 @@
 import type {
   SnapchatPublishOptions,
+  LinkedInPostFormat,
   SocialCampaign,
   SocialAccount,
   SocialMedia,
@@ -52,6 +53,7 @@ export type PlatformDraft = {
   facebook?: FacebookDraft;
   instagram?: InstagramDraft;
   x?: XPostDraft;
+  linkedinFormat?: LinkedInPostFormat;
   /** Kept in the draft for review; the Host has no Reddit variant field yet (see contentRules). */
   reddit?: RedditDraft;
 };
@@ -264,6 +266,7 @@ export function draftFromCampaign(
       } = variant.snapchat;
       entry.snapchat = options;
     }
+    if (variant.linkedinFormat) entry.linkedinFormat = structuredClone(variant.linkedinFormat);
     platform[variant.accountId] = entry;
   }
   // The media is one file shared by every variant, so its size and length come from whichever

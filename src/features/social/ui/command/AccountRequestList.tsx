@@ -82,6 +82,15 @@ export function AccountRequestList({
     write(`${mode}:${request.id}`, async () => {
       const result = await client.accountRequests.approve({ id: request.id, mode });
       await refresh();
+      // LinkedIn Pages require a Page target. Reconnect keeps the account's configured driver.
+      if (
+        request.platform === "linkedin" &&
+        mode === "signin" &&
+        (request.requestedAccountId || request.accountType === "organization")
+      ) {
+        onNavigate("accounts", { accountId: result.accountId });
+        return;
+      }
       if (mode === "create") {
         // The owner already chose to create the account, so its window opens now; if that fails the
         // dialog still offers to open it.
@@ -174,23 +183,25 @@ export function AccountRequestList({
                 </InfoPopover>
               </div>
               <div className="account-request-actions">
+                {item.requestedAccountId ? null : (
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    loading={is(`create:${item.id}`)}
+                    disabled={busy}
+                    onClick={() => void approve(item, "create")}
+                  >
+                    {t("Create account")}
+                  </Button>
+                )}
                 <Button
                   size="sm"
-                  variant="primary"
-                  loading={is(`create:${item.id}`)}
-                  disabled={busy}
-                  onClick={() => void approve(item, "create")}
-                >
-                  {t("Create account")}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="secondary"
+                  variant={item.requestedAccountId ? "primary" : "secondary"}
                   loading={is(`signin:${item.id}`)}
                   disabled={busy}
                   onClick={() => void approve(item, "signin")}
                 >
-                  {t("I already have one")}
+                  {item.requestedAccountId ? t("Reconnect") : t("I already have one")}
                 </Button>
                 <Button
                   size="sm"

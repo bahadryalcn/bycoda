@@ -111,7 +111,7 @@ function fixture(
   return { fetcher, calls, read, checkpoint, guard, send };
 }
 
-describe("LinkedIn organization multi-image API", () => {
+describe("LinkedIn multi-image API", () => {
   it("uploads and checks each image, preserves order and alternative text, then posts once", async () => {
     const f = fixture();
     const send = job();
@@ -295,9 +295,26 @@ describe("LinkedIn organization multi-image API", () => {
     const a = account();
     a.scopes = [];
     await expect(f.send(job(), a)).rejects.toMatchObject({ code: "denied" });
-    a.accountType = "member";
-    expect(linkedInMultiImageIssue(a, job())).toContain("organization");
+    a.connection = "browser";
+    expect(linkedInMultiImageIssue(a, job())).toContain("API connection");
     expect(f.fetcher).not.toHaveBeenCalled();
+  });
+
+  it("publishes member images after confirmed upload without reading write-only assets", async () => {
+    const f = fixture();
+    const member: SocialAccount = {
+      ...account(),
+      platformId: "urn:li:person:me",
+      accountType: "member",
+      scopes: ["w_member_social"],
+    };
+    await expect(f.send(job(), member)).resolves.toMatchObject({
+      platformId: "urn:li:ugcPost:98765",
+    });
+    expect(f.calls.some((call) => call.url.includes("/rest/images/"))).toBe(false);
+    expect(JSON.parse(String(f.calls.at(-1)?.options.body))).toMatchObject({
+      author: member.platformId,
+    });
   });
 
   it("validates bytes before registering the first image", async () => {

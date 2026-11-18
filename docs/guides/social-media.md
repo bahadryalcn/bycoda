@@ -84,6 +84,25 @@ publication if your account requires approval.
 
 An unconfirmed reply is not shown as definitely unsent. **Retry same reply** checks or resumes the original operation with its original identity rather than creating another reply. The draft and unresolved operation survive conversation switches and component remounts within the current app session. They are not a new disk-persistence guarantee across app reloads. Jobs that require review remain visible as requiring review.
 
+## LinkedIn
+
+In **Content**, a LinkedIn API account provides **Post format**. Choose **Poll** for a question
+and up to four options, or **Article link** to share an existing article. Attach images, one
+MP4, or one titled PDF to a regular post. Schedule it with **When**.
+
+In **Accounts**, use **Analytics** to load metrics for the selected LinkedIn account.
+**Manage LinkedIn posts** provides reviews for edits or deletions of bycoda publications.
+If chat prepares a change, load its review ID there and inspect the action before confirming.
+
+For a scheduled LinkedIn Live event, open **Live Studio** and check eligibility for the
+selected Page or profile. Copy the destination into **LinkedIn Live** for encrypted storage on
+the account's Host. Start and end the broadcast in LinkedIn Studio with a compatible encoder.
+
+For an OAuth Company Page with Event Management and Community Management access, enable
+**LinkedIn Live comments** in the connection permissions and reconnect. In the **LinkedIn Live**
+panel, enter the event ID and load comments. With reply permission, choose **Reply**,
+write the response, and review the exact change before sending.
+
 For supported platforms, restrictions and Host/API contracts, see [Social integration](../integrations/social.md).
 
 ## Manage a YouTube channel

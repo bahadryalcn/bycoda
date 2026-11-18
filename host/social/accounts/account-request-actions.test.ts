@@ -183,4 +183,108 @@ describe("project account requests", () => {
     expect(next.id).not.toBe(request.id);
     expect(next.status).toBe("pending");
   });
+
+  it("lets LinkedIn projects request a Page even when they already have a member", async () => {
+    const f = await fixture();
+    await f.account("linkedin");
+    const { principal } = await f.session(f.a.id);
+    const request = await f.call<SocialAccountRequest>(
+      "accounts.request",
+      {
+        platform: "linkedin",
+        accountType: "organization",
+        projectId: f.a.id,
+        reason: "Company Page.",
+      },
+      principal,
+    );
+    await expect(
+      f.call("linkedin.accounts.setupStatus", { id: request.id }, principal),
+    ).resolves.toEqual({ status: "pending" });
+    const { accountId } = await f.call<{ accountId: string }>("accounts.requests.approve", {
+      id: request.id,
+      mode: "create",
+    });
+    await f.social.store.db
+      .prepare("INSERT INTO social_records(kind,id,value) VALUES('browser-workflow',?,?)")
+      .run(
+        "linkedin-signup",
+        JSON.stringify({
+          accountId,
+          platform: "linkedin",
+          intent: "signup",
+          createdAt: f.clock.value,
+          expiresAt: f.clock.value + 60_000,
+          status: "awaiting_owner",
+          registration: {
+            status: "awaiting_owner",
+            step: "challenge",
+            blockers: ["challenge"],
+            message: "Private screen message",
+          },
+        }),
+      );
+    const status = await f.call("linkedin.accounts.setupStatus", { id: request.id }, principal);
+    expect(status).toEqual({
+      status: "approved",
+      mode: "create",
+      accountId,
+      connection: "needs_sign_in",
+      signup: {
+        status: "awaiting_owner",
+        registrationStatus: "awaiting_owner",
+        step: "challenge",
+        blockers: ["challenge"],
+      },
+    });
+    const other = await f.session(f.b.id);
+    await expect(
+      f.call("linkedin.accounts.setupStatus", { id: request.id }, other.principal),
+    ).rejects.toThrow("Account request not found");
+    await f.call("accounts.grants", { accountId, projectId: f.a.id, permissions: [] });
+    await expect(
+      f.call("linkedin.accounts.setupStatus", { id: request.id }, principal),
+    ).rejects.toThrow("no permission");
+  });
+
+  it("reuses an existing LinkedIn account after owner approval of a reconnect request", async () => {
+    const f = await fixture();
+    const account = await f.account("linkedin");
+    const original = await f.social.account(account.id);
+    await f.call("accounts.disconnect", { accountId: account.id });
+    const { principal } = await f.session(f.a.id);
+    const input = {
+      platform: "linkedin",
+      projectId: f.a.id,
+      accountId: account.id,
+      reason: "Reconnect this profile.",
+    };
+    const request = await f.call<SocialAccountRequest>("accounts.request", input, principal);
+    await expect(f.call("accounts.request", input, principal)).resolves.toMatchObject({
+      id: request.id,
+    });
+    await expect(
+      f.call("accounts.requests.approve", { id: request.id, mode: "create" }),
+    ).rejects.toThrow("sign in");
+    await expect(
+      f.call("accounts.requests.approve", { id: request.id, mode: "signin" }),
+    ).resolves.toMatchObject({ accountId: account.id });
+    expect(await f.call<SocialAccount[]>("accounts.list")).toHaveLength(1);
+    await expect(
+      f.call("linkedin.accounts.setupStatus", { id: request.id }, principal),
+    ).resolves.toMatchObject({ status: "approved", mode: "signin", connection: "needs_sign_in" });
+    await f.social.connectAccount(
+      account.id,
+      {
+        platformId: original.platformId,
+        name: account.name,
+        scopes: original.scopes,
+        accessApproved: true,
+      },
+      { accessToken: "mock-credential", expiresAt: f.clock.value + 60_000 },
+    );
+    await expect(
+      f.call("linkedin.accounts.setupStatus", { id: request.id }, principal),
+    ).resolves.toMatchObject({ status: "fulfilled", mode: "signin", connection: "connected" });
+  });
 });

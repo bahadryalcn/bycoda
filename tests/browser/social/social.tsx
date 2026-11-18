@@ -306,6 +306,55 @@ if (new URLSearchParams(location.search).has("linkedin-profile")) {
     });
   });
 }
+if (new URLSearchParams(location.search).has("linkedin-support")) {
+  browserWrites = true;
+  const base = snapshot.accounts[0]!;
+  snapshot.accounts = [
+    {
+      ...base,
+      id: "linkedin-api-fixture",
+      platform: "linkedin",
+      name: "Fixture LinkedIn API",
+      platformId: "urn:li:person:fixture",
+      accountType: "member",
+      connection: "oauth",
+      scopes: ["w_member_social", "r_member_postAnalytics"],
+      connected: true,
+      accessApproved: true,
+    },
+    {
+      ...base,
+      id: "linkedin-browser-fixture",
+      platform: "linkedin",
+      name: "Fixture LinkedIn Browser",
+      platformId: "web:linkedin:in:fixture-owner",
+      accountType: "member",
+      connection: "browser",
+      scopes: browserScopes("linkedin"),
+      connected: true,
+      accessApproved: true,
+    },
+  ];
+  for (const account of snapshot.accounts)
+    snapshot.capabilities[account.id] = accountCapabilities(account);
+}
+if (new URLSearchParams(location.search).has("linkedin-live-comments")) {
+  snapshot.accounts = [
+    {
+      ...snapshot.accounts[0]!,
+      id: "linkedin-live-page",
+      platform: "linkedin",
+      accountType: "organization",
+      connection: "oauth",
+      name: "Fixture LinkedIn Live Page",
+      platformId: "urn:li:organization:42",
+      connected: true,
+      accessApproved: true,
+      scopes: ["r_events", "r_organization_social_feed", "w_organization_social_feed"],
+    },
+  ];
+  snapshot.capabilities["linkedin-live-page"] = accountCapabilities(snapshot.accounts[0]!);
+}
 if (new URLSearchParams(location.search).has("browser-monitor")) {
   snapshot.accounts[0].connected = true;
   snapshot.accounts[0].connection = "browser";
@@ -1853,6 +1902,22 @@ Object.assign(window, {
             expiresAt: Date.now() + 100000,
           };
         }
+        if (args.method === "social.browser.linkedin.manage") {
+          const operation = (args.params as { operation?: string } | undefined)?.operation;
+          if (operation === "member.read")
+            return { section: "headline", value: "Fixture product studio" };
+          if (operation === "network.list")
+            return {
+              complete: false,
+              people: [
+                {
+                  platformId: "web:linkedin:in:fixture-ada",
+                  url: "https://www.linkedin.com/in/fixture-ada/",
+                  name: "Ada Fixture",
+                },
+              ],
+            };
+        }
         if (args.method === "social.request") {
           const params = args.params as { action: string; input?: Record<string, unknown> };
           if (params.action === "youtube.videos.list")
@@ -1921,6 +1986,22 @@ Object.assign(window, {
               ],
             };
           if (params.action === "youtube.monetization.status") return { status: "needs_human" };
+          if (params.action === "linkedin.analytics")
+            return { source: "api", metrics: { impressions: 1247, reactions: 46, comments: 12 } };
+          if (params.action === "linkedin.live.status")
+            return { state: "missing", studioUrl: "https://www.linkedin.com/video/golive/manage/" };
+          if (params.action === "linkedin.live.comments.read")
+            return {
+              eventId: params.input?.eventId,
+              postId: "urn:li:ugcPost:123",
+              comments: [
+                {
+                  id: "urn:li:comment:(urn:li:activity:123,456)",
+                  actor: "urn:li:person:demo",
+                  text: "Bir ürün demosu olacak mı?",
+                },
+              ],
+            };
           if (params.action === heldAction)
             await new Promise<void>((resolve, reject) => {
               releaseAction = (fail) =>

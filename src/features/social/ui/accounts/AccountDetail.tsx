@@ -12,6 +12,12 @@ import { ScreenHeader, type ScreenHeaderMenuItem } from "../common/ScreenHeader"
 import { SOCIAL_PLATFORM_NAMES, type SocialAccount, type SocialSnapshot } from "../../model/social";
 import type { SocialClient } from "../../model/socialClient";
 import { AccountConnection } from "./AccountConnection";
+import { LinkedInAnalytics } from "../linkedin/LinkedInAnalytics";
+import { LinkedInBrowserProfile } from "../linkedin/LinkedInBrowserProfile";
+import { LinkedInCreator } from "../linkedin/LinkedInCreator";
+import { LinkedInLive } from "../linkedin/LinkedInLive";
+import { LinkedInNetwork } from "../linkedin/LinkedInNetwork";
+import { LinkedInPostManagement } from "../linkedin/LinkedInPostManagement";
 import { AccountPermissions } from "./AccountPermissions";
 import { AutonomySettings } from "./AutonomySettings";
 import { BrowserSettings } from "./BrowserSettings";
@@ -181,6 +187,54 @@ export function AccountDetail({
           disabled={disabled}
           onThisComputer={onThisComputer}
           onChanged={onChanged}
+        />
+      ) : null}
+      {account.platform === "linkedin" && account.connected ? (
+        <LinkedInAnalytics
+          key={JSON.stringify([account.id, account.platformId, account.connection])}
+          account={account}
+          client={client}
+          disabled={disabled}
+        />
+      ) : null}
+      {account.platform === "linkedin" && account.connected && account.connection === "oauth" ? (
+        <LinkedInPostManagement
+          key={JSON.stringify([account.id, account.platformId])}
+          account={account}
+          client={client}
+          disabled={disabled || !onThisComputer}
+        />
+      ) : null}
+      {account.platform === "linkedin" && account.connected ? (
+        <LinkedInLive
+          key={JSON.stringify([account.id, account.platformId, account.connection])}
+          account={account}
+          client={client}
+          disabled={disabled || !onThisComputer}
+        />
+      ) : null}
+      {account.platform === "linkedin" && account.connected ? (
+        <LinkedInBrowserProfile
+          key={JSON.stringify([account.id, account.platformId, account.connection])}
+          account={account}
+          client={client}
+          disabled={disabled || !onThisComputer}
+        />
+      ) : null}
+      {account.platform === "linkedin" && account.connected && account.connection === "browser" ? (
+        <LinkedInNetwork
+          key={JSON.stringify([account.id, account.platformId])}
+          account={account}
+          client={client}
+          disabled={disabled || !onThisComputer}
+        />
+      ) : null}
+      {account.platform === "linkedin" && account.connected ? (
+        <LinkedInCreator
+          key={JSON.stringify([account.id, account.platformId, account.connection])}
+          account={account}
+          client={client}
+          disabled={disabled || !onThisComputer}
         />
       ) : null}
       <Disclosure
