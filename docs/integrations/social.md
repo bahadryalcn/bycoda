@@ -185,6 +185,41 @@ questions). Expired, revoked or scope-changed connections require reconnection.
 
 #### Instagram, Facebook and Meta
 
+**Instagram Login and browser coverage.** Use the Instagram API first for
+connected professional accounts. Select the permissions for each operation
+when connecting or reconnecting. App Review, account eligibility and actual
+permission grants still determine availability.
+
+- Content supports HTTPS images, feed Reels, carousels of up to 20 items and
+  single-item Stories for eligible Business accounts. The Host schedules each
+  publication and persists container and submission state. Available metadata
+  depends on format and includes image alt text, tagging, collaborators, location
+  and AI disclosure. [Meta publishing reference](https://developers.facebook.com/documentation/instagram-platform/content-publishing/)
+- Inbox supports replies on owned media, owner-reviewed hide, unhide and delete,
+  and private replies on eligible comments. Existing API DMs support text or a
+  separate HTTPS image or video attachment. Instagram enforces messaging
+  windows and private reply eligibility. [Meta moderation reference](https://developers.facebook.com/documentation/instagram-platform/comment-moderation)
+- Signed webhook mention history records IDs received by this Host. Browser
+  mentions sample the visible notifications. Signed Live comments show in Inbox.
+  Available insights cover the account, owned media and eligible audience
+  breakdowns. A refused metric is reported separately from numeric values.
+  [Meta webhooks](https://developers.facebook.com/docs/graph-api/webhooks/getting-started/webhooks-for-instagram/) · [Meta insights](https://developers.facebook.com/documentation/instagram-platform/insights)
+- The verified browser connection supports owner-confirmed caption edits and
+  deletion, comment likes, follow and unfollow, a partial follower sample and
+  profile editing where the controls are present. Native API deletion requires
+  Facebook Login, which differs from this Instagram Login connection.
+  [Meta media reference](https://developers.facebook.com/docs/instagram-platform/reference/instagram-media/v21.0/)
+- Professional conversion, additional profile settings, Highlights,
+  monetization and Live Producer open an owner workflow. Availability depends on
+  the Instagram account and desktop page. bycoda does not read earnings balances
+  or collect stream keys. Obtain the stream key from Instagram's private owner
+  window and enter it directly in the streaming application.
+- Chat can request an account, prepare and schedule eligible publications, read
+  granted insights and mentions, and draft and queue public replies, private
+  replies and supported DMs. Account administration and browser-only
+  management stay owner-only. Captchas, passwords and verification remain
+  human steps.
+
 - Professional Instagram accounts use Instagram Login. The short-lived token is exchanged
   for a long-lived token before identity selection. Facebook requires an eligible managed
   Page. A personal browser account does not grant professional or Page API access.
