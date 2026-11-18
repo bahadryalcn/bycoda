@@ -159,6 +159,41 @@ it("replays only events after the last applied cursor without reloading the sour
   expect(load).toHaveBeenCalledTimes(2);
 });
 
+it("paces a replay longer than the unacknowledged window by acknowledgements", async () => {
+  const { hub, load, advance } = fixture({ limits: { maxUnacknowledgedEvents: 2 } });
+  const original = client("one");
+  subscribe(hub, original.owner);
+  await expectSnapshots(original.events, 1);
+  const applied = cursor(original.events[0]);
+  hub.detach("one");
+  const keeper = client("keeper");
+  subscribe(hub, keeper.owner, "keeper");
+  await expectSnapshots(keeper.events, 1);
+  for (let index = 2; index <= 6; index++) {
+    hub.acknowledge("keeper", "keeper", cursor(keeper.events.at(-1)!));
+    advance();
+    await expectSnapshots(keeper.events, index);
+  }
+  const resumed = client("two");
+  subscribe(hub, resumed.owner, "resumed", target, applied);
+  await expectSnapshots(resumed.events, 2);
+  await settle();
+  expect(resumed.events).toHaveLength(2); // The window is full; wait for acknowledgement.
+  hub.acknowledge("two", "resumed", cursor(resumed.events[1]));
+  await expectSnapshots(resumed.events, 4);
+  // A live event during the replay queues behind the retained backlog.
+  hub.acknowledge("keeper", "keeper", cursor(keeper.events.at(-1)!));
+  advance();
+  await expectSnapshots(keeper.events, 7);
+  expect(resumed.events).toHaveLength(4);
+  hub.acknowledge("two", "resumed", cursor(resumed.events[3]));
+  await expectSnapshots(resumed.events, 6);
+  hub.acknowledge("two", "resumed", cursor(resumed.events[5]));
+  expect(resumed.events.map((event) => event.params.kind)).not.toContain("resync-required");
+  expect(resumed.events.map((event) => event.params.cursor.sequence)).toEqual([2, 3, 4, 5, 6, 7]);
+  expect(load).toHaveBeenCalledTimes(7);
+});
+
 it("requires resync after a replay gap or expired disconnected stream", async () => {
   let now = 0;
   const { hub, advance } = fixture({

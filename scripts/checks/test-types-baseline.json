@@ -120,7 +120,7 @@
     "host/tasks/tasks.test.ts": 2,
     "host/transport/dispatch.test.ts": 6,
     "host/transport/ws/server.test.ts": 34,
-    "host/transport/ws/subscriptions.test.ts": 7,
+    "host/transport/ws/subscriptions.test.ts": 2,
     "host/voice/voice-capability-coverage.test.ts": 1,
     "host/voice/voice-thread-grants.test.ts": 1,
     "host/voice/voice.test.ts": 1,
