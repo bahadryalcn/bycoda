@@ -49,6 +49,12 @@ type Retained = { event: Event; bytes: number; at: number };
 type Read = { connectionId: string; held: boolean; abandoned: boolean; settled: boolean };
 // Physical loads may exceed the logical read cap by this much while abandoned loads drain.
 const abandonedReadAllowance = 4;
+// Consecutive failed reads a stream absorbs before its consumers must resync.
+const maxQuietStreamFailures = 3;
+const streamRetryBaseMs = 500;
+const streamRetryMaxMs = 30_000;
+/** Data no retry can fix; consumers resync at once. */
+class StreamResyncRequired extends Error {}
 type Consumer = {
   owner: HostStreamConsumer;
   id: string;
@@ -58,6 +64,9 @@ type Consumer = {
   ack: number;
   pending: Map<number, number>;
   bytes: number;
+  // Resuming from a cursor: retained events go out as acknowledgements free
+  // the window, so a gap longer than the window resumes instead of resyncing.
+  replaying: boolean;
 };
 type Stream = {
   key: string;
@@ -79,6 +88,7 @@ type Stream = {
   reading?: AbortController;
   readingBaseline?: boolean;
   refreshAt?: number;
+  failures: number;
   consumers: Map<string, Consumer>;
 };
 
@@ -119,8 +129,7 @@ export class HostSubscriptionHub {
       ) => Promise<HostStreamSnapshot | null>;
       now?: () => number;
       limits?: Partial<
-        Pick<
-          typeof WS_LIMITS,
+        Record<
           | "maxSubscriptionsPerSocket"
           | "maxSubscriptionsPerHost"
           | "maxUnacknowledgedEvents"
@@ -129,7 +138,8 @@ export class HostSubscriptionHub {
           | "maxReplayBytes"
           | "maxReplayAgeMs"
           | "maxHostReplayBytes"
-          | "streamChunkBytes"
+          | "streamChunkBytes",
+          number
         >
       >;
       maxConcurrentReads?: number;
@@ -191,6 +201,7 @@ export class HostSubscriptionHub {
         dirty: true,
         deleted: false,
         forceSnapshot: true,
+        failures: 0,
         consumers: new Map(),
       };
       this.streams.set(key, stream);
@@ -204,6 +215,7 @@ export class HostSubscriptionHub {
       ack: 0,
       pending: new Map(),
       bytes: 0,
+      replaying: false,
     };
     stream.touched = this.now();
     stream.consumers.set(identity, consumer);
@@ -238,6 +250,7 @@ export class HostSubscriptionHub {
         consumer.bytes -= bytes;
       }
     stream.touched = this.now();
+    if (consumer.replaying && consumer.active) this.replay(stream, consumer);
     return true;
   }
 
@@ -330,9 +343,8 @@ export class HostSubscriptionHub {
     ) {
       consumer.ack = consumer.sent = cursor.sequence;
       consumer.needsSnapshot = false;
-      for (const retained of stream.events)
-        if (retained.event.cursor.sequence > cursor.sequence)
-          this.deliver(stream, consumer, retained.event);
+      consumer.replaying = true;
+      this.replay(stream, consumer);
     } else {
       if (cursor) this.deliver(stream, consumer, this.event(stream, "resync-required"));
       const last = stream.events.at(-1);
@@ -356,8 +368,43 @@ export class HostSubscriptionHub {
     };
   }
 
-  private deliver(stream: Stream, consumer: Consumer, event: Event): void {
+  // Sends retained events after the consumer's cursor while its window has room.
+  // A full window waits for the next acknowledgement; a cursor that retention has
+  // passed (or a window that cannot hold even one event) still needs a resync.
+  private replay(stream: Stream, consumer: Consumer): void {
+    for (const retained of stream.events) {
+      if (!consumer.active || this.stopped) return;
+      const sequence = retained.event.cursor.sequence;
+      if (sequence <= consumer.sent) continue;
+      if (sequence !== consumer.sent + 1) break;
+      if (!this.deliver(stream, consumer, retained.event, true)) return;
+    }
     if (!consumer.active || this.stopped) return;
+    if (consumer.sent < stream.sequence) this.overflow(stream, consumer);
+    // Leave paced delivery once the replay is caught up and fully applied.
+    else if (!consumer.pending.size) consumer.replaying = false;
+  }
+
+  private overflow(stream: Stream, consumer: Consumer): void {
+    this.send(consumer, {
+      jsonrpc: "2.0",
+      method: "subscription.event",
+      params: {
+        subscriptionId: consumer.id,
+        streamId: stream.id,
+        cursor: { epoch: stream.epoch, sequence: consumer.sent },
+        kind: "resync-required",
+      },
+    });
+    consumer.active = false;
+    consumer.replaying = false;
+    consumer.pending.clear();
+    consumer.bytes = 0;
+  }
+
+  /** Returns false only when a paced delivery must wait for window room. */
+  private deliver(stream: Stream, consumer: Consumer, event: Event, paced = false): boolean {
+    if (!consumer.active || this.stopped) return true;
     const message: SubscriptionEvent = {
       jsonrpc: "2.0",
       method: "subscription.event",
@@ -375,26 +422,15 @@ export class HostSubscriptionHub {
     );
     const bytes = readNormalizedJsonWire(normalized).byteLength;
     if (event.kind === "snapshot" || event.kind === "delta") {
-      if (event.kind === "delta" && consumer.needsSnapshot) return;
-      if (event.cursor.sequence <= consumer.sent) return;
+      if (event.kind === "delta" && consumer.needsSnapshot) return true;
+      if (event.cursor.sequence <= consumer.sent) return true;
       if (
         consumer.pending.size >= this.limits.maxUnacknowledgedEvents ||
         consumer.bytes + bytes > this.limits.maxSubscriptionWindowBytes
       ) {
-        this.send(consumer, {
-          jsonrpc: "2.0",
-          method: "subscription.event",
-          params: {
-            subscriptionId: consumer.id,
-            streamId: stream.id,
-            cursor: { epoch: stream.epoch, sequence: consumer.sent },
-            kind: "resync-required",
-          },
-        });
-        consumer.active = false;
-        consumer.pending.clear();
-        consumer.bytes = 0;
-        return;
+        if (paced && consumer.pending.size) return false;
+        this.overflow(stream, consumer);
+        return true;
       }
       consumer.pending.set(event.cursor.sequence, bytes);
       consumer.bytes += bytes;
@@ -402,6 +438,7 @@ export class HostSubscriptionHub {
       if (event.kind === "snapshot") consumer.needsSnapshot = false;
     }
     if (!this.send(consumer, message, normalized)) consumer.active = false;
+    return true;
   }
 
   private send(
@@ -487,11 +524,7 @@ export class HostSubscriptionHub {
         const generation = stream.generation;
         const deadline = setTimeout(() => {
           controller.abort();
-          if (this.stopped || stream.deleted || generation !== stream.generation) return;
-          for (const consumer of stream.consumers.values()) {
-            this.deliver(stream, consumer, this.event(stream, "resync-required"));
-            consumer.active = false;
-          }
+          this.failed(stream, generation, false);
         }, this.limits.defaultResponseTimeoutMs);
         deadline.unref();
         void this.refresh(stream, generation, controller, owner).finally(() => {
@@ -597,7 +630,7 @@ export class HostSubscriptionHub {
       const dataWire = readNormalizedJsonWire(dataCapture);
       const text = dataWire.serialized;
       if (dataWire.byteLength + 1024 > this.limits.streamChunkBytes)
-        throw new Error("Stream snapshot requires a bounded bulk descriptor.");
+        throw new StreamResyncRequired("Stream snapshot requires a bounded bulk descriptor.");
       const fingerprint = createHash("sha256").update(text).digest("hex");
       if (
         !forceSnapshot &&
@@ -630,22 +663,37 @@ export class HostSubscriptionHub {
       stream.fingerprint = fingerprint;
       stream.revision = revision;
       stream.sourceEpoch = snapshot.sourceEpoch;
+      stream.failures = 0;
       stream.touched = this.now();
       this.prune();
       for (const consumer of stream.consumers.values()) {
         if (!authorized.has(consumer)) continue;
         if (this.stopped || stream.deleted || generation !== stream.generation) return;
-        this.deliver(stream, consumer, event);
+        // A resuming consumer takes the new event in order, after its retained backlog.
+        if (consumer.replaying) this.replay(stream, consumer);
+        else this.deliver(stream, consumer, event);
       }
-    } catch {
-      if (!this.stopped && !stream.deleted && generation === stream.generation) {
-        stream.forceSnapshot = true;
-        stream.dirty = true;
-        for (const consumer of stream.consumers.values()) {
-          this.deliver(stream, consumer, this.event(stream, "resync-required"));
-          consumer.active = false;
-        }
-      }
+    } catch (error) {
+      // An aborted read was already settled by whoever aborted it (deadline,
+      // deletion, resnapshot or the last consumer leaving).
+      if (!controller.signal.aborted)
+        this.failed(stream, generation, error instanceof StreamResyncRequired);
+    }
+  }
+
+  // A failed read retries a fresh baseline with backoff while consumers stay
+  // live; only repeated failures, or data no retry can fix, cost a resync.
+  private failed(stream: Stream, generation: number, terminal: boolean): void {
+    if (this.stopped || stream.deleted || generation !== stream.generation) return;
+    stream.forceSnapshot = true;
+    stream.dirty = true;
+    stream.failures++;
+    stream.refreshAt =
+      Date.now() + Math.min(streamRetryMaxMs, streamRetryBaseMs * 2 ** (stream.failures - 1));
+    if (!terminal && stream.failures < maxQuietStreamFailures) return;
+    for (const consumer of stream.consumers.values()) {
+      this.deliver(stream, consumer, this.event(stream, "resync-required"));
+      consumer.active = false;
     }
   }
 

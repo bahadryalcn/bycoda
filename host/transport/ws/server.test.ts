@@ -865,7 +865,7 @@ describe("WS framing and orderly disposal", () => {
     });
   });
 
-  it("bounds heartbeat authorization before starting another check", async () => {
+  it("keeps every peer on a transport ping when heartbeat authorization stalls", async () => {
     const finish = deferred<boolean>();
     let block = false;
     let checks = 0;
@@ -878,12 +878,23 @@ describe("WS framing and orderly disposal", () => {
           return finish.promise;
         },
       }),
-      limits: { heartbeatIntervalMs: 5, heartbeatResponseTimeoutMs: 40 },
+      limits: { maxSocketsPerDevice: 2, heartbeatIntervalMs: 5, heartbeatResponseTimeoutMs: 40 },
     });
-    const client = await host.ready();
+    const first = await host.ready();
+    const second = await host.ready();
+    let closed = false;
+    for (const client of [first, second]) void client.closed.then(() => (closed = true));
     block = true;
-    await client.closed;
-    expect(checks).toBe(1);
+    await vi.waitFor(() => expect(checks).toBe(2));
+    // Past the 40 ms authorization deadline the store stall must not close anyone.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    await Promise.all(
+      [first, second].map(
+        (client) => new Promise<void>((resolve) => client.socket.once("ping", () => resolve())),
+      ),
+    );
+    expect(closed).toBe(false);
+    expect(checks).toBe(2); // Detached checks hold their budget slot until they settle.
     finish.resolve(true);
   });
 
@@ -1013,7 +1024,7 @@ describe("WS framing and orderly disposal", () => {
     });
     expect(dispatch).toHaveBeenCalledOnce();
   });
-  it("keeps detached heartbeat work bounded without falsely closing a replacement", async () => {
+  it("keeps detached heartbeat work bounded and still closes after a later revocation", async () => {
     const finish = deferred<boolean>();
     const started = deferred<void>();
     let block = false;
@@ -1036,15 +1047,15 @@ describe("WS framing and orderly disposal", () => {
     const first = await host.ready();
     block = true;
     await started.promise;
-    await first.closed;
     block = false;
-    const second = await host.ready();
-    await new Promise<void>((resolve) => second.socket.once("ping", () => resolve()));
+    // The timed-out check stays detached; later ticks fall back to a transport ping.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await new Promise<void>((resolve) => first.socket.once("ping", () => resolve()));
     expect(blockedChecks).toBe(1);
-    expect(await second.request("still-authorized", "connection.probe")).toHaveProperty("result");
+    expect(await first.request("still-authorized", "connection.probe")).toHaveProperty("result");
     revoked = true;
     finish.resolve(true);
-    await second.closed;
+    await first.closed;
   });
 
   it("returns transient hello overload and allows retry after detached auth settles", async () => {
