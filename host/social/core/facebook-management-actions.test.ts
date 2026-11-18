@@ -4,6 +4,7 @@ import type { SocialAccount } from "../../../src/features/social/model/social";
 import { SocialHttp } from "../../../src/integrations/social/adapter";
 import { createFacebookPageOperations } from "../../../src/integrations/social/adapters/facebook-page-operations";
 import { fixture, runCleanups } from "../social-test-support";
+import { SocialTransport } from "../social-transport";
 
 afterEach(runCleanups);
 
@@ -200,7 +201,13 @@ it("lets only the originating project apply an exact owner-approved write in cha
   ).resolves.toMatchObject({ status: "approved" });
   expect(graph).not.toHaveBeenCalled();
   await expect(s.call(action, { ...input, text: "Tampered copy" }, principal)).rejects.toThrow();
-  await expect(s.call(action, input, principal)).resolves.toMatchObject({ status: "completed" });
+  await expect(
+    new SocialTransport(s.social).rpc(principal, "social.tools.call", {
+      action,
+      input,
+      requestId: "facebook-approved-write",
+    }),
+  ).resolves.toMatchObject({ status: "completed" });
   await expect(s.call(action, input, principal)).resolves.toMatchObject({ status: "completed" });
   expect(graph.mock.calls.map(([, init]) => init?.method ?? "GET")).toEqual(["GET", "POST"]);
   expect(graph.mock.calls[1][1]?.body).toContain("Edited copy");
@@ -236,4 +243,63 @@ it("keeps a suggested edit pending and respects sending stop at dispatch", async
   await s.social.setSetting("ai.stopped", "false");
   await expect(s.call(action, input, principal)).resolves.toMatchObject({ status: "completed" });
   expect(graph).toHaveBeenCalledTimes(2);
+});
+
+it("blocks a chat-initiated comment like through the shared suppression gate", async () => {
+  const s = await fixture();
+  const account = await s.call<SocialAccount>("accounts.create", {
+    platform: "facebook",
+    accountType: "page",
+    name: "Test Page",
+    projectIds: [s.a.id],
+  });
+  await s.social.connectAccount(
+    account.id,
+    {
+      platformId: "123",
+      name: "Test Page",
+      scopes: ["pages_manage_engagement", "pages_read_user_content"],
+      accessApproved: true,
+    },
+    { accessToken: "synthetic-facebook-token" },
+  );
+  await s.call("accounts.grants", {
+    accountId: account.id,
+    projectId: s.a.id,
+    permissions: ["read", "comment"],
+  });
+  await s.call("autonomy.set", {
+    accountId: account.id,
+    policy: { levels: { comment: "autonomous" } },
+    confirm: "ENABLE_AUTONOMY",
+  });
+  await s.enable();
+  const thread = await s.thread(account, "event-1", "Comment from recipient", "comment");
+  const graph = vi.fn<typeof fetch>(async () => Response.json({ success: true }));
+  s.adapters.facebook.facebook = createFacebookPageOperations(new SocialHttp(graph), "v25.0");
+  const { principal } = await s.session();
+  const item = await s.call<FacebookManagementRequest>(
+    "facebook.management.request",
+    {
+      accountId: account.id,
+      operation: "facebook.comment.moderate",
+      details: { threadId: thread.id, action: "like" },
+    },
+    principal,
+  );
+  const input = { accountId: account.id, id: item.id };
+  const suppressed = await s.call<{ id: string }>("suppressions.add", {
+    handle: { platform: "facebook", platformId: "recipient-1" },
+    channel: "comment",
+  });
+  await expect(s.call("facebook.management.execute", input, principal)).rejects.toThrow(
+    "suppressed",
+  );
+  expect(graph).not.toHaveBeenCalled();
+  await s.call("suppressions.remove", { suppressionId: suppressed.id });
+  await expect(s.call("facebook.management.execute", input, principal)).resolves.toMatchObject({
+    status: "completed",
+  });
+  expect(graph).toHaveBeenCalledTimes(1);
+  expect(String(graph.mock.calls[0][0])).toMatch(/\/likes$/);
 });
