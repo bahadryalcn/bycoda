@@ -175,12 +175,26 @@ describe("reduceConnection", () => {
     expect(connecting).toBe(INITIAL_CONNECTION);
   });
 
-  it("blocks a machine that refused the request's access, and never calls it connected", () => {
+  it("treats a revoked pairing as an identity problem: no blind retry, pair again", () => {
     const text =
-      "Host rejected request [RPC_AUTHORIZATION] (workspace.run). Reconnect the selected machine and check its access scope.";
+      "Host rejected request [RPC_AUTHORIZATION] (workspace.run). This machine no longer accepts this computer's pairing; pair it again.";
+    expect(connectionOutcome(text)).toEqual({
+      status: "identity-mismatch",
+      error: "This machine no longer accepts this computer’s pairing. Add it again in Connections.",
+      specific: true,
+    });
+    const state = reduceConnection({ status: "connected", lastSeen: 10 }, fail(text, 20));
+    expect(state).toMatchObject({ status: "identity-mismatch", lastSeen: 10 });
+    expect(reduceConnection(state, ok(30))).toBe(state);
+    expect(blocksSending(state.status)).toBe(true);
+  });
+
+  it("blocks a machine whose route a proxy refused, with its own reason", () => {
+    const text =
+      "Host rejected request [RPC_ROUTE_REJECTED] (sessions.queue.get). A proxy or origin header in front of the machine was refused; check the route to it.";
     expect(connectionOutcome(text)).toEqual({
       status: "connection-blocked",
-      error: text,
+      error: "A proxy or origin header in front of the machine was refused. Check the route to it.",
       specific: true,
     });
     const state = reduceConnection({ status: "connected", lastSeen: 10 }, fail(text, 20));

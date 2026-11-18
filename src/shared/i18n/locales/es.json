@@ -5144,6 +5144,8 @@
   "Can’t reach {p0}": "No se puede acceder a {p0}",
   "{p0} Host on {p1} needs an update": "El host {p0} en {p1} necesita una actualización",
   "Couldn’t load from the machine": "No se pudo cargar desde el equipo",
+  "A proxy or origin header in front of the machine was refused. Check the route to it.": "Se rechazó un proxy o un encabezado Origin delante del equipo. Revisa la ruta hacia él.",
+  "This machine no longer accepts this computer’s pairing. Add it again in Connections.": "Este equipo ya no acepta el emparejamiento con este ordenador. Vuelve a añadirlo en Conexiones.",
   "Reconnecting": "Reconectando",
   "Server not found": "Servidor no encontrado",
   "Queued delivery is unknown. Sending is held for review.": "Se desconoce la entrega en cola. El envío queda retenido para revisión.",
@@ -12005,5 +12007,6 @@
   "Show delivery notice": "Mostrar aviso de entrega",
   "This device's local storage is full, so the queue could not be saved.": "El almacenamiento local de este dispositivo está lleno, por lo que no se pudo guardar la cola.",
   "The connection to the Host dropped before the result was known. The queue checks again automatically.": "La conexión con el Host se cortó antes de conocer el resultado. La cola vuelve a comprobarlo automáticamente.",
-  "The message was not sent. The technical reason is in the details.": "El mensaje no se envió. El motivo técnico está en los detalles."
+  "The message was not sent. The technical reason is in the details.": "El mensaje no se envió. El motivo técnico está en los detalles.",
+  "Sync is paused until room privacy protection is confirmed. It retries automatically.": "La sincronización está en pausa hasta que se confirme la protección de privacidad de la sala. Se reintenta automáticamente."
 }

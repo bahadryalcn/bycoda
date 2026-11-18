@@ -5898,6 +5898,8 @@
   "Can’t reach {p0}": "Can’t reach {p0}",
   "{p0} Host on {p1} needs an update": "{p0} Host on {p1} needs an update",
   "Couldn’t load from the machine": "Couldn’t load from the machine",
+  "A proxy or origin header in front of the machine was refused. Check the route to it.": "A proxy or origin header in front of the machine was refused. Check the route to it.",
+  "This machine no longer accepts this computer’s pairing. Add it again in Connections.": "This machine no longer accepts this computer’s pairing. Add it again in Connections.",
   "Reconnecting": "Reconnecting",
   "Server not found": "Server not found",
   "Queued delivery is unknown. Sending is held for review.": "Queued delivery is unknown. Sending is held for review.",
@@ -12005,5 +12007,6 @@
   "Show delivery notice": "Show delivery notice",
   "This device's local storage is full, so the queue could not be saved.": "This device's local storage is full, so the queue could not be saved.",
   "The connection to the Host dropped before the result was known. The queue checks again automatically.": "The connection to the Host dropped before the result was known. The queue checks again automatically.",
-  "The message was not sent. The technical reason is in the details.": "The message was not sent. The technical reason is in the details."
+  "The message was not sent. The technical reason is in the details.": "The message was not sent. The technical reason is in the details.",
+  "Sync is paused until room privacy protection is confirmed. It retries automatically.": "Sync is paused until room privacy protection is confirmed. It retries automatically."
 }

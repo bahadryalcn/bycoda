@@ -755,29 +755,42 @@ fn rpc_timed(
         }
     };
     let status = response.status();
-    let authorization_error = || {
-        format!("Host rejected request [RPC_AUTHORIZATION] ({method}). Reconnect the selected machine and check its access scope.")
-    };
     let device_effect = device_http_effect(method);
-    if (status == 401 || status == 403) && !device_effect {
-        return Err(authorization_error());
-    }
+    let denied = status == 401 || status == 403;
+    // The Host names why it refused in the body. Read it (bounded, best effort) so a
+    // revoked pairing and a rejected proxy route are not reported as the same thing.
     let mut bytes = Vec::new();
-    response
+    let mut read_failure = None;
+    if let Err(error) = response
         .into_reader()
         .take(MAX_RESPONSE_BYTES + 1)
         .read_to_end(&mut bytes)
-        .map_err(|error| {
-            let ureq::Error::Transport(error) = ureq::Error::from(error) else {
-                unreachable!("An I/O error becomes a transport error")
-            };
-            exchange.failed(&error);
-            if device_effect {
-                device_http_unknown(method)
-            } else {
-                rpc_transport_failure(&error, &rpc_operation(method, &params))
-            }
-        })?;
+    {
+        read_failure = Some(error);
+    }
+    let rejection = |error: Option<&str>| authorization_failure(method, status, error);
+    if denied && !device_effect {
+        let error = serde_json::from_slice::<Value>(&bytes)
+            .ok()
+            .and_then(|value| {
+                value
+                    .get("error")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+            });
+        return Err(rejection(error.as_deref()));
+    }
+    if let Some(error) = read_failure {
+        let ureq::Error::Transport(error) = ureq::Error::from(error) else {
+            unreachable!("An I/O error becomes a transport error")
+        };
+        exchange.failed(&error);
+        return Err(if device_effect {
+            device_http_unknown(method)
+        } else {
+            rpc_transport_failure(&error, &rpc_operation(method, &params))
+        });
+    }
     if bytes.len() as u64 > MAX_RESPONSE_BYTES {
         return Err(if device_effect {
             device_http_unknown(method)
@@ -801,8 +814,8 @@ fn rpc_timed(
         {
             return Err(device_http_unknown(method));
         }
-        if status == 401 || status == 403 {
-            return Err(authorization_error());
+        if denied {
+            return Err(rejection(Some(error)));
         }
         return Err(format!("Host rejected request: {error}"));
     }
@@ -822,6 +835,20 @@ fn rpc_timed(
         .as_object_mut()
         .and_then(|object| object.remove("result"))
         .ok_or_else(invalid_response)
+}
+
+/// Host body of the 403 that rejects the origin or route before any credential check.
+const ROUTE_REJECTED_BODY: &str = "Unsupported request origin or route";
+
+/// A 401 means the device row is gone on the remote (at the gate or mid-dispatch), so
+/// retrying with this token cannot succeed. A 403 with the route body means a proxy or
+/// origin header was rejected, not the pairing.
+fn authorization_failure(method: &str, status: u16, error: Option<&str>) -> String {
+    if status == 403 && error == Some(ROUTE_REJECTED_BODY) {
+        format!("Host rejected request [RPC_ROUTE_REJECTED] ({method}). A proxy or origin header in front of the machine was refused; check the route to it.")
+    } else {
+        format!("Host rejected request [RPC_AUTHORIZATION] ({method}). This machine no longer accepts this computer's pairing; pair it again.")
+    }
 }
 
 // Error classification only; this does not grant the narrower NativeDevice

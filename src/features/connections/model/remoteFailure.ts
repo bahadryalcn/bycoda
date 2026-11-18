@@ -76,7 +76,12 @@ export function classifyRemoteError(error: unknown): RemoteFailure {
     ].includes(code)
   )
     return { kind: "unreachable", message };
-  if (/Host identity changed\. Add this machine again before continuing\./i.test(text))
+  // A 401 from the Host means its device row for this computer is gone: only pairing again helps.
+  if (
+    /Host identity changed\. Add this machine again before continuing\.|\[RPC_AUTHORIZATION\]/i.test(
+      text,
+    )
+  )
     return { kind: "identity", message };
   // A Host rejection proves transport worked. Its operation may mention SSH or
   // another service being unreachable; that is not this machine's connection.

@@ -5144,6 +5144,8 @@
   "Can’t reach {p0}": "无法连接 {p0}",
   "{p0} Host on {p1} needs an update": "{p0} 主机（位于 {p1}）需要更新",
   "Couldn’t load from the machine": "无法从该机器加载",
+  "A proxy or origin header in front of the machine was refused. Check the route to it.": "机器前面的代理或 Origin 标头被拒绝。请检查通往该机器的路由。",
+  "This machine no longer accepts this computer’s pairing. Add it again in Connections.": "该机器不再接受此电脑的配对。请在“连接”中重新添加。",
   "Reconnecting": "正在重新连接",
   "Server not found": "未找到服务器",
   "Queued delivery is unknown. Sending is held for review.": "排队投递状态未知。发送已暂停，待审核。",
@@ -12005,5 +12007,6 @@
   "Show delivery notice": "显示投递通知",
   "This device's local storage is full, so the queue could not be saved.": "此设备的本地存储已满，无法保存队列。",
   "The connection to the Host dropped before the result was known. The queue checks again automatically.": "在得知结果之前，与 Host 的连接已断开。队列会自动重新检查。",
-  "The message was not sent. The technical reason is in the details.": "消息未发送。技术原因见详细信息。"
+  "The message was not sent. The technical reason is in the details.": "消息未发送。技术原因见详细信息。",
+  "Sync is paused until room privacy protection is confirmed. It retries automatically.": "在确认房间隐私保护之前，同步已暂停。将自动重试。"
 }

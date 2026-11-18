@@ -175,6 +175,27 @@ fn device_http_outcomes_preserve_admitted_uncertainty_without_reclassifying_deni
         ),
         ("devices.status", 401, unknown.to_vec(), 0, "auth"),
         (
+            "projects.list",
+            401,
+            br#"{"error":"Device credential is invalid or revoked"}"#.to_vec(),
+            0,
+            "auth",
+        ),
+        (
+            "sessions.queue.get",
+            403,
+            br#"{"error":"Unsupported request origin or route"}"#.to_vec(),
+            0,
+            "route",
+        ),
+        (
+            "devices.setup",
+            403,
+            br#"{"error":"Unsupported request origin or route"}"#.to_vec(),
+            0,
+            "route",
+        ),
+        (
             "devices.preview.mobile.status",
             400,
             unknown.to_vec(),
@@ -306,6 +327,17 @@ fn device_http_outcomes_preserve_admitted_uncertainty_without_reclassifying_deni
             expected == "auth",
             "{method}/{status}: {error}"
         );
+        assert_eq!(
+            error.contains("[RPC_ROUTE_REJECTED]"),
+            expected == "route",
+            "{method}/{status}: {error}"
+        );
+        if expected == "auth" {
+            assert!(
+                error.contains("pair it again") && !error.contains("access scope"),
+                "{error}"
+            );
+        }
         if expected == "rejected" {
             assert!(error.starts_with("Host rejected request:"), "{error}");
         }

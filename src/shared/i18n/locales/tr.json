@@ -5688,6 +5688,8 @@
   "Can’t reach {p0}": "{p0} erişilemiyor",
   "{p0} Host on {p1} needs an update": "{p1} üzerindeki {p0} Host’un güncellenmesi gerekiyor",
   "Couldn’t load from the machine": "Makineden yüklenemedi",
+  "A proxy or origin header in front of the machine was refused. Check the route to it.": "Makinenin önündeki bir proxy veya Origin başlığı reddedildi. Makineye giden rotayı kontrol et.",
+  "This machine no longer accepts this computer’s pairing. Add it again in Connections.": "Bu makine artık bu bilgisayarın eşleştirmesini kabul etmiyor. Bağlantılar bölümünden yeniden ekle.",
   "Reconnecting": "Yeniden bağlanılıyor",
   "Server not found": "Sunucu bulunamadı",
   "Queued delivery is unknown. Sending is held for review.": "Kuyruktaki iletimin durumu bilinmiyor. Gönderim inceleme için bekletiliyor.",
@@ -12005,5 +12007,6 @@
   "Show delivery notice": "Teslim bildirimini göster",
   "This device's local storage is full, so the queue could not be saved.": "Bu cihazın yerel depolaması dolu, bu yüzden kuyruk kaydedilemedi.",
   "The connection to the Host dropped before the result was known. The queue checks again automatically.": "Sonuç öğrenilmeden önce Host bağlantısı kesildi. Kuyruk otomatik olarak yeniden kontrol eder.",
-  "The message was not sent. The technical reason is in the details.": "Mesaj gönderilmedi. Teknik neden ayrıntılarda."
+  "The message was not sent. The technical reason is in the details.": "Mesaj gönderilmedi. Teknik neden ayrıntılarda.",
+  "Sync is paused until room privacy protection is confirmed. It retries automatically.": "Oda gizlilik koruması doğrulanana kadar senkronizasyon duraklatıldı. Otomatik olarak yeniden denenir."
 }

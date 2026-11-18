@@ -62,9 +62,18 @@ export function sanitizeConnectionError(text: string): string {
   return cleaned.length > 200 ? `${cleaned.slice(0, 197)}…` : cleaned;
 }
 
+/** The machine answered 403 for its route: a proxy or origin header, not the pairing. */
+const ROUTE_REJECTED =
+  "A proxy or origin header in front of the machine was refused. Check the route to it.";
+
+/** The machine answered 401: its device row for this computer is gone, so only pairing again helps. */
+const PAIRING_REFUSED =
+  "This machine no longer accepts this computer’s pairing. Add it again in Connections.";
+
 /** A short reason for a status, for banners and tooltips. */
 export function connectionReason(status: RemoteConnectionStatus, raw: string): string {
   if (status === "outdated-host") return "bycoda Host on the machine needs an update.";
+  if (status === "identity-mismatch" && /\[RPC_AUTHORIZATION\]/.test(raw)) return PAIRING_REFUSED;
   if (status === "host-not-running")
     return "The machine is reachable, but bycoda Host is not running there. Start it, then reconnect.";
   if (/Machine is unreachable/i.test(raw))
@@ -93,6 +102,12 @@ export function localizeConnectionReason(reason: string): string {
     "This machine is not connected on this computer.": t(
       "This machine is not connected on this computer.",
     ),
+    [ROUTE_REJECTED]: t(
+      "A proxy or origin header in front of the machine was refused. Check the route to it.",
+    ),
+    [PAIRING_REFUSED]: t(
+      "This machine no longer accepts this computer’s pairing. Add it again in Connections.",
+    ),
     "SSH could not connect.": t("SSH could not connect."),
     "The machine did not answer.": t("The machine did not answer."),
   };
@@ -113,11 +128,13 @@ export function connectionOutcome(error: unknown): {
     ["RPC_WS_BLOCKED", "RPC_WS_SCHEMA", "RPC_WS_TLS"].includes(
       nativeConnectionFailureCode(error) ?? "",
     ) ||
-    /\[RPC_AUTHORIZATION\]/.test(remoteErrorText(error))
+    /\[RPC_ROUTE_REJECTED\]/.test(remoteErrorText(error))
   )
     return {
       status: "connection-blocked",
-      error: sanitizeConnectionError(remoteErrorText(error)),
+      error: /\[RPC_ROUTE_REJECTED\]/.test(remoteErrorText(error))
+        ? ROUTE_REJECTED
+        : sanitizeConnectionError(remoteErrorText(error)),
       specific: true,
     };
   const failure = classifyRemoteError(error);
