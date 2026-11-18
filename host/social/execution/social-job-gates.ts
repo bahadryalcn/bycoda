@@ -90,6 +90,8 @@ export async function sendWithFallback(
   try {
     return await send(primary, account);
   } catch (error) {
+    // Instagram API failures never authorize a second send through the browser.
+    if (account.platform === "instagram") throw error;
     // The adapter failed before submit, so the dispatch marker set by the caller is not a submit.
     const notSubmitted = { ...job, dispatchedAt: undefined };
     const browserSupports =

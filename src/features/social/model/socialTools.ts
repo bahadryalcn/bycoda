@@ -75,6 +75,9 @@ export const SOCIAL_TOOLS = [
   // Browser layers (4H)
   "browser.needsHuman.list",
   "browser.recipeSuggestions.list",
+  // Instagram
+  "instagram.insights",
+  "instagram.mentions",
 ] as const;
 export type SocialTool = (typeof SOCIAL_TOOLS)[number];
 export function socialToolName(tool: SocialTool): string {

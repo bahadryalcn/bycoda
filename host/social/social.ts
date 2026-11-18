@@ -6,6 +6,7 @@ import {
 } from "./store/social-audience-store";
 import { SOCIAL_ACTION_MODULES } from "./core/social-action-modules";
 import { PROGRAM_OPERATION_FIELDS, socialActionRegistry } from "./core/social-actions";
+import { instagramDirectHandle, instagramPrivateReplyTarget } from "./inbox/instagram-reply";
 import type { AutonomousRequest, SocialServiceApi } from "./core/social-service-api";
 import {
   array,
@@ -27,6 +28,7 @@ import {
 } from "./autonomy/autonomy-gate";
 import { recordAiAction, recordAiWrite, recordAutonomousDispatch } from "./autonomy/ai-actions-log";
 import { assertSendable, type SendTarget } from "./autonomy/suppression";
+import { assertInstagramPublicationTargets } from "./execution/instagram-publish-guard";
 import {
   approvalJobFields,
   assertContactSendable,
@@ -114,6 +116,10 @@ import {
 import { contentSupport } from "../../src/integrations/social/platformAdapters";
 import { validatePublishingText } from "../../src/integrations/social/publishingFormats";
 import { parseTikTokOptions } from "../../src/integrations/social/tiktok";
+import {
+  INSTAGRAM_CAROUSEL_MAX,
+  parseInstagramPublishOptions,
+} from "../../src/integrations/social/adapters/instagram-publish";
 import type { SocialCredentialStore, SocialCredential } from "./social-credentials";
 import { SocialVideoUploads } from "./social-media";
 import { mergeDelivery, type WhatsAppReceipt } from "./social-delivery";
@@ -647,6 +653,7 @@ export class SocialService implements SocialServiceApi {
                 "tiktok",
                 "snapchat",
                 "facebook",
+                "instagram",
               ]);
               const account = await this.get<SocialAccount>("account", variant.accountId);
               await this.assertLength(
@@ -657,6 +664,7 @@ export class SocialService implements SocialServiceApi {
               if (
                 !variant.text?.trim() &&
                 !(account.platform === "snapchat" && variant.snapchat?.target === "story") &&
+                !(account.platform === "instagram" && variant.media.length > 0) &&
                 !(
                   account.platform === "facebook" &&
                   variant.facebook?.target === "reel" &&
@@ -664,7 +672,10 @@ export class SocialService implements SocialServiceApi {
                 )
               )
                 throw new Error("Enter campaign text.");
-              this.parseMedia(variant.media);
+              this.parseMedia(
+                variant.media,
+                account.platform === "instagram" && account.connection !== "browser",
+              );
               if (variant.link) url(variant.link, "link");
               validatePublishingText(account, variant);
               const unsupported = contentSupport(account, { kind: "publish", payload: variant });
@@ -3599,6 +3610,7 @@ export class SocialService implements SocialServiceApi {
             tiktok: variant.tiktok,
             snapchat: variant.snapchat,
             facebook: variant.facebook,
+            instagram: variant.instagram,
           },
           ...approvalJobFields(automated, this.now()),
           attempts: 0,
@@ -3644,6 +3656,7 @@ export class SocialService implements SocialServiceApi {
         "tiktok",
         "snapchat",
         "facebook",
+        "instagram",
       ]);
       const accountId = str(value.accountId, "account");
       const account = await this.access(p, accountId, "draft");
@@ -3773,7 +3786,13 @@ export class SocialService implements SocialServiceApi {
           containsSyntheticMedia: metadata.containsSyntheticMedia,
         };
       }
-      const media = this.parseMedia(value.media ?? []);
+      const instagramApi = account.platform === "instagram" && account.connection !== "browser";
+      const media = this.parseMedia(value.media ?? [], instagramApi);
+      let instagram: CampaignVariant["instagram"];
+      if (value.instagram !== undefined) {
+        if (!instagramApi) throw new Error("Instagram options require an Instagram API account.");
+        instagram = parseInstagramPublishOptions(value.instagram);
+      }
       const telegramChannelMedia =
         account.platform === "telegram" &&
         account.accountType === "channel" &&
@@ -3783,6 +3802,7 @@ export class SocialService implements SocialServiceApi {
         accountId,
         text:
           (snapchat?.target === "story" && value.text === "") ||
+          (account.platform === "instagram" && media.length > 0 && value.text === "") ||
           (facebook?.target === "reel" &&
             media.length === 1 &&
             typeof value.text === "string" &&
@@ -3798,6 +3818,7 @@ export class SocialService implements SocialServiceApi {
         ...(tiktok ? { tiktok } : {}),
         ...(snapchat ? { snapchat } : {}),
         ...(facebook ? { facebook } : {}),
+        ...(instagram ? { instagram } : {}),
       };
     });
     if (new Set(variants.map((variant) => variant.accountId)).size !== variants.length)
@@ -3828,8 +3849,13 @@ export class SocialService implements SocialServiceApi {
     };
     return await this.put("campaign", campaign.id, campaign);
   }
-  private parseMedia(raw: unknown): CampaignVariant["media"] {
-    if (!Array.isArray(raw) || raw.length > 4) throw new Error("Use at most four media assets.");
+  private parseMedia(raw: unknown, instagramApi = false): CampaignVariant["media"] {
+    if (!Array.isArray(raw) || raw.length > (instagramApi ? INSTAGRAM_CAROUSEL_MAX : 4))
+      throw new Error(
+        instagramApi
+          ? `Use at most ${INSTAGRAM_CAROUSEL_MAX} media assets.`
+          : "Use at most four media assets.",
+      );
     return raw.map((item) => {
       if (!item || typeof item !== "object") throw new Error("Invalid media.");
       const media = item as Record<string, unknown>;
@@ -3938,6 +3964,7 @@ export class SocialService implements SocialServiceApi {
               tiktok: variant.tiktok,
               snapchat: variant.snapchat,
               facebook: variant.facebook,
+              instagram: variant.instagram,
             },
             ...approvalJobFields(decision, variant.scheduledAt),
             attempts: 0,
@@ -3951,7 +3978,16 @@ export class SocialService implements SocialServiceApi {
     action: string,
     input: Record<string, unknown>,
   ): Promise<SocialDraft> {
-    exact(input, ["accountId", "projectId", "threadId", "contactId", "postId", "text", "factIds"]);
+    exact(input, [
+      "accountId",
+      "projectId",
+      "threadId",
+      "contactId",
+      "postId",
+      "text",
+      "factIds",
+      ...(action === "replies.draft" ? ["instagramPrivateReply", "media"] : []),
+    ]);
     const kind: SocialDraft["kind"] = action.startsWith("replies")
       ? "reply"
       : action.startsWith("messages")
@@ -3963,7 +3999,14 @@ export class SocialService implements SocialServiceApi {
     const accountId = thread?.accountId ?? str(input.accountId, "account");
     if (thread && input.accountId && input.accountId !== thread.accountId)
       throw new Error("Reply account must match the thread.");
-    await this.access(p, accountId, "draft");
+    const draftAccount = await this.access(p, accountId, "draft");
+    if (input.instagramPrivateReply !== undefined && input.instagramPrivateReply !== true)
+      throw new Error("Invalid Instagram private reply.");
+    const privateReply = input.instagramPrivateReply === true;
+    if (privateReply) {
+      this.capability(draftAccount, "message.reply");
+      instagramPrivateReplyTarget(draftAccount, thread, this.now());
+    }
     const personal =
       !!thread && !thread.projectId && (!!p.assistantAccountId || p.kind === "owner");
     if (p.assistantAccountId && !personal)
@@ -3989,6 +4032,18 @@ export class SocialService implements SocialServiceApi {
     const factIds = array(input.factIds ?? [], "verified facts");
     if (personal && factIds.length) throw new Error("Personal drafts cannot use project facts.");
     if (projectId) await this.facts([projectId], factIds);
+    const media = input.media === undefined ? [] : this.parseMedia(input.media);
+    if (media.length && (draftAccount.platform !== "instagram" || thread?.kind !== "message"))
+      throw new Error("Instagram attachments require an existing Instagram DM.");
+    const replyText = media.length && input.text === "" ? "" : str(input.text, "draft text");
+    if (media.length) {
+      this.capability(draftAccount, "message.reply");
+      const issue = contentSupport(draftAccount, {
+        kind,
+        payload: { text: replyText, media, recipientId: contact.platformId },
+      });
+      if (issue) throw new Error(issue);
+    }
     const draft: SocialDraft = {
       id: randomUUID(),
       accountId,
@@ -4003,7 +4058,9 @@ export class SocialService implements SocialServiceApi {
           }
         : {}),
       ...(kind === "comment" ? { postId: str(input.postId, "target post", 300) } : {}),
-      text: str(input.text, "draft text"),
+      text: replyText,
+      ...(privateReply ? { instagramPrivateReply: true as const } : {}),
+      ...(media.length ? { media } : {}),
       factIds,
       createdAt: this.now(),
     };
@@ -4011,7 +4068,7 @@ export class SocialService implements SocialServiceApi {
       draft.reviewReason = thread.reviewReason;
     await this.assertLength(
       await this.get<SocialAccount>("account", accountId),
-      kind === "message" || thread?.kind === "message" ? "message" : "comment",
+      privateReply || kind === "message" || thread?.kind === "message" ? "message" : "comment",
       draft.text,
     );
     return await this.put("draft", draft.id, draft);
@@ -4131,7 +4188,7 @@ export class SocialService implements SocialServiceApi {
       input.media !== undefined ? this.parseMedia(input.media) : (draft.media ?? []);
     const attachmentOnly =
       account.connection !== "browser" &&
-      ["whatsapp", "telegram"].includes(account.platform) &&
+      ["whatsapp", "telegram", "instagram"].includes(account.platform) &&
       (draft.kind === "message" || thread?.kind === "message") &&
       effectiveMedia.length > 0;
     const text =
@@ -4144,13 +4201,16 @@ export class SocialService implements SocialServiceApi {
     if (draft.projectId) await this.facts([draft.projectId], factIds);
     await this.assertLength(
       account,
-      draft.kind === "message" || thread?.kind === "message" ? "message" : "comment",
+      draft.instagramPrivateReply || draft.kind === "message" || thread?.kind === "message"
+        ? "message"
+        : "comment",
       text,
     );
     draft.text = text;
     {
       const media = effectiveMedia;
-      if (media.length) this.capability(account, "media");
+      if (media.length)
+        this.capability(account, account.platform === "instagram" ? "message.reply" : "media");
       const issue = contentSupport(account, {
         kind: draft.kind,
         payload: {
@@ -4256,13 +4316,22 @@ export class SocialService implements SocialServiceApi {
         thread.events.filter((event) => event.direction === "inbound").at(-1)?.id
     )
       throw new Error("A newer inbound message arrived. Review a new draft before sending.");
-    const limitKind = kind === "message" || thread?.kind === "message" ? "message" : "comment";
+    const limitKind =
+      draft.instagramPrivateReply || kind === "message" || thread?.kind === "message"
+        ? "message"
+        : "comment";
     await this.assertLength(account, limitKind, draft.text);
     this.eligibility(account, contact, kind, thread, !proposal.projectId);
     const effectivePolicy = await this.policy(account);
     const payload = {
       text: draft.text,
       media: draft.media ?? [],
+      ...(draft.instagramPrivateReply
+        ? { instagramPrivateReply: instagramPrivateReplyTarget(account, thread, this.now()) }
+        : {}),
+      ...(account.platform === "instagram" && !draft.instagramPrivateReply && thread?.replyUntil
+        ? { replyUntil: thread.replyUntil }
+        : {}),
       recipientId:
         thread?.kind === "comment" || (kind === "comment" && account.platform !== "youtube")
           ? undefined
@@ -4280,8 +4349,12 @@ export class SocialService implements SocialServiceApi {
             : thread.platformThreadId
           : draft.postId,
       objectPostId: thread?.platformPostId,
+      ...(account.platform === "instagram" && account.connection === "browser" && kind === "message"
+        ? { instagramRecipientHandle: instagramDirectHandle(contact) }
+        : {}),
     };
-    if (payload.media.length) this.capability(account, "media");
+    if (payload.media.length || draft.instagramPrivateReply)
+      this.capability(account, account.platform === "instagram" ? "message.reply" : "media");
     const unsupported = contentSupport(account, { kind, payload });
     if (unsupported) throw new Error(unsupported);
     if (
@@ -4355,7 +4428,7 @@ export class SocialService implements SocialServiceApi {
         thread: SocialThread | null;
       };
       const key = detail.thread
-        ? `reply:${detail.thread.id}:${detail.thread.events.filter((event) => event.direction === "inbound").at(-1)?.id}`
+        ? `${detail.draft.instagramPrivateReply ? "instagram-private" : "reply"}:${detail.thread.id}:${detail.thread.events.filter((event) => event.direction === "inbound").at(-1)?.id}`
         : `draft:${detail.draft.id}`;
       const previous = await this.queuedJob(key);
       if (previous)
@@ -4450,9 +4523,15 @@ export class SocialService implements SocialServiceApi {
     if (draft.projectId && !contact.projectIds.includes(draft.projectId))
       throw new Error("Recipient is not shared with the selected project.");
     const thread = draft.threadId ? await this.accessibleThread(p, draft.threadId) : undefined;
+    const instagramPrivateReply = draft.instagramPrivateReply
+      ? instagramPrivateReplyTarget(account, thread, this.now())
+      : undefined;
+    if (instagramPrivateReply) this.capability(account, "message.reply");
     await this.assertLength(
       account,
-      kind === "message" || thread?.kind === "message" ? "message" : "comment",
+      instagramPrivateReply || kind === "message" || thread?.kind === "message"
+        ? "message"
+        : "comment",
       draft.text,
     );
     if (
@@ -4462,11 +4541,17 @@ export class SocialService implements SocialServiceApi {
     )
       throw new Error("A newer inbound message arrived. Review a new draft before sending.");
     this.eligibility(account, contact, kind, thread, !draft.projectId);
-    await assertContactSendable(this, contact.id, account.platform, kind, thread);
+    await assertContactSendable(
+      this,
+      contact.id,
+      account.platform,
+      instagramPrivateReply ? "message" : kind,
+      thread,
+    );
     return await this.transaction(async () => {
       // Different drafts/sessions targeting the same inbound event share one lock/key.
       const key = thread
-        ? `reply:${thread.id}:${thread.events.filter((event) => event.direction === "inbound").at(-1)?.id}`
+        ? `${instagramPrivateReply ? "instagram-private" : "reply"}:${thread.id}:${thread.events.filter((event) => event.direction === "inbound").at(-1)?.id}`
         : `draft:${draft.id}`;
       const previous = await this.queuedJob(key);
       if (previous) return previous;
@@ -4503,7 +4588,13 @@ export class SocialService implements SocialServiceApi {
                 : thread.platformThreadId
               : draft.postId,
           objectPostId: thread?.platformPostId,
+          ...(account.platform === "instagram" &&
+          account.connection === "browser" &&
+          kind === "message"
+            ? { instagramRecipientHandle: instagramDirectHandle(contact) }
+            : {}),
           ...(thread?.replyUntil === undefined ? {} : { replyUntil: thread.replyUntil }),
+          ...(instagramPrivateReply ? { instagramPrivateReply } : {}),
         },
         ...approvalJobFields(autonomy, this.now()),
         attempts: 0,
@@ -5484,9 +5575,28 @@ export class SocialService implements SocialServiceApi {
             )
               throw new Error("Daily automatic send limit reached.");
           }
-          await assertContactSendable(this, contact.id, currentAccount.platform, job.kind, thread);
+          if (draft.instagramPrivateReply || job.payload.instagramPrivateReply) {
+            this.capability(currentAccount, "message.reply");
+            const target = instagramPrivateReplyTarget(currentAccount, thread, this.now());
+            if (
+              !draft.instagramPrivateReply ||
+              !isDeepStrictEqual(target, job.payload.instagramPrivateReply)
+            )
+              throw new Error("Instagram private reply target changed.");
+          }
+          await assertContactSendable(
+            this,
+            contact.id,
+            currentAccount.platform,
+            job.payload.instagramPrivateReply ? "message" : job.kind,
+            thread,
+          );
           this.eligibility(currentAccount, contact, job.kind, thread, !draft.projectId);
-        } else this.capability(currentAccount, "publish");
+        } else {
+          this.capability(currentAccount, "publish");
+          if (currentAccount.platform === "instagram")
+            await assertInstagramPublicationTargets(this, currentAccount.id, job.payload.instagram);
+        }
       };
       if (job.sessionId) await this.verifyPeer?.(job.sessionId);
       await check();

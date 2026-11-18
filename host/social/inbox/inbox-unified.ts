@@ -73,6 +73,7 @@ type Row = {
   accountId: string;
   platform: SocialPlatform;
   kind: "comment" | "message";
+  instagramSource?: "live_comment";
   title: string;
   preview: string;
   at: number;
@@ -102,6 +103,7 @@ export async function unifiedInbox(
         accountId: thread.accountId,
         platform,
         kind: thread.kind,
+        instagramSource: thread.instagramSource,
         title: contact?.name ?? thread.platformThreadId,
         preview: truncateGraphemes(last?.text ?? "", PREVIEW_GRAPHEMES),
         at: last?.at ?? thread.lastInboundAt,
@@ -157,6 +159,7 @@ async function toItem(ctx: SocialActionContext, row: Row): Promise<InboxItem> {
     accountId: row.accountId,
     platform: row.platform,
     kind: row.kind,
+    ...(row.instagramSource ? { instagramSource: row.instagramSource } : {}),
     ...(person ? { person: { id: person.id, name: person.name } } : {}),
     title: row.title,
     preview: row.preview,

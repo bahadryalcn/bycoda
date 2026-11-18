@@ -90,6 +90,7 @@ export async function ingestEvents(
       };
       if (event.postId) thread.platformPostId = event.postId;
       if (event.replyAllowed !== undefined) thread.replyAllowed = event.replyAllowed;
+      if (event.instagramSource) thread.instagramSource = event.instagramSource;
       if (thread.contactId !== contact.id) {
         thread.reviewReason = "Conversation contains multiple recipients. Manual review required.";
         delete thread.projectId;

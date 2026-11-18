@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SocialAccount, SocialJob, SocialMedia } from "../../features/social/model/social";
 import { SocialHttp, SocialPlatformError } from "./adapter";
+import { INSTAGRAM_CAROUSEL_MAX } from "./adapters/instagram-publish";
 import { metaPublishingIssue, publishMetaMedia } from "./metaMedia";
 
 const now = 1_800_000_000_000;
@@ -83,6 +84,91 @@ const send = (
   );
 
 describe("Meta public media publication", () => {
+  it.each([image(), video()])(
+    "publishes an Instagram Story from %j and returns its ID",
+    async (item) => {
+      const mock = api();
+      const publish = job([item]);
+      publish.payload = {
+        text: "",
+        media: [item],
+        instagram: { format: "story", userTags: [{ username: "tagged" }] },
+      };
+      const approval = vi.fn(async () => {});
+      expect(await send(mock, "instagram", publish, undefined, approval)).toMatchObject({
+        platformId: "published",
+      });
+      expect(mock.calls.slice(0, 3)).toEqual([
+        {
+          method: "POST",
+          path: "/v27.0/123/media",
+          body: {
+            media_type: "STORIES",
+            [item.kind === "image" ? "image_url" : "video_url"]: item.url,
+            user_tags: [{ username: "tagged" }],
+          },
+        },
+        { method: "GET", path: "/v27.0/container1", body: undefined },
+        { method: "POST", path: "/v27.0/123/media_publish", body: { creation_id: "container1" } },
+      ]);
+      expect(approval).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("reports Story publishing unavailable for a known Instagram creator before sending", async () => {
+    const mock = api();
+    const publish = job();
+    publish.payload = { text: "", media: [image()], instagram: { format: "story" } };
+    const creator: SocialAccount = { ...account("instagram"), instagramAccountType: "CREATOR" };
+    await expect(
+      publishMetaMedia(mock.http, "instagram", creator, publish, "synthetic", "v25.0"),
+    ).rejects.toMatchObject({ code: "unsupported" });
+    expect(mock.calls).toHaveLength(0);
+  });
+
+  it("publishes up to 20 carousel items with tags on each selected item and disclosures on the parent", async () => {
+    const mock = api();
+    const publish = job(Array.from({ length: INSTAGRAM_CAROUSEL_MAX }, (_, index) => image(index)));
+    publish.payload.instagram = {
+      userTags: [{ username: "tagged", x: 0, y: 1, mediaIndex: 19 }],
+      collaborators: ["collaborator"],
+      locationId: "4321",
+      isAiGenerated: true,
+    };
+    await send(mock, "instagram", publish);
+    const containers = mock.calls.filter((call) => call.path.endsWith("/media"));
+    expect(containers).toHaveLength(21);
+    expect(containers[19]).toMatchObject({
+      path: "/v27.0/123/media",
+      body: {
+        image_url: "https://cdn.test/19.jpg",
+        user_tags: [{ username: "tagged", x: 0, y: 1 }],
+      },
+    });
+    expect(containers[19].body).not.toHaveProperty("is_ai_generated");
+    expect(containers[20].body).toMatchObject({
+      media_type: "CAROUSEL",
+      children: Array.from({ length: 20 }, (_, index) => `container${index + 1}`),
+      collaborators: ["collaborator"],
+      location_id: "4321",
+      is_ai_generated: true,
+    });
+  });
+
+  it("does not submit an Instagram Story again after an uncertain publish response", async () => {
+    const mock = api((call) =>
+      call.path.endsWith("/media_publish") ? new Response(null, { status: 503 }) : undefined,
+    );
+    const publish = job();
+    publish.payload = { text: "", media: [image()], instagram: { format: "story" } };
+    await expect(send(mock, "instagram", publish)).rejects.toMatchObject({ code: "unknown" });
+    expect(publish.preparation?.metaMedia?.instagramSubmitted).toBe(true);
+    await expect(send(mock, "instagram", structuredClone(publish))).rejects.toMatchObject({
+      code: "unknown",
+    });
+    expect(mock.calls.filter((call) => call.path.endsWith("/media_publish"))).toHaveLength(1);
+  });
+
   it("creates a Reel and waits for its container before one guarded publish", async () => {
     const mock = api();
     const publish = job([video()]);
@@ -323,6 +409,21 @@ describe("Meta public media publication", () => {
 });
 
 describe("Meta media content validation", () => {
+  it("rejects Instagram publishing options that cannot be applied to the requested format", async () => {
+    const mock = api();
+    const story = job();
+    story.payload.instagram = { format: "story" };
+    expect(metaPublishingIssue("instagram", story)).toContain("Stories do not support captions");
+    const carousel = job([image(), video()]);
+    carousel.payload.instagram = { userTags: [{ username: "missing_index", x: 0, y: 1 }] };
+    expect(metaPublishingIssue("instagram", carousel)).toContain("needs a media index");
+    const reel = job([video()]);
+    reel.payload.instagram = { userTags: [{ username: "has_coordinates", x: 0, y: 1 }] };
+    expect(metaPublishingIssue("instagram", reel)).toContain("do not support coordinates");
+    await expect(send(mock, "instagram", story)).rejects.toMatchObject({ code: "unsupported" });
+    expect(mock.calls).toHaveLength(0);
+  });
+
   it.each([
     { kind: "document", url: "https://cdn.test/file.pdf" },
     { kind: "image", url: "http://cdn.test/file.jpg" },
@@ -341,7 +442,7 @@ describe("Meta media content validation", () => {
   it("checks media count, image alternative text, caption length and Facebook video limits", () => {
     expect(metaPublishingIssue("instagram", job([]))).toBeTruthy();
     expect(
-      metaPublishingIssue("instagram", job(Array.from({ length: 5 }, (_, n) => image(n)))),
+      metaPublishingIssue("instagram", job(Array.from({ length: 21 }, (_, n) => image(n)))),
     ).toBeTruthy();
     expect(
       metaPublishingIssue("instagram", job([{ ...image(), alt: "a".repeat(1001) }])),

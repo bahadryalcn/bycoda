@@ -23,6 +23,7 @@ import type {
 import type { AiAction, AutonomyPolicy } from "../../../src/features/social/model/autonomy";
 import type { SocialAccountRequest } from "../../../src/features/social/model/accountRequests";
 import type { InboxStatusRecord } from "../inbox/inbox-types";
+import { readInstagramMentions } from "../inbox/instagram-mentions";
 
 /** Generic `social_records` kinds. Person and list have dedicated typed methods below. */
 export type AudienceRecordKind =
@@ -152,6 +153,11 @@ export class SocialAudienceStore {
       .prepare("SELECT id, value FROM social_records WHERE kind=? AND id>? ORDER BY id LIMIT ?")
       .all(kind, input.cursor ?? "", limit + 1);
     return pageOf(rows, limit, (row) => parse<AudienceRecordValue[K]>(row));
+  }
+
+  /** Account-specific Instagram mention notifications, paged by delivery order. */
+  async instagramMentions(accountId: string, cursor?: string) {
+    return readInstagramMentions(this.store, accountId, cursor);
   }
 
   // People and handles.

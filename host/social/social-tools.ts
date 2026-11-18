@@ -144,6 +144,29 @@ export const SOCIAL_TOOL_SCHEMAS: Record<SocialTool, Record<string, unknown>> = 
               },
               ["title", "privacy", "madeForKids", "containsSyntheticMedia"],
             ),
+            // Instagram publishing metadata applies to Instagram API targets only.
+            instagram: object(
+              {
+                format: { enum: ["story"] },
+                userTags: {
+                  type: "array",
+                  maxItems: 20,
+                  items: object(
+                    {
+                      username: string(),
+                      x: { type: "number", minimum: 0, maximum: 1 },
+                      y: { type: "number", minimum: 0, maximum: 1 },
+                      mediaIndex: { type: "integer", minimum: 0, maximum: 19 },
+                    },
+                    ["username"],
+                  ),
+                },
+                collaborators: { type: "array", maxItems: 3, items: string() },
+                locationId: string(),
+                isAiGenerated: { type: "boolean" },
+              },
+              [],
+            ),
           },
           ["accountId", "text"],
         ),
@@ -169,11 +192,40 @@ export const SOCIAL_TOOL_SCHEMAS: Record<SocialTool, Record<string, unknown>> = 
     { id: string(), text: string(), factIds: strings(), expectedDraft: { type: "object" } },
     ["id", "text", "expectedDraft"],
   ),
-  "replies.draft": object({ threadId: string(), text: string(), factIds: strings() }, [
-    "threadId",
-    "text",
-  ]),
+  "replies.draft": object(
+    {
+      threadId: string(),
+      text: string(),
+      factIds: strings(),
+      // Instagram
+      instagramPrivateReply: { const: true },
+      media: {
+        type: "array",
+        maxItems: 1,
+        items: object(
+          {
+            kind: { enum: ["image", "video"] },
+            url: string(),
+          },
+          ["kind", "url"],
+        ),
+      },
+    },
+    ["threadId", "text"],
+  ),
   "replies.send": byId(),
+  // Instagram
+  "instagram.insights": object(
+    {
+      accountId: string(),
+      mediaId: string(),
+      demographics: { enum: ["age", "gender", "country", "city"] },
+      since: { type: "integer", minimum: 1 },
+      until: { type: "integer", minimum: 1 },
+    },
+    ["accountId"],
+  ),
+  "instagram.mentions": object({ accountId: string(), cursor: string() }, ["accountId"]),
   "contacts.upsert": object(
     {
       accountId: string(),
@@ -406,6 +458,9 @@ export const SOCIAL_READ_TOOLS: readonly SocialTool[] = [
   "ai.report",
   "browser.needsHuman.list",
   "browser.recipeSuggestions.list",
+  // Instagram
+  "instagram.insights",
+  "instagram.mentions",
 ];
 const socialReads = new Set<string>(SOCIAL_READ_TOOLS);
 const SOCIAL_REQUEST_ID_PATTERN = "^[A-Za-z0-9._:-]+$";
@@ -446,6 +501,13 @@ export function normalizeSocialToolRequest(
 
 /** Extra guidance for tools whose use is not obvious from their name. */
 const TOOL_NOTES: Partial<Record<SocialTool, string>> = {
+  // Instagram
+  "instagram.insights":
+    " Reads account insights or metrics for one owned media ID. For account totals, optional paired since/until use Unix seconds. Missing metrics are returned separately.",
+  "instagram.mentions":
+    " Reads mention IDs observed by the Host's signed Instagram webhooks. Use next as cursor for older events. History is limited to notifications received here.",
+  "replies.draft":
+    " For an Instagram comment, set instagramPrivateReply to prepare a private rather than public reply. For an existing Instagram DM, attach one HTTPS image or video with empty text.",
   "accounts.request":
     " Use when this project's social work needs a platform account the project does not have (check accounts.list first). It only asks the owner to create or sign in an account; it creates nothing on any platform, and the owner approves it in Social Command. Never retry a pending request.",
 };
