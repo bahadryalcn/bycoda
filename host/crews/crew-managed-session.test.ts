@@ -1,6 +1,8 @@
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { forEachAsync } from "../async-collections";
+import { HostEngine } from "../engine";
 import { HostStore } from "../store";
+import { HostTasks } from "../tasks/service";
 import { assertNotCrewManaged, crewManagedSession, crewSessionRuns } from "./crew-managed-session";
 import { initializeCrewSchedulerProjection } from "./crew-scheduler-projection";
 
@@ -63,4 +65,25 @@ it("lists every crew session of a project, finished runs included, for list summ
   const bare = new HostStore(":memory:");
   stores.push(bare);
   expect((await crewSessionRuns(bare, "p")).size).toBe(0);
+});
+
+it("uses the task index when listing sessions for a project's crew runs", async () => {
+  const f = await fixture();
+  await f.run("legacy", "finished", "lead");
+  await f.task("legacy-task", {
+    id: "legacy-task",
+    projectId: "p",
+    status: "done",
+    updatedAt: 1,
+    crewRunId: "legacy",
+    sessionId: "worker",
+  });
+  await new HostTasks(f.store, new HostEngine(f.store, {})).ready;
+  const prepare = vi.spyOn(f.store.db, "prepare");
+  expect((await crewSessionRuns(f.store, "p")).get("worker")).toBe("legacy");
+  const query = prepare.mock.calls.find(([sql]) => sql.includes("tasks t"))?.[0];
+  const plan = await f.store.db.prepare(`EXPLAIN QUERY PLAN ${query}`).all("p");
+  expect(plan.map((row) => row.detail)).toContainEqual(
+    expect.stringMatching(/SEARCH t USING INDEX tasks_crew_run/),
+  );
 });
