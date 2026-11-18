@@ -267,3 +267,30 @@ it("sends a Global thread's desktop approval with no project folder and refuses 
   ).toThrow("Invalid global desktop approval source.");
   relay.close();
 });
+
+it("fails a claimed request once the desktop that claimed it goes silent, and frees its slot", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-11-07T10:00:00Z"));
+  try {
+    const relay = new ConversationDesktopRelay("host");
+    await relay.take("desktop");
+    const pending = relay.call(action, {}, "/project", principal);
+    const settled = pending.then(
+      () => "resolved",
+      (error: Error) => error.message,
+    );
+    expect(await relay.take("desktop")).toHaveLength(1);
+    // The desktop keeps polling: the claim survives past the stale window.
+    for (let elapsed = 0; elapsed < DESKTOP_RELAY_STALE_MS + 10_000; elapsed += 10_000) {
+      await vi.advanceTimersByTimeAsync(10_000);
+      await relay.take("desktop");
+    }
+    // Silence from the claiming desktop fails the claim,
+    // even when nothing else touches the relay.
+    await vi.advanceTimersByTimeAsync(DESKTOP_RELAY_STALE_MS + 10_000);
+    await expect(settled).resolves.toContain("Desktop disconnected");
+    relay.close();
+  } finally {
+    vi.useRealTimers();
+  }
+});
