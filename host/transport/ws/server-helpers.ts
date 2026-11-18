@@ -105,3 +105,23 @@ export function authorizeWith(
     ? budget.runShared(principal.id, check)
     : budget.run(principal.id, check, "control");
 }
+
+/**
+ * The envelope of an outgoing JSON.parse wire with its JSON payload (RPC `result`, event `data`)
+ * replaced by null, so a schema check covers the envelope fields without walking the payload.
+ */
+export function withoutPayload(wire: unknown): unknown {
+  if (!wire || typeof wire !== "object" || Array.isArray(wire)) return wire;
+  const message = wire as Record<string, unknown>;
+  if (Object.hasOwn(message, "result")) return { ...message, result: null };
+  const params = message.params;
+  if (
+    message.method === "subscription.event" &&
+    params &&
+    typeof params === "object" &&
+    !Array.isArray(params) &&
+    Object.hasOwn(params, "data")
+  )
+    return { ...message, params: { ...params, data: null } };
+  return wire;
+}

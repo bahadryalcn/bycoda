@@ -38,7 +38,12 @@ import { HostReadWorkBudget } from "../read-budget";
 import { HostBulkError, hostBulkDependencies, type HostBulkTransfers } from "../http/bulk";
 import { HostStreamError, type HostSubscriptionHub } from "./subscriptions";
 import { dispatchErrorCode, principalCapabilities, rejectUpgrade, waitFor } from "./server-helpers";
-import { authorizeWith, invalidRequestMessage, type AuthMode } from "./server-helpers";
+import {
+  authorizeWith,
+  invalidRequestMessage,
+  withoutPayload,
+  type AuthMode,
+} from "./server-helpers";
 
 export const HOST_WS_READ_CAPABILITY = "transport.ws.read.v2";
 const READ_METHODS = ["environment.describe", "projects.list"] as const;
@@ -215,7 +220,11 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
       serialized = capture?.serialized ?? JSON.stringify(value);
       byteLength = capture?.byteLength ?? Buffer.byteLength(serialized);
       if (byteLength > WS_LIMITS.maxMessageBytes) throw new Error("Response too large.");
-      const wire = capture ? capture.wire : JSON.parse(serialized);
+      // The wire is JSON.parse output either way, so the payload is JSON by
+      // construction; validate the envelope without walking a large payload.
+      const wire = withoutPayload(capture ? capture.wire : JSON.parse(serialized)) as {
+        method?: unknown;
+      } | null;
       if (wire?.method === "subscription.event") SubscriptionEventSchema.parse(wire);
       else RpcResponseSchema.parse(wire);
     } catch (error) {
@@ -495,15 +504,12 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
             });
             throw checked.error;
           }
-          const validated = checked.data;
-          // Keep the pre-toJSON JSON check for bulk exactly where it was. Typed
-          // transforms may strip fields or construct new values; normalize that
-          // output with its real enclosing result key before reusing bytes.
-          const bulkValue = lease ? JsonValueSchema.parse(validated) : undefined;
+          // Typed transforms may strip fields or construct new values; normalize
+          // that output with its real enclosing result key before reusing bytes.
           const capture =
             definition.resultSchema === JsonValueSchema
               ? initial
-              : normalizeJsonField(lease ? bulkValue : validated, "result");
+              : normalizeJsonField(checked.data, "result");
           const delivered = lease
             ? options.bulk!.encodeNormalized(lease, capture, WS_LIMITS.maxMessageBytes - 1024)
             : readNormalizedJsonWire(capture).wire;
