@@ -434,14 +434,30 @@ describe("WebSocket read admission and safe disclosure", () => {
     expect(client.socket.readyState).toBe(WebSocket.OPEN);
   });
 
-  it("retains the outbound size fence for normalized generic responses", async () => {
-    const host = await fixture({ dispatch: async () => "x".repeat(WS_LIMITS.maxMessageBytes) });
-    const client = await host.ready();
-    client.send("large-result", "environment.describe");
-    expect(await client.closed).toMatchObject({
-      code: 1011,
-      reason: "Response cannot be represented by this transport.",
+  it("answers an oversized result with a typed error and keeps the socket open", async () => {
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    let oversized = true;
+    const host = await fixture({
+      dispatch: async () => (oversized ? "x".repeat(WS_LIMITS.maxMessageBytes) : "ok"),
     });
+    const client = await host.ready();
+    const failed = await client.request("large-result", "environment.describe");
+    expect(failed).toMatchObject({
+      id: "large-result",
+      error: {
+        code: RPC_ERROR_CODES.internalError,
+        message: expect.stringContaining("too large"),
+        data: { category: "unavailable", retryable: false },
+      },
+    });
+    expect(Buffer.byteLength(JSON.stringify(failed))).toBeLessThan(1024);
+    expect(client.socket.readyState).toBe(WebSocket.OPEN);
+    // The same connection keeps serving other requests.
+    oversized = false;
+    expect(await client.request("small-result", "environment.describe")).toMatchObject({
+      result: "ok",
+    });
+    stderr.mockRestore();
   });
 
   it.each(["commands.dispatch", "sessions.page", "subscriptions.open", "constructor"])(

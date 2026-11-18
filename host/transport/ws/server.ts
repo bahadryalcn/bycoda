@@ -119,6 +119,9 @@ type Peer = {
 
 class RequestExpired extends Error {}
 
+/** A finished result that cannot fit one frame; only this request fails, never the socket. */
+class ResultTooLarge extends Error {}
+
 /**
  * Authenticated native read pilot. This is not the full WS session transport:
  * mutations, live subscriptions, browser tickets and LAN TLS are not advertised.
@@ -540,6 +543,17 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
             "result",
             result.capture,
           );
+          // An oversized result fails this request with a typed error; closing the
+          // socket would drop every other request and subscription and invite a retry loop.
+          const bytes = readNormalizedJsonWire(response).byteLength;
+          if (bytes > WS_LIMITS.maxMessageBytes) {
+            resultLog.warn("result too large", {
+              method: request.method,
+              bytes,
+              maxBytes: WS_LIMITS.maxMessageBytes,
+            });
+            throw new ResultTooLarge("Result too large.");
+          }
           // send still validates the complete actual wire envelope/schema and
           // enforces frame/backpressure limits after the final authority awaits.
           send(peer, undefined, response);
@@ -565,6 +579,23 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
             : {}),
           ...(definition.kind === "command" ? { commandId: String(request.params.commandId) } : {}),
         });
+      else if (error instanceof ResultTooLarge)
+        failure(
+          peer,
+          request.id,
+          RPC_ERROR_CODES.internalError,
+          "Result too large to send; narrow the request.",
+          {
+            category: "unavailable",
+            retryable: false,
+            ...(hostRpcHasEffect(request.method, definition.kind)
+              ? { delivery: "unknown" as const }
+              : {}),
+            ...(definition.kind === "command"
+              ? { commandId: String(request.params.commandId) }
+              : {}),
+          },
+        );
       else if (error instanceof HostDispatchError) {
         failure(
           peer,
