@@ -69,6 +69,18 @@ function field(label: string): HTMLInputElement {
   return document.getElementById(found!.htmlFor) as HTMLInputElement;
 }
 
+function openSelect(label: string) {
+  const trigger = field(label) as unknown as HTMLButtonElement;
+  act(() => trigger.click());
+  return [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')];
+}
+
+function pick(label: string, option: string) {
+  const choice = openSelect(label).find((item) => item.textContent?.trim() === option);
+  expect(choice).toBeDefined();
+  act(() => choice!.click());
+}
+
 beforeEach(() => {
   element = document.createElement("div");
   document.body.append(element);
@@ -141,29 +153,31 @@ describe("Facebook destination", () => {
 });
 
 describe("TikTok options", () => {
-  it("waits for the creator's options and keeps the fields locked until they load", () => {
+  it("keeps format available while waiting for the creator's privacy options", () => {
     render("tiktok");
     expect(text()).toContain("Loading your TikTok options…");
-    expect(element.querySelector("fieldset")!.disabled).toBe(true);
+    expect(text()).not.toContain("Who can see this video");
+    pick("TikTok post format", "Photos");
+    expect(onChange).toHaveBeenLastCalledWith({ tiktok: { mediaType: "photo", consent: false } });
   });
 
   it("starts with no privacy chosen and no consent given", () => {
     render("tiktok", { creator, media: [video({ durationSeconds: 25 })] });
     expect(element.querySelector("fieldset")!.disabled).toBe(false);
-    expect(element.querySelector<HTMLSelectElement>("select")!.value).toBe("");
+    expect(field("Who can see this video").textContent).toContain("Choose who can see this video");
     expect(checkbox("I confirm the consent").checked).toBe(false);
     expect(text()).toContain("Video length 25 seconds.");
   });
 
   it("offers only the privacy choices the creator's account allows", () => {
     render("tiktok", { creator });
-    const options = [...element.querySelectorAll("option")].map((option) => option.textContent);
+    const options = openSelect("Who can see this video").map((option) => option.textContent?.trim());
     expect(options).toEqual(["Choose who can see this video", "Everyone", "Only me"]);
   });
 
   it("reports a privacy choice and the consent as explicit changes", () => {
     render("tiktok", { creator });
-    setValue(element.querySelector("select")!, "SELF_ONLY");
+    pick("Who can see this video", "Only me");
     expect(onChange).toHaveBeenLastCalledWith({ tiktok: { privacy: "SELF_ONLY" } });
     act(() => checkbox("I confirm the consent").click());
     expect(onChange).toHaveBeenLastCalledWith({ tiktok: { consent: true } });
@@ -176,6 +190,42 @@ describe("TikTok options", () => {
     expect(duet.checked).toBe(false);
     expect(text()).toContain("Turned off in your TikTok settings");
     expect(checkbox("Allow comments").disabled).toBe(false);
+  });
+
+  it("lets photo posts choose a cover and music without exposing video interactions", () => {
+    render("tiktok", {
+      creator,
+      media: [
+        { localId: "first", name: "first.jpg", media: { kind: "image" } },
+        { localId: "second", name: "second.jpg", media: { kind: "image" } },
+      ],
+      value: { tiktok: { mediaType: "photo" } },
+    });
+    expect(text()).not.toContain("Allow duets");
+    expect(text()).not.toContain("Allow stitches");
+    pick("TikTok cover photo", "Photo 2");
+    expect(onChange).toHaveBeenLastCalledWith({ tiktok: { mediaType: "photo", photoCoverIndex: 1 } });
+    act(() => checkbox("Add TikTok-recommended music").click());
+    expect(onChange).toHaveBeenLastCalledWith({ tiktok: { mediaType: "photo", autoAddMusic: true } });
+  });
+
+  it("offers a TikTok inbox handoff only for an API account with video.upload", () => {
+    render("tiktok", {
+      creator,
+      account: {
+        platform: "tiktok",
+        connection: "oauth",
+        scopes: ["video.upload"],
+      } as SocialAccount,
+    });
+    pick("TikTok publishing mode", "Send draft to TikTok inbox");
+    expect(onChange).toHaveBeenLastCalledWith({ tiktok: { mode: "inbox", consent: false } });
+    render("tiktok", { value: { tiktok: { mode: "inbox" } } });
+    expect(text()).not.toContain("I confirm the consent");
+    expect(element.querySelector("fieldset")!.disabled).toBe(false);
+    expect(openSelect("TikTok publishing mode").find((option) =>
+      option.textContent?.trim() === "Send draft to TikTok inbox",
+    )?.disabled).toBe(true);
   });
 });
 

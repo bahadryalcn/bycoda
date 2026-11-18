@@ -1,10 +1,11 @@
 import { surfaceAttributes } from "../../../../../shared/ui/Surface";
 import { LoadingText } from "../../../../../shared/ui/LoadingText";
 import { Text } from "../../../../../shared/ui/Text";
-import { t } from "../../../../../shared/i18n";
+import { t, useFormat } from "../../../../../shared/i18n";
 import { FieldGroup } from "../../../../../shared/ui/FieldGroup";
 import { Checkbox } from "../../../../../shared/ui/Checkbox";
-import { NativeSelect } from "../../../../../shared/ui/Select";
+import { Select } from "../../../../../shared/ui/Select";
+import { TextField } from "../../../../../shared/ui/TextField";
 import type { TikTokVideoOptions } from "../../../model/social";
 import type { PlatformFieldProps } from "./PlatformFields";
 
@@ -19,13 +20,17 @@ export function privacyLabel(code: string): string {
   return PRIVACY_LABELS[code]?.() ?? code;
 }
 
-/** TikTok video options. Privacy and consent are never pre-selected; interactions follow the creator's settings. */
-export function TikTokFields({ value, media, disabled, creator, onChange }: PlatformFieldProps) {
+/** TikTok publishing options. Direct posts require an explicit privacy choice and consent. */
+export function TikTokFields({ account, value, media, disabled, creator, onChange }: PlatformFieldProps) {
+  const { formatNumber } = useFormat();
   const options = value.tiktok ?? {};
   const change = (patch: Partial<Omit<TikTokVideoOptions, "durationSeconds">>) =>
     onChange({ ...value, tiktok: { ...options, ...patch } });
   const duration = media.find((item) => item.media.kind === "video")?.probe?.durationSeconds;
-  const locked = disabled || !creator;
+  const photo = options.mediaType === "photo";
+  const inbox = options.mode === "inbox";
+  const photos = media.filter((item) => item.media.kind === "image");
+  const canUploadInbox = account.connection !== "browser" && account.scopes?.includes("video.upload");
   const interactions: {
     key: "allowComment" | "allowDuet" | "allowStitch";
     label: string;
@@ -39,14 +44,36 @@ export function TikTokFields({ value, media, disabled, creator, onChange }: Plat
     <FieldGroup
       legend={t("TikTok")}
       {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "content-platform")}
-      disabled={locked}
+      disabled={disabled}
     >
-      {!creator ? (
+      <Select
+        label={t("TikTok post format")}
+        value={photo ? "photo" : "video"}
+        options={[
+          { value: "video", label: t("Video") },
+          { value: "photo", label: t("Photos") },
+        ]}
+        disabled={disabled}
+        onValueChange={(next) => change({ mediaType: next === "photo" ? "photo" : "video", consent: false })}
+      />
+      {canUploadInbox || inbox ? (
+        <Select
+          label={t("TikTok publishing mode")}
+          value={inbox ? "inbox" : "direct"}
+          options={[
+            { value: "direct", label: t("Publish directly") },
+            { value: "inbox", label: t("Send draft to TikTok inbox"), disabled: !canUploadInbox },
+          ]}
+          disabled={disabled}
+          onValueChange={(next) => change({ mode: next === "inbox" ? "inbox" : "direct", consent: false })}
+        />
+      ) : null}
+      {!creator && !inbox ? (
         <LoadingText delay={false} className="content-platform-note">
           {t("Loading your TikTok options…")}
         </LoadingText>
       ) : null}
-      {duration ? (
+      {!photo && duration ? (
         <Text
           as="p"
           size="caption"
@@ -57,21 +84,18 @@ export function TikTokFields({ value, media, disabled, creator, onChange }: Plat
           {t("Video length {p0} seconds.", { p0: Math.round(duration) })}
         </Text>
       ) : null}
-      <NativeSelect
-        aria-label={t("Who can see this video")}
+      {!inbox && creator ? <>
+      <Select
+        label={photo ? t("Who can see this post") : t("Who can see this video")}
         value={options.privacy ?? ""}
-        onChange={(event) => change({ privacy: event.target.value })}
-      >
-        <option value="" disabled>
-          {t("Choose who can see this video")}
-        </option>
-        {(creator?.privacyOptions ?? []).map((code) => (
-          <option key={code} value={code}>
-            {privacyLabel(code)}
-          </option>
-        ))}
-      </NativeSelect>
-      {interactions.map((item) => (
+        options={[
+          { value: "", label: photo ? t("Choose who can see this post") : t("Choose who can see this video"), disabled: true },
+          ...creator.privacyOptions.map((code) => ({ value: code, label: privacyLabel(code) })),
+        ]}
+        disabled={disabled}
+        onValueChange={(next) => change({ privacy: next })}
+      />
+      {interactions.filter((item) => !photo || item.key === "allowComment").map((item) => (
         <Checkbox
           checked={!item.blocked && options[item.key] === true}
           disabled={item.blocked}
@@ -124,11 +148,44 @@ export function TikTokFields({ value, media, disabled, creator, onChange }: Plat
       <Checkbox
         checked={options.consent === true}
         onChange={(event) => change({ consent: event.target.checked })}
-        label={t("I confirm the consent needed to post this video to TikTok.")}
+        label={photo
+          ? t("I confirm the consent needed to post these photos to TikTok.")
+          : t("I confirm the consent needed to post this video to TikTok.")}
         size="body"
         leading="inherit"
         className="content-check"
       />
+      </> : null}
+      {photo ? <>
+        <TextField
+          label={t("TikTok photo title")}
+          value={options.photoTitle ?? ""}
+          onChange={(event) => change({ photoTitle: event.target.value })}
+          maxLength={90}
+        />
+        {photos.length ? (
+          <Select
+            label={t("TikTok cover photo")}
+            value={String(options.photoCoverIndex ?? 0)}
+            options={photos.map((_, index) => ({
+              value: String(index),
+              label: t("Photo {p0}", { p0: formatNumber(index + 1) }),
+            }))}
+            disabled={disabled}
+            onValueChange={(next) => change({ photoCoverIndex: Number(next) })}
+          />
+        ) : null}
+        {!inbox ? (
+          <Checkbox
+            checked={options.autoAddMusic === true}
+            onChange={(event) => change({ autoAddMusic: event.target.checked })}
+            label={t("Add TikTok-recommended music")}
+            size="body"
+            leading="inherit"
+            className="content-check"
+          />
+        ) : null}
+      </> : null}
     </FieldGroup>
   );
 }

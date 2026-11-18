@@ -117,6 +117,10 @@ export function mediaProblems(
           ? [t("Up to four images per post.")]
           : [];
     case "tiktok":
+      return (media.length === 1 && videos === 1) ||
+        (images === media.length && images > 0 && images <= 4)
+        ? []
+        : [t("Attach one video or up to four TikTok photos.")];
     case "youtube":
       return media.length === 1 && videos === 1 ? [] : [t("Attach exactly one video.")];
     default:
@@ -156,12 +160,37 @@ export function tiktokProblems(
   options: PlatformDraft["tiktok"],
   media: ContentMedia[],
   creator?: TikTokCreatorInfo,
+  connection?: SocialAccount["connection"],
 ): string[] {
   const problems: string[] = [];
+  const photo = options?.mediaType === "photo";
+  const inbox = options?.mode === "inbox";
+  if (photo) {
+    if (!media.length || media.some((item) => item.media.kind !== "image"))
+      problems.push(t("Attach photos for the TikTok photo post."));
+    else if ((options?.photoCoverIndex ?? 0) >= media.length)
+      problems.push(t("Choose a cover from your TikTok photos."));
+    if (
+      connection !== undefined &&
+      media.some((item) => connection === "browser" ? !item.media.uploadId : !item.media.url)
+    )
+      problems.push(
+        connection === "browser"
+          ? t("Attach local images for TikTok Studio.")
+          : t("Use photo URLs on a TikTok-verified domain or URL prefix."),
+      );
+  } else if (media.some((item) => item.media.kind === "image")) {
+    problems.push(t("Choose Photos as the TikTok post format."));
+  }
+  if (inbox) {
+    if (connection === "browser") problems.push(t("TikTok inbox drafts need the API connection."));
+    return problems;
+  }
   if (!options?.privacy) problems.push(t("Choose who can see the TikTok video."));
   else if (creator && !creator.privacyOptions.includes(options.privacy))
     problems.push(t("Choose a privacy option your TikTok account offers."));
   if (options?.consent !== true) problems.push(t("Confirm the TikTok content consent."));
+  if (photo) return problems;
   const duration = videoProbe(media)?.durationSeconds;
   if (!duration) problems.push(t("The video length could not be read."));
   else if (creator && duration > creator.maxDurationSeconds)
@@ -261,7 +290,7 @@ export function draftProblems(input: RuleInput): Problem[] {
     if (account.platform === "facebook")
       for (const text of reelProblems(platform?.facebook, draft.media)) add(text);
     if (account.platform === "tiktok")
-      for (const text of tiktokProblems(platform?.tiktok, draft.media, input.creator?.[account.id]))
+      for (const text of tiktokProblems(platform?.tiktok, draft.media, input.creator?.[account.id], account.connection ?? "oauth"))
         add(text);
     if (account.platform === "youtube")
       for (const text of youtubeProblems(platform?.youtube)) add(text);
@@ -310,11 +339,18 @@ export function buildVariants(input: RuleInput): CampaignVariant[] {
       const tiktok = platform.tiktok;
       variant.tiktok = {
         ...tiktok,
+        ...(tiktok.mediaType === "photo"
+          ? {
+              photoTitle: tiktok.photoTitle?.trim() ?? "",
+              photoCoverIndex: tiktok.photoCoverIndex ?? 0,
+              autoAddMusic: tiktok.autoAddMusic ?? false,
+            }
+          : {}),
         privacy: tiktok.privacy ?? "",
         durationSeconds: probe?.durationSeconds ?? 0,
         allowComment: tiktok.allowComment ?? false,
-        allowDuet: tiktok.allowDuet ?? false,
-        allowStitch: tiktok.allowStitch ?? false,
+        allowDuet: tiktok.mediaType !== "photo" && (tiktok.allowDuet ?? false),
+        allowStitch: tiktok.mediaType !== "photo" && (tiktok.allowStitch ?? false),
         brandContent: tiktok.brandContent ?? false,
         brandOrganic: tiktok.brandOrganic ?? false,
         isAigc: tiktok.isAigc ?? false,
