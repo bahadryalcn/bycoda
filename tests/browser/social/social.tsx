@@ -1822,6 +1822,9 @@ Object.assign(window, {
                 },
               ],
             };
+          if (params.action === "youtube.video.update") return { status: "done" };
+          if (params.action === "youtube.video.delete")
+            throw new Error("Fixture YouTube deletion denied.");
           if (params.action === "youtube.channel.read")
             return {
               name: "Fixture channel",

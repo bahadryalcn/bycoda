@@ -24,6 +24,47 @@ async function openSocial(page: Page) {
 
 const sections = (page: Page) => page.getByRole("tablist", { name: "Social bölümleri" });
 
+test("social YouTube management confirms video edits and shows provider failures", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/social/social.html?youtube-management");
+  await sections(page).getByRole("tab", { name: "İçerik", exact: true }).click();
+  await page.getByRole("button", { name: "Videolar ve oynatma listeleri", exact: true }).click();
+  await page.getByRole("button", { name: "Videoları listele", exact: true }).click();
+  await page.getByRole("button", { name: "Kullan", exact: true }).click();
+  await page.getByRole("textbox", { name: "Başlık", exact: true }).fill("Renamed in fixture");
+  await page.getByRole("button", { name: "Videoyu düzenle", exact: true }).click();
+  const edit = page.getByRole("dialog", { name: "Videoyu düzenle" });
+  await expect(edit.getByText("Renamed in fixture")).toBeVisible();
+  expect(await requests(page, "youtube.video.update")).toEqual([]);
+  await edit.getByRole("button", { name: "Videoyu düzenle" }).click();
+  await expect
+    .poll(() => requests(page, "youtube.video.update"))
+    .toEqual([
+      {
+        accountId: "youtube-api",
+        videoId: "shortDemo01",
+        patch: { title: "Renamed in fixture" },
+      },
+    ]);
+  await expect(edit).toBeHidden();
+  await page.getByRole("button", { name: /^İşlem:/ }).click();
+  await page.getByRole("option", { name: "Videoyu sil", exact: true }).click();
+  await page.getByRole("button", { name: "Videoyu sil", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Videoyu sil" })
+    .getByRole("button", { name: "Videoyu sil" })
+    .click();
+  await expect(page.getByText("Fixture YouTube deletion denied.")).toBeVisible();
+  expect(await requests(page, "youtube.video.delete")).toEqual([
+    {
+      accountId: "youtube-api",
+      videoId: "shortDemo01",
+      confirm: true,
+    },
+  ]);
+});
+
 for (const theme of ["light", "dark"])
   for (const width of [800, 1280]) {
     test(`social YouTube management ${theme} ${width}`, async ({ page }) => {
