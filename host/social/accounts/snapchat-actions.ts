@@ -19,6 +19,7 @@ import {
 import type { SocialActionContext, SocialActionModule } from "../core/social-actions";
 import { exact, hash, str } from "../core/social-helpers";
 import { parseSnapchatProfilePatch } from "../social-browser-snapchat-profile";
+import { snapchatBrowserStoryId } from "../../../src/integrations/social/snapchat-profile";
 
 async function account(
   ctx: SocialActionContext,
@@ -140,7 +141,8 @@ function deleteInput(input: Record<string, unknown>) {
     input.confirmId !== id ||
     !(
       (target === "spotlight" && snapchatSnapId.test(id)) ||
-      ((target === "saved_story" || target === "story") && snapchatUuid.test(id))
+      (target === "saved_story" && snapchatUuid.test(id)) ||
+      (target === "story" && snapchatBrowserStoryId.test(id))
     )
   )
     throw new Error("Confirm the exact Snapchat publication ID.");
@@ -225,7 +227,7 @@ async function removeContent(ctx: SocialActionContext, input: Record<string, unk
     throw new SocialPlatformError("unsupported");
   if (selected.paused || selected.executorId !== ctx.environmentId)
     throw new SocialPlatformError("denied");
-  const assetId = deletion.target === "spotlight" ? deletion.id : deletion.id.toLowerCase();
+  const assetId = deletion.target === "saved_story" ? deletion.id.toLowerCase() : deletion.id;
   const key = `snapchat:delete:${hash(JSON.stringify([selected.platformId, deletion.target, assetId]))}`;
   const prior = await ctx.service.setting(key);
   if (prior === "succeeded") return { target: deletion.target, id: deletion.id };
@@ -277,12 +279,17 @@ async function removeContent(ctx: SocialActionContext, input: Record<string, unk
 export const snapchatActions: SocialActionModule = {
   "snapchat.profile.read": { readOnly: true, ownerOnly: false, tool: true, run: profile },
   "snapchat.friends.list": {
-    readOnly: true, ownerOnly: false, tool: true,
+    readOnly: true,
+    ownerOnly: false,
+    tool: true,
     run: async (ctx, input) => {
       exact(input, ["accountId"]);
       const selected = await account(ctx, input);
-      if (selected.accountType !== "member" || selected.connection !== "browser" ||
-        !ctx.service.snapchatBrowserProfile)
+      if (
+        selected.accountType !== "member" ||
+        selected.connection !== "browser" ||
+        !ctx.service.snapchatBrowserProfile
+      )
         throw new SocialPlatformError("unsupported");
       return await ctx.service.snapchatBrowserProfile(ctx.principal, selected.id, "friends", {});
     },

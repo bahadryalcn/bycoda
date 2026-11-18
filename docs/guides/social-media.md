@@ -57,8 +57,9 @@ Choose **Snapchat** in **Accounts & Settings** to create or sign in to a member
 account. Complete password, verification and terms in the browser. Connect a
 Public Profile through the Public Profile API for publishing, publications and
 insights. Connect its verified browser account to manage the profile and read
-monetization status. Member browser connections can read and reply to chats and
-start a text chat after the Host verifies the exact friend.
+monetization status. To start a text chat, open **New Snapchat chat** in Inbox.
+Read the visible friends list or enter the exact username. The Host verifies the
+friend and the chat before sending.
 
 Choose **Spotlight**, **Public Story**, or **Saved Story** in Content. For a
 Saved Story, enter its title in the post field and attach media or enter source

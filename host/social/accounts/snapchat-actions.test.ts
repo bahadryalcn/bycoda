@@ -102,6 +102,44 @@ it("queues a Snapchat Saved Story and dispatches the exact approved publication 
   expect(f.send.mock.calls[0]?.[1]).toMatchObject({ id: job.id, payload: { snapchat } });
 });
 
+it("passes an exact opaque Public Story ID to the browser and holds an ambiguous result", async () => {
+  const f = await fixture();
+  const profile = await f.call<SocialAccount>("accounts.create", {
+    platform: "snapchat",
+    accountType: "public_profile",
+    connection: "browser",
+    name: "Profile",
+    projectIds: [f.a.id],
+  });
+  await f.social.connectAccount(
+    profile.id,
+    {
+      platformId: "web:snapchat:public_profile:owner",
+      name: "Profile",
+      scopes: [],
+      accessApproved: true,
+      connection: "browser",
+    },
+    { accessToken: "synthetic-browser-token" },
+  );
+  const browser = vi.fn(async () => {
+    throw new SocialPlatformError("unknown");
+  });
+  f.social.snapchatBrowserProfile = browser;
+  const id = "Story-Exact.Opaque";
+  const request = { accountId: profile.id, target: "story", id, confirmId: id };
+  await expect(f.call("snapchat.content.delete", request)).rejects.toMatchObject({
+    code: "unknown",
+  });
+  await expect(f.call("snapchat.content.delete", request)).rejects.toMatchObject({
+    code: "unknown",
+  });
+  expect(browser).toHaveBeenCalledExactlyOnceWith(owner, profile.id, "delete-story", {
+    storyId: id,
+    confirm: "DELETE_SNAPCHAT_STORY",
+  });
+});
+
 it("drafts a new Snapchat chat by exact canonical username without sending", async () => {
   const f = await fixture();
   const member = await f.call<SocialAccount>("accounts.create", {

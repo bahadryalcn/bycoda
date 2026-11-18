@@ -29,7 +29,8 @@ describe("saved Snapchat web pages (synthetic fixtures)", () => {
     <div data-username="profile_search_result">outside the list</div>`;
     const f = fixture(recipe("snapchat"), own(), html, { render: () => html });
     await expect(readSnapchatFriends(f.ctx, f.ctx.account.platformId)).resolves.toEqual({
-      usernames: ["friend_one", "friend_two"], partial: true,
+      usernames: ["friend_one", "friend_two"],
+      partial: true,
     });
     expect(f.page.click).not.toHaveBeenCalled();
     expect(f.page.fill).not.toHaveBeenCalled();

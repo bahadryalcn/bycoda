@@ -88,9 +88,14 @@ export function browserOperations(
       account.accountType === "public_profile"
         ? ["publish", "media", "profile.read"].includes(operation)
         : account.accountType === "member" &&
-          ["inbox.read", "message.reply", "poll", "audience.collect", "message.start", "profile.read"].includes(
-            operation,
-          ),
+          [
+            "inbox.read",
+            "message.reply",
+            "poll",
+            "audience.collect",
+            "message.start",
+            "profile.read",
+          ].includes(operation),
     );
   return account.platform === "linkedin" && account.accountType === "organization"
     ? operations.filter(

@@ -104,8 +104,7 @@ describe("Snapchat insights", () => {
       getSnapchatInsights(ctx, {
         ...query,
         fields: query.fields ? [...query.fields] : undefined,
-        breakdownDimensions:
-          query.breakdownDimensions ? [...query.breakdownDimensions] : undefined,
+        breakdownDimensions: query.breakdownDimensions ? [...query.breakdownDimensions] : undefined,
       }),
     ).rejects.toMatchObject({ code: "rejected" });
     expect(fetch).not.toHaveBeenCalled();

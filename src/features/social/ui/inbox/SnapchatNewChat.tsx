@@ -45,7 +45,9 @@ export function SnapchatNewChat({
     setError("");
     try {
       await pending.run("friends", async () => {
-        const page = await client.request<FriendPage>("snapchat.friends.list", { accountId: account.id });
+        const page = await client.request<FriendPage>("snapchat.friends.list", {
+          accountId: account.id,
+        });
         setFriends({ key: friendKey, page });
       });
     } catch (cause) {
@@ -120,8 +122,12 @@ export function SnapchatNewChat({
         disabled={!editable}
         onChange={(event) => setUsername(event.currentTarget.value)}
       />
-      <Button variant="secondary" loading={pending.is("friends")} disabled={!editable}
-        onClick={() => void readFriends().catch(() => undefined)}>
+      <Button
+        variant="secondary"
+        loading={pending.is("friends")}
+        disabled={!editable}
+        onClick={() => void readFriends().catch(() => undefined)}
+      >
         {t("Read Snapchat friends")}
       </Button>
       {friendPage?.usernames.length ? (
@@ -135,8 +141,12 @@ export function SnapchatNewChat({
           onValueChange={setUsername}
           disabled={!editable}
         />
-      ) : friendPage && !friendPage.partial ? <InlineMessage>{t("No Snapchat friends found.")}</InlineMessage> : null}
-      {friendPage?.partial && <InlineMessage>{t("Only visible Snapchat friends are shown.")}</InlineMessage>}
+      ) : friendPage && !friendPage.partial ? (
+        <InlineMessage>{t("No Snapchat friends found.")}</InlineMessage>
+      ) : null}
+      {friendPage?.partial && (
+        <InlineMessage>{t("Only visible Snapchat friends are shown.")}</InlineMessage>
+      )}
       <TextareaField
         label={t("Message")}
         value={text}

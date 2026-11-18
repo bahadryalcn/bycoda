@@ -60,8 +60,7 @@ export function snapchatCapabilities(): PlatformCapabilities {
       // Snapchat member chats
       "message.start":
         "Start a text chat only after the exact username is verified in the connected member's friends list.",
-      "profile.read":
-        "Read the verified profile from the connected Snapchat browser session.",
+      "profile.read": "Read the verified profile from the connected Snapchat browser session.",
       poll: "Bounded visible snapshots of up to two existing chats per run. An unrecognized layout is handed to the layered browser driver instead of reporting an empty inbox.",
       "audience.collect":
         "Contacts of existing chats on the signed-in member account, limited to what the chat list shows.",

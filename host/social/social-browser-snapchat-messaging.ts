@@ -5,9 +5,11 @@ import { needsHumanError } from "./browser/challenge";
 
 type FriendChat = { threadId: string; href: string; recipient: string };
 export const snapChatLocation = String.raw`((location.origin==='https://web.snapchat.com'&&location.pathname==='/') || (location.origin==='https://www.snapchat.com'&&/^\/web\/?$/.test(location.pathname)))`;
-const friendsList = '[data-testid="my-friends-list"],[aria-label="My Friends"],[aria-label="Arkadaşlarım"]';
+const friendsList =
+  '[data-testid="my-friends-list"],[aria-label="My Friends"],[aria-label="Arkadaşlarım"]';
 type ChatReader = Pick<BrowserRecipeContext, "page" | "verifyIdentity" | "waitFor">;
-const visibleElement = "el=>!el.closest('[hidden],[aria-hidden=\"true\"]')&&el.getClientRects().length>0&&getComputedStyle(el).visibility!=='hidden'";
+const visibleElement =
+  "el=>!el.closest('[hidden],[aria-hidden=\"true\"]')&&el.getClientRects().length>0&&getComputedStyle(el).visibility!=='hidden'";
 
 export function snapchatConversation(
   owner: string,
@@ -49,7 +51,8 @@ async function showFriends(ctx: ChatReader) {
   })()`;
   if (await ctx.page.evaluate<boolean>(trigger)) {
     await proveSnapchatMessagingScreen(ctx);
-    if (await ctx.page.evaluate<boolean>(trigger)) await ctx.page.click('[data-bycoda-snap-friends="true"]');
+    if (await ctx.page.evaluate<boolean>(trigger))
+      await ctx.page.click('[data-bycoda-snap-friends="true"]');
   }
 }
 

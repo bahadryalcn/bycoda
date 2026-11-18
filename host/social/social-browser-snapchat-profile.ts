@@ -1,4 +1,5 @@
 import type { SocialAccount } from "../../src/features/social/model/social";
+import { snapchatBrowserStoryId } from "../../src/integrations/social/snapchat-profile";
 import type {
   SnapchatMonetizationStatus,
   SnapchatProfilePatch,
@@ -16,7 +17,6 @@ import {
 export const SNAPCHAT_PROFILE_MANAGER = "https://my.snapchat.com";
 const profilePrefix = "web:snapchat:public_profile:";
 const memberPrefix = "web:snapchat:";
-const assetId = /^[\w.-]{8,160}$/;
 const profileUuid = /^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i;
 type EditableField = "name" | "bio" | "website" | "category";
 type Until = <T>(expression: string, timeout: number) => Promise<T | undefined>;
@@ -335,7 +335,8 @@ export class SnapchatProfileActions {
   }
 
   async deleteStory(storyId: string): Promise<{ storyId: string; deleted: true }> {
-    if (this.account.accountType !== "public_profile" || !assetId.test(storyId)) throw denied();
+    if (this.account.accountType !== "public_profile" || !snapchatBrowserStoryId.test(storyId))
+      throw denied();
     const { profileId } = await this.read();
     if (!profileId) throw denied();
     await this.guard();

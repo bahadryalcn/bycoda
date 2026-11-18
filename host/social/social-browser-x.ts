@@ -439,16 +439,22 @@ export class XBrowserSessions {
         const { page } = session;
         if (action === "friends") {
           await page.goto(SNAP);
-          return await readSnapchatFriends({
-            page,
-            waitFor: (expression, timeout = 12_000) => this.until(page, expression, timeout),
-            verifyIdentity: async () => {
-              await check();
-              const verified = await snapchatBrowserRecipe.identity(page, account);
-              if (verified?.platformId !== account.platformId || verified.accountType !== "member")
-                throw new SocialPlatformError("denied");
+          return await readSnapchatFriends(
+            {
+              page,
+              waitFor: (expression, timeout = 12_000) => this.until(page, expression, timeout),
+              verifyIdentity: async () => {
+                await check();
+                const verified = await snapchatBrowserRecipe.identity(page, account);
+                if (
+                  verified?.platformId !== account.platformId ||
+                  verified.accountType !== "member"
+                )
+                  throw new SocialPlatformError("denied");
+              },
             },
-          }, account.platformId);
+            account.platformId,
+          );
         }
         const actions = new SnapchatProfileActions(
           page,

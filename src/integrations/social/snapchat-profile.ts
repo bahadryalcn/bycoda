@@ -16,3 +16,5 @@ export type SnapchatMonetizationStatus = {
   status: "eligible" | "ineligible" | "unknown" | "unavailable";
   dailyRewardsEligible?: boolean;
 };
+
+export const snapchatBrowserStoryId = /^[\w.-]{8,160}$/;
