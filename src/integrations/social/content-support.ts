@@ -2,7 +2,8 @@ import type { SocialAccount, SocialJob } from "./adapter";
 import { browserContentIssue } from "./browserCapabilities";
 import { facebookReelContentIssue } from "./facebookReels";
 import { messagingContentIssue } from "./adapters/messaging-shared";
-import { linkedInMultiImageIssue } from "./linkedinMedia";
+import { linkedInCommentaryIssue, linkedInMultiImageIssue } from "./linkedinMedia";
+import { linkedInFormatIssue, linkedInVideoIssue } from "./adapters/linkedin-formats";
 import { metaPublishingIssue } from "./metaMedia";
 import { snapchatContentIssue } from "./snapchat";
 import { telegramChannelContentIssue } from "./telegramChannel";
@@ -15,6 +16,24 @@ export function contentSupport(
 ): string | undefined {
   if (job.payload.facebook && (account.platform !== "facebook" || account.connection === "browser"))
     return "The Facebook Reel destination requires a Facebook Page API connection.";
+  // LinkedIn publishing formats.
+  if (
+    job.payload.linkedinFormat &&
+    (account.platform !== "linkedin" || account.connection !== "oauth")
+  )
+    return "LinkedIn polls and article links require a LinkedIn API connection.";
+  if (account.platform === "linkedin" && account.connection === "oauth" && job.kind === "publish") {
+    const issue =
+      linkedInCommentaryIssue(job) ?? linkedInFormatIssue(job) ?? linkedInVideoIssue(job);
+    if (issue) return issue;
+    const [first] = job.payload.media;
+    if (!first) return undefined;
+    if (job.payload.media.length > 1) return linkedInMultiImageIssue(account, job);
+    if (!first.uploadId || first.url) return "LinkedIn publishing requires host-uploaded media.";
+    if (first.kind === "document" && !first.title?.trim())
+      return "Give the LinkedIn document a title.";
+    return undefined;
+  }
   if (account.connection === "browser" && account.platform !== "x")
     return browserContentIssue(account, job);
   if (account.platform === "telegram" && account.accountType === "channel")
@@ -37,8 +56,6 @@ export function contentSupport(
   }
   if (job.kind !== "publish" && job.payload.media.length)
     return "Reply/message media attachments are not supported yet.";
-  if (account.platform === "linkedin" && job.payload.media.length > 1)
-    return linkedInMultiImageIssue(account, job);
   if (job.kind === "publish" && ["instagram", "facebook"].includes(account.platform))
     return metaPublishingIssue(account.platform as "instagram" | "facebook", job);
   if (account.platform === "youtube" && job.kind === "publish") {
@@ -67,13 +84,5 @@ export function contentSupport(
   }
   if (job.payload.media.some((item) => item.kind === "video"))
     return "Video upload/processing is not implemented; use an image or text.";
-  if (
-    account.platform === "linkedin" &&
-    job.payload.media.length &&
-    (account.accountType !== "organization" ||
-      job.payload.media.length !== 1 ||
-      !job.payload.media[0].uploadId)
-  )
-    return "LinkedIn image publishing requires an organization, one uploaded image and image-readiness permission. Member write-only tokens cannot verify Images API readiness.";
   return undefined;
 }

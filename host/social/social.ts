@@ -113,6 +113,7 @@ import {
 } from "../../src/integrations/social/adapter";
 import { contentSupport } from "../../src/integrations/social/platformAdapters";
 import { validatePublishingText } from "../../src/integrations/social/publishingFormats";
+import { parseLinkedInPostFormat } from "./linkedin/linkedin-format-input";
 import { parseTikTokOptions } from "../../src/integrations/social/tiktok";
 import type { SocialCredentialStore, SocialCredential } from "./social-credentials";
 import { SocialVideoUploads } from "./social-media";
@@ -3599,6 +3600,7 @@ export class SocialService implements SocialServiceApi {
             tiktok: variant.tiktok,
             snapchat: variant.snapchat,
             facebook: variant.facebook,
+            linkedinFormat: variant.linkedinFormat,
           },
           ...approvalJobFields(automated, this.now()),
           attempts: 0,
@@ -3644,6 +3646,7 @@ export class SocialService implements SocialServiceApi {
         "tiktok",
         "snapchat",
         "facebook",
+        "linkedinFormat",
       ]);
       const accountId = str(value.accountId, "account");
       const account = await this.access(p, accountId, "draft");
@@ -3773,6 +3776,12 @@ export class SocialService implements SocialServiceApi {
           containsSyntheticMedia: metadata.containsSyntheticMedia,
         };
       }
+      const linkedinFormat =
+        value.linkedinFormat === undefined
+          ? undefined
+          : parseLinkedInPostFormat(value.linkedinFormat);
+      if (linkedinFormat && (account.platform !== "linkedin" || account.connection !== "oauth"))
+        throw new Error("LinkedIn polls and article links require a LinkedIn API connection.");
       const media = this.parseMedia(value.media ?? []);
       const telegramChannelMedia =
         account.platform === "telegram" &&
@@ -3783,6 +3792,7 @@ export class SocialService implements SocialServiceApi {
         accountId,
         text:
           (snapchat?.target === "story" && value.text === "") ||
+          (linkedinFormat && typeof value.text === "string" && !value.text.trim()) ||
           (facebook?.target === "reel" &&
             media.length === 1 &&
             typeof value.text === "string" &&
@@ -3798,6 +3808,7 @@ export class SocialService implements SocialServiceApi {
         ...(tiktok ? { tiktok } : {}),
         ...(snapchat ? { snapchat } : {}),
         ...(facebook ? { facebook } : {}),
+        ...(linkedinFormat ? { linkedinFormat } : {}),
       };
     });
     if (new Set(variants.map((variant) => variant.accountId)).size !== variants.length)
@@ -3938,6 +3949,7 @@ export class SocialService implements SocialServiceApi {
               tiktok: variant.tiktok,
               snapchat: variant.snapchat,
               facebook: variant.facebook,
+              linkedinFormat: variant.linkedinFormat,
             },
             ...approvalJobFields(decision, variant.scheduledAt),
             attempts: 0,

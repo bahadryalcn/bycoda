@@ -1,5 +1,6 @@
 import type { SocialAccount, SocialJob } from "../../features/social/model/social";
 import { SocialHttp, SocialPlatformError, type SocialSendResult } from "./adapter";
+import { linkedInActorId, linkedInWriteScope } from "./adapters/linkedin-formats";
 
 type Preparation = NonNullable<SocialJob["preparation"]>;
 type Checkpoint = (state: Preparation) => void | Promise<void>;
@@ -10,22 +11,16 @@ const postUrn = (value: unknown): value is string =>
 const content = (job: Pick<SocialJob, "payload">) =>
   [job.payload.text, job.payload.link].filter(Boolean).join("\n");
 
-function authorId(account: Pick<SocialAccount, "platformId">): string {
-  const value = account.platformId.replace(/^urn:li:organization:/, "");
-  if (!/^[1-9]\d{0,24}$/.test(value)) throw new SocialPlatformError("denied");
-  return `urn:li:organization:${value}`;
-}
-
 export function linkedInMultiImageIssue(
   account: Pick<SocialAccount, "platform" | "accountType" | "connection">,
   job: Pick<SocialJob, "kind" | "payload">,
 ): string | undefined {
   if (
     account.platform !== "linkedin" ||
-    account.accountType !== "organization" ||
+    (account.accountType !== "organization" && account.accountType !== "member") ||
     account.connection === "browser"
   )
-    return "LinkedIn API multi-image posts require an organization connection.";
+    return "LinkedIn API multi-image posts require a member or organization API connection.";
   if (job.kind !== "publish")
     return "LinkedIn API multi-image media is supported for publishing only.";
   const items = job.payload.media;
@@ -65,7 +60,7 @@ export function validateImage(bytes: Uint8Array): void {
 async function signature(account: SocialAccount, job: SocialJob): Promise<string> {
   const bytes = new TextEncoder().encode(
     JSON.stringify([
-      authorId(account),
+      linkedInActorId(account),
       job.kind,
       job.payload.text,
       job.payload.link ?? null,
@@ -83,7 +78,7 @@ function result(platformId: string): SocialSendResult {
   };
 }
 
-/** Ordinary organization MultiImage posts, with no saved signed URLs or duplicate post on resume. */
+/** Ordinary MultiImage posts, with no saved signed URLs or duplicate post on resume. */
 export async function publishLinkedInMultiImage(
   http: SocialHttp,
   account: SocialAccount,
@@ -97,8 +92,9 @@ export async function publishLinkedInMultiImage(
 ): Promise<SocialSendResult> {
   if (linkedInMultiImageIssue(account, job) || !/^20\d{4}$/.test(linkedinVersion))
     throw new SocialPlatformError("unsupported");
-  if (!account.scopes.includes("w_organization_social")) throw new SocialPlatformError("denied");
-  const author = authorId(account);
+  if (!account.scopes.includes(linkedInWriteScope(account)))
+    throw new SocialPlatformError("denied");
+  const author = linkedInActorId(account);
   const expected = await signature(account, job);
   const previous = job.preparation?.linkedinMedia;
   if (
@@ -170,18 +166,23 @@ export async function publishLinkedInMultiImage(
       uploadedNow = true;
       await save();
     }
-    const { value: readiness } = await http.request(
-      `https://api.linkedin.com/rest/images/${encodeURIComponent(image.id)}`,
-      token,
-      { headers },
-    );
-    if (readiness.id !== image.id || readiness.owner !== author)
-      throw new SocialPlatformError("denied");
-    if (readiness.status === "WAITING_UPLOAD" && image.status === "registered" && !uploadedNow)
-      throw new SocialPlatformError("rejected");
-    if (["WAITING_UPLOAD", "PROCESSING"].includes(readiness.status))
-      throw new SocialPlatformError("processing", now() + 60_000);
-    if (readiness.status !== "AVAILABLE") throw new SocialPlatformError("rejected");
+    // A member token cannot read versioned image metadata. Resume only a confirmed PUT.
+    if (account.accountType === "member") {
+      if (image.status === "registered") throw new SocialPlatformError("unknown");
+    } else {
+      const { value: readiness } = await http.request(
+        `https://api.linkedin.com/rest/images/${encodeURIComponent(image.id)}`,
+        token,
+        { headers },
+      );
+      if (readiness.id !== image.id || readiness.owner !== author)
+        throw new SocialPlatformError("denied");
+      if (readiness.status === "WAITING_UPLOAD" && image.status === "registered" && !uploadedNow)
+        throw new SocialPlatformError("rejected");
+      if (["WAITING_UPLOAD", "PROCESSING"].includes(readiness.status))
+        throw new SocialPlatformError("processing", now() + 60_000);
+      if (readiness.status !== "AVAILABLE") throw new SocialPlatformError("rejected");
+    }
     image.status = "ready";
     await save();
   }
@@ -232,9 +233,8 @@ function validatePdf(bytes: Uint8Array): void {
 }
 
 /**
- * One organization PDF post through the Documents API. shortcut: endpoint paths, upload host and
- * the readiness status names are not verified against live LinkedIn; the upload reuses the
- * image upload helper, whose host allowlist is `www.linkedin.com/dms-uploads/`.
+ * One PDF post through the Documents API. Reuses the LinkedIn upload helper, which restricts
+ * destination to `www.linkedin.com/dms-uploads/`.
  */
 export async function publishLinkedInDocument(
   http: SocialHttp,
@@ -251,7 +251,7 @@ export async function publishLinkedInDocument(
   const title = item?.title?.trim() ?? "";
   if (
     account.platform !== "linkedin" ||
-    account.accountType !== "organization" ||
+    (account.accountType !== "organization" && account.accountType !== "member") ||
     account.connection === "browser" ||
     job.kind !== "publish" ||
     job.payload.media.length !== 1 ||
@@ -265,8 +265,9 @@ export async function publishLinkedInDocument(
   )
     throw new SocialPlatformError("unsupported");
   if (!/^20\d{4}$/.test(linkedinVersion)) throw new SocialPlatformError("unsupported");
-  if (!account.scopes.includes("w_organization_social")) throw new SocialPlatformError("denied");
-  const author = authorId(account);
+  if (!account.scopes.includes(linkedInWriteScope(account)))
+    throw new SocialPlatformError("denied");
+  const author = linkedInActorId(account);
   const headers = { "LinkedIn-Version": linkedinVersion, "X-Restli-Protocol-Version": "2.0.0" };
   let documentId: string | undefined = job.preparation?.mediaIds?.[0];
   if (job.preparation?.mediaIds && job.preparation.mediaIds.length !== 1)
@@ -298,6 +299,8 @@ export async function publishLinkedInDocument(
     token,
     { headers },
   );
+  if (readiness.id !== documentId || readiness.owner !== author)
+    throw new SocialPlatformError("denied");
   if (["WAITING_UPLOAD", "PROCESSING"].includes(readiness.status))
     throw new SocialPlatformError("processing", now() + 60_000);
   if (readiness.status !== "AVAILABLE") throw new SocialPlatformError("rejected");

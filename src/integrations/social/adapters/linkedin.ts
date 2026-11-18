@@ -8,6 +8,16 @@ import {
   validateImage,
 } from "../linkedinMedia";
 import { at, completeScanPost, enqueueKnownPosts, id, requireId, scanState, text } from "./common";
+import { readLinkedInAnalytics } from "./linkedin-analytics";
+import {
+  linkedInActorId,
+  linkedInFormatIssue,
+  linkedInPostContent,
+  linkedInVideoIssue,
+  linkedInWriteScope,
+  prepareLinkedInVideo,
+} from "./linkedin-formats";
+import { manageLinkedIn } from "./linkedin-manage";
 
 const ownPostUrn = (value: unknown): value is string =>
   typeof value === "string" && /^urn:li:(?:share|ugcPost):[1-9]\d{0,24}$/.test(value);
@@ -15,14 +25,20 @@ const ownPostUrn = (value: unknown): value is string =>
 export function createLinkedInAdapter(http: SocialHttp, linkedinVersion: string): SocialAdapter {
   return {
     ownedPostPages: true,
+    linkedinAnalytics(account, token, query) {
+      return readLinkedInAnalytics(http, linkedinVersion, account, token, query);
+    },
+    linkedinManage(account, token, action, beforeSubmit) {
+      return manageLinkedIn(http, linkedinVersion, account, token, action, beforeSubmit);
+    },
     async send(account, job, token, media, checkpoint, beforeSubmit) {
       const headers = {
         "LinkedIn-Version": linkedinVersion,
         "X-Restli-Protocol-Version": "2.0.0",
       };
-      const author = account.platformId.startsWith("urn:")
-        ? account.platformId
-        : `urn:li:${account.accountType === "organization" ? "organization" : "person"}:${account.platformId}`;
+      const author = linkedInActorId(account);
+      if (linkedInFormatIssue(job) || linkedInVideoIssue(job))
+        throw new SocialPlatformError("unsupported");
       if (job.kind === "message") throw new SocialPlatformError("unsupported");
       if (job.kind !== "publish") {
         const nested = job.kind === "reply";
@@ -49,6 +65,11 @@ export function createLinkedInAdapter(http: SocialHttp, linkedinVersion: string)
       }
       // Limits are checked before any upload or registration request.
       if (linkedInCommentaryIssue(job)) throw new SocialPlatformError("unsupported");
+      if (
+        (job.payload.linkedinFormat || job.payload.media[0]?.kind === "video") &&
+        !account.scopes.includes(linkedInWriteScope(account))
+      )
+        throw new SocialPlatformError("denied");
       if (job.payload.media.some((item) => item.kind === "document")) {
         if (job.payload.media.length !== 1) throw new SocialPlatformError("unsupported");
         return publishLinkedInDocument(
@@ -73,17 +94,36 @@ export function createLinkedInAdapter(http: SocialHttp, linkedinVersion: string)
           checkpoint,
           beforeSubmit,
         );
-      let image: string | undefined;
-      if (job.payload.media.length) {
+      let attachment: { id: string; altText?: string } | undefined;
+      if (job.payload.media[0]?.kind === "video") {
+        const video = await prepareLinkedInVideo(
+          http,
+          author,
+          job,
+          token,
+          headers,
+          media,
+          checkpoint,
+        );
+        attachment = { id: video };
+      } else if (job.payload.media.length) {
         const item = job.payload.media[0];
         if (
-          account.accountType !== "organization" ||
           job.payload.media.length !== 1 ||
           item.kind !== "image" ||
-          !item.uploadId
+          !item.uploadId ||
+          item.url ||
+          item.title ||
+          (item.alt?.length ?? 0) > 4086
         )
           throw new SocialPlatformError("unsupported");
-        image = job.preparation?.mediaIds?.[0];
+        let image = job.preparation?.mediaIds?.[0];
+        const imageUrn = /^urn:li:image:[A-Za-z0-9_-]{1,150}$/;
+        if (
+          job.preparation?.mediaIds &&
+          (job.preparation.mediaIds.length !== 1 || !image || !imageUrn.test(image))
+        )
+          throw new SocialPlatformError("rejected");
         if (!image) {
           const bytes = await media(item.uploadId);
           validateImage(bytes);
@@ -94,20 +134,27 @@ export function createLinkedInAdapter(http: SocialHttp, linkedinVersion: string)
             headers,
           );
           image = requireId(registration.value?.image);
+          if (!imageUrn.test(image)) throw new SocialPlatformError("unknown");
           await http.uploadLinkedInImage(requireId(registration.value?.uploadUrl), token, bytes);
           await checkpoint?.({ mediaIds: [image] });
         }
-        const { value: readiness } = await http.request(
-          `https://api.linkedin.com/rest/images/${id(image)}`,
-          token,
-          { headers },
-        );
-        if (readiness.owner !== author) throw new SocialPlatformError("denied");
-        // Same processing outcome as the multi-image path; a rate limit would misreport it.
-        if (["WAITING_UPLOAD", "PROCESSING"].includes(readiness.status))
-          throw new SocialPlatformError("processing", Date.now() + 60_000);
-        if (readiness.status !== "AVAILABLE") throw new SocialPlatformError("rejected");
+        // The versioned Images API is write-only with w_member_social.
+        if (account.accountType === "organization") {
+          const { value: readiness } = await http.request(
+            `https://api.linkedin.com/rest/images/${id(image)}`,
+            token,
+            { headers },
+          );
+          if (readiness.owner !== author) throw new SocialPlatformError("denied");
+          if (["WAITING_UPLOAD", "PROCESSING"].includes(readiness.status))
+            throw new SocialPlatformError("processing", Date.now() + 60_000);
+          if (readiness.status !== "AVAILABLE") throw new SocialPlatformError("rejected");
+        }
+        attachment = { id: image, ...(item.alt ? { altText: item.alt } : {}) };
       }
+      const content = job.payload.linkedinFormat
+        ? linkedInPostContent(job.payload.linkedinFormat, attachment)
+        : attachment && { media: attachment };
       await beforeSubmit?.();
       const { headers: responseHeaders, value } = await http.json(
         "https://api.linkedin.com/rest/posts",
@@ -123,16 +170,7 @@ export function createLinkedInAdapter(http: SocialHttp, linkedinVersion: string)
           },
           lifecycleState: "PUBLISHED",
           isReshareDisabledByAuthor: false,
-          ...(image
-            ? {
-                content: {
-                  media: {
-                    id: image,
-                    ...(job.payload.media[0]?.alt ? { altText: job.payload.media[0].alt } : {}),
-                  },
-                },
-              }
-            : {}),
+          ...(content ? { content } : {}),
         },
         headers,
       );

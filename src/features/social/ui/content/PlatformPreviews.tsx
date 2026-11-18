@@ -22,6 +22,8 @@ export function PlatformPreviews({ accounts, draft, policies, problems }: Platfo
     <section className="content-previews" aria-label={t("Previews")}>
       {accounts.map((account) => {
         const reel = draft.platform[account.id]?.facebook?.target === "reel";
+        const linkedinFormat =
+          account.platform === "linkedin" ? draft.platform[account.id]?.linkedinFormat : undefined;
         const limit = characterLimit(account, policies, { reel, hasMedia: draft.media.length > 0 });
         const count = characterCount(account, text, link);
         const over = limit !== undefined && count > limit;
@@ -46,8 +48,20 @@ export function PlatformPreviews({ accounts, draft, policies, problems }: Platfo
               leading="inherit"
               className="content-preview-text"
             >
-              {text || t("Your post text appears here.")}
+              {text || (!linkedinFormat ? t("Your post text appears here.") : null)}
             </Text>
+            {linkedinFormat?.kind === "poll" ? (
+              <Text as="p" size="secondary" leading="inherit" tone="inherit">
+                {[linkedinFormat.question, ...linkedinFormat.options].filter(Boolean).join(" · ")}
+              </Text>
+            ) : null}
+            {linkedinFormat?.kind === "article" ? (
+              <Text as="p" size="secondary" leading="inherit" tone="inherit">
+                {[linkedinFormat.title, linkedinFormat.source, linkedinFormat.description]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </Text>
+            ) : null}
             {draft.media.length ? (
               <Text
                 as="p"

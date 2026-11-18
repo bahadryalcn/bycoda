@@ -196,6 +196,9 @@ export function ContentEditorFields(props: ContentEditorFieldsProps) {
         client={client}
         editor={editor}
         media={draft.media}
+        allowDocument={
+          selected.length > 0 && selected.every((account) => account.platform === "linkedin")
+        }
         disabled={disabled || mediaBlocked}
         disabledReason={locked ?? (mediaBlocked ? mediaReason : undefined)}
         onChange={changeMedia}

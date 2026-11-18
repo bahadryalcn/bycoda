@@ -188,6 +188,14 @@ export type SocialMedia = {
   alt?: string;
   title?: string;
 };
+export type LinkedInPostFormat =
+  | {
+      kind: "poll";
+      question: string;
+      options: string[];
+      duration: "ONE_DAY" | "THREE_DAYS" | "SEVEN_DAYS" | "FOURTEEN_DAYS";
+    }
+  | { kind: "article"; source: string; title: string; description?: string };
 export type CampaignVariant = {
   accountId: string;
   text: string;
@@ -199,6 +207,7 @@ export type CampaignVariant = {
   tiktok?: TikTokVideoOptions;
   snapchat?: SnapchatPublishOptions;
   facebook?: FacebookReelOptions;
+  linkedinFormat?: LinkedInPostFormat;
 };
 /** Explicit Reel destination; omission preserves ordinary Page feed publishing. */
 export type FacebookReelOptions = {
@@ -430,6 +439,7 @@ export type SocialJob = {
     tiktok?: TikTokVideoOptions;
     snapchat?: SnapchatPublishOptions;
     facebook?: FacebookReelOptions;
+    linkedinFormat?: LinkedInPostFormat;
     reddit?: RedditPayload;
     x?: XPostExtras;
     whatsapp?: { template?: WhatsAppTemplateMessage; interactive?: WhatsAppInteractive };

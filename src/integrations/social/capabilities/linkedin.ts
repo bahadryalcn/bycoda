@@ -16,8 +16,7 @@ export function linkedinCapabilities(type: SocialAccount["accountType"]): Platfo
     ),
     media: r(
       [org ? "w_organization_social" : "w_member_social"],
-      "One to four owner-uploaded organization images with alternative text and Images API readiness verification, or one organization PDF through the Documents API (endpoint shape not verified live). Member media and video are not implemented in the API adapter; organization video needs part ETags the shared HTTP client does not return.",
-      !org,
+      "Up to four uploaded images, one PDF document or one multipart MP4 video through the versioned API.",
     ),
     "comments.read": r(
       [org ? "r_organization_social_feed" : "r_member_social_feed"],

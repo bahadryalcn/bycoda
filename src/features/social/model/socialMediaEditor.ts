@@ -168,7 +168,9 @@ export async function uploadForSocialEditor(
   const version = editor.version();
   const upload = file.type.startsWith("video/")
     ? await client.uploadVideo(file, progress)
-    : await client.upload(file);
+    : file.type === "application/pdf"
+      ? await client.uploadDocument(file)
+      : await client.upload(file);
   if (editor.isClosed() || editor.version() !== version)
     throw new Error("Social media editor changed.");
   await editor.adoptUpload(upload);

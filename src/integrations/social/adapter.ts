@@ -6,11 +6,19 @@ import type {
   Capability,
   SocialMedia,
   SocialOperation,
+  SocialPermission,
 } from "../../features/social/model/social";
 import type { CaptureSource, CollectedPerson } from "./audience-types";
+// LinkedIn operations.
+import type {
+  LinkedInAnalyticsQuery,
+  LinkedInAnalyticsResult,
+} from "./adapters/linkedin-analytics";
+import type { LinkedInManagementAction } from "./adapters/linkedin-manage";
+// End LinkedIn operations.
 import { META_RATE_LIMIT_CODES } from "./meta-codes";
 
-export type { Capability, SocialAccount, SocialJob, SocialMedia, SocialOperation };
+export type { Capability, SocialAccount, SocialJob, SocialMedia, SocialOperation, SocialPermission };
 
 /** WhatsApp Cloud API throughput codes on graph.facebook.com. Unverified: from general knowledge, not re-checked live. */
 const WHATSAPP_RATE_LIMIT_CODES: readonly number[] = [80007, 130429, 131056];
@@ -92,6 +100,19 @@ export type SocialOwnedPostPage = (after?: string) => Promise<{
   next?: string;
 }>;
 export interface SocialAdapter {
+  // LinkedIn operations.
+  linkedinAnalytics?(
+    account: SocialAccount,
+    token: string,
+    query: LinkedInAnalyticsQuery,
+  ): Promise<LinkedInAnalyticsResult>;
+  linkedinManage?(
+    account: SocialAccount,
+    token: string,
+    action: LinkedInManagementAction,
+    beforeSubmit: () => Promise<void>,
+  ): Promise<SocialSendResult>;
+  // End LinkedIn operations.
   /** Fetch bounded owned-publication pages only when the pending scan drains. */
   ownedPostPages?: true;
   creatorInfo?(
@@ -487,11 +508,12 @@ export class SocialHttp {
   /** Returns the part ETag, which a multipart upload needs for its finalize call. */
   async uploadLinkedInImage(
     url: string,
-    token: string,
+    token: string | undefined,
     bytes: Uint8Array,
   ): Promise<{ etag?: string }> {
-    const parsed = new URL(url);
+    const parsed = URL.parse(url);
     if (
+      !parsed ||
       parsed.protocol !== "https:" ||
       parsed.hostname !== "www.linkedin.com" ||
       parsed.port ||
@@ -505,7 +527,7 @@ export class SocialHttp {
       response = await this.fetcher(url, {
         method: "PUT",
         headers: {
-          Authorization: `Bearer ${token}`,
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
           "Content-Type": "application/octet-stream",
         },
         body: new Uint8Array(bytes),

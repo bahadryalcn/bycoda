@@ -11,7 +11,7 @@ describe("LinkedIn capability map", () => {
     expect(org.media.unsupported).toBeFalsy();
     expect(org["audience.collect"].unsupported).toBeFalsy();
     expect(member.publish.unsupported).toBeFalsy();
-    expect(member.media.unsupported).toBe(true);
+    expect(member.media.unsupported).toBeFalsy();
     expect(member["audience.collect"].unsupported).toBe(true);
   });
 

@@ -1,4 +1,5 @@
 import type {
+  LinkedInPostFormat,
   SocialCampaign,
   SocialMedia,
   TikTokVideoOptions,
@@ -26,6 +27,7 @@ export type PlatformDraft = {
   tiktok?: Partial<Omit<TikTokVideoOptions, "durationSeconds">>;
   youtube?: Partial<YouTubeVideoOptions>;
   facebook?: FacebookDraft;
+  linkedinFormat?: LinkedInPostFormat;
   /** Kept in the draft for review; the Host has no Reddit variant field yet (see contentRules). */
   reddit?: RedditDraft;
 };
@@ -134,6 +136,7 @@ export function draftFromCampaign(campaign: SocialCampaign): ContentDraft {
     if (variant.tiktok) entry.tiktok = withoutDuration(variant.tiktok);
     if (variant.facebook)
       entry.facebook = { target: "reel", frameRate: variant.facebook.frameRate };
+    if (variant.linkedinFormat) entry.linkedinFormat = structuredClone(variant.linkedinFormat);
     platform[variant.accountId] = entry;
   }
   // The media is one file shared by every variant, so its size and length come from whichever

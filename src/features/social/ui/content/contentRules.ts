@@ -218,7 +218,15 @@ export function draftProblems(input: RuleInput): Problem[] {
   const { draft, now } = input;
   const problems: Problem[] = [];
   if (!input.projectId) problems.push({ text: t("Choose a project first.") });
-  if (!draft.text.trim() && !draft.media.length)
+  const accounts = selectedAccounts(draft, input.accounts);
+  if (
+    !draft.text.trim() &&
+    !draft.media.length &&
+    (!accounts.length ||
+      accounts.some(
+        (account) => account.platform !== "linkedin" || !draft.platform[account.id]?.linkedinFormat,
+      ))
+  )
     problems.push({ text: t("Write the post or attach media.") });
   if (!draft.accountIds.length) problems.push({ text: t("Choose at least one account.") });
   const link = draft.link.trim();
@@ -243,7 +251,7 @@ export function draftProblems(input: RuleInput): Problem[] {
         accountId: id,
       });
   }
-  for (const account of selectedAccounts(draft, input.accounts)) {
+  for (const account of accounts) {
     const name = accountLabel(account);
     const add = (text: string) =>
       problems.push({ text: `${name}: ${text}`, accountId: account.id });
@@ -257,7 +265,33 @@ export function draftProblems(input: RuleInput): Problem[] {
     if (limit !== undefined && count > limit)
       add(t("Content for this account can be at most {p0} characters.", { p0: limit }));
     for (const text of mediaProblems(account.platform, draft.media)) add(text);
+    if (draft.media.some((item) => item.media.kind === "document")) {
+      if (account.platform !== "linkedin") add(t("PDF documents require a LinkedIn account."));
+      else if (draft.media.length !== 1) add(t("Attach one PDF document by itself."));
+      else if (!draft.media[0]?.media.title?.trim()) add(t("Enter a document title."));
+    }
     const platform = draft.platform[account.id];
+    if (account.platform === "linkedin") {
+      const format = platform?.linkedinFormat;
+      if (format && (link || (format.kind === "poll" && draft.media.length)))
+        add(t("Remove attachments and the separate link for this LinkedIn format."));
+      if (format?.kind === "poll") {
+        const options = format.options.map((option) => option.trim()).filter(Boolean);
+        if (
+          !format.question.trim() ||
+          options.length < 2 ||
+          new Set(options.map((option) => option.toLowerCase())).size !== options.length
+        )
+          add(t("Enter a poll question and two to four distinct options."));
+      }
+      if (format?.kind === "article") {
+        if (!isHttpUrl(format.source) || !format.source.trim().startsWith("https://"))
+          add(t("Enter a link that starts with https://."));
+        if (!format.title.trim()) add(t("Enter a title."));
+        if (draft.media.length > 1 || draft.media.some((item) => item.media.kind !== "image"))
+          add(t("Attach one image for the article thumbnail."));
+      }
+    }
     if (account.platform === "facebook")
       for (const text of reelProblems(platform?.facebook, draft.media)) add(text);
     if (account.platform === "tiktok")
@@ -329,6 +363,22 @@ export function buildVariants(input: RuleInput): CampaignVariant[] {
         height: probe?.height ?? 0,
         frameRate: platform.facebook.frameRate ?? 0,
       };
+    }
+    if (account.platform === "linkedin" && account.connection === "oauth") {
+      const format = platform?.linkedinFormat;
+      if (format?.kind === "poll")
+        variant.linkedinFormat = {
+          ...format,
+          question: format.question.trim(),
+          options: format.options.map((option) => option.trim()).filter(Boolean),
+        };
+      if (format?.kind === "article")
+        variant.linkedinFormat = {
+          kind: format.kind,
+          source: format.source.trim(),
+          title: format.title.trim(),
+          ...(format.description?.trim() ? { description: format.description.trim() } : {}),
+        };
     }
     return variant;
   });
