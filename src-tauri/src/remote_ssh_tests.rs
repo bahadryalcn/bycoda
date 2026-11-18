@@ -240,7 +240,7 @@ fn loopback_transport_preserves_host_and_reconnects() {
     assert_eq!(output.trim(), "remote-script-ok");
     let environment = required("BYCODA_TEST_ENVIRONMENT");
     for _ in 0..2 {
-        let tunnel = Tunnel::start_with_command(&target, None, None, make_command()).unwrap();
+        let tunnel = Tunnel::start_with_command(&target, None, None, make_command(), None).unwrap();
         let response = ureq::post(&format!("http://127.0.0.1:{}/rpc", tunnel.port))
             .set(
                 "Authorization",
@@ -421,6 +421,159 @@ fn a_slot_held_by_a_tunnel_start_reads_as_busy_without_waiting() {
     );
     release_tx.send(()).unwrap();
     holder.join().unwrap();
+}
+
+#[test]
+fn reconnect_does_not_queue_requests_or_publish_to_a_replaced_machine_slot() {
+    let tunnels = Tunnels::default();
+    let target = SshTarget {
+        target: "fixture@host".into(),
+        port: None,
+        remote_port: 3774,
+        alternate: None,
+        host_key_alias: None,
+        identity_file: None,
+    };
+    let result = tunnels.endpoint_with("m", "old-env", &target, true, |_, _| {
+        for allow_connect in [true, false] {
+            let error = tunnels
+                .endpoint("m", "old-env", &target, allow_connect)
+                .err()
+                .unwrap();
+            assert!(error.contains("in progress"));
+        }
+        tunnels.forget_failure("m");
+        tunnels.remove("m");
+        tunnels.insert(
+            "m".into(),
+            "new-env",
+            Tunnel::adopt(long_lived_child(), 4321),
+        );
+        Ok(Tunnel::adopt(long_lived_child(), 4322))
+    });
+    assert!(result.err().unwrap().contains("changed during reconnect"));
+    let lease = tunnels.endpoint("m", "new-env", &target, false).unwrap();
+    assert_eq!(lease.endpoint, "http://127.0.0.1:4321");
+    assert!(tunnels.is_current("m", &lease));
+}
+
+#[test]
+fn reconnect_preserves_failure_cooldown_and_explicit_retry() {
+    let tunnels = Tunnels::default();
+    let target = SshTarget {
+        target: "fixture@host".into(),
+        port: None,
+        remote_port: 3774,
+        alternate: None,
+        host_key_alias: None,
+        identity_file: None,
+    };
+    let first = tunnels.endpoint_with("m", "env", &target, true, |_, _| Err(SSH_TIMEOUT.into()));
+    assert_eq!(first.err().as_deref(), Some(SSH_TIMEOUT));
+    let cached = tunnels.endpoint_with("m", "env", &target, true, |_, _| {
+        panic!("a recent failure should be cached")
+    });
+    assert_eq!(cached.err().as_deref(), Some(SSH_TIMEOUT));
+    tunnels.forget_failure("m");
+    let retried = tunnels
+        .endpoint_with("m", "env", &target, true, |_, _| {
+            Ok(Tunnel::adopt(long_lived_child(), 4321))
+        })
+        .unwrap();
+    assert!(tunnels.is_current("m", &retried));
+}
+
+#[test]
+fn reconnect_tries_another_route_only_while_the_original_budget_remains() {
+    let primary = SshTarget {
+        target: "fixture@primary".into(),
+        port: None,
+        remote_port: 3774,
+        alternate: None,
+        host_key_alias: None,
+        identity_file: None,
+    };
+    let alternate = SshTarget {
+        target: "fixture@alternate".into(),
+        ..primary.clone()
+    };
+    let dials = vec![primary.clone(), alternate.clone()];
+    let result = Tunnel::start_dials(
+        &primary,
+        None,
+        dials.clone(),
+        Some(Instant::now() + Duration::from_secs(5)),
+        |dial| {
+            if dial == &primary {
+                return Err("first dial failed".into());
+            }
+            Ok(Tunnel::adopt(long_lived_child(), 4321))
+        },
+    )
+    .unwrap();
+    assert_eq!(result.target.as_ref(), Some(&primary));
+    assert_eq!(result.dialed.as_ref(), Some(&alternate));
+
+    let deadline = Instant::now() + Duration::from_millis(200);
+    let expired = Tunnel::start_dials(&primary, None, dials, Some(deadline), |dial| {
+        assert_eq!(dial, &primary);
+        while Instant::now() < deadline {
+            std::thread::sleep(deadline.saturating_duration_since(Instant::now()));
+        }
+        Err(SSH_TIMEOUT.into())
+    });
+    assert_eq!(expired.err().as_deref(), Some(SSH_TIMEOUT));
+
+    // A process that never opens the forward must also honor the given deadline.
+    #[cfg(windows)]
+    let mut command = {
+        let mut command = Command::new("cmd");
+        command.args(["/C", "ping -n 30 127.0.0.1 >nul & rem"]);
+        command
+    };
+    #[cfg(not(windows))]
+    let mut command = {
+        let mut command = Command::new("sh");
+        command.args(["-c", "exec sleep 30"]);
+        command
+    };
+    crate::hide_window_console(&mut command);
+    let started = Instant::now();
+    let result = Tunnel::start_with_command(
+        &primary,
+        None,
+        None,
+        command,
+        Some(started + Duration::from_millis(500)),
+    );
+    assert_eq!(result.err().as_deref(), Some(SSH_TIMEOUT));
+    assert!(started.elapsed() < Duration::from_secs(10));
+}
+
+#[test]
+fn reconnect_skips_silent_routes_but_keeps_unknown_routes_and_one_last_resort() {
+    let primary = SshTarget {
+        target: "fixture@primary".into(),
+        port: None,
+        remote_port: 3774,
+        alternate: None,
+        host_key_alias: None,
+        identity_file: None,
+    };
+    let alternate = SshTarget {
+        target: "fixture@alternate".into(),
+        ..primary.clone()
+    };
+    let learned = SshTarget {
+        target: "fixture@learned".into(),
+        ..primary.clone()
+    };
+    let dials = vec![primary.clone(), alternate.clone(), learned.clone()];
+    assert_eq!(
+        rank_dials(dials.clone(), vec![Some(false), None, Some(true)], true),
+        vec![learned, alternate]
+    );
+    assert_eq!(rank_dials(dials, vec![Some(false); 3], true), vec![primary]);
 }
 #[test]
 fn a_tunnel_dropped_after_its_ssh_died_still_reports_the_exit() {
@@ -710,10 +863,16 @@ fn the_other_address_is_checked_like_the_first() {
 fn tcp_reachability_and_failure_tags() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
-    assert!(tcp_reachable("127.0.0.1", port, Duration::from_secs(2)));
+    assert_eq!(
+        tcp_reachable("127.0.0.1", port, Duration::from_secs(2), None),
+        Some(true)
+    );
     // A released ephemeral port can be reused by another parallel test.
     // Port zero never has a listener, so the negative dial is deterministic.
-    assert!(!tcp_reachable("127.0.0.1", 0, Duration::from_secs(2)));
+    assert_eq!(
+        tcp_reachable("127.0.0.1", 0, Duration::from_secs(2), None),
+        Some(false)
+    );
     assert_eq!(
         failure_tag(Some(255), Some(true)),
         " (exit 255, host reachable)"
