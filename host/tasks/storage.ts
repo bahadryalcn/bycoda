@@ -43,6 +43,9 @@ export async function assistantFollowupsChanged(context: TaskContext): Promise<v
     await context.store.db
       .prepare("UPDATE task_cache_revision SET version=version+1 WHERE id=1")
       .run();
+    await context.store.db
+      .prepare("UPDATE task_change_stamp SET assistant_stamp=hex(randomblob(16)) WHERE id=1")
+      .run();
     context.store.afterCommit(() => context.onChange?.());
   }, "critical");
 }
@@ -51,31 +54,23 @@ export async function changeEtag(context: TaskContext): Promise<string> {
   await context.ready;
 
   return await context.store.db.scope(async () => {
-    const revision = await context.revisionCounter();
-    if (context.etagCache?.revision === revision && context.etagCache.sourceStamp === "none")
-      return context.etagCache.etag;
-    const sourceStamp = await assistantTaskMetadataSourceStamp(
-      context.store,
-      await context.list(undefined, false),
-    );
-    if (context.etagCache?.revision === revision && context.etagCache.sourceStamp === sourceStamp)
-      return context.etagCache.etag;
-    const summaries = (await context.list()).map((task) => ({
-      id: task.id,
-      status: task.status,
-      updatedAt: task.updatedAt,
-      sessionId: task.sessionId,
-      runId: task.runId,
-      usageStamp: task.budgetUsage?.measuredAt,
-      assistantFollowups: task.assistantFollowups,
-      evaluation: task.evaluation,
-      error: typeof task.error === "string" ? task.error.slice(0, 512) : undefined,
-    }));
-    const etag = createHash("sha256").update(JSON.stringify(summaries)).digest("base64url");
-    // list() may itself backfill review notes, which bumps the revision.
-    if (!context.store.transactionActive)
-      context.etagCache = { revision: await context.revisionCounter(), sourceStamp, etag };
-    return etag;
+    const { stamp, assistant_stamp, assistant_goals } = (await context.store.db
+      .prepare(`
+      SELECT stamp, assistant_stamp, (
+        SELECT json_group_array(goal_id) FROM (
+          SELECT DISTINCT json_extract(value, '$.goalId') AS goal_id FROM tasks
+          WHERE json_extract(value, '$.goalId') GLOB 'assistant-*'
+            AND json_extract(value, '$.sessionId') <> ''
+        )
+      ) AS assistant_goals FROM task_change_stamp WHERE id=1
+    `)
+      .get())!;
+    const goalIds = JSON.parse(assistant_goals) as string[];
+    if (!goalIds.length) return stamp;
+    const sourceStamp = await assistantTaskMetadataSourceStamp(context.store, goalIds);
+    return createHash("sha256")
+      .update(JSON.stringify([stamp, assistant_stamp, sourceStamp]))
+      .digest("base64url");
   });
 }
 
@@ -220,7 +215,14 @@ export async function list(
   });
   if (!includeAssistantMetadata || context.store.transactionActive) return result;
   const revision = await context.store.db.scope(() => context.revisionCounter());
-  const sourceStamp = await assistantTaskMetadataSourceStamp(context.store, result);
+  const assistantGoalIds = [
+    ...new Set(
+      result.flatMap((task) =>
+        task.goalId?.startsWith("assistant-") && task.sessionId ? [task.goalId] : [],
+      ),
+    ),
+  ];
+  const sourceStamp = await assistantTaskMetadataSourceStamp(context.store, assistantGoalIds);
   const metadata = context.assistantMetadataCache.get(projectId);
   if (
     entryRevision === revision &&
@@ -233,7 +235,7 @@ export async function list(
     !context.store.transactionActive &&
     entryRevision === revision &&
     revision === (await context.store.db.scope(() => context.revisionCounter())) &&
-    sourceStamp === (await assistantTaskMetadataSourceStamp(context.store, result))
+    sourceStamp === (await assistantTaskMetadataSourceStamp(context.store, assistantGoalIds))
   ) {
     if (context.assistantMetadataCache.size >= 32) context.assistantMetadataCache.clear();
     context.assistantMetadataCache.set(projectId, { revision, sourceStamp, tasks: projected });

@@ -43,7 +43,6 @@ import type { TaskContext } from "./context";
 import type { ConversationDelegation } from "../delegation/service";
 import type {
   TaskAssistantMetadataCache,
-  TaskEtagCache,
   TaskListCache,
   TaskPointIndex,
   TaskProjectListCache,
@@ -362,8 +361,6 @@ export class HostTasks {
 
   /** Published only for an actual committed removal, never a failed/absent delete. */
   onDelete?: (task: { id: string; projectId: string }) => void;
-
-  protected etagCache?: TaskEtagCache;
 
   protected listCache?: TaskListCache;
 

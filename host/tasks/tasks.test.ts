@@ -58,6 +58,7 @@ it("refreshes read-only assistant follow-up metadata and board ETags without rew
     .value;
   const etag = await f.tasks.changeEtag(),
     revision = await f.tasks.revision();
+  await f.tasks.list();
   const projection = vi.spyOn(assistantTaskMetadata, "withAssistantTaskMetadata");
   await f.tasks.list();
   await f.tasks.list();
@@ -78,9 +79,10 @@ it("refreshes read-only assistant follow-up metadata and board ETags without rew
   await f.tasks.assistantFollowupsChanged();
   expect(changed).toHaveBeenCalledOnce();
   expect(await f.tasks.revision()).toBeGreaterThan(revision);
-  expect(await f.tasks.changeEtag()).not.toBe(etag);
-  expect((await f.tasks.list())[0].assistantFollowups).toEqual({ delivered: 1, unconfirmed: 0 });
   const deliveredEtag = await f.tasks.changeEtag();
+  expect(deliveredEtag).not.toBe(etag);
+  expect(projection).not.toHaveBeenCalled();
+  expect((await f.tasks.list())[0].assistantFollowups).toEqual({ delivered: 1, unconfirmed: 0 });
   expect(projection).toHaveBeenCalledOnce();
   projection.mockRestore();
   // Canonical source membership can change without touching a task or receipt.
@@ -89,13 +91,15 @@ it("refreshes read-only assistant follow-up metadata and board ETags without rew
       "UPDATE goals SET value=json_set(value,'$.taskIds',json('[]')) WHERE id='assistant-job'",
     )
     .run();
-  expect((await f.tasks.list())[0].assistantFollowups).toBeUndefined();
   expect(await f.tasks.changeEtag()).not.toBe(deliveredEtag);
+  expect((await f.tasks.list())[0].assistantFollowups).toBeUndefined();
   await f.store.db
     .prepare("UPDATE goals SET value=json_set(value,'$.taskIds',json(?)) WHERE id='assistant-job'")
     .run(JSON.stringify([task.id]));
   expect((await f.tasks.list())[0].assistantFollowups?.delivered).toBe(1);
+  expect(await f.tasks.changeEtag()).toBe(deliveredEtag);
   await f.store.db.prepare("UPDATE assistant_jobs SET deleted_at=1 WHERE id='job'").run();
+  expect(await f.tasks.changeEtag()).not.toBe(deliveredEtag);
   expect((await f.tasks.list())[0].assistantFollowups).toBeUndefined();
   expect((await f.store.db.prepare("SELECT value FROM tasks WHERE id=?").get(task.id))!.value).toBe(
     original,
@@ -1832,23 +1836,45 @@ describe("host tasks", () => {
       "Project is not registered on this machine",
     );
   });
-  it("recomputes the change etag only after a task is written or removed", async () => {
-    const { tasks, input, clock, store } = await setup();
+  it("reads task change etags without listing tasks, even after a write", async () => {
+    const { tasks, input, store } = await setup();
+    const task = await tasks.save(input());
+    const list = vi.spyOn(tasks, "list");
+    const projection = vi.spyOn(assistantTaskMetadata, "withAssistantTaskMetadata");
+    const initial = await tasks.changeEtag();
+    expect(await tasks.changeEtag()).toBe(initial);
+
+    await store.db
+      .prepare("UPDATE tasks SET value=json_set(value, '$.budgetUsage.measuredAt', ?) WHERE id=?")
+      .run(task.budgetUsage!.measuredAt + 1, task.id);
+    expect(await tasks.changeEtag()).toBe(initial);
+
+    await store.db
+      .prepare("UPDATE tasks SET value=json_set(value, '$.budgetUsage.agentMinutes', 1) WHERE id=?")
+      .run(task.id);
+    const budget = await tasks.changeEtag();
+    expect(budget).not.toBe(initial);
+
+    await store.db
+      .prepare("UPDATE tasks SET value=json_set(value, '$.status', 'blocked') WHERE id=?")
+      .run(task.id);
+    const blocked = await tasks.changeEtag();
+    expect(blocked).not.toBe(budget);
+
+    await store.db.prepare("DELETE FROM tasks WHERE id=?").run(task.id);
+    expect(await tasks.changeEtag()).not.toBe(blocked);
+    expect(list).not.toHaveBeenCalled();
+    expect(projection).not.toHaveBeenCalled();
+    list.mockRestore();
+    projection.mockRestore();
+  });
+  it("changes the task etag after inserting another task", async () => {
+    const { tasks, input } = await setup();
     const empty = await tasks.changeEtag();
-    const revision = tasks.revision;
     expect(await tasks.changeEtag()).toBe(empty);
-    expect(tasks.revision).toBe(revision);
     await tasks.save(input());
     const one = await tasks.changeEtag();
     expect(one).not.toBe(empty);
-    // Unchanged rows are not parsed again while polling.
-    const prepare = vi.spyOn(store.db, "prepare");
-    expect(await tasks.changeEtag()).toBe(one);
-    expect(prepare.mock.calls.map(([sql]) => sql)).toEqual([
-      "SELECT version FROM task_cache_revision WHERE id=1",
-    ]);
-    prepare.mockRestore();
-    clock.now += 1;
     await tasks.save(input({ id: "second" }));
     expect(await tasks.changeEtag()).not.toBe(one);
   });

@@ -73,7 +73,6 @@ export interface TaskContext {
   revisionCounter: HostTasks["revisionCounter"];
   onChange: HostTasks["onChange"];
   onDelete: HostTasks["onDelete"];
-  etagCache: HostTasks["etagCache"];
   listCache: HostTasks["listCache"];
   projectListCache: HostTasks["projectListCache"];
   assistantMetadataCache: HostTasks["assistantMetadataCache"];
