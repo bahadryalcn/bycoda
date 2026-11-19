@@ -10,8 +10,6 @@ import { validateSessionConversationTool } from "../conversation/conversation-to
 const totals = {
   diamonds: 50,
   gifts: 1,
-  comments: 0,
-  likes: 0,
   comments: 2,
   likes: 3,
   follows: 0,

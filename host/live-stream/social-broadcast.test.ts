@@ -166,7 +166,7 @@ it("requires exact approval and current Social permission before provisioning", 
 
 it("uses a stable reason for missing credentials and does not leak an OBS error", async () => {
   const { broadcast, social, obs } = await fixture();
-  const input = { accountId: account.accountId };
+  const input = { accountId: account.accountId, scene: "Studio" };
   social.prepare.mockRejectedValueOnce(new SocialLiveError("LIVE_MISSING_CREDENTIALS"));
   await expect(broadcast.start(input, undefined, allow)).resolves.toMatchObject({
     reason: "LIVE_CREDENTIALS_MISSING",
@@ -223,7 +223,7 @@ it("requires owner reconciliation after an ambiguous provider create without a r
     await guard?.();
     throw new SocialLiveError("LIVE_PLATFORM_UNCERTAIN");
   });
-  const input = { accountId: account.accountId };
+  const input = { accountId: account.accountId, scene: "Studio" };
   await expect(broadcast.start(input, undefined, allow)).resolves.toMatchObject({
     state: "uncertain",
     canStop: true,
