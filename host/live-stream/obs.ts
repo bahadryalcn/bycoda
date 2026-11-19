@@ -261,7 +261,14 @@ export class LiveStreamObs {
     return this.withObs(async (client) => {
       const { outputActive, outputReconnecting } = await client.call("GetStreamStatus");
       if (outputActive || outputReconnecting) return false;
-      await client.call("SetStreamServiceSettings", previous.data);
+      // OBS rejects empty settings (403), and an owner who never set a service has none:
+      // clearing to a blank custom server still removes the managed key.
+      await client.call(
+        "SetStreamServiceSettings",
+        Object.keys(previous.data.streamServiceSettings).length
+          ? previous.data
+          : { streamServiceType: "rtmp_custom", streamServiceSettings: { server: "", key: "" } },
+      );
       await this.secrets.delete(PREVIOUS_DESTINATION);
       return true;
     }).catch(() => false);

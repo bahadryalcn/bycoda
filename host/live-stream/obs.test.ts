@@ -102,6 +102,20 @@ it("keeps the owner's OBS stream service only in the credential store and restor
   expect(await obs.restoreDestination()).toBe(true);
 });
 
+it("clears the managed key when the owner never set a stream service", async () => {
+  // Real OBS 33 reports `{}` settings for an unset service and rejects them on write (403).
+  settings = { streamServiceType: "rtmp_common", streamServiceSettings: {} };
+  const { obs, store } = create();
+  await obs.startSocial("rtmps://ingest.example/live", "managed-key", "Studio", noop, noop);
+  streaming = false;
+  expect(await obs.restoreDestination()).toBe(true);
+  expect(settings).toEqual({
+    streamServiceType: "rtmp_custom",
+    streamServiceSettings: { server: "", key: "" },
+  });
+  expect(store.has("live-stream-obs-previous-destination")).toBe(false);
+});
+
 it("drops the snapshot when the owner saves a manual destination", async () => {
   const { obs, store } = create();
   await obs.startSocial("rtmps://ingest.example/live", "managed-key", "Studio", noop, noop);
