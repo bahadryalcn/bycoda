@@ -5,8 +5,8 @@ function fixture() {
   const worker = {
     postMessage: vi.fn(),
     terminate: vi.fn(),
-    onmessage: null as Worker["onmessage"],
-    onerror: null as Worker["onerror"],
+    onmessage: null as ((event: MessageEvent) => void) | null,
+    onerror: null as ((event: ErrorEvent) => void) | null,
   };
   const queue = new MarkdownParseQueue(() => worker);
   const complete = (blocks: string[]) =>
@@ -78,8 +78,8 @@ it("isolates a slow parse: only that reply falls back, siblings continue in orde
     const makeWorker = () => ({
       postMessage: vi.fn(),
       terminate: vi.fn(),
-      onmessage: null as Worker["onmessage"],
-      onerror: null as Worker["onerror"],
+      onmessage: null as ((event: MessageEvent) => void) | null,
+      onerror: null as ((event: ErrorEvent) => void) | null,
     });
     const queue = new MarkdownParseQueue(() => {
       const worker = makeWorker();

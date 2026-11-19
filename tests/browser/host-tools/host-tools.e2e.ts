@@ -956,7 +956,9 @@ for (const locale of ["en", "tr"]) {
               exact: true,
             })
             .click();
-          await expect(page.getByText(locale === "en" ? "2.4%" : "%2,4", { exact: true })).toBeVisible();
+          await expect(
+            page.getByText(locale === "en" ? "2.4%" : "%2,4", { exact: true }),
+          ).toBeVisible();
         }
         expect(
           await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),

@@ -121,12 +121,14 @@ function Expand-Archive([string] $LiteralPath, [string] $DestinationPath) {
   };
 }
 
-it.skipIf(!windows)("promotes a complete runtime after its staged node.exe is unlocked", async () => {
-  const staged = mkdtempSync(join(directory, "promotion-"));
-  const destination = `${staged}-ready`;
-  writeFileSync(join(staged, "host.mjs"), "fixture entry");
-  writeFileSync(join(staged, "node.exe"), "fixture engine");
-  await run(`
+it.skipIf(!windows)(
+  "promotes a complete runtime after its staged node.exe is unlocked",
+  async () => {
+    const staged = mkdtempSync(join(directory, "promotion-"));
+    const destination = `${staged}-ready`;
+    writeFileSync(join(staged, "host.mjs"), "fixture entry");
+    writeFileSync(join(staged, "node.exe"), "fixture engine");
+    await run(`
 $ErrorActionPreference = 'Stop'
 $script = [IO.File]::ReadAllText('src-tauri/src/remote_bootstrap.ps1').Replace('@@VERSION@@', "'test'").Replace('@@RELEASE@@', "''").Replace('@@ACL@@', '')
 $ast = [Management.Automation.Language.Parser]::ParseInput($script, [ref] $null, [ref] $null)
@@ -146,10 +148,11 @@ try {
   if ($null -ne $script:engineLock) { $script:engineLock.Dispose() }
 }
 `);
-  expect(existsSync(staged)).toBe(false);
-  expect(readFileSync(join(destination, "host.mjs"), "utf8")).toBe("fixture entry");
-  expect(readFileSync(join(destination, "node.exe"), "utf8")).toBe("fixture engine");
-});
+    expect(existsSync(staged)).toBe(false);
+    expect(readFileSync(join(destination, "host.mjs"), "utf8")).toBe("fixture entry");
+    expect(readFileSync(join(destination, "node.exe"), "utf8")).toBe("fixture engine");
+  },
+);
 
 it.skipIf(!shell)(
   "runs the PowerShell installer, verifies its package, and reuses the installed runtime",

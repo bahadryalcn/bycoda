@@ -1,16 +1,23 @@
 // @vitest-environment happy-dom
-import { act, createElement } from "react";
+import { act, createElement, type ComponentType, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { handleEditorFindKey } from "../editor/editorSearch";
 import {
-  FilePreviewSearch,
+  FilePreviewSearch as FilePreviewSearchComponent,
   findPreviewTextMatches,
   openFindInActiveFilePreview,
 } from "./FilePreviewSearch";
 import { saveKeybindingOverride } from "../../settings/model/settings";
 import { evaluatePreviewSearch } from "./previewSearchEvaluation";
 import { Worker as NodeWorker } from "node:worker_threads";
+
+// createElement passes the preview as its third argument, which the required `children` prop rejects.
+const FilePreviewSearch = FilePreviewSearchComponent as ComponentType<{
+  active: boolean;
+  contentVersion: string;
+  children?: ReactNode;
+}>;
 
 // These tests mount real React trees and worker threads. Under the parallel suite the default
 // 5s budget is not enough, so give the whole file the same 20s the Notes view uses.

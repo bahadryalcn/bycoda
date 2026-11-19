@@ -61,7 +61,13 @@ it("lifts a popover inside a toast-layer viewport sheet above it without a manua
   await render(
     createElement(
       Sheet,
-      { modal: false, layer: LAYER.toast, title: "Notifications", onClose: vi.fn() },
+      {
+        modal: false,
+        layer: LAYER.toast,
+        title: "Notifications",
+        onClose: vi.fn(),
+        children: null,
+      },
       createElement(Popover, { anchor }, "Options"),
     ),
   );
@@ -72,7 +78,7 @@ it("lifts a popover inside a default-layer viewport sheet above the dialog layer
   await render(
     createElement(
       Sheet,
-      { modal: false, title: "Panel", onClose: vi.fn() },
+      { modal: false, title: "Panel", onClose: vi.fn(), children: null },
       createElement(Popover, { anchor }, "Menu"),
     ),
   );
@@ -83,7 +89,7 @@ it("leaves a viewport sheet at the popover layer on the inherited floor", async 
   await render(
     createElement(
       Sheet,
-      { modal: false, layer: LAYER.popover, title: "Panel", onClose: vi.fn() },
+      { modal: false, layer: LAYER.popover, title: "Panel", onClose: vi.fn(), children: null },
       createElement(Popover, { anchor }, "Menu"),
     ),
   );

@@ -7,7 +7,7 @@ import { usePointerMovement } from "../../../shared/ui/picker/usePointerMovement
 import { Button } from "../../../shared/ui/Button";
 import { SelectTrigger } from "../../../shared/ui/Select";
 import { Tooltip } from "../../../shared/ui/Tooltip";
-import { formatShortcut, usePlatform } from "../../../shared/ui/shortcut";
+import { formatShortcutWith, usePlatform } from "../../../shared/ui/shortcut";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { clampActiveIndex } from "../../../shared/hooks/useKeyedActiveIndex";
 import { useLocale, useT } from "../../../shared/i18n";
@@ -775,7 +775,7 @@ export function ModelPicker({
 
   const Trigger = field ? SelectTrigger : Button;
   const platform = usePlatform();
-  const recentShortcut = formatShortcut(RECENT_MODELS_SHORTCUT, platform);
+  const recentShortcut = formatShortcutWith(RECENT_MODELS_SHORTCUT, platform, t);
 
   // The quick switch opens from the keyboard too: Alt+Down (the usual "open the list" chord)
   // and the context-menu keys, which also stand in for right-click on touch and keyboard.

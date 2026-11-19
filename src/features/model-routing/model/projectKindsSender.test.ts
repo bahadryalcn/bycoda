@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createProjectKindsSender, projectKindsSignature } from "./projectKindsSender";
+import type { ModelRoutingScope } from "../../../shared/model/host-contracts/model-routing";
 
 const RETRY = [100, 200] as const;
 
@@ -79,7 +80,7 @@ describe("createProjectKindsSender", () => {
   });
 
   it("never runs two writes at once and sends the newest map after the first settles", async () => {
-    let kinds: Record<string, string> = { "g:/a": "work" };
+    let kinds: Record<string, ModelRoutingScope> = { "g:/a": "work" };
     const first = deferred<boolean>();
     const sync = vi.fn().mockReturnValueOnce(first.promise).mockResolvedValue(true);
     const sender = createProjectKindsSender({
@@ -101,7 +102,7 @@ describe("createProjectKindsSender", () => {
   });
 
   it("does not let a stale success hide a changed map, nor resend an unchanged one", async () => {
-    let kinds: Record<string, string> = { "g:/a": "work" };
+    let kinds: Record<string, ModelRoutingScope> = { "g:/a": "work" };
     const first = deferred<boolean>();
     const sync = vi.fn().mockReturnValueOnce(first.promise).mockResolvedValue(true);
     const sender = createProjectKindsSender({ current: () => kinds, sync, retryDelaysMs: RETRY });

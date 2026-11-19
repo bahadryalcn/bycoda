@@ -58,6 +58,10 @@ export function formatCost(
   costUsd: number,
   format: Pick<BoundFormat, "formatNumber"> = { formatNumber },
 ): string {
+  return formatCostWith(costUsd, format);
+}
+
+export function formatCostWith(costUsd: number, format: Pick<BoundFormat, "formatNumber">): string {
   if (costUsd > 0 && costUsd < 0.01) return `<${format.formatNumber(0.01, USD)}`;
   return format.formatNumber(costUsd, USD);
 }

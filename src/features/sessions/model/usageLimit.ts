@@ -1,4 +1,5 @@
 import { formatDate, t } from "../../../shared/i18n/core";
+import type { BoundFormat } from "../../../shared/i18n/boundFormat";
 import { formatResetDuration } from "../../providers/model/rateLimits";
 import type { Session } from "./session";
 
@@ -19,6 +20,15 @@ export function usageLimitResetDelay(resetsAt: number, now: number): number | un
 
 /** "3:16 AM · in 4h 42m" today, "Sep 26, 3:16 AM · in 1d 4h" later. */
 export function formatUsageLimitReset(resetsAt: number, now: number): string {
+  return formatUsageLimitResetWith(resetsAt, now, t, { formatDate, formatResetDuration });
+}
+
+export function formatUsageLimitResetWith(
+  resetsAt: number,
+  now: number,
+  t: (message: string, values?: Record<string, unknown>) => string,
+  { formatDate, formatResetDuration }: Pick<BoundFormat, "formatDate" | "formatResetDuration">,
+): string {
   const reset = new Date(resetsAt);
   const sameDay = reset.toDateString() === new Date(now).toDateString();
   const when = formatDate(reset, {

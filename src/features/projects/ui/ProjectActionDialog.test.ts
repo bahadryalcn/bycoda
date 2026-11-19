@@ -44,7 +44,7 @@ async function mountDialog(props: { onClose?: () => void; onSave?: () => void } 
         actions: [],
         cwd: "C:/project",
         editing: true,
-        error: "",
+        error: null,
         onSave: props.onSave ?? vi.fn(),
         onClose: props.onClose ?? vi.fn(),
         onDelete: vi.fn(),

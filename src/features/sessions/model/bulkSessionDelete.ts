@@ -108,6 +108,13 @@ export function bulkDeleteNotice(
 
 /** Translated sentences for what a bulk delete left behind; null when nothing needs saying. */
 export function bulkDeleteNoticeText(notice: BulkDeleteNotice): string | null {
+  return bulkDeleteNoticeTextWith(notice, t);
+}
+
+export function bulkDeleteNoticeTextWith(
+  notice: BulkDeleteNotice,
+  t: (message: string, values?: Record<string, unknown>) => string,
+): string | null {
   if (notice.kind === "text") return notice.text;
   const parts: string[] = [];
   if (notice.deleted > 0) {

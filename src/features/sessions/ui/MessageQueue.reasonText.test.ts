@@ -57,7 +57,12 @@ it("shows how to recover a missing attachment as visible text", async () => {
 it("keeps a blocked Resume focusable with its reason", async () => {
   await act(async () =>
     root.render(
-      createElement(MessageQueue, { messages: [missing], status: "paused", onResume: () => true }),
+      createElement(MessageQueue, {
+        messages: [missing],
+        status: "paused",
+        onResume: () => true,
+        canAttach: false,
+      }),
     ),
   );
   const resume = [...container.querySelectorAll<HTMLButtonElement>("button")].find((node) =>

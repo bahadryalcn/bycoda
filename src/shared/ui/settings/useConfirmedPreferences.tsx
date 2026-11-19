@@ -1,5 +1,5 @@
 import { useRef, useState, type ReactNode } from "react";
-import { t } from "../../i18n";
+import { useT } from "../../i18n";
 import { SettingsFeedback } from "./SettingsRows";
 
 /** One requested preference value, as the owner's last click left it. */
@@ -20,6 +20,50 @@ type Lane = { running: boolean; queued: boolean; latest: ConfirmedPreferenceRequ
 const isPromise = (value: unknown): value is Promise<unknown> =>
   typeof (value as { then?: unknown } | null)?.then === "function";
 
+function settled(request: ConfirmedPreferenceRequest, written: unknown) {
+  try {
+    return written !== false && (request.verify?.() ?? true);
+  } catch {
+    return false;
+  }
+}
+
+async function drainLane(
+  lane: Lane,
+  setPending: (pending: boolean) => void,
+  setFailed: (failed: boolean) => void,
+) {
+  lane.running = true;
+  let showingPending = false;
+  try {
+    while (lane.queued) {
+      lane.queued = false;
+      const request = lane.latest;
+      let written: unknown = false;
+      try {
+        const result = request.write();
+        if (isPromise(result)) {
+          if (!showingPending) {
+            showingPending = true;
+            setPending(true);
+          }
+          written = await result;
+        } else written = result;
+      } catch {
+        written = false;
+      }
+      // A newer value is waiting, so only its outcome matters.
+      if (lane.queued) continue;
+      const ok = settled(request, written);
+      setFailed(!ok);
+      if (ok) request.onConfirmed?.();
+    }
+  } finally {
+    lane.running = false;
+    if (showingPending) setPending(false);
+  }
+}
+
 /**
  * Pending and failure feedback for settings that save when changed, one lane per setting id.
  *
@@ -33,6 +77,7 @@ const isPromise = (value: unknown): value is Promise<unknown> =>
  * Give each control `disabled={pending(id)}` so its displayed value cannot go stale while saving.
  */
 export function useConfirmedPreferences() {
+  const t = useT();
   const [pendingIds, setPendingIds] = useState<Record<string, boolean>>({});
   const [failedIds, setFailedIds] = useState<Record<string, boolean>>({});
   const lanes = useRef(new Map<string, Lane>());
@@ -46,46 +91,6 @@ export function useConfirmedPreferences() {
       return next;
     });
 
-  const settled = (request: ConfirmedPreferenceRequest, written: unknown) => {
-    try {
-      return written !== false && (request.verify?.() ?? true);
-    } catch {
-      return false;
-    }
-  };
-
-  const drain = async (id: string, lane: Lane) => {
-    lane.running = true;
-    let showingPending = false;
-    try {
-      while (lane.queued) {
-        lane.queued = false;
-        const request = lane.latest;
-        let written: unknown = false;
-        try {
-          const result = request.write();
-          if (isPromise(result)) {
-            if (!showingPending) {
-              showingPending = true;
-              flag(id, true, setPendingIds);
-            }
-            written = await result;
-          } else written = result;
-        } catch {
-          written = false;
-        }
-        // A newer value is waiting: only its outcome matters, so this one reports nothing.
-        if (lane.queued) continue;
-        const ok = settled(request, written);
-        flag(id, !ok, setFailedIds);
-        if (ok) request.onConfirmed?.();
-      }
-    } finally {
-      lane.running = false;
-      if (showingPending) flag(id, false, setPendingIds);
-    }
-  };
-
   const commit = (id: string, request: ConfirmedPreferenceRequest) => {
     let lane = lanes.current.get(id);
     if (!lane) {
@@ -94,7 +99,13 @@ export function useConfirmedPreferences() {
     }
     lane.latest = request;
     lane.queued = true;
-    if (!lane.running) void drain(id, lane).catch(console.error);
+    if (!lane.running) {
+      void drainLane(
+        lane,
+        (pending) => flag(id, pending, setPendingIds),
+        (failed) => flag(id, failed, setFailedIds),
+      ).catch(console.error);
+    }
   };
 
   const retry = (id: string) => {

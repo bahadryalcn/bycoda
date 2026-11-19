@@ -1010,7 +1010,6 @@ export const AgentMarkdown = memo(function AgentMarkdown({
     loadStreamingTextMode,
   );
   const adaptive = textMode === "adaptive";
-  const visible = usePresentationVisible();
   const reducedMotion = usePrefersReducedMotion();
   // Keep one hook order when preferences change during an active reply.
   const paced = usePacedText(text, !!streaming, revealOnMount, !adaptive);
@@ -1018,6 +1017,11 @@ export const AgentMarkdown = memo(function AgentMarkdown({
   useEffect(() => {
     setMountEntrance(false);
   }, []);
+  const fading = useWordFading(
+    !!streaming || paced.revealing || (adaptive && mountEntrance),
+    adaptive ? ADAPTIVE_FADE_MAX_MS : undefined,
+  );
+  const visible = usePresentationVisible(fading);
   const fadeRoot = useRef<HTMLDivElement>(null);
   const previousPresentation = useRef({ visible, textMode, reducedMotion });
   useLayoutEffect(() => {
@@ -1034,10 +1038,6 @@ export const AgentMarkdown = memo(function AgentMarkdown({
     previousPresentation.current = { visible, textMode, reducedMotion };
   }, [visible, textMode, reducedMotion]);
   useRenderTrace(text, paced.text, paced.revealing, streaming);
-  const fading = useWordFading(
-    !!streaming || paced.revealing || (adaptive && mountEntrance),
-    adaptive ? ADAPTIVE_FADE_MAX_MS : undefined,
-  );
   // Only the words still fading in, in the last block, carry a span (see
   // DirectionalBlock and useWordFadeWindow), and a word keeps its element until
   // its fade is over, since dropping one mid-fade would remount it and fade it

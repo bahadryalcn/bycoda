@@ -1007,6 +1007,14 @@ export function workSummaryLine(steps: Block[], live = false): string {
   if (live && steps.length > 0 && isRunningCompaction(steps[steps.length - 1])) {
     return compactingText();
   }
+  return summarizeWork(steps, live);
+}
+
+export function settledWorkSummaryLine(steps: Block[]): string {
+  return summarizeWork(steps, false);
+}
+
+function summarizeWork(steps: Block[], live: boolean): string {
   const appSummary = bycodaWorkSummary(steps, live);
   if (appSummary) return appSummary;
   const tally = tallySteps(steps);

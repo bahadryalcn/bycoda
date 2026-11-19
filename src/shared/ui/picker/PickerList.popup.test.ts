@@ -32,7 +32,7 @@ function optionsFor(expanded: boolean, onAction: () => void): PickerOption[] {
   ];
 }
 
-it("announces an action row that opens a popup as a listbox trigger linked to it", async () => {
+it("keeps an action row that opens a popup a plain option, not an invalid-ARIA trigger", async () => {
   const onAction = vi.fn();
   await act(async () =>
     root.render(
@@ -45,8 +45,9 @@ it("announces an action row that opens a popup as a listbox trigger linked to it
     ),
   );
   const row = container.querySelector<HTMLElement>("[data-picker-action]")!;
-  expect(row.getAttribute("aria-haspopup")).toBe("listbox");
-  expect(row.getAttribute("aria-expanded")).toBe("false");
+  // aria-haspopup/aria-expanded are not allowed on role="option"; the link is aria-controls only.
+  expect(row.hasAttribute("aria-haspopup")).toBe(false);
+  expect(row.hasAttribute("aria-expanded")).toBe(false);
   expect(row.hasAttribute("aria-controls")).toBe(false);
   expect(row.hasAttribute("aria-selected")).toBe(false);
   expect(container.querySelector('[aria-haspopup="menu"]')).toBeNull();
@@ -67,11 +68,9 @@ it("links the trigger to its flyout list only while the flyout is expanded", asy
     );
   await render(true);
   const row = container.querySelector<HTMLElement>("[data-picker-action]")!;
-  expect(row.getAttribute("aria-expanded")).toBe("true");
   expect(row.getAttribute("aria-controls")).toBe("flyout-worktrees");
   await render(false);
   const collapsed = container.querySelector<HTMLElement>("[data-picker-action]")!;
-  expect(collapsed.getAttribute("aria-expanded")).toBe("false");
   expect(collapsed.hasAttribute("aria-controls")).toBe(false);
 });
 

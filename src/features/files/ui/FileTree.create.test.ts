@@ -11,22 +11,16 @@ import {
   saveExpanded,
   saveSelected,
 } from "../model/fileTree";
-import type { FsEntry } from "../../../platform/tauri/fs";
+import { setRemoteCommandRunner, type FsEntry } from "../../../platform/tauri/fs";
 import { FileTree } from "./FileTree";
-import { reportRemoteLoad, resetRemoteHealth } from "../../connections/model/remoteHealth";
-
-/** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
-async function tooltipText(element: HTMLElement): Promise<string> {
-  await act(async () => {
-    element.dispatchEvent(new Event("pointerover", { bubbles: true }));
-    await new Promise((resolve) => setTimeout(resolve, 520));
-  });
-  const text = document.querySelector('[role="tooltip"]')?.textContent ?? "";
-  await act(async () => {
-    element.dispatchEvent(new Event("pointerout", { bubbles: true }));
-  });
-  return text;
-}
+import {
+  notifyRemoteRecovered,
+  recordRemoteConnection,
+  reportRemoteLoad,
+  resetRemoteHealth,
+} from "../../connections/model/remoteHealth";
+import { setMachineEnabled } from "../../connections/model/machineEnabled";
+import { adoptRemoteMachineInventory } from "../../connections/model/connections";
 
 const { directories, created, gate } = vi.hoisted(() => ({
   directories: new Map<string, FsEntry[]>(),
@@ -378,35 +372,78 @@ describe("Explorer create availability", () => {
   const remoteCwd = () => `remote://machine-1/project-${project}`;
   const mountRemote = async () => {
     const remote = remoteCwd();
+    // The machine is saved here, so only its connection decides what the Explorer shows.
+    adoptRemoteMachineInventory([
+      { id: "m1", name: "Desk", endpoint: "http://desk", environmentId: "machine-1" },
+    ]);
+    // The machine answers its folder reads with an empty folder.
+    setRemoteCommandRunner(async () => []);
     cwd = remote;
     props = { ...props, cwd: remote };
     await act(async () => root.render(createElement(FileTree, props)));
   };
   afterEach(() => resetRemoteHealth());
 
-  it("disables New File and New Folder with the reason while the machine is unreachable", async () => {
+  it("keeps the loaded tree, dimmed with the reconnect notice, while the machine is offline", async () => {
+    const reads = vi.fn(async () => [] as FsEntry[]);
     await mountRemote();
-    await act(async () => {
-      reportRemoteLoad(remoteCwd(), "files", new Error("Machine is unreachable"));
-    });
+    setRemoteCommandRunner(reads);
+    expect(container.querySelector("[data-explorer-root]")).not.toBeNull();
+
+    // Another view's request found the machine down: this one has no failure of its own.
+    await act(async () => recordRemoteConnection("machine-1", new Error("Machine is unreachable")));
+
+    expect(container.querySelector("[data-machine-unavailable]")).toBeNull();
+    expect(container.querySelector("[data-explorer-root]")).not.toBeNull();
+    expect(container.querySelector('[role="tree"]')?.className).toContain("opacity-60");
+    expect(container.textContent).toContain("Can’t reach");
+    expect(reads).not.toHaveBeenCalled();
     for (const action of ["new-file", "new-folder"]) {
       expect(header(action).disabled).toBe(true);
       expect(header(action).getAttribute("aria-label")).toContain("This machine is unreachable");
-      expect(header(action).getAttribute("title")).toBeNull();
-      expect(await tooltipText(header(action))).toContain("This machine is unreachable");
     }
-    await act(async () => header("new-file").click());
-    expect(nameInput()).toBeNull();
-    // The context menu states the same reason instead of a silent dead item.
-    await contextMenu(container.querySelector("[data-explorer-root]")!);
-    const item = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
-      (button) => button.textContent?.trim().startsWith("New File"),
-    )!;
-    expect(item.getAttribute("aria-disabled") === "true" || item.disabled).toBe(true);
-    expect(item.textContent).toContain("This machine is unreachable");
+
+    // Recovery: the notice goes and creating works again.
+    await act(async () => notifyRemoteRecovered("machine-1"));
+    await act(async () => recordRemoteConnection("machine-1"));
+    expect(container.textContent).not.toContain("Can’t reach");
+    expect(header("new-file").disabled).toBe(false);
   });
 
-  it("names the pairing and host-update reasons separately", async () => {
+  it("shows the shared notice for an offline machine when nothing was loaded yet", async () => {
+    const reads = vi.fn(async () => [] as FsEntry[]);
+    setRemoteCommandRunner(reads);
+    adoptRemoteMachineInventory([
+      { id: "m1", name: "Desk", endpoint: "http://desk", environmentId: "machine-1" },
+    ]);
+    recordRemoteConnection("machine-1", new Error("Machine is unreachable"));
+    cwd = remoteCwd();
+    props = { ...props, cwd };
+    await act(async () => root.render(createElement(FileTree, props)));
+
+    expect(container.querySelector("[data-explorer-root]")).toBeNull();
+    expect(container.querySelector('[data-machine-unavailable="offline"]')?.textContent).toContain(
+      "Waiting for it to come back",
+    );
+    expect(reads).not.toHaveBeenCalled();
+
+    // The machine answers again: the tree mounts and loads.
+    await act(async () => notifyRemoteRecovered("machine-1"));
+    await act(async () => recordRemoteConnection("machine-1"));
+    expect(container.querySelector("[data-machine-unavailable]")).toBeNull();
+    expect(container.querySelector("[data-explorer-root]")).not.toBeNull();
+    expect(reads).toHaveBeenCalled();
+  });
+
+  it("still replaces a loaded tree when the machine is turned off", async () => {
+    await mountRemote();
+    await act(async () => setMachineEnabled("machine-1", false));
+    expect(container.querySelector("[data-explorer-root]")).toBeNull();
+    expect(container.querySelector('[data-machine-unavailable="turned-off"]')).not.toBeNull();
+    await act(async () => setMachineEnabled("machine-1", true));
+  });
+
+  it("replaces a loaded tree with the pairing notice, whatever was cached", async () => {
     await mountRemote();
     await act(async () => {
       reportRemoteLoad(
@@ -415,9 +452,12 @@ describe("Explorer create availability", () => {
         new Error("Host identity changed. Add this machine again before continuing."),
       );
     });
-    expect(header("new-folder").getAttribute("aria-label")).toContain(
-      "Pair this machine again to change files",
-    );
+    expect(container.querySelector("[data-explorer-root]")).toBeNull();
+    expect(container.querySelector('[data-machine-unavailable="pairing-refused"]')).not.toBeNull();
+  });
+
+  it("names the host-update reason for creating", async () => {
+    await mountRemote();
     await act(async () => {
       reportRemoteLoad(remoteCwd(), "files", new Error("Unsupported host method"));
     });

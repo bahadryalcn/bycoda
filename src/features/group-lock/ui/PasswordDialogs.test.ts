@@ -161,6 +161,40 @@ it("keeps password setup open and retryable when storing the password fails", as
   expect(onClose).not.toHaveBeenCalled();
 });
 
+it("presents a lost Host result in words and keeps the typed password for a retry", async () => {
+  const verify = vi
+    .fn()
+    .mockRejectedValue(
+      new Error(
+        "RPC_WS_INTERRUPTED: Native Host connection did not return a result. The operation outcome is unknown; reconcile its command receipt before retrying.",
+      ),
+    );
+  const onDone = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(PasswordPromptDialog, {
+        title: "Unlock",
+        description: "",
+        submitLabel: "Unlock",
+        verify,
+        onDone,
+        onClose: vi.fn(),
+      }),
+    ),
+  );
+  const input = document.querySelector<HTMLInputElement>('input[type="password"]')!;
+  input.value = "right password";
+  await act(async () => {
+    submit();
+  });
+  const alert = document.querySelector('[role="alert"]')?.textContent ?? "";
+  expect(alert).not.toBe("");
+  expect(alert).not.toContain("RPC_WS_");
+  expect(input.value).toBe("right password");
+  expect(document.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(false);
+  expect(onDone).not.toHaveBeenCalled();
+});
+
 it("does not run the prompt completion callback after its dialog unmounts", async () => {
   let resolve!: (value: VerifyResult) => void;
   const result = new Promise<VerifyResult>((done) => {

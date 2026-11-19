@@ -16,6 +16,12 @@ features own their mutations, retained data, drafts and uncertain outcomes.
 - `src/features/connections/ui/RemoteLoadError.tsx`: standalone fallback and coordinated feedback.
 - `src/features/connections/model/machineFocus.ts`: which machines the user works in; it
   sets how often a down machine is checked and whether it is redialed.
+- `src/features/connections/model/machineAvailability.ts` and
+  `src/features/connections/ui/MachineUnavailable.tsx`: whether a project's machine
+  may be read (not added, pairing refused, sign-in, off, offline) and the one notice
+  panes show instead of loading; reads resume through the shared recovery event. Panes
+  mount through `MachineGate` with their own "has data" answer: an offline machine keeps
+  loaded data (dimmed, with `RemoteLoadError`), every other reason always shows the notice.
 - `src/features/connections/ui/RemoteDataStatus.tsx`: per-data freshness and
   independent read errors.
 - `src/features/connections/model/remoteHealth.ts`, `src/features/connections/model/remoteReconnect.ts` and

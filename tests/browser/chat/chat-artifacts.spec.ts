@@ -367,7 +367,11 @@ test("chat messages, attachment references and running work keep a readable hier
         "data-size",
         "42 B",
       );
-      expect((await token.boundingBox())!.height).toBeLessThan(26);
+      // The token sits on the message's own line: at most the body leading plus the inline strut.
+      const leading = await token.evaluate((element) =>
+        parseFloat(getComputedStyle(element).lineHeight),
+      );
+      expect((await token.boundingBox())!.height).toBeLessThanOrEqual(leading + 4);
       const track = dock.locator('[data-pacing-track="reserved"]');
       const summary = dock.locator(".activity-dock-summary");
       const trackBox = (await track.boundingBox())!;
@@ -388,10 +392,11 @@ test("chat messages, attachment references and running work keep a readable hier
       if (width === 1440) await page.screenshot({ path: info.outputPath(`chat-${theme}.png`) });
     }
   }
-  const preview = group.locator(".zen-phase-summary");
-  expect((await preview.boundingBox())!.height).toBeLessThanOrEqual(120);
+  const preview = group.locator(".zen-phase-live");
+  // The live window is one bounded height rule: min(17.5rem, 45vh).
+  expect((await preview.boundingBox())!.height).toBeLessThanOrEqual(17.5 * 16);
   await group.getByRole("button", { name: "Show more", exact: true }).click();
-  await expect(group.locator(".zen-phase-summary")).toHaveCount(0);
+  await expect(group.locator(".zen-phase-live")).toHaveCount(0);
   await expect(group.getByText(/very-long-command-path-0/).first()).toBeVisible();
   await page.setViewportSize({ width: 390, height: 900 });
   // Trail rows keep one line height; a long command ends in an ellipsis inside its row

@@ -180,7 +180,7 @@ describe("ContentScreen edit lock", () => {
       ...data,
       scheduledJobs: [job("far-job", "far", "queued")],
       scheduledCampaigns: [campaign("far", "Scheduled long ago")],
-    } as DataState;
+    } as unknown as DataState;
     render();
     act(() => element.querySelector<HTMLButtonElement>(".content-entry")!.click());
     expect(editor()).toEqual({ locked: LOCK_TEXT, campaign: "far" });

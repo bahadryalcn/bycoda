@@ -56,7 +56,15 @@ function row(name: string, additions = 1) {
     deletions: 1,
   };
 }
-function models() {
+type ViewModel = {
+  id: string;
+  emptyMessage?: string;
+  additions?: number;
+  canStage?: boolean;
+  canDiscard?: boolean;
+  canStageHunk?: boolean;
+};
+function models(): ViewModel[] {
   return api.view.mock.calls[api.view.mock.calls.length - 1][0].files;
 }
 async function settle(ms = 0) {

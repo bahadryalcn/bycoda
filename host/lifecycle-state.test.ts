@@ -6,6 +6,7 @@ import { acquireHostOwner } from "./owner";
 import {
   HOST_SHUTDOWN_DEADLINE_MS,
   HOST_STOP_WAIT_MS,
+  hostStateReleased,
   readRunningHost,
   verifyHostStopped,
 } from "./lifecycle-state";
@@ -41,6 +42,29 @@ it("recovers after metadata repair without discarding the live owner", async () 
   writeFileSync(join(directory, "running.json"), JSON.stringify(valid));
   expect(readRunningHost(directory)).toEqual(valid);
   await expect(verifyHostStopped(directory)).rejects.toThrow("still owns");
+});
+
+it("treats lifecycle state of a force-exited Host as released, without deleting it", () => {
+  // A Host that hit its shutdown deadline exits before cleanup removes running.json; the
+  // uninstall wait then ran out its whole 60 s and failed the update.
+  const departedPid = 2_147_483_647;
+  expect(() => process.kill(departedPid, 0)).toThrow();
+  const stale = JSON.stringify({ pid: departedPid, port: 3776, secret: "fixture-only" });
+  writeFileSync(join(directory, "running.json"), stale);
+  expect(readRunningHost(directory)).toBeUndefined();
+  expect(hostStateReleased(directory, departedPid)).toBe(true);
+  expect(readFileSync(join(directory, "running.json"), "utf8")).toBe(stale);
+  // A live PID, another Host's record, or unreadable state still holds the wait.
+  writeFileSync(
+    join(directory, "running.json"),
+    JSON.stringify({ pid: process.pid, port: 3776, secret: "fixture-only" }),
+  );
+  expect(hostStateReleased(directory, process.pid)).toBe(false);
+  expect(hostStateReleased(directory, departedPid)).toBe(false);
+  writeFileSync(join(directory, "running.json"), "{broken");
+  expect(hostStateReleased(directory, departedPid)).toBe(false);
+  rmSync(join(directory, "running.json"));
+  expect(hostStateReleased(directory, process.pid)).toBe(true);
 });
 
 it("certifies stopped only when no owner remains", async () => {

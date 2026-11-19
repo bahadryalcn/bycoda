@@ -52,7 +52,7 @@ async function setup(phoneHashes: string[]) {
   let pending: AssistantNotification[] = [];
   const assistant = vi.fn(async () => pending);
   const sent: ExpoPushMessage[] = [];
-  const create = (send?: (messages: ExpoPushMessage[]) => Promise<void>) =>
+  const create = (send?: (messages: readonly ExpoPushMessage[]) => Promise<void>) =>
     new PushNotifications({
       store,
       environmentId: "env-1",

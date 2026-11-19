@@ -20,7 +20,9 @@ test("long text opens only on demand and its rendered Markdown can be selected a
   await expect(dialog.getByRole("button", { name: "Copy message" })).toBeVisible();
   const selectExcerpt = async (selector: string) => {
     const pre = page.locator(selector);
-    await expect(pre).toHaveCSS("user-select", "text");
+    // WebKit reports the keyword `auto` where Chromium resolves it to `text`; either is selectable,
+    // and the drag selection below proves it.
+    await expect(pre).not.toHaveCSS("user-select", "none");
     await page.evaluate(() => document.fonts.ready.then(() => undefined));
     // Visibility alone can catch the preview/modal during its scale animation.
     // Hover waits for stable geometry before we measure real mouse coordinates.

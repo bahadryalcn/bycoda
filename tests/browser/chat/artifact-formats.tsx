@@ -308,11 +308,15 @@ function LocalImageFixture() {
     context.fillText("LEFT EDGE", 20, 80);
     context.fillText("RIGHT EDGE", 1100, 80);
     context.fillText("BOTTOM EDGE", 560, 860);
-    const data = canvas.toDataURL("image/png").split(",")[1];
+    const source = canvas.toDataURL("image/png");
+    // Local images load through an exact native file grant and the asset protocol, not as bytes.
     mockIPC((command) => {
-      if (command === "read_binary_file") return data;
+      if (command === "prepare_local_file") return "/fixture/chat-preview.png";
       throw new Error(`Unsupported fixture command: ${command}`);
     });
+    (
+      window as unknown as { __TAURI_INTERNALS__: { convertFileSrc: () => string } }
+    ).__TAURI_INTERNALS__.convertFileSrc = () => source;
     return true;
   });
   return ready ? (

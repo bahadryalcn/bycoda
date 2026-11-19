@@ -1,5 +1,6 @@
 import { errorText } from "../../../shared/lib/errors";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { useMachineAvailability } from "../../connections/public/machineAvailability";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isGitWatched, subscribeGitChanged } from "../../../platform/tauri/fs";
 
@@ -8,6 +9,9 @@ type Snapshot<T> = {
   data: T | null;
   loading: boolean;
   error: string | null;
+  /** What the last read rejected with; unset after a success. `error` is only the
+   * message a screen shows, and a transient failure has none. */
+  cause?: unknown;
 };
 // Results stay cached so a revisited panel opens with its last data, but the
 // cache is a least-recently-used one: commit diffs, blame and history pages
@@ -17,7 +21,7 @@ const MAX_CACHED_BYTES = 16 * 1024 * 1024;
 const cache = new Map<string, unknown>();
 const cacheSizes = new Map<string, number>();
 let cachedBytes = 0;
-const completed = new Map<string, { at: number; error: string | null }>();
+const completed = new Map<string, { at: number; error: string | null; cause?: unknown }>();
 type FlightGroup = { latest?: Promise<unknown>; pending: number; latestPending: boolean };
 const flights = new Map<string, FlightGroup>();
 let generation = 0;
@@ -78,12 +82,15 @@ function writeCached(key: string, data: unknown): boolean {
 export function useGitResource<T>(
   cwd: string,
   key: string,
-  enabled: boolean,
+  wanted: boolean,
   read: () => Promise<T>,
   watch = true,
   minRefreshMs = 0,
   quiet = false,
 ) {
+  // A machine that cannot be asked gets no reads; they start once it is available again.
+  const available = useMachineAvailability(cwd).available;
+  const enabled = wanted && available;
   const [nonce, setNonce] = useState(0);
   const refreshKey = useRef<string | null>(null);
   const refresh = useCallback(() => {
@@ -95,6 +102,7 @@ export function useGitResource<T>(
     data: readCached<T>(key) ?? null,
     loading: enabled && (!quiet || !completed.has(key)),
     error: completed.get(key)?.error ?? null,
+    cause: completed.get(key)?.cause,
   }));
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keep this resource's admitted reads synchronized with checkout notifications and resume events until unmount.
   useEffect(() => {
@@ -112,6 +120,7 @@ export function useGitResource<T>(
       data: previous.key === key ? previous.data : (readCached<T>(key) ?? null),
       loading: enabled && shows(forced),
       error: completed.get(key)?.error ?? null,
+      cause: completed.get(key)?.cause,
     }));
     if (!enabled) return;
     const load = async (force = false) => {
@@ -150,6 +159,7 @@ export function useGitResource<T>(
                 completed.set(key, {
                   at: Date.now(),
                   error: errorText(error),
+                  cause: error,
                 });
               throw error;
             })
@@ -190,6 +200,7 @@ export function useGitResource<T>(
             ...previous,
             loading: false,
             error: presentRemoteError(error) ?? null,
+            cause: error,
           }));
       } finally {
         inFlight = false;

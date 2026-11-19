@@ -500,12 +500,19 @@ describe("pinned sessions", () => {
     const cwd = "/tmp/index-project";
     const stored = (id: string) => ({
       ...summary(id, cwd),
-      providerHistory: { providers: ["claude"] as const, activeHarness: "claude" as const },
+      providerHistory: { providers: ["claude" as const], activeHarness: "claude" as const },
     });
     const second: Session = {
       ...newSession("codex", cwd),
       id: "second",
-      blocks: [{ id: "u1", role: "user", text: "Hi", turnModel: { harness: "codex", id: "gpt" } }],
+      blocks: [
+        {
+          id: "u1",
+          role: "user",
+          text: "Hi",
+          turnModel: { harness: "codex", id: "gpt", name: "GPT" },
+        },
+      ],
     };
     const unsaved: Session = { ...newSession("claude", cwd), id: "unsaved", busy: true };
     const rows = historyWithLiveSessions(

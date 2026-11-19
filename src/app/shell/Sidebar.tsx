@@ -176,7 +176,7 @@ import { sessionDisplayTitle } from "../../features/sessions/model/session";
 import { MiddleTruncate } from "../../shared/ui/MiddleTruncate";
 import { nextUnseenFinishedSessions } from "../../features/sessions/model/sessionDone";
 import { orchestrationTaskLabelCode } from "../../features/orchestration/model/orchestrationSummary";
-import { orchestrationTaskLabelText } from "../../features/orchestration/ui/orchestrationTaskLabelText";
+import { orchestrationTaskLabelTextWith } from "../../features/orchestration/ui/orchestrationTaskLabelText";
 import { orderedSessionActionIds } from "../../features/sessions/model/sessionSelection";
 import { paneDropFromPoint, setExternalPaneDrop } from "../../features/workspace/model/paneDrop";
 import type { PaneEdge } from "../../features/workspace/model/layout";
@@ -361,6 +361,11 @@ import { SessionsEmpty } from "../../features/sessions/ui/SessionsEmpty";
 import { SessionsNoMatch } from "../../features/sessions/ui/SessionsNoMatch";
 import { SidebarUpdateFooter } from "./SidebarUpdate";
 import { useRemoteProject } from "../../features/connections/public/useRemoteProject";
+import {
+  machineHidesView,
+  useMachineAvailability,
+} from "../../features/connections/public/machineAvailability";
+import { MachineUnavailable } from "../../features/connections/public/MachineUnavailable";
 import { useRemoteSessionBindings } from "../../features/connections/model/useRemoteSessionBinding";
 import { pathKey } from "../../shared/lib/paths";
 import {
@@ -701,7 +706,13 @@ function SidebarComponent({
   const format = useFormat();
   const remoteProject = isRemoteProjectPath(cwd);
   const tab: SidebarTabId = requestedTab;
-  const remote = useRemoteProjectSessions(cwd, remoteProject);
+  const machineAvailability = useMachineAvailability(remoteProject ? cwd : undefined);
+  // An offline machine keeps its last session list (its channel recovers on its own); one this
+  // computer cannot ask at all (not added, pairing refused, off, sign-in) is not read.
+  const remote = useRemoteProjectSessions(
+    cwd,
+    remoteProject && (machineAvailability.available || machineAvailability.reason === "offline"),
+  );
   const closeFilesSearch = useCallback(
     () => onFilesSearchOpenChange(false),
     [onFilesSearchOpenChange],
@@ -841,6 +852,11 @@ function SidebarComponent({
     () => projectSessionCollection(remoteProject, remote.sessions, sessions, cwd),
     [remoteProject, remote.sessions, sessions, cwd],
   );
+  // The list shows the shared notice in place of the sessions (and of their load status) for a
+  // machine this computer cannot ask; an offline one keeps a list that was already loaded.
+  const sessionsHidden =
+    remoteProject &&
+    machineHidesView(machineAvailability, remote.loaded || projectSessions.length > 0);
   // Count the whole workspace before search, pagination or worktree filters.
   // Local busy IDs also include sessions continued on this desktop's host.
   const workingSessionCount = new Set(
@@ -1388,11 +1404,13 @@ function SidebarComponent({
     active: panelOpen && sidebarAvailable,
   });
 
-  const [sessionStateCwd, setSessionStateCwd] = useState(cwd);
-  // Reset project-owned state before children render the next project. React
-  // retries this component immediately instead of committing stale folder rows.
-  if (sessionStateCwd !== cwd) {
-    setSessionStateCwd(cwd);
+  const sessionStateCwd = useRef(cwd);
+  // Reset project-owned state before paint when switching projects. Initialization already
+  // loaded the preferences for the first project.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- keeps project-owned folder state in step with the selected project before paint
+  useLayoutEffect(() => {
+    if (sessionStateCwd.current === cwd) return;
+    sessionStateCwd.current = cwd;
     organizationReady.current = !NATIVE_SESSION_ORGANIZATION_ACTIVE;
     setSessionFolders(NATIVE_SESSION_ORGANIZATION_ACTIVE ? [] : loadSessionFolders(cwd));
     setSessionOrder(NATIVE_SESSION_ORGANIZATION_ACTIVE ? {} : loadSessionOrder(cwd));
@@ -1401,7 +1419,7 @@ function SidebarComponent({
     setRenamingFolderId(null);
     setFolderMenu(null);
     setSessionDrop(null);
-  }
+  }, [cwd]);
   useEffect(() => {
     pendingFolderSessionIds.current.clear();
   }, [cwd]);
@@ -3636,7 +3654,7 @@ function SidebarComponent({
               : undefined
           }
         />
-        {tab === "sessions" && remoteProject && !lastSessionsOpen ? (
+        {tab === "sessions" && remoteProject && !lastSessionsOpen && !sessionsHidden ? (
           !remote.machine && remote.dataState.error && remoteConnectionIssue ? (
             <RemoteLoadError cwd={cwd} failure={classifyRemoteError(remote.dataState.error)} />
           ) : (
@@ -3790,9 +3808,11 @@ function SidebarComponent({
                 )}
                 {/* Loading and errors precede empty results, so an unfinished
                   request never claims this project has no conversations. */}
-                {remoteProject &&
-                projectSessions.length === 0 &&
-                !["ready", "empty"].includes(remote.dataState.phase) ? null : pendingFirstLoad ? (
+                {sessionsHidden ? (
+                  <MachineUnavailable cwd={cwd} size="compact" />
+                ) : remoteProject &&
+                  projectSessions.length === 0 &&
+                  !["ready", "empty"].includes(remote.dataState.phase) ? null : pendingFirstLoad ? (
                   <Text
                     role="status"
                     as="p"
@@ -3875,10 +3895,6 @@ function SidebarComponent({
                         </Text>
                       );
                     })()
-                  ) : remoteProject && !remote.machine ? (
-                    <Text as="p" size="caption" tone="secondary" className="px-3 py-2">
-                      {t("This project’s machine isn’t connected on this computer.")}
-                    </Text>
                   ) : (
                     <SessionsEmpty message="Sessions you start will show up here" />
                   )
@@ -6456,7 +6472,7 @@ const SessionCard = memo(function SessionCard({
               <div className="mt-1.5 flex flex-col gap-0.5">
                 {orchestration.tasks.map((task) => {
                   const labelCode = orchestrationTaskLabelCode(task, orchestration);
-                  const label = orchestrationTaskLabelText(labelCode);
+                  const label = orchestrationTaskLabelTextWith(labelCode, t);
                   return (
                     <div
                       key={task.sessionId}

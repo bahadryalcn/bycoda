@@ -12364,5 +12364,12 @@
   "Your saved file access choice could not be read, so access is off until you choose it again.": "无法读取你保存的文件访问选择，因此在你重新选择之前访问保持关闭。",
   "Saved folder permissions could not be read, so folders need approval again.": "无法读取已保存的文件夹权限，因此文件夹需要重新批准。",
   "Unreadable copy kept at {p0}": "无法读取的副本已保留在 {p0}",
-  "Could not dismiss the notice. Try again.": "无法关闭该通知。请重试。"
+  "Could not dismiss the notice. Try again.": "无法关闭该通知。请重试。",
+  "{p0} isn’t available": "{p0} 不可用",
+  "This project’s machine isn’t available": "此项目的机器不可用",
+  "This computer doesn’t have this project’s machine yet. Add it in Connections to open the project.": "此电脑还没有此项目的机器。请在“设备”中添加后打开项目。",
+  "The machine no longer accepts this computer. Pair them again in Connections.": "该机器不再接受此电脑。请在“设备”中重新配对。",
+  "The machine needs you to sign in again. Open Connections to reconnect.": "该机器需要你重新登录。打开“设备”以重新连接。",
+  "The machine isn’t answering. Waiting for it to come back.": "该机器没有响应。正在等待它恢复。",
+  "The machine is turned off on this computer. Turn it on in Connections.": "该机器在此电脑上已关闭。请在“设备”中开启。"
 }

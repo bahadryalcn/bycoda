@@ -12364,5 +12364,12 @@
   "Your saved file access choice could not be read, so access is off until you choose it again.": "Deine gespeicherte Auswahl zum Dateizugriff konnte nicht gelesen werden. Der Zugriff bleibt aus, bis du erneut wählst.",
   "Saved folder permissions could not be read, so folders need approval again.": "Gespeicherte Ordnerberechtigungen konnten nicht gelesen werden. Ordner müssen erneut genehmigt werden.",
   "Unreadable copy kept at {p0}": "Unlesbare Kopie gespeichert unter {p0}",
-  "Could not dismiss the notice. Try again.": "Der Hinweis konnte nicht geschlossen werden. Versuche es erneut."
+  "Could not dismiss the notice. Try again.": "Der Hinweis konnte nicht geschlossen werden. Versuche es erneut.",
+  "{p0} isn’t available": "{p0} ist nicht verfügbar",
+  "This project’s machine isn’t available": "Die Maschine dieses Projekts ist nicht verfügbar",
+  "This computer doesn’t have this project’s machine yet. Add it in Connections to open the project.": "Dieser Computer kennt die Maschine dieses Projekts noch nicht. Füge sie unter Rechner hinzu, um das Projekt zu öffnen.",
+  "The machine no longer accepts this computer. Pair them again in Connections.": "Die Maschine akzeptiert diesen Computer nicht mehr. Kopple sie unter Rechner erneut.",
+  "The machine needs you to sign in again. Open Connections to reconnect.": "Die Maschine verlangt eine erneute Anmeldung. Öffne Rechner, um neu zu verbinden.",
+  "The machine isn’t answering. Waiting for it to come back.": "Die Maschine antwortet nicht. Warte, bis sie wieder erreichbar ist.",
+  "The machine is turned off on this computer. Turn it on in Connections.": "Die Maschine ist auf diesem Computer ausgeschaltet. Schalte sie unter Rechner ein."
 }

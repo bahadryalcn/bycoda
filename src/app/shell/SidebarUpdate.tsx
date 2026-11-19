@@ -50,7 +50,7 @@ export function SidebarUpdateFooter({
   // Only the reminder action snoozes. Dismissal and failures leave reminders unchanged.
   const canSnooze = snapshot.phase !== "error";
   const closePrompt = () => setPromptOpen(false);
-  const laterPrompt = () => {
+  const onLaterPrompt = () => {
     snoozeUpdatePrompt();
     setPromptOpen(false);
   };
@@ -154,7 +154,7 @@ export function SidebarUpdateFooter({
           onClose={closePrompt}
           footer={
             <ModalActions>
-              <Button variant="ghost" onClick={canSnooze ? laterPrompt : closePrompt}>
+              <Button variant="ghost" onClick={canSnooze ? onLaterPrompt : closePrompt}>
                 {canSnooze ? t("Remind me tomorrow") : t("Close")}
               </Button>
               {snapshot.availableVersion ? (

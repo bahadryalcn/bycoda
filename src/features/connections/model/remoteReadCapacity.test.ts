@@ -22,6 +22,7 @@ const snapshot = (sessionId: string): HostSession => ({
     model: "test",
     runtimeMode: "supervised",
     title: "Test",
+    modelSettings: {},
     blocks: [],
   },
 });

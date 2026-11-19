@@ -2993,3 +2993,36 @@ fn resource_retirement_fences_cross_window_stateful_unary_without_claiming_not_s
         broker.shutdown();
     }
 }
+
+// A native caller enqueues on a runtime worker and then blocks for the reply. The route worker
+// it woke sits in that worker's LIFO slot, which other workers cannot steal, so a plain blocking
+// wait stranded the socket loop: no reply was read, no Host ping answered, and the Host closed
+// the connection while the caller timed out with RPC_WS_INTERRUPTED.
+#[test]
+fn a_blocking_reply_wait_on_a_runtime_worker_keeps_the_woken_route_task_running() {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    let (wake_tx, mut wake_rx) = tokio::sync::mpsc::channel::<()>(1);
+    let (reply_tx, reply_rx) = mpsc::channel::<()>();
+    runtime.spawn(async move {
+        while wake_rx.recv().await.is_some() {
+            let _ = reply_tx.send(());
+        }
+    });
+    thread::sleep(Duration::from_millis(50));
+    let replied = runtime.block_on(async move {
+        tokio::spawn(async move {
+            wake_tx.try_send(()).unwrap();
+            wait_for_reply(&reply_rx, Duration::from_secs(2)).is_ok()
+        })
+        .await
+        .unwrap()
+    });
+    assert!(
+        replied,
+        "the woken route task was stranded behind a blocking wait"
+    );
+}

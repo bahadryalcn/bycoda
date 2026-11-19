@@ -22,7 +22,7 @@ it.each([
     document.body.append(surface);
     const mount = document.createElement("div");
     const root = createRoot(mount);
-    let selected: TranscriptSelection | null = null;
+    let selected = null as TranscriptSelection | null;
     function Harness() {
       selected = useTranscriptSelection(surface, true).selection;
       return null;
@@ -70,7 +70,7 @@ it("re-reads the selection geometry from the live range and reports loss only wh
   document.body.append(surface);
   const mount = document.createElement("div");
   const root = createRoot(mount);
-  let selected: TranscriptSelection | null = null;
+  let selected = null as TranscriptSelection | null;
   function Harness() {
     selected = useTranscriptSelection(surface, true).selection;
     return null;

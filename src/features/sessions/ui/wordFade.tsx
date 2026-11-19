@@ -107,10 +107,11 @@ export function usePacedText(
   revealOnMount = streaming,
   enabled = true,
 ): { text: string; revealing: boolean } {
-  const visible = usePresentationVisible();
   const shown = useRef(revealOnMount ? 0 : text.length);
   const pacing = useRef(streaming || revealOnMount);
-  const mountReveal = useRef(revealOnMount && !streaming);
+  const [mountReveal, setMountReveal] = useState(revealOnMount && !streaming);
+  const canPace = enabled && (streaming || mountReveal);
+  const visible = usePresentationVisible(canPace);
   const latest = useRef({ text, streaming });
   latest.current = { text, streaming };
   const backlogSince = useRef<number | null>(null);
@@ -142,10 +143,9 @@ export function usePacedText(
   shown.current = Math.min(shown.current, text.length);
   if (
     !visible ||
-    !enabled ||
+    !canPace ||
     text.length > MAX_PACED_TEXT_CHARS ||
     direct ||
-    (!streaming && !mountReveal.current) ||
     text.length - shown.current > REVEAL_MAX_BACKLOG
   )
     shown.current = text.length;
@@ -157,7 +157,7 @@ export function usePacedText(
       backlogSince.current = null;
       if (!streaming) {
         pacing.current = false;
-        mountReveal.current = false;
+        setMountReveal(false);
       }
       return;
     }

@@ -56,6 +56,7 @@ it("shows the graph header branch through MiddleTruncate with the full name once
           onBranch: () => {},
           onDirty: () => {},
           graph: null,
+          commit: null,
         }),
       ),
     );

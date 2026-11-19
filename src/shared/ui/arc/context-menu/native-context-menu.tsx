@@ -10,7 +10,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from "react";
-import { t } from "../../../i18n";
+import { useT } from "../../../i18n";
 import { LAYER } from "../../../lib/layers";
 import { Check, ChevronRight } from "../../icons";
 import { Popover, popupListClassName } from "../../Popover";
@@ -82,7 +82,7 @@ export function NativeContextMenu({
   ownerId,
   onBack,
   items,
-  ariaLabel = t("Actions"),
+  ariaLabel,
   header,
   width = MENU_WIDTH,
   side,
@@ -94,6 +94,7 @@ export function NativeContextMenu({
   onMouseEnter,
   onMouseLeave,
 }: ContextMenuProps) {
+  const t = useT();
   const menuId = useId();
   const menuRef = useRef<HTMLDivElement>(null);
   const submenuRef = useRef<HTMLDivElement>(null);
@@ -389,7 +390,7 @@ export function NativeContextMenu({
         data-explorer-menu={menuId}
         role="menu"
         tabIndex={-1}
-        aria-label={ariaLabel}
+        aria-label={ariaLabel ?? t("Actions")}
         aria-activedescendant={`${menuId}-${active}`}
         onKeyDown={onMenuKey}
         onContextMenu={(e) => e.preventDefault()}

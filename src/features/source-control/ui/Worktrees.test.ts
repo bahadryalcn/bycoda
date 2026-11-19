@@ -315,7 +315,10 @@ it("selects an existing worktree from the draft workspace menu", async () => {
   );
 
   expect(document.querySelector('[aria-label="Existing worktrees"]')).not.toBeNull();
-  expect(existingWorktree.getAttribute("aria-expanded")).toBe("true");
+  // The row is a role="option", so only aria-controls links it to the open flyout.
+  expect(existingWorktree.getAttribute("aria-controls")).toBe(
+    document.querySelector('[aria-label="Existing worktrees"][role="listbox"]')?.id,
+  );
   expect(listWorktrees).toHaveBeenCalledWith("/existing-worktree-picker");
   const option = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find((item) =>
     item.textContent?.includes(tree.path),

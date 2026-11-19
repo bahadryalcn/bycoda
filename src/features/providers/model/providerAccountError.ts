@@ -64,7 +64,10 @@ export function safeProviderAccountDetail(value: unknown): string | undefined {
   return truncateGraphemes(text, DETAIL_MAX);
 }
 
-function fallbackSummary(action: ProviderAccountAction): string {
+function fallbackSummary(
+  action: ProviderAccountAction,
+  t: typeof import("../../../shared/i18n").t,
+): string {
   switch (action) {
     case "save":
       return t("Could not save this account.");
@@ -77,7 +80,10 @@ function fallbackSummary(action: ProviderAccountAction): string {
   }
 }
 
-function loginSummary(error: HarnessLoginError): string {
+function loginSummary(
+  error: HarnessLoginError,
+  t: typeof import("../../../shared/i18n").t,
+): string {
   const provider = HARNESS_TITLE[error.harness];
   switch (error.code) {
     case "unsupported":
@@ -93,7 +99,11 @@ function loginSummary(error: HarnessLoginError): string {
   }
 }
 
-function accountSummary(error: ProviderAccountError, action: ProviderAccountAction) {
+function accountSummary(
+  error: ProviderAccountError,
+  action: ProviderAccountAction,
+  t: typeof import("../../../shared/i18n").t,
+) {
   switch (error.code) {
     case "identityUnverified":
       return { summary: t("Could not verify the signed-in account. Please try again.") };
@@ -112,7 +122,7 @@ function accountSummary(error: ProviderAccountError, action: ProviderAccountActi
       };
     case "cleanupFailed": {
       // The original failure stays visible; the repair step is added after it.
-      const inner = presentProviderAccountError(error.cause, action);
+      const inner = presentProviderAccountErrorWith(error.cause, action, t);
       return {
         summary: t("{p0} Temporary profile cleanup failed; retry before adding another account.", {
           p0: inner.summary,
@@ -132,20 +142,36 @@ export function presentProviderAccountError(
   error: unknown,
   action: ProviderAccountAction,
 ): ProviderAccountErrorPresentation {
-  if (error instanceof ProviderAccountError) return accountSummary(error, action);
+  return presentProviderAccountErrorWith(error, action, t);
+}
+
+function presentProviderAccountErrorWith(
+  error: unknown,
+  action: ProviderAccountAction,
+  t: typeof import("../../../shared/i18n").t,
+): ProviderAccountErrorPresentation {
+  if (error instanceof ProviderAccountError) return accountSummary(error, action, t);
   if (error instanceof HarnessLoginError) {
     const detail = safeProviderAccountDetail(error.detail);
-    return { summary: loginSummary(error), ...(detail ? { detail } : {}) };
+    return { summary: loginSummary(error, t), ...(detail ? { detail } : {}) };
   }
   if (error instanceof Error && error.name === "AbortError") {
     return { summary: t("Sign-in cancelled.") };
   }
   const detail = safeProviderAccountDetail(error);
-  return { summary: fallbackSummary(action), ...(detail ? { detail } : {}) };
+  return { summary: fallbackSummary(action, t), ...(detail ? { detail } : {}) };
 }
 
 /** One line for surfaces that hold a single string. */
 export function providerAccountErrorText(error: unknown, action: ProviderAccountAction): string {
-  const { summary, detail } = presentProviderAccountError(error, action);
+  return providerAccountErrorTextWith(error, action, t);
+}
+
+export function providerAccountErrorTextWith(
+  error: unknown,
+  action: ProviderAccountAction,
+  t: typeof import("../../../shared/i18n").t,
+): string {
+  const { summary, detail } = presentProviderAccountErrorWith(error, action, t);
   return detail ? `${summary} ${detail}` : summary;
 }

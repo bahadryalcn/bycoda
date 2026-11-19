@@ -2,6 +2,13 @@ import { t } from "../../../shared/i18n";
 import type { OrchestrationTaskLabelCode } from "../model/orchestrationSummary";
 
 export function orchestrationTaskLabelText(code: OrchestrationTaskLabelCode): string {
+  return orchestrationTaskLabelTextWith(code, t);
+}
+
+export function orchestrationTaskLabelTextWith(
+  code: OrchestrationTaskLabelCode,
+  t: (message: string) => string,
+): string {
   switch (code) {
     case "needsInput":
       return t("Needs input");

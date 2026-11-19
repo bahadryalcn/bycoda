@@ -4,6 +4,10 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { HostStore } from "../../store";
 import { AssistantObservationJournal } from "./assistant-observation-journal";
+import type { SQLInputValue } from "node:sqlite";
+
+/** Narrows a journal read to its `ok` page. */
+const ok = <T extends { status: string }>(page: T) => page as Extract<T, { status: "ok" }>;
 
 const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => {
@@ -54,7 +58,7 @@ it("keeps the Chief task cursor independent from other source types", async () =
   await journal.acknowledge(
     "chief:task",
     scope,
-    page.nextCursor,
+    ok(page).nextCursor,
     async () => true,
     () => true,
   );
@@ -117,7 +121,7 @@ it("commits source and observation together; replay, ack and dedupe use durable 
     journal.acknowledge(
       "chief",
       scope,
-      page.nextCursor + 1,
+      ok(page).nextCursor + 1,
       async () => true,
       () => true,
     ),
@@ -125,7 +129,7 @@ it("commits source and observation together; replay, ack and dedupe use durable 
   await journal.acknowledge(
     "chief",
     scope,
-    page.nextCursor,
+    ok(page).nextCursor,
     async () => true,
     () => true,
   );
@@ -218,7 +222,7 @@ it("survives restart, concurrent producers and separates Hosts and scopes", asyn
   await journal.acknowledge(
     "observer",
     scope,
-    before.nextCursor,
+    ok(before).nextCursor,
     async () => true,
     () => true,
   );
@@ -292,7 +296,7 @@ it("rechecks captured authorization after async source validation before offerin
     journal.acknowledge(
       "chief",
       scope,
-      page.nextCursor,
+      ok(page).nextCursor,
       async () => true,
       () => current,
     ),
@@ -322,7 +326,7 @@ it("indexes the expiry lookup used by retention and keeps retained rows when upg
   const { store, journal } = await fixture();
   const kept = await store.transaction(() => journal.append(event));
   const plan = async (sql: string, ...args: unknown[]) =>
-    (await store.db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...args))
+    (await store.db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...(args as SQLInputValue[])))
       .map((row) => String(row.detail))
       .join("\n");
   // `+` keeps SQLite's rowid min/max shortcut from bypassing the index, as in the retention SQL.

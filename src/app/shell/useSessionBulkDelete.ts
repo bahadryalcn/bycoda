@@ -17,13 +17,13 @@ import type { remoteProjectFor } from "../../features/connections/model/remotePr
 import { forgetRemoteQueue } from "../../features/connections/model/useRemoteQueue";
 import {
   bulkDeleteNotice,
-  bulkDeleteNoticeText,
+  bulkDeleteNoticeTextWith,
   deleteSessionsInBulk,
   splitRunningSessions,
   type BulkDeleteNotice,
 } from "../../features/sessions/model/bulkSessionDelete";
 import { confirmSessionDelete } from "../../features/sessions/model/confirmSessionDelete";
-import { t } from "../../shared/i18n";
+import { t, useT } from "../../shared/i18n";
 
 export type SessionBulkDeleteOptions = {
   cwd: string;
@@ -259,9 +259,10 @@ export function useSessionBulkDelete({
     });
   };
 
+  const translate = useT();
   return {
     // Words are produced here, at render, so the notice follows the owner's language.
-    bulkNotice: bulkNotice ? bulkDeleteNoticeText(bulkNotice) : null,
+    bulkNotice: bulkNotice ? bulkDeleteNoticeTextWith(bulkNotice, translate) : null,
     deleteProgress,
     deleteNoticeError,
     deleteNoticeSuccess,

@@ -8,6 +8,8 @@ import {
 } from "./shared-browser";
 import { RuntimeLogsService } from "../execution/runtime-logs";
 
+type FrameResult = { data: string; leaseId?: string; documentId?: string; navigationId?: string };
+
 it("resizes the owned session to390px, reports real frame dimensions and bounds pointer input", async () => {
   const page = {
     goto: vi.fn(),
@@ -138,7 +140,7 @@ it("loads lazily, enforces device control leases and rejects unsupported URLs/in
     "a",
   );
   expect(loader).toHaveBeenCalledTimes(1);
-  const shared = await browser.dispatch("browser.frame", {}, "b");
+  const shared = (await browser.dispatch("browser.frame", {}, "b")) as FrameResult;
   expect(shared.leaseId).toBeUndefined();
   expect(shared.data).toBe(Buffer.from("frame").toString("base64"));
   await expect(
@@ -463,7 +465,7 @@ it("closes a page created after host shutdown rather than resurrecting the brows
         newContext: async () => ({
           newPage: () =>
             new Promise((resolve) => {
-              finishPage = resolve;
+              finishPage = resolve as (value: unknown) => void;
             }),
         }),
       }),
@@ -519,16 +521,26 @@ it("isolates scoped browser pages and keeps document identity through input", as
     const pb = { ...b, leaseId: claimB.leaseId };
     await registry.dispatch("browser.open", { ...pa, url: "https://example.com/a" }, "owner");
     await registry.dispatch("browser.open", { ...pb, url: "https://example.com/b" }, "owner");
-    const before = await registry.dispatch("browser.frame", pa, "owner");
+    const before = (await registry.dispatch("browser.frame", pa, "owner")) as FrameResult;
     await registry.dispatch("browser.input", { ...pa, kind: "click", x: 1, y: 1 }, "owner");
-    const after = await registry.dispatch("browser.frame", pa, "owner");
+    const after = (await registry.dispatch("browser.frame", pa, "owner")) as FrameResult;
     expect(launches).toBe(1);
-    expect(before.data).not.toBe((await registry.dispatch("browser.frame", pb, "owner")).data);
+    expect(before.data).not.toBe(
+      ((await registry.dispatch("browser.frame", pb, "owner")) as FrameResult).data,
+    );
     expect(after.documentId).toBe(before.documentId);
     expect(after.navigationId).not.toBe(before.navigationId);
     await registry.dispatch("browser.release", pa, "owner");
-    const observedA = await registry.dispatchForSession("browser.frame", a, "agent");
-    const observedB = await registry.dispatchForSession("browser.frame", b, "agent");
+    const observedA = (await registry.dispatchForSession(
+      "browser.frame",
+      a,
+      "agent",
+    )) as FrameResult;
+    const observedB = (await registry.dispatchForSession(
+      "browser.frame",
+      b,
+      "agent",
+    )) as FrameResult;
     expect(observedA.data).toBe(before.data);
     expect(observedB.data).not.toBe(observedA.data);
     await expect(
@@ -720,7 +732,7 @@ it("reports who holds the browser without exposing owner fingerprints or other l
 function pooledChromium() {
   const processes: { disconnect: () => void; close: ReturnType<typeof vi.fn> }[] = [];
   const pages: Record<string, (() => void)[]>[] = [];
-  const loader: BrowserLoader = async () => ({
+  const loader = (async () => ({
     chromium: {
       launch: async () => {
         const disconnected: (() => void)[] = [];
@@ -749,7 +761,7 @@ function pooledChromium() {
         };
       },
     },
-  });
+  })) as unknown as BrowserLoader;
   return { loader, processes, pages };
 }
 
@@ -819,14 +831,14 @@ it("passes an optional validated JPEG quality to one-shot browser frames", async
     url: () => "http://localhost:3000/",
     screenshot: vi.fn(async () => Buffer.from("frame")),
   };
-  const loader: BrowserLoader = async () => ({
+  const loader = (async () => ({
     chromium: {
       launch: async () => ({
         newContext: async () => ({ newPage: async () => page }),
         close: vi.fn(),
       }),
     },
-  });
+  })) as unknown as BrowserLoader;
   const browser = new SharedBrowser(loader);
   const claim = await browser.dispatch("browser.claim", {}, "agent");
   const params = { leaseId: claim.leaseId };

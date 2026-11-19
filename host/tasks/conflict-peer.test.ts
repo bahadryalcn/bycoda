@@ -77,6 +77,7 @@ function fixture() {
   const plan = {
     token: "reviewed-plan",
     expiresAt: 2000,
+    expiresInMs: 1000,
     workspaceId: "workspace",
     expectedRevision: 1,
     sourceBranchRef: "refs/heads/task",

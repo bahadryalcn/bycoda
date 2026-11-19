@@ -9,7 +9,7 @@ import {
 } from "./remoteFileCopy";
 
 const MB = REMOTE_COPY_CHUNK_BYTES;
-const noDelay = () => Promise.resolve();
+const noDelay = (_ms?: number) => Promise.resolve();
 const transient = (error: unknown) => error instanceof Error && error.message === "link down";
 const answer = (offset: number, length: number): RemoteChunk => ({
   data: `${offset}:${length}`,

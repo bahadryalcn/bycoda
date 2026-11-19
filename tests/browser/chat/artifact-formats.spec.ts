@@ -283,7 +283,10 @@ test("a Markdown local image fits its preview frame without clipping or stretchi
         await page.setViewportSize({ width, height: 800 });
         const outer = (await frame.boundingBox())!;
         const inner = (await image.boundingBox())!;
-        expect(outer.height).toBeLessThanOrEqual(181);
+        // The frame follows the image's own ratio (1440 x 900) within the 40rem x 32rem bounds.
+        expect(outer.height).toBeLessThanOrEqual(32 * 16 + 1);
+        expect(outer.width).toBeLessThanOrEqual(40 * 16 + 1);
+        expect(Math.abs(outer.width / outer.height - 1440 / 900)).toBeLessThan(0.02);
         expect(inner.x).toBeGreaterThanOrEqual(outer.x);
         expect(inner.y).toBeGreaterThanOrEqual(outer.y);
         expect(inner.x + inner.width).toBeLessThanOrEqual(outer.x + outer.width + 1);

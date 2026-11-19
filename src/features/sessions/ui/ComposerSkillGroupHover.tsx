@@ -65,7 +65,7 @@ export function ComposerSkillGroupHover({
     const point = pointerRef.current;
     pointerRef.current = null;
     if (!el || !point) return;
-    tokensRef.current ??= readTokenRects(el.parentElement);
+    if (tokensRef.current === null) tokensRef.current = readTokenRects(el.parentElement);
     const hit = tokensRef.current.find(({ rects }) =>
       rects.some((rect) => containsPoint(rect, point.x, point.y)),
     )?.token;
@@ -79,7 +79,7 @@ export function ComposerSkillGroupHover({
   const onMove = useStableCallback((event: PointerEvent) => {
     if (!field?.current || event.pointerType === "touch") return;
     pointerRef.current = { x: event.clientX, y: event.clientY };
-    frameRef.current ||= requestAnimationFrame(hitTest);
+    if (!frameRef.current) frameRef.current = requestAnimationFrame(hitTest);
   });
   const onLeave = useStableCallback(() => {
     cancelFrame();

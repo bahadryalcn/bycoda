@@ -12,7 +12,11 @@ import {
 } from "../../notifications/model/notifications";
 
 import { sessionDisplayTitle } from "../model/session";
-import { formatReminderTime, reminderTime, type SessionReminder } from "../model/sessionReminders";
+import {
+  formatReminderTimeWith,
+  reminderTime,
+  type SessionReminder,
+} from "../model/sessionReminders";
 import { ExplorerMenu } from "../../files/public/ExplorerMenu";
 import { Clock } from "../../../shared/ui/icons";
 import { sessionReminderPresets } from "./sessionReminderPresets";
@@ -105,7 +109,7 @@ export function ReminderNotices({
                 </Text>
                 <Text as="span" size="caption" tone="secondary" truncate className="block">
                   {projectDisplayNameFrom(reminder.cwd, projectLabels)} ·{" "}
-                  {formatReminderTime(reminder.dueAt)}
+                  {formatReminderTimeWith(reminder.dueAt, format.formatDate)}
                 </Text>
               </Button>
               <div className="mt-1 flex items-center gap-1">

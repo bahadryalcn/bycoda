@@ -6,7 +6,7 @@ import { DescriptionItem, DescriptionList } from "../../../shared/ui/Description
 import { useFormat, useT } from "../../../shared/i18n";
 import { useId, useRef, useState } from "react";
 import { contextRatio, formatTokens, type ContextUsage } from "../model/contextUsage";
-import { formatApiTime, formatCost, type SessionUsage } from "../model/sessionUsage";
+import { formatApiTime, formatCostWith, type SessionUsage } from "../model/sessionUsage";
 import { Meter, meterTone } from "../../../shared/ui/Meter";
 import { Popover } from "../../../shared/ui/Popover";
 import { useHoverCard } from "../../../shared/ui/HoverCard";
@@ -98,7 +98,7 @@ export function ContextMeter({
     : t("Unavailable");
   const label = [
     detail,
-    ...(sessionUsage ? [`${t("Cost")}: ${formatCost(sessionUsage.costUsd, format)}`] : []),
+    ...(sessionUsage ? [`${t("Cost")}: ${formatCostWith(sessionUsage.costUsd, format)}`] : []),
     ...(sessionUsage && sessionUsage.apiMs > 0
       ? [`${t("API time")}: ${formatApiTime(sessionUsage.apiMs)}`]
       : []),
@@ -207,7 +207,7 @@ export function ContextMeter({
           {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "context-meter-stats")}
         >
           <DescriptionItem term={t("Cost")}>
-            {formatCost(sessionUsage.costUsd, format)}
+            {formatCostWith(sessionUsage.costUsd, format)}
           </DescriptionItem>
           {sessionUsage.apiMs > 0 ? (
             <DescriptionItem term={t("API time")}>

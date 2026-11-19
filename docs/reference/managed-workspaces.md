@@ -10,7 +10,9 @@ alone does not establish runtime support.
 
 `host/managed/managed-workspace-runtime.ts` composes the production services once. Startup
 reconciles provably stopped Host activities and recovers creation, rewind,
-delivery and removal journals before admitting new writers. Sessions, tasks,
+delivery and removal journals before admitting new writers. A creation blocked
+before Git ran (no folder, branch or registration) is not retried at startup:
+it stays recorded, fenced and listed for its owner's retry or cleanup. Sessions, tasks,
 goals, automations and stewards use authoritative registry execution paths.
 Providers, shells, terminals, editor writes and development servers participate
 in shared durable activity/reservation admission. Uncertain activity remains

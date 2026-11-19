@@ -79,6 +79,7 @@ import {
 import { GIT_ACTIONS, useRemoteSupports } from "../../connections/public/remoteCapabilities";
 import { useRemoteLoadFailure } from "../../connections/public/remoteHealth";
 import { RemoteLoadError } from "../../connections/public/RemoteLoadError";
+import { MachineGate } from "../../connections/public/MachineUnavailable";
 import { useReloadOnReconnect } from "../../connections/public/useReloadOnReconnect";
 import type { RemoteDataState } from "../../connections";
 import { basename, clipboardFilePaths, type FsEntry } from "../../../platform/tauri/fs";
@@ -377,18 +378,17 @@ function FileTreeInner({
   const canInspectGit = useRemoteSupports(cwd, GIT_ACTIONS) === true;
   const connectionFailure = useRemoteLoadFailure(cwd, "files");
   const refreshFailureShownCentrally = useConnectionErrorShownCentrally(refreshFailure?.message);
-  // Why creating cannot start at all: no folder to create in, or a remote machine that cannot be
-  // asked. These are the capability signals the tree already has; there is no per-folder permission.
+  // Why creating cannot start at all: no folder to create in, or a Host too old to do it. A
+  // machine that cannot be asked at all never shows the tree (see `FileTree`); there is no per-folder
+  // permission. An offline machine keeps its listing but cannot be changed.
   const createUnavailableReason =
     !cwd || cwd === "~"
       ? t("Open a project folder first")
       : connectionFailure?.kind === "unreachable"
         ? t("This machine is unreachable")
-        : connectionFailure?.kind === "identity"
-          ? t("Pair this machine again to change files")
-          : connectionFailure?.kind === "outdated"
-            ? t("Update the host to change files")
-            : undefined;
+        : connectionFailure?.kind === "outdated"
+          ? t("Update the host to change files")
+          : undefined;
 
   const toggle = (path: string) => {
     const next = new Set(expandedRef.current);
@@ -1305,8 +1305,14 @@ function FileTreeInner({
 // intact unless file-tree props, local state, or subscriptions actually change.
 // Keyed by root: switching folders remounts the inner tree, so every piece of
 // per-root state (selection, expansion, menus, refs, timers) starts fresh.
+// A remote project whose machine cannot be asked shows the shared notice and reads no folder,
+// except an offline machine whose listing is already loaded: that stays, dimmed, with its notice.
 export const FileTree = memo(function FileTree(props: Props) {
-  return <FileTreeInner key={props.cwd} {...props} />;
+  return (
+    <MachineGate cwd={props.cwd} hasData={() => peekDir(props.cwd) !== null}>
+      <FileTreeInner key={props.cwd} {...props} />
+    </MachineGate>
+  );
 });
 
 function TreeChildren({

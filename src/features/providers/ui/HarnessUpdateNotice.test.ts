@@ -189,10 +189,10 @@ describe("HarnessUpdateNotice", () => {
     let finishUpdate!: () => void;
     vi.mocked(updateCli).mockImplementationOnce(
       () =>
-        new Promise<void>((resolve) => {
+        new Promise<string | undefined>((resolve) => {
           finishUpdate = () => {
             openCodeInstalled = "opencode v2.0.26";
-            resolve();
+            resolve(undefined);
           };
         }),
     );

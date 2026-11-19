@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { HostStore } from "../store";
 import { capEventsGlobally, eventBudget, trimSessionEvents } from "./event-retention";
 
@@ -78,6 +78,53 @@ it("caps total event bytes by trimming the largest sessions' oldest revisions", 
     totalBytes: 150_000,
     deletedRows: 0,
   });
+});
+
+it("scans session sizes in short scopes that let queued database work interleave", async () => {
+  const sessions = Object.fromEntries(
+    Array.from({ length: 20 }, (_, index) => [
+      `s${String(index).padStart(2, "0")}`,
+      {
+        rows: 3 + index,
+        bytes: 100,
+      },
+    ]),
+  );
+  const store = await storeWithEvents(sessions);
+  const single = await store.db
+    .prepare("SELECT COALESCE(SUM(octet_length(payload)),0) AS bytes FROM events")
+    .get();
+  const order: string[] = [];
+  const storeScope = store.db.storeScope.bind(store.db);
+  let probe: Promise<unknown> | undefined;
+  const spy = vi.spyOn(store.db, "storeScope").mockImplementation((work, options) => {
+    // Queued behind the first slice, like a desktop request arriving mid-scan.
+    probe ??= store.db
+      .prepare("SELECT 1")
+      .get()
+      .then(() => order.push("probe"));
+    return storeScope(work, options);
+  });
+  const result = await capEventsGlobally(store.db, checkpoint(store), { cap: 1e9 });
+  order.push("scan");
+  await probe;
+  expect(spy.mock.calls.length).toBeGreaterThan(1);
+  expect(order).toEqual(["probe", "scan"]);
+  expect(result).toEqual({ totalBytes: Number(single?.bytes), deletedRows: 0, sessions: 0 });
+
+  // A stop between slices ends the pass before any trim decision on partial sizes.
+  let slices = 0;
+  spy.mockImplementation((work, options) => {
+    slices++;
+    return storeScope(work, options);
+  });
+  const stopped = await capEventsGlobally(store.db, checkpoint(store), {
+    cap: 0,
+    stopped: () => slices > 0,
+  });
+  expect(slices).toBe(1);
+  expect(stopped.deletedRows).toBe(0);
+  expect((await revisions(store, "s19")).length).toBe(22);
 });
 
 it("lets the revision floor win over the cap", async () => {

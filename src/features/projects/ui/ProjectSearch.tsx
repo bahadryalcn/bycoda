@@ -12,7 +12,7 @@ import { LoadingText } from "../../../shared/ui/LoadingText";
 import { SearchInput, SearchInputGroup } from "../../../shared/ui/SearchInput";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { useLocale, useT } from "../../../shared/i18n";
-import { findControlLabels } from "../../../shared/i18n/findLabels";
+import { useFindControlLabels } from "../../../shared/i18n/findLabels";
 import {
   CaseSensitive,
   MoreHorizontal,
@@ -83,7 +83,7 @@ function ProjectSearchContent({
   search,
 }: Props) {
   const t = useT();
-  const labels = findControlLabels(t);
+  const labels = useFindControlLabels();
   const inputRef = useRef<HTMLInputElement>(null);
   const closeLatest = useStableCallback(onClose);
   const stateKey = `find-in-files:${pathKey(cwd)}`;

@@ -345,7 +345,10 @@ export async function createLifecycleRuntime(
   try {
     // Each step logs its own time: this phase alone holds the Host's listen back.
     await bootPhase("recovery-managed", () =>
-      dependencies.managed.recover((id) => dependencies.tasks.reconcileDelivery(id)),
+      dependencies.managed.recover(
+        (id) => dependencies.tasks.reconcileDelivery(id),
+        (name, work) => bootPhase(`recovery-managed-${name}`, work),
+      ),
     );
     await bootPhase("recovery-services", () =>
       Promise.all(

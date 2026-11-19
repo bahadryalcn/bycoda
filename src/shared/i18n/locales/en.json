@@ -12364,5 +12364,12 @@
   "bycoda cannot control apps running as administrator. Run the target app without elevation.": "bycoda cannot control apps running as administrator. Run the target app without elevation.",
   "Could not save note. ": "Could not save note. ",
   "Availability change was not confirmed.": "Availability change was not confirmed.",
-  "Saving this question is unconfirmed. Retry to verify the original card.": "Saving this question is unconfirmed. Retry to verify the original card."
+  "Saving this question is unconfirmed. Retry to verify the original card.": "Saving this question is unconfirmed. Retry to verify the original card.",
+  "{p0} isn’t available": "{p0} isn’t available",
+  "This project’s machine isn’t available": "This project’s machine isn’t available",
+  "This computer doesn’t have this project’s machine yet. Add it in Connections to open the project.": "This computer doesn’t have this project’s machine yet. Add it in Connections to open the project.",
+  "The machine no longer accepts this computer. Pair them again in Connections.": "The machine no longer accepts this computer. Pair them again in Connections.",
+  "The machine needs you to sign in again. Open Connections to reconnect.": "The machine needs you to sign in again. Open Connections to reconnect.",
+  "The machine isn’t answering. Waiting for it to come back.": "The machine isn’t answering. Waiting for it to come back.",
+  "The machine is turned off on this computer. Turn it on in Connections.": "The machine is turned off on this computer. Turn it on in Connections."
 }

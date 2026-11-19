@@ -66,6 +66,19 @@ type Props = {
   layout?: TitleBarLayout;
 };
 
+function closeIdleTabsItem(label: string, countIdleTabs: Props["countIdleTabs"]): ContextMenuItem {
+  // The menu reads the current count whenever it checks the row, including while already open.
+  return Object.defineProperty(
+    { kind: "item" as const, id: "close_idle_tabs", label },
+    "disabled",
+    {
+      enumerable: true,
+      configurable: true,
+      get: () => !countIdleTabs?.(),
+    },
+  );
+}
+
 const MemoMenuBar = memo(function MenuBar({
   onNew,
   onNewTerminal,
@@ -386,19 +399,7 @@ const MemoMenuBar = memo(function MenuBar({
       label: t("Close Other Tabs"),
       shortcut: shortcut("Tab: Close Others", `${MOD}${ALT}T`),
     },
-    ...(onCloseIdleTabs
-      ? [
-          {
-            kind: "item" as const,
-            id: "close_idle_tabs",
-            label: t("Close Idle Tabs"),
-            // Counted when the menu renders its items, not when the menu bar renders.
-            get disabled() {
-              return !countIdleTabs?.();
-            },
-          },
-        ]
-      : []),
+    ...(onCloseIdleTabs ? [closeIdleTabsItem(t("Close Idle Tabs"), countIdleTabs)] : []),
     {
       kind: "item",
       id: "close_all_tabs",

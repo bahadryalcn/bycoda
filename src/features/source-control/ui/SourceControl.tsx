@@ -13,6 +13,8 @@ import type { Worktree } from "../model/worktrees";
 import { Button } from "../../../shared/ui/Button";
 import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
+import { MachineGate } from "../../connections/public/MachineUnavailable";
+import { peekDiffIndex } from "../hooks/useDiffIndex";
 
 type Props = {
   repositoryPaths?: readonly string[];
@@ -29,7 +31,23 @@ type Props = {
   onOpenCommit: (commit: GitHistoryCommit) => void;
 };
 
-export function SourceControl({
+/** Source control of a project, or the shared notice while its machine cannot be asked: no
+ * repository, change, branch or history read starts until the machine is available. An
+ * offline machine keeps what was loaded (worktrees or changes) with its reconnect notice. */
+export function SourceControl(props: Props) {
+  const { cwd, enabled, repositoryPaths, onOpenRepository } = props;
+  const worktrees = useProjectWorktrees(
+    cwd,
+    enabled && !repositoryPaths?.length && !!onOpenRepository,
+  );
+  return (
+    <MachineGate cwd={cwd} hasData={() => !!worktrees.data || peekDiffIndex(cwd) !== null}>
+      <SourceControlContent {...props} worktrees={worktrees} />
+    </MachineGate>
+  );
+}
+
+function SourceControlContent({
   repositoryPaths,
   onOpenRepository,
   cwd,
@@ -42,12 +60,9 @@ export function SourceControl({
   onOpenInEditor,
   onOpenAllChanges,
   onOpenCommit,
-}: Props) {
+  worktrees: { data, error, loading, refresh },
+}: Props & { worktrees: ReturnType<typeof useProjectWorktrees> }) {
   useLocale();
-  const { data, error, loading, refresh } = useProjectWorktrees(
-    cwd,
-    enabled && !repositoryPaths?.length && !!onOpenRepository,
-  );
   // A plain folder has no worktrees to list; the panel below says so once.
   const connectionShownCentrally = useConnectionErrorShownCentrally(error);
   const discoveryNotice =

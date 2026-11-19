@@ -50,9 +50,9 @@ for (const theme of ["light", "dark"]) {
       // Wide footers keep the window-wide controls inline (refresh, sounds, full screen).
       const refresh = bar.getByRole("button", { name: "Refresh current view", exact: true });
       await expect(refresh).toHaveCount(1);
-      await expect(bar.getByRole("button", { name: "Workspace controls", exact: true })).toHaveCount(
-        0,
-      );
+      await expect(
+        bar.getByRole("button", { name: "Workspace controls", exact: true }),
+      ).toHaveCount(0);
       await page.evaluate(() => {
         (window as unknown as { refreshEvents: number }).refreshEvents = 0;
         window.addEventListener("bycoda:refresh-workspace-view", () => {

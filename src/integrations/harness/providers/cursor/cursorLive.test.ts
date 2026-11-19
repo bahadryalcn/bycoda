@@ -315,7 +315,8 @@ it("keeps concurrent Cursor questions reachable until each native response is wr
     "both responses acknowledged",
   );
   expect(
-    events.reduce(applyHarnessEvent, newSession("cursor", "/repo")).pendingQuestion,
+    events.reduce((state, event) => applyHarnessEvent(state, event), newSession("cursor", "/repo"))
+      .pendingQuestion,
   ).toBeUndefined();
   reply(promptId, { stopReason: "end_turn" });
   await turn;
@@ -373,7 +374,10 @@ describe("cursor background subagents", () => {
     });
     reply(promptId, { stopReason: "end_turn" });
     await turn;
-    const session = events.reduce(applyHarnessEvent, newSession("cursor", "/repo"));
+    const session = events.reduce(
+      (state, event) => applyHarnessEvent(state, event),
+      newSession("cursor", "/repo"),
+    );
     const row = session.blocks.find((block) => block.tool?.callId === "call_agent")!;
     expect(row.text).toBe("Review ACP routing");
     expect(row.tool?.status).toBe("completed");
@@ -877,7 +881,7 @@ it("fails the in-flight turn with the exit code and redacted stderr tail (Window
   onStderr!("\u001b[31mError: request rejected\u001b[0m\r\n");
   onStderr!("Authorization: Bearer abcdef0123456789abcdef\r\n");
   onExit!(3);
-  const error = await failed;
+  const error = (await failed) as Error;
   expect(error.message).toBe(
     "Cursor CLI exited (exit code 3):\nError: request rejected\nAuthorization: Bearer …",
   );

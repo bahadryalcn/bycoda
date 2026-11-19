@@ -2,12 +2,12 @@ import { useEffect, useState } from "react";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import type { NoticeAction } from "../../../shared/ui/Notice";
 import { Button } from "../../../shared/ui/Button";
-import { useT } from "../../../shared/i18n";
+import { useFormat, useT } from "../../../shared/i18n";
 import { Gauge, X } from "../../../shared/ui/icons";
 import { useMinuteNow } from "../../../shared/hooks/useMinuteNow";
 import type { ProviderAccountProvider } from "../../providers/model/providerAccounts";
 import type { UsageLimit } from "../model/session";
-import { formatUsageLimitReset, usageLimitResetDelay } from "../model/usageLimit";
+import { formatUsageLimitResetWith, usageLimitResetDelay } from "../model/usageLimit";
 import { ProviderAccountMenu } from "./ProviderAccountMenu";
 
 export function UsageLimitNotice({
@@ -32,6 +32,7 @@ export function UsageLimitNotice({
   onDismiss?: () => void;
 }) {
   const t = useT();
+  const format = useFormat();
   const resetsAt = limit.resetsAt;
   // The minute clock drives the countdown label; it can trail the reset by up to a minute.
   const minuteNow = useMinuteNow(resetsAt != null);
@@ -52,7 +53,7 @@ export function UsageLimitNotice({
     resetsAt == null
       ? t("Reset time unknown")
       : waiting
-        ? t("Resets {p0}", { p0: formatUsageLimitReset(resetsAt, now) })
+        ? t("Resets {p0}", { p0: formatUsageLimitResetWith(resetsAt, now, t, format) })
         : t("Limit has reset");
 
   // The toggle names the action it performs: "Cancel auto-resume" while armed, "Resume at reset" to arm.

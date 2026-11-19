@@ -31,7 +31,7 @@ const job = (id: string, day: number): SocialJob =>
     status: "succeeded",
     createdAt: Date.UTC(2026, 10, day),
     payload: { text: `Post ${id}`, media: [] },
-  }) as SocialJob;
+  }) as unknown as SocialJob;
 const action = (id: string, day: number): AiAction => ({
   id,
   at: Date.UTC(2026, 10, day),

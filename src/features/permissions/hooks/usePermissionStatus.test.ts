@@ -70,7 +70,7 @@ it("shares one report, one focus read and one native subscription across consume
     ),
   );
   expect(native.read).toHaveBeenCalledTimes(1);
-  expect(listen.mock.calls.filter(([type]) => type === "focus")).toHaveLength(1);
+  expect(listen.mock.calls.filter(([type]) => (type as string) === "focus")).toHaveLength(1);
   expect(seen.every((row) => row.entries[0].state === "granted")).toBe(true);
   await act(async () => window.dispatchEvent(new Event("focus")));
   expect(native.read).toHaveBeenCalledTimes(2);

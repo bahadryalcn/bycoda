@@ -528,7 +528,7 @@ test("split search keeps independent compact toolbars and keyboard focus", async
   await page.keyboard.press("Control+f");
   await expect(leftFind).toBeFocused();
   await leftFind.fill("value10");
-  await left.getByRole("button", { name: "Match Whole Word", exact: true }).click();
+  await left.getByRole("button", { name: "Match whole word", exact: true }).click();
   await expect(left.locator(".cm-find-count")).toContainText("1 of 1");
   await right.locator(".cm-content").click();
   await page.keyboard.press("Control+f");
@@ -536,12 +536,12 @@ test("split search keeps independent compact toolbars and keyboard focus", async
   await rightFind.fill("value2");
   await expect(right.locator(".cm-find-count")).toContainText("111");
   await expect(leftFind).toHaveValue("value10");
-  await expect(left.getByRole("button", { name: "Match Whole Word", exact: true })).toHaveAttribute(
+  await expect(left.getByRole("button", { name: "Match whole word", exact: true })).toHaveAttribute(
     "aria-pressed",
     "true",
   );
   await expect(
-    right.getByRole("button", { name: "Match Whole Word", exact: true }),
+    right.getByRole("button", { name: "Match whole word", exact: true }),
   ).toHaveAttribute("aria-pressed", "false");
   await rightFind.press("Control+f");
   await expect(rightFind).toBeFocused();

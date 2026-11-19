@@ -35,7 +35,9 @@ test("1100 mounted row hooks settle and refresh after a committed change", async
   await page.evaluate(() => (window as any).unmountProbes());
 });
 
-test("corrupt timestamp rejects a write and preserves original evidence", async ({ page }) => {
+test("a malformed stored timestamp reads as absent and the next write repairs it", async ({
+  page,
+}) => {
   await page.goto("/tests/browser/inbox/inbox-seen-storage.html", {
     waitUntil: "domcontentloaded",
   });
@@ -65,7 +67,7 @@ test("corrupt timestamp rejects a write and preserves original evidence", async 
     db.close();
     return { saved, original, state: (window as any).inboxSeen.inboxSeenStatus().state };
   });
-  expect(result).toEqual({ saved: false, original: "corrupt", state: "error" });
+  expect(result).toEqual({ saved: true, original: 500, state: "ready" });
 });
 
 test("large unread aggregate settles without repeating reads", async ({ page }) => {

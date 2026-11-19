@@ -136,7 +136,7 @@ describe("tools presentation transfer", () => {
           timestamp: 1,
           source: "server" as const,
           sourceId: "dev",
-          level: "log" as const,
+          level: "info" as const,
           message: "Ready",
           details: { nested: { value: 1 } },
         },

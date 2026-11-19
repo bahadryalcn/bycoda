@@ -72,7 +72,7 @@ for (const theme of ["light", "dark"])
       );
       await expect(page.getByText(/Provider authentication expired/)).toBeVisible();
       await capture("error");
-      await page.getByRole("button", { name: "Retry", exact: true }).click();
+      await page.getByRole("button", { name: "Try again", exact: true }).click();
       await requestCount(page, 3);
       await resolve(page, {
         kind: "proposal",

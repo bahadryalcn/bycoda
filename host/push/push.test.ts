@@ -181,7 +181,7 @@ describe("sendExpoPush", () => {
   const accepted = () =>
     Response.json({ data: Array.from({ length: 100 }, () => ({ status: "ok" })) });
   const failure = (run: Promise<unknown>) =>
-    run.catch((caught: unknown) => caught as ExpoPushError);
+    run.catch((caught: unknown) => caught as ExpoPushError) as Promise<ExpoPushError>;
 
   it("keeps an ambiguous 5xx batch out of retry and lists only the later unsent batch", async () => {
     const fetchImpl = vi

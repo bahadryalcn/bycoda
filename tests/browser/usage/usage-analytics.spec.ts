@@ -141,14 +141,17 @@ for (const [theme, width] of [
       fullPage: true,
       animations: "disabled",
     });
-    await openFilters(page);
+    // The date range lives in the toolbar: choosing Custom opens a popover holding the exact picker.
+    await select(page, "Date range", "Custom date and time");
     await page.getByRole("button", { name: "Date and time range", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Date and time range", exact: true });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByRole("grid")).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
-    await expect(page.getByRole("dialog", { name: "Filters", exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("dialog", { name: "Custom date and time", exact: true }),
+    ).toBeVisible();
     await page.getByRole("button", { name: "Date and time range", exact: true }).click();
     await expect(dialog).toBeVisible();
     const date = await page.evaluate(() => {
@@ -170,7 +173,7 @@ for (const [theme, width] of [
     await expect(dialog).toBeHidden();
     await select(page, "Resolution", "Hourly");
     await page.keyboard.press("Escape");
-    await expect(page.locator('[data-usage-chart="trend"] details table tbody tr')).toHaveCount(4);
+    await expect(page.locator('[data-usage-chart="trend"] figure table tbody tr')).toHaveCount(4);
     await page.getByRole("tab", { name: "Time analysis", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Day and hour activity" })).toBeVisible();
     await expect(page.locator('[data-usage-chart="trend"]')).toHaveCount(0);
@@ -225,7 +228,8 @@ test("usage analytics and exact date/time controls are localized in Turkish", as
   while (await series.count()) await series.first().click();
   await expect(trend.getByText("Gösterilecek seriyi seçin", { exact: true })).toBeVisible();
   await expect(trend.getByText("Choose a series to show", { exact: true })).toHaveCount(0);
-  await page.getByRole("button", { name: "Filtreler", exact: true }).click();
+  await page.getByRole("button", { name: /^Tarih aralığı:/ }).click();
+  await page.getByRole("option", { name: "Özel tarih ve saat", exact: true }).click();
   await page.getByRole("button", { name: "Tarih ve saat aralığı", exact: true }).click();
   await expect(page.getByLabel("Başlangıç tarihi ve saati", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Bitiş tarihi ve saati", { exact: true })).toBeVisible();

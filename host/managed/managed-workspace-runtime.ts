@@ -492,49 +492,80 @@ export function createManagedWorkspaceRuntime(
         return registry.retarget(request, owner);
       },
     },
-    async recover(reconcileDelivery?: (workspaceId: string) => Promise<unknown>) {
+    /** `step` times each named step; boot passes a phase timer, other callers run plain. */
+    async recover(
+      reconcileDelivery?: (workspaceId: string) => Promise<unknown>,
+      step: <T>(name: string, work: () => Promise<T>) => Promise<T> = (_name, work) => work(),
+    ) {
       const initialStartup = !started;
       // Actual process-startup data migration completes before server admission
       // or managed writes. It never reconstructs Native actors or freshness.
-      if (initialStartup) await nativeActivity.initializeBufferRetention();
+      if (initialStartup)
+        await step("buffer-retention", () => nativeActivity.initializeBufferRetention());
       // Settle only unfenced prior Host turns. The AsyncLocal scope admits startup
       // normalization without exposing managed writes to any transport or caller.
-      if (initialStartup) await startupRecovery.run(true, () => engine.recoverManagedStartup());
-      for (const operation of await registry.listOperations())
-        if (
-          operation.phase !== "complete" ||
-          (operation.kind === "rewind" && !(operation as { finalized?: boolean }).finalized)
-        )
-          await activity.reconcilePreviousActivities({
-            workspaceId: operation.workspaceId,
-            operationId: operation.id,
-          });
-      const reconciled = await activity.reconcilePreviousActivities();
-      for (const blocked of reconciled.blocked)
-        console.warn(
-          `Workspace activity ${blocked.activityId} from a previous Host run was kept: ${blocked.reason}`,
+      if (initialStartup)
+        await step("startup-turns", () =>
+          startupRecovery.run(true, () => engine.recoverManagedStartup()),
         );
-      const results = (await exactGitRewind.enabled()) ? await rewind.recoverPending() : [];
-      for (const operation of await registry.listOperations()) {
-        if (operation.kind === "rewind") continue;
-        try {
-          if (operation.kind === "create" && operation.phase !== "complete")
-            await registry.recoverCreate(operation.id);
-          else if (operation.kind === "delivery") {
-            if (operation.phase !== "complete") await delivery.recover(operation.id);
-            await reconcileDelivery?.(operation.workspaceId);
-          } else if (operation.kind === "removal" && operation.phase !== "complete")
-            await removal.recover(operation.id);
-        } catch (error) {
-          results.push({
-            operationId: operation.id,
-            error: error instanceof Error ? error.message : String(error),
-          });
+      await step("activities", async () => {
+        for (const operation of await registry.listOperations())
+          if (
+            operation.phase !== "complete" ||
+            (operation.kind === "rewind" && !(operation as { finalized?: boolean }).finalized)
+          )
+            await activity.reconcilePreviousActivities({
+              workspaceId: operation.workspaceId,
+              operationId: operation.id,
+            });
+        const reconciled = await activity.reconcilePreviousActivities();
+        for (const blocked of reconciled.blocked)
+          console.warn(
+            `Workspace activity ${blocked.activityId} from a previous Host run was kept: ${blocked.reason}`,
+          );
+      });
+      const results = await step("rewind", async () =>
+        (await exactGitRewind.enabled()) ? await rewind.recoverPending() : [],
+      );
+      await step("operations", async () => {
+        for (const operation of await registry.listOperations()) {
+          if (operation.kind === "rewind") continue;
+          try {
+            if (
+              operation.kind === "create" &&
+              operation.phase === "blocked" &&
+              // Classification failure keeps the ordinary recovery below.
+              (await registry
+                .abandonUnmaterializedCreate(operation.workspaceId, false)
+                .catch(() => null))
+            ) {
+              // Nothing reached Git, so a retry only repeats the failed creation under the
+              // repository's Git lock and held the Host's listen for every boot. It stays
+              // recorded and fenced until its owner retries the request or cleans it up.
+              const error = `Workspace creation is blocked until its owner retries or cleans it up: ${operation.error?.message ?? "materialization failed"}`;
+              console.warn(`Workspace creation ${operation.id} was kept: ${error}`);
+              results.push({ operationId: operation.id, error });
+            } else if (operation.kind === "create" && operation.phase !== "complete")
+              await registry.recoverCreate(operation.id);
+            else if (operation.kind === "delivery") {
+              if (operation.phase !== "complete") await delivery.recover(operation.id);
+              await reconcileDelivery?.(operation.workspaceId);
+            } else if (operation.kind === "removal" && operation.phase !== "complete")
+              await removal.recover(operation.id);
+          } catch (error) {
+            results.push({
+              operationId: operation.id,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
         }
-      }
-      await activity.recoverOrphanReservations();
+      });
+      await step("orphan-reservations", () => activity.recoverOrphanReservations());
       started = true;
-      if (initialStartup) await startupRecovery.run(true, () => engine.recoverManagedStartup());
+      if (initialStartup)
+        await step("startup-turns-final", () =>
+          startupRecovery.run(true, () => engine.recoverManagedStartup()),
+        );
       return results;
     },
     async prepareBootstrap(request: Parameters<typeof bootstrap.prepare>[0]) {

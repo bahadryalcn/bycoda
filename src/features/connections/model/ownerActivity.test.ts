@@ -22,7 +22,7 @@ it("tells every advertising Host only while the owner uses this window", async (
 });
 
 it("never dials a machine that is down or turned off here", () => {
-  const send = vi.fn(() => Promise.resolve());
+  const send = vi.fn((_id: string) => Promise.resolve());
   const reachable = vi.fn((machine: { id: string }) => machine.id === "up");
   reportOwnerActivity({
     active: () => true,
@@ -37,7 +37,7 @@ it("never dials a machine that is down or turned off here", () => {
 it("reports a machine again on the next tick after it reconnects", () => {
   vi.useFakeTimers();
   let connected = false;
-  const send = vi.fn(() => Promise.resolve());
+  const send = vi.fn((_id: string) => Promise.resolve());
   const stop = startOwnerActivityReports({
     active: () => true,
     machines: () => [{ id: "a" }],
@@ -54,7 +54,7 @@ it("reports a machine again on the next tick after it reconnects", () => {
 
 it("reports on an interval until stopped", () => {
   vi.useFakeTimers();
-  const send = vi.fn(() => Promise.resolve());
+  const send = vi.fn((_id: string) => Promise.resolve());
   const stop = startOwnerActivityReports({
     active: () => true,
     machines: () => [{ id: "a" }],

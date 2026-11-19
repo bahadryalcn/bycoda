@@ -3,6 +3,10 @@ import { createStore } from "../../../shared/lib/store";
 import { gitDiffStats, subscribeGitChanged, type GitDiffStats } from "../../../platform/tauri/fs";
 import { currentGitChangeHint, peekFullGitIndex } from "../model/gitIndexStore";
 import {
+  readMachineAvailability,
+  useMachineAvailability,
+} from "../../connections/public/machineAvailability";
+import {
   ACTIVE_PROJECT_REFRESH_MS,
   BACKGROUND_PROJECT_REFRESH_MS,
 } from "../model/gitRefreshPolicy";
@@ -192,10 +196,12 @@ export function useProjectDiffStats(
   foreground = true,
 ): GitDiffStats | null {
   const active = enabled && Boolean(cwd) && cwd !== "~";
+  // The last counts stay shown, but a machine that cannot be asked is not read.
+  const readable = useMachineAvailability(cwd).available;
   const subscribe = useCallback(
     (listener: () => void) =>
-      active ? subscribeEntry(cwd, listener, foreground) : () => undefined,
-    [active, cwd, foreground],
+      active && readable ? subscribeEntry(cwd, listener, foreground) : () => undefined,
+    [active, readable, cwd, foreground],
   );
   const getSnapshot = useCallback(() => {
     return active ? entryFor(cwd).stats : null;
@@ -213,7 +219,10 @@ export function useProjectsDiffStats(
   cwds: readonly string[],
   enabled: boolean,
 ): (GitDiffStats | null)[] {
-  const paths = cwds.filter((cwd) => enabled && Boolean(cwd) && cwd !== "~");
+  // Reads only machines that can be asked; a list of many projects checks each one.
+  const paths = cwds.filter(
+    (cwd) => enabled && Boolean(cwd) && cwd !== "~" && readMachineAvailability(cwd).available,
+  );
   const key = JSON.stringify(paths);
   const subscribe = useCallback(
     (listener: () => void) => {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useReducer, useState } from "react";
 import { invokeWorkspace, subscribeGitChanged } from "../../../platform/tauri/fs";
 import { joinPath, pathKey } from "../../../shared/lib/paths";
+import { useMachineAvailability } from "../../connections/public/machineAvailability";
 
 type Modules = Readonly<Record<string, readonly string[]>>;
 /** The size bound that cut one checkout's repository scan short; its list is partial. */
@@ -48,9 +49,12 @@ function list(cwd: string, includeRepositories: boolean): Promise<Discovery> {
  */
 export function useGitSubmodules(
   paths: readonly string[],
-  enabled: boolean,
+  wanted: boolean,
   includeRepositories = false,
 ) {
+  // The roots of one view share a machine; one that cannot be asked is not read.
+  const available = useMachineAvailability(paths[0]).available;
+  const enabled = wanted && available;
   const rootsKey = JSON.stringify([...new Set(paths.filter((path) => path && path !== "~"))]);
   const key = `${includeRepositories}:${rootsKey}`;
   const [snapshot, setSnapshot] = useState<Snapshot>({

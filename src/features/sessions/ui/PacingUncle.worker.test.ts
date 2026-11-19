@@ -21,15 +21,22 @@ class WorkerFake {
   onerror: (() => void) | null = null;
   onmessageerror: (() => void) | null = null;
   terminate = vi.fn();
-  postMessage = vi.fn((message: { type: string; generation: number; sequence?: number }) => {
-    const type = (
-      { probe: "capabilities", init: "ready", draw: "drawn", dispose: "disposed" } as Record<
-        string,
-        string
-      >
-    )[message.type];
-    if (type) this.onmessage?.({ data: { ...message, type, version: 1 } });
-  });
+  postMessage = vi.fn(
+    (message: {
+      type: string;
+      generation: number;
+      sequence?: number;
+      frame: Record<string, unknown>;
+    }) => {
+      const type = (
+        { probe: "capabilities", init: "ready", draw: "drawn", dispose: "disposed" } as Record<
+          string,
+          string
+        >
+      )[message.type];
+      if (type) this.onmessage?.({ data: { ...message, type, version: 1 } });
+    },
+  );
   constructor() {
     workers.push(this);
   }

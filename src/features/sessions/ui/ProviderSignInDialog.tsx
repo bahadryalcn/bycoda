@@ -2,7 +2,7 @@ import { useT } from "../../../shared/i18n";
 import { useState } from "react";
 import { loginHarness } from "../../../integrations/harness/core/auth";
 import { HARNESS_TITLE, type HarnessId } from "../model/session";
-import { providerAccountErrorText } from "../../providers/public/providerAccountError";
+import { providerAccountErrorTextWith } from "../../providers/public/providerAccountError";
 import { Modal } from "../../../shared/ui/Modal";
 import { ProviderSignInPanel, type ProviderSignInState } from "./ProviderSignInPanel";
 
@@ -32,7 +32,8 @@ export function ProviderSignInDialog({
   }>({ key: ownerKey, state: "idle", error: null });
   const current = attempt.key === ownerKey ? attempt : null;
   const state: ProviderSignInState = current?.state ?? "idle";
-  const error = state === "error" ? providerAccountErrorText(current?.error, "signIn") : null;
+  const error =
+    state === "error" ? providerAccountErrorTextWith(current?.error, "signIn", t) : null;
 
   const signIn = () => {
     setAttempt({ key: ownerKey, state: "running", error: null });

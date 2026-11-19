@@ -27,12 +27,20 @@ let mutationTail: Promise<void> = Promise.resolve();
 let queuedMutations = 0;
 /** Waits between automatic retries of a Host busy failure: 1s to 16s. */
 const TRANSIENT_RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 16_000];
-/** Host capacity pushback only; a deadline or an unknown failure stays held for an explicit retry. */
+/** Host capacity pushback only; a deadline or a Host-side unknown failure stays held for an
+ * explicit retry. */
 const HOST_BUSY =
   /RPC_WS_OVERLOAD|Host read capacity is busy|Host pending (read request|control queue) limit reached/;
 /** Whether a held failure is Host capacity pushback rather than a privacy defect. */
 export function isRoomPrivacyHostBusy(error: unknown): boolean {
   return HOST_BUSY.test(errorText(error));
+}
+/** The native Host connection stalled or was replaced before a result arrived. Native commands
+ * are idempotent per operation ID, so replaying the same operation is the receipt reconciliation. */
+const NATIVE_RESULT_LOST = /RPC_WS_INTERRUPTED/;
+/** Failures the drain retries on its own under the original operation identity. */
+function isReconcilable(error: unknown): boolean {
+  return isRoomPrivacyHostBusy(error) || NATIVE_RESULT_LOST.test(errorText(error));
 }
 let wakeBackoff: (() => void) | null = null;
 let ready = false;
@@ -114,6 +122,12 @@ export function withRoomPrivacyMutation<T>(
   // The change's own failure (for example an unreachable remote machine) after a committed
   // projection leaves privacy confirmed; only projection failures hold later changes.
   let projectionCommitted = false;
+  // A lost native result after the local change ran is reconciled by the drain; Room stays
+  // closed (pending) meanwhile, so the applied change is reported as done.
+  let mutated = false;
+  let reconciling = false;
+  let value: T | undefined;
+  let mutationError: unknown;
   const work = mutationTail.then(async () => {
     if (!ready && !status.error)
       await new Promise<void>((resolve, reject) => {
@@ -140,8 +154,6 @@ export function withRoomPrivacyMutation<T>(
         ...(workspaceRequestId ? { workspaceRequestId } : {}),
       });
       const current = await invoke<Projection | null>("control_privacy_projection_read");
-      let value: T | undefined;
-      let mutationError: unknown;
       const token = newPrivacyMutationToken();
       try {
         value = await mutate(token);
@@ -149,6 +161,7 @@ export function withRoomPrivacyMutation<T>(
         mutationError = error;
       } finally {
         activeMutationTokens.delete(token);
+        mutated = true;
       }
       operation = {
         expected: current?.revision ?? null,
@@ -169,8 +182,17 @@ export function withRoomPrivacyMutation<T>(
       projectionCommitted = true;
       if (mutationError !== undefined) throw mutationError;
       return value as T;
+    } catch (error) {
+      if (!projectionCommitted && ready && isReconcilable(error)) {
+        // Replay this operation in the background before any later change begins.
+        reconciling = true;
+        running = false;
+        dirty = true;
+        startDrain();
+      }
+      throw error;
     } finally {
-      running = false;
+      if (!reconciling) running = false;
     }
   });
   mutationTail = work.then(
@@ -195,6 +217,14 @@ export function withRoomPrivacyMutation<T>(
         throw error;
       }
       queuedMutations--;
+      if (reconciling) {
+        // The drain owns the status until it settles; it publishes only once no change is queued.
+        if (!running && queuedMutations === 0 && !status.error)
+          publish({ pending: false, error: null });
+        if (!mutated) throw error;
+        if (mutationError !== undefined) throw mutationError;
+        return value as T;
+      }
       publish({ pending: false, error: errorText(error) });
       throw error;
     },
@@ -340,7 +370,7 @@ function backoff(ms: number): Promise<void> {
   });
 }
 
-/** Qualify the projection. A transient Host failure (busy, deadline) is retried with backoff
+/** Qualify the projection. Host busy pushback or a lost native result is retried with backoff
  * under the same operation identity while the status stays pending; anything else, or an
  * exhausted budget, is held as an error until explicit retry. */
 async function drain(): Promise<void> {
@@ -354,7 +384,7 @@ async function drain(): Promise<void> {
       } catch (error) {
         dirty = true;
         const delay = TRANSIENT_RETRY_DELAYS_MS[attempt];
-        if (delay === undefined || !ready || !isRoomPrivacyHostBusy(error)) {
+        if (delay === undefined || !ready || !isReconcilable(error)) {
           publish({
             pending: false,
             error: errorText(error),

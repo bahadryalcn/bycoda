@@ -107,10 +107,14 @@ describe("LiveViewRegistry", () => {
     emit("Page.screencastFrame", frameEvent("first"));
     clock = 1200;
     emit("Page.screencastFrame", frameEvent("too-soon"));
-    expect((await registry.frame("acc"))?.jpegBase64).toBe("first");
+    expect(((await registry.frame("acc")) as { jpegBase64: string } | null)?.jpegBase64).toBe(
+      "first",
+    );
     clock = 2000;
     emit("Page.screencastFrame", frameEvent("x".repeat(1024 * 1024 * 2)));
-    expect((await registry.frame("acc"))?.jpegBase64).toBe("first");
+    expect(((await registry.frame("acc")) as { jpegBase64: string } | null)?.jpegBase64).toBe(
+      "first",
+    );
   });
 
   it("ignores frames from another CDP session", async () => {
@@ -152,7 +156,7 @@ describe("LiveViewRegistry", () => {
 });
 
 describe("commandsFor (owner input)", () => {
-  const frame = { jpegBase64: "", width: 800, height: 600 };
+  const frame = { seq: 1, jpegBase64: "", width: 800, height: 600 };
 
   it("maps a click inside the frame to move, press and release", () => {
     const commands = commandsFor({ type: "click", x: 10, y: 20 }, frame);

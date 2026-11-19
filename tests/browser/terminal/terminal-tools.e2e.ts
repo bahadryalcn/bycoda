@@ -331,7 +331,7 @@ for (const theme of ["light", "dark"]) {
       await expect(list).toBeVisible();
       await expect(terminal).toBeFocused();
       await terminal.press("ArrowDown");
-      await expect(list.getByRole("option", { selected: true })).toHaveText("git diff");
+      await expect(list.getByRole("option", { selected: true })).toContainText("git diff");
       await terminal.press("Tab");
       await expect(list).toHaveCount(0);
       await expect(page.locator("html")).toHaveAttribute(

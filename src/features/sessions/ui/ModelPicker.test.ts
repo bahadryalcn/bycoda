@@ -51,6 +51,7 @@ vi.mock("../../../shared/ui/Popover", async () => ({
     anchor?: unknown;
     side?: string;
     "aria-label"?: string;
+    "aria-activedescendant"?: string;
     "data-model-picker"?: boolean;
   }) =>
     createElement(

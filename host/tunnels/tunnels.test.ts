@@ -102,8 +102,8 @@ describe("external tunnels host ownership", () => {
     s.executable.mockResolvedValue(undefined as never);
     let finish!: (program: string) => void;
     let signal!: AbortSignal;
-    s.install.mockImplementationOnce((given: AbortSignal) => {
-      signal = given;
+    s.install.mockImplementationOnce((given?: AbortSignal) => {
+      signal = given!;
       return new Promise<string>((resolve) => (finish = resolve));
     });
     const starting = s.service.start(dev);

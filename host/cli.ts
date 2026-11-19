@@ -21,6 +21,8 @@ import { createNativeAuthorityBootstrap } from "./native-authority/bootstrap";
 import { writeFileAtomic } from "./storage/atomic-write";
 import {
   HOST_STOP_WAIT_MS,
+  hostStateReleased,
+  readHostRecord,
   readRunningHost,
   verifyHostStopped,
   type RunningHost as Running,
@@ -259,19 +261,25 @@ Connect another computer using an SSH forward to the loopback port.`);
           lifecycle(state, "stop"),
         );
         if (!stopped) {
-          if (readRunning()?.pid !== state.pid)
+          if (readHostRecord(directory)?.pid !== state.pid)
             throw new Error("The host restarted during shutdown; retry service uninstall.");
           exitedState = state;
         }
       } else await lifecycle(state, "stop").catch(() => undefined);
       const stopStarted = monotonicNow();
-      while (!exitedState && elapsedSince(stopStarted) < HOST_STOP_WAIT_MS && existsSync(statePath))
+      while (
+        !exitedState &&
+        elapsedSince(stopStarted) < HOST_STOP_WAIT_MS &&
+        !hostStateReleased(directory, state.pid)
+      )
         await new Promise((resolve) => setTimeout(resolve, 100));
-      if (process.platform === "win32" && !exitedState && existsSync(statePath))
+      if (process.platform === "win32" && !exitedState && !hostStateReleased(directory, state.pid))
         throw new Error("The old host did not finish shutting down; service paths were preserved.");
     }
     if (process.platform === "win32") notes = await uninstallService();
-    if (exitedState && readRunning()?.pid === exitedState.pid) rmSync(statePath, { force: true });
+    // A Host that exited without its cleanup (forced exit) leaves its record behind.
+    if (state && existsSync(statePath) && hostStateReleased(directory, state.pid))
+      rmSync(statePath, { force: true });
     console.log(
       [
         (await probeHostOwner(directory)) === "stopped"

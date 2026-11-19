@@ -104,7 +104,7 @@ it("groups failed accounts under one retry and sends only those account IDs", as
   const container = document.createElement("div");
   const root = createRoot(container);
   try {
-    await act(async () => root.render(createElement(MessagesPanel, { accounts })));
+    await act(async () => root.render(createElement(MessagesPanel, { accounts, sourceRow: null })));
     expect(container.textContent).toContain("Could not refresh 2 accounts.");
     const retries = [...container.querySelectorAll("button")].filter(
       (control) => control.textContent?.trim() === "Try again",

@@ -61,7 +61,7 @@ for (const theme of ["light", "dark"])
           ).toBeVisible();
         if (surface === "permissions")
           await expect(
-            page.getByRole("button", { name: "Review access…", exact: true }).first(),
+            page.getByRole("button", { name: "Review access", exact: true }).first(),
           ).toBeVisible();
         if (surface === "guide")
           await expect(page.getByText("Not allowed", { exact: true })).toBeVisible();

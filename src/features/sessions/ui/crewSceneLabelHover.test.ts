@@ -19,7 +19,7 @@ it("reveals a clipped crew member's full name and context on pointer hover", () 
       root.render(
         createElement(
           OverflowTooltip,
-          { label: hint },
+          { label: hint, children: null },
           createElement(
             "span",
             {

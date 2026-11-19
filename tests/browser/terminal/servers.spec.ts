@@ -795,7 +795,9 @@ test("quick connect is explicit, leaves inventory unsaved and keeps the raw tab 
   expect((await calls()).some((item) => item.command.startsWith("ssh_terminal"))).toBe(false);
   await page.getByRole("button", { name: "Quick connect", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Quick connect", exact: true });
-  await dialog.getByRole("textbox", { name: "Hostname", exact: true }).fill("quick.example.invalid");
+  await dialog
+    .getByRole("textbox", { name: "Hostname", exact: true })
+    .fill("quick.example.invalid");
   await dialog.getByRole("textbox", { name: "SSH user", exact: true }).fill("alice");
   await expect(dialog.locator('[aria-label="Endpoint preview"]')).toContainText(
     "alice@quick.example.invalid:22",

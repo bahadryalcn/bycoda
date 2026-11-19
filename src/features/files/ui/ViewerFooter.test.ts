@@ -30,7 +30,8 @@ vi.mock("./PdfViewer", () => ({ default: () => null }));
 vi.mock("../../sessions/public/SurfaceSelection", async () => {
   const { createElement } = await import("react");
   return {
-    SurfaceSelection: ({ children }: { children: unknown }) => createElement("div", null, children),
+    SurfaceSelection: ({ children }: { children: import("react").ReactNode }) =>
+      createElement("div", null, children),
   };
 });
 

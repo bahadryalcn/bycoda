@@ -82,6 +82,7 @@ export function LocalMedia({
     // never publishes into a newer scope.
     if (!near || !isLocalMediaPath(path)) return;
     const controller = new AbortController();
+    const maxBytes = video ? undefined : LOCAL_IMAGE_MAX_BYTES;
     void (async () => {
       try {
         // shortcut: the native size gate runs once at preparation; a file that grows
@@ -89,7 +90,7 @@ export function LocalMedia({
         // to the asset grant if that matters.
         const local = await prepareLocalFile(path, {
           signal: controller.signal,
-          maxBytes: video ? undefined : LOCAL_IMAGE_MAX_BYTES,
+          maxBytes,
         });
         if (controller.signal.aborted) return;
         setSource({ path, url: convertFileSrc(local) });

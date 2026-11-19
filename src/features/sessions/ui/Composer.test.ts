@@ -34,7 +34,7 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
           ? mcpInvoke(command, args)
           : command === "list_question_attachment_drafts"
             ? Promise.resolve([])
-            : original.invoke(command, args),
+            : original.invoke(command, args as Parameters<typeof original.invoke>[1]),
   };
 });
 
@@ -451,7 +451,7 @@ describe("Composer question focus", () => {
     expect(onNewSession).toHaveBeenCalledOnce();
     expect(onSubmit).not.toHaveBeenCalled();
     expect(textarea.value).toBe("");
-    expect(getComposerDraft("new-command")?.text ?? "").toBe("");
+    expect(getComposerDraft("new-command") ?? "").toBe("");
   });
 
   it("offers /new in the command picker for remote sessions", async () => {
@@ -509,7 +509,7 @@ describe("Composer question focus", () => {
       } else {
         expect(onSubmit).toHaveBeenCalledExactlyOnceWith("/clear", [], { intent: "default" });
         expect(textarea.value).toBe("");
-        expect(getComposerDraft("clear-command")?.text ?? "").toBe("");
+        expect(getComposerDraft("clear-command") ?? "").toBe("");
       }
     },
   );
@@ -1002,6 +1002,7 @@ describe("Composer question focus", () => {
 
   it("names the message textarea in the active language and lets a caller override the name", async () => {
     const props = {
+      focused: true,
       harness: "claude" as const,
       model: "claude-sonnet",
       runtimeMode: "supervised" as const,
@@ -1761,7 +1762,9 @@ describe("Composer question focus", () => {
     const onRecallLastTurn = vi.fn();
     let restoreMessage: ((value: typeof recalled) => void) | undefined;
     let recallLastTurn: (() => void) | undefined;
-    const onSubmit = vi.fn(() => true);
+    const onSubmit = vi.fn(
+      (_text: string, _files: Attachment[], _options?: ComposerTurnOptions) => true,
+    );
 
     await act(async () =>
       root.render(

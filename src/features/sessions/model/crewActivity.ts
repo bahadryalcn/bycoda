@@ -15,6 +15,14 @@ export const ADVISOR_SEAT = 3;
 const SUBAGENT_SEATS = [0, 1, 4, 5];
 const MIN_SEATS = 6;
 
+function emptyCrewSeats(length: number, started: boolean): CrewSeat[] {
+  return Array.from({ length }, (_, id) => ({
+    role: id === LEAD_SEAT ? "lead" : id === ADVISOR_SEAT ? "advisor" : "subagent",
+    working: false,
+    ...(started ? { context: 0 } : {}),
+  }));
+}
+
 /** Claude's advisor is a server tool named "advisor"; the harness keeps the name as the tool kind. */
 export function isAdvisorBlock(block: Block): boolean {
   return block.role === "tool" && (block.tool?.kind ?? "").toLowerCase() === "advisor";
@@ -97,9 +105,9 @@ export function crewSeats(sessionId: string | undefined, sessions: readonly Sess
         : childrenWithContext;
     while (helpers.length < subagents) helpers.push({ context: leadContext ?? 0 });
   }
-  const seats: CrewSeat[] = Array.from(
-    { length: Math.max(MIN_SEATS, MIN_SEATS + subagents - SUBAGENT_SEATS.length) },
-    () => ({ role: "subagent", working: false, ...(started ? { context: 0 } : {}) }),
+  const seats = emptyCrewSeats(
+    Math.max(MIN_SEATS, MIN_SEATS + subagents - SUBAGENT_SEATS.length),
+    started,
   );
   const withContext = (seat: CrewSeat, context: number | undefined): CrewSeat =>
     context === undefined ? seat : { ...seat, context };
@@ -165,7 +173,7 @@ export function createCrewSeatsSelector(): (
 /** Preview/test crew: `count` working seats, filled lead, advisor, then subagents. */
 export function previewCrewSeats(count: number): CrewSeat[] {
   const n = Math.max(0, Math.floor(count));
-  const seats = crewSeats(undefined, []);
+  const seats = emptyCrewSeats(MIN_SEATS, false);
   while (seats.length < n) seats.push({ role: "subagent", working: false });
   const order = [
     LEAD_SEAT,

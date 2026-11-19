@@ -195,7 +195,11 @@ it("keeps another machine's subscribed banner and backoff after a scoped reconne
     expect(remotePollDue(project)).toBe(true);
     expect(remotePollDue(other)).toBe(false);
     expect(readRemoteConnection("env-other").status).toBe("unreachable");
+    // A recovery announcement alone does not say the machine answers: it stays unreachable
+    // (so views of it keep their notice) until a request to it succeeds.
     await act(async () => notifyRemoteRecovered());
+    expect(visible?.kind).toBe("unreachable");
+    await act(async () => recordRemoteConnection("env-other"));
     expect(visible).toBeUndefined();
     expect(remotePollDue(other)).toBe(true);
   } finally {

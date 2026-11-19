@@ -655,9 +655,9 @@ test("workspace header keeps location before history and project controls", asyn
             }));
             // A truncated project name must stay identifiable by its accessible name.
             if (titleWidth.content > titleWidth.available)
-              await expect(
-                header.getByRole("button", { name: /Switch worktree/ }),
-              ).toContainText("bycoda");
+              await expect(header.getByRole("button", { name: /Switch worktree/ })).toContainText(
+                "bycoda",
+              );
             else expect(titleWidth.content).toBeLessThanOrEqual(titleWidth.available);
           }
           // A narrow pane folds the session tools into "More actions".

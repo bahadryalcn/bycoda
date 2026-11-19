@@ -1,5 +1,5 @@
 import { errorText } from "../../lib/errors";
-import { useRef, useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode, type RefObject } from "react";
 import { useT } from "../../i18n";
 import { Button } from "../Button";
 import { ErrorDetails } from "../ErrorDetails";
@@ -11,6 +11,8 @@ import { Text } from "../Text";
 import { usePendingSource, type PendingChange } from "./pendingChanges";
 import { SettingsFeedback } from "./SettingsRows";
 import styles from "./SettingsSaveBar.module.css";
+
+type SaveFailure = { detail: string } | null;
 
 export type SettingsSaveBarProps = {
   /** Stable id of this editor; the settings shell asks before leaving while it has changes. */
@@ -44,6 +46,35 @@ export type SettingsSaveBarProps = {
   children?: ReactNode;
 };
 
+async function saveSettings(
+  onSave: SettingsSaveBarProps["onSave"],
+  running: RefObject<boolean>,
+  setBusy: (busy: boolean) => void,
+  setFailure: (failure: SaveFailure) => void,
+  notes: RefObject<HTMLDivElement | null>,
+  saveButton: RefObject<HTMLButtonElement | null>,
+): Promise<boolean> {
+  // Duplicate-operation guard: taken before the first await.
+  if (running.current) return false;
+  running.current = true;
+  setBusy(true);
+  try {
+    const acknowledged = (await onSave()) === true;
+    // A refusal the editor explains itself leaves no stale failure.
+    setFailure(null);
+    // Retry unmounts once the attempt settles. Return focus to Save.
+    if (notes.current?.contains(document.activeElement)) saveButton.current?.focus();
+    return acknowledged;
+  } catch (error) {
+    // Keep the draft, registration and focus while showing the failure.
+    setFailure({ detail: errorText(error) });
+    return false;
+  } finally {
+    running.current = false;
+    setBusy(false);
+  }
+}
+
 /**
  * The one save bar for explicit-save settings. It sticks to the bottom of the settings
  * scroller, counts changes across every scope of the editor and lists them (grouped by scope,
@@ -75,33 +106,13 @@ export function SettingsSaveBar({
   const anchor = useRef<HTMLButtonElement>(null);
   const saveButton = useRef<HTMLButtonElement>(null);
   const notes = useRef<HTMLDivElement>(null);
-  const [failure, setFailure] = useState<{ detail: string } | null>(null);
+  const [failure, setFailure] = useState<SaveFailure>(null);
   const [busy, setBusy] = useState(false);
   const running = useRef(false);
   const working = pending || busy;
   const dirty = changes.length > 0;
   // Every way to save (button, Retry, leave prompt) runs here, so a rejection is never unhandled.
-  const save = async (): Promise<boolean> => {
-    // Duplicate-operation guard: taken before the first await.
-    if (running.current) return false;
-    running.current = true;
-    setBusy(true);
-    try {
-      const acknowledged = (await onSave()) === true;
-      // A refusal the editor explains itself (false) leaves no stale failure of ours behind.
-      setFailure(null);
-      // Retry unmounts once the attempt settles; focus returns to Save instead of the page.
-      if (notes.current?.contains(document.activeElement)) saveButton.current?.focus();
-      return acknowledged;
-    } catch (error) {
-      // The draft, the pending registration and focus stay as they were; only the notice changes.
-      setFailure({ detail: errorText(error) });
-      return false;
-    } finally {
-      running.current = false;
-      setBusy(false);
-    }
-  };
+  const save = () => saveSettings(onSave, running, setBusy, setFailure, notes, saveButton);
   const discard = () => {
     setFailure(null);
     onDiscard();

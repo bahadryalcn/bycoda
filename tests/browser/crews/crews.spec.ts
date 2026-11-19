@@ -1692,8 +1692,12 @@ for (const theme of ["light", "dark"] as const) {
       await shot("member-form");
       const performance = dialog.locator("summary").filter({ hasText: /^Performance$/ });
       await performance.click();
-      await expect(dialog.getByText("Unsupported fixture operation remote_request", { exact: true })).toBeVisible();
-      const error = dialog.getByRole("alert").filter({ hasText: "Unsupported fixture operation remote_request" });
+      await expect(
+        dialog.getByText("Unsupported fixture operation remote_request", { exact: true }),
+      ).toBeVisible();
+      const error = dialog
+        .getByRole("alert")
+        .filter({ hasText: "Unsupported fixture operation remote_request" });
       await expect(error).toHaveCount(1);
       await expect(error.locator("svg")).toHaveCount(1);
       await error.getByRole("button", { name: "Try again", exact: true }).click();

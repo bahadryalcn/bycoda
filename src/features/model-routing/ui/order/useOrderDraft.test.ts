@@ -337,7 +337,7 @@ it("keeps the submitted limit draft locked until Host acknowledgement", async ()
         release = resolve;
       }),
   );
-  let saving!: Promise<void>;
+  let saving!: Promise<unknown>;
   await act(async () => {
     saving = editor.save();
   });

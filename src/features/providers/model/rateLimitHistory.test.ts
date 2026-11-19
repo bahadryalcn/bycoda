@@ -20,8 +20,8 @@ const segmentKeys = () =>
     (name) => name.startsWith(segmentPrefix),
   );
 /** Every persisted reading: the legacy base array plus all window segments. */
-function stored(): { account: string; at: number }[] {
-  const rows: { account: string; at: number }[] = [];
+function stored(): { account: string; at: number; used: number }[] {
+  const rows: { account: string; at: number; used: number }[] = [];
   for (const name of [key, ...segmentKeys()]) {
     try {
       rows.push(...JSON.parse(localStorage.getItem(name) ?? "[]"));

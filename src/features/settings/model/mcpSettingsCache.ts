@@ -100,7 +100,11 @@ export function loadMcpSettings(
   options: { claudeHealth?: boolean; globalOnly?: boolean } = {},
 ) {
   if (cwd.startsWith("remote://")) {
-    return Promise.resolve({ servers: [], error: MCP_LOCAL_ONLY_ERROR, claudeError: "" });
+    return Promise.resolve<McpSettingsSnapshot>({
+      servers: [],
+      error: MCP_LOCAL_ONLY_ERROR,
+      claudeError: "",
+    });
   }
   const globalOnly = options.globalOnly === true;
   const key = settingsKey(cwd, globalOnly);

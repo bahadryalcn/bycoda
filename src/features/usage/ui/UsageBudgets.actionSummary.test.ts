@@ -41,8 +41,11 @@ const budget = (id: string, action: UsageBudget["action"]): UsageBudget => ({
   target: "/project",
   label: `Budget ${id}`,
   metric: "tokens",
-  period: "daily",
+  period: "weekly",
   capacity: 1000,
+  percent: 100,
+  provider: "codex",
+  accountId: "account",
   action,
 });
 

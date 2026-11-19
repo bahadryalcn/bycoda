@@ -16,7 +16,7 @@ function task(status: Task["status"], extra: Partial<Task> = {}): Task {
 
 describe("orchestrationTaskLabelCode", () => {
   it("maps each live status to its code", () => {
-    const live: OrchestrationSummary = { status: "running", live: true, tasks: [] };
+    const live: OrchestrationSummary = { status: "active", live: true, tasks: [] };
     expect(orchestrationTaskLabelCode(task("queued"), live)).toBe("queued");
     expect(orchestrationTaskLabelCode(task("running"), live)).toBe("working");
     expect(orchestrationTaskLabelCode(task("cancelling"), live)).toBe("stopping");
@@ -28,14 +28,14 @@ describe("orchestrationTaskLabelCode", () => {
   });
 
   it("prefers needs-input over every status", () => {
-    const live: OrchestrationSummary = { status: "running", live: true, tasks: [] };
+    const live: OrchestrationSummary = { status: "active", live: true, tasks: [] };
     expect(orchestrationTaskLabelCode(task("running", { needsInput: true }), live)).toBe(
       "needsInput",
     );
   });
 
   it("marks unfinished work from a saved run as saved, not working", () => {
-    const saved: OrchestrationSummary = { status: "running", tasks: [] };
+    const saved: OrchestrationSummary = { status: "active", tasks: [] };
     expect(orchestrationTaskLabelCode(task("running"), saved)).toBe("saved");
     expect(orchestrationTaskLabelCode(task("queued"), saved)).toBe("saved");
     expect(orchestrationTaskLabelCode(task("cancelling"), saved)).toBe("saved");

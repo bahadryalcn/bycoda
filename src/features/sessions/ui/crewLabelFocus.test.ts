@@ -81,7 +81,7 @@ it("follows resizes and text changes, and cleans up on release", async () => {
   expect(label.hasAttribute("data-clipped")).toBe(false);
   scrollWidth = 400;
   // The window-wide observer delivers by target element.
-  act(() => resize([{ target: label } as ResizeObserverEntry], {} as ResizeObserver));
+  act(() => resize([{ target: label } as unknown as ResizeObserverEntry], {} as ResizeObserver));
   expect(label.dataset.clipped).toBe("true");
   stop?.();
   expect(label.hasAttribute("tabindex")).toBe(false);
@@ -95,7 +95,7 @@ it("opens the shared tooltip with the full label from keyboard focus only when c
     root.render(
       createElement(
         OverflowTooltip,
-        { label: "Designer · Subagent · Context: 70%" },
+        { label: "Designer · Subagent · Context: 70%", children: null },
         createElement(
           "span",
           {
@@ -125,7 +125,7 @@ it("never opens the tooltip for a label that is fully visible", () => {
     root.render(
       createElement(
         OverflowTooltip,
-        { label: "Lead" },
+        { label: "Lead", children: null },
         createElement(
           "span",
           {

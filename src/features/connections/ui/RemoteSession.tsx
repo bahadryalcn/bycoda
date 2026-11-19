@@ -7,11 +7,9 @@ import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionE
 import { Button } from "../../../shared/ui/Button";
 import { ErrorDetails, fitsOneLine } from "../../../shared/ui/ErrorDetails";
 import { LoadingText } from "../../../shared/ui/LoadingText";
-import {
-  MissingRemoteMachine,
-  RemoteSessionFrame,
-  RemoteSessionContent,
-} from "./RemoteSessionFrame";
+import { RemoteSessionFrame, RemoteSessionContent } from "./RemoteSessionFrame";
+import { FailureState } from "../../../shared/ui/FailureState";
+import { MachineUnavailable } from "./MachineUnavailable";
 import { isApprovalOccurrenceId } from "../../../shared/model/approvalOccurrence";
 import { isLocalSyncMachine } from "../model/localSync";
 import { machineLabel } from "../model/machineIdentity";
@@ -268,9 +266,25 @@ export function RemoteSession({
           (!owner || (entry.id === owner.machineId && isLocalSyncMachine(entry))),
       )
     : undefined;
-  if (!project || !machine)
+  if (!project)
     return (
-      <MissingRemoteMachine compact={compactPresentation} project={!!project} loaded={loaded} />
+      <FailureState
+        context={compactPresentation ? "list" : "page"}
+        role="status"
+        description={t(
+          "This project’s machine details are missing. Add the project again from the project rail.",
+        )}
+      />
+    );
+  if (!machine)
+    return loaded ? (
+      <MachineUnavailable
+        cwd={shell.cwd}
+        reason="not-added"
+        size={compactPresentation ? "compact" : "page"}
+      />
+    ) : (
+      <LoadingText>{t("Connecting to the machine…")}</LoadingText>
     );
   return (
     <DurableRemoteSessionGate

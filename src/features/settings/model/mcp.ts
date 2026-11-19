@@ -20,6 +20,13 @@ export const MCP_PROVIDER_LABELS: Record<McpConnection["provider"], string> = {
 };
 
 export function scopeLabel(scope: McpConnection["scope"]): string {
+  return scopeLabelWith(scope, t);
+}
+
+export function scopeLabelWith(
+  scope: McpConnection["scope"],
+  t: (message: string) => string,
+): string {
   return scope === "user" ? t("Global") : scope === "project" ? t("Project") : t("Local project");
 }
 

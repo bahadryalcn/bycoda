@@ -12,7 +12,7 @@ import {
   type PickerOption,
 } from "../../../shared/ui/picker";
 import { HarnessIcon } from "./HarnessIcon";
-import { MCP_PROVIDER_LABELS, scopeLabel, type McpConnection } from "../../settings/public/mcp";
+import { MCP_PROVIDER_LABELS, scopeLabelWith, type McpConnection } from "../../settings/public/mcp";
 
 import { mcpPickerServers } from "../model/mcpPicker";
 import type { HarnessId } from "../model/session";
@@ -48,7 +48,7 @@ export function McpServerPicker({
       : servers.map((server) => ({
           value: serverKey(server),
           title: server.name,
-          description: `${MCP_PROVIDER_LABELS[server.provider]} · ${scopeLabel(server.scope)}`,
+          description: `${MCP_PROVIDER_LABELS[server.provider]} · ${scopeLabelWith(server.scope, t)}`,
           icon: (
             <HarnessIcon
               harness={server.provider === "claude_desktop" ? "claude" : server.provider}

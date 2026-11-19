@@ -484,7 +484,7 @@ describe("grok live turn sequence", () => {
       onStderr!(line);
     onStderr!("config: api_key=sk-live-0123456789abcdef0123");
     onExit!(7);
-    const message = (await failed).message;
+    const message = ((await failed) as Error).message;
     const lines = message.split("\n");
     expect(lines[0]).toBe("Grok Build exited (exit code 7):");
     expect(lines.slice(1)).toHaveLength(3);

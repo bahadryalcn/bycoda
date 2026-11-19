@@ -35,6 +35,13 @@ export function reminderTime(preset: string, now = new Date()): number | null {
 }
 
 export function formatReminderTime(dueAt: number): string {
+  return formatReminderTimeWith(dueAt, formatDate);
+}
+
+export function formatReminderTimeWith(
+  dueAt: number,
+  formatDate: (value: number, options: Intl.DateTimeFormatOptions) => string,
+): string {
   return formatDate(dueAt, {
     weekday: "short",
     month: "short",

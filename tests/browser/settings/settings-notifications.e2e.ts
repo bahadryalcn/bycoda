@@ -87,7 +87,7 @@ for (const theme of ["dark", "light"]) {
         path: `temp/verification/2026-10-18-notifications/${theme}-${width}-categories.png`,
       });
       const category = list.getByRole("switch", {
-        name: "Agent finished for team/project-39 (github.com)",
+        name: "Agent finished",
         exact: true,
       });
       await category.focus();

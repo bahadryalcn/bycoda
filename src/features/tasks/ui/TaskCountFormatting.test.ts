@@ -34,6 +34,8 @@ const usage = (patch: Partial<TaskRunBudgetUsage> = {}): TaskRunBudgetUsage => (
   tokensComplete: true,
   unknownTokenRuns: 0,
   reportedCostUsd: null,
+  estimatedCostUsd: null,
+  measuredAt: 1,
   ...patch,
 });
 

@@ -87,7 +87,9 @@ for (const light of [true, false])
             return { background: s.backgroundColor, filter: s.backdropFilter, opaque };
           });
           // Glass was dropped (DECISIONS-LOG): every mode paints the one opaque composer surface.
-          expect(actual.background, `${mode} ${node === box ? "composer" : "question"}`).toBe(actual.opaque);
+          expect(actual.background, `${mode} ${node === box ? "composer" : "question"}`).toBe(
+            actual.opaque,
+          );
           expect(actual.filter).toBe("none");
         }
         await expect(field(page)).toHaveValue("Retained composer draft");

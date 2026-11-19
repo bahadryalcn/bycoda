@@ -28,7 +28,7 @@ it.each([true, false])(
   "keeps navigation usable during a stalled Tasks import (transition: %s)",
   async (transition) => {
     let finish!: (module: { default: () => ReturnType<typeof createElement> }) => void;
-    const Tasks = lazySurface(
+    const Tasks = lazySurface<object>(
       () =>
         new Promise((resolve) => {
           finish = resolve;
@@ -85,7 +85,7 @@ it.each([true, false])(
 it("explains a slow load and clears its timer when the page arrives", async () => {
   vi.useFakeTimers();
   let finish!: (module: { default: () => ReturnType<typeof createElement> }) => void;
-  const Tasks = lazySurface(
+  const Tasks = lazySurface<object>(
     () =>
       new Promise((resolve) => {
         finish = resolve;
@@ -119,7 +119,7 @@ it("explains a slow load and clears its timer when the page arrives", async () =
 it("localizes the route name in the loading header and copy", async () => {
   await setLanguagePreference("tr");
   try {
-    const Tasks = lazySurface(() => new Promise(() => {}), { suspense: false });
+    const Tasks = lazySurface<object>(() => new Promise(() => {}), { suspense: false });
     await act(async () =>
       root.render(
         createElement(NavigationBoundary, {

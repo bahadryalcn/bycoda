@@ -1,10 +1,44 @@
 // @vitest-environment happy-dom
-import { act, createElement } from "react";
+import { act, createElement, Profiler } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { AgentMarkdown } from "./AgentMarkdown";
 import { AgentTranscript } from "./AgentTranscript";
 import type { Block } from "../model/session";
+
+it("keeps settled Markdown mounted without rendering on document visibility changes", () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  const onRender = vi.fn();
+  try {
+    act(() =>
+      root.render(
+        createElement(
+          Profiler,
+          { id: "settled-markdown", onRender },
+          createElement(AgentMarkdown, { text: "Saved **Markdown**" }),
+        ),
+      ),
+    );
+    const paragraph = container.querySelector("p");
+    expect(paragraph?.textContent).toBe("Saved Markdown");
+    onRender.mockClear();
+
+    for (const state of ["hidden", "visible"] as const) {
+      visibility.mockReturnValue(state);
+      act(() => document.dispatchEvent(new Event("visibilitychange")));
+    }
+
+    expect(onRender).not.toHaveBeenCalled();
+    expect(container.querySelector("p")).toBe(paragraph);
+  } finally {
+    act(() => root.unmount());
+    visibility.mockRestore();
+    vi.unstubAllGlobals();
+  }
+});
 
 it("keeps completed markdown nodes and selection while the tail and block boundary change", () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

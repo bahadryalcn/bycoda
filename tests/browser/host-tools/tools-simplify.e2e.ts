@@ -101,7 +101,7 @@ for (const theme of ["dark", "light"] as const) {
           await page.getByRole("button", { name: "Sample now", exact: true }).click();
           await expect(page.locator(".resource-value").first()).toHaveText("2.4%");
           await expect(
-            page.getByRole("img", { name: "bycoda host CPU", exact: true }),
+            page.getByRole("img", { name: /^bycoda host CPU: Latest 2.4%/ }),
           ).toBeVisible();
         }
         await expectCompactHeader(page);

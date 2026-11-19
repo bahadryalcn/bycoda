@@ -105,7 +105,7 @@ it("applies a native batch array in order and isolates a malformed element", asy
   let emit!: (payload: unknown) => void;
   vi.mocked(listen).mockImplementation(async (_event, callback) => {
     emit = (payload) => callback({ payload } as never);
-    return vi.fn();
+    return vi.fn<() => void>();
   });
   const listener = vi.fn();
   const onRejected = vi.fn();
@@ -224,7 +224,7 @@ it("validates canonical subscription envelopes before forwarding", async () => {
   let emit!: (payload: unknown) => void;
   vi.mocked(listen).mockImplementation(async (_event, callback) => {
     emit = (payload) => callback({ payload } as never);
-    return vi.fn();
+    return vi.fn<() => void>();
   });
   const listener = vi.fn();
   const release = await createTauriHostConnection("machine").listen(listener);

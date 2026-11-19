@@ -12364,5 +12364,12 @@
   "bycoda cannot control apps running as administrator. Run the target app without elevation.": "bycoda yönetici olarak çalışan uygulamaları kontrol edemez. Hedef uygulamayı yükseltme olmadan çalıştırın.",
   "Could not save note. ": "Not kaydedilemedi. ",
   "Availability change was not confirmed.": "Uygunluk değişikliği doğrulanmadı.",
-  "Saving this question is unconfirmed. Retry to verify the original card.": "Bu sorunun kaydedildiği doğrulanmadı. Özgün kartı doğrulamak için yeniden deneyin."
+  "Saving this question is unconfirmed. Retry to verify the original card.": "Bu sorunun kaydedildiği doğrulanmadı. Özgün kartı doğrulamak için yeniden deneyin.",
+  "{p0} isn’t available": "{p0} kullanılamıyor",
+  "This project’s machine isn’t available": "Bu projenin makinesi kullanılamıyor",
+  "This computer doesn’t have this project’s machine yet. Add it in Connections to open the project.": "Bu bilgisayarda bu projenin makinesi henüz yok. Projeyi açmak için Bağlantılar'dan ekle.",
+  "The machine no longer accepts this computer. Pair them again in Connections.": "Makine artık bu bilgisayarı kabul etmiyor. Bağlantılar'dan yeniden eşleştir.",
+  "The machine needs you to sign in again. Open Connections to reconnect.": "Makine yeniden oturum açmanı istiyor. Yeniden bağlanmak için Bağlantılar'ı aç.",
+  "The machine isn’t answering. Waiting for it to come back.": "Makine yanıt vermiyor. Geri gelmesi bekleniyor.",
+  "The machine is turned off on this computer. Turn it on in Connections.": "Makine bu bilgisayarda kapalı. Bağlantılar'dan aç."
 }

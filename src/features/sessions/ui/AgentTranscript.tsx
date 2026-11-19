@@ -162,7 +162,7 @@ import {
   isProseBlock,
   hasTurnCopyText,
   turnCopyText,
-  workSummaryLine,
+  settledWorkSummaryLine,
   type TurnItem,
 } from "../model/transcriptActivity";
 import { lastUserTurnBlock } from "../model/editLastTurn";
@@ -1117,7 +1117,7 @@ const Turn = memo(function Turn({
   // that did it trails as a quiet tag rather than standing in for a title.
   const foldInDock = live && liveStatusInDock && !waitingForApproval;
   const foldTitle: ReactNode = foldInDock ? (
-    workSummaryLine(folded)
+    settledWorkSummaryLine(folded)
   ) : live ? (
     <LiveFoldTitle
       startedAt={clockStart}
@@ -1132,7 +1132,7 @@ const Turn = memo(function Turn({
   ) : durationMs != null ? (
     formatWorkingDuration(t, format, durationMs, turnModelName, true)
   ) : (
-    workSummaryLine(folded)
+    settledWorkSummaryLine(folded)
   );
   const showFoldLine =
     (live && (!liveStatusInDock || waitingForApproval)) || durationMs != null || !!fold;

@@ -119,6 +119,7 @@ describe("idle tab count in the title tab context menu", () => {
           onClose: vi.fn(),
           onCloseMany: vi.fn(),
           onCloseIdleTabs: vi.fn(),
+          onReorder: vi.fn(),
           countIdleTabs,
         }),
       ),

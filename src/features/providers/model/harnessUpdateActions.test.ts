@@ -238,7 +238,7 @@ describe("cancelling and joining the CLI updater", () => {
   it("reports a cancelled updater as cancelled, not as a CLI failure, and shows no toast", async () => {
     let stopUpdater!: (error: unknown) => void;
     vi.mocked(updateHarnessCli).mockImplementationOnce(
-      () => new Promise<void>((_, reject) => (stopUpdater = reject)),
+      () => new Promise<string | undefined>((_, reject) => (stopUpdater = reject)),
     );
     vi.mocked(cancelHarnessUpdate).mockResolvedValueOnce(true);
     const show = vi.spyOn(toast, "show");

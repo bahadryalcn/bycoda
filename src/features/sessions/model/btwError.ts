@@ -52,6 +52,14 @@ export function presentBtwThreadError(
   thread: { error?: string; errorCode?: BtwErrorCode },
   providerTitle: string,
 ): string {
+  return presentBtwThreadErrorWith(thread, providerTitle, t);
+}
+
+export function presentBtwThreadErrorWith(
+  thread: { error?: string; errorCode?: BtwErrorCode },
+  providerTitle: string,
+  t: (message: string, values?: Record<string, unknown>) => string,
+): string {
   switch (thread.errorCode) {
     case "workingDirectoryRequired":
       return t("A project working directory is required for this question.");

@@ -78,7 +78,7 @@ test("composer keeps committed authority and restores the latest draft after rem
   const authority = () => page.evaluate(() => window.__shell.draftAuthority());
   await expect.poll(authority).toEqual({
     draft,
-    committedDraft: draft,
+    committedDraftPresent: true,
     composerText: draft,
     cachedDraft: draft,
     current: true,
@@ -94,7 +94,7 @@ test("composer keeps committed authority and restores the latest draft after rem
   await box.fill(`${draft}\nNext edit`);
   await expect.poll(authority).toMatchObject({
     draft: `${draft}\nNext edit`,
-    committedDraft: `${draft}\nNext edit`,
+    committedDraftPresent: true,
     composerText: `${draft}\nNext edit`,
     cachedDraft: `${draft}\nNext edit`,
     current: true,

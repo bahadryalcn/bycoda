@@ -97,6 +97,7 @@ export const refreshRemoteProjectSessions = () =>
   window.dispatchEvent(new Event(REMOTE_HISTORY_CHANGE));
 let cachedMachines: RemoteMachine[] = [];
 let machinesLoaded = false;
+const inventoryListeners = new Set<() => void>();
 /** The inventory projects the same native records; health/host consumers keep one cache. */
 export function adoptRemoteMachineInventory(machines: RemoteMachine[]) {
   machines.forEach((machine) => bindMachineEnvironment(machine.id, machine.environmentId));
@@ -113,7 +114,15 @@ export function adoptRemoteMachineInventory(machines: RemoteMachine[]) {
   }
   cachedMachines = machines;
   machinesLoaded = true;
+  inventoryListeners.forEach((listener) => listener());
 }
+/** Hears every change to the saved machine list (read, added, edited or removed). */
+export function subscribeRemoteMachineList(listener: () => void): () => void {
+  inventoryListeners.add(listener);
+  return () => inventoryListeners.delete(listener);
+}
+/** Whether the saved machine list has been read: until then a missing machine is unknown, not absent. */
+export const remoteMachinesLoaded = () => machinesLoaded;
 /** The saved machine with this Host identity, as last read from the native store. */
 export function savedMachineForEnvironment(environmentId: string): RemoteMachine | undefined {
   return cachedMachines.find((entry) => entry.environmentId === environmentId);
@@ -1035,6 +1044,7 @@ export async function disconnectMachine(machineId: string): Promise<void> {
   if (environmentId) invalidateRemoteCapabilities(environmentId);
   if (environmentId) forgetRemoteConnection(environmentId);
   cachedMachines = cachedMachines.filter((entry) => entry.id !== machineId);
+  inventoryListeners.forEach((listener) => listener());
   window.dispatchEvent(new Event(CHANGE));
 }
 

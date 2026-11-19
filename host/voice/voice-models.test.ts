@@ -163,9 +163,11 @@ it("keeps a slow download alive past the stall window while bytes keep arriving"
 
 it("passes the absolute download ceiling to the runner instead of a flat 30 minutes", async () => {
   const home = await mkdtemp(join(tmpdir(), "voice-models-"));
-  const run = vi.fn(async (_python: string, _args: string[]) => {
-    throw failure({ killed: true, signal: "SIGTERM", code: null });
-  });
+  const run = vi.fn(
+    async (_python: string, _args: string[], _signal?: AbortSignal, _maxMs?: number) => {
+      throw failure({ killed: true, signal: "SIGTERM", code: null });
+    },
+  );
   const service = new VoiceModelsService(home, run, inspectReady(), { maxMs: 7_000_000 });
   try {
     service.start("download", "small", false, {});

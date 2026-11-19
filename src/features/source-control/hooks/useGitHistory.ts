@@ -91,9 +91,8 @@ export function useGitHistory(cwd: string, enabled: boolean, all: boolean) {
 
   const error = resource.error ?? tail?.error ?? null;
   useEffect(() => {
-    if (enabled && remote && !resource.loading)
-      reportRemoteLoad(cwd, "graph", resource.error ?? undefined);
-  }, [cwd, enabled, remote, resource.loading, resource.error]);
+    if (enabled && remote && !resource.loading) reportRemoteLoad(cwd, "graph", resource.cause);
+  }, [cwd, enabled, remote, resource.loading, resource.cause]);
   return {
     commits,
     hasMore,

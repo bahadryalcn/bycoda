@@ -2310,7 +2310,7 @@ it("asks to connect the machine when it is not set up on this computer", async (
   );
   await render();
   expect(document.body.textContent).toContain(
-    "The machine for this project isn’t connected on this computer.",
+    "This computer doesn’t have this project’s machine yet. Add it in Connections to open the project.",
   );
   expect(container.querySelector("textarea")).toBeNull();
 });

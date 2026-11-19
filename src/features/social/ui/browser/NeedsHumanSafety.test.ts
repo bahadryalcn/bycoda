@@ -47,7 +47,11 @@ function waiting(
 function clientWith(items: NeedsHumanItem[]) {
   const list = vi.fn(async () => ({ items }));
   const resolve = vi.fn(async () => undefined);
-  const browserViewFrame = vi.fn(async () => ({ jpegBase64: "QUFB", width: 10, height: 10 }));
+  const browserViewFrame = vi.fn(async (_accountId: string, _cursor?: unknown) => ({
+    jpegBase64: "QUFB",
+    width: 10,
+    height: 10,
+  }));
   const browserViewInput = vi.fn(async () => undefined);
   const client = {
     browser: { needsHuman: { list, resolve } },

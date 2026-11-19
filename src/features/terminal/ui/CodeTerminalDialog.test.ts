@@ -20,7 +20,7 @@ const exitedController = (): CodeTerminalController => {
     snapshot: () => state,
     subscribe: () => () => {},
     start: async () => {},
-    refresh: async () => {},
+    refresh: async () => "idle" as const,
     stop: async () => {},
   };
 };

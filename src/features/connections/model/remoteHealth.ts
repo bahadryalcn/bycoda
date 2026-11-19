@@ -269,10 +269,30 @@ export function subscribeChanges(listener: () => void): () => void {
   return () => changeListeners.delete(listener);
 }
 
-/** The latest failure of one view's loads for a remote project, if any. */
+/** One stable failure per machine for `offlineFailure`, so snapshots compare equal. */
+const offlineFailures = new Map<string, RemoteFailure>();
+
+/** What a view with retained data shows while its machine is offline and its reads are paused
+ * (`machineAvailability`): no read runs, so none reports the failure itself. */
+function offlineFailure(environmentId: string): RemoteFailure | undefined {
+  const state = connections.get(environmentId);
+  if (state?.status !== "unreachable" && state?.status !== "host-not-running") return undefined;
+  const message = state.error ?? "Machine is unreachable.";
+  const known = offlineFailures.get(environmentId);
+  if (known?.message === message) return known;
+  const next: RemoteFailure = { kind: "unreachable", message };
+  offlineFailures.set(environmentId, next);
+  return next;
+}
+
+/** The latest failure of one view's loads for a remote project, if any. While the machine is
+ * offline that is an unreachable failure even if this view's own loads stopped. */
 export function useRemoteLoadFailure(cwd: string, source: string): RemoteFailure | undefined {
   const environmentId = environmentOf(cwd);
-  const read = () => (environmentId ? failures.get(keyFor(environmentId, source)) : undefined);
+  const read = () =>
+    environmentId
+      ? (failures.get(keyFor(environmentId, source)) ?? offlineFailure(environmentId))
+      : undefined;
   return useSyncExternalStore(subscribeChanges, read, read);
 }
 
@@ -282,6 +302,7 @@ export function forgetRemoteConnection(environmentId: string): void {
   invalidateConnection(environmentId);
   connections.delete(environmentId);
   downSince.delete(environmentId);
+  offlineFailures.delete(environmentId);
   timeouts.delete(environmentId);
   unreachable.delete(environmentId);
   for (const key of Array.from(failures.keys()))
@@ -296,5 +317,6 @@ export function resetRemoteHealth(): void {
   unreachable.clear();
   connections.clear();
   downSince.clear();
+  offlineFailures.clear();
   timeouts.clear();
 }

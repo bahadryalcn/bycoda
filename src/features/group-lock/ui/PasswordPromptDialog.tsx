@@ -8,6 +8,10 @@ import { PasswordField } from "../../../shared/ui/PasswordField";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
 import { CooldownNotice } from "./CooldownNotice";
+import {
+  isTransientTransportError,
+  presentRemoteError,
+} from "../../connections/public/remoteFailure";
 
 /** The live cool-down notice; rendered from the running timer, never stored. */
 export function cooldownMessage(remainingMs: number): string | null {
@@ -26,6 +30,13 @@ export function verifyFailureMessage(result: VerifyResult, cooldownMs: number): 
   if (result.reason === "no-password") return t("No lock password is set.");
   if (cooldownMs > 0) return null;
   return t("Wrong password.");
+}
+
+/** A thrown check or save failure as the user reads it; Host transport codes never show raw. */
+export function promptErrorMessage(reason: unknown): string {
+  return isTransientTransportError(reason)
+    ? presentRemoteError(reason, { explicit: true })
+    : t(errorText(reason));
 }
 
 /** What to tell the user when the password was right but the change was not fully saved. */
@@ -74,7 +85,7 @@ type Props = {
 
 /**
  * Asks for the lock password. A wrong one is answered after a short pause and
- * clears the field; repeated misses start a cool-down kept by the lock model,
+ * clears the field (a thrown failure keeps it); repeated misses start a cool-down kept by the lock model,
  * so closing and reopening this dialog does not skip it.
  */
 export function PasswordPromptDialog({
@@ -138,9 +149,9 @@ export function PasswordPromptDialog({
       if (result.retryAfterMs > 0) cooldown.start(result.retryAfterMs);
       setError(verifyFailureMessage(result, result.retryAfterMs));
     } catch (reason) {
+      // A thrown failure is not a refused password: keep it typed so the retry is one click.
       if (!alive.current) return;
-      if (input.current) input.current.value = "";
-      setError(t(errorText(reason)));
+      setError(promptErrorMessage(reason));
     } finally {
       if (alive.current) setBusy(false);
     }

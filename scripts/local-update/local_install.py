@@ -456,6 +456,30 @@ def app_install(release, manifest, report):
     binary = app if windows else app / 'Contents/MacOS' / PRODUCT_IDENTITY['binaryName']
     report('installed', version=manifest['version'], **installed_identity(manifest, binary))
 
+SECRET_FLAG = re.compile(r'key|token|secret|password|-encodedcommand', re.IGNORECASE)
+SECRET_TEXT = re.compile(r'(Bearer\s+)\S+|("(?:secret|token|launchKey)"\s*:\s*)"[^"]*"|\b[a-f0-9]{32,}\b', re.IGNORECASE)
+
+def redact(text):
+    return SECRET_TEXT.sub(lambda m: (m.group(1) or m.group(2) or '') + '<redacted>', text)
+
+def log_command_failure(error, tail=4000):
+    """Stage log only (stderr is install-<component>.log): the job record shown to
+    clients keeps its generic message. Values after secret-like flags, encoded
+    PowerShell scripts, bearer tokens and long hex keys are redacted."""
+    argv = [str(arg) for arg in (error.cmd if isinstance(error.cmd, (list, tuple)) else [error.cmd])]
+    shown = ['<redacted>' if index and SECRET_FLAG.search(argv[index - 1]) else redact(arg)
+             for index, arg in enumerate(argv)]
+    print('Command failed: ' + ' '.join(shown), file=sys.stderr)
+    print(f'returncode={getattr(error, "returncode", None)} timeout={getattr(error, "timeout", None)}',
+          file=sys.stderr)
+    for name in ('stderr', 'stdout'):
+        value = getattr(error, name, None)
+        if isinstance(value, bytes):
+            value = value.decode('utf-8', 'replace')
+        if value:
+            print(f'{name} (last {tail} characters):\n' + redact(value[-tail:]), file=sys.stderr)
+    sys.stderr.flush()
+
 def main(launch_key=None):
     manifest_path = pathlib.Path(sys.argv[1]).resolve()
     release = manifest_path.parent
@@ -479,7 +503,9 @@ def main(launch_key=None):
             report('starting')
             (host_install if component == 'host' else app_install)(release, manifest, report)
         except Exception as error:
-            # Never print auth state or arbitrary subprocess output.
+            if hasattr(error, 'cmd'):
+                log_command_failure(error)
+            # Never put auth state or arbitrary subprocess output in the job record.
             report('failed', errorType=type(error).__name__, error=str(error) if not hasattr(error, 'cmd') else 'Command failed; see local stage logs')
             raise SystemExit(1)
 

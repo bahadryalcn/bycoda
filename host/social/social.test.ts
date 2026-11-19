@@ -1326,7 +1326,7 @@ describe("Room reviewed Social send", () => {
         allowed,
         proposal.requestId,
         qualify,
-      )) as { state: string; result: SocialJob };
+      )) as unknown as { state: string; result: SocialJob };
       expect(result).toMatchObject({
         state: "completed",
         result: {
@@ -1871,7 +1871,7 @@ describe("social workspace performance and authorization", () => {
       expect(thread.hasInbound).toBe(true);
     }
     expect(response.snapshot!.contacts[0].history).toHaveLength(5);
-    expect(response.snapshot!.related!.contacts[0].history).toHaveLength(5);
+    expect(response.snapshot!.related!.contacts![0].history).toHaveLength(5);
     expect(Buffer.byteLength(JSON.stringify(response))).toBeLessThan(30000);
     const detail = await s.call<SocialThread>("thread.page", { id: source.id });
     expect(detail.events).toHaveLength(20);
@@ -2024,7 +2024,7 @@ describe("social workspace performance and authorization", () => {
     expect(inWindow.snapshot!.jobs.map((job) => job.id)).toEqual(["window-start", "target"]);
     expect(inWindow.snapshot!.pages!.jobs).toEqual({ offset: 0, limit: 100, total: 2 });
     expect(inWindow.snapshot!.filters!.jobs).toEqual(query.filters.jobs);
-    expect(inWindow.snapshot!.related!.campaigns.map((row) => row.id)).toContain(campaign.id);
+    expect(inWindow.snapshot!.related!.campaigns!.map((row) => row.id)).toContain(campaign.id);
     // Counts describe the whole scope, not the window.
     expect(
       Object.values(inWindow.snapshot!.jobCounts!).reduce((sum, count) => sum + count, 0),
@@ -2225,7 +2225,7 @@ describe("social workspace performance and authorization", () => {
     expect(searched.snapshot!.threads[0].id).toBe(source.id);
     expect(searched.snapshot!.threads[0].events[0].text).not.toContain("Historical needle");
     expect(searched.snapshot!.contacts).toEqual([]);
-    expect(searched.snapshot!.related!.contacts.map((row) => row.id)).toContain(contact.id);
+    expect(searched.snapshot!.related!.contacts!.map((row) => row.id)).toContain(contact.id);
     const segment = await s.call<{
       id: string;
     }>("segments.create", {
@@ -2614,6 +2614,7 @@ describe("Merkezi sosyal servis", () => {
         eventId: "other-recipient",
         threadId: "conversation-1",
         contactId: "different-recipient",
+        contactName: "Different recipient",
         kind: "message",
         text: "Hello",
         at: ++s.clock.value,

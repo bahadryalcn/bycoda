@@ -268,7 +268,7 @@ describe("Hermes live ACP sequence", () => {
       "\u001b[31mfatal: provider refused OPENROUTER_API_KEY=sk-or-0123456789abcdef0123\u001b[0m\r\n",
     );
     onExit!(4);
-    const message = (await failed).message;
+    const message = ((await failed) as Error).message;
     expect(message).toContain("Hermes Agent exited (exit code 4):\nfatal: provider refused");
     expect(message).not.toContain("sk-or-");
   });

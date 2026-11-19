@@ -7,7 +7,16 @@ import { deleteSessionsByProject } from "./sessionStore";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), isTauri: () => false }));
 
 const logs = {
-  buffer: [],
+  buffer: {
+    entries: [],
+    sources: [],
+    cursor: 0,
+    dropped: 0,
+    clearAfter: 0,
+    trimmed: 0,
+    restarted: false,
+  },
+  search: "",
   source: "all" as const,
   sourceIds: [],
   level: "all",

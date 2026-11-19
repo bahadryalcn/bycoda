@@ -264,6 +264,7 @@ async function setup(start = at("2026-10-05T08:00:00"), linkedAncestor = false) 
       expectedRevision: workspace.revision,
       token: "fixture-owner-plan",
       expiresAt: clock.now + 60_000,
+      expiresInMs: 60_000,
       sourceBranchRef: workspace.branchRef,
       sourceHead: source,
       targetBranchRef: workspace.targetBranchRef,

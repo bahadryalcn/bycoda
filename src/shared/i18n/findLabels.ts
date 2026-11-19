@@ -1,3 +1,5 @@
+import { useT } from "./index";
+
 /**
  * Labels for the find controls shared by the editor, file preview and project search,
  * so the same control reads and announces the same way on every surface. Sentence case.
@@ -12,4 +14,8 @@ export function findControlLabels(translate: (message: string) => string) {
     previousMatch: translate("Previous match"),
     nextMatch: translate("Next match"),
   };
+}
+
+export function useFindControlLabels() {
+  return findControlLabels(useT());
 }

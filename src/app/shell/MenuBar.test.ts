@@ -118,6 +118,32 @@ describe("application menu bar keyboard model", () => {
     expect(document.activeElement).toBe(input);
   });
 
+  it("reads the current idle-tab count only while the File menu is open", () => {
+    const countIdleTabs = vi.fn(() => 0);
+    act(() =>
+      root.render(
+        createElement(MenuBar, {
+          onNew: vi.fn(),
+          onToggleSidebar: vi.fn(),
+          onToggleSessionSidebar: vi.fn(),
+          onCloseIdleTabs: vi.fn(),
+          countIdleTabs,
+        }),
+      ),
+    );
+    tapAlt();
+    expect(countIdleTabs).not.toHaveBeenCalled();
+    keyOn(button("file"), "keydown", "ArrowDown");
+    const closeIdle = () =>
+      [...menu()!.querySelectorAll<HTMLButtonElement>("button")].find(
+        (item) => item.textContent === "Close Idle Tabs",
+      );
+    expect(closeIdle()?.disabled).toBe(true);
+    countIdleTabs.mockReturnValue(1);
+    keyOn(menu()!, "keydown", "ArrowDown");
+    expect(closeIdle()?.disabled).toBe(false);
+  });
+
   it("returns focus to the previous element when Alt hides the bar again", () => {
     tapAlt();
     tapAlt();

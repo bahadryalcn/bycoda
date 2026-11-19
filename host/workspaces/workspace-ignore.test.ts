@@ -18,7 +18,8 @@ vi.mock("node:child_process", async (importOriginal) => {
   return {
     ...actual,
     spawn: (_command: string, args: string[]) => {
-      const child = new EventEmitter() as EventEmitter & Record<string, unknown>;
+      const child = new EventEmitter() as InstanceType<typeof EventEmitter> &
+        Record<string, unknown>;
       const chunks: Buffer[] = [];
       child.stdout = new EventEmitter();
       child.stderr = new EventEmitter();
@@ -32,7 +33,10 @@ vi.mock("node:child_process", async (importOriginal) => {
           fake.calls.push({ args, input: Buffer.concat(chunks).toString("utf8") });
           callback();
           process.nextTick(() => {
-            (child.stdout as EventEmitter).emit("data", Buffer.from(fake.reply));
+            (child.stdout as InstanceType<typeof EventEmitter>).emit(
+              "data",
+              Buffer.from(fake.reply),
+            );
             child.emit("close", 0);
           });
         },

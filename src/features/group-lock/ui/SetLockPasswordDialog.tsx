@@ -1,4 +1,3 @@
-import { errorText } from "../../../shared/lib/errors";
 import { t, useLocale } from "../../../shared/i18n";
 import { Text } from "../../../shared/ui/Text";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
@@ -11,7 +10,13 @@ import { PasswordField } from "../../../shared/ui/PasswordField";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
 import { CooldownNotice } from "./CooldownNotice";
-import { cooldownMessage, pause, useCooldown, verifyFailureMessage } from "./PasswordPromptDialog";
+import {
+  cooldownMessage,
+  pause,
+  promptErrorMessage,
+  useCooldown,
+  verifyFailureMessage,
+} from "./PasswordPromptDialog";
 
 type Props = {
   /** `set` for the first password, `change` to replace the current one. */
@@ -113,7 +118,7 @@ export function SetLockPasswordDialog({ mode, onClose, onDone }: Props) {
     } catch (reason) {
       if (!alive.current) return;
       clear();
-      setError(t(errorText(reason)));
+      setError(promptErrorMessage(reason));
     } finally {
       if (alive.current) setBusy(false);
     }

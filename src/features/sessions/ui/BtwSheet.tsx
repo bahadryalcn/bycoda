@@ -38,7 +38,7 @@ import {
   type HarnessId,
 } from "../model/session";
 import { compactQuestion } from "../model/btwQuestion";
-import { presentBtwThreadError } from "../model/btwError";
+import { presentBtwThreadErrorWith } from "../model/btwError";
 
 type Options = {
   parentSessionId?: string;
@@ -627,7 +627,7 @@ export function BtwSheet({
                 {t("Couldn’t finish")}
               </Text>
               <Text as="div" tone="danger" leading="normal" className="mt-1">
-                {presentBtwThreadError(persisted, HARNESS_TITLE[harness])}
+                {presentBtwThreadErrorWith(persisted, HARNESS_TITLE[harness], t)}
               </Text>
             </div>
             <Button variant="ghost" type="button" onClick={btw.retry} className="shrink-0">
