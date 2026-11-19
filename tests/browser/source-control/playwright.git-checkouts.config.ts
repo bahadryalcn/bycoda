@@ -12,7 +12,7 @@ export default defineConfig({
   webServer: {
     cwd: fileURLToPath(new URL("../../..", import.meta.url)),
     command:
-      "pnpm exec vite build --config tests/browser/source-control/vite.git-checkouts.config.ts && pnpm exec vite preview --config tests/browser/source-control/vite.git-checkouts.config.ts",
+      "pnpm exec vp build --config tests/browser/source-control/vite.git-checkouts.config.ts && pnpm exec vp preview --config tests/browser/source-control/vite.git-checkouts.config.ts",
     url: "http://127.0.0.1:1453/tests/browser/source-control/git-workspace.html",
     reuseExistingServer: false,
     timeout: 120_000,

@@ -2,6 +2,32 @@ import { test, expect, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 
 for (const theme of ["light", "dark"])
+  for (const width of [1280, 800])
+    test(`commit shows Push 1 during status refresh in ${theme} at ${width}px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/tests/browser/source-control/git-workspace.html?commit-transition");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await page
+        .getByRole("textbox", { name: "Commit message", exact: true })
+        .fill("Update README");
+      await page.getByRole("button", { name: "Commit", exact: true }).click();
+      const primary = page.locator('[data-split-part="primary"]');
+      await expect(primary).toHaveText(/^Push\s*1$/);
+      await expect(primary).toBeEnabled();
+      const evidence = "temp/verification/git-commit-controls";
+      mkdirSync(evidence, { recursive: true });
+      await page.screenshot({
+        path: `${evidence}/push-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+    });
+
+for (const theme of ["light", "dark"])
   test(`file names share typography and paths stay secondary ${theme}`, async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(
@@ -110,7 +136,9 @@ for (const theme of ["light", "dark"] as const)
       await list.screenshot({ path: `${folder}/list-${theme}-${width}.png` });
       await page.getByRole("button", { name: "View as Tree", exact: true }).first().click();
       await expect.poll(filePadding).toBe("20px");
-      const directory = list.locator("[role=row]:not(:has([data-git-file])) > [data-action-host]").first();
+      const directory = list
+        .locator("[role=row]:not(:has([data-git-file])) > [data-action-host]")
+        .first();
       await expect
         .poll(() => directory.evaluate((node) => getComputedStyle(node).paddingInlineStart))
         .toBe("10px");

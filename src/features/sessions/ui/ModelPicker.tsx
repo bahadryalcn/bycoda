@@ -113,6 +113,11 @@ type Props = {
   hotkeys?: boolean;
   /** Bump to open the picker from outside, e.g. a usage-limit notice. */
   openRequest?: number;
+  /** An existing button owns opening and anchors the model panel. */
+  externalTrigger?: {
+    anchor: React.RefObject<HTMLButtonElement | null>;
+    onDismiss: () => void;
+  };
   /**
    * `inline` (default) is the compact toolbar trigger. `field` renders the trigger as a
    * full-width, left-aligned form field, for forms where the picker answers a labelled question.
@@ -132,6 +137,8 @@ type Props = {
    * for callers that discard those changes, e.g. model-routing rows. Panel presentation only.
    */
   hideAgentSettings?: boolean;
+  /** Limit the settings panel to the model's reasoning effort and speed. */
+  settingsScope?: "reasoning-and-speed";
   /** Offer the current selection's extras inside the picker; only where changes are kept. */
   showExtras?: boolean;
   /** Model settings stay readable but locked, e.g. while a turn runs. */
@@ -178,11 +185,13 @@ export function ModelPicker({
   allowedHarnesses,
   hotkeys = false,
   openRequest = 0,
+  externalTrigger,
   presentation = "inline",
   inheritChoice,
   accountId,
   accountChoices = false,
   hideAgentSettings = false,
+  settingsScope,
   showExtras = false,
   extrasDisabled = false,
   extrasDisabledReason,
@@ -237,7 +246,8 @@ export function ModelPicker({
     favoritesRef.current = favorites;
   }, [favorites]);
   const recentMenuId = useId();
-  const button = useRef<HTMLButtonElement>(null);
+  const ownButton = useRef<HTMLButtonElement>(null);
+  const button = externalTrigger?.anchor ?? ownButton;
   const search = useRef<HTMLInputElement>(null);
   const onCloseRef = useRef(onClose);
   const openRef = useRef(open);
@@ -365,6 +375,10 @@ export function ModelPicker({
     // In beside-picker mode every option row renders as a toolbar pill, so the
     // menu lists models only.
     if (hideSettings || inheritSelected) return [];
+    if (settingsScope === "reasoning-and-speed")
+      return [effortSetting(current), fastSetting(current)].filter(
+        (setting): setting is ModelSetting => setting !== undefined,
+      );
     // Delegation and Context lead; Fast and Reasoning stay near Model.
     const all = menuSettingsAtRevision(
       {
@@ -392,6 +406,7 @@ export function ModelPicker({
     hideSettings,
     inheritSelected,
     pickerHarnesses,
+    settingsScope,
     source,
     t,
     usage,
@@ -544,6 +559,7 @@ export function ModelPicker({
       button.current?.focus({ preventScroll: true });
       onCloseRef.current?.();
     }
+    externalTrigger?.onDismiss();
   };
 
   // Every open starts from the current provider with a fresh list, search and favorites.
@@ -785,115 +801,117 @@ export function ModelPicker({
 
   return (
     <>
-      <Tooltip
-        asChild
+      {!externalTrigger && (
+        <Tooltip
+          asChild
 
-        shortcut={hotkeys ? switchShortcut : null}
+          shortcut={hotkeys ? switchShortcut : null}
 
-        label={triggerTitle}
-        details={[t("Recent models: right-click or {p0}", { p0: recentShortcut.text })]}
-      >
-        <Trigger
-          {...(field
-            ? { "data-field-size": "md", "data-state": open || recentOpen ? "open" : "closed" }
-            : { size: "sm" as const, variant: "ghost" as const })}
-          className={field ? "bycoda-arc-select" : "w-auto max-w-full min-w-0 shrink-0"}
-          data-model-picker-presentation={presentation}
-          ref={button}
-          motion="none"
-          type="button"
-          aria-label={
-            inheritSelected
-              ? inherit.label
-              : `${HARNESS_TITLE[current.harness]}${
-                  current.provider ? `, ${current.provider.name},` : ""
-                } ${currentLabel}${triggerEffortLabel ? `, ${t("effort {p0}", { p0: triggerEffortLabel })}` : ""}${triggerFastOn ? `, ${t("Fast")}` : triggerFastState === "off" && field ? `, ${t("Fast off")}` : ""}${fieldAccount ? `, ${t("Account: {p0}", { p0: fieldAccount.label })}` : ""}${triggerExtras.map((extra) => `, ${extra.name}: ${extra.label}`).join("")}`
-          }
-          expanded={open || recentOpen}
-          aria-haspopup="dialog"
-          aria-keyshortcuts="Alt+ArrowDown Shift+F10"
-          onKeyDown={onTriggerKeyDown}
-          onPointerEnter={() => void preloadModelPicker().catch(() => {})}
-          onFocus={() => void preloadModelPicker().catch(() => {})}
-          onMouseDown={(event) => event.preventDefault()}
-          onContextMenu={(event) => {
-            event.preventDefault();
-
-            event.stopPropagation();
-
-            openRecentMenu();
-          }}
-
-          onClick={() => togglePicker()}
+          label={triggerTitle}
+          details={[t("Recent models: right-click or {p0}", { p0: recentShortcut.text })]}
         >
-          <span
-            className={`flex min-w-0 flex-1 items-center gap-1.5${field ? " @container/model-trigger" : ""}`}
+          <Trigger
+            {...(field
+              ? { "data-field-size": "md", "data-state": open || recentOpen ? "open" : "closed" }
+              : { size: "sm" as const, variant: "ghost" as const })}
+            className={field ? "bycoda-arc-select" : "w-auto max-w-full min-w-0 shrink-0"}
+            data-model-picker-presentation={presentation}
+            ref={button}
+            motion="none"
+            type="button"
+            aria-label={
+              inheritSelected
+                ? inherit.label
+                : `${HARNESS_TITLE[current.harness]}${
+                    current.provider ? `, ${current.provider.name},` : ""
+                  } ${currentLabel}${triggerEffortLabel ? `, ${t("effort {p0}", { p0: triggerEffortLabel })}` : ""}${triggerFastOn ? `, ${t("Fast")}` : triggerFastState === "off" && field ? `, ${t("Fast off")}` : ""}${fieldAccount ? `, ${t("Account: {p0}", { p0: fieldAccount.label })}` : ""}${triggerExtras.map((extra) => `, ${extra.name}: ${extra.label}`).join("")}`
+            }
+            expanded={open || recentOpen}
+            aria-haspopup="dialog"
+            aria-keyshortcuts="Alt+ArrowDown Shift+F10"
+            onKeyDown={onTriggerKeyDown}
+            onPointerEnter={() => void preloadModelPicker().catch(() => {})}
+            onFocus={() => void preloadModelPicker().catch(() => {})}
+            onMouseDown={(event) => event.preventDefault()}
+            onContextMenu={(event) => {
+              event.preventDefault();
+
+              event.stopPropagation();
+
+              openRecentMenu();
+            }}
+
+            onClick={() => togglePicker()}
           >
-            {inheritSelected ? (
-              <Text
-                data-model-inherit
-                size="inherit"
-                tone="inherit"
-                truncate
-                className="min-w-0 flex-1 text-left"
-              >
-                {inherit.label}
-              </Text>
-            ) : (
-              <>
-                <HarnessIcon harness={current.harness} className="size-4 shrink-0" />
-
-                <Text size="inherit" tone="inherit" truncate className="min-w-0">
-                  {current.name}
+            <span
+              className={`flex min-w-0 flex-1 items-center gap-1.5${field ? " @container/model-trigger" : ""}`}
+            >
+              {inheritSelected ? (
+                <Text
+                  data-model-inherit
+                  size="inherit"
+                  tone="inherit"
+                  truncate
+                  className="min-w-0 flex-1 text-left"
+                >
+                  {inherit.label}
                 </Text>
-              </>
-            )}
+              ) : (
+                <>
+                  <HarnessIcon harness={current.harness} className="size-4 shrink-0" />
 
-            {field ? (
-              <ModelTriggerBadges
-                account={fieldAccount}
-                effort={showEffortSummary && !inheritSelected ? triggerEffortLabel : undefined}
-                fast={triggerFastState}
-                extras={triggerExtras}
-              />
-            ) : (
-              <>
-                {triggerAccountLabel && !inheritSelected ? (
-                  <>
-                    {" "}
-                    <Text
-                      data-model-account
-                      size="inherit"
-                      tone="secondary"
-                      truncate
-                      className="min-w-0 max-w-24"
-                    >
-                      {triggerAccountLabel}
-                    </Text>
-                  </>
-                ) : null}
-
-                {triggerEffortLabel ? (
-                  <Text data-model-effort size="inherit" tone="secondary" className="shrink-0">
-                    {triggerEffortLabel}
+                  <Text size="inherit" tone="inherit" truncate className="min-w-0">
+                    {current.name}
                   </Text>
-                ) : null}
+                </>
+              )}
 
-                {triggerFastOn ? (
-                  <Zap
-                    data-model-fast
-                    className="icon-xs shrink-0"
-                    tone="secondary"
-                    fill="currentColor"
-                    strokeWidth={1.75}
-                    aria-hidden
-                  />
-                ) : null}
-              </>
-            )}
-          </span>
-        </Trigger>
-      </Tooltip>
+              {field ? (
+                <ModelTriggerBadges
+                  account={fieldAccount}
+                  effort={showEffortSummary && !inheritSelected ? triggerEffortLabel : undefined}
+                  fast={triggerFastState}
+                  extras={triggerExtras}
+                />
+              ) : (
+                <>
+                  {triggerAccountLabel && !inheritSelected ? (
+                    <>
+                      {" "}
+                      <Text
+                        data-model-account
+                        size="inherit"
+                        tone="secondary"
+                        truncate
+                        className="min-w-0 max-w-24"
+                      >
+                        {triggerAccountLabel}
+                      </Text>
+                    </>
+                  ) : null}
+
+                  {triggerEffortLabel ? (
+                    <Text data-model-effort size="inherit" tone="secondary" className="shrink-0">
+                      {triggerEffortLabel}
+                    </Text>
+                  ) : null}
+
+                  {triggerFastOn ? (
+                    <Zap
+                      data-model-fast
+                      className="icon-xs shrink-0"
+                      tone="secondary"
+                      fill="currentColor"
+                      strokeWidth={1.75}
+                      aria-hidden
+                    />
+                  ) : null}
+                </>
+              )}
+            </span>
+          </Trigger>
+        </Tooltip>
+      )}
 
       {open && hideSettings ? (
         <ModelFlyout
@@ -932,7 +950,8 @@ export function ModelPicker({
         <ModelPanel
           anchor={button}
           side={field ? "bottom" : "top"}
-          project={project}
+          project={settingsScope ? undefined : project}
+          showProviderSettings={!settingsScope}
           onDismiss={(reason) => dismiss(reason === "escape")}
           browser={{
             harnesses: pickerHarnesses,

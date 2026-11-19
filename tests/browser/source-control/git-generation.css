@@ -18,13 +18,17 @@
   --font-sans: "Segoe UI", sans-serif;
 }
 /* Match the application's native form-control theme in this isolated fixture. */
-html {
+html:not(.theme-light) {
   color-scheme: dark;
 }
 body {
   margin: 0;
   background: #0f0f0f;
   color: #ebebeb;
+}
+html.theme-light body {
+  background: var(--color-background-base);
+  color: var(--color-content);
 }
 .popover-backdrop {
   background: color-mix(in srgb, var(--color-background-base) 95%, transparent);

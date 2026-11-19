@@ -25,8 +25,6 @@ import {
   PanelRight,
   RefreshCw,
   Undo2,
-  WandSparkles,
-  X,
 } from "../../../shared/ui/icons";
 import {
   Suspense,
@@ -138,9 +136,8 @@ import { requestWorktreeManagement } from "../model/worktreeManagement";
 import styles from "./CheckoutHeader.module.css";
 import { CheckoutIdentity, checkoutBranch } from "./CheckoutIdentity";
 import { UpstreamLabel } from "./UpstreamLabel";
-import { InlineAction } from "../../../shared/ui/ActionHost";
 import { TextareaField } from "../../../shared/ui/TextareaField";
-import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
+import { GitCommitGenerationActions } from "./GitGenerationSettings";
 import { ChangeList } from "./GitChangesList";
 import { useDiffIndex, announceGitChange } from "../hooks/useDiffIndex";
 import { useCommitDraft } from "../hooks/useCommitDraft";
@@ -843,6 +840,8 @@ function ChangedFiles({
     generating,
     amend,
     generationChoice,
+    commitGenerationChoice,
+    setCommitGenerationChoice,
     generate,
     cancelGenerate,
     toggleAmend: toggleAmendDraft,
@@ -1143,14 +1142,15 @@ function ChangedFiles({
         committed = true;
         // The commit is made: its files leave the list now, not after the push
         // and the reload that follow.
-        if (index) showOptimistic(applyCommit(index, stageAll));
+        const committedIndex = index && applyCommit(index, stageAll, amending);
+        if (committedIndex) showOptimistic(committedIndex);
         clearDraft();
         if (push || createPr) {
           setPending("Pushing…");
           await gitPush(cwd);
           pushed = true;
           recordPrActivity();
-          if (index) showOptimistic(applySync(applyCommit(index, stageAll)));
+          if (committedIndex) showOptimistic(applySync(committedIndex));
         }
         onMutated();
         if (createPr) {
@@ -1384,25 +1384,17 @@ function ChangedFiles({
               }}
               className={styles.message}
               endAdornment={
-                <>
-                  {generating ? <WorkingIndicator label={t("Generating message…")} /> : null}
-                  <InlineAction
-                    reveal="always"
-                    label={
-                      generating
-                        ? t("Stop commit message generation")
-                        : t("Generate commit message")
-                    }
-                    disabled={!generating && !canGenerate}
-                    onClick={() => (generating ? cancelGenerate() : void generate())}
-                  >
-                    {generating ? (
-                      <X className="icon-sm" strokeWidth={1.75} />
-                    ) : (
-                      <WandSparkles className="icon-sm" strokeWidth={1.75} />
-                    )}
-                  </InlineAction>
-                </>
+                <GitCommitGenerationActions
+                  key={cwd}
+                  cwd={cwd}
+                  preferred={textHarness}
+                  choice={commitGenerationChoice}
+                  onChange={setCommitGenerationChoice}
+                  canGenerate={canGenerate}
+                  generating={generating}
+                  generate={() => void generate()}
+                  cancel={cancelGenerate}
+                />
               }
             />
           </div>

@@ -9,6 +9,10 @@ repository, using that Host's Git model routing and provider accounts. They neve
 fall back to a local provider when the remote Host is unavailable. Stopping
 generation dismisses the pending result; the Host call retains its 90-second
 provider deadline. Edited drafts and changed staged content remain protected.
+The arrow beside **Generate commit message** opens the model picker with the
+selected model's supported effort and speed controls. The choice is saved per
+checkout and applies to commit messages. **Automatic** clears the commit-specific
+choice. Remote checkouts list models from their own Host.
 
 Linked workspace repository lists include every declared folder, including `.`
 when the containing folder is itself a repository. Root and nested repositories
@@ -109,7 +113,9 @@ list instead, only when you choose it; provider error text is not shown.
 
 While there are changes, the main button is **Commit**: it commits what is staged,
 or every change when nothing is staged (amending never adds unstaged files). It
-never pushes. **Commit & Push** and **Commit, Push & Create PR** are in its menu.
+never pushes. After a successful regular commit, a tracked branch shows the
+updated outgoing commit count while Git refreshes the full status.
+**Commit & Push** and **Commit, Push & Create PR** are in its menu.
 Pending outgoing or incoming commits keep their own **Push**, **Pull**, **Sync
 Changes** or **Publish Branch** button beside it. With nothing to commit, that sync,
 Create PR or View PR action leads instead.

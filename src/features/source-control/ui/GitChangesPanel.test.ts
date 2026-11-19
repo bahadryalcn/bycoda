@@ -486,13 +486,23 @@ describe("GitChangesPanel commit message generation", () => {
     expect(container.querySelector("textarea")?.value).toBe("feat: add app");
     expect(container.textContent).not.toContain("Draft or changes changed during generation");
   });
-  it("uses the saved project model and advisor for generation", async () => {
-    const choice = {
+  it.each([false, true])("uses saved model (commit override: %j)", async (override) => {
+    const legacy = {
       harness: "claude",
       model: "claude:sonnet-5",
       modelSettings: { advisor: "opus" },
     };
-    localStorage.setItem("bycoda.gitGeneration.v1:/repo", JSON.stringify(choice));
+    const choice = override
+      ? {
+          harness: "claude",
+          model: "claude:opus-5-5",
+          modelSettings: { effort: "high", fast: "true" },
+        }
+      : legacy;
+    localStorage.setItem("bycoda.gitGeneration.v1:/repo", JSON.stringify(legacy));
+    if (override) {
+      localStorage.setItem("bycoda.gitCommitGeneration.v1:/repo", JSON.stringify(choice));
+    }
     vi.mocked(gitDiffIndex).mockResolvedValue(
       index({
         files: [
@@ -992,6 +1002,29 @@ describe("GitChangesPanel action feedback", () => {
     expect(container.textContent).not.toContain("Commit created");
     expect(container.querySelector("textarea")?.value).toBe("");
     expect(container.querySelector('header [role="status"]')).toBeNull();
+  });
+
+  it("shows the new push count as soon as the commit succeeds while status reloads", async () => {
+    vi.mocked(gitDiffIndex).mockResolvedValue(
+      index({
+        remote: "origin",
+        upstream: "origin/main",
+        files: [changedFile("file.ts", { staged: true, unstaged: false })],
+      }),
+    );
+    vi.mocked(gitCommit).mockResolvedValueOnce(undefined);
+    await renderPanel("/repo-commit-push-count");
+    await fillCommitMessage("Update push count");
+    let finishReload!: (value: GitDiffIndex) => void;
+    vi.mocked(gitDiffIndex).mockImplementation(
+      () => new Promise((resolve) => (finishReload = resolve)),
+    );
+    await act(async () => primaryAction().click());
+    expect(primaryAction().textContent?.trim()).toMatch(/^Push\s*1$/);
+    await act(async () =>
+      finishReload(index({ remote: "origin", upstream: "origin/main", ahead: 1 })),
+    );
+    expect(primaryAction().textContent?.trim()).toMatch(/^Push\s*1$/);
   });
 
   const changed = (staged: boolean) => ({

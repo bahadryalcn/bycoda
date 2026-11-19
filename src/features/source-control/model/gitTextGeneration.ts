@@ -24,7 +24,7 @@ export async function generateCommitMessage(
     cwd,
     preferred,
     signal,
-    await resolveGitGenerationChoice(choice, cwd, preferred),
+    choice ?? (await resolveGitGenerationChoice(undefined, cwd, preferred)),
     captured,
   );
 }
