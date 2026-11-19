@@ -6,6 +6,7 @@ import {
 import { callLiveStreamConversationTool, requestLiveStreamStreamApproval } from "./tools";
 import { externalMcpCatalog, managedMcpCatalog, mcpCatalog } from "../mcp/mcp-http";
 import { validateSessionConversationTool } from "../conversation/conversation-tools";
+import type { ApprovedLiveTarget } from "./social-broadcast";
 
 const totals = {
   diamonds: 50,
@@ -46,7 +47,7 @@ const target = {
   ...account,
   binding: { accountId: account.accountId, platform: account.platform, platformId: "channel-1" },
 };
-const liveStatus = { state: "idle" as const, canStop: false };
+const liveStatus = { state: "idle" as const, canStop: false, destinations: [] };
 
 function setup() {
   const service = {
@@ -58,7 +59,7 @@ function setup() {
     obsSetup: vi.fn(async () => status),
     obsStream: vi.fn(async () => status),
     liveScene: vi.fn(async (scene?: string) => scene ?? "Studio"),
-    liveAccount: vi.fn(async () => target),
+    liveTargets: vi.fn(async (): Promise<ApprovedLiveTarget[]> => [target]),
     liveAccounts: vi.fn(async () => ({ accounts: [account] })),
     liveStatus: vi.fn(async () => liveStatus),
     liveStart: vi.fn(async () => liveStatus),
@@ -106,12 +107,12 @@ describe("Live streaming Conversation Tools", () => {
       validateSessionConversationTool("liveStream.obsStream", { action: "send" }),
     ).toThrow();
     expect(() =>
-      validateSessionConversationTool("liveStream.goLive", { accountId: "yt", scene: "Stage" }),
+      validateSessionConversationTool("liveStream.goLive", { accountIds: ["yt"], scene: "Stage" }),
     ).not.toThrow();
     for (const field of ["projectId", "streamKey", "approved"]) {
       expect(() =>
         validateSessionConversationTool("liveStream.goLive", {
-          accountId: "yt",
+          accountIds: ["yt"],
           [field]: "forged",
         }),
       ).toThrow();
@@ -208,16 +209,16 @@ describe("Live streaming Conversation Tools", () => {
 
   it("binds the approved Social account and scene to the original session's project", async () => {
     const { call, approve, service } = setup();
-    await call("liveStream.goLive", { accountId: "yt" });
+    await call("liveStream.goLive", { accountIds: ["yt"] });
     expect(approve).toHaveBeenCalledWith(
-      { action: "liveStream.goLive", input: { ...account, scene: "Studio" } },
+      { action: "liveStream.goLive", input: { accounts: [account], scene: "Studio" } },
       expect.any(Function),
     );
     expect(service.liveStart).toHaveBeenCalledWith(
-      { accountId: "yt", scene: "Studio" },
+      { accountIds: ["yt"], scene: "Studio" },
       { ...principal, actorId: "session:s" },
       expect.any(Function),
-      target,
+      [target],
     );
     await call("liveStream.endLive");
     expect(approve).toHaveBeenCalledOnce();
@@ -236,7 +237,7 @@ describe("Live streaming Conversation Tools", () => {
     const desktop = { call, callAssistantThread: vi.fn() };
     const operation = {
       action: "liveStream.goLive" as const,
-      input: { ...account, scene: "Stage" },
+      input: { accounts: [account], scene: "Stage" },
     };
     const request = () =>
       requestLiveStreamStreamApproval(
@@ -254,14 +255,47 @@ describe("Live streaming Conversation Tools", () => {
     });
   });
 
+  it("puts every requested account in the native approval and dispatches the same list", async () => {
+    const { call, approve, service } = setup();
+    const second = { accountId: "tt", platform: "tiktok" as const, label: "Short channel" };
+    const secondTarget = { ...second, binding: { ...target.binding, accountId: "tt" } };
+    service.liveTargets.mockResolvedValueOnce([target, secondTarget]);
+    await call("liveStream.goLive", { accountIds: ["yt", "tt"], scene: "Studio" });
+    expect(approve).toHaveBeenCalledWith(
+      { action: "liveStream.goLive", input: { accounts: [account, second], scene: "Studio" } },
+      expect.any(Function),
+    );
+    expect(service.liveStart).toHaveBeenCalledWith(
+      { accountIds: ["yt", "tt"], scene: "Studio" },
+      expect.anything(),
+      expect.any(Function),
+      [target, secondTarget],
+    );
+  });
+
+  it("rejects empty, duplicate, oversized and legacy single-account goLive input", async () => {
+    const { call, approve } = setup();
+    await expect(call("liveStream.goLive", { accountIds: ["yt", "yt"] })).rejects.toThrow();
+    await expect(call("liveStream.goLive", { accountIds: [" yt", "yt "] })).rejects.toThrow();
+    expect(approve).not.toHaveBeenCalled();
+    const go = (input: Record<string, unknown>) =>
+      validateSessionConversationTool("liveStream.goLive", input);
+    expect(() => go({ accountIds: [] })).toThrow();
+    expect(() => go({ accountIds: ["a", "b", "c", "d", "e", "f", "g"] })).toThrow();
+    expect(() => go({ accountId: "yt" })).toThrow();
+    expect(() => go({ accountIds: ["a", "b", "c", "d", "e", "f"] })).not.toThrow();
+  });
+
   it("drops a Social start if access changes or the owner declines", async () => {
     const { call, approve, authorized, service } = setup();
     approve.mockRejectedValueOnce(new Error("Owner declined."));
-    await expect(call("liveStream.goLive", { accountId: "yt" })).rejects.toThrow("Owner declined.");
+    await expect(call("liveStream.goLive", { accountIds: ["yt"] })).rejects.toThrow(
+      "Owner declined.",
+    );
     approve.mockImplementationOnce(async () => {
       authorized.mockResolvedValue(false);
     });
-    await expect(call("liveStream.goLive", { accountId: "yt" })).rejects.toThrow(
+    await expect(call("liveStream.goLive", { accountIds: ["yt"] })).rejects.toThrow(
       "Session authority revoked.",
     );
     expect(service.liveStart).not.toHaveBeenCalled();
@@ -293,13 +327,13 @@ describe("Live streaming Conversation Tools", () => {
       callLiveStreamConversationTool(
         service,
         "liveStream.goLive",
-        { accountId: "yt" },
+        { accountIds: ["yt"] },
         authorized,
         approve,
         { kind: "assistant-thread", threadId: "room", environmentId: "host" },
       ),
     ).rejects.toThrow("Social broadcasting requires a project");
-    expect(service.liveAccount).not.toHaveBeenCalled();
+    expect(service.liveTargets).not.toHaveBeenCalled();
     expect(approve).not.toHaveBeenCalled();
   });
 });

@@ -35,6 +35,11 @@ events and owns the session and report.
 - TikTok LIVE intake reads public events. Keep authentication cookies out of the
   connector and keep the optional Euler API key in Host credentials.
 - Keep OBS credentials, stream keys and avatar URLs out of Conversation Tools.
+- A go-live request names one to six accounts. Orientation decides the canvas
+  (TikTok and Instagram vertical via Aitum, the rest horizontal); several on a
+  canvas share one `host/live-stream/relay.ts` ffmpeg process. Acquire every
+  ingest before any relay or OBS output starts, roll back created broadcasts on
+  failure, and keep stream keys out of journals, status and relay logs.
 - Reading a channel can end independently of OBS. OBS start from chat requires
   exact native owner approval and current authority at dispatch.
 - Report counts cover observed live events. Demo activity stays identifiable.

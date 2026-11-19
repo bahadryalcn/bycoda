@@ -72,9 +72,14 @@ export type LiveStreamStatus = z.infer<typeof LiveStreamStatusSchema>;
 export type LiveStreamReport = z.infer<typeof LiveStreamReportSchema>;
 
 const liveTargetText = z.string().min(1).max(256);
-/** `scene` names an existing OBS scene; without it the scene OBS currently shows is used. */
+/** Most Social accounts one broadcast may target; one per platform. */
+export const LIVE_STREAM_MAX_ACCOUNTS = 6;
+/**
+ * `accountIds` are unique Social accounts to broadcast to at once. `scene` names an existing OBS
+ * scene; without it the scene OBS currently shows is used.
+ */
 export const LiveStreamLiveStartParamsSchema = z.strictObject({
-  accountId: liveTargetText,
+  accountIds: z.array(liveTargetText).min(1).max(LIVE_STREAM_MAX_ACCOUNTS),
   scene: liveTargetText.optional(),
 });
 const livePlatform = z.enum(["youtube", "tiktok", "instagram", "facebook", "linkedin", "x"]);
@@ -84,42 +89,59 @@ const liveAccount = z.strictObject({
   label: z.string(),
 });
 const liveAccounts = z.strictObject({ accounts: z.array(liveAccount) });
+const liveReason = z.enum([
+  "OBS_NOT_CONFIGURED",
+  "OBS_UNAVAILABLE",
+  "OBS_ALREADY_STREAMING",
+  "SCENE_NOT_FOUND",
+  "VERTICAL_CANVAS_UNAVAILABLE",
+  "RELAY_UNAVAILABLE",
+  "RELAY_FAILED",
+  "ACCOUNT_UNAVAILABLE",
+  "AUTHORITY_DENIED",
+  "LIVE_CREDENTIALS_MISSING",
+  "OWNER_STEP_REQUIRED",
+  "PLATFORM_FAILED",
+  "START_UNCERTAIN",
+  "STOP_UNCERTAIN",
+  "CANCELED",
+]);
+/** TikTok and Instagram go out on the vertical canvas; every other platform on the main one. */
+const liveOrientation = z.enum(["horizontal", "vertical"]);
+const liveDestination = liveAccount.extend({
+  orientation: liveOrientation,
+  state: z.enum(["starting", "streaming", "failed", "ended"]),
+  reason: liveReason.optional(),
+  /** Redacted failure text from the relay; never contains an ingest address or key. */
+  detail: z.string().max(200).optional(),
+});
 export const LiveStreamLiveStatusSchema = z.strictObject({
   state: z.enum(["idle", "starting", "streaming", "stopping", "uncertain", "owner_step", "failed"]),
   canStop: z.boolean(),
-  accountId: z.string().optional(),
-  platform: livePlatform.optional(),
+  /** One entry per requested account, in request order. Empty when idle. */
+  destinations: z.array(liveDestination),
   scene: z.string().optional(),
   obsStreaming: z.boolean().optional(),
   managedDestination: z.boolean().optional(),
   needsPlatformConfirmation: z.boolean().optional(),
-  reason: z
-    .enum([
-      "OBS_NOT_CONFIGURED",
-      "OBS_UNAVAILABLE",
-      "OBS_ALREADY_STREAMING",
-      "SCENE_NOT_FOUND",
-      "ACCOUNT_UNAVAILABLE",
-      "AUTHORITY_DENIED",
-      "LIVE_CREDENTIALS_MISSING",
-      "OWNER_STEP_REQUIRED",
-      "PLATFORM_FAILED",
-      "START_UNCERTAIN",
-      "STOP_UNCERTAIN",
-      "CANCELED",
-    ])
-    .optional(),
+  reason: liveReason.optional(),
 });
 export type LiveStreamLiveAccount = z.infer<typeof liveAccount>;
+export type LiveStreamLiveDestination = z.infer<typeof liveDestination>;
 export type LiveStreamLiveStatus = z.infer<typeof LiveStreamLiveStatusSchema>;
 export type LiveStreamLiveStartParams = z.infer<typeof LiveStreamLiveStartParamsSchema>;
 
+export function liveStreamOrientation(platform: LiveStreamLiveAccount["platform"]) {
+  return platform === "tiktok" || platform === "instagram" ? "vertical" : "horizontal";
+}
+
 export function parseLiveStreamLiveStart(input: unknown): LiveStreamLiveStartParams {
   const params = LiveStreamLiveStartParamsSchema.parse(input);
-  return LiveStreamLiveStartParamsSchema.parse({
-    accountId: params.accountId.trim(),
-    scene: params.scene?.trim(),
-  });
+  const accountIds = params.accountIds.map((id) => id.trim());
+  // Uniqueness is checked here because wire schemas cannot carry a custom refinement.
+  if (new Set(accountIds).size !== accountIds.length)
+    throw new Error("Account IDs must be unique.");
+  return LiveStreamLiveStartParamsSchema.parse({ accountIds, scene: params.scene?.trim() });
 }
 
 export const LIVE_STREAM_RPC = {

@@ -771,20 +771,31 @@ This merges the listed source branch into the current branch (fast-forward or me
         }
         "\nThis starts broadcasting the active OBS scene to the destination configured in OBS. It can disclose video and audio outside bycoda."
     } else if action == "liveStream.goLive" {
+        let accounts = review_input["accounts"]
+            .as_array()
+            .filter(|accounts| (1..=6).contains(&accounts.len()));
         if review_input
             .as_object()
-            .is_none_or(|input| input.len() != 4)
-            || !matches!(
-                review_input["platform"].as_str(),
-                Some("youtube" | "tiktok" | "instagram" | "facebook" | "linkedin" | "x")
-            )
+            .is_none_or(|input| input.len() != 2)
+            || accounts.is_none()
         {
             return Err("Invalid Social broadcast approval".into());
         }
-        for field in ["accountId", "label", "scene"] {
-            desktop_approval_field(&review_input, field, 256)?;
+        desktop_approval_field(&review_input, "scene", 256)?;
+        for account in accounts.into_iter().flatten() {
+            if account.as_object().is_none_or(|entry| entry.len() != 3)
+                || !matches!(
+                    account["platform"].as_str(),
+                    Some("youtube" | "tiktok" | "instagram" | "facebook" | "linkedin" | "x")
+                )
+            {
+                return Err("Invalid Social broadcast approval".into());
+            }
+            for field in ["accountId", "label"] {
+                desktop_approval_field(account, field, 256)?;
+            }
         }
-        "\nThis starts a public broadcast of the listed OBS scene to the listed Social account. It can disclose video and audio outside bycoda. Approval applies to this operation only."
+        "\nThis starts a public broadcast of the listed OBS scene to every listed Social account at once. It can disclose video and audio outside bycoda. Approval applies to this operation only."
     } else if action.starts_with("terminals.") {
         "\nThis controls a Host pipe shell. Its launch directory is not a sandbox; accepted input may continue running after Room closes. Command completion is not observed."
     } else {
@@ -2059,14 +2070,26 @@ mod tests {
         assert!(management_approval_message(&stream).is_err());
         stream["input"]["operation"]["action"] = json!("liveStream.goLive");
         stream["input"]["operation"]["input"] = json!({
-            "accountId": "youtube-one", "label": "Studio channel",
-            "platform": "youtube", "scene": "Studio"
+            "accounts": [
+                {"accountId": "youtube-one", "label": "Studio channel", "platform": "youtube"},
+                {"accountId": "tiktok-one", "label": "Short channel", "platform": "tiktok"}
+            ],
+            "scene": "Studio"
         });
         let (message, _) = management_approval_message(&stream).unwrap();
         assert!(message.contains("public broadcast") && message.contains("Studio channel"));
         assert!(message.contains("youtube-one") && message.contains("Studio"));
+        assert!(message.contains("tiktok-one") && message.contains("Short channel"));
+        let valid = stream["input"]["operation"]["input"].clone();
         stream["input"]["operation"]["input"]["streamKey"] = json!("not for approval");
         assert!(management_approval_message(&stream).is_err());
+        stream["input"]["operation"]["input"] = valid.clone();
+        stream["input"]["operation"]["input"]["accounts"][1]["streamKey"] = json!("hidden");
+        assert!(management_approval_message(&stream).is_err());
+        stream["input"]["operation"]["input"] = valid.clone();
+        stream["input"]["operation"]["input"]["accounts"] = json!([]);
+        assert!(management_approval_message(&stream).is_err());
+        stream["input"]["operation"]["input"] = valid;
         let mut note = request.clone();
         note["input"]["operation"]["action"] = json!("notes.update");
         note["input"]["operation"]["input"] = json!({"requestId":"note-request","noteInput":{"id":"note","expectedUpdatedAt":42,"body":"reviewed text"}});

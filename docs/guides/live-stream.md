@@ -36,6 +36,28 @@ interact with your stream, ask a bycoda chat to build that for your own scene.
    the platform before another start. If the app asks you to confirm the
    broadcast ended, end any live or pending broadcast on the platform first.
 
+## Go live on several platforms at once
+
+Under **Stream to**, tick every account you want. YouTube, Facebook, LinkedIn and
+X are **Horizontal** and go out from the main OBS canvas. TikTok and Instagram are
+**Vertical** and go out from the Aitum Vertical canvas. Up to six accounts can
+share one broadcast, and the approval dialog lists every one of them.
+
+- For TikTok or Instagram, install the Aitum Vertical plugin in OBS and add one
+  stream output in its settings. bycoda fills that output with the account's server
+  and key while you are live. Without it the start stops with a message before
+  anything goes live.
+- To send one canvas to two or more platforms, bycoda needs ffmpeg on your PATH.
+  With a single platform per canvas ffmpeg is not needed.
+- While live, each destination shows **Starting**, **Streaming**, **Failed** (with
+  the reason) or **Ended**. One platform failing does not stop the others.
+- Your upload must carry every destination at once: roughly the bitrate of each
+  canvas times its number of destinations. Keep the total under about 75% of your
+  upload speed.
+
+**Configured OBS server** is a separate single choice and cannot be combined with
+accounts.
+
 Use **Configured OBS server** to broadcast with manually supplied OBS credentials.
 After choosing a Social destination, save a manual destination again before
 starting through that option.

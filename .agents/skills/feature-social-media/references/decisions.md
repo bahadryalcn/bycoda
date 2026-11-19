@@ -56,3 +56,9 @@ Owner decision, 2026-11-19, source: owner chat while reviewing Live Games (trans
 > "everyone should be able to build and integrate this themselves with AI, we will not have a built-in game like this, back it up elsewhere and remove it"
 
 Recorded decision: bycoda ships no built-in live game. The Halay game, its browser overlay, gift rules and game settings are removed (backups: branch `backup/live-games-halay` and the `bycoda-halay-backup` folder). The generic feature stays as "Live streaming": TikTok LIVE intake, demo events, a session report, OBS control and the go-live flow to Social accounts. The Host data file is now `live-stream.json`; no migration from the old Live games state.
+
+Owner decision, 2026-11-19, source: owner chat about Live streaming (translated):
+
+> "I have 50 Mbit upload. We also need to be able to stream to all of them at the same time"
+
+Recorded decision: Social go-live takes several accounts at once (`accountIds`, 1 to 6). YouTube, Facebook, LinkedIn and X use the main OBS canvas; TikTok and Instagram use the Aitum Vertical canvas (OBS plugin, output 0). When a canvas has more than one destination, the Host runs a local ffmpeg relay that copies that canvas to every destination, so one failing platform does not stop the others. One owner approval covers the full account list. No reader for the old single-account broadcast journal.

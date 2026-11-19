@@ -144,10 +144,12 @@ External MCP credentials do not expose the family.
   Confirm the stream state in status before retrying or reporting success.
   The Euler API key and OBS stream credentials are set in the owner UI.
 - `liveStream.liveAccounts` lists the ready Social destinations visible to the
-  conversation's project. Use its `accountId` with `liveStream.goLive`. The
-  optional `scene` names an existing OBS scene and defaults to the scene OBS shows. Starting requires exact native
-  owner approval for that account and scene, the project's Social account
-  grant, and current Social policy.
+  conversation's project. Pass one to six of its `accountId` values as
+  `accountIds` to `liveStream.goLive` to go live on all of them at once. The
+  optional `scene` names an existing OBS scene and defaults to the scene OBS
+  shows. Starting requires exact native owner approval listing every account and
+  the scene, the project's Social account grant for each, and current Social
+  policy.
 - Read `liveStream.liveStatus` after starting or stopping. Report any owner
   step, and never automatically retry an uncertain start. `liveStream.endLive`
   stops OBS and ends the platform broadcast where supported. Tool responses

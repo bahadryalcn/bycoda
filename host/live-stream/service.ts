@@ -381,8 +381,8 @@ export class LiveStreamService {
     return this.socialBroadcast.accounts(principal);
   }
 
-  liveAccount(accountId: string, principal?: SocialPrincipal) {
-    return this.socialBroadcast.approvalTarget(accountId, principal);
+  liveTargets(accountIds: readonly string[], principal?: SocialPrincipal) {
+    return this.socialBroadcast.approvalTargets(accountIds, principal);
   }
 
   async liveStatus(principal?: SocialPrincipal) {
@@ -394,14 +394,14 @@ export class LiveStreamService {
     params: LiveStreamLiveStartParams & { scene: string },
     principal: SocialPrincipal | undefined,
     authorize: Authority,
-    approvedAccount?: ApprovedLiveTarget,
+    approvedAccounts?: readonly ApprovedLiveTarget[],
   ) {
     return this.serial(() =>
       this.socialBroadcast.start(
         params,
         principal,
         async () => !this.closing && authorize(),
-        approvedAccount,
+        approvedAccounts,
       ),
     );
   }
@@ -420,6 +420,7 @@ export class LiveStreamService {
     clearInterval(this.timer);
     await this.queue;
     this.stopConnector();
+    await this.socialBroadcast.close();
     if (
       this.initialized &&
       (await this.initialized.then(

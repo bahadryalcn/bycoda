@@ -31952,10 +31952,15 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
         "properties": {
-          "accountId": { "maxLength": 256, "minLength": 1, "type": "string" },
+          "accountIds": {
+            "items": { "maxLength": 256, "minLength": 1, "type": "string" },
+            "maxItems": 6,
+            "minItems": 1,
+            "type": "array"
+          },
           "scene": { "maxLength": 256, "minLength": 1, "type": "string" }
         },
-        "required": ["accountId"],
+        "required": ["accountIds"],
         "type": "object"
       },
       "requiredCapability": "liveStream.v1",
@@ -31964,21 +31969,58 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
         "properties": {
-          "accountId": { "type": "string" },
           "canStop": { "type": "boolean" },
+          "destinations": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "accountId": { "type": "string" },
+                "detail": { "maxLength": 200, "type": "string" },
+                "label": { "type": "string" },
+                "orientation": { "enum": ["horizontal", "vertical"], "type": "string" },
+                "platform": {
+                  "enum": ["youtube", "tiktok", "instagram", "facebook", "linkedin", "x"],
+                  "type": "string"
+                },
+                "reason": {
+                  "enum": [
+                    "OBS_NOT_CONFIGURED",
+                    "OBS_UNAVAILABLE",
+                    "OBS_ALREADY_STREAMING",
+                    "SCENE_NOT_FOUND",
+                    "VERTICAL_CANVAS_UNAVAILABLE",
+                    "RELAY_UNAVAILABLE",
+                    "RELAY_FAILED",
+                    "ACCOUNT_UNAVAILABLE",
+                    "AUTHORITY_DENIED",
+                    "LIVE_CREDENTIALS_MISSING",
+                    "OWNER_STEP_REQUIRED",
+                    "PLATFORM_FAILED",
+                    "START_UNCERTAIN",
+                    "STOP_UNCERTAIN",
+                    "CANCELED"
+                  ],
+                  "type": "string"
+                },
+                "state": { "enum": ["starting", "streaming", "failed", "ended"], "type": "string" }
+              },
+              "required": ["accountId", "platform", "label", "orientation", "state"],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "managedDestination": { "type": "boolean" },
           "needsPlatformConfirmation": { "type": "boolean" },
           "obsStreaming": { "type": "boolean" },
-          "platform": {
-            "enum": ["youtube", "tiktok", "instagram", "facebook", "linkedin", "x"],
-            "type": "string"
-          },
           "reason": {
             "enum": [
               "OBS_NOT_CONFIGURED",
               "OBS_UNAVAILABLE",
               "OBS_ALREADY_STREAMING",
               "SCENE_NOT_FOUND",
+              "VERTICAL_CANVAS_UNAVAILABLE",
+              "RELAY_UNAVAILABLE",
+              "RELAY_FAILED",
               "ACCOUNT_UNAVAILABLE",
               "AUTHORITY_DENIED",
               "LIVE_CREDENTIALS_MISSING",
@@ -32004,7 +32046,7 @@
             "type": "string"
           }
         },
-        "required": ["state", "canStop"],
+        "required": ["state", "canStop", "destinations"],
         "type": "object"
       },
       "retry": "never",
@@ -32028,21 +32070,58 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
         "properties": {
-          "accountId": { "type": "string" },
           "canStop": { "type": "boolean" },
+          "destinations": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "accountId": { "type": "string" },
+                "detail": { "maxLength": 200, "type": "string" },
+                "label": { "type": "string" },
+                "orientation": { "enum": ["horizontal", "vertical"], "type": "string" },
+                "platform": {
+                  "enum": ["youtube", "tiktok", "instagram", "facebook", "linkedin", "x"],
+                  "type": "string"
+                },
+                "reason": {
+                  "enum": [
+                    "OBS_NOT_CONFIGURED",
+                    "OBS_UNAVAILABLE",
+                    "OBS_ALREADY_STREAMING",
+                    "SCENE_NOT_FOUND",
+                    "VERTICAL_CANVAS_UNAVAILABLE",
+                    "RELAY_UNAVAILABLE",
+                    "RELAY_FAILED",
+                    "ACCOUNT_UNAVAILABLE",
+                    "AUTHORITY_DENIED",
+                    "LIVE_CREDENTIALS_MISSING",
+                    "OWNER_STEP_REQUIRED",
+                    "PLATFORM_FAILED",
+                    "START_UNCERTAIN",
+                    "STOP_UNCERTAIN",
+                    "CANCELED"
+                  ],
+                  "type": "string"
+                },
+                "state": { "enum": ["starting", "streaming", "failed", "ended"], "type": "string" }
+              },
+              "required": ["accountId", "platform", "label", "orientation", "state"],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "managedDestination": { "type": "boolean" },
           "needsPlatformConfirmation": { "type": "boolean" },
           "obsStreaming": { "type": "boolean" },
-          "platform": {
-            "enum": ["youtube", "tiktok", "instagram", "facebook", "linkedin", "x"],
-            "type": "string"
-          },
           "reason": {
             "enum": [
               "OBS_NOT_CONFIGURED",
               "OBS_UNAVAILABLE",
               "OBS_ALREADY_STREAMING",
               "SCENE_NOT_FOUND",
+              "VERTICAL_CANVAS_UNAVAILABLE",
+              "RELAY_UNAVAILABLE",
+              "RELAY_FAILED",
               "ACCOUNT_UNAVAILABLE",
               "AUTHORITY_DENIED",
               "LIVE_CREDENTIALS_MISSING",
@@ -32068,7 +32147,7 @@
             "type": "string"
           }
         },
-        "required": ["state", "canStop"],
+        "required": ["state", "canStop", "destinations"],
         "type": "object"
       },
       "retry": "safe-query",
@@ -32092,21 +32171,58 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
         "properties": {
-          "accountId": { "type": "string" },
           "canStop": { "type": "boolean" },
+          "destinations": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "accountId": { "type": "string" },
+                "detail": { "maxLength": 200, "type": "string" },
+                "label": { "type": "string" },
+                "orientation": { "enum": ["horizontal", "vertical"], "type": "string" },
+                "platform": {
+                  "enum": ["youtube", "tiktok", "instagram", "facebook", "linkedin", "x"],
+                  "type": "string"
+                },
+                "reason": {
+                  "enum": [
+                    "OBS_NOT_CONFIGURED",
+                    "OBS_UNAVAILABLE",
+                    "OBS_ALREADY_STREAMING",
+                    "SCENE_NOT_FOUND",
+                    "VERTICAL_CANVAS_UNAVAILABLE",
+                    "RELAY_UNAVAILABLE",
+                    "RELAY_FAILED",
+                    "ACCOUNT_UNAVAILABLE",
+                    "AUTHORITY_DENIED",
+                    "LIVE_CREDENTIALS_MISSING",
+                    "OWNER_STEP_REQUIRED",
+                    "PLATFORM_FAILED",
+                    "START_UNCERTAIN",
+                    "STOP_UNCERTAIN",
+                    "CANCELED"
+                  ],
+                  "type": "string"
+                },
+                "state": { "enum": ["starting", "streaming", "failed", "ended"], "type": "string" }
+              },
+              "required": ["accountId", "platform", "label", "orientation", "state"],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "managedDestination": { "type": "boolean" },
           "needsPlatformConfirmation": { "type": "boolean" },
           "obsStreaming": { "type": "boolean" },
-          "platform": {
-            "enum": ["youtube", "tiktok", "instagram", "facebook", "linkedin", "x"],
-            "type": "string"
-          },
           "reason": {
             "enum": [
               "OBS_NOT_CONFIGURED",
               "OBS_UNAVAILABLE",
               "OBS_ALREADY_STREAMING",
               "SCENE_NOT_FOUND",
+              "VERTICAL_CANVAS_UNAVAILABLE",
+              "RELAY_UNAVAILABLE",
+              "RELAY_FAILED",
               "ACCOUNT_UNAVAILABLE",
               "AUTHORITY_DENIED",
               "LIVE_CREDENTIALS_MISSING",
@@ -32132,7 +32248,7 @@
             "type": "string"
           }
         },
-        "required": ["state", "canStop"],
+        "required": ["state", "canStop", "destinations"],
         "type": "object"
       },
       "retry": "never",
@@ -65409,10 +65525,15 @@
             "params": {
               "additionalProperties": false,
               "properties": {
-                "accountId": { "maxLength": 256, "minLength": 1, "type": "string" },
+                "accountIds": {
+                  "items": { "maxLength": 256, "minLength": 1, "type": "string" },
+                  "maxItems": 6,
+                  "minItems": 1,
+                  "type": "array"
+                },
                 "scene": { "maxLength": 256, "minLength": 1, "type": "string" }
               },
-              "required": ["accountId"],
+              "required": ["accountIds"],
               "type": "object"
             }
           },
@@ -82460,5 +82581,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "c74878e0c285e61a08c83aa19f706b9e9dc30df5132fc81d14142f6fcbdaa048"
+  "schemaHash": "375b34961e1390db8eede064e94ff72c09a45ce5e663e52a8e7ec4a7907d9ee2"
 }

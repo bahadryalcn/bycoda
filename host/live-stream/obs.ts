@@ -25,6 +25,12 @@ const configSchema = z.looseObject({
   server_password: z.string().optional(),
 });
 type Authorize = () => Promise<void>;
+/** Aitum Vertical's obs-websocket vendor; output 0 must already exist in its settings. */
+const AITUM_VENDOR = "aitum-vertical-canvas";
+const AITUM_IDLE = { server: "rtmp://127.0.0.1/off", key: "off" };
+export type SocialCanvases = { horizontal: boolean; vertical: boolean };
+export type SocialOutput = { server: string; key: string };
+export type SocialPlan = { scene: string; horizontal?: SocialOutput; vertical?: SocialOutput };
 
 async function obsPath() {
   if (process.platform !== "win32" || !process.env.APPDATA)
@@ -295,68 +301,154 @@ export class LiveStreamObs {
     });
   }
 
-  private async checkSocialScene(client: OBSWebSocket, scene: string) {
-    const { outputActive, outputReconnecting } = await client.call("GetStreamStatus");
-    if (outputActive || outputReconnecting)
-      throw new LiveStreamObsActionError("OBS_ALREADY_STREAMING");
+  /**
+   * One request to the Aitum Vertical plugin. OBS answers code 600 when no vendor has that name,
+   * which is how a missing or not yet loaded plugin shows up; `success: false` means no canvas.
+   */
+  private async vertical(
+    client: OBSWebSocket,
+    requestType: string,
+    requestData: Record<string, string | number> = {},
+  ) {
+    const answer = await client
+      .call("CallVendorRequest", { vendorName: AITUM_VENDOR, requestType, requestData })
+      .catch((error: unknown) => {
+        if ((error as { code?: unknown } | null)?.code === 600)
+          throw new LiveStreamObsActionError("VERTICAL_CANVAS_UNAVAILABLE");
+        throw error;
+      });
+    const data = answer.responseData as { success?: boolean; streaming?: boolean };
+    if (data.success !== true) throw new LiveStreamObsActionError("VERTICAL_CANVAS_UNAVAILABLE");
+    return data;
+  }
+
+  private async verticalStreaming(client: OBSWebSocket) {
+    return (await this.vertical(client, "status")).streaming === true;
+  }
+
+  private async checkSocial(client: OBSWebSocket, scene: string, canvases: SocialCanvases) {
+    if (canvases.horizontal) {
+      const { outputActive, outputReconnecting } = await client.call("GetStreamStatus");
+      if (outputActive || outputReconnecting)
+        throw new LiveStreamObsActionError("OBS_ALREADY_STREAMING");
+    }
     const { scenes } = await client.call("GetSceneList");
     if (!scenes.some((entry) => entry.sceneName === scene))
       throw new LiveStreamObsActionError("SCENE_NOT_FOUND");
+    if (canvases.vertical) {
+      await this.vertical(client, "version");
+      if (await this.verticalStreaming(client))
+        throw new LiveStreamObsActionError("OBS_ALREADY_STREAMING");
+    }
   }
 
-  async socialPreflight(scene: string) {
+  async socialPreflight(scene: string, canvases: SocialCanvases) {
     if (!this.observed.configured) throw new LiveStreamObsActionError("OBS_NOT_CONFIGURED");
-    await this.withObs((client) => this.checkSocialScene(client, scene));
+    await this.withObs((client) => this.checkSocial(client, scene, canvases));
   }
 
-  async startSocial(
-    server: string,
-    key: string,
-    scene: string,
-    beforeSettings: Authorize,
-    beforeStart: Authorize,
-  ) {
+  /**
+   * Points the requested canvases at their destinations and starts them. The main canvas keeps the
+   * owner's previous stream service (see restoreDestination); Aitum's output 0 cannot be read
+   * back, so it is overwritten and parked on a dead local address afterwards (clearVertical).
+   * Resolves once every requested canvas is confirmed streaming; otherwise stops what it started.
+   */
+  async startSocial(plan: SocialPlan, beforeSettings: Authorize, beforeStart: Authorize) {
+    const canvases = { horizontal: Boolean(plan.horizontal), vertical: Boolean(plan.vertical) };
     return this.withObs(async (client, assertConnected) => {
-      await this.checkSocialScene(client, scene);
+      await this.checkSocial(client, plan.scene, canvases);
       await beforeSettings();
       assertConnected();
-      await this.snapshotDestination(client);
-      assertConnected();
-      await this.setDestination(client, server, key);
-      assertConnected();
-      await client.call("SetCurrentProgramScene", { sceneName: scene });
+      if (plan.horizontal) {
+        await this.snapshotDestination(client);
+        assertConnected();
+        await this.setDestination(client, plan.horizontal.server, plan.horizontal.key);
+        assertConnected();
+        await client.call("SetCurrentProgramScene", { sceneName: plan.scene });
+      }
+      if (plan.vertical) {
+        assertConnected();
+        await this.verticalDestination(client, plan.vertical.server, plan.vertical.key);
+      }
       await beforeStart();
       assertConnected();
-      await client.call("StartStream");
-      for (let probe = 0; probe < 6; probe++) {
-        const { outputActive } = await client.call("GetStreamStatus");
-        if (outputActive) break;
+      if (plan.horizontal) await client.call("StartStream");
+      if (plan.vertical) await this.vertical(client, "start_streaming");
+      let active = await this.activeCanvases(client, canvases);
+      for (let probe = 0; probe < 12 && !this.allActive(active, canvases); probe++) {
         await delay(250);
         assertConnected();
+        active = await this.activeCanvases(client, canvases);
       }
       await this.readBack(client);
-      return this.observed.streaming === true;
-    });
+      if (!this.allActive(active, canvases)) {
+        // One canvas did not come up: stop the other so nothing goes out half-configured.
+        if (active.horizontal) await client.call("StopStream").catch(() => {});
+        if (active.vertical) await this.vertical(client, "stop_streaming").catch(() => {});
+        throw new LiveStreamObsActionError(
+          canvases.vertical && !active.vertical ? "VERTICAL_CANVAS_UNAVAILABLE" : "OBS_UNAVAILABLE",
+        );
+      }
+      return active;
+    }, 15_000);
   }
 
-  async socialStreamStatus() {
+  private async verticalDestination(client: OBSWebSocket, server: string, key: string) {
+    this.validateDestination(server);
+    await this.vertical(client, "update_stream_server", { stream_server: server, index: 0 });
+    await this.vertical(client, "update_stream_key", { stream_key: key, index: 0 });
+  }
+
+  private allActive(active: SocialCanvases, wanted: SocialCanvases) {
+    return (!wanted.horizontal || active.horizontal) && (!wanted.vertical || active.vertical);
+  }
+
+  private async activeCanvases(client: OBSWebSocket, wanted: SocialCanvases) {
+    const main = wanted.horizontal ? await client.call("GetStreamStatus") : undefined;
+    return {
+      horizontal: Boolean(main?.outputActive || main?.outputReconnecting),
+      vertical: wanted.vertical ? await this.verticalStreaming(client) : false,
+    };
+  }
+
+  /** Streaming state of the requested canvases; undefined for canvases not asked about. */
+  async socialStreamStatus(canvases: SocialCanvases) {
     return this.withObs(async (client) => {
-      const { outputActive, outputReconnecting } = await client.call("GetStreamStatus");
-      return outputActive || outputReconnecting;
+      const active = await this.activeCanvases(client, canvases);
+      return {
+        ...(canvases.horizontal ? { horizontal: active.horizontal } : {}),
+        ...(canvases.vertical ? { vertical: active.vertical } : {}),
+      };
     });
   }
 
-  async stopSocial(authorize: Authorize) {
+  async stopSocial(canvases: SocialCanvases, authorize: Authorize) {
     return this.withObs(async (client, assertConnected) => {
-      const status = await client.call("GetStreamStatus");
-      if (status.outputActive || status.outputReconnecting) {
+      const active = await this.activeCanvases(client, canvases);
+      if (active.horizontal || active.vertical) {
         await authorize();
         assertConnected();
-        await client.call("StopStream");
+        if (active.horizontal) await client.call("StopStream");
+        if (active.vertical) await this.vertical(client, "stop_streaming");
       }
-      const { outputActive, outputReconnecting } = await client.call("GetStreamStatus");
-      return !outputActive && !outputReconnecting;
-    });
+      // OBS and Aitum stop asynchronously: the output stays active until the encoder flushes.
+      let after = await this.activeCanvases(client, canvases);
+      for (let probe = 0; probe < 40 && (after.horizontal || after.vertical); probe++) {
+        await delay(250);
+        assertConnected();
+        after = await this.activeCanvases(client, canvases);
+      }
+      return !after.horizontal && !after.vertical;
+    }, 15_000);
+  }
+
+  /** Parks Aitum's output 0 on a dead local address so no platform key stays stored. */
+  async clearVertical() {
+    return this.withObs(async (client) => {
+      if (await this.verticalStreaming(client)) return false;
+      await this.verticalDestination(client, AITUM_IDLE.server, AITUM_IDLE.key);
+      return true;
+    }).catch(() => false);
   }
 
   private async readBack(client: OBSWebSocket) {

@@ -1,33 +1,28 @@
 import { useState } from "react";
 import { useT } from "../../../shared/i18n";
-import type {
-  LiveStreamLiveAccount,
-  LiveStreamLiveStatus,
-  LiveStreamStatus,
-} from "../../../shared/model/host-contracts/live-stream";
+import type { LiveStreamStatus } from "../../../shared/model/host-contracts/live-stream";
 import { Button } from "../../../shared/ui/Button";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { Check, Play, Square } from "../../../shared/ui/icons";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
-import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
+import { Skeleton } from "../../../shared/ui/Skeleton";
 import { StatusText } from "../../../shared/ui/StatusText";
 import type {
   LiveStreamAccountsQuery,
   LiveStreamFeedback,
   LiveStreamLiveQuery,
 } from "../hooks/useLiveStream";
+import {
+  CONFIGURED_OBS,
+  hasVerticalAccount,
+  platformNames,
+  selectedAccounts,
+  toggleSelection,
+} from "../model/liveDestinations";
 import { liveStreamRequest } from "../model/liveStreamClient";
-
-const configuredObs = "__configured-obs__";
-const platformNames: Record<LiveStreamLiveAccount["platform"], string> = {
-  youtube: "YouTube",
-  tiktok: "TikTok",
-  instagram: "Instagram",
-  facebook: "Facebook",
-  linkedin: "LinkedIn",
-  x: "X",
-};
+import { LiveDestinationPicker } from "./LiveDestinationPicker";
+import { LiveDestinationStatus, streamReason } from "./LiveDestinationStatus";
 
 export function LiveStreamControls({
   obs,
@@ -42,11 +37,12 @@ export function LiveStreamControls({
 }) {
   const t = useT();
   const { confirm, dialog } = useConfirm();
-  const [selected, setSelected] = useState(configuredObs);
+  const [selected, setSelected] = useState<string[]>([CONFIGURED_OBS]);
   const available = accounts.data?.accounts ?? [];
-  const account = available.find((entry) => entry.accountId === selected);
+  const picked = selectedAccounts(selected, available);
+  const obsChosen = selected.includes(CONFIGURED_OBS);
   const activity = live.data;
-  const activeAccount = available.find((entry) => entry.accountId === activity?.accountId);
+  const destinations = activity?.destinations ?? [];
   const managed = Boolean(
     activity?.canStop || activity?.state === "starting" || activity?.state === "stopping",
   );
@@ -56,28 +52,23 @@ export function LiveStreamControls({
     activity?.state === "starting" ||
     feedback.pending("live-start") ||
     feedback.pending("obs-start");
-  const liveDestination = activity?.platform
-    ? activeAccount
-      ? accountLabel(activeAccount, t)
-      : platformNames[activity.platform]
-    : undefined;
+  const liveDestinations = destinations
+    .map((entry) => `${platformNames[entry.platform]} · ${entry.label}`)
+    .join(", ");
   const shouldStop = Boolean(activity?.canStop || obs.streaming);
   const requiresManualCredentials =
-    selected === configuredObs && activity?.managedDestination && !managed && !obs.streaming;
-  const targetOptions = [
-    ...available.map((entry) => ({ value: entry.accountId, label: accountLabel(entry, t) })),
-    { value: configuredObs, label: t("Configured OBS server") },
-  ];
-  const applicable = activity?.accountId === selected || managed;
-  const reason = applicable && activity ? streamReason(activity.reason, t) : undefined;
+    obsChosen && activity?.managedDestination && !managed && !obs.streaming;
+  const reason =
+    activity && (managed || destinations.length > 0) ? streamReason(activity.reason, t) : undefined;
+  const hasSelection = picked.length > 0 || obsChosen;
 
   const start = () => {
-    if (account) {
+    if (picked.length > 0) {
       void confirm({
         title: t("Start streaming"),
         message: t("OBS will broadcast {p0} to {p1}.", {
           p0: obs.scene ?? t("Scene"),
-          p1: accountLabel(account, t),
+          p1: picked.map((entry) => `${platformNames[entry.platform]} · ${entry.label}`).join(", "),
         }),
         confirmLabel: t("Start streaming"),
         danger: false,
@@ -86,7 +77,7 @@ export function LiveStreamControls({
             action: "live-start",
             requestLive: () =>
               liveStreamRequest("liveStream.live.start", {
-                accountId: account.accountId,
+                accountIds: picked.map((entry) => entry.accountId),
                 scene: obs.scene,
               }),
           });
@@ -94,7 +85,7 @@ export function LiveStreamControls({
       }).catch(() => undefined);
       return;
     }
-    if (selected !== configuredObs) return;
+    if (!obsChosen) return;
     void confirm({
       title: t("Start streaming"),
       message: t("OBS will go live on its configured streaming server."),
@@ -114,7 +105,7 @@ export function LiveStreamControls({
       void confirm({
         title: t("Confirm broadcast ended"),
         message: t("End any live or pending broadcast on the platform before confirming."),
-        context: liveDestination,
+        context: liveDestinations,
         confirmLabel: t("Confirm broadcast ended"),
         danger: false,
         onConfirm: () =>
@@ -137,22 +128,24 @@ export function LiveStreamControls({
   };
 
   return (
-    <div className="flex min-w-0 flex-col gap-2">
-      <div className="flex flex-wrap items-end gap-2">
-        <div className="min-w-0 flex-1">
-          <SearchableSelect
-            label={t("Stream to")}
-            value={managed ? (activity?.accountId ?? "") : obs.streaming ? configuredObs : selected}
-            placeholder={liveDestination ?? t("Choose an account")}
-            options={targetOptions}
-            onChange={(value) => {
-              setSelected(value);
-              feedback.clear();
-            }}
-            loading={accounts.isPending}
-            disabled={feedback.busy || managed || obs.streaming}
-          />
-        </div>
+    <div className="flex min-w-0 flex-col gap-3">
+      {managed ? null : accounts.isPending ? (
+        <Skeleton className="h-24 w-full" />
+      ) : (
+        <LiveDestinationPicker
+          accounts={available}
+          selected={obs.streaming ? [CONFIGURED_OBS] : selected}
+          disabled={feedback.busy || obs.streaming === true}
+          onToggle={(key) => {
+            setSelected((current) => toggleSelection(current, key));
+            feedback.clear();
+          }}
+        />
+      )}
+      {destinations.length > 0 ? (
+        <LiveDestinationStatus destinations={destinations} overallReason={activity?.reason} />
+      ) : null}
+      <div>
         {shouldStop ? (
           <Button
             variant="secondary"
@@ -176,12 +169,14 @@ export function LiveStreamControls({
               managed ||
               !obs.configured ||
               requiresManualCredentials ||
-              (!account && selected !== configuredObs)
+              !hasSelection
             }
             loading={starting}
             onClick={start}
           >
-            {t("Start streaming")}
+            {picked.length > 1
+              ? t("Start streaming to {p0} destinations", { p0: String(picked.length) })
+              : t("Start streaming")}
           </Button>
         )}
       </div>
@@ -194,11 +189,11 @@ export function LiveStreamControls({
           {t("Set up a LIVE destination in Social to stream to a connected account.")}
         </InlineMessage>
       ) : null}
-      {!managed && (account?.platform === "tiktok" || account?.platform === "instagram") ? (
+      {!managed && hasVerticalAccount(picked) ? (
         <InlineMessage>
-          {t("{p0} shows vertical video. Set the OBS canvas to 1080×1920 before you go live.", {
-            p0: platformNames[account.platform],
-          })}
+          {t(
+            "TikTok and Instagram stream from the Aitum Vertical canvas. Install Aitum Vertical in OBS and add one stream output in its settings.",
+          )}
         </InlineMessage>
       ) : null}
       {requiresManualCredentials ? (
@@ -218,8 +213,8 @@ export function LiveStreamControls({
         <InlineMessage tone={activity?.state === "failed" ? "danger" : "warning"}>
           {reason}
         </InlineMessage>
-      ) : activity?.state === "streaming" && liveDestination ? (
-        <StatusText tone="done">{t("Streaming to {p0}", { p0: liveDestination })}</StatusText>
+      ) : activity?.state === "streaming" && destinations.length === 0 ? (
+        <StatusText tone="done">{t("Streaming")}</StatusText>
       ) : activity?.state === "starting" || activity?.state === "stopping" ? (
         <StatusText tone="running">
           {activity.state === "starting" ? t("Starting…") : t("Stopping…")}
@@ -235,38 +230,4 @@ export function LiveStreamControls({
       {dialog}
     </div>
   );
-}
-
-function accountLabel(account: LiveStreamLiveAccount, t: ReturnType<typeof useT>) {
-  return t("{p0} · {p1}", { p0: platformNames[account.platform], p1: account.label });
-}
-
-function streamReason(reason: LiveStreamLiveStatus["reason"], t: ReturnType<typeof useT>) {
-  switch (reason) {
-    case "OBS_NOT_CONFIGURED":
-      return t("Set up OBS before starting a broadcast.");
-    case "OBS_UNAVAILABLE":
-      return t("Open OBS and check its WebSocket connection.");
-    case "OBS_ALREADY_STREAMING":
-      return t("Stop the current OBS stream before switching accounts.");
-    case "SCENE_NOT_FOUND":
-      return t("The selected scene could not be found in OBS.");
-    case "ACCOUNT_UNAVAILABLE":
-      return t("Reconnect this account in Social.");
-    case "AUTHORITY_DENIED":
-      return t("Check publishing permissions and stops in Social.");
-    case "LIVE_CREDENTIALS_MISSING":
-      return t("Save this account’s LIVE server and key in Social.");
-    case "OWNER_STEP_REQUIRED":
-      return t("Complete the remaining step on the platform to confirm the broadcast.");
-    case "PLATFORM_FAILED":
-      return t("The platform could not complete the broadcast action.");
-    case "START_UNCERTAIN":
-    case "STOP_UNCERTAIN":
-      return t(
-        "Could not confirm the broadcast action. Check OBS and the platform before trying again.",
-      );
-    case "CANCELED":
-      return t("Cancelled");
-  }
 }

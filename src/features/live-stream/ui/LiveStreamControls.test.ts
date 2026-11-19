@@ -26,13 +26,25 @@ it("shows uncertain provider state and requires owner acknowledgement before cle
   const pending: LiveStreamLiveStatus = {
     state: "uncertain",
     canStop: true,
-    accountId: "youtube-studio",
-    platform: "youtube",
+    destinations: [
+      {
+        accountId: "youtube-studio",
+        platform: "youtube",
+        label: "Stream Studio",
+        orientation: "horizontal",
+        state: "failed",
+      },
+    ],
     reason: "STOP_UNCERTAIN",
     obsStreaming: false,
     needsPlatformConfirmation: true,
   };
-  const idle: LiveStreamLiveStatus = { state: "idle", canStop: false, managedDestination: true };
+  const idle: LiveStreamLiveStatus = {
+    state: "idle",
+    canStop: false,
+    destinations: [],
+    managedDestination: true,
+  };
   let live = pending;
   request.mockImplementation(async (method: string, params: { platformEnded?: true }) => {
     switch (method) {
