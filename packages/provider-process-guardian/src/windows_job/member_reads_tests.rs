@@ -31,7 +31,7 @@ fn captured_handle(job: &OwnedProcessJob, pid: u32) -> *const OwnedHandle {
         .unwrap()
         .iter()
         .find_map(|(&(member_pid, _), handle)| {
-            (member_pid == pid).then(|| std::sync::Arc::as_ptr(handle))
+            (member_pid == pid).then_some(std::sync::Arc::as_ptr(handle))
         })
         .expect("the live member was never captured")
 }

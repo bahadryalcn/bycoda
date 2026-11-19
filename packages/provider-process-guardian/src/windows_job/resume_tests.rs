@@ -9,7 +9,9 @@ fn resume_child_body() -> &'static str {
         .find("pub fn resume_child(")
         .expect("resume_child definition present");
     let rest = &SOURCE[start..];
-    let end = rest.find("\n}\n").expect("resume_child closing brace present");
+    let end = rest
+        .find("\n}\n")
+        .expect("resume_child closing brace present");
     &rest[..end]
 }
 

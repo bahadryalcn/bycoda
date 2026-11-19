@@ -230,8 +230,10 @@ impl Client {
     ) -> (StartFailure, Option<StartDetail>) {
         let parent = Uuid::new_v4().to_string();
         let env: BTreeMap<String, String> = BTreeMap::new();
-        self.send(json!({"version":1,"kind":"start","guardianId":self.guardian,"parentId":parent,
-            "command":command,"args":[],"cwd":cwd,"env":env}));
+        self.send(
+            json!({"version":1,"kind":"start","guardianId":self.guardian,"parentId":parent,
+            "command":command,"args":[],"cwd":cwd,"env":env}),
+        );
         let failure = match self.next() {
             GuardianReply::Failed {
                 guardian_id,

@@ -240,7 +240,8 @@ impl JobNotifications {
                 self.mark_incomplete("NEW for an active pid");
                 return;
             }
-            if self.lifetimes_by_pid.len() >= 65_536 && !self.lifetimes_by_pid.contains_key(&pid) {                self.mark_incomplete("lifetime map full");
+            if self.lifetimes_by_pid.len() >= 65_536 && !self.lifetimes_by_pid.contains_key(&pid) {
+                self.mark_incomplete("lifetime map full");
                 return;
             }
             let lifetimes = self.lifetimes_by_pid.entry(pid).or_default();
@@ -793,7 +794,9 @@ pub fn create_job() -> io::Result<OwnedHandle> {
 pub fn resume_child(pid: u32) -> io::Result<()> {
     use windows_sys::Win32::{
         Foundation::HANDLE,
-        System::Threading::{OpenProcess, ResumeThread, PROCESS_QUERY_INFORMATION, THREAD_SUSPEND_RESUME},
+        System::Threading::{
+            OpenProcess, ResumeThread, PROCESS_QUERY_INFORMATION, THREAD_SUSPEND_RESUME,
+        },
     };
     // ntdll walks only this process's thread list. Stable Rust exposes no
     // primary-thread handle, and a machine-wide thread snapshot scales with
@@ -927,12 +930,7 @@ mod tests {
                 io::stdin().read_line(&mut release).unwrap();
                 assert_eq!(release.trim(), "release");
                 for child in &mut held {
-                    child
-                        .stdin
-                        .take()
-                        .unwrap()
-                        .write_all(b"release\n")
-                        .unwrap();
+                    child.stdin.take().unwrap().write_all(b"release\n").unwrap();
                 }
                 for child in &mut held {
                     assert!(child.wait().unwrap().success());
@@ -1290,7 +1288,11 @@ mod tests {
         let mut line = String::new();
         loop {
             line.clear();
-            assert_ne!(output.read_line(&mut line).unwrap(), 0, "holder exited early");
+            assert_ne!(
+                output.read_line(&mut line).unwrap(),
+                0,
+                "holder exited early"
+            );
             if line.contains("holding") {
                 break;
             }

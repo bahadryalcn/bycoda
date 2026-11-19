@@ -649,7 +649,15 @@ fn start<W: Write + Send + 'static>(
     });
     if let Err(error) = started {
         control_failure(&control);
-        supervise(original, receiver, wake, output, binding, control, build_receipt);
+        supervise(
+            original,
+            receiver,
+            wake,
+            output,
+            binding,
+            control,
+            build_receipt,
+        );
         return Err(error);
     }
     // Retain a second owner of the slot until the supervisor actually takes it.
