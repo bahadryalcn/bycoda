@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import type { HostSession } from "../../src/features/connections/model/protocol";
-import type { Block } from "../../src/features/sessions/model/session";
+import type { Block, ConversationRewindEntry } from "../../src/features/sessions/model/session";
 import { blockDigest, conversationHead } from "../../src/features/sync/model/conversationDigest";
 import {
   partialSessionSync,
   previewBlock,
+  previewRewindHistory,
   previewSession,
+  REWIND_ARCHIVE_PREVIEW_BYTES,
   TranscriptPages,
   transcriptPage,
 } from "./transcriptPage";
@@ -191,6 +193,82 @@ it("bounds rewind archive metadata in snapshots without changing active or store
   expect(page.value.session.blocks.some((block) => block.id.startsWith("removed-"))).toBe(false);
   expect(preview.session.rewindHistoryTruncated).toBe(true);
   expect(JSON.stringify(value.session.rewindHistory)).toBe(original);
+});
+
+it("selects the same rewind preview as a full re-serialization per block", () => {
+  // Reference: the direct byte-cap loop, serializing the accumulated archive each time.
+  const reference = (history: ConversationRewindEntry[]) => {
+    const projected: ConversationRewindEntry[] = [];
+    let truncated = false;
+    for (let index = history.length - 1; index >= 0; index--) {
+      const entry = history[index]!;
+      const bounded: ConversationRewindEntry = { ...entry, blocks: [] };
+      if (entry.blocks.length > 100) truncated = true;
+      for (const block of entry.blocks.slice(-100).reverse()) {
+        const trial = [...projected, { ...bounded, blocks: [...bounded.blocks, block] }];
+        if (Buffer.byteLength(JSON.stringify(trial)) > REWIND_ARCHIVE_PREVIEW_BYTES) {
+          truncated = true;
+          break;
+        }
+        bounded.blocks.unshift(block);
+      }
+      if (Buffer.byteLength(JSON.stringify([...projected, bounded])) > REWIND_ARCHIVE_PREVIEW_BYTES) {
+        truncated = true;
+        break;
+      }
+      projected.unshift(bounded);
+      if (index > 0 && projected.length >= 100) {
+        truncated = true;
+        break;
+      }
+    }
+    if (projected.length < history.length) truncated = true;
+    return { rewindHistory: projected, truncated };
+  };
+  const archives: ConversationRewindEntry[][] = [
+    // Dense small blocks: many entries and blocks, cap reached mid-archive.
+    Array.from({ length: 60 }, (_, e) => ({
+      id: `e${e}`,
+      createdAt: e,
+      fromBlockId: `f${e}`,
+      blocks: Array.from({ length: 30 }, (_, b) => ({
+        id: `e${e}-b${b}`,
+        role: "assistant" as const,
+        text: "é".repeat((e * 37 + b * 11) % 400),
+      })),
+    })),
+    // Single oversized entry: the entry itself is cut, not the whole archive.
+    [
+      {
+        id: "only",
+        createdAt: 1,
+        fromBlockId: "from",
+        blocks: Array.from({ length: 150 }, (_, b) => ({
+          id: `b${b}`,
+          role: "user" as const,
+          text: "x".repeat(900 + (b % 7)),
+        })),
+      },
+    ],
+    // Fits entirely: no truncation.
+    [
+      {
+        id: "small",
+        createdAt: 2,
+        fromBlockId: "s",
+        blocks: [{ id: "a", role: "user" as const, text: "hi" }],
+      },
+    ],
+  ];
+  for (const history of archives) {
+    const expected = reference(history);
+    const actual = previewRewindHistory({ rewindHistory: history });
+    expect(actual.rewindHistory).toEqual(expected.rewindHistory);
+    expect(actual.rewindHistoryTruncated).toBe(expected.truncated ? true : undefined);
+    expect(
+      Buffer.byteLength(JSON.stringify(actual.rewindHistory)),
+    ).toBeLessThanOrEqual(REWIND_ARCHIVE_PREVIEW_BYTES);
+  }
 });
 
 it("keeps partial delta IDs contiguous from the earliest surviving loaded block", () => {
