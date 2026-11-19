@@ -7,6 +7,7 @@ import { mkdir, open, readdir, stat, type FileHandle } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { parseBrowserAnnotation } from "../../src/shared/lib/browserAnnotation";
 import { HostDomainRefusalError } from "../domains/context";
+import { attachmentDeletionHeld } from "../storage/snapshots";
 // Reads, status hashes and writes of the same file observe a single ordered stream.
 // Each operation closes its handle; settled queues retain neither handles nor stores.
 const attachmentOperations = new Map<string, Promise<void>>();
@@ -520,6 +521,8 @@ export async function collectAttachmentGarbage(
       // removals share this transaction rather than committing per file.
       return await store.transaction(async () => {
         if (resume) resume.scan = undefined;
+        // A snapshot cut is still copying files its database backup references.
+        if (attachmentDeletionHeld(store.attachmentDir)) return [];
         if ((await stamp()) !== startedStamp) return [];
         // A write by another connection at any point in a sliced pass.
         if (
