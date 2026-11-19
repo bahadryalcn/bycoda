@@ -364,7 +364,7 @@ pub async fn harness_update(
                 return Ok(detail);
             }
             let detail = if detail.is_empty() { "Update failed" } else { &detail };
-            let guidance = update_guidance(&binary_provider, codex.is_some(), &detail);
+            let guidance = update_guidance(&binary_provider, codex.is_some(), detail);
             Err(format!(
                 "{binary_provider} update failed ({}):\n{detail}{guidance}",
                 output.status

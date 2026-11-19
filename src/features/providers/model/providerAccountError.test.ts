@@ -11,6 +11,11 @@ import {
 beforeEach(async () => {
   await setLanguagePreference("en");
 });
+
+it("keeps graphemes intact at the provider detail limit", () => {
+  const prefix = "x".repeat(238);
+  expect(safeProviderAccountDetail(`${prefix}😀more`)).toBe(`${prefix}😀…`);
+});
 afterEach(async () => {
   await setLanguagePreference("en");
 });

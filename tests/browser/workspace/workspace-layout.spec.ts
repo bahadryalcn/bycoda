@@ -175,8 +175,7 @@ test("a short narrow chat keeps a long draft and its controls scrollable", async
   const field = page.getByRole("textbox").first();
   await field.fill(Array.from({ length: 25 }, (_, i) => `Draft line ${i}`).join("\n"));
   expect(await field.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
-  // A disabled Send names its reason ("Send. <reason>"), so match the prefix.
-  const send = page.getByRole("button", { name: /^Send(\.|$)/ });
+  const send = page.getByRole("button", { name: "Send", exact: true });
   await send.scrollIntoViewIfNeeded();
   await expect(send).toBeInViewport();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

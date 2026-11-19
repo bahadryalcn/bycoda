@@ -109,6 +109,7 @@ const MemoMenuBar = memo(function MenuBar({
 
   // The bar takes focus when it appears and hands it back to where the user was when it hides,
   // unless an action already moved focus somewhere real (a dialog, an input).
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Move DOM focus into the menu on open and restore it on close.
   useEffect(() => {
     if (!open) return;
     const previous = document.activeElement;

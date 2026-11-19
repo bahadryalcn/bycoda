@@ -154,6 +154,7 @@ export function AssistantSetup({
     }
   }, [snapshot, draft, environmentId]);
   const [draftWriter] = useState(() => createLocalDraftWriter(DRAFT_KEY));
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Attach the draft writer's page lifecycle listener and flush on unmount.
   useEffect(() => draftWriter.attach(), [draftWriter]);
   useEffect(() => {
     // Typing only records the draft; the shared debounce writes it, and close or pagehide flushes it.

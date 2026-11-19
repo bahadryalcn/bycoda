@@ -50,6 +50,7 @@ export function ListRow({
     <button
       type={type}
       {...props}
+      // oxlint-disable-next-line jsx-a11y/role-supports-aria-props -- The forwarded role supplies the option semantics for the default selection state.
       aria-selected={props["aria-selected"] ?? (props.role === "option" ? !!active : undefined)}
       data-selected={selected ? "true" : undefined}
       data-active={active ? "true" : undefined}

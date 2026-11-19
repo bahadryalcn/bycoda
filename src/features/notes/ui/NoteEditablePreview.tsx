@@ -177,8 +177,7 @@ export function NoteEditablePreview({
             className="note-preview-block items-start gap-1 [content-visibility:auto] [contain-intrinsic-size:var(--layout-contain-intrinsic-size)]"
             style={{ "--layout-contain-intrinsic-size": "auto 64px" } as CSSProperties}
           >
-            {/* Pointer-only click-to-edit: the pencil action is the one keyboard stop, so the
-                rendered links and controls inside stay independent of a button role. */}
+            {/* oxlint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- The pencil button below provides keyboard editing and this pointer shortcut wraps independent links and controls. */}
             <div
               className="note-preview-content"
               onClick={(event) => {

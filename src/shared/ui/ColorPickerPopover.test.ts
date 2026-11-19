@@ -52,6 +52,11 @@ it("exposes keyboard sliders and publishes once under StrictMode", () => {
   expect(hue.tabIndex).toBe(0);
   expect(saturation.tabIndex).toBe(0);
   expect(brightness.tabIndex).toBe(0);
+  const instructions = saturation.getAttribute("aria-describedby");
+  expect(brightness.getAttribute("aria-describedby")).toBe(instructions);
+  expect(document.getElementById(instructions!)?.textContent).toBe(
+    "Use Left/Right for saturation and Up/Down for brightness.",
+  );
   act(() => {
     hue.dispatchEvent(
       new KeyboardEvent("keydown", { key: "ArrowRight", shiftKey: true, bubbles: true }),

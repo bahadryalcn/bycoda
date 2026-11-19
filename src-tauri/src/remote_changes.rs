@@ -244,7 +244,7 @@ impl Changes {
             state.refresh_running = true;
             drop(state);
             let mut leader = RefreshLeader {
-                entry: &*entry,
+                entry: &entry,
                 demand_generation,
                 done: false,
             };
@@ -291,7 +291,7 @@ impl Changes {
         state.running = true;
         drop(state);
         let mut leader = PollLeader {
-            entry: &*entry,
+            entry: &entry,
             done: false,
         };
         let result =

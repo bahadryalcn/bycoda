@@ -13,7 +13,10 @@ const TECHNICAL = /^\s*(?:[A-Z][A-Z0-9_]{2,}|[A-Za-z]*Error|[A-Za-z]*Exception)\
  * Takes the caller's `useT()` and calls no module-`t` helper, so render code stays
  * compilable by the React Compiler.
  */
-export function deliveryFailureSentence(raw: string, t: ReturnType<typeof useT>): string {
+export function deliveryFailureSentence(
+  raw: string,
+  t: ReturnType<typeof useT>,
+): string | undefined {
   if (STORAGE_FULL.test(raw))
     return t("This device's local storage is full, so the queue could not be saved.");
   if (WS_INTERRUPTED.test(raw))
@@ -24,5 +27,5 @@ export function deliveryFailureSentence(raw: string, t: ReturnType<typeof useT>)
   // Reasons the queue or provider wrote as a sentence lead with it; the rest stays in details.
   const first = raw.split(/\r?\n/, 1)[0].trim();
   if (first && !TECHNICAL.test(first)) return truncateGraphemes(first, 200);
-  return t("The message was not sent. The technical reason is in the details.");
+  return undefined;
 }

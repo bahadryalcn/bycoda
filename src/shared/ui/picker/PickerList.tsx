@@ -220,8 +220,6 @@ export function PickerList({
         tabIndex={-1}
         aria-selected={list.multiple || !option.onAction ? selected : undefined}
         aria-disabled={unavailable || undefined}
-        aria-haspopup={option.popup ? "listbox" : undefined}
-        aria-expanded={option.popup ? option.popup.expanded : undefined}
         aria-controls={option.popup?.expanded ? option.popup.listId : undefined}
         aria-describedby={descriptionId}
         disabled={unavailable}

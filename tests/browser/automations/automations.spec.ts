@@ -39,7 +39,7 @@ for (const width of [800, 1280])
       await setTheme();
       const proposal = page.getByRole("dialog", { name: "Automation", exact: true });
       await expect(
-        proposal.getByRole("textbox", { name: "Instructions", exact: true }),
+        proposal.getByRole("combobox", { name: "Instructions", exact: true }),
       ).toHaveValue("Review fixture activity and report findings");
       await capture("proposal");
       await proposal.getByRole("button", { name: "Cancel", exact: true }).click();
@@ -66,7 +66,7 @@ for (const width of [1280, 800]) {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto("/tests/browser/automations/automations.html?host=offline");
     const warning = page.getByText(/tailm.*reachable right now/);
-    const retry = page.getByRole("button", { name: "Retry", exact: true });
+    const retry = page.getByRole("button", { name: "Try again", exact: true });
     await expect(warning).toBeVisible();
     await expect(page.getByText("Automations unavailable", { exact: true })).toHaveCount(0);
     await expect(page.getByText("Create your first automation", { exact: true })).toHaveCount(0);
@@ -96,7 +96,7 @@ for (const width of [1280, 800]) {
     await capture("picker-offline");
     await blank.click();
     const name = page.getByRole("textbox", { name: "Automation name", exact: true });
-    const instructions = page.getByRole("textbox", { name: "Instructions", exact: true });
+    const instructions = page.getByRole("combobox", { name: "Instructions", exact: true });
     await name.fill("Preserve offline draft");
     await instructions.fill("Owner instructions survive connection recovery.");
     await retry.click();
@@ -180,7 +180,7 @@ test("automation save keeps its label and focus while fields lock and failures p
       await expect
         .poll(() =>
           page
-            .getByRole("textbox", { name: "Instructions", exact: true, includeHidden: true })
+            .getByRole("combobox", { name: "Instructions", exact: true, includeHidden: true })
             .evaluate((node) => node.getBoundingClientRect().height),
         )
         .toBeLessThan(220);

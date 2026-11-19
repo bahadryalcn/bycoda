@@ -225,13 +225,15 @@ function Fixture() {
       updateDeliveryProgress("composer-layout-fixture", progress, "accepted");
       return () => clearDeliveryProgress("composer-layout-fixture", progress);
     }
-    if (queueVisual !== "rejected") return;
+    if (queueVisual !== "rejected" && queueVisual !== "waiting") return;
     const progress = beginDeliveryProgress("composer-layout-fixture", "queued", "preparing");
     updateDeliveryProgress(
       "composer-layout-fixture",
       progress,
-      "rejected",
-      "The provider rejected the message. It remains queued and paused.",
+      queueVisual,
+      queueVisual === "waiting"
+        ? "RPC_WS_DEADLINE: Host request deadline elapsed or native consumer detached. The operation outcome is unknown; reconcile its command receipt before retrying."
+        : "The provider rejected the message. It remains queued and paused.",
     );
     return () => clearDeliveryProgress("composer-layout-fixture", progress);
   }, [queueVisual]);

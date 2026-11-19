@@ -34,7 +34,7 @@ export function useBrowserSelectionProbe({
 }) {
   const latest = useRef({ probe, idle, onUnstable, onRecovered, onLost });
   latest.current = { probe, idle, onUnstable, onRecovered, onLost };
-  // Runs the probe loop for as long as the selection is open and the panel is visible.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Probe the Host's selection lease while the panel is open and visible.
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;

@@ -269,9 +269,8 @@ fn forward_logs(
         packet_sequence += 1;
         let _ = result;
     };
-    loop {
-        // Blocks until output or teardown, so an idle terminal wakes nothing.
-        let Ok(first) = receiver.recv() else { break };
+    // Blocks until output or teardown, so an idle terminal wakes nothing.
+    while let Ok(first) = receiver.recv() {
         if !service.is_current() {
             return;
         }

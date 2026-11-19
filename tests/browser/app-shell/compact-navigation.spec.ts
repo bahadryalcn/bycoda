@@ -203,7 +203,7 @@ test("workspace picker uses spare header width before clipping names", async ({
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/app-shell/compact-navigation.html?pickerWidth");
   const header = page.locator("[data-workspace-header]");
-  const picker = header.getByRole("button", { name: "Switch working copy", exact: true });
+  const picker = header.getByRole("button", { name: "Switch worktree", exact: true });
   await expect(picker).toContainText("main", { timeout: 90_000 });
   await page.getByRole("tab", { name: "Explorer", exact: true }).click();
   const resize = page.getByRole("separator", { name: "Resize sidebar", exact: true });
@@ -552,7 +552,7 @@ test("workspace header keeps location before history and project controls", asyn
     await expect(header).toBeVisible({ timeout: 90_000 });
     const title = project
       ? header
-          .getByRole("button", { name: "Switch working copy", exact: true })
+          .getByRole("button", { name: "Switch worktree", exact: true })
           .getByText("bycoda", { exact: true })
       : header.getByText("Last sessions", { exact: true });
     const toggle = page.getByRole("button", { name: "Expand projects", exact: true });
@@ -656,7 +656,7 @@ test("workspace header keeps location before history and project controls", asyn
             // A truncated project name must stay identifiable by its accessible name.
             if (titleWidth.content > titleWidth.available)
               await expect(
-                header.getByRole("button", { name: /Switch working copy/ }),
+                header.getByRole("button", { name: /Switch worktree/ }),
               ).toContainText("bycoda");
             else expect(titleWidth.content).toBeLessThanOrEqual(titleWidth.available);
           }

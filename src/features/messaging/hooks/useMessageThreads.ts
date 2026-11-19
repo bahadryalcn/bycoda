@@ -149,7 +149,7 @@ export function useMessageThreads(accounts: readonly MessagingAccount[], active:
     connectedRef.current = connected;
   }, [connected]);
 
-  // A dropped account leaves the list at once, so a re-added account never shows the old one.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Subscribe to external cache invalidations so a removed account's threads disappear immediately.
   useEffect(
     () =>
       subscribeMessagingCaches((accountId) => {

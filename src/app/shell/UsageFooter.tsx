@@ -429,7 +429,6 @@ export function UsageFooter({
   );
 }
 
-
 function SessionChip({ session }: { session: UsageFooterSession }) {
   const t = useT();
   const trigger = useRef<HTMLButtonElement>(null);

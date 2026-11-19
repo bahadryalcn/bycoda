@@ -177,14 +177,11 @@ mod tests {
         wait_for_token(flight, Instant::now() + Duration::from_secs(5))
     }
 
+    type LookupGate = Arc<(Mutex<bool>, Condvar)>;
+
     /// A mocked `gh auth token` which reports its start, waits for `open`, and
     /// returns `token-<start number>`; no process is spawned.
-    fn gated_lookup() -> (
-        Lookup,
-        Arc<AtomicUsize>,
-        mpsc::Receiver<()>,
-        Arc<(Mutex<bool>, Condvar)>,
-    ) {
+    fn gated_lookup() -> (Lookup, Arc<AtomicUsize>, mpsc::Receiver<()>, LookupGate) {
         let starts = Arc::new(AtomicUsize::new(0));
         let (entered_send, entered) = mpsc::channel();
         let entered_send = Mutex::new(entered_send);
@@ -246,16 +243,17 @@ mod tests {
         // The runner slot is released after retirement, so the next caller
         // starts its own lookup instead of reading the old credential.
         let deadline = Instant::now() + Duration::from_secs(5);
-        let next = loop {
-            let joined = lookups.join().unwrap();
-            if joined.start || Instant::now() > deadline {
-                break joined;
-            }
+        while lookups.state().running.is_some() {
+            assert!(Instant::now() < deadline, "first lookup did not retire");
             thread::yield_now();
-        };
+        }
+        let next = lookups.join().unwrap();
         assert!(next.start);
         assert!(!Arc::ptr_eq(&next.flight, &first.flight));
         assert!(lookups.state().queued.is_none());
+        launch(lookups, next.flight.clone(), lookup);
+        assert_eq!(wait(&next.flight).unwrap().as_deref(), Some("token-2"));
+        assert_eq!(starts.load(Ordering::SeqCst), 2);
     }
 
     #[test]

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { NATIVE_BUFFER_UPLOAD_LIMITS } from "../../../src/shared/model/host-contracts/native-buffer-upload";
 import { PeerMessageBudget, WS_MESSAGE_BUDGET } from "./message-budget";
 
 const MAX_FRAME = 1_048_576;
@@ -38,6 +39,17 @@ describe("PeerMessageBudget", () => {
       expect(budget.admit(MAX_FRAME, 0)).toBe("accept");
     }
     expect(budget.admit(MAX_FRAME, 0)).toBe("drop");
+  });
+
+  it("admits a maximum-size native upload without depending on budget refills", () => {
+    const budget = new PeerMessageBudget(WS_MESSAGE_BUDGET, 0);
+    const { maxBytes, chunkBytes } = NATIVE_BUFFER_UPLOAD_LIMITS;
+    expect(budget.admit(1024, 0)).toBe("accept"); // Negotiation and begin.
+    for (let offset = 0; offset < maxBytes; offset += chunkBytes) {
+      const base64Bytes = 4 * Math.ceil(Math.min(chunkBytes, maxBytes - offset) / 3);
+      expect(budget.admit(base64Bytes + 1024, 0)).toBe("accept");
+    }
+    expect(budget.admit(1024, 0)).toBe("accept"); // Commit.
   });
 
   it("closes the connection after a sustained run of refused messages", () => {

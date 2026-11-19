@@ -94,9 +94,9 @@ test("graph scope, file filtering and keyboard resizing preserve Git context", a
   const filter = page.getByRole("dialog", { name: "Filter changed files", exact: true });
   await filter.getByRole("searchbox", { name: "File or folder name" }).fill("theme");
   await expect(
-    dialog.getByRole("listbox", { name: "Changes", exact: true }).locator("[data-git-file]"),
+    dialog.getByRole("grid", { name: "Changes", exact: true }).locator("[data-git-file]"),
   ).toHaveCount(1);
-  await expect(dialog.getByRole("listbox", { name: "Changes", exact: true })).toContainText(
+  await expect(dialog.getByRole("grid", { name: "Changes", exact: true })).toContainText(
     "theme.css",
   );
   await filter.getByRole("searchbox").press("Escape");
@@ -414,7 +414,7 @@ test("large histories and file lists stay windowed; searching does not query Git
   const graph = dialog.getByRole("region", { name: "Commit graph", exact: true });
   await expect(graph.locator("li button.git-history-item").first()).toBeVisible();
   expect(await graph.locator("li button.git-history-item").count()).toBeLessThan(70);
-  const changes = dialog.getByRole("listbox", { name: "Changes", exact: true });
+  const changes = dialog.getByRole("grid", { name: "Changes", exact: true });
   await expect(changes.locator("[data-git-file]").first()).toBeVisible();
   expect(await changes.locator("[data-git-file]").count()).toBeLessThan(40);
   const historyCalls = () =>
@@ -668,17 +668,16 @@ for (const theme of ["light", "dark"])
         (light) => document.documentElement.classList.toggle("theme-light", light),
         theme === "light",
       );
-      const list = page.getByRole("listbox", { name: "Changes", exact: true });
+      const list = page.getByRole("grid", { name: "Changes", exact: true });
       await expect(list).toHaveAttribute("aria-multiselectable", "true");
-      expect(await list.evaluate((node) => node.tagName)).toBe("UL");
       const files = list.locator("[data-git-file]");
       await expect(files).toHaveCount(2);
       await files.first().click();
       await files.first().press("Shift+ArrowDown");
-      await expect(list.locator('[role="option"][aria-selected="true"]')).toHaveCount(2);
+      await expect(list.locator('[role="row"][aria-selected="true"]')).toHaveCount(2);
       await expect(files.last()).toBeFocused();
       await page.screenshot({ path: `temp/verification/picker-roots/git-${theme}-${width}.png` });
       await files.last().press("Escape");
-      await expect(list.locator('[role="option"][aria-selected="true"]')).toHaveCount(1);
+      await expect(list.locator('[role="row"][aria-selected="true"]')).toHaveCount(1);
       await expect(files.last()).toBeFocused();
     });

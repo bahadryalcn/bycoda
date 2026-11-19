@@ -116,10 +116,11 @@ export function LocalInstallWizard({
   const install = () => {
     if (readyToInstall) local.install();
   };
-  // Reason: an install that is already running on the Host (started from another window) is shown on the install step.
-  useEffect(() => {
+  const [wasInstalling, setWasInstalling] = useState(installing);
+  if (wasInstalling !== installing) {
+    setWasInstalling(installing);
     if (installing) setStep(2);
-  }, [installing]);
+  }
 
   const steps: StepperStep[] = [
     { id: "computer", label: target ?? t("This computer") },

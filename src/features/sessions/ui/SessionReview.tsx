@@ -10,6 +10,7 @@ import { Button } from "../../../shared/ui/Button";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { useLocale, useT } from "../../../shared/i18n";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import {
   keepSessionChanges,
   sessionCheckpointStatus,
@@ -91,10 +92,10 @@ function SessionReviewContent({
   // Mirrors `recording` for async callbacks; the poll count survives phase changes within one wait.
   const recordingRef = useRef<RecordingPhase>("idle");
   const pollAttempts = useRef(0);
-  const setPhase = useCallback((next: RecordingPhase) => {
+  const setPhase = useStableCallback((next: RecordingPhase) => {
     recordingRef.current = next;
     setRecording(next);
-  }, []);
+  });
   const actingRef = useRef(false);
   const filesRef = useRef(files);
   useLayoutEffect(() => {

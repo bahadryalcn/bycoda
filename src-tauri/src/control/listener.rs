@@ -14,6 +14,7 @@ pub(super) const QUEUE_CAPACITY: usize = 32;
 pub(super) const BUSY_ERROR: &str = "busy";
 /// A busy reply is one short line into a fresh socket; never let it stall accepting.
 const BUSY_WRITE_TIMEOUT: Duration = Duration::from_millis(250);
+const IO_TIMEOUT: Duration = Duration::from_secs(3);
 const ACCEPT_BACKOFF_START: Duration = Duration::from_millis(50);
 const ACCEPT_BACKOFF_MAX: Duration = Duration::from_secs(2);
 
@@ -49,6 +50,12 @@ pub(super) fn accept_loop(listener: &TcpListener, queue: &SyncSender<TcpStream>)
         match listener.accept() {
             Ok((stream, _)) => {
                 backoff = ACCEPT_BACKOFF_START;
+                if stream.set_nonblocking(false).is_err()
+                    || stream.set_read_timeout(Some(IO_TIMEOUT)).is_err()
+                    || stream.set_write_timeout(Some(IO_TIMEOUT)).is_err()
+                {
+                    continue;
+                }
                 if !enqueue(queue, stream) {
                     return;
                 }

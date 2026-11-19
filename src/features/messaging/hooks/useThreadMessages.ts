@@ -91,7 +91,7 @@ export function useThreadMessages(thread: MessageThread) {
     [accountId, threadId],
   );
 
-  // A dropped account's conversation leaves the view too, and its in-flight pages are abandoned.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Drop the conversation and outstanding reads when the shared account cache is cleared.
   useEffect(
     () =>
       subscribeMessagingCaches((dropped) => {
@@ -119,7 +119,7 @@ export function useThreadMessages(thread: MessageThread) {
     };
   }, [load, thread.updatedAt]);
 
-  // Only a thread change (not newer activity) abandons a pending earlier page.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Invalidate outstanding pagination requests when the thread changes or unmounts.
   useEffect(
     () => () => {
       earlierRequest.current += 1;

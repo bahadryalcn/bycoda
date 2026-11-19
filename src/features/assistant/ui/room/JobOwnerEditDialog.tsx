@@ -75,6 +75,7 @@ export function JobOwnerEditDialog({
       setDraftStorageError(!saved);
     }),
   );
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Attach the draft writer's page lifecycle listener and flush on unmount.
   useEffect(() => writer.attach(), [writer]);
   const alive = useRef(true);
   useEffect(() => {

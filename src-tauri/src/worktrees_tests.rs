@@ -213,7 +213,7 @@ fn worktree_probes_report_dirty_clean_and_missing_in_order() {
     let missing = repo.0.join("never-created");
     // More entries than STATUS_PARALLELISM, so results must be reassembled.
     let mut paths = vec![root.clone(), PathBuf::from(&dirty.path), missing];
-    paths.extend(std::iter::repeat(root.clone()).take(STATUS_PARALLELISM + 2));
+    paths.extend(std::iter::repeat_n(root.clone(), STATUS_PARALLELISM + 2));
     let probes = map_bounded(&paths, STATUS_PARALLELISM, |path| probe_worktree(path)).unwrap();
     assert_eq!(probes.len(), paths.len());
     assert!(!probes[0].missing && probes[0].dirty == Some(false));

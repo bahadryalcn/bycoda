@@ -40,12 +40,11 @@ describe("deliveryFailureSentence", () => {
 
   it("hides other technical failures behind the details", () => {
     for (const raw of [
+      "RPC_WS_DEADLINE: Host request deadline elapsed or native consumer detached.",
       "TypeError: Cannot read properties of undefined",
       "HOST_UNAVAILABLE: no answer",
       "Error: boom\n    at stack frame",
     ])
-      expect(deliveryFailureSentence(raw, t)).toBe(
-        "The message was not sent. The technical reason is in the details.",
-      );
+      expect(deliveryFailureSentence(raw, t)).toBeUndefined();
   });
 });

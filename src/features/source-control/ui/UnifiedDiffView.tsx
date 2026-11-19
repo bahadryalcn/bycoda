@@ -919,6 +919,7 @@ function VirtualRows({
     };
   }, [near, rowMetrics, scrollerRef, split]);
 
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keep selected rows mounted while the DOM selection crosses virtualized diff lines.
   useEffect(() => {
     if (!near) return;
     const onSelectionChange = () => {

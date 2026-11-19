@@ -10,6 +10,34 @@ import {
 
 for (const theme of ["light", "dark"]) {
   for (const width of [1280, 800]) {
+    test(`queued send details ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.addInitScript(() => localStorage.setItem("bycoda.language", "en"));
+      await page.goto(
+        `/tests/browser/chat/composer-extras.html?chat-layout&delivery-progress&queue-state=waiting&theme=${theme}`,
+      );
+      const notice = page.locator('[data-delivery-progress="waiting"]');
+      await expect(notice).toContainText("The message stays queued and is retried automatically.");
+      await expect(notice).not.toContainText("The technical reason is in the details.");
+      const trigger = notice.getByRole("button", { name: /^Details:/ });
+      await trigger.press("Enter");
+      const details = page.getByRole("dialog", { name: /^Details:/ });
+      await expect(details.getByLabel("Error details")).toContainText("RPC_WS_DEADLINE");
+      await expect(details.getByRole("button", { name: "Copy details" })).toBeInViewport();
+      const noticeBox = (await notice.boundingBox())!;
+      expect((await details.boundingBox())!.y).toBeGreaterThanOrEqual(
+        noticeBox.y + noticeBox.height,
+      );
+      await page.screenshot({
+        animations: "disabled",
+        path: `temp/verification/error-details/queue-${theme}-${width}.png`,
+      });
+      await page.keyboard.press("Escape");
+      await expect(details).toBeHidden();
+      await expect(trigger).toBeFocused();
+    });
+
     test(`workspace footer spacing and scoped refresh ${theme} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 800 });
       await page.emulateMedia({ reducedMotion: "reduce" });

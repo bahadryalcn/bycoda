@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
  */
 export function useVisibleNow(active: boolean, intervalMs: number): number {
   const [now, setNow] = useState(() => Date.now());
-  // Subscribes to the interval timer and page visibility, both outside React state; torn down on deactivation.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keep the wall-clock timer active only while the page and its consumer are visible.
   useEffect(() => {
     if (!active) return;
     let timer: ReturnType<typeof setInterval> | undefined;

@@ -59,7 +59,7 @@ export function useRemoteHostSync(): RemoteHostSync {
   const refreshAdoptedSessionRef = useRef<RefreshAdoptedSession>(undefined);
   useEffect(() => startProviderAccountHostSync(), []);
   useEffect(() => startModelEnabledHostSync(), []);
-  // Start delegation and catalog synchronization once the workspace has painted.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Start delegation and catalog synchronization with the Host after the workspace paints.
   useEffect(() => startRendererModelRoutingAfterPaint(), []);
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- publishes the Settings bykit switch to the local Host while the workspace is mounted
   useEffect(() => startBykitHostSync(), []);

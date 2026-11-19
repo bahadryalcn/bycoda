@@ -283,44 +283,6 @@ fn wait_ms(deadline: Option<Instant>) -> u32 {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn read_exact_assembles_partial_reads() {
-        let mut chunks = vec![vec![1u8, 2], vec![3u8]].into_iter();
-        let mut buffer = [0u8; 3];
-        read_exact_with(&mut buffer, |chunk| {
-            let next = chunks.next().unwrap();
-            chunk[..next.len()].copy_from_slice(&next);
-            Ok(next.len() as u32)
-        })
-        .unwrap();
-        assert_eq!(buffer, [1, 2, 3]);
-    }
-
-    #[test]
-    fn read_exact_stops_at_first_timeout() {
-        let mut calls = 0;
-        let mut buffer = [0u8; 4];
-        let error = read_exact_with(&mut buffer, |_| {
-            calls += 1;
-            Err(io::Error::new(io::ErrorKind::TimedOut, "stalled"))
-        })
-        .unwrap_err();
-        assert_eq!(error.kind(), io::ErrorKind::TimedOut);
-        assert_eq!(calls, 1);
-    }
-
-    #[test]
-    fn read_exact_rejects_closed_client() {
-        let mut buffer = [0u8; 1];
-        let error = read_exact_with(&mut buffer, |_| Ok(0)).unwrap_err();
-        assert_eq!(error.kind(), io::ErrorKind::UnexpectedEof);
-    }
-}
-
 pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::new("windows-instance")
         .setup(|app, _| {
@@ -394,4 +356,42 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
             });
         })
         .build()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn read_exact_assembles_partial_reads() {
+        let mut chunks = vec![vec![1u8, 2], vec![3u8]].into_iter();
+        let mut buffer = [0u8; 3];
+        read_exact_with(&mut buffer, |chunk| {
+            let next = chunks.next().unwrap();
+            chunk[..next.len()].copy_from_slice(&next);
+            Ok(next.len() as u32)
+        })
+        .unwrap();
+        assert_eq!(buffer, [1, 2, 3]);
+    }
+
+    #[test]
+    fn read_exact_stops_at_first_timeout() {
+        let mut calls = 0;
+        let mut buffer = [0u8; 4];
+        let error = read_exact_with(&mut buffer, |_| {
+            calls += 1;
+            Err(io::Error::new(io::ErrorKind::TimedOut, "stalled"))
+        })
+        .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+        assert_eq!(calls, 1);
+    }
+
+    #[test]
+    fn read_exact_rejects_closed_client() {
+        let mut buffer = [0u8; 1];
+        let error = read_exact_with(&mut buffer, |_| Ok(0)).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::UnexpectedEof);
+    }
 }

@@ -73,8 +73,7 @@ export function useQueuedSendDrain(input: {
   submitRef.current = input.submit;
   /** Consecutive refused submits of the current head; sets the next wait. */
   const refusals = useRef(0);
-  // Reset the backoff whenever the head or what may unblock it changes, so a refusal that
-  // cleared (new head, new capability, new authority) is retried at once, not after the cap.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Reset the Host retry backoff when the pending send or its admission conditions change.
   useEffect(() => {
     refusals.current = 0;
   }, [

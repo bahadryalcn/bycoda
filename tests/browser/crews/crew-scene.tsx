@@ -257,20 +257,23 @@ function Fixture() {
       <Disclosure summary="Crew settings">
         <CrewStageCard />
       </Disclosure>
-      <CrewScene
-        sessionId={session.id}
-        session={session}
-        crew={
-          previewContext === undefined
-            ? undefined
-            : Array.from({ length: 6 }, (_, id) => ({
-                role: id === 2 ? "lead" : id === 3 ? "advisor" : "subagent",
-                working: id === 2 || id === 3,
-                context: previewContext,
-              }))
-        }
-        variant={background ? "background" : "hero"}
-      />
+      {/* The settings stage card above renders its own preview scene; specs address this live one. */}
+      <div data-live-scene style={{ display: "contents" }}>
+        <CrewScene
+          sessionId={session.id}
+          session={session}
+          crew={
+            previewContext === undefined
+              ? undefined
+              : Array.from({ length: 6 }, (_, id) => ({
+                  role: id === 2 ? "lead" : id === 3 ? "advisor" : "subagent",
+                  working: id === 2 || id === 3,
+                  context: previewContext,
+                }))
+          }
+          variant={background ? "background" : "hero"}
+        />
+      </div>
     </main>
   );
 }

@@ -101,7 +101,7 @@ export const TaskBoardColumn = memo(function TaskBoardColumn({
     revealFrom.current = size;
     setLimit(size + COLUMN_WINDOW);
   };
-  // After "Load more" the button can unmount with the last page, so focus moves to the first new card.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Focus the first newly mounted card after the load-more window grows.
   useEffect(() => {
     const from = revealFrom.current;
     if (from === null) return;
@@ -113,6 +113,7 @@ export const TaskBoardColumn = memo(function TaskBoardColumn({
     "bycoda-task-column flex min-h-0 min-w-0 flex-col",
   );
   return (
+    // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- The section is a drop target and cards expose move actions independently.
     <section
       aria-label={t(COLUMN_LABELS[status])}
       data-task-column={status}
@@ -152,6 +153,7 @@ export const TaskBoardColumn = memo(function TaskBoardColumn({
       >
         {t(COLUMN_LABELS[status])}
       </SectionLabel>
+      {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- Observe bubbled focus to keep the focused card in the window. */}
       <ul
         ref={list}
         onFocus={(event) => {
@@ -237,6 +239,7 @@ const TaskBoardItem = memo(function TaskBoardItem({
   const dragging = useTaskBoardDrag(drag, (state) => state.draggedKey === key);
   const before = useTaskBoardDrag(drag, (state) => state.dropBeforeKey === key);
   return (
+    // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- The list item carries native drag events while the card owns keyboard actions.
     <li
       data-task-key={key}
       draggable={draggable}

@@ -90,6 +90,7 @@ function MeasuredTranscriptRows({
       owner ? owner.measurementsFor(listId) : new Map<string, { width: number; height: number }>(),
     [owner, listId],
   );
+  // oxlint-disable-next-line bycoda/compiler-owns-memo -- The compiler skips the virtualizer, and the list must retain the same fold map for its mounted owner and ID.
   const folds = useMemo(
     () => (owner ? owner.codeFoldsFor(listId) : new Map<string, Record<string, boolean>>()),
     [owner, listId],
@@ -200,6 +201,7 @@ function MeasuredTranscriptRows({
   }, [rows, owner, listId]);
   // Holding ties the list's sizes and folds to its mount: unmounting drops them, and a strict-mode
   // replay re-holds the same maps so rows that wrote into them still reach the owner.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Register the list's caches with the transcript owner for the lifetime of its mounted rows.
   useLayoutEffect(() => {
     if (owner) return owner.holdList(listId, sizes, folds);
   }, [owner, listId, sizes, folds]);

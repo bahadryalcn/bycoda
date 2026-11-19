@@ -46,7 +46,7 @@ export function useGithubCliStatus() {
 
   const check = useCallback(() => read(false), [read]);
 
-  // Mount reads once; a newer read or unmount invalidates any read still in flight.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Load the native GitHub CLI status on mount and invalidate the read on unmount.
   useEffect(() => {
     void read(false);
     return () => {
@@ -56,6 +56,7 @@ export function useGithubCliStatus() {
 
   // While the pinned copy installs, re-read quietly until it is ready, has failed, the read
   // fails, or the watch deadline passes. Each finished read schedules the next one.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Poll the native GitHub CLI status while the installer is running.
   useEffect(() => {
     if (!status?.installing || error || slow) return;
     const timer = window.setTimeout(() => {

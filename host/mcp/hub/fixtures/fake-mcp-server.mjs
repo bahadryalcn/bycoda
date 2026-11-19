@@ -28,11 +28,13 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       if (message.params.name === "crash") process.exit(3);
       // "hold" never answers; "slow" answers after arguments.ms.
       if (message.params.name === "hold") return;
-      if (message.params.name === "slow")
-        return void setTimeout(
+      if (message.params.name === "slow") {
+        setTimeout(
           () => reply({ content: [{ type: "text", text: `slow:${process.pid}` }] }),
           Number(message.params.arguments?.ms ?? 0),
         );
+        return;
+      }
       return reply({
         content: [{ type: "text", text: `${message.params.arguments?.text ?? ""}:${process.pid}` }],
       });

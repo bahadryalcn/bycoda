@@ -62,22 +62,22 @@ export function MessageThreadView({
   const loaded = messages !== null;
   const firstId = messages?.[0]?.id;
   const lastId = messages?.[messages.length - 1]?.id;
+  const previousLastId = useRef(lastId);
 
   const scrollToEnd = () => {
     const element = scrollRef.current;
     if (element) element.scrollTop = element.scrollHeight;
   };
-  // Open at the newest message and follow new ones while the reader is at the end.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Follow new messages in the DOM scroller or show the jump control when the reader has scrolled away.
   useLayoutEffect(() => {
-    if (!followEnd.current) return;
-    scrollToEnd();
-    setUnseen(false);
+    const arrived = lastId !== undefined && previousLastId.current !== lastId;
+    previousLastId.current = lastId;
+    if (followEnd.current) {
+      scrollToEnd();
+      setUnseen(false);
+    } else if (arrived) setUnseen(true);
   }, [loaded, lastId]);
-  // Reason: a new message must not move a reader who scrolled up, so it only raises the jump button.
-  useLayoutEffect(() => {
-    if (!followEnd.current && lastId !== undefined) setUnseen(true);
-  }, [lastId]);
-  // Earlier messages were added above the reader: restore their place relative to the end.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Restore the scroller's anchor after inserting earlier messages above the reader.
   useLayoutEffect(() => {
     const element = scrollRef.current;
     const distance = earlierAnchor.current;
@@ -85,11 +85,11 @@ export function MessageThreadView({
     earlierAnchor.current = null;
     element.scrollTop = element.scrollHeight - distance;
   }, [firstId]);
-  // A failed earlier page adds nothing above the reader, so its anchor is void.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Clear the pending DOM scroll anchor when the earlier page request fails.
   useLayoutEffect(() => {
     if (earlierError) earlierAnchor.current = null;
   }, [earlierError]);
-  // The last earlier page removed the button that had focus: keep keyboard focus in the conversation.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Restore DOM focus to the conversation when the last page removes its load button.
   useLayoutEffect(() => {
     if (hasEarlier || !refocus.current) return;
     refocus.current = false;

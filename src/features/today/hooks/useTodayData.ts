@@ -74,7 +74,7 @@ export function useTodayData(period: TodayPeriod): {
     };
   }, [period, version]);
   const reload = useCallback(() => setVersion((current) => current + 1), []);
-  // Automatic refresh only while visible: interval, foreground return and local midnight.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Refresh external Today sources on a timer, including local midnight, while the pane is visible.
   useEffect(() => {
     if (!visible) return;
     const refreshIfDue = () => {

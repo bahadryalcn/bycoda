@@ -49,6 +49,15 @@ it("keeps a changed connection apart from the Host it replaced", async () => {
   expect(load).toHaveBeenCalledTimes(2);
 });
 
+it("keeps a recent answer across a wall-clock jump", async () => {
+  const reads = sharedMachineListReads<string>();
+  const load = vi.fn(async () => ["row"]);
+  await reads.read(machine, load, 10_000);
+  vi.setSystemTime(Date.now() + 60_000);
+  await reads.read(machine, load, 10_000);
+  expect(load).toHaveBeenCalledOnce();
+});
+
 it("starts a new read after a write and does not keep the one it overtook", async () => {
   const reads = sharedMachineListReads<string>();
   let releaseOld!: (rows: string[]) => void;

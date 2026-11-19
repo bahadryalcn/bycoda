@@ -239,6 +239,7 @@ export function useAssistantRoomState(props: AssistantViewProps, lock: Assistant
   const [jobReviewFrozen, setJobReviewFrozen] = useState(false);
   const jobReviewEnvironment = useRef<string | undefined>(undefined);
   const [jobReviewWriter] = useState(() => createLocalDraftWriter("bycoda.assistant.job-review"));
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Attach the review writer's page lifecycle listener and flush on unmount.
   useEffect(() => jobReviewWriter.attach(), [jobReviewWriter]);
   useEffect(() => {
     // A frozen review is a durable intent written before dispatch; a pending unfrozen write must not replace it.
@@ -359,6 +360,7 @@ export function useAssistantRoomState(props: AssistantViewProps, lock: Assistant
   const defaultProjectId = currentProject?.id ?? currentProject?.path ?? "";
 
   const [jobDraftWriter] = useState(() => createLocalDraftWriter("bycoda.assistant.job-draft"));
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Attach the draft writer's page lifecycle listener and flush on unmount.
   useEffect(() => jobDraftWriter.attach(), [jobDraftWriter]);
   useEffect(() => {
     // Typing only records the value; the shared debounce writes it, and close or pagehide flushes it.

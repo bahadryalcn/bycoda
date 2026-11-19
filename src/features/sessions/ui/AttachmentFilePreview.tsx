@@ -175,7 +175,7 @@ export function useSaveAttachmentCopy(attachment: Attachment) {
   const [held, setHeld] = useState<SaveCopyState | null>(null);
   const liveAttachment = useRef<Attachment | null>(null);
   const flight = useRef<object | null>(null);
-  // Changing the source invalidates a pending read before it opens a dialog.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Invalidate an outstanding file read before it opens a save dialog for a replaced attachment.
   useLayoutEffect(() => {
     if (!sameFilePreviewSource(liveAttachment.current, attachment)) {
       flight.current = null;
@@ -183,7 +183,7 @@ export function useSaveAttachmentCopy(attachment: Attachment) {
     }
     liveAttachment.current = attachment;
   }, [attachment]);
-  // A removed card cannot complete a read even when no replacement is rendered.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Invalidate an outstanding save dialog request when its attachment unmounts.
   useLayoutEffect(
     () => () => {
       flight.current = null;

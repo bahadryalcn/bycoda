@@ -64,7 +64,7 @@ for (const width of [390, 1000]) {
       await expect(dialog.locator("pre")).toHaveText("Attachment file content");
       await page.keyboard.press("Escape");
       await expect(dialog).toHaveCount(0);
-      await expect(file.getByRole("button")).toBeFocused();
+      await expect(file.getByRole("button", { name: "Open notes.txt full screen", exact: true })).toBeFocused();
       await page.keyboard.press("Enter");
       await expect(page.getByRole("dialog").locator("pre")).toHaveText("Attachment file content");
       await page.keyboard.press("Escape");

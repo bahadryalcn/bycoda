@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { defaultRangeExtractor } from "@tanstack/react-virtual";
+import { observeResize } from "../lib/observeResize";
 import { COLLECTION_WINDOW_THRESHOLD, useCollectionVirtualizer } from "./useCollectionVirtualizer";
 import { useStableCallback } from "./useStableCallback";
 
@@ -90,14 +91,13 @@ export function useTimelineWindow({
       setMargin((previous) => (Math.abs(previous - next) < 0.5 ? previous : next));
     };
     update();
-    const resize = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update);
+    const stopObserving = [observeResize(scroll, update)];
     const mutations = typeof MutationObserver === "undefined" ? null : new MutationObserver(update);
-    resize?.observe(scroll);
     for (const sibling of list.parentElement?.children ?? [])
-      if (sibling !== list) resize?.observe(sibling);
+      if (sibling !== list) stopObserving.push(observeResize(sibling, update));
     if (list.parentElement) mutations?.observe(list.parentElement, { childList: true });
     return () => {
-      resize?.disconnect();
+      for (const stop of stopObserving) stop();
       mutations?.disconnect();
     };
   }, [list, scroll, enabled]);

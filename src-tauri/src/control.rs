@@ -748,8 +748,6 @@ fn admit(
 }
 
 fn serve(mut stream: TcpStream, app: &AppHandle, inner: &Arc<Mutex<Inner>>) {
-    let _ = stream.set_read_timeout(Some(Duration::from_secs(3)));
-    let _ = stream.set_write_timeout(Some(Duration::from_secs(3)));
     let admitted = match admit(&mut stream, app, inner) {
         Ok(admitted) => admitted,
         Err(error) => return write_response(&mut stream, Err(error)),

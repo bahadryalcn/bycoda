@@ -1,6 +1,7 @@
 import { useT } from "../i18n";
 import {
   useEffect,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
@@ -122,6 +123,7 @@ export function ColorSwatchRow({
  */
 export function ColorPickerPopover({ value, onChange, disabled = false, readOnly = false }: Props) {
   const t = useT();
+  const planeInstructionsId = useId();
   const [hsv, setHsv] = useState<Hsv>(() => hexToHsv(value));
   const [hexDraft, setHexDraft] = useState(() => normalizeHex(value));
   const currentHsv = useRef(hsv);
@@ -273,6 +275,9 @@ export function ColorPickerPopover({ value, onChange, disabled = false, readOnly
         }}
         onPointerDown={onSvPointer}
       >
+        <span id={planeInstructionsId} hidden>
+          {t("Use Left/Right for saturation and Up/Down for brightness.")}
+        </span>
         <span
           aria-hidden
           className={styles.handle}
@@ -288,7 +293,7 @@ export function ColorPickerPopover({ value, onChange, disabled = false, readOnly
           aria-disabled={disabled || undefined}
           aria-readonly={readOnly || undefined}
           aria-label={t("Saturation")}
-          aria-description={t("Use Left/Right for saturation and Up/Down for brightness.")}
+          aria-describedby={planeInstructionsId}
           aria-valuetext={`${Math.round(hsv.s)}%`}
           aria-valuemin={0}
           aria-valuemax={100}
@@ -302,7 +307,7 @@ export function ColorPickerPopover({ value, onChange, disabled = false, readOnly
           aria-disabled={disabled || undefined}
           aria-readonly={readOnly || undefined}
           aria-label={t("Brightness")}
-          aria-description={t("Use Left/Right for saturation and Up/Down for brightness.")}
+          aria-describedby={planeInstructionsId}
           aria-valuetext={`${Math.round(hsv.v)}%`}
           aria-valuemin={0}
           aria-valuemax={100}

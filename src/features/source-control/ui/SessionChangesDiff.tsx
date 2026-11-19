@@ -177,8 +177,7 @@ export function SessionChangesDiff({ cwd, sessionId, focusPath }: Props) {
   // A failed load or refresh reruns once the machine's link is back.
   useReloadOnReconnect(cwd, reload, { active: error !== null });
 
-  // A focus change only reorders the loads that are still pending; the diffs
-  // already on screen stay loaded.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Reprioritize outstanding diff reads when the focused file changes.
   useEffect(() => {
     refocusRef.current?.();
   }, [focusPath]);

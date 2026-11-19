@@ -194,8 +194,7 @@ export function useInboxActivity(
     sessionsRef.current = sessions;
   }, [sessions]);
 
-  // Reason: the poll effect is keyed on projectKey, so it reads the latest
-  // project list from this ref when it runs, without restarting for each change.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Supply the current project list to the existing Inbox poll without restarting it.
   useLayoutEffect(() => {
     projectsRef.current = railProjects;
   }, [railProjects]);

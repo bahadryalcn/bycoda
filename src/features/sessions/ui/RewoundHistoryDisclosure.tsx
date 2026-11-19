@@ -35,6 +35,7 @@ export function RewoundHistoryDisclosure({
       <div
         role="region"
         aria-label={summary}
+        // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- The capped history region needs keyboard scroll access.
         tabIndex={0}
         className="mt-2 flex max-h-[min(16rem,40cqb)] flex-col gap-3 overflow-y-auto overscroll-contain"
       >

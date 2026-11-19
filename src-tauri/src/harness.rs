@@ -9758,7 +9758,7 @@ mod native_output_integration_tests {
     impl Read for ScriptedSocket {
         fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
             match self.steps.pop_front() {
-                Some(Some(bytes)) if bytes.is_empty() => Ok(0),
+                Some(Some([])) => Ok(0),
                 Some(Some(bytes)) => {
                     out[..bytes.len()].copy_from_slice(bytes);
                     Ok(bytes.len())

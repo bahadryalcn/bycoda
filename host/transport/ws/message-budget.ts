@@ -7,8 +7,9 @@ export const WS_MESSAGE_BUDGET = Object.freeze({
   messagesPerSecond: 100,
   messageBurst: 300,
   bytesPerSecond: 4_194_304,
-  // Must hold at least one maximum-size frame (WS_LIMITS.maxMessageBytes).
-  byteBurst: 8_388_608,
+  // A 16 MiB native upload takes over 21 MiB once split into base64 JSON frames.
+  // Allow one full upload burst while keeping the sustained byte rate bounded.
+  byteBurst: 24 * 1024 * 1024,
   // Consecutive refused messages before the connection is closed with 1008.
   maxConsecutiveDrops: 100,
 });

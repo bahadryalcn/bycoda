@@ -38,7 +38,7 @@ export function useQuietRetry(
     };
   }, []);
   // Reset the count only once a read settled without a busy failure; a retry in flight is neither.
-  // Reason: arms one retry timer for the current attempt, or waits while a retry is in flight.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Arms one timer for the current Host read retry and cancels it when conditions change.
   useEffect(() => {
     if (loading || running) return;
     if (!transient) {

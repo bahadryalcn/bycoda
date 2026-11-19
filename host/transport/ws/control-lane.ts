@@ -123,10 +123,15 @@ export class ControlLease {
     return new Promise<void>((resolve, reject) => {
       const aborted = () => reject(signal.reason);
       signal.addEventListener("abort", aborted, { once: true });
-      void this.previous.then(() => {
-        signal.removeEventListener("abort", aborted);
-        resolve();
-      });
+      void this.previous
+        .then(() => {
+          signal.removeEventListener("abort", aborted);
+          resolve();
+        })
+        .catch((error: unknown) => {
+          signal.removeEventListener("abort", aborted);
+          reject(error);
+        });
     });
   }
 

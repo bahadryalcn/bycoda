@@ -30,9 +30,8 @@ export function SettingsSearch({
     },
     [],
   );
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Warm the shared search index during browser idle time after the language changes.
   useEffect(() => {
-    // Reason: the first keystroke would otherwise walk the whole message catalog on the main
-    // thread. Build the reverse lookup while idle after Settings opens, and again per language.
     const warm = () => {
       warmSourceMessages();
       setIndexedLocale(locale);

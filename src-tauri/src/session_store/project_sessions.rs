@@ -139,6 +139,7 @@ pub async fn session_delete_by_project(
                 .as_ref()
                 .is_ok_and(|outcome| !outcome.deleted.is_empty())
             {
+                // ast-grep-ignore: rust-emit-broadcast -- Every window observes the shared reminder store and must refresh after a project deletion.
                 let _ = app.emit(crate::reminders::CHANGED, ());
             }
             result

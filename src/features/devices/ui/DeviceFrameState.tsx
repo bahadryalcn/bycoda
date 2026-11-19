@@ -34,11 +34,11 @@ export function capturedLabel(capturedAt: string, now: number): string | undefin
         : seconds < 3600
           ? relative.format(-Math.round(seconds / 60), "minute")
           : relative.format(-Math.round(seconds / 3600), "hour");
-  const time = new Date(at).toLocaleTimeString(locale, {
+  const time = dateTimeFormat(locale, {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
-  });
+  }).format(at);
   return t("Captured {p0} · {p1}", { p0: time, p1: age });
 }
 

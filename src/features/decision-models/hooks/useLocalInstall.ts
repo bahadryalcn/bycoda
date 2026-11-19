@@ -63,8 +63,7 @@ export function useLocalInstall(options: {
     else setError(new Error(state.error ?? t("Install did not finish.")));
   });
 
-  // Reason: an install started by another window, or before this one was reopened, keeps running on
-  // the Host; show it instead of offering a second Install button.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Resume displaying an install that is already running on the Host.
   useEffect(() => {
     if (!modelId) return;
     let alive = true;
@@ -80,7 +79,7 @@ export function useLocalInstall(options: {
     };
   }, [client, modelId, apply]);
 
-  // Reason: the install lives on the Host, so its progress is read from there until it ends.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Poll the Host for the tracked install's progress until it ends.
   useEffect(() => {
     if (!tracked || !modelId) return;
     let alive = true;

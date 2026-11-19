@@ -21,7 +21,7 @@ test("initial crew title clears all character labels in hero and background pane
     localStorage.setItem("bycoda.crewTheme", "star-wars");
   });
   await page.goto("/tests/browser/crews/crew-scene.html");
-  const scene = page.locator(".crew-scene");
+  const scene = page.locator("[data-live-scene] .crew-scene");
   await expect(scene).toHaveAttribute("data-art-status", "ready");
   await expect(scene.locator(".crew-scene__label")).toHaveCount(6);
   for (const variant of ["hero", "background"]) {
@@ -306,7 +306,7 @@ test("the live scene honors reduced motion and the stored decorative-motion pref
     localStorage.setItem("bycoda.decorativeMotion.v1", "true");
   });
   await page.goto("/tests/browser/crews/crew-scene.html");
-  const scene = page.locator(".crew-scene");
+  const scene = page.locator("[data-live-scene] .crew-scene");
   await expect(scene).toHaveAttribute("data-art-status", "ready");
   await page.getByLabel("Context preview", { exact: true }).fill("100");
   await expect(scene).toHaveAttribute("data-motion", "running");
@@ -374,7 +374,7 @@ test("the live crew keeps labels and footprints on one deep crescent as helpers 
     localStorage.setItem("bycoda.crewTheme", "star-wars");
   });
   await page.goto("/tests/browser/crews/crew-scene.html");
-  const scene = page.locator(".crew-scene");
+  const scene = page.locator("[data-live-scene] .crew-scene");
   await expect(scene).toHaveAttribute("data-art-status", "ready");
   const geometry = () =>
     scene.evaluate((element) => {
@@ -441,24 +441,23 @@ test("settings switch crew themes and color fills track context through compacti
   });
   await page.setViewportSize({ width: 1200, height: 950 });
   await page.goto("/tests/browser/crews/crew-scene.html");
-  const scene = page.locator(".crew-scene");
+  const scene = page.locator("[data-live-scene] .crew-scene");
   await expect(scene).toHaveAttribute("data-theme", "classic");
   await page.getByText("Crew settings", { exact: true }).click();
-  await page.getByRole("button", { name: /^Crew theme:/ }).click();
-  await page.getByRole("option", { name: "Star Wars", exact: true }).click();
+  await page.getByRole("radio", { name: "Star Wars", exact: true }).click();
   await expect(scene).toHaveAttribute("data-theme", "star-wars");
   await expect(scene).toHaveAttribute("data-art-status", "ready");
-  await expect(page.locator('.crew-scene__label[data-character="chewbacca"]')).toHaveCount(1);
-  await expect(page.locator('.crew-scene__label[data-character="r2-d2"]')).toHaveCount(0);
-  await expect(page.locator('.crew-scene__label[data-role="advisor"]')).toHaveAttribute(
+  await expect(page.locator('[data-live-scene] .crew-scene__label[data-character="chewbacca"]')).toHaveCount(1);
+  await expect(page.locator('[data-live-scene] .crew-scene__label[data-character="r2-d2"]')).toHaveCount(0);
+  await expect(page.locator('[data-live-scene] .crew-scene__label[data-role="advisor"]')).toHaveAttribute(
     "data-character",
     "yoda",
   );
-  await expect(page.locator('.crew-scene__label[data-role="lead"]')).toHaveAttribute(
+  await expect(page.locator('[data-live-scene] .crew-scene__label[data-role="lead"]')).toHaveAttribute(
     "data-character",
     "obi-wan",
   );
-  await expect(page.locator('.crew-scene__label[data-charge="unknown"]')).toHaveCount(6);
+  await expect(page.locator('[data-live-scene] .crew-scene__label[data-charge="unknown"]')).toHaveCount(6);
   const sample = () =>
     scene.locator("canvas").evaluate((canvas) => {
       const c = canvas.getContext("2d")!;
@@ -478,10 +477,10 @@ test("settings switch crew themes and color fills track context through compacti
     });
   const preview = page.getByLabel("Context preview", { exact: true });
   await preview.fill("0");
-  await expect(page.locator('.crew-scene__label[data-charge="0"]')).toHaveCount(6);
+  await expect(page.locator('[data-live-scene] .crew-scene__label[data-charge="0"]')).toHaveCount(6);
   const empty = await sample();
   await preview.fill("50");
-  await expect(page.locator('.crew-scene__label[data-charge="50"]')).toHaveCount(6);
+  await expect(page.locator('[data-live-scene] .crew-scene__label[data-charge="50"]')).toHaveCount(6);
   await expect.poll(async () => (await sample()).body).not.toEqual(empty.body);
   expect((await sample()).head).toEqual(empty.head);
   await scene.screenshot({ path: testInfo.outputPath("star-wars-half.png") });
@@ -489,20 +488,19 @@ test("settings switch crew themes and color fills track context through compacti
   await expect.poll(async () => (await sample()).head).not.toEqual(empty.head);
   await scene.screenshot({ path: testInfo.outputPath("star-wars-full.png") });
   await preview.fill("10");
-  await expect(page.locator('.crew-scene__label[data-charge="10"]')).toHaveCount(6);
+  await expect(page.locator('[data-live-scene] .crew-scene__label[data-charge="10"]')).toHaveCount(6);
   await expect.poll(async () => (await sample()).head).toEqual(empty.head);
   await page.getByRole("switch", { name: "Color with context", exact: true }).click();
-  await expect(page.locator(".crew-scene__meter")).toHaveCount(0);
+  await expect(page.locator("[data-live-scene] .crew-scene__meter")).toHaveCount(0);
   await expect.poll(async () => (await sample()).head).not.toEqual(empty.head);
   await page.reload();
   await expect(scene).toHaveAttribute("data-theme", "star-wars");
   await expect(scene).toHaveAttribute("data-art-status", "ready");
-  await expect(page.locator(".crew-scene__meter")).toHaveCount(0);
+  await expect(page.locator("[data-live-scene] .crew-scene__meter")).toHaveCount(0);
   await page.getByText("Crew settings", { exact: true }).click();
-  await page.getByRole("button", { name: /^Crew theme:/ }).click();
-  await page.getByRole("option", { name: "Classic crew", exact: true }).click();
+  await page.getByRole("radio", { name: "Classic crew", exact: true }).click();
   await expect(scene).toHaveAttribute("data-theme", "classic");
-  await expect(page.locator('.crew-scene__label[data-age="3"]')).toHaveCount(6);
+  await expect(page.locator('[data-live-scene] .crew-scene__label[data-age="3"]')).toHaveCount(6);
   // The same stored setting event updates existing panes without a remount.
   await page.evaluate(() => {
     localStorage.setItem("bycoda.crewTheme", "star-wars");
@@ -513,15 +511,15 @@ test("settings switch crew themes and color fills track context through compacti
   await expect(scene).toHaveAttribute("data-theme", "star-wars");
   await page.getByLabel("Helpers", { exact: true }).fill("5");
   await page.getByRole("button", { name: "Use helpers", exact: true }).click();
-  await expect(page.locator(".crew-scene__label")).toHaveCount(7);
-  await expect(page.locator('.crew-scene__label[data-character="chewbacca"]')).toHaveCount(1);
-  await expect(page.locator('.crew-scene__label[data-character="r2-d2"]')).toHaveCount(1);
+  await expect(page.locator("[data-live-scene] .crew-scene__label")).toHaveCount(7);
+  await expect(page.locator('[data-live-scene] .crew-scene__label[data-character="chewbacca"]')).toHaveCount(1);
+  await expect(page.locator('[data-live-scene] .crew-scene__label[data-character="r2-d2"]')).toHaveCount(1);
   await scene.screenshot({ path: testInfo.outputPath("star-wars-seven.png") });
   await page.getByLabel("Helpers", { exact: true }).fill("10");
   await page.getByRole("button", { name: "Use helpers", exact: true }).click();
-  await expect(page.locator(".crew-scene__label")).toHaveCount(12);
-  await expect(page.locator('.crew-scene__label[data-character="yoda"]')).toHaveCount(1);
-  await expect(page.locator('.crew-scene__label[data-character="obi-wan"]')).toHaveCount(1);
+  await expect(page.locator("[data-live-scene] .crew-scene__label")).toHaveCount(12);
+  await expect(page.locator('[data-live-scene] .crew-scene__label[data-character="yoda"]')).toHaveCount(1);
+  await expect(page.locator('[data-live-scene] .crew-scene__label[data-character="obi-wan"]')).toHaveCount(1);
   await page.setViewportSize({ width: 420, height: 900 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await scene.screenshot({ path: testInfo.outputPath("star-wars-crowd-mobile.png") });

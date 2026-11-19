@@ -73,8 +73,7 @@ function InlineVisualFrame({ valid }: { valid: InlineVisualSource }) {
   const [panelSlot, setPanelSlot] = useState<HTMLDivElement | null>(null);
   const [expandedSlot, setExpandedSlot] = useState<HTMLDivElement | null>(null);
   const slot = view === "inline" ? inlineSlot : view === "panel" ? panelSlot : expandedSlot;
-  // Layout effect: the move lands in the commit that opens the view, before it paints. A slot
-  // that is not mounted yet leaves the host where it is until its ref reports it.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Move the existing iframe DOM host into the mounted view before paint.
   useLayoutEffect(() => {
     if (slot) moveInlineVisualFrameHost(host, slot);
   }, [host, slot]);

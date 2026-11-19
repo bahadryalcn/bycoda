@@ -101,7 +101,8 @@
   opacity: 0.75;
 }
 .crew-scene__theme-title {
-  margin-block-end: 16px;
+  /* Wrapped labels grow upward past the stage's top edge; this gap keeps them below the title. */
+  margin-block-end: 36px;
   text-align: center;
   color: currentColor;
   opacity: 0.7;

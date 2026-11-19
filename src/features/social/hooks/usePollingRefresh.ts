@@ -35,7 +35,7 @@ export function usePollingRefresh({
 }: PollingRefreshOptions): () => Promise<void> {
   const loadRef = useRef(load);
   const schedulerRef = useRef<RefreshScheduler | null>(null);
-  // Commits the latest read before the poll effect below starts its first run.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Give the existing Host poll scheduler the latest committed loader without restarting its timer.
   useEffect(() => {
     loadRef.current = load;
   });

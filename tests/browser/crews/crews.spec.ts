@@ -334,7 +334,7 @@ test("renaming a library group onto an existing group is refused instead of merg
   await page.goto("/tests/browser/crews/crews.html");
   const dialog = await openGroupDialog(page, "UI", "Rename group");
   await dialog.getByRole("textbox", { name: "Group name", exact: true }).fill("Backend");
-  await expect(dialog.getByText("A group with this name already exists")).toBeVisible();
+  await expect(dialog.getByRole("alert")).toContainText("A group with this name already exists");
   await expect(dialog.getByRole("button", { name: "Rename", exact: true })).toBeDisabled();
   expect((await groupSnapshot(page)).groupUpdateCalls).toBe(0);
 });
@@ -411,7 +411,7 @@ test("uncertain start keeps its receipt when closed and reopened", async ({ page
     .getByRole("textbox", { name: "Task title", exact: true })
     .fill("Review mobile navigation");
   await start
-    .getByRole("textbox", { name: "Description", exact: true })
+    .getByRole("combobox", { name: "Description", exact: true })
     .fill("Check the narrow layout.");
   await start.getByRole("button", { name: "Start with crew", exact: true }).click();
   await expect(start.getByText("Start response unavailable. Delivery unknown.")).toBeVisible();
@@ -465,7 +465,7 @@ test("the start dialog starts the work with the access chosen for this task and 
     .getByRole("textbox", { name: "Task title", exact: true })
     .fill("Review mobile navigation");
   await start
-    .getByRole("textbox", { name: "Description", exact: true })
+    .getByRole("combobox", { name: "Description", exact: true })
     .fill("Check the narrow layout.");
   await start.getByRole("button", { name: "Start with crew", exact: true }).click();
   await expect(page.getByLabel("Started work")).toHaveText("1");
@@ -491,7 +491,7 @@ test("an externally deleted crew cannot start new work", async ({ page }) => {
   await page.goto("/tests/browser/crews/crews.html?taskStart");
   const start = await openStart(page);
   await start.getByRole("textbox", { name: "Task title", exact: true }).fill("Keep my request");
-  await start.getByRole("textbox", { name: "Description", exact: true }).fill("Keep my request");
+  await start.getByRole("combobox", { name: "Description", exact: true }).fill("Keep my request");
   await page.evaluate(() =>
     (window as unknown as { simulateCrewDelete: () => void }).simulateCrewDelete(),
   );
@@ -876,7 +876,7 @@ test("opens ongoing work from the rail and starts new work once from the same cr
   }
   await start.getByRole("textbox", { name: "Task title", exact: true }).fill("Mobile sign-in");
   await start
-    .getByRole("textbox", { name: "Description", exact: true })
+    .getByRole("combobox", { name: "Description", exact: true })
     .fill("Build mobile sign-in.");
   await start.getByRole("button", { name: "Start with crew", exact: true }).dblclick();
   await expect(start).toHaveCount(0);
@@ -1396,7 +1396,7 @@ test("a failed save stays visible, keeps the draft and starts nothing", async ({
   await expect(
     dialog.getByText("The Host rejected this crew: storage is read-only right now."),
   ).toBeInViewport();
-  await expect(dialog.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Try again", exact: true })).toBeVisible();
   await expect(dialog.getByRole("textbox", { name: "Crew name", exact: true })).toHaveValue(
     "Website Crew v2",
   );
@@ -1692,7 +1692,7 @@ for (const theme of ["light", "dark"] as const) {
       const error = dialog.getByRole("alert").filter({ hasText: "Could not load performance" });
       await expect(error).toHaveCount(1);
       await expect(error.locator("svg")).toHaveCount(1);
-      await error.getByRole("button", { name: "Retry", exact: true }).click();
+      await error.getByRole("button", { name: "Try again", exact: true }).click();
       await expect(error).toBeVisible();
       await expect
         .poll(() =>
@@ -1771,7 +1771,7 @@ for (const theme of ["light", "dark"] as const) {
       await expect(
         dialog.getByText("The Host rejected this crew: storage is read-only right now."),
       ).toBeVisible();
-      await expect(dialog.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+      await expect(dialog.getByRole("button", { name: "Try again", exact: true })).toBeVisible();
       await shot("footer-error");
       await page.goto(`/tests/browser/crews/crews.html?library=empty&theme=${theme}`);
       await editCrew(page);

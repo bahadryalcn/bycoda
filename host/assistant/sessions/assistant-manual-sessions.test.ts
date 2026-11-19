@@ -1,4 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
+import { EventEmitter, once } from "node:events";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -20,9 +21,16 @@ async function setup(fullAuthority = false) {
     store = new HostStore(join(directory, "host.db"));
   await store.ready;
   const project = await store.addProject(directory, "Manual fixture"),
-    turns: { input: SendTurnInput; finish: () => void }[] = [];
+    turns: { input: SendTurnInput; finish: () => void }[] = [],
+    providerEvents = new EventEmitter();
   const provider: HostProvider = {
-    send: vi.fn((input) => new Promise<void>((finish) => turns.push({ input, finish }))),
+    send: vi.fn(
+      (input) =>
+        new Promise<void>((finish) => {
+          turns.push({ input, finish });
+          providerEvents.emit("turn");
+        }),
+    ),
     stop: vi.fn(async () => {}),
     cancel: vi.fn(async () => turns.at(-1)?.finish()),
     approve: vi.fn(),
@@ -174,6 +182,7 @@ async function setup(fullAuthority = false) {
     project,
     sessionId,
     turns,
+    nextTurn: () => once(providerEvents, "turn"),
     candidate,
     enroll,
     nudge,
@@ -292,6 +301,7 @@ it("integrates owner enrollment, dynamic privacy, captured policy epochs and exa
     ).manual!,
     grant = enrolled.grants[0];
   expect(grant.title).toBeTruthy();
+  const started = f.nextTurn();
   const sending = f.assistant.request(
     {
       op: "manual.nudge",
@@ -303,7 +313,8 @@ it("integrates owner enrollment, dynamic privacy, captured policy epochs and exa
     },
     "chief",
   );
-  await vi.waitFor(() => expect(f.turns).toHaveLength(1));
+  await Promise.race([started, sending]);
+  expect(f.turns).toHaveLength(1);
   f.turns[0].input.onAccepted?.();
   await sending;
   f.turns[0].input.onEvent({ type: "turn.metrics", inputTokens: 100, outputTokens: 20 });
@@ -449,8 +460,10 @@ it("keeps awake only a proven current manual-owned run, including a revoked gran
   const grant = await f.enroll(),
     profile = (await f.assistant.request({ op: "snapshot" }, "owner")).snapshot!.profile;
   // Opt-in is false even if an assistant turn is running.
+  const manualStarted = f.nextTurn();
   const sending = f.nudge(grant.id, "awake-manual");
-  await vi.waitFor(() => expect(f.turns).toHaveLength(1));
+  await Promise.race([manualStarted, sending]);
+  expect(f.turns).toHaveLength(1);
   f.turns[0].input.onAccepted?.();
   await sending;
   await f.assistant.tick();
@@ -487,13 +500,15 @@ it("keeps awake only a proven current manual-owned run, including a revoked gran
   await f.engine.waitForRun(f.sessionId, (await f.store.session(f.sessionId)).runId);
   await f.assistant.tick();
   expect(awake).toHaveBeenLastCalledWith(false);
+  const ownerStarted = f.nextTurn();
   const owner = await f.engine.command({
     type: "send",
     commandId: "owner-after-manual",
     sessionId: f.sessionId,
     text: "Owner's next turn",
   });
-  await vi.waitFor(() => expect(f.turns).toHaveLength(2));
+  await ownerStarted;
+  expect(f.turns).toHaveLength(2);
   f.turns[1].input.onAccepted?.();
   await f.assistant.tick();
   expect(awake).toHaveBeenLastCalledWith(false);
@@ -554,8 +569,10 @@ it("sends only through a real explicit manual grant, stamps truthful author prov
   const f = await setup(),
     grant = await f.enroll();
   for (let index = 0; index < 2; index++) {
+    const started = f.nextTurn();
     const sending = f.nudge(grant.id, `nudge-${index}`);
-    await vi.waitFor(() => expect(f.turns).toHaveLength(index + 1));
+    await Promise.race([started, sending]);
+    expect(f.turns).toHaveLength(index + 1);
     f.turns[index].input.onAccepted?.();
     expect((await sending).operation?.delivery).toBe("delivered");
     f.turns[index].finish();
@@ -585,14 +602,16 @@ it("sends only through a real explicit manual grant, stamps truthful author prov
 
 it("steers an explicitly enrolled active owner turn without cancelling it and fences later policy revocation", async () => {
   const f = await setup(),
-    grant = await f.enroll();
+    grant = await f.enroll(),
+    started = f.nextTurn();
   const receipt = await f.engine.command({
     type: "send",
     commandId: "owner-active",
     sessionId: f.sessionId,
     text: "Owner's active work",
   });
-  await vi.waitFor(() => expect(f.turns).toHaveLength(1));
+  await started;
+  expect(f.turns).toHaveLength(1);
   f.turns[0].input.onAccepted?.();
   const result = await f.nudge(grant.id, "active-manual-steer");
   expect(result.operation?.delivery, undefined).toBe("delivered");
@@ -623,8 +642,10 @@ it("compacts and continues large manual histories through the same guarded runti
     f.provider.compact = vi.fn(async (input) => {
       input.onEvent({ type: "context.compacted", used: 1000, window: 1000000 });
     });
+    const started = f.nextTurn();
     const sending = f.nudge(grant.id, `context-${used}`);
-    await vi.waitFor(() => expect(f.turns).toHaveLength(1), { timeout: 10_000, interval: 25 });
+    await Promise.race([started, sending]);
+    expect(f.turns).toHaveLength(1);
     f.turns[0].input.onAccepted?.();
     expect((await sending).operation).toMatchObject({
       action: used === 160000 ? "compact" : "handoff",

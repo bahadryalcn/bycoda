@@ -106,38 +106,6 @@ fn resolve(host: &str, port: u16) -> Result<Vec<SocketAddr>, String> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn abandoned_lookup_keeps_its_slot_until_the_worker_finishes() {
-        let count = AtomicUsize::new(0);
-        let other_lookups: Vec<_> = (1..MAX_PENDING_RESOLVES)
-            .map(|_| PendingResolve::acquire(&count).unwrap())
-            .collect();
-        let pending = PendingResolve::acquire(&count).unwrap();
-        let (result, abandoned_receiver) = mpsc::channel();
-        let (finish, blocked_worker) = mpsc::channel();
-
-        std::thread::scope(|scope| {
-            let worker = scope.spawn(move || {
-                let _ = blocked_worker.recv();
-                assert!(result.send(()).is_err());
-                drop(pending);
-            });
-            drop(abandoned_receiver);
-            let rejected_while_blocked = PendingResolve::acquire(&count).is_none();
-            finish.send(()).unwrap();
-            worker.join().unwrap();
-            assert!(rejected_while_blocked);
-        });
-
-        assert!(PendingResolve::acquire(&count).is_some());
-        drop(other_lookups);
-    }
-}
-
 impl Conn {
     pub(super) fn connect(
         host: &str,
@@ -310,5 +278,37 @@ impl Conn {
             Stream::Tls(tls) => tls.write_all(bytes).and_then(|_| tls.flush()),
         };
         result.map_err(|error| self.io_error(error))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn abandoned_lookup_keeps_its_slot_until_the_worker_finishes() {
+        let count = AtomicUsize::new(0);
+        let other_lookups: Vec<_> = (1..MAX_PENDING_RESOLVES)
+            .map(|_| PendingResolve::acquire(&count).unwrap())
+            .collect();
+        let pending = PendingResolve::acquire(&count).unwrap();
+        let (result, abandoned_receiver) = mpsc::channel();
+        let (finish, blocked_worker) = mpsc::channel();
+
+        std::thread::scope(|scope| {
+            let worker = scope.spawn(move || {
+                let _ = blocked_worker.recv();
+                assert!(result.send(()).is_err());
+                drop(pending);
+            });
+            drop(abandoned_receiver);
+            let rejected_while_blocked = PendingResolve::acquire(&count).is_none();
+            finish.send(()).unwrap();
+            worker.join().unwrap();
+            assert!(rejected_while_blocked);
+        });
+
+        assert!(PendingResolve::acquire(&count).is_some());
+        drop(other_lookups);
     }
 }

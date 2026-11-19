@@ -115,7 +115,7 @@ it("dismisses with a non-composition Escape without selecting", async () => {
   expect(input()).toBeNull();
 });
 
-it("declares and links the actual listbox opened by Existing worktree", async () => {
+it("links the actual listbox while Existing worktree is open", async () => {
   await act(async () =>
     root.render(
       createElement(WorkspacePicker, {
@@ -133,7 +133,6 @@ it("declares and links the actual listbox opened by Existing worktree", async ()
   const trigger = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
     (button) => button.textContent?.trim() === "Existing worktree…",
   )!;
-  expect(trigger.getAttribute("aria-haspopup")).toBe("listbox");
   expect(trigger.hasAttribute("aria-controls")).toBe(false);
   await act(async () => trigger.click());
 

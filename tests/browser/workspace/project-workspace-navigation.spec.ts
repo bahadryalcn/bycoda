@@ -795,8 +795,8 @@ async function choose(panel: Locator, label: string, option: string | RegExp) {
 // opens a picker with a Worktrees tab; "All checkouts" is its first row.
 async function chooseMergedCheckout(panel: Locator, option: string | RegExp) {
   const page = panel.page();
-  await panel.getByRole("button", { name: /^Working copy [^:]/ }).click();
-  const picker = page.getByRole("dialog", { name: "Working copy", exact: true });
+  await panel.getByRole("button", { name: /^Worktree [^:]/ }).click();
+  const picker = page.getByRole("dialog", { name: "Worktree", exact: true });
   await picker.getByRole("tab", { name: /^Worktrees/ }).click();
   await picker
     .getByRole(
@@ -815,7 +815,7 @@ test("main and worktrees remain separate and usable in narrow and wide Changes p
   // The control opens on the session's own checkout, named by its folder and branch; the
   // overview lists every checkout.
   await expect(
-    panel.getByRole("button", { name: "Working copy api · main", exact: true }),
+    panel.getByRole("button", { name: "Worktree api · main", exact: true }),
   ).toBeVisible();
   await expect(panel.locator("[data-checkout-overview]")).toHaveCount(0);
   await chooseMergedCheckout(panel, "All checkouts");
@@ -841,11 +841,11 @@ test("main and worktrees remain separate and usable in narrow and wide Changes p
     "diff:G:/wallet-worktrees/task:G:/wallet-worktrees/task/same.ts",
   );
   await expect(
-    panel.getByRole("button", { name: "Working copy: All checkouts", exact: true }),
+    panel.getByRole("button", { name: "Worktree: All checkouts", exact: true }),
   ).toBeVisible();
-  await choose(panel, "Working copy", /^task\b/);
+  await choose(panel, "Worktree", /^task\b/);
   await expect(panel.locator("[data-checkout-overview]")).toHaveCount(0);
-  await expect(panel.getByRole("button", { name: /^Working copy task\b/ })).toBeVisible();
+  await expect(panel.getByRole("button", { name: /^Worktree task\b/ })).toBeVisible();
   await chooseMergedCheckout(panel, "All checkouts");
   await expect(checkouts).toHaveCount(2);
   await expect(taskToggle).toHaveAttribute("aria-expanded", "true");

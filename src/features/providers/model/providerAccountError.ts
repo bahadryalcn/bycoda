@@ -1,6 +1,7 @@
 import { HarnessLoginError } from "../../../integrations/harness/core/authErrors";
 import { redactExitStderrLine } from "../../../integrations/harness/core/exitDiagnostics";
 import { t } from "../../../shared/i18n";
+import { truncateGraphemes } from "../../../shared/lib/text/truncate";
 import { HARNESS_TITLE, type HarnessId } from "../../../shared/model/harnessIdentity";
 
 /** What a provider account operation failed at; the presenter picks the sentence from this. */
@@ -60,7 +61,7 @@ export function safeProviderAccountDetail(value: unknown): string | undefined {
     .replace(/\s+/g, " ")
     .trim();
   if (!text) return undefined;
-  return text.length > DETAIL_MAX ? `${text.slice(0, DETAIL_MAX - 1)}…` : text;
+  return truncateGraphemes(text, DETAIL_MAX);
 }
 
 function fallbackSummary(action: ProviderAccountAction): string {

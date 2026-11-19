@@ -76,7 +76,7 @@ export function createDragEdgeScroll() {
 /** Stable per-view controller; its pending frame is cancelled when the view unmounts. */
 export function useJiraDragEdgeScroll() {
   const [scroll] = useState(createDragEdgeScroll);
-  // Reason: a frame scheduled for a drag must not scroll or report a target after the view is gone.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Cancel the pending drag scroll animation frame when the view unmounts.
   useEffect(() => () => scroll.stop(), [scroll]);
   return scroll;
 }

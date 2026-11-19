@@ -17,7 +17,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
-use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
@@ -1153,7 +1153,13 @@ fn write_cached_prices(cache: &Path, prices: &ModelPrices) {
         return;
     };
     let temp = cache.with_extension("json.tmp");
-    if std::fs::write(&temp, bytes).is_ok() && std::fs::rename(&temp, cache).is_err() {
+    let saved = std::fs::File::create(&temp)
+        .and_then(|mut file| {
+            file.write_all(&bytes)?;
+            file.sync_all()
+        })
+        .and_then(|_| std::fs::rename(&temp, cache));
+    if saved.is_err() {
         let _ = std::fs::remove_file(&temp);
     }
 }

@@ -850,6 +850,7 @@ function ChangedFiles({
   } = useCommitDraft({ cwd, index, textHarness, canGenerate, fail });
   // Cancels a running PR description (provider call) when the list unmounts or moves to another repository (#1369).
   const prGeneration = useRef<AbortController | null>(null);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Abort the active pull request description request when its repository changes or unmounts.
   useEffect(() => () => prGeneration.current?.abort(), [cwd]);
   // Nothing staged: Commit takes every change, as the header menu's Commit does.
   const canCommit =

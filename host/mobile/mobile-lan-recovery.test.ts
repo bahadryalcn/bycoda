@@ -158,7 +158,7 @@ it("keeps the listener through a brief interface blip and restores a closed one 
     present ? ["192.168.2.108"] : ["192.168.95.2"],
   );
   // Fake timers first: the address watcher's interval is created by start().
-  vi.useFakeTimers();
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
   cleanups.push(async () => void vi.useRealTimers());
   await f.access.start();
   const tick = () => vi.advanceTimersByTimeAsync(5_000);
@@ -184,5 +184,6 @@ it("keeps the listener through a brief interface blip and restores a closed one 
   present = true;
   await tick();
   expect(f.plain.listen.mock.calls.length).toBe(binds + 1);
-  expect(await f.access.status()).toMatchObject({ state: "ready" });
+  // The poll starts the bind, but readiness is published only after real disk I/O.
+  await expect.poll(() => f.access.status(), { timeout: 10_000 }).toMatchObject({ state: "ready" });
 });

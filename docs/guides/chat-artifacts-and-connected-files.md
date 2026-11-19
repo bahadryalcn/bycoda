@@ -158,8 +158,10 @@ own errors in the conversation history.
 
 HTTP failures and structured provider responses show a short message in the
 conversation. Open **Technical details** to read or copy the complete original
-response, including its status, request identity and diagnostics. Plain errors
-keep their original explanation.
+response, including its status, request identity and diagnostics. Queue notices
+with diagnostics use **Details**. The copy button at the top of either panel
+copies the full text, including any lines you need to scroll to read. Plain
+errors keep their original explanation.
 
 ## Documents, tables, and media
 

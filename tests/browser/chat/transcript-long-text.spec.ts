@@ -143,7 +143,7 @@ for (const theme of ["light", "dark"])
         await expect(dialog.getByLabel("Error details", { exact: true })).toHaveText(raw);
         await expect(
           dialog.getByRole("button", { name: "Copy details", exact: true }),
-        ).toBeVisible();
+        ).toBeInViewport();
         expect(
           await dialog.evaluate((node) => {
             const box = node.getBoundingClientRect();
@@ -169,6 +169,19 @@ for (const theme of ["light", "dark"])
         ).toBe(true);
         await page.screenshot({
           path: join(captures, `${theme}-${width}-zoom-${zoom}-summary.png`),
+          animations: "disabled",
+        });
+        const error = page
+          .getByRole("alert")
+          .filter({ hasText: "The provider is temporarily unavailable." });
+        await error.getByRole("button", { name: /^Technical details:/ }).press("Enter");
+        const errorDetails = page.getByRole("dialog", {
+          name: /The provider is temporarily unavailable/,
+        });
+        await expect(errorDetails.getByLabel("Error details")).toContainText("req_503");
+        await expect(errorDetails.getByRole("button", { name: "Copy details" })).toBeInViewport();
+        await page.screenshot({
+          path: join(captures, `${theme}-${width}-zoom-${zoom}-provider-error.png`),
           animations: "disabled",
         });
       });

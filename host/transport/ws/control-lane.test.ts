@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ControlLane, ControlLaneBusy } from "./control-lane";
+import { ControlLane, ControlLaneBusy, ControlLease } from "./control-lane";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -145,5 +145,14 @@ describe("ControlLane", () => {
   it("rejects invalid limits", () => {
     expect(() => new ControlLane(0, 1)).toThrow();
     expect(() => new ControlLane(1, -1)).toThrow();
+  });
+
+  it("rejects an ordered wait when its predecessor fails and detaches the abort listener", async () => {
+    const reason = new Error("previous turn failed");
+    const lease = new ControlLease(new ControlLane(1, 0), Promise.reject(reason));
+    const { signal } = live();
+    const removeListener = vi.spyOn(signal, "removeEventListener");
+    await expect(lease.ordered(signal)).rejects.toBe(reason);
+    expect(removeListener).toHaveBeenCalledWith("abort", expect.any(Function));
   });
 });

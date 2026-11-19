@@ -800,7 +800,7 @@ for (const { width, theme } of [
     );
     await fillTask(form);
     const objective = "Keep this exact user objective while reusing the workflow.";
-    await form.getByRole("textbox", { name: "Description", exact: true }).fill(objective);
+    await form.getByRole("combobox", { name: "Description", exact: true }).fill(objective);
     await openAdvanced(form);
     const summary = form.locator("summary").filter({ hasText: /^Workflow$/ });
     await summary.focus();
@@ -808,7 +808,7 @@ for (const { width, theme } of [
     await choose(page, form.getByRole("button", { name: /^Workflow:/ }), "Source research");
     await form.getByRole("button", { name: "Apply workflow", exact: true }).click();
     const applied = JSON.parse(
-      await form.getByRole("textbox", { name: "Description", exact: true }).inputValue(),
+      await form.getByRole("combobox", { name: "Description", exact: true }).inputValue(),
     );
     expect(applied.objective).toBe(objective);
     expect(applied.acceptance).toContain(
@@ -900,7 +900,7 @@ for (const { width, theme } of [
     await choose(page, reopened.getByRole("button", { name: /^Workflow:/ }), "My checked flow");
     await reopened.getByRole("button", { name: "Apply workflow", exact: true }).click();
     const restored = JSON.parse(
-      await reopened.getByRole("textbox", { name: "Description", exact: true }).inputValue(),
+      await reopened.getByRole("combobox", { name: "Description", exact: true }).inputValue(),
     );
     expect(restored.acceptance).toContain(
       "Factual claims are checked against opened primary sources",
@@ -1562,7 +1562,7 @@ async function fillTask(form: Locator) {
     .getByRole("textbox", { name: "Task title", exact: true })
     .fill("Run on the selected computer");
   await form
-    .getByRole("textbox", { name: "Description", exact: true })
+    .getByRole("combobox", { name: "Description", exact: true })
     .fill("Finish the fixture task without stopping.");
 }
 async function fillGoal(form: Locator) {
@@ -1703,7 +1703,7 @@ test("project discovery errors have an in-form retry", async ({ page }) => {
   await page.evaluate(() =>
     (window as unknown as { taskFixtureRecoverProjects: () => void }).taskFixtureRecoverProjects(),
   );
-  await form.getByRole("button", { name: "Retry", exact: true }).click();
+  await form.getByRole("button", { name: "Try again", exact: true }).click();
   await expect(form.getByRole("alert")).toHaveCount(0);
   await choose(page, project(form), "remote-api");
   await expect(form.locator("[data-goal-project]")).toHaveCount(1);
@@ -2063,10 +2063,10 @@ test("compact task form keeps advanced choices and long instructions manageable"
   await expect(machine(form)).toBeFocused();
   await fillTask(form);
   await form
-    .getByRole("textbox", { name: "Description", exact: true })
+    .getByRole("combobox", { name: "Description", exact: true })
     .fill("Detailed instructions and acceptance criteria.\n".repeat(80));
   const prompt = (await form
-    .getByRole("textbox", { name: "Description", exact: true })
+    .getByRole("combobox", { name: "Description", exact: true })
     .boundingBox())!;
   expect(prompt.height).toBeLessThanOrEqual(225);
   await expect(form.getByRole("button", { name: "Add to To do", exact: true })).toBeVisible();

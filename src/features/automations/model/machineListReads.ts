@@ -1,6 +1,7 @@
 import { isLocalSyncMachine } from "../../connections/public/localSync";
 import type { RemoteMachine } from "../../connections";
 import { withTimeout } from "../../../shared/lib/withTimeout";
+import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
 
 /** A machine list read that has not answered by now is abandoned and no longer joined. */
 export const MACHINE_LIST_READ_TIMEOUT_MS = 20_000;
@@ -36,7 +37,7 @@ export function sharedMachineListReads<T>() {
         maxAgeMs > 0 &&
         entry?.value !== undefined &&
         entry.at !== undefined &&
-        Date.now() - entry.at < maxAgeMs
+        elapsedSince(entry.at) < maxAgeMs
       )
         return Promise.resolve(entry.value);
       const fresh: Entry<T> = { machineId: machine.id };
@@ -49,7 +50,7 @@ export function sharedMachineListReads<T>() {
       ).then(
         (value) => {
           if (entries.get(key) === fresh)
-            entries.set(key, { machineId: machine.id, at: Date.now(), value });
+            entries.set(key, { machineId: machine.id, at: monotonicNow(), value });
           return value;
         },
         (error: unknown) => {

@@ -138,8 +138,7 @@ const cssSize = (value: number | string) => (typeof value === "number" ? `${valu
  * already moved elsewhere is left alone.
  */
 function useContainerFocusReturn(sheet: RefObject<HTMLElement | null>, active: boolean) {
-  // Layout effect: the opener is read before any descendant or owner effect moves focus into the
-  // sheet, and the cleanup runs in the commit that closes it.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Capture the DOM focus owner before paint and restore it when the sheet closes.
   useLayoutEffect(() => {
     const node = sheet.current;
     if (!active || !node) return;

@@ -166,7 +166,7 @@ export function UsageMeter({
         });
   return (
     <Tooltip label={resetsAtLabel} describe={false} asChild>
-      {/* Focusable with the exact reset time as text, so keyboard and screen-reader users reach it without hover. */}
+      {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- Focus reveals the exact reset time tooltip for keyboard users. */}
       <div className={className} tabIndex={resetsAtLabel ? 0 : undefined}>
         {resetsAtLabel ? <span className="sr-only">{resetsAtLabel}</span> : null}
         <Text as="div" className="flex items-baseline justify-between gap-2">

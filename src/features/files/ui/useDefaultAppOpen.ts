@@ -13,7 +13,7 @@ export function useDefaultAppOpen(owner: object, path: string) {
   const busy = useRef(false);
   const generation = useRef(0);
 
-  // Reset the in-flight guard when the owner changes so the new source can open at once.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Invalidate pending native open results when their file is replaced or unmounted.
   useEffect(() => {
     generation.current += 1;
     busy.current = false;

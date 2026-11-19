@@ -3,7 +3,10 @@ import { useT } from "../i18n";
 import { truncateGraphemes } from "../lib/text/truncate";
 import { Button } from "./Button";
 import { CopyButton } from "./CopyButton";
+import { ChevronDown } from "./icons";
+import { OutputBlock } from "./OutputBlock";
 import { Popover } from "./Popover";
+import { Text } from "./Text";
 
 /**
  * "Details" link that opens a dialog Popover with the complete technical error text (selectable,
@@ -23,7 +26,7 @@ export function ErrorDetails({
   label,
   actions,
   children,
-  width = 420,
+  width = 360,
   className,
 }: {
   /** The complete technical text. Shown as written and copied in full. */
@@ -54,6 +57,7 @@ export function ErrorDetails({
         type="button"
         variant="link"
         layout="text"
+        textSize="caption"
         className={className}
         aria-label={name}
         aria-expanded={open}
@@ -62,37 +66,43 @@ export function ErrorDetails({
         onClick={() => setOpen((current) => !current)}
       >
         {text}
+        <ChevronDown className="ms-0.5 inline size-3 align-middle" aria-hidden="true" />
       </Button>
       {open ? (
         <Popover
           id={contentId}
           anchor={anchor}
           width={width}
+          maxHeight={320}
+          align="end"
           kind="dialog"
           aria-label={name}
           tabIndex={-1}
           flow="scroll"
+          solid
           onDismiss={close}
-          className="flex flex-col gap-2 p-3 text-ui-secondary text-(--ui-text-secondary)"
+          className="flex flex-col gap-2 p-3"
         >
-          {children}
-          <pre
-            aria-label={t("Error details")}
-            className="m-0 min-w-0 font-mono text-ui-caption wrap-anywhere whitespace-pre-wrap text-content select-text"
-          >
-            {detail}
-          </pre>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-x-2">
+            <Text size="secondary" tone="primary" weight="medium">
+              {t("Technical details")}
+            </Text>
             <CopyButton
               type="button"
-              variant="secondary"
+              variant="ghost"
               size="sm"
               label={t("Copy details")}
               resetKeys={[detail]}
               onCopy={() => navigator.clipboard.writeText(detail)}
             />
-            {actions?.(close)}
           </div>
+          {children}
+          <OutputBlock aria-label={t("Error details")} frame="filled" className="shrink-0">
+            {detail}
+          </OutputBlock>
+          {actions ? (
+            <div className="flex flex-wrap items-center gap-2">{actions(close)}</div>
+          ) : null}
         </Popover>
       ) : null}
     </>
