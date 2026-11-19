@@ -130,6 +130,35 @@ describe("askSideQuestion concurrency", () => {
     ]);
   });
 
+  it("refuses overflow before reading the session and admits it after a queued cancellation", async () => {
+    const gate = deferred();
+    const run = vi.fn(async () => gate.promise);
+    const ports = sessionPorts(run);
+    const read = vi.spyOn(ports, "session");
+    const controller = new AbortController();
+    const questions = [
+      askSideQuestion(paramsFor("a"), ports),
+      askSideQuestion(paramsFor("b"), ports),
+      askSideQuestion(paramsFor("c"), ports, controller.signal),
+      askSideQuestion(paramsFor("d"), ports),
+    ];
+    const overflow = askSideQuestion(paramsFor("e"), ports).catch((error: Error) => error.message);
+    try {
+      expect(await Promise.race([overflow, flush().then(() => "pending")])).toMatch(
+        /queue is full/i,
+      );
+      expect(read).toHaveBeenCalledTimes(2);
+      controller.abort();
+      await expect(questions[2]).rejects.toThrow(/cancelled/);
+      questions.push(askSideQuestion(paramsFor("e"), ports));
+      gate.resolve("Done.");
+      await expect(questions.at(-1)).resolves.toEqual({ answer: "Done." });
+    } finally {
+      gate.resolve("Done.");
+      await Promise.allSettled([...questions, overflow]);
+    }
+  });
+
   it("cancels a queued question without starting a provider run", async () => {
     const gates = new Map(["/work/a", "/work/b"].map((cwd) => [cwd, deferred()]));
     const run = vi.fn(async (request: { cwd: string }) => gates.get(request.cwd)!.promise);

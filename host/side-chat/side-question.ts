@@ -9,9 +9,10 @@ import { runHarnessTextPrompt } from "../../src/integrations/harness/core/regist
 type Params = z.output<typeof SideQuestionParamsSchema>;
 
 export const SIDE_QUESTION_TIMEOUT_MS = 120_000;
-/** Provider runs one Host starts for side questions at once; the rest wait for a slot. */
+/** Provider runs one Host starts for side questions at once. */
 export const SIDE_QUESTION_HOST_CONCURRENCY = 2;
 export const SIDE_QUESTION_BUSY_MESSAGE = "A side question is already running for this session.";
+const SIDE_QUESTION_HOST_QUEUE_LIMIT = 2;
 
 let hostRunning = 0;
 const hostQueue: Array<() => void> = [];
@@ -29,6 +30,8 @@ function acquireHostSlot(signal?: AbortSignal): Promise<void> {
     hostRunning += 1;
     return Promise.resolve();
   }
+  if (hostQueue.length >= SIDE_QUESTION_HOST_QUEUE_LIMIT)
+    return Promise.reject(new Error("The Host side question queue is full. Try again shortly."));
   return new Promise<void>((resolve, reject) => {
     const granted = () => {
       signal?.removeEventListener("abort", onAbort);
