@@ -208,7 +208,9 @@
    focus group (data-ui-focus-quiet, arc.css), so the shared field ring skips it.
    A question docked on the composer shares that surface so both read as one pane.
    The radius is the popup role, so it follows the same token as the other floating panes. */
-[data-composer-box],
+/* The box is also a floating Surface (`.surface[data-variant="floating"]`, 0,2,0), so the box
+   selector carries `html` and its focus-group marker to keep the composer fill over that variant. */
+html [data-composer-box][data-ui-focus-group],
 [data-composer] > [data-question-form] > form {
   border-radius: var(--ui-radius-popup);
   border-color: var(--ui-composer-border);
@@ -216,7 +218,7 @@
   box-shadow: var(--ui-composer-shadow);
 }
 /* Operation boundaries retain their meaning independently of ordinary focus. */
-[data-composer-box][data-composer-editing] {
+html [data-composer-box][data-composer-editing] {
   border-color: var(--ui-tone-accent-border);
 }
 /* Project code-art icons: a solid tinted silhouette with a crisp edge keeps

@@ -362,7 +362,7 @@ for (const theme of ["light", "dark"]) {
         await page.getByRole("button", { name: "Quick connect", exact: true }).click();
         const editor = page.getByRole("dialog", { name: "Quick connect", exact: true });
         await editor
-          .getByRole("textbox", { name: "Host", exact: true })
+          .getByRole("textbox", { name: "Hostname", exact: true })
           .fill(`server-${index}.example.invalid`);
         await editor.getByRole("textbox", { name: "Name", exact: true }).fill("106");
         await editor.getByRole("button", { name: "Connect", exact: true }).click();
@@ -795,7 +795,7 @@ test("quick connect is explicit, leaves inventory unsaved and keeps the raw tab 
   expect((await calls()).some((item) => item.command.startsWith("ssh_terminal"))).toBe(false);
   await page.getByRole("button", { name: "Quick connect", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Quick connect", exact: true });
-  await dialog.getByRole("textbox", { name: "Host", exact: true }).fill("quick.example.invalid");
+  await dialog.getByRole("textbox", { name: "Hostname", exact: true }).fill("quick.example.invalid");
   await dialog.getByRole("textbox", { name: "SSH user", exact: true }).fill("alice");
   await expect(dialog.locator('[aria-label="Endpoint preview"]')).toContainText(
     "alice@quick.example.invalid:22",
@@ -875,7 +875,7 @@ for (const theme of ["light", "dark"])
       .getByRole("textbox", { name: "Name", exact: true })
       .fill("Production deployment connection with a deliberately long name");
     const address = "application.production.example.invalid";
-    await quick.getByRole("textbox", { name: "Host", exact: true }).fill(address);
+    await quick.getByRole("textbox", { name: "Hostname", exact: true }).fill(address);
     await quick.getByRole("textbox", { name: "SSH user", exact: true }).fill("deployment");
     await openAdvancedSshSettings(quick);
     await quick.locator("summary").filter({ hasText: "Use a key file path" }).click();
@@ -895,12 +895,12 @@ for (const theme of ["light", "dark"])
       true,
     );
     await page.screenshot({ path: `${folder}/quick-${theme}-390-preview.png` });
-    await quick.getByRole("textbox", { name: "Host", exact: true }).fill("-invalid-host");
+    await quick.getByRole("textbox", { name: "Hostname", exact: true }).fill("-invalid-host");
     await quick.getByRole("button", { name: "Connect", exact: true }).click();
     await expect(quick.getByRole("alert")).toHaveText("Enter a valid SSH endpoint.");
     await expect(quick.getByRole("button", { name: "Connect", exact: true })).toBeEnabled();
     await page.screenshot({ path: `${folder}/quick-${theme}-390-error.png` });
-    await quick.getByRole("textbox", { name: "Host", exact: true }).fill(address);
+    await quick.getByRole("textbox", { name: "Hostname", exact: true }).fill(address);
     await quick.getByRole("button", { name: "Connect", exact: true }).click();
     await expect(
       page.getByRole("tab", {
@@ -1033,7 +1033,7 @@ for (const theme of ["light", "dark"]) {
     await page.getByRole("button", { name: "Quick connect", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Quick connect", exact: true });
     await dialog
-      .getByRole("textbox", { name: "Host", exact: true })
+      .getByRole("textbox", { name: "Hostname", exact: true })
       .fill("windows.example.invalid");
     await dialog.getByRole("button", { name: "Connect", exact: true }).click();
     await page.getByRole("button", { name: "Terminal pane actions", exact: true }).click();
@@ -1372,10 +1372,10 @@ for (const theme of ["light", "dark"]) {
     await expect(toggle).not.toBeChecked();
     await toggle.click();
     await expect(
-      editor.getByRole("textbox", { name: "Jump host 1: Host", exact: true }),
+      editor.getByRole("textbox", { name: "Jump host 1: Hostname", exact: true }),
     ).toHaveValue("");
     await editor
-      .getByRole("textbox", { name: "Jump host 1: Host", exact: true })
+      .getByRole("textbox", { name: "Jump host 1: Hostname", exact: true })
       .fill("first.example.invalid");
     await editor.getByRole("textbox", { name: "Jump host 1: User", exact: true }).fill("operator");
     await editor.getByRole("textbox", { name: "Jump host 1: Port", exact: true }).fill("2222");
@@ -1404,7 +1404,7 @@ for (const theme of ["light", "dark"]) {
     );
     await toggle.click();
     await expect(
-      editor.getByRole("textbox", { name: "Jump host 1: Host", exact: true }),
+      editor.getByRole("textbox", { name: "Jump host 1: Hostname", exact: true }),
     ).toHaveValue("first.example.invalid");
     await editor
       .locator("summary")

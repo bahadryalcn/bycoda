@@ -196,7 +196,7 @@ test("installed notice survives reload and reading notes, closes persistently, t
 }) => {
   await page.goto(route);
   const notice = page.getByRole("button", {
-    name: `Updated to ${appVersion} — What's new`,
+    name: `Updated to ${appVersion}`,
     exact: true,
   });
   await expect(notice).toBeVisible();
@@ -211,7 +211,7 @@ test("installed notice survives reload and reading notes, closes persistently, t
   await expect(notice).toHaveCount(0);
   await page.goto(`${route}?install=${nextVersion}`);
   await expect(
-    page.getByRole("button", { name: `Updated to ${nextVersion} — What's new`, exact: true }),
+    page.getByRole("button", { name: `Updated to ${nextVersion}`, exact: true }),
   ).toBeVisible();
 });
 
@@ -408,7 +408,7 @@ test("update dialog star and dismiss retain separate pointer targets", async ({ 
   await close.click();
   await expect(github).toHaveCount(0);
   await expect(dialog).toBeVisible();
-  await page.getByRole("button", { name: "Later", exact: true }).click();
+  await page.getByRole("button", { name: "Remind me tomorrow", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await page.reload();
   await page.getByRole("button", { name: `Update to ${nextVersion}`, exact: true }).click();

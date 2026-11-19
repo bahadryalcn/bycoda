@@ -115,9 +115,9 @@ for (const width of [1280, 800])
       await expect(bulk.getByRole("button", { name: /^Start\b/ })).toBeEnabled();
       await expect(bulk.getByRole("button", { name: /^Retry\b/ })).toBeEnabled();
       await expect(bulk.getByRole("button", { name: /^Stop\b/ })).toBeDisabled();
-      await expect(bulk.getByRole("button", { name: "Delete", exact: true })).toBeEnabled();
+      await expect(bulk.getByRole("button", { name: /^Delete\b/ })).toBeEnabled();
       await capture("bulk-eligibility");
-      await bulk.getByRole("button", { name: "Delete", exact: true }).click();
+      await bulk.getByRole("button", { name: /^Delete\b/ }).click();
       const confirm = page.getByRole("dialog", { name: "Delete selected tasks", exact: true });
       await expect(confirm).toContainText("5 are eligible");
       await capture("delete-confirm");
@@ -171,12 +171,12 @@ for (const width of [1280, 800])
       await page.getByRole("button", { name: "More actions", exact: true }).first().click();
       await page.getByRole("menuitemcheckbox", { name: "Select tasks", exact: true }).click();
       await page.getByRole("checkbox", { name: "Select all results", exact: true }).check();
-      await bulk.getByRole("button", { name: "Delete", exact: true }).click();
+      await bulk.getByRole("button", { name: /^Delete\b/ }).click();
       await page
         .getByRole("dialog", { name: "Delete selected tasks", exact: true })
         .getByRole("button", { name: "Delete", exact: true })
         .click();
-      await expect(bulk.getByRole("button", { name: "Delete", exact: true })).toHaveAttribute(
+      await expect(bulk.getByRole("button", { name: /^Delete\b/ })).toHaveAttribute(
         "aria-busy",
         "true",
       );
@@ -1234,7 +1234,7 @@ test("bulk cleanup uses one confirmation, preserves code and retries only failed
   await expect(confirm).toContainText("100 are eligible");
   await confirm.getByRole("button", { name: "Delete", exact: true }).click();
   await expect(actions).toContainText("99 succeeded, 2 skipped, 1 failed");
-  await actions.getByRole("button", { name: /^Retry failed tasks/ }).click();
+  await actions.getByRole("button", { name: /^Repeat on failed tasks/ }).click();
   await page
     .getByRole("dialog", { name: "Delete selected tasks", exact: true })
     .getByRole("button", { name: "Delete", exact: true })

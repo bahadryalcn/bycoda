@@ -555,15 +555,15 @@ test("workspace header keeps location before history and project controls", asyn
           .getByRole("button", { name: "Switch worktree", exact: true })
           .getByText("bycoda", { exact: true })
       : header.getByText("Last sessions", { exact: true });
-    const toggle = page.getByRole("button", { name: "Expand projects", exact: true });
+    const toggle = page.getByRole("button", { name: "Toggle sidebar", exact: true });
     await expect(toggle).toHaveCount(1);
-    await expect(header.getByRole("button", { name: "Expand projects", exact: true })).toHaveCount(
+    await expect(header.getByRole("button", { name: "Toggle sidebar", exact: true })).toHaveCount(
       1,
     );
     await expect(
       page
         .locator("[data-compact-project-rail]")
-        .getByRole("button", { name: "Expand projects", exact: true }),
+        .getByRole("button", { name: "Toggle sidebar", exact: true }),
     ).toHaveCount(0);
     const titleFrame = header.locator("[data-pane-header-heading]");
     const workspacePane = page.locator('[data-side-pane="workspace"]');
@@ -662,7 +662,7 @@ test("workspace header keeps location before history and project controls", asyn
           }
           // A narrow pane folds the session tools into "More actions".
           const sessionTools = constrained ? "More actions" : "Search sessions";
-          for (const name of ["Back", "Forward", "Expand projects", sessionTools]) {
+          for (const name of ["Back", "Forward", "Toggle sidebar", sessionTools]) {
             const control = header.getByRole("button", { name, exact: true });
             await expect(control).toBeInViewport();
             const bounds = (await control.boundingBox())!;

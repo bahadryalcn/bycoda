@@ -20,6 +20,9 @@
           if (command === "plugin:event|listen") return 1;
           if (command === "plugin:event|unlisten") return;
           if (command === "session_checkpoint_status") return { files: [] };
+          // The Crew work section lists remote machines; this fixture has none. Without an answer the
+          // section shows a load error and retries on a timer, which the idle budget would count.
+          if (command === "remote_machines") return [];
           if (command === "list_project_files" || command === "list_claude_commands") return [];
           if (["control_load", "native_language_set", "plugin:window|set_title"].includes(command))
             return null;

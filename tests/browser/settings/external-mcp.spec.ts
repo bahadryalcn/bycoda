@@ -142,16 +142,16 @@ test("scope choices, Turkish copy and keyboard selection", async ({ page }) => {
     await page.keyboard.press("ArrowDown");
     await page.getByRole("option", { name: option, exact: true }).click();
   };
-  await choose("conversation", "Erişim yok");
+  await choose("Konuşma", "Erişim yok");
   await dialog.getByRole("button", { name: "Token oluştur", exact: true }).click();
   await expect(dialog.getByRole("alert")).toContainText("en az bir yetki");
   await expect(page.locator("body")).not.toHaveAttribute("data-creates");
-  await choose("conversation", "Okuma ve yazma");
-  await choose("runtime-logs", "Okuma");
-  await choose("social", "Yazma");
+  await choose("Konuşma", "Okuma ve yazma");
+  await choose("Çalışma zamanı logları", "Okuma");
+  await choose("Sosyal medya", "Yazma");
   // Let the shared select's outgoing label finish before visual capture.
   await expect(
-    dialog.getByRole("button", { name: "social: Yazma", exact: true }),
+    dialog.getByRole("button", { name: "Sosyal medya: Yazma", exact: true }),
   ).not.toContainText("Erişim yok");
   mkdirSync("temp/verification/2026-10-16-external-mcp", { recursive: true });
   await page.screenshot({ path: "temp/verification/2026-10-16-external-mcp/tr-dark-form.png" });

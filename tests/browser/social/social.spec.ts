@@ -122,14 +122,18 @@ for (const theme of ["light", "dark"])
         await expect(page.locator(`.content-calendar[data-view="${view}"]`)).toBeVisible();
         const cells = page.locator(".content-day");
         expect(await cells.count()).toBeGreaterThanOrEqual(7);
+        // Below 56rem the days stack in one column: each keeps only its top edge.
+        const stacked = await page
+          .locator(".content-calendar-grid")
+          .evaluate((grid) => getComputedStyle(grid).gridTemplateColumns.split(" ").length === 1);
         for (let index = 0; index < (await cells.count()); index++) {
           await expect(cells.nth(index)).toHaveCSS(
             "border-inline-start-width",
-            index % 7 ? "1px" : "0px",
+            !stacked && index % 7 ? "1px" : "0px",
           );
           await expect(cells.nth(index)).toHaveCSS(
             "border-block-start-width",
-            index >= 7 ? "1px" : "0px",
+            (stacked ? index > 0 : index >= 7) ? "1px" : "0px",
           );
         }
         const today = page.locator(".content-day[data-today]");

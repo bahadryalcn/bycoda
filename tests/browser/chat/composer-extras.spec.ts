@@ -47,22 +47,24 @@ for (const theme of ["light", "dark"]) {
       );
       const bar = page.locator("[data-workspace-footer]");
       await expect(bar.getByRole("button", { name: "Refresh usage", exact: true })).toHaveCount(0);
-      await expect(
-        bar.getByRole("button", { name: "Refresh current view", exact: true }),
-      ).toHaveCount(0);
+      // Wide footers keep the window-wide controls inline (refresh, sounds, full screen).
+      const refresh = bar.getByRole("button", { name: "Refresh current view", exact: true });
+      await expect(refresh).toHaveCount(1);
+      await expect(bar.getByRole("button", { name: "Workspace controls", exact: true })).toHaveCount(
+        0,
+      );
       await page.evaluate(() => {
         (window as unknown as { refreshEvents: number }).refreshEvents = 0;
         window.addEventListener("bycoda:refresh-workspace-view", () => {
           (window as unknown as { refreshEvents: number }).refreshEvents += 1;
         });
       });
-      await bar.getByRole("button", { name: "Workspace controls", exact: true }).click();
-      await page.getByRole("menuitem", { name: "Refresh current view", exact: true }).click();
+      await refresh.click();
       expect(
         await page.evaluate(() => (window as unknown as { refreshEvents: number }).refreshEvents),
       ).toBe(1);
       const actions = bar.locator(
-        'nav button, [data-usage-guide="terminal-toggle"], button[aria-label="Conversation tools"], button[aria-label="Notifications"]',
+        'nav button:visible, [data-usage-guide="terminal-toggle"], button[aria-label="Conversation tools"], button[aria-label="Notifications"]',
       );
       await expect(actions).toHaveCount(6);
       const boxes = await actions.evaluateAll((buttons) =>
@@ -1815,7 +1817,7 @@ test("independent scalar model settings preserve the draft caret and sibling val
   await page.keyboard.press("End");
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("scalar-settings")).toContainText('"reasoningEffort":"high"');
-  await expect(page.getByTestId("scalar-settings")).toContainText('"serviceTier":"fast"');
+  await expect(page.getByTestId("scalar-settings")).toContainText('"serviceTier":"ultrafast"');
   await expect(draft).toHaveValue("Preserve this draft");
   await expect(draft).toBeFocused();
 });

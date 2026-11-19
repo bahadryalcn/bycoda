@@ -118,7 +118,9 @@ async function cycleWindowFocus(page: Page, roots: string[]) {
       await wait(1000);
     }
   });
-  return { phases: { run: phase(await snapshot(page), roots) } };
+  const dbg = await snapshot(page);
+  console.log("DBGMETER", JSON.stringify(Object.entries(dbg.byName).sort((a, b) => b[1] - a[1]).slice(0, 30)), dbg.renders);
+  return { phases: { run: phase(dbg, roots) } };
 }
 
 async function tasksBoard(page: Page, roots: string[]) {

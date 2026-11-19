@@ -864,7 +864,7 @@ test("starts, boots and captures a device and stops live viewing on tab change",
   await page.keyboard.press("Escape");
   await selectTool(page, "Resource usage");
   await page.getByRole("button", { name: "Sample now" }).click();
-  await expect(page.getByText("140.0 MiB", { exact: true })).toBeVisible();
+  await expect(page.getByText("140 MB", { exact: true })).toBeVisible();
   const count = await page.evaluate(
     () =>
       (window as unknown as { hostToolCalls: { method: string }[] }).hostToolCalls.filter(
@@ -956,7 +956,7 @@ for (const locale of ["en", "tr"]) {
               exact: true,
             })
             .click();
-          await expect(page.getByText("2.4%", { exact: true })).toBeVisible();
+          await expect(page.getByText(locale === "en" ? "2.4%" : "%2,4", { exact: true })).toBeVisible();
         }
         expect(
           await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
