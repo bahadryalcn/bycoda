@@ -689,15 +689,11 @@ mod tests {
         let parent = fixture.repo("parent");
         let mut seen = HashSet::new();
         let mut paths = Vec::new();
-        assert!(discover_repositories(
-            &parent,
-            Instant::now(),
-            &LIMITS,
-            &mut seen,
-            &mut paths
-        )
-        .unwrap_err()
-        .contains("timed out"));
+        assert!(
+            discover_repositories(&parent, Instant::now(), &LIMITS, &mut seen, &mut paths)
+                .unwrap_err()
+                .contains("timed out")
+        );
     }
 
     #[test]

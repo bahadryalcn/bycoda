@@ -11,6 +11,13 @@ export {
   sessionProviderAccountId,
   sharedCliAccount,
   saveSharedCliAccount,
+  editProviderAccount,
+  isSharedCliAccountProvider,
+  isTerminalProviderAccount,
+  newProviderAccount,
+  removeProviderAccount,
+  setDefaultProviderAccount,
+  SHARED_CLI_ACCOUNT_PROVIDERS,
 } from "../model/providerAccounts";
 export type {
   ProviderAccount,

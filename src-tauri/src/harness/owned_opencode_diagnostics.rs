@@ -302,7 +302,8 @@ mod tests {
     fn silent_start_times_out_with_a_reason_and_without_leaking_secrets() {
         let (_send, receive) = mpsc::sync_channel::<StartEvent>(2);
         let tail = tail_with(format!("password={PASSWORD}\n").as_bytes());
-        let error = await_start(&receive, Duration::from_millis(20), &tail, &[PASSWORD]).unwrap_err();
+        let error =
+            await_start(&receive, Duration::from_millis(20), &tail, &[PASSWORD]).unwrap_err();
         assert!(error.starts_with("OWNED_OPENCODE_START_UNCONFIRMED: no endpoint"));
         assert!(!error.contains(PASSWORD));
     }
@@ -312,8 +313,13 @@ mod tests {
         let (send, receive) = mpsc::sync_channel(2);
         send.send(StartEvent::Endpoint("http://127.0.0.1:4000".into()))
             .unwrap();
-        let endpoint =
-            await_start(&receive, Duration::from_secs(1), &StderrTail::default(), &[]).unwrap();
+        let endpoint = await_start(
+            &receive,
+            Duration::from_secs(1),
+            &StderrTail::default(),
+            &[],
+        )
+        .unwrap();
         assert_eq!(endpoint, "http://127.0.0.1:4000");
     }
 

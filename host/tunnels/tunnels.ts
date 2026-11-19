@@ -700,7 +700,7 @@ export class ExternalTunnels {
     this.closing = true;
     clearTimeout(this.automaticTimer);
     return this.serialized(async () => {
-      for (const [id, install] of [...this.pending]) {
+      for (const [id, install] of Array.from(this.pending)) {
         const record = this.records.find((entry) => entry.id === id);
         if (record) this.cancelPending(record, install);
         else {

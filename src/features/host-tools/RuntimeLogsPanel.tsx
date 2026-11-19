@@ -52,7 +52,7 @@ import {
   runtimeLogsAgentPrompt,
   type RuntimeLogGroup,
 } from "./runtimeLogsModel";
-import { RuntimeLogsView } from "./runtimeLogsView";
+import { RuntimeLogsView } from "./model/runtimeLogsView";
 import type { RuntimeLogEntry, RuntimeLogSnapshot } from "./runtimeLogTypes";
 import {
   patchToolsDraftPart,

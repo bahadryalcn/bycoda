@@ -33,10 +33,7 @@ pub(super) fn create(source: &Path, link: &Path) -> std::io::Result<()> {
         let message = if detail.is_empty() {
             format!("junction creation exited with {}", output.status)
         } else {
-            format!(
-                "junction creation exited with {}: {detail}",
-                output.status
-            )
+            format!("junction creation exited with {}: {detail}", output.status)
         };
         Err(std::io::Error::other(message))
     }

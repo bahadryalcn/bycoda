@@ -176,7 +176,10 @@ fn launch_failures_leave_a_timestamped_trace_instead_of_a_discarded_stderr() {
         "{log}"
     );
     assert!(log.contains("InvalidInput"), "{log}");
-    assert!(log.starts_with("20"), "shared diagnostic line starts with an ISO date: {log}");
+    assert!(
+        log.starts_with("20"),
+        "shared diagnostic line starts with an ISO date: {log}"
+    );
     fs::remove_file(fixture.0.join("host.log")).unwrap();
 
     assert!(!fixture.launch_raw(b"{not json", "0").status.success());
@@ -190,7 +193,10 @@ fn launch_failures_leave_a_timestamped_trace_instead_of_a_discarded_stderr() {
     missing["executable"] = json!(fixture.0.join("missing-node-executable"));
     assert!(!fixture.launch(&missing, "0").status.success());
     let log = log_of(&fixture, "host.log");
-    assert!(log.contains("start Host:") && log.contains("NotFound"), "{log}");
+    assert!(
+        log.contains("start Host:") && log.contains("NotFound"),
+        "{log}"
+    );
     fs::remove_file(fixture.0.join("host.log")).unwrap();
 
     // An unusable host.log is reported in the sibling log and retried like any failed launch.
@@ -211,7 +217,10 @@ fn log_rotation_failure_does_not_end_supervision() {
     assert!(fixture.launch(&fixture.config(), "0").status.success());
     let log = log_of(&fixture, "host.log");
     assert!(log.contains("new log"), "the Host still launched");
-    assert!(log.contains("WARN  [host.launcher] rotate Host log:"), "{log}");
+    assert!(
+        log.contains("WARN  [host.launcher] rotate Host log:"),
+        "{log}"
+    );
     assert!(log.len() < 1024 * 1024, "the oversized log was truncated");
 }
 
@@ -292,5 +301,8 @@ setInterval(() => fs.appendFileSync('beat', 'x'), 50);
             .creation_flags(0x08000000)
             .output();
     }
-    assert_eq!(first, second, "the Host kept running after the launcher died");
+    assert_eq!(
+        first, second,
+        "the Host kept running after the launcher died"
+    );
 }

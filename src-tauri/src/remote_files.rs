@@ -259,7 +259,8 @@ fn inspect(directory: &Path, active: &[String], now: SystemTime) -> Result<Store
         .and_then(|value| value.to_str())
         .unwrap_or_default();
     // Directories are only ever created under a fresh UUID.
-    let ours = !foreign && uuid::Uuid::parse_str(name).is_ok() && !active.iter().any(|id| id == name);
+    let ours =
+        !foreign && uuid::Uuid::parse_str(name).is_ok() && !active.iter().any(|id| id == name);
     let manifest = files.iter().find(|(file, _)| file == MANIFEST);
     let info = manifest
         .filter(|(_, meta)| meta.len() < 4096)
@@ -907,7 +908,10 @@ mod tests {
         let stale = root.join(uuid::Uuid::new_v4().to_string());
         std::fs::create_dir(&stale).unwrap();
         std::fs::write(stale.join("partial.bin"), b"ab").unwrap();
-        set_modified(&stale.join("partial.bin"), Duration::from_secs(31 * 24 * HOURS));
+        set_modified(
+            &stale.join("partial.bin"),
+            Duration::from_secs(31 * 24 * HOURS),
+        );
         let fresh = root.join(uuid::Uuid::new_v4().to_string());
         std::fs::create_dir(&fresh).unwrap();
         std::fs::write(fresh.join("partial.bin"), b"ab").unwrap();

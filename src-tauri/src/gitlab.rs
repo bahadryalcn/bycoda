@@ -1377,8 +1377,18 @@ mod tests {
             assert!(status.success(), "git {args:?} failed");
         };
         git(&["init", "-q"]);
-        git(&["remote", "add", "mirror", "https://gitlab.example.com/other/mirror.git"]);
-        git(&["remote", "add", "origin", "https://gitlab.example.com/acme/web.git"]);
+        git(&[
+            "remote",
+            "add",
+            "mirror",
+            "https://gitlab.example.com/other/mirror.git",
+        ]);
+        git(&[
+            "remote",
+            "add",
+            "origin",
+            "https://gitlab.example.com/acme/web.git",
+        ]);
         let repo = gitlab_repo_for(&root, "https://gitlab.example.com");
         let _ = fs::remove_dir_all(&root);
         assert_eq!(repo, Ok("acme/web".to_string()));

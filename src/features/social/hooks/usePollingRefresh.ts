@@ -3,7 +3,7 @@ import {
   createRefreshScheduler,
   HIDDEN_REFRESH_MS,
   type RefreshScheduler,
-} from "../../automations/model/refreshScheduler";
+} from "../../automations/public/refreshScheduler";
 
 /** Longest wait between reads after repeated failures; a Host that stays down is not hammered. */
 const MAX_BACKOFF_MS = 5 * 60_000;

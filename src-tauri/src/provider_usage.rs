@@ -451,7 +451,11 @@ impl ParseSlots {
 
 impl Drop for ParseSlot<'_> {
     fn drop(&mut self) {
-        *self.0.free.lock().unwrap_or_else(|error| error.into_inner()) += 1;
+        *self
+            .0
+            .free
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) += 1;
         self.0.freed.notify_one();
     }
 }
@@ -1098,9 +1102,7 @@ impl PriceFetchState {
     fn backing_off(&self, now: u64) -> bool {
         // A clock moved back far enough to leave `retry_at` out of range must
         // not block downloads for longer than the longest wait.
-        self.failures > 0
-            && now < self.retry_at
-            && self.retry_at - now <= PRICES_RETRY_MAX_SECS
+        self.failures > 0 && now < self.retry_at && self.retry_at - now <= PRICES_RETRY_MAX_SECS
     }
 
     fn record_failure(&mut self, now: u64, error: String) {
@@ -1121,7 +1123,9 @@ static PRICE_SLOTS: std::sync::Mutex<Option<HashMap<PathBuf, PriceSlot>>> =
 /// One slot per cache file; holding its lock is what makes a download
 /// single-flight.
 fn price_slot(cache: &Path) -> PriceSlot {
-    let mut slots = PRICE_SLOTS.lock().unwrap_or_else(|error| error.into_inner());
+    let mut slots = PRICE_SLOTS
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
     slots
         .get_or_insert_with(HashMap::new)
         .entry(cache.to_path_buf())
@@ -1185,9 +1189,7 @@ fn model_prices(
             let state = slot.lock().unwrap_or_else(|error| error.into_inner());
             return match read_cached_prices(cache) {
                 Some(prices) => Ok(prices),
-                None if state.last_error.is_empty() => {
-                    Err("Model prices are not available".into())
-                }
+                None if state.last_error.is_empty() => Err("Model prices are not available".into()),
                 None => Err(state.last_error.clone()),
             };
         }
@@ -1698,7 +1700,10 @@ mod tests {
         now += 2 * PRICES_RETRY_MAX_SECS;
         let online = || Ok(counted_price("openai/back"));
         let prices = model_prices(&cache, now, online).unwrap();
-        assert_eq!((prices.models[0].id.as_str(), prices.fetched_at), ("openai/back", now));
+        assert_eq!(
+            (prices.models[0].id.as_str(), prices.fetched_at),
+            ("openai/back", now)
+        );
         assert_eq!(read_cached_prices(&cache).unwrap().fetched_at, now);
 
         // A stale copy plus a failing network answers from the copy during the wait.
@@ -1723,7 +1728,10 @@ mod tests {
         let offline = || Err::<Vec<ModelPrice>, String>("offline".into());
         assert!(model_prices(&cache, 10_000_000, offline).is_err());
         let online = || Ok(counted_price("openai/now"));
-        assert_eq!(model_prices(&cache, 1_000, online).unwrap().models[0].id, "openai/now");
+        assert_eq!(
+            model_prices(&cache, 1_000, online).unwrap().models[0].id,
+            "openai/now"
+        );
         std::fs::remove_dir_all(dir).ok();
     }
 
@@ -1781,7 +1789,10 @@ mod tests {
         let served = model_prices(&cache, now, || panic!("must not download")).unwrap();
         assert_eq!(served.models[0].id, "openai/old");
         assert!(began.elapsed() < Duration::from_millis(250));
-        assert_eq!(downloader.join().unwrap().unwrap().models[0].id, "openai/new");
+        assert_eq!(
+            downloader.join().unwrap().unwrap().models[0].id,
+            "openai/new"
+        );
         std::fs::remove_dir_all(dir).ok();
     }
 

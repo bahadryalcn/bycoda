@@ -12360,5 +12360,9 @@
   "Reconnecting failed: {p0}": "Yeniden bağlanma başarısız oldu: {p0}",
   "Reconnecting failed": "Yeniden bağlanma başarısız oldu",
   "Machine not connected on this computer": "Bu bilgisayarda makine bağlı değil",
-  "another machine": "başka bir makine"
+  "another machine": "başka bir makine",
+  "bycoda cannot control apps running as administrator. Run the target app without elevation.": "bycoda yönetici olarak çalışan uygulamaları kontrol edemez. Hedef uygulamayı yükseltme olmadan çalıştırın.",
+  "Could not save note. ": "Not kaydedilemedi. ",
+  "Availability change was not confirmed.": "Uygunluk değişikliği doğrulanmadı.",
+  "Saving this question is unconfirmed. Retry to verify the original card.": "Bu sorunun kaydedildiği doğrulanmadı. Özgün kartı doğrulamak için yeniden deneyin."
 }

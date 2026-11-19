@@ -586,7 +586,10 @@ fn routes_from(
 /// entry stays unsettled so a later report retries. Routes confirmed under a
 /// different identity or address are dropped, never carried over.
 fn apply_probe(entry: &mut Entry, confirmed: &Confirmed, reported: &[String], probe: Probe) {
-    let keeps = entry.confirmed.as_ref().is_none_or(|known| known == confirmed);
+    let keeps = entry
+        .confirmed
+        .as_ref()
+        .is_none_or(|known| known == confirmed);
     match probe {
         Probe::Resolved(routes) => {
             entry.routes = routes;
@@ -671,7 +674,9 @@ static PROBE_RETRY_AT: Mutex<Option<HashMap<String, Instant>>> = Mutex::new(None
 
 /// Whether an unresolved probe for `key` may start now; if so, books the next.
 fn probe_retry_due(key: &str) -> bool {
-    let mut guard = PROBE_RETRY_AT.lock().unwrap_or_else(PoisonError::into_inner);
+    let mut guard = PROBE_RETRY_AT
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
     let times = guard.get_or_insert_with(HashMap::new);
     let now = Instant::now();
     if times.get(key).is_some_and(|next| now < *next) {
@@ -1411,7 +1416,10 @@ mod tests {
         Entry {
             reported: reported.iter().map(|address| address.to_string()).collect(),
             resolved: true,
-            routes: reported.iter().map(|address| learned_route(address)).collect(),
+            routes: reported
+                .iter()
+                .map(|address| learned_route(address))
+                .collect(),
             confirmed: Some(confirmed.clone()),
             ..Entry::default()
         }
@@ -1495,7 +1503,12 @@ mod tests {
         assert!(entry.resolved);
         assert_eq!(entry.confirmed, Some(confirmed.clone()));
         // A real, empty answer (every address is saved) is settled too.
-        apply_probe(&mut entry, &confirmed, &reported, Probe::Resolved(Vec::new()));
+        apply_probe(
+            &mut entry,
+            &confirmed,
+            &reported,
+            Probe::Resolved(Vec::new()),
+        );
         assert!(entry.routes.is_empty() && entry.resolved);
     }
 

@@ -191,7 +191,7 @@ export function MessageThreadView({
         ref={scrollRef}
         // Focusable only by script, as the landing place when the last "Load earlier" button unmounts.
         tabIndex={-1}
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain outline-none"
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
         onScroll={(event) => onScroll(event.currentTarget)}
       >
         {messages == null ? (

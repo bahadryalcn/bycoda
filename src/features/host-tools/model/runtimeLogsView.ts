@@ -6,9 +6,9 @@ import {
   type RuntimeLogFilters,
   type RuntimeLogGroup,
   type RuntimeLogsBuffer,
-} from "./runtimeLogsModel";
-import { runtimeLogDisplayLevel, type RuntimeLogDisplayLevel } from "./runtimeLogPresentation";
-import type { RuntimeLogEntry } from "./runtimeLogTypes";
+} from "../runtimeLogsModel";
+import { runtimeLogDisplayLevel, type RuntimeLogDisplayLevel } from "../runtimeLogPresentation";
+import type { RuntimeLogEntry } from "../runtimeLogTypes";
 
 export type RuntimeLogsViewState = {
   /** Groups in display order; a group keeps its identity until an entry joins or leaves it. */

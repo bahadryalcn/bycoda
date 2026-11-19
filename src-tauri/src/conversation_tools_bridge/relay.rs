@@ -78,8 +78,8 @@ fn deliver_finish(
     // Preparation admits this bounded original forwarding;
     // all original replies remain owned through settlement.
     // A lost finish leaves the Host waiting for its relay deadline.
-    let finished = reply
-        .and_then(|reply| issuer.project("conversation.desktop.finish", reply, |_| Ok(())));
+    let finished =
+        reply.and_then(|reply| issuer.project("conversation.desktop.finish", reply, |_| Ok(())));
     if let Err(error) = finished {
         log::warn!(
             "[desktop relay] {} result was not delivered: {error}",
@@ -299,9 +299,15 @@ mod tests {
             take_delay(false, 0, Duration::from_secs(600), false),
             Duration::from_secs(5)
         );
-        assert_eq!(take_delay(false, 2, Duration::ZERO, true), Duration::from_secs(4));
+        assert_eq!(
+            take_delay(false, 2, Duration::ZERO, true),
+            Duration::from_secs(4)
+        );
         // A failed take never re-arms, however long it ran.
-        assert_eq!(take_delay(false, 3, Duration::ZERO, true), Duration::from_secs(8));
+        assert_eq!(
+            take_delay(false, 3, Duration::ZERO, true),
+            Duration::from_secs(8)
+        );
         assert!(Duration::from_millis(TAKE_WAIT_MS) < Duration::from_secs(45));
     }
 

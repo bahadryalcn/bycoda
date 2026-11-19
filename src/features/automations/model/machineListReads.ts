@@ -1,5 +1,5 @@
-import { isLocalSyncMachine } from "../../connections/model/localSync";
-import type { RemoteMachine } from "../../connections/model/protocol";
+import { isLocalSyncMachine } from "../../connections/public/localSync";
+import type { RemoteMachine } from "../../connections";
 import { withTimeout } from "../../../shared/lib/withTimeout";
 
 /** A machine list read that has not answered by now is abandoned and no longer joined. */

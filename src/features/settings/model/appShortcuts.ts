@@ -1,6 +1,6 @@
 import { keybindingPressed, matchCustomKeybinding, type ShortcutEvent } from "./settings";
 import { isImeComposition } from "../../../shared/lib/keyboard";
-import type { LayoutPreset } from "../../workspace/model/layoutPresets";
+import type { LayoutPreset } from "../../workspace";
 import type { FocusDir } from "../../workspace/model/layout";
 import type { SettingsSectionId } from "./settings";
 

@@ -166,7 +166,10 @@ impl Launcher<'_> {
             Err(error) => {
                 // Housekeeping never ends supervision: report it and let the normal
                 // backoff retry the append open.
-                self.note(Level::Error, &format!("open Host log: {}", describe(&error)));
+                self.note(
+                    Level::Error,
+                    &format!("open Host log: {}", describe(&error)),
+                );
                 return Ok((1, Duration::ZERO));
             }
         };

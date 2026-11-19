@@ -89,7 +89,7 @@ export function DocumentView({
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [reloadKey, setReloadKey] = useState(0);
   // The open action belongs to the file it came from; a different file starts clean.
-  const actionOwner = useMemo(() => ({}), [path, externalPath]);
+  const actionOwner = useMemo(() => ({ path, externalPath }), [path, externalPath]);
   const openAction = useDefaultAppOpen(actionOwner, externalPath ?? path);
   const reload = useCallback(() => setReloadKey((value) => value + 1), []);
   const name = basename(path);

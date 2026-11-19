@@ -4,7 +4,11 @@ use tauri::Emitter;
 
 static REVISION: AtomicU64 = AtomicU64::new(1);
 
-pub(super) fn matches_generation(live: &LiveForward, owner: &ForwardOwner, generation: uuid::Uuid) -> bool {
+pub(super) fn matches_generation(
+    live: &LiveForward,
+    owner: &ForwardOwner,
+    generation: uuid::Uuid,
+) -> bool {
     live.generation == generation && live.owner_lease.same_generation(owner) && owner.is_alive()
 }
 

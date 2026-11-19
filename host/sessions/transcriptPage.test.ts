@@ -212,7 +212,9 @@ it("selects the same rewind preview as a full re-serialization per block", () =>
         }
         bounded.blocks.unshift(block);
       }
-      if (Buffer.byteLength(JSON.stringify([...projected, bounded])) > REWIND_ARCHIVE_PREVIEW_BYTES) {
+      if (
+        Buffer.byteLength(JSON.stringify([...projected, bounded])) > REWIND_ARCHIVE_PREVIEW_BYTES
+      ) {
         truncated = true;
         break;
       }
@@ -265,9 +267,9 @@ it("selects the same rewind preview as a full re-serialization per block", () =>
     const actual = previewRewindHistory({ rewindHistory: history });
     expect(actual.rewindHistory).toEqual(expected.rewindHistory);
     expect(actual.rewindHistoryTruncated).toBe(expected.truncated ? true : undefined);
-    expect(
-      Buffer.byteLength(JSON.stringify(actual.rewindHistory)),
-    ).toBeLessThanOrEqual(REWIND_ARCHIVE_PREVIEW_BYTES);
+    expect(Buffer.byteLength(JSON.stringify(actual.rewindHistory))).toBeLessThanOrEqual(
+      REWIND_ARCHIVE_PREVIEW_BYTES,
+    );
   }
 });
 

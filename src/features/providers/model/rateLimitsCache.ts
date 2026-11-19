@@ -241,7 +241,7 @@ function scheduleRetry(
 // Re-arm paused retries when the window regains focus; the account may have been removed meanwhile.
 focusManager.subscribe(() => {
   if (!focusManager.isFocused()) return;
-  for (const [key, resume] of [...pausedRetries]) {
+  for (const [key, resume] of Array.from(pausedRetries)) {
     pausedRetries.delete(key);
     if (snapshots.has(key)) resume();
   }
@@ -261,7 +261,7 @@ export function clearCachedRateLimits(provider?: RateLimitProvider, accountId?: 
     const { [key]: _removed, ...rest } = allSnapshots;
     allSnapshots = rest;
   } else {
-    for (const key of [...retryTimers.keys()]) cancelRetry(key);
+    for (const key of retryTimers.keys()) cancelRetry(key);
     pausedRetries.clear();
     retryAttempts.clear();
     renewalChecks.clear();

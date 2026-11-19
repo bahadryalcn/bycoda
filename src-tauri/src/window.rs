@@ -1466,7 +1466,10 @@ mod tests {
         // Unconfigured configs (no main minimum) still get the bound.
         let mut bare = tauri::utils::config::WindowConfig::default();
         configure_session_window(&mut bare, true);
-        assert_eq!((bare.min_width, bare.min_height), (Some(480.0), Some(320.0)));
+        assert_eq!(
+            (bare.min_width, bare.min_height),
+            (Some(480.0), Some(320.0))
+        );
         assert_eq!(main.min_width, Some(800.0));
         assert_eq!(main.min_height, Some(520.0));
     }

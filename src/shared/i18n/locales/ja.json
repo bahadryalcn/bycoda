@@ -12356,5 +12356,13 @@
   "Reconnecting failed: {p0}": "再接続に失敗しました: {p0}",
   "Reconnecting failed": "再接続に失敗しました",
   "Machine not connected on this computer": "このコンピューターに接続されていないマシン",
-  "another machine": "別のマシン"
+  "another machine": "別のマシン",
+  "bycoda cannot control apps running as administrator. Run the target app without elevation.": "bycoda は管理者として実行されているアプリを制御できません。対象のアプリを昇格せずに実行してください。",
+  "Could not save note. ": "ノートを保存できませんでした。",
+  "Availability change was not confirmed.": "利用可否の変更は確認されませんでした。",
+  "Saving this question is unconfirmed. Retry to verify the original card.": "この質問の保存は確認されていません。再試行して元のカードを確認してください。",
+  "Your saved file access choice could not be read, so access is off until you choose it again.": "保存されたファイルアクセスの選択を読み取れなかったため、再度選択するまでアクセスはオフです。",
+  "Saved folder permissions could not be read, so folders need approval again.": "保存されたフォルダー権限を読み取れなかったため、フォルダーの再承認が必要です。",
+  "Unreadable copy kept at {p0}": "読み取れないコピーを {p0} に保存しました",
+  "Could not dismiss the notice. Try again.": "通知を閉じられませんでした。もう一度お試しください。"
 }

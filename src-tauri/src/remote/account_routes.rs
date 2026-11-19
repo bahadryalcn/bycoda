@@ -233,10 +233,15 @@ mod tests {
             .err()
             .expect("no tunnel exists");
         assert_eq!(failure.code, "RPC_WS_SSH");
-        assert!(failure.message.contains("Automatic reconnect is off"), "{failure}");
+        assert!(
+            failure.message.contains("Automatic reconnect is off"),
+            "{failure}"
+        );
         assert!(!failure.message.contains("Verified native"), "{failure}");
         // The HTTP-path failover check keys on this prefix, so it must stay.
-        assert!(failure.to_string().starts_with("RPC_WS_SSH: Machine is unreachable"));
+        assert!(failure
+            .to_string()
+            .starts_with("RPC_WS_SSH: Machine is unreachable"));
     }
 
     #[test]

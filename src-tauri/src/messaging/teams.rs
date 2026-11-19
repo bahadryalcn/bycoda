@@ -94,7 +94,9 @@ pub(crate) fn thread_messages(
     // An older page is Graph's own next link for this chat; anything else never gets the token.
     let url = match before {
         Some(cursor) if chat_next_link(cursor, &chat) => cursor.to_string(),
-        Some(_) => return Err("This conversation page is invalid. Reload the conversation.".into()),
+        Some(_) => {
+            return Err("This conversation page is invalid. Reload the conversation.".into())
+        }
         None => first,
     };
     let me = me_id(secret)?;

@@ -1,4 +1,5 @@
 import { useMemo, useRef, type CSSProperties } from "react";
+import { Text } from "../../../shared/ui/Text";
 import { useCelebrationBox, useTurnCelebration } from "./turnCelebration";
 import "./PlanStepsBurst.css";
 
@@ -58,7 +59,18 @@ export function PlanStepsBurst({ blockId, startedAt }: { blockId: string; starte
               }
             >
               <span className="plan-step-dot">
-                <span className="plan-step-number">{index + 1}</span>
+                <svg viewBox="0 0 16 16" className="plan-step-disc">
+                  <circle cx="8" cy="8" r="7.25" stroke="var(--mode-color)" strokeWidth="1.5" />
+                </svg>
+                <Text
+                  size="micro"
+                  tone="inherit"
+                  leading="none"
+                  weight="medium"
+                  className="plan-step-number"
+                >
+                  {index + 1}
+                </Text>
                 <svg viewBox="0 0 12 12" className="plan-step-check">
                   <path d={CHECK_PATH} />
                 </svg>

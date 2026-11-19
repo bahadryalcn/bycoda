@@ -16,7 +16,7 @@ Own the Host-wide routing document and run-start resolution in `host/model-routi
 - The renderer bootstrap also binds live catalog/account reads to `src/integrations/harness/core/automaticSubagents.ts`; the harness layer must not import feature stores. Preview reads remain live and `agents.options` remains authoritative.
 - UI/public entries: `src/features/model-routing/public/`; query ownership in `src/features/model-routing/model/`.
 - Smart setup: `model/smartSetup*.ts`, `model/modelProfile.ts` and the researched table `model/modelCatalogFacts.ts` under `src/features/model-routing/`; the order action edits the existing draft.
-- Settings composition: `src/features/settings/ui/ProviderSettings.tsx` (tabs in `src/features/settings/model/providerSettingsTabs.ts`) renders `src/features/settings/ui/models/ModelsPage.tsx` with `view: "work" | "defaults"`. Background work is `ui/order/ModelOrderSettings.tsx`: tabs Jobs (`ui/roles/ModelRolesGroups.tsx`), Models & order (`ModelOrderList.tsx`: kind sections, By account or Priority view, bulk selection), Groups, Agents (`ui/delegation/`) and Limits (`ModelOrderLimitsTab.tsx`), over one draft and one Save. Reordering only in the Priority view; `orderTabs.ts` maps `orderChanges` id prefixes to tab dots.
+- Settings composition: `src/features/settings/ui/models/ModelsPage.tsx` over one draft and one Save; tabs and files in [settings composition](references/surfaces.md).
 
 ## Workflow
 

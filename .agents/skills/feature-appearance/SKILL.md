@@ -15,8 +15,7 @@ Use for Appearance controls, durable preference outcomes, live previews, global/
 - `src/features/settings/ui/appearance/controls/`: theme generation and image controls. The sticky generator spans tabs and uses existing setters; a suggestion is a whole new look: tint/accent always apply, optional groups when present, a missing gradient switches the old one off, and the chosen card's image is drawn/reused or the previous image removed. Random prompts come from `model/themePromptIdeas.ts`.
 - `AppearanceSettings.tsx` keeps every tab's DOM (search reveal) but wraps hidden tabs in `<Activity mode="hidden">`, so they defer updates and pause effects; tests open a tab before asserting updates.
 - `src/features/settings/model/themeSuggestionFields.ts`: AI field specs and accessibility guards, with bounds from `themeRanges.ts`; the Host prompt derives from these specs.
-- `host/appearance/theme-suggestions.ts`: Host command `appearance.themeSuggestions` (contract in `src/shared/model/host-contracts/appearance.ts`); it validates and clamps every entry before it returns.
-- `host/appearance/background-image.ts`: Host command `appearance.backgroundImage`. It reuses the Social image adapters (Codex native ImageGen, or Gemini when the Host has `GEMINI_API_KEY` and `BYCODA_SOCIAL_GEMINI_IMAGE_MODEL`), tries only the chosen provider, and returns a temporary file the desktop copies through `onChooseChatBackground`.
+- `host/appearance/`: Host commands `appearance.themeSuggestions` and `appearance.backgroundImage`; details in [surfaces](references/surfaces.md).
 - `src/features/settings/model/workspaceBackground.ts` and `src/shared/theme/workspaceBackground.ts`: separate artwork persistence and safe serialization; shared CSS paints it once without native glass.
 - Read [surfaces](references/surfaces.md) only for the affected background/native/platform/saved-theme path.
 

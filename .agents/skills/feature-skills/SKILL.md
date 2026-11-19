@@ -17,8 +17,7 @@ Use for Skills management UI, catalog/policy state, document edit/preview/split,
 ## Recommended catalog and installation
 
 - `RecommendedSkills.tsx` and `recommendedSkills.ts` own the public third-party, metadata-only catalog and original publisher links. Never import personal/project-owned skills into recommendations. Keep prerequisites visible; never bundle third-party skill bodies or silently install optional tools or hooks.
-- `skillInstallRecipe.ts` owns the visible command, pinned public Skills CLI version and installer reference. This standardized installer is distinct from a publisher's own preferred installer. Execute argv without a shell, in an isolated temporary project/home/cache with a deadline; package lifecycle scripts stay disabled.
-- Installation uses `skillInstallation.ts` and Host `skill-install.ts` through authenticated owner workspace commands. Validate the registered project, machine, scope, provider, allowlisted source, bounded CLI-produced subtree and matching skill name. Resolve one upstream commit and preserve supporting files and executable modes.
+- `skillInstallRecipe.ts` and `skillInstallation.ts` (Host `skill-install.ts`) run the pinned Skills CLI without a shell, isolated and with a deadline, through authenticated owner commands; validation and recipe rules are in [surfaces](references/surfaces.md).
 - Never overwrite existing destinations or change enablement policy. Publish discovery only after supporting files and provider marker exist; reconcile uncertain operations by original request identity before any retry.
 - Catalog-managed provider markers filter before same-name precedence in native/Host/composer discovery. Preserve legacy skill visibility and independent machine/provider restrictions.
 

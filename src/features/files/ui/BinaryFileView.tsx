@@ -244,7 +244,7 @@ function ImageView({
   const imageRef = useRef<HTMLImageElement>(null);
   const clickTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // Open-in-app state belongs to the file it started for; a different file starts clean.
-  const openOwner = useMemo(() => ({}), [path]);
+  const openOwner = useMemo(() => ({ path }), [path]);
   const openAction = useDefaultAppOpen(openOwner, path);
   const localCopy = !!parseRemotePath(path) && !localExplorerPath(path);
 

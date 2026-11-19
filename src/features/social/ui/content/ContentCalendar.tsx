@@ -93,7 +93,7 @@ export function ContentCalendar({
               {...surfaceAttributes(
                 {
                   frame: index ? "pane" : undefined,
-                  edge: index >= 7 ? (index % 7 ? "start" : "block-start") : "inline-start",
+                  edge: index >= 7 ? (index % 7 ? "start" : "block-start") : "responsive-start",
                   variant: today ? "inset" : undefined,
                 },
                 "content-day",

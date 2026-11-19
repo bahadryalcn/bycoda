@@ -252,7 +252,9 @@ fn sweep_stores(
 
 fn file_stamp(path: &Path) -> Option<FileStamp> {
     let metadata = std::fs::metadata(path).ok()?;
-    metadata.is_file().then(|| (metadata.len(), metadata.modified().ok()))
+    metadata
+        .is_file()
+        .then(|| (metadata.len(), metadata.modified().ok()))
 }
 
 fn store_signature(path: &Path) -> Option<StoreSignature> {
@@ -751,7 +753,8 @@ mod tests {
         let probed = std::cell::RefCell::new(Vec::<PathBuf>::new());
         let mut probe = |path: &Path| {
             probed.borrow_mut().push(path.to_path_buf());
-            path.ends_with("child/store.db").then(|| "parent".to_owned())
+            path.ends_with("child/store.db")
+                .then(|| "parent".to_owned())
         };
 
         let first = sweep_stores(&fixture.0, HashMap::new(), &mut probe);

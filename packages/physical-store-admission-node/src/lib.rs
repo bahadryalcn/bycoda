@@ -164,7 +164,11 @@ fn check_capacity(state: &StrongRegistry, owner: u64) -> napi::Result<()> {
         .values()
         .filter(|record| record.binding.owner == owner)
         .count()
-        + state.pending.values().filter(|&&pending| pending == owner).count();
+        + state
+            .pending
+            .values()
+            .filter(|&&pending| pending == owner)
+            .count();
     if state.records.len() + state.pending.len() >= MAX_PROCESS || owned >= MAX_OWNER {
         Err(failure(
             "physical admission reservation capacity exceeded; existing guards retained",
@@ -346,7 +350,11 @@ impl BoundStore {
     pub fn try_writer(&self) -> napi::Result<Option<WriterHandle>> {
         // Filesystem admission runs under the per-file admission lock only; the
         // process registry mutex is held just to reserve and to commit.
-        let _admission = self.binding.admission.lock().unwrap_or_else(PoisonError::into_inner);
+        let _admission = self
+            .binding
+            .admission
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         let pending = Pending::reserve(self.binding.owner)?;
         let guard = match self.binding.store.try_writer() {
             Ok(guard) => guard,
@@ -363,7 +371,11 @@ impl BoundStore {
 
     #[napi]
     pub fn try_begin_close(&self) -> napi::Result<Option<ClosingHandle>> {
-        let _admission = self.binding.admission.lock().unwrap_or_else(PoisonError::into_inner);
+        let _admission = self
+            .binding
+            .admission
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         let pending = Pending::reserve(self.binding.owner)?;
         let guard = match self.binding.store.try_begin_close() {
             Ok(guard) => guard,
@@ -380,7 +392,11 @@ impl BoundStore {
 
     #[napi]
     pub fn try_upgrade(&self, closing: &ClosingHandle) -> napi::Result<Option<ClosedHandle>> {
-        let _admission = self.binding.admission.lock().unwrap_or_else(PoisonError::into_inner);
+        let _admission = self
+            .binding
+            .admission
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         // The record leaves the map only for the filesystem drain attempt. Its
         // slot stays capacity-counted, and EVERY outcome re-inserts the live
         // guard (never dropped), so there is still no ingress gap. A concurrent

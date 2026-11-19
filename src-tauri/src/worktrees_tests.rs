@@ -153,7 +153,10 @@ fn bounded_map_keeps_order_and_never_exceeds_the_limit() {
         item * 2
     })
     .unwrap();
-    assert_eq!(results, items.iter().map(|item| item * 2).collect::<Vec<_>>());
+    assert_eq!(
+        results,
+        items.iter().map(|item| item * 2).collect::<Vec<_>>()
+    );
     assert!(peak.load(Ordering::SeqCst) <= 3);
     assert!(map_bounded(&Vec::<usize>::new(), 3, |item| *item)
         .unwrap()

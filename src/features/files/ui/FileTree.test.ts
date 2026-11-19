@@ -916,6 +916,9 @@ describe("FileTree starts Explorer file drags", () => {
     const preview = document.querySelector<HTMLElement>(".explorer-file-drag-preview");
     expect(preview).not.toBeNull();
     expect(preview?.getAttribute("aria-hidden")).toBe("true");
+    expect(preview?.getAttribute("data-surface-variant")).toBe("floating");
+    expect(preview?.getAttribute("data-surface-radius")).toBe("popup");
+    expect(preview?.getAttribute("data-surface-elevation")).toBe("floating");
     expect(preview?.textContent).toContain("first.ts");
     expect(preview?.children).toHaveLength(2);
     expect(preview?.querySelectorAll('[data-icon="first.ts"]')).toHaveLength(1);

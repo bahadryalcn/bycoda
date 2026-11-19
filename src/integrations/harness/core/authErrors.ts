@@ -1,4 +1,4 @@
-import type { HarnessId } from "../../../features/sessions/model/session";
+import type { HarnessId } from "../../../shared/model/harnessIdentity";
 
 /** Why a provider CLI sign-in did not finish. The UI branches on this, never on `message`. */
 export type HarnessLoginErrorCode =

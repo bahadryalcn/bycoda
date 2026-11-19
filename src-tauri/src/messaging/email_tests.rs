@@ -124,7 +124,11 @@ fn member_pages_walk_back_from_the_newest_without_gaps() {
     let (second, earlier) = member_page(&summaries, &members, cursor.parse().ok());
     assert_eq!(second.len(), THREAD_PAGE_SIZE);
     assert_eq!(second.last().copied(), first[0].checked_sub(1));
-    let (third, earlier) = member_page(&summaries, &members, earlier.and_then(|uid| uid.parse().ok()));
+    let (third, earlier) = member_page(
+        &summaries,
+        &members,
+        earlier.and_then(|uid| uid.parse().ok()),
+    );
     assert_eq!(third, members[..5]);
     assert_eq!(earlier, None);
 }
@@ -132,8 +136,14 @@ fn member_pages_walk_back_from_the_newest_without_gaps() {
 #[test]
 fn a_short_thread_is_one_page_and_a_vanished_cursor_ends_history() {
     let (summaries, members) = numbered(3);
-    assert_eq!(member_page(&summaries, &members, None), (members.clone(), None));
-    assert_eq!(member_page(&summaries, &members, Some(9_999)), (Vec::new(), None));
+    assert_eq!(
+        member_page(&summaries, &members, None),
+        (members.clone(), None)
+    );
+    assert_eq!(
+        member_page(&summaries, &members, Some(9_999)),
+        (Vec::new(), None)
+    );
 }
 
 #[test]

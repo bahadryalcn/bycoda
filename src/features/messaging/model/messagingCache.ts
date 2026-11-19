@@ -62,10 +62,10 @@ export function dropMessagingAccount(accountId: string): void {
   generations.set(accountId, accountGeneration(accountId) + 1);
   identities.delete(accountId);
   threadListCache.delete(accountId);
-  for (const key of [...threadPageCache.keys()]) {
+  for (const key of threadPageCache.keys()) {
     if (accountOfThread(key) === accountId) threadPageCache.delete(key);
   }
-  for (const listener of [...listeners]) listener(accountId);
+  for (const listener of Array.from(listeners)) listener(accountId);
 }
 
 /** Forgets every account, used when a group lock engages. */

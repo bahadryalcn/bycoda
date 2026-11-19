@@ -3,7 +3,8 @@ import { presentRemoteError } from "../../connections/public/remoteFailure";
 import type { CSSProperties } from "react";
 /** Different job: Explorer hierarchy owns rename, drag/drop and range selection; TreeRow owns each interactive row. */
 import { Tooltip } from "../../../shared/ui/Tooltip";
-import { Text } from "../../../shared/ui/Text";
+import { Text, textAttributes } from "../../../shared/ui/Text";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { MoveRecoveryNotice, type CopyNotice } from "./MoveRecoveryNotice";
 import { TextField } from "../../../shared/ui/TextField";
 import {
@@ -520,7 +521,19 @@ function FileTreeInner({
     const createPreview = () => {
       preview = document.createElement("div");
       preview.setAttribute("aria-hidden", "true");
-      preview.classList.add("explorer-file-drag-preview");
+      const surface = surfaceAttributes({
+        variant: "floating",
+        frame: "pane",
+        radius: "popup",
+        elevation: "floating",
+      });
+      const typography = textAttributes({ size: "caption", tone: "primary", leading: "none" });
+      const { className: surfaceClass, ...surfaceAttrs } = surface;
+      const { className: textClass, ...textAttrs } = typography;
+      preview.className = `explorer-file-drag-preview ${surfaceClass} ${textClass}`;
+      for (const [name, value] of Object.entries({ ...surfaceAttrs, ...textAttrs })) {
+        if (value !== undefined) preview.setAttribute(name, String(value));
+      }
 
       // Keep the useful identity of the row without dragging its full-width
       // layout, indentation spacer, selection state, or button behavior.

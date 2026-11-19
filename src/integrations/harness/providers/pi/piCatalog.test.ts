@@ -16,9 +16,12 @@ vi.mock("../../../../platform/tauri/fs", () => ({
   homeDir: vi.fn(async () => "/home/test"),
 }));
 vi.mock("../../../../features/sessions/model/models", async () => ({
-  setHarnessModels: mocks.setHarnessModels,
   withAutoCompactToggle: (await import("../../../../features/sessions/model/autoCompact"))
     .withAutoCompactToggle,
+}));
+vi.mock("../../core/probedCatalogStore", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../core/probedCatalogStore")>()),
+  publishProbedCatalog: mocks.setHarnessModels,
 }));
 beforeEach(() => processConstructions.reset());
 vi.mock("../../core/child", () => {

@@ -26,7 +26,9 @@ pub(crate) fn lock_writer(
                     Ok(guard)
                 }
                 Err(error) => {
-                    log::error!("session store writer could not be restored after a panic: {error}");
+                    log::error!(
+                        "session store writer could not be restored after a panic: {error}"
+                    );
                     Err(CRASHED.into())
                 }
             }
@@ -111,8 +113,10 @@ mod tests {
         let store = store();
         panic_holding(&store, |conn| {
             conn.execute("INSERT INTO parent VALUES (2)", []).unwrap();
-            conn.execute_batch("BEGIN; INSERT INTO parent VALUES (3); INSERT INTO parent VALUES (4);")
-                .unwrap();
+            conn.execute_batch(
+                "BEGIN; INSERT INTO parent VALUES (3); INSERT INTO parent VALUES (4);",
+            )
+            .unwrap();
         });
         let guard = lock_writer(&store).unwrap();
         assert!(guard.is_autocommit());
@@ -148,12 +152,19 @@ mod tests {
             ("session_store.rs", include_str!("../session_store.rs")),
             ("authority.rs", include_str!("authority.rs")),
             ("canonical_store.rs", include_str!("canonical_store.rs")),
-            ("delete_with_images.rs", include_str!("delete_with_images.rs")),
+            (
+                "delete_with_images.rs",
+                include_str!("delete_with_images.rs"),
+            ),
             ("incremental.rs", include_str!("incremental.rs")),
             ("pin_receipts.rs", include_str!("pin_receipts.rs")),
         ];
         for (name, source) in sources {
-            for raw in ["conn.lock().map_err", "conn.lock().unwrap_or_else", "Session store is locked"] {
+            for raw in [
+                "conn.lock().map_err",
+                "conn.lock().unwrap_or_else",
+                "Session store is locked",
+            ] {
                 assert!(!source.contains(raw), "{name} bypasses lock_writer: {raw}");
             }
         }

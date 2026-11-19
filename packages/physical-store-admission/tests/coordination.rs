@@ -310,7 +310,12 @@ fn concurrent_first_binders_converge_on_one_complete_namespace() {
             .collect::<Vec<_>>();
         let stores = binders
             .into_iter()
-            .map(|binder| binder.join().unwrap().expect("a concurrent first bind must succeed"))
+            .map(|binder| {
+                binder
+                    .join()
+                    .unwrap()
+                    .expect("a concurrent first bind must succeed")
+            })
             .collect::<Vec<_>>();
         // Every binder must share the SAME lock inodes. A split cohort would let
         // the last binder drain past the first binder's live writer.

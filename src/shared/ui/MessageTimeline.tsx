@@ -87,27 +87,35 @@ export function MessageTimeline({
   const translate = useT();
   // Today turns over at local midnight, so the separators follow it.
   const now = useToday()?.getTime() ?? 0;
-  const timeline = useTimelineWindow({
+  const {
+    windowed: hasWindow,
+    indexes,
+    padStart,
+    padEnd,
+    attachList,
+    measureRow,
+    focus,
+  } = useTimelineWindow({
     keys: windowed ? items.map((item) => item.id) : noKeys,
     onSizeChange,
   });
   return (
     <ol
-      ref={timeline.listRef}
+      ref={attachList}
       className={[styles.timeline, className].filter(Boolean).join(" ")}
       aria-label={label}
       style={
-        timeline.windowed
+        hasWindow
           ? {
-              paddingBlockStart: timeline.padStart,
-              paddingBlockEnd: timeline.padEnd,
+              paddingBlockStart: padStart,
+              paddingBlockEnd: padEnd,
               // The window owns scroll corrections for rows that appear above the reader.
               overflowAnchor: "none",
             }
           : undefined
       }
     >
-      {(timeline.windowed ? timeline.indexes : items.map((_, index) => index)).flatMap((index) => {
+      {(hasWindow ? indexes : items.map((_, index) => index)).flatMap((index) => {
         const item = items[index];
         const separator = index === 0 || dayKey(items[index - 1].time) !== dayKey(item.time);
         return [
@@ -132,16 +140,16 @@ export function MessageTimeline({
             data-message-id={item.id}
             data-own={item.own ? "true" : undefined}
             data-plain={item.plain ? "true" : undefined}
-            {...(timeline.windowed
+            {...(hasWindow
               ? {
-                  ref: timeline.measureRow,
+                  ref: measureRow,
                   "data-index": index,
                   "aria-posinset": index + 1,
                   "aria-setsize": items.length,
-                  onFocusCapture: () => timeline.focus(item.id),
+                  onFocusCapture: () => focus(item.id),
                   onBlurCapture: (event: FocusEvent<HTMLLIElement>) => {
                     if (!event.currentTarget.contains(event.relatedTarget as Node | null))
-                      timeline.focus(null);
+                      focus(null);
                   },
                 }
               : {})}

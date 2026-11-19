@@ -112,13 +112,14 @@ pub(crate) fn thread_messages(
 /// A Slack message `ts`: seconds, a dot and microseconds.
 fn valid_cursor(cursor: &str) -> Result<(), String> {
     let valid = cursor.len() <= 24
-        && cursor
-            .split_once('.')
-            .is_some_and(|(seconds, micros)| {
-                !seconds.is_empty()
-                    && !micros.is_empty()
-                    && seconds.bytes().chain(micros.bytes()).all(|byte| byte.is_ascii_digit())
-            });
+        && cursor.split_once('.').is_some_and(|(seconds, micros)| {
+            !seconds.is_empty()
+                && !micros.is_empty()
+                && seconds
+                    .bytes()
+                    .chain(micros.bytes())
+                    .all(|byte| byte.is_ascii_digit())
+        });
     if valid {
         Ok(())
     } else {
@@ -759,8 +760,8 @@ pub(super) fn thread_messages_with(
     if let Some(cursor) = before {
         params.push(("latest", cursor));
     }
-    let (value, _) = call(http, "conversations.history", &params, None, true)
-        .map_err(ApiError::text)?;
+    let (value, _) =
+        call(http, "conversations.history", &params, None, true).map_err(ApiError::text)?;
     let raw = value
         .get("messages")
         .and_then(Value::as_array)

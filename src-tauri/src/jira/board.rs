@@ -557,7 +557,12 @@ mod tests {
     }
     #[test]
     fn refuses_incomplete_pagination() {
-        assert!(fetch_values(Instant::now() + Duration::from_secs(60), 10, |_| Ok(json!({"values":[],"isLast":false}))).is_err());
+        assert!(
+            fetch_values(Instant::now() + Duration::from_secs(60), 10, |_| Ok(
+                json!({"values":[],"isLast":false})
+            ))
+            .is_err()
+        );
         assert!(parse_page(
             &json!({"issues":[],"isLast":false}),
             "https://team.atlassian.net"

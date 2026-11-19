@@ -278,7 +278,9 @@ it("sends the task as the editor opened it on an edit, never on a create", async
     expect(draft.expectedConfiguration).not.toHaveProperty(field);
 
   await saveTask([local], draft);
-  const sent = (vi.mocked(remoteRequest).mock.calls.at(-1)?.[2] as { task: any }).task;
+  const sentCall = vi.mocked(remoteRequest).mock.lastCall;
+  expect(sentCall).toBeDefined();
+  const sent = (sentCall![2] as { task: any }).task;
   expect(sent.title).toBe("My edit");
   expect(sent.expectedConfiguration).toEqual(draft.expectedConfiguration);
 
@@ -287,7 +289,9 @@ it("sends the task as the editor opened it on an edit, never on a create", async
     ...newTaskDraft("G:/app", "codex", "codex:test"),
     expectedConfiguration: draft.expectedConfiguration,
   });
-  const created = (vi.mocked(remoteRequest).mock.calls.at(-1)?.[2] as { task: any }).task;
+  const createCall = vi.mocked(remoteRequest).mock.lastCall;
+  expect(createCall).toBeDefined();
+  const created = (createCall![2] as { task: any }).task;
   expect(created).not.toHaveProperty("expectedConfiguration");
 });
 

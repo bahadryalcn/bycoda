@@ -106,9 +106,9 @@
   .content-calendar[data-view] .content-day {
     min-block-size: 0;
   }
-  .content-calendar .content-day[data-surface-frame][data-surface-edge] {
-    border-width: 0;
-    border-block-start-width: 1px;
+  .content-calendar .content-day {
+    --surface-frame-stacked: 1;
+    --surface-frame-inline-start-visible: 0;
   }
   .content-calendar .content-day-title {
     flex-direction: row;

@@ -12360,5 +12360,9 @@
   "Reconnecting failed": "Reconnecting failed",
   "Machine not connected on this computer": "Machine not connected on this computer",
   "another machine": "another machine",
-  "Cancel move to new window": "Cancel move to new window"
+  "Cancel move to new window": "Cancel move to new window",
+  "bycoda cannot control apps running as administrator. Run the target app without elevation.": "bycoda cannot control apps running as administrator. Run the target app without elevation.",
+  "Could not save note. ": "Could not save note. ",
+  "Availability change was not confirmed.": "Availability change was not confirmed.",
+  "Saving this question is unconfirmed. Retry to verify the original card.": "Saving this question is unconfirmed. Retry to verify the original card."
 }

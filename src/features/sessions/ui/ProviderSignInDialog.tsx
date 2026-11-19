@@ -2,7 +2,7 @@ import { useT } from "../../../shared/i18n";
 import { useState } from "react";
 import { loginHarness } from "../../../integrations/harness/core/auth";
 import { HARNESS_TITLE, type HarnessId } from "../model/session";
-import { providerAccountErrorText } from "../../providers/model/providerAccountError";
+import { providerAccountErrorText } from "../../providers/public/providerAccountError";
 import { Modal } from "../../../shared/ui/Modal";
 import { ProviderSignInPanel, type ProviderSignInState } from "./ProviderSignInPanel";
 

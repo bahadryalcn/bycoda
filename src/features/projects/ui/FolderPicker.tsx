@@ -18,7 +18,7 @@ import { ActionHost } from "../../../shared/ui/ActionHost";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { useT } from "../../../shared/i18n";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useId, useRef, useState, type CSSProperties } from "react";
 import {
   createPath,
   homeDir,
@@ -153,11 +153,15 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
     );
   }, [directory, revision]);
 
-  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keeps the active keyboard option visible: windowed rows scroll through the virtualizer, mounted rows through the DOM.
-  useEffect(() => {
-    if (windowed) win.scrollToEntry(active);
+  const scrollActiveIntoView = useEffectEvent((index: number) => {
+    if (windowed) win.scrollToEntry(index);
     else
       listRef.current?.querySelector('[data-active="true"]')?.scrollIntoView({ block: "nearest" });
+  });
+
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keeps the keyboard option visible when the active index changes.
+  useEffect(() => {
+    scrollActiveIntoView(active);
   }, [active]);
 
   function navigate(path: string) {
@@ -420,9 +424,21 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
                 }
               }}
             >
-              {lead > 0 ? <div aria-hidden style={{ blockSize: lead }} /> : null}
+              {lead > 0 ? (
+                <div
+                  aria-hidden
+                  className="[block-size:var(--folder-spacer-size)]"
+                  style={{ "--folder-spacer-size": `${lead}px` } as CSSProperties}
+                />
+              ) : null}
               {rows}
-              {tail > 0 ? <div aria-hidden style={{ blockSize: tail }} /> : null}
+              {tail > 0 ? (
+                <div
+                  aria-hidden
+                  className="[block-size:var(--folder-spacer-size)]"
+                  style={{ "--folder-spacer-size": `${tail}px` } as CSSProperties}
+                />
+              ) : null}
             </PickerListRoot>
           </div>
           {newName !== null ? (

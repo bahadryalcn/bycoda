@@ -14,10 +14,10 @@ use std::{
 };
 use zeroize::Zeroizing;
 
-#[cfg(not(windows))]
-use crate::termius_command::{run_bounded, HELPER_OUTPUT_LIMIT, HELPER_TIMEOUT};
 #[cfg(any(test, not(windows)))]
 use crate::termius_command::HelperFailure;
+#[cfg(not(windows))]
+use crate::termius_command::{run_bounded, HELPER_OUTPUT_LIMIT, HELPER_TIMEOUT};
 
 #[derive(Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -669,11 +669,16 @@ mod tests {
         let key = Zeroizing::new(STANDARD.encode([5u8; 32]).into_bytes());
         assert_eq!(key_from_keychain(Ok(key)).unwrap().as_slice(), &[5u8; 32]);
         let timed_out = key_from_keychain(Err(HelperFailure::TimedOut)).unwrap_err();
-        assert!(timed_out.contains("did not respond") && timed_out.contains("try the import again"));
+        assert!(
+            timed_out.contains("did not respond") && timed_out.contains("try the import again")
+        );
         let missing = key_from_keychain(Err(HelperFailure::Missing)).unwrap_err();
         assert!(missing.contains(KEYCHAIN_TOOL) && missing.contains("Install it"));
         let failed = key_from_keychain(Err(HelperFailure::Failed)).unwrap_err();
-        assert_eq!(failed, "Termius local key was not available from the system keychain");
+        assert_eq!(
+            failed,
+            "Termius local key was not available from the system keychain"
+        );
         let junk = key_from_keychain(Ok(Zeroizing::new(b"private-output".to_vec()))).unwrap_err();
         assert!(!junk.contains("private-output"));
     }

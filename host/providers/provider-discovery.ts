@@ -22,7 +22,7 @@ export async function discoverAvailableProviders(
 ): Promise<RemoteProvider[]> {
   // `acp` is a generic adapter configured by the owner, not a launcher found on PATH.
   const candidates = providers.filter((provider) => provider !== "acp");
-  const found = new Array<boolean>(candidates.length).fill(false);
+  const found = candidates.map(() => false);
   await forEachConcurrent(candidates, concurrency, async (provider, index) => {
     try {
       await resolve(provider);

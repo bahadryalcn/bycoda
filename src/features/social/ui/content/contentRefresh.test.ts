@@ -79,7 +79,7 @@ it("combines to unique rows with the fresh copy of a changed row", () => {
   for (const page of next.pages)
     combined = appendSocialWorkspacePage(combined, page.snapshot!, page.offsets);
   expect(combined?.campaigns.map((row) => row.id)).toEqual(["c8", "c7", "c6", "c5", "c4", "c3"]);
-  expect((combined?.campaigns[1] as { name?: string }).name).toBe("Renamed");
+  expect(combined?.campaigns[1]).toMatchObject({ name: "Renamed" });
 });
 
 it("takes workspace-wide fields and campaign states from the newest page onto the page that wins", () => {

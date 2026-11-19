@@ -516,12 +516,11 @@ impl CheckpointStore {
         let legacy_baseline = std::mem::take(&mut journal.cached_baseline);
         let legacy_stamps = std::mem::take(&mut journal.cached_stamps);
         let migrating = !legacy_baseline.is_empty() || !legacy_stamps.is_empty();
-        let (cached_baseline, cached_stamps) = match load_stamps(&dir)
-            .filter(|saved| same_cwd(&saved.cwd, cwd))
-        {
-            Some(saved) => (saved.baseline, saved.stamps),
-            None => (legacy_baseline, legacy_stamps),
-        };
+        let (cached_baseline, cached_stamps) =
+            match load_stamps(&dir).filter(|saved| same_cwd(&saved.cwd, cwd)) {
+                Some(saved) => (saved.baseline, saved.stamps),
+                None => (legacy_baseline, legacy_stamps),
+            };
         if cached_baseline.is_empty() && baseline_dir.exists() {
             // Legacy/crash-invalidated caches have no trusted inventory.
             std::fs::remove_dir_all(&baseline_dir).map_err(|e| e.to_string())?;
@@ -2613,7 +2612,9 @@ mod tests {
         journal
             .cached_baseline
             .insert("a.txt".into(), SnapshotKind::Contents);
-        journal.cached_stamps.insert("a.txt".into(), "legacy".into());
+        journal
+            .cached_stamps
+            .insert("a.txt".into(), "legacy".into());
         save(&dir, &journal).unwrap();
         remove_stamps(&dir).unwrap();
         f.begin("session", "two");

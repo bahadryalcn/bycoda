@@ -338,7 +338,7 @@ export class McpHub {
   }
 
   private wakeWaiters(): void {
-    for (const ticket of [...this.slotQueue]) ticket.wake();
+    for (const ticket of Array.from(this.slotQueue)) ticket.wake();
   }
 
   private prune(): void {

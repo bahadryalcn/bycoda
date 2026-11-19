@@ -1,7 +1,7 @@
 import { HarnessLoginError } from "../../../integrations/harness/core/authErrors";
 import { redactExitStderrLine } from "../../../integrations/harness/core/exitDiagnostics";
 import { t } from "../../../shared/i18n";
-import { HARNESS_TITLE, type HarnessId } from "../../sessions/model/session";
+import { HARNESS_TITLE, type HarnessId } from "../../../shared/model/harnessIdentity";
 
 /** What a provider account operation failed at; the presenter picks the sentence from this. */
 export type ProviderAccountErrorCode =

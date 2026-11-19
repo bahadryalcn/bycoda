@@ -88,9 +88,8 @@ impl EventBatcher {
             let mut queue = self.inner.queue();
             queue.bytes = queue.bytes.saturating_add(weight);
             queue.events.push(event);
-            let flush_now = urgent
-                || queue.events.len() >= MAX_BATCH_EVENTS
-                || queue.bytes >= MAX_BATCH_BYTES;
+            let flush_now =
+                urgent || queue.events.len() >= MAX_BATCH_EVENTS || queue.bytes >= MAX_BATCH_BYTES;
             let arm_timer = !flush_now && !queue.timer;
             if arm_timer {
                 queue.timer = true;

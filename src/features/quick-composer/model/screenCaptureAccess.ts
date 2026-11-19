@@ -3,7 +3,7 @@ import { t } from "../../../shared/i18n";
 import {
   AttachmentFailureError,
   type AttachmentFailure,
-} from "../../sessions/model/attachmentFailure";
+} from "../../sessions/public/attachmentFailure";
 
 /** Stable code returned by `quick_composer_capture` when macOS withholds Screen Recording. */
 const SCREEN_RECORDING_DENIED = "screen-recording-permission-required";

@@ -428,7 +428,10 @@ fn run_history_strips_prompts_in_sql_while_recovery_listing_keeps_them() {
     assert!(history[0].prompt.is_none());
 
     let recovery = list_runs(&conn, "automation-id").unwrap();
-    assert_eq!(recovery[0].prompt.as_deref(), Some("a very long launch prompt"));
+    assert_eq!(
+        recovery[0].prompt.as_deref(),
+        Some("a very long launch prompt")
+    );
 }
 
 #[test]
@@ -442,8 +445,21 @@ fn claim_backfill_runs_once_and_tolerates_invalid_rows() {
          INSERT INTO automations VALUES ('automation-id', '{}', 1, 1, 1);",
     )
     .unwrap();
-    let event_run = new_event_run("automation-id", "tasks:event-a", "tasks", "task_blocked", 1, 5, "p");
-    insert_raw_run(&conn, "event-run", 5, &serde_json::to_string(&event_run).unwrap());
+    let event_run = new_event_run(
+        "automation-id",
+        "tasks:event-a",
+        "tasks",
+        "task_blocked",
+        1,
+        5,
+        "p",
+    );
+    insert_raw_run(
+        &conn,
+        "event-run",
+        5,
+        &serde_json::to_string(&event_run).unwrap(),
+    );
     insert_raw_run(&conn, "corrupt", 6, "not json");
     insert_raw_run(&conn, "manual", 7, "{\"id\":\"manual\"}");
 
@@ -462,7 +478,8 @@ fn claim_backfill_runs_once_and_tolerates_invalid_rows() {
     assert_eq!(claims(&conn), vec![("tasks:event-a".to_string(), None, 5)]);
 
     // A later open must not rescan history: a removed claim stays removed.
-    conn.execute("DELETE FROM automation_event_claims", []).unwrap();
+    conn.execute("DELETE FROM automation_event_claims", [])
+        .unwrap();
     ensure_tables(&conn).unwrap();
     assert!(claims(&conn).is_empty());
 }

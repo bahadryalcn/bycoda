@@ -96,19 +96,28 @@ struct Wake {
 
 impl Wake {
     fn notify(&self) {
-        let mut generation = self.generation.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut generation = self
+            .generation
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         *generation = generation.wrapping_add(1);
         self.changed.notify_all();
     }
 
     fn current(&self) -> u64 {
-        *self.generation.lock().unwrap_or_else(PoisonError::into_inner)
+        *self
+            .generation
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Returns at once if `seen` is stale; otherwise waits for a notify or the timeout.
     /// `None` waits until notified.
     fn wait(&self, seen: u64, timeout: Option<Duration>) {
-        let guard = self.generation.lock().unwrap_or_else(PoisonError::into_inner);
+        let guard = self
+            .generation
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         let _guard = match timeout {
             Some(timeout) => {
                 match self
@@ -712,11 +721,8 @@ pub(crate) fn init(app: &AppHandle) {
             log::warn!("Could not check reminders: {error}");
         }
         let next = store.with_read_conn(|conn| {
-            next_due(
-                conn,
-                preferences.project_rules.keys().map(String::as_str),
-            )
-            .map_err(|error| error.to_string())
+            next_due(conn, preferences.project_rules.keys().map(String::as_str))
+                .map_err(|error| error.to_string())
         });
         let sleep = match next {
             Ok(next) => sleep_until(next, now_millis()),
@@ -959,9 +965,10 @@ mod tests {
         );
         assert_eq!(next_due(&conn, std::iter::empty()).unwrap(), None);
         assert_eq!(
-            take_due(&mut conn, 200, |r| claimable.contains(&r.session_id.as_str()))
-                .unwrap()
-                .len(),
+            take_due(&mut conn, 200, |r| claimable
+                .contains(&r.session_id.as_str()))
+            .unwrap()
+            .len(),
             1
         );
         assert_eq!(
@@ -980,7 +987,11 @@ mod tests {
         set(&mut conn, &["future".into()], 500, 100).unwrap();
         let changes_before = conn.total_changes();
         assert!(take_due(&mut conn, 499, |_| true).unwrap().is_empty());
-        assert_eq!(conn.total_changes(), changes_before, "no row may be written");
+        assert_eq!(
+            conn.total_changes(),
+            changes_before,
+            "no row may be written"
+        );
         assert!(list_due(&conn, 499).unwrap().is_empty());
         assert_eq!(list_due(&conn, 500).unwrap().len(), 1);
         assert_eq!(list(&conn).unwrap().len(), 1);

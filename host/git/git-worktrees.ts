@@ -116,11 +116,7 @@ export async function materializeManagedWorkspace(
           if (error.length < 2000) error += chunk.slice(0, 2000 - error.length);
         });
         child.on("error", (cause) =>
-          reject(
-            signal.aborted
-              ? new Error("Workspace branch reservation timed out")
-              : cause,
-          ),
+          reject(signal.aborted ? new Error("Workspace branch reservation timed out") : cause),
         );
         child.on("close", (code) =>
           code === 0

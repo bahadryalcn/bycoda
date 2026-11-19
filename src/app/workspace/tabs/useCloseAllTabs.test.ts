@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, createElement, useState } from "react";
+import { act, createElement, useLayoutEffect, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { newSession } from "../../../features/sessions/model/session";
@@ -39,7 +39,10 @@ function deferred() {
 function Harness() {
   const [tabs, setTabs] = useState(deps.tabsRef.current);
   setLiveTabs = setTabs;
-  deps.tabsRef.current = tabs;
+  // Keep the harness's imperative tab reader aligned with committed state.
+  useLayoutEffect(() => {
+    deps.tabsRef.current = tabs;
+  }, [tabs]);
   const actions = useCloseTabActions({
     activateTab: vi.fn(),
     persistSession: vi.fn(),

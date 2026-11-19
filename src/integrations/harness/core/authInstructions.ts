@@ -69,7 +69,7 @@ const current = new Map<string, SignInInstructions>();
 const listeners = new Set<() => void>();
 
 function notify() {
-  for (const listener of [...listeners]) listener();
+  for (const listener of Array.from(listeners)) listener();
 }
 
 /** One key per provider account; the default account is the same with or without an id. */

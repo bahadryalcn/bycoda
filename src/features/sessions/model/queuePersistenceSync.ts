@@ -148,7 +148,7 @@ export function createQueuePersistenceSync(deps: {
     if (!running) return;
     const tracked = deps.sessions().filter(persists);
     const live = new Set(tracked.map((session) => session.id));
-    for (const id of [...entries.keys()]) if (!live.has(id)) forget(id);
+    for (const id of entries.keys()) if (!live.has(id)) forget(id);
     for (const session of tracked) {
       const queue = session.queuedMessages;
       const entry = entries.get(session.id);
@@ -168,7 +168,7 @@ export function createQueuePersistenceSync(deps: {
 
   function retryUnsaved(): void {
     if (!running) return;
-    for (const id of [...unsaved]) {
+    for (const id of Array.from(unsaved)) {
       const entry = entries.get(id);
       if (!entry || entry.pending) continue;
       clearTimer(entry);

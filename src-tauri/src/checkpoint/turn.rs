@@ -795,7 +795,9 @@ impl CheckpointStore {
         {
             if let Some(error) = turn.error {
                 // The bracketed codes are typed markers the review card reads; keep the legacy text before them.
-                return Err(format!("Workspace checkpoint failed: {error} [CHECKPOINT_FAILED]"));
+                return Err(format!(
+                    "Workspace checkpoint failed: {error} [CHECKPOINT_FAILED]"
+                ));
             }
             if turn.active {
                 return Err(

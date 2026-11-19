@@ -28,3 +28,4 @@ export type * as uiConnectionRecoverySettingsApi from "./public/ConnectionRecove
 export type * as uiGradientBlurBackgroundApi from "./public/GradientBlurBackground";
 export type * as uiLiveBackgroundCanvasApi from "./public/LiveBackgroundCanvas";
 export type * as uiSettingsControlsApi from "../../shared/ui/settings";
+export type * as secondaryWindowAppearanceApi from "./public/secondaryWindowAppearance";

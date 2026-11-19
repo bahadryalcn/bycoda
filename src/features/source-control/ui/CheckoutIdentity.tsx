@@ -47,12 +47,18 @@ export function CheckoutIdentity({
         <Text size="caption" leading="inherit" tone="secondary" className={styles.path}>
           <GitBranch aria-hidden className="icon-xs shrink-0" />
           <Text as="span" size="inherit" tone="inherit" className={styles.reference}>
-            {prefix ? <span className="min-w-0 truncate">{prefix}</span> : null}
+            {prefix ? (
+              <Text size="inherit" tone="inherit" truncate className="min-w-0">
+                {prefix}
+              </Text>
+            ) : null}
             {branch ? (
               // The branch keeps its discriminating end (e.g. `…-fix-login`) and shows the full name on clip.
               <MiddleTruncate className="min-w-0">{branch}</MiddleTruncate>
             ) : (
-              <span className="min-w-0 truncate">{reference}</span>
+              <Text size="inherit" tone="inherit" truncate className="min-w-0">
+                {reference}
+              </Text>
             )}
           </Text>
         </Text>

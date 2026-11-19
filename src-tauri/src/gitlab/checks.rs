@@ -541,9 +541,8 @@ mod tests {
     }
     #[test]
     fn job_log_keeps_the_tail_of_a_long_trace() {
-        let body: &'static str = Box::leak(
-            format!("{}ERROR: exit 1", "setup line\n".repeat(20_000)).into_boxed_str(),
-        );
+        let body: &'static str =
+            Box::leak(format!("{}ERROR: exit 1", "setup line\n".repeat(20_000)).into_boxed_str());
         let (url, server) = fixture(vec![body]);
         let config = GitlabConfig {
             url,
@@ -692,6 +691,10 @@ mod tests {
             &test_config("https://other.example", "token-a"),
             now
         ));
-        assert!(!project_entry_matches(&entry, &same, now + PROJECT_CACHE_TTL));
+        assert!(!project_entry_matches(
+            &entry,
+            &same,
+            now + PROJECT_CACHE_TTL
+        ));
     }
 }

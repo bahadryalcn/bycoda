@@ -285,9 +285,8 @@ impl NativeServiceChannel {
             channel.delivery_supported && delivery::supports_bounded_format_host(&descriptor);
         channel.delivery_admission_supported =
             channel.delivery_supported && delivery::supports_admission_host(&descriptor);
-        channel.desktop_take_wait_supported = descriptor["capabilities"]
-            .as_array()
-            .is_some_and(|caps| {
+        channel.desktop_take_wait_supported =
+            descriptor["capabilities"].as_array().is_some_and(|caps| {
                 caps.iter().any(|cap| {
                     cap.as_str() == Some("native.services.conversation.desktop.take.wait.v1")
                 })
@@ -1035,7 +1034,7 @@ mod tests {
                 delivery_epoch_gaps_supported: false,
                 bounded_format_supported: false,
                 delivery_admission_supported: false,
-            desktop_take_wait_supported: false,
+                desktop_take_wait_supported: false,
                 journal: None,
                 delivery_cursor: Mutex::new(None),
                 delivery_ack_cursor: Mutex::new(None),

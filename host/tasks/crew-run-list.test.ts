@@ -22,7 +22,7 @@ async function fixture() {
 
 describe("HostTasks.listCrewRun", () => {
   it("returns only the run's tasks of the run's project, oldest first, without listing the project", async () => {
-    const { store, tasks, insert } = await fixture();
+    const { tasks, insert } = await fixture();
     await insert("late", { projectId: "p", crewRunId: "run", createdAt: 30 });
     await insert("early", { projectId: "p", crewRunId: "run", createdAt: 10 });
     await insert("other-run", { projectId: "p", crewRunId: "other" });

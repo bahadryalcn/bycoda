@@ -673,10 +673,7 @@ fn list_runs(conn: &Connection, automation_id: &str) -> Result<Vec<AutomationRun
 
 /// Run history for display: the launch prompt is dropped in SQL so large prompts are
 /// never copied out of SQLite.
-fn list_run_history(
-    conn: &Connection,
-    automation_id: &str,
-) -> Result<Vec<AutomationRun>, String> {
+fn list_run_history(conn: &Connection, automation_id: &str) -> Result<Vec<AutomationRun>, String> {
     read_runs(
         conn,
         automation_id,

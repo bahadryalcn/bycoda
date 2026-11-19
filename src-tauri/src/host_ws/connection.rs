@@ -189,23 +189,29 @@ async fn connect(
         open_transport(&request),
     )
     .await?;
-    let socket = within(shared, generation, "handshake upgrade", phases.upgrade, async {
-        let (mut socket, response) =
-            client_async_tls_with_config(request, stream, Some(config), None)
-                .await
-                .map_err(|error| upgrade_error(&error))?;
-        if response
-            .headers()
-            .get(header::SEC_WEBSOCKET_PROTOCOL)
-            .and_then(|v| v.to_str().ok())
-            != Some(contracts.protocol())
-        {
-            let _ = socket.close(None).await;
-            // A Host that speaks another subprotocol still serves HTTP.
-            return Err(("unsupported", true));
-        }
-        Ok(socket)
-    })
+    let socket = within(
+        shared,
+        generation,
+        "handshake upgrade",
+        phases.upgrade,
+        async {
+            let (mut socket, response) =
+                client_async_tls_with_config(request, stream, Some(config), None)
+                    .await
+                    .map_err(|error| upgrade_error(&error))?;
+            if response
+                .headers()
+                .get(header::SEC_WEBSOCKET_PROTOCOL)
+                .and_then(|v| v.to_str().ok())
+                != Some(contracts.protocol())
+            {
+                let _ = socket.close(None).await;
+                // A Host that speaks another subprotocol still serves HTTP.
+                return Err(("unsupported", true));
+            }
+            Ok(socket)
+        },
+    )
     .await?;
     within(
         shared,

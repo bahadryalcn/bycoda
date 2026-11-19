@@ -190,7 +190,7 @@ export class HostAutomations {
       await this.ready;
       await Promise.allSettled([this.ticking, ...this.manualRuns]);
       // Ticking is done, so nothing can start another launch; drain those still running.
-      await Promise.allSettled([...this.inflight.values()]);
+      await Promise.allSettled(this.inflight.values());
     })();
     return this.disposal;
   }

@@ -299,46 +299,49 @@ fn relay(
         );
         // A body-less plain request has nothing to upload, so it needs no writer thread.
         let needs_writer = first.websocket || first.remaining > 0;
-        let writer = needs_writer.then(|| std::thread::spawn(move || {
-            let mut buffer = vec![0; CHUNK];
-            let mut remaining = first.remaining;
-            while !writer_done.load(Ordering::SeqCst) && writer_gateway.alive.load(Ordering::SeqCst)
-            {
-                if first.websocket && !writer_upgraded.load(Ordering::SeqCst) {
-                    std::thread::sleep(Duration::from_millis(10));
-                    continue;
-                }
-                if !first.websocket && remaining == 0 {
-                    return;
-                }
-                let limit = if first.websocket {
-                    CHUNK
-                } else {
-                    remaining.min(CHUNK)
-                };
-                match upload.read(&mut buffer[..limit]) {
-                    Ok(0) => break,
-                    Ok(count) => {
-                        if writer_access
-                            .write(&writer_stream, &buffer[..count])
-                            .is_err()
-                        {
-                            break;
-                        }
-                        if !first.websocket {
-                            remaining -= count;
-                        }
-                        if let Ok(mut touched) = writer_gateway.touched.lock() {
-                            *touched = Instant::now();
-                        }
+        let writer = needs_writer.then(|| {
+            std::thread::spawn(move || {
+                let mut buffer = vec![0; CHUNK];
+                let mut remaining = first.remaining;
+                while !writer_done.load(Ordering::SeqCst)
+                    && writer_gateway.alive.load(Ordering::SeqCst)
+                {
+                    if first.websocket && !writer_upgraded.load(Ordering::SeqCst) {
+                        std::thread::sleep(Duration::from_millis(10));
+                        continue;
                     }
-                    Err(error) if timeout(&error) => continue,
-                    Err(_) => break,
+                    if !first.websocket && remaining == 0 {
+                        return;
+                    }
+                    let limit = if first.websocket {
+                        CHUNK
+                    } else {
+                        remaining.min(CHUNK)
+                    };
+                    match upload.read(&mut buffer[..limit]) {
+                        Ok(0) => break,
+                        Ok(count) => {
+                            if writer_access
+                                .write(&writer_stream, &buffer[..count])
+                                .is_err()
+                            {
+                                break;
+                            }
+                            if !first.websocket {
+                                remaining -= count;
+                            }
+                            if let Ok(mut touched) = writer_gateway.touched.lock() {
+                                *touched = Instant::now();
+                            }
+                        }
+                        Err(error) if timeout(&error) => continue,
+                        Err(_) => break,
+                    }
                 }
-            }
-            writer_done.store(true, Ordering::SeqCst);
-            let _ = upload.shutdown(Shutdown::Both);
-        }));
+                writer_done.store(true, Ordering::SeqCst);
+                let _ = upload.shutdown(Shutdown::Both);
+            })
+        });
         let mut failure = None;
         let mut response_headers = Vec::new();
         let mut response_replies = Vec::new();

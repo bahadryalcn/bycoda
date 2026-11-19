@@ -214,9 +214,8 @@ fn resolve_public_target(
     deadline: Instant,
 ) -> std::io::Result<Vec<std::net::SocketAddr>> {
     use std::sync::atomic::{AtomicUsize, Ordering};
-    let wait = remaining_budget(deadline, Instant::now()).map_err(|_| {
-        std::io::Error::new(std::io::ErrorKind::TimedOut, "Link preview timed out")
-    })?;
+    let wait = remaining_budget(deadline, Instant::now())
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "Link preview timed out"))?;
     static ACTIVE: AtomicUsize = AtomicUsize::new(0);
     // A plain compare-exchange loop: `fetch_update` is deprecated on newer toolchains
     // (renamed `try_update`), which older toolchains do not have yet.

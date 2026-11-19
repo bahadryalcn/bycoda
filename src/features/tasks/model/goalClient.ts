@@ -13,14 +13,15 @@ import {
   backgroundMachines,
   hostProjectCwd,
   hostProjectFor,
-} from "../../automations/model/hostAutomationClient";
+  machineCapabilities,
+  machineProjects,
+} from "../../automations/public/hostMachines";
 import {
   collectMachineResults,
   type LastGoodLists,
   type MachineResult,
 } from "../../automations/model/machineResults";
 import { sharedMachineListReads } from "../../automations/model/machineListReads";
-import { machineCapabilities, machineProjects } from "../../automations/model/machineSnapshot";
 import type { HarnessId, RuntimeMode } from "../../sessions/model/session";
 import {
   defaultProviderAccountId,

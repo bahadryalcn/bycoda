@@ -1542,7 +1542,10 @@ mod tests {
             &[claude_line("user", cwd, "", &message("Alpha one"))],
         );
         let stamp = std::fs::metadata(&path).unwrap().modified().unwrap();
-        assert_eq!(discover_in(&root, &[]).candidates[0].first_prompt, "Alpha one");
+        assert_eq!(
+            discover_in(&root, &[]).candidates[0].first_prompt,
+            "Alpha one"
+        );
 
         // Same size and modification time: the cached scan answers, the file is not opened.
         std::fs::write(
@@ -1551,11 +1554,17 @@ mod tests {
         )
         .unwrap();
         set_modified(&path, stamp);
-        assert_eq!(discover_in(&root, &[]).candidates[0].first_prompt, "Alpha one");
+        assert_eq!(
+            discover_in(&root, &[]).candidates[0].first_prompt,
+            "Alpha one"
+        );
 
         // A new modification time is a new file as far as freshness goes.
         set_modified(&path, stamp + Duration::from_secs(5));
-        assert_eq!(discover_in(&root, &[]).candidates[0].first_prompt, "Bravo two");
+        assert_eq!(
+            discover_in(&root, &[]).candidates[0].first_prompt,
+            "Bravo two"
+        );
 
         // A different size is too.
         std::fs::write(

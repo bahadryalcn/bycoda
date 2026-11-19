@@ -246,7 +246,12 @@ mod tests {
         }
         let current = fs::read_to_string(directory.0.join("host.log")).unwrap();
         assert!(current.contains("line 29 "));
-        assert!(fs::metadata(directory.0.join("host.log.old")).unwrap().len() > 0);
+        assert!(
+            fs::metadata(directory.0.join("host.log.old"))
+                .unwrap()
+                .len()
+                > 0
+        );
     }
 
     #[test]

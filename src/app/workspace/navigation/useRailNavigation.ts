@@ -1,4 +1,11 @@
-import { useLayoutEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import {
+  useEffectEvent,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import { loadNotesEnabled } from "../../../features/settings/model/settings";
 import { setCrewsPageOpen, useCrewsPageOpen } from "../../../features/crews/model/crewsPage";
 import type { AuxiliaryToolId } from "../../model/toolWindows";
@@ -100,10 +107,7 @@ export function useRailNavigation(d: RailNavigationDeps) {
       prev.canBack === canBack && prev.canForward === canForward ? prev : { canBack, canForward },
     );
   };
-  // Reason: the stacks change only when the location, the open tabs, the tool-window
-  // mode or the notes setting change. Re-filtering them on unrelated App commits
-  // (issue #780) is avoidable work on the blocking layout path.
-  useLayoutEffect(() => {
+  const syncNavigation = useEffectEvent(() => {
     const h = history.current;
     const back = h.back.filter(valid);
     const forward = h.forward.filter(valid);
@@ -131,6 +135,10 @@ export function useRailNavigation(d: RailNavigationDeps) {
       history.current = { ...h, back, forward };
     }
     updateNavigation();
+  });
+  // The stacks change only with the location, open tabs, tool-window mode or notes setting.
+  useLayoutEffect(() => {
+    syncNavigation();
   }, [current.view, current.tabId, current.cwd, toolWindow, openTabKey, notesEnabled]);
 
   const restore = (visit: Visit, previous: Visit) => {

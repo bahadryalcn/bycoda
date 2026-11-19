@@ -14,6 +14,7 @@
 .member-avatar-eye {
   transform-box: fill-box;
   transform-origin: center;
+  /* ui-drift-ignore: feature-motion -- This bespoke SVG blink deforms only the portrait's drawn eye pixels. */
   animation: member-avatar-blink 4.6s infinite;
 }
 

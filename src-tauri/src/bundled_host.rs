@@ -1065,10 +1065,7 @@ mod tests {
         assert_eq!(deferred_retry(OTHER_INSTALL), OTHER_INSTALL_POLL);
         assert!(OTHER_INSTALL_POLL < RETRY_INTERVAL);
         assert_eq!(deferred_retry(HOST_STARTING), HOST_BOOT_GRACE);
-        assert_eq!(
-            deferred_retry(WAITING_FOR_SESSIONS),
-            RETRY_INTERVAL
-        );
+        assert_eq!(deferred_retry(WAITING_FOR_SESSIONS), RETRY_INTERVAL);
         assert_eq!(
             deferred_reason(WAITING_FOR_SESSIONS).as_deref(),
             Some("waiting-for-sessions")

@@ -22,12 +22,12 @@ export function startLeaseHeartbeat(send: () => void, intervalMs: number): () =>
     lastSentAt = monotonicNow();
     send();
   };
-  const useInterval = () => {
+  const startFallbackInterval = () => {
     worker?.terminate();
     worker = undefined;
     if (!stopped && fallback === undefined) fallback = setInterval(tick, every);
   };
-  if (typeof Worker === "undefined") useInterval();
+  if (typeof Worker === "undefined") startFallbackInterval();
   else {
     try {
       worker = new Worker(new URL("./leaseHeartbeat.worker.ts", import.meta.url), {
@@ -35,10 +35,10 @@ export function startLeaseHeartbeat(send: () => void, intervalMs: number): () =>
         name: "lease-heartbeat",
       });
       worker.onmessage = tick;
-      worker.onerror = useInterval;
+      worker.onerror = startFallbackInterval;
       worker.postMessage({ type: "start", ms: every });
     } catch {
-      useInterval();
+      startFallbackInterval();
     }
   }
   return () => {

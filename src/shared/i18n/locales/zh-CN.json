@@ -2129,7 +2129,7 @@
   "{p0} queued messages restored": "{p0} 已恢复排队消息",
   "Send next": "发送下一个",
   "Reorder queued message": "重新排序排队消息",
-  "An attached file is gone. Edit this message to drop it, or remove the message.": "附加文件不见了。编辑此消息以删除它，或删除该消息。",
+  "Edit to drop it, or remove the message.": "编辑以移除附件，或删除该消息。",
   "Attachment missing": "附件丢失",
   "Steer": "转向",
   "Edit queued message": "编辑排队消息",
@@ -12356,5 +12356,13 @@
   "Reconnecting failed: {p0}": "重新连接失败：{p0}",
   "Reconnecting failed": "重新连接失败",
   "Machine not connected on this computer": "此计算机未连接该设备",
-  "another machine": "另一台设备"
+  "another machine": "另一台设备",
+  "bycoda cannot control apps running as administrator. Run the target app without elevation.": "bycoda 无法控制以管理员身份运行的应用。请在不提升权限的情况下运行目标应用。",
+  "Could not save note. ": "无法保存笔记。",
+  "Availability change was not confirmed.": "可用性更改未得到确认。",
+  "Saving this question is unconfirmed. Retry to verify the original card.": "此问题是否已保存尚未确认。请重试以核实原始卡片。",
+  "Your saved file access choice could not be read, so access is off until you choose it again.": "无法读取你保存的文件访问选择，因此在你重新选择之前访问保持关闭。",
+  "Saved folder permissions could not be read, so folders need approval again.": "无法读取已保存的文件夹权限，因此文件夹需要重新批准。",
+  "Unreadable copy kept at {p0}": "无法读取的副本已保留在 {p0}",
+  "Could not dismiss the notice. Try again.": "无法关闭该通知。请重试。"
 }

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   createRefreshScheduler,
   type RefreshScheduler,
-} from "../../automations/model/refreshScheduler";
+} from "../../automations/public/refreshScheduler";
 import type { BrowserViewFrame, BrowserViewRead } from "../model/socialActions";
 import type { SocialClient } from "../model/socialClient";
 

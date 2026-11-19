@@ -1542,10 +1542,7 @@ mod tests {
         let total = Deadline::TRANSFER_TOTAL.as_secs();
         let mut transfer = Deadline::new("transfer-4", true, start);
         assert_eq!(transfer.expired(secs(start, total - 1), 1), None);
-        assert_eq!(
-            transfer.expired(secs(start, total), 2),
-            Some(Expiry::Total)
-        );
+        assert_eq!(transfer.expired(secs(start, total), 2), Some(Expiry::Total));
     }
     #[test]
     fn timeout_messages_stay_distinguishable() {
@@ -1580,7 +1577,11 @@ mod tests {
         assert_eq!(progress.event.lock().unwrap().transferred_bytes, frozen);
         assert_eq!(progress.activity(), 5001);
         // Data past the declared size is still a live peer, not an idle one.
-        progress.observe(&format!("debug3: Received data {} -> {}", 1u64 << 41, 1u64 << 41));
+        progress.observe(&format!(
+            "debug3: Received data {} -> {}",
+            1u64 << 41,
+            1u64 << 41
+        ));
         assert_eq!(progress.activity(), 5002);
     }
     #[cfg(unix)]

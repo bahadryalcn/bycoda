@@ -225,7 +225,9 @@ function LocalAgentTabView({
           </Text>
         </Tooltip>
         <OverflowTooltip label={runStatus}>
-          <span className="min-w-0 flex-1 truncate text-right">{runStatus}</span>
+          <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1 text-end">
+            {runStatus}
+          </Text>
         </OverflowTooltip>
         <span ref={setFindTriggerContainer} className="shrink-0" />
       </Text>

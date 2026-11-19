@@ -34,9 +34,9 @@ pub(crate) mod row_identity;
 pub mod usage;
 mod visibility;
 mod wal_watchdog;
-pub(crate) mod writer_lock;
 pub(crate) mod window_barrier;
 pub(crate) mod write_receipts;
+pub(crate) mod writer_lock;
 /// Project path identity shared with the frontend's `pathKey`.
 pub(crate) use content_search::path_key as project_path_key;
 pub use content_search::{ContentSearchOptions, ContentSearchResult};

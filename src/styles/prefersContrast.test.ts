@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
 
-const css = ["src/styles/index.css", "src/features/files/editor/editorBlame.css"]
+const css = ["src/styles/index.css", "src/shared/ui/Text.module.css"]
   .map((file) => readFileSync(file, "utf8"))
   .join("\n");
 
@@ -25,8 +25,8 @@ it("keeps readable chat and editor text on the semantic text tokens, not content
     ".agent-reasoning.agent-markdown p,\n.agent-reasoning.agent-markdown li",
     ".inbox-comment-md.agent-markdown blockquote",
     '.whats-new-md.agent-markdown [data-streamdown="heading-3"]',
-    ".cm-blameCardSha",
-    ".cm-blameCardDate",
+    '.text[data-tone="muted"]',
+    '.text[data-tone="secondary"]',
   ];
   for (const selector of selectors) {
     const start = css.indexOf(`\n${selector} {`);

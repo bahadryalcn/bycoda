@@ -647,7 +647,7 @@ export function attachDevServerTunnel(options: DevServerTunnelOptions) {
           attempt.socket.destroy();
           attempt.tcp?.destroy();
         }
-        for (const tunnel of [...tunnels]) tunnel.finish(1001, "Host is stopping.");
+        for (const tunnel of Array.from(tunnels)) tunnel.finish(1001, "Host is stopping.");
         sockets.close(() => resolve());
       }));
     },

@@ -8,7 +8,7 @@ import {
   mergeRuntimeLogs,
   type RuntimeLogFilters,
 } from "./runtimeLogsModel";
-import { RuntimeLogsView } from "./runtimeLogsView";
+import { RuntimeLogsView } from "./model/runtimeLogsView";
 import type { RuntimeLogEntry, RuntimeLogSnapshot } from "./runtimeLogTypes";
 
 const entry = (cursor: number, patch: Partial<RuntimeLogEntry> = {}): RuntimeLogEntry => ({
@@ -106,7 +106,9 @@ describe("runtime logs view", () => {
       let message = value.message;
       Object.defineProperty(value, "message", {
         get: () => (reads++, message),
-        set: (next: string) => (message = next),
+        set: (next: string) => {
+          message = next;
+        },
         enumerable: true,
       });
       return value;

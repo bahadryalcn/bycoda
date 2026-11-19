@@ -2,7 +2,7 @@ import { createRoot } from "react-dom/client";
 import { PermissionHelper } from "./PermissionHelper";
 import { languageReady } from "../../../shared/i18n";
 import { installNativeContextMenuGuard } from "../../../shared/lib/nativeContextMenu";
-import { bootSecondaryWindowAppearance } from "../../settings/model/secondaryWindowAppearance";
+import { bootSecondaryWindowAppearance } from "../../settings/public/secondaryWindowAppearance";
 import "../../../styles/index.css";
 
 installNativeContextMenuGuard();

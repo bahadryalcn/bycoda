@@ -139,13 +139,13 @@ export function createLazyDiffLoader<Item extends LazyDiffItem, Loaded>(
       reorder();
       const kept = new Set(items.map((item) => item.id));
       let dropped = false;
-      for (const id of [...loaded.keys()]) {
+      for (const id of loaded.keys()) {
         if (kept.has(id)) continue;
         loaded.delete(id);
         loadedFor.delete(id);
         dropped = true;
       }
-      for (const id of [...dirty]) if (!kept.has(id)) dirty.delete(id);
+      for (const id of dirty) if (!kept.has(id)) dirty.delete(id);
       if (itemOptions?.refresh) for (const id of loaded.keys()) dirty.add(id);
       // A refresh retries what failed before.
       failed.clear();

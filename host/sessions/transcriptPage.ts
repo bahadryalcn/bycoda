@@ -273,9 +273,7 @@ export function previewRewindHistory(
       const projectedBlock = projectBlock(block);
       const candidateBytes = Buffer.byteLength(JSON.stringify(projectedBlock));
       const commas = boundedEntry.blocks.length; // Separators once the candidate joins.
-      const trialBytes = bytesWithEntry(
-        entryWrapBytes + 2 + blockBytes + candidateBytes + commas,
-      );
+      const trialBytes = bytesWithEntry(entryWrapBytes + 2 + blockBytes + candidateBytes + commas);
       if (trialBytes > REWIND_ARCHIVE_PREVIEW_BYTES) {
         truncated = true;
         break;

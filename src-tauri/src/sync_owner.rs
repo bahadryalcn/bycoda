@@ -3,8 +3,8 @@
 use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
-use tauri::{Emitter, Manager};
 use std::time::{Duration, Instant};
+use tauri::{Emitter, Manager};
 
 /// Bounded wait for a page whose provider work is still pending. A timeout only
 /// stops this waiter: the cycle rows stay held, and the next sync begin or

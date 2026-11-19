@@ -19,7 +19,7 @@ import { basename, isAbsolute, join, resolve } from "node:path";
 import type { WorkspaceBootstrap } from "./workspace-service-contracts.ts";
 import type { WorkspaceBootstrapStatus, WorkspaceDevEnvironment } from "./workspace-contracts.ts";
 import { portLeaseEnvironment } from "../dev-servers/dev-port-leases.ts";
-import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps";
+import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps.ts";
 
 /** Overall bound on waiting for another builder's shared build-cache lease. */
 const DEFAULT_BUILD_LEASE_WAIT_MS = 30 * 60_000;

@@ -374,7 +374,8 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                         if show {
                             let target = app.clone();
                             if let Err(error) = app.run_on_main_thread(move || {
-                                if let Err(error) = crate::window::show_existing_or_open_new(&target)
+                                if let Err(error) =
+                                    crate::window::show_existing_or_open_new(&target)
                                 {
                                     log::warn!("Could not show existing bycoda window: {error}");
                                 }

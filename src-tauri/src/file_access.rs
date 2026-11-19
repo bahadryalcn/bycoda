@@ -350,8 +350,7 @@ impl Registry {
     /// An owner review is always allowed. The automatic first-run prompt stays off
     /// while a corrupt saved choice is unacknowledged: the app fails closed and waits.
     fn consent_prompt_allowed(&self, review: bool) -> bool {
-        review
-            || (self.mode == FileAccessMode::Unconfigured && !self.mode_recovery_pending())
+        review || (self.mode == FileAccessMode::Unconfigured && !self.mode_recovery_pending())
     }
 
     fn save_recoveries(&self) -> Result<(), String> {
@@ -945,7 +944,9 @@ mod tests {
         }
         let pending = restored.recoveries.clone();
         assert_eq!(
-            Registry::open(registry.protected.clone()).unwrap().recoveries,
+            Registry::open(registry.protected.clone())
+                .unwrap()
+                .recoveries,
             pending
         );
         restored.dismiss_recovery(&pending[0].id).unwrap();

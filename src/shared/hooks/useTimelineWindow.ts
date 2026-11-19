@@ -49,6 +49,9 @@ export function useTimelineWindow({
   const sizes = useRef(new Map<string, number>());
   const firstKey = useRef<string | undefined>(undefined);
   const notify = useStableCallback(onSizeChange);
+  const focus = useStableCallback((key: string | null) => {
+    focused.current = key;
+  });
   const virtualizer = useCollectionVirtualizer<HTMLElement, HTMLElement>({
     count: keys.length,
     getScrollElement: () => scroll,
@@ -108,7 +111,7 @@ export function useTimelineWindow({
     let added = 0;
     for (let row = 0; row < index; row++)
       added += sizes.current.get(keys[row]) ?? ESTIMATED_ROW_HEIGHT;
-    scroll.scrollTop += added;
+    scroll.scrollBy(0, added);
   }, [keys, enabled, scroll]);
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- tells the scroller's owner the content height changed after rows were measured
   useLayoutEffect(() => {
@@ -121,11 +124,9 @@ export function useTimelineWindow({
     indexes: items.map((item) => item.index),
     padStart: items.length ? Math.max(0, items[0].start - margin) : 0,
     padEnd: items.length ? Math.max(0, total - (items[items.length - 1].end - margin)) : 0,
-    listRef: setList,
+    attachList: setList,
     /** Ref callback of each rendered row; the row carries `data-index`. */
     measureRow: virtualizer.measureElement,
-    focus: (key: string | null) => {
-      focused.current = key;
-    },
+    focus,
   };
 }

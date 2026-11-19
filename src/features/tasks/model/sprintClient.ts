@@ -4,11 +4,11 @@ import { useQueryVisible } from "../../../shared/hooks/useQueryVisible";
 import { remoteRequest } from "../../connections/public/connections";
 import { isLocalSyncMachine } from "../../connections/public/localSync";
 import type { RemoteMachine } from "../../connections";
-import { machineCapabilities } from "../../automations/model/machineSnapshot";
+import { machineCapabilities } from "../../automations/public/hostMachines";
 import {
   createRefreshScheduler,
   type RefreshScheduler,
-} from "../../automations/model/refreshScheduler";
+} from "../../automations/public/refreshScheduler";
 import type { BoardTask } from "./taskClient";
 import {
   HOST_SPRINTS,

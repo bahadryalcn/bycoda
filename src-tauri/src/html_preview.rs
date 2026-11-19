@@ -336,7 +336,10 @@ fn preview_content(path: &str, range: Option<&str>) -> Result<Served, String> {
 enum RangePlan {
     Full,
     /// `end` is exclusive.
-    Partial { start: u64, end: u64 },
+    Partial {
+        start: u64,
+        end: u64,
+    },
     Unsatisfiable,
 }
 
@@ -414,11 +417,9 @@ fn read_asset(asset: &Path, range: Option<&str>) -> Result<Served, String> {
             ));
         }
         RangePlan::Full => (0, len, false),
-        RangePlan::Partial { start, end } => (
-            start,
-            end.min(start + MAX_PREVIEW_RESPONSE_BYTES),
-            true,
-        ),
+        RangePlan::Partial { start, end } => {
+            (start, end.min(start + MAX_PREVIEW_RESPONSE_BYTES), true)
+        }
     };
     let wanted = end - start;
     file.seek(SeekFrom::Start(start))
@@ -586,12 +587,7 @@ pub fn respond(request: tauri::http::Request<Vec<u8>>) -> tauri::http::Response<
             served.content_type,
             served.content_range,
         ),
-        Err(error) => preview_response(
-            404,
-            error.into_bytes(),
-            "text/plain; charset=utf-8",
-            None,
-        ),
+        Err(error) => preview_response(404, error.into_bytes(), "text/plain; charset=utf-8", None),
     }
 }
 
@@ -737,13 +733,14 @@ mod tests {
             )
             .unwrap();
         let registry = Mutex::new(entries);
-        let result = preview_content_with(&registry, &format!("/{token}/asset.css"), None, |_, _| {
-            let mut registry = registry
-                .try_lock()
-                .expect("asset I/O must release registry");
-            registry.close(&owner, &token).unwrap();
-            Ok(Served::full(b"late private bytes".to_vec(), "text/css"))
-        });
+        let result =
+            preview_content_with(&registry, &format!("/{token}/asset.css"), None, |_, _| {
+                let mut registry = registry
+                    .try_lock()
+                    .expect("asset I/O must release registry");
+                registry.close(&owner, &token).unwrap();
+                Ok(Served::full(b"late private bytes".to_vec(), "text/css"))
+            });
         assert_eq!(result.err().as_deref(), Some("Preview has closed"));
         std::fs::remove_dir_all(folder).unwrap();
     }
@@ -808,22 +805,37 @@ mod tests {
         );
         assert_eq!(
             plan_range(Some("bytes=500-"), len),
-            RangePlan::Partial { start: 500, end: 1000 }
+            RangePlan::Partial {
+                start: 500,
+                end: 1000
+            }
         );
         // The last byte position is clamped to the file end, not rejected.
         assert_eq!(
             plan_range(Some("bytes=900-5000"), len),
-            RangePlan::Partial { start: 900, end: 1000 }
+            RangePlan::Partial {
+                start: 900,
+                end: 1000
+            }
         );
         assert_eq!(
             plan_range(Some("bytes=-10"), len),
-            RangePlan::Partial { start: 990, end: 1000 }
+            RangePlan::Partial {
+                start: 990,
+                end: 1000
+            }
         );
         assert_eq!(
             plan_range(Some("bytes=-5000"), len),
-            RangePlan::Partial { start: 0, end: 1000 }
+            RangePlan::Partial {
+                start: 0,
+                end: 1000
+            }
         );
-        assert_eq!(plan_range(Some("bytes=1000-"), len), RangePlan::Unsatisfiable);
+        assert_eq!(
+            plan_range(Some("bytes=1000-"), len),
+            RangePlan::Unsatisfiable
+        );
         assert_eq!(plan_range(Some("bytes=-0"), len), RangePlan::Unsatisfiable);
         assert_eq!(plan_range(Some("bytes=-5"), 0), RangePlan::Unsatisfiable);
         // Multi-range, reversed, signed or non-bytes forms fall back to the full body.
@@ -842,12 +854,8 @@ mod tests {
 
     #[test]
     fn partial_responses_carry_content_range_and_accept_ranges() {
-        let response = preview_response(
-            206,
-            vec![1, 2],
-            "video/mp4",
-            Some("bytes 0-1/3000".into()),
-        );
+        let response =
+            preview_response(206, vec![1, 2], "video/mp4", Some("bytes 0-1/3000".into()));
         assert_eq!(response.status(), 206);
         assert_eq!(response.headers()["Content-Range"], "bytes 0-1/3000");
         assert_eq!(response.headers()["Accept-Ranges"], "bytes");
@@ -1067,7 +1075,9 @@ mod tests {
             "<h1>Remote</h1>".into(),
         );
         assert_eq!(
-            preview_content(&format!("/{token}/index.html"), None).unwrap().body,
+            preview_content(&format!("/{token}/index.html"), None)
+                .unwrap()
+                .body,
             b"<h1>Remote</h1>"
         );
         assert!(preview_content(&format!("/{token}/style.css"), None).is_err());

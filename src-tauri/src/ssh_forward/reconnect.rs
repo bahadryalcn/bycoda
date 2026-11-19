@@ -171,7 +171,9 @@ pub(super) fn restart(
             };
             let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), live.status.local_port);
             if TcpListener::bind(address).is_err() {
-                return Ok(Some(Err(Attempt::Retry("Local port is already in use".into()))));
+                return Ok(Some(Err(Attempt::Retry(
+                    "Local port is already in use".into(),
+                ))));
             }
             let (child, stderr) = match spawn(prepared.args) {
                 Ok(spawned) => spawned,
@@ -213,7 +215,9 @@ pub(super) fn restart(
             };
             if reap_child(child).is_err() {
                 let mut sessions = state.sessions.lock().unwrap_or_else(|e| e.into_inner());
-                if let Some(live) = sessions.get_mut(id).filter(|live| live.generation == generation)
+                if let Some(live) = sessions
+                    .get_mut(id)
+                    .filter(|live| live.generation == generation)
                 {
                     live.status.state = "unknown".into();
                     live.status.error = Some(
@@ -498,7 +502,13 @@ mod tests {
     fn a_new_start_with_the_same_id_ends_the_old_wait() {
         let state = SshForwards::default();
         let (owner, generation) = waiting_forward(&state, "reconnect-replaced", "rule", 1);
-        state.sessions.lock().unwrap().get_mut("rule").unwrap().generation = uuid::Uuid::new_v4();
+        state
+            .sessions
+            .lock()
+            .unwrap()
+            .get_mut("rule")
+            .unwrap()
+            .generation = uuid::Uuid::new_v4();
         assert!(!waiting(&state, "rule", &owner, generation));
         assert!(matches!(
             restart(&state, &owner, "rule", generation, prepared(), |_| {
@@ -535,11 +545,15 @@ mod tests {
     fn a_failed_restart_goes_back_to_waiting_and_classifies_the_failure() {
         for (stderr, terminal) in [
             ("", false),
-            ("\nssh: connect to host h port 22: Network is unreachable", false),
+            (
+                "\nssh: connect to host h port 22: Network is unreachable",
+                false,
+            ),
             ("\nHost key verification failed.", true),
         ] {
             let state = SshForwards::default();
-            let (owner, generation) = waiting_forward(&state, "reconnect-failed", "rule", free_port());
+            let (owner, generation) =
+                waiting_forward(&state, "reconnect-failed", "rule", free_port());
             let sink: Arc<Mutex<String>> = Arc::new(Mutex::new(stderr.into()));
             let outcome = restart(&state, &owner, "rule", generation, prepared(), |_| {
                 Ok((short_child(), sink))

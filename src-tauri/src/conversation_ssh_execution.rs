@@ -538,7 +538,11 @@ impl<T: std::os::fd::AsRawFd> PipeReady for T {
         const WAIT_MS: libc::c_int = 100;
         let mut fd = libc::pollfd {
             fd: std::os::fd::AsRawFd::as_raw_fd(self),
-            events: if writable { libc::POLLOUT } else { libc::POLLIN },
+            events: if writable {
+                libc::POLLOUT
+            } else {
+                libc::POLLIN
+            },
             revents: 0,
         };
         // SAFETY: one live pollfd is passed for this call only; poll does not retain it.

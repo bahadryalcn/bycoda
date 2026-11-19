@@ -161,7 +161,7 @@ function InlineVisualFrame({ valid }: { valid: InlineVisualSource }) {
       aria-label={valid.title}
       className="my-2 min-w-0 overflow-hidden font-sans"
     >
-      {/* The only preview in the tree: it renders into the host, which sits in the active slot. */}
+      {/* ui-drift-ignore: portal-outside-shared -- The portal keeps one preview mounted across inline, Sheet and Modal slots. */}
       {createPortal(
         <HtmlPreview
           path="remote://inline-visual/snapshot.html"

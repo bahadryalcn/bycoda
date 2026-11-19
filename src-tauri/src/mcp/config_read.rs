@@ -34,7 +34,10 @@ pub(super) fn read_json(path: &Path, reduce: Option<Reduce>) -> Result<Option<Ar
         Err(error) => return Err(error.to_string()),
     };
     let key = (path.to_path_buf(), reduce.is_some());
-    let stamp = metadata.modified().ok().map(|modified| (modified, metadata.len()));
+    let stamp = metadata
+        .modified()
+        .ok()
+        .map(|modified| (modified, metadata.len()));
     if let Some((modified, len)) = stamp {
         let cache = CACHE.lock().unwrap_or_else(PoisonError::into_inner);
         if let Some(hit) = cache
@@ -121,7 +124,8 @@ mod tests {
     use super::*;
 
     fn temp_file(name: &str, content: &str) -> (PathBuf, PathBuf) {
-        let directory = std::env::temp_dir().join(format!("bycoda-mcp-read-{}", uuid::Uuid::new_v4()));
+        let directory =
+            std::env::temp_dir().join(format!("bycoda-mcp-read-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&directory).unwrap();
         let path = directory.join(name);
         std::fs::write(&path, content).unwrap();
@@ -185,7 +189,9 @@ mod tests {
         assert!(view.get("history").is_none());
         assert!(view["projects"]["/repo"].get("history").is_none());
         assert_eq!(view["projects"]["/repo"]["disabledMcpServers"][0], "global");
-        assert!(view["projects"]["/repo"]["mcpServers"].get("local").is_some());
+        assert!(view["projects"]["/repo"]["mcpServers"]
+            .get("local")
+            .is_some());
         assert!(claude_view(serde_json::json!({"projects": "bad"}))["projects"].is_string());
     }
 }

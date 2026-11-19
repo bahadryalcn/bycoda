@@ -311,7 +311,8 @@ describe("harness login", () => {
     const login = loginHarness("codex");
     await vi.waitFor(() => expect(child.watchChild).toHaveBeenCalledOnce());
     expect(getSignInInstructions(key)).toBeUndefined();
-    (child.watchChild.mock.calls[0]?.[2] as (code: number) => void)(0);
+    const onExit = child.watchChild.mock.calls[0][2] as (code: number) => void;
+    onExit(0);
     await login;
   });
 

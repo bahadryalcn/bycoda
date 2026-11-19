@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   catalogModelsFor,
   hasLiveCatalog,
@@ -34,5 +34,18 @@ describe("applyProbedCatalog", () => {
   it("does not turn a stand-in list into a live one", () => {
     applyProbedCatalog("codex", [model("a")], false);
     expect(hasLiveCatalog("codex")).toBe(false);
+  });
+
+  it("replays the latest probe when the session catalog loads after discovery", async () => {
+    vi.resetModules();
+    const probes = await import("./catalogProbe");
+    probes.applyProbedCatalog("codex", [model("older")], false);
+    probes.applyProbedCatalog("codex", [model("latest")]);
+
+    const sessionCatalog = await import("../../../features/sessions/model/models");
+    expect(sessionCatalog.catalogModelsFor("codex").map((item) => item.id)).toEqual([
+      "codex:latest",
+    ]);
+    expect(sessionCatalog.hasLiveCatalog("codex")).toBe(true);
   });
 });

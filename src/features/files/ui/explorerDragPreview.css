@@ -10,16 +10,9 @@
   align-items: center;
   gap: 6px;
   margin: 0;
-  padding: 0 9px 0 7px;
+  padding-inline: var(--space-2);
   overflow: hidden;
   pointer-events: none;
-  border: 1px solid var(--ui-fill-strong);
-  border-radius: var(--ui-radius-popup);
-  background: var(--ui-surface-floating);
-  box-shadow: var(--ui-elevation-floating);
-  color: var(--color-content);
-  font-size: 12px;
-  line-height: 1;
   white-space: nowrap;
   opacity: 0.94;
   will-change: transform;

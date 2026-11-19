@@ -19,7 +19,7 @@ import { presentRemoteError } from "../../connections/public/remoteFailure";
 import {
   createRefreshScheduler,
   HIDDEN_REFRESH_MS,
-} from "../../automations/model/refreshScheduler";
+} from "../../automations/public/refreshScheduler";
 
 const PREVIEW_POLL_MS = 3000;
 const PREVIEW_MAX_BACKOFF_MS = 60_000;

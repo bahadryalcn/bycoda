@@ -1,4 +1,4 @@
-import type { QuotaSample } from "../../providers/model/rateLimitHistory";
+import type { QuotaSample } from "../../providers/public/rateLimitHistory";
 import type { UsageWindow } from "./usageAnalytics";
 
 /** Matches the 180-bucket DOM bound `effectiveResolution` applies to usage charts. */

@@ -4385,7 +4385,7 @@ function SidebarComponent({
           ref={drawerRef}
           data-sidebar-drawer={drawerClosing ? "closing" : "open"}
           inert={drawerClosing || undefined}
-          className={`flex shrink-0 justify-end overflow-hidden max-[596px]:absolute max-[596px]:inset-y-0 max-[596px]:start-14 max-[596px]:z-30 ${
+          className={`flex shrink-0 justify-end overflow-hidden max-[596px]:absolute max-[596px]:inset-y-0 max-[596px]:start-14 max-[596px]:z-(--layer-pane-sheet) ${
             drawerClosing ? "pointer-events-none" : ""
           }`}
         >

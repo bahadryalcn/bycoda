@@ -292,9 +292,7 @@ fn wait_heartbeat(app: &AppHandle) -> bool {
     let guard = state.stop.lock().unwrap_or_else(|error| error.into_inner());
     let _ = state
         .wake
-        .wait_timeout_while(guard, HEARTBEAT, |_| {
-            state.running.load(Ordering::Acquire)
-        });
+        .wait_timeout_while(guard, HEARTBEAT, |_| state.running.load(Ordering::Acquire));
     state.running.load(Ordering::Acquire)
 }
 pub(crate) fn shutdown(app: &AppHandle) {

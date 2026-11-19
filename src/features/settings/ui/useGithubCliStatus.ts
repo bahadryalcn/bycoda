@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { githubStatus } from "../../inbox/model/githubTasks";
-import type { GithubStatus } from "../../inbox/model/githubStatus";
+import { githubStatus, type GithubStatus } from "../../inbox/public/githubStatus";
 import { errorText } from "../../../shared/lib/errors";
 import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
 

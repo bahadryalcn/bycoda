@@ -15,24 +15,27 @@ const SUSPEND_GAP_MS = 5000;
  */
 export function useElapsedFrom(startedAt: number | undefined, paused: boolean): number | null {
   const visible = usePresentationVisible();
-  const fallback = useRef<number | null>(null);
+  const [initialClock] = useState(() => {
+    const now = Date.now();
+    return { now, elapsed: Math.max(0, now - (startedAt ?? now)) };
+  });
+  const fallback = useRef<number | null>(startedAt === undefined ? initialClock.now : null);
   const pausedMs = useRef(0);
   const suspendedMs = useRef(0);
   const pauseStarted = useRef<number | null>(null);
   const seenStartedAt = useRef(startedAt);
 
-  if (seenStartedAt.current !== startedAt) {
-    seenStartedAt.current = startedAt;
-    fallback.current = null;
-    pausedMs.current = 0;
-    suspendedMs.current = 0;
-    pauseStarted.current = paused ? Date.now() : null;
-  }
+  const [elapsedMs, setElapsedMs] = useState(initialClock.elapsed);
 
-  const origin = startedAt ?? (fallback.current ??= Date.now());
-  const [elapsedMs, setElapsedMs] = useState(() => Math.max(0, Date.now() - origin));
-
+  // Run the wall-clock timer only while the committed turn is visible and active.
   useEffect(() => {
+    if (seenStartedAt.current !== startedAt) {
+      seenStartedAt.current = startedAt;
+      fallback.current = null;
+      pausedMs.current = 0;
+      suspendedMs.current = 0;
+      pauseStarted.current = paused ? Date.now() : null;
+    }
     const start = startedAt ?? (fallback.current ??= Date.now());
     if (paused) {
       if (pauseStarted.current == null) pauseStarted.current = Date.now();

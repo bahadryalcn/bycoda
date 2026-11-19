@@ -38,7 +38,11 @@ it("re-serializes only the block that changed between desktop syncs", () => {
   expect(delta.kind === "delta" && delta.blocks.map((item) => item.id)).toEqual(["c"]);
 });
 
-function sessionView(id: string, revision: number, blocks: ReturnType<typeof block>[]): HostSession {
+function sessionView(
+  id: string,
+  revision: number,
+  blocks: ReturnType<typeof block>[],
+): HostSession {
   return {
     projectId: "p",
     revision,

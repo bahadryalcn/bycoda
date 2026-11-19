@@ -611,7 +611,10 @@ mod dispatch_tests {
 
     #[test]
     fn help_items_open_their_own_canonical_destinations() {
-        assert_eq!(help_url("help_website").as_deref(), Some("https://bycoda.codes"));
+        assert_eq!(
+            help_url("help_website").as_deref(),
+            Some("https://bycoda.codes")
+        );
         assert_eq!(
             help_url("help_github").as_deref(),
             Some("https://github.com/bahadryalcn/bycoda")

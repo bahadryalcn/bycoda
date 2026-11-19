@@ -945,7 +945,6 @@
   "Session subagents": "Sitzungs-Subagenten",
   "Session subagents: {p0} running of {p1}": "Sitzungs-Subagenten: {p0} von {p1} laufend",
   "Session subagents: {p0}": "Sitzungs-Subagenten: {p0}",
-  "{p0}/{p1} erledigt": "{p0}/{p1} erledigt",
   "Opening new window…": "Neues Fenster öffnen…",
   "Moves to a new window when the response finishes": "Wechselt zu einem neuen Fenster, wenn die Antwort abgeschlossen ist",
   "Unsaved changes": "Nicht gespeicherte Änderungen",
@@ -12357,5 +12356,13 @@
   "Reconnecting failed: {p0}": "Wiederherstellung der Verbindung fehlgeschlagen: {p0}",
   "Reconnecting failed": "Wiederherstellung der Verbindung fehlgeschlagen",
   "Machine not connected on this computer": "Gerät auf diesem Computer nicht verbunden",
-  "another machine": "einem anderen Gerät"
+  "another machine": "einem anderen Gerät",
+  "bycoda cannot control apps running as administrator. Run the target app without elevation.": "bycoda kann keine Apps mit Administratorrechten steuern. Starte die Ziel-App ohne erhöhte Rechte.",
+  "Could not save note. ": "Notiz konnte nicht gespeichert werden. ",
+  "Availability change was not confirmed.": "Die Änderung der Verfügbarkeit wurde nicht bestätigt.",
+  "Saving this question is unconfirmed. Retry to verify the original card.": "Das Speichern dieser Frage ist unbestätigt. Versuche es erneut, um die ursprüngliche Karte zu prüfen.",
+  "Your saved file access choice could not be read, so access is off until you choose it again.": "Deine gespeicherte Auswahl zum Dateizugriff konnte nicht gelesen werden. Der Zugriff bleibt aus, bis du erneut wählst.",
+  "Saved folder permissions could not be read, so folders need approval again.": "Gespeicherte Ordnerberechtigungen konnten nicht gelesen werden. Ordner müssen erneut genehmigt werden.",
+  "Unreadable copy kept at {p0}": "Unlesbare Kopie gespeichert unter {p0}",
+  "Could not dismiss the notice. Try again.": "Der Hinweis konnte nicht geschlossen werden. Versuche es erneut."
 }

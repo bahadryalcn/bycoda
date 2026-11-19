@@ -1,4 +1,4 @@
-import { getGroupLockView, subscribeGroupLock } from "../../group-lock/model/groupLock";
+import { getGroupLockView, subscribeGroupLock } from "../../group-lock/public/projectLock";
 import { dropAllMessagingCaches } from "./messagingCache";
 
 /**

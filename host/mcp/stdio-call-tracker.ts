@@ -39,6 +39,6 @@ export class McpStdioCallTracker {
 
   /** Resolves when every started call has settled, including ones started while waiting. */
   async drain(): Promise<void> {
-    while (this.#tasks.size) await Promise.all([...this.#tasks]);
+    while (this.#tasks.size) await Promise.all(this.#tasks);
   }
 }

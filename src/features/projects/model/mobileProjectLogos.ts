@@ -10,7 +10,7 @@ import {
   loadTabGroupMascots,
   resolveTabGroupLogoWith,
   tabGroupLogoDisplayRevision,
-} from "../../workspace/model/tabGroups";
+} from "../../workspace/public/tabGroups";
 import { detectedProjectLogo } from "../../workspace/model/projectLogoState";
 import { directoryStorageGeneration } from "./directoryStorageSignal";
 

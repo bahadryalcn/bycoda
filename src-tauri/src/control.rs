@@ -12,10 +12,10 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 
+mod listener;
 pub(crate) mod owner_approval;
 #[path = "control_receipts.rs"]
 pub(crate) mod receipts;
-mod listener;
 mod scratch;
 #[path = "control_writes.rs"]
 pub(crate) mod writes;
@@ -709,12 +709,8 @@ fn admit(
     let (tx, rx) = mpsc::channel();
     let grant = {
         let mut host = inner.lock().map_err(|_| "Control service unavailable")?;
-        let grant = request_grant_for_action(
-            &host,
-            &request.namespace,
-            &request.token,
-            &request.action,
-        )?;
+        let grant =
+            request_grant_for_action(&host, &request.namespace, &request.token, &request.action)?;
         if host.pending.len() >= 24 {
             return Err(listener::BUSY_ERROR.into());
         }

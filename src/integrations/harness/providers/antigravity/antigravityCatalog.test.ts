@@ -18,8 +18,9 @@ vi.mock("../../core/child", () => ({
   unwatchChild: vi.fn(),
   killChild: vi.fn(),
 }));
-vi.mock("../../../../features/sessions/model/models", () => ({
-  setHarnessModels: mock.setModels,
+vi.mock("../../core/probedCatalogStore", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../core/probedCatalogStore")>()),
+  publishProbedCatalog: mock.setModels,
 }));
 vi.mock("../../../../platform/tauri/fs", () => ({ homeDir: async () => "C:\Users\me" }));
 

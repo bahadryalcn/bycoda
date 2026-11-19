@@ -96,7 +96,7 @@ describe("SourceRow test failure feedback", () => {
       );
     const toggle = () =>
       Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find((node) =>
-        /details$/.test(node.textContent?.trim() ?? ""),
+        node.textContent?.trim().endsWith("details"),
       );
     openMenu();
     await settleDecisionUi();

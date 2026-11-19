@@ -220,11 +220,11 @@ pub(super) fn start_ssh_job(
             machines.push(machine.clone());
             write(&path, &machines)?;
             state.invalidate_ws(&machine.id);
-            retired.push(state.tunnels.insert(
-                machine.id.clone(),
-                &machine.environment_id,
-                tunnel,
-            ));
+            retired.push(
+                state
+                    .tunnels
+                    .insert(machine.id.clone(), &machine.environment_id, tunnel),
+            );
             drop(_guard);
             drop(retired);
             Ok(machine.public())

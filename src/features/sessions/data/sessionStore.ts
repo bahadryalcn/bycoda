@@ -4,7 +4,7 @@ import { inlineVisualValue } from "../model/inlineVisual";
 import { readToolWindow } from "../../../app/model/toolWindows";
 import { serverTerminalRestoreState } from "../../connections/public/serverTerminalRestoreState";
 import { buildSessionBlockDelta, type PersistedBlock } from "./sessionDelta";
-import { parseHead, type ConversationHead } from "../../sync/model/conversationHead";
+import { parseHead, type ConversationHead } from "../../sync/public/conversationHead";
 import { PersistenceBaselines } from "./persistenceBaselines";
 import {
   hostSessionBinding,

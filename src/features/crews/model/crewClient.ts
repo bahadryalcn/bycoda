@@ -1,12 +1,12 @@
 import { HOST_MODEL_ROUTING } from "../../../shared/model/host-contracts/model-routing";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { machineCapabilities } from "../../automations/model/machineSnapshot";
 import {
   backgroundMachineFor,
   backgroundMachines,
   hostProjectFor,
-} from "../../automations/model/hostAutomationClient";
+  machineCapabilities,
+} from "../../automations/public/hostMachines";
 import { remoteRequest } from "../../connections/model/connections";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { useRemoteModelCatalog } from "../../connections/model/useRemoteModelCatalog";

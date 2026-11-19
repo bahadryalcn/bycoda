@@ -13725,7 +13725,10 @@ mod tests {
         commit_file(&dir.0, "b.txt", "beta\n", "on side");
         assert!(git(&dir.0, &["checkout", "main"]));
         commit_file(&dir.0, "c.txt", "gamma\n", "on main");
-        assert!(git(&dir.0, &["merge", "--no-ff", "-m", "merge side", "side"]));
+        assert!(git(
+            &dir.0,
+            &["merge", "--no-ff", "-m", "merge side", "side"]
+        ));
         commit_file(&dir.0, "d.txt", "delta\n", "after merge");
 
         let whole = git_history_scoped(&dir.0, None, None, true).unwrap();

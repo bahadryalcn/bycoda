@@ -132,8 +132,8 @@ mod tests {
 
     #[test]
     fn returns_output_only_for_a_successful_helper() {
-        let output = run_bounded(&mut command("echo ok"), HELPER_TIMEOUT, HELPER_OUTPUT_LIMIT)
-            .unwrap();
+        let output =
+            run_bounded(&mut command("echo ok"), HELPER_TIMEOUT, HELPER_OUTPUT_LIMIT).unwrap();
         assert_eq!(String::from_utf8_lossy(&output).trim(), "ok");
         assert_eq!(
             run_bounded(&mut command("exit 3"), HELPER_TIMEOUT, HELPER_OUTPUT_LIMIT).unwrap_err(),

@@ -18,7 +18,7 @@ async function mapBounded<T, R>(
   limit: number,
   fn: (item: T) => Promise<R>,
 ): Promise<R[]> {
-  const out: R[] = new Array(items.length);
+  const out: R[] = [];
   let next = 0;
   await Promise.all(
     Array.from({ length: Math.min(limit, items.length) }, async () => {

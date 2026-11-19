@@ -15,11 +15,11 @@ import {
   attachmentsFromPaths,
   filesFromClipboard,
   MAX_ATTACHMENTS,
+  MAX_EMBED_BYTES,
   pickAttachments,
   retainAttachmentPickerSelection,
   revokeAttachment,
-  MAX_EMBED_BYTES,
-} from "../../sessions/model/attachments";
+} from "../../sessions/public/attachments";
 import {
   attachmentDropVerdict,
   type AttachmentDropBlock,
@@ -37,7 +37,7 @@ import { captureNotice, type QuickNotice } from "../model/screenCaptureAccess";
 import {
   AttachmentFailureError,
   selectionExceedsCapacity,
-} from "../../sessions/model/attachmentFailure";
+} from "../../sessions/public/attachmentFailure";
 import { storeQuickAttachments } from "../model/quickAttachments";
 import type { QuickComposerOwner, QuickPreparation } from "../model/quickComposerClosure";
 import { captureDraft, dropPastedText, insertRestoredText } from "../../../shared/lib/draftRestore";

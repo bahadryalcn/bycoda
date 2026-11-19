@@ -60,3 +60,9 @@ Read for the affected authority, persistence or delivery boundary;
 ## Evidence boundaries
 
 - Snapshot/unit evidence does not prove crash/power-loss durability, all-actor closure, native sandbox enforcement or installed source inclusion.
+
+## Liveness, subscription lane and queue claims
+
+- Desktop window liveness (`DesktopLive`, the desktop relay) ages heartbeats on `AwakeClock`, which skips Host machine sleep; it grants no authority, and a window silent a full window after waking still expires.
+- Subscription open/ack/close use the per-socket lane in `host/transport/ws/control-lane.ts`: bounded FIFO queue, request deadline from ingress, effects in arrival order. A full queue or admission timeout is a retryable `not-sent` overload; clients treat it as "later", never as a broken socket.
+- `sessions.queue.claimDispatch` admits an existing desktop queue claim only for its exact row, client, token and drain epoch. Recheck the queue revision inside the command receipt transaction and settle the claim there; older Hosts defer the handoff.

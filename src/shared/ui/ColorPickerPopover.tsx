@@ -226,7 +226,7 @@ export function ColorPickerPopover({ value, onChange, disabled = false, readOnly
 
   // Saturation and brightness are two sliders over one plane. Arrows move along their own axis (Shift for 10),
   // PageUp/PageDown move 10 and Home/End jump to the ends. The plane stays the pointer surface.
-  const onAxisKeyDown = (axis: "s" | "v") => (event: ReactKeyboardEvent<HTMLSpanElement>) => {
+  const onAxisKeyDown = (axis: "s" | "v", event: ReactKeyboardEvent<HTMLSpanElement>) => {
     if (isImeComposition(event.nativeEvent)) return;
     const step = event.shiftKey ? 10 : 1;
     const [increaseKey, decreaseKey] =
@@ -294,7 +294,7 @@ export function ColorPickerPopover({ value, onChange, disabled = false, readOnly
           aria-valuemax={100}
           aria-valuenow={Math.round(hsv.s)}
           className={styles.axis}
-          onKeyDown={onAxisKeyDown("s")}
+          onKeyDown={(event) => onAxisKeyDown("s", event)}
         />
         <span
           role="slider"
@@ -308,7 +308,7 @@ export function ColorPickerPopover({ value, onChange, disabled = false, readOnly
           aria-valuemax={100}
           aria-valuenow={Math.round(hsv.v)}
           className={styles.axis}
-          onKeyDown={onAxisKeyDown("v")}
+          onKeyDown={(event) => onAxisKeyDown("v", event)}
         />
       </div>
 

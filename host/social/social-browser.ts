@@ -217,7 +217,7 @@ export class Cdp {
         return this.warnOnce("frame", "Dropped a malformed browser debugging frame.");
       const sessionId = typeof message.sessionId === "string" ? message.sessionId : undefined;
       // Snapshot so a listener that unsubscribes mid-dispatch cannot skip a sibling.
-      for (const listener of [...this.listeners]) {
+      for (const listener of Array.from(this.listeners)) {
         try {
           const outcome: unknown = listener(message.method, message.params, sessionId);
           if (isThenable(outcome))

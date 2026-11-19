@@ -261,7 +261,10 @@ pub async fn messaging_thread_messages(
     before: Option<String>,
 ) -> Result<MessagePage, String> {
     // The cursor is provider-opaque; each provider validates it before it reaches a URL or command.
-    if before.as_ref().is_some_and(|cursor| cursor.len() > MAX_CURSOR_BYTES) {
+    if before
+        .as_ref()
+        .is_some_and(|cursor| cursor.len() > MAX_CURSOR_BYTES)
+    {
         return Err("This conversation page is invalid. Reload the conversation.".into());
     }
     blocking(move || {

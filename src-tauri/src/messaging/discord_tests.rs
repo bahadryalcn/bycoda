@@ -342,22 +342,18 @@ fn history_page(newest: u64, count: u64) -> Value {
 
 #[test]
 fn a_full_page_offers_older_messages_before_its_oldest_id() {
-    let mut fake = Fake::default()
-        .ok("/users/@me", me())
-        .ok(
-            "/messages?limit=50",
-            history_page(300_000_000_000_000_100, 50),
-        );
+    let mut fake = Fake::default().ok("/users/@me", me()).ok(
+        "/messages?limit=50",
+        history_page(300_000_000_000_000_100, 50),
+    );
     let page = thread_messages_with(&mut fake, CHANNEL, None).unwrap();
     assert_eq!(page.messages.len(), 50);
     assert_eq!(page.earlier.as_deref(), Some("300000000000000051"));
 
-    let mut older = Fake::default()
-        .ok("/users/@me", me())
-        .ok(
-            "before=300000000000000051",
-            history_page(300_000_000_000_000_050, 3),
-        );
+    let mut older = Fake::default().ok("/users/@me", me()).ok(
+        "before=300000000000000051",
+        history_page(300_000_000_000_000_050, 3),
+    );
     let page = thread_messages_with(&mut older, CHANNEL, page.earlier.as_deref()).unwrap();
     assert_eq!(page.messages.len(), 3);
     assert_eq!(page.earlier, None);

@@ -2478,8 +2478,10 @@ fn bulk_transient_chunk_drop_retries_same_offset_and_completes() {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let bytes = Arc::new(
-        serde_json::to_vec(&json!([{"id":"project.bulk","cwd":"/fixture","name":"x".repeat(140_000)}]))
-            .unwrap(),
+        serde_json::to_vec(
+            &json!([{"id":"project.bulk","cwd":"/fixture","name":"x".repeat(140_000)}]),
+        )
+        .unwrap(),
     );
     let data = bytes.clone();
     let server = Server::spawn(move |listener| async move {
@@ -2523,8 +2525,10 @@ fn bulk_persistent_chunk_failure_stops_after_bounded_attempts() {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let bytes = Arc::new(
-        serde_json::to_vec(&json!([{"id":"project.bulk","cwd":"/fixture","name":"x".repeat(140_000)}]))
-            .unwrap(),
+        serde_json::to_vec(
+            &json!([{"id":"project.bulk","cwd":"/fixture","name":"x".repeat(140_000)}]),
+        )
+        .unwrap(),
     );
     let data = bytes.clone();
     let server = Server::spawn(move |listener| async move {

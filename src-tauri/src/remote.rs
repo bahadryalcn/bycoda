@@ -755,13 +755,8 @@ fn rpc_timed(
         if crate::remote_routes::account_tunnel(endpoint).is_some() {
             // The proof counts against this call's deadline, and a fresh one for the
             // same route, machine and credential is reused instead of repeated.
-            crate::remote_routes::verify_account_endpoint(
-                endpoint,
-                environment_id,
-                token,
-                timeout,
-            )
-            .map_err(|_| UNVERIFIED)?;
+            crate::remote_routes::verify_account_endpoint(endpoint, environment_id, token, timeout)
+                .map_err(|_| UNVERIFIED)?;
             verified = Some(environment_id);
         }
     }
@@ -880,8 +875,7 @@ fn rpc_exchange(
         // Typed oversize answer: a query was refused harmlessly; an effect already ran and
         // its undelivered outcome must not read as a definitive "Host rejected request".
         if value.get("code").and_then(Value::as_str) == Some(response_limit::RESULT_TOO_LARGE_CODE)
-            && (device_effect
-                || value.get("delivery").and_then(Value::as_str) == Some("unknown"))
+            && (device_effect || value.get("delivery").and_then(Value::as_str) == Some("unknown"))
         {
             return Err(response_limit::result_too_large_unknown(method));
         }
@@ -1127,7 +1121,9 @@ fn host_not_running_failure(error: &str) -> String {
     if transport_failure_proves_unsent(error) {
         MESSAGE.to_owned()
     } else {
-        format!("{MESSAGE} The request may have reached it before it stopped; its outcome is unknown.")
+        format!(
+            "{MESSAGE} The request may have reached it before it stopped; its outcome is unknown."
+        )
     }
 }
 
@@ -1250,14 +1246,14 @@ fn machine_rpc_for_consumer(
                     }
                 }
                 let response = match response {
-            Err(error)
-                if error.starts_with("The host request did not complete")
-                    && state.tunnels.take_host_refusal(&machine.id) =>
-            {
-                Err(host_not_running_failure(&error))
-            }
-            other => other,
-        };
+                    Err(error)
+                        if error.starts_with("The host request did not complete")
+                            && state.tunnels.take_host_refusal(&machine.id) =>
+                    {
+                        Err(host_not_running_failure(&error))
+                    }
+                    other => other,
+                };
                 if response
                     .as_ref()
                     .err()
@@ -2286,15 +2282,12 @@ fn remote_request_blocking(
     {
         return Err("The original Host connection changed. The outcome remains unknown.".into());
     }
-    if expected_generation
-        .as_deref()
-        .is_some_and(|expected| {
-            assistant_route_generation(state, &machine.id)
-                .ok()
-                .as_deref()
-                != Some(expected)
-        })
-    {
+    if expected_generation.as_deref().is_some_and(|expected| {
+        assistant_route_generation(state, &machine.id)
+            .ok()
+            .as_deref()
+            != Some(expected)
+    }) {
         return Err("The original Host connection retired. The outcome remains unknown.".into());
     }
     if fresh == Some(true) && machine.ssh.is_some() {

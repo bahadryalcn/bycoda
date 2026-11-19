@@ -31,7 +31,7 @@ import {
   supportsProviderAccounts,
   isSharedCliAccountProvider,
   SHARED_CLI_ACCOUNT_PROVIDERS,
-} from "../../providers/model/providerAccounts";
+} from "../../providers/public/providerAccounts";
 import {
   removeProviderAccountCredentials,
   signOutProviderAccountCredentials,
@@ -45,7 +45,7 @@ import {
   providerAccountErrorText,
   safeProviderAccountDetail,
   type ProviderAccountAction,
-} from "../../providers/model/providerAccountError";
+} from "../../providers/public/providerAccountError";
 import {
   duplicateAccountSignIns,
   identityKey,

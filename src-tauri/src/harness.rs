@@ -2684,7 +2684,10 @@ const TEXT_WORKSPACE_PREFIX: &str = "bycoda-antigravity-text-";
 pub fn harness_remove_text_workspace(cwd: String) -> Result<(), String> {
     let path = PathBuf::from(&cwd);
     let root = std::env::temp_dir();
-    let name = path.file_name().and_then(|name| name.to_str()).unwrap_or_default();
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
     let id = name.strip_prefix(TEXT_WORKSPACE_PREFIX).unwrap_or_default();
     if path.parent() != Some(root.as_path()) || uuid::Uuid::parse_str(id).is_err() {
         return Err("Not a text agent workspace".into());
@@ -2705,8 +2708,7 @@ mod text_workspace_tests {
     #[test]
     fn removes_only_its_own_text_workspace() {
         let workspace =
-            tauri::async_runtime::block_on(harness_prepare_text_workspace("agent".into()))
-                .unwrap();
+            tauri::async_runtime::block_on(harness_prepare_text_workspace("agent".into())).unwrap();
         assert!(std::path::Path::new(&workspace.cwd).is_dir());
         harness_remove_text_workspace(workspace.cwd.clone()).unwrap();
         assert!(!std::path::Path::new(&workspace.cwd).exists());
@@ -2724,7 +2726,9 @@ mod text_workspace_tests {
         assert!(harness_remove_text_workspace(not_uuid.to_string_lossy().into_owned()).is_err());
         assert!(foreign.exists() && not_uuid.exists());
         // A traversal that resolves outside the temp root is refused too.
-        let traversal = std::env::temp_dir().join("..").join(foreign.file_name().unwrap());
+        let traversal = std::env::temp_dir()
+            .join("..")
+            .join(foreign.file_name().unwrap());
         assert!(harness_remove_text_workspace(traversal.to_string_lossy().into_owned()).is_err());
         std::fs::remove_dir_all(foreign).unwrap();
         std::fs::remove_dir_all(not_uuid).unwrap();
@@ -2741,13 +2745,21 @@ mod http_bound_tests {
     fn harness_http_caps_concurrent_blocking_calls_and_timeout() {
         let permits = harness_http_permits();
         let held: Vec<_> = (0..HARNESS_HTTP_MAX_CONCURRENT)
-            .map(|_| permits.clone().try_acquire_owned().expect("permit within the cap"))
+            .map(|_| {
+                permits
+                    .clone()
+                    .try_acquire_owned()
+                    .expect("permit within the cap")
+            })
             .collect();
         assert!(permits.clone().try_acquire_owned().is_err());
         drop(held);
         assert!(permits.try_acquire_owned().is_ok());
         assert_eq!(HARNESS_HTTP_MAX_TIMEOUT_MS, 30 * 60_000);
-        assert_eq!(u64::MAX.clamp(1, HARNESS_HTTP_MAX_TIMEOUT_MS), HARNESS_HTTP_MAX_TIMEOUT_MS);
+        assert_eq!(
+            u64::MAX.clamp(1, HARNESS_HTTP_MAX_TIMEOUT_MS),
+            HARNESS_HTTP_MAX_TIMEOUT_MS
+        );
     }
 }
 
@@ -9767,10 +9779,7 @@ mod native_output_integration_tests {
 
     #[test]
     fn sse_reader_releases_a_silent_stream_when_stop_is_set_between_polls() {
-        for kind in [
-            std::io::ErrorKind::TimedOut,
-            std::io::ErrorKind::WouldBlock,
-        ] {
+        for kind in [std::io::ErrorKind::TimedOut, std::io::ErrorKind::WouldBlock] {
             let stop = Arc::new(AtomicBool::new(false));
             let polls = Arc::new(AtomicU64::new(0));
             let socket = ScriptedSocket {

@@ -1098,13 +1098,19 @@ mod tests {
     fn wait_for_window(changes: &Changes, machine: &str, window: &str) {
         let deadline = Instant::now() + Duration::from_secs(3);
         loop {
-            let registered = changes.entries.lock().unwrap().get(machine).is_some_and(|entry| {
-                entry.state.lock().unwrap().windows.contains_key(window)
-            });
+            let registered = changes
+                .entries
+                .lock()
+                .unwrap()
+                .get(machine)
+                .is_some_and(|entry| entry.state.lock().unwrap().windows.contains_key(window));
             if registered {
                 return;
             }
-            assert!(Instant::now() < deadline, "window {window} never registered");
+            assert!(
+                Instant::now() < deadline,
+                "window {window} never registered"
+            );
             std::thread::sleep(Duration::from_millis(5));
         }
     }
@@ -1112,7 +1118,8 @@ mod tests {
     #[test]
     fn leader_panic_releases_the_lane_and_wakes_followers_without_resending() {
         let changes = Arc::new(Changes::default());
-        let params = json!({"sessions":[{"sessionId":"s","revision":1}],"projects":[],"waitMs":20000});
+        let params =
+            json!({"sessions":[{"sessionId":"s","revision":1}],"projects":[],"waitMs":20000});
         let (entered, wait_entered) = std::sync::mpsc::channel();
         let (release, wait_release) = std::sync::mpsc::channel::<()>();
         let leader = changes.clone();

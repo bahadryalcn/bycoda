@@ -8,7 +8,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { bridgeQueryEvents } from "../../shared/lib/queryClient";
 import { useDismissPopover } from "../../shared/hooks/useDismissPopover";
-import { useLocale, useT } from "../../shared/i18n";
+import { useT } from "../../shared/i18n";
 import { Terminal } from "../../shared/ui/icons";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { HarnessIcon } from "../../features/sessions/ui/HarnessIcon";
@@ -43,7 +43,7 @@ import { useKeybindingShortcut } from "../../features/settings/public/useKeybind
 import { ConversationToolsButton } from "../../features/host-tools/ConversationToolsButton";
 import type { ConversationTools } from "../../features/host-tools/SessionHostTools";
 import { UsageProviderChip } from "./UsageProviderChip";
-import "./terminalLive.css";
+import { WorkingIndicator } from "../../shared/ui/WorkingIndicator";
 import {
   saveUsageDisplayAccount,
   useUsageDisplayAccount,
@@ -64,7 +64,7 @@ import {
   type ProviderAccountProvider,
 } from "../../features/providers/model/providerAccounts";
 import { useProviderAccounts } from "../../features/providers/model/useProviderAccounts";
-import { providerAccountErrorText } from "../../features/providers/model/providerAccountError";
+import { providerAccountErrorText } from "../../features/providers/public/providerAccountError";
 import { surfaceAttributes } from "../../shared/ui/Surface";
 
 export type UsageFooterSession = {
@@ -429,16 +429,6 @@ export function UsageFooter({
   );
 }
 
-function TerminalLiveMark() {
-  useLocale();
-  return (
-    <span className="terminal-live shrink-0" aria-hidden>
-      <span className="terminal-live-bar" />
-      <span className="terminal-live-bar" />
-      <span className="terminal-live-bar" />
-    </span>
-  );
-}
 
 function SessionChip({ session }: { session: UsageFooterSession }) {
   const t = useT();
@@ -580,7 +570,7 @@ function RunningTerminalChip({
           setMenuOpen((value) => !value);
         }}
       >
-        <TerminalLiveMark />
+        <WorkingIndicator className="shrink-0" />
         <span className="sr-only">{label}</span>
       </Button>
       {menuOpen && many && !panelOpen ? (

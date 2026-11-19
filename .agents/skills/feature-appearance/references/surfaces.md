@@ -40,3 +40,8 @@ Check write failure/retry/sibling races, scoped reset, image decode/worker failu
 - Every applied chat background image is also kept in the library (`model/backgroundLibrary.ts`, `controls/BackgroundLibrary.tsx`). Saved themes (`model/savedThemes.ts`, `model/appearanceSnapshot.ts`, `controls/savedThemeActions.ts`, `SavedThemes.tsx`, `SaveLookButton.tsx`) store a snapshot of every setting plus a library image id.
 - A new Appearance setting must join `captureAppearanceSnapshot`, `normalizeAppearanceSnapshot` and `applyAppearanceSnapshot`, or saved themes will not restore it.
 - Library images referenced by saved themes are never evicted; deleting one asks first and leaves those themes without the picture.
+
+## Host theme and background commands
+
+- `host/appearance/theme-suggestions.ts`: Host command `appearance.themeSuggestions` (contract in `src/shared/model/host-contracts/appearance.ts`); it validates and clamps every entry before it returns.
+- `host/appearance/background-image.ts`: Host command `appearance.backgroundImage`. It reuses the Social image adapters (Codex native ImageGen, or Gemini when the Host has `GEMINI_API_KEY` and `BYCODA_SOCIAL_GEMINI_IMAGE_MODEL`), tries only the chosen provider, and returns a temporary file the desktop copies through `onChooseChatBackground`.

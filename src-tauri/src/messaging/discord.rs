@@ -453,8 +453,8 @@ pub(super) fn thread_messages_with(
         Some(cursor) => format!("/channels/{thread_id}/messages?limit={PAGE_SIZE}&before={cursor}"),
         None => format!("/channels/{thread_id}/messages?limit={PAGE_SIZE}"),
     };
-    let value = call(http, &path, None)
-        .map_err(|error| error_text(error, Some(thread_id), false))?;
+    let value =
+        call(http, &path, None).map_err(|error| error_text(error, Some(thread_id), false))?;
     // Discord answers newest first and has no "more" flag: a full page may have older messages,
     // and its last entry is the cursor for them.
     let earlier = value

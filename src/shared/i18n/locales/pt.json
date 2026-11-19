@@ -12356,5 +12356,13 @@
   "Reconnecting failed: {p0}": "Falha ao reconectar: {p0}",
   "Reconnecting failed": "Falha ao reconectar",
   "Machine not connected on this computer": "Máquina não conectada neste computador",
-  "another machine": "outra máquina"
+  "another machine": "outra máquina",
+  "bycoda cannot control apps running as administrator. Run the target app without elevation.": "O bycoda não pode controlar aplicativos executados como administrador. Execute o aplicativo de destino sem elevação.",
+  "Could not save note. ": "Não foi possível salvar a nota. ",
+  "Availability change was not confirmed.": "A alteração de disponibilidade não foi confirmada.",
+  "Saving this question is unconfirmed. Retry to verify the original card.": "Não foi confirmado que esta pergunta foi salva. Tente novamente para verificar o cartão original.",
+  "Your saved file access choice could not be read, so access is off until you choose it again.": "Sua escolha salva de acesso a arquivos não pôde ser lida, então o acesso fica desativado até você escolher novamente.",
+  "Saved folder permissions could not be read, so folders need approval again.": "As permissões de pasta salvas não puderam ser lidas, então as pastas precisam de aprovação novamente.",
+  "Unreadable copy kept at {p0}": "Cópia ilegível mantida em {p0}",
+  "Could not dismiss the notice. Try again.": "Não foi possível dispensar o aviso. Tente novamente."
 }

@@ -390,7 +390,9 @@ mod tests {
             let (_, rest) = source
                 .split_once(&signature)
                 .unwrap_or_else(|| panic!("{name} must be an async command"));
-            let body = rest.split_once("#[tauri::command]").map_or(rest, |part| part.0);
+            let body = rest
+                .split_once("#[tauri::command]")
+                .map_or(rest, |part| part.0);
             let lane = format!("crate::harness::run_blocking(\"{name}\", move || {{");
             let (before, inside) = body
                 .split_once(&lane)
@@ -399,7 +401,10 @@ mod tests {
                 !before.contains("database(") && !inside.is_empty(),
                 "{name} opens SQLite outside the blocking lane"
             );
-            assert!(inside.contains("database(&app)"), "{name} keeps its SQLite work");
+            assert!(
+                inside.contains("database(&app)"),
+                "{name} keeps its SQLite work"
+            );
         }
     }
 

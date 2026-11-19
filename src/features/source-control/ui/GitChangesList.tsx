@@ -288,7 +288,6 @@ export function ChangeList({ files, view, ...rest }: ChangeRowProps) {
           aria-multiselectable
           aria-rowcount={visibleRows.length}
           tabIndex={-1}
-          className="outline-none"
           style={virtualized ? { position: "relative", height: virtual.getTotalSize() } : undefined}
           onFocusCapture={(event) => {
             const key = (event.target as HTMLElement).closest<HTMLElement>("[data-git-row]")

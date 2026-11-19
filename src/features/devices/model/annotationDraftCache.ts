@@ -28,7 +28,7 @@ export function createAnnotationDraftCache<T extends FrameDraft>(
   function trim(keep: string) {
     let chars = 0;
     for (const drafts of entries.values()) chars += scopeFrameChars(drafts);
-    for (const scope of [...entries.keys()]) {
+    for (const scope of entries.keys()) {
       if (entries.size <= maxScopes && chars <= maxFrameChars) return;
       if (scope === keep || mounted.includes(scope)) continue;
       chars -= scopeFrameChars(entries.get(scope)!);

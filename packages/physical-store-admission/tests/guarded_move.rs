@@ -174,9 +174,17 @@ fn large_nested_move_publishes_exact_multi_chunk_contents() {
         &|| Ok(()),
     )
     .unwrap();
-    assert_eq!(fs::read(root.join("destination/tree/inner/big")).unwrap(), big);
-    assert_eq!(fs::read(root.join("recovery/source/inner/big")).unwrap(), big);
-    assert!(fs::read(root.join("destination/tree/empty")).unwrap().is_empty());
+    assert_eq!(
+        fs::read(root.join("destination/tree/inner/big")).unwrap(),
+        big
+    );
+    assert_eq!(
+        fs::read(root.join("recovery/source/inner/big")).unwrap(),
+        big
+    );
+    assert!(fs::read(root.join("destination/tree/empty"))
+        .unwrap()
+        .is_empty());
     assert!(!root.join("source/tree").exists());
     drop((source, destination, recovery, stage));
     fs::remove_dir_all(root).unwrap();
@@ -216,7 +224,11 @@ fn same_length_edit_after_digest_is_refused_before_quarantine() {
         &check,
     )
     .unwrap_err();
-    assert!(error.message.contains("Staged copy differs"), "{}", error.message);
+    assert!(
+        error.message.contains("Staged copy differs"),
+        "{}",
+        error.message
+    );
     assert!(!error.quarantined);
     assert!(!error.published);
     assert_eq!(fs::read(&file).unwrap(), b"BBBBBBBB");

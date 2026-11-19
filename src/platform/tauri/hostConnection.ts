@@ -159,7 +159,7 @@ function routeNativeEvent(routes: Map<string, Set<NativeEventListener>>, payload
     parsed.success && parsed.data.machineId === machineId
       ? (parsed.data.event as ManagedHostEvent)
       : undefined;
-  for (const entry of [...entries]) {
+  for (const entry of Array.from(entries)) {
     // One consumer's failure must not starve the other listeners of this machine.
     try {
       if (event) entry.listener(event);

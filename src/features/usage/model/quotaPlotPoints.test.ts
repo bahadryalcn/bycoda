@@ -26,7 +26,7 @@ it("bounds thousands of samples to one latest reading per account and column", (
   // The newest reading of each account stays on the plot.
   expect(points).toContain(rows[5999]);
   expect(points).toContain(rows[5998]);
-  expect(points.map((p) => p.at)).toEqual([...points.map((p) => p.at)].sort((x, y) => x - y));
+  expect(points.map((p) => p.at)).toEqual(points.map((p) => p.at).sort((x, y) => x - y));
 });
 
 it("never drops an account whose samples fall in the same column", () => {

@@ -703,7 +703,10 @@ fn a_tunnel_host_refusal_keeps_an_ambiguous_request_outcome_unknown() {
         "The host request did not complete [RPC_CONNECTION_INTERRUPTED] (commands.dispatch).",
     ] {
         let message = super::host_not_running_failure(ambiguous);
-        assert!(message.starts_with("Host is not running on the machine."), "{message}");
+        assert!(
+            message.starts_with("Host is not running on the machine."),
+            "{message}"
+        );
         assert!(message.contains("its outcome is unknown"), "{message}");
     }
     for unsent in [
@@ -1127,7 +1130,10 @@ fn voice_rpc_methods_are_bounded_and_model_loading_has_time_to_finish() {
     assert!(!supported_remote_method("voice.tools.exec"));
     assert!(rpc_timeout("voice.tools.call", &json!({})) >= Duration::from_secs(250));
     // A held desktop take waits up to 25 s on the Host; the client must outlast that hold.
-    assert!(rpc_timeout("conversation.desktop.take", &json!({"waitMs": 25000})) > Duration::from_secs(25));
+    assert!(
+        rpc_timeout("conversation.desktop.take", &json!({"waitMs": 25000}))
+            > Duration::from_secs(25)
+    );
     assert!(rpc_timeout("assistant.builder.avatarGenerate", &json!({})) > Duration::from_secs(240));
     assert!(rpc_timeout("assistant.builder.interview", &json!({})) > Duration::from_secs(100));
     assert!(rpc_timeout("voice.local.start", &json!({})) >= Duration::from_secs(180));
@@ -1207,13 +1213,17 @@ fn http_deadlines_outlast_every_long_contract_deadline() {
     let methods = manifest["methods"].as_object().unwrap();
     let mut checked = 0;
     for (method, entry) in methods {
-        let contract = std::time::Duration::from_millis(entry["responseTimeoutMs"].as_u64().unwrap());
+        let contract =
+            std::time::Duration::from_millis(entry["responseTimeoutMs"].as_u64().unwrap());
         if contract <= DEFAULT_RPC_TIMEOUT {
             continue;
         }
         checked += 1;
         let http = rpc_timeout(method, &json!({}));
-        assert!(http >= contract, "{method}: HTTP {http:?} < contract {contract:?}");
+        assert!(
+            http >= contract,
+            "{method}: HTTP {http:?} < contract {contract:?}"
+        );
     }
     assert!(checked >= 20, "{checked}");
 }

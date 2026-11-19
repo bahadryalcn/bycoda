@@ -2027,12 +2027,24 @@ mod tests {
         assert_eq!(sync_index(&store, None, &|| true).unwrap(), 0);
         let conn = store.lock_conn().unwrap();
         assert!(matches!(
-            apply_plan(&conn, "s", updated_at, version, &blocks, &plan, None, &|| true).unwrap(),
+            apply_plan(
+                &conn,
+                "s",
+                updated_at,
+                version,
+                &blocks,
+                &plan,
+                None,
+                &|| true
+            )
+            .unwrap(),
             Applied::Stale
         ));
         assert_eq!(
             conn.query_row("SELECT COUNT(*) FROM session_search_blocks", [], |row| row
-                .get::<_, i64>(0))
+                .get::<_, i64>(
+                0
+            ))
             .unwrap(),
             1
         );
@@ -2043,7 +2055,17 @@ mod tests {
         let plan = plan_index(stored, &blocks, None, &|| true).unwrap();
         assert!(plan.removals.is_empty() && plan.insertions.is_empty());
         assert!(matches!(
-            apply_plan(&conn, "s", updated_at, version, &blocks, &plan, None, &|| true).unwrap(),
+            apply_plan(
+                &conn,
+                "s",
+                updated_at,
+                version,
+                &blocks,
+                &plan,
+                None,
+                &|| true
+            )
+            .unwrap(),
             Applied::Wrote
         ));
         drop(conn);
@@ -2082,13 +2104,24 @@ mod tests {
             )
             .unwrap();
         assert!(matches!(
-            apply_plan(&conn, "s", updated_at_now, version_now, &blocks, &plan, None, &|| true)
-                .unwrap(),
+            apply_plan(
+                &conn,
+                "s",
+                updated_at_now,
+                version_now,
+                &blocks,
+                &plan,
+                None,
+                &|| true
+            )
+            .unwrap(),
             Applied::Declined
         ));
         assert_eq!(
             conn.query_row("SELECT COUNT(*) FROM session_search_blocks", [], |row| row
-                .get::<_, i64>(0))
+                .get::<_, i64>(
+                0
+            ))
             .unwrap(),
             0
         );
@@ -2380,9 +2413,17 @@ mod tests {
             )
             .unwrap();
             let rows = [
-                (0, "a", json!({"id":"a","role":"user","text":"needle before"}).to_string()),
+                (
+                    0,
+                    "a",
+                    json!({"id":"a","role":"user","text":"needle before"}).to_string(),
+                ),
                 (1, "b", "{not json".to_string()),
-                (2, "c", json!({"id":"c","role":"assistant","text":"needle after"}).to_string()),
+                (
+                    2,
+                    "c",
+                    json!({"id":"c","role":"assistant","text":"needle after"}).to_string(),
+                ),
             ];
             for (ordinal, block_id, raw) in rows {
                 conn.execute(

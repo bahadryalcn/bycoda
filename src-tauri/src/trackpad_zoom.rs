@@ -126,7 +126,10 @@ mod mac {
             assert!(!push_magnify(&mut pending, "main".into(), -0.3));
             assert!(!push_magnify(&mut pending, "main".into(), 0.05));
             let total = pending["main"];
-            assert!((total - -0.15).abs() < 1e-9, "net direction and total kept, got {total}");
+            assert!(
+                (total - -0.15).abs() < 1e-9,
+                "net direction and total kept, got {total}"
+            );
         }
 
         #[test]

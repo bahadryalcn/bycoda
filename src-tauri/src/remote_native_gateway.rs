@@ -167,7 +167,10 @@ impl NativeGatewayChannel {
             return Err(message.into());
         }
         if descriptor["environmentId"] != channel.selection.machine.environment_id {
-            return Err("The owning Host identity changed; reconnect it before opening a private link".into());
+            return Err(
+                "The owning Host identity changed; reconnect it before opening a private link"
+                    .into(),
+            );
         }
         let websocket = descriptor["capabilities"]
             .as_array()

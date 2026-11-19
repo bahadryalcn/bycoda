@@ -1259,12 +1259,8 @@ impl Tunnel {
                 wait_for_stderr_until(&tunnel.stderr_done, stderr_deadline);
                 // Same credential filter and bounds as the exit report, so this
                 // text is safe for every transport that surfaces it.
-                let stderr = stderr_tail(
-                    &tunnel
-                        .stderr
-                        .lock()
-                        .unwrap_or_else(PoisonError::into_inner),
-                );
+                let stderr =
+                    stderr_tail(&tunnel.stderr.lock().unwrap_or_else(PoisonError::into_inner));
                 return Err(format!(
                     "SSH connection failed{}: {}. Open Settings → Machines and reconnect to check access.",
                     failure_tag(exit, reachable),

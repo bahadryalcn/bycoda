@@ -52,6 +52,6 @@ it("stacks the model below the member name and limits long metadata in narrow ro
   expect(html).toContain(
     "@min-[28rem]/member-row:grid-cols-[auto_minmax(0,1fr)_minmax(8rem,14rem)_auto]",
   );
-  expect(html).toMatch(/<div class="[^"]*row-start-2[^\"]*">Model picker<\/div>/);
+  expect(html).toMatch(/<div class="[^"]*row-start-2[^"]*">Model picker<\/div>/);
   expect(html).toMatch(/max-w-\[50%\][^>]*>[\s\S]*@long-build-pipeline-specialist-handle/);
 });

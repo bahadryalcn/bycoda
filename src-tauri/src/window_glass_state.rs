@@ -328,13 +328,26 @@ mod tests {
         assert!(!dir.join("window-glass.json.tmp").exists());
     }
 
-    const PAGE: Rgb = Rgb { r: 12, g: 14, b: 18 };
+    const PAGE: Rgb = Rgb {
+        r: 12,
+        g: 14,
+        b: 18,
+    };
 
     #[test]
     fn saved_page_colour_survives_and_a_bad_one_keeps_the_flag() {
         let dir = temp_dir("page-colour");
         let path = dir.join(FILE_NAME);
-        write_flag(&path, true, Rgb { r: 250, g: 249, b: 246 }).unwrap();
+        write_flag(
+            &path,
+            true,
+            Rgb {
+                r: 250,
+                g: 249,
+                b: 246,
+            },
+        )
+        .unwrap();
         let saved = read_background(&path).unwrap();
         assert_eq!((saved.r, saved.g, saved.b), (250, 249, 246));
         assert!(read_flag(&path));

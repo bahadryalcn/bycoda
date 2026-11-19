@@ -194,7 +194,7 @@ async function mapLimit<T, R>(
   limit: number,
   run: (item: T) => Promise<R>,
 ): Promise<R[]> {
-  const results = new Array<R>(items.length);
+  const results: R[] = [];
   let next = 0;
   const worker = async () => {
     while (next < items.length) {

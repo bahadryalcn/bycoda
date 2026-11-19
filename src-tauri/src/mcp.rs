@@ -416,10 +416,7 @@ impl McpDiscovery {
 }
 
 #[tauri::command]
-pub async fn mcp_discover(
-    cwd: String,
-    global_only: Option<bool>,
-) -> Result<McpDiscovery, String> {
+pub async fn mcp_discover(cwd: String, global_only: Option<bool>) -> Result<McpDiscovery, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let home = dirs_home().ok_or("Home directory not found")?;
         let project = expand_home(&cwd);
@@ -597,9 +594,13 @@ fn discover_with_warnings(
 
 fn add_json_file(found: &mut McpDiscovery, provider: &str, scope: &str, path: &Path, key: &str) {
     match config_read::read_json(path, None) {
-        Ok(Some(config)) => {
-            add_json_servers(&mut found.connections, provider, scope, path, config.get(key))
-        }
+        Ok(Some(config)) => add_json_servers(
+            &mut found.connections,
+            provider,
+            scope,
+            path,
+            config.get(key),
+        ),
         Ok(None) => {}
         Err(message) => found.warn(provider, scope, path, message),
     }

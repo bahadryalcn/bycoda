@@ -196,6 +196,7 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
               loading={busy === "suggest"}
               loadingLabel={t("Working…")}
               {...suggestGate}
+              // ui-drift-ignore: native-title -- Button consumes the empty title to suppress its tooltip when the same reason is already visible.
               title={aiNote ? "" : undefined}
               aria-describedby={aiNote ? aiNoteId : undefined}
             >

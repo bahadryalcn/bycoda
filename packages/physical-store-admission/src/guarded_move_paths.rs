@@ -72,10 +72,11 @@ fn discard_unpublished_move(
             .entries()?
             .map(|entry| entry.map(|item| item.file_name()))
             .collect::<io::Result<Vec<_>>>()?;
-        match names
-            .iter()
-            .find(|name| !known.iter().any(|item| std::ffi::OsStr::new(item) == name.as_os_str()))
-        {
+        match names.iter().find(|name| {
+            !known
+                .iter()
+                .any(|item| std::ffi::OsStr::new(item) == name.as_os_str())
+        }) {
             Some(name) => Err(io::Error::other(format!(
                 "unexpected entry {name:?} in a move directory"
             ))),
@@ -188,16 +189,54 @@ pub fn move_paths(source: &Path, destination: &Path) -> io::Result<RecoveryResul
         }
         Ok(())
     };
-    match move_with_recovery(&source_parent, source_name, &destination_parent, destination_name, &recovery, &stage, &receipt, &check_admission) {
+    match move_with_recovery(
+        &source_parent,
+        source_name,
+        &destination_parent,
+        destination_name,
+        &recovery,
+        &stage,
+        &receipt,
+        &check_admission,
+    ) {
         Ok(()) => {
             // The destination is verified. Retire the quarantined copy only after
             // the directories are re-checked; keep it when either step fails.
-            match check_admission().and_then(|()| retire_recovery(recovery, stage, &source_parent, &recovery_name, &destination_parent, &stage_name)) {
-                Ok(()) => Ok(RecoveryResult { path: destination.to_owned(), recovery_path, receipt_path, recovery_retained: false, warning: None }),
-                Err(error) => Ok(RecoveryResult { path: destination.to_owned(), recovery_path, receipt_path, recovery_retained: true, warning: Some(format!("The move completed, but the recovery copy was kept: {error}")) }),
+            match check_admission().and_then(|()| {
+                retire_recovery(
+                    recovery,
+                    stage,
+                    &source_parent,
+                    &recovery_name,
+                    &destination_parent,
+                    &stage_name,
+                )
+            }) {
+                Ok(()) => Ok(RecoveryResult {
+                    path: destination.to_owned(),
+                    recovery_path,
+                    receipt_path,
+                    recovery_retained: false,
+                    warning: None,
+                }),
+                Err(error) => Ok(RecoveryResult {
+                    path: destination.to_owned(),
+                    recovery_path,
+                    receipt_path,
+                    recovery_retained: true,
+                    warning: Some(format!(
+                        "The move completed, but the recovery copy was kept: {error}"
+                    )),
+                }),
             }
-        },
-        Err(error) if error.published => Ok(RecoveryResult { path: destination.to_owned(), recovery_path, receipt_path, recovery_retained: true, warning: Some(error.message) }),
+        }
+        Err(error) if error.published => Ok(RecoveryResult {
+            path: destination.to_owned(),
+            recovery_path,
+            receipt_path,
+            recovery_retained: true,
+            warning: Some(error.message),
+        }),
         Err(error) => {
             // The source is intact (never quarantined, or restored by identity) and
             // nothing was published, so the staged copy is ours alone to discard.
@@ -205,13 +244,28 @@ pub fn move_paths(source: &Path, destination: &Path) -> io::Result<RecoveryResul
             // everything and name the stage directory so the leftover is findable.
             let source_in_place = !error.quarantined || error.source_restored;
             let cleanup = if source_in_place {
-                check_admission().and_then(|()| discard_unpublished_move(recovery, stage, &source_parent, &recovery_name, &destination_parent, &stage_name))
+                check_admission().and_then(|()| {
+                    discard_unpublished_move(
+                        recovery,
+                        stage,
+                        &source_parent,
+                        &recovery_name,
+                        &destination_parent,
+                        &stage_name,
+                    )
+                })
             } else {
                 Err(io::Error::other("source is retained in recovery"))
             };
             let (outcome, receipt_note) = match cleanup {
                 Ok(()) => ("Staged copy removed.".to_string(), String::new()),
-                Err(reason) => (format!("Staged copy kept at {} ({reason}).", stage_dir_path.display()), format!(" Receipt: {}.", receipt_path.display())),
+                Err(reason) => (
+                    format!(
+                        "Staged copy kept at {} ({reason}).",
+                        stage_dir_path.display()
+                    ),
+                    format!(" Receipt: {}.", receipt_path.display()),
+                ),
             };
             Err(io::Error::other(format!("Cross-volume move failed: {}. {} {}{} (source parent device {}, inode {}; paths may be stale if directories were moved)", error.message, if error.source_restored { "Source restored.".to_string() } else if error.quarantined { format!("Source retained at {}.", recovery_path.display()) } else { "Source was not moved.".to_string() }, outcome, receipt_note, source_identity.dev(), source_identity.ino())))
         }

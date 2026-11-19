@@ -324,13 +324,14 @@ export function InboxView({
 
   const projects = useMemo(() => inboxProjectsForRail(recents, cwd), [cwd, recents]);
   const projectOptions = useMemo(() => inboxProjectOptions(projects, logos), [logos, projects]);
+  const isGithubSource = source === "github";
   const activeFilters = useMemo(
     () =>
       pruneInboxFilters(
-        source === "github" ? { ...filters, hiddenKinds: [] } : filters,
+        isGithubSource ? { ...filters, hiddenKinds: [] } : filters,
         projects.map((project) => project.path),
       ),
-    [filters, projects, source],
+    [filters, projects, isGithubSource],
   );
   const listScope = `${viewStateKey}:${JSON.stringify([source, githubKind, activeFilters, jiraScope, linearScope])}`;
   const filtersActive =
@@ -470,7 +471,7 @@ export function InboxView({
   const { items, providerErrors } = collection;
   const loading = collection.loading || collection.pendingProviders.includes(source);
   const showCollectionTools = loading || items.length > 0 || narrowed;
-  const linearProjects = useMemo(() => linearProjectOptions(items), [items]);
+  const linearProjects = linearProjectOptions(items);
 
   const { targetItem, patchTargetItem } = useLinkedTargetItem({ target, cwd, items });
 
@@ -561,24 +562,14 @@ export function InboxView({
     ],
   );
 
-  const inboxSeenTick = useInboxSeenTick();
+  useInboxSeenTick();
   const seenStorageStatus = inboxSeenStatus();
-  const sourceEntries = useMemo(
-    () =>
-      sourceAvailable
-        ? items
-            .filter((item) => item.provider === source)
-            .map((item) => ({
-              key: inboxItemKey(item),
-              updatedAt: item.updatedAt,
-            }))
-        : [],
-    [items, source, sourceAvailable],
-  );
-  const sourceHasUnseen = useMemo(
-    () => inboxHasUnseenItems(sourceEntries),
-    [inboxSeenTick, sourceEntries],
-  );
+  const sourceEntries = sourceAvailable
+    ? items
+        .filter((item) => item.provider === source)
+        .map((item) => ({ key: inboxItemKey(item), updatedAt: item.updatedAt }))
+    : [];
+  const sourceHasUnseen = inboxHasUnseenItems(sourceEntries);
 
   const sourceError = providerErrors[source] ?? null;
   // Full pages mean older items may not be loaded; the list reads have no total.

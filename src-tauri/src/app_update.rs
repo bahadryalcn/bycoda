@@ -53,11 +53,7 @@ fn is_newer(candidate: &str, current: &str) -> bool {
     }
 }
 
-fn newer<T>(
-    stable: Option<T>,
-    preview: Option<T>,
-    version: impl Fn(&T) -> &str,
-) -> Option<T> {
+fn newer<T>(stable: Option<T>, preview: Option<T>, version: impl Fn(&T) -> &str) -> Option<T> {
     match (stable, preview) {
         (Some(stable), Some(preview)) if is_newer(version(&preview), version(&stable)) => {
             Some(preview)
@@ -135,12 +131,10 @@ mod tests {
             barrier.wait().await;
             Ok(Some("0.6.95-preview.1.gabc"))
         };
-        let found = tokio::time::timeout(
-            Duration::from_secs(5),
-            check_both(stable, preview, version),
-        )
-        .await
-        .expect("feeds were not checked concurrently");
+        let found =
+            tokio::time::timeout(Duration::from_secs(5), check_both(stable, preview, version))
+                .await
+                .expect("feeds were not checked concurrently");
         assert_eq!(found, Ok(Some("0.6.95-preview.1.gabc")));
     }
 
@@ -155,7 +149,10 @@ mod tests {
 
         let stable = async { Ok(Some("0.6.94")) };
         let preview = async { Err("timed out".to_string()) };
-        assert_eq!(check_both(stable, preview, version).await, Ok(Some("0.6.94")));
+        assert_eq!(
+            check_both(stable, preview, version).await,
+            Ok(Some("0.6.94"))
+        );
 
         let stable = async { Err::<Option<&'static str>, _>("stable failed".to_string()) };
         let preview = async { Err("preview failed".to_string()) };
@@ -169,7 +166,10 @@ mod tests {
     async fn the_newer_signed_release_wins() {
         let stable = async { Ok(Some("0.6.95")) };
         let preview = async { Ok(Some("0.6.95-preview.42.gabcdef012345")) };
-        assert_eq!(check_both(stable, preview, version).await, Ok(Some("0.6.95")));
+        assert_eq!(
+            check_both(stable, preview, version).await,
+            Ok(Some("0.6.95"))
+        );
     }
 
     #[test]

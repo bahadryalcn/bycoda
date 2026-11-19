@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { getTabGroupLogosSnapshot } from "../../workspace/model/tabGroups";
+import { getTabGroupLogosSnapshot } from "../../workspace/public/tabGroups";
 import { subscribeTabGroupLogos } from "../../workspace/model/projectLogoState";
 
 const NO_LOGOS: Record<string, string> = {};

@@ -197,7 +197,9 @@ fn remove_detected_except(dir: &Path, stem: &str, keep: Option<&Path>) {
 
 /// Copies the detected logo into `dir`, rewriting only when its bytes changed.
 fn store_detected(dir: &Path, project: &str, root: &Path) -> Result<Option<String>, String> {
-    let _guard = STORE_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _guard = STORE_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let stem = detected_stem(project);
     let Some((bytes, ext)) = find_project_logo(root) else {
         remove_detected_except(dir, &stem, None);

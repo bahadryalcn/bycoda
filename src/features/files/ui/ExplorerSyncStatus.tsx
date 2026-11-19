@@ -65,7 +65,9 @@ export function ExplorerSyncStatus({
           </span>
         ) : null}
         {shownError ? (
-          <span className="min-w-0 max-w-40 truncate">{errorHeadline(shownError)}</span>
+          <Text size="inherit" tone="inherit" truncate className="min-w-0 max-w-40">
+            {errorHeadline(shownError)}
+          </Text>
         ) : null}
         {shownError && !fitsOneLine(shownError) ? (
           <ErrorDetails

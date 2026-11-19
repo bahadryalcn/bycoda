@@ -57,7 +57,9 @@ mod table {
                 return Ok(owners_on_port(&buffer, port));
             }
             if status != ERROR_INSUFFICIENT_BUFFER {
-                return Err(format!("Could not read the local TCP listeners ({status})."));
+                return Err(format!(
+                    "Could not read the local TCP listeners ({status})."
+                ));
             }
             // u64 storage keeps the table aligned for its row structs.
             buffer = vec![0; (size as usize).div_ceil(8)];

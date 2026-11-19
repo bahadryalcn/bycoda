@@ -1,5 +1,6 @@
-import { setHarnessModels, type AgentModel } from "../../../features/sessions/model/models";
-import type { HarnessId } from "../../../features/sessions/model/session";
+import type { AgentModel } from "../../../shared/model/agentModel";
+import type { HarnessId } from "../../../shared/model/harnessIdentity";
+import { publishProbedCatalog } from "./probedCatalogStore";
 
 /** A probe answered successfully but listed no models; the earlier list is kept. */
 export class EmptyCatalogProbeError extends Error {
@@ -16,5 +17,5 @@ export class EmptyCatalogProbeError extends Error {
  */
 export function applyProbedCatalog(harness: HarnessId, models: AgentModel[], live = true): void {
   if (models.length === 0) throw new EmptyCatalogProbeError(harness);
-  setHarnessModels(harness, models, live);
+  publishProbedCatalog(harness, models, live);
 }

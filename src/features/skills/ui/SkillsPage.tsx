@@ -37,7 +37,16 @@ import type { EditorView } from "@codemirror/view";
 import styles from "./SkillsPage.module.css";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
-import { useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useContext,
+  useEffect,
+  useEffectEvent,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { RefreshCw, X } from "../../../shared/ui/icons";
 import { Spinner } from "../../../shared/ui/Spinner";
@@ -137,6 +146,7 @@ export function SkillsPage({
   const remoteProject = remoteProjectFor(cwd);
   const projectMachine = remoteProject?.environmentId;
   const { machines: connected } = useRemoteMachines();
+  const otherMachineName = t("Other machine");
   const machines = useMemo<Machine[]>(() => {
     const list = remoteProjectMachines(connected).map((machine) => ({
       environmentId: machine.environmentId,
@@ -146,11 +156,11 @@ export function SkillsPage({
     if (projectMachine && !list.some((entry) => entry.environmentId === projectMachine))
       list.push({
         environmentId: projectMachine,
-        name: knownRemoteMachine(projectMachine)?.name ?? t("Other machine"),
+        name: knownRemoteMachine(projectMachine)?.name ?? otherMachineName,
         cwd,
       });
     return list;
-  }, [connected, projectMachine, cwd, t]);
+  }, [connected, projectMachine, cwd, otherMachineName]);
   const [machineLists, setMachineLists] = useState<
     Record<
       string,
@@ -308,6 +318,13 @@ export function SkillsPage({
       else previewButtons.current.delete(key);
     };
 
+  const restorePreviewFocus = useEffectEvent(() => {
+    // A rescan replaces row elements, so restore by skill and trigger identity.
+    const opener = previewButtons.current.get(previewOpener.current ?? "");
+    const target = opener ?? filterInput.current;
+    if (target?.isConnected) target.focus();
+  });
+  // Move focus into the preview and restore it when the preview closes.
   useEffect(() => {
     if (!previewOpen) return;
     closePreview.current?.focus();
@@ -322,10 +339,7 @@ export function SkillsPage({
     document.addEventListener("keydown", onKey);
     return () => {
       document.removeEventListener("keydown", onKey);
-      // A rescan replaces row elements, so restore by skill and trigger identity.
-      const opener = previewButtons.current.get(previewOpener.current ?? "");
-      const target = opener ?? filterInput.current;
-      if (target?.isConnected) target.focus();
+      restorePreviewFocus();
     };
   }, [previewOpen]);
 
@@ -361,18 +375,19 @@ export function SkillsPage({
     };
   }, [previewSkill, previewMachine, previewRead]);
 
+  const skipLocalRefresh = useEffectEvent(
+    () =>
+      skills !== null &&
+      !localLoading &&
+      refreshScope.current !== "all" &&
+      refreshScope.current !== "local",
+  );
+  // Only scope changes and explicit refreshes can start a load.
   useEffect(() => {
     let cancelled = false;
     const changedScope = localScope.current !== cwd;
     localScope.current = cwd;
-    if (
-      !changedScope &&
-      skills !== null &&
-      !localLoading &&
-      refreshScope.current !== "all" &&
-      refreshScope.current !== "local"
-    )
-      return;
+    if (!changedScope && skipLocalRefresh()) return;
     if (changedScope) setSkills(cachedLocalSkills(cwd));
     setLocalLoading(true);
     setError(null);

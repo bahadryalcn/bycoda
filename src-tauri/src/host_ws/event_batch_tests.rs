@@ -115,7 +115,10 @@ fn a_full_batch_flushes_without_waiting_for_the_window() {
     let batch = rx.recv_timeout(SOON).unwrap();
     assert_eq!(batch.len(), MAX_BATCH_EVENTS);
     assert_eq!(batch.first().unwrap(), "delta:0");
-    assert_eq!(batch.last().unwrap(), &format!("delta:{}", MAX_BATCH_EVENTS - 1));
+    assert_eq!(
+        batch.last().unwrap(),
+        &format!("delta:{}", MAX_BATCH_EVENTS - 1)
+    );
 }
 
 #[test]
@@ -152,7 +155,9 @@ fn a_flood_is_delivered_complete_and_in_order_within_bounded_batches() {
         assert!(batch.len() <= MAX_BATCH_EVENTS);
         seen.extend(batch);
     }
-    let expected: Vec<String> = (0..total).map(|sequence| format!("delta:{sequence}")).collect();
+    let expected: Vec<String> = (0..total)
+        .map(|sequence| format!("delta:{sequence}"))
+        .collect();
     assert_eq!(seen, expected);
 }
 
@@ -176,9 +181,15 @@ fn concurrent_flushers_never_swap_batches() {
     let mut deltas = Vec::new();
     while (deltas.len() as u64) < total {
         let batch = rx.recv_timeout(SOON).unwrap();
-        deltas.extend(batch.into_iter().filter(|entry| entry.starts_with("delta:")));
+        deltas.extend(
+            batch
+                .into_iter()
+                .filter(|entry| entry.starts_with("delta:")),
+        );
     }
-    let expected: Vec<String> = (0..total).map(|sequence| format!("delta:{sequence}")).collect();
+    let expected: Vec<String> = (0..total)
+        .map(|sequence| format!("delta:{sequence}"))
+        .collect();
     assert_eq!(deltas, expected);
 }
 
@@ -187,7 +198,9 @@ fn envelope_batch_is_one_array_of_machine_envelopes_in_order() {
     let payload = envelope_batch("machine.1", vec![delta(0), state("ready")]);
     let envelopes = payload.as_array().unwrap();
     assert_eq!(envelopes.len(), 2);
-    assert!(envelopes.iter().all(|entry| entry["machineId"] == "machine.1"));
+    assert!(envelopes
+        .iter()
+        .all(|entry| entry["machineId"] == "machine.1"));
     assert_eq!(envelopes[0]["event"]["kind"], "subscription");
     assert_eq!(envelopes[0]["event"]["event"]["params"]["sequence"], 0);
     assert_eq!(envelopes[1]["event"]["kind"], "state");

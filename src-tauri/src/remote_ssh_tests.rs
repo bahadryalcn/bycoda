@@ -512,7 +512,10 @@ fn detaching_never_waits_for_a_slot_holder_and_ssh_stops_once_it_lets_go() {
     assert!(stopped(&child));
     let current = slot.lock().unwrap();
     assert!(current.tunnel.is_none());
-    assert_eq!(current.generation, 2, "the old lease's generation is fenced");
+    assert_eq!(
+        current.generation, 2,
+        "the old lease's generation is fenced"
+    );
 }
 
 #[test]
@@ -522,7 +525,10 @@ fn replacing_a_tunnel_returns_the_old_one_for_the_caller_to_stop() {
     tunnels.insert("m".into(), "env", old);
     let (fresh, fresh_child) = adopt_tracked(4322);
     let retired = tunnels.insert("m".into(), "env", fresh);
-    assert!(!stopped(&old_child), "insert must not stop ssh under a lock");
+    assert!(
+        !stopped(&old_child),
+        "insert must not stop ssh under a lock"
+    );
     drop(retired);
     assert!(stopped(&old_child));
     assert!(!stopped(&fresh_child));
@@ -706,17 +712,26 @@ fn repeated_failed_redials_back_off_and_stay_quiet_inside_the_window() {
     let cooldown = || tunnels.slots().get("m").unwrap().lock().unwrap().cooldown;
     // Each failure is remembered for its own jittered window: just inside it
     // nothing is dialed, just past it the next dial happens.
-    assert!(tunnels.endpoint_with("m", "env", &target, true, fail).is_err());
+    assert!(tunnels
+        .endpoint_with("m", "env", &target, true, fail)
+        .is_err());
     assert_eq!(dials.get(), 1);
     for failures in 1..=3u32 {
         let window = cooldown();
         let ceiling = Duration::from_secs(10 << (failures - 1));
-        assert!(window >= ceiling / 2 && window <= ceiling, "{window:?} in {ceiling:?}");
+        assert!(
+            window >= ceiling / 2 && window <= ceiling,
+            "{window:?} in {ceiling:?}"
+        );
         age_failure(&tunnels, "m", window - Duration::from_millis(1));
-        assert!(tunnels.endpoint_with("m", "env", &target, true, fail).is_err());
+        assert!(tunnels
+            .endpoint_with("m", "env", &target, true, fail)
+            .is_err());
         assert_eq!(dials.get(), failures, "window has not passed");
         age_failure(&tunnels, "m", window + Duration::from_millis(1));
-        assert!(tunnels.endpoint_with("m", "env", &target, true, fail).is_err());
+        assert!(tunnels
+            .endpoint_with("m", "env", &target, true, fail)
+            .is_err());
         assert_eq!(dials.get(), failures + 1);
     }
 }
@@ -728,7 +743,9 @@ fn explicit_retry_a_new_address_or_environment_and_success_reset_the_backoff() {
     let fail = |_: &SshTarget, _: Instant| Err::<Tunnel, _>(SSH_TIMEOUT.to_string());
     let failures = |tunnels: &Tunnels| tunnels.slots().get("m").unwrap().lock().unwrap().failures;
     for _ in 0..3 {
-        assert!(tunnels.endpoint_with("m", "env", &target, true, fail).is_err());
+        assert!(tunnels
+            .endpoint_with("m", "env", &target, true, fail)
+            .is_err());
         age_failure(&tunnels, "m", Duration::from_secs(600));
     }
     assert_eq!(failures(&tunnels), 3);
@@ -736,7 +753,9 @@ fn explicit_retry_a_new_address_or_environment_and_success_reset_the_backoff() {
     tunnels.forget_failure("m");
     assert_eq!(failures(&tunnels), 0);
     // A changed address or identity file is not answered with the old memo.
-    assert!(tunnels.endpoint_with("m", "env", &target, true, fail).is_err());
+    assert!(tunnels
+        .endpoint_with("m", "env", &target, true, fail)
+        .is_err());
     let edited = SshTarget {
         identity_file: Some("C:/keys/other".into()),
         ..target.clone()
@@ -749,7 +768,11 @@ fn explicit_retry_a_new_address_or_environment_and_success_reset_the_backoff() {
         })
         .is_err());
     assert!(dialed.get());
-    assert_eq!(failures(&tunnels), 1, "the new address starts at one failure");
+    assert_eq!(
+        failures(&tunnels),
+        1,
+        "the new address starts at one failure"
+    );
     // So does a new environment.
     let dialed = std::cell::Cell::new(false);
     assert!(tunnels
@@ -779,7 +802,9 @@ fn another_machines_failures_do_not_delay_this_machine() {
     let tunnels = Tunnels::default();
     let target = backoff_target("fixture@host");
     let fail = |_: &SshTarget, _: Instant| Err::<Tunnel, _>(SSH_TIMEOUT.to_string());
-    assert!(tunnels.endpoint_with("down", "env", &target, true, fail).is_err());
+    assert!(tunnels
+        .endpoint_with("down", "env", &target, true, fail)
+        .is_err());
     let lease = tunnels
         .endpoint_with("up", "env", &target, true, |_, _| {
             Ok(Tunnel::adopt(long_lived_child(), 4321))
@@ -1476,7 +1501,10 @@ fn setup_failure_never_shows_credentials_or_an_empty_reason() {
     }
     for empty in ["", "  \n", "token=abc\n"] {
         let failure = setup_failure(Some(255), empty);
-        assert!(failure.contains("exit") && failure.contains("code 255"), "{failure}");
+        assert!(
+            failure.contains("exit") && failure.contains("code 255"),
+            "{failure}"
+        );
         assert!(!failure.trim_end().ends_with(':'));
     }
     assert!(setup_failure(None, "").contains("stopped"));
@@ -1487,5 +1515,8 @@ fn timeout_keeps_what_ssh_said_without_credentials() {
     let message = "SSH setup timed out. Check the host's network connection and try again.";
     assert_eq!(timeout_failure(message, ""), message);
     let failure = timeout_failure(message, "Installing host…\ntoken=abc\nwaiting for lock\n");
-    assert_eq!(failure, format!("{message}\nInstalling host…\nwaiting for lock"));
+    assert_eq!(
+        failure,
+        format!("{message}\nInstalling host…\nwaiting for lock")
+    );
 }

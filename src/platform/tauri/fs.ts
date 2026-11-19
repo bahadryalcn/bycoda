@@ -12,7 +12,7 @@ import { REMOTE_PATH_PREFIX } from "../../shared/lib/remotePaths";
 import { localExplorerPath } from "../../shared/lib/remoteExplorerPaths";
 import { requestFolderPicker } from "./folderPicker";
 import { createGitWatchCoalescer, sameCheckout, type GitWatchReport } from "./gitWatchCoalesce";
-import type { InterjectionMeta } from "../../features/sessions/model/session";
+import type { InterjectionMeta } from "../../shared/model/interjection";
 
 export { REMOTE_PATH_PREFIX } from "../../shared/lib/remotePaths";
 

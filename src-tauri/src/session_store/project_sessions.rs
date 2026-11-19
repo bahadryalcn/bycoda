@@ -134,7 +134,11 @@ pub async fn session_delete_by_project(
         crate::native_window_lifecycle::persistence_write_observed(&window, || {
             let cleanup = |paths: &[String]| crate::fs::delete_generated_images_sync(&app, paths);
             let result = delete_listed(&store, &cwd, session_ids, cleanup);
-            if result.0.as_ref().is_ok_and(|outcome| !outcome.deleted.is_empty()) {
+            if result
+                .0
+                .as_ref()
+                .is_ok_and(|outcome| !outcome.deleted.is_empty())
+            {
                 let _ = app.emit(crate::reminders::CHANGED, ());
             }
             result
@@ -184,7 +188,11 @@ mod tests {
     }
 
     fn chat(id: &str, cwd: &str) -> SessionUpsert {
-        session(id, cwd, json!([{"id": "u", "role": "user", "text": "hello"}]))
+        session(
+            id,
+            cwd,
+            json!([{"id": "u", "role": "user", "text": "hello"}]),
+        )
     }
 
     fn chat_with_image(id: &str, cwd: &str, path: &str) -> SessionUpsert {
@@ -225,9 +233,22 @@ mod tests {
         );
         let ids = listed_ids(&store.lock_conn().unwrap(), "/isolated/project").unwrap();
         assert_eq!(ids, ["listed-a", "listed-b"]);
-        assert!(is_listed_in_project(&store.lock_conn().unwrap(), "/isolated/project", "listed-a").unwrap());
-        assert!(!is_listed_in_project(&store.lock_conn().unwrap(), "/isolated/project", "other-project").unwrap());
-        assert!(!is_listed_in_project(&store.lock_conn().unwrap(), "/isolated/project", "blank-draft").unwrap());
+        assert!(
+            is_listed_in_project(&store.lock_conn().unwrap(), "/isolated/project", "listed-a")
+                .unwrap()
+        );
+        assert!(!is_listed_in_project(
+            &store.lock_conn().unwrap(),
+            "/isolated/project",
+            "other-project"
+        )
+        .unwrap());
+        assert!(!is_listed_in_project(
+            &store.lock_conn().unwrap(),
+            "/isolated/project",
+            "blank-draft"
+        )
+        .unwrap());
     }
 
     #[test]
@@ -261,10 +282,15 @@ mod tests {
         assert_eq!(outcome.skipped, ["moved-away", "missing"]);
         assert_eq!(outcome.failed, None);
         assert!(outcome.not_attempted.is_empty());
-        assert!(!exists(&store, "gone-a") && !exists(&store, "gone-b") && !exists(&store, "gone-c"));
+        assert!(
+            !exists(&store, "gone-a") && !exists(&store, "gone-b") && !exists(&store, "gone-c")
+        );
         // Another project keeps its row and the image it still references.
         assert!(exists(&store, "kept-other") && exists(&store, "moved-away"));
-        assert_eq!(&*cleanups.borrow(), &[vec!["/images/unused.png".to_string()]]);
+        assert_eq!(
+            &*cleanups.borrow(),
+            &[vec!["/images/unused.png".to_string()]]
+        );
     }
 
     #[test]
@@ -282,7 +308,9 @@ mod tests {
         let (result, _) = delete_listed(
             &store,
             "/isolated/project",
-            ["first", "not a valid id", "third"].map(String::from).to_vec(),
+            ["first", "not a valid id", "third"]
+                .map(String::from)
+                .to_vec(),
             |_| Ok(()),
         );
         let outcome = result.unwrap();
@@ -299,13 +327,18 @@ mod tests {
     #[test]
     fn a_failed_image_cleanup_keeps_the_deletions_and_withholds_idle() {
         let store = SessionStore::open_in_memory().unwrap();
-        seed(&store, &[chat_with_image("gone", "/isolated/project", "/images/unused.png")]);
-        let (result, observed) = delete_listed(
+        seed(
             &store,
-            "/isolated/project",
-            vec!["gone".into()],
-            |_| Err("cleanup failure".into()),
+            &[chat_with_image(
+                "gone",
+                "/isolated/project",
+                "/images/unused.png",
+            )],
         );
+        let (result, observed) =
+            delete_listed(&store, "/isolated/project", vec!["gone".into()], |_| {
+                Err("cleanup failure".into())
+            });
         assert_eq!(result.unwrap().deleted, ["gone"]);
         assert_eq!(observed, Err(()));
         assert!(!exists(&store, "gone"));

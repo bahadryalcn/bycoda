@@ -600,7 +600,7 @@ describe("error causes (#1446)", () => {
     );
     expect(error.code).toBe("validation_failed");
     expect(error.message.startsWith("Invalid request body: ")).toBe(true);
-    expect(error.message).not.toMatch(/[\[{]\s*"/);
+    expect(error.message).not.toMatch(/[[{]\s*"/);
     expect(error.cause).toEqual(
       expect.arrayContaining([expect.objectContaining({ code: expect.any(String) })]),
     );

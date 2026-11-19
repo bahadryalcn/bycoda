@@ -142,7 +142,7 @@ describe("SessionImportDialog", () => {
     expect(row.closest("ul")?.classList.contains("@container/import-rows")).toBe(true);
     expect(metadata[1].classList.contains("@max-[480px]/import-rows:hidden")).toBe(true);
     for (const value of metadata) {
-      expect([...value.classList].some((token) => /^w-/.test(token))).toBe(false);
+      expect([...value.classList].some((token) => token.startsWith("w-"))).toBe(false);
     }
   });
 

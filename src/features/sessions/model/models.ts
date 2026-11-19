@@ -1,4 +1,6 @@
 import type { HarnessId } from "../../../shared/model/harnessIdentity";
+import type { AgentModel, ModelSetting } from "../../../shared/model/agentModel";
+import { attachProbedCatalogConsumer } from "../../../integrations/harness/core/probedCatalogStore";
 import { productProviderDefaults } from "../../../shared/model/productProviderDefaults";
 import { withClaudeAdvisor } from "./claudeAdvisor";
 import { withAutoCompactSettings } from "./autoCompact";
@@ -13,38 +15,11 @@ import {
   isHarnessAvailable,
 } from "../../../integrations/harness/core/availabilityState";
 
-export type ModelSettingChoice = {
-  value: string;
-  label: string;
-};
-
-export type ModelSetting = {
-  id: string;
-  label: string;
-  kind: "select" | "toggle";
-  value: string;
-  options: ModelSettingChoice[];
-  description?: string;
-};
-
-export type AgentModel = {
-  id: string;
-  harness: HarnessId;
-  name: string;
-  nativeId?: string;
-  /** Concrete native model launched by a moving provider alias. */
-  aliasTarget?: string;
-  /** Upstream provider inside a multi-provider harness such as OpenCode. */
-  provider?: {
-    id: string;
-    name: string;
-  };
-  settings?: ModelSetting[];
-  /** A CLI speed variant represented by this model's Fast setting. */
-  fastVariant?: { id: string; nativeId: string };
-  /** Context window, when the harness catalog reports one. */
-  contextWindow?: number;
-};
+export type {
+  AgentModel,
+  ModelSetting,
+  ModelSettingChoice,
+} from "../../../shared/model/agentModel";
 
 export const MODELS: AgentModel[] = [
   {
@@ -1290,3 +1265,5 @@ function pickDefaultId(harness: HarnessId, models: AgentModel[]): string {
     DEFAULT_MODEL_ID[harness]
   );
 }
+
+attachProbedCatalogConsumer(setHarnessModels);

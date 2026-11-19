@@ -25,6 +25,7 @@ import { useTodayData } from "../hooks/useTodayData";
 import type { TodayData, TodayPeriod, TodayTotals } from "../model/todayAggregate";
 import { SummaryPanel } from "./TodaySummaryPanel";
 import styles from "./today.module.css";
+import { Motion } from "../../../shared/ui/Motion";
 
 const cost = (totals: Pick<TodayTotals, "cost" | "unpricedTokens">) =>
   `${totals.unpricedTokens > 0 ? "≥ " : ""}${formatUsageCost(totals.cost)}`;
@@ -158,7 +159,9 @@ export function TodayView() {
           )}
         </>
       ) : (
-        <div
+        <Motion
+          transition="opacity"
+          duration="standard"
           className={loadedPeriod !== period ? `${styles.body} ${styles.pending}` : styles.body}
           aria-busy={refreshing}
         >
@@ -184,7 +187,7 @@ export function TodayView() {
               language={locale}
             />
           </div>
-        </div>
+        </Motion>
       )}
     </section>
   );

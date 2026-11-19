@@ -51,14 +51,15 @@ fn private_directory(dir: &Path) -> Result<(), String> {
         lookup
             .args(["/user", "/fo", "csv", "/nh"])
             .creation_flags(0x08000000);
-        let account = run_bounded(&mut lookup, HELPER_TIMEOUT, HELPER_OUTPUT_LIMIT).map_err(
-            |failure| match failure {
-                HelperFailure::TimedOut => {
-                    "Windows did not identify the SSH key owner in time. Try the import again."
+        let account =
+            run_bounded(&mut lookup, HELPER_TIMEOUT, HELPER_OUTPUT_LIMIT).map_err(|failure| {
+                match failure {
+                    HelperFailure::TimedOut => {
+                        "Windows did not identify the SSH key owner in time. Try the import again."
+                    }
+                    _ => "Could not identify the SSH key owner",
                 }
-                _ => "Could not identify the SSH key owner",
-            },
-        )?;
+            })?;
         let csv = String::from_utf8_lossy(&account);
         let sid = csv
             .trim()

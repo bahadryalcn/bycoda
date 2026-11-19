@@ -531,7 +531,9 @@ mod tests {
             let (_, rest) = source
                 .split_once(&signature)
                 .unwrap_or_else(|| panic!("{name} must be an async command"));
-            let body = rest.split_once("#[tauri::command]").map_or(rest, |part| part.0);
+            let body = rest
+                .split_once("#[tauri::command]")
+                .map_or(rest, |part| part.0);
             let (before, inside) = body
                 .split_once("spawn_blocking(move ||")
                 .unwrap_or_else(|| panic!("{name} must run on the blocking pool"));

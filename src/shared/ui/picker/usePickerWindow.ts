@@ -1,4 +1,5 @@
-import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
+import type { VirtualItem } from "@tanstack/react-virtual";
+import { useCollectionVirtualizer } from "../../hooks/useCollectionVirtualizer";
 
 /** Lists longer than this render only the rows near the viewport; shorter ones mount every row. */
 export const PICKER_WINDOW_THRESHOLD = 120;
@@ -27,12 +28,13 @@ export function usePickerWindow(
   getScrollElement: () => HTMLElement | null,
   enabled: boolean,
 ): PickerWindow {
-  const virtual = useVirtualizer<HTMLElement, HTMLElement>({
+  const virtual = useCollectionVirtualizer<HTMLElement, HTMLElement>({
     count: enabled ? entries.length : 0,
     getScrollElement,
     estimateSize: (index) => (entries[index]?.kind === "heading" ? HEADING_HEIGHT : OPTION_HEIGHT),
     getItemKey: (index) => entries[index]?.key ?? index,
     overscan: 8,
+    initialRect: undefined,
     enabled,
   });
   return {

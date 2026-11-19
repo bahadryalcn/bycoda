@@ -25,6 +25,7 @@ import { loadProjectProviderSettings, projectDefaultAccountId } from "./projectP
 import { applySessionDefaults, providerSessionDefaults } from "./providerSessionDefaults";
 import { HARNESS_LABEL, HARNESS_TITLE } from "../../../shared/model/harnessIdentity";
 import type { HarnessId } from "../../../shared/model/harnessIdentity";
+import type { InterjectionMeta } from "../../../shared/model/interjection";
 
 export { HARNESSES, HARNESS_LABEL, HARNESS_TITLE } from "../../../shared/model/harnessIdentity";
 export type { HarnessId } from "../../../shared/model/harnessIdentity";
@@ -165,13 +166,7 @@ export type SecondOpinionMeta = {
 };
 
 /** A mid-turn interjection the harness asked to surface, e.g. OMP advisor notes. */
-export type InterjectionSeverity = "nit" | "concern" | "blocker";
-
-export type InterjectionMeta = {
-  customType: string;
-  /** Highest severity among this interjection's retained notes, when any is known. */
-  severity?: InterjectionSeverity;
-};
+export type { InterjectionMeta, InterjectionSeverity } from "../../../shared/model/interjection";
 
 export type ToolPreviewKind = "read" | "write" | "shell" | "search";
 

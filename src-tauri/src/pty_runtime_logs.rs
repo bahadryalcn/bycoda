@@ -419,7 +419,10 @@ struct DemandShared {
 }
 
 fn lock_book(shared: &DemandShared) -> MutexGuard<'_, DemandBook> {
-    shared.book.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    shared
+        .book
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// Registers a terminal with the one shared demand watcher, which starts on first use.
@@ -874,7 +877,10 @@ $ "
         );
         book.answer("/app", Err("Host is starting".into()), now);
         assert_eq!(book.next_wait(now), Some(DEMAND_RETRY));
-        assert!(!capture.load(Ordering::Acquire), "an error keeps the last answer");
+        assert!(
+            !capture.load(Ordering::Acquire),
+            "an error keeps the last answer"
+        );
     }
 
     #[test]
@@ -887,11 +893,21 @@ $ "
         book.register("/app", "closed", Arc::downgrade(&closed), now);
         drop(closed);
         book.prune();
-        assert_eq!(book.terminals.len(), 1, "the project keeps its live terminal");
-        assert_eq!(book.due(now), vec![("/app".to_string(), "kept".to_string())]);
+        assert_eq!(
+            book.terminals.len(),
+            1,
+            "the project keeps its live terminal"
+        );
+        assert_eq!(
+            book.due(now),
+            vec![("/app".to_string(), "kept".to_string())]
+        );
         drop(kept);
         book.prune();
-        assert!(book.next_wait(now).is_none(), "no open terminal means no wakeup");
+        assert!(
+            book.next_wait(now).is_none(),
+            "no open terminal means no wakeup"
+        );
         assert!(book.due(now).is_empty());
     }
 

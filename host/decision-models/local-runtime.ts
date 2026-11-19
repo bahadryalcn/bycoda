@@ -157,7 +157,7 @@ export class LocalRuntime {
   /** Stops every process this runtime started and waits for terminations already in flight. */
   async stopAll(): Promise<void> {
     await Promise.all([...this.running.keys()].map((sourceId) => this.stop(sourceId)));
-    await Promise.all([...this.stopping]);
+    await Promise.all(this.stopping);
   }
 
   /**
@@ -167,7 +167,7 @@ export class LocalRuntime {
   async close(): Promise<void> {
     this.closed = true;
     await this.stopAll();
-    await Promise.allSettled([...this.starting.values()]);
+    await Promise.allSettled(this.starting.values());
     await this.stopAll();
     this.clearTimer();
   }

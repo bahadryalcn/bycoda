@@ -129,7 +129,8 @@ export function UsagePage({ limitsOnly = false }: { limitsOnly?: boolean }) {
  */
 function ResetCountdown({ resetsAt }: { resetsAt: number }) {
   const tick = useMinuteNow();
-  return <>{formatResetCountdown(resetsAt - (tick || Date.now()))}</>;
+  const [mountedAt] = useState(Date.now);
+  return <>{formatResetCountdown(resetsAt - (tick || mountedAt))}</>;
 }
 
 function AccountLimits({

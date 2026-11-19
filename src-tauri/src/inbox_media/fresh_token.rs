@@ -88,7 +88,11 @@ impl FreshLookups {
     /// Called once when `ran` finished. Returns the queued flight to start next.
     fn retire(&self, ran: &Arc<TokenFlight>, verified: bool) -> Option<Arc<TokenFlight>> {
         let mut state = self.state();
-        if !state.running.as_ref().is_some_and(|run| Arc::ptr_eq(run, ran)) {
+        if !state
+            .running
+            .as_ref()
+            .is_some_and(|run| Arc::ptr_eq(run, ran))
+        {
             return None;
         }
         if !verified {

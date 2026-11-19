@@ -1136,11 +1136,12 @@ fn diff_iteration_file(
     // Sides are already capped at MAX_DIFF_FILE_BYTES by azure_file_content.
     let is_add = base_bytes.is_none();
     let is_delete = target_bytes.is_none();
-    let (additions, deletions, hunks) = match git_unified_hunks(base_bytes.as_deref(), target_bytes.as_deref()) {
-        Ok(Some(hunks)) => hunks,
-        Ok(None) => return Ok(FileDiff::Skipped { too_large: false }),
-        Err(_) => return Ok(FileDiff::GitTimedOut),
-    };
+    let (additions, deletions, hunks) =
+        match git_unified_hunks(base_bytes.as_deref(), target_bytes.as_deref()) {
+            Ok(Some(hunks)) => hunks,
+            Ok(None) => return Ok(FileDiff::Skipped { too_large: false }),
+            Err(_) => return Ok(FileDiff::GitTimedOut),
+        };
     let mut block = format!("diff --git a/{0} b/{0}\n", change.path);
     if is_add {
         block.push_str("new file mode 100644\n");
@@ -1270,7 +1271,10 @@ fn create_secure_tmp_dir() -> Option<PathBuf> {
 /// provider already requires git for remote detection). Returns `None` when
 /// the sides are identical or git is unavailable/fails. A deadline error stops
 /// the diff so the caller can retry without waiting on every remaining file.
-fn git_unified_hunks(old: Option<&[u8]>, new: Option<&[u8]>) -> std::io::Result<Option<(i64, i64, String)>> {
+fn git_unified_hunks(
+    old: Option<&[u8]>,
+    new: Option<&[u8]>,
+) -> std::io::Result<Option<(i64, i64, String)>> {
     let Some(dir) = create_secure_tmp_dir() else {
         return Ok(None);
     };
@@ -2450,7 +2454,9 @@ mod tests {
         assert!(hunks.contains("@@"));
         assert!(hunks.contains("+TWO"));
         assert!(
-            git_unified_hunks(Some(b"same\n"), Some(b"same\n")).unwrap().is_none(),
+            git_unified_hunks(Some(b"same\n"), Some(b"same\n"))
+                .unwrap()
+                .is_none(),
             "identical sides produce no hunks"
         );
     }
