@@ -51,6 +51,10 @@ const parseRecords = (text: string): DelegationRecord[] => {
 /** Records live in one state file; the oldest finished rows go first when it is full. */
 export class DelegationStore {
   private records?: DelegationRecord[];
+  /** Memory holds changes the file does not yet have (a failed write keeps it set). */
+  private dirty = false;
+  private queued = 0;
+  private waiting: { resolve: () => void; reject: (error: unknown) => void }[] = [];
   private chain: Promise<unknown> = Promise.resolve();
 
   constructor(private readonly directory: string) {}
@@ -63,23 +67,64 @@ export class DelegationStore {
     if (!this.records) {
       const result = await readStateFile(this.file, parseRecords);
       this.records = result.status === "ok" ? result.value : [];
+      // A missing or corrupt file is rewritten by the next change, as before.
+      if (result.status !== "ok") this.dirty = true;
     }
     return this.records;
   }
 
-  /** Serialized read-modify-write so concurrent tool calls never drop a row. */
-  private update<T>(change: (records: DelegationRecord[]) => T | Promise<T>): Promise<T> {
-    const next = this.chain.then(async () => {
-      const records = await this.load();
-      const result = await change(records);
-      const dropped = this.trim(records);
-      await writeFileAtomic(this.file, JSON.stringify(records), { mode: 0o600 });
-      // After the row is gone: a failed cleanup leaves an unreferenced empty folder, never a dangling row.
-      for (const runId of dropped) await this.removeScratch(runId);
-      return result;
+  /**
+   * Serialized read-modify-write so concurrent tool calls never drop a row. A change settles only
+   * after a write that contains it. When more changes are queued behind it, the last one in the
+   * queue writes once for the whole group instead of once per change.
+   */
+  private update(change: (records: DelegationRecord[]) => boolean): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      this.queued += 1;
+      const next = this.chain.then(async () => {
+        this.queued -= 1;
+        let records: DelegationRecord[];
+        try {
+          records = await this.load();
+        } catch (error) {
+          reject(error);
+          return;
+        }
+        let changed = true;
+        let failed = false;
+        try {
+          changed = change(records);
+        } catch (error) {
+          failed = true;
+          reject(error);
+        }
+        if (changed) this.dirty = true;
+        if (!failed) this.waiting.push({ resolve, reject });
+        if (this.queued === 0) await this.flush(records);
+      });
+      this.chain = next.catch(() => undefined);
     });
-    this.chain = next.catch(() => undefined);
-    return next;
+  }
+
+  /** One write for the whole group; each change settles only after it, or after its failure. */
+  private async flush(records: DelegationRecord[]): Promise<void> {
+    const group = this.waiting;
+    this.waiting = [];
+    const size = records.length;
+    const dropped = this.trim(records);
+    if (records.length !== size) this.dirty = true;
+    if (this.dirty) {
+      try {
+        await writeFileAtomic(this.file, JSON.stringify(records), { mode: 0o600 });
+      } catch (error) {
+        for (const entry of group) entry.reject(error);
+        return;
+      }
+      this.dirty = false;
+    }
+    // After the row is gone: a failed cleanup leaves an unreferenced empty folder, never a dangling row.
+    for (const runId of dropped) await this.removeScratch(runId);
+    for (const entry of group) entry.resolve();
   }
 
   /** Drops the oldest finished rows; returns the run ids of the chat-only ones. */
@@ -131,13 +176,19 @@ export class DelegationStore {
   add(record: DelegationRecord): Promise<void> {
     return this.update((records) => {
       records.push(record);
+      return true;
     });
   }
 
   patch(runId: string, change: Partial<DelegationRecord>): Promise<void> {
     return this.update((records) => {
       const record = records.find((entry) => entry.runId === runId);
-      if (record) Object.assign(record, change);
+      if (!record) return false;
+      // A patch that repeats stored values does not rewrite the file.
+      const keys = Object.keys(change) as (keyof DelegationRecord)[];
+      const changed = keys.some((key) => !(key in record) || record[key] !== change[key]);
+      if (changed) Object.assign(record, change);
+      return changed;
     });
   }
 }
