@@ -20,18 +20,31 @@ function preference<T extends string | number | boolean>(
   });
   return {
     ...setting,
+    /** Storage key; reset needs it to snapshot and restore the raw stored value. */
+    key,
+    /** Canonical default shown by Settings; the only copy of this value. */
+    defaultValue: fallback,
     save(value: T) {
       if (!valid(value)) throw new Error(`Invalid tool preference: ${name}`);
-      try {
-        localStorage.setItem(key, JSON.stringify(value));
-        if (localStorage.getItem(key) !== JSON.stringify(value)) throw new Error();
-      } catch {
-        throw new Error(`Could not save tool preference: ${name}`);
-      }
-      if (typeof window !== "undefined")
-        window.dispatchEvent(new CustomEvent(`${key}.changed`, { detail: value }));
+      writeVerified(key, JSON.stringify(value), name);
+      announce(key, value);
     },
   };
+}
+
+/** Durable write: the value must read back exactly, otherwise the save did not happen. */
+function writeVerified(key: string, raw: string, name: string) {
+  try {
+    localStorage.setItem(key, raw);
+    if (localStorage.getItem(key) !== raw) throw new Error();
+  } catch {
+    throw new Error(`Could not save tool preference: ${name}`);
+  }
+}
+
+function announce(key: string, value: unknown) {
+  if (typeof window !== "undefined")
+    window.dispatchEvent(new CustomEvent(`${key}.changed`, { detail: value }));
 }
 
 const oneOf =
@@ -93,6 +106,54 @@ export const toolPreferences = {
   ),
 };
 export type ToolPreferenceKey = keyof typeof toolPreferences;
+
+/** Reset could not be undone completely: `unrestored` keys may now hold a default or a mix. */
+export class ToolPreferencesResetError extends Error {
+  constructor(readonly unrestored: readonly ToolPreferenceKey[]) {
+    super(`Could not restore tool preferences: ${unrestored.join(", ")}`);
+    this.name = "ToolPreferencesResetError";
+  }
+}
+
+/**
+ * Restore only `names` to their canonical defaults as one unit. Values already at the default
+ * (or never saved) are not rewritten. If a write fails, every value changed so far is put back;
+ * a failed rollback throws `ToolPreferencesResetError` naming what stayed changed. Any other
+ * thrown error means nothing changed. Unlisted preferences are never touched.
+ */
+export function resetToolPreferences(names: readonly ToolPreferenceKey[]): void {
+  let plan: { name: ToolPreferenceKey; key: string; raw: string; previous: string }[];
+  try {
+    plan = names.flatMap((name) => {
+      const { key, defaultValue } = toolPreferences[name];
+      const raw = JSON.stringify(defaultValue);
+      const previous = localStorage.getItem(key);
+      return previous === null || previous === raw ? [] : [{ name, key, raw, previous }];
+    });
+  } catch {
+    throw new Error("Could not read tool preferences");
+  }
+  const attempted: typeof plan = [];
+  try {
+    for (const change of plan) {
+      attempted.push(change);
+      writeVerified(change.key, change.raw, change.name);
+    }
+  } catch (failure) {
+    const unrestored: ToolPreferenceKey[] = [];
+    for (const change of attempted) {
+      try {
+        writeVerified(change.key, change.previous, change.name);
+      } catch {
+        unrestored.push(change.name);
+        announce(change.key, toolPreferences[change.name].load());
+      }
+    }
+    if (unrestored.length > 0) throw new ToolPreferencesResetError(unrestored);
+    throw failure;
+  }
+  for (const change of plan) announce(change.key, toolPreferences[change.name].defaultValue);
+}
 
 export function browserDefaultViewport() {
   switch (toolPreferences.browserViewport.load()) {

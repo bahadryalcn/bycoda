@@ -91,21 +91,50 @@ fn same_path(a: &Path, b: &Path) -> bool {
     }
 }
 
-pub(crate) fn contains_working_dir(root: &Path, cwd: &Path) -> bool {
-    let root = crate::worktree_lifecycle::canonical_workspace_path(root)
-        .unwrap_or_else(|_| root.to_path_buf());
-    let cwd = crate::worktree_lifecycle::canonical_workspace_path(cwd)
-        .unwrap_or_else(|_| cwd.to_path_buf());
-    if cfg!(windows) {
-        let root = path_to_js(&root).to_lowercase();
-        let cwd = path_to_js(&cwd).to_lowercase();
-        cwd == root || cwd.starts_with(&format!("{}/", root.trim_end_matches('/')))
-    } else {
-        cwd.starts_with(root)
+/// A directory resolved once (symlinks, Windows case) so many containment
+/// checks cost string comparisons instead of one filesystem lookup per pair.
+struct WorkingDirKey {
+    canonical: PathBuf,
+    /// Windows only: lowercase `/` form, and the same with a trailing `/`.
+    folded: String,
+    folded_prefix: String,
+}
+
+impl WorkingDirKey {
+    fn new(path: &Path) -> Self {
+        let canonical = crate::worktree_lifecycle::canonical_workspace_path(path)
+            .unwrap_or_else(|_| path.to_path_buf());
+        let (folded, folded_prefix) = if cfg!(windows) {
+            let folded = path_to_js(&canonical).to_lowercase();
+            let prefix = format!("{}/", folded.trim_end_matches('/'));
+            (folded, prefix)
+        } else {
+            Default::default()
+        };
+        Self {
+            canonical,
+            folded,
+            folded_prefix,
+        }
+    }
+
+    fn contains(&self, cwd: &Self) -> bool {
+        if cfg!(windows) {
+            cwd.folded == self.folded || cwd.folded.starts_with(&self.folded_prefix)
+        } else {
+            cwd.canonical.starts_with(&self.canonical)
+        }
     }
 }
 
-fn session_ids(conn: &rusqlite::Connection, path: &Path) -> Result<Vec<String>, String> {
+pub(crate) fn contains_working_dir(root: &Path, cwd: &Path) -> bool {
+    WorkingDirKey::new(root).contains(&WorkingDirKey::new(cwd))
+}
+
+/// Raw `(session id, working directory)` of every session that still owns its
+/// directory. Only this query runs against the connection; path resolution
+/// happens afterwards so no store connection waits on the filesystem.
+fn session_working_dirs(conn: &rusqlite::Connection) -> Result<Vec<(String, String)>, String> {
     let mut query = conn
         .prepare("SELECT id, COALESCE(NULLIF(worktree_cwd, ''), cwd) FROM sessions WHERE worktree_removed = 0")
         .map_err(|e| e.to_string())?;
@@ -114,20 +143,125 @@ fn session_ids(conn: &rusqlite::Connection, path: &Path) -> Result<Vec<String>, 
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })
         .map_err(|e| e.to_string())?;
-    let mut ids = Vec::new();
-    for row in rows {
-        let (id, cwd) = row.map_err(|e| e.to_string())?;
-        let cwd = expand_home(&cwd);
-        if contains_working_dir(path, &cwd) {
-            ids.push(id);
+    rows.collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|e| e.to_string())
+}
+
+/// Session directories resolved once each, grouped so every worktree is matched
+/// with comparisons only (sessions sharing a directory are resolved together).
+struct SessionDirs {
+    keys: Vec<WorkingDirKey>,
+    sessions: Vec<(String, usize)>,
+}
+
+impl SessionDirs {
+    fn new(rows: Vec<(String, String)>) -> Self {
+        let mut indexes: std::collections::HashMap<String, usize> = Default::default();
+        let mut keys = Vec::new();
+        let mut sessions = Vec::with_capacity(rows.len());
+        for (id, cwd) in rows {
+            let index = *indexes.entry(cwd).or_insert_with_key(|cwd| {
+                keys.push(WorkingDirKey::new(&expand_home(cwd)));
+                keys.len() - 1
+            });
+            sessions.push((id, index));
         }
+        Self { keys, sessions }
     }
-    Ok(ids)
+
+    /// Ids in store row order, as the per-worktree query returned them.
+    fn ids_under(&self, root: &WorkingDirKey) -> Vec<String> {
+        self.sessions
+            .iter()
+            .filter(|(_, index)| root.contains(&self.keys[*index]))
+            .map(|(id, _)| id.clone())
+            .collect()
+    }
+}
+
+fn session_ids(conn: &rusqlite::Connection, path: &Path) -> Result<Vec<String>, String> {
+    Ok(SessionDirs::new(session_working_dirs(conn)?).ids_under(&WorkingDirKey::new(path)))
+}
+
+/// Git status scans are disk-bound; a few at a time keep a repository with many
+/// working copies responsive without starting one process per worktree at once.
+const STATUS_PARALLELISM: usize = 4;
+
+/// Runs `work` over `items` on at most `limit` threads, returning results in
+/// item order. A panicking worker fails the call instead of losing items.
+fn map_bounded<T: Sync, R: Send>(
+    items: &[T],
+    limit: usize,
+    work: impl Fn(&T) -> R + Sync,
+) -> Result<Vec<R>, String> {
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let mut done: Vec<(usize, R)> = Vec::with_capacity(items.len());
+    std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..limit.max(1).min(items.len()))
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut local = Vec::new();
+                    loop {
+                        let index = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        let Some(item) = items.get(index) else { break };
+                        local.push((index, work(item)));
+                    }
+                    local
+                })
+            })
+            .collect();
+        for worker in workers {
+            done.extend(
+                worker
+                    .join()
+                    .map_err(|_| "A worktree status worker failed".to_string())?,
+            );
+        }
+        Ok::<(), String>(())
+    })?;
+    done.sort_unstable_by_key(|(index, _)| *index);
+    Ok(done.into_iter().map(|(_, result)| result).collect())
 }
 
 fn default_root(main: &Path) -> PathBuf {
     let name = main.file_name().unwrap_or_default().to_string_lossy();
     main.with_file_name(format!("{name}-worktrees"))
+}
+
+struct WorktreeProbe {
+    missing: bool,
+    dirty: Option<bool>,
+    unpushed: Option<u64>,
+}
+
+/// Read-only state of one working copy. A failed Git read stays unknown (`None`),
+/// never clean. `--no-renames` skips rename detection, which cannot change
+/// whether anything is dirty; untracked files still count, as in removal review.
+fn probe_worktree(path: &Path) -> WorktreeProbe {
+    if !path.is_dir() {
+        return WorktreeProbe {
+            missing: true,
+            dirty: None,
+            unpushed: None,
+        };
+    }
+    WorktreeProbe {
+        missing: false,
+        dirty: git(
+            path,
+            &[
+                "status",
+                "--porcelain",
+                "--untracked-files=normal",
+                "--no-renames",
+            ],
+        )
+        .ok()
+        .map(|status| !status.is_empty()),
+        unpushed: git(path, &["rev-list", "--count", "HEAD", "--not", "--remotes"])
+            .ok()
+            .and_then(|count| count.trim().parse().ok()),
+    }
 }
 
 #[tauri::command]
@@ -137,23 +271,19 @@ pub async fn git_worktrees(app: tauri::AppHandle, cwd: String) -> Result<Worktre
         let mut worktrees = list(&expand_home(&cwd))?;
         let main = worktrees.first().ok_or("No working copies found")?;
         let default_root = path_to_js(&default_root(Path::new(&main.path)));
-        {
-            let conn = store.lock_conn()?;
-            for tree in &mut worktrees {
-                tree.session_ids = session_ids(&conn, Path::new(&tree.path))?;
-            }
-        }
-        for tree in &mut worktrees {
-            let path = Path::new(&tree.path);
-            tree.missing = !path.is_dir();
-            if !tree.missing {
-                tree.dirty = git(path, &["status", "--porcelain", "--untracked-files=normal"])
-                    .ok()
-                    .map(|status| !status.is_empty());
-                tree.unpushed = git(path, &["rev-list", "--count", "HEAD", "--not", "--remotes"])
-                    .ok()
-                    .and_then(|count| count.trim().parse().ok());
-            }
+        // One short query on the WAL reader; this listing never writes, so it
+        // must not queue behind or block the writer connection.
+        let sessions = SessionDirs::new(store.with_read_conn(session_working_dirs)?);
+        let paths: Vec<PathBuf> = worktrees
+            .iter()
+            .map(|tree| PathBuf::from(&tree.path))
+            .collect();
+        let probes = map_bounded(&paths, STATUS_PARALLELISM, |path| probe_worktree(path))?;
+        for (tree, probe) in worktrees.iter_mut().zip(probes) {
+            tree.session_ids = sessions.ids_under(&WorkingDirKey::new(Path::new(&tree.path)));
+            tree.missing = probe.missing;
+            tree.dirty = probe.dirty;
+            tree.unpushed = probe.unpushed;
         }
         Ok(Worktrees {
             worktrees,

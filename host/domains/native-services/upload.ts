@@ -1,5 +1,9 @@
 import type { NativeBufferUploadPlatform } from "../native-workspaces/ports";
 import {
+  commitDeadlineElapsed,
+  NATIVE_UPLOAD_COMMIT_LIMITS,
+} from "../native-workspaces/upload-commit";
+import {
   NATIVE_SERVICE_UPLOAD_LIMITS as limits,
   NATIVE_SERVICE_UPLOAD_RPC_SCHEMAS,
   type NativeServiceUploadMethod,
@@ -20,12 +24,18 @@ type Entry = {
   status: NativeServiceUploadStatus;
   bytes?: Uint8Array;
   chunks: Map<number, { bytes: number; digest: string }>;
+  /** Settles when the operation settles or the commit deadline passes; never rejects. */
   pending?: Promise<void>;
+  commitDeadlineAt?: number;
+  /** The receipt was finalized as unknown while the operation may still be running. */
+  held?: boolean;
 };
 
 /** Bounded in-process request staging for two finite existing operations only. A commit
- * owns its exact operation promise through settlement; receipt lookup never runs it
- * again. No generic forwarded method, caller-supplied owner, or disk credential. */
+ * owns its exact operation promise; receipt lookup never runs it again. A commit that
+ * outlives its deadline becomes a final unknown receipt (never success, never replayed)
+ * and keeps its bytes and quota charged until the operation settles or the hold ends.
+ * No generic forwarded method, caller-supplied owner, or disk credential. */
 export function createNativeServiceUploadService(ports: {
   environmentId: string;
   platform: NativeBufferUploadPlatform;
@@ -41,9 +51,16 @@ export function createNativeServiceUploadService(ports: {
     context: HostDomainContext,
   ): Promise<unknown>;
   now?(): number;
+  commitDeadlineMs?: number;
+  commitHoldMs?: number;
 }) {
   const entries = new Map<string, Entry>();
   const now = ports.now ?? Date.now;
+  const commitDeadlineMs = ports.commitDeadlineMs ?? NATIVE_UPLOAD_COMMIT_LIMITS.deadlineMs;
+  const commitHoldMs = Math.max(
+    ports.commitHoldMs ?? NATIVE_UPLOAD_COMMIT_LIMITS.holdMs,
+    limits.ttlMs,
+  );
   let stopped = false;
   const key = (principalId: string, uploadId: string) =>
     JSON.stringify([ports.environmentId, principalId, uploadId]);
@@ -51,9 +68,29 @@ export function createNativeServiceUploadService(ports: {
     entry.bytes = undefined;
   };
   const snapshot = (entry: Entry) => structuredClone(entry.status);
+  /** Final unknown receipt for a commit past its deadline. The operation may still be
+   * running, so bytes and quota stay charged until it settles or the hold elapses. */
+  const expireCommit = (entry: Entry) => {
+    if (entry.status.state !== "committing") return;
+    entry.status.state = "failed";
+    entry.status.outcome = { delivery: "unknown", code: "operation-unconfirmed" };
+    entry.status.expiresAt = now() + commitHoldMs;
+    entry.held = true;
+  };
+  /** The operation promise settled: its staging allocation is safe to release. */
+  const settled = (entry: Entry) => {
+    release(entry);
+    if (entry.held) {
+      entry.held = false;
+      entry.status.expiresAt = now() + limits.ttlMs;
+    }
+  };
   const prune = () => {
     for (const [id, entry] of entries) {
+      if (entry.commitDeadlineAt !== undefined && entry.commitDeadlineAt <= now())
+        expireCommit(entry);
       if (entry.status.state !== "committing" && entry.status.expiresAt <= now()) {
+        // A held entry past its hold is abandoned; a later settlement only no-ops.
         release(entry);
         entries.delete(id);
       }
@@ -209,10 +246,14 @@ export function createNativeServiceUploadService(ports: {
         }
         entry.status.state = "committing";
         const accepted = entry;
-        // The staging allocation remains charged until the actual operation settles.
-        accepted.pending = (async () => {
+        accepted.commitDeadlineAt = now() + commitDeadlineMs;
+        // The staging allocation remains charged until the actual operation settles or,
+        // after the deadline, the hold ends. Past the deadline the receipt is unknown.
+        const operation = (async () => {
           try {
             await assertDomainAuthority(context);
+            // Past the deadline the receipt is already final: never dispatch afterwards.
+            if (accepted.status.state !== "committing") return;
             const result = await (accepted.status.delivery
               ? ports.deliver?.(
                   accepted.status.target,
@@ -238,14 +279,20 @@ export function createNativeServiceUploadService(ports: {
                 JSON.parse(JSON.stringify(result ?? null)),
               );
             await assertDomainAuthority(context);
+            // A late success never rewrites an unknown receipt into a completed one.
+            if (accepted.status.state !== "committing") return;
             accepted.status.state = "completed";
             accepted.status.result = JSON.parse(JSON.stringify(retained));
             accepted.status.expiresAt = now() + limits.ttlMs;
-            release(accepted);
           } catch {
-            fail(accepted, "unknown");
+            if (accepted.status.state === "committing") fail(accepted, "unknown");
+          } finally {
+            settled(accepted);
           }
         })();
+        accepted.pending = commitDeadlineElapsed(operation, commitDeadlineMs).then((elapsed) => {
+          if (elapsed) expireCommit(accepted);
+        });
       }
       await entry.pending;
     }
@@ -257,7 +304,9 @@ export function createNativeServiceUploadService(ports: {
     async close() {
       stopped = true;
       stopSweep();
+      // Every pending commit is bounded by its deadline, so shutdown cannot hang.
       await Promise.all([...entries.values()].map((entry) => entry.pending));
+      for (const entry of entries.values()) release(entry);
       entries.clear();
     },
   };

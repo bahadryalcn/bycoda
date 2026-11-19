@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { WebSocket, type ClientOptions } from "ws";
 import { HostBulkTransfers } from "../http/bulk";
+import { HostSubscriptionHub } from "./subscriptions";
 import { HostDispatchError, createHostDispatcher } from "../dispatch";
 import { HostDomainOutcomeError, HostDomainRefusalError } from "../../domains/context";
 import {
@@ -123,7 +124,7 @@ async function fixture(
   overrides: Partial<
     Pick<
       HostWebSocketOptions,
-      "authenticate" | "dispatch" | "limits" | "allowedHosts" | "methods" | "bulk"
+      "authenticate" | "dispatch" | "limits" | "allowedHosts" | "methods" | "bulk" | "subscriptions"
     >
   > = {},
 ) {
@@ -165,6 +166,8 @@ async function fixture(
       protocol?: string | null;
       headers?: Record<string, string>;
       path?: string;
+      /** false holds pongs so a test decides when the peer answers (or never does). */
+      autoPong?: boolean;
     } = {},
   ) => {
     const token = input.token === undefined ? TOKEN_A : input.token;
@@ -172,6 +175,7 @@ async function fixture(
     const client = new ProbeClient(`ws://127.0.0.1:${port}${input.path ?? "/ws"}`, protocol, {
       headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...input.headers },
       handshakeTimeout: 2_000,
+      autoPong: input.autoPong ?? true,
     });
     clients.add(client);
     return client;
@@ -567,6 +571,40 @@ describe("WebSocket read admission and safe disclosure", () => {
       release.resolve({ id: "device-a", authorized: async () => true });
     }
     await first.opened;
+  });
+
+  it("counts verified devices against their own admission bucket and keeps unknown tokens shared", async () => {
+    const gate = deferred<void>();
+    const TOKEN_C = "C".repeat(43);
+    const TOKEN_D = "D".repeat(43);
+    let hold = false;
+    const host = await fixture({
+      limits: { maxUnauthenticatedSocketsPerSource: 1, maxAuthenticationJobsPerSource: 1 },
+      authenticate: async (token) => {
+        if (hold) await gate.promise;
+        if (token === TOKEN_A) return { id: "device-a", authorized: async () => true };
+        if (token === TOKEN_B) return { id: "device-b", authorized: async () => true };
+        return null;
+      },
+    });
+    // Every client here shares one loopback address; each device is verified once first.
+    await host.ready(TOKEN_A);
+    await host.ready(TOKEN_B);
+    hold = true;
+    const settled = [
+      host.connect({ token: TOKEN_A }),
+      host.connect({ token: TOKEN_B }),
+      host.connect({ token: TOKEN_C }),
+    ];
+    await vi.waitFor(() => expect(host.authenticate).toHaveBeenCalledTimes(5));
+    // A second concurrent handshake of the same device, or of another unknown token, is still refused.
+    await expect(host.connect({ token: TOKEN_A }).opened).rejects.toThrow(/429/);
+    await expect(host.connect({ token: TOKEN_D }).opened).rejects.toThrow(/429/);
+    expect(host.authenticate).toHaveBeenCalledTimes(5);
+    gate.resolve();
+    await settled[0]!.opened;
+    await settled[1]!.opened;
+    await expect(settled[2]!.opened).rejects.toThrow(/401/);
   });
 
   it("releases timed-out upgrade admission even when its auth backend remains pending", async () => {
@@ -1058,6 +1096,132 @@ describe("WS framing and orderly disposal", () => {
     await first.closed;
   });
 
+  it("does not close a peer whose pong was buffered across host sleep", async () => {
+    const host = await fixture({
+      limits: { heartbeatIntervalMs: 5, heartbeatResponseTimeoutMs: 300 },
+    });
+    const client = host.connect({ autoPong: false });
+    await client.opened;
+    expect(await client.hello("hello-sleep")).toHaveProperty("result");
+    const ping = await new Promise<Buffer>((resolve) => client.socket.once("ping", resolve));
+    // Sleep: the wall clock jumps while the pong is outstanding, so the timer fires first.
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 60 * 60_000);
+    onTestFinished(() => clock.mockRestore());
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(client.socket.readyState).toBe(WebSocket.OPEN);
+    client.socket.pong(ping);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(await client.request("after-sleep", "connection.probe")).toHaveProperty("result");
+  });
+
+  it("retires a silent peer after the sleep grace period", async () => {
+    const host = await fixture({
+      limits: { heartbeatIntervalMs: 5, heartbeatResponseTimeoutMs: 40 },
+    });
+    const client = host.connect({ autoPong: false });
+    await client.opened;
+    expect(await client.hello("hello-silent-sleep")).toHaveProperty("result");
+    await new Promise((resolve) => client.socket.once("ping", resolve));
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 60 * 60_000);
+    onTestFinished(() => clock.mockRestore());
+    expect(await client.closed).toMatchObject({
+      code: 1001,
+      reason: "Connection heartbeat timed out.",
+    });
+  });
+
+  it("retires a silent peer on the first timeout when the process did not sleep", async () => {
+    const host = await fixture({
+      limits: { heartbeatIntervalMs: 5, heartbeatResponseTimeoutMs: 40 },
+    });
+    const client = host.connect({ autoPong: false });
+    await client.opened;
+    expect(await client.hello("hello-silent")).toHaveProperty("result");
+    expect(await client.closed).toMatchObject({
+      code: 1001,
+      reason: "Connection heartbeat timed out.",
+    });
+  });
+
+  describe("heartbeat behind buffered frames", () => {
+    /**
+     * Stands in for a link that flushes `rate` bytes/ms from a queue under the socket cap
+     * (0 = stalled). Install it before connecting so the first ping sees the same queue.
+     */
+    function mockQueue(rate: number) {
+      const startedAt = performance.now();
+      const queued = 6_000_000;
+      const spy = vi
+        .spyOn(WebSocket.prototype, "bufferedAmount", "get")
+        .mockImplementation(() => queued - (performance.now() - startedAt) * rate);
+      onTestFinished(() => spy.mockRestore());
+    }
+
+    it("keeps a peer whose queue is still draining until its pong arrives", async () => {
+      const host = await fixture({
+        limits: { heartbeatIntervalMs: 5, heartbeatResponseTimeoutMs: 40 },
+      });
+      mockQueue(1_000);
+      const client = host.connect({ autoPong: false });
+      await client.opened;
+      expect(await client.hello("hello-draining")).toHaveProperty("result");
+      const ping = await new Promise<Buffer>((resolve) => client.socket.once("ping", resolve));
+      // Three full response windows with no pong: the old deadline would have closed this socket.
+      await new Promise((resolve) => setTimeout(resolve, 130));
+      expect(client.socket.readyState).toBe(WebSocket.OPEN);
+      client.socket.pong(ping);
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      expect(await client.request("after-drain", "connection.probe")).toHaveProperty("result");
+    });
+
+    it("still retires a dead peer whose queue never moves", async () => {
+      const host = await fixture({
+        limits: { heartbeatIntervalMs: 5, heartbeatResponseTimeoutMs: 40 },
+      });
+      mockQueue(0);
+      const client = host.connect({ autoPong: false });
+      await client.opened;
+      expect(await client.hello("hello-stalled")).toHaveProperty("result");
+      await new Promise((resolve) => client.socket.once("ping", resolve));
+      expect(await client.closed).toMatchObject({
+        code: 1001,
+        reason: "Connection heartbeat timed out.",
+      });
+    });
+
+    it("bounds the extra time a draining link can hold the deadline", async () => {
+      const host = await fixture({
+        limits: { heartbeatIntervalMs: 5, heartbeatResponseTimeoutMs: 40 },
+      });
+      mockQueue(1_000);
+      const client = host.connect({ autoPong: false });
+      await client.opened;
+      expect(await client.hello("hello-bounded")).toHaveProperty("result");
+      const startedAt = performance.now();
+      expect(await client.closed).toMatchObject({
+        code: 1001,
+        reason: "Connection heartbeat timed out.",
+      });
+      // One response window plus the five extensions, never an open-ended wait.
+      expect(performance.now() - startedAt).toBeLessThan(40 * 6 + 400);
+    });
+
+    it("treats any inbound frame, not only a pong, as liveness", async () => {
+      const host = await fixture({
+        limits: { heartbeatIntervalMs: 5, heartbeatResponseTimeoutMs: 40 },
+      });
+      const client = host.connect({ autoPong: false });
+      await client.opened;
+      expect(await client.hello("hello-acks")).toHaveProperty("result");
+      await new Promise((resolve) => client.socket.once("ping", resolve));
+      for (let index = 0; index < 8; index += 1) {
+        expect(await client.request(`ack-${index}`, "connection.probe")).toHaveProperty("result");
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(client.socket.readyState).toBe(WebSocket.OPEN);
+    });
+  });
+
   it("returns transient hello overload and allows retry after detached auth settles", async () => {
     const finish = deferred<boolean>();
     const started = deferred<void>();
@@ -1371,3 +1535,97 @@ it.each([false, true])(
     expect(toJSON).toHaveBeenCalledExactlyOnceWith("");
   },
 );
+
+describe("slow consumer back-pressure", () => {
+  async function slowStreamFixture() {
+    const hub = new HostSubscriptionHub({
+      environmentId: ENVIRONMENT,
+      load: async () => ({ revision: 1, data: { blob: "x".repeat(600) } }),
+    });
+    const host = await fixture({
+      subscriptions: hub,
+      limits: { maxSocketQueuedBytes: 1_000 },
+      methods: [],
+    });
+    cleanups.push(async () => hub.close());
+    let buffered = 0;
+    const spy = vi
+      .spyOn(WebSocket.prototype, "bufferedAmount", "get")
+      .mockImplementation(() => buffered);
+    onTestFinished(() => spy.mockRestore());
+    const socket = new WebSocket(`ws://127.0.0.1:${host.port}/ws`, WS_SUBPROTOCOL, {
+      headers: { Authorization: `Bearer ${TOKEN_A}` },
+    });
+    const frames: Array<{ id?: string; method?: string; params?: { kind?: string } }> = [];
+    socket.on("message", (data) => frames.push(JSON.parse(data.toString())));
+    const closed = new Promise<number>((resolve) => socket.once("close", resolve));
+    await new Promise<void>((resolve, reject) => {
+      socket.once("open", resolve);
+      socket.once("error", reject);
+    });
+    cleanups.push(async () => socket.terminate());
+    const call = (id: string, method: string, params: unknown) =>
+      socket.send(JSON.stringify({ jsonrpc: "2.0", id, method, params }));
+    call("hello", "connection.hello", {
+      environmentId: ENVIRONMENT,
+      supportedWireVersions: [WS_WIRE_VERSION],
+      supportedSchemaVersions: [HOST_SCHEMA_VERSION],
+      clientId: "fixture-client",
+      clientKind: "desktop",
+    });
+    await vi.waitFor(() => expect(frames.some((frame) => frame.id === "hello")).toBe(true));
+    const open = (id: string) =>
+      call(id, "subscriptions.open", {
+        subscriptionId: id,
+        target: { kind: "session", sessionId: "session" },
+      });
+    return {
+      frames,
+      closed,
+      socket,
+      open,
+      setBuffered: (bytes: number) => {
+        buffered = bytes;
+      },
+    };
+  }
+
+  it("resyncs only the lagging subscription and keeps the socket open", async () => {
+    const slow = await slowStreamFixture();
+    slow.setBuffered(900);
+    slow.open("sub-1");
+    await vi.waitFor(() =>
+      expect(slow.frames.some((frame) => frame.params?.kind === "resync-required")).toBe(true),
+    );
+    expect(slow.frames.some((frame) => frame.params?.kind === "snapshot")).toBe(false);
+    expect(slow.socket.readyState).toBe(WebSocket.OPEN);
+    // Drained: the next subscription gets its snapshot on the same connection.
+    slow.setBuffered(0);
+    slow.open("sub-2");
+    await vi.waitFor(() =>
+      expect(slow.frames.some((frame) => frame.params?.kind === "snapshot")).toBe(true),
+    );
+    expect(slow.socket.readyState).toBe(WebSocket.OPEN);
+  });
+
+  it("still closes the socket with 1013 when the queue stays over the cap", async () => {
+    const slow = await slowStreamFixture();
+    const now = vi.spyOn(performance, "now");
+    onTestFinished(() => now.mockRestore());
+    slow.setBuffered(900);
+    slow.open("sub-1");
+    await vi.waitFor(() =>
+      expect(slow.frames.some((frame) => frame.params?.kind === "resync-required")).toBe(true),
+    );
+    now.mockReturnValue(performance.now() + 31_000);
+    slow.open("sub-2");
+    expect(await slow.closed).toBe(1013);
+  });
+
+  it("closes the socket when even the control reserve is exhausted", async () => {
+    const slow = await slowStreamFixture();
+    slow.setBuffered(1_300);
+    slow.open("sub-1");
+    expect(await slow.closed).toBe(1013);
+  });
+});

@@ -16,6 +16,28 @@ const replyFields: Record<string, readonly string[]> = {
   settled: ["version", "kind", "guardianId", "parentId", "ownerId", "exitCode", "retirement"],
   failed: ["version", "kind", "guardianId", "parentId", "reason"],
 };
+/** Fields a reply may add; the guardian omits `detail` unless an OS call failed. */
+const optionalReplyFields: Record<string, readonly string[]> = { failed: ["detail"] };
+const DETAIL_TEXT = /^[\w .()\-:,]{1,64}$/;
+
+/** Bounded cause of a failed provider start: failing step, error kind, OS code. */
+function startDetailText(value: unknown): string {
+  if (value === undefined) return "";
+  const detail = value as Record<string, unknown> | null;
+  if (
+    !detail ||
+    typeof detail !== "object" ||
+    Array.isArray(detail) ||
+    Object.keys(detail).length !== 3 ||
+    typeof detail.step !== "string" ||
+    typeof detail.kind !== "string" ||
+    !DETAIL_TEXT.test(detail.step) ||
+    !DETAIL_TEXT.test(detail.kind) ||
+    (detail.code !== null && !Number.isSafeInteger(detail.code))
+  )
+    throw new ProviderGuardianError("Invalid guardian frame fields.");
+  return ` (${detail.step}: ${detail.kind}${detail.code === null ? "" : `, os error ${String(detail.code)}`})`;
+}
 
 export type GuardianLaunch = {
   command: string;
@@ -275,10 +297,11 @@ export class NativeGuardianChild extends EventEmitter implements GuardianProvide
     if (frame.version !== 1 || typeof frame.kind !== "string" || this.terminal || this.failed)
       throw new ProviderGuardianError("Invalid guardian protocol state.");
     const fields = replyFields[frame.kind];
+    const optional = optionalReplyFields[frame.kind] ?? [];
     if (
       !fields ||
-      Object.keys(frame).length !== fields.length ||
-      fields.some((key) => !Object.hasOwn(frame, key))
+      fields.some((key) => !Object.hasOwn(frame, key)) ||
+      Object.keys(frame).some((key) => !fields.includes(key) && !optional.includes(key))
     )
       throw new ProviderGuardianError("Invalid guardian frame fields.");
     if (frame.kind === "ready") {
@@ -351,7 +374,11 @@ export class NativeGuardianChild extends EventEmitter implements GuardianProvide
       !this.ownerId &&
       ["invalid-start", "spawn-failed", "unsupported", "io"].includes(String(frame.reason))
     ) {
-      this.startResult.reject(new ProviderGuardianError("Guardian provider startup failed."));
+      this.startResult.reject(
+        new ProviderGuardianError(
+          `Guardian provider startup failed: ${String(frame.reason)}${startDetailText(frame.detail)}.`,
+        ),
+      );
       return;
     }
     if (frame.kind === "settled") {

@@ -1,3 +1,4 @@
+import { DESKTOP_TAKE_WAIT_MS } from "../../src/shared/model/host-contracts/native-services";
 import type { ServerBindings } from "./bindings";
 import type { OwnerRpcRequest } from "./owner-rpc-context";
 import { handleApprovalsRpc } from "./rpc-approvals";
@@ -59,9 +60,14 @@ const heldPollMs = (params: Record<string, unknown>): number => {
  * assistant turn lasts as long as that work, which has its own deadline, so it is never
  * reported. Every other method, including the `sessions.desktopLive` heartbeat, gets none.
  */
+/** An idle desktop take is held for the wait it asked for, up to the relay's bound. */
+const heldTakeMs = (params: Record<string, unknown>): number =>
+  Math.min(DESKTOP_TAKE_WAIT_MS, Math.max(0, Number(params.waitMs) || 0));
 const RPC_HOLD_MS: Record<string, (params: Record<string, unknown>) => number> = {
   "machine.changes": heldPollMs,
   "sessions.sync": heldPollMs,
+  "conversation.desktop.take": heldTakeMs,
+  "native.services.conversation.desktop.take": heldTakeMs,
   "workspace.run": () => Infinity,
   "assistant.request": () => Infinity,
 };
@@ -77,7 +83,7 @@ export function slowRpcThresholdMs(method: string, params: Record<string, unknow
 const RPC_DEADLINE_MS = 120_000;
 const GIT_MUTATION_DEADLINE_MS = 480_000;
 const LONG_RPC_DEADLINE_MS: Record<string, number> = {
-  "git.action": GIT_MUTATION_DEADLINE_MS,
+  "git.action": 640_000,
   "git.switch": GIT_MUTATION_DEADLINE_MS,
   "git.createBranch": GIT_MUTATION_DEADLINE_MS,
   "git.worktreeCreate": GIT_MUTATION_DEADLINE_MS,
@@ -90,7 +96,13 @@ const LONG_RPC_DEADLINE_MS: Record<string, number> = {
   "sessions.sideQuestion": 190_000,
   "voice.local.start": 210_000,
   "devices.action": 210_000,
+  "devices.capture": 220_000,
   "devices.boot": 270_000,
+  "appearance.backgroundImage": 280_000,
+  "appearance.backgroundSuggestions": 140_000,
+  "appearance.themeSuggestions": 140_000,
+  "decisionModels.local.start": 135_000,
+  "decisionModels.sources.test": 135_000,
   "assistant.builder.avatarGenerate": 280_000,
   "projects.clone": 660_000,
   "browser.setup": 1_260_000,
@@ -199,6 +211,17 @@ export function rpcFailureFields(
         ? undefined
         : createHash("sha256").update(text).digest("hex").slice(0, 12),
   };
+}
+
+/**
+ * A runtime or system fault (a programming error, or a failed fs/socket call that carries
+ * `syscall`) describes the Host, not the request. Its message can hold paths or SQL text, so the
+ * HTTP layer answers 500 with a generic message instead of 400 with the raw text.
+ */
+export function isInternalFailure(error: unknown): boolean {
+  if (error instanceof TypeError || error instanceof RangeError || error instanceof ReferenceError)
+    return true;
+  return error instanceof Error && typeof (error as { syscall?: unknown }).syscall === "string";
 }
 import { handleWorktreesRpc } from "./rpc-worktrees";
 type Dependencies = Pick<
@@ -362,6 +385,7 @@ const handlers: Record<
   "native.delivery.epochs.status": handleNativeRpc,
   "native.delivery.epochs.compact": handleNativeRpc,
   "native.delivery.epochs.close": handleNativeRpc,
+  "native.delivery.epochs.gap.resolve": handleNativeRpc,
   "native.buffers.delivery.status": handleNativeRpc,
   "native.buffers.delivery.ack": handleNativeRpc,
   "native.services.delivery.apply": handleNativeRpc,
@@ -613,6 +637,9 @@ const handlers: Record<
   "decisionModels.local.recommend": handleDecisionModelsRpc,
   "decisionModels.local.plan": handleDecisionModelsRpc,
   "decisionModels.local.install": handleDecisionModelsRpc,
+  "decisionModels.local.installStart": handleDecisionModelsRpc,
+  "decisionModels.local.installProgress": handleDecisionModelsRpc,
+  "decisionModels.local.cancelInstall": handleDecisionModelsRpc,
   "decisionModels.local.start": handleDecisionModelsRpc,
   "decisionModels.local.stop": handleDecisionModelsRpc,
   "decisionModels.local.uninstall": handleDecisionModelsRpc,
@@ -770,6 +797,7 @@ const handlers: Record<
   "crews.deleteRun": handleCrewsRpc,
   "crews.agent.save": handleCrewsRpc,
   "crews.agent.delete": handleCrewsRpc,
+  "crews.agent.group.update": handleCrewsRpc,
   "crews.start": handleCrewsRpc,
   "crews.get": handleCrewsRpc,
   "crews.assign": handleCrewsRpc,

@@ -25,19 +25,10 @@ it("opens each destination and refreshes without reloading the app", async () =>
     document.body.append(host);
     expect(
       [...host.querySelectorAll("button")].map((button) => button.getAttribute("aria-label")),
-    ).toEqual(["Workspace controls", "Sounds", "Full screen"]);
-    const openMenu = async () =>
-      act(async () =>
-        host.querySelector<HTMLButtonElement>('button[aria-label="Workspace controls"]')!.click(),
-      );
-    for (const label of ["Refresh current view"]) {
-      await openMenu();
-      const item = [...document.body.querySelectorAll<HTMLElement>('[role^="menuitem"]')].find(
-        (item) => item.textContent?.includes(label),
-      );
-      expect(item, label).toBeDefined();
-      await act(async () => item!.click());
-    }
+    ).toEqual(["Refresh current view", "Sounds", "Full screen"]);
+    const refreshButton = () =>
+      host.querySelector<HTMLButtonElement>('button[aria-label="Refresh current view"]')!;
+    await act(async () => refreshButton().click());
     expect(reload).toHaveBeenCalledOnce();
     expect(document.body.textContent).not.toContain("Manage hidden groups");
     expect(document.body.textContent).not.toContain("Provider usage");
@@ -49,12 +40,8 @@ it("opens each destination and refreshes without reloading the app", async () =>
         }),
       ),
     );
-    await openMenu();
-    const refresh = [...document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
-      (item) => item.textContent?.includes("Refresh current view"),
-    )!;
-    expect((refresh as HTMLButtonElement).disabled).toBe(true);
-    await act(async () => refresh.click());
+    expect(refreshButton().disabled).toBe(true);
+    await act(async () => refreshButton().click());
     expect(reload).toHaveBeenCalledOnce();
   } finally {
     await act(async () => root.unmount());

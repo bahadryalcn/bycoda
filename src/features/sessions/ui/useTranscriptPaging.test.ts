@@ -203,3 +203,20 @@ it.each([
   expect(setPagingError).toHaveBeenCalledWith(shown);
   expect(loadingRef.current).toBe(false);
 });
+
+it.each([
+  ["adds nothing (it failed and said so itself)", 0, false],
+  ["adds blocks", 20, true],
+  ["reports no count", undefined, true],
+])("moves the window only when the remote load %s", async (_name, added, moved) => {
+  const apply = vi.fn();
+  await runRemoteLoad({
+    load: () => Promise.resolve(added),
+    stale: () => false,
+    apply,
+    loadingRef: { current: true },
+    setPagingLoading: () => {},
+    setPagingError: () => {},
+  });
+  expect(apply).toHaveBeenCalledTimes(moved ? 1 : 0);
+});

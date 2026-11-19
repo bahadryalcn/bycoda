@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 import {
   expandSkillGroupTokens,
@@ -98,6 +99,7 @@ import {
   retainAttachmentPickerSelection,
   revokeAttachment,
 } from "../model/attachments";
+import { collectSkippedAttachments } from "../model/attachmentSkips";
 import {
   attachmentTokens,
   attachmentsDroppedByEdit,
@@ -251,6 +253,8 @@ import type { SessionOrganizationResult } from "../model/sessionOrganizationStor
 import { SessionFolderPicker } from "./SessionFolderPicker";
 import { MCP_COMMAND, isMcpCommand } from "../model/mcpCommand";
 import { mcpContextText, newMcpTag, taggedMcpServers, type McpTag } from "../model/mcpPicker";
+import { COMPOSER_PICKER_SELECTOR } from "../model/composerPickerSelector";
+import { tokenSyncUnchanged, type TokenSyncSnapshot } from "../model/composerTokenSync";
 import {
   getComposerAttachments,
   getComposerMcpTags,
@@ -264,6 +268,7 @@ import type { LastTurnRecall } from "../model/editLastTurn";
 import {
   isDefaultQueueChord,
   QUEUE_MESSAGE_COMMAND,
+  queueChordConsumesKey,
   queueShortcutApplies,
 } from "../model/composerQueue";
 import {
@@ -296,7 +301,6 @@ import {
   useComposerAttachmentLifecycle,
   useComposerAttachmentReads,
   releaseOverLimit,
-  skippedPastedFiles,
 } from "./useComposerAttachments";
 import { useComposerFileDrop } from "./useComposerFileDrop";
 import { useComposerRegistrations } from "./useComposerRegistrations";
@@ -512,7 +516,7 @@ async function awaitSubmission(run: SubmissionRun): Promise<void> {
     );
   } catch (error) {
     if (parentChanged.identity() === originalIdentity)
-      run.setPasteError(error instanceof Error ? error.message : String(error));
+      run.setPasteError(errorText(error));
   } finally {
     rawAction.finish();
     if (parentChanged.identity() === originalIdentity && run.submitLockRef.current === token) {
@@ -759,6 +763,8 @@ export const Composer = memo(function Composer({
   const mentionRef = useRef<MentionToken | null>(null);
   /** Set while the text is an unedited entry recalled with Up/Down. */
   const historyRef = useRef<HistoryBrowse | null>(null);
+  /** The text, caret and skill list the slash/dollar/mention parse last ran for. */
+  const tokenSyncRef = useRef<TokenSyncSnapshot | null>(null);
   const escapeArmedRef = useRef<number | null>(null);
   const replaceCitations = useCallback((next: ChatCitation[]) => {
     if (JSON.stringify(citationsRef.current) === JSON.stringify(next)) return;
@@ -1095,6 +1101,7 @@ export const Composer = memo(function Composer({
     mentionIndex,
     rankedFiles,
     filesFailed,
+    filesIndexNotice,
     retryFiles,
     workItemsLoading,
     workItemsScoped,
@@ -1197,15 +1204,22 @@ export const Composer = memo(function Composer({
   );
 
   const addAttachments = useCallback(
-    (incoming: Attachment[]) => {
+    (incoming: Attachment[], notice?: string | null) => {
       if (!canMutateDraft()) return;
-      if (!harnessSupportsAttachments(harness) || incoming.length === 0) return;
+      if (!harnessSupportsAttachments(harness)) return;
+      if (incoming.length === 0) {
+        // Nothing to add, but the files a read left out are still said.
+        if (notice) setPasteError(notice);
+        return;
+      }
       const previous = attachmentsRef.current;
       const next = mergeAttachments(previous, incoming);
       attachmentsRef.current = next;
       setAttachments(next);
-      // Files the full draft left out are said, not silently dropped.
-      setPasteError(releaseOverLimit(previous, next, incoming));
+      // Files the full draft left out, and blobs a read skipped, are said, not silently dropped.
+      setPasteError(
+        [releaseOverLimit(previous, next, incoming), notice].filter(Boolean).join(" ") || null,
+      );
       draftRevisionRef.current += 1;
       // Skipped duplicates are not in `next`, so they get no token either.
       insertIntoDraft(tokensForIncoming(previous, next.slice(previous.length)));
@@ -1502,11 +1516,19 @@ export const Composer = memo(function Composer({
     return () => cancelAnimationFrame(frame);
   }, [draft, syncHighlightScroll]);
 
-  const syncTokensFromTextarea = (el: HTMLTextAreaElement) => {
+  /**
+   * `skipUnchanged` is for events that trail an input (select, keyup): the
+   * input already parsed this text and caret, so they parse only when the
+   * caret or the skill list moved. Input and click always parse.
+   */
+  const syncTokensFromTextarea = (el: HTMLTextAreaElement, skipUnchanged = false) => {
     if (creatingSkill) return;
     // A recalled "/plan" must not pop the menu over the next Up press.
     if (historyRef.current?.text === el.value) return;
     const cursor = el.selectionStart ?? 0;
+    const snapshot = { value: el.value, cursor, context: [dollarSkills, harness] };
+    if (skipUnchanged && tokenSyncUnchanged(tokenSyncRef.current, snapshot)) return;
+    tokenSyncRef.current = snapshot;
     const token = slashTokenAt(el.value, cursor, hasNativeCommands(harness));
     // `$name` opens only while some Codex skill matches, so `$HOME` stays text.
     const dollar = token ? null : dollarTokenAt(el.value, cursor);
@@ -1790,7 +1812,7 @@ export const Composer = memo(function Composer({
 
     if (
       composer?.querySelector(
-        "[data-skill-picker], [data-session-folder-picker], [data-mention-picker], [data-mcp-picker], [data-composer-plus], [data-question-form]",
+        `${COMPOSER_PICKER_SELECTOR}, [data-composer-plus], [data-question-form]`,
       )
     )
       return;
@@ -2683,30 +2705,30 @@ export const Composer = memo(function Composer({
       }
     }
 
-    // Shift+Tab (rebindable) queues the message behind the running turn.
-    // With nothing to queue it does nothing: the key stays in the composer
-    // either way, so a press between turns never throws focus onto the toolbar.
+    // Shift+Tab (rebindable) queues the message behind the running turn. It only
+    // takes the key while something can be queued; otherwise Shift+Tab keeps its
+    // native job of moving focus backwards so keyboard users are never trapped.
+    // Open slash/mention/picker popups own Tab above and are excluded here.
     if (
       keybindingPressed(QUEUE_MESSAGE_COMMAND, e, isDefaultQueueChord(e)) &&
       !(slash || mentionOpen || pickerOpen)
     ) {
-      e.preventDefault();
-      if (
-        queueShortcutApplies({
-          busy,
-          backgroundOnly,
-          subagentsRunning: localSubagentsRunning,
-          allowBusySubmit,
-          disabled: disabled || worktreeRemoved,
-          popupOpen: false,
-          draftMode: draftActive,
-          text: withChatCitations(e.currentTarget.value, citationsRef.current),
-          attachmentCount: attachmentsRef.current.length,
-        })
-      ) {
-        submit(e.currentTarget.value, true);
+      const applies = queueShortcutApplies({
+        busy,
+        backgroundOnly,
+        subagentsRunning: localSubagentsRunning,
+        allowBusySubmit,
+        disabled: disabled || worktreeRemoved,
+        popupOpen: false,
+        draftMode: draftActive,
+        text: withChatCitations(e.currentTarget.value, citationsRef.current),
+        attachmentCount: attachmentsRef.current.length,
+      });
+      if (queueChordConsumesKey(e, applies)) {
+        e.preventDefault();
+        if (applies) submit(e.currentTarget.value, true);
+        return;
       }
-      return;
     }
 
     // Plain arrows browse prompt history; Esc Esc owns conversation rewind.
@@ -2779,19 +2801,18 @@ export const Composer = memo(function Composer({
         setPasteError(t("This conversation does not accept attachments."));
         return;
       }
-      rememberAttachmentRead((accepted) =>
-        attachmentsFromFiles(messageFiles).then((pasted) =>
+      rememberAttachmentRead((accepted) => {
+        const skips = collectSkippedAttachments();
+        return attachmentsFromFiles(messageFiles, { onSkipped: skips.onSkipped }).then((pasted) =>
           accepted.apply(() => {
             if (!accepted.isCurrent()) {
               pasted.forEach(revokeAttachment);
               return;
             }
-            addAttachments(pasted);
-            const skipped = skippedPastedFiles(messageFiles, pasted);
-            if (skipped) setPasteError(skipped);
+            addAttachments(pasted, skips.notice());
           }),
-        ),
-      );
+        );
+      });
       return;
     }
     const files = filesFromClipboard(e.clipboardData);
@@ -2834,7 +2855,7 @@ export const Composer = memo(function Composer({
           .catch((reason: unknown) => {
             if (!accepted.isCurrent()) return;
             accepted.fail(reason);
-            setPasteError(reason instanceof Error ? reason.message : String(reason));
+            setPasteError(errorText(reason));
           }),
       );
       return;
@@ -2844,19 +2865,18 @@ export const Composer = memo(function Composer({
       setPasteError(t("This conversation does not accept attachments."));
       return;
     }
-    rememberAttachmentRead((accepted) =>
-      attachmentsFromFiles(files).then((pasted) =>
+    rememberAttachmentRead((accepted) => {
+      const skips = collectSkippedAttachments();
+      return attachmentsFromFiles(files, { onSkipped: skips.onSkipped }).then((pasted) =>
         accepted.apply(() => {
           if (!accepted.isCurrent()) {
             pasted.forEach(revokeAttachment);
             return;
           }
-          addAttachments(pasted);
-          const skipped = skippedPastedFiles(files, pasted);
-          if (skipped) setPasteError(skipped);
+          addAttachments(pasted, skips.notice());
         }),
-      ),
-    );
+      );
+    });
   };
 
   const attachFromPicker = () => {
@@ -3006,6 +3026,7 @@ export const Composer = memo(function Composer({
       onKeyDownCapture={disabled ? undefined : onComposerKeyDown}
     >
       <ComposerQuestionForm
+        checkpointNoticeOwned
         question={question}
         sessionId={sessionId}
         parentSessionId={logicalParentSessionId}
@@ -3372,6 +3393,7 @@ export const Composer = memo(function Composer({
               workItemsScoped={workItemsScoped}
               includeWorkItems={workItemsAvailable}
               failed={filesFailed}
+              indexNotice={filesIndexNotice}
               onRetry={retryFiles}
               includeNotes={notesEnabled}
               onActive={setMentionActive}
@@ -3517,9 +3539,9 @@ export const Composer = memo(function Composer({
                         ? t("Add context, or send to continue…")
                         : (placeholder ?? t("Message"))
               }
-              aria-label={inputAriaLabel}
+              aria-label={inputAriaLabel ?? t("Message")}
               disabled={disabled}
-              className={`composer-field scrollbar-none relative max-h-40 w-full resize-none overflow-x-hidden whitespace-pre-wrap wrap-break-word bg-transparent px-3 text-ui-body leading-5.5 placeholder:overflow-hidden placeholder:text-ellipsis placeholder:whitespace-nowrap font-sans ${
+              className={`composer-field relative max-h-40 w-full resize-none overflow-x-hidden whitespace-pre-wrap wrap-break-word bg-transparent px-3 text-ui-body leading-5.5 placeholder:overflow-hidden placeholder:text-ellipsis placeholder:whitespace-nowrap font-sans ${
                 shell ? "py-4" : "py-3"
               } ${hasSubagents ? "pe-16" : ""}`}
               onFocus={onFocus}
@@ -3527,8 +3549,8 @@ export const Composer = memo(function Composer({
               onPaste={onPaste}
               onScroll={(e) => syncHighlightScroll(e.currentTarget)}
               onClick={(e) => syncTokensFromTextarea(e.currentTarget)}
-              onKeyUp={(e) => syncTokensFromTextarea(e.currentTarget)}
-              onSelect={(e) => syncTokensFromTextarea(e.currentTarget)}
+              onKeyUp={(e) => syncTokensFromTextarea(e.currentTarget, true)}
+              onSelect={(e) => syncTokensFromTextarea(e.currentTarget, true)}
               onInput={(e) => {
                 if (!parentChanged.canMutate()) {
                   parentChanged();
@@ -3590,6 +3612,13 @@ export const Composer = memo(function Composer({
                   accountId={providerAccountId}
                   accountChoices={Boolean(onSelectProviderAccount)}
                   extrasDisabled={disabled || !onModelSettingsChange}
+                  extrasDisabledReason={
+                    disabled
+                      ? "Settings are locked while this conversation is updating."
+                      : onModelSettingsChange
+                        ? undefined
+                        : "Settings can't be changed here."
+                  }
                   onChange={onPickerModelChange}
                   onSettingsChange={onPickerSettingsChange}
                   onClose={onPickerClose}
@@ -3834,9 +3863,7 @@ export const Composer = memo(function Composer({
               <Button
                 variant="ghost"
                 type="button"
-                tooltip={t("Stop editing last message")}
                 shortcut="Esc"
-                aria-label={t("Stop editing last message")}
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={exitEditMode}
                 className="shrink-0"

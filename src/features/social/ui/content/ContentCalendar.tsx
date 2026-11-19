@@ -3,7 +3,7 @@ import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { ClampText } from "../../../../shared/ui/ClampText";
 import { Text } from "../../../../shared/ui/Text";
 import { formatDate, t } from "../../../../shared/i18n";
-import { wallClockNow } from "../../../../shared/lib/time/wallClock";
+import { useMinuteNow } from "../../../../shared/hooks/useMinuteNow";
 import { ActionHost } from "../../../../shared/ui/ActionHost";
 import { Button } from "../../../../shared/ui/Button";
 import { Plus } from "../../../../shared/ui/icons";
@@ -30,6 +30,13 @@ export type ContentCalendarProps = {
 
 const MAX_MONTH_ENTRIES = 3;
 
+function toggleDay(current: Set<string>, key: string): Set<string> {
+  const next = new Set(current);
+  if (next.has(key)) next.delete(key);
+  else next.add(key);
+  return next;
+}
+
 /** Week or month grid of planned, sent and failed posts. A day opens the editor on that day. */
 export function ContentCalendar({
   view,
@@ -41,7 +48,8 @@ export function ContentCalendar({
   const [expandedDays, setExpandedDays] = useState<Set<string>>(() => new Set());
   const days = view === "week" ? weekDays(anchor) : monthCells(anchor);
   const byDay = entriesByDay(entries);
-  const now = wallClockNow();
+  // Minute-floored clock: "today" moves to the new day at local midnight while the calendar stays open.
+  const now = useMinuteNow();
   const month = new Date(anchor).getMonth();
   return (
     <div
@@ -66,19 +74,22 @@ export function ContentCalendar({
           ))}
         </Text>
       ) : null}
-      <div className="content-calendar-grid">
+      <div className="content-calendar-grid" role="list">
         {days.map((day, index) => {
           const key = dayKey(day);
           const dayEntries = byDay.get(key) ?? [];
+          const expanded = expandedDays.has(key);
+          const overflow = view === "month" && dayEntries.length > MAX_MONTH_ENTRIES;
           const { shown, more } =
-            view === "month" && !expandedDays.has(key)
+            view === "month" && !expanded
               ? splitMonthEntries(dayEntries, MAX_MONTH_ENTRIES)
               : { shown: dayEntries, more: 0 };
           const outside = view === "month" && new Date(day).getMonth() !== month;
           const today = isToday(day, now);
           return (
-            <section
+            <div
               key={key}
+              role="listitem"
               {...surfaceAttributes(
                 {
                   frame: index ? "pane" : undefined,
@@ -89,9 +100,13 @@ export function ContentCalendar({
               )}
               data-today={today || undefined}
               data-outside={outside || undefined}
-              aria-label={formatDate(day, { weekday: "long", day: "numeric", month: "long" })}
+              aria-current={today ? "date" : undefined}
             >
               <div className="content-day-head">
+                {/* The full date is the day's accessible name; the visible number and weekday are decoration. */}
+                <span className="sr-only">
+                  {formatDate(day, { weekday: "long", day: "numeric", month: "long" })}
+                </span>
                 <span className="content-day-title" aria-hidden="true">
                   {view === "week" ? (
                     <Text
@@ -178,20 +193,26 @@ export function ContentCalendar({
                   </Button>
                 </ActionHost>
               ))}
-              {more ? (
+              {overflow ? (
                 <Button
                   variant="link"
                   layout="text"
-                  aria-expanded={false}
-                  label={t("Show all posts on {p0}", {
-                    p0: formatDate(day, { day: "numeric", month: "long" }),
-                  })}
-                  onClick={() => setExpandedDays((current) => new Set([...current, key]))}
+                  aria-expanded={expanded}
+                  label={
+                    expanded
+                      ? t("Show fewer posts on {p0}", {
+                          p0: formatDate(day, { day: "numeric", month: "long" }),
+                        })
+                      : t("Show all posts on {p0}", {
+                          p0: formatDate(day, { day: "numeric", month: "long" }),
+                        })
+                  }
+                  onClick={() => setExpandedDays((current) => toggleDay(current, key))}
                 >
-                  {t("{p0} more", { p0: more })}
+                  {expanded ? t("Show less") : t("{p0} more", { p0: more })}
                 </Button>
               ) : null}
-            </section>
+            </div>
           );
         })}
       </div>

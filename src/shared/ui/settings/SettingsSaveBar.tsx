@@ -1,12 +1,15 @@
+import { errorText } from "../../lib/errors";
 import { useRef, useState, type ReactNode } from "react";
 import { useT } from "../../i18n";
 import { Button } from "../Button";
+import { ErrorDetails } from "../ErrorDetails";
 import { Undo2 } from "../icons";
 import { Popover } from "../Popover";
 import { StatusDot } from "../StatusDot";
 import { surfaceAttributes } from "../Surface";
 import { Text } from "../Text";
 import { usePendingSource, type PendingChange } from "./pendingChanges";
+import { SettingsFeedback } from "./SettingsFeedback";
 import styles from "./SettingsSaveBar.module.css";
 
 export type SettingsSaveBarProps = {
@@ -26,7 +29,13 @@ export type SettingsSaveBarProps = {
   saveLabel?: string;
   successLabel?: string;
   onDiscard: () => void;
-  onSave: () => unknown;
+  /**
+   * Resolves true only after the save was durably acknowledged; see `PendingSource.save`. A
+   * rejection is caught by the bar: the draft, Save and its focus stay, and a failure notice with
+   * Retry appears. Explain a refusal the editor understands (validation, conflict) through
+   * `children` and resolve false instead of throwing.
+   */
+  onSave: () => boolean | Promise<boolean>;
   /** Controls next to the count, such as what the changes apply to. */
   leading?: ReactNode;
   /** Controls before Discard, such as the scope the editor saves to. */
@@ -64,17 +73,49 @@ export function SettingsSaveBar({
   const t = useT();
   const [open, setOpen] = useState(false);
   const anchor = useRef<HTMLButtonElement>(null);
+  const saveButton = useRef<HTMLButtonElement>(null);
+  const notes = useRef<HTMLDivElement>(null);
+  const [failure, setFailure] = useState<{ detail: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const running = useRef(false);
+  const working = pending || busy;
   const dirty = changes.length > 0;
+  // Every way to save (button, Retry, leave prompt) runs here, so a rejection is never unhandled.
+  const save = async (): Promise<boolean> => {
+    // Duplicate-operation guard: taken before the first await.
+    if (running.current) return false;
+    running.current = true;
+    setBusy(true);
+    try {
+      const acknowledged = (await onSave()) === true;
+      // A refusal the editor explains itself (false) leaves no stale failure of ours behind.
+      setFailure(null);
+      // Retry unmounts once the attempt settles; focus returns to Save instead of the page.
+      if (notes.current?.contains(document.activeElement)) saveButton.current?.focus();
+      return acknowledged;
+    } catch (error) {
+      // The draft, the pending registration and focus stay as they were; only the notice changes.
+      setFailure({ detail: errorText(error) });
+      return false;
+    } finally {
+      running.current = false;
+      setBusy(false);
+    }
+  };
+  const discard = () => {
+    setFailure(null);
+    onDiscard();
+  };
   usePendingSource(
     dirty
       ? {
           id,
           title,
           changes,
-          pending,
-          canSave: canSave && !pending,
-          save: onSave,
-          discard: onDiscard,
+          pending: working,
+          canSave: canSave && !working,
+          save,
+          discard,
         }
       : null,
   );
@@ -85,7 +126,25 @@ export function SettingsSaveBar({
       {...surfaceAttributes({ variant: "canvas", frame: "pane", edge: "block-start" }, styles.bar)}
       data-save-bar={id}
     >
-      {children ? <div className={styles.notes}>{children}</div> : null}
+      {children || (failure && dirty) ? (
+        <div ref={notes} className={styles.notes}>
+          {children}
+          {failure && dirty ? (
+            <SettingsFeedback
+              state="error"
+              immediate
+              action={{ label: t("Retry"), onClick: () => void save(), pending: busy }}
+              extra={
+                failure.detail ? (
+                  <ErrorDetails title={t("Could not save changes")} detail={failure.detail} />
+                ) : undefined
+              }
+            >
+              {t("Could not save changes")}
+            </SettingsFeedback>
+          ) : null}
+        </div>
+      ) : null}
       <div className={styles.row}>
         <div className={styles.status}>
           {dirty ? (
@@ -109,20 +168,21 @@ export function SettingsSaveBar({
         <Button
           size="sm"
           variant="ghost"
-          disabled={pending || !(discardEnabled ?? dirty)}
-          onClick={onDiscard}
+          disabled={working || !(discardEnabled ?? dirty)}
+          onClick={discard}
         >
           {discardLabel ?? t("Discard")}
         </Button>
         <Button
+          ref={saveButton}
           size="sm"
           variant="primary"
-          loading={pending}
+          loading={working}
           loadingLabel={t("Saving…")}
           success={saved && !dirty}
           successLabel={successLabel ?? t("Saved")}
           disabled={!dirty || !canSave}
-          onClick={() => void onSave()}
+          onClick={() => void save()}
         >
           {saveLabel ?? t("Save")}
         </Button>
@@ -165,7 +225,7 @@ export function SettingsSaveBar({
                           variant="ghost"
                           iconOnly
                           label={t("Undo {p0}", { p0: change.label })}
-                          disabled={pending}
+                          disabled={working}
                           onClick={change.revert}
                         >
                           <Undo2 className="icon-sm" />

@@ -2692,7 +2692,7 @@ export class HostEngine {
             } else if (command.type === "draft") {
               if (value.status === "running" || value.session.blocks.some((block) => block.draft))
                 throw new Error("This session cannot save another draft right now");
-              const attachments = resolveAttachments(this.store, command.attachments ?? []);
+              const attachments = await resolveAttachments(this.store, command.attachments ?? []);
               value = {
                 ...value,
                 session: {
@@ -2824,7 +2824,7 @@ export class HostEngine {
               const attachments =
                 command.type === "send"
                   ? (draft?.attachments ??
-                    resolveAttachments(this.store, command.attachments ?? []))
+                    (await resolveAttachments(this.store, command.attachments ?? [])))
                   : [];
               if (
                 attachments.some(
@@ -3224,7 +3224,7 @@ export class HostEngine {
                 if (!provider.steer) throw new Error("This provider cannot steer an active turn");
                 if (!active || active.cancelled || active.ending)
                   throw new Error("This turn was stopped");
-                const attachments = resolveAttachments(this.store, command.attachments ?? []);
+                const attachments = await resolveAttachments(this.store, command.attachments ?? []);
                 const owner = value.session.blocks[executionUserIndex(value.session.blocks)];
                 value = {
                   ...value,

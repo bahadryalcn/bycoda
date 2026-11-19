@@ -94,7 +94,12 @@ export function CrewTeamItem({
           </Text>
           {/* Scope and size are data, not help text: they stay visible. */}
           <Text as="p" tone="muted" truncate>
-            {[scope, t("{p0} members", { p0: crew.agents.length })].join(" · ")}
+            {[
+              scope,
+              t(crew.agents.length === 1 ? "{p0} member" : "{p0} members", {
+                p0: crew.agents.length,
+              }),
+            ].join(" · ")}
           </Text>
           <Text as="p" tone="muted" className="mt-0.5 flex items-center gap-1.5">
             {execution === "working" ? <WorkingIndicator size="xs" /> : null}

@@ -13,6 +13,8 @@ import {
   layoutLeaves,
   layoutSashes,
   leaf,
+  MIN_PANE_RATIO,
+  minPaneRatio,
   newChangesTab,
   newCommitTab,
   newEditorWorkspaceTab,
@@ -36,6 +38,7 @@ import {
   openTerminalTab,
   paneEdgeFromPoint,
   placePane,
+  sashBoundaryRange,
   splitPane,
   splitSizesAtBoundary,
   updateTerminalTab,
@@ -170,6 +173,34 @@ describe("splitSizesAtBoundary", () => {
   it("leaves invalid boundaries unchanged", () => {
     const sizes = [0.5, 0.5];
     expect(splitSizesAtBoundary(sizes, 2, 0.5)).toBe(sizes);
+  });
+});
+
+describe("pane pixel minimum", () => {
+  it("turns the pixel minimum into a share of the split", () => {
+    expect(minPaneRatio(1200, 240)).toBeCloseTo(0.2);
+    expect(minPaneRatio(1000, 120)).toBeCloseTo(0.12);
+  });
+
+  it("keeps a third of a split too small for two minimum panes", () => {
+    expect(minPaneRatio(400, 240)).toBeCloseTo(1 / 3);
+  });
+
+  it("falls back to the ratio floor without a measured span", () => {
+    expect(minPaneRatio(0, 240)).toBe(MIN_PANE_RATIO);
+    expect(minPaneRatio(Number.NaN, 240)).toBe(MIN_PANE_RATIO);
+  });
+
+  it("bounds the sash by the minimum on both neighbours", () => {
+    const range = sashBoundaryRange([0.2, 0.3, 0.5], 1, 0.1);
+    expect(range.min).toBeCloseTo(0.3);
+    expect(range.max).toBeCloseTo(0.6);
+  });
+
+  it("pins the sash to the midpoint of a pair too small for two minimums", () => {
+    const range = sashBoundaryRange([0.5, 0.1, 0.4], 1, 0.2);
+    expect(range.min).toBeCloseTo(0.55);
+    expect(range.max).toBeCloseTo(0.55);
   });
 });
 

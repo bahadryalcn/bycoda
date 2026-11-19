@@ -87,7 +87,7 @@ const button = (text: string) =>
   [...element.querySelectorAll("button")].find((b) => b.textContent?.trim() === text);
 const rows = () => [...element.querySelectorAll<HTMLElement>(".social-activity-row")];
 
-it("reads only the selected project's history, 20 jobs at most", async () => {
+it("reads only the selected project's history, 20 jobs per page", async () => {
   const { sectionSnapshot } = await mount({ projectId: "p1" });
   expect(sectionSnapshot).toHaveBeenCalledExactlyOnceWith({
     section: "history",
@@ -101,10 +101,11 @@ it("reads every project's history when no project is selected", async () => {
   expect(sectionSnapshot).toHaveBeenCalledExactlyOnceWith({ section: "history", limit: 20 });
 });
 
-it("shows at most 20 jobs even when the Host sends more", async () => {
+it("shows every row a Host without paging sends and offers no Load more", async () => {
   const jobs = Array.from({ length: 25 }, (_, index) => job({ id: `j${index}` }));
   await mount({ jobs });
-  expect(rows()).toHaveLength(20);
+  expect(rows()).toHaveLength(25);
+  expect(button("Load more")).toBeUndefined();
 });
 
 it("says nothing was sent only after a successful empty read", async () => {

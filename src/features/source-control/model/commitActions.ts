@@ -21,8 +21,8 @@ export function commitMenuItems(
   mutationsDisabled = false,
 ): ExplorerMenuItem[] {
   const items: ExplorerMenuItem[] = [
-    { kind: "item", id: "open-changes", label: "Open Changes" },
-    { kind: "item", id: "blame", label: "Open in Blame" },
+    { kind: "item", id: "open-changes", label: "Open changes" },
+    { kind: "item", id: "blame", label: "Open in blame" },
     { kind: "item", id: "github", label: "Open on GitHub" },
     { kind: "sep" },
     {
@@ -35,7 +35,7 @@ export function commitMenuItems(
     {
       kind: "item",
       id: "branch",
-      label: "Create Branch…",
+      label: "Create branch…",
       disabled: mutationsDisabled,
     },
     {

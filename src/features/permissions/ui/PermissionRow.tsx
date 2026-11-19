@@ -87,7 +87,7 @@ export function PermissionRow({
             )}
             {!failed && !entry.canRequest && (
               <Button onClick={() => setSetup(true)}>
-                {entry.canOpenSettings ? t("Review access…") : t("Setup guide")}
+                {t("Review access")}
               </Button>
             )}
           </span>

@@ -273,36 +273,72 @@ test("a new review shows current activity and opens the current reviewer", async
   await expect(page.getByLabel("Opened session")).toHaveText("current-review-session");
 });
 
-test("partial library group updates retry only the remaining profiles", async ({ page }) => {
-  await page.goto("/tests/browser/crews/crews.html?groupRetry");
-  await openCrewsTab(page, "Members");
-  await page.getByRole("button", { name: /^Member group:/ }).click();
-  await page.getByRole("option", { name: "UI", exact: true }).click();
-  await page.getByRole("button", { name: "Group options", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Rename group", exact: true }).click();
-  const dialog = page.getByRole("dialog", {
-    name: "Rename group",
-    exact: true,
-  });
-  await dialog.getByRole("textbox", { name: "Group name", exact: true }).fill("Interface");
-  await dialog.getByRole("button", { name: "Rename", exact: true }).click();
-  await expect(dialog.getByRole("alert")).toContainText("Second profile unavailable");
-  await expect(dialog.getByRole("textbox", { name: "Group name", exact: true })).toBeDisabled();
-  await dialog.getByRole("button", { name: "Rename", exact: true }).click();
-  await expect(dialog).toHaveCount(0);
-  const snapshot = await page.evaluate(() =>
+type GroupSnapshot = {
+  agents: { id: string; groups?: string[] }[];
+  agentSaveCounts: Record<string, number>;
+  groupUpdateCalls: number;
+};
+const groupSnapshot = (page: Page) =>
+  page.evaluate(() =>
     (
-      window as unknown as {
-        crewFixtureSnapshot: () => {
-          agents: { id: string; groups: string[] }[];
-          agentSaveCounts: Record<string, number>;
-        };
-      }
+      window as unknown as { crewFixtureSnapshot: () => GroupSnapshot }
     ).crewFixtureSnapshot(),
   );
-  expect(snapshot.agents.every((agent) => agent.groups.includes("Interface"))).toBe(true);
-  expect(snapshot.agentSaveCounts["lib-ui"]).toBe(1);
-  expect(snapshot.agentSaveCounts["lib-api"]).toBe(2);
+async function openGroupDialog(page: Page, group: string, action: "Rename group" | "Delete group") {
+  await openCrewsTab(page, "Members");
+  await page.getByRole("button", { name: /^Member group:/ }).click();
+  await page.getByRole("option", { name: group, exact: true }).click();
+  await page.getByRole("button", { name: "Group options", exact: true }).click();
+  await page.getByRole("menuitem", { name: action, exact: true }).click();
+  return page.getByRole("dialog", {
+    name: action === "Rename group" ? action : new RegExp(`^Delete group ${group}`),
+  });
+}
+
+test("a failed library group rename leaves every profile in the old group and retries as one call", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/crews/crews.html?groupRetry");
+  const dialog = await openGroupDialog(page, "UI", "Rename group");
+  await dialog.getByRole("textbox", { name: "Group name", exact: true }).fill("Interface");
+  await dialog.getByRole("button", { name: "Rename", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toContainText("Group update unavailable");
+  // Nothing moved: no profile carries the new name and the field stays editable.
+  const failed = await groupSnapshot(page);
+  expect(failed.agents.every((agent) => agent.groups?.join() === "UI")).toBe(true);
+  await expect(dialog.getByRole("textbox", { name: "Group name", exact: true })).toBeEnabled();
+  await dialog.getByRole("button", { name: "Rename", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  const snapshot = await groupSnapshot(page);
+  expect(snapshot.agents.every((agent) => agent.groups?.join() === "Interface")).toBe(true);
+  expect(snapshot.groupUpdateCalls).toBe(2);
+  expect(snapshot.agentSaveCounts).toEqual({});
+});
+
+test("library group delete removes the label from every member in one call and keeps the members", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/crews/crews.html");
+  const before = await groupSnapshot(page);
+  const dialog = await openGroupDialog(page, "UI", "Delete group");
+  await dialog.getByRole("button", { name: "Delete group", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  const snapshot = await groupSnapshot(page);
+  expect(snapshot.agents.map((agent) => agent.id)).toEqual(before.agents.map((agent) => agent.id));
+  expect(snapshot.agents.some((agent) => agent.groups?.includes("UI"))).toBe(false);
+  expect(snapshot.groupUpdateCalls).toBe(1);
+  expect(snapshot.agentSaveCounts).toEqual({});
+});
+
+test("renaming a library group onto an existing group is refused instead of merging", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/crews/crews.html");
+  const dialog = await openGroupDialog(page, "UI", "Rename group");
+  await dialog.getByRole("textbox", { name: "Group name", exact: true }).fill("Backend");
+  await expect(dialog.getByText("A group with this name already exists")).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Rename", exact: true })).toBeDisabled();
+  expect((await groupSnapshot(page)).groupUpdateCalls).toBe(0);
 });
 
 test("library copy reconciles an uncertain saved profile without a second save", async ({
@@ -1214,7 +1250,7 @@ test("narrow windows show the work list or one work at a time", async ({ page })
   await management.getByRole("button", { name: "Back to work list" }).click();
   await expect(list).toBeVisible();
   await expect(list.getByRole("button", { name: /^Work item 3/ })).toHaveAttribute(
-    "aria-pressed",
+    "aria-current",
     "true",
   );
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
@@ -1230,7 +1266,7 @@ test("wide windows keep the work list beside the selected work", async ({ page }
   await expect(management.getByRole("button", { name: "Back to work list" })).toBeHidden();
   // The work opened from the sidebar is the selected row even when it sits far down the list.
   await expect(management.locator('[data-crew-work-choice="run"]')).toHaveAttribute(
-    "aria-pressed",
+    "aria-current",
     "true",
   );
 });
@@ -1814,10 +1850,10 @@ for (const theme of ["light", "dark"])
         .getByRole("button", { name: "Manage", exact: true })
         .click();
       const dialog = page.getByRole("dialog", { name: "Website Crew", exact: true });
-      const nav = dialog.getByRole("navigation", { name: "Crew work", exact: true });
-      const list = nav.getByRole("list", { name: "Work list", exact: true });
+      const list = dialog.getByRole("list", { name: "Work list", exact: true });
       await expect(list).toBeVisible();
-      await expect(nav).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      await expect(dialog.getByRole("navigation", { name: "Crew work", exact: true })).toHaveCount(0);
+      await expect(list.locator("xpath=..")).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
       expect(await list.getByRole("listitem").count()).toBeGreaterThan(2);
       await page.screenshot({
         path: `temp/verification/crew-work-current/list-${theme}-${width}.png`,
@@ -1827,7 +1863,7 @@ for (const theme of ["light", "dark"])
       await expect(dialog.locator('[data-crew-run="many-2"]')).toBeVisible();
       if (!(await list.isVisible()))
         await dialog.getByRole("button", { name: "Back to work list", exact: true }).click();
-      await expect(item).toHaveAttribute("aria-pressed", "true");
+      await expect(item).toHaveAttribute("aria-current", "true");
       await page.screenshot({
         path: `temp/verification/crew-work-current/selected-${theme}-${width}.png`,
       });

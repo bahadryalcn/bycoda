@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useT } from "../../../shared/i18n";
@@ -109,7 +110,7 @@ export function SessionDiscussionPanel({
       })
       .catch((cause: unknown) => {
         if (active && generation === request.current)
-          setError(cause instanceof Error ? cause.message : String(cause));
+          setError(errorText(cause));
       })
       .finally(() => {
         if (active && generation === request.current) setLoading(false);

@@ -202,6 +202,49 @@ it("treats a certificate reference without a sha256 as unreadable", async () => 
   expect(await blobCount(f.store)).toBe(4);
 });
 
+it("scans certificate JSON once per pass, not once per delete batch", async () => {
+  const f = await seeded();
+  await f.store.db
+    .prepare(`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<1100)
+      INSERT INTO native_buffer_blobs SELECT printf('%064x',i),1,0 FROM n`)
+    .run();
+  const prepared = f.store.db.prepare.bind(f.store.db);
+  const scans = vi.spyOn(f.store.db, "prepare").mockImplementation((sql) => prepared(sql));
+  const result = await collectOrphanNativeBufferBlobs(f.store);
+  const jsonScans = scans.mock.calls.filter(([sql]) => sql.includes("json_each")).length;
+  scans.mockRestore();
+  expect(result).toMatchObject({ orphanBlobs: 1101, deletedBlobs: 1101 });
+  // Unreadable-reference guard, orphan count and candidate list: three, independent of batches.
+  expect(jsonScans).toBeLessThanOrEqual(3);
+  expect(await blobCount(f.store)).toBe(3);
+});
+
+it("keeps a blob that a certificate written mid-pass references", async () => {
+  const f = await seeded();
+  const original = f.store.transaction.bind(f.store);
+  let injected = false;
+  // The certificate lands after the pass derived its orphan set, before the first delete.
+  vi.spyOn(f.store, "transaction").mockImplementation(async (run, mode) => {
+    if (!injected) {
+      injected = true;
+      const digest = sha(f.b);
+      await f.store.db
+        .prepare("INSERT INTO native_buffer_certificates VALUES (?,?,?,?)")
+        .run(
+          reportId,
+          2,
+          digest,
+          JSON.stringify({ snapshotDigest: digest, artifacts: [{ sha256: digest }] }),
+        );
+    }
+    return original(run, mode);
+  });
+  const result = await collectOrphanNativeBufferBlobs(f.store);
+  expect(injected).toBe(true);
+  expect(result).toMatchObject({ orphanBlobs: 1, deletedBlobs: 0 });
+  expect(await blobCount(f.store)).toBe(4);
+});
+
 it("does nothing before the native buffer schema exists", async () => {
   const f = await fixture();
   expect(await collectOrphanNativeBufferBlobs(f.store)).toEqual({

@@ -14,7 +14,11 @@ export type RoomVisibilityTarget = Readonly<{
   cwd: string;
 }>;
 
+const MAX_ENTRIES = 1024;
+
 type Entry = {
+  /** Epoch of the last register or revoke; it keeps this entry's sequence floor alive. */
+  epoch: number;
   sequence: number;
   source: RoomVisibilitySource;
   targets: Set<string>;
@@ -74,11 +78,12 @@ export class AssistantVisibilityFence {
     }
     const key = sourceKey(source);
     const previous = this.entries.get(key);
-    if (!previous && this.entries.size >= 1024) throw new Error("Room visibility capacity reached");
+    if (!previous) this.reserveSlot();
     if (previous && (sequence <= previous.sequence || previous.inFlight !== 0)) {
       throw new Error("Stale or undrained Room visibility registration");
     }
     this.entries.set(key, {
+      epoch: this.epoch,
       sequence,
       source: { ...source },
       targets: new Set(targets.map(targetKey)),
@@ -122,8 +127,9 @@ export class AssistantVisibilityFence {
       throw new Error("Stale Room visibility revocation");
     }
     if (!entry) {
-      if (this.entries.size >= 1024) throw new Error("Room visibility capacity reached");
+      this.reserveSlot();
       this.entries.set(key, {
+        epoch: this.epoch,
         sequence,
         source: { ...source },
         targets: new Set(),
@@ -133,11 +139,33 @@ export class AssistantVisibilityFence {
       });
       return Promise.resolve();
     }
+    entry.epoch = this.epoch;
     entry.sequence = sequence;
     entry.active = false;
     entry.targets.clear();
     if (entry.inFlight === 0) return Promise.resolve();
     return new Promise((resolve) => entry.waiters.push(resolve));
+  }
+
+  /**
+   * Make room for a new source. Only entries from before the last `revokeAll` are retired, and
+   * only when inactive and drained (no permit, no waiter): `register` refuses every snapshot
+   * captured in an earlier epoch, so no pending or late result can reach them. Anything touched
+   * in the current epoch keeps its sequence floor, so a full fence still fails closed.
+   */
+  private reserveSlot(): void {
+    if (this.entries.size < MAX_ENTRIES) return;
+    for (const [key, entry] of this.entries) {
+      if (
+        entry.epoch < this.epoch &&
+        !entry.active &&
+        entry.inFlight === 0 &&
+        entry.waiters.length === 0 &&
+        entry.targets.size === 0
+      )
+        this.entries.delete(key);
+    }
+    if (this.entries.size >= MAX_ENTRIES) throw new Error("Room visibility capacity reached");
   }
 
   /** Acquire immediately before admitting the physical effect; always release. */

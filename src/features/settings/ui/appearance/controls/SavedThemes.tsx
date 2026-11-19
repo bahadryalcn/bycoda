@@ -23,6 +23,7 @@ import {
   renameTheme,
 } from "./savedThemeActions";
 import { ThemeNameDialog } from "./ThemeNameDialog";
+import { errorText } from "../../../../../shared/lib/errors";
 import "./ThemeControls.css";
 import { writeGeneratorValue } from "./themeGeneratorSession";
 
@@ -52,7 +53,7 @@ export function SavedThemes({ appearance }: { appearance: AppearanceSettings }) 
           t("This theme's image is no longer in the library. The rest of the look was applied."),
         );
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : String(error));
+      setNotice(errorText(error));
     } finally {
       setBusy(false);
     }

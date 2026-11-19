@@ -1,4 +1,4 @@
-import { readNormalizedJsonWire } from "../normalized-wire";
+import { normalizeJsonWire, readNormalizedJsonWire } from "../normalized-wire";
 import { afterEach, expect, it, vi } from "vitest";
 import {
   HostSubscriptionHub,
@@ -404,6 +404,101 @@ it("retries a failed read while consumers stay live and resyncs only after repea
   expect(second.events.at(-1)?.params.kind).toBe("resync-required");
 });
 
+it("resyncs only the consumer whose authorization cannot be verified and keeps the snapshot for the rest", async () => {
+  const loading = deferred<{ revision: number; data: { revision: number } }>();
+  const load = vi.fn(async () => loading.promise);
+  const { hub } = fixture({ load });
+  const healthy = client("healthy"),
+    flaky = client("flaky");
+  subscribe(hub, healthy.owner);
+  subscribe(hub, flaky.owner);
+  await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(1));
+  await settle();
+  flaky.owner.authorized = async () => {
+    throw new Error("authorization store busy");
+  };
+  loading.resolve({ revision: 1, data: { revision: 1 } });
+  await expectSnapshots(healthy.events, 1);
+  expect(load).toHaveBeenCalledTimes(1);
+  expect(healthy.events.map((event) => event.params.kind)).toEqual(["snapshot"]);
+  expect(flaky.events.map((event) => event.params.kind)).toEqual(["resync-required"]);
+});
+
+it("retries through another consumer when the reading owner's authorization is unavailable", async () => {
+  const load = vi.fn(
+    async (
+      _target: HostStreamTarget,
+      _principal: string,
+      _signal: AbortSignal,
+      context: HostStreamLoadContext,
+    ) => {
+      if (!(await context.authorized())) throw new Error("unauthorized");
+      return { revision: 1, data: { revision: 1 } };
+    },
+  );
+  const { hub } = fixture({ load });
+  const reader = client("reader"),
+    other = client("other");
+  reader.owner.executionAuthorized = async () => {
+    throw new Error("authorization store busy");
+  };
+  subscribe(hub, reader.owner);
+  subscribe(hub, other.owner);
+  await vi.waitFor(() => expect(snapshots(other.events)).toHaveLength(1), { timeout: 5_000 });
+  await expectSnapshots(reader.events, 1);
+  expect(load).toHaveBeenCalledTimes(2);
+  for (const events of [reader.events, other.events])
+    expect(events.map((event) => event.params.kind)).toEqual(["snapshot"]);
+});
+
+it("drops a reader whose authorization was revoked without charging the other consumers", async () => {
+  const load = vi.fn(
+    async (
+      _target: HostStreamTarget,
+      _principal: string,
+      _signal: AbortSignal,
+      context: HostStreamLoadContext,
+    ) => {
+      if (!(await context.authorized())) throw new Error("unauthorized");
+      return { revision: 1, data: { revision: 1 } };
+    },
+  );
+  const { hub } = fixture({ load });
+  const revoked = client("revoked"),
+    other = client("other");
+  revoked.owner.executionAuthorized = async () => false;
+  subscribe(hub, revoked.owner);
+  subscribe(hub, other.owner);
+  await expectSnapshots(other.events, 1);
+  expect(revoked.events).toEqual([]);
+  expect(hub.closeSubscription("revoked", "subscription")).toBe(false);
+  expect(other.events.map((event) => event.params.kind)).toEqual(["snapshot"]);
+});
+
+it(
+  "gives consumers that subscribe after a resync a fresh failure allowance",
+  async () => {
+    let failures = 3;
+    const load = vi.fn(async () => {
+      if (failures-- > 0) throw new Error("store stalled");
+      return { revision: 1, data: { revision: 1 } };
+    });
+    const { hub } = fixture({ load });
+    const first = client("first");
+    subscribe(hub, first.owner);
+    await vi.waitFor(() => expect(first.events.at(-1)?.params.kind).toBe("resync-required"), {
+      timeout: 8_000,
+    });
+    hub.closeSubscription("first", "subscription");
+    failures = 1;
+    const late = client("late");
+    subscribe(hub, late.owner);
+    await vi.waitFor(() => expect(snapshots(late.events)).toHaveLength(1), { timeout: 8_000 });
+    expect(late.events.map((event) => event.params.kind)).toEqual(["snapshot"]);
+  },
+  20_000,
+);
+
 it("sends explicit resync instead of unbounded oversize snapshot data", async () => {
   const load = vi.fn(async () => ({ data: { text: "x".repeat(65_536) } }));
   const { hub } = fixture({ load });
@@ -712,4 +807,91 @@ it("reaches compact-form streams (tail, delta) from an invalidation of the plain
       (event) => event.params.subscriptionId === "delta" && event.params.kind === "resync-required",
     ),
   ).toBe(true);
+});
+
+it("sheds only the subscription the socket refused and keeps its siblings streaming", async () => {
+  const { hub, advance } = fixture();
+  const lagging = client("lagging"),
+    healthy = client("healthy");
+  const sent: Array<{ kind: string; essential?: boolean }> = [];
+  let refuse = false;
+  const laggingSend = lagging.owner.send;
+  lagging.owner.send = (event, essential) => {
+    sent.push({ kind: event.params.kind, essential });
+    if (refuse && !essential) return "slow";
+    return laggingSend(event, essential);
+  };
+  subscribe(hub, lagging.owner);
+  subscribe(hub, healthy.owner);
+  await expectSnapshots(lagging.events, 1);
+  await expectSnapshots(healthy.events, 1);
+  hub.acknowledge("lagging", "subscription", cursor(lagging.events[0]));
+  hub.acknowledge("healthy", "subscription", cursor(healthy.events[0]));
+  refuse = true;
+  advance();
+  await expectSnapshots(healthy.events, 2);
+  // The refused snapshot is replaced by one essential resync frame; nothing else is sent.
+  expect(sent.at(-1)).toEqual({ kind: "resync-required", essential: true });
+  expect(snapshots(lagging.events)).toHaveLength(1);
+  expect(lagging.events.at(-1)?.params.kind).toBe("resync-required");
+  // A later change no longer reaches the shed subscription; the healthy one keeps receiving.
+  hub.acknowledge("healthy", "subscription", cursor(snapshots(healthy.events)[1]));
+  advance();
+  await expectSnapshots(healthy.events, 3);
+  expect(sent.filter((entry) => entry.kind === "snapshot")).toHaveLength(2);
+});
+
+it("treats a closed connection (false) as a lost consumer without a resync frame", async () => {
+  const { hub, advance } = fixture();
+  const gone = client("gone");
+  subscribe(hub, gone.owner);
+  await expectSnapshots(gone.events, 1);
+  gone.access.writable = false;
+  hub.acknowledge("gone", "subscription", cursor(gone.events[0]));
+  advance();
+  await expectSnapshots(gone.events, 2);
+  advance();
+  await settle();
+  expect(snapshots(gone.events)).toHaveLength(2); // pushed once, refused as closed, then inactive
+  expect(gone.events.filter((event) => event.params.kind === "resync-required")).toHaveLength(0);
+});
+
+it("reuses the loader's captured snapshot bytes instead of serializing the data again", async () => {
+  const data = { revision: 1, rows: ["a", "b"] };
+  const capture = normalizeJsonWire(data);
+  const wire = readNormalizedJsonWire(capture).wire as typeof data;
+  const stringify = vi.spyOn(JSON, "stringify");
+  try {
+    const { hub } = fixture({ load: async () => ({ revision: 1, data: wire, capture }) });
+    const { owner, events } = client("captured");
+    subscribe(hub, owner);
+    await expectSnapshots(events, 1);
+    expect(events[0].params.data).toEqual(data);
+    expect(stringify.mock.calls.some(([value]) => value === wire)).toBe(false);
+  } finally {
+    stringify.mockRestore();
+  }
+});
+
+it("still validates and captures data whose capture does not describe it", async () => {
+  const capture = normalizeJsonWire({ revision: 1 });
+  const stringify = vi.spyOn(JSON, "stringify");
+  try {
+    // A foreign capture grants no trust: the unserializable payload must still be rejected.
+    const { hub } = fixture({
+      load: async () => ({ revision: 1, data: { bad: () => 1 } as never, capture }),
+    });
+    const { owner, events } = client("foreign");
+    subscribe(hub, owner);
+    await settle();
+    expect(snapshots(events)).toHaveLength(0);
+  } finally {
+    stringify.mockRestore();
+  }
+  const data = { revision: 2 };
+  const { hub } = fixture({ load: async () => ({ revision: 2, data, capture }) });
+  const { owner, events } = client("mismatch");
+  subscribe(hub, owner);
+  await expectSnapshots(events, 1);
+  expect(events[0].params.data).toEqual(data);
 });

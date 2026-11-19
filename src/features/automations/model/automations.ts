@@ -7,6 +7,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { HarnessId, RuntimeMode } from "../../sessions/model/session";
 import type { SshRunStatus } from "../../connections/model/sshRunbooks";
+import type { HostAutomation } from "./hostAutomations";
 import {
   isScheduleKind,
   latestOverdueOccurrence,
@@ -120,6 +121,9 @@ export type AutomationHost = {
   projectId: string;
   /** A run is going and its session is waiting on an approval or a question. */
   needsInput?: boolean;
+  /** The Host's own record as listed, kept exactly so a write that rebuilds the
+   * automation can name what it was based on. Absent on legacy cache rows. */
+  configuration?: HostAutomation;
   /** The machine did not answer; this is what it last reported. */
   stale?: boolean;
 };
@@ -197,6 +201,8 @@ export type AutomationDraft = {
   hostTrigger?: import("./hostAutomations").HostAutomationInput["trigger"];
   hostTemplate?: import("./hostAutomations").HostAutomationInput["template"];
   hostMachineId?: string;
+  /** Identity minted when a new background draft starts; a retried create reuses it. */
+  hostCreateId?: string;
   id?: string;
   name: string;
   prompt: string;

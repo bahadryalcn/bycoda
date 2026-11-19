@@ -41,7 +41,7 @@ const click = (el: Element) =>
   });
 
 async function render(changes: PendingChange[], props: Partial<SettingsSaveBarProps> = {}) {
-  const onSave = vi.fn();
+  const onSave = vi.fn<() => boolean>(() => true);
   const onDiscard = vi.fn();
   await act(async () =>
     root.render(
@@ -130,4 +130,81 @@ it("shows the saved label only once the draft is clean", async () => {
   expect(button("Saved to Global")).toBeDefined();
   await render([{ id: "a", label: "Effort" }], { saved: true });
   expect(buttons().some((el) => el.textContent?.trim() === "Saved")).toBe(false);
+});
+
+const settle = () => act(async () => new Promise<void>((resolve) => setTimeout(resolve, 0)));
+
+it("catches a rejected save, keeps the draft, Save and its focus, and Retry saves again", async () => {
+  const unhandled = vi.fn();
+  process.on("unhandledRejection", unhandled);
+  try {
+    const onSave = vi
+      .fn<() => Promise<boolean>>()
+      .mockRejectedValueOnce(new Error("disk full"))
+      .mockResolvedValueOnce(true);
+    await render([{ id: "a", label: "Effort" }], { onSave });
+    const save = button("Save");
+    save.focus();
+    await click(save);
+    await settle();
+    expect(unhandled).not.toHaveBeenCalled();
+    const alert = document.querySelector('[role="alert"]')!;
+    expect(alert.textContent).toContain("Could not save changes");
+    // The raw text sits behind Details, never in the banner.
+    expect(alert.textContent).not.toContain("disk full");
+    expect(button("1 unsaved change")).toBeDefined();
+    expect(pendingSources().map((source) => [source.id, source.canSave])).toEqual([["bar", true]]);
+    expect(button("Save").disabled).toBe(false);
+    expect(document.activeElement).toBe(save);
+    // Retry from the notice; when it succeeds the notice goes and focus lands on Save.
+    const retry = button("Retry");
+    retry.focus();
+    await click(retry);
+    await settle();
+    expect(onSave).toHaveBeenCalledTimes(2);
+    expect(document.querySelector('[role="alert"]')).toBeNull();
+    expect(document.activeElement).toBe(save);
+  } finally {
+    process.off("unhandledRejection", unhandled);
+  }
+});
+
+it("resolves a rejected registered save to false for the leave prompt", async () => {
+  const onSave = vi.fn<() => Promise<boolean>>().mockRejectedValue(new Error("offline"));
+  await render([{ id: "a", label: "Effort" }], { onSave });
+  let result: boolean | Promise<boolean> | undefined;
+  await act(async () => {
+    result = pendingSources()[0]!.save();
+    await result;
+  });
+  expect(result).toBeInstanceOf(Promise);
+  expect(await result).toBe(false);
+  expect(button("Retry")).toBeDefined();
+});
+
+it("clears the failure on Discard and shows none when the editor refuses with false", async () => {
+  const onSave = vi.fn<() => Promise<boolean>>().mockRejectedValueOnce(new Error("offline"));
+  const { onDiscard } = await render([{ id: "a", label: "Effort" }], { onSave });
+  await click(button("Save"));
+  await settle();
+  expect(document.querySelector('[role="alert"]')).not.toBeNull();
+  await click(button("Discard"));
+  expect(onDiscard).toHaveBeenCalledOnce();
+  expect(document.querySelector('[role="alert"]')).toBeNull();
+  onSave.mockResolvedValueOnce(false);
+  await click(button("Save"));
+  await settle();
+  expect(document.querySelector('[role="alert"]')).toBeNull();
+});
+
+it("runs one save while another is in flight", async () => {
+  let finish!: (saved: boolean) => void;
+  const onSave = vi.fn(() => new Promise<boolean>((resolve) => (finish = resolve)));
+  await render([{ id: "a", label: "Effort" }], { onSave });
+  await click(button("Save"));
+  await click(button("Save"));
+  expect(onSave).toHaveBeenCalledOnce();
+  expect(pendingSources()[0]!.pending).toBe(true);
+  await act(async () => finish(true));
+  expect(pendingSources()[0]!.pending).toBe(false);
 });

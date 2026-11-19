@@ -1,8 +1,12 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
-import { DraftPresenceRegistry } from "./presence";
+import {
+  DraftPresenceRegistry,
+  PRESENCE_CLEAN_TTL_MS,
+  PRESENCE_PERSIST_INTERVAL_MS,
+} from "./presence";
 import { createDefaultsAutoArchive } from "../settings-defaults/auto-archive";
 import { DEFAULT_AGENT_DEFAULTS } from "../../src/features/tasks/model/hostSettings";
 
@@ -135,4 +139,63 @@ it("archive tick integrates authority and archives only clean sessions reversibl
   expect(archived).toEqual(["clean"]);
   setTime(100_000 + 86_400_000);
   expect(await archive.tick()).toBe(0);
+});
+async function stored(directory: string): Promise<{ clientId: string; reportedAt: number }[]> {
+  return JSON.parse(await readFile(join(directory, "presence.json"), "utf8"));
+}
+it("unchanged heartbeats stay in memory and the file refreshes only at the coarse interval", async () => {
+  const { directory, registry, report, setTime } = await setup();
+  await report("desktop");
+  await report("phone", ["s"]);
+  const first = await readFile(join(directory, "presence.json"), "utf8");
+  setTime(130_000);
+  await report("desktop");
+  await report("phone", ["s"]);
+  expect(await readFile(join(directory, "presence.json"), "utf8")).toBe(first);
+  // Memory still carries the fresh timestamp, so clean sessions stay archivable.
+  expect(await registry.hasUnsentDraft("clean", 60_000)).toBe(false);
+  expect(await registry.hasUnsentDraft("s", 60_000)).toBe(true);
+  setTime(100_000 + PRESENCE_PERSIST_INTERVAL_MS);
+  await report("desktop");
+  expect((await stored(directory)).find((row) => row.clientId === "desktop")?.reportedAt).toBe(
+    100_000 + PRESENCE_PERSIST_INTERVAL_MS,
+  );
+  // A changed session set persists immediately, between intervals.
+  await report("phone", ["s", "t"]);
+  expect(await stored(directory)).toHaveLength(2);
+  expect(await readFile(join(directory, "presence.json"), "utf8")).toContain('"t"');
+});
+it("prunes expired clean clients but never expired draft-bearing ones or fresh ownership", async () => {
+  const { directory, registry, report, setTime } = await setup();
+  await report("phone", [], "leaked-install");
+  await report("phone", ["draft"], "offline-window");
+  await report("phone", [], "phone");
+  await report("desktop");
+  setTime(100_000 + PRESENCE_CLEAN_TTL_MS);
+  // Leaked clean rows no longer pin the answer to "unknown" even before a pruning write.
+  await report("phone", [], "phone");
+  expect(await registry.hasUnsentDraft("clean", PRESENCE_CLEAN_TTL_MS * 2)).toBeUndefined();
+  await report("desktop");
+  const ids = (await stored(directory)).map((row) => row.clientId).sort();
+  expect(ids).toEqual(["desktop", "offline-window", "phone"]);
+  expect(await registry.hasUnsentDraft("draft", 1000)).toBe(true);
+});
+it("a leaked client id cannot exhaust the cap once it expires", async () => {
+  const { directory } = await setup();
+  const rows = Array.from({ length: 4096 }, (_, index) => ({
+    deviceId: "phone",
+    clientId: `old-${index}`,
+    sessionIds: [],
+    reportedAt: 1,
+  }));
+  await writeFile(join(directory, "presence.json"), JSON.stringify(rows));
+  const registry = new DraftPresenceRegistry(
+    directory,
+    async () => ["desktop", "phone"],
+    () => PRESENCE_CLEAN_TTL_MS + 10,
+  );
+  await expect(
+    registry.report("desktop", { clientId: "desktop", sessionIds: [], complete: true }),
+  ).resolves.toEqual({ accepted: true });
+  expect(await stored(directory)).toHaveLength(1);
 });

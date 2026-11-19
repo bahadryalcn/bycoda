@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { t } from "../../../shared/i18n";
 import { pathKey } from "../../../shared/lib/paths";
 import { toast } from "../../../shared/ui/ToastRegion";
@@ -42,7 +43,7 @@ export async function runBackgroundRemoval(
       id,
       tone: "danger",
       title: t("Couldn't delete {p0}", { p0: label }),
-      message: error instanceof Error ? error.message : String(error),
+      message: errorText(error),
     });
     return false;
   } finally {

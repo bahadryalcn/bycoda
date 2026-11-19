@@ -12,9 +12,7 @@ test("file tree preserves selection, inline rename, windowing and native externa
   await expect(row("b.ts")).toHaveAttribute("aria-selected", "true");
   await row("a.ts").click();
   await row("a.ts").press("F2");
-  const rename = page.getByRole("textbox", {
-    name: "Type file name. Press Enter to confirm or Escape to cancel.",
-  });
+  const rename = page.getByRole("textbox", { name: "File name", exact: true });
   await expect(rename).toBeFocused();
   expect(
     await rename.evaluate((node: HTMLInputElement) => [node.selectionStart, node.selectionEnd]),
@@ -289,7 +287,7 @@ test("inline name editor keeps IME composition: Enter and Escape during composit
   const operations = () => page.evaluate(() => (window as unknown as ImeWindow).treeOperations);
   await expect(page.locator(`[role="treeitem"][title="/fixture/a.ts"]`)).toBeVisible();
   await page.locator('[data-explorer-action="new-file"]').click();
-  const input = page.getByRole("textbox", { name: /^Type file name/ });
+  const input = page.getByRole("textbox", { name: "File name", exact: true });
   await expect(input).toBeFocused();
   await page.evaluate(() => {
     const log: string[] = [];
@@ -333,7 +331,7 @@ test("inline name editor keeps IME composition: Enter and Escape during composit
 
   // WebKit ends composition before the confirming keydown (isComposing false, keyCode 229).
   await page.locator('[data-explorer-action="new-file"]').click();
-  const second = page.getByRole("textbox", { name: /^Type file name/ });
+  const second = page.getByRole("textbox", { name: "File name", exact: true });
   await second.fill("safari.ts");
   await second.evaluate((field) => {
     field.dispatchEvent(new CompositionEvent("compositionend", { data: "", bubbles: true }));
@@ -448,7 +446,7 @@ for (const theme of ["dark", "light"] as const)
         density,
       );
       const row = (path: string) => page.locator(`[role="treeitem"][title="/fixture/${path}"]`);
-      const field = page.getByRole("textbox", { name: /^Type file name/ });
+      const field = page.getByRole("textbox", { name: /^(File|Folder) name$/ });
       const shot = (name: string) =>
         page.screenshot({
           path: `${imeShotDir}/density-${density}-${name}-${theme}-1280x800.png`,

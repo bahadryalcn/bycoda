@@ -141,6 +141,62 @@ it.each(["ctrlKey", "metaKey"] as const)(
   },
 );
 
+function pressInTerminal(init: KeyboardEventInit) {
+  const terminal = document.createElement("div");
+  terminal.className = "bycoda-terminal";
+  const input = document.createElement("textarea");
+  terminal.append(input);
+  container.append(terminal);
+  const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
+  input.dispatchEvent(event);
+  terminal.remove();
+  return event;
+}
+
+it.each(["w", "d", "t", "n", "b", "p", "o", "j", "k"])(
+  "leaves plain Ctrl+%s to the focused terminal instead of the app chord",
+  (letter) => {
+    const actions = deps.actions.current as unknown as Record<string, ReturnType<typeof vi.fn>>;
+    for (const name of [
+      "onClosePane",
+      "onSplit",
+      "onNewTerminalTab",
+      "onToggleSidebar",
+      "onToggleProjectTerminal",
+      "pickProject",
+      "onOpenSearch",
+    ])
+      actions[name] = vi.fn();
+    const event = pressInTerminal({ key: letter, code: `Key${letter.toUpperCase()}`, ctrlKey: true });
+    expect(event.defaultPrevented).toBe(false);
+    for (const action of Object.values(actions)) expect(action).not.toHaveBeenCalled();
+  },
+);
+
+it("keeps app and emergency chords reachable from a terminal", () => {
+  const actions = deps.actions.current as unknown as Record<string, ReturnType<typeof vi.fn>>;
+  actions.onNext = vi.fn();
+  expect(pressInTerminal({ key: "Tab", code: "Tab", ctrlKey: true }).defaultPrevented).toBe(true);
+  expect(actions.onNext).toHaveBeenCalledOnce();
+  expect(
+    pressInTerminal({ key: "P", code: "KeyP", ctrlKey: true, shiftKey: true }).defaultPrevented,
+  ).toBe(true);
+  expect(actions.onOpenCommandPalette).toHaveBeenCalledOnce();
+  deps.nativeFullscreenRef.current = true;
+  expect(pressInTerminal({ key: "Escape", code: "Escape" }).defaultPrevented).toBe(true);
+  expect(fullscreen).toHaveBeenCalledWith(false);
+  // Outside a terminal the same plain chord keeps its app meaning.
+  expect(press({ key: "p", code: "KeyP", ctrlKey: true }).defaultPrevented).toBe(true);
+  expect(actions.onGoToFile).toHaveBeenCalledOnce();
+});
+
+it("still honours a Ctrl+letter chord the owner recorded for an app command from a terminal", () => {
+  saveKeybindingOverride("App: Go to File", { shortcut: "Control+KeyG" });
+  const event = pressInTerminal({ key: "g", code: "KeyG", ctrlKey: true });
+  expect(event.defaultPrevented).toBe(true);
+  expect(deps.actions.current.onGoToFile).toHaveBeenCalledOnce();
+});
+
 it("opens a directly assigned settings section and respects a disabled binding", () => {
   saveKeybindingOverride("Settings: Connections", { shortcut: "Option+KeyQ" });
   const event = press({ key: "q", code: "KeyQ", altKey: true });
@@ -178,6 +234,51 @@ it("opens a session on Ctrl+N and routes Ctrl+Alt+N to notes", () => {
   expect(deps.actions.current.onNew).toHaveBeenCalledOnce();
 });
 
+it.each([
+  ["onNew", { key: "t", code: "KeyT", ctrlKey: true }],
+  ["onClosePane", { key: "w", code: "KeyW", ctrlKey: true }],
+  ["onCloseAllTabs", { key: "W", code: "KeyW", ctrlKey: true, shiftKey: true }],
+  ["onCloseOtherTabs", { key: "t", code: "KeyT", ctrlKey: true, altKey: true }],
+  ["onSplit", { key: "d", code: "KeyD", ctrlKey: true }],
+  ["onNewTerminal", { key: "`", code: "Backquote", ctrlKey: true }],
+  ["onToggleProjectTerminal", { key: "j", code: "KeyJ", ctrlKey: true }],
+  ["onActivate", { key: "2", code: "Digit2", ctrlKey: true }],
+  ["onToggleSidebar", { key: "b", code: "KeyB", ctrlKey: true }],
+] as const)("runs %s once per press and ignores a held key", (handler, init) => {
+  const actions = deps.actions.current as unknown as Record<string, ReturnType<typeof vi.fn>>;
+  actions[handler] = vi.fn();
+  expect(press(init).defaultPrevented).toBe(true);
+  expect(actions[handler]).toHaveBeenCalledOnce();
+  // Auto-repeat keeps the browser/native default suppressed but never re-runs it.
+  for (let i = 0; i < 5; i++)
+    expect(press({ ...init, repeat: true }).defaultPrevented).toBe(true);
+  expect(actions[handler]).toHaveBeenCalledOnce();
+});
+
+it("ignores a held key for a recorded one-shot tab binding but still repeats navigation", () => {
+  const actions = deps.actions.current as unknown as Record<string, ReturnType<typeof vi.fn>>;
+  actions.onClosePane = vi.fn();
+  actions.onNext = vi.fn();
+  actions.onFocusDir = vi.fn();
+  saveKeybindingOverride("Pane: Close", { shortcut: "Option+KeyQ" });
+  press({ key: "q", code: "KeyQ", altKey: true });
+  press({ key: "q", code: "KeyQ", altKey: true, repeat: true });
+  expect(actions.onClosePane).toHaveBeenCalledOnce();
+  for (let i = 0; i < 3; i++) {
+    press({ key: "Tab", code: "Tab", ctrlKey: true, repeat: i > 0 });
+    press({ key: "ArrowLeft", code: "ArrowLeft", ctrlKey: true, altKey: true, repeat: i > 0 });
+  }
+  expect(actions.onNext).toHaveBeenCalledTimes(3);
+  expect(actions.onFocusDir).toHaveBeenCalledTimes(3);
+});
+
+it("opens an app surface once per press", () => {
+  const chord = { key: "i", code: "KeyI", ctrlKey: true, shiftKey: true };
+  press(chord);
+  expect(press({ ...chord, repeat: true }).defaultPrevented).toBe(true);
+  expect(deps.actions.current.onOpenInbox).toHaveBeenCalledOnce();
+});
+
 it.each(Object.entries(LAYOUT_SHORTCUTS))(
   "dispatches %s only in the workspace",
   (command, preset) => {
@@ -213,6 +314,49 @@ it.each([
     press({ key, code: `Key${key.toUpperCase()}`, ctrlKey: true, shiftKey: true }).defaultPrevented,
   ).toBe(true);
   expect(deps.actions.current[handler]).toHaveBeenCalledOnce();
+});
+
+it("reaches an approval popup from inside a Modal without deciding it or closing the dialog", async () => {
+  const close = vi.fn();
+  const decide = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(
+        "div",
+        null,
+        createElement(Listener),
+        createElement(Modal, {
+          title: "Edit",
+          onClose: close,
+          children: createElement("input", { "aria-label": "Name" }),
+        }),
+      ),
+    ),
+  );
+  const field = document.querySelector<HTMLInputElement>('input[aria-label="Name"]')!;
+  field.focus();
+  const region = document.createElement("div");
+  region.dataset.toastRegion = "top-center";
+  region.innerHTML =
+    '<article class="notification-request"><button>Open session</button><button>Allow</button><button>Deny</button></article>';
+  const [open, allow, deny] = [...region.querySelectorAll("button")];
+  for (const button of [allow, deny]) button.addEventListener("click", decide);
+  document.body.append(region);
+  const chord = { key: "j", code: "KeyJ", ctrlKey: true, shiftKey: true };
+  expect(press(chord).defaultPrevented).toBe(true);
+  // Focus lands on the safe control, never on a decision, and nothing is decided.
+  expect(document.activeElement).toBe(open);
+  expect(decide).not.toHaveBeenCalled();
+  expect(region.closest("[inert]")).toBeNull();
+  // Escape hands focus back to the dialog's field without closing the dialog.
+  open.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+  expect(document.activeElement).toBe(field);
+  expect(close).not.toHaveBeenCalled();
+  // A disabled chord does nothing.
+  saveKeybindingOverride("App: Focus Approval Requests", { disabled: true });
+  expect(press(chord).defaultPrevented).toBe(false);
+  expect(document.activeElement).toBe(field);
+  region.remove();
 });
 
 it("lets a real Modal own workspace chords and resumes them after dismissal", async () => {

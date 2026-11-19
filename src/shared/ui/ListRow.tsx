@@ -50,6 +50,7 @@ export function ListRow({
     <button
       type={type}
       {...props}
+      aria-selected={props["aria-selected"] ?? (props.role === "option" ? !!active : undefined)}
       data-selected={selected ? "true" : undefined}
       data-active={active ? "true" : undefined}
       data-danger={danger ? "true" : undefined}

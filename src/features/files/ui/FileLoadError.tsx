@@ -1,4 +1,5 @@
 import { OutputBlock } from "../../../shared/ui/OutputBlock";
+import { CopyButton } from "../../../shared/ui/CopyButton";
 import { Text } from "../../../shared/ui/Text";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { t, useLocale } from "../../../shared/i18n/technical";
@@ -8,17 +9,21 @@ import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
 import { Progress } from "../../../shared/ui/Progress";
 import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
 import { isRemoteProjectPath } from "../../projects/public/recents";
+import {
+  isUnsupportedRemoteRoute,
+  presentRemoteError,
+} from "../../connections/public/remoteFailure";
 import { basename, revealPath } from "../../../platform/tauri/fs";
-import { readTextFileSlice, type TextFileSlice } from "../data/largeTextFile";
+import { readTextFileSlice, type TextFileSlice, type TextFileStamp } from "../data/largeTextFile";
 
 const REVEAL_LABEL = IS_MAC
   ? "Reveal in Finder"
   : IS_WIN
     ? "Reveal in File Explorer"
-    : "Open Containing Folder";
+    : "Open containing folder";
 
 /** Prefix of the native editor-limit error (`read_text_file_sync` in `fs.rs`). */
 const TOO_LARGE_TO_EDIT = "File is too large to edit";
@@ -32,43 +37,52 @@ const reveal = (path: string) =>
     console.warn("FileLoadError reveal failed", error);
   });
 
-/** Shown when the editor cannot load a file. Local files over the editor limit
- * open as a read-only, paged view instead of a dead end. */
+/** Why a paged read stopped: the sentence to show, and whether sending the same request again can help. */
+type PagedFailure = { message: string; retryable: boolean };
+
+/** Shown when the editor cannot load a file. A file over the editor limit opens as a read-only,
+ * paged view, on this computer or on the connected machine that owns it. Where the same request
+ * cannot succeed (an outdated Host), no Retry is offered: the message names the fix instead. */
 export function FileLoadError({
   path,
   message,
+  retryable = true,
   onRetry,
 }: {
   path: string;
   message: string;
+  retryable?: boolean;
   onRetry: () => void;
 }) {
   useLocale();
   const local = !isRemoteProjectPath(path);
-  const [fallback, setFallback] = useState<string | null>(null);
+  const [fallback, setFallback] = useState<PagedFailure | null>(null);
   const shownCentrally = useConnectionErrorShownCentrally(message);
-  if (local && isTooLargeToEdit(message) && fallback === null)
+  if (isTooLargeToEdit(message) && fallback === null)
     return <LargeTextFileView key={path} path={path} onError={setFallback} />;
   if (shownCentrally) return null;
+  const failure = fallback ?? { message, retryable };
   return (
     <div className="grid h-full place-items-center p-6">
       <Alert tone="danger" className="max-w-md" title={`${t("Couldn’t open ")}${basename(path)}`}>
-        <p>{fallback ?? message}</p>
+        <p>{failure.message}</p>
         <div className="mt-2 flex flex-wrap items-center gap-1">
-          <Button
-            size="sm"
-            variant="ghost"
-            motion="none"
-            type="button"
-            onClick={() => {
-              setFallback(null);
-              onRetry();
-            }}
-            className="shrink-0"
-          >
-            <RotateCcw className="icon-xs" strokeWidth={1.75} />
-            {t("Retry")}
-          </Button>
+          {failure.retryable ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              motion="none"
+              type="button"
+              onClick={() => {
+                setFallback(null);
+                onRetry();
+              }}
+              className="shrink-0"
+            >
+              <RotateCcw className="icon-xs" strokeWidth={1.75} />
+              {t("Retry")}
+            </Button>
+          ) : null}
           {local ? (
             <Button
               size="sm"
@@ -81,7 +95,15 @@ export function FileLoadError({
               <Folder className="icon-xs" strokeWidth={1.75} />
               {t(REVEAL_LABEL)}
             </Button>
-          ) : null}
+          ) : (
+            <CopyButton
+              size="sm"
+              variant="ghost"
+              label={t("Copy path")}
+              text={path}
+              resetKeys={[path]}
+            />
+          )}
         </div>
       </Alert>
     </div>
@@ -93,24 +115,34 @@ function LargeTextFileView({
   onError,
 }: {
   path: string;
-  onError: (message: string) => void;
+  onError: (failure: PagedFailure) => void;
 }) {
   useLocale();
+  const local = !isRemoteProjectPath(path);
   // Start offsets of the pages before the current one, for "Previous".
   const [history, setHistory] = useState<number[]>([]);
   const [offset, setOffset] = useState(0);
   const [loaded, setLoaded] = useState<{ key: string; slice: TextFileSlice } | null>(null);
+  // Version of the file the first page came from; every later page must match it.
+  const stamp = useRef<TextFileStamp | null>(null);
   const key = `${path}:${offset}`;
   const page = loaded?.key === key ? loaded.slice : null;
 
+  // Loads the page at the current byte offset from the host; a superseded request's reply is dropped.
   useEffect(() => {
     let cancelled = false;
-    readTextFileSlice(path, offset).then(
+    readTextFileSlice(path, offset, stamp.current).then(
       (slice) => {
-        if (!cancelled) setLoaded({ key: `${path}:${offset}`, slice });
+        if (cancelled) return;
+        stamp.current ??= { size: slice.size, modifiedUs: slice.modifiedUs };
+        setLoaded({ key: `${path}:${offset}`, slice });
       },
       (error: unknown) => {
-        if (!cancelled) onError(error instanceof Error ? error.message : String(error));
+        if (!cancelled)
+          onError({
+            message: presentRemoteError(error, { explicit: true }),
+            retryable: !isUnsupportedRemoteRoute(error),
+          });
       },
     );
     return () => {
@@ -121,7 +153,7 @@ function LargeTextFileView({
   if (!page) {
     return (
       <div className="grid h-full place-items-center p-3">
-        <Progress label={t("Opening ") + basename(path) + "…"} compact />
+        <Progress label={t("Opening {p0}…", { p0: basename(path) })} compact />
       </div>
     );
   }
@@ -171,10 +203,14 @@ function LargeTextFileView({
         >
           {t("Next")}
         </Button>
-        <Button size="sm" variant="ghost" motion="none" type="button" onClick={() => reveal(path)}>
-          <Folder className="icon-xs" strokeWidth={1.75} />
-          {t(REVEAL_LABEL)}
-        </Button>
+        {local ? (
+          <Button size="sm" variant="ghost" motion="none" type="button" onClick={() => reveal(path)}>
+            <Folder className="icon-xs" strokeWidth={1.75} />
+            {t(REVEAL_LABEL)}
+          </Button>
+        ) : (
+          <CopyButton size="sm" variant="ghost" label={t("Copy path")} text={path} resetKeys={[path]} />
+        )}
       </Text>
       <OutputBlock
         size="secondary"

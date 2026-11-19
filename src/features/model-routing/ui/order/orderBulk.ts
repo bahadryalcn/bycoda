@@ -13,6 +13,17 @@ import {
 import type { SetupCandidate } from "../../model/smartSetup";
 import { entryAccountId } from "./orderGrouping";
 
+/**
+ * The choice "Add model" starts from: the last entry's provider when the Host still offers it,
+ * otherwise the first offered choice. Undefined when the Host offers none.
+ */
+export function addChoiceFor(
+  candidates: readonly SetupCandidate[],
+  lastHarness?: string,
+): SetupCandidate | undefined {
+  return candidates.find((candidate) => candidate.target.harness === lastHarness) ?? candidates[0];
+}
+
 /** Removes every listed entry; a group the whole selection would empty stops the edit and is named. */
 export function removeEntries(draft: OrderDraft, ids: readonly string[]): OrderDraft {
   const gone = new Set(ids);

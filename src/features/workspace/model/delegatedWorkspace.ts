@@ -22,12 +22,22 @@ export function withoutDelegatedTabs(
   tabs: WorkspaceTab[],
   sessions: readonly { id: string; modelSettings?: Record<string, string> }[],
 ): WorkspaceTab[] {
-  return withoutSessionPanes(
-    tabs,
-    new Set(
-      sessions.filter((session) => !isUserConversation(session)).map((session) => session.id),
-    ),
-  );
+  return withoutHiddenSessionTabs(tabs, delegatedSessionIds(sessions));
+}
+
+/** The ids of sessions that are not user conversations (advisor, subagent and similar children). */
+export function delegatedSessionIds(
+  sessions: readonly { id: string; modelSettings?: Record<string, string> }[],
+): string[] {
+  return sessions.filter((session) => !isUserConversation(session)).map((session) => session.id);
+}
+
+/** `withoutDelegatedTabs` for a caller that already projected the hidden ids. */
+export function withoutHiddenSessionTabs(
+  tabs: WorkspaceTab[],
+  hiddenIds: readonly string[],
+): WorkspaceTab[] {
+  return withoutSessionPanes(tabs, new Set(hiddenIds));
 }
 
 /** Covers legacy workspace snapshots as well as newly collected layouts. */

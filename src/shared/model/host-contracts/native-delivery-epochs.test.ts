@@ -107,3 +107,28 @@ it("reports only matching covered originals as fenced and never fabricates resul
     }).success,
   ).toBe(false);
 });
+
+it("binds gap resolution to one exact original and never encodes success", () => {
+  const schema = NATIVE_DELIVERY_EPOCH_RPC_SCHEMAS["native.delivery.epochs.gap.resolve"];
+  const params = {
+    ...ref,
+    sequence: 7180,
+    kind: "native.services.workspace.format",
+    sha256: "a".repeat(64),
+    byteLength: 9,
+  };
+  expect(schema.params.parse(params)).toEqual(params);
+  for (const invalid of [
+    { ...params, sequence: 0 },
+    { ...params, kind: "arbitrary.exec" },
+    { ...params, sha256: "A".repeat(64) },
+    { ...params, byteLength: 16 * 1024 * 1024 + 1 },
+    { ...params, extra: true },
+  ])
+    expect(schema.params.safeParse(invalid).success).toBe(false);
+  for (const outcome of ["not_admitted", "admitted"])
+    expect(schema.result.safeParse({ ...params, outcome }).success).toBe(true);
+  for (const outcome of ["succeeded", "retired", "skipped"])
+    expect(schema.result.safeParse({ ...params, outcome }).success).toBe(false);
+  expect(NATIVE_DELIVERY_RPC_SCHEMAS["native.delivery.epochs.gap.resolve"]).toBe(schema);
+});

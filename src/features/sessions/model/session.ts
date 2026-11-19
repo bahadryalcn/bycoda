@@ -1,5 +1,6 @@
 import { truncateGraphemes } from "../../../shared/lib/text/truncate";
 import { stripAttachmentTokens } from "./attachmentTokens";
+import type { BtwErrorCode } from "./btwError";
 import type { InlineVisual } from "./inlineVisual";
 import type { ToolInspection } from "./toolInspection";
 import { dropContextWindow, type ContextUsage } from "./contextUsage";
@@ -145,7 +146,10 @@ export type BtwThread = {
   providerThreadId?: string;
   /** Account that owns this side conversation's provider thread. */
   providerAccountId?: string;
+  /** Raw failure text for logs and recovery; the sheet shows `errorCode` or a redacted form of it. */
   error?: string;
+  /** Set when the app itself refused the request; translated where the sheet renders it. */
+  errorCode?: BtwErrorCode;
   /** Live harness blocks for the in-flight reply; not persisted. */
   pendingBlocks?: Block[];
 };

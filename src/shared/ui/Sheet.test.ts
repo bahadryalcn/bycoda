@@ -168,6 +168,109 @@ it("releases Escape while Activity hides the sheet and preserves its draft", () 
   }
 });
 
+it("returns focus to the opener when a container sheet closes, even if the owner moved focus in", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const draw = (open: boolean, mounted = true) =>
+    act(() =>
+      root.render(
+        createElement(
+          "div",
+          null,
+          createElement("textarea", { id: "composer" }),
+          mounted
+            ? createElement(Sheet, {
+                modal: false,
+                anchor: "container",
+                side: "bottom",
+                open,
+                initialFocus: false,
+                title: "Side question",
+                onClose: () => undefined,
+                children: createElement("textarea", { id: "side-question" }),
+              })
+            : null,
+        ),
+      ),
+    );
+  try {
+    draw(false);
+    const composer = document.getElementById("composer")!;
+    composer.focus();
+    draw(true);
+    // The side-question owner moves focus into its own field after the sheet opens.
+    document.getElementById("side-question")!.focus();
+    expect(document.activeElement?.id).toBe("side-question");
+    // Closing and unmounting in the same turn (the owner drops the sheet once it is closed).
+    draw(false, false);
+    await Promise.resolve();
+    expect(document.activeElement).toBe(composer);
+  } finally {
+    act(() => root.unmount());
+    host.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("does not pull focus back from a stacked overlay or a control the user moved to", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const draw = (open: boolean, modal: boolean) =>
+    act(() =>
+      root.render(
+        createElement(
+          "div",
+          null,
+          createElement("button", { id: "opener" }, "Open"),
+          createElement("input", { id: "elsewhere" }),
+          createElement(Sheet, {
+            modal: false,
+            anchor: "container",
+            open,
+            initialFocus: false,
+            title: "Details",
+            onClose: () => undefined,
+            children: createElement("input", { id: "inside" }),
+          }),
+          modal
+            ? createElement(Modal, {
+                title: "Confirm",
+                onClose: () => undefined,
+                children: createElement("input", { id: "modal-field" }),
+              })
+            : null,
+        ),
+      ),
+    );
+  try {
+    draw(false, false);
+    document.getElementById("opener")!.focus();
+    draw(true, false);
+    document.getElementById("inside")!.focus();
+    draw(false, false);
+    document.getElementById("elsewhere")!.focus();
+    await Promise.resolve();
+    expect(document.activeElement?.id).toBe("elsewhere");
+
+    document.getElementById("opener")!.focus();
+    draw(true, false);
+    document.getElementById("inside")!.focus();
+    // A confirmation opens as the sheet closes: it keeps focus.
+    draw(false, true);
+    document.getElementById("modal-field")!.focus();
+    await Promise.resolve();
+    expect(document.activeElement?.id).toBe("modal-field");
+  } finally {
+    act(() => root.unmount());
+    host.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
 it("keeps a persistent non-modal workspace named as a region with its custom header", () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const host = document.createElement("div");

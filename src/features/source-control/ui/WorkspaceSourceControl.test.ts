@@ -14,6 +14,7 @@ const { notify, discovery, discover } = vi.hoisted(() => ({
   discovery: {
     modules: {} as Record<string, string[]>,
     error: undefined as string | undefined,
+    limits: {} as Record<string, string>,
     refresh: vi.fn(),
   },
 }));
@@ -105,7 +106,7 @@ vi.mock("./GitChangesPanel", () => ({
         ? createElement(
             "select",
             {
-              "aria-label": "Working copy",
+              "aria-label": "Worktree",
               value: props.checkout.value,
               onChange: (event: { target: { value: string } }) =>
                 props.checkout!.onChange(event.target.value),
@@ -141,6 +142,7 @@ beforeEach(() => {
   discover.mockClear();
   discovery.modules = {};
   discovery.error = undefined;
+  discovery.limits = {};
   discovery.refresh.mockClear();
   host = document.createElement("div");
   document.body.append(host);
@@ -386,6 +388,15 @@ it("retains known repositories on a discovery error and offers refresh", async (
   expect(notify).toHaveBeenCalledWith("/wallet/api/core-pack", "checkout");
 });
 
+it("lists repositories found before a size limit and says the scan was limited, not failed", async () => {
+  discovery.modules = { "/wallet/api": ["/wallet/api/core-pack"] };
+  discovery.limits = { "/wallet/api": "entries" };
+  await render();
+  expect(host.querySelectorAll("section")).toHaveLength(3);
+  expect(host.textContent).toContain("(scan limited)");
+  expect(host.querySelector('[role="alert"]')).toBeNull();
+});
+
 it("recognizes Windows submodule paths already registered with different separators and casing", async () => {
   discovery.modules = { "G:\\repo": ["G:/repo/core-pack"] };
   await render(["G:\\repo", "g:\\repo\\CORE-PACK"]);
@@ -551,7 +562,7 @@ it("merges the checkout choice into the panel for one checkout and keeps the top
   await choose("");
   const top = host.querySelector("select")!;
   expect(host.querySelector("[data-checkout-overview]")!.contains(top)).toBe(false);
-  expect(top.getAttribute("aria-label")).toBe("Working copy");
+  expect(top.getAttribute("aria-label")).toBe("Worktree");
   expect(host.querySelector('[aria-label="Manage worktrees…"]')).not.toBeNull();
   expect(host.querySelector("[data-checkout-label]")).toBeNull();
 });

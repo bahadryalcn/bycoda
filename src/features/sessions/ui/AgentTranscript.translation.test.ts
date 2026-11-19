@@ -77,6 +77,17 @@ it.each([
       await act(async () => apply.click());
       expect(message()?.textContent).toBe("Before Hello after");
       const scroller = container.querySelector<HTMLElement>(".agent-transcript")!;
+      // Regression: the toolbar floats over the transcript instead of taking flow height,
+      // and uses the shared floating surface rather than an opaque background band.
+      const toolbar = scroller
+        .querySelector('button[aria-label="Close translation"]')!
+        .closest<HTMLElement>('[data-surface-variant="floating"]')!;
+      const stickyRow = toolbar.parentElement!;
+      expect(stickyRow.parentElement).toBe(scroller);
+      expect(stickyRow.className).toContain("sticky");
+      expect(stickyRow.className).toContain("h-0");
+      expect(toolbar.className).not.toContain("bg-(--ui-surface)");
+      expect(toolbar.className).toContain("absolute");
       for (const [key, expected] of [
         ["ArrowUp", block.text],
         ["ArrowDown", "Before Hello after"],

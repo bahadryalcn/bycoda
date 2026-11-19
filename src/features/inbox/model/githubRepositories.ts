@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { isRemoteProjectPath, normalizeProjectPath, pathKey } from "../../../shared/lib/paths";
 import { githubRead } from "./githubReadGate";
 
@@ -40,7 +41,7 @@ export async function discoverGithubRepositories(cwd: string): Promise<string[]>
   try {
     return await githubRepositories(normalizeProjectPath(cwd));
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = errorText(error);
     // Expected stale recents/non-repository folders. Auth, permissions, executable,
     // network failures and malformed provider responses must stay visible and retryable.
     if (

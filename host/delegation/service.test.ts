@@ -13,6 +13,7 @@ import {
   type DelegateModelRef,
 } from "../../src/shared/model/host-contracts/delegation";
 import { STOPPED_BY_USER } from "../sessions/sessionRuns";
+import { ChangeSignal } from "../changeSignal";
 import { ConversationDelegation, type AgentsCaller } from "./service";
 import { DatabaseSync } from "node:sqlite";
 import { DesktopSessions } from "../desktop/desktopSessions";
@@ -37,12 +38,22 @@ type Entry = {
 class FakeHost {
   readonly entries = new Map<string, Entry>();
   readonly commands: Command[] = [];
+  /** Counts state-row reads, the cost a waiting parent pays per re-check. */
+  runIdReads = 0;
+  readonly changes = new ChangeSignal();
   private seq = 0;
   readonly store = {
+    changes: this.changes,
     session: async (sessionId: string) => {
       const entry = this.entries.get(sessionId);
       if (!entry) throw new Error(`no session ${sessionId}`);
       return entry;
+    },
+    sessionRunId: async (sessionId: string) => {
+      this.runIdReads++;
+      const entry = this.entries.get(sessionId);
+      if (!entry) throw new Error(`no session ${sessionId}`);
+      return entry.runId;
     },
     setScratchCwd: async (sessionId: string, cwd: string) => {
       this.scratch.set(sessionId, cwd);
@@ -126,6 +137,8 @@ class FakeHost {
   /** New array each time: the approval check caches by array identity. */
   append(entry: Entry, block: Block) {
     entry.session.blocks = [...entry.session.blocks, block];
+    // Like a committed session write in the real store.
+    this.changes.notify();
   }
 
   /** The child's turn completes with an assistant reply. */
@@ -228,6 +241,28 @@ const delegate = (requestId: string, extra: Record<string, unknown> = {}) =>
 
 const consult = (requestId: string, question = "Is this safe?") =>
   call("agents.consult", { requestId, question });
+
+it("does not re-read a waiting child while nothing changes", async () => {
+  setup({ subagents: [codexSix] });
+  const started = await delegate("idle-wait");
+  host.runIdReads = 0;
+  await call("agents.wait", { runId: started.runId, timeoutSeconds: 2 });
+  // The initial read only: no committed change and no safety re-read within 2 s.
+  expect(host.runIdReads).toBeLessThanOrEqual(1);
+});
+
+it("resolves a waiting run on the child's committed change, not at the timeout", async () => {
+  setup({ subagents: [codexSix] });
+  const started = await delegate("change-wait");
+  const sessionId = String(started.sessionId);
+  host.runIdReads = 0;
+  setTimeout(() => host.finish(sessionId, "Done"), 50);
+  const begun = Date.now();
+  const result = await call("agents.wait", { runId: started.runId, timeoutSeconds: 10 });
+  expect(result).toMatchObject({ status: "succeeded" });
+  expect(Date.now() - begun).toBeLessThan(3000);
+  expect(host.runIdReads).toBeLessThanOrEqual(3);
+});
 
 it("supports direct sibling steering and same-context continuation with peer authority limits", async () => {
   setup({ subagents: [codexSix] });
@@ -654,6 +689,23 @@ describe("requests and limits", () => {
       sessionId: "",
     });
     expect(host.commandsOf("create")).toHaveLength(DELEGATION_LIMITS.runningSubagents);
+  });
+
+  it("starts without reading other conversations' children or any child transcript", async () => {
+    setup({ subagents: [codexFive] });
+    host.add("other", { modelSettings: { [CROSS_SUBAGENTS_KEY]: JSON.stringify([codexFive]) } });
+    const foreign = await call(
+      "agents.delegate",
+      { requestId: "foreign", title: "Review", prompt: "Check" },
+      { sessionId: "other", projectId: "p" },
+    );
+    const own = await delegate("own-1");
+    const session = vi.spyOn(host.store, "session");
+    const runId = vi.spyOn(host.store, "sessionRunId");
+    await delegate("own-2");
+    expect(runId.mock.calls.map(([id]) => id)).not.toContain(foreign.sessionId);
+    expect(runId.mock.calls.map(([id]) => id)).toContain(own.sessionId);
+    expect(session.mock.calls.map(([id]) => id)).not.toContain(foreign.sessionId);
   });
 
   it("allows one running advisor at a time", async () => {

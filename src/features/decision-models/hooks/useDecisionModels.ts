@@ -137,8 +137,11 @@ export function useDecisionModels(client: DecisionModelsClient) {
         if (!alive.current || scanGeneration.current !== cachedGeneration) return;
         setFound(result.found);
         setScanIncomplete(result.incomplete ?? false);
-        // First open with nothing cached: look once, in the background.
-        if (result.found.length === 0) void scan().catch(() => undefined);
+        // First open with no valid scan on the Host: look once, in the background. An empty answer
+        // the Host stamped with `scannedAt` is a finished scan (shown with "Scan again", and with
+        // its incomplete notice when it was one), so merely opening the page never rescans.
+        if (result.found.length === 0 && result.scannedAt === undefined)
+          void scan().catch(() => undefined);
       },
       (error: unknown) => {
         if (alive.current && scanGeneration.current === cachedGeneration) setScanError(error);

@@ -1,4 +1,10 @@
-import { t } from "../../../shared/i18n";
+import {
+  connectionReason,
+  localizeConnectionReason,
+  PAIRING_REFUSED,
+  ROUTE_REJECTED,
+  sanitizeConnectionError,
+} from "./connectionReason";
 import { classifyRemoteError, nativeConnectionFailureCode, remoteErrorText } from "./remoteFailure";
 import { classifySshFailure, parseSshStartFailure } from "./sshFailure";
 
@@ -49,79 +55,18 @@ export type RemoteConnectionEvent =
    * longer applies, and a connection to the new one is being made. */
   | { type: "reset" };
 
-/** Takes anything secret or machine-sized out of an error before it is shown:
- * bearer tokens, key=value credentials and whole `ssh …` command lines. */
-export function sanitizeConnectionError(text: string): string {
-  const cleaned = text
-    .replace(/Bearer\s+[\w.~+/=-]+/gi, "Bearer …")
-    .replace(/\b(token|password|passphrase|secret)\s*[=:]\s*\S+/gi, "$1 …")
-    .replace(/\bssh(?:\.exe)?\s+-\S.*/gi, "")
-    .replace(/\s*Open Settings → (?:Machines|Connections) and reconnect[^.]*\.?/gi, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  return cleaned.length > 200 ? `${cleaned.slice(0, 197)}…` : cleaned;
-}
-
-/** The machine answered 403 for its route: a proxy or origin header, not the pairing. */
-const ROUTE_REJECTED =
-  "A proxy or origin header in front of the machine was refused. Check the route to it.";
-
-/** The machine answered 401: its device row for this computer is gone, so only pairing again helps. */
-const PAIRING_REFUSED =
-  "This machine no longer accepts this computer’s pairing. Add it again in Connections.";
+// The reason helpers live in `connectionReason.ts` so `remoteFailure.ts` can use them without a cycle.
+export { connectionReason, localizeConnectionReason, sanitizeConnectionError };
 
 /** The machine refused this computer's credential, as opposed to a changed Host identity. */
 export function isPairingRefused(state: RemoteConnectionState): boolean {
   return state.status === "identity-mismatch" && state.error === PAIRING_REFUSED;
 }
 
-/** A short reason for a status, for banners and tooltips. */
-export function connectionReason(status: RemoteConnectionStatus, raw: string): string {
-  if (status === "outdated-host") return "bycoda Host on the machine needs an update.";
-  if (status === "identity-mismatch" && /\[RPC_AUTHORIZATION\]/.test(raw)) return PAIRING_REFUSED;
-  if (status === "host-not-running")
-    return "The machine is reachable, but bycoda Host is not running there. Start it, then reconnect.";
-  if (/Machine is unreachable/i.test(raw))
-    return "The machine did not answer. It may be off, asleep or offline.";
-  if (
-    /no longer connected|isn.t connected on this computer|Connect this project.s machine/i.test(raw)
-  )
-    return "This machine is not connected on this computer.";
-  if (/SSH connection failed/i.test(raw)) {
-    const detail = sanitizeConnectionError(raw.replace(/^.*?SSH connection failed[^:]*:\s*/i, ""));
-    return detail ? `SSH could not connect: ${detail}` : "SSH could not connect.";
-  }
-  return sanitizeConnectionError(raw) || "The machine did not answer.";
-}
-
-/** `connectionReason` in the user's language, for the fixed sentences it returns. */
-export function localizeConnectionReason(reason: string): string {
-  const known: Record<string, string> = {
-    "bycoda Host on the machine needs an update.": t("bycoda Host on the machine needs an update."),
-    "The machine is reachable, but bycoda Host is not running there. Start it, then reconnect.": t(
-      "The machine is reachable, but bycoda Host is not running there. Start it, then reconnect.",
-    ),
-    "The machine did not answer. It may be off, asleep or offline.": t(
-      "The machine did not answer. It may be off, asleep or offline.",
-    ),
-    "This machine is not connected on this computer.": t(
-      "This machine is not connected on this computer.",
-    ),
-    [ROUTE_REJECTED]: t(
-      "A proxy or origin header in front of the machine was refused. Check the route to it.",
-    ),
-    [PAIRING_REFUSED]: t(
-      "This machine no longer accepts this computer’s pairing. Add it again in Connections.",
-    ),
-    "SSH could not connect.": t("SSH could not connect."),
-    "The machine did not answer.": t("The machine did not answer."),
-  };
-  return known[reason] ?? reason;
-}
-
 /** Which status a failed request means. `connected` when the machine itself
  * answered, even if with an error of its own. `status` is undefined for a
- * timeout or a bad answer, which says nothing about the machine's state. `specific`
+ * timeout, a bad answer or a request refused because the machine is turned off here,
+ * which say nothing about the machine's state. `specific`
  * is false for the bare "did not answer" that every failed request ends in, which
  * must not replace a more precise reason that is already known. */
 export function connectionOutcome(error: unknown): {
@@ -151,7 +96,8 @@ export function connectionOutcome(error: unknown): {
     };
   if (failure.kind === "outdated")
     return { status: "outdated-host", error: connectionReason("outdated-host", failure.message) };
-  if (failure.kind === "temporary") return {};
+  // A refusal by this computer's own switch never reached the machine: no answer, no outage.
+  if (failure.kind === "temporary" || failure.kind === "disabled") return {};
   if (failure.kind !== "unreachable") return { status: "connected" };
   const text = remoteErrorText(error);
   if (/Host is not running on the machine/i.test(text))

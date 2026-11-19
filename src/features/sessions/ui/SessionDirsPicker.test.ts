@@ -137,6 +137,27 @@ describe("session folders", () => {
     expect(additionalDirsForSession("s1", "/work/web")).toEqual(["/custom/api"]);
   });
 
+  it("translates the native dialog title and picker errors", async () => {
+    const { setLanguagePreference } = await import("../../../shared/i18n");
+    try {
+      await act(async () => {
+        await setLanguagePreference("de");
+      });
+      vi.mocked(pickFolders).mockRejectedValueOnce(new Error("unavailable"));
+      render();
+      open();
+      await act(async () => button("Wählen Sie aus").click());
+      expect(pickFolders).toHaveBeenCalledWith("Ordner zu dieser Sitzung hinzufügen", true);
+      expect(document.querySelector('[role="alert"]')?.textContent).toBe(
+        "Der Ordnerauswahldialog konnte nicht geöffnet werden. Bitte versuchen Sie es erneut.",
+      );
+    } finally {
+      await act(async () => {
+        await setLanguagePreference("en");
+      });
+    }
+  });
+
   it("resets extra folders to the project setting while keeping the working folder", () => {
     saveAdditionalDirs("/work/web", ["/work/api"]);
     saveSessionAdditionalDirs("s1", "/work/web", ["/custom/ui"]);

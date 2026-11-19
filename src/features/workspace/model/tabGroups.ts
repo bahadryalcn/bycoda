@@ -393,6 +393,9 @@ export function loadTabGroupLogos(): Record<string, string> {
   return readRecord(LOGO_KEY);
 }
 
+/** Same record as `loadTabGroupLogos`, parsed once per stored change and shared by every reader. */
+export const getTabGroupLogosSnapshot = cachedRecordReader(LOGO_KEY, loadTabGroupLogos);
+
 export function saveTabGroupLogo(project: string, path: string | null): void {
   const next = loadTabGroupLogos();
   if (!path) delete next[project];

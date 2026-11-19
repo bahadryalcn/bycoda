@@ -44,6 +44,31 @@ export const resolveBinary: Record<RemoteProvider, () => Promise<{ path: string 
 
 export const MAX_BODY = 16 * 1024 * 1024;
 
+// Node's whole-request receive deadline for the Host HTTP server. It must let a full
+// MAX_BODY upload arrive over a slow remote link: 16 MiB in 180 s needs only ~93 KB/s.
+// Finite on purpose, so a stalled client still releases its socket. Matches the LAN and
+// WSS gateways. Node applies it to every request, so the server-wide value is only the
+// ceiling: every request except an accepted RPC upload is cut by boundRequestReceive.
+export const REQUEST_RECEIVE_TIMEOUT_MS = 180_000;
+
+/** Receive window for a request that has not yet proven its credential, and for every
+ * non-RPC route. It is the Host's previous whole-request deadline. */
+export const UNAUTHENTICATED_RECEIVE_TIMEOUT_MS = 20_000;
+
+/** Cuts the request if its body is still incomplete after `ms`. The returned `disarm` must run
+ * once the request is accepted for its own, longer budget; until then the shorter one applies.
+ * Complete requests (bodiless GET, streamed responses) are never cut. */
+export function boundRequestReceive(
+  request: IncomingMessage,
+  ms = UNAUTHENTICATED_RECEIVE_TIMEOUT_MS,
+): () => void {
+  const timer = setTimeout(() => {
+    if (!request.complete) request.destroy();
+  }, ms);
+  timer.unref?.();
+  return () => clearTimeout(timer);
+}
+
 export const discoverModels: Record<RemoteProvider, (cwd: string) => Promise<AgentModel[]>> = {
   codex: discoverCodexModels,
   claude: discoverClaudeModels,

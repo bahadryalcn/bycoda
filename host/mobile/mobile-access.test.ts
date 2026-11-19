@@ -96,6 +96,27 @@ describe("private mobile access", () => {
     expect(results.every((result) => result.state === "ready")).toBe(true);
     expect(run.mock.calls.filter((call) => call[1][1] === "--bg")).toHaveLength(1);
   });
+  it("reports every status and enable result to observers without letting them fail the call", async () => {
+    let config: unknown = {};
+    const run = vi.fn(async (_program: string, args: string[]) => {
+      if (args[0] === "status") return identity;
+      if (args[1] === "status") return JSON.stringify(config);
+      config = configured();
+      return "enabled";
+    });
+    const service = createMobileAccessService(() => 3776, {
+      executable: async () => "tailscale",
+      run,
+    });
+    const seen: string[] = [];
+    service.observe((status) => seen.push(status.state));
+    service.observe(() => {
+      throw new Error("observer failed");
+    });
+    expect((await service.status()).state).toBe("setup-required");
+    expect((await service.enable()).state).toBe("ready");
+    expect(seen).toEqual(["setup-required", "ready"]);
+  });
   it("needs installation or login instead of silently configuring networking", async () => {
     const run = vi.fn(async () => JSON.stringify({ BackendState: "NeedsLogin" }));
     const missing = createMobileAccessService(() => 3776, {

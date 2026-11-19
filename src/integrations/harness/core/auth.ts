@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { homeDir } from "../../../platform/tauri/fs";
 import {
@@ -7,6 +8,15 @@ import {
 import { HARNESS_TITLE, type HarnessId } from "../../../features/sessions/model/session";
 import * as child from "./child";
 import { harnessLoginArgs } from "./authSupport";
+import {
+  clearSignInInstructions,
+  offerSignInInstructionLine,
+  signInInstructionsKey,
+} from "./authInstructions";
+import { HarnessLoginError } from "./authErrors";
+import { redactExitStderrLine } from "./exitDiagnostics";
+
+export { HarnessLoginError, type HarnessLoginErrorCode } from "./authErrors";
 
 export {
   harnessLoginArgs,
@@ -53,7 +63,8 @@ const inflight = new Map<string, Promise<void>>();
 
 /**
  * Launch the provider's own login flow. The child owns browser opening and
- * credential storage; Bycoda only supervises its exit status. Duplicate
+ * credential storage; Bycoda supervises its exit status and surfaces only the sign-in link and
+ * device code the CLI prints for a browserless Host (see `authInstructions`). Duplicate
  * clicks share one run so two OAuth flows cannot race each other.
  */
 export function loginHarness(
@@ -81,7 +92,11 @@ async function runHarnessLogin(
   const args = harnessLoginArgs(harness);
   const resolve = LOGIN_RESOLVERS[harness];
   if (!args || !resolve) {
-    throw new Error(`${HARNESS_TITLE[harness]} does not offer a single browser sign-in flow.`);
+    throw new HarnessLoginError(
+      "unsupported",
+      harness,
+      `${HARNESS_TITLE[harness]} does not offer a single browser sign-in flow.`,
+    );
   }
 
   const childId = loginChildId(harness, accountId);
@@ -91,6 +106,9 @@ async function runHarnessLogin(
   if (previous) await child.killChild(previous).catch(() => undefined);
   signal?.throwIfAborted();
   const loginProcess = child.createChildProcessHandle(childId, undefined, "management");
+
+  const instructionsKey = signInInstructionsKey(harness, accountId);
+  clearSignInInstructions(instructionsKey);
 
   return new Promise<void>((resolve, reject) => {
     let settled = false;
@@ -105,6 +123,7 @@ async function runHarnessLogin(
       if (timer) clearTimeout(timer);
       signal?.removeEventListener("abort", cancel);
       child.unwatchChild(loginProcess);
+      clearSignInInstructions(instructionsKey);
       if (error) reject(error);
       else resolve();
     };
@@ -120,13 +139,21 @@ async function runHarnessLogin(
         .then(() => child.killChild(loginProcess))
         .then(
           () => finish(new DOMException("Sign-in cancelled", "AbortError")),
-          () => finish(new Error("Could not stop sign-in. Please try again.")),
+          () =>
+            finish(
+              new HarnessLoginError(
+                "stopFailed",
+                harness,
+                "Could not stop sign-in. Please try again.",
+              ),
+            ),
         );
     };
 
+    // Only the extracted sign-in link and device code are kept; the raw CLI output is dropped.
     child.watchChild(
       loginProcess,
-      () => undefined,
+      (line) => offerSignInInstructionLine(instructionsKey, line),
       (code) => {
         if (cancelling) return;
         if (code === 0) {
@@ -135,13 +162,17 @@ async function runHarnessLogin(
         }
         const detail = safeLoginDetail(lastError);
         finish(
-          new Error(
+          new HarnessLoginError(
+            "exited",
+            harness,
             detail ||
               `${HARNESS_TITLE[harness]} sign-in exited${code == null ? " unexpectedly" : ` with code ${code}`}.`,
+            { exitCode: code, detail },
           ),
         );
       },
       (line) => {
+        offerSignInInstructionLine(instructionsKey, line);
         if (line.trim()) lastError = line.trim();
       },
     );
@@ -154,7 +185,13 @@ async function runHarnessLogin(
         .killChild(loginProcess)
         .catch(() => undefined)
         .finally(() => {
-          finish(new Error(`${HARNESS_TITLE[harness]} sign-in timed out. Please try again.`));
+          finish(
+            new HarnessLoginError(
+              "timedOut",
+              harness,
+              `${HARNESS_TITLE[harness]} sign-in timed out. Please try again.`,
+            ),
+          );
         });
     }, LOGIN_TIMEOUT_MS);
 
@@ -167,8 +204,16 @@ async function runHarnessLogin(
       : child.spawnChild(loginProcess, path, [...args], cwd, undefined, harness);
     void spawn.catch((error) => {
       if (cancelling) return;
-      const message = error instanceof Error ? error.message : String(error);
-      finish(new Error(`Could not start ${HARNESS_TITLE[harness]} sign-in: ${message}`));
+      // The process layer's text can carry paths or credentials; keep it redacted and bounded.
+      const detail = safeLoginDetail(errorText(error));
+      finish(
+        new HarnessLoginError(
+          "spawnFailed",
+          harness,
+          `Could not start ${HARNESS_TITLE[harness]} sign-in${detail ? `: ${detail}` : "."}`,
+          { detail },
+        ),
+      );
     });
     signal?.addEventListener("abort", cancel, { once: true });
     if (signal?.aborted) cancel();
@@ -176,8 +221,7 @@ async function runHarnessLogin(
 }
 
 function safeLoginDetail(value: string): string {
-  const text = value
-    .replace(/https?:\/\/\S+/gi, "sign-in link")
+  const text = redactExitStderrLine(value.replace(/https?:\/\/\S+/gi, "sign-in link"))
     .replace(/\s+/g, " ")
     .trim();
   return text.length > 240 ? `${text.slice(0, 237)}…` : text;

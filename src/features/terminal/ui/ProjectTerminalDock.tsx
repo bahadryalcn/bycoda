@@ -463,7 +463,7 @@ function ProjectTerminalDockComponent({
         <ExplorerMenu
           x={terminalMenu.x}
           y={terminalMenu.y}
-          ariaLabel="Terminal actions"
+          ariaLabel={t("Terminal actions")}
           className="terminal-popup"
           items={[
             ...(onSplitTerminal ? [{ kind: "item" as const, id: "split", label: t("Split") }] : []),
@@ -486,7 +486,7 @@ function ProjectTerminalDockComponent({
             {
               kind: "item",
               id: "close-others",
-              label: t("Close Others"),
+              label: t("Close others"),
               disabled: dock.pane.files.length < 2,
             },
             { kind: "item", id: "close-all", label: t("Close All Terminals") },
@@ -516,7 +516,7 @@ function ProjectTerminalDockComponent({
           side={dock.side === "top" ? "bottom" : "top"}
           align="end"
           className="terminal-popup"
-          ariaLabel="Terminal profiles"
+          ariaLabel={t("Terminal profiles")}
           items={[
             ...(profiles?.profiles ?? []).map((profile) => ({
               kind: "item" as const,
@@ -605,7 +605,7 @@ function ProjectTerminalDockComponent({
             {
               kind: "item",
               id: "close-others",
-              label: t("Close Others"),
+              label: t("Close others"),
               disabled: dock.pane.files.length < 2,
             },
             { kind: "item", id: "close-all", label: t("Close All Terminals"), danger: true },

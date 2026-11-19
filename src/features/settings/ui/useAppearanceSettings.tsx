@@ -6,6 +6,7 @@ import {
 } from "../model/backgroundLibrary";
 import { resetInteractionTint } from "../model/interactionTint";
 import { resetWorkingIndicator } from "../model/workingIndicator";
+import { errorText } from "../../../shared/lib/errors";
 import { resetScrollbarStyle } from "../model/scrollbarStyle";
 import {
   saveWorkspaceBackground,
@@ -380,7 +381,7 @@ export function useAppearanceSettings(
         }
         return path;
       } catch (error) {
-        setChatBackgroundError(error instanceof Error ? error.message : String(error));
+        setChatBackgroundError(errorText(error));
         return null;
       } finally {
         chatBackgroundPending.current = false;
@@ -404,7 +405,7 @@ export function useAppearanceSettings(
       applyChatBackground(null);
       setChatBackgroundPath(null);
     } catch (error) {
-      setChatBackgroundError(error instanceof Error ? error.message : String(error));
+      setChatBackgroundError(errorText(error));
     } finally {
       chatBackgroundPending.current = false;
       setChatBackgroundBusy(false);

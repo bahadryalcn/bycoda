@@ -232,7 +232,8 @@ function TagInputControl({
       for (const type of ["beforeinput", "paste", "drop"])
         node.removeEventListener(type, guard, true);
     };
-  });
+    // The guard reads inputPort and composing through refs, so it stays current without rebinding on each render. The input is always mounted, so the node only changes with the observer.
+  }, [inputObserver]);
 
   function mutateInput(kind: string, apply: () => unknown, requestedTags?: readonly string[]) {
     const port = inputPort.current;

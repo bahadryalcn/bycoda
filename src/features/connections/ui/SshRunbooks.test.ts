@@ -255,6 +255,32 @@ it("retains ambiguous dispatch identity and recovers/cancels by status without r
   expect(native.start).toHaveBeenCalledOnce();
   expect(document.body.textContent).toContain("Cancelled");
 });
+it("backs off failing active-run status polls instead of retrying every second", async () => {
+  vi.useFakeTimers();
+  try {
+    native.status.mockImplementation(async (id: string) => outcome(id, "running"));
+    await render("known-run");
+    native.status.mockClear();
+    native.status.mockRejectedValue(new Error("machine offline"));
+    await act(async () => vi.advanceTimersByTimeAsync(1_000));
+    expect(native.status).toHaveBeenCalledTimes(1);
+    await act(async () => vi.advanceTimersByTimeAsync(5_999));
+    expect(native.status).toHaveBeenCalledTimes(1);
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(native.status).toHaveBeenCalledTimes(2);
+    await act(async () => vi.advanceTimersByTimeAsync(11_999));
+    expect(native.status).toHaveBeenCalledTimes(2);
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(native.status).toHaveBeenCalledTimes(3);
+    native.status.mockImplementation(async (id: string) => outcome(id, "running"));
+    await act(async () => vi.advanceTimersByTimeAsync(24_000));
+    expect(native.status).toHaveBeenCalledTimes(4);
+    expect(document.body.textContent).toContain("machine offline");
+    expect(button("Refresh status").disabled).toBe(false);
+  } finally {
+    vi.useRealTimers();
+  }
+});
 it("discards late reviews after unmount instead of preserving executable approval", async () => {
   let answer: (value: any) => void = () => {};
   native.review.mockImplementation(

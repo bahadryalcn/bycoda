@@ -29,7 +29,9 @@ describe("spreadsheet worker lifecycle", () => {
       () => worker,
       15_000,
     );
-    const rejected = expect(pending).rejects.toThrow("exceeded 15 seconds");
+    const rejected = expect(pending).rejects.toMatchObject({
+      problem: { reason: "timeout", ms: 15_000 },
+    });
     await vi.advanceTimersByTimeAsync(15_000);
     await rejected;
     expect(worker.terminate).toHaveBeenCalledOnce();

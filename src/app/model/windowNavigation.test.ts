@@ -20,6 +20,9 @@ vi.mock("@tauri-apps/api/window", () => ({
   getAllWindows: api.getAllWindows,
   getCurrentWindow: () => ({ label: "tools", listen: api.listen }),
 }));
+vi.mock("@tauri-apps/api/webviewWindow", () => ({
+  getCurrentWebviewWindow: () => ({ label: "tools" }),
+}));
 import {
   chooseNavigationWindow,
   routeWindowDestination,
@@ -138,15 +141,45 @@ describe("cross-window navigation delivery", () => {
     expect(api.setFocus).toHaveBeenCalledOnce();
     expect(listeners.size).toBe(0);
   });
-  it("opens a conversation window when only the tools window exists", async () => {
+  it("resolves discovery as soon as every window has answered, without the discovery bound", async () => {
+    windows = [tools, entry("main", { sessionIds: ["worker"] })];
+    const opened = routeWindowDestination(worker, true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await opened).toBe(true);
+    expect(api.emitTo).toHaveBeenCalledWith(
+      "main",
+      "workspace_navigation_open",
+      expect.objectContaining({ target: worker }),
+    );
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it("opens a conversation window and routes once the new window announces it is ready", async () => {
+    windows = [tools];
+    api.invoke.mockImplementation(async () => {
+      windows.push(entry("new-session"));
+      listeners.get("workspace_navigation_ready")?.({ payload: { label: "new-session" } });
+    });
+    const opened = routeWindowDestination(worker, true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await opened).toBe(true);
+    expect(api.invoke).toHaveBeenCalledWith("open_new_window");
+    expect(api.emitTo).toHaveBeenCalledWith(
+      "new-session",
+      "workspace_navigation_open",
+      expect.anything(),
+    );
+    expect(listeners.has("workspace_navigation_ready")).toBe(false);
+  });
+  it("falls back to one discovery when the new window never announces, within the ceiling", async () => {
     windows = [tools];
     api.invoke.mockImplementation(async () => {
       windows.push(entry("new-session"));
     });
     const opened = routeWindowDestination(worker, true);
-    await vi.advanceTimersByTimeAsync(320);
+    await vi.advanceTimersByTimeAsync(9900);
+    expect(api.emitTo).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(200);
     expect(await opened).toBe(true);
-    expect(api.invoke).toHaveBeenCalledWith("open_new_window");
     expect(api.emitTo).toHaveBeenCalledWith(
       "new-session",
       "workspace_navigation_open",

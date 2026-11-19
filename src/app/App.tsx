@@ -140,6 +140,7 @@ import { useDesktopLiveHandlers } from "./workspace/control/useDesktopLiveHandle
 import { useWindowDragPreview } from "./model/useWindowDragPreview";
 import { DetachedWorkingBar } from "./shell/DetachedWorkingBar";
 import { WindowControlsVisible } from "./shell/WindowControls";
+import { useFittedShellPanes } from "./shell/fitShellPanes";
 import { Suspense, useCallback, useMemo, useEffect, useRef, useState } from "react";
 import { useWorktreeFocus } from "../features/source-control/model/worktreeFocus";
 import { useStableCallback } from "../shared/hooks/useStableCallback";
@@ -155,7 +156,7 @@ import { setAdditionalDirsResolver } from "../integrations/harness/core/addition
 import { leafIds, newTab } from "../features/workspace/model/layout";
 import { idleWorkspaceTabIds } from "../features/workspace/model/idleTabs";
 import { useCloseForeignEmptyTabs } from "./workspace/tabs/useCloseForeignEmptyTabs";
-import { composerDraftOf, composerDraftRevision } from "../features/sessions/model/draftCache";
+import { composerDraftOf } from "../features/sessions/model/draftCache";
 import { type WindowTransferPayload } from "./model/windowTransfer";
 import { paneDropFromPoint } from "../features/workspace/model/paneDrop";
 import {
@@ -222,12 +223,10 @@ import { useQueuePersistence } from "../features/sessions/hooks/useQueuePersiste
 import { type SessionSummary } from "../features/sessions/data/sessionStore";
 import { TranscriptPoolOutlet } from "../features/sessions/ui/TranscriptPool";
 import { useDockBadge } from "../features/notifications/hooks/useDockBadge";
-import { useKeepAwake } from "../features/settings/model/keepAwake";
-import { useInputNotifications } from "../features/notifications/hooks/useInputNotifications";
+import { SessionNotificationBridges } from "./workspace/bridges/SessionNotificationBridges";
 import { useBackgroundNotifications } from "../features/notifications/hooks/useBackgroundNotifications";
 import { useSocialNotifications } from "../features/notifications/hooks/useSocialNotifications";
 import { useAccountPlatform } from "./hooks/useAccountPlatform";
-import { useAttentionNotifications } from "../features/notifications/hooks/useAttentionNotifications";
 import { useQuickComposerLaunches } from "../features/quick-composer/hooks/useQuickComposerLaunches";
 
 import {
@@ -386,7 +385,6 @@ function Workspace({
     sessionDeleteDialog,
     setSessionDeleteDialog,
   } = useSessionRecoveryState();
-  useKeepAwake(sessions);
   const switchingWorktrees = useRef(new Map<string, string>());
   const removingWorktreePaths = useRef(new Set<string>());
   const deleteConfirmationPending = useRef(false);
@@ -422,11 +420,19 @@ function Workspace({
     setComposerFocusToken,
     tabProjectsRef,
     projectOfTab,
-    projectRailOpen,
+    projectRailOpen: storedProjectRailOpen,
     setProjectRailOpen,
-    sessionSidebarOpen,
+    sessionSidebarOpen: storedSessionSidebarOpen,
     setSessionSidebarOpen,
   } = useComposerRailState({ windowTransfer, resumed });
+  // The stored rail/sidebar choices stay as the user left them; a window (or UI zoom)
+  // too narrow for them beside the main column shows the compact rail instead.
+  const fittedPanes = useFittedShellPanes({
+    rail: storedProjectRailOpen,
+    sidebar: storedSessionSidebarOpen,
+  });
+  const projectRailOpen = fittedPanes.rail;
+  const sessionSidebarOpen = fittedPanes.sidebar;
   const [lastSessionsOpen, setLastSessionsOpen] = useState(false);
   const [newListedSessionRequest, setNewListedSessionRequest] = useState(0);
   const tabCloseScope = "project" as const;
@@ -827,8 +833,6 @@ function Workspace({
   const activeSessionIdRef = useRef(activeSessionId);
   activeSessionIdRef.current = activeSessionId;
 
-  useInputNotifications(sessions, activeSessionId);
-  useAttentionNotifications(sessions, activeSessionId);
   useBackgroundNotifications(automationsViewOpen && taskBoardShown);
   useSocialNotifications();
   useAccountPlatform();
@@ -1143,13 +1147,9 @@ function Workspace({
       movingTabIds,
     ],
   );
-  // Read cheap mutable revisions without subscribing the entire app to typing.
-  const draftRevision = composerDraftRevision();
-  const movingTabsKey = [...movingTabIds.current].join("\0");
-  const idleTabCount = useMemo(
-    () => idleTabIds(activeTabId, dirtyFiles).length,
-    [idleTabIds, activeTabId, dirtyFiles, draftRevision, movingTabsKey],
-  );
+  // Menus that show the idle count call this only while they render open, so streamed session
+  // updates no longer rescan every tab. The stable identity keeps memoized menu bars quiet.
+  const countIdleTabs = useStableCallback(() => idleTabIds(activeTabId, dirtyFiles).length);
   const onCloseIdleTabs = () => {
     const ids = idleTabIds();
     if (ids.length > 0) onCloseTabs(ids, activeTabIdRef.current);
@@ -1300,6 +1300,7 @@ function Workspace({
     tabsRef,
     sessionsRef,
     activeTabIdRef,
+    windowTransferPendingRef,
     dirtyFilesRef,
     setDirtyFiles,
     setTabs,
@@ -1418,6 +1419,7 @@ function Workspace({
     ensureOpenSession,
     onPopOutSession,
     onPrefetchHistorySession,
+    onRetrySessionHistory,
   } = useSessionLoading({
     sessionsRef,
     setSessions,
@@ -1704,6 +1706,7 @@ function Workspace({
 
   const {
     onFocusDir,
+    onMovePaneDir,
     onRatio,
     onCwdChange,
     onBranchChange,
@@ -1713,6 +1716,7 @@ function Workspace({
   } = useWorkspaceDirectoryActions({
     activeTab,
     onFocusPane,
+    onMovePane,
     windowTransferPendingRef,
     movingTabIds,
     setTabs,
@@ -2326,8 +2330,8 @@ function Workspace({
     onReload,
     onFindInProject,
   } = useWindowChromeActions({
-    projectRailOpen,
-    sessionSidebarOpen,
+    projectRailOpen: storedProjectRailOpen,
+    sessionSidebarOpen: storedSessionSidebarOpen,
     setServersViewOpen,
     setProjectRailOpen,
     setSessionSidebarOpen,
@@ -2609,6 +2613,7 @@ function Workspace({
       automationsViewOpen,
       socialBoardShown,
       taskBoardShown,
+      auxiliaryTool,
       settingsSection,
       projectCwd,
       activeTab,
@@ -2714,6 +2719,7 @@ function Workspace({
     onActivate,
     onSplit,
     onFocusDir,
+    onMovePaneDir,
     onToggleSidebar,
     onToggleSessionSidebar,
     onGoToFile,
@@ -2787,6 +2793,7 @@ function Workspace({
     onComposerWorktreeChange,
     onRemoteSnapshot,
     onRefreshAdoptedSession,
+    onRetrySessionHistory,
     onWorkspaceModeChange,
     onWorktreeBaseChange,
     onManageWorktrees,
@@ -2859,7 +2866,7 @@ function Workspace({
     inboxViewOpen,
     notesViewOpen,
     automationsViewOpen,
-    collapsedProjectRailMode,
+    collapsedProjectRailMode: fittedPanes.compactRailForced ? "compact" : collapsedProjectRailMode,
     projectRailOpen,
     visibleRecents,
   });
@@ -2947,7 +2954,7 @@ function Workspace({
     onCloseTitleTab,
     onCloseTabs,
     onCloseIdleTabs,
-    idleTabCount,
+    countIdleTabs,
     onArchiveTitleTab,
     onDeleteTitleTab,
     onReorderTabs,
@@ -3364,7 +3371,7 @@ function Workspace({
                           onCloseCurrentTab={onCloseCurrentTab}
                           onCloseOtherTabs={onCloseOtherTabs}
                           onCloseIdleTabs={onCloseIdleTabs}
-                          idleTabCount={idleTabCount}
+                          countIdleTabs={countIdleTabs}
                           onCloseAllTabs={onCloseAllTabs}
                           onPickProject={pickProject}
                           onFindInProject={onFindInProject}
@@ -3630,6 +3637,7 @@ function Workspace({
                   setSessionDeleteDialog={setSessionDeleteDialog}
                 />
                 <WorkspaceNotices sessionReminders={sessionReminders} openSettings={openSettings} />
+                <SessionNotificationBridges activeSessionId={activeSessionId} />
                 <AppConfirmHost />
                 <WorkspacePickerDialogs
                   resumePickerFor={resumePickerFor}

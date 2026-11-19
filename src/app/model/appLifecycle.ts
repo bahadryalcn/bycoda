@@ -25,7 +25,7 @@ import {
 import { closeLeaf, leafIds, type WorkspaceTab } from "../../features/workspace/model/layout";
 import {
   abortRestoredSession,
-  claimRestoredSession,
+  claimRestoredSessions,
   remoteSessionOwnershipKey,
 } from "./sessionWindowOwnership";
 import { parseRemotePath } from "../../features/connections/model/remoteProjects";
@@ -468,17 +468,14 @@ export function loadBootWorkspace(): Promise<BootWorkspace> {
         return { windowTransfer: null, resumed: null, history: [], historyCwd: null };
       }
       const hintedCwd = lastProjectPath();
-      const historyHint: { value: Awaited<ReturnType<typeof listProjectHistory>> } = {
-        value: null,
-      };
-      void listProjectHistory(hintedCwd).then((value) => {
-        historyHint.value = value;
-      });
-      const resumed = await loadResumedWorkspace();
+      // Awaited together with the restore so the sidebar history is ready at
+      // first paint instead of depending on which query finishes first.
+      const [hinted, resumed] = await Promise.all([
+        listProjectHistory(hintedCwd),
+        loadResumedWorkspace(),
+      ]);
       const listed =
-        hintedCwd && sameProjectPath(resumed?.projectCwd ?? hintedCwd, hintedCwd)
-          ? historyHint.value
-          : null;
+        hintedCwd && sameProjectPath(resumed?.projectCwd ?? hintedCwd, hintedCwd) ? hinted : null;
       return {
         windowTransfer: null,
         resumed,
@@ -594,22 +591,25 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
   const foreign = new Set<string>();
   const claimed = new Set<string>();
   try {
+    // Local ids first, then the remote Host key of each one this window won, so
+    // a remote key is never claimed for a conversation another window owns.
+    for (const id of await claimRestoredSessions(claimIds)) foreign.add(id);
+    const keyOwners = new Map<string, string[]>();
     for (const id of claimIds) {
-      const local = await claimRestoredSession(id);
-      if (!local) {
-        foreign.add(id);
-        continue;
-      }
+      if (foreign.has(id)) continue;
       claimed.add(id);
       const remoteKey = remoteKeys.get(id);
-      if (remoteKey) {
-        if (await claimRestoredSession(remoteKey)) claimed.add(remoteKey);
-        else {
+      if (remoteKey) keyOwners.set(remoteKey, [...(keyOwners.get(remoteKey) ?? []), id]);
+    }
+    const foreignKeys = await claimRestoredSessions([...keyOwners.keys()]);
+    for (const [key, owners] of keyOwners) {
+      if (foreignKeys.has(key)) {
+        for (const id of owners) {
           foreign.add(id);
-          await abortRestoredSession(id);
           claimed.delete(id);
+          await abortRestoredSession(id);
         }
-      }
+      } else claimed.add(key);
     }
   } catch (error) {
     // Unknown ownership cannot safely paint or rewrite the saved workspace.

@@ -189,3 +189,39 @@ it("renders the session's machine notice inline with the raw text behind Details
   expect(container.textContent).toContain("Reconnect");
   expect(container.textContent).not.toContain("SSH timed out");
 });
+
+it("names a changed Host identity and offers only Review in Connections, never Reconnect", async () => {
+  state.shared = false;
+  await act(async () =>
+    root.render(
+      createElement(RemoteLoadError, {
+        cwd: "env",
+        failure: {
+          kind: "identity",
+          message: "Host identity changed. Add this machine again before continuing.",
+        },
+      }),
+    ),
+  );
+  expect(container.textContent).toContain("Server’s identity changed");
+  expect(container.textContent).not.toContain("Couldn’t load from the machine");
+  const labels = [...container.querySelectorAll("button")].map((entry) => entry.textContent);
+  expect(labels).toContain("Review in Connections");
+  expect(labels.some((label) => label?.includes("Reconnect"))).toBe(false);
+  expect(state.reconnect).not.toHaveBeenCalled();
+});
+
+it("says a busy machine is busy and adds no retry action the failure does not allow", async () => {
+  state.shared = false;
+  await act(async () =>
+    root.render(
+      createElement(RemoteLoadError, {
+        cwd: "env",
+        failure: { kind: "temporary", message: "[RPC_TIMEOUT] read deadline passed" },
+      }),
+    ),
+  );
+  expect(container.textContent).toContain("Server is busy right now");
+  expect(container.textContent).not.toContain("Couldn’t load from the machine");
+  expect(container.querySelectorAll("button")).toHaveLength(0);
+});

@@ -300,6 +300,7 @@ function WorkspaceModePicker({
             icon: <FolderTree className="icon-md" />,
             trailing: <ChevronRight aria-hidden className="icon-sm" strokeWidth={1.75} />,
             onAction: () => openWorktreeMenu(true),
+            popup: { listId: flyoutListId, expanded: worktreeMenu },
           },
         ]
       : []),
@@ -310,14 +311,6 @@ function WorkspaceModePicker({
     description: prettyCwd(tree.path),
     icon: busyPath === tree.path ? <Spinner size="md" /> : <FolderTree className="icon-md" />,
   }));
-
-  // The row keeps the submenu semantics of the flyout it opens.
-  useEffect(() => {
-    if (!open || !onSelectWorktree) return;
-    const row = document.getElementById(existingRowId);
-    row?.setAttribute("aria-haspopup", "menu");
-    row?.setAttribute("aria-expanded", String(worktreeMenu));
-  }, [open, worktreeMenu, onSelectWorktree, existingRowId]);
 
   const onListMouseOver = (event: ReactMouseEvent<HTMLElement>) => {
     if (!onSelectWorktree || !(event.target instanceof Element)) return;

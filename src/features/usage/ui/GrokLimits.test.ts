@@ -37,7 +37,7 @@ it("keeps unavailable data unknown and offers retry", () => {
   state.limits = { ...idleRateLimits("grok"), status: "error", error: "Grok usage unavailable" };
   const markup = renderToStaticMarkup(createElement(GrokLimits, { refresh: 0 }));
   expect(markup).toContain("Grok usage unavailable");
-  expect(markup).toContain("Retry");
+  expect(markup).toContain("Try again");
   expect(markup).not.toContain('role="meter"');
 });
 

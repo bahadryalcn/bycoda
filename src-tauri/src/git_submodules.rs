@@ -45,16 +45,49 @@ impl IndexRecords {
     }
 }
 
+/// Size bounds of the opt-in repository scan. Reaching one ends the scan early
+/// with the repositories found so far, reported through `Submodules::limit`.
+struct Limits {
+    entries: usize,
+    directories: usize,
+    depth: usize,
+    repositories: usize,
+}
+
+const LIMITS: Limits = Limits {
+    entries: 200_000,
+    directories: 10_000,
+    depth: 64,
+    repositories: 256,
+};
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Submodules {
+    /// Repository paths relative to the checkout.
+    paths: Vec<String>,
+    /// The size bound that left part of the tree unscanned; `None` for a complete scan.
+    limit: Option<&'static str>,
+}
+
 #[tauri::command]
 pub async fn git_submodules(
     cwd: String,
     include_repositories: Option<bool>,
-) -> Result<Vec<String>, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        list_options(&expand_home(&cwd), include_repositories.unwrap_or(false))
+) -> Result<serde_json::Value, String> {
+    let include_repositories = include_repositories.unwrap_or(false);
+    let found = tauri::async_runtime::spawn_blocking(move || {
+        list_scan(&expand_home(&cwd), include_repositories, &LIMITS)
     })
     .await
-    .map_err(|error| error.to_string())?
+    .map_err(|error| error.to_string())??;
+    // Gitlink-only discovery has no size bound to report, so existing clients keep the plain list.
+    let wire = if include_repositories {
+        serde_json::to_value(found)
+    } else {
+        serde_json::to_value(found.paths)
+    };
+    wire.map_err(|error| error.to_string())
 }
 
 /// Discover initialized gitlinks without fetching or moving any working tree.
@@ -63,11 +96,25 @@ fn list(cwd: &Path) -> Result<Vec<String>, String> {
     list_options(cwd, false)
 }
 
+#[cfg(test)]
 fn list_options(cwd: &Path, include_repositories: bool) -> Result<Vec<String>, String> {
+    list_scan(cwd, include_repositories, &LIMITS).map(|found| found.paths)
+}
+
+fn list_scan(
+    cwd: &Path,
+    include_repositories: bool,
+    limits: &Limits,
+) -> Result<Submodules, String> {
     let root = match cwd.canonicalize() {
         Ok(root) => root,
         // A removed checkout has no repositories, like any other vanished path.
-        Err(error) if vanished(&error) => return Ok(Vec::new()),
+        Err(error) if vanished(&error) => {
+            return Ok(Submodules {
+                paths: Vec::new(),
+                limit: None,
+            })
+        }
         Err(error) => return Err(error.to_string()),
     };
     let deadline = Instant::now() + GIT_LOCAL_TIMEOUT;
@@ -154,11 +201,13 @@ fn list_options(cwd: &Path, include_repositories: bool) -> Result<Vec<String>, S
         }
         parser.finish()?;
     }
-    if include_repositories {
-        discover_repositories(&root, deadline, &mut seen, &mut paths)?;
-    }
+    let limit = if include_repositories {
+        discover_repositories(&root, deadline, limits, &mut seen, &mut paths)?
+    } else {
+        None
+    };
     paths.sort();
-    Ok(paths)
+    Ok(Submodules { paths, limit })
 }
 
 /// Agents create and delete files while discovery runs. A path that disappeared
@@ -224,21 +273,26 @@ fn linked(metadata: &std::fs::Metadata) -> bool {
 }
 
 /// Read-only opt-in discovery includes ignored source roots, skipping all directory links.
+/// A size bound ends the scan with the repositories found so far and names the bound; a
+/// deadline or a directory that changed under the scan still fails, because neither says
+/// anything about the rest of the tree.
 fn discover_repositories(
     root: &Path,
     deadline: Instant,
+    limits: &Limits,
     seen: &mut HashSet<PathBuf>,
     paths: &mut Vec<String>,
-) -> Result<(), String> {
+) -> Result<Option<&'static str>, String> {
     let mut queue = vec![(root.to_path_buf(), 0usize)];
     let mut index = 0usize;
     let mut entries = 0usize;
+    let mut limit = None;
     while index < queue.len() {
         if Instant::now() >= deadline {
             return Err("Repository discovery timed out".into());
         }
-        if index >= 10_000 {
-            return Err("Repository discovery directory limit exceeded".into());
+        if index >= limits.directories {
+            return Ok(Some("directories"));
         }
         let (directory, depth) = queue[index].clone();
         index += 1;
@@ -272,8 +326,8 @@ fn discover_repositories(
                 return Err("Repository discovery timed out".into());
             }
             entries += 1;
-            if entries > 200_000 {
-                return Err("Repository discovery entry limit exceeded".into());
+            if entries > limits.entries {
+                return Ok(Some("entries"));
             }
             let Some(entry) = present(entry)? else {
                 continue;
@@ -295,8 +349,9 @@ fn discover_repositories(
             if !metadata.is_dir() || linked(&metadata) {
                 continue;
             }
-            if depth >= 64 {
-                return Err("Repository discovery depth limit exceeded".into());
+            if depth >= limits.depth {
+                limit.get_or_insert("depth");
+                continue;
             }
             let Some(child) = present(path.canonicalize())? else {
                 continue;
@@ -333,8 +388,8 @@ fn discover_repositories(
                 checked?;
                 let top = String::from_utf8_lossy(&top);
                 if PathBuf::from(top.trim()).canonicalize().ok().as_ref() == Some(&child) {
-                    if paths.len() >= 256 {
-                        return Err("Too many nested repositories".into());
+                    if paths.len() >= limits.repositories {
+                        return Ok(Some("repositories"));
                     }
                     paths.push(
                         child
@@ -349,7 +404,7 @@ fn discover_repositories(
             queue.push((child, depth + 1));
         }
     }
-    Ok(())
+    Ok(limit)
 }
 
 #[cfg(test)]
@@ -564,6 +619,7 @@ mod tests {
         assert!(discover_repositories(
             &parent.join("external"),
             Instant::now() + GIT_LOCAL_TIMEOUT,
+            &LIMITS,
             &mut seen,
             &mut paths
         )
@@ -600,6 +656,7 @@ mod tests {
         discover_repositories(
             &queued,
             Instant::now() + GIT_LOCAL_TIMEOUT,
+            &LIMITS,
             &mut seen,
             &mut paths,
         )
@@ -612,24 +669,78 @@ mod tests {
     }
 
     #[test]
-    fn opt_in_reports_depth_and_deadline_limits_instead_of_empty_success() {
+    fn opt_in_keeps_found_repositories_and_names_the_depth_limit() {
         let fixture = Fixture::new();
         let parent = fixture.repo("parent");
+        fixture.repo("parent/mobile");
         let mut nested = parent.clone();
         for _ in 0..66 {
             nested = nested.join("d");
         }
         std::fs::create_dir_all(nested).unwrap();
-        assert!(list_options(&parent, true)
-            .unwrap_err()
-            .contains("depth limit"));
+        let found = list_scan(&parent, true, &LIMITS).unwrap();
+        assert_eq!(found.paths, vec!["mobile"]);
+        assert_eq!(found.limit, Some("depth"));
+    }
+
+    #[test]
+    fn opt_in_deadline_still_fails_instead_of_returning_a_partial_list() {
+        let fixture = Fixture::new();
+        let parent = fixture.repo("parent");
         let mut seen = HashSet::new();
         let mut paths = Vec::new();
-        assert!(
-            discover_repositories(&parent, Instant::now(), &mut seen, &mut paths)
-                .unwrap_err()
-                .contains("timed out")
-        );
+        assert!(discover_repositories(
+            &parent,
+            Instant::now(),
+            &LIMITS,
+            &mut seen,
+            &mut paths
+        )
+        .unwrap_err()
+        .contains("timed out"));
+    }
+
+    #[test]
+    fn opt_in_size_limits_keep_repositories_found_before_them() {
+        let fixture = Fixture::new();
+        // A plain folder keeps the entry count to the three repositories below.
+        let plain = fixture.0.join("plain");
+        std::fs::create_dir_all(&plain).unwrap();
+        for name in ["a", "b", "c"] {
+            fixture.repo(&format!("plain/{name}"));
+        }
+        let scan = |limits: Limits| {
+            let root = plain.canonicalize().unwrap();
+            let mut seen = HashSet::new();
+            let mut paths = Vec::new();
+            let limit = discover_repositories(
+                &root,
+                Instant::now() + GIT_LOCAL_TIMEOUT,
+                &limits,
+                &mut seen,
+                &mut paths,
+            )
+            .unwrap();
+            (limit, paths.len())
+        };
+        assert_eq!(scan(LIMITS), (None, 3));
+        // The third entry crosses the bound; the two before it stay.
+        let entries = Limits {
+            entries: 2,
+            ..LIMITS
+        };
+        assert_eq!(scan(entries), (Some("entries"), 2));
+        // The root scan already found all three before the second queued directory.
+        let directories = Limits {
+            directories: 2,
+            ..LIMITS
+        };
+        assert_eq!(scan(directories), (Some("directories"), 3));
+        let repositories = Limits {
+            repositories: 2,
+            ..LIMITS
+        };
+        assert_eq!(scan(repositories), (Some("repositories"), 2));
     }
 
     #[test]

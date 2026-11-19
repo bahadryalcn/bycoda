@@ -280,3 +280,5 @@ shows, written for the person holding the client: a newer Host asks them to upda
 the app, an older Host asks them to update the Host. The Host returns the same text
 to a client whose request carries another version. Any change that does bump the
 version must ship new desktop and mobile builds together with the Host release.
+The Rust side keeps the same version and texts in `src-tauri/src/remote/protocol.rs`;
+its tests fail when they differ from the TypeScript source, so bump both together.

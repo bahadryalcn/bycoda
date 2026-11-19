@@ -2,6 +2,7 @@ import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Code } from "../../../shared/ui/Code";
 import { Text } from "../../../shared/ui/Text";
 import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { Spinner } from "../../../shared/ui/Spinner";
@@ -149,13 +150,21 @@ const negative = "danger";
 const active = "accent";
 const states: Record<
   RepairState,
-  { label: string; summary: string; Icon: IconComponent | "spinner"; color: BadgeTone }
+  {
+    label: string;
+    summary: string;
+    /** Translated "{p0} …" count label for several checks in one state. */
+    count: string;
+    Icon: IconComponent | "spinner";
+    color: BadgeTone;
+  }
 > = {
   repairing: {
     get label() {
       return t("Repairing");
     },
     summary: "Repair in progress",
+    count: "{p0} repairing",
     Icon: "spinner",
     color: active,
   },
@@ -164,6 +173,7 @@ const states: Record<
       return t("Awaiting CI");
     },
     summary: "Awaiting new CI checks",
+    count: "{p0} awaiting CI",
     Icon: CircleDashed,
     color: neutral,
   },
@@ -172,6 +182,7 @@ const states: Record<
       return t("Refreshing");
     },
     summary: "Refreshing CI checks",
+    count: "{p0} refreshing",
     Icon: "spinner",
     color: neutral,
   },
@@ -180,6 +191,7 @@ const states: Record<
       return t("Out of date");
     },
     summary: "CI results are out of date",
+    count: "{p0} out of date",
     Icon: CircleDashed,
     color: neutral,
   },
@@ -188,6 +200,7 @@ const states: Record<
       return t("CI passed");
     },
     summary: "passed",
+    count: "{p0} passed",
     Icon: CheckCircle,
     color: positive,
   },
@@ -196,6 +209,7 @@ const states: Record<
       return t("Still failing");
     },
     summary: "still failing",
+    count: "{p0} still failing",
     Icon: CircleX,
     color: negative,
   },
@@ -204,6 +218,7 @@ const states: Record<
       return t("CI running");
     },
     summary: "running",
+    count: "{p0} running",
     Icon: "spinner",
     color: active,
   },
@@ -212,6 +227,7 @@ const states: Record<
       return t("CI cancelled");
     },
     summary: "cancelled",
+    count: "{p0} cancelled",
     Icon: CircleDashed,
     color: neutral,
   },
@@ -220,6 +236,7 @@ const states: Record<
       return t("CI skipped");
     },
     summary: "skipped",
+    count: "{p0} skipped",
     Icon: CircleDashed,
     color: neutral,
   },
@@ -228,6 +245,7 @@ const states: Record<
       return t("Unknown");
     },
     summary: "unknown",
+    count: "{p0} unknown",
     Icon: CircleDashed,
     color: neutral,
   },
@@ -236,6 +254,7 @@ const states: Record<
       return t("Stopped");
     },
     summary: "Repair stopped",
+    count: "{p0} stopped",
     Icon: CircleDashed,
     color: neutral,
   },
@@ -244,6 +263,7 @@ const states: Record<
       return t("Interrupted");
     },
     summary: "Tracking interrupted",
+    count: "{p0} interrupted",
     Icon: CircleDashed,
     color: neutral,
   },
@@ -252,10 +272,27 @@ const states: Record<
       return t("Agent stopped");
     },
     summary: "Agent could not finish",
+    count: "{p0} agent stopped",
     Icon: CircleX,
     color: negative,
   },
 };
+// Which state leads a group's icon and the panel's one announcement.
+const repairPriority: RepairState[] = [
+  "repairing",
+  "agent-error",
+  "fail",
+  "stale",
+  "refreshing",
+  "pending",
+  "waiting",
+  "interrupted",
+  "stopped",
+  "cancel",
+  "unknown",
+  "skipping",
+  "pass",
+];
 function StatusIcon({ state }: { state: RepairState }) {
   useLocale();
   const { Icon, color } = states[state];
@@ -283,7 +320,6 @@ export function CheckRepairStatus({ item }: { item: RepairItem }) {
           status.Icon === "spinner" ? <Spinner size="sm" /> : <status.Icon strokeWidth={1.75} />
         }
         data-repair-status
-        role="status"
       >
         {status.label}
       </Badge>
@@ -306,22 +342,7 @@ function RepairCard({
   const [expanded, setExpanded] = useState(false);
   const counts = new Map<RepairState, number>();
   for (const item of group.items) counts.set(item.state, (counts.get(item.state) ?? 0) + 1);
-  const priority: RepairState[] = [
-    "repairing",
-    "agent-error",
-    "fail",
-    "stale",
-    "refreshing",
-    "pending",
-    "waiting",
-    "interrupted",
-    "stopped",
-    "cancel",
-    "unknown",
-    "skipping",
-    "pass",
-  ];
-  const lead = priority.find((state) => counts.has(state))!;
+  const lead = repairPriority.find((state) => counts.has(state))!;
   const label = t(group.items.length === 1 ? "{p0} check" : "{p0} checks", {
     p0: formatNumber(group.items.length),
   });
@@ -348,7 +369,6 @@ function RepairCard({
                 size="caption"
                 tone="inherit"
                 weight="medium"
-                role="status"
                 className="flex flex-wrap gap-x-3 gap-y-0.5"
               >
                 {[...counts].map(([state, count]) => (
@@ -356,10 +376,10 @@ function RepairCard({
                     {["pass", "fail", "pending", "cancel", "skipping", "unknown"].includes(state)
                       ? single
                         ? states[state].label
-                        : `${count} ${t(states[state].summary)}`
+                        : t(states[state].count, { p0: formatNumber(count) })
                       : counts.size === 1
                         ? t(states[state].summary)
-                        : `${count} ${states[state].label.toLowerCase()}`}
+                        : t(states[state].count, { p0: formatNumber(count) })}
                   </Badge>
                 ))}
               </Text>
@@ -462,17 +482,28 @@ export function CheckRepairProgress({
   useLocale();
   const groups = useCheckRepairs(cwd, repo, repair.number, view);
   if (!groups.length) return null;
+  // One announcement for the whole panel: the lead state's count across every group.
+  const totals = new Map<RepairState, number>();
+  for (const group of groups)
+    for (const item of group.items) totals.set(item.state, (totals.get(item.state) ?? 0) + 1);
+  const lead = repairPriority.find((state) => totals.has(state))!;
   return (
-    <div className="space-y-2" aria-label={t("Repair progress")}>
-      {groups.map((group) => (
-        <RepairCard
-          key={group.sessionId}
-          group={group}
-          repair={repair}
-          view={view}
-          onShowCheck={onShowCheck}
-        />
-      ))}
-    </div>
+    <>
+      <div className="space-y-2" aria-label={t("Repair progress")}>
+        {groups.map((group) => (
+          <RepairCard
+            key={group.sessionId}
+            group={group}
+            repair={repair}
+            view={view}
+            onShowCheck={onShowCheck}
+          />
+        ))}
+      </div>
+      <LiveText
+        className="sr-only"
+        text={t(states[lead].count, { p0: formatNumber(totals.get(lead)!) })}
+      />
+    </>
   );
 }

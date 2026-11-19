@@ -56,13 +56,26 @@ export function parseRemotePath(
   };
 }
 
+/** Last parsed registry, keyed by its raw localStorage string, so unchanged reads skip JSON.parse. */
+let parsedRegistry: { raw: string | null; projects: Record<string, RemoteProject> } | undefined;
+
 function readAll(): Record<string, RemoteProject> {
+  let raw: string | null;
   try {
-    const value: unknown = JSON.parse(localStorage.getItem(KEY) ?? "{}");
-    return value && typeof value === "object" ? (value as Record<string, RemoteProject>) : {};
+    raw = localStorage.getItem(KEY);
   } catch {
     return {};
   }
+  if (parsedRegistry?.raw === raw) return parsedRegistry.projects;
+  let projects: Record<string, RemoteProject> = {};
+  try {
+    const value: unknown = JSON.parse(raw ?? "{}");
+    if (value && typeof value === "object") projects = value as Record<string, RemoteProject>;
+  } catch {
+    /* a corrupt registry reads as empty until the next write replaces it */
+  }
+  parsedRegistry = { raw, projects };
+  return projects;
 }
 
 export function remoteProjectFor(path: string): RemoteProject | undefined {

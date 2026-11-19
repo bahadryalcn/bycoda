@@ -161,6 +161,71 @@ it("opens with the tail and loads one older page only after an explicit request"
   expect(vi.mocked(invoke)).toHaveBeenCalledTimes(2);
 });
 
+it("binds older uploaded and generated images to the owning Host without fetching bytes", async () => {
+  const current = snapshot();
+  current.history = { before: 2, revision: 1, totalBlocks: 3 };
+  const older: HostSession = {
+    ...current,
+    session: {
+      ...current.session,
+      blocks: [
+        {
+          id: "older-message",
+          role: "user",
+          text: "Uploaded image",
+          attachments: [
+            {
+              id: "older-upload",
+              name: "upload.png",
+              kind: "image",
+              mimeType: "image/png",
+              size: 3,
+            },
+          ],
+        },
+        {
+          id: "older-generated",
+          role: "image",
+          text: "",
+          image: {
+            name: "generated.png",
+            mimeType: "image/png",
+            size: 3,
+            path: "G:/project/generated.png",
+          },
+        },
+      ],
+    },
+  };
+  vi.mocked(invoke).mockImplementation(async (_command, input) => {
+    const { machineId, method, params } = input as {
+      machineId: string;
+      method: string;
+      params: { sessionId: string; id?: string; offset?: number };
+    };
+    expect(machineId).toBe("older-image-owner");
+    expect(params.sessionId).toBe(current.session.id);
+    if (method === "sessions.page") {
+      return { sync: { kind: "snapshot", value: older }, totalBlocks: 3, revision: 1 };
+    }
+    if (method === "attachments.read") {
+      expect(params.offset).toBe(0);
+      if (params.id === "older-upload") return { data: btoa("old"), offset: 3, size: 3 };
+      if (params.id === "older-generated") return { data: btoa("gen"), offset: 3, size: 3 };
+    }
+    throw new Error(method);
+  });
+
+  const full = await loadRemoteHistoryPage("older-image-owner", current.session.id, current);
+  expect(vi.mocked(invoke)).toHaveBeenCalledTimes(1);
+  const upload = full?.session.blocks[0].attachments?.[0];
+  const generated = full?.session.blocks[1].image;
+  expect(upload?.loadPreview).toBeTypeOf("function");
+  expect(generated?.loadPreview).toBeTypeOf("function");
+  await expect(upload!.loadPreview!()).resolves.toBe(btoa("old"));
+  await expect(generated!.loadPreview!()).resolves.toBe(btoa("gen"));
+});
+
 it("discards stale history pages without replacing live output or deleted blocks", async () => {
   const base = snapshot();
   vi.mocked(invoke).mockImplementation(async (_command, input) => {

@@ -49,6 +49,7 @@
   line-height: var(--ui-leading-secondary);
   cursor: pointer;
   outline: none;
+  box-shadow: none;
   user-select: none;
   transition:
     background-color var(--motion-feedback-duration, 120ms) var(--motion-ease-out, ease-out),

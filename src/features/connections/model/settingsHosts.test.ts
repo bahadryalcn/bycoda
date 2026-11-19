@@ -125,7 +125,7 @@ it("explains why a machine cannot be used, and says nothing for a connected one"
   const message = (id: string) =>
     settingsHostUnavailableMessage(entries.find((entry) => entry.id === id)!);
   expect(message("local")).toBeUndefined();
-  expect(message("auth")).toContain("Pair it again from Settings > Connections");
+  expect(message("auth")).toContain("Pair it again from Settings → Connections");
 });
 
 it("learns a machine's state in the background without rejecting", async () => {

@@ -270,7 +270,7 @@ it("tells the owner to pair a remote machine again from Connections, with no Rec
   mocks.entry = unavailable("pair-again");
   await render();
   expect(mocks.client).not.toHaveBeenCalled();
-  expect(container.textContent).toContain("Pair it again from Settings > Connections");
+  expect(container.textContent).toContain("Pair it again from Settings → Connections");
   expect(container.textContent).not.toContain("Reconnect");
 });
 

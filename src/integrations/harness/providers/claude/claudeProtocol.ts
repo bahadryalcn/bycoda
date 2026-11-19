@@ -1,5 +1,5 @@
 import { asRecord } from "../../../../shared/lib/records";
-import { truncateGraphemes } from "../../../../shared/lib/text/truncate";
+import { EXIT_STDERR_LINES, pushExitStderrTail } from "../../core/exitDiagnostics";
 import type {
   Attachment,
   RuntimeMode,
@@ -550,16 +550,11 @@ export function isUsageLimitResult(rec: Record<string, unknown>): boolean {
 }
 
 /** Lines of Claude's stderr kept to explain an exit. */
-export const CLAUDE_EXIT_STDERR_LINES = 3;
-const EXIT_STDERR_LINE_MAX = 300;
+export const CLAUDE_EXIT_STDERR_LINES = EXIT_STDERR_LINES;
 
-/** Keeps the last few non-empty stderr lines, each bounded, for the exit message. */
+/** Keeps the last few non-empty stderr lines, each redacted and bounded, for the exit message. */
 export function pushClaudeStderrTail(tail: string[], line: string): void {
-  const text = line.trim();
-  if (!text) return;
-  tail.push(truncateGraphemes(text, EXIT_STDERR_LINE_MAX));
-  if (tail.length > CLAUDE_EXIT_STDERR_LINES)
-    tail.splice(0, tail.length - CLAUDE_EXIT_STDERR_LINES);
+  pushExitStderrTail(tail, line);
 }
 
 /** Error text for an exit nobody asked for: the code and what Claude last printed. */

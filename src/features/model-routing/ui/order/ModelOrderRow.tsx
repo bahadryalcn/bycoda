@@ -86,7 +86,7 @@ export function ModelOrderRow({
       )}
       data-entry-id={entry.id}
       data-dragging={sortable?.draggingId === entry.id ? "" : undefined}
-      aria-label={t("Model {p0}", { p0: index + 1 })}
+      aria-label={t("Position {p0}", { p0: index + 1 })}
     >
       {onSelect ? (
         <Checkbox
@@ -151,8 +151,8 @@ export function ModelOrderRow({
       <div className="flex w-16 shrink-0">
         <ModelProfileBadge harness={entry.harness} model={entry.model} />
       </div>
-      {/* Fixed columns keep the pickers, tags and quota aligned across rows. */}
-      <div className="flex w-56 shrink-0 items-center justify-end gap-2">
+      {/* A fixed width keeps tags and quota aligned across rows; content wraps inside it instead of spilling into the profile column. */}
+      <div className="flex w-56 max-w-full shrink-0 flex-wrap items-center justify-end gap-x-2 gap-y-1">
         {next ? (
           <Badge size="xs" tone="success" className="shrink-0">
             {t("Next")}
@@ -165,7 +165,7 @@ export function ModelOrderRow({
             </Badge>
           </OverflowTooltip>
         ) : null}
-        <Text size="caption" tone="secondary" className="whitespace-nowrap">
+        <Text size="caption" tone="secondary" className="break-words">
           {left}
         </Text>
       </div>

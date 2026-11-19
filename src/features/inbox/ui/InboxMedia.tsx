@@ -36,10 +36,11 @@ function InboxMediaContent({ src, alt }: Props) {
 
   // Load authenticated bytes through the owning native route; retire blobs and stale responses.
   useEffect(() => {
+    const controller = new AbortController();
     let cancelled = false;
     let objectUrl: string | null = null;
     setState({ status: "loading" });
-    void fetchInboxMedia(src)
+    void fetchInboxMedia(src, controller.signal)
       .then((bytes) => {
         if (cancelled) return;
         const type = sniffInboxMedia(bytes);
@@ -55,6 +56,7 @@ function InboxMediaContent({ src, alt }: Props) {
       });
     return () => {
       cancelled = true;
+      controller.abort();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [src, attempt]);

@@ -88,11 +88,12 @@ type SurfaceTabMenu = {
   fileId: string;
 };
 
-const REVEAL_LABEL = IS_MAC
-  ? "Reveal in Finder"
-  : IS_WIN
-    ? "Reveal in File Explorer"
-    : "Open Containing Folder";
+/** Literal `t()` calls per platform, so the locale extractor sees every key. */
+function revealLabel(translate: typeof t): string {
+  if (IS_MAC) return translate("Reveal in Finder");
+  if (IS_WIN) return translate("Reveal in File Explorer");
+  return translate("Open containing folder");
+}
 
 export function surfaceTabMenuItems(
   translate: typeof t,
@@ -109,7 +110,7 @@ export function surfaceTabMenuItems(
           kind: "item",
           id: "move-left",
           get label() {
-            return translate("Move Left");
+            return translate("Move left");
           },
           disabled: !sides.left,
         },
@@ -117,7 +118,7 @@ export function surfaceTabMenuItems(
           kind: "item",
           id: "move-right",
           get label() {
-            return translate("Move Right");
+            return translate("Move right");
           },
           disabled: !sides.right,
         },
@@ -135,7 +136,7 @@ export function surfaceTabMenuItems(
     kind: "item",
     id: "close-others",
     get label() {
-      return translate("Close Others");
+      return translate("Close others");
     },
     disabled: !canCloseOthers,
   };
@@ -146,7 +147,7 @@ export function surfaceTabMenuItems(
       kind: "item",
       id: "close-right",
       get label() {
-        return translate("Close Tabs to the Right");
+        return translate("Close tabs to the right");
       },
       disabled: !sides.right,
     },
@@ -154,7 +155,7 @@ export function surfaceTabMenuItems(
       kind: "item",
       id: "close-left",
       get label() {
-        return translate("Close Tabs to the Left");
+        return translate("Close tabs to the left");
       },
       disabled: !sides.left,
     },
@@ -170,7 +171,7 @@ export function surfaceTabMenuItems(
             kind: "item" as const,
             id: "new-window",
             get label() {
-              return translate("Open in New Window");
+              return translate("Open in new window");
             },
             disabled: newWindow.dirty,
             description: newWindow.dirty ? translate("Save the file first") : undefined,
@@ -184,7 +185,7 @@ export function surfaceTabMenuItems(
             kind: "item" as const,
             id: "open-default",
             get label() {
-              return translate("Open in Default App");
+              return translate("Open in default app");
             },
           },
         ]
@@ -192,27 +193,27 @@ export function surfaceTabMenuItems(
     ...(isRemoteProjectPath(file.path)
       ? [{ kind: "item" as const, id: "open-copy", label: translate("Open local copy") }]
       : []),
-    { kind: "item" as const, id: "reveal", label: translate(REVEAL_LABEL) },
+    { kind: "item" as const, id: "reveal", label: revealLabel(translate) },
     { kind: "sep" as const },
     {
       kind: "item",
       id: "copy-path",
       get label() {
-        return translate("Copy Path");
+        return translate("Copy path");
       },
     },
     {
       kind: "item",
       id: "copy-relative-path",
       get label() {
-        return translate("Copy Relative Path");
+        return translate("Copy relative path");
       },
     },
     {
       kind: "item",
       id: "copy-name",
       get label() {
-        return translate("Copy File Name");
+        return translate("Copy file name");
       },
     },
     { kind: "sep" },
@@ -345,7 +346,7 @@ export function SurfaceTabs({
   paneId,
   onMoveFile,
   onPaneDragStart,
-  label = "Open files",
+  label,
   trailing,
 }: Props) {
   "use memo";
@@ -582,7 +583,7 @@ export function SurfaceTabs({
         <TabList
           ref={lockOverscroll}
           data-surface-pane-id={paneId}
-          label={label}
+          label={label ?? t("Open files")}
           className="scrollbar-none flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto overscroll-none pr-1"
         >
           {onPaneDragStart ? (

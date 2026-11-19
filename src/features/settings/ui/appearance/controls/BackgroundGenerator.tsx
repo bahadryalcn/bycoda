@@ -67,8 +67,8 @@ export function BackgroundGenerator({
           onKeyDown={onKeyDown}
         />
         <span>
-          {t("Model: {p1}", {
-            p1: `${choice.harness} / ${choice.model}${choice.providerAccountId ? ` / ${choice.providerAccountId}` : ""}`,
+          {t("Model: {p0}", {
+            p0: `${choice.harness} / ${choice.model}${choice.providerAccountId ? ` / ${choice.providerAccountId}` : ""}`,
           })}
         </span>
         <Button

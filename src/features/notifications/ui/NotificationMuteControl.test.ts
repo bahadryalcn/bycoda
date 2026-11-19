@@ -38,6 +38,12 @@ function click(label: string) {
   act(() => button!.click());
 }
 
+function buttonWithText(text: string) {
+  const button = [...container.querySelectorAll("button")].find((item) => item.textContent === text);
+  expect(button, `Button ${text}`).toBeDefined();
+  return button!;
+}
+
 const pickTime = (hour: number, minute: number) => {
   for (const [label, index] of [
     ["Hour", hour],
@@ -55,7 +61,7 @@ const pickTime = (hour: number, minute: number) => {
 describe("NotificationMuteControl", () => {
   it("dismisses a custom deadline when the selected projects change", () => {
     act(() => root.render(createElement(NotificationMuteControl, { projectIds: ["private"] })));
-    click("Mute notifications");
+    click("Mute");
     click("Choose date and time");
     pickTime(17, 35);
     act(() => root.render(createElement(NotificationMuteControl, { projectIds: ["personal"] })));
@@ -65,7 +71,7 @@ describe("NotificationMuteControl", () => {
 
   it("dismisses duration presets when the selected projects change", () => {
     act(() => root.render(createElement(NotificationMuteControl, { projectIds: ["private"] })));
-    click("Mute notifications");
+    click("Mute");
     act(() => root.render(createElement(NotificationMuteControl, { projectIds: ["personal"] })));
     expect(document.querySelector('[role="menu"]')).toBeNull();
     expect(loadNotificationPreferences()).toEqual({});
@@ -76,7 +82,7 @@ describe("NotificationMuteControl", () => {
     act(() =>
       root.render(createElement(NotificationMuteControl, { projectIds: ["private", "personal"] })),
     );
-    click("Mute notifications");
+    click("Mute");
     click("Choose date and time");
     pickTime(17, 35);
     act(() =>
@@ -93,10 +99,8 @@ describe("NotificationMuteControl", () => {
     updateNotificationPreferences(["private"], { disabled: ["issues"], mutedUntil: null });
     localStorage.setItem("bycoda.projectNotifications.v1", "{broken");
     act(() => root.render(createElement(NotificationMuteControl, { projectIds: ["private"] })));
-    const resume = container.querySelector<HTMLButtonElement>(
-      '[aria-label="Resume notifications"]',
-    )!;
-    const mute = container.querySelector<HTMLButtonElement>('[aria-label="Change mute duration"]')!;
+    const resume = buttonWithText("Resume notifications");
+    const mute = buttonWithText("Muted");
     expect(resume.disabled).toBe(true);
     expect(mute.disabled).toBe(true);
     act(() => {
@@ -115,7 +119,7 @@ describe("NotificationMuteControl", () => {
   it("keeps a custom deadline draft through an unavailable-read pause", () => {
     vi.mocked(Date.now).mockReturnValue(new Date(2030, 0, 15, 12).getTime());
     act(() => root.render(createElement(NotificationMuteControl, { projectIds: ["private"] })));
-    click("Mute notifications");
+    click("Mute");
     click("Choose date and time");
     pickTime(17, 35);
     const submit = document.querySelector<HTMLButtonElement>('button[type="submit"]')!;
@@ -145,7 +149,7 @@ describe("NotificationMuteControl", () => {
         }),
       ),
     );
-    click("Mute notifications");
+    click("Mute");
     click("8 hours");
     expect(loadNotificationPreferences()).toEqual({
       private: { disabled: ["issues"], mutedUntil: 1_800_028_800_000 },
@@ -169,7 +173,7 @@ describe("NotificationMuteControl", () => {
   it("accepts a custom future time and rejects an expired one without saving", () => {
     vi.mocked(Date.now).mockReturnValue(new Date(2030, 0, 15, 12).getTime());
     act(() => root.render(createElement(NotificationMuteControl, { projectIds: ["private"] })));
-    click("Mute notifications");
+    click("Mute");
     click("Choose date and time");
     expect(
       [...document.querySelectorAll("button")].some((button) => button.textContent === "1 hour"),
@@ -201,6 +205,20 @@ describe("NotificationMuteControl", () => {
       new Date(2030, 0, 16, 17).getTime(),
     );
     expect(document.querySelector('[role="alert"]')).toBeNull();
-    expect(document.activeElement?.getAttribute("aria-label")).toBe("Change mute duration");
+    expect(document.activeElement?.textContent).toBe("Muted");
+  });
+
+  it("names text triggers by their visible label and keeps the icon-only trigger named", () => {
+    act(() => root.render(createElement(NotificationMuteControl, { projectIds: ["private"] })));
+    expect(buttonWithText("Mute").hasAttribute("aria-label")).toBe(false);
+    act(() => root.render(createElement(NotificationMuteControl, { projectIds: ["private"], compact: true })));
+    expect(container.querySelector('button[aria-label="Mute notifications"]')).not.toBeNull();
+
+    updateNotificationPreferences(["private"], { mutedUntil: null });
+    act(() => root.unmount());
+    root = createRoot(container);
+    act(() => root.render(createElement(NotificationMuteControl, { projectIds: ["private"] })));
+    expect(buttonWithText("Muted").hasAttribute("aria-label")).toBe(false);
+    expect(buttonWithText("Resume notifications").hasAttribute("aria-label")).toBe(false);
   });
 });

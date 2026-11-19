@@ -11,6 +11,12 @@ import {
 export const NATIVE_FORMAT_MAX_RESULT_BYTES = 4 * 1024 * 1024;
 
 const empty = z.strictObject({});
+/** Longest an idle desktop take is held open. Stays under the Host's desktop stale window. */
+export const DESKTOP_TAKE_WAIT_MS = 25_000;
+// Sent only to a Host that advertises `native.services.conversation.desktop.take.wait.v1`; older Hosts reject the key.
+const desktopTakeParams = z.strictObject({
+  waitMs: z.number().int().min(0).max(DESKTOP_TAKE_WAIT_MS).optional(),
+});
 const assistantPresence = z.strictObject({
   state: z.enum(["present", "idle", "away", "dnd"]),
   choice: z.enum(["present", "away", "dnd"]).optional(),
@@ -218,7 +224,7 @@ export const NATIVE_SERVICES_RPC_SCHEMAS = {
   "native.services.conversation.bridge.describe": { params: empty, result: conversationDescribe },
   "native.services.conversation.access.issue": { params: access, result: grant },
   "native.services.conversation.desktop.take": {
-    params: empty,
+    params: desktopTakeParams,
     // The relay hands out coding-session and assistant Room requests alike; a Room request
     // the desktop refused here was already claimed and stayed lost until its deadline.
     result: z

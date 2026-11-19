@@ -10,6 +10,8 @@ import { t } from "../../../shared/i18n";
 import { previewSshConfiguration, type SshConfigurationPreview } from "../model/sshGroupDefaults";
 import { sshEndpointPreview, validSshEndpointPreview } from "../model/sshEndpointReview";
 import type { ServerRecord } from "../model/serverInventory";
+import { errorText } from "../../../shared/lib/errors";
+import { sanitizeConnectionError } from "../model/remoteConnection";
 
 /** Only an explicit click creates a new terminal; native launch rechecks this digest. */
 export function SshConfigurationConnectReview({
@@ -50,7 +52,7 @@ export function SshConfigurationConnectReview({
         setReview(result);
       })
       .catch((reason) => {
-        if (current) setError(String(reason));
+        if (current) setError(sanitizeConnectionError(errorText(reason)));
       });
     return () => {
       current = false;

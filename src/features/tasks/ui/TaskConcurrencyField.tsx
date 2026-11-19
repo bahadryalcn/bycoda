@@ -58,7 +58,8 @@ export function TaskConcurrencyField({
       onKeyDown={(event) => {
         if (event.key === "Enter" && !isImeComposition(event.nativeEvent)) {
           event.preventDefault();
-          event.currentTarget.blur();
+          // Save in place so focus stays on the field; validation still gates the save.
+          void save();
         }
       }}
     />

@@ -11,6 +11,8 @@ import {
   type ReactNode,
 } from "react";
 import { t, useLocale } from "../../../shared/i18n/git";
+import { useFormat } from "../../../shared/i18n";
+import { fileCountLabel } from "../model/gitGraphDisplay";
 import {
   gitDiffIndex,
   gitFetch,
@@ -29,6 +31,7 @@ import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { Sash } from "../../../shared/ui/Sash";
+import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import {
   GIT_ACTIONS,
@@ -44,6 +47,7 @@ import { GitGraphBranches } from "./GitGraphBranches";
 import { GitGraphCommitInspector } from "./GitGraphCommitInspector";
 import { GitGraphConflictEditor } from "./GitGraphConflictEditor";
 import { GitChangesPanel } from "./GitChangesPanel";
+import { AheadBehindCount } from "./AheadBehindCount";
 import { WorkingTreeDiff } from "./WorkingTreeDiff";
 import { GitStashSection } from "./GitStashSection";
 import { GitFeedback } from "./GitFeedback";
@@ -173,6 +177,7 @@ export function GitGraphWorkspace({
   graph,
 }: Props) {
   useLocale();
+  const format = useFormat();
   const supported = useRemoteSupports(cwd, GIT_ACTIONS) === true;
   const conflictSupported = useRemoteSupports(cwd, GIT_CONFLICTS) === true;
   const [busy] = useGitPanelState(cwd, "busy");
@@ -391,21 +396,20 @@ export function GitGraphWorkspace({
         }
       >
         <GitBranch className="icon-md shrink-0" tone="accent" />
-        <Text as="span" size="caption" tone="inherit" weight="medium" truncate className="max-w-44">
-          {index.data ? (index.data.branch ?? t("Detached HEAD")) : "…"}
-        </Text>
-        <Tooltip
-          label={
-            t("Outgoing commits") +
-            `: ${index.data?.ahead ?? 0} · ` +
-            t("Incoming commits") +
-            `: ${index.data?.behind ?? 0}`
-          }
+        <Text
+          as="span"
+          size="caption"
+          tone="inherit"
+          weight="medium"
+          className="flex min-w-0 max-w-44"
         >
-          <Text size="caption" tone="secondary" className="tabular-nums">
-            {index.data ? `↑${index.data.ahead ?? 0} ↓${index.data.behind ?? 0}` : null}
-          </Text>
-        </Tooltip>
+          <MiddleTruncate className="min-w-0">
+            {index.data ? (index.data.branch ?? t("Detached HEAD")) : "…"}
+          </MiddleTruncate>
+        </Text>
+        {index.data ? (
+          <AheadBehindCount ahead={index.data.ahead ?? 0} behind={index.data.behind ?? 0} />
+        ) : null}
       </PaneHeader>
       {actionAnchor ? (
         <DropdownMenu
@@ -415,7 +419,7 @@ export function GitGraphWorkspace({
             {
               kind: "item",
               id: "stage",
-              label: t("Stage All Changes"),
+              label: t("Stage all changes"),
               disabled:
                 !!busy ||
                 !index.data?.files.some((file) => file.unstaged) ||
@@ -493,7 +497,7 @@ export function GitGraphWorkspace({
         ) : null}
         {/* An explicitly reopened branch rail shares narrow windows with the inspector. The
             graph can yield to its compact commit column instead of pushing the inspector offscreen. */}
-        <section aria-label={t("Commit Graph")} className="flex min-w-[180px] flex-1 flex-col">
+        <section aria-label={t("Commit graph")} className="flex min-w-[180px] flex-1 flex-col">
           <div {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "shrink-0")}>
             <Button
               size="sm"
@@ -521,9 +525,9 @@ export function GitGraphWorkspace({
                 {t("Working tree")}
               </Text>
               <Text size="inherit" tone="secondary">
-                {index.data?.files.length ?? 0} {t("files")}
+                {fileCountLabel(index.data?.files.length ?? 0, format)}
                 {index.data?.conflicts?.length
-                  ? ` · ${index.data.conflicts.length} ${t("conflicts")}`
+                  ? ` · ${t("{p0} conflicts", { p0: format.formatNumber(index.data.conflicts.length) })}`
                   : ""}
               </Text>
             </Button>

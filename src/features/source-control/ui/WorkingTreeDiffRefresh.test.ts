@@ -273,6 +273,57 @@ it("does not refresh a new checkout when an old checkout's stage finishes", asyn
   expect(api.diff.mock.calls.filter(([cwd]) => cwd === "/other-repo")).toHaveLength(0);
 });
 
+const STALE_NOTICE = "Couldn’t refresh. Showing the last available snapshot.";
+function retryButton() {
+  return [...container.querySelectorAll("button")].find((button) =>
+    button.textContent?.includes("Retry refresh"),
+  );
+}
+
+it("keeps the last good review after a failed refresh, blocks actions on it, and retries in place", async () => {
+  const before = models();
+  expect(before.length).toBe(200);
+  api.files.mockRejectedValueOnce(new Error("index locked"));
+  act(() => {
+    notifyGitChangedWith(CWD, "index", { observed: true, paths: [`${CWD}/f7.ts`] });
+  });
+  await settle(600);
+
+  // Same models stay on screen; the failure is a notice, not the full-panel state.
+  expect(container.textContent).toContain(STALE_NOTICE);
+  expect(container.textContent).not.toContain("Couldn’t load changes");
+  expect(models().length).toBe(200);
+  models().forEach((model, i) => expect(model.id).toBe(before[i].id));
+  // Nothing may be staged or discarded from rows the latest read did not confirm.
+  expect(models().every((model) => !model.canStage && !model.canDiscard && !model.canStageHunk)).toBe(
+    true,
+  );
+  const props = api.view.mock.calls.at(-1)![0];
+  await act(async () => {
+    await props.onStageFile(models()[0].id);
+  });
+  expect(api.stage).not.toHaveBeenCalled();
+
+  // Retry re-reads in place: no loading surface, same view instance, actions return.
+  const renders = api.view.mock.calls.length;
+  await act(async () => {
+    retryButton()!.click();
+  });
+  await settle(0);
+  expect(api.view.mock.calls.length).toBeGreaterThan(renders);
+  expect(container.textContent).not.toContain(STALE_NOTICE);
+  expect(models().length).toBe(200);
+  expect(models()[0].canStage).toBe(true);
+});
+
+it("still shows the full-panel failure when nothing has loaded yet", async () => {
+  api.files.mockRejectedValue(new Error("no git"));
+  await act(async () => root.render(createElement(WorkingTreeDiff, { cwd: "/failing-repo" })));
+  await settle(0);
+  expect(container.textContent).toContain("Couldn’t load changes");
+  expect(container.textContent).not.toContain(STALE_NOTICE);
+});
+
 it("updates cached diff labels after a language change without reloading Git data", async () => {
   const previous = getDomainLanguagePreference("git");
   const before = models().at(-1)!.emptyMessage;

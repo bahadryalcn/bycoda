@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 import type { CSSProperties } from "react";
 /** Different job: Explorer hierarchy owns rename, drag/drop and range selection; TreeRow owns each interactive row. */
@@ -47,6 +48,7 @@ import {
 } from "react";
 import { leafName, validateFileName, type NameIssue } from "../model/fileName";
 import { hasMember, membersChanged } from "../model/treeMembership";
+import "./explorerDragPreview.css";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
 import { isImeComposition } from "../../../shared/lib/keyboard";
@@ -107,6 +109,7 @@ import { ExplorerSyncStatus } from "./ExplorerSyncStatus";
 import { useRemoteFolderBrowser } from "./useRemoteFolderBrowser";
 import {
   isDirAt,
+  treeTabStop,
   useTreeSelection,
   type Clip,
   type Creating,
@@ -162,6 +165,8 @@ const NARROW_HEADER_WIDTH = 200;
 type TreeStateValue = {
   expanded: Set<string>;
   selectedPaths: Set<string>;
+  /** Roving tabindex: the one row that is a Tab stop (see `treeTabStop`); null leaves it to the first root row. */
+  tabStop: string | null;
   creating: Creating | null;
   renaming: string | null;
   cutPaths: Set<string>;
@@ -182,6 +187,8 @@ type TreeActions = {
   onRenameCommit: (path: string, raw: string) => Promise<void>;
   onRenameCancel: () => void;
   onItemContextMenu: (entry: { path: string; isDir: boolean }, e: ReactMouseEvent) => void;
+  /** A row took focus (Tab entry included): the roving Tab stop and key target follow it. */
+  onRowFocus: (path: string) => void;
 };
 
 type TreeStore = ReturnType<typeof createTreeStore>;
@@ -225,6 +232,12 @@ function createDirectorySnapshot(store: TreeStore, parent: string, entries: FsEn
         (hasMember(members, next.renaming) || hasMember(members, previous.renaming))) ||
       (next.dragOverPath !== previous.dragOverPath &&
         (hasMember(members, next.dragOverPath) || hasMember(members, previous.dragOverPath))) ||
+      // A null stop hands the Tab stop to the first root row, so every directory re-reads on that edge.
+      (next.tabStop !== previous.tabStop &&
+        (next.tabStop === null ||
+          previous.tabStop === null ||
+          hasMember(members, next.tabStop) ||
+          hasMember(members, previous.tabStop))) ||
       membersChanged(previous.expanded, next.expanded, members) ||
       membersChanged(previous.selectedPaths, next.selectedPaths, members) ||
       membersChanged(previous.cutPaths, next.cutPaths, members) ||
@@ -397,6 +410,11 @@ function FileTreeInner({
     commitSelectedPath(path);
   };
 
+  // Focus-only: moves the roving Tab stop and the key target without touching the (multi)selection.
+  const onRowFocus = (path: string) => {
+    if (selectedPathRef.current !== path) commitSelectedPath(path);
+  };
+
   const actionPaths = (path: string) =>
     path === cwd
       ? []
@@ -432,7 +450,7 @@ function FileTreeInner({
     } catch (error) {
       if (activeRoot.current === cwd) {
         setCopyFailedText(value);
-        setOpError(error instanceof Error ? error.message : String(error));
+        setOpError(errorText(error));
       }
     }
   };
@@ -951,6 +969,7 @@ function FileTreeInner({
       onRenameCommit,
       onRenameCancel,
       onItemContextMenu,
+      onRowFocus,
     };
   });
   const actions = useMemo<TreeActions>(
@@ -965,6 +984,7 @@ function FileTreeInner({
       onRenameCommit: (path, raw) => latestActions.current.onRenameCommit(path, raw),
       onRenameCancel: () => latestActions.current.onRenameCancel(),
       onItemContextMenu: (entry, e) => latestActions.current.onItemContextMenu(entry, e),
+      onRowFocus: (path) => latestActions.current.onRowFocus(path),
     }),
     [],
   );
@@ -972,10 +992,12 @@ function FileTreeInner({
     () => new Set(clip?.mode === "cut" ? clip.entries.map((entry) => entry.path) : []),
     [clip],
   );
+  const tabStop = treeTabStop(cwd, selectedPath, expanded);
   const treeState = useMemo<TreeStateValue>(
     () => ({
       expanded,
       selectedPaths,
+      tabStop,
       creating,
       renaming,
       cutPaths,
@@ -986,6 +1008,7 @@ function FileTreeInner({
     [
       expanded,
       selectedPaths,
+      tabStop,
       creating,
       renaming,
       cutPaths,
@@ -1052,7 +1075,7 @@ function FileTreeInner({
             </InlineAction>
             <InlineAction
               reveal="always"
-              label={createLabel(t("New Folder"))}
+              label={createLabel(t("New folder"))}
               disabled={Boolean(createBlockedReason)}
               data-explorer-action="new-folder"
               onClick={() => runHeaderAction("new-folder")}
@@ -1320,11 +1343,14 @@ function TreeChildren({
   // rename and drag targets stay mounted even past the cut.
   const { shown, hidden } = windowEntries(visible, limit, [
     ...ctx.selectedPaths,
+    ctx.tabStop,
     ctx.renaming,
     ctx.dragOverPath,
   ]);
   const folders = shown.filter((e) => e.isDir);
   const files = shown.filter((e) => !e.isDir);
+  // Without an active row the first root row is the tree's Tab stop.
+  const firstRootPath = depth === 0 ? (folders[0] ?? files[0])?.path : undefined;
   const pad = { paddingLeft: 28 + depth * 12 };
   const renderNode = (child: FsEntry) => {
     const open = ctx.expanded.has(child.path);
@@ -1335,6 +1361,7 @@ function TreeChildren({
         depth={depth}
         open={open}
         selected={ctx.selectedPaths.has(child.path)}
+        tabStop={ctx.tabStop === null ? child.path === firstRootPath : ctx.tabStop === child.path}
         editing={ctx.renaming === child.path}
         cut={ctx.cutPaths.has(child.path)}
         dragOver={ctx.dragOverPath === child.path}
@@ -1412,6 +1439,7 @@ const TreeNode = memo(function TreeNode({
   depth,
   open,
   selected,
+  tabStop,
   editing,
   cut,
   dragOver,
@@ -1421,6 +1449,7 @@ const TreeNode = memo(function TreeNode({
   depth: number;
   open: boolean;
   selected: boolean;
+  tabStop: boolean;
   editing: boolean;
   cut: boolean;
   dragOver: boolean;
@@ -1436,6 +1465,7 @@ const TreeNode = memo(function TreeNode({
     onRenameCommit,
     onRenameCancel,
     onItemContextMenu,
+    onRowFocus,
   } = useTreeActions();
   const [loaded, setLoaded] = useState<FsEntry[] | null>(() =>
     entry.isDir ? peekDir(entry.path) : null,
@@ -1522,6 +1552,8 @@ const TreeNode = memo(function TreeNode({
           aria-selected={selected}
           aria-level={depth + 1}
           aria-expanded={entry.isDir ? open : undefined}
+          tabStop={tabStop}
+          onFocus={() => onRowFocus(entry.path)}
           onClick={onClick}
           onDoubleClick={(event) => {
             if (!entry.isDir && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
@@ -1599,6 +1631,7 @@ export function NameRow({
   const finished = useRef(false);
   const contextId = useId();
   const issueId = useId();
+  const hintId = useId();
   const [value, setValue] = useState(initial);
   const [attempted, setAttempted] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -1684,15 +1717,16 @@ export function NameRow({
           aria-busy={busy || undefined}
           aria-invalid={invalid || undefined}
           aria-describedby={
-            [context ? contextId : null, showIssue ? issueId : null].filter(Boolean).join(" ") ||
-            undefined
+            [hintId, context ? contextId : null, showIssue ? issueId : null]
+              .filter(Boolean)
+              .join(" ") || undefined
           }
           placeholder={isDir ? t("Folder name") : t("File name")}
           spellCheck={false}
           autoComplete="off"
           autoCorrect="off"
           autoCapitalize="off"
-          aria-label={t("Type file name. Press Enter to confirm or Escape to cancel.")}
+          aria-label={isDir ? t("Folder name") : t("File name")}
           onChange={(e) => {
             setValue(e.target.value);
             setSubmitError(null);
@@ -1725,6 +1759,9 @@ export function NameRow({
           leading="none"
         />
         {busy ? <Spinner size="sm" className="shrink-0" /> : null}
+        <span id={hintId} className="sr-only">
+          {t("Press Enter to confirm or Escape to cancel.")}
+        </span>
         {context ? (
           <span id={contextId} className="sr-only">
             {context}

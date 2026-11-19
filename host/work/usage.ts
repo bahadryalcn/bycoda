@@ -161,7 +161,17 @@ export async function readWorkUsage(
   options: Parameters<typeof aggregateWorkUsage>[1],
 ): Promise<WorkUsageReading> {
   await budgets.sync();
-  const rows = await store.db.prepare("SELECT value FROM task_run_budget_ledger").all();
+  // A sealed run that settled before the earliest window starts cannot overlap any window, so
+  // only open runs and runs settled inside the monthly/weekly span are read. Runs with an
+  // invalid interval are never sealed and stay open, so they keep reporting.
+  const windows = workUsageWindows(options.now);
+  const since = Math.min(windows.weekly.start, windows.monthly.start);
+  const rows = await store.db
+    .prepare(
+      `SELECT value FROM task_run_budget_ledger WHERE sealed_settled_at IS NULL
+       UNION ALL SELECT value FROM task_run_budget_ledger WHERE sealed_settled_at>=?`,
+    )
+    .all(since);
   const runs = rows.map((row) => JSON.parse(String(row.value)) as WorkUsageRun);
   for (const run of runs) {
     if (run.provider && run.accountId) continue;

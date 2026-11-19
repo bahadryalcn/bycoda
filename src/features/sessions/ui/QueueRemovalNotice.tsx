@@ -8,11 +8,14 @@ export function QueueRemovalNotice({
   onUndo,
   onDismiss,
   disabled,
+  disabledReason,
 }: {
   id: string;
   onUndo: () => Promise<boolean>;
   onDismiss: (id: string) => void;
   disabled: boolean;
+  /** Shown while `disabled`, naming why Undo is unavailable. */
+  disabledReason?: string;
 }) {
   const t = useT();
   const [pending, setPending] = useState(false);
@@ -37,6 +40,7 @@ export function QueueRemovalNotice({
         label: t("Undo"),
         pending,
         disabled,
+        disabledReason,
         onClick: () => {
           setPending(true);
           void onUndo()

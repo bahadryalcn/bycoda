@@ -1,13 +1,47 @@
 //! Blocking TCP/TLS connection with per-operation timeouts and an overall deadline.
 use std::io::{ErrorKind, Read, Write};
 use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc, OnceLock};
 use std::time::{Duration, Instant};
 use ureq::rustls::{ClientConfig, ClientConnection, RootCertStore, StreamOwned};
 
 pub(super) const IO_TIMEOUT: Duration = Duration::from_secs(20);
 const RESOLVE_TIMEOUT: Duration = Duration::from_secs(10);
+/// A lookup the caller gave up on keeps its thread until the OS resolver returns, so the
+/// number of such lookups is capped; past the cap new lookups fail at once.
+const MAX_PENDING_RESOLVES: usize = 4;
+static PENDING_RESOLVES: AtomicUsize = AtomicUsize::new(0);
 const READ_CHUNK: usize = 16 * 1024;
+
+/// One slot of the pending-lookup cap, released when the lookup thread finishes.
+struct PendingResolve;
+
+impl PendingResolve {
+    fn acquire() -> Option<Self> {
+        let mut current = PENDING_RESOLVES.load(Ordering::Acquire);
+        loop {
+            if current >= MAX_PENDING_RESOLVES {
+                return None;
+            }
+            match PENDING_RESOLVES.compare_exchange_weak(
+                current,
+                current + 1,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return Some(Self),
+                Err(actual) => current = actual,
+            }
+        }
+    }
+}
+
+impl Drop for PendingResolve {
+    fn drop(&mut self) {
+        PENDING_RESOLVES.fetch_sub(1, Ordering::AcqRel);
+    }
+}
 
 enum Stream {
     Plain(TcpStream),
@@ -48,6 +82,11 @@ fn tls_config() -> Arc<ClientConfig> {
 }
 
 fn resolve(host: &str, port: u16) -> Result<Vec<SocketAddr>, String> {
+    let Some(pending) = PendingResolve::acquire() else {
+        return Err(format!(
+            "Too many mail server lookups are still pending. Try {host} again shortly."
+        ));
+    };
     let (sender, receiver) = mpsc::channel();
     let target = format!("{host}:{port}");
     std::thread::spawn(move || {
@@ -56,6 +95,7 @@ fn resolve(host: &str, port: u16) -> Result<Vec<SocketAddr>, String> {
                 .to_socket_addrs()
                 .map(|addrs| addrs.collect::<Vec<_>>()),
         );
+        drop(pending);
     });
     match receiver.recv_timeout(RESOLVE_TIMEOUT) {
         Ok(Ok(addrs)) if !addrs.is_empty() => Ok(addrs),

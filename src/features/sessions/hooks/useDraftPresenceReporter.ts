@@ -20,6 +20,8 @@ export function draftPresenceChanged(
   );
 }
 
+const REPORT_INTERVAL_MS = 30_000;
+
 /** Full snapshots only after successful hydration; failures retain Host's last conservative state. */
 export function useDraftPresenceReporter(): void {
   const [environmentId, setEnvironmentId] = useState<string>();
@@ -32,12 +34,19 @@ export function useDraftPresenceReporter(): void {
     const known = new Set<string>();
     let loaded = false,
       stopped = false,
-      flight = false;
+      flight = false,
+      rerun = false;
+    // `undefined` means the Host has not confirmed the current snapshot; ticks and visibility retry it.
     let previous: string[] | undefined,
       lastReport = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const run = async () => {
-      if (stopped || flight || !composerDraftsLoaded()) return;
+      if (stopped || !composerDraftsLoaded()) return;
+      // A change during an in-flight report reruns once after it settles instead of being dropped.
+      if (flight) {
+        rerun = true;
+        return;
+      }
       flight = true;
       try {
         if (!loaded) {
@@ -49,27 +58,40 @@ export function useDraftPresenceReporter(): void {
           loaded = true;
         }
         const sessionIds = [...known].filter(hasUnsentComposerDraft).sort();
-        if (!draftPresenceChanged(previous, sessionIds) && Date.now() - lastReport < 30_000) return;
+        if (!draftPresenceChanged(previous, sessionIds) && Date.now() - lastReport < REPORT_INTERVAL_MS)
+          return;
         const target = await invoke<RemoteMachine | null>("local_host_connect");
-        if (!target || stopped) return;
+        if (!target || stopped) {
+          previous = undefined;
+          return;
+        }
         setEnvironmentId(target.environmentId);
         const { remoteRequest } = await import("../../connections/public/connections");
-        await remoteRequest(
-          target.id,
-          "drafts.presence.report",
-          {
-            clientId: `desktop:${getCurrentWindow().label}`,
-            sessionIds,
-            complete: true,
-          },
-          false,
-          false,
-          target.environmentId,
-        );
+        try {
+          await remoteRequest(
+            target.id,
+            "drafts.presence.report",
+            {
+              clientId: `desktop:${getCurrentWindow().label}`,
+              sessionIds,
+              complete: true,
+            },
+            false,
+            false,
+            target.environmentId,
+          );
+        } catch (error) {
+          previous = undefined;
+          throw error;
+        }
         previous = sessionIds;
         lastReport = Date.now();
       } finally {
         flight = false;
+        if (rerun && !stopped) {
+          rerun = false;
+          schedule();
+        }
       }
     };
     const schedule = () => {
@@ -87,16 +109,24 @@ export function useDraftPresenceReporter(): void {
       schedule();
     });
     const unsubscribeLoaded = subscribeComposerDraftLoadState(schedule);
+    // Returning to a visible window refreshes or retries the snapshot without waiting for a tick.
+    const onVisible = () => {
+      if (!document.hidden) schedule();
+    };
+    document.addEventListener("visibilitychange", onVisible);
     schedule();
-    // Heartbeats refresh unchanged snapshots and retry after Host reconnect/restart.
+    // Heartbeats keep a confirmed snapshot fresh. A hidden window stays quiet unless its snapshot is
+    // unconfirmed; draft edits and visibility recovery still report while hidden.
     const heartbeat = setInterval(() => {
+      if (document.hidden && previous !== undefined) return;
       void run().catch(() => {});
-    }, 1000);
+    }, REPORT_INTERVAL_MS);
     return () => {
       stopped = true;
       reconnect.current = () => {};
       clearTimeout(timer);
       clearInterval(heartbeat);
+      document.removeEventListener("visibilitychange", onVisible);
       unsubscribe();
       unsubscribeLoaded();
     };

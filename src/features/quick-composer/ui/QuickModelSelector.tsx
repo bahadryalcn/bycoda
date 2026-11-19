@@ -210,10 +210,10 @@ export function QuickModelSelector({
                 className="h-60 min-h-0 overflow-y-auto overscroll-none"
                 emptyLabel={
                   query
-                    ? t("No matching models")
+                    ? t("No matches")
                     : visibleTab === "favorites"
                       ? t("No favorite models")
-                      : t("Loading models…")
+                      : t("Loading…")
                 }
                 renderOptionActions={(option) => {
                   const item = models.find((item) => modelRowKey(item) === option.value)!;

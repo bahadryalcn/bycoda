@@ -246,7 +246,7 @@ async function selectProject(path: string) {
   await act(async () =>
     container.querySelector<HTMLButtonElement>('[aria-label^="Switch project"]')!.click(),
   );
-  expect(document.querySelector('input[placeholder="Search projects..."]')).not.toBeNull();
+  expect(document.querySelector('input[placeholder="Search projects…"]')).not.toBeNull();
   // Each project option names the project's folder (its full path shows only as a tooltip).
   const name = path.split("/").pop()!;
   const option = Array.from(

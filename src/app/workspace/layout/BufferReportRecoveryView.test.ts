@@ -2,6 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { formatDate } from "../../../shared/i18n";
 import {
   BufferReportRecoveryView,
   type BufferReportDisplay,
@@ -90,5 +91,40 @@ describe("earlier file reports empty collections", () => {
     expect(
       [...container.querySelectorAll("button")].some((b) => b.textContent === "Show all reports"),
     ).toBe(true);
+  });
+});
+
+describe("earlier file report times", () => {
+  const timed = (version: number, updatedAt: number | null): BufferReportDisplay => ({
+    ...report(version, true),
+    updatedAt,
+  });
+  it("formats the report time through the shared app-locale formatter", async () => {
+    const at = Date.UTC(2026, 10, 18, 12, 30);
+    await render(model([timed(2, at)]));
+    expect(text()).toContain(
+      `· ${formatDate(at, {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      })}`,
+    );
+  });
+  it("shows an unavailable time for missing or invalid timestamps without throwing", async () => {
+    await render(model([timed(2, null), timed(3, Number.NaN), timed(4, 8_640_000_000_000_001)]));
+    expect(text().split("Time unavailable")).toHaveLength(4);
+  });
+});
+
+describe("earlier file report summaries", () => {
+  it("keeps the loaded summary static and gives the search its own placeholder", async () => {
+    await render(model([report(1, true)]));
+    expect(container.querySelector(".recovery-status")?.getAttribute("role")).toBeNull();
+    expect(text()).toContain("Loaded: 1 · Needs recovery: 1");
+    expect(
+      container.querySelector('input[placeholder="Filter by window or report number"]'),
+    ).not.toBeNull();
   });
 });

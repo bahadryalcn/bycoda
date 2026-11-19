@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { openMicrophone } from "./microphoneAccess";
 
 export type MicrophoneRecordingState = "idle" | "requesting" | "recording" | "ready" | "playing";
@@ -68,7 +69,7 @@ export class MicrophoneRecording {
     } catch (cause) {
       if (generation !== this.generation || this.disposed) return;
       this.reset();
-      this.changed("idle", cause instanceof Error ? cause.message : String(cause));
+      this.changed("idle", errorText(cause));
     }
   }
 

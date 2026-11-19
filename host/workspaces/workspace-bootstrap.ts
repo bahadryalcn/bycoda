@@ -19,6 +19,12 @@ import { basename, isAbsolute, join, resolve } from "node:path";
 import type { WorkspaceBootstrap } from "./workspace-service-contracts.ts";
 import type { WorkspaceBootstrapStatus, WorkspaceDevEnvironment } from "./workspace-contracts.ts";
 import { portLeaseEnvironment } from "../dev-servers/dev-port-leases.ts";
+import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps";
+
+/** Overall bound on waiting for another builder's shared build-cache lease. */
+const DEFAULT_BUILD_LEASE_WAIT_MS = 30 * 60_000;
+/** Waits start at `buildLeasePollMs` and double up to this multiple of it. */
+const BUILD_LEASE_BACKOFF_CAP = 20;
 
 /** A caller may use this only after the build command has reached its verified close boundary. */
 export class BuildCacheSettledFailure extends Error {
@@ -43,9 +49,21 @@ export interface WorkspaceBootstrapOptions {
   sharedCargoTargetRoot?: string;
   toolchain?: string;
   profile?: string;
+  /** First wait between lease attempts; later waits back off to 20x this (default 100 ms, so 2 s). */
   buildLeasePollMs?: number;
+  /** Deadline for acquiring the build-cache lease before `BUILD_CACHE_LEASE_TIMEOUT` (default 30 min). */
+  buildLeaseWaitMs?: number;
+  /** Per-command deadlines for the package manager child; each overrides its default. */
+  commandTimeoutMs?: { version?: number; install?: number };
+  /** How long a timed-out command may take to prove its process tree is gone. */
+  commandKillGraceMs?: number;
   onBuildCacheState?(workspaceId: string, state: "waitingForBuildCache" | "building"): void;
 }
+const DEFAULT_VERSION_TIMEOUT_MS = 30_000;
+const DEFAULT_INSTALL_TIMEOUT_MS = 20 * 60_000;
+const DEFAULT_KILL_GRACE_MS = 10_000;
+/** POSIX only: delay before a process group that ignored SIGTERM gets SIGKILL. */
+const FORCE_KILL_MS = 5_000;
 type Operation = {
   status: WorkspaceBootstrapStatus;
   abort: AbortController;
@@ -60,12 +78,24 @@ const cancelled = () =>
   Object.assign(new Error("Workspace preparation was cancelled."), { code: "ABORT_ERR" });
 const snapshot = (operation: Operation): WorkspaceBootstrapStatus =>
   structuredClone(operation.status);
+/**
+ * A rejection tagged `settled` was raised only after the spawned process tree was
+ * verified gone, so the workspace may be released. Untagged rejections keep the owner.
+ */
+const settledFailure = (error: Error) => Object.assign(error, { settled: true });
+const isSettled = (error: unknown) => (error as { settled?: unknown } | null)?.settled === true;
+const timeoutFailure = (settled: boolean) =>
+  Object.assign(new Error("BOOTSTRAP_TIMEOUT"), { settled });
 
-/** Returns only bounded command output; caller never puts package-manager output in RPC errors. */
+/**
+ * Returns only bounded command output; caller never puts package-manager output in RPC errors.
+ * It has no deadline of its own: the caller bounds it by aborting `signal`, which kills only
+ * the process tree spawned here (never by image name, so unrelated installs are untouched).
+ */
 export const runBootstrapCommand: BootstrapCommand = ({ command, args, cwd, signal, env }) =>
   new Promise((resolve, reject) => {
     if (signal.aborted) {
-      reject(cancelled());
+      reject(settledFailure(cancelled()));
       return;
     }
     const windows = process.platform === "win32";
@@ -109,35 +139,52 @@ export const runBootstrapCommand: BootstrapCommand = ({ command, args, cwd, sign
     });
     // Drain stderr without persisting arbitrary installer diagnostics or credentials.
     child.stderr.resume();
+    let forceTimer: NodeJS.Timeout | undefined;
     const abort = () => {
       if (child.exitCode !== null || child.signalCode !== null || !child.pid) return;
+      const pid = child.pid;
       if (windows) {
-        spawn("taskkill.exe", ["/pid", String(child.pid), "/t", "/f"], {
+        // Exact pid tree of this child only.
+        spawn("taskkill.exe", ["/pid", String(pid), "/t", "/f"], {
           windowsHide: true,
           stdio: "ignore",
         }).on("error", () => child.kill());
       } else {
         try {
-          process.kill(-child.pid, "SIGTERM");
+          process.kill(-pid, "SIGTERM");
         } catch {
           child.kill();
         }
+        // A group that ignores SIGTERM would never close; force it. Cleared on close,
+        // so a recycled group id is never signalled.
+        forceTimer ??= setTimeout(() => {
+          try {
+            process.kill(-pid, "SIGKILL");
+          } catch {
+            child.kill("SIGKILL");
+          }
+        }, FORCE_KILL_MS);
       }
     };
     signal.addEventListener("abort", abort, { once: true });
     if (signal.aborted) abort();
     child.once("error", (error) => {
       signal.removeEventListener("abort", abort);
+      clearTimeout(forceTimer);
       reject(error);
     });
     child.once("close", (code) => {
       signal.removeEventListener("abort", abort);
-      if (signal.aborted) reject(cancelled());
+      clearTimeout(forceTimer);
+      // Close means the child and every descendant holding its stdio are gone.
+      if (signal.aborted) reject(settledFailure(cancelled()));
       else if (code !== 0)
         reject(
-          Object.assign(new Error("Workspace package manager command failed."), {
-            code: "INSTALL_FAILED",
-          }),
+          settledFailure(
+            Object.assign(new Error("Workspace package manager command failed."), {
+              code: "INSTALL_FAILED",
+            }),
+          ),
         );
       else resolve(output.trim());
     });
@@ -310,26 +357,62 @@ export class WorkspaceBootstrapService implements WorkspaceBootstrap {
       signal.throwIfAborted();
       operation.status.state = "installing";
       const command = this.options.runCommand ?? runBootstrapCommand;
-      const run: BootstrapCommand = async (request) => {
+      const killGraceMs = this.options.commandKillGraceMs ?? DEFAULT_KILL_GRACE_MS;
+      // Each command owns its own deadline timer and abort controller, so one timeout
+      // never reaches another workspace's install or the build-cache lease.
+      const run = async (request: Parameters<BootstrapCommand>[0], timeoutMs: number) => {
         await this.options.receipts?.commandEvidence(operation.status.id, {
           command: request.command,
           args: request.args,
           cwd: request.cwd,
         });
         operation.physicalUnknown = true;
-        const output = await command(request);
-        operation.physicalUnknown = false;
-        return output;
+        const deadline = new AbortController();
+        const deadlineTimer = setTimeout(() => deadline.abort(), timeoutMs);
+        let graceTimer: NodeJS.Timeout | undefined;
+        const overdue = new Promise<never>((_, reject) => {
+          deadline.signal.addEventListener(
+            "abort",
+            () => {
+              // The tree is being killed; wait a bounded time for proof it is gone.
+              graceTimer = setTimeout(() => reject(timeoutFailure(false)), killGraceMs);
+            },
+            { once: true },
+          );
+        });
+        try {
+          const output = await Promise.race([
+            command({ ...request, signal: AbortSignal.any([request.signal, deadline.signal]) }),
+            overdue,
+          ]);
+          operation.physicalUnknown = false;
+          return output;
+        } catch (error) {
+          // Only a verified-closed tree releases the owner; an unproven one stays held.
+          if (isSettled(error)) operation.physicalUnknown = false;
+          if (deadline.signal.aborted && !request.signal.aborted)
+            throw timeoutFailure(isSettled(error));
+          throw error;
+        } finally {
+          clearTimeout(deadlineTimer);
+          clearTimeout(graceTimer);
+        }
       };
-      const version = await run({ command: "pnpm", args: ["--version"], cwd: root, signal });
+      const version = await run(
+        { command: "pnpm", args: ["--version"], cwd: root, signal },
+        this.options.commandTimeoutMs?.version ?? DEFAULT_VERSION_TIMEOUT_MS,
+      );
       if (version.trim() !== pin[1]) throw new Error("PNPM_VERSION_MISMATCH");
       signal.throwIfAborted();
-      await run({
-        command: "pnpm",
-        args: ["install", "--frozen-lockfile", "--prefer-offline"],
-        cwd: root,
-        signal,
-      });
+      await run(
+        {
+          command: "pnpm",
+          args: ["install", "--frozen-lockfile", "--prefer-offline"],
+          cwd: root,
+          signal,
+        },
+        this.options.commandTimeoutMs?.install ?? DEFAULT_INSTALL_TIMEOUT_MS,
+      );
       signal.throwIfAborted();
       await this.assertDependenciesLocal(root);
       if (hash(await readFile(join(root, "pnpm-lock.yaml"))) !== fingerprint)
@@ -353,6 +436,8 @@ export class WorkspaceBootstrapService implements WorkspaceBootstrap {
                 PNPM_PIN_REQUIRED: "The workspace must pin its pnpm version.",
                 PNPM_VERSION_MISMATCH:
                   "The active pnpm version does not match the workspace packageManager pin.",
+                BOOTSTRAP_TIMEOUT:
+                  "Dependency installation timed out. Check the network and package registry, then retry.",
               } as Record<string, string>
             )[code] ?? "Workspace preparation failed. Check the package manager setup and retry.",
         };
@@ -436,7 +521,11 @@ export class WorkspaceBootstrapService implements WorkspaceBootstrap {
     const nonce = randomUUID();
     const temporary = join(cargoTargetDir, `.bycoda-build-lease-${nonce}.tmp`);
     const owner = JSON.stringify({ version: 2, nonce, pid: process.pid, workspaceId });
+    // One connection serves every attempt of this call; it is opened lazily and only closed
+    // on cleanup or after an error it could not recover from.
     let db: DatabaseSync | undefined;
+    const waitStarted = monotonicNow();
+    let waits = 0;
     let published = false;
     let effectStarted = false;
     let settled = false;
@@ -515,8 +604,33 @@ export class WorkspaceBootstrapService implements WorkspaceBootstrap {
         }
       }
     };
-    const pause = async () => {
+    // Drops the exclusive witness of an open transaction without another open. A connection
+    // that cannot roll back is closed instead, which releases the witness as well.
+    const rollback = () => {
+      try {
+        db?.exec("ROLLBACK");
+      } catch {
+        db?.close();
+        db = undefined;
+      }
+    };
+    // Callers release the witness first, so a timeout never leaves this attempt holding it.
+    // Only the acquisition wait is bounded: once the sentinel is published, abandoning the
+    // wait would strand an uncertain generation for an operator to verify.
+    const pause = async (bounded = true) => {
+      const remaining =
+        (this.options.buildLeaseWaitMs ?? DEFAULT_BUILD_LEASE_WAIT_MS) - elapsedSince(waitStarted);
+      if (bounded && remaining <= 0)
+        throw Object.assign(new Error("Timed out waiting for the shared build cache."), {
+          code: "BUILD_CACHE_LEASE_TIMEOUT",
+        });
       this.options.onBuildCacheState?.(workspaceId, "waitingForBuildCache");
+      const poll = this.options.buildLeasePollMs ?? 100;
+      const delay = Math.min(
+        poll * 2 ** Math.min(waits++, 10),
+        poll * BUILD_LEASE_BACKOFF_CAP,
+        bounded ? remaining : Infinity,
+      );
       await new Promise<void>((done, reject) => {
         const abort = () => {
           clearTimeout(timer);
@@ -525,7 +639,7 @@ export class WorkspaceBootstrapService implements WorkspaceBootstrap {
         const timer = setTimeout(() => {
           signal.removeEventListener("abort", abort);
           done();
-        }, this.options.buildLeasePollMs ?? 100);
+        }, delay);
         signal.addEventListener("abort", abort, { once: true });
         if (signal.aborted) abort();
       });
@@ -545,23 +659,33 @@ export class WorkspaceBootstrapService implements WorkspaceBootstrap {
       }
       while (!published) {
         signal.throwIfAborted();
-        const candidate = new DatabaseSync(dbPath);
+        if (!db) {
+          db = new DatabaseSync(dbPath);
+          try {
+            db.exec("PRAGMA busy_timeout=0; PRAGMA synchronous=FULL");
+          } catch (error) {
+            db.close();
+            db = undefined;
+            throw error;
+          }
+        }
         try {
-          candidate.exec(
-            "PRAGMA busy_timeout=0; PRAGMA synchronous=FULL; BEGIN EXCLUSIVE; CREATE TABLE IF NOT EXISTS lease_generation (id INTEGER PRIMARY KEY CHECK(id=1), nonce TEXT NOT NULL, uncertain INTEGER NOT NULL DEFAULT 1)",
+          db.exec(
+            "BEGIN EXCLUSIVE; CREATE TABLE IF NOT EXISTS lease_generation (id INTEGER PRIMARY KEY CHECK(id=1), nonce TEXT NOT NULL, uncertain INTEGER NOT NULL DEFAULT 1)",
           );
-          const columns = candidate.prepare("PRAGMA table_info(lease_generation)").all();
+          const columns = db.prepare("PRAGMA table_info(lease_generation)").all();
           if (!columns.some((column) => column.name === "uncertain"))
-            candidate.exec(
-              "ALTER TABLE lease_generation ADD COLUMN uncertain INTEGER NOT NULL DEFAULT 1",
-            );
+            db.exec("ALTER TABLE lease_generation ADD COLUMN uncertain INTEGER NOT NULL DEFAULT 1");
         } catch (error) {
-          candidate.close();
-          if (!busy(error)) throw error;
+          if (!busy(error)) {
+            db.close();
+            db = undefined;
+            throw error;
+          }
+          // A busy BEGIN opened no transaction; the idle connection serves the next attempt.
           await pause();
           continue;
         }
-        db = candidate;
         try {
           let recoveredNonce: string | undefined;
           const generation = db
@@ -643,8 +767,7 @@ export class WorkspaceBootstrapService implements WorkspaceBootstrap {
                 (await readSentinel()) === old
               )
             ) {
-              db.close();
-              db = undefined;
+              rollback();
               await pause();
               continue;
             }
@@ -664,8 +787,7 @@ export class WorkspaceBootstrapService implements WorkspaceBootstrap {
             db.exec("BEGIN EXCLUSIVE");
           } catch (error) {
             if (!busy(error)) throw error;
-            db.close();
-            db = undefined;
+            // The COMMIT above left no open transaction to roll back.
             await pause();
             continue;
           }
@@ -673,8 +795,7 @@ export class WorkspaceBootstrapService implements WorkspaceBootstrap {
             .prepare("SELECT nonce FROM lease_generation WHERE id=1")
             .get() as { nonce?: unknown } | undefined;
           if (currentGeneration?.nonce !== nonce) {
-            db.close();
-            db = undefined;
+            rollback();
             await pause();
             continue;
           }
@@ -685,8 +806,7 @@ export class WorkspaceBootstrapService implements WorkspaceBootstrap {
             published = true;
           } catch (error) {
             if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-            db.close();
-            db = undefined;
+            rollback();
             await pause();
           }
         } catch (error) {
@@ -702,6 +822,7 @@ export class WorkspaceBootstrapService implements WorkspaceBootstrap {
       effectStarted = true;
       db!.prepare("UPDATE lease_generation SET uncertain=1 WHERE id=1 AND nonce=?").run(nonce);
       db!.exec("COMMIT");
+      waits = 0;
       while (true) {
         signal.throwIfAborted();
         try {
@@ -709,7 +830,9 @@ export class WorkspaceBootstrapService implements WorkspaceBootstrap {
           break;
         } catch (error) {
           if (!busy(error)) throw error;
-          await pause();
+          // Past publication: a peer holds the witness only briefly before it refuses the
+          // uncertain generation, so this wait backs off but has no deadline.
+          await pause(false);
         }
       }
       let result: T;

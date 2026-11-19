@@ -2,6 +2,7 @@ import { Text } from "../../../shared/ui/Text";
 import { memo } from "react";
 import { useT } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
+import { BrandMark } from "../../../shared/ui/BrandMark";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import type { ResumePromptKind } from "../model/resumePrompt";
 import type { Block } from "../model/session";
@@ -38,7 +39,7 @@ export const ResumeTurnRow = memo(function ResumeTurnRow({
         tone="secondary"
         summary={
           <>
-            <img src={PRODUCT_IDENTITY.smallLogoSrc} alt="" className="icon-sm shrink-0" />
+            <BrandMark variant="smallMark" className="icon-sm shrink-0" />
             {summary}
           </>
         }

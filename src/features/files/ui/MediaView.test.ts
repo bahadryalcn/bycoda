@@ -82,6 +82,25 @@ it("does not download restored inactive media tabs", async () => {
   expect(mocks.prepare).toHaveBeenCalledOnce();
 });
 
+it("keeps a loaded player mounted and does not reload it when its tab is hidden and shown again", async () => {
+  mocks.prepare.mockResolvedValue("/cache/demo.mp4");
+  await act(async () =>
+    root.render(createElement(MediaView, { path: "remote://mac/demo.mp4", active: true })),
+  );
+  const video = container.querySelector("video");
+  expect(video?.getAttribute("src")).toBe("asset:/cache/demo.mp4");
+  await act(async () =>
+    root.render(createElement(MediaView, { path: "remote://mac/demo.mp4", active: false })),
+  );
+  expect(container.querySelector("video")).toBe(video);
+  expect(video?.getAttribute("src")).toBe("asset:/cache/demo.mp4");
+  await act(async () =>
+    root.render(createElement(MediaView, { path: "remote://mac/demo.mp4", active: true })),
+  );
+  expect(container.querySelector("video")).toBe(video);
+  expect(mocks.prepare).toHaveBeenCalledOnce();
+});
+
 it("keeps external-open progress local, blocks duplicates and allows retry after failure", async () => {
   mocks.prepare.mockResolvedValue("/demo.mp4");
   let reject!: (error: Error) => void;

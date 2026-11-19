@@ -32,6 +32,8 @@ import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { UpdateImpact } from "./UpdateImpact";
 import { confirmInApp } from "../../../shared/model/appConfirm";
 import { RemoveMachineDialog } from "./RemoveMachineDialog";
+import { errorText } from "../../../shared/lib/errors";
+import { sanitizeConnectionError } from "../model/remoteConnection";
 import { useContext, useRef, useState } from "react";
 import { Plus, RefreshCw } from "../../../shared/ui/icons";
 import {
@@ -166,7 +168,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
       submittedAddDraft.current = undefined;
     },
     onFailed: (reason) => {
-      setError(String(reason));
+      setError(sanitizeConnectionError(errorText(reason)));
       submitting.current = false;
       setBusy(false);
       submittedAddDraft.current = undefined;
@@ -251,7 +253,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
       submitting.current = false;
       afterEdit.current = false;
       if (alive.current) {
-        setError(String(reason));
+        setError(sanitizeConnectionError(errorText(reason)));
         setBusy(false);
       }
     }
@@ -268,7 +270,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
         setAdding(false);
         setNotice(t("{p0} is connected.", { p0: machine.name }));
       })
-      .catch((reason) => setError(String(reason)))
+      .catch((reason) => setError(sanitizeConnectionError(errorText(reason))))
       .finally(() => setBusy(false));
   };
   const startEdit = (machine: RemoteMachine) => {
@@ -320,7 +322,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
       else setNotice(t("{p0} was renamed.", { p0: saved.name }));
     } catch (reason) {
       setBusy(false);
-      setError(String(reason));
+      setError(sanitizeConnectionError(errorText(reason)));
     }
   };
   useConnectionRequestInbox({
@@ -341,7 +343,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
           await remoteRequest(machine.id, "devices.revokeSelf");
         } catch (reason) {
           throw new Error(
-            `Could not revoke access, so ${machine.name} was not removed: ${String(reason)}. Reconnect and try again, or remove it from this desktop only and revoke it on the host with bycoda-host devices and bycoda-host revoke <device-id>.`,
+            `Could not revoke access, so ${machine.name} was not removed: ${sanitizeConnectionError(errorText(reason))}. Reconnect and try again, or remove it from this desktop only and revoke it on the host with bycoda-host devices and bycoda-host revoke <device-id>.`,
           );
         }
       }
@@ -359,7 +361,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
             ),
       );
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(sanitizeConnectionError(errorText(reason)));
     } finally {
       if (alive.current) setRevoking(false);
     }
@@ -461,7 +463,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                 type="button"
                 className="self-start"
                 onClick={() => {
-                  if (jobId) void cancel(jobId).catch((reason) => setError(String(reason)));
+                  if (jobId) void cancel(jobId).catch((reason) => setError(sanitizeConnectionError(errorText(reason))));
                 }}
                 variant="ghost"
               >

@@ -451,7 +451,10 @@ it("critically migrates existing file receipts and holds legacy uncertain rows w
         state TEXT NOT NULL, result_json TEXT, proof_json TEXT,
         PRIMARY KEY(environment_id,principal_id,original_id));
       INSERT INTO native_delivery_receipts SELECT environment_id,principal_id,kind,original_id,sha256,byte_length,state,result_json,proof_json FROM native_delivery_new;
-      DROP TABLE native_delivery_new;`);
+      DROP TABLE native_delivery_new;
+      DROP TABLE native_delivery_quota_totals;
+      DROP TABLE native_delivery_quota_scopes;
+      DROP TABLE native_delivery_quota_state;`);
   });
   const beforeMigration = f.store.db.exec.bind(f.store.db);
   vi.spyOn(f.store.db, "exec").mockImplementation(async (sql) => {

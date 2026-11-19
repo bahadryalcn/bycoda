@@ -8,7 +8,9 @@ import {
   clearScanCache,
   parseClaudeLine,
   parseCodexLine,
+  scanCacheState,
   scanLogs,
+  setScanCacheLimit,
   type LogRequest,
 } from "./cost-scan";
 
@@ -134,6 +136,7 @@ it("parses Codex token counts, skipping a repeated running total", () => {
 let dir: string | undefined;
 afterEach(async () => {
   clearScanCache();
+  setScanCacheLimit(150_000);
   if (dir) await rm(dir, { recursive: true, force: true });
   dir = undefined;
 });
@@ -158,4 +161,50 @@ it("scans log files, merging growing Claude requests and ignoring old logs", asy
   expect(scan.requests).toHaveLength(1);
   expect(scan.requests[0].output).toBe(9);
   expect((await scanLogs([dir], "claude", Date.now() + 86_400_000)).requests).toEqual([]);
+});
+
+it("bounds the retained scan cache by request count without losing exactness or freshness", async () => {
+  dir = await mkdtemp(join(tmpdir(), "usage-scan-"));
+  setScanCacheLimit(4);
+  const entry = (id: string, output: number, cwd: string) =>
+    JSON.stringify({
+      type: "assistant",
+      timestamp: "2026-11-09T06:01:00Z",
+      requestId: id,
+      cwd,
+      message: { id, model: "claude-opus-5", usage: { input_tokens: 1, output_tokens: output } },
+    });
+  const write = (name: string, output: number) =>
+    writeFile(
+      join(dir as string, `${name}.jsonl`),
+      [entry(`${name}-a`, output, `/work/${name}`), entry(`${name}-b`, output + 1, `/work/${name}`)].join(
+        "\n",
+      ),
+    );
+  for (const [index, name] of ["a", "b", "c"].entries()) await write(name, (index + 1) * 10);
+
+  const outputs = async () =>
+    (await scanLogs([dir as string], "claude", 0)).requests
+      .map((request) => `${request.project}:${request.output}`)
+      .sort();
+  const expected = ["/work/a:10", "/work/a:11", "/work/b:20", "/work/b:21", "/work/c:30", "/work/c:31"];
+
+  expect(await outputs()).toEqual(expected);
+  // Over budget: some files stay cached, none of the scan's data is lost, the cache is never wiped.
+  const first = scanCacheState();
+  expect(first.requests).toBeLessThanOrEqual(4);
+  expect(first.files).toBeGreaterThan(0);
+  expect(await outputs()).toEqual(expected);
+  expect(scanCacheState()).toEqual(first);
+
+  // A rewritten file is parsed again even while it is cached.
+  await write("a", 100);
+  expect(await outputs()).toEqual([
+    "/work/a:100",
+    "/work/a:101",
+    "/work/b:20",
+    "/work/b:21",
+    "/work/c:30",
+    "/work/c:31",
+  ]);
 });

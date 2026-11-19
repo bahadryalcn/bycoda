@@ -1,7 +1,15 @@
-import { statFiles } from "../../../platform/tauri/fs";
+import { statFiles, statFilesSettled } from "../../../platform/tauri/fs";
 import { editorPathsEqual } from "../../search/model/search";
 
 const MAX_PATHS = 64;
+/** Paths whose unavailable stat was already reported, so every poll stays quiet until it recovers. */
+const unavailableReported = new Set<string>();
+
+function reportUnavailable(path: string, reason: unknown) {
+  if (unavailableReported.has(path)) return;
+  unavailableReported.add(path);
+  console.warn("File change check unavailable", path, reason);
+}
 
 type Listener = () => void;
 
@@ -30,6 +38,7 @@ export function watchFile(path: string, onChange: Listener): () => void {
     listeners.delete(path);
     mtimes.delete(path);
     unobserved.delete(path);
+    unavailableReported.delete(path);
   };
 }
 
@@ -106,9 +115,16 @@ async function poll(paths: string[] | "all") {
   try {
     for (let i = 0; i < list.length; i += MAX_PATHS) {
       const batch = list.slice(i, i + MAX_PATHS);
-      const stats = await statFiles(batch);
+      const stats = await statFilesSettled(batch);
       for (const stat of stats) {
         if (!listeners.has(stat.path)) continue;
+        if ("unavailable" in stat) {
+          // Its machine could not answer, which is not a deletion: keep the
+          // baseline (and a pending first observation) until it answers again.
+          reportUnavailable(stat.path, stat.unavailable);
+          continue;
+        }
+        unavailableReported.delete(stat.path);
         const previous = mtimes.get(stat.path);
         const firstObservation = unobserved.delete(stat.path);
         mtimes.set(stat.path, stat.mtimeMs);

@@ -21,12 +21,15 @@ import styles from "./Popover.module.css";
 import {
   placePopover,
   POPUP_MAX_WIDTH,
+  POPUP_SIZE_REM,
   POPUP_VIEWPORT_PADDING,
   popupListWidth,
+  popupSizeWidth,
   type AnchorRect,
   type PopoverAlign,
   type PopoverPosition,
   type PopoverSide,
+  type PopoverSize,
 } from "../lib/popover";
 
 /**
@@ -106,6 +109,7 @@ type Props = Omit<ComponentPropsWithoutRef<"div">, "style"> & {
   gap?: number;
   padding?: number;
   width?: number;
+  size?: PopoverSize;
   /**
    * Marks a list popup (select, menu, picker): the width is the floor and the surface grows with its
    * longest row up to `POPUP_MAX_WIDTH` (800px), always clamped to the viewport. Unlike `width`, content
@@ -175,6 +179,10 @@ function origin(side: PopoverSide, align: PopoverAlign): string {
   if (side === "bottom") return `${near} 0%`;
   if (side === "top") return `${near} 100%`;
   return side === "right" ? `0% ${near}` : `100% ${near}`;
+}
+
+function rootFontSize(): number {
+  return Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
 }
 
 function anchorElement(anchor: PopoverAnchor): HTMLElement | null {
@@ -303,6 +311,7 @@ function NativePopover({
     gap: _gap,
     padding: _padding,
     width: _width,
+    size: _size,
     minWidth,
     minHeight: _minHeight,
     constrainHeight: _constrainHeight,
@@ -344,6 +353,7 @@ function WebPopover({
   gap,
   padding,
   width,
+  size,
   minWidth,
   minHeight,
   maxHeight,
@@ -417,12 +427,13 @@ function WebPopover({
     };
     // offsetWidth rounds a fractional width down; pinning that width wraps the
     // last word of shrink-to-fit content (tooltips), so round the box up.
+    const fixedWidth = width ?? (size != null ? popupSizeWidth(size, rootFontSize()) : undefined);
     const pinnedWidth = el.style.width;
     let naturalWidth: number;
     try {
       // A positioned picker has a pinned width. Measure its new content before
       // reusing that width, including same-height lists loaded after opening.
-      if (width == null && minWidth != null) el.style.width = "max-content";
+      if (fixedWidth == null && minWidth != null) el.style.width = "max-content";
       naturalWidth = Math.max(
         el.offsetWidth,
         Math.ceil(el.getBoundingClientRect().width / zoom - 0.05),
@@ -439,7 +450,7 @@ function WebPopover({
         align,
         gap,
         padding,
-        width: width ?? (minWidth == null ? naturalWidth : popupListWidth(naturalWidth, minWidth)),
+        width: fixedWidth ?? (minWidth == null ? naturalWidth : popupListWidth(naturalWidth, minWidth)),
         minHeight,
         maxHeight,
       },
@@ -447,7 +458,7 @@ function WebPopover({
     setPosition((prev) => (samePosition(prev, next) ? prev : next));
     // `key` stands in for the anchor, which is read through a ref.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, side, align, gap, padding, width, minWidth, minHeight, maxHeight]);
+  }, [key, side, align, gap, padding, width, size, minWidth, minHeight, maxHeight]);
 
   useLayoutEffect(() => {
     place();
@@ -540,7 +551,7 @@ function WebPopover({
         position: "fixed",
         left: 0,
         top: 0,
-        width: width ?? "max-content",
+        width: width ?? (size != null ? `${POPUP_SIZE_REM[size]}rem` : "max-content"),
         ...(constrainHeight
           ? { maxHeight: maxHeight ?? `calc(100vh - ${POPUP_VIEWPORT_PADDING * 2}px)` }
           : {}),
@@ -592,7 +603,10 @@ function WebPopover({
         }}
         className={`${position && motion !== "none" ? "popover-open " : ""}${bounded ? `${styles.bounded} ` : ""}relative z-[1] outline-none ${className ?? ""}`}
       >
-        <OverlayParent.Provider value={overlayId}>{children}</OverlayParent.Provider>
+        {/* Menus and tooltips opened from inside this popover stack above it. */}
+        <OverlayMenuLayer.Provider value={effectiveLayer + 1}>
+          <OverlayParent.Provider value={overlayId}>{children}</OverlayParent.Provider>
+        </OverlayMenuLayer.Provider>
       </div>
     </div>,
     // Keep menus inside their native top-layer owner so they stay visible and interactive.

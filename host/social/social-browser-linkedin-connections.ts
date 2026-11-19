@@ -7,6 +7,7 @@ import {
   unsupported,
 } from "./social-browser-publishing-shared";
 import type { BrowserRecipeContext } from "./social-browser-recipe";
+import { ADD_NOTE_LABELS, INVITATION_SEND_LABELS } from "./browser/ui-labels";
 
 /**
  * Connection invitations for a member browser connection. Not dispatched by the job system:
@@ -146,10 +147,12 @@ export async function linkedInSendConnectionRequest(
     }
   }
   await click(ctx, connect, "connect");
-  await click(ctx, 'dialog[open] button,[role="dialog"] button', "invite-note", [
-    "Add a note",
-    "Not ekle",
-  ]);
+  await click(
+    ctx,
+    'dialog[open] button,[role="dialog"] button',
+    "invite-note",
+    ADD_NOTE_LABELS,
+  );
   const field = await control(
     ctx,
     'dialog[open] textarea,[role="dialog"] textarea',
@@ -157,12 +160,12 @@ export async function linkedInSendConnectionRequest(
   );
   await ctx.verifyIdentity();
   await ctx.page.fill(field, note);
-  const send = await control(ctx, 'dialog[open] button,[role="dialog"] button', "invite-send", [
-    "Send invitation",
-    "Send",
-    "Gönder",
-    "Davet gönder",
-  ]);
+  const send = await control(
+    ctx,
+    'dialog[open] button,[role="dialog"] button',
+    "invite-send",
+    INVITATION_SEND_LABELS,
+  );
   await ctx.verifyIdentity();
   await limiter.record(ctx.account.id);
   ctx.markSubmitted?.();

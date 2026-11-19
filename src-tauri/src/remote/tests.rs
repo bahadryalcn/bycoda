@@ -694,6 +694,30 @@ fn ambiguous_or_authorization_failures_never_replay_a_command() {
 }
 
 #[test]
+fn a_tunnel_host_refusal_keeps_an_ambiguous_request_outcome_unknown() {
+    let reset = "The host request did not complete [RPC_HOST_UNAVAILABLE] (commands.dispatch). Reconnect before retrying an action; its outcome is unknown.";
+    for ambiguous in [
+        reset,
+        "The host request did not complete [RPC_TIMEOUT] (commands.dispatch).",
+        "The host request did not complete [RPC_PROTOCOL] (commands.dispatch).",
+        "The host request did not complete [RPC_CONNECTION_INTERRUPTED] (commands.dispatch).",
+    ] {
+        let message = super::host_not_running_failure(ambiguous);
+        assert!(message.starts_with("Host is not running on the machine."), "{message}");
+        assert!(message.contains("its outcome is unknown"), "{message}");
+    }
+    for unsent in [
+        "The host request did not complete [RPC_DNS] (commands.dispatch).",
+        "The host request did not complete [RPC_PROXY] (commands.dispatch).",
+    ] {
+        assert_eq!(
+            super::host_not_running_failure(unsent),
+            "Host is not running on the machine. Start bycoda Host there, then reconnect."
+        );
+    }
+}
+
+#[test]
 fn a_host_that_accepts_a_command_then_disconnects_is_not_sent_it_again() {
     use std::io::{BufRead, BufReader};
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -1102,6 +1126,8 @@ fn voice_rpc_methods_are_bounded_and_model_loading_has_time_to_finish() {
     assert!(!supported_remote_method("voice.local.exec"));
     assert!(!supported_remote_method("voice.tools.exec"));
     assert!(rpc_timeout("voice.tools.call", &json!({})) >= Duration::from_secs(250));
+    // A held desktop take waits up to 25 s on the Host; the client must outlast that hold.
+    assert!(rpc_timeout("conversation.desktop.take", &json!({"waitMs": 25000})) > Duration::from_secs(25));
     assert!(rpc_timeout("assistant.builder.avatarGenerate", &json!({})) > Duration::from_secs(240));
     assert!(rpc_timeout("assistant.builder.interview", &json!({})) > Duration::from_secs(100));
     assert!(rpc_timeout("voice.local.start", &json!({})) >= Duration::from_secs(180));
@@ -1169,6 +1195,29 @@ fn git_actions_outlast_the_hosts_network_limit_and_others_keep_the_default() {
     );
 }
 
+/// Over HTTP the desktop must wait at least as long as the contract lets the Host work, or it
+/// reports a timeout for a call the Host completes. Every method whose contract deadline
+/// exceeds the default is checked against the generated manifest.
+#[test]
+fn http_deadlines_outlast_every_long_contract_deadline() {
+    let manifest: Value = serde_json::from_str(include_str!(
+        "../../../src/shared/model/host-contracts/generated/manifest.json"
+    ))
+    .unwrap();
+    let methods = manifest["methods"].as_object().unwrap();
+    let mut checked = 0;
+    for (method, entry) in methods {
+        let contract = std::time::Duration::from_millis(entry["responseTimeoutMs"].as_u64().unwrap());
+        if contract <= DEFAULT_RPC_TIMEOUT {
+            continue;
+        }
+        checked += 1;
+        let http = rpc_timeout(method, &json!({}));
+        assert!(http >= contract, "{method}: HTTP {http:?} < contract {contract:?}");
+    }
+    assert!(checked >= 20, "{checked}");
+}
+
 #[test]
 fn model_catalog_outlasts_provider_discovery() {
     assert!(rpc_timeout("models.list", &json!({})) > std::time::Duration::from_secs(45));
@@ -1190,7 +1239,6 @@ fn conversation_tools_outlast_host_setup_and_device_operations() {
     for method in [
         "devices.status",
         "devices.list",
-        "devices.capture",
         "devices.stop",
         "resources.read",
         "devices.exec",
@@ -1666,7 +1714,10 @@ fn retries_on_another_port_only_for_unreachable_hosts() {
         "Host identity changed: this address answers as a different machine."
     ));
     assert!(!port_may_have_moved(
-        "This host uses an incompatible protocol version"
+        crate::remote::protocol::OLDER_HOST_MESSAGE
+    ));
+    assert!(!port_may_have_moved(
+        crate::remote::protocol::NEWER_HOST_MESSAGE
     ));
 }
 
@@ -1702,10 +1753,13 @@ fn native_recovery_rejects_identical_repair_and_saved_route_replacement() {
         workspace: None,
         machine: machine.clone(),
         recovery: Some(RecoveryRoute {
-            revision: state.recovery_routes.capture().unwrap(),
+            revision: state.recovery_routes.capture(&machine.id).unwrap(),
             selected_endpoint: machine.endpoint.clone(),
         }),
     };
+    transport.assert_recovery_saved(&state, &path).unwrap();
+    // Another machine's reconnect or reroute never retires this selection.
+    state.invalidate_ws("unrelated-machine");
     transport.assert_recovery_saved(&state, &path).unwrap();
     let mut changed = machine.clone();
     changed.token = "replaced-fixture-owner".into();
@@ -1723,7 +1777,7 @@ fn native_recovery_rejects_identical_repair_and_saved_route_replacement() {
         workspace: None,
         machine: machine.clone(),
         recovery: Some(RecoveryRoute {
-            revision: state.recovery_routes.capture().unwrap(),
+            revision: state.recovery_routes.capture(&machine.id).unwrap(),
             selected_endpoint: machine.endpoint.clone(),
         }),
     };
@@ -1739,6 +1793,25 @@ fn native_recovery_rejects_identical_repair_and_saved_route_replacement() {
         .file_type()
         .is_symlink());
     std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn recovery_routes_retire_one_machine_and_close_retires_all() {
+    let routes = RecoveryRoutes::default();
+    let (first, second) = (routes.capture("a").unwrap(), routes.capture("b").unwrap());
+    routes.retire("a");
+    assert!(!routes.current("a", first));
+    assert!(routes.current("b", second));
+    // A retired machine gets a new revision, never an earlier one again.
+    let renewed = routes.capture("a").unwrap();
+    assert_ne!(renewed, first);
+    assert!(routes.current("a", renewed));
+    // Retiring a machine nobody pinned yet leaves the others alone.
+    routes.retire("never-seen");
+    assert!(routes.current("a", renewed) && routes.current("b", second));
+    routes.close();
+    assert!(routes.capture("a").is_err() && routes.capture("b").is_err());
+    assert!(!routes.current("b", second));
 }
 
 #[test]
@@ -1765,7 +1838,7 @@ fn native_recovery_retires_an_actual_in_flight_http_read_before_disclosure() {
         workspace: None,
         machine: machine.clone(),
         recovery: Some(RecoveryRoute {
-            revision: state.recovery_routes.capture().unwrap(),
+            revision: state.recovery_routes.capture(&machine.id).unwrap(),
             selected_endpoint: machine.endpoint.clone(),
         }),
     };

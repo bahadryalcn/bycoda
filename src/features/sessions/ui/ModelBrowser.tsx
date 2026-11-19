@@ -84,6 +84,10 @@ export function ModelBrowser({
   const source = useModelSource();
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const groups = modelGroups(tab, models);
+  // A passing pointer previews a provider only while it cannot discard anything: a typed
+  // search or the open account list must survive pointer drift across the rail. Click and
+  // keyboard activation still switch providers on purpose.
+  const previewOnHover = query.length === 0 && body == null;
 
   // Popover measures its initially hidden frame during layout. Focus only
   // after that measurement, when the browser can focus the visible input.
@@ -166,6 +170,7 @@ export function ModelBrowser({
             title={t("Favorites")}
             onSelect={() => onSelectTab("favorites")}
             selected={tab === "favorites"}
+            previewOnHover={previewOnHover}
           >
             <Star
               className="icon-md"
@@ -184,6 +189,7 @@ export function ModelBrowser({
               }
               selected={tab === harness}
               onSelect={() => onSelectTab(harness)}
+              previewOnHover={previewOnHover}
             >
               <span className="relative block">
                 <HarnessIcon harness={harness} className="size-4" />
@@ -296,12 +302,15 @@ function ProviderTabButton({
   title,
   selected,
   onSelect,
+  previewOnHover,
   children,
 }: {
   value: string;
   title: string;
   selected: boolean;
   onSelect: () => void;
+  /** Whether a moving pointer may select this tab; false keeps the search and account list. */
+  previewOnHover: boolean;
   children: ReactNode;
 }) {
   useLocale();
@@ -319,7 +328,7 @@ function ProviderTabButton({
       // Only a moving pointer previews a provider: a flyout that opens under a
       // resting pointer must keep its initial tab.
       onMouseMove={
-        selected
+        selected || !previewOnHover
           ? undefined
           : (event) => {
               if (event.movementX || event.movementY) onSelect();

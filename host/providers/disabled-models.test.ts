@@ -1,6 +1,10 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { expect, it } from "vitest";
 import { applyDisabledModels } from "../domains/models/disabled-models";
-import { parseDisabledModels } from "./disabled-models";
+import { HostStore } from "../store";
+import { parseDisabledModels, readDisabledModels, saveDisabledModels } from "./disabled-models";
 
 const catalog = {
   models: {
@@ -29,4 +33,27 @@ it("keeps a provider's full list when every model is disabled", () => {
 it("drops malformed entries when parsing", () => {
   expect(parseDisabledModels(["x", "x", 3, "", null])).toEqual(["x"]);
   expect(parseDisabledModels("x")).toEqual([]);
+});
+
+it("distinguishes missing and empty settings from an invalid stored value", async () => {
+  const root = await mkdtemp(join(tmpdir(), "disabled-models-"));
+  const store = new HostStore(join(root, "host.db"));
+  try {
+    await expect(readDisabledModels(store)).resolves.toBeUndefined();
+    await saveDisabledModels(store, []);
+    await expect(readDisabledModels(store)).resolves.toEqual([]);
+    for (const value of ["{", "{}"]) {
+      await store.db
+        .prepare("UPDATE host_settings SET value=? WHERE key=?")
+        .run(value, "disabledModels");
+      await expect(readDisabledModels(store)).rejects.toThrow(
+        "Saved disabled-model settings are invalid.",
+      );
+    }
+    await saveDisabledModels(store, ["codex:a"]);
+    await expect(readDisabledModels(store)).resolves.toEqual(["codex:a"]);
+  } finally {
+    await store.close();
+    await rm(root, { recursive: true, force: true });
+  }
 });

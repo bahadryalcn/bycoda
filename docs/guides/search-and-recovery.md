@@ -89,7 +89,7 @@ the recovery update fails, the save failure is reported separately; retry must
 not blindly open another copy. Failed saves when closing the panel also remain
 visible at the recovery entry point.
 
-Startup status checks also apply when saved conversations finish loading after
+Startup status checks also apply when saved sessions finish loading after
 the workspace appears. Recovery removals recheck project locks when the queued
 action runs. Recovery updates save in order; if a removal cannot be saved, its
 entries return without replacing newer recovered work or undoing later choices.

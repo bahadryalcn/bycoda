@@ -11,6 +11,7 @@ import {
   createChildProcessHandle,
   prepareHarnessTextWorkspace,
   readHarnessTextFile,
+  removeHarnessTextWorkspace,
   resolveAntigravityBinary,
   spawnChild,
   watchChild,
@@ -49,6 +50,8 @@ export async function runAntigravityTextPrompt(input: TextPromptInput): Promise<
   return runTextOperation(input.operationContext, async () => {
     input.signal?.throwIfAborted();
     let release: (() => void) | undefined;
+    // Set only for a workspace this machine created for this request (not Host-owned).
+    const scratch: { cwd?: string } = {};
     const id = `bycoda-antigravity-text-${crypto.randomUUID()}`;
     const child = createChildProcessHandle(
       id,
@@ -64,11 +67,17 @@ export async function runAntigravityTextPrompt(input: TextPromptInput): Promise<
         const binary = await resolveAntigravityBinary();
         input.signal?.throwIfAborted();
         return binary.transport === "stream-json"
-          ? await runStreamText(child, binary.path, input)
-          : await runAcpText(child, binary, input);
+          ? await runStreamText(child, binary.path, input, scratch)
+          : await runAcpText(child, binary, input, scratch);
       },
       async () => {
         await retirements.retire([child]);
+        // Reached only after the agent is verified retired; a failed retirement throws above and keeps its cwd.
+        if (scratch.cwd) {
+          await removeHarnessTextWorkspace(scratch.cwd).catch((error: unknown) =>
+            console.warn("[antigravity.text] temp workspace cleanup failed", error),
+          );
+        }
         release?.();
       },
       input,
@@ -80,11 +89,13 @@ async function runStreamText(
   child: ChildProcessHandle,
   path: string,
   input: TextPromptInput,
+  scratch: { cwd?: string },
 ): Promise<string> {
   const workspace = await prepareHarnessTextWorkspace(
     ANTIGRAVITY_TEXT_AGENT,
     input.operationContext?.hostRun,
   );
+  if (!input.operationContext?.hostRun) scratch.cwd = workspace.cwd;
   input.signal?.throwIfAborted();
   async function verifyAgent() {
     const log = await readHarnessTextFile(workspace.logPath);
@@ -206,11 +217,13 @@ async function runAcpText(
   child: ChildProcessHandle,
   binary: { path: string; args: string[] },
   input: TextPromptInput,
+  scratch: { cwd?: string },
 ): Promise<string> {
   const workspace = await prepareHarnessTextWorkspace(
     ANTIGRAVITY_TEXT_AGENT,
     input.operationContext?.hostRun,
   );
+  if (!input.operationContext?.hostRun) scratch.cwd = workspace.cwd;
   input.signal?.throwIfAborted();
   let output = "";
   const acp = new AcpClient(child, {

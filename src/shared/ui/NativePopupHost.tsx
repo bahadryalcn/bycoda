@@ -35,7 +35,7 @@ export function PopupBackdrop({
       className={
         solid
           ? "popover-solid pointer-events-none absolute inset-0 z-0 rounded-[inherit]"
-          : `pointer-events-none absolute inset-0 z-0 [border-radius:inherit] backdrop-blur-xl popover-backdrop${frosted ? " popover-frosted" : ""}`
+          : `pointer-events-none absolute inset-0 z-0 [border-radius:inherit] popover-backdrop${frosted ? " popover-frosted" : ""}`
       }
     />
   );

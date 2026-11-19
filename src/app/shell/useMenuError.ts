@@ -1,3 +1,4 @@
+import { errorText } from "../../shared/lib/errors";
 import { useLayoutEffect, useRef, useState } from "react";
 import { toast } from "../../shared/ui/ToastRegion";
 
@@ -19,7 +20,7 @@ export function useMenuError(menuPath: string | undefined, menuOpen: boolean) {
     else setState(message === null ? null : { path: menuPath, message });
   };
   const handleFailMenuError = (error: unknown) =>
-    handleMenuError(error instanceof Error ? error.message : String(error));
+    handleMenuError(errorText(error));
   return {
     menuError: state ? state.message : null,
     setMenuError: handleMenuError,

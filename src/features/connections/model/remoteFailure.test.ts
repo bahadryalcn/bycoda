@@ -2,14 +2,49 @@ import { describe, expect, it } from "vitest";
 import { TimeoutError } from "../../../shared/lib/withTimeout";
 import {
   classifyRemoteError,
+  describeLocalError,
+  describeRemoteError,
   isConnectionFailure,
   isHostAuthorizationRefusal,
   isTimeoutFailure,
   isTransientTransportError,
+  isUnsupportedRemoteRoute,
   presentRemoteError,
   unreachablePollDelay,
 } from "./remoteFailure";
 import { delegatedDiscoveryFailure } from "./useDelegatedRunDiscovery";
+
+describe("a machine turned off on this computer", () => {
+  const code = Object.assign(new Error("Machine connection is disabled"), {
+    code: "RPC_WS_DISABLED",
+  });
+
+  it.each([
+    code,
+    "RPC_WS_DISABLED: Machine connection is disabled",
+    "Error: Machine connection is disabled",
+    "Machine connection is disabled",
+  ])("classifies %s as disabled, not an answer or an outage", (error) => {
+    const failure = classifyRemoteError(error);
+    expect(failure.kind).toBe("disabled");
+    expect(isConnectionFailure(failure)).toBe(false);
+    expect(isTransientTransportError(error)).toBe(false);
+    expect(isTimeoutFailure(error)).toBe(false);
+  });
+
+  it("shows a turned-off sentence even for passive loads, never the native English", () => {
+    expect(presentRemoteError(code)).toBe(
+      "This machine is turned off. Turn it on in Machines settings.",
+    );
+    expect(presentRemoteError(code, { explicit: true })).not.toMatch(/disabled/i);
+  });
+
+  it("does not take a host's own error that mentions it for a refusal", () => {
+    expect(
+      classifyRemoteError("Host rejected request: Machine connection is disabled by policy").kind,
+    ).toBe("other");
+  });
+});
 
 describe("classifyRemoteError", () => {
   it.each([
@@ -237,6 +272,22 @@ describe("isTimeoutFailure", () => {
   });
 });
 
+describe("isUnsupportedRemoteRoute", () => {
+  it("is true when an outdated Host or an unoffered command will fail again", () => {
+    expect(isUnsupportedRemoteRoute(new Error("Unsupported workspace command"))).toBe(true);
+    expect(
+      isUnsupportedRemoteRoute(
+        new Error("This isn’t available for projects on another machine yet."),
+      ),
+    ).toBe(true);
+  });
+
+  it("is false for a failure a second request can fix", () => {
+    expect(isUnsupportedRemoteRoute(new Error("The file changed while it was open."))).toBe(false);
+    expect(isUnsupportedRemoteRoute(new Error("Binary files cannot be previewed."))).toBe(false);
+  });
+});
+
 describe("isHostAuthorizationRefusal", () => {
   it("is true only for the Host's authorization refusal", () => {
     expect(
@@ -249,5 +300,151 @@ describe("isHostAuthorizationRefusal", () => {
       isHostAuthorizationRefusal(new Error("The host request did not complete [RPC_TIMEOUT]")),
     ).toBe(false);
     expect(isHostAuthorizationRefusal(undefined)).toBe(false);
+  });
+});
+
+describe("describeRemoteError", () => {
+  // #1153: dialogs printed `String(reason)`, so a remote timeout read "Error: ... [RPC_TIMEOUT]".
+  it("presents a transport failure and keeps the raw text for Details", () => {
+    const view = describeRemoteError(new Error("The host request did not complete [RPC_TIMEOUT]"));
+    expect(view.message).toBe("This computer is busy right now. Try again in a moment.");
+    expect(view.details).toBe("The host request did not complete [RPC_TIMEOUT]");
+  });
+
+  it("strips the Error and Host rejection prefixes from details", () => {
+    expect(describeRemoteError("Host rejected request: Folder already exists")).toEqual({
+      message: "Folder already exists",
+      details: "Folder already exists",
+    });
+    expect(describeRemoteError(new Error("Access denied")).details).toBe("Access denied");
+  });
+
+  it("always has a visible message, even for an error with no text", () => {
+    expect(describeRemoteError(new Error("")).message).toBe("Something went wrong. Try again.");
+  });
+});
+
+describe("checkpoint review markers", () => {
+  it("hides the typed marker of a rejected checkpoint review", () => {
+    expect(
+      classifyRemoteError(
+        new Error("Host rejected request: Workspace checkpoint failed: no space [CHECKPOINT_FAILED]"),
+      ).message,
+    ).toBe("Workspace checkpoint failed: no space");
+    expect(
+      classifyRemoteError("Workspace checkpoint is still recording this turn [CHECKPOINT_RECORDING]")
+        .message,
+    ).toBe("Workspace checkpoint is still recording this turn");
+  });
+});
+
+describe("explicit actions on an unreachable machine (#923)", () => {
+  const explicit = (error: unknown) => presentRemoteError(error, { explicit: true });
+  const dns =
+    "The host request did not complete [RPC_DNS] (commands.dispatch). The machine address could not be resolved. Check the saved connection address.";
+  const proxy =
+    "The host request did not complete [RPC_PROXY] (commands.dispatch). The network proxy could not connect. Check the proxy and machine connection.";
+
+  it("names a mistyped address or a broken proxy instead of asking to wait", () => {
+    expect(explicit(new Error(dns))).toBe(
+      "The machine address could not be resolved. Check the saved connection address.",
+    );
+    expect(explicit(new Error(proxy))).toBe(
+      "The network proxy could not connect. Check the proxy and machine connection.",
+    );
+  });
+
+  it("names a stopped Host and a machine that is not connected here", () => {
+    expect(
+      explicit(new Error("Host is not running on the machine. Start bycoda Host there, then reconnect.")),
+    ).toBe(
+      "The machine is reachable, but bycoda Host is not running there. Start it, then reconnect.",
+    );
+    expect(explicit(new Error("Machine is no longer connected"))).toBe(
+      "This machine is not connected on this computer.",
+    );
+  });
+
+  it("names an SSH sign-in or host-key refusal without echoing ssh output", () => {
+    const auth = explicit(
+      new Error(
+        "SSH connection failed (exit 255, host reachable): me@10.0.0.4: Permission denied (publickey). Open Settings → Connections and reconnect.",
+      ),
+    );
+    expect(auth).toBe(
+      "SSH could not sign in to this machine. Sign in or check the SSH key, then reconnect.",
+    );
+    expect(auth).not.toContain("10.0.0.4");
+    expect(
+      explicit(
+        new Error("SSH connection failed (exit 255): Host key verification failed. Open Settings → Connections and reconnect."),
+      ),
+    ).toBe("SSH does not trust this machine’s host key. Review it in Connections, then reconnect.");
+  });
+
+  it("keeps the wait advice for a plain outage", () => {
+    for (const text of [
+      "Machine is unreachable",
+      "The host request did not complete [RPC_HOST_UNAVAILABLE] (x).",
+      "SSH connection failed (exit 255, host unreachable): Connection timed out",
+    ])
+      expect(explicit(new Error(text))).toBe(
+        "Waiting for the connection to this computer. Try again once it is back.",
+      );
+  });
+
+  it("keeps passive loads quiet for the same failures", () => {
+    for (const text of [dns, proxy, "Host is not running on the machine. Start bycoda Host there."])
+      expect(presentRemoteError(new Error(text))).toBeUndefined();
+  });
+
+  it("redacts credentials and ssh command lines from unreachable details", () => {
+    const view = describeRemoteError(
+      new Error("SSH connection failed (exit 255): ssh -i key me@host password=hunter2"),
+    );
+    expect(view.details).not.toContain("hunter2");
+    expect(view.details).not.toContain("ssh -i");
+  });
+});
+
+describe("a local action's failure text", () => {
+  const summary = "Could not update this reminder.";
+
+  it("shows the summary and the cause without an Error prefix", () => {
+    expect(describeLocalError(new Error("reminder_set failed: disk full"), summary)).toBe(
+      `${summary}\n\nreminder_set failed: disk full`,
+    );
+    expect(describeLocalError("Error: reminder_set failed", summary)).toBe(
+      `${summary}\n\nreminder_set failed`,
+    );
+  });
+
+  it("redacts secrets and command lines from the kept detail", () => {
+    const text = describeLocalError(
+      new Error("write failed token=abc123 ssh -i key me@host"),
+      summary,
+    );
+    expect(text.startsWith(summary)).toBe(true);
+    expect(text).not.toContain("abc123");
+    expect(text).not.toContain("ssh -i");
+  });
+
+  it("keeps a machine that is off out of native English entirely", () => {
+    const off = Object.assign(new Error("Machine connection is disabled"), {
+      code: "RPC_WS_DISABLED",
+    });
+    expect(describeLocalError(off, summary)).toBe(
+      "This machine is turned off. Turn it on in Machines settings.",
+    );
+  });
+
+  it("names an actionable cause in place of the generic summary", () => {
+    const text = describeLocalError(new Error("[RPC_DNS] lookup failed"), summary);
+    expect(text).toMatch(/could not be resolved/);
+    expect(text).not.toBe(summary);
+  });
+
+  it("falls back to the summary alone when there is no detail", () => {
+    expect(describeLocalError(new Error(""), summary)).toBe(summary);
   });
 });

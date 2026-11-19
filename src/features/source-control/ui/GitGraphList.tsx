@@ -20,6 +20,7 @@ import {
 import type { GitHistoryCommit } from "../../../platform/tauri/fs";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
+import { useMinuteNow } from "../../../shared/hooks/useMinuteNow";
 import { GRAPH_ROW_PX, SWIMLANE_WIDTH, type HistoryItemViewModel } from "../model/gitGraph";
 import {
   formatAbsoluteTime,
@@ -65,7 +66,6 @@ type Props = {
 const OVERSCAN = 10;
 /** Used until the scroller has been measured (and where nothing measures). */
 const FALLBACK_VIEWPORT_PX = 600;
-const NOW_REFRESH_MS = 60_000;
 
 const WIDE_HEADER_PX = 32;
 const WIDE_REFS_PX = 190;
@@ -75,15 +75,6 @@ const WIDE_SHA_PX = 72;
 const WIDE_GRAPH_MAX_PX = 260;
 
 const LOAD_MORE_CLASS = "w-full text-left";
-
-function useNow(): number {
-  const [now, setNow] = useState(Date.now);
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), NOW_REFRESH_MS);
-    return () => clearInterval(timer);
-  }, []);
-  return now;
-}
 
 /** Widest lane drawing among the rows, so the wide view's Graph column fits all. */
 function graphColumnWidth(items: readonly GraphListItem[]): number {
@@ -124,7 +115,7 @@ export function GitGraphList({
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
   const [firstRow, setFirstRow] = useState(0);
   const [viewport, setViewport] = useState(0);
-  const now = useNow();
+  const now = useMinuteNow();
   const openRow = useStableCallback((sha: string, pin?: boolean) => {
     const commit = items.find((item) => item.commit.sha === sha)?.commit;
     if (commit) onOpen(commit, pin);

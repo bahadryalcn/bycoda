@@ -1,0 +1,39 @@
+/* The floating chip that follows a dragged explorer row. Its !important declarations beat the
+   generic row and drag-state rules that apply to the same element while a drag is active. */
+.explorer-file-drag-preview {
+  position: fixed !important;
+  inset: 0 auto auto 0 !important;
+  z-index: var(--layer-drag);
+  display: flex !important;
+  width: max-content !important;
+  max-width: min(280px, calc(100vw - 16px));
+  height: 26px !important;
+  align-items: center;
+  gap: 6px;
+  margin: 0 !important;
+  padding: 0 9px 0 7px !important;
+  overflow: hidden;
+  pointer-events: none !important;
+  border: 1px solid var(--ui-fill-strong);
+  border-radius: var(--ui-radius-popup);
+  background: var(--ui-surface-floating) !important;
+  box-shadow: var(--ui-elevation-floating);
+  color: var(--color-content) !important;
+  font-size: 12px !important;
+  line-height: 1 !important;
+  white-space: nowrap;
+  opacity: 0.94 !important;
+  will-change: transform;
+  contain: paint;
+}
+
+.explorer-file-drag-preview > span {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+}
+
+html.theme-light .explorer-file-drag-preview {
+  background: var(--color-background-base) !important;
+  opacity: 1 !important;
+}

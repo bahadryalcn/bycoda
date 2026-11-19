@@ -72,3 +72,12 @@ export function boundedSet<K, V>(cache: Map<K, V>, key: K, value: V, limit = 64)
   cache.set(key, value);
   while (cache.size > limit) cache.delete(cache.keys().next().value!);
 }
+
+/** Read a value and mark it the newest entry; `null` when absent. Pairs with `boundedSet`. */
+export function boundedGet<K, V>(cache: Map<K, V>, key: K): V | null {
+  if (!cache.has(key)) return null;
+  const value = cache.get(key)!;
+  cache.delete(key);
+  cache.set(key, value);
+  return value;
+}

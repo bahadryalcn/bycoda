@@ -140,3 +140,82 @@ it("launches successful claims immediately and retains only failed events for th
     vi.unstubAllGlobals();
   }
 });
+
+it("abandons a hung task read at its deadline and keeps polling", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const automation = { id: "automation", enabled: true };
+  api.lead.mockResolvedValue(true);
+  api.list.mockReset().mockResolvedValue([automation]);
+  api.tasks
+    .mockReset()
+    .mockImplementationOnce(() => new Promise(() => {}))
+    .mockResolvedValue([
+      { id: "a", cwd: "/repo", machineId: "local", createdAt: 100, status: "queued" },
+    ]);
+  api.claim.mockReset().mockResolvedValue([{ automation, run: { id: "a" }, prompt: "a" }]);
+  const launch = vi.fn(async () => {});
+  const recover = vi.fn(async () => {});
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  function Harness() {
+    useWorkspaceAutomationActivity({ ensureAutomationRecovery: recover, launchAutomation: launch });
+    return null;
+  }
+  const root = createRoot(document.createElement("div"));
+  try {
+    await act(async () => root.render(createElement(Harness)));
+    expect(api.tasks).toHaveBeenCalledTimes(1);
+    await act(async () => vi.advanceTimersByTimeAsync(20_000));
+    expect(warn).toHaveBeenCalledWith("Automation event source unavailable", expect.any(Error));
+    expect(launch).not.toHaveBeenCalled();
+    await act(async () => vi.advanceTimersByTimeAsync(30_000));
+    expect(api.tasks).toHaveBeenCalledTimes(2);
+    expect(launch).toHaveBeenCalledTimes(1);
+  } finally {
+    await act(async () => root.unmount());
+    warn.mockRestore();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("keeps polling when the shared recovery never settles and retains events for the next poll", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const automation = { id: "automation", enabled: true };
+  api.lead.mockResolvedValue(true);
+  api.list.mockReset().mockResolvedValue([automation]);
+  api.tasks
+    .mockReset()
+    .mockResolvedValueOnce([
+      { id: "a", cwd: "/repo", machineId: "local", createdAt: 100, status: "queued" },
+    ])
+    .mockResolvedValue([]);
+  api.claim.mockReset().mockResolvedValue([]);
+  const recover = vi
+    .fn<() => Promise<void>>()
+    .mockImplementationOnce(() => new Promise<void>(() => {}))
+    .mockResolvedValue(undefined);
+  const launch = vi.fn(async () => {});
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  function Harness() {
+    useWorkspaceAutomationActivity({ ensureAutomationRecovery: recover, launchAutomation: launch });
+    return null;
+  }
+  const root = createRoot(document.createElement("div"));
+  try {
+    await act(async () => root.render(createElement(Harness)));
+    await act(async () => vi.advanceTimersByTimeAsync(30_000));
+    expect(api.claim).not.toHaveBeenCalled();
+    await act(async () => vi.advanceTimersByTimeAsync(30_000));
+    expect(api.claim).toHaveBeenCalledTimes(1);
+    expect(api.claim.mock.calls[0]?.[1].map((event: { key: string }) => event.key)).toEqual([
+      "tasks:local:a:created",
+    ]);
+  } finally {
+    await act(async () => root.unmount());
+    warn.mockRestore();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  }
+});

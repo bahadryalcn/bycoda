@@ -104,3 +104,61 @@ it("disables Send for an empty draft or a blocked child", () => {
   const blocked = [...container.querySelectorAll("button")].find((b) => b.textContent === "Send");
   expect(blocked?.disabled).toBe(true);
 });
+
+it("announces the Ctrl/Cmd+Enter send shortcut on the message box", () => {
+  render(relay({ mode: "direct" }));
+  const message = container.querySelector("textarea")!;
+  expect(message.getAttribute("aria-keyshortcuts")).toBe("Control+Enter Meta+Enter");
+});
+
+it("shows the shared Mod+Enter hint on the send button in both routes", () => {
+  render(relay({ mode: "direct" }));
+  const send = [...container.querySelectorAll("button")].find((b) => b.textContent === "Send")!;
+  expect(send.hasAttribute("data-tooltip-owner")).toBe(true);
+
+  render(relay());
+  const relayButton = [...container.querySelectorAll("button")].find(
+    (b) => b.textContent === "Relay via main agent",
+  )!;
+  expect(relayButton.hasAttribute("data-tooltip-owner")).toBe(true);
+});
+
+it("leaves Enter to insert a newline; Ctrl/Cmd+Enter sends only outside IME composition", () => {
+  const send = vi.fn();
+  const setDraft = vi.fn();
+  render(relay({ mode: "direct", send, setDraft }));
+  const message = container.querySelector("textarea")!;
+
+  act(() => {
+    message.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+    );
+  });
+  expect(send).not.toHaveBeenCalled();
+
+  act(() => {
+    message.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Enter",
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  });
+  expect(send).toHaveBeenCalledOnce();
+
+  act(() => {
+    message.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Enter",
+        ctrlKey: true,
+        isComposing: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  });
+  expect(send).toHaveBeenCalledOnce();
+  expect(setDraft).not.toHaveBeenCalled();
+});

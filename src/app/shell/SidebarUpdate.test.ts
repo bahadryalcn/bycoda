@@ -61,7 +61,17 @@ describe("isSidebarUpdateActionable", () => {
     const actionable = phases.filter((phase) =>
       isSidebarUpdateActionable({ phase, currentVersion: "0.1.37" }),
     );
-    expect(actionable).toEqual(["available", "downloading"]);
+    expect(actionable).toEqual(["available", "downloading", "error"]);
+  });
+});
+
+describe("SidebarUpdateFooter errors", () => {
+  it("keeps a failed update without a version visible in the rail", () => {
+    setAppUpdateSnapshot({ phase: "error", currentVersion: "0.1.37", error: "network down" });
+    const markup = renderToStaticMarkup(createElement(SidebarUpdateFooter, {}));
+
+    expect(markup).not.toBe("");
+    expect(markup).not.toContain("Update to");
   });
 });
 

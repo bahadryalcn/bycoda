@@ -255,7 +255,7 @@ export function JobRow({
                   ]
                 : []),
             { kind: "sep" },
-            { kind: "item", id: "delete", label: t("Delete..."), danger: true },
+            { kind: "item", id: "delete", label: t("Delete…"), danger: true },
           ]}
         />
       )}

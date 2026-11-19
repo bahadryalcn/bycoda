@@ -5,6 +5,7 @@ import {
   type DiscoveryReport,
   type ImportCandidate,
 } from "../../../platform/tauri/sessionImport";
+import { t } from "../../../shared/i18n";
 import { importSessionRecord, importedSessionKeys } from "../data/sessionStore";
 import { sameProjectPath } from "../../projects/public/recents";
 import { isAlreadyImported, SESSION_HISTORY_IMPORTED_EVENT } from "./importModel";
@@ -298,8 +299,9 @@ export function createHistoryImportControl(overrides: Partial<Deps> = {}) {
       } catch {
         operation.status = {
           state: "failed",
-          message:
+          message: t(
             "History import did not finish. Review stored conversations before starting another import.",
+          ),
         };
       }
       return operation.status;

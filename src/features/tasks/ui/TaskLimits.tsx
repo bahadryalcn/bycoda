@@ -234,16 +234,10 @@ export function LimitsPanel({
     >
       {errors.map((entry) => (
         <li key={`error:${entry.machineId}`} className="task-ops-head">
-          <Text
-            size="caption"
-            tone="danger"
-            leading="inherit"
-            role="status"
+          <InlineError
+            details={`${entry.machineName}: ${entry.error}`}
             className="task-ops-caption task-ops-head-text"
-            data-tone="danger"
-          >
-            {entry.machineName}: {entry.error}
-          </Text>
+          />
           {onRetry ? (
             <Button variant="ghost" loading={retrying} onClick={() => onRetry(entry.machineId)}>
               {t("Retry")}
@@ -284,7 +278,7 @@ export function LimitsPanel({
                 leading="inherit"
                 className="task-ops-caption task-ops-num"
               >
-                {entry.stale ? `${t("Out of date")} Â· ` : t("Used today: ")}
+                {entry.stale ? `${t("Out of date")} ·` : t("Used today: ")}
                 {formatAgentMinutes(entry.usedMinutes)}
                 {limited ? t(" of {p0}", { p0: formatAgentMinutes(entry.dailyAgentMinutes) }) : ""}
               </Text>

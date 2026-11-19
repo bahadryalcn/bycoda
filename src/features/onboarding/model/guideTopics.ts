@@ -76,7 +76,7 @@ export function guideMissingHelp(need: GuideNeed, context: GuideContext): GuideM
     changes: {
       reason: t("Changes shows once a project is open in the sidebar."),
       action: "changes",
-      label: t("Open Changes"),
+      label: t("Open changes"),
     },
     files: {
       reason: t("Explorer shows once a project is open in the sidebar."),
@@ -278,8 +278,8 @@ export function guideTopics(): GuideTopic[] {
       steps: [
         {
           id: "changes.open",
-          title: t("Open Changes"),
-          text: t("Open Changes in the sidebar to see modified files."),
+          title: t("Open changes"),
+          text: t("Open changes in the sidebar to see modified files."),
           show: { targets: ["changes"], need: "changes" },
         },
         {
@@ -301,7 +301,7 @@ export function guideTopics(): GuideTopic[] {
         t("Branches, stash, the git graph, blame and conflict resolution are in the same panel."),
       ],
       shortcuts: [],
-      action: { id: "changes", label: t("Open Changes"), step: "changes.open" },
+      action: { id: "changes", label: t("Open changes"), step: "changes.open" },
       tour: true,
     },
     {

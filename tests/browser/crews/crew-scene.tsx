@@ -5,7 +5,7 @@ import { CrewScene } from "../../../src/features/sessions/ui/CrewScene";
 import { newSession, type Block } from "../../../src/features/sessions/model/session";
 import { saveCrewGrowthEnabled } from "../../../src/features/settings/model/settings";
 import { languageReady } from "../../../src/shared/i18n";
-import { CrewSettings } from "../../../src/features/settings/ui/AppearanceBehaviorSettings";
+import { CrewStageCard } from "../../../src/features/settings/ui/appearance/controls/CrewStageCard";
 import {
   CODE_WIDTH,
   CREW_TOP,
@@ -255,7 +255,7 @@ function Fixture() {
         </label>
       </div>
       <Disclosure summary="Crew settings">
-        <CrewSettings />
+        <CrewStageCard />
       </Disclosure>
       <CrewScene
         sessionId={session.id}

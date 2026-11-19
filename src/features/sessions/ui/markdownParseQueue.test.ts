@@ -71,6 +71,86 @@ it("settles a stalled worker as failure and ignores its late result", () => {
   }
 });
 
+it("isolates a slow parse: only that reply falls back, siblings continue in order on a fresh worker", () => {
+  vi.useFakeTimers();
+  try {
+    const workers: ReturnType<typeof makeWorker>[] = [];
+    const makeWorker = () => ({
+      postMessage: vi.fn(),
+      terminate: vi.fn(),
+      onmessage: null as Worker["onmessage"],
+      onerror: null as Worker["onerror"],
+    });
+    const queue = new MarkdownParseQueue(() => {
+      const worker = makeWorker();
+      workers.push(worker);
+      return worker;
+    });
+    const slow = { result: vi.fn(), error: vi.fn() },
+      second = { result: vi.fn(), error: vi.fn() },
+      third = { result: vi.fn(), error: vi.fn() };
+    const releases = [
+      queue.subscribe("slow", slow),
+      queue.subscribe("second", second),
+      queue.subscribe("third", third),
+    ];
+    queue.request("slow", "huge reply");
+    queue.request("second", "second reply");
+    queue.request("third", "third reply");
+    const stalled = workers[0];
+    expect(stalled.postMessage).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(15_000);
+    expect(slow.error).toHaveBeenCalledOnce();
+    expect(second.error).not.toHaveBeenCalled();
+    expect(third.error).not.toHaveBeenCalled();
+    expect(stalled.terminate).toHaveBeenCalledOnce();
+    expect(workers).toHaveLength(2);
+    const fresh = workers[1];
+    expect(fresh.postMessage).toHaveBeenCalledTimes(1);
+    expect(fresh.postMessage.mock.calls[0][0].text).toBe("second reply");
+
+    // A late result and a late error from the terminated worker change nothing.
+    stalled.onmessage!({ data: { sequence: 1, blocks: ["late"] } } as MessageEvent);
+    stalled.onerror!.call(stalled as unknown as Worker, {} as ErrorEvent);
+    expect(slow.result).not.toHaveBeenCalled();
+    expect(fresh.terminate).not.toHaveBeenCalled();
+
+    fresh.onmessage!({
+      data: { sequence: fresh.postMessage.mock.calls[0][0].sequence, blocks: ["second"] },
+    } as MessageEvent);
+    expect(second.result).toHaveBeenCalledWith("second reply", ["second"]);
+    expect(fresh.postMessage).toHaveBeenCalledTimes(2);
+    expect(fresh.postMessage.mock.calls[1][0].text).toBe("third reply");
+    fresh.onmessage!({
+      data: { sequence: fresh.postMessage.mock.calls[1][0].sequence, blocks: ["third"] },
+    } as MessageEvent);
+    expect(third.result).toHaveBeenCalledWith("third reply", ["third"]);
+
+    // The slow reply stays on its bounded fallback without a retry loop; siblings still parse.
+    queue.request("slow", "huge reply, still growing");
+    expect(slow.error).toHaveBeenCalledTimes(2);
+    expect(fresh.postMessage).toHaveBeenCalledTimes(2);
+    queue.request("second", "second reply again");
+    expect(fresh.postMessage).toHaveBeenCalledTimes(3);
+    expect(second.error).not.toHaveBeenCalled();
+
+    // A released slow reply can be parsed again when it remounts.
+    releases[0]();
+    const remount = { result: vi.fn(), error: vi.fn() };
+    const releaseRemount = queue.subscribe("slow", remount);
+    queue.request("slow", "huge reply");
+    expect(remount.error).not.toHaveBeenCalled();
+
+    releaseRemount();
+    releases[1]();
+    releases[2]();
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 it("reports malformed completion instead of leaving a reply pending forever", () => {
   const { queue, worker } = fixture();
   const error = vi.fn();

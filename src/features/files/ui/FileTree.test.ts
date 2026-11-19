@@ -15,6 +15,7 @@ import {
   verifiedDirAt,
 } from "../model/fileTree";
 import type { FsEntry } from "../../../platform/tauri/fs";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import {
   EXPLORER_FILE_POINTER_DRAG_EVENT,
   type ExplorerFilePointerDragDetail,
@@ -335,7 +336,7 @@ describe("NameRow IME composition", () => {
 });
 
 describe("FileTree render isolation", () => {
-  it.each(["New File", "New Folder", "Rename"])(
+  it.each(["New File", "New folder", "Rename"])(
     "commits %s once and retries only the failed listing",
     async (action) => {
       props.onFileMoved = vi.fn();
@@ -347,7 +348,7 @@ describe("FileTree render isolation", () => {
       )!;
       await act(async () => item.click());
       const input = container.querySelector<HTMLInputElement>(
-        'input[aria-label^="Type file name"]',
+        'input[aria-label="File name"], input[aria-label="Folder name"]',
       )!;
       act(() => {
         Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
@@ -359,7 +360,9 @@ describe("FileTree render isolation", () => {
       vi.mocked(props.onOpenFile).mockClear();
       failures.set(cwd, "listing unavailable");
       await press(input, { key: "Enter" });
-      expect(container.querySelector('input[aria-label^="Type file name"]')).toBeNull();
+      expect(
+        container.querySelector('input[aria-label="File name"], input[aria-label="Folder name"]'),
+      ).toBeNull();
       expect(container.querySelector('[role="alert"]')?.textContent).toContain(
         "File change saved. Refresh failed.",
       );
@@ -437,6 +440,10 @@ describe("FileTree render isolation", () => {
 
     await act(async () => render());
     expect(container.querySelector('[data-remote-data-state="error"]')).not.toBeNull();
+    // The failure is readable in the row without hovering the sync status.
+    expect(container.querySelector('[data-remote-data-state="error"]')!.textContent).toContain(
+      presentRemoteError("host unavailable", { explicit: true }),
+    );
     expect(container.querySelector('[data-remote-data-state="empty"]')).toBeNull();
     expect(row("first.ts")).toBeNull();
 

@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rename, writeFile, stat, unlink } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, writeFile, stat, unlink } from "node:fs/promises";
 import { delimiter, dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { createServer, type Socket } from "node:net";
@@ -17,15 +17,16 @@ import { DeviceControlLeases } from "./device-control-leases";
 import { iosCaptureDisplay } from "./ios-display";
 import { inspectionFingerprint, inspectionNodes, type InspectionNode } from "./device-inspection";
 import { cachedExpoGo, expoPreviewUrl } from "./expo-go";
-import type {
-  DeviceAction,
-  DeviceFrame,
-  DeviceHostStatus,
-  DeviceSummary,
+import {
+  DEVICE_HUB_VERSION,
+  type DeviceAction,
+  type DeviceFrame,
+  type DeviceHostStatus,
+  type DeviceSummary,
 } from "../../src/shared/model/host-contracts/native-devices";
 
 export * from "./device-authority";
-export const DEVICE_HUB_VERSION = "0.12.0";
+export { DEVICE_HUB_VERSION };
 export const AGENT_DEVICE_VERSION = "0.21.23";
 /** Use native screen points, not the CLI's cropped alert viewport scaling. */
 export function elementPressArgs(nodes: unknown, label: string): string[] {
@@ -64,6 +65,8 @@ const TOOLS = {
   hub: { name: "expo-device-hub", version: DEVICE_HUB_VERSION, entry: "dist/server/cli.mjs" },
   agent: { name: "agent-device", version: AGENT_DEVICE_VERSION, entry: "bin/agent-device.mjs" },
 };
+/** Install staging and replaced-cache siblings; the live cache is the bare version name. */
+const TOOL_LEFTOVER = /\.(stage|previous)-[0-9a-f-]{36}$/;
 type HubDevices = {
   simulators?: DeviceSummary[];
   emulators?: DeviceSummary[];
@@ -412,6 +415,7 @@ export class DeviceHost {
         .find(existsSync);
     if (!npm)
       throw new Error("npm CLI is unavailable beside the host Node runtime. Configure npmCliPath.");
+    await this.sweepToolLeftovers();
     for (const tool of tools) {
       await assertDeviceAuthority(effect);
       const spec = TOOLS[tool];
@@ -420,25 +424,47 @@ export class DeviceHost {
       await assertDeviceAuthority(effect);
       if (installed) continue;
       const stage = `${dir}.stage-${randomUUID()}`;
-      await mkdir(stage, { recursive: true, mode: 0o700 });
-      await assertDeviceAuthority(effect);
-      await writeFile(
-        join(stage, "package.json"),
-        JSON.stringify({ private: true, dependencies: { [spec.name]: spec.version } }),
-        { mode: 0o600 },
+      try {
+        await mkdir(stage, { recursive: true, mode: 0o700 });
+        await assertDeviceAuthority(effect);
+        await writeFile(
+          join(stage, "package.json"),
+          JSON.stringify({ private: true, dependencies: { [spec.name]: spec.version } }),
+          { mode: 0o600 },
+        );
+        await this.command(
+          effect,
+          this.nodePath,
+          [npm, "install", "--no-audit", "--no-fund", "--omit=dev"],
+          { cwd: stage, env: this.env, timeoutMs: 600_000 },
+        );
+        await assertDeviceAuthority(effect);
+        if (!existsSync(join(stage, "node_modules", spec.name, spec.entry)))
+          throw new Error("Device tool install did not produce the expected executable");
+        await writeFile(join(stage, ".install-complete"), spec.version, { mode: 0o600 });
+        await this.promoteTool(stage, dir, effect);
+      } finally {
+        // Every writer above has settled. A promoted stage is already renamed away, so this only discards a failed one.
+        await rm(stage, { recursive: true, force: true }).catch(() => {});
+      }
+    }
+  }
+  /**
+   * Removes stage and replaced-cache siblings left by earlier installs. Runs inside
+   * runExclusive and only matches the UUID-suffixed names, never a live version directory.
+   */
+  private async sweepToolLeftovers() {
+    // shortcut: assumes one Host per data directory; a second Host sharing it could lose an in-flight stage, upgrade to a lock marker if that becomes possible.
+    for (const tool of Object.keys(TOOLS) as (keyof typeof TOOLS)[]) {
+      const parent = dirname(this.dir(tool));
+      const names = await readdir(parent).catch(() => [] as string[]);
+      await Promise.all(
+        names
+          .filter((name) => TOOL_LEFTOVER.test(name))
+          .map((name) =>
+            rm(join(parent, name), { recursive: true, force: true }).catch(() => {}),
+          ),
       );
-      await this.command(
-        effect,
-        this.nodePath,
-        [npm, "install", "--no-audit", "--no-fund", "--omit=dev"],
-        { cwd: stage, env: this.env, timeoutMs: 600_000 },
-      );
-      await assertDeviceAuthority(effect);
-      if (!existsSync(join(stage, "node_modules", spec.name, spec.entry)))
-        throw new Error("Device tool install did not produce the expected executable");
-      await writeFile(join(stage, ".install-complete"), spec.version, { mode: 0o600 });
-      // Preserve partial/previous directories; never delete tool caches or unrelated work.
-      await this.promoteTool(stage, dir, effect);
     }
   }
   private async promoteTool(stage: string, dir: string, effect?: DeviceEffectContext) {
@@ -466,6 +492,8 @@ export class DeviceHost {
       }
       throw cause;
     }
+    // The replaced cache is obsolete once the new one is live. A failed removal is retried by the next sweep.
+    if (previous) await rm(previous, { recursive: true, force: true }).catch(() => {});
   }
   start(effect?: DeviceEffectContext): Promise<DeviceHostStatus> {
     return this.runExclusive(async () => {

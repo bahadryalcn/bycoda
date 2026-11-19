@@ -8,7 +8,8 @@ import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { t, useLocale } from "../../../shared/i18n";
 import { formatArchiveDate as formatDate } from "../../../shared/i18n/format";
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useMemo, useRef, useState } from "react";
+import { ContinuousList } from "../../../shared/ui/ContinuousList";
 import { HarnessIcon } from "../../sessions/public/HarnessIcon";
 
 import { useLockSnapshot } from "../../group-lock/hooks/useGroupLock";
@@ -18,6 +19,7 @@ import { getGroupLockView } from "../../group-lock/model/groupLock";
 import { RemoveProjectDialog } from "../../projects/public/RemoveProjectDialog";
 
 import { prettyCwd, projectKey, projectName } from "../../../shared/lib/paths";
+import { errorText } from "../../../shared/lib/errors";
 
 import {
   loadRecents,
@@ -148,11 +150,23 @@ export function ArchivePage({
       .toLocaleLowerCase()
       .includes(projectQuery.trim().toLocaleLowerCase()),
   );
-  const matchingSessions = archived.filter((session) =>
-    sessionDisplayTitle(session.title, session.harness)
-      .toLocaleLowerCase()
-      .includes(sessionQuery.trim().toLocaleLowerCase()),
+  // Titles are derived once per session list, not once per keystroke.
+  const searchableSessions = useMemo(
+    () =>
+      archived.map((session) => {
+        const title = sessionDisplayTitle(session.title, session.harness);
+        return { session, title, haystack: title.toLocaleLowerCase() };
+      }),
+    [archived],
   );
+  // The list follows the query at low priority so typing never waits on it.
+  const deferredSessionQuery = useDeferredValue(sessionQuery);
+  const matchingSessions = useMemo(() => {
+    const query = deferredSessionQuery.trim().toLocaleLowerCase();
+    return query
+      ? searchableSessions.filter((entry) => entry.haystack.includes(query))
+      : searchableSessions;
+  }, [searchableSessions, deferredSessionQuery]);
   const run = async (key: string, action: () => void | boolean | Promise<void | boolean>) => {
     // Restore/delete actions for the same target must not overlap either.
     const target = key.slice(key.indexOf(":") + 1);
@@ -166,7 +180,7 @@ export function ArchivePage({
       if ((await action()) === false)
         throw new Error(t("The operation did not complete. You can try again."));
     } catch (error) {
-      setErrors((current) => ({ ...current, [key]: String(error).replace(/^Error: /, "") }));
+      setErrors((current) => ({ ...current, [key]: errorText(error) }));
       throw error;
     } finally {
       inFlight.current.delete(key);
@@ -403,82 +417,78 @@ export function ArchivePage({
                 </SettingsFeedback>
               </div>
             ) : null}
-            <ScrollArea
-              gutter="stable"
-              {...surfaceAttributes(
-                { separator: "block" },
-                "settings-collection-list archive-settings-list",
-              )}
-              role="region"
-              aria-label={t("Archived conversations")}
-              tabIndex={0}
-            >
-              {matchingSessions.length === 0 ? (
-                <EmptyState
-                  size="inline"
-                  kind="filtered"
-                  className="settings-collection-empty"
-                  descriptionText={{ size: "caption", tone: "secondary", leading: "normal" }}
-                  description={t("No matching archived conversations.")}
-                  resetLabel={t("Clear search")}
-                  onReset={() => setSessionQuery("")}
-                />
-              ) : null}
-              {matchingSessions.map((session) => (
-                <ActionHost
-                  key={session.id}
-                  {...surfaceAttributes(
-                    { radius: "none", separator: "block" },
-                    "settings-collection-row",
-                  )}
-                >
-                  <HarnessIcon harness={session.harness} className="icon-sm shrink-0" />
-                  <Button
-                    className="min-w-0 flex-1"
-                    align="start"
-                    variant="ghost"
-                    size="sm"
-                    type="button"
-                    onClick={() => onOpenSession(session.id)}
-                  >
-                    {sessionDisplayTitle(session.title, session.harness)}
-                  </Button>
-                  <Text size="caption" tone="secondary" className="shrink-0 tabular-nums">
-                    {formatDate(session.updatedAt)}
-                  </Text>
-                  <div className="settings-collection-actions">
+            {matchingSessions.length === 0 ? (
+              <EmptyState
+                size="inline"
+                kind="filtered"
+                className="settings-collection-empty"
+                descriptionText={{ size: "caption", tone: "secondary", leading: "normal" }}
+                description={t("No matching archived conversations.")}
+                resetLabel={t("Clear search")}
+                onReset={() => setSessionQuery("")}
+              />
+            ) : (
+              // The archive only grows, so only the rows near the viewport mount. Search filters
+              // `items` in place under one stateKey: scroll, focus and open confirmations survive it.
+              <ContinuousList
+                rowAppearance="settings"
+                gutter="stable"
+                className="archive-settings-list"
+                label={t("Archived conversations")}
+                items={matchingSessions}
+                itemKey={(entry) => entry.session.id}
+                stateKey={`archive-conversations:${cwd}`}
+                estimateSize={44}
+                renderItem={({ session, title }) => (
+                  <ActionHost {...surfaceAttributes({ radius: "none" }, "settings-collection-row")}>
+                    <HarnessIcon harness={session.harness} className="icon-sm shrink-0" />
                     <Button
-                      className="shrink-0"
-                      loading={!!pending[`unarchive:${session.id}`]}
-                      disabled={!!pending[`delete:${session.id}`]}
-                      onClick={() =>
-                        void run(`unarchive:${session.id}`, () =>
-                          onArchiveSession(session.id, false),
-                        ).catch(() => {})
-                      }
+                      className="min-w-0 flex-1"
+                      align="start"
+                      variant="ghost"
+                      size="sm"
+                      type="button"
+                      onClick={() => onOpenSession(session.id)}
                     >
-                      {t("Unarchive")}
+                      {title}
                     </Button>
-                    <ConfirmMorph
-                      label={t("Delete")}
-                      tone="danger"
-                      confirmMode="press"
-                      disabled={!!pending[`unarchive:${session.id}`]}
-                      onConfirm={() =>
-                        run(`delete:${session.id}`, () => onDeleteSession(session.id))
-                      }
-                    />
-                  </div>
-                  {errors[`unarchive:${session.id}`] ? (
-                    <div className="settings-collection-feedback">
-                      <SettingsFeedback state="error">
-                        {errors[`unarchive:${session.id}`]}
-                      </SettingsFeedback>
+                    <Text size="caption" tone="secondary" className="shrink-0 tabular-nums">
+                      {formatDate(session.updatedAt)}
+                    </Text>
+                    <div className="settings-collection-actions">
+                      <Button
+                        className="shrink-0"
+                        loading={!!pending[`unarchive:${session.id}`]}
+                        disabled={!!pending[`delete:${session.id}`]}
+                        onClick={() =>
+                          void run(`unarchive:${session.id}`, () =>
+                            onArchiveSession(session.id, false),
+                          ).catch(() => {})
+                        }
+                      >
+                        {t("Unarchive")}
+                      </Button>
+                      <ConfirmMorph
+                        label={t("Delete")}
+                        tone="danger"
+                        confirmMode="press"
+                        disabled={!!pending[`unarchive:${session.id}`]}
+                        onConfirm={() =>
+                          run(`delete:${session.id}`, () => onDeleteSession(session.id))
+                        }
+                      />
                     </div>
-                  ) : null}
-                </ActionHost>
-              ))}
-            </ScrollArea>
+                    {errors[`unarchive:${session.id}`] ? (
+                      <div className="settings-collection-feedback">
+                        <SettingsFeedback state="error">
+                          {errors[`unarchive:${session.id}`]}
+                        </SettingsFeedback>
+                      </div>
+                    ) : null}
+                  </ActionHost>
+                )}
+              />
+            )}
           </div>
         )}
       </Group>

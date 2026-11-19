@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { invoke as tauriInvoke, isTauri } from "@tauri-apps/api/core";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { listenWindowAsync } from "../../../platform/tauri/listenWindow";
@@ -87,6 +88,14 @@ export function prepareHarnessTextWorkspace(
   return originalBackend
     ? originalBackend.invoke("harness_prepare_text_workspace", { content })
     : tauriInvoke("harness_prepare_text_workspace", { content });
+}
+
+/** Remove a workspace prepared without a Host run. Call only after its agent has exited. */
+export function removeHarnessTextWorkspace(cwd: string): Promise<void> {
+  // shortcut: a headless backend's own workspaces are not removed here; upgrade by
+  // adding harness_remove_text_workspace to that backend's invoke.
+  if (backend) return Promise.resolve();
+  return tauriInvoke("harness_remove_text_workspace", { cwd });
 }
 
 function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -593,7 +602,7 @@ function deliverIsolatedItem(
   } catch (error) {
     console.warn(`[bycoda] harness ${source} item handler failed`, {
       rule: "one failed item never drops the rest of its batch",
-      error: error instanceof Error ? error.message : String(error),
+      error: errorText(error),
     });
     if (nativeItem) discardNativeOutputItems([nativeItem], "line-handler-failed");
   }
@@ -627,7 +636,7 @@ function receiveProcessLines(
       console.warn(`[bycoda] harness ${channel} line handler failed`, {
         sessionId,
         rule: "one failed line never drops the rest of its batch",
-        error: error instanceof Error ? error.message : String(error),
+        error: errorText(error),
       });
       if (nativeItem) discardNativeOutputItems([nativeItem], "line-handler-failed");
     }
@@ -1200,7 +1209,7 @@ export function killChild(handle: ChildProcessHandle): Promise<void> {
     if (
       state.exited ||
       /^NATIVE_PROCESS_CONSTRUCTION_STALE$/.test(
-        error instanceof Error ? error.message : String(error),
+        errorText(error),
       )
     ) {
       console.warn("[child] kill target already gone", error);
@@ -1325,10 +1334,6 @@ export function resolveAntigravityBinary(binaryPath?: string | null): Promise<{
     args: string[];
     transport?: AntigravityTransport;
   }>;
-}
-
-export function freeHarnessPort(): Promise<number> {
-  return invoke("harness_free_port");
 }
 
 export type HarnessHttpInput = {
@@ -1466,7 +1471,7 @@ export function inspectHarnessBinary(
     } catch (error) {
       return {
         path: resolved.path,
-        error: error instanceof Error ? error.message : String(error),
+        error: errorText(error),
       };
     }
   });
@@ -1484,6 +1489,12 @@ export async function updateHarnessCli(
     binaryPath: runtimeProviderBinaryPath(provider),
     targetVersion,
   });
+}
+
+/** Stops the running self-update of this provider's binary. False when no updater is running. */
+export async function cancelHarnessUpdate(provider: ConfigurableBinaryProvider): Promise<boolean> {
+  const resolved = await resolveHarnessBinary(provider);
+  return invoke<boolean>("harness_update_cancel", { command: resolved.path });
 }
 
 /** Capture cleanup permission while the exact fresh utility child still exists.

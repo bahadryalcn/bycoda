@@ -30,7 +30,7 @@ it("reconciles a lost accepted reply through the domain after another client adv
     sessionStatus: async () => "idle",
     desktopWatch: async () => undefined,
     queues: { get: async () => advanced, serve },
-    attachments: { validateExposure: async () => {}, normalize: () => [] },
+    attachments: { validateExposure: async () => {}, normalize: async () => [] },
   });
   const context = { authorized: async () => true, exposeAttachments: async () => {} };
   const call = vi.fn(async (action: string, params?: Record<string, unknown>) => {

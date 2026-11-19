@@ -84,7 +84,7 @@ export function AutomationProposalDialog() {
               />
               <TextField
                 label={t("Output")}
-                value={proposal.outputTarget === "room" ? t("Assistant Room") : t("Task")}
+                value={proposal.outputTarget === "room" ? t("Assistant room") : t("Task")}
                 readOnly
               />
               <div className="flex min-w-0 flex-col gap-1">

@@ -1,7 +1,7 @@
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Text } from "../../../shared/ui/Text";
 import { useState, type ReactNode } from "react";
-import { useT } from "../../../shared/i18n";
+import { useFormat, useT, type BoundFormat } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { ContinuousList } from "../../../shared/ui/ContinuousList";
 import { CollectionFooter } from "../../../shared/ui/ContinuousList";
@@ -10,6 +10,7 @@ import { InlineError } from "../../../shared/ui/InlineError";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { SearchInput, SearchInputGroup } from "../../../shared/ui/SearchInput";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { RefreshCw, Search } from "../../../shared/ui/icons";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 
@@ -49,9 +50,17 @@ type Props<R extends BufferReportDisplay> = {
   /** Where the reports come from; the owner renders it, the view places it in its toolbar. */
   sourceControl?: ReactNode;
 };
-function readableTime(value: number | null): string | null {
-  if (value === null || Math.abs(value) > 8_640_000_000_000_000) return null;
-  return new Date(value).toLocaleString();
+/** Absolute local time in the app language; the Intl formatter throws on NaN, so guard it. */
+function readableTime(format: BoundFormat, value: number | null): string | null {
+  if (value === null || !Number.isFinite(value) || Math.abs(value) > 8_640_000_000_000_000)
+    return null;
+  return format.formatDate(value, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 export function BufferReportRecoveryView<R extends BufferReportDisplay>({
   recovery,
@@ -61,18 +70,19 @@ export function BufferReportRecoveryView<R extends BufferReportDisplay>({
   sourceControl,
 }: Props<R>) {
   const t = useT();
+  const format = useFormat();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"held" | "all">("held");
   const [pathQuery, setPathQuery] = useState("");
   if (!recovery.visible)
     return (
-      <Text role="status" as="p" size="secondary" tone="secondary" className="p-3">
+      <Text as="p" size="secondary" tone="secondary" className="p-3">
         {t("Unlock project groups to inspect earlier file reports.")}
       </Text>
     );
   if (!recovery.available)
     return (
-      <Text role="status" as="p" size="secondary" tone="secondary" className="p-3">
+      <Text as="p" size="secondary" tone="secondary" className="p-3">
         {t("Earlier file reports are available in the desktop application.")}
       </Text>
     );
@@ -113,12 +123,19 @@ export function BufferReportRecoveryView<R extends BufferReportDisplay>({
               setPathQuery(event.target.value);
             }}
             aria-label={t("Search reported files")}
-            placeholder={t("Search reported files")}
+            placeholder={t("Filter by file path")}
           />
         </SearchInputGroup>
-        <Text role="status" as="div" size="caption" tone="secondary" className="recovery-status">
+        <Text as="div" size="caption" tone="secondary" className="recovery-status">
           <span>{t("{p0} reported files", { p0: details.buffers.length })}</span>
-          {pathQuery ? <span>{t("{p0} match", { p0: matched.length })}</span> : null}
+          {pathQuery ? (
+            <LiveText
+              text={t("Showing {p0} of {p1}", {
+                p0: matched.length,
+                p1: details.buffers.length,
+              })}
+            />
+          ) : null}
         </Text>
         <div className="recovery-body">
           {pathRows.length ? (
@@ -177,7 +194,7 @@ export function BufferReportRecoveryView<R extends BufferReportDisplay>({
     );
   }
   return (
-    <section className="recovery-pane" aria-label={t("Earlier file reports")}>
+    <section className="recovery-pane">
       <div className="recovery-toolbar">
         <InfoPopover>
           {t("Inspecting a report never changes files or removes its protection.")}
@@ -199,7 +216,7 @@ export function BufferReportRecoveryView<R extends BufferReportDisplay>({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             aria-label={t("Search loaded reports")}
-            placeholder={t("Search loaded reports")}
+            placeholder={t("Filter by window or report number")}
           />
         </SearchInputGroup>
         <Button
@@ -212,17 +229,17 @@ export function BufferReportRecoveryView<R extends BufferReportDisplay>({
           {recovery.loaded ? t("Refresh reports") : t("Check reports")}
         </Button>
       </div>
-      <Text role="status" as="div" size="caption" tone="secondary" className="recovery-status">
+      <Text as="div" size="caption" tone="secondary" className="recovery-status">
         {recovery.loaded ? (
           <>
             <span>
-              {t("{p0} loaded reports · {p1} need recovery", {
+              {t("Loaded: {p0} · Needs recovery: {p1}", {
                 p0: recovery.records.length,
                 p1: heldCount,
               })}
             </span>
             {rows.length !== scoped.length ? (
-              <span>{t("Showing {p0} of {p1}", { p0: rows.length, p1: scoped.length })}</span>
+              <LiveText text={t("Showing {p0} of {p1}", { p0: rows.length, p1: scoped.length })} />
             ) : null}
           </>
         ) : (
@@ -240,7 +257,7 @@ export function BufferReportRecoveryView<R extends BufferReportDisplay>({
             label={t("Earlier file reports")}
             renderItem={(row) => {
               const key = reportKey(row);
-              const time = readableTime(row.updatedAt);
+              const time = readableTime(format, row.updatedAt);
               return (
                 <div role="listitem" className="flex flex-wrap items-start gap-2 py-2">
                   <div className="min-w-0 basis-48 flex-1">

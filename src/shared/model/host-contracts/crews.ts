@@ -391,6 +391,18 @@ export const CrewsAgentDeleteParamsSchema = z.strictObject({
   ...project,
   agentId: text,
 });
+/**
+ * Renames or removes one library group on every member in a single Host transaction.
+ * `members` is the caller's view of the whole group with each profile's revision; the Host
+ * applies nothing when the group, a revision or the target name no longer matches.
+ */
+export const CrewsAgentGroupUpdateParamsSchema = z.strictObject({
+  ...project,
+  group: text,
+  /** The new label; absent removes `group` from its members. */
+  rename: text.optional(),
+  members: z.array(z.strictObject({ agentId: text, expectedUpdatedAt: z.number() })).max(1000),
+});
 
 export const CrewsStartParamsSchema = z.strictObject({
   ...project,
@@ -453,6 +465,9 @@ export const CrewsDeleteResultSchema = deleted;
 export const CrewsDeleteRunResultSchema = deleted;
 export const CrewsAgentSaveResultSchema = SavedCrewAgentSchema;
 export const CrewsAgentDeleteResultSchema = deleted;
+export const CrewsAgentGroupUpdateResultSchema = z.strictObject({
+  updated: z.number().int().min(0),
+});
 export const CrewsStartResultSchema = CrewRunSchema;
 export const CrewsGetResultSchema = CrewRunDetailSchema;
 export const CrewsAssignResultSchema = CrewAssignmentSchema;
@@ -558,6 +573,10 @@ export const CREWS_RPC_SCHEMAS = {
   "crews.agent.delete": {
     params: CrewsAgentDeleteParamsSchema,
     result: CrewsAgentDeleteResultSchema,
+  },
+  "crews.agent.group.update": {
+    params: CrewsAgentGroupUpdateParamsSchema,
+    result: CrewsAgentGroupUpdateResultSchema,
   },
   "crews.start": {
     params: CrewsStartParamsSchema,

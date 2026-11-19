@@ -138,3 +138,43 @@ it("keeps the tabs array and a memoized consumer when an update changes nothing"
     act(() => root.unmount());
   }
 });
+
+it("does not re-render for a change to an ordinary conversation, only for a hidden child", () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const root = createRoot(document.createElement("div"));
+  const session = { ...newSession("codex", "/repo"), id: "ordinary" };
+  setSessions([session]);
+  const seed = { session, tab: newTab(session.id) };
+  let renders = 0;
+  function Harness() {
+    useTabState({ seed, windowTransfer: null, resumed: null });
+    renders += 1;
+    return null;
+  }
+  try {
+    act(() => root.render(createElement(Harness)));
+    const rendersBefore = renders;
+    act(() => setSessions([{ ...session, busy: true, title: "Renamed" }]));
+    act(() => setSessions([{ ...session, busy: false }]));
+    expect(renders).toBe(rendersBefore);
+    const child = {
+      ...newSession("codex", "/repo"),
+      id: "child",
+      modelSettings: {
+        delegationParent: JSON.stringify({
+          parentSessionId: session.id,
+          runId: "run",
+          kind: "subagent",
+          model: "codex:m",
+          startedAt: 1,
+        }),
+      },
+    };
+    act(() => setSessions([session, child]));
+    expect(renders).toBeGreaterThan(rendersBefore);
+  } finally {
+    act(() => root.unmount());
+    setSessions([]);
+    vi.unstubAllGlobals();
+  }
+});

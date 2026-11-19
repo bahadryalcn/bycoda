@@ -58,9 +58,11 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.clearAllMocks();
 });
+// The accessible name is the label plus its count badge; match the label alone.
 const button = (name: string) =>
   [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-    (node) => (node.getAttribute("aria-label") ?? node.textContent) === name,
+    (node) =>
+      (node.getAttribute("aria-label") ?? node.textContent?.replace(/\d+$/, "")) === name,
   )!;
 const disabled = (node: HTMLButtonElement) =>
   node.disabled || node.getAttribute("aria-disabled") === "true";

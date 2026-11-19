@@ -6,9 +6,9 @@ import {
   withProviderRetirement,
 } from "../../core/providerRetirement";
 import { asRecord } from "../../../../shared/lib/records";
+import { applyProbedCatalog } from "../../core/catalogProbe";
 import { homeDir } from "../../../../platform/tauri/fs";
 import {
-  setHarnessModels,
   type AgentModel,
   type ModelSetting,
   type ModelSettingChoice,
@@ -39,13 +39,7 @@ let inflight: Promise<void> | null = null;
 export function refreshCursorCatalog(): Promise<void> {
   if (inflight) return inflight;
   inflight = discoverCursorModels()
-    .then((models) => {
-      if (models.length > 0) setHarnessModels("cursor", models);
-    })
-    .catch((error: unknown) => {
-      assertOptionalProviderProbeError(error);
-      console.debug("[bycoda] cursor catalog", error);
-    })
+    .then((models) => applyProbedCatalog("cursor", models))
     .finally(() => {
       inflight = null;
     });

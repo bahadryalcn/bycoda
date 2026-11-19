@@ -60,7 +60,7 @@ import { loadResumeAtReset } from "../../../features/settings/model/settings";
 import { selectedAnswerLabels } from "../../../features/sessions/model/userQuestion";
 import type { HarnessEvent } from "./types";
 import {
-  COMPACTING_TEXT,
+  compactingText,
   COMPACTION_STATUS_KEY,
   isRunningCompaction,
 } from "../../../features/sessions/model/compactionStatus";
@@ -1016,7 +1016,7 @@ function applyCompactionStatus(
     return appendBlock(session, {
       id: crypto.randomUUID(),
       role: "system",
-      text: text || COMPACTING_TEXT,
+      text: text || compactingText(),
       statusKey: COMPACTION_STATUS_KEY,
       statusRunningSince: Date.now(),
     });

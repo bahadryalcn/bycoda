@@ -55,6 +55,18 @@ const scopeLabel = {
   workspace: "Workspace",
 };
 const periodLabel = { all: "All time", weekly: "Rolling 7 days", fiveHour: "5 hours" };
+type ProjectCatalog = {
+  groups: ReturnType<typeof loadProjectGroups>;
+  recents: string[];
+};
+
+function readProjectCatalog(): ProjectCatalog {
+  return {
+    groups: loadProjectGroups(),
+    recents: loadRecents().map((p) => p.path),
+  };
+}
+
 const subscribeNothing = () => () => {};
 const clientSnapshot = () => true;
 const serverSnapshot = () => false;
@@ -77,14 +89,31 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
     error: string;
     now: number;
   } | null>(null);
+  const [catalog, setCatalog] = useState<ProjectCatalog>({ groups: [], recents: [] });
   const [writeError, setError] = useState("");
   const [editor, setEditor] = useState<UsageBudget | "new" | null>(null);
   const [saved, setSaved] = useState(false);
   const addButton = useRef<HTMLButtonElement>(null);
+  // Project storage is read here, in the handler, so the editor opens with
+  // current targets without a storage read on every render.
+  const openEditor = (next: UsageBudget | "new") => {
+    setCatalog(readProjectCatalog());
+    setEditor(next);
+    setSaved(false);
+  };
   useEffect(() => subscribeUsageBudgets(() => setVersion((v) => v + 1)), []);
+  // Hidden tabs skip the minute tick; becoming visible re-reads once so the
+  // readings are fresh without polling in the background.
   useEffect(() => {
-    const timer = window.setInterval(() => setVersion((v) => v + 1), 60_000);
-    return () => window.clearInterval(timer);
+    const bump = () => {
+      if (!document.hidden) setVersion((v) => v + 1);
+    };
+    const timer = window.setInterval(bump, 60_000);
+    document.addEventListener("visibilitychange", bump);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", bump);
+    };
   }, []);
   useEffect(() => {
     let cancelled = false;
@@ -94,7 +123,8 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
         const instant = Date.now();
         const reader = createBudgetReader(getSessions(), instant);
         const rows = await Promise.all(rules.map(async (b) => [b.id, await reader(b)] as const));
-        if (!cancelled)
+        if (!cancelled) {
+          setCatalog(readProjectCatalog());
           setLoad({
             version,
             refresh,
@@ -103,6 +133,7 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
             error: "",
             now: instant,
           });
+        }
       } catch {
         if (!cancelled)
           setLoad({
@@ -171,29 +202,40 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
                 "Local rules can overlap. Their readings are not added together and provider quota percentages are never pooled.",
               )}
             </p>
-            <p>
-              {t(
-                "Token budgets include input, output and cache tokens from local records. Project and workspace reports use 15-minute buckets; boundary buckets are included. Session budgets require complete turn metrics. Percentage rules compare the selected account's weekly or 5-hour usage with your threshold; they do not reserve provider capacity. Missing or stale data blocks new turns only when blocking is enabled. Running turns can exceed a budget.",
-              )}
-            </p>
+            <ul className="list-disc space-y-1 pl-4">
+              <li>
+                {t("Token budgets count input, output and cache tokens from local records.")}
+              </li>
+              <li>
+                {t(
+                  "Project and workspace reports use 15-minute buckets, including boundary buckets.",
+                )}
+              </li>
+              <li>{t("Session budgets need complete turn metrics.")}</li>
+              <li>
+                {t(
+                  "Percentage rules compare the account's weekly or 5-hour usage with your threshold. They do not reserve provider capacity.",
+                )}
+              </li>
+              <li>
+                {t("Missing or stale data blocks new turns only when blocking is enabled.")}
+              </li>
+              <li>{t("Running turns can exceed a budget.")}</li>
+            </ul>
           </InfoPopover>
           {(["block", "monitor"] as const).map((action) => {
             const count = visible.filter((budget) => budget.action === action).length;
             return count ? (
               <Badge key={action}>
-                {count} {t(action === "block" ? "Block new turns" : "Monitor only")}
+                {action === "block"
+                  ? t("{p0} blocking", { p0: count })
+                  : t("{p0} monitor only", { p0: count })}
               </Badge>
             ) : null;
           })}
         </div>
         {visible.length || editor ? (
-          <Button
-            ref={addButton}
-            onClick={() => {
-              setEditor("new");
-              setSaved(false);
-            }}
-          >
+          <Button ref={addButton} onClick={() => openEditor("new")}>
             {t("Add budget")}
           </Button>
         ) : null}
@@ -205,10 +247,7 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
           description={t("No usage budgets. Add a project, session or workspace budget.")}
           action={{
             label: t("Add budget"),
-            onClick: () => {
-              setEditor("new");
-              setSaved(false);
-            },
+            onClick: () => openEditor("new"),
           }}
         />
       ) : null}
@@ -220,9 +259,9 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
           budget={editor === "new" ? undefined : editor}
           sessions={sessions.filter((s) => !isProjectLockedIn(lock, s.cwd))}
           projectPaths={[
-            ...new Set([...loadRecents().map((p) => p.path), ...sessions.map((s) => s.cwd)]),
+            ...new Set([...catalog.recents, ...sessions.map((s) => s.cwd)]),
           ].filter((p) => !isProjectLockedIn(lock, p))}
-          groups={loadProjectGroups().filter((g) => !lock.lockedGroupIds.has(g.id))}
+          groups={catalog.groups.filter((g) => !lock.lockedGroupIds.has(g.id))}
           onCancel={() => {
             setEditor(null);
             addButton.current?.focus();
@@ -266,7 +305,7 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
                   {budget.scope === "machine"
                     ? t("Supported local Codex and Claude usage")
                     : budget.scope === "workspace"
-                      ? (loadProjectGroups().find((group) => group.id === budget.target)?.name ??
+                      ? (catalog.groups.find((group) => group.id === budget.target)?.name ??
                         t("Workspace unavailable"))
                       : budget.scope === "session"
                         ? (sessions.find((session) => session.id === budget.target)?.title ??
@@ -277,10 +316,7 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
               <div className="flex gap-1">
                 <Button
                   variant="ghost"
-                  onClick={() => {
-                    setEditor(budget);
-                    setSaved(false);
-                  }}
+                  onClick={() => openEditor(budget)}
                 >
                   {t("Edit")}
                 </Button>
@@ -562,6 +598,13 @@ function BudgetEditor({
             { value: "monitor", label: t("Monitor only") },
             { value: "block", label: t("Block new turns") },
           ]}
+          note={
+            action === "block" ? (
+              <Text as="p" size="secondary">
+                {t("Missing or stale data blocks new turns. Running turns can exceed the budget.")}
+              </Text>
+            ) : undefined
+          }
         />
         <TextField
           label={t("Budget name (optional)")}
@@ -600,8 +643,9 @@ function BudgetEditor({
 
 function BudgetSelect({
   info,
+  note,
   ...props
-}: ComponentProps<typeof SearchableSelect> & { info?: ReactNode }) {
+}: ComponentProps<typeof SearchableSelect> & { info?: ReactNode; note?: ReactNode }) {
   return (
     <div className="space-y-1">
       <Text tone="inherit" weight="medium" className="flex items-center gap-1">
@@ -609,6 +653,7 @@ function BudgetSelect({
         {info}
       </Text>
       <SearchableSelect hideLabel {...props} />
+      {note}
     </div>
   );
 }

@@ -105,9 +105,9 @@ fn live_read() {
     let messages = call(
         &account,
         &mut secret,
-        |a, s| email::thread_messages(a, s, &id),
-        |a, s| slack::thread_messages(a, s, &id),
-        |a, s| discord::thread_messages(a, s, &id),
+        |a, s| email::thread_messages(a, s, &id, None).map(|page| page.messages),
+        |a, s| slack::thread_messages(a, s, &id, None).map(|page| page.messages),
+        |a, s| discord::thread_messages(a, s, &id, None).map(|page| page.messages),
     )
     .expect("thread messages");
     println!("first thread messages: {}", messages.len());
@@ -210,10 +210,11 @@ fn live_browser_sign_in() {
     }
     if let Some(first) = threads.first() {
         let messages = match provider {
-            Provider::Slack => slack::thread_messages(&account, &mut secret, &first.id),
-            _ => email::thread_messages(&account, &mut secret, &first.id),
+            Provider::Slack => slack::thread_messages(&account, &mut secret, &first.id, None),
+            _ => email::thread_messages(&account, &mut secret, &first.id, None),
         }
-        .expect("messages");
+        .expect("messages")
+        .messages;
         println!(
             "first thread messages: {} outbound={}",
             messages.len(),
@@ -240,10 +241,11 @@ fn live_browser_sign_in() {
             sent.body.chars().count()
         );
         let after = match provider {
-            Provider::Slack => slack::thread_messages(&account, &mut secret, &thread.id),
-            _ => email::thread_messages(&account, &mut secret, &thread.id),
+            Provider::Slack => slack::thread_messages(&account, &mut secret, &thread.id, None),
+            _ => email::thread_messages(&account, &mut secret, &thread.id, None),
         }
-        .expect("messages after reply");
+        .expect("messages after reply")
+        .messages;
         println!(
             "reply visible: {}",
             after

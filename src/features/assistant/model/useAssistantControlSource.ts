@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { withTimeout } from "../../../shared/lib/withTimeout";
 
-let registrationWork = Promise.resolve();
+/** Per-(Room, Host) chains: a slow or unreachable Host never delays another Room's registration. */
+const registrationWork = new Map<string, Promise<void>>();
 let registrationSequence = 0;
 type Registration = {
   threadId: string;
@@ -12,6 +13,9 @@ type Registration = {
   background: number;
   legacyActive: boolean;
   timer?: ReturnType<typeof setInterval>;
+  /** A heartbeat for this source is queued or in flight; further ticks add nothing. */
+  heartbeatQueued: boolean;
+  onVisible?: () => void;
   status: "pending" | "registered" | "unavailable";
   listeners: Set<(status: "pending" | "registered" | "unavailable") => void>;
 };
@@ -55,12 +59,25 @@ export function waitForAssistantControlSource(
   });
 }
 
+/** Refresh the native lease. Skips when one is already pending, and for hidden interactive windows. */
+function heartbeat(source: Registration) {
+  if (source.heartbeatQueued || source.users === 0) return;
+  const role = source.interactive ? "interactive" : "background";
+  // A hidden interactive Room is not the user's surface; background ownership keeps its lease.
+  if (role === "interactive" && document.visibilityState === "hidden") return;
+  source.heartbeatQueued = true;
+  void register(source, true, role).finally(() => {
+    source.heartbeatQueued = false;
+  });
+}
+
 function register(
   source: Registration,
   active: boolean,
   role: "interactive" | "background" = "interactive",
-) {
-  registrationWork = registrationWork
+): Promise<void> {
+  const key = JSON.stringify([source.threadId, source.environmentId]);
+  const work = (registrationWork.get(key) ?? Promise.resolve())
     .then(async () => {
       if (active && source.users === 0) return;
       const send = async (command: string, desiredActive: boolean, withRole: boolean) =>
@@ -95,7 +112,7 @@ function register(
       if (active && source.users > 0) {
         source.status = "registered";
         source.listeners.forEach((listener) => listener(source.status));
-        notifySource(JSON.stringify([source.threadId, source.environmentId]));
+        notifySource(key);
       }
     })
     .catch(() => {
@@ -103,9 +120,15 @@ function register(
       if (active && source.users > 0) {
         source.status = "unavailable";
         source.listeners.forEach((listener) => listener(source.status));
-        notifySource(JSON.stringify([source.threadId, source.environmentId]));
+        notifySource(key);
       }
     });
+  registrationWork.set(key, work);
+  void work.then(() => {
+    // The chain ends here once nothing newer queued behind it.
+    if (registrationWork.get(key) === work) registrationWork.delete(key);
+  });
+  return work;
 }
 
 /** Registers a real Room source; background ownership yields to interactive windows. */
@@ -131,14 +154,17 @@ export function useAssistantControlSource(
         interactive: 0,
         background: 0,
         legacyActive: false,
+        heartbeatQueued: false,
         status: "pending",
         listeners: new Set(),
       };
       const captured = source;
-      source.timer = setInterval(
-        () => register(captured, true, captured.interactive ? "interactive" : "background"),
-        15_000,
-      );
+      source.timer = setInterval(() => heartbeat(captured), 15_000);
+      // Heartbeats paused while hidden; renew the lease as soon as the window is shown again.
+      source.onVisible = () => {
+        if (document.visibilityState === "visible") heartbeat(captured);
+      };
+      document.addEventListener("visibilitychange", source.onVisible);
       registrations.set(key, source);
     }
     const previousRole = source.interactive
@@ -164,6 +190,7 @@ export function useAssistantControlSource(
         return;
       }
       clearInterval(captured.timer);
+      if (captured.onVisible) document.removeEventListener("visibilitychange", captured.onVisible);
       registrations.delete(key);
       notifySource(key);
       register(captured, false);

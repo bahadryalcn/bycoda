@@ -9,6 +9,9 @@ const mocks = vi.hoisted(() => ({
   log: "Custom agent loaded",
   tool: false,
   acp: false,
+  hold: false,
+  killFails: false,
+  remove: vi.fn(),
 }));
 vi.mock("../../core/child", () =>
   processConstructions.mock({
@@ -19,6 +22,9 @@ vi.mock("../../core/child", () =>
       cwd: "/private/text",
       logPath: "/private/text/agent.log",
     }),
+    removeHarnessTextWorkspace: async (cwd: string) => {
+      mocks.remove(cwd);
+    },
     readHarnessTextFile: async () => mocks.log,
     resolveAntigravityBinary: async () => ({
       path: "/bin/agy",
@@ -84,6 +90,7 @@ vi.mock("../../core/child", () =>
         );
         return;
       }
+      if (mocks.hold) return;
       if (mocks.tool)
         callback(JSON.stringify({ event: "step_update", step_update: { step_type: "tool" } }));
       callback(
@@ -92,6 +99,7 @@ vi.mock("../../core/child", () =>
     },
     killChild: async (...args: unknown[]) => {
       mocks.kill(...args);
+      if (mocks.killFails) throw new Error("Kill failed");
       // Real killChild detaches only this original construction's watch. This
       // protocol fake models listener removal, not Native process retirement.
       mocks.callbacks.delete(args[0] as string);
@@ -111,6 +119,8 @@ beforeEach(() => {
   mocks.log = "Custom agent loaded";
   mocks.tool = false;
   mocks.acp = false;
+  mocks.hold = false;
+  mocks.killFails = false;
   mocks.callbacks.clear();
 });
 describe("isolated Antigravity text requests", () => {
@@ -198,6 +208,38 @@ describe("isolated Antigravity text requests", () => {
     await expect(runAntigravityTextPrompt({ cwd: "/project", prompt: "hello" })).rejects.toThrow(
       "attempted to use a tool",
     );
+  });
+  it("removes the private workspace after a successful request, once the agent is retired", async () => {
+    expect(await runAntigravityTextPrompt({ cwd: "/project", prompt: "hello" })).toBe("你好");
+    expect(mocks.remove).toHaveBeenCalledExactlyOnceWith("/private/text");
+    expect(mocks.kill.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.remove.mock.invocationCallOrder[0],
+    );
+  });
+  it("removes the private workspace when the agent reports a failure", async () => {
+    mocks.tool = true;
+    await expect(runAntigravityTextPrompt({ cwd: "/project", prompt: "hello" })).rejects.toThrow(
+      "attempted to use a tool",
+    );
+    expect(mocks.remove).toHaveBeenCalledExactlyOnceWith("/private/text");
+  });
+  it("removes the private workspace when the request is cancelled mid-flight", async () => {
+    mocks.hold = true;
+    const controller = new AbortController();
+    const pending = runAntigravityTextPrompt({
+      cwd: "/project",
+      prompt: "hello",
+      signal: controller.signal,
+    });
+    await vi.waitFor(() => expect(mocks.write).toHaveBeenCalled());
+    controller.abort();
+    await expect(pending).rejects.toThrow("cancelled");
+    expect(mocks.remove).toHaveBeenCalledExactlyOnceWith("/private/text");
+  });
+  it("keeps the workspace when the agent cannot be verified stopped", async () => {
+    mocks.killFails = true;
+    expect(await runAntigravityTextPrompt({ cwd: "/project", prompt: "hello" })).toBe("你好");
+    expect(mocks.remove).not.toHaveBeenCalled();
   });
   it("does not launch an already cancelled request", async () => {
     const controller = new AbortController();

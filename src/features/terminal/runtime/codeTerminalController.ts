@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { featureHost } from "../../connections/public/hostFeatureClient";
 import { remoteRequest } from "../../connections/public/connections";
 import { parseRemotePath } from "../../connections/public/remoteProjects";
@@ -31,6 +32,29 @@ export type CodeTerminalOptions = {
   isCurrent(): boolean;
 };
 
+/** `progress` made visible progress (or more is pending), `idle` read nothing new, `failed` could not read. */
+export type CodeTerminalReadOutcome = "progress" | "idle" | "failed";
+
+/** Keeps the latest CODE_OUTPUT_LIMIT code units without splitting a grapheme. */
+function boundOutput(output: string): string {
+  if (output.length <= CODE_OUTPUT_LIMIT) return output;
+  const cut = output.length - CODE_OUTPUT_LIMIT;
+  // Segment only a window around the cut; a cluster reaching the window end falls back to the full tail.
+  const windowStart = Math.max(0, cut - 64);
+  const firstBoundary = (end: number) => {
+    let start = windowStart;
+    for (const part of graphemes(output.slice(windowStart, end))) {
+      if (start >= cut) break;
+      start += part.length;
+    }
+    return start;
+  };
+  const windowEnd = cut + 64;
+  let start = firstBoundary(windowEnd);
+  if (start >= windowEnd && windowEnd < output.length) start = firstBoundary(output.length);
+  return output.slice(start);
+}
+
 /** One explicit click owns one process; reads and failures never replay its launch. */
 export function createCodeTerminal(options: CodeTerminalOptions) {
   let state: CodeTerminalState = {
@@ -42,28 +66,26 @@ export function createCodeTerminal(options: CodeTerminalOptions) {
     exitCode: null,
   };
   const listeners = new Set<() => void>();
-  let readHost: (() => Promise<void>) | undefined;
+  let readHost: (() => Promise<CodeTerminalReadOutcome>) | undefined;
   let stopHost: (() => Promise<void>) | undefined;
   let started = false;
-  let reading: Promise<void> | undefined;
+  let reading: Promise<CodeTerminalReadOutcome> | undefined;
   const update = (patch: Partial<CodeTerminalState>) => {
     state = { ...state, ...patch };
     for (const listener of listeners) listener();
   };
-  const append = (data: string, truncated = false) => {
+  /** Appends in order; undefined when the read carries nothing new for the visible state. */
+  const outputPatch = (data: string, truncated: boolean): Partial<CodeTerminalState> | undefined => {
+    if (!data && (!truncated || state.truncated)) return undefined;
     const output = state.output + data;
-    let bounded = output;
-    if (output.length > CODE_OUTPUT_LIMIT) {
-      const parts = graphemes(output);
-      let start = parts.length;
-      let remaining = CODE_OUTPUT_LIMIT;
-      while (start > 0 && parts[start - 1].length <= remaining) remaining -= parts[--start].length;
-      bounded = parts.slice(start).join("");
-    }
-    const patch = {
-      output: bounded,
+    return {
+      output: boundOutput(output),
       truncated: state.truncated || truncated || output.length > CODE_OUTPUT_LIMIT,
     };
+  };
+  const append = (data: string, truncated = false) => {
+    const patch = outputPatch(data, truncated);
+    if (!patch) return;
     // xterm already draws native chunks. Only notify its React owner at process settlement.
     if (options.native) state = { ...state, ...patch };
     else update(patch);
@@ -72,16 +94,18 @@ export function createCodeTerminal(options: CodeTerminalOptions) {
     if (!options.isCurrent())
       throw new Error("Conversation or working directory changed before execution.");
   };
-  const refresh = async () => {
-    if (!readHost || state.phase === "exited") return;
+  const refresh = async (): Promise<CodeTerminalReadOutcome> => {
+    // Before the Host process exists there is nothing to read yet; keep the base cadence.
+    if (!readHost) return "progress";
+    if (state.phase === "exited") return "idle";
     if (reading) return reading;
     reading = readHost()
-      .catch((reason) =>
-        update({
-          phase: "unknown",
-          error: reason instanceof Error ? reason.message : String(reason),
-        }),
-      )
+      .catch((reason): CodeTerminalReadOutcome => {
+        const error = errorText(reason);
+        // A repeated identical failure must not re-render the dialog.
+        if (state.phase !== "unknown" || state.error !== error) update({ phase: "unknown", error });
+        return "failed";
+      })
       .finally(() => {
         reading = undefined;
       });
@@ -159,11 +183,17 @@ export function createCodeTerminal(options: CodeTerminalOptions) {
             limit: 65536,
           });
           cursor = result.cursor;
-          append(result.output, result.truncated);
+          const output = outputPatch(result.output, result.truncated);
           // The exit record can arrive before the final output page is drained.
-          if (result.terminal.state === "exited" && !result.hasMore)
-            update({ phase: "exited", exitCode: result.terminal.exitCode, error: undefined });
-          else update({ phase: "running", error: undefined });
+          const next: Partial<CodeTerminalState> =
+            result.terminal.state === "exited" && !result.hasMore
+              ? { phase: "exited", exitCode: result.terminal.exitCode, error: undefined }
+              : { phase: "running", error: undefined };
+          const patch = { ...output, ...next };
+          // One notification per read, and none when nothing visible changed.
+          if ((Object.keys(patch) as (keyof CodeTerminalState)[]).some((key) => state[key] !== patch[key]))
+            update(patch);
+          return output || result.hasMore || patch.phase === "exited" ? "progress" : "idle";
         };
         stopHost = async () => {
           await request("terminals.close", { id: terminal.id });
@@ -173,7 +203,7 @@ export function createCodeTerminal(options: CodeTerminalOptions) {
         discardTerminalRun(state.id);
         update({
           phase: "unknown",
-          error: reason instanceof Error ? reason.message : String(reason),
+          error: errorText(reason),
         });
       }
     },
@@ -191,7 +221,7 @@ export function createCodeTerminal(options: CodeTerminalOptions) {
             "Terminal identity is unknown. Inspect the original machine before stopping or starting another command.",
           );
       } catch (reason) {
-        update({ error: reason instanceof Error ? reason.message : String(reason) });
+        update({ error: errorText(reason) });
       }
     },
   };

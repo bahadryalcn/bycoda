@@ -20,6 +20,18 @@ const denied =
 const timedOut = "SSH timed out connecting to the machine.";
 
 describe("connectionOutcome", () => {
+  it("gives no status for a request refused because the machine is turned off", () => {
+    const refused = Object.assign(new Error("Machine connection is disabled"), {
+      code: "RPC_WS_DISABLED",
+    });
+    expect(connectionOutcome(refused)).toEqual({});
+    for (const state of [
+      { status: "connected", lastSeen: 10 },
+      { status: "unreachable", error: "down", lastSeen: 10 },
+    ] as const)
+      expect(reduceConnection(state, { type: "failure", error: refused, at: 20 })).toBe(state);
+  });
+
   it.each(["RPC_WS_BLOCKED", "RPC_WS_TLS", "RPC_WS_SCHEMA"])(
     "holds sending for %s until explicit recovery",
     (code) => {

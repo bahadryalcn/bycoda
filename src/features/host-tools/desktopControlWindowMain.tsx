@@ -2,49 +2,14 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { DesktopControlStrip } from "./DesktopControlStrip";
-import {
-  applyAppearancePreferences,
-  initAppearancePreferences,
-  loadAppearancePreferences,
-} from "../settings/model/appearancePreferences";
-import {
-  applyAccentColor,
-  applyThemeDarkLightness,
-  applyThemePreference,
-  applyThemeTint,
-  loadAccentColor,
-  loadThemeDarkLightness,
-  loadThemeHue,
-  loadThemePreference,
-  loadThemeSaturation,
-  SCHEME_CHANGE_EVENT,
-  subscribeThemeStorage,
-  watchSystemColorScheme,
-  type ColorScheme,
-} from "../settings/model/appearance";
+import { bootSecondaryWindowAppearance } from "../settings/model/secondaryWindowAppearance";
 import { languageReady, t, useLocale } from "../../shared/i18n";
 import { installNativeContextMenuGuard } from "../../shared/lib/nativeContextMenu";
 import "../../styles/index.css";
 import { InlineError } from "../../shared/ui/InlineError";
 installNativeContextMenuGuard();
-function appearance() {
-  applyAppearancePreferences(loadAppearancePreferences());
-  applyAccentColor(loadAccentColor());
-  applyThemeTint(loadThemeHue(), loadThemeSaturation());
-  applyThemeDarkLightness(loadThemeDarkLightness());
-  applyThemePreference(loadThemePreference());
-}
-initAppearancePreferences();
-appearance();
-subscribeThemeStorage(appearance);
-watchSystemColorScheme();
-window.addEventListener(SCHEME_CHANGE_EVENT, (event) => {
-  void getCurrentWindow()
-    .setTheme((event as CustomEvent<ColorScheme>).detail)
-    .catch(() => undefined);
-});
+bootSecondaryWindowAppearance();
 function IndicatorWindow() {
   useLocale();
   const root = useRef<HTMLDivElement>(null);

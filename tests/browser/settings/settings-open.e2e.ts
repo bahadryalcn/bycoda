@@ -138,7 +138,7 @@ test("settings expose advanced controls without opening a menu", async ({ page }
       await form.getByRole("button", { name: "Add a computer", exact: true }).first().click();
       const addDialog = page.getByRole("dialog", { name: "Add a computer", exact: true });
       await addDialog.getByRole("tab", { name: "Enter address", exact: true }).click();
-      const machineForm = addDialog.getByRole("form", { name: "Add a new machine", exact: true });
+      const machineForm = addDialog.getByRole("form", { name: "Add a new computer", exact: true });
       const hostUrl = machineForm.getByRole("radio", { name: "Host URL", exact: true });
       await hostUrl.focus();
       await hostUrl.press("Space");

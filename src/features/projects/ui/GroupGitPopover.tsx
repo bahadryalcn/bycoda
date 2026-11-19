@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { Text } from "../../../shared/ui/Text";
@@ -42,7 +43,7 @@ async function loadDetail(path: string, isCancelled: () => boolean): Promise<Det
       hasUpstream: index.upstream != null,
     };
   } catch (error) {
-    return { state: "error", message: error instanceof Error ? error.message : String(error) };
+    return { state: "error", message: errorText(error) };
   }
 }
 
@@ -102,7 +103,7 @@ export function GroupGitPopover({
       anchor={anchor}
       align="start"
       width={320}
-      role="dialog"
+      kind="dialog"
       aria-label={t("{p0} git overview", { p0: name })}
       onDismiss={onDismiss}
       className="overflow-y-auto p-1"

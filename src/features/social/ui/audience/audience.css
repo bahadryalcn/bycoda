@@ -70,9 +70,6 @@
   list-style: none;
 }
 
-.audience-list-name {
-}
-
 .audience-heading {
   margin: 0.5rem 0 0.25rem;
 }
@@ -126,9 +123,6 @@
 .audience-person-name {
 }
 
-.audience-strong {
-}
-
 .audience-score {
   display: inline-flex;
   align-items: center;
@@ -151,10 +145,6 @@
 
 .audience-bulk-count {
   font-variant-numeric: tabular-nums;
-}
-
-.audience-add {
-  align-self: flex-start;
 }
 
 .audience-between {
@@ -193,12 +183,6 @@
   flex-direction: column;
   gap: 0.125rem;
   min-width: 0;
-}
-
-.audience-trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
 }
 
 /* A sequence row: details on the left, Start/Pause and Edit on the right; stacked in narrow panes. */
@@ -254,11 +238,6 @@
   gap: 0.25rem;
 }
 
-/* A platform name is one unit: wrap between badges, never inside one ("WhatsA pp"). */
-.audience-platforms > * {
-  white-space: nowrap;
-}
-
 .audience-search {
   flex: 0 1 18rem;
   min-width: 0;
@@ -292,10 +271,6 @@
 
 .audience-pipeline li {
   padding: 0.125rem 0.5rem;
-}
-
-.audience-stat-meter {
-  margin-top: 0.25rem;
 }
 
 /* Collection rows: the name button takes the row, the actions menu sits at its end. */

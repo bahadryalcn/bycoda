@@ -1,7 +1,8 @@
+import { DocumentProblemError, type DocumentProblem } from "./documentViewer";
 import type { Spreadsheet } from "./spreadsheet";
 
 export const SPREADSHEET_TIMEOUT = 15_000;
-type Reply = { ok: true; book: Spreadsheet } | { ok: false; message: string };
+type Reply = { ok: true; book: Spreadsheet } | { ok: false; problem: DocumentProblem };
 export function loadSpreadsheet(
   bytes: Uint8Array,
   signal: AbortSignal,
@@ -35,17 +36,15 @@ export function loadSpreadsheet(
     };
     const abort = () => finish(new DOMException("Cancelled", "AbortError"));
     const timer = setTimeout(
-      () =>
-        finish(
-          new Error("Spreadsheet preview exceeded 15 seconds. Open it in the default app instead."),
-        ),
+      () => finish(new DocumentProblemError({ reason: "timeout", ms: timeout })),
       timeout,
     );
     signal.addEventListener("abort", abort, { once: true });
     worker.onmessage = (event: MessageEvent<Reply>) =>
-      event.data.ok ? finish(undefined, event.data.book) : finish(new Error(event.data.message));
-    worker.onerror = () =>
-      finish(new Error("Spreadsheet worker failed. Open it in the default app instead."));
+      event.data.ok
+        ? finish(undefined, event.data.book)
+        : finish(new DocumentProblemError(event.data.problem));
+    worker.onerror = () => finish(new DocumentProblemError({ reason: "workerFailed" }));
     try {
       // Transfer a copy: other document views still own the original bytes.
       const copy = bytes.slice();

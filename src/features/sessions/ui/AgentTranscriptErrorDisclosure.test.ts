@@ -96,7 +96,11 @@ describe("Bycoda CLI disclosure", () => {
     expect(trigger?.getAttribute("aria-expanded")).toBe("false");
     expect(row?.querySelector("pre")).toBeNull();
     expect(row?.textContent).toContain("Ranbycoda app notes.list");
-    expect(row?.querySelector('img[src="/brand/bycoda/mark-black.svg"]')).not.toBeNull();
+    expect(
+      row?.querySelector(
+        'img[src="/brand/bycoda/mark-black.svg"], img[src="/brand/bycoda/mark-white.svg"]',
+      ),
+    ).not.toBeNull();
     expect(container.textContent).not.toContain("Contents/MacOS/bycoda");
     expect(container.textContent).not.toContain('"title":"Ideas"');
     act(() => trigger?.click());

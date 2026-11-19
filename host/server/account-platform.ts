@@ -45,6 +45,12 @@ export async function createAccountPlatformRuntime(dependencies: Dependencies) {
   const links = new SessionTaskLinks(directory, {
     taskExists: async (id) =>
       (await dependencies.tasks.list(undefined, false)).some((task) => task.id === id),
+    // Covers Host-stored and desktop-only conversations; an unknown id throws.
+    sessionExists: async (id) =>
+      dependencies.queueSessionKnown(id).then(
+        () => true,
+        () => false,
+      ),
     now: Date.now,
   });
   const store = new SessionLifecycleStore(directory);
@@ -95,7 +101,8 @@ export async function createAccountPlatformRuntime(dependencies: Dependencies) {
     limits: dependencies.tasks.limits,
     queued: async (id) => (await dependencies.sessionQueues.get(id)).messages.length > 0,
     running: dependencies.hostRuns,
-    hasUnsentDraft: (id, windowMs) => drafts.hasUnsentDraft(id, windowMs),
+    hasUnsentDraft: (id, windowMs, devices) => drafts.hasUnsentDraft(id, windowMs, devices),
+    draftDevices: () => drafts.listDevices(),
   });
 
   // New work wakes a settled session once the Host accepted it; Stop and answers never do.

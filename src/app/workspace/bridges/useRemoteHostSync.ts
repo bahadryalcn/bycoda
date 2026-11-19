@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, type MutableRefObject } from "react";
 import { startProviderAccountHostSync } from "../../../features/providers/public/providerAccountHostSync";
+import { WorkspaceActionError } from "../../model/workspaceActionError";
 import { startModelEnabledHostSync } from "../../../features/sessions/model/modelEnabledHostSync";
 import { startBykitHostSync } from "../../../features/host-tools/public/bykitHostSync";
 import {
@@ -70,7 +71,10 @@ export function useRemoteHostSync(): RemoteHostSync {
   const onRefreshAdoptedSession = useCallback<RefreshAdoptedSession>(
     (sessionId, target, resolution) => {
       const refresh = refreshAdoptedSessionRef.current;
-      if (!refresh) return Promise.reject(new Error("Host unavailable. Try again."));
+      if (!refresh)
+        return Promise.reject(
+          new WorkspaceActionError("hostUnavailable", "Host unavailable. Try again."),
+        );
       return refresh(sessionId, target, resolution);
     },
     [],

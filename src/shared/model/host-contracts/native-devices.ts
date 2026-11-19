@@ -2,6 +2,8 @@ import { z } from "zod";
 import { SafeCounterSchema } from "./schemas";
 
 export const DevicePlatformSchema = z.enum(["ios", "android"]);
+/** The pinned expo-device-hub the Host installs; setup copy quotes this same value. */
+export const DEVICE_HUB_VERSION = "0.12.0";
 /** Who holds a device or browser lease right now; absent when nobody does. */
 export const LeaseHolderSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("session"), sessionId: z.string() }),

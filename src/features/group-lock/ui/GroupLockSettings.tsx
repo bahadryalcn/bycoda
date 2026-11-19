@@ -155,11 +155,12 @@ export function GroupLockSettings({
     ? listedGroups.filter((group) => group.name.toLocaleLowerCase().includes(groupSearch))
     : listedGroups;
   const searchable = listedGroups.length >= 6;
-  const groupSummary = t("{p0} groups · {p1} protected · {p2} locked", {
-    p0: listedGroups.length,
-    p1: protectedCount,
-    p2: lockedCount,
-  });
+  const groupSummary = t(
+    listedGroups.length === 1
+      ? "{p0} group · {p1} protected · {p2} locked"
+      : "{p0} groups · {p1} protected · {p2} locked",
+    { p0: listedGroups.length, p1: protectedCount, p2: lockedCount },
+  );
 
   const toggleLockable = (id: string, name: string, on: boolean) => {
     if (!on) setDialog({ kind: "remove-lock", id, name });
@@ -272,7 +273,7 @@ export function GroupLockSettings({
             className="shrink-0"
             disabled={!hasLockable}
             loading={Boolean(pendingWrites["lock-all"])}
-            loadingLabel={t("Updating...")}
+            loadingLabel={t("Updating…")}
             startIcon={<Lock className="icon-sm" />}
             tooltip={
               hasLockable

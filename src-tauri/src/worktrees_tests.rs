@@ -139,6 +139,86 @@ fn parses_literal_paths_and_worktree_flags() {
     assert!(!trees[1].is_main);
 }
 
+#[test]
+fn bounded_map_keeps_order_and_never_exceeds_the_limit() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let active = AtomicUsize::new(0);
+    let peak = AtomicUsize::new(0);
+    let items: Vec<usize> = (0..12).collect();
+    let results = map_bounded(&items, 3, |item| {
+        let now = active.fetch_add(1, Ordering::SeqCst) + 1;
+        peak.fetch_max(now, Ordering::SeqCst);
+        std::thread::sleep(std::time::Duration::from_millis(15));
+        active.fetch_sub(1, Ordering::SeqCst);
+        item * 2
+    })
+    .unwrap();
+    assert_eq!(results, items.iter().map(|item| item * 2).collect::<Vec<_>>());
+    assert!(peak.load(Ordering::SeqCst) <= 3);
+    assert!(map_bounded(&Vec::<usize>::new(), 3, |item| *item)
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn session_dirs_match_nested_sessions_once_per_worktree_in_row_order() {
+    let repo = repo();
+    let root = repo.0.join("repo");
+    let sibling = repo.0.join("repo-sibling");
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    std::fs::create_dir_all(&sibling).unwrap();
+    let text = |path: &Path| path_to_js(path);
+    let sessions = SessionDirs::new(vec![
+        ("root".into(), text(&root)),
+        ("nested".into(), text(&root.join("src"))),
+        ("again".into(), text(&root)),
+        ("sibling".into(), text(&sibling)),
+        ("gone".into(), text(&root.join("missing-directory"))),
+    ]);
+    // One resolved key per distinct directory, however many sessions share it.
+    assert_eq!(sessions.keys.len(), 4);
+    assert_eq!(
+        sessions.ids_under(&WorkingDirKey::new(&root)),
+        ["root", "nested", "again", "gone"]
+    );
+    assert_eq!(
+        sessions.ids_under(&WorkingDirKey::new(&sibling)),
+        ["sibling"]
+    );
+    assert!(contains_working_dir(&root, &root.join("src")));
+    assert!(!contains_working_dir(&root, &sibling));
+}
+
+#[test]
+fn session_ids_ignore_removed_sessions() {
+    let repo = repo();
+    let root = repo.0.join("repo");
+    let store = SessionStore::open_in_memory().unwrap();
+    let conn = store.lock_conn().unwrap();
+    for (id, removed) in [("kept", 0), ("removed", 1)] {
+        conn.execute("INSERT INTO sessions (id,cwd,harness,model,runtime_mode,title,blocks_json,created_at,updated_at,worktree_removed) VALUES (?1,?2,'codex','test','supervised','Fixture','[]',1,1,?3)", rusqlite::params![id, path_to_js(&root), removed]).unwrap();
+    }
+    assert_eq!(session_ids(&conn, &root).unwrap(), ["kept"]);
+}
+
+#[test]
+fn worktree_probes_report_dirty_clean_and_missing_in_order() {
+    let repo = repo();
+    let root = repo.0.join("repo");
+    let dirty = create(&root, "probe-dirty", "main", false).unwrap();
+    std::fs::write(Path::new(&dirty.path).join("untracked"), "fixture").unwrap();
+    let missing = repo.0.join("never-created");
+    // More entries than STATUS_PARALLELISM, so results must be reassembled.
+    let mut paths = vec![root.clone(), PathBuf::from(&dirty.path), missing];
+    paths.extend(std::iter::repeat(root.clone()).take(STATUS_PARALLELISM + 2));
+    let probes = map_bounded(&paths, STATUS_PARALLELISM, |path| probe_worktree(path)).unwrap();
+    assert_eq!(probes.len(), paths.len());
+    assert!(!probes[0].missing && probes[0].dirty == Some(false));
+    assert_eq!(probes[1].dirty, Some(true));
+    assert!(probes[2].missing && probes[2].dirty.is_none() && probes[2].unpushed.is_none());
+    assert!(probes[3..].iter().all(|probe| probe.dirty == Some(false)));
+}
+
 #[cfg(windows)]
 #[test]
 fn removal_deletes_long_paths_without_changing_repository_config() {

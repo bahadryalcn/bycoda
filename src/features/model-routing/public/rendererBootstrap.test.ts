@@ -22,7 +22,7 @@ vi.mock("./delegation", () => ({
 }));
 
 vi.mock("../model/liveCatalogFacts", () => ({
-  refreshLocalLiveCatalogFacts: refreshFacts,
+  startLocalLiveCatalogFactsSync: refreshFacts,
 }));
 
 afterEach(() => {

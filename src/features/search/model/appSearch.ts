@@ -444,10 +444,24 @@ export function conversationRowsFrom(
       cwd: session.cwd,
       harness: session.harness,
       title: session.title,
-      updatedAt: previous?.updatedAt ?? Date.now(),
+      updatedAt: previous?.updatedAt ?? liveActivityAt(session),
     });
   }
   return [...rows.values()];
+}
+
+/**
+ * Stable recency for a live session that has no history row: its latest
+ * recorded turn timestamp, or 0 (no recency bonus) when it records none.
+ * Never the wall clock, which would rebuild on every call and boost forever.
+ */
+function liveActivityAt(session: Session): number {
+  return Math.max(
+    0,
+    session.turnStoppedAt ?? 0,
+    session.statusRunningSince ?? 0,
+    session.backgroundSince ?? 0,
+  );
 }
 
 export function mergeHits(...lists: AppSearchHit[][]): AppSearchHit[] {

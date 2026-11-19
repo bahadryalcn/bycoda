@@ -1138,7 +1138,7 @@ export const AgentMarkdown = memo(function AgentMarkdown({
                   <InlineMessage tone="warning">
                     {t("Formatted preview unavailable. Showing source.")}
                   </InlineMessage>
-                  <div className="whitespace-pre-wrap">{paced.text}</div>
+                  <div className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]">{paced.text}</div>
                 </>
               ) : (
                 <MarkdownProseContext.Provider value={renderProse}>

@@ -34,21 +34,35 @@ export function summarizeOrchestration(
   };
 }
 
-export function orchestrationTaskLabel(
+/** Status code for a subagent row; the UI translates it at render time. */
+export type OrchestrationTaskLabelCode =
+  | "needsInput"
+  | "saved"
+  | "paused"
+  | "queued"
+  | "working"
+  | "stopping"
+  | "done"
+  | "failed"
+  | "needsReview"
+  | "interrupted"
+  | "cancelled";
+
+export function orchestrationTaskLabelCode(
   task: OrchestrationSummary["tasks"][number],
   summary: OrchestrationSummary,
-): string {
-  if (task.needsInput) return "Needs input";
-  if (!summary.live && ["running", "cancelling", "queued"].includes(task.status)) return "Saved";
-  if (summary.status === "paused" && task.status === "queued") return "Paused";
+): OrchestrationTaskLabelCode {
+  if (task.needsInput) return "needsInput";
+  if (!summary.live && ["running", "cancelling", "queued"].includes(task.status)) return "saved";
+  if (summary.status === "paused" && task.status === "queued") return "paused";
   return {
-    queued: "Queued",
-    running: "Working",
-    cancelling: "Stopping",
-    completed: "Done",
-    failed: "Failed",
-    blocked: "Needs review",
-    interrupted: "Interrupted",
-    cancelled: "Cancelled",
+    queued: "queued",
+    running: "working",
+    cancelling: "stopping",
+    completed: "done",
+    failed: "failed",
+    blocked: "needsReview",
+    interrupted: "interrupted",
+    cancelled: "cancelled",
   }[task.status];
 }

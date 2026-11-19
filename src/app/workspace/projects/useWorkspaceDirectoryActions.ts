@@ -23,8 +23,16 @@ import {
   newTab,
   setSplitRatio,
   type FocusDir,
+  type PaneEdge,
   type WorkspaceTab,
 } from "../../../features/workspace/model/layout";
+
+const EDGE_FOR_DIR: Record<FocusDir, PaneEdge> = {
+  left: "left",
+  right: "right",
+  up: "top",
+  down: "bottom",
+};
 import { removeTabFromGroup, tabGroupProject } from "../../../features/workspace/model/tabGroups";
 import {
   keepSessionChanges,
@@ -39,6 +47,7 @@ import { hostSessionBinding } from "../../../features/connections/model/sessionE
 export interface WorkspaceDirectoryActionsDeps {
   activeTab: WorkspaceTab | undefined;
   onFocusPane: (paneId: string) => void;
+  onMovePane: (fromId: string, toId: string, edge: PaneEdge) => void;
   windowTransferPendingRef: MutableRefObject<boolean>;
   movingTabIds: MutableRefObject<Set<string>>;
   setTabs: (update: WorkspaceTab[] | ((previous: WorkspaceTab[]) => WorkspaceTab[])) => void;
@@ -59,6 +68,7 @@ export interface WorkspaceDirectoryActionsDeps {
 export function useWorkspaceDirectoryActions({
   activeTab,
   onFocusPane,
+  onMovePane,
   windowTransferPendingRef,
   movingTabIds,
   setTabs,
@@ -81,6 +91,17 @@ export function useWorkspaceDirectoryActions({
       if (next) onFocusPane(next);
     },
     [activeTab, onFocusPane],
+  );
+
+  // Docks the focused pane on the neighbour's edge facing `dir`: the same move
+  // the pointer drop makes, so keyboard and drag share one code path.
+  const onMovePaneDir = useCallback(
+    (dir: FocusDir) => {
+      if (!activeTab) return;
+      const target = neighborLeafId(activeTab.layout, activeTab.focusedId, dir);
+      if (target) onMovePane(activeTab.focusedId, target, EDGE_FOR_DIR[dir]);
+    },
+    [activeTab, onMovePane],
   );
 
   const onRatio = useCallback(
@@ -259,6 +280,7 @@ export function useWorkspaceDirectoryActions({
 
   return {
     onFocusDir,
+    onMovePaneDir,
     onRatio,
     onCwdChange,
     onBranchChange,

@@ -50,7 +50,7 @@ for (const theme of ["light", "dark"]) {
       await address.fill("owner@new-machine");
       await expect(
         addDialog.getByText(
-          "Installs bycoda Host over SSH so you can run agents on this machine.",
+          "Installs bycoda Host over SSH so you can run agents on this computer.",
           { exact: true },
         ),
       ).toBeVisible();

@@ -200,7 +200,7 @@ export function NotificationAlerts() {
             label={event.label}
             dependsOn={notificationsEnabled}
             disabledReason={
-              notificationsEnabled && event.id === "taskbar" && !IS_WIN
+              event.id === "taskbar" && !IS_WIN
                 ? t(
                     "Taskbar badges and flashing are available only on Windows. Your choice is preserved.",
                   )
@@ -208,15 +208,6 @@ export function NotificationAlerts() {
             }
             feedback={saveFeedback(event.id)}
             disabled={event.id === "taskbar" && !IS_WIN}
-            info={
-              event.id === "taskbar" && !IS_WIN ? (
-                <InfoPopover>
-                  {t(
-                    "Taskbar badges and flashing are available only on Windows. Your choice is preserved.",
-                  )}
-                </InfoPopover>
-              ) : undefined
-            }
           >
             <Toggle
               label={event.label}
@@ -262,8 +253,6 @@ export function NotificationAlerts() {
         {/* No row id: search indexes the delivery time under the "daily-summary" entry above. */}
         <Row
           label={t("Delivery time")}
-          descriptionVisible
-          description={t("Uses this computer’s local clock.")}
           dependsOn={notificationsEnabled && summaryEnabled}
           disabledReason={
             notificationsEnabled

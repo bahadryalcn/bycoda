@@ -44,6 +44,7 @@ import {
   updateDeliveryProgress,
 } from "../../sessions/public/deliveryProgress";
 import { DeliveryUnknownError } from "../../../shared/lib/deliveryUnknown";
+import { TimeoutError, withTimeout } from "../../../shared/lib/withTimeout";
 import { LOCAL_HOST_REACHABLE_EVENT } from "./hostWake";
 import { hasInlineQueueAttachments, storeInlineQueueAttachments } from "./queuedAttachmentStorage";
 
@@ -67,6 +68,8 @@ export function useLocalSharedQueueClient(sessionId: string) {
 const IDLE_SYNC_MS = 60_000;
 /** Retry of a queue whose last look failed while the host is reachable: it doubles up to the safety pass. */
 const ERROR_RETRY_MS = 1_500;
+/** How long the dispatcher waits for one queue's Host request before it moves on to the next queue. */
+export const QUEUE_SYNC_DEADLINE_MS = 20_000;
 /** How long a claimed send may wait for the provider before Resume gives up on it. */
 export const HUNG_CLAIM_MS = 30_000;
 /** Queues another computer changed, to be read at once even if idle or hidden. */
@@ -574,6 +577,41 @@ export function useSharedLocalQueues(
         if (!sessionById(sessionsRef.current, id)) unshared.delete(id);
       if (pruned) notifyQueues();
     };
+    /** Queues whose Host request outlived the deadline and is still running. Its client
+     * keeps owning it (a second request would join it), so the dispatcher leaves the
+     * queue alone until it settles, then looks at it again. */
+    const stalled = new Map<string, Promise<void>>();
+    /** One queue's Host request, waited for at most the deadline; a failure is logged, never dropped. */
+    const bounded = async (
+      id: string,
+      entry: Entry,
+      work: Promise<void>,
+      label: string,
+    ): Promise<"settled" | "failed" | "stalled"> => {
+      try {
+        await withTimeout(work, QUEUE_SYNC_DEADLINE_MS, label);
+        return "settled";
+      } catch (error) {
+        if (!(error instanceof TimeoutError)) {
+          // The client already holds the queue with this reason; the retry backoff reads it.
+          console.warn(`${label} failed`, error);
+          return "failed";
+        }
+        console.warn(error.message);
+        entry.client.noteStalled("The Host did not answer in time. The queue waits for its answer.");
+        const late: Promise<void> = work
+          .catch(() => {})
+          .then(() => {
+            if (stalled.get(id) === late) stalled.delete(id);
+            if (stopped) return;
+            // A late answer is applied by the next look, never by this old pass.
+            woken.add(id);
+            runTick?.();
+          });
+        stalled.set(id, late);
+        return "stalled";
+      }
+    };
     const tick = async () => {
       if (running) {
         again = true;
@@ -628,9 +666,19 @@ export function useSharedLocalQueues(
         const candidates = wokenNow.size
           ? [...changed, ...syncOrder(sessionsRef.current).filter((s) => !wokenNow.has(s.id))]
           : syncOrder(sessionsRef.current);
-        for (const session of candidates) {
+        /** A request outlived its deadline: the rest of the pass goes to a fresh one (the stalled
+         * queue is skipped there) with the wakes and passes this one had still to serve. */
+        const stopAfterStall = (index: number) => {
+          for (const later of candidates.slice(index + 1))
+            if (wokenNow.has(later.id)) woken.add(later.id);
+          if (forceAll) safety = true;
+          if (catchingUp) catchUp = true;
+          again = true;
+        };
+        for (const [index, session] of candidates.entries()) {
           if (stopped) return;
           if (!queueEligible(session)) continue;
+          if (stalled.has(session.id)) continue;
           let entry = localQueues.get(session.id);
           const justChanged = wokenNow.has(session.id);
           if (justChanged && entry) entry.nextIdleSyncAt = 0;
@@ -790,7 +838,16 @@ export function useSharedLocalQueues(
             entry.nextIdleSyncAt = Date.now() + IDLE_SYNC_MS;
             if (!entry.client.snapshot().loaded) {
               entry.observed = fields(session);
-              await entry.client.initialize(entry.observed);
+              const first = await bounded(
+                session.id,
+                entry,
+                entry.client.initialize(entry.observed),
+                "Shared queue load",
+              );
+              if (first === "stalled") {
+                stopAfterStall(index);
+                break;
+              }
               if (entry.client.absent() && !entry.claiming) {
                 localQueues.delete(session.id);
                 owned.delete(session.id);
@@ -809,10 +866,17 @@ export function useSharedLocalQueues(
               continue;
             }
             entry.publish();
-            try {
-              await entry.client.sync();
-            } catch {}
+            const synced = await bounded(
+              session.id,
+              entry,
+              entry.client.sync(),
+              "Shared queue sync",
+            );
             entry.apply();
+            if (synced === "stalled") {
+              stopAfterStall(index);
+              break;
+            }
           }
         }
       } catch (error) {

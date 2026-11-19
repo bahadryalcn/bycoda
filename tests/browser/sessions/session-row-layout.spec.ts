@@ -57,7 +57,7 @@ for (const light of [false, true])
         page.getByRole("menuitem", { name: "Search sessions", exact: true }),
       ).toBeVisible();
       await expect(
-        page.getByRole("menuitemcheckbox", { name: "Select conversations", exact: true }),
+        page.getByRole("menuitemcheckbox", { name: "Select sessions", exact: true }),
       ).toBeVisible();
       await expect(
         page.getByRole("menuitemcheckbox", { name: "Filter sessions", exact: true }),
@@ -72,14 +72,14 @@ for (const light of [false, true])
       await page.keyboard.press("Escape");
       await header.getByRole("button", { name: "More actions", exact: true }).click();
       await page
-        .getByRole("menuitemcheckbox", { name: "Select conversations", exact: true })
+        .getByRole("menuitemcheckbox", { name: "Select sessions", exact: true })
         .click();
-      await expect(pane.getByRole("toolbar", { name: "Selected conversations" })).toBeVisible();
+      await expect(pane.getByRole("toolbar", { name: "Selected sessions" })).toBeVisible();
       await header.getByRole("button", { name: "More actions", exact: true }).click();
       await page.getByRole("menuitemcheckbox", { name: "Filter sessions", exact: true }).click();
       await expect(page.getByRole("menu", { name: "Filter sessions", exact: true })).toBeVisible();
       await page.keyboard.press("Escape");
-      await header.getByRole("button", { name: "New Session", exact: true }).click();
+      await header.getByRole("button", { name: "New session", exact: true }).click();
       await expect(page.getByLabel("Created sessions", { exact: true })).toHaveText("1");
       await pane.evaluate((element) => element.style.setProperty("width", "400px", "important"));
       await expect(header.getByRole("button", { name: "More actions", exact: true })).toBeHidden();
@@ -637,7 +637,7 @@ for (const light of [false, true]) {
         `/tests/browser/sessions/session-row-layout.html?global&${width === 1280 ? "wide" : "compact"}&${light ? "light" : "dark"}`,
         { waitUntil: "domcontentloaded" },
       );
-      const create = page.getByRole("button", { name: "New Session", exact: true });
+      const create = page.getByRole("button", { name: "New session", exact: true });
       await create.click();
       const dialog = page.getByRole("dialog", { name: "Choose a project for the new session" });
       const search = dialog.getByRole("combobox", { name: "Search projects" });
@@ -678,14 +678,14 @@ test("new session accepts explicit current project and preserves project-local d
   await page.goto("/tests/browser/sessions/session-row-layout.html?global", {
     waitUntil: "domcontentloaded",
   });
-  await page.getByRole("button", { name: "New Session", exact: true }).click();
+  await page.getByRole("button", { name: "New session", exact: true }).click();
   await page.getByRole("option", { name: /^bycoda / }).click();
   await expect(page.getByRole("status", { name: "Created sessions" })).toHaveText("1");
   await expect(page.getByRole("status", { name: "Created project" })).toHaveText("/fixture/bycoda");
   await page.goto("/tests/browser/sessions/session-row-layout.html", {
     waitUntil: "domcontentloaded",
   });
-  await page.getByRole("button", { name: "New Session", exact: true }).click();
+  await page.getByRole("button", { name: "New session", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.getByRole("status", { name: "Created sessions" })).toHaveText("1");
 });
@@ -696,7 +696,7 @@ test("new session retains selector and error when selected project becomes unava
   await page.goto("/tests/browser/sessions/session-row-layout.html?global&create-error", {
     waitUntil: "domcontentloaded",
   });
-  await page.getByRole("button", { name: "New Session", exact: true }).click();
+  await page.getByRole("button", { name: "New session", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Choose a project for the new session" });
   await dialog.getByRole("option", { name: /demo-repo / }).click();
   await expect(

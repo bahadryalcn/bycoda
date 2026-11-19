@@ -305,8 +305,10 @@ other skill (Claude blocks them at launch; other providers are told not to use t
 needs a host that supports tool profiles.
 
 Group rename/delete updates the
-profiles, not the members' existence; deleting a group keeps the members. These
-controls are hidden on hosts without group support. Select library profiles (or
+profiles, not the members' existence; deleting a group keeps the members. The Host moves
+every profile in one step, so a failure or a profile edited elsewhere leaves the whole
+group unchanged, and a rename onto an existing group name is refused instead of merging the
+two. These controls are hidden on hosts without atomic group updates. Select library profiles (or
 none, for all shown) and use the bulk bar to give them one model and its options;
 each profile is saved and failures are listed by profile.
 

@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
@@ -69,7 +70,7 @@ export function CreateWorktreeDialog({
       const tree = await createWorktree(baseCwd, name.trim(), base, existing);
       await onCreated(tree);
     } catch (err) {
-      return String(err);
+      return presentRemoteError(err, { explicit: true });
     }
   }, undefined);
   return (
@@ -100,9 +101,9 @@ export function CreateWorktreeDialog({
     >
       <form id={formId} className="flex flex-col gap-4" action={submit}>
         <Text as="p" size="caption" tone="secondary">
-          {t("An independent working copy of ")}
+          {t("An independent worktree of ")}
           {prettyCwd(cwd)}
-          {t(". Existing uncommitted changes stay in their current working copy.")}
+          {t(". Existing uncommitted changes stay in their current worktree.")}
         </Text>
         <SearchableSelect
           label={t("Branch type")}

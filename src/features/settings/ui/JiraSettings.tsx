@@ -8,6 +8,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Row } from "../../../shared/ui/settings";
+import { errorText } from "../../../shared/lib/errors";
 import {
   InboxAccountActions,
   InboxConnectionStatus,
@@ -32,7 +33,11 @@ import {
   type JiraProject,
   type JiraStatus,
 } from "../../inbox/model/jira";
-import { listJiraBoards, type JiraBoard } from "../../inbox/model/jiraBoard";
+import {
+  jiraBoardsInVisibleProjects,
+  listJiraBoardCatalog,
+  type JiraBoard,
+} from "../../inbox/model/jiraBoard";
 import {
   isInboxScopeNumber,
   isInboxScopeString,
@@ -87,28 +92,32 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
   const allowedBoardIds = boardScope.value;
   const [backgroundState, setBackgroundState] = useState(readBackgroundSync);
   const projectOwner = useRef("");
-  const [boards, setBoards] = useState<JiraBoard[]>([]);
+  const [catalog, setCatalog] = useState<JiraBoard[]>([]);
   const [boardsError, setBoardsError] = useState<string | null>(null);
   const boardsOwner = useRef(scopeOwner);
+  // Project checkboxes only narrow the cached catalog; they never start a board request.
+  const boards = jiraBoardsInVisibleProjects(catalog, projects, hiddenIds);
 
+  // Effect reason: the board catalog is external Jira data; it loads per account, tab visibility
+  // or explicit refresh, never per project selection.
   useEffect(() => {
     if (busy || !active) return;
     if (!status?.connected) {
-      setBoards([]);
+      setCatalog([]);
       setBoardsLoading(false);
       return;
     }
     let cancelled = false;
-    if (boardsOwner.current !== scopeOwner) setBoards([]);
+    if (boardsOwner.current !== scopeOwner) setCatalog([]);
     boardsOwner.current = scopeOwner;
     setBoardsError(null);
     setBoardsLoading(true);
-    void listJiraBoards({ includeUnselected: true })
+    void listJiraBoardCatalog()
       .then((next) => {
-        if (!cancelled) setBoards(next);
+        if (!cancelled) setCatalog(next);
       })
       .catch((err: unknown) => {
-        if (!cancelled) setBoardsError(String(err instanceof Error ? err.message : err));
+        if (!cancelled) setBoardsError(errorText(err));
       })
       .finally(() => {
         if (!cancelled) setBoardsLoading(false);
@@ -116,7 +125,7 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
     return () => {
       cancelled = true;
     };
-  }, [status?.connected, scopeOwner, busy, active, hiddenIds, projects, boardsRevision]);
+  }, [status?.connected, scopeOwner, busy, active, boardsRevision]);
 
   const loadProjects = useCallback(async () => {
     const generation = ++projectRequest.current;
@@ -128,7 +137,7 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
       if (generation === projectRequest.current && account === request.current) setProjects(next);
     } catch (err) {
       if (generation === projectRequest.current && account === request.current)
-        setProjectsError(String(err instanceof Error ? err.message : err));
+        setProjectsError(errorText(err));
     } finally {
       if (generation === projectRequest.current && account === request.current)
         setProjectsLoading(false);
@@ -149,7 +158,7 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
       if (next.connected) await loadProjects();
     } catch (err: unknown) {
       if (generation === request.current)
-        setStatusError(String(err instanceof Error ? err.message : err));
+        setStatusError(errorText(err));
     } finally {
       if (generation === request.current) setChecking(false);
     }
@@ -200,7 +209,7 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
       notifyJiraChange();
       await loadProjects();
     } catch (err) {
-      setError(String(err instanceof Error ? err.message : err));
+      setError(errorText(err));
     } finally {
       mutation.current = false;
       setOperation(null);
@@ -224,7 +233,7 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
       clearInboxCache();
       notifyJiraChange();
     } catch (err) {
-      setError(String(err instanceof Error ? err.message : err));
+      setError(errorText(err));
     } finally {
       mutation.current = false;
       setOperation(null);
@@ -396,7 +405,7 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
                   onClick={() =>
                     void openUrl(
                       "https://id.atlassian.com/manage-profile/security/api-tokens",
-                    ).catch((err: unknown) => setError(String(err)))
+                    ).catch((err: unknown) => setError(errorText(err)))
                   }
                 >
                   {t("Create API token")}
@@ -497,7 +506,7 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
                     .filter((board) => allowedBoardIds.includes(board.id))
                     .map((board) => String(board.id))}
                   onChange={setAllowedBoards}
-                  disabled={busy || checking || boardsLoading || Boolean(boardsError)}
+                  disabled={busy || checking || boardsLoading}
                   loading={boardsLoading}
                   summary={(count, total) =>
                     t("{p0} of {p1} boards selected", { p0: count, p1: total })
@@ -542,7 +551,7 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
                   onClick: () => setBackgroundState(readBackgroundSync()),
                 }}
               >
-                {t("Saved Inbox scope is unavailable. Retry before changing it.")}
+                {t("The Jira background refresh setting is unavailable. Retry before changing it.")}
               </SettingsFeedback>
             ) : undefined
           }

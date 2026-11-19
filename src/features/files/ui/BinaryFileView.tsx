@@ -1,19 +1,21 @@
+import { errorText } from "../../../shared/lib/errors";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
-import { Progress } from "../../../shared/ui/Progress";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { t, useLocale } from "../../../shared/i18n/technical";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, Check, Copy, Folder, Minus, Plus, RotateCcw } from "../../../shared/ui/icons";
 import { ExplorerMenu } from "./ExplorerMenu";
+import { FileTransferProgress } from "./FileTransferProgress";
 import { FileTypeIcon } from "./FileTypeIcon";
 import { formatFileSize, sniffImageMime } from "../model/filePreview";
 import { watchFile } from "../model/fileWatch";
 import {
   basename,
   copyFileToClipboard,
+  prepareLocalFile,
   readBinaryFile,
   revealPath,
 } from "../../../platform/tauri/fs";
@@ -22,11 +24,19 @@ import { IS_MAC } from "../../../platform/tauri/platform";
 import { useImageZoom } from "../../../shared/hooks/useImageZoom";
 import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
 import { CopyButton } from "../../../shared/ui/CopyButton";
+import { parseRemotePath } from "../../connections/public/remoteProjects";
+import { localExplorerPath } from "../../../shared/lib/remoteExplorerPaths";
+import { OpenInDefaultAppButton, ViewerFooter } from "./ViewerFooter";
+import { useDefaultAppOpen } from "./useDefaultAppOpen";
 
 type Props = { path: string; cwd: string };
 
+/** A connected machine's image is copied here first, bounded like its former host-side preview read. */
+const MAX_REMOTE_IMAGE_BYTES = 10 * 1024 * 1024;
+
 type LoadState =
-  | { status: "loading" }
+  | { status: "loading"; received?: number; total?: number }
+  | { status: "cancelled" }
   | { status: "ready"; path: string; url: string; mime: string; size: number }
   | { status: "unsupported"; size: number }
   | { status: "error"; message: string };
@@ -39,6 +49,10 @@ export function BinaryFileView({ path, cwd }: Props) {
   useLocale();
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [reloadKey, setReloadKey] = useState(0);
+  // Aborts the running remote copy; `cancelledPath` keeps a file change from restarting it.
+  const transfer = useRef<AbortController | null>(null);
+  const cancelledPath = useRef<string | null>(null);
+  const remote = !!parseRemotePath(path);
 
   const liveUrl = useRef<string | null>(null);
   useEffect(
@@ -50,6 +64,8 @@ export function BinaryFileView({ path, cwd }: Props) {
 
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
+    transfer.current = controller;
     // A reload of the same path keeps the current view mounted (zoom and pan stay).
     setState((current) =>
       current.status === "ready" && current.path === path ? current : { status: "loading" },
@@ -61,7 +77,23 @@ export function BinaryFileView({ path, cwd }: Props) {
       if (previous) URL.revokeObjectURL(previous);
     };
 
-    readBinaryFile(path).then(
+    (parseRemotePath(path)
+      ? prepareLocalFile(path, {
+          signal: controller.signal,
+          maxBytes: MAX_REMOTE_IMAGE_BYTES,
+          onProgress: (received, total) => {
+            if (controller.signal.aborted) return;
+            // A reload of a shown image must not replace it with the progress bar.
+            setState((current) =>
+              current.status === "loading" ? { status: "loading", received, total } : current,
+            );
+          },
+        }).then((local) => {
+          if (controller.signal.aborted) throw new DOMException("Cancelled", "AbortError");
+          return readBinaryFile(local);
+        })
+      : readBinaryFile(path)
+    ).then(
       (bytes) => {
         if (cancelled) return;
         // The blob's MIME comes from the bytes, never the extension, so a file
@@ -80,26 +112,39 @@ export function BinaryFileView({ path, cwd }: Props) {
         });
       },
       (cause: unknown) => {
-        if (cancelled) return;
+        // The Cancel button already showed its own state.
+        if (cancelled || controller.signal.aborted) return;
         settle({
           status: "error",
-          message: cause instanceof Error ? cause.message : String(cause),
+          message: errorText(cause),
         });
       },
     );
 
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [path, reloadKey]);
 
   const reload = useCallback(() => setReloadKey((value) => value + 1), []);
+  const cancelTransfer = () => {
+    cancelledPath.current = path;
+    transfer.current?.abort();
+    setState({ status: "cancelled" });
+  };
+  const retry = () => {
+    cancelledPath.current = null;
+    reload();
+  };
 
   useEffect(() => {
     let timer = 0;
     const stop = watchFile(path, () => {
       window.clearTimeout(timer);
-      timer = window.setTimeout(reload, 50);
+      timer = window.setTimeout(() => {
+        if (cancelledPath.current !== path) reload();
+      }, 50);
     });
     return () => {
       window.clearTimeout(timer);
@@ -114,8 +159,30 @@ export function BinaryFileView({ path, cwd }: Props) {
   if (state.status === "loading") {
     return (
       <div className="grid h-full place-items-center p-3">
-        <Progress label={t("Opening ") + basename(path) + "…"} compact />
+        <FileTransferProgress
+          label={t("Opening {p0}…", { p0: basename(path) })}
+          received={state.received}
+          total={state.total}
+          onCancel={remote ? cancelTransfer : undefined}
+        />
       </div>
+    );
+  }
+
+  if (state.status === "cancelled") {
+    return (
+      <FileCard
+        path={path}
+        cwd={cwd}
+        title={basename(path)}
+        detail={t("Cancelled")}
+        icon={
+          <div className="mx-auto mb-3 flex justify-center">
+            <FileTypeIcon name={basename(path)} isDir={false} size="lg" />
+          </div>
+        }
+        onRetry={retry}
+      />
     );
   }
 
@@ -176,6 +243,10 @@ function ImageView({
   const scrollRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
   const clickTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // Open-in-app state belongs to the file it started for; a different file starts clean.
+  const openOwner = useMemo(() => ({}), [path]);
+  const openAction = useDefaultAppOpen(openOwner, path);
+  const localCopy = !!parseRemotePath(path) && !localExplorerPath(path);
 
   const imageZoom = useImageZoom(scrollRef, path);
   const zoom = imageZoom.value.scale;
@@ -247,17 +318,13 @@ function ImageView({
       {copyError ? (
         <InlineError className="shrink-0 break-words px-3 py-2">{copyError}</InlineError>
       ) : null}
-      <Text
-        as="footer"
-        {...surfaceAttributes(
-          { frame: "pane", edge: "top" },
-          "flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center gap-3 border-(--ui-pane-border) px-3 py-1",
-        )}
-      >
+      {openAction.error ? (
+        <InlineError className="shrink-0 break-words px-3 py-2">{openAction.error}</InlineError>
+      ) : null}
+      <ViewerFooter name={basename(path)}>
         <span className="tabular-nums">{natural ? `${natural.w} × ${natural.h}` : "—"}</span>
         <span className="tabular-nums">{formatFileSize(size)}</span>
         <span className="uppercase">{mime.replace(/^image\//, "")}</span>
-        <span className="flex-1" />
         {IS_MAC ? (
           <Button
             size="sm"
@@ -305,7 +372,12 @@ function ImageView({
         >
           <Plus className="icon-xs" strokeWidth={1.75} />
         </Button>
-      </Text>
+        <OpenInDefaultAppButton
+          localCopy={localCopy}
+          loading={openAction.opening}
+          onOpen={openAction.open}
+        />
+      </ViewerFooter>
       {menu ? (
         <ExplorerMenu
           x={menu.x}
@@ -357,7 +429,7 @@ function FileCard({
     try {
       await work();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(errorText(reason));
     } finally {
       running.current = false;
       setPending(null);

@@ -264,6 +264,32 @@ describe("model panel", () => {
     expect(document.activeElement).toBe(trigger());
   });
 
+  it.each(["data-mcp-picker", "data-session-folder-picker"])(
+    "does not open over a focused composer %s",
+    async (attribute) => {
+      await render({ harness: "claude", model: "claude:opus-5", hotkeys: true });
+      const blocking = document.createElement("div");
+      blocking.setAttribute(attribute, "");
+      const search = document.createElement("input");
+      blocking.append(search);
+      document.body.append(blocking);
+      search.focus();
+      await act(async () => {
+        search.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: ">",
+            code: "Period",
+            ctrlKey: true,
+            shiftKey: true,
+            bubbles: true,
+          }),
+        );
+      });
+      expect(panel()).toBeNull();
+      blocking.remove();
+    },
+  );
+
   it.each([
     ["subagentModel", "default", "subagentPolicy"],
     ["autoCompact", "off", "autoCompactWindow"],
@@ -618,6 +644,34 @@ describe("model panel", () => {
     await openPanel();
     expect(providerTab("Grok Build").getAttribute("aria-selected")).toBe("true");
   });
+
+  it("keeps a typed search and provider while the pointer drifts over the provider rail", async () => {
+    await render({ harness: "grok", model: "grok:grok-4.6", values: { effort: "high" } });
+    await openPanel();
+    const search = container.querySelector<HTMLInputElement>('input[aria-label="Search models"]')!;
+    await inputText(search, "Grok");
+    const openCodeTab = providerTab("OpenCode");
+    await movePointer(openCodeTab);
+    expect(openCodeTab.getAttribute("aria-selected")).toBe("false");
+    expect(providerTab("Grok Build").getAttribute("aria-selected")).toBe("true");
+    expect(search.value).toBe("Grok");
+
+    // A deliberate click still switches providers and starts that list fresh.
+    await click(openCodeTab);
+    expect(openCodeTab.getAttribute("aria-selected")).toBe("true");
+    expect(search.value).toBe("");
+  });
+
+  it("previews a provider on hover again once the search is empty", async () => {
+    await render({ harness: "grok", model: "grok:grok-4.6", values: { effort: "high" } });
+    await openPanel();
+    const search = container.querySelector<HTMLInputElement>('input[aria-label="Search models"]')!;
+    await inputText(search, "Grok");
+    await inputText(search, "");
+    const openCodeTab = providerTab("OpenCode");
+    await movePointer(openCodeTab);
+    expect(openCodeTab.getAttribute("aria-selected")).toBe("true");
+  });
 });
 
 describe("model panel settings column", () => {
@@ -919,13 +973,20 @@ describe("model panel settings column", () => {
   it("explains the hovered setting in the help strip", async () => {
     await openOrdered({});
     const help = () => container.querySelector("[data-model-setting-help]")!.textContent;
-    expect(help()).toContain("Help");
+    expect(help()).not.toContain("Help");
     await act(async () => {
       container
         .querySelector('[data-setting-id="fast"] [role="switch"]')!
         .dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
     });
     expect(help()).toContain("Same model, faster output");
+  });
+
+  it("shows a single labelled help control and no placeholder text when no setting is pointed at", async () => {
+    await openOrdered({});
+    const footer = container.querySelector("[data-model-setting-help]")!;
+    expect(footer.textContent).not.toContain("Help");
+    expect(footer.querySelectorAll('button[aria-label="Help"]')).toHaveLength(1);
   });
 
   it("opens complete settings help without hovering and retains it when focus moves into help", async () => {

@@ -15,6 +15,7 @@ import {
   SUPPORT_CATEGORIES,
   SUPPORT_SUBJECT_MAX,
   submitSupportTicket,
+  validateSupportDraft,
   type SupportCategory,
   type SupportDraft,
   type SupportDraftIssue,
@@ -111,10 +112,17 @@ export function AccountSupport() {
   const [draft, setDraft] = useState<SupportDraft>(EMPTY_SUPPORT_DRAFT);
   const [result, setResult] = useState<SupportSubmitResult | null>(null);
   const [busy, setBusy] = useState(false);
-  const issues = result?.status === "invalid" ? result.issues : [];
+  // Field errors follow the draft as it is now, and only while the last send was rejected.
+  const issues = result?.status === "invalid" ? validateSupportDraft(draft) : [];
   const issue = (...names: SupportDraftIssue[]) => {
     const found = issues.find((name) => names.includes(name));
     return found ? issueText(found) : undefined;
+  };
+  // Any edit makes the last outcome stale. A send still in flight sets `result` when it settles,
+  // so its outcome is shown even if the user typed meanwhile.
+  const edit = (next: SupportDraft) => {
+    setDraft(next);
+    setResult(null);
   };
 
   const send = async () => {
@@ -144,6 +152,7 @@ export function AccountSupport() {
             {t("Send to support")}
           </Button>
         }
+        descriptionVisible
         description={t(
           "Nothing from your sessions, code, logs or file paths is attached automatically. Do not paste passwords, tokens or other secrets.",
         )}
@@ -167,7 +176,7 @@ export function AccountSupport() {
             hideLabel
             value={draft.category}
             options={SUPPORT_CATEGORIES.map((value) => ({ value, label: categoryLabel(value) }))}
-            onValueChange={(value) => setDraft({ ...draft, category: value as SupportCategory })}
+            onValueChange={(value) => edit({ ...draft, category: value as SupportCategory })}
           />
         </Row>
         <Row label={t("Subject")} stacked>
@@ -176,7 +185,7 @@ export function AccountSupport() {
             hideLabel
             value={draft.subject}
             error={issue("subject-missing", "subject-long")}
-            onChange={(event) => setDraft({ ...draft, subject: event.target.value })}
+            onChange={(event) => edit({ ...draft, subject: event.target.value })}
           />
         </Row>
         <Row label={t("Message")} stacked>
@@ -188,7 +197,7 @@ export function AccountSupport() {
             maxRows={14}
             autosize
             error={issue("body-missing", "body-long")}
-            onChange={(event) => setDraft({ ...draft, body: event.target.value })}
+            onChange={(event) => edit({ ...draft, body: event.target.value })}
           />
         </Row>
       </Group>

@@ -1,3 +1,4 @@
+import { errorText } from "../../shared/lib/errors";
 import { useT } from "../../shared/i18n";
 import { Button } from "../../shared/ui/Button";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -42,7 +43,7 @@ function NativeWindowControls() {
       await action();
       await refreshWindowState().catch(() => null);
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : String(failure));
+      setError(errorText(failure));
     }
   };
 
@@ -83,8 +84,14 @@ function NativeWindowControls() {
       </Button>
       <Button
         iconOnly
-        label={isMaximized || isFullscreen ? t("Restore window") : t("Maximize window")}
-        tooltip={isMaximized || isFullscreen ? t("Restore") : t("Maximize")}
+        label={
+          isFullscreen
+            ? t("Exit full screen")
+            : isMaximized
+              ? t("Restore window")
+              : t("Maximize window")
+        }
+        tooltip={isFullscreen ? t("Exit full screen") : isMaximized ? t("Restore") : t("Maximize")}
         variant="ghost"
         motion="none"
         data-tauri-drag-region="false"

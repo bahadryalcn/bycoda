@@ -1,4 +1,3 @@
-import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { Code } from "../../../shared/ui/Code";
 import { useT } from "../../../shared/i18n";
@@ -11,16 +10,19 @@ import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Select } from "../../../shared/ui/Select";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { projectActionPresetIO } from "../model/projectActionCatalog";
-import { Alert } from "../../../shared/ui/Alert";
+import { RemoteActionError } from "../../connections/public/RemoteActionError";
+import type { RemoteErrorView } from "../../connections/public/remoteFailure";
 import { Field } from "../../../shared/ui/Field";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { Check, CodeBlock, Globe, Play, Terminal, Wrench } from "../../../shared/ui/icons";
 import { prettyCwd } from "../../../shared/lib/paths";
 import {
-  quickComposerShortcutLabel,
-  shortcutFromKeyEvent,
+  recorderShortcutFromStored,
+  storedShortcutFromRecorder,
 } from "../../quick-composer/model/quickComposerShortcut";
+import { IS_MAC } from "../../../platform/tauri/platform";
+import { ShortcutRecorder } from "../../../shared/ui/ShortcutRecorder";
 import {
   ACTION_ICONS,
   projectActionShortcutError,
@@ -63,6 +65,7 @@ const examples = [
   },
 ];
 const CHIP_LIMIT = 4;
+const shortcutPlatform = IS_MAC ? "mac" : "other";
 
 export function ProjectActionDialog({
   action,
@@ -78,7 +81,7 @@ export function ProjectActionDialog({
   actions: ProjectAction[];
   cwd: string;
   editing: boolean;
-  error: string;
+  error: RemoteErrorView | null;
   onSave: (action: ProjectAction) => boolean | void;
   onDelete: () => void;
   onClose: () => void;
@@ -304,32 +307,22 @@ export function ProjectActionDialog({
             onChange={(event) => setDraft({ ...draft, command: event.target.value })}
           />
           <div className="grid gap-3 sm:grid-cols-2">
-            <Tooltip label={t("Backspace clears the shortcut.")}>
-              <TextField
-                label={t("Keybinding")}
-                readOnly
-
-                placeholder={t("Click here and press a shortcut")}
-                value={draft.shortcut ? quickComposerShortcutLabel(draft.shortcut) : ""}
-                aria-invalid={Boolean(shortcutError)}
-                onKeyDown={(event) => {
-                  if (event.key === "Tab") return;
-                  event.preventDefault();
-                  event.stopPropagation();
-                  if (event.key === "Backspace" || event.key === "Delete") {
-                    setDraft({ ...draft, shortcut: "" });
-                    setShortcutHint("");
-                    return;
-                  }
-                  const value = shortcutFromKeyEvent(event);
-                  if (value) {
-                    setDraft({ ...draft, shortcut: value });
-                    setShortcutHint("");
-                  } else if (!["Control", "Meta", "Alt", "Shift"].includes(event.key))
-                    setShortcutHint(t("Include Ctrl, Alt or Command with another key."));
-                }}
-              />
-            </Tooltip>
+            {/* Capture starts only from a press or Enter/Space on the recorder, so Escape and Tab keep their dialog behavior elsewhere. */}
+            <ShortcutRecorder
+              label={t("Keybinding")}
+              platform={shortcutPlatform}
+              placeholder={t("Click here and press a shortcut")}
+              value={recorderShortcutFromStored(draft.shortcut, shortcutPlatform)}
+              onValueChange={(value) => {
+                const stored = value ? storedShortcutFromRecorder(value, shortcutPlatform) : "";
+                if (stored === null) {
+                  setShortcutHint(t("Include Ctrl, Alt or Command with another key."));
+                  return;
+                }
+                setDraft({ ...draft, shortcut: stored });
+                setShortcutHint("");
+              }}
+            />
             <TextField
               label={`${t("Web address")} ${t("(optional)")}`}
               type="url"
@@ -361,7 +354,7 @@ export function ProjectActionDialog({
               />
             ) : null}
           </div>
-          {error ? <Alert tone="danger">{error}</Alert> : null}
+          {error ? <RemoteActionError error={error} /> : null}
           {missing ? (
             <Text as="p" size="caption" tone="muted">
               <LiveText text={missing} />

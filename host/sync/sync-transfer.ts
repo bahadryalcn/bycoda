@@ -15,6 +15,8 @@ const TRANSFER_TTL_MS = 2 * 60_000;
 /** After the last piece is served, only that piece stays readable so a lost response can be retried. */
 const LAST_CHUNK_GRACE_MS = 15_000;
 const MAX_TRANSFERS = 8;
+/** A transfer that served a piece this recently is still being downloaded and is never evicted. */
+const DOWNLOAD_PIN_MS = 30_000;
 export const MAX_SYNC_TRANSFER_UNITS = 32 * 1024 * 1024;
 export const MAX_TRANSFER_CACHE_BYTES = 128 * 1024 * 1024;
 
@@ -32,7 +34,16 @@ const encodedBytes = (value: string) => Buffer.byteLength(JSON.stringify(value))
 export class SyncTransfers {
   private transfers = new Map<
     string,
-    { sessionId: string; text: string; expires: number; lastOffset?: number }
+    {
+      sessionId: string;
+      text: string;
+      expires: number;
+      lastOffset?: number;
+      /** Last time a piece was served; a recent, unfinished transfer is mid-download. */
+      lastServed?: number;
+      /** The final piece was served; only its short grace window remains. */
+      finished?: boolean;
+    }
   >();
 
   constructor(
@@ -62,16 +73,24 @@ export class SyncTransfers {
       serialized.set(sync, text);
       return sync;
     }
-    this.prune();
+    const now = Date.now();
+    this.prune(now);
+    const budget = this.limits.cacheBytes ?? MAX_TRANSFER_CACHE_BYTES;
     let retained = [...this.transfers.values()].reduce(
       (bytes, entry) => bytes + entry.text.length * 2,
       0,
     );
+    // Evict only idle transfers, oldest first. A transfer still being downloaded
+    // is never evicted for another device's admission; if the slot or byte budget
+    // cannot be freed without it, the caller gets a retryable busy error.
     for (const [id, entry] of this.transfers) {
-      if (retained + text.length * 2 <= (this.limits.cacheBytes ?? MAX_TRANSFER_CACHE_BYTES)) break;
+      if (this.transfers.size < MAX_TRANSFERS && retained + text.length * 2 <= budget) break;
+      if (this.downloading(entry, now)) continue;
       retained -= entry.text.length * 2;
       this.transfers.delete(id);
     }
+    if (this.transfers.size >= MAX_TRANSFERS || retained + text.length * 2 > budget)
+      throw new Error("Session transfers are busy; retry shortly.");
     const transfer = randomUUID();
     this.transfers.set(transfer, {
       sessionId,
@@ -109,10 +128,13 @@ export class SyncTransfers {
     const code = entry.text.charCodeAt(end - 1);
     if (end < entry.text.length && end - offset > 1 && code >= 0xd800 && code <= 0xdbff) end--;
     const data = entry.text.slice(offset, end);
+    const now = Date.now();
+    entry.lastServed = now;
     if (end === entry.text.length) {
+      entry.finished = true;
       entry.lastOffset = offset;
-      entry.expires = Date.now() + LAST_CHUNK_GRACE_MS;
-    } else entry.expires = Date.now() + TRANSFER_TTL_MS;
+      entry.expires = now + LAST_CHUNK_GRACE_MS;
+    } else entry.expires = now + TRANSFER_TTL_MS;
     return { data };
   }
 
@@ -121,10 +143,13 @@ export class SyncTransfers {
       if (entry.sessionId === sessionId) this.transfers.delete(id);
   }
 
-  private prune() {
-    const now = Date.now();
+  private downloading(entry: { lastServed?: number; finished?: boolean }, now: number): boolean {
+    return (
+      !entry.finished && entry.lastServed !== undefined && now - entry.lastServed < DOWNLOAD_PIN_MS
+    );
+  }
+
+  private prune(now = Date.now()) {
     for (const [id, entry] of this.transfers) if (entry.expires < now) this.transfers.delete(id);
-    while (this.transfers.size >= MAX_TRANSFERS)
-      this.transfers.delete(this.transfers.keys().next().value!);
   }
 }

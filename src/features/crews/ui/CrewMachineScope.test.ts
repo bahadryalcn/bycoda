@@ -104,7 +104,7 @@ it("keeps a failed machine read visible and offers retry even without machine da
   mocks.machineError = new Error("Host machines unavailable");
   await act(async () => root.render(createElement(Harness)));
   expect(container.textContent).toContain("Host machines unavailable");
-  await click(button("Retry"));
+  await click(button("Try again"));
   expect(mocks.refetch).toHaveBeenCalledOnce();
 });
 afterEach(async () => {

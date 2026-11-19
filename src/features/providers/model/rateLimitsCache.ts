@@ -1,6 +1,7 @@
+import { errorText } from "../../../shared/lib/errors";
 import { createStore } from "../../../shared/lib/store";
 import { useSyncExternalStore } from "react";
-import { replaceEqualDeep } from "@tanstack/react-query";
+import { focusManager, replaceEqualDeep } from "@tanstack/react-query";
 import { recordRateLimitHistory } from "./rateLimitHistory";
 import { fetchGrokRateLimits } from "./grokRateLimitsFetch";
 import {
@@ -126,19 +127,21 @@ export function loadRateLimits(
               ? await fetchGrokRateLimits(accountId)
               : await fetchOpencodeGoRateLimits();
     } catch (error) {
-      result = errorRateLimits(provider, error instanceof Error ? error.message : String(error));
+      result = errorRateLimits(provider, errorText(error));
     } finally {
       if (generations.get(key) === generation) pending.delete(key);
     }
     if (generations.get(key) !== generation) return result;
     if (oneShot && !canRetry()) return result;
+    // Only an unbroken run of renewal checks counts towards the cap.
+    if (result.renewalPending !== true) renewalChecks.delete(key);
     if (result.status === "error") {
       const renewalPending = result.renewalPending === true;
       // A failed request (a 429, a dropped connection) says nothing about the
       // usage itself: the last windows stay, dated when they were read.
       if (cached && hasWindows(cached)) {
         result = {
-          ...errorRateLimits(provider, result.error ?? "", cached),
+          ...errorRateLimits(provider, result.error ?? "", cached, result.reason),
           updatedAt: cached.updatedAt,
           ...(renewalPending ? { renewalPending } : {}),
         };
@@ -184,10 +187,16 @@ const RETRY_DELAYS_MS = [60_000, 3 * 60_000, 10 * 60_000, 15 * 60_000];
  * checks the local credential, so usage appears soon after the CLI renews it.
  */
 const RENEWAL_CHECK_MS = 15_000;
+/** Renewal checks per account before it falls back to the network backoff. */
+const MAX_RENEWAL_CHECKS = 10;
 const retryAttempts = new Map<string, number>();
+const renewalChecks = new Map<string, number>();
 const retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+/** Retries that came due while the window was hidden; the next focus resumes them. */
+const pausedRetries = new Map<string, () => void>();
 
 function cancelRetry(key: string): void {
+  pausedRetries.delete(key);
   const timer = retryTimers.get(key);
   if (timer === undefined) return;
   clearTimeout(timer);
@@ -202,9 +211,12 @@ function scheduleRetry(
   renewalPending = false,
 ): void {
   const key = keyFor(provider, accountId);
-  const attempt = retryAttempts.get(key) ?? 0;
+  const checks = renewalChecks.get(key) ?? 0;
+  const renewing = renewalPending && checks < MAX_RENEWAL_CHECKS;
   // A local renewal check does not count towards the network backoff.
-  if (!renewalPending) retryAttempts.set(key, attempt + 1);
+  if (renewing) renewalChecks.set(key, checks + 1);
+  const attempt = retryAttempts.get(key) ?? 0;
+  if (!renewing) retryAttempts.set(key, attempt + 1);
   cancelRetry(key);
   retryTimers.set(
     key,
@@ -212,19 +224,28 @@ function scheduleRetry(
       () => {
         retryTimers.delete(key);
         // The account may have been removed while waiting.
-        if (snapshots.has(key)) {
+        if (!snapshots.has(key)) return;
+        const resume = () => {
           // Renewal checks repeat quietly instead of flashing a loading state.
-          if (canRetry())
-            void loadRateLimits(provider, accountId, true, canRetry, background || renewalPending);
-          else scheduleRetry(provider, accountId, canRetry, background, renewalPending);
-        }
+          void loadRateLimits(provider, accountId, true, canRetry, background || renewing);
+        };
+        // Hidden: stop polling and wait for focus instead of rescheduling.
+        if (canRetry()) resume();
+        else pausedRetries.set(key, resume);
       },
-      renewalPending
-        ? RENEWAL_CHECK_MS
-        : RETRY_DELAYS_MS[Math.min(attempt, RETRY_DELAYS_MS.length - 1)],
+      renewing ? RENEWAL_CHECK_MS : RETRY_DELAYS_MS[Math.min(attempt, RETRY_DELAYS_MS.length - 1)],
     ),
   );
 }
+
+// Re-arm paused retries when the window regains focus; the account may have been removed meanwhile.
+focusManager.subscribe(() => {
+  if (!focusManager.isFocused()) return;
+  for (const [key, resume] of [...pausedRetries]) {
+    pausedRetries.delete(key);
+    if (snapshots.has(key)) resume();
+  }
+});
 
 /** Also used when an account is removed and by tests that need a clean cache. */
 export function clearCachedRateLimits(provider?: RateLimitProvider, accountId?: string): void {
@@ -232,6 +253,7 @@ export function clearCachedRateLimits(provider?: RateLimitProvider, accountId?: 
     const key = keyFor(provider, accountId);
     cancelRetry(key);
     retryAttempts.delete(key);
+    renewalChecks.delete(key);
     generations.delete(key);
     pending.delete(key);
     queuedRefreshes.delete(key);
@@ -240,7 +262,9 @@ export function clearCachedRateLimits(provider?: RateLimitProvider, accountId?: 
     allSnapshots = rest;
   } else {
     for (const key of [...retryTimers.keys()]) cancelRetry(key);
+    pausedRetries.clear();
     retryAttempts.clear();
+    renewalChecks.clear();
     generations.clear();
     pending.clear();
     queuedRefreshes.clear();

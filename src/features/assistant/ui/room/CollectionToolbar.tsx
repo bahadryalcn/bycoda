@@ -111,10 +111,10 @@ export function CollectionToolbar({ snapshot }: { snapshot: AssistantSnapshot })
                     scopeKey = privacy.key;
                   const now = new Date(),
                     day = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-                  run("notes.summary", t("Preparing briefing..."), async () => {
+                  run("notes.summary", t("Preparing briefing…"), async () => {
                     if (!sourceEnvironment)
                       throw new Error(
-                        "The original Host could not be verified. Keep this draft and reconnect its original computer.",
+                        "The original computer could not be verified. Keep this draft and reconnect that computer.",
                       );
                     const response = await assistantRequest(
                       { op: "briefing.daily", day },

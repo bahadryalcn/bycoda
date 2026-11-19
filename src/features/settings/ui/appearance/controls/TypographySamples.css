@@ -55,7 +55,7 @@
   .typography-preview {
     position: sticky;
     inset-block-start: calc(
-      var(--ui-control-height-compact) + 28px + var(--appearance-generator-height, 0px)
+      var(--settings-page-bar-height) + 8px + var(--appearance-generator-height, 0px)
     );
   }
 }

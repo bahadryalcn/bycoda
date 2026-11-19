@@ -1,3 +1,5 @@
+import { errorText } from "../../../../shared/lib/errors";
+import { t } from "../../../../shared/i18n/core";
 import {
   promptBlocks,
   type PromptContentBlock,
@@ -12,8 +14,9 @@ export type HermesBackgroundDispatch = {
   transcripts: string[];
 };
 
-export const HERMES_AUTH_HELP =
-  "Configure Hermes with `hermes model`, then verify it with `hermes acp --check`.";
+export function hermesAuthHelp(): string {
+  return t("Configure Hermes with `hermes model`, then verify it with `hermes acp --check`.");
+}
 
 /**
  * Hermes writes ordinary provider-health warnings to stderr. Only promote
@@ -36,7 +39,7 @@ export function hermesStderrAuthError(line: string): string | null {
   ) {
     return null;
   }
-  return `${message}\n\n${HERMES_AUTH_HELP}`;
+  return `${message}\n\n${hermesAuthHelp()}`;
 }
 
 /** Hermes accepts the standard ACP text, image, and resource-link blocks. */
@@ -58,14 +61,14 @@ export function hermesModeId(
 }
 
 export function hermesStartupError(error: unknown): Error {
-  const detail = error instanceof Error ? error.message : String(error);
+  const detail = errorText(error);
   if (/auth|credential|api key|provider|configure|setup/i.test(detail)) {
-    return new Error(`${detail.trim()}\n\n${HERMES_AUTH_HELP}`);
+    return new Error(`${detail.trim()}\n\n${hermesAuthHelp()}`);
   }
   if (/timed out/i.test(detail)) {
-    return new Error(`Hermes Agent did not start. ${HERMES_AUTH_HELP}`);
+    return new Error(t("Hermes Agent did not start. {p0}", { p0: hermesAuthHelp() }));
   }
-  return new Error(`Hermes Agent did not start. ${detail}`);
+  return new Error(t("Hermes Agent did not start. {p0}", { p0: detail }));
 }
 
 export function hermesSessionId(result: unknown): string | undefined {

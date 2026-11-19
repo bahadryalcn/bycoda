@@ -6,6 +6,7 @@ import { BrowserPanel } from "./BrowserPanel";
 import { hostFeatureRequest } from "../connections/model/hostFeatureClient";
 import { registerBrowserComposer } from "./browserComposer";
 import { writeBrowserDraftTransfer } from "./browserDraftTransfer";
+import { SELECTION_PROBE_MS } from "./hooks/useBrowserSelectionProbe";
 
 vi.mock("../connections/model/hostFeatureClient", () => ({ hostFeatureRequest: vi.fn() }));
 let container: HTMLDivElement, root: Root;
@@ -305,7 +306,7 @@ it("clears on remove, Escape, navigation and lease loss", async () => {
   state.navigationId = "next";
   delete state.annotationId;
   await act(async () => {
-    vi.advanceTimersByTime(1000);
+    await vi.advanceTimersByTimeAsync(SELECTION_PROBE_MS);
   });
   expect(document.body.querySelector(".host-browser-selection textarea")).toBeNull();
   expect(container.querySelector("img")?.tabIndex).toBe(-1);
@@ -320,6 +321,74 @@ it("clears on remove, Escape, navigation and lease loss", async () => {
   expect(
     button("Select element and add to composer").matches(":disabled, [aria-disabled=true]"),
   ).toBe(true);
+});
+const statusCalls = () =>
+  vi.mocked(hostFeatureRequest).mock.calls.filter((call) => call[2] === "browser.status").length;
+const cancelCalls = () =>
+  vi.mocked(hostFeatureRequest).mock.calls.filter((call) => call[2] === "browser.annotation.cancel")
+    .length;
+/** Makes `browser.status` reject while `down.value` is set; every other call is unchanged. */
+function failStatusWhile(down: { value: boolean }) {
+  const original = vi.mocked(hostFeatureRequest).getMockImplementation()!;
+  vi.mocked(hostFeatureRequest).mockImplementation(async (...args) => {
+    if (down.value && args[2] === "browser.status") throw new Error("host unreachable");
+    return original(...args);
+  });
+}
+it("polls selection status every few seconds instead of every second", async () => {
+  await render();
+  await start();
+  const before = statusCalls();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(SELECTION_PROBE_MS - 1);
+  });
+  expect(statusCalls()).toBe(before);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1);
+  });
+  expect(statusCalls()).toBe(before + 1);
+});
+it("keeps the selection through a transient status failure and clears the connection notice", async () => {
+  await render();
+  await start();
+  const down = { value: true };
+  failStatusWhile(down);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(SELECTION_PROBE_MS);
+  });
+  expect(button("Cancel selection")).toBeDefined();
+  expect(cancelCalls()).toBe(0);
+  expect(document.body.textContent).toContain("Connection to the Host is unstable");
+  expect(document.body.textContent).not.toContain("Selection expired");
+  down.value = false;
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(2000);
+  });
+  expect(button("Cancel selection")).toBeDefined();
+  expect(cancelCalls()).toBe(0);
+  expect(document.body.textContent).not.toContain("Connection to the Host is unstable");
+});
+it("gives the selection up with a connection message after repeated status failures", async () => {
+  await render();
+  await start();
+  failStatusWhile({ value: true });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(SELECTION_PROBE_MS + 2000 * 2);
+  });
+  expect(button("Cancel selection")).toBeUndefined();
+  expect(cancelCalls()).toBe(1);
+  expect(document.body.textContent).toContain("Connection to the Host was lost");
+});
+it("still ends the selection when the Host reports it is no longer selecting", async () => {
+  await render();
+  await start();
+  delete state.annotationId;
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(SELECTION_PROBE_MS);
+  });
+  expect(button("Cancel selection")).toBeUndefined();
+  expect(document.body.textContent).toContain("Selection expired");
+  expect(document.body.textContent).not.toContain("Connection to the Host");
 });
 it("preserves the element and comment when its compact editor closes", async () => {
   await render();

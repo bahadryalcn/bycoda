@@ -36,7 +36,10 @@ type Options = {
   onRevealReady?: (reveal: ((blockId: string) => boolean) | null) => void;
 };
 
-/** The remote history request and what must run however it ends; kept out of the hook for the compiler. */
+/**
+ * The remote history request and what must run however it ends; kept out of the hook for the compiler.
+ * A load that added nothing failed and reported it itself, so the window, cursor and scroll stay put.
+ */
 export async function runRemoteLoad({
   load,
   stale,
@@ -53,8 +56,8 @@ export async function runRemoteLoad({
   setPagingError: (error: string | null) => void;
 }): Promise<void> {
   try {
-    await load();
-    if (stale()) return;
+    const added = await load();
+    if (stale() || added === 0) return;
     apply();
   } catch (error) {
     // A dropped link is covered by the shared connection notice; the page can be requested again.

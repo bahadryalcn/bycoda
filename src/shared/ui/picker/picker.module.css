@@ -7,6 +7,10 @@
     min-block-size: 0;
     min-inline-size: 0;
   }
+  /* Shared height for composer pickers: the list scrolls inside it, the header and footer stay fixed. */
+  .standardHeight {
+    max-block-size: min(240px, 40vh);
+  }
 }
 
 /* Popover frame: fixed header and footer around one scrolling list. */

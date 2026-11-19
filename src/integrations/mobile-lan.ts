@@ -1,6 +1,9 @@
+import { HOST_HTTP_MAX_RESPONSE_BYTES } from "../shared/model/host-contracts/response-limit";
+
 /** Pure wire contract for QR-pinned, encrypted local-network mobile access. */
 export const MOBILE_LAN_VERSION = 1;
-export const MOBILE_LAN_MAX_BYTES = 16 * 1024 * 1024;
+/** The decrypted inner body is the Host `/rpc` body, so its cap is the Host response cap. */
+export const MOBILE_LAN_MAX_BYTES = HOST_HTTP_MAX_RESPONSE_BYTES;
 export const MOBILE_LAN_MAX_WIRE_BYTES = MOBILE_LAN_MAX_BYTES * 2 + 4096;
 export const MOBILE_LAN_WINDOW_MS = 60_000;
 export type MobileAccessMode = "lan" | "tailscale";

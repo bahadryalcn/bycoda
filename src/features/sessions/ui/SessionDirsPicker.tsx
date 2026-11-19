@@ -2,7 +2,7 @@ import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { PickerList, PopoverSearchHeader, usePickerList } from "../../../shared/ui/picker";
-import { useT } from "../../../shared/i18n";
+import { useT, type t as Translate } from "../../../shared/i18n";
 import { useRef, useState } from "react";
 import { basename, pickFolders } from "../../../platform/tauri/fs";
 import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
@@ -54,6 +54,7 @@ function candidatesFrom(
 }
 
 type FolderPick = {
+  t: typeof Translate;
   choosingProject: boolean;
   sessionId: string;
   project: string;
@@ -66,6 +67,7 @@ type FolderPick = {
 
 /** The native folder dialog and what follows; outside the component so its `try` stays out of render code. */
 async function pickSessionFolders({
+  t,
   choosingProject,
   sessionId,
   project,
@@ -77,12 +79,12 @@ async function pickSessionFolders({
 }: FolderPick): Promise<void> {
   try {
     const selected = await pickFolders(
-      choosingProject ? "Choose session project" : "Add folders to this session",
+      choosingProject ? t("Choose session project") : t("Add folders to this session"),
       !choosingProject,
     );
     if (selected.length === 0) return;
     if (selected.some((path) => !isLocalProject(path))) {
-      setError("Choose a local project folder rather than your home or drive root.");
+      setError(t("Choose a local project folder rather than your home or drive root."));
       setOpen(true);
       return;
     }
@@ -97,7 +99,7 @@ async function pickSessionFolders({
       setOpen(true);
     }
   } catch {
-    setError("Could not open the folder picker. Please try again.");
+    setError(t("Could not open the folder picker. Please try again."));
     setOpen(true);
   } finally {
     pickingRef.current = false;
@@ -186,6 +188,7 @@ export function SessionDirsPicker({
     setPicking(true);
     setError(undefined);
     await pickSessionFolders({
+      t,
       choosingProject,
       sessionId,
       project,
@@ -273,13 +276,11 @@ export function SessionDirsPicker({
           anchor={root}
           side="top"
           minWidth={320}
-          autoFocus
           onDismiss={(reason) => dismiss(reason === "escape")}
-          role="dialog"
+          kind="dialog"
           aria-label={
             mode === "project" ? t("Change session project") : t("Folders for this session")
           }
-          tabIndex={-1}
           className="flex min-h-0 flex-col"
         >
           <div className="flex items-center justify-between gap-2 px-2 pb-1 pt-0.5">

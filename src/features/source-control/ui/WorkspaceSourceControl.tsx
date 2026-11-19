@@ -93,7 +93,7 @@ export function WorkspaceSourceControl({
   const [savedLabels, setSavedLabels] = useState(loadTabGroupLabels);
   useEffect(() => subscribeProjectPathsChanged(() => setSavedLabels(loadTabGroupLabels())), []);
   const discoveryRoots = checkouts ? paths : selected === cwd ? [...paths, cwd] : paths;
-  const { modules, error, refresh } = useGitSubmodules(discoveryRoots, enabled, true);
+  const { modules, limits, error, refresh } = useGitSubmodules(discoveryRoots, enabled, true);
   const connectionShownCentrally = useConnectionErrorShownCentrally(error);
   const repositories = checkoutRepositoryPaths(paths, modules);
   const childNames = new Map(
@@ -206,7 +206,7 @@ export function WorkspaceSourceControl({
     ? [name(target), !checkouts && own(target) ? t("This session") : "", target]
         .filter(Boolean)
         .join(" · ")
-    : `${checkouts ? t("Working copy") : t("Repository")} · ${
+    : `${checkouts ? t("Worktree") : t("Repository")} · ${
         checkouts ? t("All checkouts") : t("All repositories")
       }`;
   const targetOptions: SearchableSelectOption[] = [
@@ -283,7 +283,7 @@ export function WorkspaceSourceControl({
             <div className="min-w-0 flex-1">
               <SearchableSelect
                 hideLabel
-                label={checkouts ? t("Working copy") : t("Repository")}
+                label={checkouts ? t("Worktree") : t("Repository")}
                 value={target}
                 onChange={choose}
                 variant="row"
@@ -330,6 +330,16 @@ export function WorkspaceSourceControl({
           <Button variant="link" size="sm" disabled={!enabled} onClick={refreshAll}>
             {t("Retry")}
           </Button>
+        </Text>
+      ) : null}
+      {Object.keys(limits).length > 0 ? (
+        <Text as="div" size="caption" tone="secondary" className="shrink-0 px-2">
+          <Tooltip
+            label={t("The scan reached a size limit, so repositories beyond it are not listed.")}
+            asChild
+          >
+            <span>{t("Repositories found: {p0} (scan limited)", { p0: repositories.length })}</span>
+          </Tooltip>
         </Text>
       ) : null}
       <div

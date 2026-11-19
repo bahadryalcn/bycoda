@@ -187,14 +187,14 @@
 .resizeEdge[data-resize-direction="s"] {
   left: 12px;
   right: 12px;
-  height: 6px;
+  block-size: 6px;
   cursor: ns-resize;
 }
 .resizeEdge[data-resize-direction="e"],
 .resizeEdge[data-resize-direction="w"] {
   top: 12px;
   bottom: 12px;
-  width: 6px;
+  inline-size: 6px;
   cursor: ew-resize;
 }
 .resizeEdge[data-resize-direction="ne"],

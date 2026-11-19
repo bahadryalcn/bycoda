@@ -17,10 +17,18 @@ import {
   type RoutePreference,
 } from "../model/machineRoutes";
 import type { RemoteMachine } from "../model/protocol";
+import { classifyRemoteError } from "../model/remoteFailure";
 
 export type { RoutePreference };
 
 type RouteCheck = { address: string; reachable: boolean | null };
+
+/** Tauri's rejection for a command this desktop build does not register: an older desktop
+ * without the route store. Only the saved other address is known then, which is expected. */
+const MISSING_ROUTE_COMMAND = /^Command remote_machine_routes not found$/;
+const olderDesktop = (reason: unknown) =>
+  classifyRemoteError(reason).kind === "outdated" ||
+  MISSING_ROUTE_COMMAND.test(String(reason).replace(/^Error: /, ""));
 
 const kindLabel = (kind: Route["kind"]) =>
   kind === "tailscale"
@@ -79,10 +87,7 @@ function MachineRouteDetails({ machine }: { machine: RemoteMachine }) {
     })
       .then((value) => current && setRoutes(value))
       .catch((reason: unknown) => {
-        if (current)
-          setReadError(
-            !/unknown command|command.*not found|not supported|no desktop/i.test(String(reason)),
-          );
+        if (current) setReadError(!olderDesktop(reason));
       })
       .finally(() => {
         if (current) setLoading(false);
@@ -124,8 +129,7 @@ function MachineRouteDetails({ machine }: { machine: RemoteMachine }) {
         ) : null}
         {ssh?.alternate ? (
           <Text wrap="anywhere" as="div" tone="muted" className="mt-1">
-            {t("Other address · ")}
-            {ssh?.alternate}
+            {t("Other address: {p0}", { p0: ssh.alternate })}
           </Text>
         ) : null}
       </div>

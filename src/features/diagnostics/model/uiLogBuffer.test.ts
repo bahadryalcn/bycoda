@@ -34,6 +34,27 @@ describe("log buffer", () => {
     expect(buffer.snapshot().length).toBeLessThan(5000);
   });
 
+  it("evicts routine focus breadcrumbs before a warning or error", () => {
+    const buffer = createLogBuffer({ lines: 3, chars: 10_000 });
+    buffer.push("error", "ui.error", "boom");
+    for (let i = 0; i < 6; i++) buffer.push("info", "ui.window", i % 2 ? "blur" : "focus");
+    const lines = buffer.snapshot().split("\n");
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).toContain("ERROR [ui.error] boom");
+    expect(lines.slice(1).every((line) => line.includes("[ui.window]"))).toBe(true);
+  });
+
+  it("evicts a warning only when no routine line is left", () => {
+    const buffer = createLogBuffer({ lines: 2, chars: 10_000 });
+    buffer.push("warn", "ui.console", "first");
+    buffer.push("error", "ui.error", "second");
+    buffer.push("error", "ui.error", "third");
+    const lines = buffer.snapshot().split("\n");
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toContain("second");
+    expect(lines[1]).toContain("third");
+  });
+
   it("folds identical consecutive lines into a repeat count", () => {
     const buffer = createLogBuffer({ lines: 3, chars: 10_000 });
     for (let i = 0; i < 4; i++) buffer.push("warn", "ui.rpc", "request failed", { method: "a.b" });

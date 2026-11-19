@@ -16,6 +16,8 @@ import {
 } from "../model/sshGroupDefaults";
 import type { ServerRecord } from "../model/serverInventory";
 import { sshEndpointPreview } from "../model/sshEndpointReview";
+import { errorText } from "../../../shared/lib/errors";
+import { sanitizeConnectionError } from "../model/remoteConnection";
 
 type Review = {
   reviewId: string;
@@ -132,7 +134,11 @@ export function SshAgentForwarding({
         generation === sequence.current &&
         current.current.target === selected.target
       )
-        setState({ target: selected.target, loading: false, error: String(reason) });
+        setState({
+          target: selected.target,
+          loading: false,
+          error: sanitizeConnectionError(errorText(reason)),
+        });
     } finally {
       if (inFlight.current?.generation === generation) inFlight.current = undefined;
     }
@@ -151,8 +157,13 @@ export function SshAgentForwarding({
   useEffect(() => {
     if (!review) return;
     const delay = Math.max(0, Math.min(30_000, review.expiresAt - Date.now()));
+    // The tick stops itself at the review's own expiry; a new review object restarts this effect.
+    const interval = setInterval(() => {
+      const now = Date.now();
+      setClock(now);
+      if (now >= review.expiresAt) clearInterval(interval);
+    }, 250);
     const timeout = setTimeout(() => setExpired(review.reviewId), delay);
-    const interval = setInterval(() => setClock(Date.now()), 250);
     return () => {
       clearTimeout(timeout);
       clearInterval(interval);
@@ -180,7 +191,7 @@ export function SshAgentForwarding({
       onApprove(current.current.server, review.reviewId);
       onClose();
     } catch (reason) {
-      setState({ target, loading: false, error: String(reason) });
+      setState({ target, loading: false, error: sanitizeConnectionError(errorText(reason)) });
     }
   };
   return (

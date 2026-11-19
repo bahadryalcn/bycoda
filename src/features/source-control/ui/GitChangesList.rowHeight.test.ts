@@ -67,7 +67,7 @@ it.each([
         ),
       ),
     );
-    const insets = [...container.querySelectorAll<HTMLElement>("li")]
+    const insets = [...container.querySelectorAll<HTMLElement>('[role="row"]')]
       .map((row) => row.style.getPropertyValue("--control-padding-start"))
       .filter(Boolean);
     expect(insets).toEqual(expected);
@@ -152,8 +152,7 @@ it("keeps path range selection and focused-row keyboard admission through the li
       ),
     ),
   );
-  const list = container.querySelector('[role="listbox"]')!;
-  expect(list.tagName).toBe("UL");
+  const list = container.querySelector('[role="grid"]')!;
   const a = list.querySelector<HTMLButtonElement>('[data-git-file="/repo/a.ts"]')!;
   await act(async () => a.click());
   await act(async () =>
@@ -167,7 +166,7 @@ it("keeps path range selection and focused-row keyboard admission through the li
     ),
   );
   const selected = () =>
-    [...list.querySelectorAll<HTMLElement>('[role="option"][aria-selected="true"]')].map(
+    [...list.querySelectorAll<HTMLElement>('[role="row"][aria-selected="true"]')].map(
       (row) => row.querySelector<HTMLElement>("[data-git-file]")!.dataset.gitFile,
     );
   expect(selected()).toEqual(["/repo/a.ts", "/repo/b.ts"]);

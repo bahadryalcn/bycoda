@@ -18,3 +18,20 @@
   Chromium headless shell, ffmpeg) and device tools install themselves in the
   background on first use. Chromium is downloaded, not bundled; `visuals.preview`
   answers `installing: true` meanwhile.
+
+## One preview across inline, panel and full view
+
+2026-11-19, owner task #1006: "Maintain a single live sandboxed iframe/preview token across
+inline/panel/full transitions using existing stable container mechanisms" (translated).
+
+- The card mounts one HtmlPreview into a host element it creates once. Views only provide a
+  slot (card, shared Sheet body, shared Modal body); the host moves between them and the
+  card slot keeps the snapshot height in every view. Every view change leaves the card slot
+  first, so closing a panel or dialog never removes the frame with it.
+- The move uses `moveBefore`, which keeps an iframe's document and focus. Without it (or when
+  it refuses) `appendChild` reparents the host, which reloads the frame's document from the
+  same live token: still one token, no create/close churn, no new authority, but page state
+  resets on that transition. Chromium-based WebViews support `moveBefore`; check the other
+  platform WebViews natively before claiming state survives there.
+- CSS-only retention (a fixed-position frame under the Sheet or Modal) was rejected: the
+  overlays are body portals with their own stacking, so the frame cannot sit above their glass.

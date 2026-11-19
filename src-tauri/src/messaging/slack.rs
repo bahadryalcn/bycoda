@@ -2,7 +2,7 @@
 //! (`secret.slack`, see `oauth`) or a pasted bot token (`xoxb-`). A thread is one
 //! conversation (channel, private channel, DM or group DM); only top-level messages are read.
 use super::oauth::{self, Purpose};
-use super::types::{Account, Attachment, Message, Provider, Secret, Thread};
+use super::types::{Account, Attachment, Message, MessagePage, Provider, Secret, Thread};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
@@ -100,9 +100,30 @@ pub(crate) fn thread_messages(
     _account: &Account,
     secret: &mut Secret,
     thread_id: &str,
-) -> Result<Vec<Message>, String> {
+    before: Option<&str>,
+) -> Result<MessagePage, String> {
     valid_conversation_id(thread_id)?;
-    run(secret, |http| thread_messages_with(http, thread_id))
+    if let Some(cursor) = before {
+        valid_cursor(cursor)?;
+    }
+    run(secret, |http| thread_messages_with(http, thread_id, before))
+}
+
+/// A Slack message `ts`: seconds, a dot and microseconds.
+fn valid_cursor(cursor: &str) -> Result<(), String> {
+    let valid = cursor.len() <= 24
+        && cursor
+            .split_once('.')
+            .is_some_and(|(seconds, micros)| {
+                !seconds.is_empty()
+                    && !micros.is_empty()
+                    && seconds.bytes().chain(micros.bytes()).all(|byte| byte.is_ascii_digit())
+            });
+    if valid {
+        Ok(())
+    } else {
+        Err("This conversation page is invalid. Reload the conversation.".into())
+    }
 }
 
 pub(crate) fn reply(
@@ -196,8 +217,12 @@ impl Http for UreqHttp {
         };
         let response = match result {
             Ok(response) | Err(ureq::Error::Status(_, response)) => response,
-            Err(ureq::Error::Transport(_)) => {
-                return Err("Could not reach Slack. Check your connection and try again.".into())
+            Err(ureq::Error::Transport(error)) => {
+                return Err(crate::integrations::http::unreachable_text(
+                    "Slack",
+                    &error,
+                    json_body.is_some(),
+                ))
             }
         };
         let status = response.status();
@@ -726,21 +751,31 @@ fn conversation_title(http: &mut dyn Http, users: &mut Users, conversation: &Val
 pub(super) fn thread_messages_with(
     http: &mut dyn Http,
     thread_id: &str,
-) -> Result<Vec<Message>, String> {
+    before: Option<&str>,
+) -> Result<MessagePage, String> {
     let (me, _) = auth_test(http)?;
-    let (value, _) = call(
-        http,
-        "conversations.history",
-        &[("channel", thread_id), ("limit", HISTORY_LIMIT)],
-        None,
-        true,
-    )
-    .map_err(ApiError::text)?;
+    let mut params = vec![("channel", thread_id), ("limit", HISTORY_LIMIT)];
+    // `latest` is exclusive by default, so the page ends just before the oldest loaded message.
+    if let Some(cursor) = before {
+        params.push(("latest", cursor));
+    }
+    let (value, _) = call(http, "conversations.history", &params, None, true)
+        .map_err(ApiError::text)?;
     let raw = value
         .get("messages")
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
+    // History is newest first, so the last raw entry (kept even when it maps to nothing) is the
+    // cursor for the next older page.
+    let earlier = if value.get("has_more").and_then(Value::as_bool) == Some(true) {
+        raw.last()
+            .and_then(|message| message.get("ts"))
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    } else {
+        None
+    };
     let mut users = Users::default();
     for message in &raw {
         if let Some(user) = message.get("user").and_then(Value::as_str) {
@@ -760,7 +795,7 @@ pub(super) fn thread_messages_with(
         })
         .collect();
     messages.sort_by(|left, right| left.at.cmp(&right.at).then_with(|| left.id.cmp(&right.id)));
-    Ok(messages)
+    Ok(MessagePage { messages, earlier })
 }
 
 pub(super) fn reply_with(

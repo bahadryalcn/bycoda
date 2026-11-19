@@ -292,6 +292,10 @@ pub async fn jira_mobile_boards(app: AppHandle, filters: Filters) -> Result<Vec<
         return Err("The Jira account changed during the board read".into());
     }
     boards.retain(|board| filters.allowed_board_ids.contains(&board.id));
+    // The paired-device board contract carries no project ownership.
+    for board in &mut boards {
+        board.project_id = None;
+    }
     if boards.len() > 500 {
         return Err("Too many enabled Jira boards".into());
     }

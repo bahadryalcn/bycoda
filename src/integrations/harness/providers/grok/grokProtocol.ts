@@ -1,4 +1,6 @@
+import { errorText } from "../../../../shared/lib/errors";
 import { acpUsageEvents } from "../../core/acpUsage";
+import { t } from "../../../../shared/i18n/core";
 import { humanizeModelId } from "../../../../shared/model/modelNameFromId";
 import { trimAndCapText as cap } from "../../../../shared/lib/cappedText";
 import { asRecord, numberField, pickOption, stringField } from "../../../../shared/lib/records";
@@ -37,8 +39,9 @@ import {
   extractToolPreview,
 } from "../../core/preview";
 
-export const AUTH_HELP =
-  "Grok Build is not signed in. Run `grok login` in a terminal, or set XAI_API_KEY.";
+export function grokAuthHelp(): string {
+  return t("Grok Build is not signed in. Run `grok login` in a terminal, or set XAI_API_KEY.");
+}
 
 export const TEXT_MODEL = "grok-4.6";
 
@@ -204,14 +207,14 @@ export function grokAuthMethodId(init: unknown): string | null {
 }
 
 export function grokAuthError(error: unknown): Error {
-  const detail = error instanceof Error ? error.message : String(error);
+  const detail = errorText(error);
   if (/auth|login|credential|api key|XAI_API_KEY/i.test(detail)) {
-    return new Error(`${detail.trim()}\n\n${AUTH_HELP}`);
+    return new Error(`${detail.trim()}\n\n${grokAuthHelp()}`);
   }
   if (/timed out/i.test(detail)) {
-    return new Error(`Grok Build did not start. ${AUTH_HELP}`);
+    return new Error(t("Grok Build did not start. {p0}", { p0: grokAuthHelp() }));
   }
-  return new Error(`Grok Build did not start. ${detail}`);
+  return new Error(t("Grok Build did not start. {p0}", { p0: detail }));
 }
 
 export function pickAutoOption(

@@ -4,6 +4,7 @@ import type { RemoteDataState } from "../../connections";
 import type { BoardTask } from "../model/taskClient";
 import type { useTaskBoardQueries } from "../model/useTaskBoardQueries";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { useMinuteNow } from "../../../shared/hooks/useMinuteNow";
 
 /** A sprint assignment that failed after its task or goal was created. */
 export type PlanningRecovery = {
@@ -58,7 +59,11 @@ type TaskBoard = ReturnType<typeof useTaskBoardQueries>["board"];
 /** The board's data state and the time its cards measure from. Both follow the
  * board query: the last verified time survives a failed refresh, so it cannot be
  * derived from the current answer alone. Adjusted during render from the
- * previously seen board, with no effect pass in between. */
+ * previously seen board, with no effect pass in between.
+ *
+ * Time labels also advance on the shared minute clock while the board has tasks,
+ * so a running card keeps counting when the board object does not change. The
+ * clock stops with no tasks and while the document is hidden. */
 export function useBoardDataState(board: TaskBoard) {
   const [seen, setSeen] = useState<TaskBoard | null>(null);
   const [state, setState] = useState<{ data: RemoteDataState; now: number }>(() => ({
@@ -91,5 +96,8 @@ export function useBoardDataState(board: TaskBoard) {
       };
     });
   }
-  return { boardDataState: state.data, now: state.now };
+  // The minute clock is floored, so the max keeps `now` from going backwards when a
+  // board update stamped a later real time.
+  const minute = useMinuteNow(board.tasks.length > 0);
+  return { boardDataState: state.data, now: Math.max(state.now, minute) };
 }

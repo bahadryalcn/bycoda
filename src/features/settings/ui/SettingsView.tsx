@@ -4,6 +4,7 @@ import { Text } from "../../../shared/ui/Text";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import type { BackgroundSessionTarget } from "../../tasks/model/backgroundSession";
 import { Button } from "../../../shared/ui/Button";
+import { shouldHandleGlobalEscape } from "../../../shared/ui/overlay";
 import { Heading } from "../../../shared/ui/Heading";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
@@ -236,12 +237,17 @@ export function SettingsView({
 
   // Keep the reveal context alive so controlled advanced panels do not hide
   // the focused result when its visual highlight would otherwise expire.
+  // A target that never renders (stale deep link, anchor from another page) must not
+  // keep this observer running on every panel mutation, so the lookup gives up after
+  // REVEAL_LOOKUP_MS. A pending frame still runs, so a target that is just rendering is not lost.
   useEffect(() => {
     if (!revealed || (revealed === "project-notifications" && notificationProjectPath)) return;
     const panel = panelRef.current;
     if (!panel) return;
+    const REVEAL_LOOKUP_MS = 3000;
     let frame = 0;
     const observer = new MutationObserver(locate);
+    const lookupDeadline = setTimeout(() => observer.disconnect(), REVEAL_LOOKUP_MS);
     function locate() {
       const target = document.getElementById(settingDomId(revealed!));
       if (!target || !panel?.contains(target)) return;
@@ -270,6 +276,7 @@ export function SettingsView({
     });
     locate();
     return () => {
+      clearTimeout(lookupDeadline);
       observer.disconnect();
       cancelAnimationFrame(frame);
     };
@@ -302,7 +309,7 @@ export function SettingsView({
     // An embedding overlay already owns Escape, ordering it after inner popups and dialogs.
     if (embedded) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (!shouldHandleGlobalEscape(event)) return;
       event.preventDefault();
       event.stopPropagation();
       onCloseRef.current();

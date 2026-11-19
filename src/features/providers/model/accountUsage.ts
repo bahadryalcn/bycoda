@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import {
   clampUsedPercent,
   exhaustedWindowResetAt,
+  formatResetCountdownWith,
   formatResetDuration,
   type ProviderRateLimits,
 } from "./rateLimits";
@@ -105,26 +106,17 @@ export function accountStatusWith(
   return { tone: "ready", label: "Ready", detail: null };
 }
 
-/** True when usage failed because the account has to sign in again. */
-export function needsProviderLogin(limits: ProviderRateLimits): boolean {
-  if (limits.status === "unavailable") return true;
-  if (limits.status !== "error") return false;
-  const text = limits.error?.toLowerCase() ?? "";
+/**
+ * Signed out or expired, and a browser sign-in can fix it (the CLI exists).
+ * Only the fetch layer's structured `reason` counts; the error text is display-only.
+ */
+export function providerAccountSignedOut(limits: ProviderRateLimits): boolean {
   return (
-    text.includes("expired") ||
-    text.includes("sign-in") ||
-    text.includes("not signed in") ||
-    text.includes("not connected") ||
-    text.includes("authentication")
+    (limits.status === "error" || limits.status === "unavailable") && limits.reason === "signedOut"
   );
 }
 
-/** Signed out or expired, and a browser sign-in can fix it (the CLI exists). */
-export function providerAccountSignedOut(limits: ProviderRateLimits): boolean {
-  return needsProviderLogin(limits) && !limits.error?.toLowerCase().includes("cli not found");
-}
-
-/** "back in 31m" for the used-up window that stays blocked longest. */
+/** "Resets in 31m" for the used-up window that stays blocked longest. */
 function backIn(
   limits: ProviderRateLimits,
   now: number,
@@ -133,7 +125,7 @@ function backIn(
 ): string | null {
   const resetAt = exhaustedWindowResetAt(limits);
   if (resetAt == null || resetAt <= now) return null;
-  return translate("Resets in {p0}", { p0: format.formatResetDuration(resetAt - now) });
+  return formatResetCountdownWith(resetAt - now, translate, format);
 }
 
 /** The account with the most headroom, if it is comfortably above "low". */

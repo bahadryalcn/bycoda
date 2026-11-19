@@ -64,7 +64,7 @@ export function CrewAppearancePicker({
           width={288}
           constrainHeight
           onDismiss={() => setOpen(false)}
-          role="dialog"
+          kind="dialog"
           aria-label={t("Crew icon and color")}
           className="bycoda-arc overflow-y-auto overscroll-contain"
         >

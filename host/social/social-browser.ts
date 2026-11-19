@@ -7,6 +7,7 @@ import { lstat, open, readFile, rm } from "node:fs/promises";
 import { join, win32 } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { SocialPlatformError } from "../../src/integrations/social/adapter";
+import { createLogger } from "../diagnostics/logger";
 
 const BROWSER_RESPONSE_ORIGINS = [
   "https://x.com",
@@ -105,6 +106,23 @@ export function findBrowser(
 }
 
 type CdpListener = (method: string, params: any, sessionId?: string) => void;
+/** Largest text frame accepted from the browser; real replies (screenshots, response bodies) stay far below. */
+export const MAX_CDP_FRAME_LENGTH = 32 * 1024 * 1024;
+const log = createLogger("host.social.browser");
+const isRecord = (value: unknown): value is Record<string, any> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+const isThenable = (value: unknown): value is PromiseLike<unknown> =>
+  isRecord(value) && typeof value.then === "function";
+/** A frame is one JSON object in a text message; anything else is dropped without trusting it. */
+function parseFrame(data: unknown): Record<string, any> | undefined {
+  if (typeof data !== "string" || data.length > MAX_CDP_FRAME_LENGTH) return undefined;
+  try {
+    const message: unknown = JSON.parse(data);
+    return isRecord(message) ? message : undefined;
+  } catch {
+    return undefined;
+  }
+}
 /** Chrome DevTools Protocol over Node's built-in WebSocket; no browser download or driver package. */
 export class Cdp {
   private next = 0;
@@ -117,22 +135,10 @@ export class Cdp {
     }
   >();
   private listeners = new Set<CdpListener>();
+  private warned = new Set<string>();
   readonly closed: Promise<void>;
   private constructor(private readonly socket: WebSocket) {
-    socket.addEventListener("message", (event) => {
-      const message = JSON.parse(String(event.data));
-      if (message.id === undefined) {
-        for (const listener of this.listeners)
-          listener(message.method, message.params, message.sessionId);
-        return;
-      }
-      const waiter = this.pending.get(message.id);
-      if (!waiter) return;
-      this.pending.delete(message.id);
-      clearTimeout(waiter.timer);
-      if (message.error) waiter.reject(new Error(message.error.message));
-      else waiter.resolve(message.result ?? {});
-    });
+    socket.addEventListener("message", (event) => this.receive(event.data));
     this.closed = new Promise((resolve) =>
       socket.addEventListener("close", () => {
         for (const waiter of this.pending.values()) {
@@ -198,6 +204,46 @@ export class Cdp {
   on(listener: CdpListener) {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+  /**
+   * One frame from the browser. A frame or listener that fails is dropped here: the Host exits on
+   * an uncaught exception, so nothing thrown while handling browser-controlled data may escape.
+   */
+  private receive(data: unknown) {
+    const message = parseFrame(data);
+    if (!message) return this.warnOnce("frame", "Dropped a malformed browser debugging frame.");
+    if (message.id === undefined) {
+      if (typeof message.method !== "string")
+        return this.warnOnce("frame", "Dropped a malformed browser debugging frame.");
+      const sessionId = typeof message.sessionId === "string" ? message.sessionId : undefined;
+      // Snapshot so a listener that unsubscribes mid-dispatch cannot skip a sibling.
+      for (const listener of [...this.listeners]) {
+        try {
+          const outcome: unknown = listener(message.method, message.params, sessionId);
+          if (isThenable(outcome))
+            outcome.then(undefined, () =>
+              this.warnOnce("listener", "A browser event listener failed."),
+            );
+        } catch {
+          this.warnOnce("listener", "A browser event listener failed.");
+        }
+      }
+      return;
+    }
+    const waiter = typeof message.id === "number" ? this.pending.get(message.id) : undefined;
+    if (!waiter) return;
+    this.pending.delete(message.id);
+    clearTimeout(waiter.timer);
+    if (message.error) {
+      const reason = message.error?.message;
+      waiter.reject(new Error(typeof reason === "string" ? reason : "Browser command failed."));
+    } else waiter.resolve(isRecord(message.result) ? message.result : {});
+  }
+  /** Fixed text only: frame and page content never reach the log. One line per kind per connection. */
+  private warnOnce(kind: string, text: string) {
+    if (this.warned.has(kind)) return;
+    this.warned.add(kind);
+    log.warn(text);
   }
   close() {
     this.socket.close();

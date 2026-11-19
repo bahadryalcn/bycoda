@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { useCallback, useEffect, useState } from "react";
 import { t } from "../../../shared/i18n";
 import { TimeoutError, withTimeout } from "../../../shared/lib/withTimeout";
@@ -48,7 +49,7 @@ export async function loadWorkspaceCreation(
   const timeoutMs = explicit ? EXPLICIT_WORKTREE_READ_TIMEOUT_MS : WORKSPACE_POLICY_READ_TIMEOUT_MS;
   const fallback = (error: unknown): WorkspaceCreationResult => {
     console.warn("[workspaces] policy read unavailable; using the current checkout", error);
-    return { warning: error instanceof Error ? error.message : String(error) };
+    return { warning: errorText(error) };
   };
   let read: PolicyRead;
   try {
@@ -192,7 +193,7 @@ export function useWorkspaceCreation(
             choice,
             base,
             reload,
-            error: error instanceof Error ? error.message : String(error),
+            error: errorText(error),
             updateRequired: error instanceof WorkspaceCapabilityError,
           });
       },

@@ -46,6 +46,42 @@ it("follows the measured input while you speak and stays flat when muted", () =>
   expect(quiet).toBeCloseTo(1, 1);
 });
 
+it("stops requesting frames while the window is behind another application and resumes on focus", () => {
+  const request = vi.fn(() => 7);
+  const cancel = vi.fn();
+  vi.stubGlobal("requestAnimationFrame", request);
+  vi.stubGlobal("cancelAnimationFrame", cancel);
+  const hasFocus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  try {
+    act(() =>
+      root.render(
+        createElement(VoiceCore, {
+          state: "assistant",
+          level: { current: 0 },
+          name: "",
+          avatar: undefined,
+        }),
+      ),
+    );
+    expect(request).toHaveBeenCalledTimes(1);
+    hasFocus.mockReturnValue(false);
+    act(() => {
+      window.dispatchEvent(new Event("blur"));
+    });
+    expect(cancel).toHaveBeenCalledWith(7);
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(host.querySelector<HTMLElement>("[data-state]")?.dataset.pose).toBe("assistant");
+    hasFocus.mockReturnValue(true);
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    expect(request).toHaveBeenCalledTimes(2);
+  } finally {
+    hasFocus.mockRestore();
+    vi.unstubAllGlobals();
+  }
+});
+
 it("draws a broken ring without turning arcs on error and shows the avatar initial", () => {
   act(() =>
     root.render(

@@ -77,6 +77,48 @@ it("does not hide a busy failure that nothing can retry", async () => {
   await view.unmount();
 });
 
+it("starts no second retry while the first is loading with the error still shown", async () => {
+  const retry = vi.fn();
+  const view = await mount({ error: BUSY, retry });
+  await act(async () => vi.advanceTimersByTime(QUIET_RETRY_DELAYS_MS[0]));
+  expect(retry).toHaveBeenCalledOnce();
+  // The caller keeps the busy error while the retry loads.
+  await view.render({ error: BUSY, retry, loading: true });
+  await act(async () => vi.advanceTimersByTime(60_000));
+  expect(retry).toHaveBeenCalledOnce();
+  // The next delay is counted from the moment the retry settled.
+  await view.render({ error: BUSY, retry, loading: false });
+  await act(async () => vi.advanceTimersByTime(QUIET_RETRY_DELAYS_MS[1] - 1));
+  expect(retry).toHaveBeenCalledOnce();
+  await act(async () => vi.advanceTimersByTime(1));
+  expect(retry).toHaveBeenCalledTimes(2);
+  await view.unmount();
+});
+
+it("waits for a returned retry promise before arming the next delay", async () => {
+  let settle: () => void = () => {};
+  const retry = vi.fn(() => new Promise<void>((resolve) => (settle = resolve)));
+  const view = await mount({ error: BUSY, retry });
+  await act(async () => vi.advanceTimersByTime(QUIET_RETRY_DELAYS_MS[0]));
+  await act(async () => vi.advanceTimersByTime(60_000));
+  expect(retry).toHaveBeenCalledOnce();
+  await act(async () => settle());
+  await act(async () => vi.advanceTimersByTime(QUIET_RETRY_DELAYS_MS[1]));
+  expect(retry).toHaveBeenCalledTimes(2);
+  await view.unmount();
+});
+
+it("drops a pending retry on unmount and ignores its late settle", async () => {
+  let settle: () => void = () => {};
+  const retry = vi.fn(() => new Promise<void>((resolve) => (settle = resolve)));
+  const view = await mount({ error: BUSY, retry });
+  await act(async () => vi.advanceTimersByTime(QUIET_RETRY_DELAYS_MS[0]));
+  await view.unmount();
+  await act(async () => settle());
+  await act(async () => vi.advanceTimersByTime(60_000));
+  expect(retry).toHaveBeenCalledOnce();
+});
+
 it("keeps counting while a retry is loading, so the ladder escalates to the error", async () => {
   const retry = vi.fn();
   const view = await mount({ error: BUSY, retry });

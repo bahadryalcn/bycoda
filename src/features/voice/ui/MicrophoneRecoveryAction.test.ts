@@ -49,7 +49,7 @@ it("opens a guide without prompting, then opens settings only on an explicit act
   await act(async () => button("Review access")!.click());
   expect(native.open).not.toHaveBeenCalled();
   expect(document.body.textContent).toContain("Let desktop apps access your microphone");
-  await act(async () => button("Open Settings")!.click());
+  await act(async () => button("Open settings")!.click());
   expect(native.open).toHaveBeenCalledExactlyOnceWith("microphone");
   expect(document.body.textContent).toContain("Waiting for access");
 });
@@ -57,9 +57,9 @@ it("shows a settings failure and allows retry without claiming access", async ()
   native.open.mockRejectedValueOnce(new Error("settings failed")).mockResolvedValue(undefined);
   await render("OS denied");
   await act(async () => button("Review access")!.click());
-  await act(async () => button("Open Settings")!.click());
-  expect(document.body.textContent).toContain("Could not open the permission prompt or settings.");
-  await act(async () => button("Open Settings")!.click());
+  await act(async () => button("Open settings")!.click());
+  expect(document.body.textContent).toContain("Couldn’t open the permission prompt or settings.");
+  await act(async () => button("Open settings")!.click());
   expect(native.open).toHaveBeenCalledTimes(2);
   expect(document.body.textContent).not.toContain("Access is ready");
 });

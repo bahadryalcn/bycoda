@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import {
   useCallback,
   useEffect,
@@ -194,7 +195,7 @@ export function useNoteImageInsertion({
               ),
             );
           }
-          owners.current.onError(err instanceof Error ? err.message : String(err));
+          owners.current.onError(errorText(err));
         });
       } finally {
         const committed = () => {

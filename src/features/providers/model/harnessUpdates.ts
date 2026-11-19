@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { HarnessId } from "../../sessions/model/session";
@@ -143,7 +144,7 @@ export async function checkHarnessVersions({
           return {
             harness,
             status: "unknown",
-            error: error instanceof Error ? error.message : String(error),
+            error: errorText(error),
           };
         }
       }),

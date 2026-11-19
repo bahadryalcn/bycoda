@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import type { McpConnection } from "../../settings";
+import { t } from "../../../shared/i18n";
 import {
+  describeMcpConfigWarnings,
   getCachedMcpSettings,
   loadMcpSettings,
   subscribeMcpSettings,
@@ -39,6 +41,13 @@ export function claudeMcpStatus(servers: McpSettingsSnapshot["servers"]): Map<st
       .filter((server) => server.provider === "claude")
       .map((server): [string, string] => [server.name, server.status]),
   );
+}
+
+/** An empty list with unreadable files is a failed read, not "No MCP servers found". */
+export function mcpCatalogError(snapshot: McpSettingsSnapshot): string {
+  if (snapshot.error || snapshot.servers.length > 0 || !snapshot.configWarnings?.length)
+    return snapshot.error;
+  return `${t("Some MCP configuration files could not be read, so their servers are not listed.")}\n${describeMcpConfigWarnings(snapshot.configWarnings)}`;
 }
 
 /** Rejects a read that belongs to another scope than the one being shown. */
@@ -81,7 +90,7 @@ export function useComposerMcpCatalog(input: {
         scope,
         connections: snapshot.servers,
         status: claudeMcpStatus(snapshot.servers),
-        error: snapshot.error,
+        error: mcpCatalogError(snapshot),
         loading: false,
       });
     };

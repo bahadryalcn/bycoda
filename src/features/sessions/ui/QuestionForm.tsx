@@ -23,8 +23,8 @@ import {
 } from "../model/attachments";
 import { questionTransportHeld, runQuestionAttachmentEffect } from "../model/questionAttachments";
 import { useT } from "../../../shared/i18n";
-import { usePresentationVisible } from "./presentationVisibility";
-import { useEffect, useLayoutEffect, useId, useRef, useState } from "react";
+import { usePresentationNow } from "./AgentClock";
+import { useLayoutEffect, useId, useRef, useState } from "react";
 import { ChevronLeft, FilePlus, MessageSquare } from "../../../shared/ui/icons";
 import { questionDraftKey, type QuestionDraft } from "../model/questionDrafts";
 import {
@@ -47,6 +47,8 @@ type Props = {
   dismissEntirePrompt?: boolean;
   /** Share the composer's background when this question is docked above it. */
   docked?: boolean;
+  /** The composer's notice stack already announces the checkpoint; do not repeat it here. */
+  checkpointNoticeOwned?: boolean;
   attachmentsSupported?: boolean;
   remote?: boolean;
   onReply: (requestId: number, reply: UserQuestionReply) => void;
@@ -106,8 +108,8 @@ function QuestionFormContent({
   } = useQuestionFormDraft(prompt, draftScope, parentSessionId);
   const { step, answers, custom } = draft;
   const statusId = useId();
-  const [now, setNow] = useState(Date.now);
-  const visible = usePresentationVisible();
+  // Countdown label only; auto-resolve and interaction checks run on the host's deadline.
+  const now = usePresentationNow(prompt.autoResolveAt != null);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [readingAttachments, setReadingAttachments] = useState(false);
   const attachmentFlight = useRef(false);
@@ -129,13 +131,6 @@ function QuestionFormContent({
     prompt.delivery,
   );
   const held = transportHeld || !reserved || readingAttachments || recovery.blocked;
-
-  useEffect(() => {
-    if (prompt.autoResolveAt == null || !visible) return;
-    setNow(Date.now());
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [prompt.requestId, prompt.autoResolveAt, visible]);
 
   const interact = () => {
     if (!reserved || !reservation.current?.current() || !parentChanged.canMutate()) return;
@@ -399,14 +394,10 @@ function QuestionFormContent({
           if (!canAttach || !pasted.length) return;
           event.preventDefault();
           event.stopPropagation();
-          readAttachments(async () => {
-            const attached = await attachmentsFromFiles(pasted, {
-              persistBlobs: false,
-            });
-            if (attached.length !== pasted.length)
-              throw new Error(t("Some files could not be attached. Try attaching them again."));
-            return attached;
-          });
+          // Valid files attach; blobs left out are named by the reader's notice.
+          readAttachments((onSkipped) =>
+            attachmentsFromFiles(pasted, { persistBlobs: false, onSkipped }),
+          );
         }}
         onSubmit={(event) => {
           event.preventDefault();
@@ -531,7 +522,7 @@ function QuestionFormContent({
           {...surfaceAttributes({ variant: "inset", frame: "pane", edge: "top" }, styles.footer)}
         >
           <div className={styles.feedback}>
-            {parentClosed ? (
+            {parentClosed && !props.checkpointNoticeOwned ? (
               <LiveText text={t("Preparing session checkpoint. Your draft is kept.")} />
             ) : null}
             {capacityMessage ? <InlineError>{capacityMessage}</InlineError> : null}

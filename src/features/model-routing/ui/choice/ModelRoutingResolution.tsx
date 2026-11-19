@@ -1,4 +1,3 @@
-import { useQuery } from "@tanstack/react-query";
 import { t, useLocale } from "../../../../shared/i18n";
 import type {
   ModelRoutingItemChoice,
@@ -7,7 +6,7 @@ import type {
 } from "../../../../shared/model/host-contracts/model-routing";
 import { Text } from "../../../../shared/ui/Text";
 import { ModelLabel } from "../../../sessions/public/ModelLabel";
-import { resolveModelRouting } from "../../model/modelRoutingClient";
+import { useModelRoutingPreview } from "../../model/useModelRoutingPreview";
 
 /** Preview only: failure never prevents editing or saving the containing form. */
 export function ModelRoutingResolution({
@@ -27,13 +26,11 @@ export function ModelRoutingResolution({
   problemsOnly?: boolean;
 }) {
   useLocale();
-  const query = useQuery({
-    queryKey: ["model-routing-resolution", machineId, role, choice, fixed, revision],
-    queryFn: () => resolveModelRouting(machineId, { role, choice, fixed }),
-    retry: false,
-    staleTime: 3000,
-    refetchInterval: 60_000,
-  });
+  const query = useModelRoutingPreview(
+    machineId,
+    ["model-routing-resolution", machineId, role, choice, fixed, revision],
+    { role, choice, fixed },
+  );
   const result = query.data;
   if (problemsOnly && !query.isError && (!result || result.ok)) return null;
   return (

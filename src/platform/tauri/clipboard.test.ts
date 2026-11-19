@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from "vitest";
-import { copyMessage, copyText, messageFilesFromClipboard } from "./clipboard";
+import { copyMessage, copyText, messageFilesFromClipboard, readClipboardImage } from "./clipboard";
 import { invoke } from "@tauri-apps/api/core";
 import {
   MAX_EMBED_BYTES,
@@ -13,6 +13,26 @@ import {
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
 afterEach(() => vi.restoreAllMocks());
+
+it("reads an empty clipboard as no image rather than as a failure", async () => {
+  vi.mocked(invoke).mockRejectedValueOnce("The clipboard does not contain an image.");
+  await expect(readClipboardImage()).resolves.toBeNull();
+  vi.mocked(invoke).mockResolvedValueOnce(new ArrayBuffer(0));
+  await expect(readClipboardImage()).resolves.toBeNull();
+});
+
+it("reports a real clipboard read failure instead of treating it as empty", async () => {
+  vi.mocked(invoke).mockRejectedValueOnce("Pasteboard is locked");
+  await expect(readClipboardImage()).rejects.toThrow("Pasteboard is locked");
+});
+
+it("returns clipboard bytes as a PNG file", async () => {
+  vi.mocked(invoke).mockResolvedValueOnce(new Uint8Array([137, 80, 78, 71]).buffer);
+  const file = await readClipboardImage();
+  expect(file?.name).toBe("clipboard-image.png");
+  expect(file?.type).toBe("image/png");
+  expect(file?.size).toBe(4);
+});
 
 it("copies lazy remote images and documents through their authorized readers", async () => {
   vi.mocked(invoke).mockClear();
@@ -252,22 +272,41 @@ it("copies a message with multiple attachments and preserves names and bytes on 
 
 it("rejects clipboard files whose decoded bytes exceed the attachment limit", () => {
   const base64Length = Math.ceil((MAX_EMBED_BYTES + 1) / 3) * 4;
-  const payload = encodeURIComponent(
-    JSON.stringify([
-      {
-        name: "oversized.bin",
-        mimeType: "application/octet-stream",
-        data: "A".repeat(base64Length),
-      },
-    ]),
-  );
-  const html = `<div data-bycoda-files="${payload}"></div>`;
+  const html =
+    `<div><a data-bycoda-file="oversized.bin" href="data:application/octet-stream;base64,` +
+    `${"A".repeat(base64Length)}" download="oversized.bin">oversized.bin</a></div>`;
 
   expect(
     messageFilesFromClipboard({
       getData: (type) => (type === "text/html" ? html : ""),
     }),
   ).toBeNull();
+});
+
+it("embeds each attachment once and keeps escaped names and text intact", async () => {
+  let written: ClipboardItem[] = [];
+  vi.spyOn(navigator.clipboard, "write").mockImplementation(async (items) => {
+    written = items;
+  });
+  const text = `<b>"quoted"</b> data-bycoda-file="x" & more`;
+  await copyMessage(text, [
+    {
+      id: "1",
+      name: `a "<&>" 'b'.bin`,
+      mimeType: "application/octet-stream",
+      kind: "file",
+      size: 3,
+      data: "+/+/",
+    },
+  ]);
+  expect(await (await written[0].getType("text/plain")).text()).toBe(text);
+  const html = await (await written[0].getType("text/html")).text();
+  expect(html.split("+/+/")).toHaveLength(2);
+  expect(html).not.toContain("%2B");
+  expect(html.split('data-bycoda-file="')).toHaveLength(2);
+  const files = messageFilesFromClipboard({ getData: () => html });
+  expect(files?.map((file) => file.name)).toEqual([`a "<&>" 'b'.bin`]);
+  expect(Array.from(new Uint8Array(await files![0].arrayBuffer()))).toEqual([251, 255, 191]);
 });
 
 it("skips restored images without live content while keeping the text", async () => {

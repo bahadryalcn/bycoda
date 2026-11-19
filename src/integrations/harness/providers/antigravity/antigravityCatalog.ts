@@ -1,11 +1,10 @@
 import { killChild } from "../../core/child";
 import {
-  assertOptionalProviderProbeError,
   createProviderRetirementLedger,
   withProviderRetirement,
 } from "../../core/providerRetirement";
+import { applyProbedCatalog } from "../../core/catalogProbe";
 import { homeDir } from "../../../../platform/tauri/fs";
-import { setHarnessModels } from "../../../../features/sessions/model/models";
 import { AcpClient } from "../../core/acp";
 import {
   createChildProcessHandle,
@@ -26,14 +25,8 @@ let inflight: Promise<void> | null = null;
 export function refreshAntigravityCatalog(): Promise<void> {
   if (inflight) return inflight;
   inflight = discoverAntigravityModels()
-    .then((models) => {
-      if (models.length > 0) setHarnessModels("antigravity", models);
-    })
-    .catch((error: unknown) => {
-      assertOptionalProviderProbeError(error);
-      // Preserve the last live catalog (or startup seeds) when offline/logged out.
-      console.debug("[bycoda] antigravity catalog", error);
-    })
+    // A failed or empty probe rejects; the last live catalog (or startup seeds) stays.
+    .then((models) => applyProbedCatalog("antigravity", models))
     .finally(() => {
       inflight = null;
     });

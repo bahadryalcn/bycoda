@@ -7,6 +7,7 @@ import {
   pickerSettings,
   settingGroupId,
   settingLabel,
+  settingLock,
 } from "./modelPickerData";
 
 const select = (id: string, label = id): ModelSetting => ({
@@ -74,6 +75,33 @@ it("names every reasoning setting the same way", () => {
   expect(settingLabel(select("effort", "Effort"))).toBe("Reasoning");
   expect(settingLabel(select("reasoningEffort", "Reasoning"))).toBe("Reasoning");
   expect(settingLabel(select("variant", "Variant"))).toBe("Variant");
+});
+
+it("gives each locked row its reason and leaves editable rows unlocked", () => {
+  const extras = "Settings are locked while this conversation is updating.";
+  const window = select("autoCompactWindow");
+  const autoCompact = toggle("autoCompact");
+  const current = model([autoCompact, window, select("fast"), select("effort")]);
+
+  expect(settingLock(select("effort"), current, {}, true, extras)).toEqual({ reason: extras });
+  expect(settingLock(select("fast"), current, {}, true)).toEqual({ reason: undefined });
+  expect(settingLock(select("effort"), current, {}, false)).toBeUndefined();
+
+  expect(settingLock(window, current, { autoCompact: "off" }, false)).toEqual({
+    reason: "Turn on auto-compact to change its window.",
+  });
+  expect(settingLock(window, current, { autoCompact: "on" }, false)).toBeUndefined();
+  expect(settingLock(window, current, { autoCompact: "off" }, true, extras)).toEqual({
+    reason: extras,
+  });
+
+  const subagentModel = { ...select("subagentModel"), value: "default" };
+  const policy = select("subagentPolicy");
+  const withPolicy = model([subagentModel, policy]);
+  expect(settingLock(policy, withPolicy, { crossSubagents: "[]" }, false)).toEqual({
+    reason: "Pick a subagent model or subagent list first.",
+  });
+  expect(settingLock(policy, withPolicy, { crossSubagents: "auto" }, false)).toBeUndefined();
 });
 
 it("only treats a plain on/off pair as Fast", () => {

@@ -39,7 +39,7 @@ export function DeleteWorktreeDialog({
   callbacks.current = { onClose, onDeleted };
   const request: ConfirmRequest = {
     title: t("Delete worktree?"),
-    message: t("This permanently deletes the working copy and everything inside it."),
+    message: t("This permanently deletes the worktree and everything inside it."),
     cancelLabel: t("Cancel"),
     details: (
       <Text as="p" size="caption" tone="secondary" className="flex items-start gap-2">

@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Text } from "../../../shared/ui/Text";
@@ -19,6 +20,7 @@ import { loadVoicePersona } from "../../voice/model/voicePersona";
 import { VoiceSetupSteps } from "../../voice/ui/VoiceSetupSteps";
 import { assistantRequest, useAssistantSnapshot } from "../model/assistantClient";
 import { assistantSetupDefaults } from "../model/assistantSetupDefaults";
+import { createLocalDraftWriter } from "../model/assistantLocalDraft";
 import { useModelSource } from "../../sessions/public/modelSource";
 import {
   defaultModelSettings,
@@ -151,14 +153,12 @@ export function AssistantSetup({
       setDraft({ ...draft, environmentId });
     }
   }, [snapshot, draft, environmentId]);
+  const [draftWriter] = useState(() => createLocalDraftWriter(DRAFT_KEY));
+  useEffect(() => draftWriter.attach(), [draftWriter]);
   useEffect(() => {
-    if (draft)
-      try {
-        localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
-      } catch {
-        /* Keep the in-memory draft when storage is full. */
-      }
-  }, [draft]);
+    // Typing only records the draft; the shared debounce writes it, and close or pagehide flushes it.
+    if (draft) draftWriter.schedule(() => JSON.stringify(draft));
+  }, [draft, draftWriter]);
   const index = draft ? Math.max(0, steps.indexOf(draft.step)) : 0;
   const step = steps[index];
   const patch = draft?.patch ?? {};
@@ -216,7 +216,7 @@ export function AssistantSetup({
       setError("");
       setDraft({ ...draft, patch: { ...draft.patch, execution }, step: steps[index + 1] });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(errorText(cause));
     }
   }
   function update(next: AssistantProfilePatch) {
@@ -248,7 +248,7 @@ export function AssistantSetup({
       if (execution !== patch.execution)
         setDraft({ ...draft, patch: { ...draft.patch, execution } });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(errorText(cause));
       return;
     }
     busy.current = true;
@@ -331,7 +331,7 @@ export function AssistantSetup({
       );
       assertSource();
       if (!profile?.setupComplete) throw new Error(t("Setup was not confirmed by the Host."));
-      localStorage.removeItem(DRAFT_KEY);
+      draftWriter.clear();
       setFinished(true);
     } catch (cause) {
       setError(presentRemoteError(cause, { explicit: true }));
@@ -413,7 +413,7 @@ export function AssistantSetup({
         )}
         {!draft ? (
           <LoadingText delay={false} className={styles.muted}>
-            {t("Loading...")}
+            {t("Loading…")}
           </LoadingText>
         ) : null}
         {!draft ? null : (

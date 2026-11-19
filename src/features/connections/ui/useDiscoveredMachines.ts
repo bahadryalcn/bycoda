@@ -12,11 +12,14 @@ import type { RemoteMachine } from "../model/protocol";
 /** The list is re-read this often while it is visible. */
 export const DISCOVERY_REFRESH_MS = 10_000;
 
-/** A desktop build without the discovery command has no native candidates. */
+/**
+ * `undefined` means the read failed (or the desktop build lacks the command): the caller keeps
+ * its last confirmed list. An empty array is a real result and clears the list.
+ */
 const nativeCandidates = () =>
   invoke<MachineCandidate[]>("discover_machine_candidates").then(
-    (list) => (Array.isArray(list) ? list : []),
-    () => [] as MachineCandidate[],
+    (list) => (Array.isArray(list) ? list : undefined),
+    () => undefined,
   );
 
 export type DiscoveredMachinesState = {
@@ -43,18 +46,20 @@ export function useDiscoveredMachines(
   const [loading, setLoading] = useState(true);
 
   const read = useEffectEvent(async (isCurrent: () => boolean) => {
-    const [computers, found] = await Promise.all([
-      signedIn
-        ? listOtherComputers(deviceId).then(
-            (list) => list.map((computer) => candidateFromComputer(computer)),
-            () => undefined,
-          )
-        : Promise.resolve([] as MachineCandidate[]),
-      nativeCandidates(),
-    ]);
+    // A slow or stalled account read (bounded by the account API deadline) must not hold back
+    // the desktop's own candidates, so they are applied as soon as they arrive.
+    const nativeDone = nativeCandidates().then((found) => {
+      if (isCurrent() && found) setNative(found);
+    });
+    const computers = await (signedIn
+      ? listOtherComputers(deviceId).then(
+          (list) => list.map((computer) => candidateFromComputer(computer)),
+          () => undefined,
+        )
+      : Promise.resolve([] as MachineCandidate[]));
+    await nativeDone;
     if (!isCurrent()) return;
     if (computers) setAccountList(computers);
-    setNative(found);
     setLoading(false);
   });
 
@@ -62,8 +67,14 @@ export function useDiscoveredMachines(
   useEffect(() => {
     if (!active) return;
     let current = true;
+    // One read at a time: a slow pass skips the next tick instead of overlapping it.
+    let inFlight = false;
     const run = () => {
-      if (!document.hidden) void read(() => current);
+      if (document.hidden || inFlight) return;
+      inFlight = true;
+      void read(() => current).finally(() => {
+        inFlight = false;
+      });
     };
     run();
     const timer = setInterval(run, DISCOVERY_REFRESH_MS);

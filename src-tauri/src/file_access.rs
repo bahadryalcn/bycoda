@@ -16,11 +16,40 @@ struct Grant {
     writable: bool,
 }
 
+const RECOVERIES_FILE: &str = "recoveries.json";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RecoveryKind {
+    Mode,
+    Grants,
+}
+
+/// A registry file that was corrupt and moved to its quarantine copy. The notice
+/// stays until the owner dismisses it; the copy itself is never deleted.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileAccessRecovery {
+    id: String,
+    kind: RecoveryKind,
+    quarantine: PathBuf,
+}
+
+impl FileAccessRecovery {
+    fn new(kind: RecoveryKind, quarantine: PathBuf) -> Self {
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            kind,
+            quarantine,
+        }
+    }
+}
+
 struct Registry {
     mode: FileAccessMode,
     persistent: Vec<Grant>,
     transient: Vec<Grant>,
     protected: PathBuf,
+    recoveries: Vec<FileAccessRecovery>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -155,6 +184,13 @@ fn link_quarantine(source: &Path, destination: &Path) -> std::io::Result<()> {
     std::fs::hard_link(source, destination)
 }
 
+/// A loaded registry file. `quarantine` is set only when the file was corrupt and
+/// its evidence was moved aside; a missing file loads the default with no notice.
+struct Loaded<T> {
+    value: T,
+    quarantine: Option<PathBuf>,
+}
+
 // Called during initialization before the registry is published. Mutations after
 // initialization are serialized by FileAccess::registry.
 fn read_recoverable<T>(
@@ -162,15 +198,25 @@ fn read_recoverable<T>(
     description: &str,
     parse: impl Fn(&[u8]) -> Result<T, String>,
     default: impl Fn() -> T,
-) -> Result<T, String> {
+) -> Result<Loaded<T>, String> {
     for _ in 0..4 {
         let bytes = match std::fs::read(path) {
             Ok(bytes) => bytes,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(default()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(Loaded {
+                    value: default(),
+                    quarantine: None,
+                })
+            }
             Err(error) => return Err(format!("{description} could not be read: {error}")),
         };
         match parse(&bytes) {
-            Ok(value) => return Ok(value),
+            Ok(value) => {
+                return Ok(Loaded {
+                    value,
+                    quarantine: None,
+                })
+            }
             Err(reason) => {
                 // Reload when another writer replaced the observed bytes. Never
                 // intentionally quarantine a replacement we have not parsed.
@@ -217,7 +263,10 @@ fn read_recoverable<T>(
                             "{description} was corrupt ({reason}); recovery copy: {}",
                             quarantine.display()
                         );
-                        return Ok(default());
+                        return Ok(Loaded {
+                            value: default(),
+                            quarantine: Some(quarantine),
+                        });
                     }
                     Ok(_) => continue,
                     Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
@@ -234,13 +283,22 @@ impl Registry {
     fn open(protected: PathBuf) -> Result<Self, String> {
         std::fs::create_dir_all(&protected).map_err(|error| error.to_string())?;
         let protected = canonical_target(&protected)?;
+        // shortcut: a corrupt notice list is quarantined and logged only, so its own
+        // corruption is not shown as a notice; the copy still stays on disk.
+        let mut recoveries: Vec<FileAccessRecovery> = read_recoverable(
+            &protected.join(RECOVERIES_FILE),
+            "File access recovery notices",
+            |bytes| serde_json::from_slice(bytes).map_err(|error| error.to_string()),
+            Vec::new,
+        )?
+        .value;
         let mode = read_recoverable(
             &protected.join("access-mode.json"),
             "File access mode",
             |bytes| serde_json::from_slice(bytes).map_err(|error| error.to_string()),
             || FileAccessMode::Unconfigured,
         )?;
-        let persistent = read_recoverable(
+        let grants = read_recoverable(
             &protected.join("grants.json"),
             "File permissions",
             |bytes| {
@@ -259,12 +317,65 @@ impl Registry {
             },
             Vec::new,
         )?;
-        Ok(Self {
-            mode,
-            persistent,
+        let fresh: Vec<FileAccessRecovery> = [
+            (RecoveryKind::Mode, mode.quarantine),
+            (RecoveryKind::Grants, grants.quarantine),
+        ]
+        .into_iter()
+        .filter_map(|(kind, quarantine)| quarantine.map(|path| FileAccessRecovery::new(kind, path)))
+        .collect();
+        let recorded = !fresh.is_empty();
+        recoveries.extend(fresh);
+        let registry = Self {
+            mode: mode.value,
+            persistent: grants.value,
             transient: Vec::new(),
             protected,
-        })
+            recoveries,
+        };
+        if recorded {
+            // A notice that cannot be made durable fails startup rather than letting
+            // the next launch silently forget the quarantined grants.
+            registry.save_recoveries()?;
+        }
+        Ok(registry)
+    }
+
+    fn mode_recovery_pending(&self) -> bool {
+        self.recoveries
+            .iter()
+            .any(|recovery| recovery.kind == RecoveryKind::Mode)
+    }
+
+    /// An owner review is always allowed. The automatic first-run prompt stays off
+    /// while a corrupt saved choice is unacknowledged: the app fails closed and waits.
+    fn consent_prompt_allowed(&self, review: bool) -> bool {
+        review
+            || (self.mode == FileAccessMode::Unconfigured && !self.mode_recovery_pending())
+    }
+
+    fn save_recoveries(&self) -> Result<(), String> {
+        let bytes = serde_json::to_vec(&self.recoveries).map_err(|error| error.to_string())?;
+        durable_write(&self.protected.join(RECOVERIES_FILE), &bytes)
+    }
+
+    // Dismissing removes only the notice. The quarantine copy is evidence and stays.
+    fn dismiss_recovery(&mut self, id: &str) -> Result<(), String> {
+        let next: Vec<FileAccessRecovery> = self
+            .recoveries
+            .iter()
+            .filter(|recovery| recovery.id != id)
+            .cloned()
+            .collect();
+        if next.len() == self.recoveries.len() {
+            return Ok(());
+        }
+        let previous = std::mem::replace(&mut self.recoveries, next);
+        if let Err(error) = self.save_recoveries() {
+            self.recoveries = previous;
+            return Err(error);
+        }
+        Ok(())
     }
 
     fn blocked(&self, path: &Path, mutation: bool) -> bool {
@@ -594,6 +705,31 @@ pub fn get_file_access_mode(app: AppHandle) -> Result<FileAccessMode, String> {
         .mode)
 }
 
+#[tauri::command]
+pub fn get_file_access_recoveries(app: AppHandle) -> Result<Vec<FileAccessRecovery>, String> {
+    let state = app.state::<FileAccess>();
+    let recoveries = state
+        .registry
+        .lock()
+        .map_err(|_| "File permissions are unavailable")?
+        .recoveries
+        .clone();
+    Ok(recoveries)
+}
+
+#[tauri::command]
+pub async fn dismiss_file_access_recovery(app: AppHandle, id: String) -> Result<(), String> {
+    crate::harness::run_blocking("dismiss_file_access_recovery", move || {
+        let state = app.state::<FileAccess>();
+        let mut registry = state
+            .registry
+            .lock()
+            .map_err(|_| "File permissions are unavailable")?;
+        registry.dismiss_recovery(&id)
+    })
+    .await
+}
+
 // Native retains the fixed-text consent request; the owning application window answers it.
 // The modal waits for the user, so it occupies a blocking-pool thread, never a tokio worker.
 #[tauri::command]
@@ -618,12 +754,14 @@ fn configure_file_access_sync(
         .approval
         .lock()
         .map_err(|_| "File approval is unavailable")?;
-    let current = state
-        .registry
-        .lock()
-        .map_err(|_| "File permissions are unavailable")?
-        .mode;
-    if !review && current != FileAccessMode::Unconfigured {
+    let (current, prompt_allowed) = {
+        let registry = state
+            .registry
+            .lock()
+            .map_err(|_| "File permissions are unavailable")?;
+        (registry.mode, registry.consent_prompt_allowed(review))
+    };
+    if !prompt_allowed {
         return Ok(current);
     }
     let turkish = language == "tr";
@@ -781,6 +919,55 @@ mod tests {
     }
 
     #[test]
+    fn missing_registry_files_report_no_recovery() {
+        let (_tmp, registry, _folder) = fixture();
+        let restored = Registry::open(registry.protected.clone()).unwrap();
+        assert!(restored.recoveries.is_empty());
+        assert!(restored.consent_prompt_allowed(false));
+        assert!(!registry.protected.join(RECOVERIES_FILE).exists());
+    }
+
+    #[test]
+    fn corrupt_registry_files_are_reported_until_dismissed_and_stay_closed() {
+        let (_tmp, registry, folder) = fixture();
+        std::fs::write(registry.protected.join("access-mode.json"), "invalid").unwrap();
+        std::fs::write(registry.protected.join("grants.json"), "{").unwrap();
+        let mut restored = Registry::open(registry.protected.clone()).unwrap();
+        assert_eq!(restored.recoveries.len(), 2);
+        assert!(restored.mode_recovery_pending());
+        // Fail closed: the corrupt saved mode grants nothing and no first-run prompt runs.
+        assert_eq!(restored.mode, FileAccessMode::Unconfigured);
+        assert!(!restored.consent_prompt_allowed(false));
+        assert!(restored.consent_prompt_allowed(true));
+        assert!(!restored.allowed(&canonical_target(&folder).unwrap(), false));
+        for recovery in &restored.recoveries {
+            assert!(recovery.quarantine.exists());
+        }
+        let pending = restored.recoveries.clone();
+        assert_eq!(
+            Registry::open(registry.protected.clone()).unwrap().recoveries,
+            pending
+        );
+        restored.dismiss_recovery(&pending[0].id).unwrap();
+        // Dismissal removes the notice only; the evidence copy is never deleted.
+        assert!(pending[0].quarantine.exists());
+        let after = Registry::open(registry.protected.clone()).unwrap();
+        assert_eq!(after.recoveries, pending[1..].to_vec());
+        assert!(!after.mode_recovery_pending());
+        assert!(after.consent_prompt_allowed(false));
+    }
+
+    #[test]
+    fn dismissing_an_unknown_notice_changes_nothing() {
+        let (_tmp, registry, _folder) = fixture();
+        std::fs::write(registry.protected.join("grants.json"), "{").unwrap();
+        let mut restored = Registry::open(registry.protected.clone()).unwrap();
+        let before = restored.recoveries.clone();
+        restored.dismiss_recovery("not-a-notice").unwrap();
+        assert_eq!(restored.recoveries, before);
+    }
+
+    #[test]
     fn corrupt_grants_are_quarantined_and_new_consent_survives_restart() {
         for bytes in ["", "{", "[{}]", "[{\"path\":\"relative\",\"selected\":\"relative\",\"directory\":true,\"writable\":true}]"] {
             let (_tmp, registry, folder) = fixture();
@@ -788,7 +975,11 @@ mod tests {
             std::fs::write(&path, bytes).unwrap();
             let mut restored = Registry::open(registry.protected.clone()).unwrap();
             assert!(!restored.allowed(&canonical_target(&folder).unwrap(), false));
-            let copies: Vec<_> = std::fs::read_dir(&registry.protected).unwrap().map(|entry| entry.unwrap().path()).collect();
+            let copies: Vec<_> = std::fs::read_dir(&registry.protected)
+                .unwrap()
+                .map(|entry| entry.unwrap().path())
+                .filter(|path| path.to_string_lossy().contains(".corrupt-"))
+                .collect();
             assert_eq!(copies.len(), 1);
             assert_eq!(std::fs::read(&copies[0]).unwrap(), bytes.as_bytes());
             restored.grant(&folder, true, true).unwrap();
@@ -813,7 +1004,8 @@ mod tests {
             },
             Vec::new,
         )
-        .unwrap();
+        .unwrap()
+        .value;
         assert!(grants.is_empty());
         assert_eq!(std::fs::read(&path).unwrap(), b"[]");
         assert_eq!(std::fs::read_dir(registry.protected).unwrap().count(), 1);

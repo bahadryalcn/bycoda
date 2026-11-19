@@ -159,7 +159,7 @@ export function CwdPicker({
     items.push({
       kind: "item",
       id: MORE_ID,
-      label: t("More Projects"),
+      label: t("More projects"),
       submenuLabel: t("More projects"),
       submenuWidth: MENU_WIDTH,
       submenuMaxHeight: SUBMENU_MAX_HEIGHT,

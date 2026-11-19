@@ -21,12 +21,33 @@ const mock = vi.hoisted(() => ({
   remember: vi.fn(),
   available: vi.fn(),
   auth: vi.fn(),
+  language: vi.fn(),
 }));
+vi.mock("../../../shared/i18n", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../shared/i18n")>()),
+  setLanguagePreference: mock.language,
+}));
+// Replaces only the header language picker with a button that picks Turkish.
+vi.mock("../../../shared/ui/Select", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../shared/ui/Select")>();
+  return {
+    ...actual,
+    Select: (props: Parameters<typeof actual.Select>[0]) =>
+      props.label === "Language"
+        ? createElement(
+            "button",
+            { type: "button", onClick: () => props.onValueChange?.("tr") },
+            "Switch language",
+          )
+        : createElement(actual.Select, props),
+  };
+});
 vi.mock("../../account", () => ({
   useAccountState: () => ({ phase: "unavailable" }),
   useAccount: () => ({}),
   getStatsChoice: () => "off",
   setStatsChoice: () => undefined,
+  statsDisclosure: () => "Shared statistics disclosure",
   subscribeAnonymousStats: () => () => undefined,
 }));
 vi.mock("../../../shared/ui/Modal", () => ({
@@ -183,6 +204,7 @@ beforeEach(() => {
     truncated: 0,
   });
   mock.pick.mockResolvedValue(["G:/new-project"]);
+  mock.language.mockResolvedValue(undefined);
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -432,5 +454,24 @@ describe("onboarding workflow", () => {
       false,
     );
     expect(container.textContent).toContain("1 project folders added");
+  });
+  it("shows a language failure only until the next step and ignores a stale reply", async () => {
+    let rejectFirst!: (reason: unknown) => void;
+    mock.language.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectFirst = reject;
+        }),
+    );
+    await render();
+    await click("Switch language");
+    await click("Switch language");
+    await act(async () => rejectFirst(new Error("Stale save failed")));
+    expect(container.textContent).not.toContain("Stale save failed");
+    mock.language.mockRejectedValueOnce(new Error("Save failed"));
+    await click("Switch language");
+    expect(container.textContent).toContain("Save failed");
+    await click("Continue");
+    expect(container.textContent).not.toContain("Save failed");
   });
 });

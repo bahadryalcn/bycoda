@@ -28,6 +28,7 @@ Use for Skills management UI, catalog/policy state, document edit/preview/split,
 
 - Installation inventory, same-name active copy, owner machine enable policy, invocation metadata and provider restrictions are separate states; enabled in one layer is not permission in another.
 - Disabled names apply across sources on the owning machine. Reads/search/invocation and late results must respect fresh authority; no shadowed-copy bypass or local overwrite of remote policy.
+- Host `list_skills` discovery is async and bounded; with `withStatus` it answers `{ skills, truncated }`, otherwise a bare array for older callers. A truncated machine list never proves a skill absent: presence stays unknown and the page says some skills are not shown.
 - Preserve local/remote/managed source identity and allowed edit/raw-view access; YAML frontmatter, supporting assets and document/cwd context survive preview/edit/split.
 - Keep one retained draft and disk-comparison baseline across selection/navigation. Failed reads, save conflicts and failed writes retain edits; clear only the exact saved draft.
 - Transfer requires clean source drafts, exact owning machine/source, existing path/size/duplicate protections, staging/rollback and explicit native replacement consent.

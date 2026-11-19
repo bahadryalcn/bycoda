@@ -526,8 +526,51 @@ fn nonblocking<T>(_pipe: &T) -> bool {
     true
 }
 
+/// Waits for a pipe to become ready, bounded so stop and deadline checks still run.
+/// Unix polls the fd, so data or EOF wakes the thread at once. Elsewhere pipes block in
+/// the kernel and this only paces a retry.
+trait PipeReady {
+    fn wait_ready(&self, writable: bool);
+}
+#[cfg(unix)]
+impl<T: std::os::fd::AsRawFd> PipeReady for T {
+    fn wait_ready(&self, writable: bool) {
+        const WAIT_MS: libc::c_int = 100;
+        let mut fd = libc::pollfd {
+            fd: std::os::fd::AsRawFd::as_raw_fd(self),
+            events: if writable { libc::POLLOUT } else { libc::POLLIN },
+            revents: 0,
+        };
+        // SAFETY: one live pollfd is passed for this call only; poll does not retain it.
+        unsafe { libc::poll(&mut fd, 1, WAIT_MS) };
+    }
+}
+#[cfg(not(unix))]
+impl<T> PipeReady for T {
+    fn wait_ready(&self, _writable: bool) {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// Waits on the IO completion channel until every thread reports or the budget ends.
+/// Returns how many threads are still open; zero also when every sender is gone.
+fn wait_for_io(done: &std::sync::mpsc::Receiver<()>, mut open: usize, budget: Duration) -> usize {
+    let until = Instant::now() + budget;
+    while open > 0 {
+        let Some(left) = until.checked_duration_since(Instant::now()) else {
+            break;
+        };
+        match done.recv_timeout(left) {
+            Ok(()) => open -= 1,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => break,
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return 0,
+        }
+    }
+    open
+}
+
 fn drain(
-    mut source: impl Read,
+    mut source: impl Read + PipeReady,
     job: Arc<Mutex<Job>>,
     stderr: bool,
     stop: Arc<std::sync::atomic::AtomicBool>,
@@ -543,7 +586,7 @@ fn drain(
                 if stop.load(std::sync::atomic::Ordering::Acquire) {
                     return false;
                 }
-                std::thread::sleep(Duration::from_millis(20));
+                source.wait_ready(false);
             }
             Err(_) => return false,
             Ok(n) => {
@@ -584,19 +627,27 @@ fn supervise_owned(
         return;
     }
     let stop_io = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    // Each IO thread reports on this channel just before it returns; settlement waits on it.
+    let (done_tx, done) = std::sync::mpsc::channel::<()>();
     let out_job = job.clone();
     let out_stop = stop_io.clone();
+    let out_done = done_tx.clone();
     let out = std::thread::spawn(move || {
-        output.is_some_and(|source| drain(source, out_job, false, out_stop))
+        let result = output.is_some_and(|source| drain(source, out_job, false, out_stop));
+        let _ = out_done.send(());
+        result
     });
     let err_job = job.clone();
     let err_stop = stop_io.clone();
+    let err_done = done_tx.clone();
     let err = std::thread::spawn(move || {
-        error.is_some_and(|source| drain(source, err_job, true, err_stop))
+        let result = error.is_some_and(|source| drain(source, err_job, true, err_stop));
+        let _ = err_done.send(());
+        result
     });
     let write_stop = stop_io.clone();
     let write = std::thread::spawn(move || {
-        input.is_some_and(|mut input| {
+        let result = input.is_some_and(|mut input| {
             let mut bytes = stdin.as_slice();
             while !bytes.is_empty() {
                 if write_stop.load(std::sync::atomic::Ordering::Acquire) {
@@ -609,13 +660,15 @@ fn supervise_owned(
                         if write_stop.load(std::sync::atomic::Ordering::Acquire) {
                             return false;
                         }
-                        std::thread::sleep(Duration::from_millis(20));
+                        input.wait_ready(true);
                     }
                     Err(_) => return false,
                 }
             }
             true
-        })
+        });
+        let _ = done_tx.send(());
+        result
     });
     let started = Instant::now();
     let (mut state, code, mut reason, mut unknown) = loop {
@@ -666,13 +719,8 @@ fn supervise_owned(
         }
     };
     // A proxy child may retain inherited pipes. Never block settlement indefinitely.
-    let until = Instant::now() + Duration::from_secs(3);
-    while Instant::now() < until
-        && (!out.is_finished() || !err.is_finished() || !write.is_finished())
-    {
-        std::thread::sleep(Duration::from_millis(20));
-    }
-    if !out.is_finished() || !err.is_finished() || !write.is_finished() {
+    let mut open = wait_for_io(&done, 3, Duration::from_secs(3));
+    if open > 0 {
         stop_io.store(true, std::sync::atomic::Ordering::Release);
         #[cfg(windows)]
         {
@@ -684,15 +732,9 @@ fn supervise_owned(
                 }
             }
         }
-        let cancel_until = Instant::now() + Duration::from_secs(1);
-        while Instant::now() < cancel_until
-            && (!out.is_finished() || !err.is_finished() || !write.is_finished())
-        {
-            std::thread::sleep(Duration::from_millis(20));
-        }
+        open = wait_for_io(&done, open, Duration::from_secs(1));
     }
-    let all_finished = out.is_finished() && err.is_finished() && write.is_finished();
-    let io_ok = if all_finished {
+    let io_ok = if open == 0 {
         let out_ok = out.join().unwrap_or(false);
         let err_ok = err.join().unwrap_or(false);
         let write_ok = write.join().unwrap_or(false);

@@ -43,14 +43,58 @@ async function releaseUnused() {
   }
 }
 
+function claimNative(ids: readonly string[]): Promise<ClaimResult> {
+  return serialized(async () => {
+    const claim = await invoke<ClaimResult>("claim_session_windows", { sessionIds: ids });
+    if (claim.status === "owned")
+      for (const [id, token] of Object.entries(claim.tokens)) tokens.set(id, token);
+    return claim;
+  });
+}
+
 const restored = new Map<string, (retain?: boolean) => Promise<void>>();
-/** Hold bootstrap claims until a mounted tab confirms ownership. */
-export async function claimRestoredSession(id: string): Promise<boolean> {
-  if (restored.has(id)) return true;
-  const finish = await reserve([id], false);
-  if (!finish) return false;
-  restored.set(id, finish);
-  return true;
+/** The native command takes at most this many ids and claims all or none of them. */
+const CLAIM_BATCH_SIZE = 128;
+/**
+ * Holds bootstrap claims until a mounted tab confirms ownership. Claims the ids
+ * in order in as few native calls as possible and returns those another window
+ * owns; each owned id keeps its own release, so `abortRestoredSession` and the
+ * mount-time sync treat it exactly like a single claim. A conflict names one id,
+ * so that id is set aside and the rest are claimed again. On any failure every
+ * claim made by this call is released before the error is rethrown.
+ */
+export async function claimRestoredSessions(ids: Iterable<string>): Promise<Set<string>> {
+  const foreign = new Set<string>();
+  const fresh = [...new Set(ids)].filter((id) => !restored.has(id));
+  const finishers = new Map(fresh.map((id) => [id, holdReservations([id])] as const));
+  try {
+    for (let offset = 0; offset < fresh.length; offset += CLAIM_BATCH_SIZE) {
+      let pending = fresh.slice(offset, offset + CLAIM_BATCH_SIZE);
+      while (pending.length) {
+        const claim = await claimNative(pending);
+        if (claim.status === "owned") {
+          for (const id of pending) restored.set(id, finishers.get(id)!);
+          break;
+        }
+        const next = pending.filter((id) => id !== claim.sessionId);
+        if (next.length === pending.length)
+          throw new Error("Conversation ownership named an unrequested conversation.");
+        foreign.add(claim.sessionId);
+        await finishers.get(claim.sessionId)!();
+        pending = next;
+      }
+    }
+  } catch (error) {
+    // Every reservation drops before the first release runs, so one call frees all.
+    await Promise.all(
+      [...finishers].map(([id, finish]) => {
+        if (restored.get(id) === finish) restored.delete(id);
+        return finish().catch(() => {});
+      }),
+    );
+    throw error;
+  }
+  return foreign;
 }
 export async function abortRestoredSession(id: string): Promise<void> {
   const finish = restored.get(id);
@@ -91,15 +135,12 @@ export function reserveSessionWindow(
 ): Promise<((retain?: boolean) => Promise<void>) | null> {
   return reserve(ids, true, inspectSessionId);
 }
-async function reserve(
-  ids: readonly string[],
-  focusRequested: boolean,
-  inspectSessionId?: string,
-): Promise<((retain?: boolean) => Promise<void>) | null> {
+/** Protects ids from `releaseUnused` until the returned release runs once. */
+function holdReservations(ids: readonly string[]): (retain?: boolean) => Promise<void> {
   const unique = [...new Set(ids)];
   for (const id of unique) reservations.set(id, (reservations.get(id) ?? 0) + 1);
   let finished = false;
-  const finish = async (retain = false) => {
+  return async (retain = false) => {
     if (finished) return;
     finished = true;
     if (retain) for (const id of unique) visible.add(id);
@@ -110,13 +151,16 @@ async function reserve(
     }
     await serialized(releaseUnused);
   };
+}
+async function reserve(
+  ids: readonly string[],
+  focusRequested: boolean,
+  inspectSessionId?: string,
+): Promise<((retain?: boolean) => Promise<void>) | null> {
+  const unique = [...new Set(ids)];
+  const finish = holdReservations(unique);
   try {
-    const result = await serialized(async () => {
-      const claim = await invoke<ClaimResult>("claim_session_windows", { sessionIds: unique });
-      if (claim.status === "owned")
-        for (const [id, token] of Object.entries(claim.tokens)) tokens.set(id, token);
-      return claim;
-    });
+    const result = await claimNative(unique);
     if (result.status === "other") {
       if (focusRequested) {
         if (!focusOwner) throw new Error("Conversation window focus is unavailable.");

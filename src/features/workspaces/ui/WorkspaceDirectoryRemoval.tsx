@@ -8,6 +8,7 @@ import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { shortSha } from "../../../shared/lib/shortSha";
 import type { ManagedWorkspace, WorkspaceCleanupPlan } from "../model/contracts";
 import { runBackgroundRemoval } from "../model/backgroundRemoval";
 import {
@@ -195,7 +196,7 @@ export function WorkspaceDirectoryRemoval({
           <>
             {plan.head && (
               <p className="break-all">
-                {plan.branchRef} · {plan.head.slice(0, 12)}
+                {plan.branchRef} · {shortSha(plan.head)}
               </p>
             )}
             {plan.dirty && (

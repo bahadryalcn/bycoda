@@ -9,6 +9,7 @@ vi.mock("../../account", () => ({
   AnonymousUsageSetting: () => null,
   isAnonymousStatsEnabled: () => false,
   setAnonymousStatsEnabled: vi.fn(),
+  statsDisclosure: () => "Statistics disclosure",
   subscribeAnonymousStats: () => () => {},
 }));
 vi.mock("../../diagnostics", () => ({ DiagnosticsSharingSetting: () => null }));

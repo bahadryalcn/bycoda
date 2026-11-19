@@ -1,5 +1,5 @@
 import { Text } from "../../../../shared/ui/Text";
-import { useSyncExternalStore } from "react";
+import { useId, useSyncExternalStore } from "react";
 import { t } from "../../../../shared/i18n";
 import { useConfirm } from "../../../../shared/ui/ConfirmDialog";
 import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
@@ -14,7 +14,7 @@ import { inboxApi } from "./inboxApi";
 import { createInboxReplyOperation } from "./inboxReplyOperation";
 import { inboxReplyState } from "./inboxReplyState";
 import { replyBlockedText } from "./inboxModel";
-import { useInboxInvalidate, useInboxReplyOptions, useInboxSnapshot } from "./useInboxData";
+import { useInboxInvalidate, useInboxProjectFacts, useInboxReplyOptions } from "./useInboxData";
 import "./inbox.css";
 
 /** Host limit for one AI reply: 1 to 20 verified facts. */
@@ -38,19 +38,20 @@ export function ReplyBox(props: { client: SocialClient; thread: SocialThread }) 
 function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: SocialThread }) {
   const api = inboxApi(client);
   const options = useInboxReplyOptions(client, thread.id);
-  const snapshot = useInboxSnapshot(client);
+  const projectFacts = useInboxProjectFacts(client, thread.projectId);
   const invalidate = useInboxInvalidate(client);
   const state = inboxReplyState(client, thread.id);
-  const { draft, busy, error, queued, operation } = useSyncExternalStore(
+  const { draft, busy, error, errorDetail, queued, operation } = useSyncExternalStore(
     state.subscribe,
     state.snapshot,
   );
   const { text } = draft;
   const changeDraft = (next: ReplyDraft) => state.update({ draft: next });
   const setBusy = (busy: "" | "suggest" | "send") => state.update({ busy });
-  const setError = (error: string) => state.update({ error });
+  const setError = (error: string, errorDetail = "") => state.update({ error, errorDetail });
   const setQueued = (queued: boolean) => state.update({ queued });
   const confirmation = useConfirm();
+  const aiNoteId = useId();
 
   const blocked = options.data ? replyBlockedText(options.data) : undefined;
   // Until the Host answers, Send says why it is off instead of guessing that a reply is allowed.
@@ -60,8 +61,7 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
       ? undefined
       : t("Checking whether this conversation can take a reply.");
   const blockedReason = operation?.sendAttempted ? undefined : (unknownReason ?? blocked);
-  const facts =
-    snapshot.data?.profiles.find((profile) => profile.projectId === thread.projectId)?.facts ?? [];
+  const facts = projectFacts.data ?? [];
 
   const aiPrerequisite = !thread.projectId
     ? t("Choose the conversation's project first.")
@@ -157,21 +157,22 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
       });
     } catch (cause) {
       setError(
-        (attempt.sendAttempted
+        attempt.sendAttempted
           ? t(
               "Reply result is unconfirmed. Retry the same reply to check its status; do not send a separate copy.",
             )
-          : t("Reply preparation could not finish. Retry the same reply or edit its draft.")) +
-          (cause instanceof Error ? ` ${cause.message}` : ""),
+          : t("Reply preparation could not finish. Retry the same reply or edit its draft."),
+        cause instanceof Error ? cause.message : "",
       );
     } finally {
       setBusy("");
     }
   };
 
-  // Every blocked action has a visible reason, including empty drafts and AI prerequisites.
-  const prerequisite = sendGate.disabled ? sendGate.disabledReason : undefined;
-  const suggestReason = suggestGate.disabled ? suggestGate.disabledReason : undefined;
+  // A disabled action's reason lives in its own tooltip and accessible description. Only the AI
+  // prerequisites get visible text, because the owner must act on them; that note replaces the
+  // tooltip so the same reason is never shown twice.
+  const aiNote = operation ? undefined : aiPrerequisite;
 
   return (
     <div className="inbox-reply">
@@ -195,6 +196,8 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
               loading={busy === "suggest"}
               loadingLabel={t("Working…")}
               {...suggestGate}
+              title={aiNote ? "" : undefined}
+              aria-describedby={aiNote ? aiNoteId : undefined}
             >
               {t("Fill with AI")}
             </Button>
@@ -211,14 +214,16 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
           </>
         }
       />
-      {prerequisite ? (
-        <Text as="p" size="caption" tone="muted" leading="inherit" className="inbox-note">
-          {prerequisite}
-        </Text>
-      ) : null}
-      {suggestReason && suggestReason !== prerequisite ? (
-        <Text as="p" size="caption" tone="muted" className="inbox-note">
-          {suggestReason}
+      {aiNote ? (
+        <Text
+          as="p"
+          id={aiNoteId}
+          size="caption"
+          tone="muted"
+          leading="inherit"
+          className="inbox-note"
+        >
+          {aiNote}
         </Text>
       ) : null}
       {options.isError ? (
@@ -233,12 +238,12 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
           {t("Try again")}
         </Button>
       ) : null}
-      {error ? <InlineError>{error}</InlineError> : null}
+      {error ? <InlineError details={errorDetail || undefined}>{error}</InlineError> : null}
       {operation && !operation.sendAttempted && !busy ? (
         <Button
           variant="link"
           layout="text"
-          onClick={() => state.update({ operation: undefined, error: "" })}
+          onClick={() => state.update({ operation: undefined, error: "", errorDetail: "" })}
         >
           {t("Edit reply")}
         </Button>

@@ -79,9 +79,9 @@ it("keeps option toggles inside the query frame and shares inline details contro
     expect(toggle.getAttribute("aria-pressed")).toBe("true");
     expect(toggle.getAttribute("data-button-selected")).toBe("true");
   }
-  const controls = host.querySelectorAll<HTMLButtonElement>('[aria-label="Toggle Search Details"]');
+  const controls = host.querySelectorAll<HTMLButtonElement>('[aria-label="Toggle search details"]');
   expect(controls).toHaveLength(1);
-  const replace = host.querySelector<HTMLButtonElement>('[aria-label="Toggle Replace"]')!;
+  const replace = host.querySelector<HTMLButtonElement>('[aria-label="Toggle replace"]')!;
   expect(replace).not.toBeNull();
   act(() => replace.click());
   expect(input("Replace")).not.toBeNull();
@@ -90,25 +90,25 @@ it("keeps option toggles inside the query frame and shares inline details contro
   act(() => controls[0].click());
   expect(details.hidden).toBe(false);
   expect([...controls].map((button) => button.getAttribute("aria-expanded"))).toEqual(["true"]);
-  for (const label of ["files to include", "files to exclude"]) {
+  for (const label of ["Files to include", "Files to exclude"]) {
     const field = input(label);
     expect(details.contains(field)).toBe(true);
     expect(host.querySelector(`label[for="${field.id}"]`)?.textContent).toBe(label);
   }
-  type("files to include", "src/**");
+  type("Files to include", "src/**");
   act(() => controls[0].click());
   expect(details.hidden).toBe(true);
-  expect(input("files to include").value).toBe("src/**");
+  expect(input("Files to include").value).toBe("src/**");
   expect(host.querySelector('[role="dialog"]')).toBeNull();
 });
 
 it("defaults details to collapsed again when no path filters were retained", () => {
   render();
-  act(() => host.querySelector<HTMLButtonElement>('[aria-label="Toggle Search Details"]')!.click());
+  act(() => host.querySelector<HTMLButtonElement>('[aria-label="Toggle search details"]')!.click());
   render("/other");
   render();
   expect(
-    host.querySelector('[aria-label="Toggle Search Details"]')?.getAttribute("aria-expanded"),
+    host.querySelector('[aria-label="Toggle search details"]')?.getAttribute("aria-expanded"),
   ).toBe("false");
 });
 it.each(["", "~"])(
@@ -155,9 +155,9 @@ it.each(["query", "include", "exclude", "case", "word", "regex"] as const)(
     else {
       if (change === "include" || change === "exclude") {
         act(() =>
-          host.querySelector<HTMLButtonElement>('[aria-label="Toggle Search Details"]')!.click(),
+          host.querySelector<HTMLButtonElement>('[aria-label="Toggle search details"]')!.click(),
         );
-        type(`files to ${change}`, "src/**");
+        type(`Files to ${change}`, "src/**");
       } else {
         const label = {
           case: "Match case",
@@ -209,17 +209,17 @@ it("ignores an old project's delayed completion after switching projects", async
 it("restores find text and all filters on return, reruns search, and isolates other projects", async () => {
   render();
   type("Search", "needle");
-  act(() => host.querySelector<HTMLButtonElement>('[aria-label="Toggle Search Details"]')!.click());
-  type("files to include", "src/**");
-  type("files to exclude", "**/generated/**");
+  act(() => host.querySelector<HTMLButtonElement>('[aria-label="Toggle search details"]')!.click());
+  type("Files to include", "src/**");
+  type("Files to exclude", "**/generated/**");
   for (const label of ["Match case", "Match whole word", "Use regular expression"])
     act(() => document.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!.click());
   act(() => root.unmount());
   root = createRoot(host);
   render();
   expect(input("Search").value).toBe("needle");
-  expect(input("files to include").value).toBe("src/**");
-  expect(input("files to exclude").value).toBe("**/generated/**");
+  expect(input("Files to include").value).toBe("src/**");
+  expect(input("Files to exclude").value).toBe("**/generated/**");
   await act(async () => vi.advanceTimersByTime(210));
   expect(search).toHaveBeenLastCalledWith(
     expect.objectContaining({
@@ -240,9 +240,9 @@ it("restores find text and all filters on return, reruns search, and isolates ot
 it("resets advanced filters without clearing the retained query", async () => {
   render();
   type("Search", "needle");
-  act(() => host.querySelector<HTMLButtonElement>('[aria-label="Toggle Search Details"]')!.click());
-  type("files to include", "src/**");
-  type("files to exclude", "generated/**");
+  act(() => host.querySelector<HTMLButtonElement>('[aria-label="Toggle search details"]')!.click());
+  type("Files to include", "src/**");
+  type("Files to exclude", "generated/**");
   act(() => document.querySelector<HTMLButtonElement>('[aria-label="Match case"]')!.click());
   expect(
     host.querySelector('[aria-label="Match case"]')?.getAttribute("data-button-selected"),
@@ -252,8 +252,8 @@ it("resets advanced filters without clearing the retained query", async () => {
   )!;
   act(() => reset.click());
   expect(input("Search").value).toBe("needle");
-  expect(input("files to include").value).toBe("");
-  expect(input("files to exclude").value).toBe("");
+  expect(input("Files to include").value).toBe("");
+  expect(input("Files to exclude").value).toBe("");
   expect(
     host.querySelector('[aria-label="Match case"]')?.getAttribute("data-button-selected"),
   ).toBeNull();
@@ -291,10 +291,10 @@ it("previews counts, confirms replacement, then refreshes results", async () => 
   render();
   type("Search", "old");
   await act(async () => vi.advanceTimersByTime(210));
-  act(() => host.querySelector<HTMLButtonElement>('[aria-label="Toggle Replace"]')!.click());
+  act(() => host.querySelector<HTMLButtonElement>('[aria-label="Toggle replace"]')!.click());
   type("Replace", "new");
   await act(async () =>
-    host.querySelector<HTMLButtonElement>('[aria-label="Replace All"]')!.click(),
+    host.querySelector<HTMLButtonElement>('[aria-label="Replace all"]')!.click(),
   );
   expect(replaceProject).toHaveBeenCalledExactlyOnceWith(
     expect.objectContaining({ query: "old", replacement: "new", dryRun: true }),
@@ -303,7 +303,7 @@ it("previews counts, confirms replacement, then refreshes results", async () => 
   const dialog = document.querySelector('[role="dialog"]')!;
   await act(async () =>
     [...dialog.querySelectorAll("button")]
-      .find((button) => button.textContent === "Replace All")!
+      .find((button) => button.textContent === "Replace all")!
       .click(),
   );
   expect(replaceProject).toHaveBeenLastCalledWith(
@@ -317,8 +317,8 @@ it("previews counts, confirms replacement, then refreshes results", async () => 
 it("cancel leaves files untouched and empty results disable replacement", async () => {
   vi.mocked(replaceProject).mockClear();
   render();
-  act(() => host.querySelector<HTMLButtonElement>('[aria-label="Toggle Replace"]')!.click());
-  const replace = host.querySelector<HTMLButtonElement>('[aria-label="Replace All"]')!;
+  act(() => host.querySelector<HTMLButtonElement>('[aria-label="Toggle replace"]')!.click());
+  const replace = host.querySelector<HTMLButtonElement>('[aria-label="Replace all"]')!;
   expect(replace.disabled || replace.getAttribute("aria-disabled") === "true").toBe(true);
   search.mockResolvedValueOnce(found("old"));
   type("Search", "old");

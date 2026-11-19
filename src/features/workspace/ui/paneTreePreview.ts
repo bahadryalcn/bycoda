@@ -36,6 +36,17 @@ export function sashStyle(sash: LayoutSash) {
 export const sashKey = (sash: Pick<LayoutSash, "splitId" | "index">) =>
   `${sash.splitId}:${sash.index}`;
 
+/** Accessible name naming the two neighbouring tracks and the split's size, so repeated sashes stay distinct. */
+export function paneSashLabel(
+  sash: LayoutSash,
+  t: (message: string, values?: Record<string, unknown>) => string,
+) {
+  const values = { p0: sash.index + 1, p1: sash.index + 2, p2: sash.sizes.length };
+  return sash.dir === "right"
+    ? t("Resize between column {p0} and column {p1} of {p2}", values)
+    : t("Resize between row {p0} and row {p1} of {p2}", values);
+}
+
 /**
  * Writes a layout's pane and sash boxes straight onto the tree's elements. A sash
  * drag runs this per frame instead of re-rendering the tree; React renders the

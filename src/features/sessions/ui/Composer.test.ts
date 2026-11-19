@@ -56,6 +56,7 @@ vi.mock("../../source-control/hooks/useProjectBranches", () => ({
 }));
 
 import { Composer } from "./Composer";
+import { setLanguagePreference } from "../../../shared/i18n";
 import { setRemoteCommandRunner } from "../../../platform/tauri/fs";
 import { invalidateSkills } from "../../skills/model/skills";
 import { invalidateProjectFiles } from "../../files/model/fileIndex";
@@ -996,6 +997,44 @@ describe("Composer question focus", () => {
     await act(async () => root.render(createElement(Composer, { ...props, draftResetToken: 2 })));
     expect(document.querySelector("textarea")?.value).toBe("");
     expect(onDraftChange).toHaveBeenLastCalledWith("");
+  });
+
+  it("names the message textarea in the active language and lets a caller override the name", async () => {
+    const props = {
+      harness: "claude" as const,
+      model: "claude-sonnet",
+      runtimeMode: "supervised" as const,
+      executionCwd: "/repo",
+      hideProjectPicker: true,
+      hideBranchPicker: true,
+      initialDraft: "Keep this draft",
+      onFocus: vi.fn(),
+      onCwdChange: vi.fn(),
+      onModelChange: vi.fn(),
+      onRuntimeModeChange: vi.fn(),
+      onSubmit: vi.fn(),
+    };
+    const field = () => document.querySelector("textarea")!;
+    await setLanguagePreference("tr");
+    try {
+      await act(async () => root.render(createElement(Composer, props)));
+      expect(field().getAttribute("aria-label")).toBe("Mesaj");
+
+      // A state-dependent placeholder never becomes the accessible name.
+      await act(async () =>
+        root.render(createElement(Composer, { ...props, worktreeRemoved: true })),
+      );
+      expect(field().placeholder).toContain("Select a branch or worktree");
+      expect(field().getAttribute("aria-label")).toBe("Mesaj");
+
+      await act(async () =>
+        root.render(createElement(Composer, { ...props, inputAriaLabel: "Yan soru" })),
+      );
+      expect(field().getAttribute("aria-label")).toBe("Yan soru");
+      expect(field().value).toBe("Keep this draft");
+    } finally {
+      await setLanguagePreference("en");
+    }
   });
 
   it("keeps drafts and blocks sending until a working copy is selected", async () => {
@@ -2114,7 +2153,7 @@ describe("Composer question focus", () => {
 
     const workspace = document.querySelector('[aria-label="Workspace Worktree"]');
     expect(workspace?.tagName).toBe("DIV");
-    expect(document.querySelector('[aria-label="Choose working copy"]')).toBeNull();
+    expect(document.querySelector('[aria-label="Choose worktree"]')).toBeNull();
     expect(document.querySelector('[aria-label="Branch mc/greeting"]')).not.toBeNull();
   });
 

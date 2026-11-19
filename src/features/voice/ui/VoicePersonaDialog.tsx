@@ -128,7 +128,7 @@ export function VoicePersonaDialog({
       <div className={styles.form}>
         {saveError ? (
           <InlineError>
-            {t("Voice style could not be saved. Your draft is kept. Try again.")}
+            {t("Couldn’t save the voice style. Your draft is kept. Try again.")}
           </InlineError>
         ) : null}
         {!styleOnly ? (

@@ -18,6 +18,7 @@ import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Switch } from "../../../shared/ui/Switch";
 import { Slider } from "../../../shared/ui/Slider";
 import { Tab, TabList, Tabs } from "../../../shared/ui/Tabs";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Plus, X, Zap } from "../../../shared/ui/icons";
 import {
   delegationOptionSelected,
@@ -96,9 +97,7 @@ export function ModelSettingHelp({
             </Text>{" "}
             {t(help)}
           </>
-        ) : (
-          t("Help")
-        )}
+        ) : null}
       </ClampText>
       {descriptions.length ? (
         <InfoPopover label={t("Help")}>
@@ -126,6 +125,7 @@ export function ModelSettingsColumn({
   settings,
   values,
   locked,
+  lockReason,
   onChoose,
   onExplain,
   hideAgentSettings = false,
@@ -139,6 +139,8 @@ export function ModelSettingsColumn({
   settings: ModelSetting[];
   values: Record<string, string>;
   locked: (setting: ModelSetting) => boolean;
+  /** English reason a locked row cannot change, shown on hover; absent when none is known. */
+  lockReason?: (setting: ModelSetting) => string | undefined;
   /** Applies one picked value; subagent choices toggle in place. */
   onChoose: (setting: ModelSetting, value: string) => void;
   /** The setting under the pointer or focus, for the panel's help strip. */
@@ -177,20 +179,26 @@ export function ModelSettingsColumn({
     (setting) => shownTab === "settings" && settingControlKind(setting) === "effort",
   );
   const scrolling = shown.filter((setting) => !pinned.includes(setting));
-  const renderSetting = (setting: ModelSetting) => (
-    <SettingRow
-      key={setting.id}
-      setting={setting}
-      values={values}
-      defaultWindow={defaultAutoCompactWindow(current, values)}
-      disabled={locked(setting)}
-      onChoose={(value) => onChoose(setting, value)}
-      onPick={() => {
-        returnSetting.current = setting.id;
-        setPickingId(setting.id);
-      }}
-    />
-  );
+  // The reason hint wraps every row, so a row that unlocks keeps its mounted state.
+  const renderSetting = (setting: ModelSetting) => {
+    const disabled = locked(setting);
+    const reason = disabled ? lockReason?.(setting) : undefined;
+    return (
+      <Tooltip key={setting.id} label={reason ? t(reason) : undefined}>
+        <SettingRow
+          setting={setting}
+          values={values}
+          defaultWindow={defaultAutoCompactWindow(current, values)}
+          disabled={disabled}
+          onChoose={(value) => onChoose(setting, value)}
+          onPick={() => {
+            returnSetting.current = setting.id;
+            setPickingId(setting.id);
+          }}
+        />
+      </Tooltip>
+    );
+  };
   // Hover or focus names the setting whose help the strip shows.
   const explain = (event: MouseEvent<HTMLElement> | FocusEvent<HTMLElement>) => {
     const id = (event.target as HTMLElement).closest<HTMLElement>("[data-setting-id]")?.dataset

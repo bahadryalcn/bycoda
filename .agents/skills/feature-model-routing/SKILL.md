@@ -37,7 +37,7 @@ Own the Host-wide routing document and run-start resolution in `host/model-routi
 - Order entries move within their work, personal or shared group (`groupEntriesByKind`). `enforceRoleNeeds` checks AI bindings against `ROLE_NEED`. Smart setup refills same-named pools at low for light-only roles, high for any heavy role, and medium otherwise. Save via the version-bound transaction.
 - Scope filtering: a run with a project folder skips entries whose account kind is the other scope (`otherScope`); untagged accounts are shared and fixed choices are never filtered.
 - Delegation layers apply global, then provider, then account, then item. Subagents, advisor, effort ceiling and image models live separately from order-entry model settings.
-- Saves are owner-only and use `expectedVersion`; stale saves retain drafts and require reconciliation. Reading capability or showing a control grants no write authority.
+- Saves are owner-only and use `expectedVersion`; stale saves retain drafts and require reconciliation. The Host marks a stale `expectedVersion` with `MODEL_ROUTING_CONFLICT`; clients accept that code or the exact legacy message (`isRoutingSaveConflict`), only for the routing save, never by matching "version" or "changed". Reading capability or showing a control grants no write authority.
 - Hosts without `models.routing.v1` retain fixed model behavior; unavailable reads must not masquerade as an authoritative empty order.
 
 ## Focused checks

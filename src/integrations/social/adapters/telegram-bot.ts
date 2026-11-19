@@ -13,6 +13,7 @@ const chatId = (raw: unknown): string => {
 
 export function createTelegramAdapter(http: SocialHttp): SocialAdapter {
   return {
+    ignoresPublishedPosts: true,
     async send(account, job, token, media, _checkpoint, beforeSubmit) {
       if (messagingContentIssue(account, job)) throw new SocialPlatformError("unsupported");
       const text = messageText(job);

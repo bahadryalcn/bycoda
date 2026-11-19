@@ -10,6 +10,24 @@ export function terminalToolShortcut(
   return null;
 }
 
+/**
+ * Plain Ctrl+letter is shell input (^W delete word, ^D EOF, ^P/^N history, ...),
+ * so a focused terminal owns it ahead of the app's default chords. Shift, Alt and
+ * Meta combinations, Ctrl+Tab, Ctrl+digits and punctuation stay with the app.
+ * `code` covers non-Latin layouts, where `key` is not an ASCII letter.
+ */
+export function isTerminalControlKey(
+  event: TerminalKeyEvent & Partial<Pick<KeyboardEvent, "code">>,
+): boolean {
+  return (
+    event.ctrlKey &&
+    !event.metaKey &&
+    !event.altKey &&
+    !event.shiftKey &&
+    (/^Key[A-Z]$/.test(event.code ?? "") || /^[a-z]$/i.test(event.key))
+  );
+}
+
 /** Translate macOS editing shortcuts into sequences understood by common shells. */
 export function macTerminalShortcutData(event: TerminalKeyEvent): string | null {
   if (event.ctrlKey || event.shiftKey) return null;

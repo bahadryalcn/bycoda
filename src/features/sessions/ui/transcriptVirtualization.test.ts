@@ -161,3 +161,45 @@ it("settles only the reveal it was given, so a newer target survives", () => {
   owner.settleReveal("restored");
   expect(owner.snapshot()).toBe("next");
 });
+
+it("drops fold state of rows a list no longer has, and leaves other lists alone", () => {
+  const owner = new TranscriptVirtualization();
+  const folds = owner.codeFoldsFor("turn:1:items");
+  folds.set("kept", { a: true });
+  folds.set("removed", { b: false });
+  owner.codeFoldsFor("turn:2:items").set("removed", { c: true });
+
+  owner.retainRows("turn:1:items", new Set(["kept"]));
+
+  expect([...folds.keys()]).toEqual(["kept"]);
+  expect(owner.codeFoldsFor("turn:2:items").get("removed")).toEqual({ c: true });
+});
+
+it("drops a list's sizes and folds when it unmounts, and restores them on a replayed mount", () => {
+  const owner = new TranscriptVirtualization();
+  const sizes = new Map([["row", { width: 1, height: 2 }]]);
+  const folds = new Map([["row", { a: true }]]);
+
+  const release = owner.holdList("list", sizes, folds);
+  expect(owner.measurementsFor("list")).toBe(sizes);
+  release();
+  expect(owner.measurements.has("list")).toBe(false);
+  expect(owner.codeFolds.has("list")).toBe(false);
+
+  // A strict-mode replay holds the same maps again, so the owner sees them as before.
+  const replay = owner.holdList("list", sizes, folds);
+  expect(owner.codeFoldsFor("list")).toBe(folds);
+  replay();
+});
+
+it("lets a newer hold of a list survive the release of an older one", () => {
+  const owner = new TranscriptVirtualization();
+  const older = owner.holdList("list", new Map(), new Map());
+  const newerFolds = new Map<string, Record<string, boolean>>();
+  const newer = owner.holdList("list", new Map(), newerFolds);
+
+  older();
+  expect(owner.codeFolds.get("list")).toBe(newerFolds);
+  newer();
+  expect(owner.codeFolds.has("list")).toBe(false);
+});

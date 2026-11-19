@@ -17,6 +17,7 @@ import {
   isDelegatedChildOf,
   isDelegatedDescendantOf,
   nestedDelegatedChildren,
+  nestedDelegationOwner,
 } from "./delegatedAgents";
 import { deriveActivityDock } from "./activityDock";
 import type { Block, Session } from "./session";
@@ -509,5 +510,53 @@ describe("a subagent's own subagents", () => {
     expect(row).toMatchObject({ needsInput: true, status: "running" });
     const answered = { ...grand, pendingOwnerApproval: false };
     expect(delegatedDockAgents([idle], 1_000, [answered])[0]).not.toHaveProperty("needsInput");
+  });
+});
+
+describe("family lookup on a streamed-text frame", () => {
+  const root = { ...newSession("codex", "/repo"), id: PARENT };
+  const sub = child("sub", { busy: true });
+  const grand = child("grand", {}, { parentSessionId: "sub", runId: "run-g" });
+  const streamed = (session: Session): Session => ({
+    ...session,
+    blocks: [{ id: "a1", role: "assistant", text: "more text", streaming: true }],
+  });
+
+  it("finds the family on the shell but returns the live objects", () => {
+    const shell = [root, sub, grand];
+    const live = [root, streamed(sub), streamed(grand)];
+    expect(delegatedChildren(live, PARENT, shell)).toEqual([live[1]]);
+    expect(delegatedChildren(live, PARENT, shell)[0]).toBe(live[1]);
+    expect(nestedDelegatedChildren(live, [live[1]], shell)[0]).toBe(live[2]);
+    expect(nestedDelegationOwner(live, "grand", shell)).toBe(live[1]);
+    expect(nestedDelegationOwner(live, "sub", shell)).toBeUndefined();
+    expect(nestedDelegationOwner(live, undefined, shell)).toBeUndefined();
+  });
+
+  it("returns the same objects as the plain lookup when both arrays are one", () => {
+    const sessions = [root, sub, grand];
+    expect(delegatedChildren(sessions, PARENT)).toEqual([sub]);
+    expect(nestedDelegationOwner(sessions, "grand")).toBe(sub);
+  });
+
+  it("does not scan unlinked sessions again for the same array", () => {
+    let reads = 0;
+    const plain = Array.from({ length: 50 }, (_, index) => {
+      const session = { ...newSession("codex", "/repo"), id: `plain-${index}` };
+      return Object.defineProperty(session, "modelSettings", {
+        get() {
+          reads += 1;
+          return undefined;
+        },
+      });
+    });
+    const sessions = [root, ...plain, sub];
+    expect(delegatedChildren(sessions, PARENT)).toEqual([sub]);
+    const afterFirst = reads;
+    expect(afterFirst).toBeGreaterThan(0);
+    delegatedChildren(sessions, PARENT);
+    nestedDelegatedChildren(sessions, [sub]);
+    nestedDelegationOwner(sessions, "sub");
+    expect(reads).toBe(afterFirst);
   });
 });

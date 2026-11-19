@@ -44,9 +44,14 @@ const UNREADABLE_REFERENCE = `SELECT 1 AS bad FROM native_buffer_certificates AS
   WHERE reference.type IS NOT 'object' OR json_type(reference.value,'$.sha256') IS NOT 'text'
     OR length(json_extract(reference.value,'$.sha256'))<>64 LIMIT 1`;
 
+// Certificates are insert-only and never deleted (the store rejects a changed row), so an
+// unchanged count and newest rowid mean no certificate appeared since the marker was read.
+const CERTIFICATE_MARKER = `SELECT COUNT(*) AS certificates, COALESCE(MAX(rowid),0) AS newest
+  FROM native_buffer_certificates`;
+
 let reportedUnreadable = false;
 
-async function guard(store: HostStore): Promise<NativeBufferBlobGcResult["skipped"]> {
+async function missingTables(store: HostStore): Promise<"missing-tables" | undefined> {
   for (const table of TABLES)
     if (
       !(await store.db
@@ -54,6 +59,12 @@ async function guard(store: HostStore): Promise<NativeBufferBlobGcResult["skippe
         .get(table))
     )
       return "missing-tables";
+  return undefined;
+}
+
+async function unreadableCertificate(
+  store: HostStore,
+): Promise<"unreadable-certificate" | undefined> {
   if (
     (await store.db.prepare(UNREADABLE_CERTIFICATE).get()) ||
     (await store.db.prepare(UNREADABLE_REFERENCE).get())
@@ -65,6 +76,68 @@ async function guard(store: HostStore): Promise<NativeBufferBlobGcResult["skippe
     return "unreadable-certificate";
   }
   return undefined;
+}
+
+async function guard(store: HostStore): Promise<NativeBufferBlobGcResult["skipped"]> {
+  return (await missingTables(store)) ?? (await unreadableCertificate(store));
+}
+
+async function certificateMarker(store: HostStore) {
+  const row = await store.db.prepare(CERTIFICATE_MARKER).get();
+  return `${Number(row?.certificates ?? 0)}:${Number(row?.newest ?? 0)}`;
+}
+
+type Orphan = { sha256: string; byteLength: number };
+type Snapshot = {
+  /** Certificate marker read before the orphan scan; a different marker makes it stale. */
+  marker: string;
+  orphanBlobs: number;
+  orphanBytes: number;
+  /** Orphans in sha256 order, at most one pass worth; `truncated` when more exist. */
+  candidates: Orphan[];
+  truncated: boolean;
+};
+
+/** One full derivation of the orphan set: the unreadable-certificate guard and the
+ * certificate JSON scans run here once, not once per delete batch. Call inside storeScope. */
+async function takeSnapshot(
+  store: HostStore,
+  limit: number,
+): Promise<Snapshot | { skipped: NonNullable<NativeBufferBlobGcResult["skipped"]> }> {
+  const missing = await missingTables(store);
+  if (missing) return { skipped: missing };
+  const marker = await certificateMarker(store);
+  const unreadable = await unreadableCertificate(store);
+  if (unreadable) return { skipped: unreadable };
+  const totals = await count(store);
+  const rows = totals.orphanBlobs
+    ? await store.db
+        .prepare(`SELECT sha256, byte_length ${ORPHANS} ORDER BY sha256 LIMIT ?`)
+        .all(limit)
+    : [];
+  return {
+    marker,
+    ...totals,
+    candidates: rows.map((row) => ({
+      sha256: String(row.sha256),
+      byteLength: Number(row.byte_length),
+    })),
+    truncated: totals.orphanBlobs > rows.length,
+  };
+}
+
+/** The next delete batch: up to the blob and byte caps (one larger blob still goes alone). */
+function nextBatch(candidates: Orphan[], from: number) {
+  const batch: Orphan[] = [];
+  let bytes = 0;
+  for (let index = from; index < candidates.length; index++) {
+    const candidate = candidates[index];
+    if (batch.length >= NATIVE_BUFFER_GC_BATCH_BLOBS) break;
+    if (batch.length && bytes + candidate.byteLength > NATIVE_BUFFER_GC_BATCH_BYTES) break;
+    batch.push(candidate);
+    bytes += candidate.byteLength;
+  }
+  return batch;
 }
 
 async function count(store: HostStore) {
@@ -84,46 +157,78 @@ export function countOrphanNativeBufferBlobs(store: HostStore): Promise<NativeBu
   });
 }
 
-/** Deletes unreferenced blobs and their chunks. Each batch re-derives the orphan set in
- * the same transaction that deletes it, so a concurrent complete() that reuses a
- * deduplicated blob is serialized before or after, never between check and delete.
- * Artifacts and certificates are never deleted here. */
+/** Deletes unreferenced blobs and their chunks. The orphan set is derived once per pass
+ * (certificate JSON scanned once). Each delete transaction then re-proves its batch:
+ * the certificate marker must be unchanged (otherwise the set is re-derived), and every
+ * blob must still be absent from the artifact rows, so a concurrent complete() that
+ * reuses a deduplicated blob is serialized before or after, never between check and
+ * delete. Artifacts and certificates are never deleted here. */
 export async function collectOrphanNativeBufferBlobs(
   store: HostStore,
   options: { maxBatches?: number; stopped?: () => boolean } = {},
 ): Promise<NativeBufferBlobGcResult> {
-  const before = await countOrphanNativeBufferBlobs(store);
-  const result = { ...before };
-  if (before.skipped || !before.orphanBlobs) return result;
-  for (let batch = 0; batch < (options.maxBatches ?? NATIVE_BUFFER_GC_MAX_BATCHES); batch++) {
+  const maxBatches = options.maxBatches ?? NATIVE_BUFFER_GC_MAX_BATCHES;
+  const limit = NATIVE_BUFFER_GC_BATCH_BLOBS * maxBatches;
+  const first = await store.db.storeScope(() => takeSnapshot(store, limit));
+  if ("skipped" in first)
+    return { orphanBlobs: 0, orphanBytes: 0, deletedBlobs: 0, deletedBytes: 0, ...first };
+  const result: NativeBufferBlobGcResult = {
+    orphanBlobs: first.orphanBlobs,
+    orphanBytes: first.orphanBytes,
+    deletedBlobs: 0,
+    deletedBytes: 0,
+  };
+  if (!first.orphanBlobs) return result;
+  let current = first;
+  let position = 0;
+  const refresh = async () => {
+    const next = await store.db.storeScope(() => takeSnapshot(store, limit));
+    if ("skipped" in next || !next.candidates.length) return false;
+    current = next;
+    position = 0;
+    return true;
+  };
+  for (let batch = 0; batch < maxBatches; batch++) {
     if (options.stopped?.()) break;
-    const deleted = await store.db.storeScope(() =>
+    if (position >= current.candidates.length) {
+      if (!current.truncated || !(await refresh())) break;
+    }
+    const chosen = nextBatch(current.candidates, position);
+    const marker = current.marker;
+    const outcome = await store.db.storeScope(() =>
       withShortBusyTimeout(store.db, () =>
         store.transaction(async () => {
-          if (await guard(store)) return null;
+          if (await missingTables(store)) return null;
+          if ((await certificateMarker(store)) !== marker) return "stale" as const;
+          const hashes = chosen.map((candidate) => candidate.sha256);
           const rows = await store.db
-            .prepare(`SELECT sha256, byte_length ${ORPHANS} ORDER BY sha256 LIMIT ?`)
-            .all(NATIVE_BUFFER_GC_BATCH_BLOBS);
-          const chosen: string[] = [];
-          let bytes = 0;
-          for (const row of rows) {
-            const length = Number(row.byte_length);
-            if (chosen.length && bytes + length > NATIVE_BUFFER_GC_BATCH_BYTES) break;
-            chosen.push(String(row.sha256));
-            bytes += length;
+            .prepare(
+              `SELECT sha256, byte_length FROM native_buffer_blobs
+              WHERE sha256 IN (${hashes.map(() => "?").join(",")})
+                AND sha256 NOT IN (SELECT sha256 FROM native_buffer_artifacts)`,
+            )
+            .all(...hashes);
+          const keys = rows.map((row) => [String(row.sha256)]);
+          if (keys.length) {
+            await store.db.runMany("DELETE FROM native_buffer_blob_chunks WHERE sha256=?", keys);
+            await store.db.runMany("DELETE FROM native_buffer_blobs WHERE sha256=?", keys);
           }
-          if (!chosen.length) return null;
-          const keys = chosen.map((hash) => [hash]);
-          await store.db.runMany("DELETE FROM native_buffer_blob_chunks WHERE sha256=?", keys);
-          await store.db.runMany("DELETE FROM native_buffer_blobs WHERE sha256=?", keys);
-          return { blobs: chosen.length, bytes, more: rows.length > chosen.length };
+          return {
+            consumed: chosen.length,
+            blobs: rows.length,
+            bytes: rows.reduce((sum, row) => sum + Number(row.byte_length), 0),
+          };
         }, "checkpoint"),
       ),
     );
-    if (!deleted) break;
-    result.deletedBlobs += deleted.blobs;
-    result.deletedBytes += deleted.bytes;
-    if (!deleted.more && deleted.blobs < NATIVE_BUFFER_GC_BATCH_BLOBS) break;
+    if (!outcome) break;
+    if (outcome === "stale") {
+      if (!(await refresh())) break;
+      continue;
+    }
+    position += outcome.consumed;
+    result.deletedBlobs += outcome.blobs;
+    result.deletedBytes += outcome.bytes;
   }
   return result;
 }

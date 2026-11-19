@@ -62,6 +62,13 @@ const PLACEMENTS: readonly ToastPlacement[] = [
 ];
 
 const DEFAULT_INSET = 12;
+/**
+ * How far each corner column reaches past the window edge. A scroll box clips at its own padding
+ * edge, and the floating shadow reaches 8px below and 24px of blur past a toast. The column bleeds
+ * this far and its padding gives the toasts back their inset, so layout is unchanged and no shadow
+ * is cut off.
+ */
+const SHADOW_BLEED = 32;
 /** Keeps the toast stack on the inner side of every feature card in its corner. */
 const STACK_ORDER = 1000;
 
@@ -104,13 +111,27 @@ let toastSeq = 0;
 /** Keys count up, so a newer toast sorts and stacks above an older one. */
 const nextToastKey = () => (toastSeq += 1);
 
+/** Fixes where a corner column sits and how far its scroll box reaches past the window edge. */
+function placeColumn(placement: ToastPlacement, node: HTMLDivElement) {
+  const top = placement.startsWith("top");
+  const end = placement.endsWith("end");
+  const center = placement.endsWith("center");
+  node.style.top = top ? `-${SHADOW_BLEED}px` : "";
+  node.style.bottom = top ? "" : `-${SHADOW_BLEED}px`;
+  node.style.insetInlineStart = center || !end ? `-${SHADOW_BLEED}px` : "";
+  node.style.insetInlineEnd = center || end ? `-${SHADOW_BLEED}px` : "";
+  node.style.maxHeight = `calc(100dvh + ${2 * SHADOW_BLEED}px)`;
+  node.style.paddingInline = `${DEFAULT_INSET + SHADOW_BLEED}px`;
+  applyInset(placement, node);
+}
+
 function applyInset(placement: ToastPlacement, node: HTMLDivElement) {
   const inset = insets[placement] ?? DEFAULT_INSET;
   const top = placement.startsWith("top");
-  // The column's own padding is the inset, so card shadows and focus rings are never clipped
-  // by its scroll box. The padding is pointer-transparent like the rest of the column.
-  node.style.paddingBlockStart = `${top ? inset : DEFAULT_INSET}px`;
-  node.style.paddingBlockEnd = `${top ? DEFAULT_INSET : inset}px`;
+  // The padding is the toasts' inset from the window edge; the bleed past it is shadow room that
+  // stays pointer-transparent like the rest of the column.
+  node.style.paddingBlockStart = `${(top ? inset : DEFAULT_INSET) + SHADOW_BLEED}px`;
+  node.style.paddingBlockEnd = `${(top ? DEFAULT_INSET : inset) + SHADOW_BLEED}px`;
 }
 
 /** On narrow windows, routine feedback sits below centered alerts instead of covering them. */
@@ -128,7 +149,7 @@ function syncTopCorners() {
       }
     }
   }
-  const padding = `${inset}px`;
+  const padding = `${inset + SHADOW_BLEED}px`;
   if (routine.node.style.paddingBlockStart !== padding)
     routine.node.style.paddingBlockStart = padding;
 }
@@ -202,15 +223,16 @@ function corner(placement: ToastPlacement): Corner {
     const end = placement.endsWith("end");
     const center = placement.endsWith("center");
     node.dataset.toastRegion = placement;
-    node.setAttribute("aria-live", "polite");
+    // No aria-live: each toast card announces itself through its own role (alert or status), so a
+    // live column around it would announce every toast twice.
     // A bottom column grows upward: what leaves through the window edge then never scrolls it.
     node.className = [
-      "pointer-events-none fixed flex max-h-dvh gap-2 overflow-y-auto overscroll-contain px-3",
-      top ? "top-0 flex-col" : "bottom-0 flex-col-reverse",
-      center ? "inset-x-0 items-center" : end ? "end-0 items-end" : "start-0 items-start",
+      "pointer-events-none fixed flex gap-2 overflow-y-auto overscroll-contain",
+      top ? "flex-col" : "flex-col-reverse",
+      center ? "items-center" : end ? "items-end" : "items-start",
     ].join(" ");
     node.style.zIndex = String(LAYER.toast);
-    applyInset(placement, node);
+    placeColumn(placement, node);
     const stack = document.createElement("div");
     stack.dataset.toastStack = "";
     stack.dataset.empty = "";

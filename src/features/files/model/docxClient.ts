@@ -1,7 +1,8 @@
+import { DocumentProblemError, type DocumentProblem } from "./documentViewer";
 import { checkDocxHtml } from "./docxPreview";
 
 export const DOCX_TIMEOUT = 15_000;
-type Reply = { ok: true; html: string } | { ok: false; message: string };
+type Reply = { ok: true; html: string } | { ok: false; problem: DocumentProblem };
 
 /** Each view owns its converter. Cancellation terminates CPU work, not just its reply. */
 export function loadDocx(
@@ -33,24 +34,20 @@ export function loadDocx(
     };
     const abort = () => finish(new DOMException("Cancelled", "AbortError"));
     const timer = setTimeout(
-      () =>
-        finish(
-          new Error("Document preview exceeded 15 seconds. Open it in the default app instead."),
-        ),
+      () => finish(new DocumentProblemError({ reason: "timeout", ms: timeout })),
       timeout,
     );
     signal.addEventListener("abort", abort, { once: true });
     worker.onmessage = (event: MessageEvent<Reply>) => {
       try {
-        if (!event.data.ok) return finish(new Error(event.data.message));
+        if (!event.data.ok) return finish(new DocumentProblemError(event.data.problem));
         checkDocxHtml(event.data.html);
         finish(undefined, event.data.html);
       } catch (cause) {
         finish(cause);
       }
     };
-    worker.onerror = () =>
-      finish(new Error("Document conversion failed. Open it in the default app instead."));
+    worker.onerror = () => finish(new DocumentProblemError({ reason: "workerFailed" }));
     try {
       // The original belongs to the shared document cache and must remain readable.
       const copy = bytes.slice();

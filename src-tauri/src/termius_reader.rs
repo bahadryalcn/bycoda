@@ -14,6 +14,11 @@ use std::{
 };
 use zeroize::Zeroizing;
 
+#[cfg(not(windows))]
+use crate::termius_command::{run_bounded, HELPER_OUTPUT_LIMIT, HELPER_TIMEOUT};
+#[cfg(any(test, not(windows)))]
+use crate::termius_command::HelperFailure;
+
 #[derive(Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Endpoint {
@@ -526,30 +531,51 @@ fn local_key() -> Result<Zeroizing<Vec<u8>>, String> {
     }
 }
 
+#[cfg(target_os = "macos")]
+const KEYCHAIN_TOOL: &str = "security";
+#[cfg(all(not(target_os = "macos"), any(test, not(windows))))]
+const KEYCHAIN_TOOL: &str = "secret-tool";
+
+/// Maps the bounded keychain helper's outcome to a safe, actionable message. The helper's
+/// output and error text are never included.
+#[cfg(any(test, not(windows)))]
+fn key_from_keychain(
+    outcome: Result<Zeroizing<Vec<u8>>, HelperFailure>,
+) -> Result<Zeroizing<Vec<u8>>, String> {
+    match outcome {
+        Ok(bytes) => decode_key(&bytes),
+        Err(HelperFailure::TimedOut) => Err("The system keychain did not respond. Unlock it or answer its access prompt, then try the import again.".into()),
+        Err(HelperFailure::Missing) => Err(format!(
+            "The system keychain tool ({KEYCHAIN_TOOL}) was not found, so the Termius local key could not be read. Install it and try the import again."
+        )),
+        Err(HelperFailure::Failed) => {
+            Err("Termius local key was not available from the system keychain".into())
+        }
+    }
+}
+
 #[cfg(not(windows))]
 fn local_key() -> Result<Zeroizing<Vec<u8>>, String> {
     #[cfg(target_os = "macos")]
-    let output = std::process::Command::new("/usr/bin/security")
-        .args([
-            "find-generic-password",
-            "-s",
-            "Termius",
-            "-a",
-            "localKey",
-            "-w",
-        ])
-        .output();
+    let mut command = std::process::Command::new("/usr/bin/security");
+    #[cfg(target_os = "macos")]
+    command.args([
+        "find-generic-password",
+        "-s",
+        "Termius",
+        "-a",
+        "localKey",
+        "-w",
+    ]);
     #[cfg(not(target_os = "macos"))]
-    let output = std::process::Command::new("secret-tool")
-        .args(["lookup", "service", "termius-app", "account", "localKey"])
-        .output();
-    let mut output =
-        output.map_err(|_| "Could not access the Termius local key in the system keychain")?;
-    let bytes = Zeroizing::new(std::mem::take(&mut output.stdout));
-    if !output.status.success() {
-        return Err("Termius local key was not available from the system keychain".into());
-    }
-    decode_key(&bytes)
+    let mut command = std::process::Command::new("secret-tool");
+    #[cfg(not(target_os = "macos"))]
+    command.args(["lookup", "service", "termius-app", "account", "localKey"]);
+    key_from_keychain(run_bounded(
+        &mut command,
+        HELPER_TIMEOUT,
+        HELPER_OUTPUT_LIMIT,
+    ))
 }
 
 #[cfg(test)]
@@ -638,6 +664,20 @@ mod tests {
                 .is_empty()
         );
     }
+    #[test]
+    fn keychain_helper_failures_become_safe_actionable_errors() {
+        let key = Zeroizing::new(STANDARD.encode([5u8; 32]).into_bytes());
+        assert_eq!(key_from_keychain(Ok(key)).unwrap().as_slice(), &[5u8; 32]);
+        let timed_out = key_from_keychain(Err(HelperFailure::TimedOut)).unwrap_err();
+        assert!(timed_out.contains("did not respond") && timed_out.contains("try the import again"));
+        let missing = key_from_keychain(Err(HelperFailure::Missing)).unwrap_err();
+        assert!(missing.contains(KEYCHAIN_TOOL) && missing.contains("Install it"));
+        let failed = key_from_keychain(Err(HelperFailure::Failed)).unwrap_err();
+        assert_eq!(failed, "Termius local key was not available from the system keychain");
+        let junk = key_from_keychain(Ok(Zeroizing::new(b"private-output".to_vec()))).unwrap_err();
+        assert!(!junk.contains("private-output"));
+    }
+
     #[test]
     fn decrypts_nacl_envelope_and_rejects_wrong_keys() {
         let key = [7u8; 32];

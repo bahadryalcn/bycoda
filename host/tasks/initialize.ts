@@ -70,6 +70,11 @@ export function initialize(context: TaskContext, store: HostStore): Promise<void
       CREATE INDEX IF NOT EXISTS tasks_scheduler_status ON tasks(json_extract(value, '$.status'));
       CREATE INDEX IF NOT EXISTS tasks_crew_run
         ON tasks(CASE WHEN json_valid(value) THEN json_extract(value,'$.crewRunId') END);
+      -- budgetParent resolves a crew task's owner every scheduler tick; queries must repeat this exact expression.
+      CREATE INDEX IF NOT EXISTS tasks_crew_execution
+        ON tasks(CASE WHEN json_valid(value) THEN json_extract(value,'$.crewExecutionId') END);
+      -- General goal lookup; the partial tasks_assistant_goal index below cannot serve goalId=? predicates.
+      CREATE INDEX IF NOT EXISTS tasks_goal ON tasks(json_extract(value,'$.goalId'));
       CREATE INDEX IF NOT EXISTS tasks_scheduler_status_merged ON tasks(json_extract(value, '$.status'), json_extract(value, '$.merged'));
       CREATE INDEX IF NOT EXISTS tasks_scheduler_cleanup ON tasks(id)
         WHERE json_extract(value, '$.status')='done' AND json_extract(value, '$.merged')=1

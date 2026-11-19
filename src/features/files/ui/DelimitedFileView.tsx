@@ -67,13 +67,16 @@ export function DelimitedFileView(props: ComponentProps<typeof FileEditorType>) 
         </Text>
       ) : null}
       <div className="relative min-h-0 flex-1">
-        {mode === "preview" ? <DocumentView path={props.path} cwd={props.cwd} /> : null}
+        {mode === "preview" ? (
+          <DocumentView path={props.path} cwd={props.cwd} visible={props.shown} />
+        ) : null}
         {sourceMounted ? (
           <div className={mode === "source" ? "absolute inset-0" : "hidden"}>
             <FileEditor
               {...props}
               onDirtyChange={reportDirty}
               active={props.active && mode === "source"}
+              shown={(props.shown ?? true) && mode === "source"}
             />
           </div>
         ) : null}

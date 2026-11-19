@@ -573,6 +573,107 @@ fn recovery_wait_gives_up_after_its_bound_and_proceeds() {
     assert!(started.elapsed() >= std::time::Duration::from_millis(100));
 }
 
+fn active_marker_exists(store: &CheckpointStore, session: &str) -> bool {
+    store.root.join(".active").join(session).is_file()
+}
+
+#[test]
+fn active_marker_follows_the_turn_record() {
+    let repo = tmp("active-marker");
+    assert!(init_git_commit(&repo.0, &[("a.txt", "base\n")]));
+    let cwd = repo.0.to_string_lossy().into_owned();
+    let (_tmp, store) = store();
+    assert!(!active_marker_exists(&store, "session"));
+    store.begin_turn("session", &cwd, "one").unwrap();
+    assert!(active_marker_exists(&store, "session"));
+    store.finish_turn("session", &cwd, "one", false).unwrap();
+    assert!(!active_marker_exists(&store, "session"));
+}
+
+#[test]
+fn recovery_reads_only_marked_sessions_once_the_index_exists() {
+    let repo = tmp("index-scan");
+    assert!(init_git_commit(&repo.0, &[("a.txt", "base\n")]));
+    let cwd = repo.0.to_string_lossy().into_owned();
+    let (_tmp, seeded) = store();
+    for session in ["settled-a", "settled-b"] {
+        seeded.begin_turn(session, &cwd, "one").unwrap();
+        seeded.finish_turn(session, &cwd, "one", false).unwrap();
+    }
+    let launch = crashed_session(&seeded, &cwd, "live", "crashed");
+    // First launch with the index: every record is read once to build it.
+    let first = launch.plan_recovery();
+    assert_eq!(first.records_read, 3);
+    assert!(turn::active_sessions::ready(&launch.root));
+    drop(first);
+    // Records the index never lists are not opened, readable or not.
+    std::fs::write(seeded.session_dir("settled-a").join("turn.json"), "{").unwrap();
+    std::fs::remove_file(seeded.session_dir("settled-b").join("turn.json")).unwrap();
+    let relaunch = CheckpointStore::new(launch.root.clone());
+    let plan = relaunch.plan_recovery();
+    assert_eq!(plan.records_read, 1);
+    let started = std::time::Instant::now();
+    relaunch
+        .barrier
+        .wait_for("live", &[], std::time::Duration::from_millis(150));
+    assert!(
+        started.elapsed() >= std::time::Duration::from_millis(150),
+        "the marked active session was not registered before commands"
+    );
+    plan.run();
+    assert_eq!(turn_record(&relaunch, "live")["active"], false);
+    assert!(!active_marker_exists(&relaunch, "live"));
+}
+
+#[test]
+fn recovery_sweeps_stale_markers_but_keeps_unreadable_ones() {
+    let repo = tmp("index-sweep");
+    assert!(init_git_commit(&repo.0, &[("a.txt", "base\n")]));
+    let cwd = repo.0.to_string_lossy().into_owned();
+    let (_tmp, store) = store();
+    store.begin_turn("settled", &cwd, "one").unwrap();
+    store.finish_turn("settled", &cwd, "one", false).unwrap();
+    std::fs::create_dir_all(store.root.join("broken")).unwrap();
+    std::fs::create_dir(store.root.join("broken").join("turn.json")).unwrap();
+    turn::active_sessions::mark_ready(&store.root).unwrap();
+    for session in ["settled", "broken", "deleted"] {
+        turn::active_sessions::mark(&store.session_dir(session)).unwrap();
+    }
+    store.plan_recovery().run();
+    assert!(!active_marker_exists(&store, "settled"));
+    assert!(!active_marker_exists(&store, "deleted"));
+    assert!(active_marker_exists(&store, "broken"));
+    assert_eq!(turn_record(&store, "settled")["active"], false);
+}
+
+#[test]
+fn unreadable_record_is_indexed_so_it_is_never_dropped_on_the_first_scan() {
+    let (_tmp, store) = store();
+    std::fs::create_dir_all(store.root.join("broken")).unwrap();
+    std::fs::create_dir(store.root.join("broken").join("turn.json")).unwrap();
+    let plan = store.plan_recovery();
+    assert_eq!(plan.records_read, 1);
+    assert!(active_marker_exists(&store, "broken"));
+    assert!(turn::active_sessions::ready(&store.root));
+}
+
+#[test]
+fn settled_lease_is_retired_without_opening_settled_records() {
+    let repo = tmp("index-lease");
+    assert!(init_git_commit(&repo.0, &[("a.txt", "base\n")]));
+    let cwd = repo.0.to_string_lossy().into_owned();
+    let (_tmp, store) = store();
+    store.begin_turn("session", &cwd, "one").unwrap();
+    store.finish_turn("session", &cwd, "one", false).unwrap();
+    // A crash after the record settled but before the lease was released.
+    turn::leases::publish(&store.leases, "session", "one", &cwd).unwrap();
+    turn::active_sessions::mark_ready(&store.root).unwrap();
+    let plan = store.plan_recovery();
+    assert_eq!(plan.records_read, 0);
+    plan.run();
+    assert_eq!(std::fs::read_dir(&store.leases).unwrap().count(), 0);
+}
+
 fn bycoda_refs(repo: &Path) -> Vec<String> {
     git_output(
         repo,
@@ -670,4 +771,22 @@ fn finalization_filters_unrelated_non_utf8_paths_before_decoding() {
         vec!["own.txt"]
     );
     assert_eq!(std::fs::read(&invalid).unwrap(), b"external");
+}
+
+#[test]
+fn turn_review_errors_carry_typed_codes_after_the_legacy_text() {
+    let repo = tmp("turn-review-codes");
+    let cwd = repo.0.to_string_lossy().into_owned();
+    let (_tmp, store) = store();
+    store.begin_turn("session", &cwd, "plain").unwrap();
+    let recording = store.turn_review_ready("session", &cwd).unwrap_err();
+    assert!(recording.starts_with("Workspace checkpoint is still recording this turn"));
+    assert!(recording.ends_with("[CHECKPOINT_RECORDING]"));
+    store.finish_turn("session", &cwd, "plain", false).unwrap();
+    assert!(init_git_commit(&repo.0, &[("a.txt", "base\n")]));
+    assert!(git(&repo.0, &["config", "core.sparseCheckout", "true"]));
+    store.begin_turn("session", &cwd, "failed").unwrap_err();
+    let failed = store.turn_review_ready("session", &cwd).unwrap_err();
+    assert!(failed.starts_with("Workspace checkpoint failed:"));
+    assert!(failed.ends_with("[CHECKPOINT_FAILED]"));
 }

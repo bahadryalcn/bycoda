@@ -159,10 +159,23 @@ it("saves a turned-off address without moving the rows", async () => {
   expect(order()).toEqual(before);
 });
 
-it("shows only the saved other address when the desktop cannot answer", async () => {
-  invoke.mockRejectedValue(new Error("no desktop"));
+it("shows only the saved other address when the desktop lacks the route command", async () => {
+  invoke.mockImplementation((command: string) =>
+    command === "remote_machine_routes"
+      ? Promise.reject("Command remote_machine_routes not found")
+      : Promise.resolve([]),
+  );
   await render();
-  expect(container.textContent).toBe("Other address · me@192.168.2.145");
+  expect(container.textContent).toBe("Other address: me@192.168.2.145");
+  expect(container.textContent).not.toContain("could not be loaded");
+  expect(container.querySelector("button")).toBeNull();
+});
+
+it("reports a real read failure whose text merely mentions a missing address", async () => {
+  invoke.mockRejectedValue(new Error("SSH config entry not found for no desktop box"));
+  await render();
+  expect(container.textContent).toContain("Addresses could not be loaded.");
+  expect(container.textContent).toContain("Retry");
 });
 
 it("lists an account Quick Tunnel as a Tunnel route found automatically, and marks it in use", async () => {

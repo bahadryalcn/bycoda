@@ -11,7 +11,10 @@ import {
 } from "../../src/integrations/mobile-lan";
 import type { MobileAccessStatus } from "../../src/integrations/mobile-access";
 import { createLanIdentity, openLanRequest } from "./mobile-lan-crypto";
+import { ownerRpcDeadlineMs } from "../server/owner-rpc";
+import type { Socket } from "node:net";
 import { createMobileWssGateway } from "../security/mobile-wss";
+import { GATEWAY_ADMISSION, OVER_CAPACITY_HTTP_RESPONSE } from "../security/gateway-admission";
 import type { MobileTlsAuthority, MobileTlsMaterial } from "../security/mobile-tls";
 import {
   defaultRouteAddress,
@@ -79,6 +82,32 @@ class LanFailure extends Error {
   }
 }
 
+const UPSTREAM_DEFAULT_MS = 180_000;
+/** Slack past the Host's own deadline, so its `HOST_RPC_DEADLINE` answer reaches the phone instead of a bare 504. */
+const UPSTREAM_DEADLINE_GRACE_MS = 30_000;
+/**
+ * Socket budget for one upstream call, read from the authenticated RPC body. A normal method
+ * keeps 180 s; a long owner method gets its Host deadline plus the grace; a method the Host
+ * bounds itself (Infinity) gets no gateway timer, so 0 disables the socket timeout.
+ */
+function upstreamBudgetMs(path: string, body: string): number {
+  if (path !== "/rpc") return UPSTREAM_DEFAULT_MS;
+  let call: { method?: unknown; params?: unknown } = {};
+  try {
+    const parsed: unknown = JSON.parse(body);
+    if (parsed && typeof parsed === "object") call = parsed;
+  } catch {
+    return UPSTREAM_DEFAULT_MS;
+  }
+  const params =
+    call.params && typeof call.params === "object" && !Array.isArray(call.params)
+      ? (call.params as Record<string, unknown>)
+      : {};
+  const deadline = ownerRpcDeadlineMs(String(call.method), params);
+  if (!Number.isFinite(deadline)) return 0;
+  return Math.max(UPSTREAM_DEFAULT_MS, deadline + UPSTREAM_DEADLINE_GRACE_MS);
+}
+
 async function boundedBody(request: IncomingMessage): Promise<string> {
   if (Number(request.headers["content-length"]) > MOBILE_LAN_MAX_WIRE_BYTES)
     throw new LanFailure(413, "request-too-large");
@@ -101,7 +130,7 @@ export function createLanGateway(
   const seen = new Map<string, number>();
   const epoch = randomBytes(32).toString("hex");
   let pending = 0;
-  return createServer(
+  const server = createServer(
     { requestTimeout: 180_000, headersTimeout: 10_000, maxHeaderSize: 8192 },
     async (request, response) => {
       response.setHeader("Content-Type", "application/json");
@@ -177,6 +206,7 @@ export function createLanGateway(
           throw new Error("Invalid request");
         // Remember before dispatch; a captured write can never execute twice.
         seen.set(opened.envelope.id, now + MOBILE_LAN_WINDOW_MS * 2);
+        const budget = upstreamBudgetMs(input.path, input.body);
         const result = await new Promise<{ status: number; body: string }>((resolve, reject) => {
           const upstream = httpRequest(
             {
@@ -213,9 +243,10 @@ export function createLanGateway(
           };
           response.once("close", disconnect);
           upstream.once("close", () => response.off("close", disconnect));
-          upstream.setTimeout(180_000, () =>
-            upstream.destroy(new LanFailure(504, "upstream-timeout")),
-          );
+          if (budget > 0)
+            upstream.setTimeout(budget, () =>
+              upstream.destroy(new LanFailure(504, "upstream-timeout")),
+            );
           upstream.on("error", (error) =>
             reject(error instanceof LanFailure ? error : new LanFailure(502, "upstream-failed")),
           );
@@ -230,6 +261,23 @@ export function createLanGateway(
       }
     },
   );
+  // Admission happens per TCP socket: plain HTTP lets a 429 reach sockets past the cap
+  // instead of Node dropping them silently. Only the reserve is answered, the rest are destroyed.
+  const admitted = new Set<Socket>();
+  const rejecting = new Set<Socket>();
+  server.maxConnections = GATEWAY_ADMISSION.maxAdmitted + GATEWAY_ADMISSION.rejectReserve;
+  server.on("connection", (socket) => {
+    socket.on("error", () => socket.destroy());
+    if (admitted.size < GATEWAY_ADMISSION.maxAdmitted) {
+      admitted.add(socket);
+      socket.once("close", () => admitted.delete(socket));
+    } else if (rejecting.size < GATEWAY_ADMISSION.rejectReserve) {
+      rejecting.add(socket);
+      socket.once("close", () => rejecting.delete(socket));
+      socket.end(OVER_CAPACITY_HTTP_RESPONSE, () => socket.destroy());
+    } else socket.destroy();
+  });
+  return server;
 }
 
 // Windows (Hyper-V, WSL, Docker) reserves new blocks of the dynamic range 49152-65535 after
@@ -483,7 +531,6 @@ export class MobileLanAccess {
       await this.closeGateway();
       const gateway = this.makeGateway(this.identity, this.environmentId, this.getPort);
       let wss: ReturnType<typeof createMobileWssGateway> | undefined;
-      gateway.maxConnections = 32;
       try {
         let portChanged = false;
         const listenSaved = async (

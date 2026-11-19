@@ -1,3 +1,4 @@
+import { errorText } from "../../shared/lib/errors";
 import { useEffect, useSyncExternalStore } from "react";
 import { subscribeUpdateChannel } from "../../features/settings/model/updateChannel";
 import { isUpdatePromptSnoozed } from "./updatePrompt";
@@ -56,11 +57,18 @@ function armProbeTimer(delay = nextUpdateProbeDelayMs()) {
 }
 
 async function probe(explicit = false) {
-  if (checking || installing || snapshot.phase === "downloading") return;
+  if (installing || snapshot.phase === "downloading") return;
+  if (checking) {
+    // Only an explicit check (a channel switch) cuts in: it retires the running probe's result
+    // so that result cannot publish the old feed, and answers now.
+    if (!explicit) return;
+    generation += 1;
+  }
   checking = true;
   const request = generation;
+  let currentVersion = snapshot.currentVersion;
   try {
-    const currentVersion = await readAppVersion();
+    currentVersion = await readAppVersion();
     if (request !== generation) return;
     const update = await probeForUpdate(explicit);
     if (request !== generation || installing) return;
@@ -78,8 +86,16 @@ async function probe(explicit = false) {
     } else {
       setAppUpdateSnapshot({ phase: "current", currentVersion });
     }
-  } catch {
-    // A failed background check must not hide an already discovered update.
+  } catch (error) {
+    // A failed background check must not hide an already discovered update. A failed explicit
+    // check (channel switch, Check for updates) is reported instead of ignored.
+    if (explicit && request === generation) {
+      setAppUpdateSnapshot({
+        phase: "error",
+        currentVersion,
+        error: errorText(error),
+      });
+    }
   } finally {
     if (request === generation) checking = false;
   }

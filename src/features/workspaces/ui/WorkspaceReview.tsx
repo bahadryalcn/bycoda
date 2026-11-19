@@ -26,6 +26,9 @@ import {
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { Heading } from "../../../shared/ui/Heading";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { hostLifetimeDeadline, remainingUntil } from "../../../shared/lib/time/hostLifetime";
+import { monotonicNow } from "../../../shared/lib/time/timestamps";
+import { shortSha } from "../../../shared/lib/shortSha";
 
 const CommitDiff = lazy(() =>
   import("../../source-control/ui/CommitDiff").then((module) => ({
@@ -99,14 +102,14 @@ export function WorkspaceReview({
   useEffect(() => {
     savePublication(workspace, "draft", publication);
   }, [workspace.id, workspace.environmentId, publication]);
-  const [now, setNow] = useState(() => Date.now());
+  const [now, setNow] = useState(() => monotonicNow());
   useEffect(() => {
     if (!plan) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const check = () => {
       clearTimeout(timer);
-      const remaining = plan.expiresAt - Date.now();
-      setNow(Date.now());
+      const remaining = remainingUntil(plan.expiresAt);
+      setNow(monotonicNow());
       if (remaining > 0) timer = setTimeout(check, Math.min(remaining, 2_147_483_647));
     };
     check();
@@ -147,6 +150,7 @@ export function WorkspaceReview({
         context,
       );
       if (!fresh) throw new Error(t("This workspace is no longer available."));
+      const sentAt = monotonicNow();
       const result = await workspaceRequest(
         "workspaces.delivery.review",
         {
@@ -157,8 +161,10 @@ export function WorkspaceReview({
         } as Parameters<typeof workspaceRequest<"workspaces.delivery.review">>[1],
         context,
       );
-      setPlan(result);
-      setNow(Date.now());
+      // `expiresAt` becomes a local monotonic deadline from the Host's lifetime; the Host's wall
+      // clock reading is not used here. The apply call sends only the token.
+      setPlan({ ...result, expiresAt: hostLifetimeDeadline(result.expiresInMs, sentAt) });
+      setNow(monotonicNow());
     } catch (reason) {
       const message = presentRemoteError(reason);
       if (message) setError(message);
@@ -175,7 +181,7 @@ export function WorkspaceReview({
     if (
       !plan ||
       lock.current ||
-      plan.expiresAt <= Date.now() ||
+      plan.expiresAt <= monotonicNow() ||
       plan.blockers.length ||
       plan.artifacts?.blockers.length ||
       plan.overlappingPaths.length
@@ -402,7 +408,7 @@ export function WorkspaceReview({
           <DescriptionList>
             <DescriptionItem term={t("Branch push")}>
               {receipt.push
-                ? `${receipt.push.remote} · ${receipt.push.sourceHead.slice(0, 12)}`
+                ? `${receipt.push.remote} · ${shortSha(receipt.push.sourceHead)}`
                 : t("Not confirmed")}
             </DescriptionItem>
             <DescriptionItem term={t("Pull request")}>
@@ -482,7 +488,7 @@ export function WorkspaceReview({
                         tooltip={sha}
                         onClick={() => setDiffCommit((value) => (value === sha ? null : sha))}
                       >
-                        {sha.slice(0, 12)}
+                        {shortSha(sha)}
                       </Button>
                     </li>
                   ))}
@@ -504,7 +510,7 @@ export function WorkspaceReview({
             {diffCommit && (
               <section className="min-w-0 overflow-hidden">
                 <Heading size="item" level={3}>
-                  {t("Commit diff")} · {diffCommit.slice(0, 12)}
+                  {t("Commit diff")} · {shortSha(diffCommit)}
                 </Heading>
                 <Suspense fallback={<LoadingText>{t("Loading diff…")}</LoadingText>}>
                   <CommitDiff cwd={executionCwd} sha={diffCommit} />

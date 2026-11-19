@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { readFileSync } from "node:fs";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
@@ -124,6 +125,37 @@ it("shows the provider scope only while changes are pending", async () => {
     expect(container.textContent).toContain("Apply to");
     await render(0, "all");
     expect(container.textContent).toContain("Apply to");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+});
+
+it("aligns the Save in field through a structural class, not its translated label", async () => {
+  const css = readFileSync("src/features/settings/ui/ProviderDefaults.css", "utf8");
+  expect(css).not.toMatch(/\[aria-label/);
+  expect(css).toMatch(/\.provider-defaults-field-end\s*\{[^}]*margin-inline-start:\s*auto/);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(
+        createElement(ProviderDefaultsSaveBar, {
+          target: { kind: "global" },
+          options: [],
+          onTargetChange: vi.fn(),
+          changes: changesOf(0),
+          saveState: { state: "idle" },
+          saving: false,
+          onSave: vi.fn(),
+          onDiscard: vi.fn(),
+        }),
+      ),
+    );
+    const field = container.querySelector(".provider-defaults-field-end");
+    expect(field).not.toBeNull();
+    expect(field!.querySelector("button[aria-haspopup='dialog']")).not.toBeNull();
   } finally {
     await act(async () => root.unmount());
     container.remove();

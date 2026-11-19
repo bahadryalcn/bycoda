@@ -262,7 +262,7 @@ it("shows the wait with a retry when the first load fails offline, then reloads 
     .mockResolvedValue(stages);
   await mount("remote://env-1/repo");
   expect(host.textContent).toContain("Conflict versions unavailable");
-  expect(host.textContent).toContain("Retry");
+  expect(host.textContent).toContain("Try again");
   await act(async () => announceRemoteRecovery("env-1"));
   expect(gitConflictStages).toHaveBeenCalledTimes(2);
   expect(host.textContent).not.toContain("Conflict versions unavailable");

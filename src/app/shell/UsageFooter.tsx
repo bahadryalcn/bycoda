@@ -39,10 +39,11 @@ import {
   runningTerminalChipLabel,
   type RunningTerminal,
 } from "../../features/terminal/model/terminalTab";
-import { MOD } from "../../platform/tauri/platform";
+import { useKeybindingShortcut } from "../../features/settings/public/useKeybindingShortcut";
 import { ConversationToolsButton } from "../../features/host-tools/ConversationToolsButton";
 import type { ConversationTools } from "../../features/host-tools/SessionHostTools";
 import { UsageProviderChip } from "./UsageProviderChip";
+import "./terminalLive.css";
 import {
   saveUsageDisplayAccount,
   useUsageDisplayAccount,
@@ -63,6 +64,7 @@ import {
   type ProviderAccountProvider,
 } from "../../features/providers/model/providerAccounts";
 import { useProviderAccounts } from "../../features/providers/model/useProviderAccounts";
+import { providerAccountErrorText } from "../../features/providers/model/providerAccountError";
 import { surfaceAttributes } from "../../shared/ui/Surface";
 
 export type UsageFooterSession = {
@@ -108,6 +110,8 @@ export function UsageFooter({
   onManageAccounts?: (provider: ProviderAccountProvider) => void;
 }) {
   const t = useT();
+  // The live binding (user overrides included), so the hint matches what the shortcut does.
+  const terminalShortcut = useKeybindingShortcut("Terminal: New");
   const wantClaude = providers.includes("claude");
   const wantCodex = providers.includes("codex");
   const wantOpencode = providers.includes("opencode");
@@ -239,7 +243,7 @@ export function UsageFooter({
           );
         }
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Could not complete sign-in";
+        const message = error instanceof Error ? error.message : t("Could not complete sign-in");
         setCachedRateLimits(
           provider,
           accountId,
@@ -254,7 +258,7 @@ export function UsageFooter({
     });
     inflight.current = tracked.catch(() => undefined);
     await tracked;
-  }, []);
+  }, [t]);
 
   const reconnectClaude = useCallback(
     () => reconnectProvider("claude", claudeAccountId),
@@ -296,11 +300,11 @@ export function UsageFooter({
     : (onNewTerminal ?? onShowTerminal);
   const ariaLabel =
     showUsage || session?.harness === "pi"
-      ? "Provider usage"
+      ? t("Provider usage")
       : showTerminals || showTerminalButton
-        ? "Terminals"
+        ? t("Terminals")
         : session
-          ? "Session"
+          ? t("Session")
           : undefined;
 
   return (
@@ -314,9 +318,10 @@ export function UsageFooter({
         `@container/usage flex h-(--ui-control-height-compact) min-w-0 items-center gap-1 ${embedded ? "flex-1" : "shrink-0 px-1.5"}`,
       )}
     >
+      {/* Shared scrollbar (not hidden) so clipped provider chips show that more exist; the chips are buttons, so keyboard focus scrolls them into view. */}
       <ScrollArea
         axis="both"
-        scrollbar="hidden"
+        scrollbar="auto"
         data-provider-usage
         className="flex min-w-0 flex-1 items-center gap-1 overscroll-x-contain"
       >
@@ -400,7 +405,7 @@ export function UsageFooter({
               iconOnly
               label={terminalLabel}
               shortcut={
-                !projectTerminalActive && !terminalUnavailableReason ? MOD + "+`" : undefined
+                !projectTerminalActive && !terminalUnavailableReason ? terminalShortcut : undefined
               }
               variant="ghost"
               motion="none"
@@ -455,7 +460,7 @@ function SessionChip({ session }: { session: UsageFooterSession }) {
       setOpen(false);
       setLoginState("complete");
     } catch (error) {
-      setLoginError(error instanceof Error ? error.message : "Could not complete sign-in");
+      setLoginError(providerAccountErrorText(error, "signIn"));
       setLoginState("error");
     }
   };
@@ -501,15 +506,14 @@ function SessionChip({ session }: { session: UsageFooterSession }) {
           align="start"
           gap={7}
           width={300}
-          autoFocus
           onDismiss={dismiss}
-          role="dialog"
+          kind="dialog"
           aria-label={t("{p0} sign-in", { p0: HARNESS_TITLE[session.harness] })}
-          tabIndex={-1}
         >
           <Text as="div" size="inherit" tone="primary">
             <ProviderSignInPanel
               harness={session.harness}
+              accountId={session.providerAccountId}
               state={loginState}
               error={loginError}
               onSignIn={() => void signIn()}

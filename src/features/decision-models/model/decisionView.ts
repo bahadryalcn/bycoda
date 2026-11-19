@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { formatNumber, t } from "../../../shared/i18n";
 import { formatBytes } from "../../../shared/i18n/format";
 import { truncateGraphemes } from "../../../shared/lib/text/truncate";
@@ -212,7 +213,7 @@ export function candidateSourceInput(candidate: DiscoveryCandidate): DecisionSou
   };
 }
 
-export function candidateKindLabel(kind: DiscoveryCandidate["kind"]): string {
+export function candidateKindLabel(kind: DiscoveryCandidate["kind"], target?: string): string {
   switch (kind) {
     case "local_service":
       return t("Running service");
@@ -221,7 +222,7 @@ export function candidateKindLabel(kind: DiscoveryCandidate["kind"]): string {
     case "runtime_process":
       return t("Running program");
     case "api_key":
-      return t("Key found on this computer");
+      return target ? t("Key found on Host {p1}", { p1: target }) : t("Key found on this computer");
   }
 }
 
@@ -249,7 +250,7 @@ export function recommendationText(tier: LocalRecommendation["tier"]): string {
 
 /** Raw error text is shown only inside the technical details disclosure, never as the main message. */
 export function errorDetail(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return errorText(error);
 }
 
 export function catalogLabel(entry: DecisionCatalogEntry): string {
@@ -264,6 +265,17 @@ export function endpointSourceKind(value: string): "local" | "api" {
   } catch {
     return "api";
   }
+}
+
+/** A failed connection test reads as a next step; only the Host error code and the source kind decide the copy, never provider text. */
+export function sourceTestFailureText(
+  kind: "local" | "api" | "gateway" | "llm",
+  code: "below_threshold" | "unavailable" | undefined,
+): string {
+  if (code === "unavailable" && kind !== "local") {
+    return t("Connection test failed. Check your credentials and retry.");
+  }
+  return sourceErrorText(code);
 }
 
 /** Host error codes are plain words in the UI; the code itself never reaches the user. */

@@ -68,7 +68,9 @@ Automatic or inherited choice.
 The conversation model picker keeps the reasoning heading, current level and bars
 together while other options scroll. Narrow panels scroll their model and settings
 sections instead of shrinking either list away. Open Help for complete setting
-descriptions with the keyboard or touch; hovering is optional.
+descriptions with the keyboard or touch; hovering is optional. A locked setting, such as
+its window while auto-compact is off or extras while the conversation is updating, names
+its reason on hover.
 
 The Defaults tab shows Chat defaults first, then Advisor, Image models, Subagents and Subagent max effort.
 These controls scroll together. Selected image and subagent models remain readable

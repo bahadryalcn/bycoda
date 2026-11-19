@@ -37,36 +37,121 @@ pub(super) struct ProgressEvent {
     pub state: String,
 }
 
+/// Acknowledged byte spans. `spans` stays sorted, disjoint and non-touching,
+/// so each insert binary-searches its merge window instead of re-sorting.
 #[derive(Default)]
-struct Ranges(Vec<(u64, u64)>);
+struct Ranges {
+    spans: Vec<(u64, u64)>,
+    total: u64,
+    /// Set once the span count passes `MAX_SPANS`; tracking stops and the
+    /// last reported total is kept, so progress never jumps backwards.
+    saturated: bool,
+}
 impl Ranges {
+    // Real OpenSSH has a bounded window of outstanding blocks. Arbitrary
+    // unmergeable diagnostics cannot grow application memory unboundedly.
+    const MAX_SPANS: usize = 4096;
+
     fn insert(&mut self, start: u64, end: u64) -> u64 {
-        if start >= end {
-            return self.bytes();
+        if start >= end || self.saturated {
+            return self.total;
         }
-        self.0.push((start, end));
-        self.0.sort_unstable();
-        let mut merged: Vec<(u64, u64)> = vec![];
-        for &(start, end) in &self.0 {
-            if let Some(last) = merged.last_mut() {
-                if start <= last.1 {
-                    last.1 = last.1.max(end);
-                    continue;
-                }
-            }
-            merged.push((start, end));
-        }
-        // Real OpenSSH has a bounded window of outstanding blocks. Arbitrary
-        // unmergeable diagnostics cannot grow application memory unboundedly.
-        if merged.len() <= 4096 {
-            self.0 = merged;
+        // Spans ending at or after `start` and starting at or before `end`
+        // touch or overlap the new block and merge into it.
+        let first = self.spans.partition_point(|span| span.1 < start);
+        let after = self.spans.partition_point(|span| span.0 <= end);
+        let (merged_start, merged_end) = if first < after {
+            (
+                start.min(self.spans[first].0),
+                end.max(self.spans[after - 1].1),
+            )
         } else {
-            self.0.clear();
+            (start, end)
+        };
+        let removed: u64 = self.spans[first..after].iter().map(|(a, b)| b - a).sum();
+        if self.spans.len() - (after - first) + 1 > Self::MAX_SPANS {
+            self.saturated = true;
+            self.spans = Vec::new();
+            return self.total;
         }
-        self.bytes()
+        self.spans
+            .splice(first..after, [(merged_start, merged_end)]);
+        self.total = self.total - removed + (merged_end - merged_start);
+        self.total
     }
-    fn bytes(&self) -> u64 {
-        self.0.iter().map(|(a, b)| b - a).sum()
+}
+
+/// Why a running sftp process was retired for time rather than cancellation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Expiry {
+    /// Metadata operation (`ls`, `rename`, `rm`) ran past its flat limit.
+    Flat,
+    /// A transfer acknowledged no data for the idle window.
+    Idle,
+    /// A transfer reached its absolute duration ceiling.
+    Total,
+}
+impl Expiry {
+    pub(super) fn message(self) -> String {
+        match self {
+            Self::Flat => "SFTP operation timed out".into(),
+            Self::Idle => format!(
+                "SFTP transfer stalled: no data for {} seconds",
+                Deadline::TRANSFER_IDLE.as_secs()
+            ),
+            Self::Total => "SFTP transfer exceeded its maximum duration".into(),
+        }
+    }
+}
+
+/// Time budget of one sftp process. Metadata operations keep a flat limit.
+/// A transfer is bounded twice: the idle window restarts whenever the progress
+/// activity counter advances, and the total ceiling never restarts, so a slow
+/// but live link finishes while a stalled or endlessly dripping one cannot
+/// hold the process (and its operation slot) forever.
+pub(super) struct Deadline {
+    started: Instant,
+    last_activity: Instant,
+    seen: u64,
+    flat: Option<Duration>,
+}
+impl Deadline {
+    const METADATA: Duration = Duration::from_secs(300);
+    const CLEANUP: Duration = Duration::from_secs(15);
+    pub(super) const TRANSFER_IDLE: Duration = Duration::from_secs(120);
+    const TRANSFER_TOTAL: Duration = Duration::from_secs(12 * 60 * 60);
+
+    pub(super) fn new(operation_id: &str, transfer: bool, now: Instant) -> Self {
+        let flat = if transfer {
+            None
+        } else if operation_id.starts_with("cleanup-") {
+            Some(Self::CLEANUP)
+        } else {
+            Some(Self::METADATA)
+        };
+        Self {
+            started: now,
+            last_activity: now,
+            seen: 0,
+            flat,
+        }
+    }
+    /// `activity` is the monotonic counter of acknowledged data diagnostics.
+    pub(super) fn expired(&mut self, now: Instant, activity: u64) -> Option<Expiry> {
+        if let Some(flat) = self.flat {
+            return (now.duration_since(self.started) >= flat).then_some(Expiry::Flat);
+        }
+        if activity != self.seen {
+            self.seen = activity;
+            self.last_activity = now;
+        }
+        if now.duration_since(self.started) >= Self::TRANSFER_TOTAL {
+            Some(Expiry::Total)
+        } else if now.duration_since(self.last_activity) >= Self::TRANSFER_IDLE {
+            Some(Expiry::Idle)
+        } else {
+            None
+        }
     }
 }
 
@@ -76,6 +161,10 @@ pub(super) struct Progress {
     event: Mutex<ProgressEvent>,
     ranges: Mutex<Ranges>,
     last: Mutex<Instant>,
+    /// Counts every well-formed data diagnostic, including ones outside the
+    /// expected range or after `Ranges` saturates, so liveness never depends
+    /// on the byte total still advancing.
+    activity: std::sync::atomic::AtomicU64,
     upload: bool,
     base: u64,
     #[cfg(test)]
@@ -102,6 +191,7 @@ impl Progress {
             }),
             ranges: Mutex::new(Ranges::default()),
             last: Mutex::new(Instant::now()),
+            activity: Default::default(),
             upload,
             base,
             #[cfg(test)]
@@ -121,10 +211,14 @@ impl Progress {
             }
         }
     }
+    pub(super) fn activity(&self) -> u64 {
+        self.activity.load(Ordering::Relaxed)
+    }
     fn observe(&self, line: &str) {
         let Some((start, end)) = diagnostic_range(line, self.upload) else {
             return;
         };
+        self.activity.fetch_add(1, Ordering::Relaxed);
         let total = self.event.lock().ok().and_then(|event| event.total_bytes);
         if start < self.base || total.is_some_and(|total| end > total) {
             return;
@@ -179,6 +273,7 @@ impl Progress {
             }),
             ranges: Mutex::new(Ranges::default()),
             last: Mutex::new(Instant::now()),
+            activity: Default::default(),
             upload,
             base,
             observer: None,
@@ -712,7 +807,12 @@ fn download_core(
         total_bytes: Some(total),
         publication: None,
     };
-    save(app, &record)?;
+    if let Err(error) = save(app, &record) {
+        // This call created the staging file with create_new and no recovery
+        // record points at it yet, so nothing else can own or resume it.
+        let _ = fs::remove_file(&record.staging_path);
+        return Err(error);
+    }
     let result = (|| {
         run_file(
             app,
@@ -1188,6 +1288,18 @@ mod tests {
         assert_eq!(ranges.insert(250, 300), 250);
     }
     #[test]
+    fn overflow_keeps_last_total_instead_of_resetting_progress() {
+        let mut ranges = Ranges::default();
+        // Descending, gapped one-byte blocks: every block counts exactly once.
+        for index in (0..4096u64).rev() {
+            ranges.insert(index * 2, index * 2 + 1);
+        }
+        assert_eq!(ranges.insert(0, 1), 4096);
+        // The next unmergeable block exceeds the span cap: keep the last total.
+        assert_eq!(ranges.insert(8192, 8193), 4096);
+        assert_eq!(ranges.insert(0, 4), 4096);
+    }
+    #[test]
     fn parses_only_actual_sftp_byte_diagnostics() {
         assert_eq!(
             diagnostic_range("debug3: Received data 10 -> 19", false),
@@ -1385,6 +1497,91 @@ mod tests {
         let input = format!("{}\nDisk full\n", "X".repeat(50000));
         let output = read_diagnostics(std::io::Cursor::new(input), None);
         assert_eq!(String::from_utf8(output).unwrap(), "Disk full\n");
+    }
+    fn secs(base: Instant, seconds: u64) -> Instant {
+        base + Duration::from_secs(seconds)
+    }
+    #[test]
+    fn metadata_operations_keep_their_flat_limit_regardless_of_activity() {
+        let start = Instant::now();
+        let mut listing = Deadline::new("list-1", false, start);
+        assert_eq!(listing.expired(secs(start, 299), 0), None);
+        // Activity is a transfer concept; it must not extend a metadata limit.
+        assert_eq!(listing.expired(secs(start, 300), 99), Some(Expiry::Flat));
+        let mut cleanup = Deadline::new("cleanup-1", false, start);
+        assert_eq!(cleanup.expired(secs(start, 14), 0), None);
+        assert_eq!(cleanup.expired(secs(start, 15), 0), Some(Expiry::Flat));
+    }
+    #[test]
+    fn transfer_outlives_the_old_flat_limit_while_data_keeps_flowing() {
+        let start = Instant::now();
+        let mut transfer = Deadline::new("transfer-1", true, start);
+        // One acknowledged block every 60 s: far past the former 300 s kill.
+        for step in 1..=20u64 {
+            assert_eq!(transfer.expired(secs(start, step * 60), step), None);
+        }
+    }
+    #[test]
+    fn stalled_transfer_stops_after_the_idle_window_from_last_activity() {
+        let start = Instant::now();
+        let idle = Deadline::TRANSFER_IDLE.as_secs();
+        let mut transfer = Deadline::new("transfer-2", true, start);
+        assert_eq!(transfer.expired(secs(start, 1000), 1), None);
+        assert_eq!(transfer.expired(secs(start, 1000 + idle - 1), 1), None);
+        assert_eq!(
+            transfer.expired(secs(start, 1000 + idle), 1),
+            Some(Expiry::Idle)
+        );
+        // A transfer that never produced data is idle from its own start.
+        let mut silent = Deadline::new("transfer-3", true, start);
+        assert_eq!(silent.expired(secs(start, idle), 0), Some(Expiry::Idle));
+    }
+    #[test]
+    fn continuously_active_transfer_still_hits_the_total_ceiling() {
+        let start = Instant::now();
+        let total = Deadline::TRANSFER_TOTAL.as_secs();
+        let mut transfer = Deadline::new("transfer-4", true, start);
+        assert_eq!(transfer.expired(secs(start, total - 1), 1), None);
+        assert_eq!(
+            transfer.expired(secs(start, total), 2),
+            Some(Expiry::Total)
+        );
+    }
+    #[test]
+    fn timeout_messages_stay_distinguishable() {
+        assert_eq!(Expiry::Flat.message(), "SFTP operation timed out");
+        assert_eq!(
+            Expiry::Idle.message(),
+            "SFTP transfer stalled: no data for 120 seconds"
+        );
+        assert_eq!(
+            Expiry::Total.message(),
+            "SFTP transfer exceeded its maximum duration"
+        );
+    }
+    #[test]
+    fn only_data_diagnostics_count_as_activity_even_after_ranges_saturate() {
+        let operation = Operation::begin("deadline-activity-test".into()).unwrap();
+        let progress = Progress::testing(&operation, 1 << 40, false, 0);
+        progress.observe("debug1: Connecting to host");
+        progress.observe("debug3: Received data not -> numbers");
+        assert_eq!(progress.activity(), 0);
+        // Gapped one-byte blocks saturate `Ranges`; the byte total then stops.
+        for index in 0..5000u64 {
+            progress.observe(&format!(
+                "debug3: Received data {} -> {}",
+                index * 2,
+                index * 2
+            ));
+        }
+        let frozen = progress.event.lock().unwrap().transferred_bytes;
+        assert_eq!(progress.activity(), 5000);
+        progress.observe("debug3: Received data 20000 -> 20000");
+        assert_eq!(progress.event.lock().unwrap().transferred_bytes, frozen);
+        assert_eq!(progress.activity(), 5001);
+        // Data past the declared size is still a live peer, not an idle one.
+        progress.observe(&format!("debug3: Received data {} -> {}", 1u64 << 41, 1u64 << 41));
+        assert_eq!(progress.activity(), 5002);
     }
     #[cfg(unix)]
     #[test]

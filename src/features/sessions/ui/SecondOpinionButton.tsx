@@ -76,9 +76,9 @@ export function HandoffButton({
       renderTrigger={renderTrigger}
       icon={Replace}
       title={t("Handoff")}
-      disabledTitle="Install another provider to hand off"
+      disabledTitle={t("Install another provider to hand off")}
       description={t("Hand this session to another agent to continue the work.")}
-      menuLabel="Hand this session to another agent"
+      menuLabel={t("Hand this session to another agent")}
     />
   );
 }
@@ -105,9 +105,9 @@ export function BuildTargetButton({
       onPick={onPick}
       icon={ChevronDown}
       title={t("Build with another model")}
-      disabledTitle="No build providers are available"
+      disabledTitle={t("No build providers are available")}
       description={t("Choose the model and provider that should build this plan.")}
-      menuLabel="Build this plan with another model or provider"
+      menuLabel={t("Build this plan with another model or provider")}
       includeCurrent
       disabled={disabled}
       triggerVariant="secondary"
@@ -121,10 +121,10 @@ export function SecondOpinionButton({
   fromSettings,
   onPick,
   icon: Icon = MessageMultiple,
-  title = "Second opinion",
-  disabledTitle = "No different model available for a second opinion",
-  description = "Send this turn to another agent to review the work.",
-  menuLabel = "Send this turn to another agent",
+  title,
+  disabledTitle,
+  description,
+  menuLabel,
   includeCurrent = false,
   excludeFromModel = false,
   disabled: disabledByCaller = false,
@@ -133,6 +133,12 @@ export function SecondOpinionButton({
   renderTrigger,
 }: Props) {
   const t = useT();
+  // Callers pass already-translated copy; these English fallbacks are translated here
+  // so a caller that omits a prop still gets the active language.
+  const titleText = title ?? t("Second opinion");
+  const disabledText = disabledTitle ?? t("No different model available for a second opinion");
+  const descriptionText = description ?? t("Send this turn to another agent to review the work.");
+  const menuLabelText = menuLabel ?? t("Send this turn to another agent");
   const availabilityVersion = useSyncExternalStore(
     subscribeHarnessAvailability,
     getHarnessAvailabilitySnapshot,
@@ -197,7 +203,7 @@ export function SecondOpinionButton({
         });
   const noTargets = targets.length === 0 || !hasSelectableModel;
   const disabled = disabledByCaller || noTargets;
-  const label = noTargets ? disabledTitle : title;
+  const label = noTargets ? disabledText : titleText;
 
   const modelsOf = (harness: HarnessId) => {
     const list = catalog.modelsFor(harness);
@@ -232,7 +238,7 @@ export function SecondOpinionButton({
           leading="none"
           className="px-1.5 py-1 text-balance"
         >
-          {description}
+          {descriptionText}
         </Text>
       ),
     },
@@ -244,7 +250,7 @@ export function SecondOpinionButton({
             id: "empty",
             node: (
               <Text as="div" size="caption" tone="secondary" className="px-1.5 py-1">
-                {disabledTitle}
+                {disabledText}
               </Text>
             ),
           },
@@ -333,7 +339,7 @@ export function SecondOpinionButton({
       {open && button ? (
         <DropdownMenu
           anchor={button}
-          label={menuLabel}
+          label={menuLabelText}
           items={menuItems()}
           side="top"
           align="center"

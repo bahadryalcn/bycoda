@@ -9,7 +9,8 @@ import {
 export type { TreeRowProps } from "./arc/tree-view/tree-row";
 /**
  * One tree row with indent, toggle, icon, label and trailing slots at shared density. Presentation only; the
- * feature owns selection, expansion, rename and drop.
+ * feature owns selection, expansion, rename and drop. Give exactly one row `tabStop` (the active one) and the
+ * rest `tabStop={false}` so Tab enters and leaves the tree once.
  * @group data
  * @use Row of a file or hierarchy tree.
  * @avoid Flat lists and menus: Button item or MenuRow. Collapsible section: Disclosure. Flat growing collections with continuation: ContinuousList.

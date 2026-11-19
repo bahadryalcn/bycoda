@@ -20,6 +20,8 @@ import { Badge, StatusBadge } from "../../../shared/ui/Badge";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { t, useLocale } from "../../../shared/i18n";
 import type { ServerRecord, SshEndpoint } from "../model/serverInventory";
+import { errorText } from "../../../shared/lib/errors";
+import { sanitizeConnectionError } from "../model/remoteConnection";
 import { serverTerminalRestoreState } from "../model/serverTerminalRestoreState";
 import { ServerTerminalRestoreControls } from "./ServerTerminalRestoreControls";
 import { SshConfigurationConnectReview } from "./SshConfigurationConnectReview";
@@ -110,7 +112,7 @@ export function ServersTerminalWorkspace({
         return;
       removeTerminal(id);
     } catch (reason) {
-      setCloseError(String(reason));
+      setCloseError(sanitizeConnectionError(errorText(reason)));
     } finally {
       closingRef.current.delete(id);
       setClosing(new Set(closingRef.current));
@@ -725,7 +727,8 @@ export function ServersTerminalWorkspace({
                 (reason) => {
                   mobile?.resolve(false);
                   configurationReview.handoff?.reject(reason);
-                  if (!configurationReview.handoff) setCloseError(String(reason));
+                  if (!configurationReview.handoff)
+                    setCloseError(sanitizeConnectionError(errorText(reason)));
                 },
               );
               setConfigurationReview(undefined);

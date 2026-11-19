@@ -6,6 +6,19 @@
   min-width: 0;
 }
 
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  transition: opacity 150ms ease;
+}
+
+/* Figures from the previous period stay in place, dimmed, until the selected period has loaded. */
+.pending {
+  opacity: 0.55;
+}
+
 .header {
   display: flex;
   flex-wrap: wrap;
@@ -19,6 +32,11 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-1);
+}
+
+.updated {
+  font-variant-numeric: tabular-nums;
+  margin-inline-end: var(--space-1);
 }
 
 .stats {

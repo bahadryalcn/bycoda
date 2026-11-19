@@ -235,6 +235,68 @@ it("persists exact Host-stamped choices through GUI/voice absence and restart wi
   expect(await f.tasks.get("decision-worker")).toMatchObject({ status: "blocked" });
 });
 
+it("lists pending decisions first, bounds resolved history to 40 rows, and uses the status index", async () => {
+  const f = await fixture();
+  const insert = (id: string, status: string, jobId: string, updatedAt: number) =>
+    f.store.db
+      .prepare(
+        "INSERT INTO assistant_owner_questions(id,job_id,request_id,fingerprint,value) VALUES(?,?,?,?,?)",
+      )
+      .run(
+        id,
+        jobId,
+        `request-${id}`,
+        "a".repeat(64),
+        JSON.stringify({
+          id,
+          version: 1,
+          jobId,
+          projectIds: [],
+          sourceToken: "b".repeat(64),
+          origin: "chief",
+          prompt: {
+            requestId: 0,
+            occurrenceId: id,
+            behavior: "nonBlocking",
+            questions: [
+              {
+                id: "question",
+                header: "Scope",
+                prompt: "Which bounded result should this deliver?",
+                multiSelect: false,
+                allowCustom: false,
+                options: [{ id: "option", label: "Small change" }],
+              },
+            ],
+          },
+          status,
+          createdAt: 1,
+          updatedAt,
+        }),
+      );
+  // Resolved history is newer than the pending rows, so only the status group can put pending first.
+  for (let index = 0; index < 45; index += 1)
+    insert(`answered-${index}`, "answered", `job-answered-${index}`, 1000 + index);
+  insert("open-old", "open", "job-open", 1);
+  insert("snoozed-newer", "snoozed", "job-snoozed", 2);
+  const listed = await f.helper.list();
+  expect(listed).toHaveLength(40);
+  expect(listed.slice(0, 2).map((question) => question.id)).toEqual(["snoozed-newer", "open-old"]);
+  expect(listed.slice(2).every((question) => question.status === "answered")).toBe(true);
+  expect(listed[2].updatedAt).toBe(1044);
+  // Pending rows still get a live source check; resolved history does not need one.
+  expect(listed[0].sourceCurrent).toBe(false);
+  expect(listed.slice(2).every((question) => question.sourceCurrent === undefined)).toBe(true);
+  const plan = await f.store.db
+    .prepare(
+      "EXPLAIN QUERY PLAN SELECT value FROM assistant_owner_questions WHERE json_extract(value,'$.status')='answered' ORDER BY json_extract(value,'$.updatedAt') DESC,id DESC LIMIT 40",
+    )
+    .all();
+  expect(plan.map((step) => step.detail).join("\n")).toContain(
+    "assistant_owner_questions_status_updated",
+  );
+});
+
 it("recovers a lost owner acknowledgement by exact durable input receipt and never repeats or changes a recorded answer", async () => {
   const f = await fixture(),
     question = await f.ask(),

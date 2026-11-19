@@ -129,6 +129,7 @@ export function createYouTubeAdapter(http: SocialHttp, now = Date.now): YouTubeA
     };
   };
   return {
+    ignoresPublishedPosts: true,
     quota,
     async send(account, job, token, media, checkpoint, beforeSubmit) {
       const content = [job.payload.text, job.payload.link].filter(Boolean).join("\n");

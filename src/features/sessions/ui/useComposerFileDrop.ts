@@ -17,6 +17,7 @@ import {
   attachmentsFromFiles,
   attachmentsFromPaths,
   filesFromClipboard,
+  type SkippedAttachment,
 } from "../model/attachments";
 import { attachmentDropVerdict, type AttachmentDropBlock } from "../model/attachmentDrop";
 import type { Attachment } from "../model/session";
@@ -33,7 +34,9 @@ type Options = {
   /** The draft's current attachments, so the badge can say how many will fit. */
   attachmentsRef?: RefObject<readonly unknown[]>;
   persistBlobs?: boolean;
-  readDroppedAttachments: (read: () => Promise<Attachment[]>) => void;
+  readDroppedAttachments: (
+    read: (onSkipped: (skipped: SkippedAttachment[]) => void) => Promise<Attachment[]>,
+  ) => void;
   setPasteError: Dispatch<SetStateAction<string | null>>;
 };
 
@@ -121,10 +124,10 @@ export function useComposerFileDrop({
       if (Date.now() - nativeDropAt < 250) return;
       const files = filesFromClipboard(data);
       if (files.length === 0) return;
-      readDroppedAttachments(() =>
+      readDroppedAttachments((onSkipped) =>
         persistBlobs === undefined
-          ? attachmentsFromFiles(files)
-          : attachmentsFromFiles(files, { persistBlobs }),
+          ? attachmentsFromFiles(files, { onSkipped })
+          : attachmentsFromFiles(files, { persistBlobs, onSkipped }),
       );
     };
 

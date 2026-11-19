@@ -1,4 +1,6 @@
 import { themePalette } from "../../../shared/theme/palette";
+import type { BoundFormat } from "../../../shared/i18n/boundFormat";
+import { t } from "../../../shared/i18n/git";
 export {
   formatGitGraphAbsoluteTime as formatAbsoluteTime,
   formatGitGraphRelativeTime as formatRelativeTime,
@@ -41,6 +43,12 @@ export function authorColor(name: string): string {
   const normalized = normalizeName(name).toLocaleLowerCase();
   if (!normalized) return ANONYMOUS_COLOR;
   return `hsl(${hashName(normalized) % 360} 55% 55%)`;
+}
+
+/** "1 file" / "3 files" in the app language, with the count formatted for that language. */
+export function fileCountLabel(count: number, format: Pick<BoundFormat, "formatNumber">): string {
+  const p0 = format.formatNumber(count);
+  return count === 1 ? t("{p0} file", { p0 }) : t("{p0} files", { p0 });
 }
 
 export function isMergeCommit(commit: { parents: readonly string[] }): boolean {

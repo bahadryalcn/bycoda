@@ -128,3 +128,15 @@ it("shows a known reset day and time as visible semantic text", () => {
     limits.session.resetsAt = null;
   }
 });
+
+it("counts reset countdowns down from the shared minute clock", () => {
+  // Regression for #599: each account used to own a 30 s interval re-rendering its whole section.
+  // Server rendering reads the clock's empty snapshot, so the countdown falls back to Date.now().
+  limits.session.resetsAt = Date.now() + 2 * 3_600_000 + 33 * 60_000;
+  try {
+    const markup = renderToStaticMarkup(createElement(UsagePage));
+    expect(markup).toContain("Resets in 2h");
+  } finally {
+    limits.session.resetsAt = null;
+  }
+});

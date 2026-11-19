@@ -45,6 +45,11 @@ await build({
   entryPoints: ["host/storage/snapshot-worker.mjs"],
   outfile: "build/host/snapshot-worker.mjs",
 });
+await build({
+  ...options,
+  entryPoints: ["host/social/audience/audience-sheet-worker.mjs"],
+  outfile: "build/host/audience-sheet-worker.mjs",
+});
 
 await build({
   ...options,

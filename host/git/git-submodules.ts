@@ -2,7 +2,10 @@ import { execFileAsync as exec } from "../../src/shared/lib/processExecution.nod
 import { realpath, stat } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
 import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps";
-import { nestedRepositoryCandidates } from "./git-repository-discovery";
+import {
+  nestedRepositoryCandidates,
+  type RepositoryDiscoveryLimit,
+} from "./git-repository-discovery";
 
 const MAX_SUBMODULES = 256;
 
@@ -19,11 +22,14 @@ async function git(cwd: string, args: string[], timeout = 15_000): Promise<strin
   return stdout;
 }
 
+/** Repository paths relative to the checkout, and the size bound that cut a scan short, if any. */
+export type HostGitSubmodules = { paths: string[]; limit: RepositoryDiscoveryLimit | null };
+
 /** Initialized gitlinks by default; opt-in source repositories. Never clones or moves a checkout. */
 export async function hostGitSubmodules(
   cwd: string,
   includeRepositories = false,
-): Promise<string[]> {
+): Promise<HostGitSubmodules> {
   const startedAt = monotonicNow();
   const remaining = () => Math.floor(Math.max(0, 15_000 - elapsedSince(startedAt)));
   const root = await realpath(cwd);
@@ -58,18 +64,25 @@ export async function hostGitSubmodules(
       queue.push(child);
     }
   }
+  let limit: RepositoryDiscoveryLimit | null = null;
   if (includeRepositories) {
-    for (const candidate of await nestedRepositoryCandidates(root, remaining)) {
+    const discovery = await nestedRepositoryCandidates(root, remaining);
+    limit = discovery.limit;
+    for (const candidate of discovery.repositories) {
       const child = await realpath(candidate);
       const rel = relative(root, child);
       if (!rel || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel) || seen.has(child))
         continue;
       const top = await git(child, ["rev-parse", "--show-toplevel"], remaining());
       if ((await realpath(top.trim())) !== child) continue;
-      if (paths.length >= MAX_SUBMODULES) throw new Error("Too many nested repositories");
+      if (paths.length >= MAX_SUBMODULES) {
+        // Keep what was verified; the caller shows the list as limited.
+        limit = "repositories";
+        break;
+      }
       seen.add(child);
       paths.push(rel.split(sep).join("/"));
     }
   }
-  return paths.sort();
+  return { paths: paths.sort(), limit };
 }

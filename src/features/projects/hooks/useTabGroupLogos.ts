@@ -1,12 +1,10 @@
-import { useEffect, useState } from "react";
-import { loadTabGroupLogos, TAB_GROUP_LOGOS_CHANGED } from "../../workspace/model/tabGroups";
+import { useSyncExternalStore } from "react";
+import { getTabGroupLogosSnapshot } from "../../workspace/model/tabGroups";
+import { subscribeTabGroupLogos } from "../../workspace/model/projectLogoState";
 
+const NO_LOGOS: Record<string, string> = {};
+
+/** Reactive logo record; every mounted reader shares one parse per stored change. */
 export function useTabGroupLogos(): Record<string, string> {
-  const [logos, setLogos] = useState(loadTabGroupLogos);
-  useEffect(() => {
-    const refresh = () => setLogos(loadTabGroupLogos());
-    window.addEventListener(TAB_GROUP_LOGOS_CHANGED, refresh);
-    return () => window.removeEventListener(TAB_GROUP_LOGOS_CHANGED, refresh);
-  }, []);
-  return logos;
+  return useSyncExternalStore(subscribeTabGroupLogos, getTabGroupLogosSnapshot, () => NO_LOGOS);
 }

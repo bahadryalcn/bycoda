@@ -198,3 +198,90 @@ it("reports failed removal beside saved terms and preserves entry until retry", 
   await click("Remove");
   expect(loadVoiceSettings().dictationDictionary).toEqual([]);
 });
+
+function buttonNamed(text: string) {
+  return [...container.querySelectorAll("button")].find(
+    (button) => button.textContent?.trim() === text,
+  )!;
+}
+
+it("explains the 500-term ceiling beside the list and disables Add term only at the limit", async () => {
+  saveVoiceSettings({
+    ...loadVoiceSettings(),
+    dictationDictionary: Array.from({ length: 500 }, (_, index) => ({
+      term: `ClinicalTerm_${index + 1}`,
+      aliases: [],
+    })),
+  });
+  await render();
+  expect(container.textContent).toContain("500 of 500 terms saved");
+  expect(container.textContent).toContain("The dictionary is full at 500 terms.");
+  expect(buttonNamed("Add term").disabled).toBe(true);
+});
+
+it("blocks a repeated term in the same scope before saving and keeps the draft", async () => {
+  saveVoiceSettings({
+    ...loadVoiceSettings(),
+    dictationDictionary: [{ term: "Bycoda", aliases: [] }],
+  });
+  await render();
+  await click("Add term");
+  await input("Preferred spelling", " bycoda ");
+  expect(container.textContent).toContain("This term is already saved in this scope.");
+  expect(buttonNamed("Save term").disabled).toBe(true);
+  await input("Preferred spelling", "Bycoda Workspace");
+  expect(container.textContent).not.toContain("This term is already saved in this scope.");
+  await click("Save term");
+  expect(loadVoiceSettings().dictationDictionary).toEqual([
+    { term: "Bycoda", aliases: [] },
+    { term: "Bycoda Workspace", aliases: [] },
+  ]);
+});
+
+it("lets an entry keep its own spelling when edited without a duplicate elsewhere", async () => {
+  saveVoiceSettings({
+    ...loadVoiceSettings(),
+    dictationDictionary: [
+      { term: "Bycoda", aliases: ["by coda"] },
+      { term: "FHIR", aliases: [] },
+    ],
+  });
+  await render();
+  await click("Edit");
+  expect(container.textContent).not.toContain("This term is already saved in this scope.");
+  await click("Save term");
+  expect(loadVoiceSettings().dictationDictionary).toEqual([
+    { term: "Bycoda", aliases: ["by coda"] },
+    { term: "FHIR", aliases: [] },
+  ]);
+});
+
+it("keeps legacy duplicates in different scopes as separate rows", async () => {
+  const projectId = projectKey("G:/Projects/clinical-speech-research");
+  saveVoiceSettings({
+    ...loadVoiceSettings(),
+    dictationDictionary: [
+      { term: "Bycoda", aliases: [] },
+      { term: "Bycoda", aliases: [], projectId },
+    ],
+  });
+  await render();
+  expect(container.querySelectorAll("[data-collection-key]")).toHaveLength(2);
+  expect(
+    [...container.querySelectorAll("button")].filter((button) => button.textContent === "Edit"),
+  ).toHaveLength(2);
+});
+
+it("mounts a bounded window of a long dictionary instead of every row", async () => {
+  saveVoiceSettings({
+    ...loadVoiceSettings(),
+    dictationDictionary: Array.from({ length: 200 }, (_, index) => ({
+      term: `Term_${index + 1}`,
+      aliases: [],
+    })),
+  });
+  await render();
+  const mounted = container.querySelectorAll("[data-collection-key]").length;
+  expect(mounted).toBeGreaterThan(0);
+  expect(mounted).toBeLessThan(200);
+});

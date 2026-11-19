@@ -93,9 +93,7 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
   const live = p.status === "live";
   const canTalk = p.status === "idle" || p.status === "sleeping" || p.status === "ready";
   const connecting = p.status === "connecting" || p.status === "reconnecting";
-  const micLabel = t(
-    canTalk ? (p.status === "idle" ? "Start voice" : "Talk") : p.muted ? "Resume" : "Pause mic",
-  );
+  const micLabel = t(canTalk ? (p.status === "idle" ? "Start voice" : "Talk") : "Mute microphone");
   const toggleLabel = t(p.compact ? "Expand voice companion" : "Compact voice companion");
   // Like the phone call screen: a large stage by default, the transcript on request. Kept here,
   // above the compact switch, so the choice survives collapsing the panel.
@@ -154,7 +152,7 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
               loading={connecting}
               disabled={canTalk ? p.startDisabled : !live}
               selected={live && p.muted}
-              aria-pressed={canTalk ? undefined : p.muted}
+              pressed={canTalk ? undefined : p.muted}
               onClick={() => (canTalk ? p.onStart() : p.onToggleMute())}
             >
               {p.muted || p.status === "ready" || p.status === "sleeping" ? (
@@ -257,7 +255,11 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
           {/* Questions and job review open in their own panel beside the companion, so the
               conversation stays readable while they are answered. */}
           {(p.choice || p.jobReview) && p.panel ? (
-            <VoiceSidePanel panel={p.panel} openKey={p.sideKey ?? ""}>
+            <VoiceSidePanel
+              panel={p.panel}
+              label={p.choice ? t("Question") : t("Review jobs before starting")}
+              openKey={p.sideKey ?? ""}
+            >
               {p.choice}
               {p.jobReview}
             </VoiceSidePanel>

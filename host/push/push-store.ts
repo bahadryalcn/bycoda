@@ -80,6 +80,8 @@ export function parsePushRegistration(input: unknown): PushRegistration {
  */
 export class PushDeviceStore {
   private ready: Promise<void> | undefined;
+  /** Bumped after each registration write in this process; see `recipientsFingerprint`. */
+  private revision = 0;
 
   constructor(private readonly db: StoreDatabase) {}
 
@@ -110,6 +112,7 @@ export class PushDeviceStore {
            settings=excluded.settings, updated_at=excluded.updated_at`,
       )
       .run(deviceHash, pushToken, JSON.stringify(settings), Date.now());
+    this.revision += 1;
   }
 
   async unregister(deviceHash: string): Promise<boolean> {
@@ -117,6 +120,7 @@ export class PushDeviceStore {
     const result = await this.db
       .prepare("DELETE FROM push_devices WHERE device_hash=?")
       .run(deviceHash);
+    this.revision += 1;
     return Number(result.changes) > 0;
   }
 
@@ -124,6 +128,20 @@ export class PushDeviceStore {
   async forgetToken(pushToken: string): Promise<void> {
     await this.prepare();
     await this.db.prepare("DELETE FROM push_devices WHERE push_token=?").run(pushToken);
+    this.revision += 1;
+  }
+
+  /**
+   * A cheap stand-in for the recipient set: it changes on every registration write in this process,
+   * and on any revoked pairing that still has a push row (the live join drops it). Reading it costs one
+   * count, not a row parse, so callers can reuse a derived result while it is unchanged.
+   */
+  async recipientsFingerprint(): Promise<string> {
+    await this.prepare();
+    const row = await this.db
+      .prepare("SELECT COUNT(*) AS n FROM push_devices p JOIN devices d ON d.hash = p.device_hash")
+      .get();
+    return `${this.revision}:${Number(row?.n ?? 0)}`;
   }
 
   async recipients(deviceHash?: string): Promise<PushRecipient[]> {

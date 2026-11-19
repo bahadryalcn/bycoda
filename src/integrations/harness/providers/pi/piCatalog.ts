@@ -1,15 +1,11 @@
 import { killChild } from "../../core/child";
 import {
-  assertOptionalProviderProbeError,
   createProviderRetirementLedger,
   preserveProviderFailure,
 } from "../../core/providerRetirement";
+import { applyProbedCatalog } from "../../core/catalogProbe";
 import { homeDir } from "../../../../platform/tauri/fs";
-import {
-  setHarnessModels,
-  withAutoCompactToggle,
-  type AgentModel,
-} from "../../../../features/sessions/model/models";
+import { withAutoCompactToggle, type AgentModel } from "../../../../features/sessions/model/models";
 import { createChildProcessHandle, spawnChild, watchChild } from "../../core/child";
 import { PiRpc } from "./piClient";
 import { OMP_FLAVOR, PI_FLAVOR, type PiFlavor } from "./piFlavor";
@@ -32,13 +28,7 @@ function refreshCatalog(flavor: PiFlavor): Promise<void> {
   const running = inflight.get(flavor.id);
   if (running) return running;
   const run = discoverModels(flavor)
-    .then((models) => {
-      if (models.length > 0) setHarnessModels(flavor.id, models);
-    })
-    .catch((error: unknown) => {
-      assertOptionalProviderProbeError(error);
-      console.debug(`[bycoda] ${flavor.id} catalog`, error);
-    })
+    .then((models) => applyProbedCatalog(flavor.id, models))
     .finally(() => {
       inflight.delete(flavor.id);
     });

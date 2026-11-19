@@ -38,6 +38,7 @@ export type ModelPanelSettings = {
   settings: ModelSetting[];
   values: Record<string, string>;
   locked: (setting: ModelSetting) => boolean;
+  lockReason?: (setting: ModelSetting) => string | undefined;
   onChoose: (setting: ModelSetting, value: string) => void;
 };
 

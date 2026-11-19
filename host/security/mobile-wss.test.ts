@@ -333,23 +333,53 @@ it("keeps owner enablement, legacy LAN identity and persisted WSS bootstrap life
 });
 
 it("bounds raw connections before TLS handshakes complete", async () => {
-  const input = await fixture(4, { maxConnections: 2 });
-  const firstAccepted = once(input.gateway, "connection");
-  const first = connectTcp({ host: "127.0.0.1", port: input.port });
-  first.on("error", () => {});
-  cleanups.push(async () => first.destroy());
-  await firstAccepted;
-  const secondAccepted = once(input.gateway, "connection");
-  const second = connectTcp({ host: "127.0.0.1", port: input.port });
-  second.on("error", () => {});
-  cleanups.push(async () => second.destroy());
-  await secondAccepted;
-  const third = connectTcp({ host: "127.0.0.1", port: input.port });
-  third.on("error", () => {});
-  cleanups.push(async () => third.destroy());
-  await once(third, "close");
+  const input = await fixture(4, { maxConnections: 2, rejectReserve: 1 });
+  const connect = () => {
+    const socket = connectTcp({ host: "127.0.0.1", port: input.port });
+    socket.on("error", () => {});
+    cleanups.push(async () => socket.destroy());
+    return socket;
+  };
+  const first = connect();
+  await once(input.gateway, "connection");
+  const second = connect();
+  await once(input.gateway, "connection");
+  // The reserve accepts one more raw socket so a TLS 429 can still be sent.
+  const third = connect();
+  await once(input.gateway, "connection");
+  const fourth = connect();
+  await once(fourth, "close");
   expect(first.destroyed).toBe(false);
   expect(second.destroyed).toBe(false);
+  expect(third.destroyed).toBe(false);
+});
+
+it("answers a TLS session past the admission cap with 429 and Retry-After", async () => {
+  const input = await fixture(4, { maxConnections: 1, rejectReserve: 1 });
+  // The WebSocket is the only established session the cap admits.
+  await input.socket();
+  const refused = await new Promise<{ status: number; retryAfter?: string }>((done, reject) => {
+    const call = httpsRequest(
+      {
+        hostname: "127.0.0.1",
+        port: input.port,
+        path: "/ws-bulk/over-capacity?offset=0",
+        method: "GET",
+        ca: input.material.caCertificatePem,
+        rejectUnauthorized: true,
+        servername: "",
+        agent: false,
+        headers: { Authorization: `Bearer ${TOKEN}` },
+      },
+      (response) => {
+        response.resume();
+        done({ status: response.statusCode!, retryAfter: response.headers["retry-after"] });
+      },
+    );
+    call.on("error", reject);
+    call.end();
+  });
+  expect(refused).toEqual({ status: 429, retryAfter: "1" });
 });
 
 it("bounds pending upgrades and releases ingress admission after an upstream timeout", async () => {

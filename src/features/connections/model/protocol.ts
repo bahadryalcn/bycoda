@@ -377,6 +377,21 @@ export function applySessionSync(known: HostSession | undefined, sync: SessionSy
   };
 }
 /**
+ * Runs one partial `sessions.sync` for a windowed transcript. The Host starts its
+ * delta at the first loaded block it still holds, so the first loaded id names the
+ * same window as the full list. A snapshot reply means that block is gone, so the
+ * full list is sent once to get exactly the window the Host resolves from it.
+ */
+export async function requestPartialSync(
+  known: HostSession,
+  send: (loadedBlockIds: string[]) => Promise<SessionSync>,
+): Promise<SessionSync> {
+  const ids = known.session.blocks.map((block) => block.id);
+  const sync = await send(ids.slice(0, 1));
+  if (sync.kind !== "snapshot" || ids.length <= 1) return sync;
+  return send(ids);
+}
+/**
  * Applies a streamed delta. A tail stream's window starts at its own first block,
  * which may differ from the one this client holds (it can have paged older history
  * or only a later window), so a partial delta is rebased onto `known`'s window.

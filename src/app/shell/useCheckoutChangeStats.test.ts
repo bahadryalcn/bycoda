@@ -16,11 +16,12 @@ const data = vi.hoisted(() => ({
   single: vi.fn(),
   multiple: vi.fn(),
   trees: [] as Worktree[],
+  limits: {} as Record<string, string>,
 }));
 vi.mock("../../features/source-control/hooks/useGitSubmodules", () => ({
   useGitSubmodules: (...args: unknown[]) => {
     data.discovery(...args);
-    return { modules: data.modules, refresh: vi.fn() };
+    return { modules: data.modules, limits: data.limits, refresh: vi.fn() };
   },
 }));
 vi.mock("../../features/source-control/hooks/useProjectWorktrees", () => ({
@@ -56,6 +57,7 @@ beforeEach(() => {
       paths.map(() => ({ files: 1, additions: 2, deletions: 1 })),
     );
   data.modules = { "/repo": ["/repo/mobile"], "/trees/worker": [] };
+  data.limits = {};
   data.trees = [
     { path: "/repo", branch: "main", isMain: true, sessionIds: [] },
     { path: "/trees/worker", branch: "feature/worker", isMain: false, sessionIds: [] },
@@ -127,6 +129,19 @@ it("does not label root-only totals as complete before child discovery finishes"
     "",
   );
   data.modules = {};
+  await act(async () => root.render(createElement(View)));
+  expect(JSON.parse(host.textContent!).changeStats).toBeNull();
+});
+
+it("keeps All totals unknown when repository discovery stopped at a size limit", async () => {
+  saveCheckoutSelection(
+    checkoutSelectionScope(
+      "/repo",
+      data.trees.map((tree) => tree.path),
+    ),
+    "",
+  );
+  data.limits = { "/repo": "entries" };
   await act(async () => root.render(createElement(View)));
   expect(JSON.parse(host.textContent!).changeStats).toBeNull();
 });

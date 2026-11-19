@@ -3,10 +3,15 @@ import { invokeWorkspace, subscribeGitChanged } from "../../../platform/tauri/fs
 import { joinPath, pathKey } from "../../../shared/lib/paths";
 
 type Modules = Readonly<Record<string, readonly string[]>>;
-type Snapshot = { key: string; modules: Modules; error?: string };
+/** The size bound that cut one checkout's repository scan short; its list is partial. */
+export type DiscoveryLimit = "entries" | "directories" | "depth" | "repositories";
+type Discovery = { modules: readonly string[]; limit: DiscoveryLimit | null };
+type Limits = Readonly<Record<string, DiscoveryLimit>>;
+type Snapshot = { key: string; modules: Modules; limits: Limits; error?: string };
 const EMPTY: Modules = {};
-const pending = new Map<string, Promise<string[]>>();
-const cached = new Map<string, readonly string[]>();
+const NO_LIMITS: Limits = {};
+const pending = new Map<string, Promise<Discovery>>();
+const cached = new Map<string, Discovery>();
 
 export function resetGitSubmoduleCache() {
   cached.clear();
@@ -15,17 +20,19 @@ export function resetGitSubmoduleCache() {
 const cacheKey = (cwd: string, includeRepositories: boolean) =>
   `${includeRepositories ? "repositories" : "submodules"}:${pathKey(cwd)}`;
 
-function list(cwd: string, includeRepositories: boolean): Promise<string[]> {
+function list(cwd: string, includeRepositories: boolean): Promise<Discovery> {
   const key = cacheKey(cwd, includeRepositories);
   const running = pending.get(key);
   if (running) return running;
-  const request = invokeWorkspace<string[]>("git_submodules", {
-    cwd,
-    ...(includeRepositories ? { includeRepositories: true } : {}),
-  }).then((paths) => {
-    const modules = paths.map((path) => joinPath(cwd, path));
-    cached.set(key, modules);
-    return modules;
+  // Only the repository scan has a size bound to report; gitlink-only discovery answers a plain list.
+  const request = invokeWorkspace<string[] | { paths: string[]; limit: DiscoveryLimit | null }>(
+    "git_submodules",
+    { cwd, ...(includeRepositories ? { includeRepositories: true } : {}) },
+  ).then((result) => {
+    const { paths, limit } = Array.isArray(result) ? { paths: result, limit: null } : result;
+    const found = { modules: paths.map((path) => joinPath(cwd, path)), limit };
+    cached.set(key, found);
+    return found;
   });
   pending.set(key, request);
   const clear = () => {
@@ -35,7 +42,10 @@ function list(cwd: string, includeRepositories: boolean): Promise<string[]> {
   return request;
 }
 
-/** Read-only discovery, shared in flight and revalidated on Git changes or focus. */
+/**
+ * Read-only discovery, shared in flight and revalidated on Git changes or focus. `limits` names
+ * the checkouts whose scan stopped at a size bound: their `modules` are real but incomplete.
+ */
 export function useGitSubmodules(
   paths: readonly string[],
   enabled: boolean,
@@ -43,7 +53,11 @@ export function useGitSubmodules(
 ) {
   const rootsKey = JSON.stringify([...new Set(paths.filter((path) => path && path !== "~"))]);
   const key = `${includeRepositories}:${rootsKey}`;
-  const [snapshot, setSnapshot] = useState<Snapshot>({ key: "", modules: EMPTY });
+  const [snapshot, setSnapshot] = useState<Snapshot>({
+    key: "",
+    modules: EMPTY,
+    limits: NO_LIMITS,
+  });
   const [revision, refresh] = useReducer((value: number) => value + 1, 0);
   const reload = useCallback(() => refresh(), []);
 
@@ -57,21 +71,29 @@ export function useGitSubmodules(
         if (cancelled) return;
         setSnapshot((previous) => {
           const modules: Record<string, readonly string[]> = {};
+          const limits: Record<string, DiscoveryLimit> = {};
           let error: string | undefined;
           results.forEach((result, index) => {
             const root = roots[index];
-            if (result.status === "fulfilled") modules[root] = result.value;
-            else {
+            if (result.status === "fulfilled") {
+              modules[root] = result.value.modules;
+              if (result.value.limit) limits[root] = result.value.limit;
+            } else {
               const known =
                 cached.get(cacheKey(root, includeRepositories)) ??
-                (previous.key === key ? previous.modules[root] : undefined);
-              if (known) modules[root] = known;
+                (previous.key === key
+                  ? { modules: previous.modules[root], limit: previous.limits[root] ?? null }
+                  : undefined);
+              if (known?.modules) {
+                modules[root] = known.modules;
+                if (known.limit) limits[root] = known.limit;
+              }
               error = String(result.reason);
               // The panel shows only a summary; the log keeps which checkout failed and why.
               console.warn("[source-control] repository discovery failed", root, error);
             }
           });
-          return { key, modules, error };
+          return { key, modules, limits, error };
         });
       },
     );
@@ -103,15 +125,20 @@ export function useGitSubmodules(
     };
   }, [enabled, rootsKey, reload]);
 
+  const known = (JSON.parse(rootsKey) as string[]).flatMap((root) => {
+    const found = cached.get(cacheKey(root, includeRepositories));
+    return found ? [[root, found] as const] : [];
+  });
   return {
     modules:
       snapshot.key === key
         ? snapshot.modules
+        : Object.fromEntries(known.map(([root, found]) => [root, found.modules])),
+    limits:
+      snapshot.key === key
+        ? snapshot.limits
         : Object.fromEntries(
-            (JSON.parse(rootsKey) as string[]).flatMap((root) => {
-              const modules = cached.get(cacheKey(root, includeRepositories));
-              return modules ? [[root, modules]] : [];
-            }),
+            known.flatMap(([root, found]) => (found.limit ? [[root, found.limit]] : [])),
           ),
     error: snapshot.key === key ? snapshot.error : undefined,
     refresh: reload,

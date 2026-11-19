@@ -1,6 +1,6 @@
 import { homeDir } from "../../../../platform/tauri/fs";
+import { applyProbedCatalog } from "../../core/catalogProbe";
 import {
-  setHarnessModels,
   withAutoCompactToggle,
   type AgentModel,
   type ModelSetting,
@@ -58,12 +58,7 @@ let inflight: Promise<void> | null = null;
 export function refreshOpenCodeCatalog(): Promise<void> {
   if (inflight) return inflight;
   inflight = discoverOpenCodeModels()
-    .then((models) => {
-      if (models.length > 0) setHarnessModels("opencode", models);
-    })
-    .catch((error: unknown) => {
-      console.debug("[bycoda] opencode catalog", error);
-    })
+    .then((models) => applyProbedCatalog("opencode", models))
     .finally(() => {
       inflight = null;
     });

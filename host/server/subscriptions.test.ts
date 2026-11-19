@@ -61,21 +61,69 @@ it("does not refresh sibling session streams when another session of the project
   runtime.unsubscribeChanges();
 });
 
+it("prunes stream version entries of retired targets on the aging timer, not only on the next load", () => {
+  vi.useFakeTimers();
+  try {
+    const store = {
+      environmentId: "env",
+      unattributedChangeVersion: 0,
+      projectVersion: () => 1,
+      versions: { scope: () => 1, session: () => 1 },
+      subscribeChanges: () => () => undefined,
+      subscribeAuthorityChanges: () => () => undefined,
+      subscribeAuthorizationChanges: () => () => undefined,
+    };
+    const noop = { onDelete: undefined, onChange: undefined };
+    const runtime = createSubscriptionsRuntime({
+      engine: { store },
+      tasks: noop,
+      goals: noop,
+      automations: noop,
+      stewards: noop,
+      hostNotes: noop,
+      crews: { definitions: noop, agents: noop, runs: noop },
+      desktop: { live: noop },
+      signal: { notify: () => undefined },
+      catalogs: noop,
+    } as never);
+    // Entries of a session and project no open stream targets any more.
+    runtime.streamProjects.set("gone", "gone-project");
+    runtime.streamSessionVersions.set("gone", 1);
+    runtime.streamProjectVersions.set("gone-project", 1);
+    runtime.streamProjectScopes.set("gone-project", 1);
+
+    vi.advanceTimersByTime(5_000);
+
+    expect(runtime.streamProjects.has("gone")).toBe(false);
+    expect(runtime.streamSessionVersions.has("gone")).toBe(false);
+    expect(runtime.streamProjectVersions.has("gone-project")).toBe(false);
+    expect(runtime.streamProjectScopes.has("gone-project")).toBe(false);
+    runtime.unsubscribeChanges();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 type DirectoryProject = { id: string; cwd: string; name: string; registered: boolean };
 function environmentRuntime() {
   const state = {
     projects: [{ id: "a", cwd: "/a", name: "A", registered: true }] as DirectoryProject[],
     privacyReady: true,
     sessions: [] as { id: string; title: string }[],
+    /** The fresh desktop snapshots; moves only when one ages out or arrives. */
+    freshClients: '["desktop"]',
+    listCalls: 0,
   };
   const live: {
     onChange?: () => void;
     onSourceChange?: () => void;
     onDirectoryChange?: () => void;
     groupLock: { access: () => unknown };
+    freshDirectoryClients: () => string;
     projectDirectory: () => unknown;
   } = {
     groupLock: { access: () => ({ groupIds: new Set<string>(), hiddenList: false }) },
+    freshDirectoryClients: () => state.freshClients,
     projectDirectory: () => ({
       version: 1,
       privacyReady: state.privacyReady,
@@ -104,7 +152,10 @@ function environmentRuntime() {
     hostNotes: noop,
     crews: { definitions: noop, agents: noop, runs: noop },
     projectsService: {
-      list: async () => state.projects.map((p) => ({ id: p.id, cwd: p.cwd, name: p.name })),
+      list: async () => {
+        state.listCalls++;
+        return state.projects.map((p) => ({ id: p.id, cwd: p.cwd, name: p.name }));
+      },
     },
     projectSessionList: async () => ({
       etag: state.sessions.map((session) => session.title).join(),
@@ -199,6 +250,7 @@ it("re-reads an open environment stream when a desktop snapshot ages out", async
     open();
     await vi.advanceTimersByTimeAsync(500);
     state.privacyReady = false; // the desktop heartbeat went stale; no commit announces it
+    state.freshClients = "[]";
     await vi.advanceTimersByTimeAsync(30_000);
     expect(events.at(-1)!.data.directory.privacyReady).toBe(false);
     runtime.subscriptionHub.close();
@@ -206,6 +258,72 @@ it("re-reads an open environment stream when a desktop snapshot ages out", async
   } finally {
     vi.useRealTimers();
   }
+});
+
+it("does not reload an open environment stream on the aging timer while no snapshot ages out", async () => {
+  vi.useFakeTimers();
+  try {
+    const { runtime, state, events, open } = environmentRuntime();
+    open();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(state.listCalls).toBe(1);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(state.listCalls).toBe(1);
+    expect(events).toHaveLength(1);
+    // A snapshot crossing the stale threshold still reloads once, then settles again.
+    state.freshClients = "[]";
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(state.listCalls).toBe(2);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(state.listCalls).toBe(2);
+    runtime.subscriptionHub.close();
+    runtime.unsubscribeChanges();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("refreshes every stream for SQL outside the session tables but only the environment for a commit no stream version explains", () => {
+  let notify!: () => void;
+  const store = {
+    environmentId: "env",
+    unattributedChangeVersion: 0,
+    projectVersion: () => 1,
+    versions: { scope: () => 1, session: () => 1 },
+    subscribeChanges: (listener: () => void) => {
+      notify = listener;
+      return () => undefined;
+    },
+    subscribeAuthorityChanges: () => () => undefined,
+    subscribeAuthorizationChanges: () => () => undefined,
+  };
+  const noop = { onDelete: undefined, onChange: undefined };
+  const runtime = createSubscriptionsRuntime({
+    engine: { store },
+    tasks: noop,
+    goals: noop,
+    automations: noop,
+    stewards: noop,
+    hostNotes: noop,
+    crews: { definitions: noop, agents: noop, runs: noop },
+    desktop: { live: noop },
+    signal: { notify: () => undefined },
+    catalogs: noop,
+  } as never);
+  const invalidate = vi.spyOn(runtime.subscriptionHub, "invalidate");
+  runtime.streamProjects.set("a", "p");
+  runtime.streamProjectVersions.set("p", 1);
+  runtime.streamProjectScopes.set("p", 1);
+  runtime.streamSessionVersions.set("a", 1);
+
+  notify(); // session-table writes elsewhere: no streamed version moved
+  expect(invalidate.mock.calls).toEqual([[{ kind: "environment" }]]);
+
+  invalidate.mockClear();
+  store.unattributedChangeVersion = 1; // a queue, approval or settings write
+  notify();
+  expect(invalidate.mock.calls).toEqual([[]]);
+  runtime.unsubscribeChanges();
 });
 
 it("replays a missed directory change to a reconnecting cursor", async () => {

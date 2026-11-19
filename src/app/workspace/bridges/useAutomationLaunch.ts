@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { resolveAutomationLaunch } from "../../../features/automations/model/automationRouting";
 import { useCallback, useRef, type Dispatch, type SetStateAction } from "react";
 import { monotonicNow } from "../../../shared/lib/time/timestamps";
@@ -337,7 +338,7 @@ export function useAutomationLaunch({
         if (admitted) {
           await updateAutomationRun(run.id, "failed", {
             ...(reservationId ? { sessionId: reservationId } : {}),
-            error: reason instanceof Error ? reason.message : String(reason),
+            error: errorText(reason),
           }).catch((error) => {
             console.warn("App operation failed", error);
           });

@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { CheckoutCache } from "../model/checkoutCache";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import {
@@ -165,7 +166,7 @@ export function useDiffIndex(
         if (remote) {
           reportRemoteLoad(cwd, "changes", error);
         } else {
-          setError(error instanceof Error ? error.message : String(error));
+          setError(errorText(error));
         }
       } finally {
         if (!cancelled) setLoading(false);

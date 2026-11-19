@@ -12,11 +12,18 @@ import {
   type AccountThreads,
   type AccountThreadsResult,
 } from "../model/messageThreads";
+import {
+  accountGeneration,
+  dropAllMessagingCaches,
+  subscribeMessagingCaches,
+  syncMessagingAccounts,
+  threadListCache,
+} from "../model/messagingCache";
+import { useLockSnapshot } from "../../group-lock/hooks/useGroupLock";
 
 export const MESSAGES_REFRESH_INTERVAL_MS = 60_000;
 
-// Last-good threads per account survive tab switches for this app run.
-const cache = new Map<string, AccountThreads>();
+// Last-good threads per account survive tab switches while the account stays connected.
 let lastLoadedAt: number | null = null;
 
 function shareThreads(previous: MessageThread[], incoming: MessageThread[]): MessageThread[] {
@@ -65,17 +72,22 @@ export function useMessageThreads(accounts: readonly MessagingAccount[], active:
   const identity = connected.map((account) => `${account.id}:${account.updatedAt}`).join("\n");
   const connectedRef = useRef(connected);
   const [byAccount, setByAccount] = useState<Record<string, AccountThreads>>(() =>
-    Object.fromEntries(cache),
+    Object.fromEntries(threadListCache),
   );
   const [loading, setLoading] = useState(false);
   const inFlight = useRef(false);
   const queued = useRef(false);
   const alive = useRef(true);
 
-  /** `queueIfBusy` is for account changes; manual and timed refreshes never stack. */
-  const refresh = useCallback((queueIfBusy = false) => {
-    const settle = (account: MessagingAccount, result: AccountThreadsResult) => {
-      const previous = cache.get(account.id);
+  /**
+   * `queueIfBusy` is for account changes; manual and timed refreshes never stack. `accountIds`
+   * limits the load to those accounts; the others keep their current result.
+   */
+  const refresh = useCallback((queueIfBusy = false, accountIds?: readonly string[]) => {
+    const settle = (account: MessagingAccount, generation: number, result: AccountThreadsResult) => {
+      // The account was removed, disconnected or re-identified while this read was in flight.
+      if (accountGeneration(account.id) !== generation) return;
+      const previous = threadListCache.get(account.id);
       const applied = applyAccountResult(previous, result);
       const threads = previous ? shareThreads(previous.threads, applied.threads) : applied.threads;
       const next =
@@ -85,24 +97,31 @@ export function useMessageThreads(accounts: readonly MessagingAccount[], active:
         applied.loaded === previous.loaded
           ? previous
           : { ...applied, threads };
-      cache.set(account.id, next);
+      threadListCache.set(account.id, next);
       if (alive.current)
         setByAccount((previous) =>
           previous[account.id] === next ? previous : { ...previous, [account.id]: next },
         );
     };
-    const run = (queue: boolean) => {
+    const run = (queue: boolean, scope?: readonly string[]) => {
+      // Drops caches of accounts that left or changed before any read starts.
+      syncMessagingAccounts(connectedRef.current);
       if (inFlight.current) {
         if (queue) queued.current = true;
         return;
       }
-      const targets = connectedRef.current;
+      const targets = connectedRef.current.filter(
+        (account) => !scope || scope.includes(account.id),
+      );
       if (targets.length === 0) return;
       inFlight.current = true;
       queued.current = false;
       setLoading(true);
       Promise.all(
-        targets.map((account) => loadAccount(account).then((result) => settle(account, result))),
+        targets.map((account) => {
+          const generation = accountGeneration(account.id);
+          return loadAccount(account).then((result) => settle(account, generation, result));
+        }),
       )
         .catch((error: unknown) => console.error("Messages refresh failed:", error))
         .finally(() => {
@@ -113,7 +132,7 @@ export function useMessageThreads(accounts: readonly MessagingAccount[], active:
           if (queued.current && alive.current) run(true);
         });
     };
-    run(queueIfBusy);
+    run(queueIfBusy, accountIds);
   }, []);
 
   useEffect(() => {
@@ -126,6 +145,30 @@ export function useMessageThreads(accounts: readonly MessagingAccount[], active:
   useEffect(() => {
     connectedRef.current = connected;
   }, [connected]);
+
+  // A dropped account leaves the list at once, so a re-added account never shows the old one.
+  useEffect(
+    () =>
+      subscribeMessagingCaches((accountId) => {
+        if (!alive.current) return;
+        setByAccount((previous) => {
+          if (!(accountId in previous)) return previous;
+          const next = { ...previous };
+          delete next[accountId];
+          return next;
+        });
+      }),
+    [],
+  );
+
+  // Cached bodies leave memory when a group lock engages, not only when an account changes.
+  const lockedGroupIds = useLockSnapshot().lockedGroupIds;
+  const lockedRef = useRef(lockedGroupIds);
+  useEffect(() => {
+    const engaged = [...lockedGroupIds].some((id) => !lockedRef.current.has(id));
+    lockedRef.current = lockedGroupIds;
+    if (engaged) dropAllMessagingCaches();
+  }, [lockedGroupIds]);
 
   // First load and every change to the connected account set.
   useEffect(() => {
@@ -145,9 +188,9 @@ export function useMessageThreads(accounts: readonly MessagingAccount[], active:
       thread: MessageThread,
       patch: Partial<Pick<MessageThread, "preview" | "updatedAt" | "unread">>,
     ) => {
-      const next = patchAccountThread(cache.get(thread.accountId), thread.id, patch);
+      const next = patchAccountThread(threadListCache.get(thread.accountId), thread.id, patch);
       if (!next) return;
-      cache.set(thread.accountId, next);
+      threadListCache.set(thread.accountId, next);
       if (alive.current) setByAccount((previous) => ({ ...previous, [thread.accountId]: next }));
     },
     [],
@@ -164,5 +207,17 @@ export function useMessageThreads(accounts: readonly MessagingAccount[], active:
     (account) => byAccount[account.id]?.loaded || byAccount[account.id]?.error,
   );
   const manualRefresh = useCallback(() => refresh(), [refresh]);
-  return { threads, failures, loading, loaded, refresh: manualRefresh, patchThread };
+  const refreshAccounts = useCallback(
+    (accountIds: readonly string[]) => refresh(false, accountIds),
+    [refresh],
+  );
+  return {
+    threads,
+    failures,
+    loading,
+    loaded,
+    refresh: manualRefresh,
+    refreshAccounts,
+    patchThread,
+  };
 }

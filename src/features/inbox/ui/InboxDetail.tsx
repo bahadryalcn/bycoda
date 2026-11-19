@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { Text } from "../../../shared/ui/Text";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Timestamp } from "../../../shared/ui/Timestamp";
@@ -31,7 +32,6 @@ import {
   inboxItemRef,
   inboxItemKey,
   inboxItemStatus,
-  formatRelativeTime,
   inboxPersonAvatarUrl,
   type InboxItem,
 } from "../model/githubTasks";
@@ -50,6 +50,7 @@ import { AgentMarkdown } from "../../sessions/ui/AgentMarkdown";
 import { SurfaceSelection } from "../../sessions/ui/SurfaceSelection";
 import { InboxComments, InboxCommentForm, type InboxReplyTarget } from "./InboxComments";
 import { InboxPrDiff } from "./InboxPrDiff";
+import { InboxRelativeTime, hasInboxRelativeTime } from "./InboxRelativeTime";
 import { InboxPrChecks, PrChecksTab } from "./InboxPrChecks";
 import { GithubPrActions } from "./InboxPrActions";
 import {
@@ -237,7 +238,7 @@ export function InboxDetail({
       if (next) setThread(next);
       setPostRefreshError(null);
     } catch (err: unknown) {
-      setPostRefreshError(err instanceof Error ? err.message : String(err));
+      setPostRefreshError(errorText(err));
     } finally {
       setThreadRefreshing(false);
     }
@@ -271,7 +272,7 @@ export function InboxDetail({
       setReplyTo(null);
       await refreshPostedThread();
     } catch (err: unknown) {
-      setPostError(err instanceof Error ? err.message : String(err));
+      setPostError(errorText(err));
       throw err;
     } finally {
       postingRef.current = false;
@@ -398,7 +399,7 @@ export function InboxDetail({
                       )}
                     </span>
                   ) : null}
-                  {item.createdAt && formatRelativeTime(item.createdAt) ? (
+                  {item.createdAt && hasInboxRelativeTime(item.createdAt) ? (
                     <>
                       {githubWorkspace ? null : <span aria-hidden>·</span>}
                       <Timestamp
@@ -408,12 +409,12 @@ export function InboxDetail({
                       />
                     </>
                   ) : null}
-                  {formatRelativeTime(item.updatedAt) ? (
+                  {hasInboxRelativeTime(item.updatedAt) ? (
                     <>
                       {githubWorkspace ? null : <span aria-hidden>·</span>}
                       <span>
                         {t("Updated ")}
-                        {formatRelativeTime(item.updatedAt)}
+                        <InboxRelativeTime at={item.updatedAt} />
                       </span>
                     </>
                   ) : null}
@@ -521,12 +522,12 @@ export function InboxDetail({
                               : item;
                             void Promise.resolve(onStart(next, tracker ? details?.body : undefined))
                               .catch((err: unknown) => {
-                                setStartError(err instanceof Error ? err.message : String(err));
+                                setStartError(errorText(err));
                               })
                               .finally(() => setStarting(false));
                           }}
                         >
-                          {starting ? t("Sending...") : t("Send to agent")}
+                          {starting ? t("Sending…") : t("Send to agent")}
                         </Button>
                         {!chooseStartProject && item.repo && !githubWorkspace ? (
                           <Text

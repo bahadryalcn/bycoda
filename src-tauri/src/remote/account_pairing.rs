@@ -32,7 +32,7 @@ fn verify_identity(origin: &str, environment_id: &str, ticket: &str) -> Result<(
     if descriptor.get("environmentId").and_then(Value::as_str) != Some(environment_id) {
         return Err("This address belongs to a different computer".into());
     }
-    host_proof::verify(origin, environment_id, ticket, "pairing")
+    host_proof::verify(origin, environment_id, ticket, "pairing", IDENTITY_TIMEOUT)
 }
 
 fn redeem_body(environment_id: &str, ticket: &str, claim_id: &str, device_name: &str) -> Value {
@@ -117,8 +117,13 @@ pub async fn remote_pair_account(
                 return Err("Host identity changed".into());
             }
             for other in origins.iter().skip(index + 1) {
-                if crate::remote_routes::verify_account_endpoint(other, &environment_id, &token)
-                    .is_ok()
+                if crate::remote_routes::verify_account_endpoint(
+                    other,
+                    &environment_id,
+                    &token,
+                    crate::remote_routes::IDENTITY_BUDGET,
+                )
+                .is_ok()
                 {
                     crate::remote_routes::learn_account_endpoint(&environment_id, other.clone());
                     break;

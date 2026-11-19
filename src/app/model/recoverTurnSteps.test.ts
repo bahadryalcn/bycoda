@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 vi.mock("./sessionWindowOwnership", () => ({
-  claimRestoredSession: vi.fn().mockResolvedValue(true),
+  claimRestoredSessions: vi.fn().mockResolvedValue(new Set()),
   abortRestoredSession: vi.fn().mockResolvedValue(undefined),
   remoteSessionOwnershipKey: (cwd: string, id: string) => `remote:${cwd}:${id}`,
 }));

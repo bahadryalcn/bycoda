@@ -2,6 +2,7 @@
 import { act, createElement, startTransition, Suspense, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { setLanguagePreference } from "../../shared/i18n";
 import { lazySurface } from "../../shared/ui/lazySurface";
 import { NavigationBoundary } from "./NavigationBoundary";
 
@@ -113,6 +114,31 @@ it("explains a slow load and clears its timer when the page arrives", async () =
   await act(async () => finish({ default: () => createElement("main", null, "Task board") }));
   expect(container.querySelector("main")!.textContent).toBe("Task board");
   expect(vi.getTimerCount()).toBe(0);
+});
+
+it("localizes the route name in the loading header and copy", async () => {
+  await setLanguagePreference("tr");
+  try {
+    const Tasks = lazySurface(() => new Promise(() => {}), { suspense: false });
+    await act(async () =>
+      root.render(
+        createElement(NavigationBoundary, {
+          name: "Tasks",
+          onBack: vi.fn(),
+          children: createElement(Tasks),
+        }),
+      ),
+    );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 550));
+    });
+    expect(container.querySelector("h1")!.textContent).toBe("Görevler");
+    expect(container.textContent).toContain("Görevler yükleniyor…");
+    expect(container.textContent).not.toContain("Loading Tasks");
+    expect(container.textContent).not.toContain("Tasks");
+  } finally {
+    await setLanguagePreference("en");
+  }
 });
 
 it("names the routed screen with its one h1 and keeps inner titles below it", async () => {

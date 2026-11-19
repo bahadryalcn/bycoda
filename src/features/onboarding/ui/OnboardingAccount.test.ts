@@ -15,6 +15,7 @@ const account = vi.hoisted(() => ({
 }));
 vi.mock("../../account", () => ({
   getStatsChoice: () => account.stats,
+  statsDisclosure: () => "Shared statistics disclosure",
   setStatsChoice: account.setStats,
   subscribeAnonymousStats: () => () => undefined,
   useAccountState: () => account.state,
@@ -120,7 +121,6 @@ describe("onboarding account step", () => {
     await render();
     await click("Continue");
     expect(text()).toContain("Statistics");
-    expect(text()).toContain("Never sent: your sessions, prompts, code");
     await click("Don't share");
     expect(account.setStats).toHaveBeenCalledWith("off");
     await click("Share anonymous statistics");

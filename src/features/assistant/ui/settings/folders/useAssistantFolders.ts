@@ -1,3 +1,4 @@
+import { errorText } from "../../../../../shared/lib/errors";
 import { presentRemoteError } from "../../../../connections/public/remoteFailure";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { t } from "../../../../../shared/i18n";
@@ -17,7 +18,7 @@ export type FoldersDraft = {
   allowChangesWithoutAsking: boolean;
 };
 
-const message = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
+const message = (cause: unknown) => (errorText(cause));
 const fromSaved = (saved: AssistantFoldersResponse): FoldersDraft => ({
   paths: saved.folders.map((folder) => folder.path),
   runWithoutAsking: saved.runWithoutAsking,

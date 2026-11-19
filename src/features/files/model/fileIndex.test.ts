@@ -9,6 +9,7 @@ import {
   rememberOpenedFile,
   resolveFileOpenRequest,
   resolveOpenablePath,
+  revalidateProjectFiles,
   subscribeProjectFiles,
 } from "./fileIndex";
 import { scorePath } from "../../../shared/lib/fuzzy";
@@ -349,6 +350,64 @@ describe("loadProjectFiles", () => {
     expect(peekProjectFiles(cwd)).toEqual([...files, extra]);
     expect(onChange).toHaveBeenCalled();
     stop();
+  });
+
+  it("reuses a fresh listing when a picker revalidates repeatedly", async () => {
+    await loadProjectFiles(cwd);
+    for (let index = 0; index < 3; index++) {
+      expect(await revalidateProjectFiles(cwd)).toBe(files);
+    }
+    expect(list).toHaveBeenCalledTimes(1);
+  });
+
+  it("joins one running scan for repeated revalidations", async () => {
+    const pending = deferred<ProjectFile[]>();
+    list.mockImplementationOnce(() => pending.promise);
+    const scans = [
+      revalidateProjectFiles(cwd),
+      revalidateProjectFiles(cwd),
+      revalidateProjectFiles(cwd),
+    ];
+    expect(list).toHaveBeenCalledTimes(1);
+    pending.resolve(files);
+    for (const scan of scans) expect(await scan).toBe(files);
+    expect(list).toHaveBeenCalledTimes(1);
+  });
+
+  it("joins a running scan even when a stale listing is cached", async () => {
+    vi.useFakeTimers();
+    await loadProjectFiles(cwd);
+    vi.advanceTimersByTime(31_000);
+    const pending = deferred<ProjectFile[]>();
+    list.mockImplementationOnce(() => pending.promise);
+    const first = revalidateProjectFiles(cwd);
+    const second = revalidateProjectFiles(cwd);
+    expect(list).toHaveBeenCalledTimes(2);
+    pending.resolve([...files, extra]);
+    expect(await first).toEqual([...files, extra]);
+    expect(await second).toEqual([...files, extra]);
+  });
+
+  it("rescans an old listing once and a directory change marks it stale", async () => {
+    vi.useFakeTimers();
+    await loadProjectFiles(cwd);
+    vi.advanceTimersByTime(31_000);
+    await revalidateProjectFiles(cwd);
+    expect(list).toHaveBeenCalledTimes(2);
+    await revalidateProjectFiles(cwd);
+    expect(list).toHaveBeenCalledTimes(2);
+
+    notifyDirsChanged();
+    await revalidateProjectFiles(cwd);
+    expect(list).toHaveBeenCalledTimes(3);
+  });
+
+  it("keeps a recent remote listing for a repeated picker open", async () => {
+    const remote = "remote://env/work/repo";
+    await loadProjectFiles(remote);
+    await revalidateProjectFiles(remote);
+    await revalidateProjectFiles(remote);
+    expect(list).toHaveBeenCalledTimes(1);
   });
 
   it("does not drop a scan for a different project", async () => {

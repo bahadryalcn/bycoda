@@ -111,7 +111,8 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
   /* Structural separators: use border-stroke, divide-stroke, or bg-stroke. */
   --color-stroke: color-mix(
     in srgb,
-    var(--color-content) calc(var(--appearance-stroke-strength, 7%) * 1.5),
+    var(--color-content)
+      calc(var(--appearance-stroke-strength, 7%) * 1.5 * var(--ui-stroke-boost, 1)),
     transparent
   );
   /* Find-match highlights only (file preview search, Surface "selection"). Rows and chips use the
@@ -525,7 +526,8 @@ html.theme-light {
   --ui-text-on-active: var(--palette-oklch_0_29_0_066_243);
   --ui-text-secondary: color-mix(
     in srgb,
-    var(--color-content) var(--appearance-secondary-strength, 85%),
+    var(--color-content)
+      min(100%, calc(var(--appearance-secondary-strength, 85%) * var(--ui-secondary-boost, 1))),
     var(--ui-tint-base)
   );
   --ui-text-disabled: color-mix(in srgb, var(--color-content) 60%, var(--ui-tint-base));
@@ -566,9 +568,6 @@ html.theme-light {
     var(--ui-navigation-selected),
     var(--ui-navigation-selected)
   );
-  /* Startup brand canvas stays dark so the white loading mark is legible in every theme. */
-  --ui-startup-surface: var(--palette-scrim);
-  --ui-startup-text: var(--palette-solidInk);
   --ui-surface-raised: color-mix(
     in oklab,
     var(--color-content) calc(16% * var(--appearance-layer-strength, 1)),
@@ -753,7 +752,8 @@ html.theme-light {
   /* T3-like hairline: about 8% ink on the dark ground. */
   --ui-pane-border: color-mix(
     in oklab,
-    var(--color-content) calc(var(--appearance-stroke-strength, 7%) * 1.15),
+    var(--color-content)
+      calc(var(--appearance-stroke-strength, 7%) * 1.15 * var(--ui-stroke-boost, 1)),
     var(--ui-layer-base)
   );
   /* Lightest field edge that keeps 3:1 against its surface; light needs more ink. */
@@ -785,6 +785,7 @@ html.theme-light {
   --ui-pane-tabs-height: var(--ui-control-height-xs);
   --ui-control-height-md: var(--ui-control-height);
   --ui-control-height-lg: 2.5rem;
+  --ui-control-height-panel: 3.5rem;
   --ui-control-radius: 0.5rem;
   --ui-drop-target-radius: 0.625rem;
   --ui-preview-card-radius: 0.5625rem;
@@ -854,9 +855,9 @@ html.theme-light {
   --layer-toast: 100;
   --layer-toast-popover: 101;
   --layer-drag: 2147483647;
-  /* Arc scale aliases for surfaces outside a .bycoda-arc root (inbox, host tools, onboarding,
-     chat controls). Same values as the .bycoda-arc block in arc.css, which still re-declares them
-     for Arc roots and their density/card overrides. Density- and scope-specific Arc roles
+  /* Arc scale aliases, declared once here: surfaces outside a .bycoda-arc root (inbox, host tools,
+     onboarding, chat controls) and Arc roots both inherit them. arc.css declares only its own
+     field, select and card overrides. Density- and scope-specific Arc roles
      (--control-height-*, --surface*, --border*) are intentionally NOT global: outside Arc they
      must use the --ui-* roles. */
   --radius-control: var(--ui-control-radius);
@@ -952,11 +953,15 @@ html.theme-light {
   html .agent-markdown .markdown-code-toggle {
     inset-inline-end: 44px;
   }
-  html .agent-markdown .markdown-code-summary {
+  html .agent-markdown .markdown-code-run {
     inset-inline-end: 88px;
   }
   html .agent-markdown .markdown-code-shell {
+    --markdown-code-actions-end: 96px;
     min-block-size: 44px;
+  }
+  html .agent-markdown .markdown-code-shell:has(.markdown-code-run) {
+    --markdown-code-actions-end: 140px;
   }
 }
 
@@ -1200,6 +1205,20 @@ html.has-user-accent.theme-light {
   }
 }
 
+/* OS "increase contrast": the stroke and secondary-text roles take a boost on top of the in-app
+   Contrast slider (--appearance-stroke-strength / --appearance-secondary-strength, set inline).
+   The boosts are multipliers so the slider still applies; forced-colors keeps its own palette. */
+:root {
+  --ui-stroke-boost: 1;
+  --ui-secondary-boost: 1;
+}
+@media (prefers-contrast: more) {
+  :root {
+    --ui-stroke-boost: 1.5;
+    --ui-secondary-boost: 1.15;
+  }
+}
+
 /* Stronger accent readability: more ink in accent text, lighter overlay tint behind glyphs. */
 html[data-accent-readability="strong"] {
   --ui-accent-ink-strength: 20%;
@@ -1400,10 +1419,10 @@ html.has-native-glass:not(.theme-light) .body-glass .bycoda-titlebar {
   min-width: var(--tab-slot-min-width, 0);
   margin-right: 0;
   box-sizing: border-box;
+  /* margin-right is a 2px nudge, so it changes at once; width is the slot's reflow itself. */
   transition:
     width var(--motion-tab-close-duration) var(--motion-tab-ease-out),
-    min-width var(--motion-tab-close-duration) var(--motion-tab-ease-out),
-    margin-right var(--motion-tab-close-duration) var(--motion-tab-ease-out);
+    min-width var(--motion-tab-close-duration) var(--motion-tab-ease-out);
 }
 
 .tab-opening {
@@ -2125,25 +2144,6 @@ html.theme-light .plan-steps {
   animation: bycoda-rise var(--duration) var(--delay) var(--motion-ease-rise) both;
 }
 
-.plan-step-dot {
-  position: absolute;
-  bottom: -16px;
-  left: -8px;
-  display: grid;
-  place-items: center;
-  width: 16px;
-  height: 16px;
-  border: 1.5px solid var(--mode-color);
-  border-radius: 9999px;
-  color: var(--mode-color);
-  font-size: 8.5px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-  box-shadow: 0 0 8px var(--mode-glow);
-  animation: plan-step-dot var(--duration) var(--delay) ease-out both;
-}
-
 .plan-step-number,
 .plan-step-check {
   grid-area: 1 / 1;
@@ -2186,40 +2186,6 @@ html.theme-light .plan-steps {
   background: radial-gradient(circle, var(--palette-hexfefce8), var(--mode-color) 70%);
   box-shadow: 0 0 5px var(--mode-glow);
   animation: bycoda-twinkle var(--duration) var(--delay) ease-in-out both;
-}
-
-@keyframes plan-step-dot {
-  0% {
-    opacity: 0;
-    transform: scale(0.3);
-    background: color-mix(in srgb, var(--mode-color) 12%, transparent);
-  }
-  10% {
-    opacity: 1;
-    transform: scale(1.2);
-  }
-  20%,
-  38% {
-    transform: scale(1);
-  }
-  34% {
-    background: color-mix(in srgb, var(--mode-color) 12%, transparent);
-  }
-  44% {
-    transform: scale(1.14);
-    background: var(--mode-color);
-  }
-  52% {
-    transform: scale(1);
-  }
-  85% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0;
-    transform: scale(0.8);
-    background: var(--mode-color);
-  }
 }
 
 @keyframes plan-step-number {
@@ -2815,7 +2781,7 @@ input,
   padding-inline-start: 0.75em;
   border: 0;
   border-inline-start: 2px solid color-mix(in srgb, var(--color-content) 16%, transparent);
-  color: color-mix(in srgb, var(--color-content) 55%, transparent);
+  color: var(--ui-text-secondary);
 }
 
 .workspace-surface[aria-hidden="true"] {
@@ -2833,50 +2799,6 @@ html.is-reordering {
 [data-explorer-dragging],
 [data-explorer-dragging] * {
   cursor: grabbing !important;
-}
-
-.explorer-file-drag-preview {
-  position: fixed !important;
-  inset: 0 auto auto 0 !important;
-  z-index: var(--layer-drag);
-  display: flex !important;
-  width: max-content !important;
-  max-width: min(280px, calc(100vw - 16px));
-  height: 26px !important;
-  align-items: center;
-  gap: 6px;
-  margin: 0 !important;
-  padding: 0 9px 0 7px !important;
-  overflow: hidden;
-  pointer-events: none !important;
-  border: 1px solid var(--ui-fill-strong);
-  border-radius: 5px;
-  background: color-mix(
-    in srgb,
-    var(--color-background-base) 96%,
-    var(--color-content) 4%
-  ) !important;
-  box-shadow:
-    0 4px 12px var(--palette-rgb_0_0_0_18pct),
-    0 1px 2px var(--palette-rgb_0_0_0_20pct);
-  color: var(--color-content) !important;
-  font-size: 12px !important;
-  line-height: 1 !important;
-  white-space: nowrap;
-  opacity: 0.94 !important;
-  will-change: transform;
-  contain: paint;
-}
-
-.explorer-file-drag-preview > span {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-}
-
-html.theme-light .explorer-file-drag-preview {
-  background: var(--color-background-base) !important;
-  opacity: 1 !important;
 }
 
 .composer-toolbar {
@@ -2918,6 +2840,13 @@ html.theme-light .explorer-file-drag-preview {
   [data-access-picker-trigger] > svg:last-child {
     display: none;
   }
+}
+
+/* An overflowing draft shows the themed scrollbar (the global rules above); the highlight layer
+   reserves the same gutter, so both wrap text at one width whether or not a scrollbar is shown. */
+.composer-field,
+.composer-highlight {
+  scrollbar-gutter: stable;
 }
 
 .composer-field {
@@ -3020,8 +2949,7 @@ header[data-tauri-drag-region] [data-tab-draggable="true"] [data-no-drag] * {
    setDropIndicator() in shared/lib/drag.ts. Nothing here animates, so reduced motion needs no
    override. */
 :root,
-[data-drop-indicator],
-.pointer-drop-hint {
+[data-drop-indicator] {
   --ui-drop-line: var(--ui-interaction-ink);
   --ui-drop-line-size: 2px;
   --ui-drop-frame: var(--ui-interaction-ink);
@@ -3132,10 +3060,12 @@ header[data-tauri-drag-region] [data-tab-draggable="true"] [data-no-drag] * {
   white-space: nowrap;
 }
 
+/* One line: the subject ellipsizes inside the badge's max width and keeps the full name in the DOM. */
 .pointer-drop-hint-subject {
   min-inline-size: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
   font-weight: 600;
 }
 
@@ -3236,12 +3166,20 @@ header[data-tauri-drag-region] [data-tab-draggable="true"] [data-no-drag] * {
   overflow: hidden;
 }
 
+/* --markdown-code-actions-end is the width the trailing action buttons occupy (copy + toggle, plus
+   run when present). The path, label, summary and header padding all stop at it, so the buttons
+   and the text they sit beside cannot overlap whatever the width. */
 .agent-markdown .markdown-code-shell {
+  --markdown-code-actions-end: 68px;
   position: relative;
   margin-block: 16px;
   min-width: 0;
   max-width: 100%;
   unicode-bidi: isolate;
+}
+
+.agent-markdown .markdown-code-shell:has(.markdown-code-run) {
+  --markdown-code-actions-end: 96px;
 }
 
 .agent-markdown a[dir],
@@ -3270,7 +3208,7 @@ header[data-tauri-drag-region] [data-tab-draggable="true"] [data-no-drag] * {
   outline: 2px solid transparent;
   background: transparent;
   box-shadow: none;
-  color: color-mix(in srgb, var(--color-content) 45%, transparent);
+  color: var(--ui-text-secondary);
   transition:
     color var(--motion-duration-standard) ease,
     background-color var(--motion-duration-standard) ease;
@@ -3311,22 +3249,10 @@ header[data-tauri-drag-region] [data-tab-draggable="true"] [data-no-drag] * {
   right: 64px;
 }
 
-.agent-markdown .markdown-code-shell:has(.markdown-code-run) [data-streamdown="code-block-header"] {
-  padding-inline-end: 96px;
-}
-
-.agent-markdown .markdown-code-shell:has(.markdown-code-run) .markdown-code-path {
-  right: 96px;
-}
-
-.agent-markdown .markdown-code-shell:has(.markdown-code-run) .markdown-code-summary {
-  inset-inline-end: 96px;
-}
-
 .agent-markdown .markdown-code-summary {
   position: absolute;
   z-index: 1;
-  inset: 0 68px 0 10px;
+  inset: 0 var(--markdown-code-actions-end) 0 10px;
   inline-size: auto;
   display: flex;
   align-items: center;
@@ -3375,7 +3301,7 @@ header[data-tauri-drag-region] [data-tab-draggable="true"] [data-no-drag] * {
 }
 
 .agent-markdown .markdown-code-resizable [data-streamdown="code-block-header"] {
-  padding-right: 68px;
+  padding-inline-end: var(--markdown-code-actions-end);
 }
 
 .agent-markdown .markdown-code-resizable [data-streamdown="code-block-body"] {
@@ -3399,11 +3325,6 @@ header[data-tauri-drag-region] [data-tab-draggable="true"] [data-no-drag] * {
   min-height: 36px;
 }
 
-.agent-markdown .markdown-code-resizable:has(.markdown-code-toggle) .markdown-code-path,
-.agent-markdown .markdown-code-resizable .markdown-code-fallback-label {
-  right: 68px;
-}
-
 .agent-markdown .markdown-code-icon {
   position: absolute;
   z-index: 1;
@@ -3421,7 +3342,7 @@ header[data-tauri-drag-region] [data-tab-draggable="true"] [data-no-drag] * {
   z-index: 1;
   top: 10px;
   left: 34px;
-  right: 12px;
+  right: var(--markdown-code-actions-end);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3430,10 +3351,6 @@ header[data-tauri-drag-region] [data-tab-draggable="true"] [data-no-drag] * {
   font-weight: 500;
   color: color-mix(in srgb, var(--color-content) 65%, transparent);
   pointer-events: auto;
-}
-
-.agent-markdown .markdown-code-shell:has(.markdown-code-copy) .markdown-code-path {
-  right: 42px;
 }
 
 .agent-markdown .markdown-code-path-link {
@@ -3466,7 +3383,7 @@ header[data-tauri-drag-region] [data-tab-draggable="true"] [data-no-drag] * {
   z-index: 1;
   top: 10px;
   left: 34px;
-  right: 12px;
+  right: var(--markdown-code-actions-end);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3517,7 +3434,7 @@ header[data-tauri-drag-region] [data-tab-draggable="true"] [data-no-drag] * {
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: color-mix(in srgb, var(--color-content) 55%, transparent);
+  color: var(--ui-text-secondary);
 }
 
 .whats-new-md.agent-markdown [data-streamdown="heading-3"]:first-child {
@@ -3598,8 +3515,8 @@ header[data-tauri-drag-region] [data-tab-draggable="true"] [data-no-drag] * {
 .agent-markdown [data-streamdown="code-block-body"] code > span::before {
   width: 24px;
   margin-right: 8px;
-  color: color-mix(in srgb, var(--color-content) 35%, transparent);
-  font-size: 10px;
+  color: var(--ui-text-muted);
+  font-size: var(--ui-font-micro);
 }
 
 .markdown-code-token {
@@ -3634,17 +3551,25 @@ html:not(.theme-light) .markdown-code-token {
   max-inline-size: 100%;
 }
 
+/* The copy button gets its own row above the table, so it never covers header text. */
 .agent-markdown .markdown-table-shell {
-  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   min-width: 0;
+}
+
+.agent-markdown .markdown-table-shell > .markdown-code-copy {
+  position: static;
+  align-self: flex-end;
 }
 
 .agent-markdown .markdown-table-shell > .markdown-code-copy:not(:hover, :focus-visible) {
   background: var(--ui-surface);
 }
 
-/* The button sits over the header row, so a pointer device only shows it while
-   the table is hovered or focused. Touch devices always show it. */
+/* A pointer device only shows the toolbar button while the table is hovered or
+   focused. Touch devices always show it. */
 @media (hover: hover) and (pointer: fine) {
   .agent-markdown .markdown-table-shell > .markdown-code-copy:not([data-copy-state]) {
     opacity: 0;
@@ -3670,7 +3595,8 @@ html:not(.theme-light) .markdown-code-token {
 .agent-markdown [data-streamdown="table-cell"] {
   padding: 8px 10px;
   font-size: 12px;
-  min-inline-size: 10rem;
+  min-inline-size: 6rem;
+  overflow-wrap: anywhere;
   vertical-align: top;
 }
 
@@ -3715,32 +3641,29 @@ html:not(.theme-light) .markdown-code-token {
   margin-top: 0.5rem;
 }
 
-.agent-markdown p strong,
-.agent-markdown p em,
-.agent-markdown p [data-streamdown="strong"] {
-  color: var(--color-content) !important;
-  opacity: 1;
+/* Emphasis colour comes from one custom property per Markdown root; contexts
+   (reasoning, zen-fold prose) override the property, not the emphasis rules. */
+.agent-markdown {
+  --md-emphasis-color: var(--color-content);
 }
 
+.agent-markdown p strong,
+.agent-markdown p em,
+.agent-markdown p [data-streamdown="strong"],
 .agent-markdown li strong,
 .agent-markdown li em,
 .agent-markdown li [data-streamdown="strong"] {
-  color: var(--color-content) !important;
+  color: var(--md-emphasis-color);
   opacity: 1;
 }
 
 .agent-reasoning.agent-markdown p,
 .agent-reasoning.agent-markdown li {
-  color: color-mix(in srgb, var(--color-content) 48%, transparent);
+  color: var(--ui-text-muted);
 }
 
-.agent-reasoning.agent-markdown p strong,
-.agent-reasoning.agent-markdown p em,
-.agent-reasoning.agent-markdown p [data-streamdown="strong"],
-.agent-reasoning.agent-markdown li strong,
-.agent-reasoning.agent-markdown li em,
-.agent-reasoning.agent-markdown li [data-streamdown="strong"] {
-  color: color-mix(in srgb, var(--color-content) 62%, transparent) !important;
+.agent-reasoning.agent-markdown {
+  --md-emphasis-color: var(--ui-text-secondary);
 }
 
 .agent-markdown .mermaid-block svg {
@@ -4234,13 +4157,8 @@ html:not(.theme-light) .markdown-code-token {
   color: color-mix(in srgb, var(--color-content) 65%, transparent);
 }
 
-.zen-fold-prose .agent-markdown p strong,
-.zen-fold-prose .agent-markdown p em,
-.zen-fold-prose .agent-markdown p [data-streamdown="strong"],
-.zen-fold-prose .agent-markdown li strong,
-.zen-fold-prose .agent-markdown li em,
-.zen-fold-prose .agent-markdown li [data-streamdown="strong"] {
-  color: color-mix(in srgb, var(--color-content) 80%, transparent) !important;
+.zen-fold-prose .agent-markdown {
+  --md-emphasis-color: color-mix(in srgb, var(--color-content) 80%, transparent);
 }
 
 /* A heading in a work note is a bold line, not a display size. */
@@ -4925,79 +4843,6 @@ html[data-performance-no-blur] .modal-backdrop {
   }
 }
 
-/* Status-bar mark for a running terminal: three orange bars that light
-   one after another. */
-.terminal-live {
-  display: inline-flex;
-  align-items: flex-end;
-  gap: 2px;
-  height: 10px;
-}
-
-.terminal-live-bar {
-  display: block;
-  width: 4px;
-  height: 8px;
-  border-radius: 0;
-  background: currentColor;
-  opacity: 0.4;
-}
-
-.terminal-live-bar:nth-child(1) {
-  animation: terminal-live-bar-1 3.2s linear infinite;
-}
-
-.terminal-live-bar:nth-child(2) {
-  animation: terminal-live-bar-2 3.2s linear infinite;
-}
-
-.terminal-live-bar:nth-child(3) {
-  animation: terminal-live-bar-3 3.2s linear infinite;
-}
-
-@keyframes terminal-live-bar-1 {
-  0%,
-  24.99%,
-  100% {
-    opacity: 0.4;
-  }
-  25%,
-  99.99% {
-    opacity: 0.85;
-  }
-}
-
-@keyframes terminal-live-bar-2 {
-  0%,
-  49.99%,
-  100% {
-    opacity: 0.4;
-  }
-  50%,
-  99.99% {
-    opacity: 0.85;
-  }
-}
-
-@keyframes terminal-live-bar-3 {
-  0%,
-  74.99%,
-  100% {
-    opacity: 0.4;
-  }
-  75%,
-  99.99% {
-    opacity: 0.85;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .terminal-live-bar {
-    animation: none;
-    opacity: 0.7;
-  }
-}
-
 /* Graph node cutouts so lane strokes do not show through the circles. */
 .git-history-item svg {
   display: block;
@@ -5043,44 +4888,6 @@ html[data-performance-no-blur] .modal-backdrop {
   .git-graph-date {
     display: block;
   }
-}
-
-/* Hover card for the editor's blame gutter. It sits on <body>, outside the
-   editor's own theme scope, because the gutter clips its children. */
-.cm-blameCard {
-  position: fixed;
-  z-index: var(--layer-hover-card);
-  max-width: 320px;
-  padding: 8px 10px;
-  border: 1px solid var(--ui-fill-strong);
-  border-radius: 6px;
-  background: var(--color-background-base);
-  color: var(--color-content);
-  box-shadow:
-    0 10px 15px -3px var(--palette-rgb_0_0_0_0_12),
-    0 4px 6px -4px var(--palette-rgb_0_0_0_0_12);
-  font-size: 12px;
-  line-height: 1.45;
-  pointer-events: none;
-}
-
-.cm-blameCardSha {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: color-mix(in srgb, var(--color-content) 50%, transparent);
-}
-
-.cm-blameCardAuthor {
-  font-weight: 600;
-}
-
-.cm-blameCardDate {
-  color: color-mix(in srgb, var(--color-content) 55%, transparent);
-}
-
-.cm-blameCardSubject {
-  margin-top: 4px;
-  overflow-wrap: anywhere;
 }
 
 /* Rail sections and groups move as blocks: keep their controls out of the way. */
@@ -5186,10 +4993,9 @@ html.is-reordering
 :is(.backdrop-blur-xl, .backdrop-blur-2xl, .backdrop-blur-lg, .backdrop-blur-md) {
   --tw-backdrop-blur: blur(var(--glass-blur));
 }
-.popover-backdrop {
-  -webkit-backdrop-filter: blur(var(--glass-blur));
-  backdrop-filter: blur(var(--glass-blur));
-}
+/* The floating surface (.popover-backdrop: popovers, menus, dialogs, sheets) is 95-100% opaque, so a
+   blur behind it is invisible yet re-samples the pane on every repaint. Only .popover-frosted
+   (a deliberately translucent hover card) blurs, through its own rule above. */
 /* A nested glass surface samples the already blurred parent only once. */
 .popover-backdrop
   ~ *

@@ -31,8 +31,10 @@ const NOT_SENT_CODES = new Set([
 ]);
 const DEFINITIVE_TEXT = /Host rejected request:|REQUEST_EXPIRED|older than 30 days/i;
 const UNCERTAIN_TEXT = /outcome is unknown|RPC_CONNECTION_INTERRUPTED|RPC_WS_INTERRUPTED/;
+// RPC_HOST_UNAVAILABLE is absent on purpose: it covers resets, aborts and EOFs, which can
+// follow a delivered command. Only a refused connect, DNS, proxy or tunnel failure is proof.
 const NOT_SENT_TEXT =
-  /RPC_HOST_UNAVAILABLE|RPC_DNS|RPC_PROXY|Machine is unreachable|Machine is no longer connected|isn.t connected on this computer|not answering|SSH connection failed|SSH timed out|Could not start OpenSSH|Host is not running on the machine/i;
+  /RPC_DNS|RPC_PROXY|Machine is unreachable|Machine is no longer connected|isn.t connected on this computer|not answering|SSH connection failed|SSH timed out|Could not start OpenSSH|Host is not running on the machine/i;
 
 /** Sorts a failed command into definitive, not-sent or uncertain. Anything not
  * recognised is treated as uncertain, the only class that needs a receipt check. */

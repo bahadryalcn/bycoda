@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Code } from "../../../shared/ui/Code";
 import { Text } from "../../../shared/ui/Text";
@@ -170,7 +171,7 @@ export function RecommendedSkills({
         requestId: request.requestId,
         skillId,
         status: "unknown",
-        error: error instanceof Error ? error.message : String(error),
+        error: errorText(error),
       });
     } finally {
       pending.current = false;
@@ -317,14 +318,14 @@ export function RecommendedSkills({
                           text={() => officialSkillInstallCommand(skill)}
                           resetKeys={[skill]}
                           onCopyError={(error) =>
-                            setLinkError(error instanceof Error ? error.message : String(error))
+                            setLinkError(errorText(error))
                           }
                         />
                         <Button
                           variant="link"
                           onClick={() => {
                             void openExternal(SKILLS_CLI_REFERENCE).catch((error: unknown) =>
-                              setLinkError(error instanceof Error ? error.message : String(error)),
+                              setLinkError(errorText(error)),
                             );
                           }}
                         >
@@ -342,7 +343,7 @@ export function RecommendedSkills({
                     variant="link"
                     onClick={() => {
                       void openExternal(skill.sourceUrl).catch((error: unknown) =>
-                        setLinkError(error instanceof Error ? error.message : String(error)),
+                        setLinkError(errorText(error)),
                       );
                     }}
                   >
@@ -411,7 +412,7 @@ export function RecommendedSkills({
                     void install(skill.id, unresolved).catch((error: unknown) => {
                       pending.current = false;
                       setBusy(null);
-                      setLinkError(error instanceof Error ? error.message : String(error));
+                      setLinkError(errorText(error));
                     });
                   }}
                 >

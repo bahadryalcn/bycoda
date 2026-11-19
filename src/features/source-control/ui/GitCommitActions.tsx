@@ -84,7 +84,7 @@ export function GitCommitActions({
     ? (index.upstream ?? `${index.remote ?? "origin"}/${index.branch ?? "HEAD"}`)
     : "";
   const syncTitle = syncing
-    ? "Synchronizing Changes..."
+    ? "Synchronizing Changes…"
     : canPublish
       ? index?.branch
         ? `Publish Branch "${index.branch}"`
@@ -97,7 +97,7 @@ export function GitCommitActions({
   const syncDetail = `${syncTitle}${canPublish || !index?.upstream ? ` · ${dest}` : ""}`;
   const syncLabel = canPublish
     ? t("Publish Branch")
-    : t(behind > 0 && ahead > 0 ? "Sync Changes" : behind > 0 ? "Pull" : "Push");
+    : t(behind > 0 && ahead > 0 ? "Sync changes" : behind > 0 ? "Pull" : "Push");
   const createTitle = index?.defaultBranch
     ? `Create a pull request into ${index.defaultBranch}`
     : "Create pull request";

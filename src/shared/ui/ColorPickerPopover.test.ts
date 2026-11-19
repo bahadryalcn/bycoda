@@ -3,6 +3,7 @@ import { act, createElement, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ColorPickerPopover, ColorSwatchRow } from "./ColorPickerPopover";
+import { setLanguagePreference } from "../i18n";
 
 let container: HTMLDivElement;
 let root: Root;
@@ -46,11 +47,11 @@ it("exposes keyboard sliders and publishes once under StrictMode", () => {
     ),
   );
   const hue = container.querySelector<HTMLElement>('[aria-label="Hue"]')!;
-  const saturation = container.querySelector<HTMLElement>(
-    '[aria-label="Saturation and brightness"]',
-  )!;
+  const saturation = container.querySelector<HTMLElement>('[aria-label="Saturation"]')!;
+  const brightness = container.querySelector<HTMLElement>('[aria-label="Brightness"]')!;
   expect(hue.tabIndex).toBe(0);
   expect(saturation.tabIndex).toBe(0);
+  expect(brightness.tabIndex).toBe(0);
   act(() => {
     hue.dispatchEvent(
       new KeyboardEvent("keydown", { key: "ArrowRight", shiftKey: true, bubbles: true }),
@@ -63,6 +64,15 @@ it("exposes keyboard sliders and publishes once under StrictMode", () => {
   });
   expect(saturation.getAttribute("aria-valuenow")).toBe("99");
   expect(onChange).toHaveBeenCalledTimes(2);
+  act(() => {
+    brightness.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+  });
+  expect(brightness.getAttribute("aria-valuenow")).toBe("99");
+  act(() => {
+    brightness.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true }));
+  });
+  expect(brightness.getAttribute("aria-valuenow")).toBe("0");
+  expect(onChange).toHaveBeenCalledTimes(4);
 });
 
 it("releases a drag when its owning picker unmounts", () => {
@@ -134,4 +144,32 @@ it("highlights the custom colour control while its picker is open and keeps the 
   expect(custom.hasAttribute("data-tooltip-owner")).toBe(true);
   expect(custom.hasAttribute("data-selected")).toBe(true);
   expect(custom.querySelector("svg")).not.toBeNull();
+});
+
+it("localizes fallback swatch labels, keeps explicit labels and the pressed selection", async () => {
+  await act(() => setLanguagePreference("tr"));
+  try {
+    const pick = vi.fn();
+    act(() =>
+      root.render(
+        createElement(ColorSwatchRow, {
+          colors: ["#ff0000", "#00ff00", "#0000ff"],
+          labels: ["Kırmızı"],
+          colorIndex: 1,
+          customColor: null,
+          onPickIndex: pick,
+        }),
+      ),
+    );
+    expect(container.querySelector('button[aria-label="Kırmızı"]')).not.toBeNull();
+    const selected = container.querySelector<HTMLButtonElement>('button[aria-label="Renk 2"]')!;
+    expect(selected.getAttribute("aria-pressed")).toBe("true");
+    const last = container.querySelector<HTMLButtonElement>('button[aria-label="Renk 3"]')!;
+    expect(last.getAttribute("aria-pressed")).toBe("false");
+    act(() => last.click());
+    expect(pick).toHaveBeenCalledExactlyOnceWith(2);
+    expect(container.querySelector('button[aria-label="Color 2"]')).toBeNull();
+  } finally {
+    await act(() => setLanguagePreference("en"));
+  }
 });

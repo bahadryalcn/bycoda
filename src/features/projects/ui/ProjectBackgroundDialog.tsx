@@ -1,11 +1,13 @@
 import { Text } from "../../../shared/ui/Text";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
-import { Alert } from "../../../shared/ui/Alert";
+import { RemoteActionError } from "../../connections/public/RemoteActionError";
+import { describeRemoteError, type RemoteErrorView } from "../../connections/public/remoteFailure";
 import { Slider } from "../../../shared/ui/Slider";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Button } from "../../../shared/ui/Button";
-import { useLocale, useT } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
+import { Row } from "../../../shared/ui/settings/SettingsRows";
 import { useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import { Modal } from "../../../shared/ui/Modal";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
@@ -66,7 +68,7 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
   );
   const [revision, setRevision] = useState(projectChatBackgroundImageRevision);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<RemoteErrorView | null>(null);
   const globalPath = useSyncExternalStore(
     subscribeChatBackgroundPath,
     loadChatBackgroundPath,
@@ -114,7 +116,7 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
       save(nextPath, emptyOpacity, sessionOpacity, scope, effect, true);
       setPath(nextPath);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(describeRemoteError(cause));
     } finally {
       setBusy(false);
     }
@@ -139,7 +141,7 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
       setEffect(NEW_THREAD_BACKGROUND_EFFECT_DEFAULT);
       setRevision(projectChatBackgroundImageRevision());
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(describeRemoteError(cause));
     } finally {
       setBusy(false);
     }
@@ -169,7 +171,7 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
 
   return (
     <Modal
-      title={t("Background Image")}
+      title={t("Background image")}
       description={t("Choose a background image for {p0}", { p0: name })}
       size="sm"
       fitViewport
@@ -229,42 +231,37 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
               </Text>
             </InfoPopover>
           </div>
-          {error ? <Alert tone="danger">{error}</Alert> : null}
+          {error ? <RemoteActionError error={error} /> : null}
         </div>
 
         {path ? (
-          <div {...surfaceAttributes({ frame: "pane", edge: "top" }, "pt-4")}>
-            <div className="flex items-center justify-between gap-4">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1">
-                  <Text size="secondary" tone="primary" weight="medium">
-                    {t("Background effect")}
-                  </Text>
-                  <InfoPopover label={NEW_THREAD_BACKGROUND_EFFECT_LABELS[effect]}>
-                    <Text as="p" size="caption" tone="secondary" leading="relaxed">
-                      {NEW_THREAD_BACKGROUND_EFFECT_DESCRIPTIONS[effect]}
-                    </Text>
-                  </InfoPopover>
-                </div>
-              </div>
-              <div className="w-36 shrink-0">
-                <SearchableSelect
-                  disabled={busy}
-                  hideLabel
-                  label={t("Project background effect")}
-                  variant="transparent"
-                  value={effect}
-                  options={NEW_THREAD_BACKGROUND_EFFECTS.map((option) => ({
-                    value: option,
-                    label: NEW_THREAD_BACKGROUND_EFFECT_LABELS[option],
-                  }))}
-                  onChange={(next) => updateEffect(next as NewThreadBackgroundEffect)}
-                  searchable={false}
-                  align="end"
-                />
-              </div>
+          <ProjectBackgroundRow
+            label={t("Background effect")}
+            info={
+              <InfoPopover label={NEW_THREAD_BACKGROUND_EFFECT_LABELS[effect]}>
+                <Text as="p" size="caption" tone="secondary" leading="relaxed">
+                  {NEW_THREAD_BACKGROUND_EFFECT_DESCRIPTIONS[effect]}
+                </Text>
+              </InfoPopover>
+            }
+          >
+            <div className="w-36 max-w-full">
+              <SearchableSelect
+                disabled={busy}
+                hideLabel
+                label={t("Project background effect")}
+                variant="transparent"
+                value={effect}
+                options={NEW_THREAD_BACKGROUND_EFFECTS.map((option) => ({
+                  value: option,
+                  label: NEW_THREAD_BACKGROUND_EFFECT_LABELS[option],
+                }))}
+                onChange={(next) => updateEffect(next as NewThreadBackgroundEffect)}
+                searchable={false}
+                align="end"
+              />
             </div>
-          </div>
+          </ProjectBackgroundRow>
         ) : null}
 
         <ProjectBackgroundRow label={t("Show on")}>
@@ -280,7 +277,7 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
         </ProjectBackgroundRow>
 
         <ProjectBackgroundRow label={t("Empty chat visibility")}>
-          <div className="flex w-56 items-center gap-3">
+          <div className="flex w-56 max-w-full items-center gap-3">
             <Slider
               disabled={busy}
               hideLabel
@@ -298,7 +295,7 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
         </ProjectBackgroundRow>
 
         <ProjectBackgroundRow label={t("Session visibility")}>
-          <div className="flex w-56 items-center gap-3">
+          <div className="flex w-56 max-w-full items-center gap-3">
             <Slider
               disabled={busy}
               hideLabel
@@ -334,19 +331,22 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
   );
 }
 
-function ProjectBackgroundRow({ label, children }: { label: string; children: ReactNode }) {
-  useLocale();
+// Shared settings Row: its label column wraps and its control column wraps below the label when the
+// modal is narrow or the locale's labels are long. The pane edge keeps the hairline between rows.
+function ProjectBackgroundRow({
+  label,
+  info,
+  children,
+}: {
+  label: string;
+  info?: ReactNode;
+  children: ReactNode;
+}) {
   return (
-    <div
-      {...surfaceAttributes(
-        { frame: "pane", edge: "top" },
-        "flex items-center justify-between gap-4 pt-4",
-      )}
-    >
-      <Text size="secondary" tone="primary" weight="medium">
-        {label}
-      </Text>
-      {children}
+    <div {...surfaceAttributes({ frame: "pane", edge: "top" })}>
+      <Row label={label} info={info}>
+        {children}
+      </Row>
     </div>
   );
 }

@@ -2037,9 +2037,6 @@
       "bycoda/effect-names-its-sync": 3,
       "bycoda/shared-resize-observer": 2
     },
-    "src/features/settings/ui/LiveBackgroundPicker.tsx": {
-      "bycoda/effect-names-its-sync": 1
-    },
     "src/features/settings/ui/McpSettings.tsx": {
       "bycoda/effect-names-its-sync": 3,
       "bycoda/shared-resize-observer": 1
@@ -2648,9 +2645,6 @@
     },
     "src/shared/hooks/useTransientFlag.ts": {
       "bycoda/effect-names-its-sync": 1
-    },
-    "src/shared/lib/githubReadGate.ts": {
-      "bycoda/app-locale-formatting": 1
     },
     "src/shared/lib/openUrlSafely.ts": {
       "oxlint/no-restricted-imports": 1

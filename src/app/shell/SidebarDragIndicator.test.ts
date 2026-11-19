@@ -131,15 +131,15 @@ describe("sidebar view tabs without dragging", () => {
         (button) => button.textContent === label,
       )!;
     const firstMenu = openMenu(0);
-    expect(item(firstMenu, "Move Left").disabled).toBe(true);
-    expect(item(firstMenu, "Move Right").disabled).toBe(false);
+    expect(item(firstMenu, "Move left").disabled).toBe(true);
+    expect(item(firstMenu, "Move right").disabled).toBe(false);
     const original = tabLabels();
-    act(() => item(firstMenu, "Move Right").click());
+    act(() => item(firstMenu, "Move right").click());
     expect(document.querySelector('[role="menu"]')).toBeNull();
     expect(tabLabels()).toEqual([original[1], original[0], original[2]]);
     const lastMenu = openMenu(2);
-    expect(item(lastMenu, "Move Left").disabled).toBe(false);
-    expect(item(lastMenu, "Move Right").disabled).toBe(true);
+    expect(item(lastMenu, "Move left").disabled).toBe(false);
+    expect(item(lastMenu, "Move right").disabled).toBe(true);
   });
 });
 

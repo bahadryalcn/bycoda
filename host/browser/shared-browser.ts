@@ -39,6 +39,7 @@ type PageEvents = {
   requestfailed: BrowserRequest;
   response: BrowserResponse;
   close: undefined;
+  crash: undefined;
 };
 
 type BrowserCdpSession = {
@@ -121,6 +122,7 @@ type Browser = {
     acceptDownloads: boolean;
   }): Promise<{ newPage(): Promise<Page>; close?(): Promise<void> }>;
   close(): Promise<void>;
+  on?(event: "disconnected", listener: () => void): unknown;
 };
 export type BrowserLoader = () => Promise<{
   chromium: { launch(options: { headless: boolean }): Promise<Browser> };
@@ -135,6 +137,14 @@ const fingerprint = (credential: string) => createHash("sha256").update(credenti
 const DEFAULT_VIEWPORT = { width: 1280, height: 720 };
 
 /** Bound screenshot memory and coordinate work before touching Chromium. */
+/** Optional JPEG quality (20..80) a client may request for one-shot frames; default 65. */
+function sharedBrowserFrameQuality(value: unknown): number {
+  if (value === undefined) return 65;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 20 || value > 80)
+    throw new Error("Invalid browser frame quality");
+  return value;
+}
+
 export function sharedBrowserViewport(width: unknown, height: unknown) {
   if (
     !Number.isInteger(width) ||
@@ -400,7 +410,8 @@ export class SharedBrowser {
           documentId = this.documentId,
           navigationId = this.navigationId;
         const viewport = { ...this.viewport };
-        const frame = await page.screenshot({ type: "jpeg", quality: 65, timeout: 5_000 });
+        const quality = sharedBrowserFrameQuality(params.quality);
+        const frame = await page.screenshot({ type: "jpeg", quality, timeout: 5_000 });
         if (
           page !== this.page ||
           documentId !== this.documentId ||
@@ -491,6 +502,8 @@ export class SharedBrowser {
       controlling: this.lease?.owner === owner,
       leaseId: this.lease?.owner === owner ? this.lease.id : undefined,
       leaseExpiresAt: this.lease?.expiresAt,
+      // Remaining lifetime on the Host clock; clients turn it into a local deadline on receipt.
+      leaseTtlMs: this.lease ? Math.max(0, this.lease.expiresAt - this.now()) : undefined,
       heldBy: this.holder(),
       viewport: { ...this.viewport },
       navigationId: this.navigationId,
@@ -878,6 +891,7 @@ export class SharedBrowser {
     if (!this.maskEvents)
       throw new Error("Safe capture requires browser DOM mutation observation.");
     const inspectedRevision = this.maskRevision;
+    const frameQuality = sharedBrowserFrameQuality(params.quality);
     const marker = `bycoda-capture-${randomUUID()}`;
     this.screenshotMutations = {
       marker,
@@ -890,7 +904,7 @@ export class SharedBrowser {
     try {
       frame = await page.screenshot({
         type: "jpeg",
-        quality: 65,
+        quality: frameQuality,
         timeout: 5_000,
         mask: inspection.masks.map((selector) => page.locator!(selector)),
         maskColor: "#333333",
@@ -1182,12 +1196,15 @@ export class SharedBrowser {
     page.on?.("requestfailed", requestfailed);
     page.on?.("response", response);
     page.on?.("close", close);
+    // A crashed renderer leaves a dead page; drop it so the next call opens a fresh one.
+    page.on?.("crash", close);
     this.detachLogListeners = () => {
       page.off?.("console", console);
       page.off?.("pageerror", pageerror);
       page.off?.("requestfailed", requestfailed);
       page.off?.("response", response);
       page.off?.("close", close);
+      page.off?.("crash", close);
     };
   }
 
@@ -1237,11 +1254,19 @@ export class SharedBrowser {
   }
 }
 
+const BROWSER_PROCESS_IDLE_MS = 2 * 60_000;
+/** The shared Chromium process and the number of owned contexts currently using it. */
+type BrowserPool = {
+  process: Promise<Browser>;
+  leases: number;
+  idleTimer?: ReturnType<typeof setTimeout>;
+};
+
 /** Isolated per-conversation browser state; legacy owner-wide mode remains separate. */
 export class SessionBrowserRegistry {
   private readonly browsers = new Map<string, SharedBrowser>();
   private readonly shared: SharedBrowser;
-  private process?: Promise<Browser>;
+  private pool?: BrowserPool;
   private readonly pooledLoader: BrowserLoader;
   constructor(
     private readonly loader: BrowserLoader,
@@ -1251,14 +1276,21 @@ export class SessionBrowserRegistry {
     this.pooledLoader = async () => ({
       chromium: {
         launch: async () => {
-          if (!this.process)
-            this.process = this.loader()
-              .then((runtime) => runtime.chromium.launch({ headless: true }))
-              .catch((error) => {
-                this.process = undefined;
-                throw error;
-              });
-          const process = await this.process;
+          const pool = this.acquirePool();
+          let released = false;
+          const release = () => {
+            if (released) return;
+            released = true;
+            pool.leases--;
+            this.scheduleIdleClose(pool);
+          };
+          let process: Browser;
+          try {
+            process = await pool.process;
+          } catch (error) {
+            release();
+            throw error;
+          }
           let context: Awaited<ReturnType<Browser["newContext"]>> | undefined;
           return {
             newContext: async (options) => {
@@ -1266,13 +1298,59 @@ export class SessionBrowserRegistry {
               return context;
             },
             close: async () => {
-              await context?.close?.();
+              try {
+                await context?.close?.();
+              } finally {
+                // A crashed process makes context.close() throw; the lease still ends.
+                release();
+              }
             },
           };
         },
       },
     });
     this.shared = new SharedBrowser(this.pooledLoader, now, options);
+  }
+  /** Returns the live shared Chromium, launching it when absent, and takes a lease on it. */
+  private acquirePool() {
+    let pool = this.pool;
+    if (!pool) {
+      const created: BrowserPool = { leases: 0, process: undefined as unknown as Promise<Browser> };
+      created.process = this.loader()
+        .then((runtime) => runtime.chromium.launch({ headless: true }))
+        .then((browser) => {
+          // A crashed or killed Chromium must not stay cached; the next launch starts a new one.
+          browser.on?.("disconnected", () => this.discardPool(created));
+          return browser;
+        })
+        .catch((error) => {
+          this.discardPool(created);
+          throw error;
+        });
+      // Launch failures reach every lease through `process`; this only avoids an unhandled rejection.
+      created.process.catch(() => {});
+      this.pool = pool = created;
+    }
+    if (pool.idleTimer) clearTimeout(pool.idleTimer);
+    pool.idleTimer = undefined;
+    pool.leases++;
+    return pool;
+  }
+  private discardPool(pool: BrowserPool) {
+    if (pool.idleTimer) clearTimeout(pool.idleTimer);
+    pool.idleTimer = undefined;
+    if (this.pool === pool) this.pool = undefined;
+  }
+  /** Closes Chromium after a bounded idle period once no owned context remains. */
+  private scheduleIdleClose(pool: BrowserPool) {
+    if (this.pool !== pool || pool.leases > 0 || pool.idleTimer) return;
+    pool.idleTimer = setTimeout(() => {
+      pool.idleTimer = undefined;
+      if (this.pool !== pool || pool.leases > 0) return;
+      this.discardPool(pool);
+      void pool.process.then((browser) => browser.close()).catch(() => {});
+    }, BROWSER_PROCESS_IDLE_MS);
+    pool.idleTimer.unref?.();
   }
   private browser(params: Record<string, unknown>, credential: string) {
     if (params.threadId !== undefined) {
@@ -1405,8 +1483,9 @@ export class SessionBrowserRegistry {
       ...Array.from(this.browsers.values(), (browser) => browser.close()),
     ]);
     this.browsers.clear();
-    const process = this.process;
-    this.process = undefined;
-    if (process) await (await process).close();
+    const pool = this.pool;
+    if (!pool) return;
+    this.discardPool(pool);
+    await (await pool.process).close();
   }
 }

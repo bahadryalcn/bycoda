@@ -252,8 +252,9 @@ export function WorkspacePolicySettings({
     };
   }, [cwd, refresh]);
 
-  const save = async (override?: WorkspacePolicyOverride) => {
-    if (!policy || !draft || saving) return;
+  /** True only once the Host acknowledged the policy for the context that was open. */
+  const save = async (override?: WorkspacePolicyOverride): Promise<boolean> => {
+    if (!policy || !draft || saving) return false;
     const requestEpoch = epoch.current;
     setSaving(true);
     setError(undefined);
@@ -277,7 +278,8 @@ export function WorkspacePolicySettings({
         },
         scope(),
       );
-      if (epoch.current !== requestEpoch) return;
+      // The project changed while saving: this draft no longer exists here, so nothing is acknowledged.
+      if (epoch.current !== requestEpoch) return false;
       commitPolicy(next);
       commitDraft(next.resolved.policy);
       setPolicyConflict(false);
@@ -286,8 +288,10 @@ export function WorkspacePolicySettings({
       // Storage limits just changed. The policy draft is already settled, so a storage
       // failure is reported on its own section with a local retry.
       void runStage("storage", requestEpoch);
+      return true;
     } catch (failure) {
       if (epoch.current === requestEpoch) setError(presentRemoteError(failure, { explicit: true }));
+      return false;
     } finally {
       setSaving(false);
     }

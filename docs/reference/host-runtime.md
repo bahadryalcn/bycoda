@@ -547,7 +547,7 @@ marker scans and FULL writer-lock scaling require target workload acceptance.
 Qualification, history migration and default promotion remain disabled pending
 the remaining full26 requirements.
 
-Local projects now expose an explicit **New conversation on this computer's Host**
+Local projects now expose an explicit **New session on this computer's Host**
 project-menu action. It connects to the actual local profile Host, verifies its
 environment and managed-create capabilities, opens the project and journals the
 new shell's explicit Host owner before opening the tab. The first send uses the
@@ -635,6 +635,16 @@ request and bulk decoding. Local cancellation releases a wait, not the physical
 control slot. The native reconnect queue retains only never-sent requests with
 their original deadline, owner and resource scope; dispatched mutations are
 never queued for replay.
+
+On a Host socket, subscription open, ack and close have their own lane
+(`maxSubscriptionControlsPerSocket` slots, then a FIFO of at most
+`maxQueuedSubscriptionControlsPerSocket`), separate from probe, cancel and the
+other controls (`maxControlRequestsPerSocket`). A burst after reconnect queues
+instead of failing; only a full queue, or a wait past the method's admission
+time, answers a retryable overload with delivery `not-sent`. The request deadline
+runs from ingress and a cancel or socket close releases a queued place at once.
+Overlapping authorization checks are allowed, but effects apply in arrival order,
+so a close never overtakes the open or ack before it.
 
 Native reconnect resumes retained subscriptions only from proven application
 commits, exact live page issuers, logical targets and resource scopes. A complete
@@ -1005,9 +1015,12 @@ bounded pass 10 minutes after start and then hourly, off the request path
 
 - Native buffer blob GC deletes a blob and its chunks only when no
   `native_buffer_artifacts` row and no certificate (snapshot digest or artifact
-  list) references its sha256. The orphan set is re-derived inside each delete
-  transaction (at most 500 blobs or 64 MB). An unreadable certificate skips the
-  pass. Artifacts and certificates are never deleted.
+  list) references its sha256. The orphan set (and the unreadable-certificate
+  guard) is derived once per pass; each delete transaction (at most 500 blobs or
+  64 MB) re-proves its batch against the artifact rows and an unchanged
+  certificate count/newest rowid, and re-derives the set when a certificate
+  appeared. An unreadable certificate skips the pass. Artifacts and certificates
+  are never deleted.
 - Native buffer history is bounded only in the git store (see "Native buffer content store"). The
   legacy SQL rows are never trimmed.
 - Replay events are capped at 256 MiB in total on top of the per-session 4 MiB.

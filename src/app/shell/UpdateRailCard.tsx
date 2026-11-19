@@ -3,7 +3,7 @@ import { Button } from "../../shared/ui/Button";
 import { ButtonGroup } from "../../shared/ui/ButtonGroup";
 import { useT } from "../../shared/i18n";
 import { X } from "../../shared/ui/icons";
-import { PRODUCT_IDENTITY } from "../../shared/lib/productIdentity";
+import { BrandMark } from "../../shared/ui/BrandMark";
 import type { InstalledUpdate } from "../model/updateNotice";
 
 type Props = {
@@ -15,28 +15,31 @@ type Props = {
 export function UpdateRailCard({ update, onOpen, onDismiss }: Props) {
   const t = useT();
   if (!update) return null;
+  // The complete message is one translation key so translators can reorder the version.
+  const updatedLabel = t("Updated to {p0}", { p0: update.version });
 
   return (
     <section role="status" className="min-w-0">
-      <ButtonGroup aria-label={`${t("Updated to ")}${update.version}`}>
+      <ButtonGroup aria-label={updatedLabel}>
         <Button
           variant="item"
           motion="none"
           type="button"
           onClick={() => onOpen(update.version)}
           align="start"
-          aria-label={`${t("Updated to ")}${update.version} — ${t("What's new")}`}
+          aria-label={updatedLabel}
           className="min-w-0 flex-1"
         >
-          <img
-            src={PRODUCT_IDENTITY.logoSrc}
-            alt=""
-            aria-hidden
-            className="size-4 shrink-0 object-contain"
-          />
-          <Text size="caption" tone="primary" weight="medium" truncate className="min-w-0">
-            {t("Updated to ")}
-            {update.version}
+          <BrandMark aria-hidden className="size-4 shrink-0 object-contain" />
+          {/* Compact rails keep the logo as the icon fallback; the name stays on the button. */}
+          <Text
+            size="caption"
+            tone="primary"
+            weight="medium"
+            truncate
+            className="min-w-0 @max-[140px]/rail:hidden"
+          >
+            {updatedLabel}
           </Text>
           <Text size="caption" tone="primary" className="shrink-0 @max-[240px]/rail:hidden">
             {t("What's new")}

@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { PermissionRow } from "../../permissions";
 import { useEffect, useRef, useState } from "react";
 import { Badge } from "../../../shared/ui/Badge";
@@ -73,7 +74,7 @@ export function MicrophonePermissionSettings() {
       if (mounted.current && id === attempt.current) setPermission("granted");
     } catch (cause) {
       if (mounted.current && id === attempt.current) {
-        const message = cause instanceof Error ? cause.message : String(cause);
+        const message = errorText(cause);
         if (isMicrophoneBlocked(message)) setPermission("denied");
         setError(message);
       }
@@ -120,7 +121,7 @@ export function MicrophonePermissionSettings() {
         <Button
           onClick={() =>
             void check().catch((cause) => {
-              if (mounted.current) setError(cause instanceof Error ? cause.message : String(cause));
+              if (mounted.current) setError(errorText(cause));
             })
           }
           loading={busy}

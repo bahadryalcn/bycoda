@@ -7,6 +7,8 @@ import {
   type RemoteJiraOperation,
 } from "./jiraBoardProtocol";
 export const REMOTE_INBOX_VERSION = 1;
+/** Projects one remote list read covers; projects past it are reported as omitted. */
+export const REMOTE_INBOX_PROJECT_LIMIT = 40;
 export const JIRA_COMMENT_IMAGE_COUNT = 4;
 export const JIRA_COMMENT_IMAGE_BYTES = 10 * 1024 * 1024;
 export const REMOTE_INBOX_PROVIDERS = [
@@ -86,6 +88,8 @@ export type RemoteInboxThread = {
 export type RemoteInboxList = {
   items: RemoteInboxItem[];
   errors: Partial<Record<RemoteInboxProvider, string>>;
+  /** Projects past REMOTE_INBOX_PROJECT_LIMIT. Their items are absent from `items`; scope to one with its id. */
+  omittedProjects?: { id: string; path: string }[];
 };
 export type RemoteInboxProviderState = {
   provider: RemoteInboxProvider;
@@ -116,7 +120,12 @@ export type RemoteInboxReview = {
 export type RemoteInboxOperation =
   | RemoteJiraOperation
   | { action: "providers" }
-  | { action: "list"; projects: { path: string }[]; query: RemoteInboxQuery }
+  | {
+      action: "list";
+      projects: { path: string }[];
+      omittedProjects?: { id: string; path: string }[];
+      query: RemoteInboxQuery;
+    }
   | { action: "details" | "thread" | "checks"; item: RemoteInboxTarget; cwd: string }
   | { action: "comment"; item: RemoteInboxTarget; cwd: string; body: string; inReplyTo?: string }
   | {
@@ -255,9 +264,15 @@ export function parseRemoteInboxOperation(
         providers.some((name) => !REMOTE_INBOX_PROVIDERS.includes(name as RemoteInboxProvider)))
     )
       throw new Error("Invalid inbox provider filter.");
+    const omitted = scoped.slice(REMOTE_INBOX_PROJECT_LIMIT);
     return {
       action,
-      projects: scoped.slice(0, 40).map((project) => ({ path: project.cwd })),
+      projects: scoped
+        .slice(0, REMOTE_INBOX_PROJECT_LIMIT)
+        .map((project) => ({ path: project.cwd })),
+      ...(omitted.length
+        ? { omittedProjects: omitted.map((project) => ({ id: project.id, path: project.cwd })) }
+        : {}),
       query: {
         assignedToMe: query.assignedToMe === true,
         state: query.state === "all" ? "all" : "open",

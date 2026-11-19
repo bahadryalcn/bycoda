@@ -3,10 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({
   models: [{ id: "a" }] as unknown[],
   live: false,
-  refresh: vi.fn(async (_ids: unknown, _options?: unknown) => undefined as void),
+  refresh: vi.fn(async (_ids: unknown, _options?: unknown) => new Set<string>()),
 }));
 vi.mock("../../../integrations/harness/core/registry", () => ({
-  refreshHarnessCatalogs: (ids: unknown, options?: unknown) => state.refresh(ids, options),
+  refreshHarnessCatalogsStrict: (ids: unknown, options?: unknown) => state.refresh(ids, options),
 }));
 vi.mock("../../sessions/model/models", () => ({
   catalogModelsFor: () => state.models,
@@ -25,7 +25,7 @@ describe("catalog receipts", () => {
     state.models = [{ id: "a" }];
     state.live = false;
     state.refresh.mockReset();
-    state.refresh.mockResolvedValue(undefined);
+    state.refresh.mockResolvedValue(new Set());
     resetCatalogReceipts();
   });
 
@@ -33,6 +33,7 @@ describe("catalog receipts", () => {
     state.refresh.mockImplementation(async () => {
       state.models = [{ id: "a" }, { id: "b" }];
       state.live = true;
+      return new Set(["codex"]);
     });
     const before = getCatalogReceiptsSnapshot();
     const receipt = await refreshProviderCatalog("codex", { force: true });
@@ -42,9 +43,30 @@ describe("catalog receipts", () => {
     expect(getCatalogReceiptsSnapshot()).toBeGreaterThan(before);
   });
 
-  it("does not claim freshness when an earlier live list is kept", async () => {
+  it("does not claim freshness when no probe ran and an earlier live list is kept", async () => {
     state.live = true;
     await expect(refreshProviderCatalog("claude")).resolves.toMatchObject({ status: "retained" });
+  });
+
+  it("calls a probe that confirmed the same list fresh", async () => {
+    state.live = true;
+    state.refresh.mockResolvedValue(new Set(["claude"]));
+    await expect(refreshProviderCatalog("claude", { force: true })).resolves.toMatchObject({
+      status: "fresh",
+      count: 1,
+    });
+  });
+
+  it("reports an empty probe answer as an error and keeps the earlier list", async () => {
+    state.live = true;
+    state.refresh.mockRejectedValue(new Error("codex reported no models."));
+    await expect(refreshProviderCatalog("codex", { force: true })).resolves.toMatchObject({
+      status: "error",
+      error: "codex reported no models.",
+      retained: true,
+      count: 1,
+    });
+    expect(state.models).toEqual([{ id: "a" }]);
   });
 
   it("reports the bundled list when no live list exists", async () => {
@@ -68,7 +90,9 @@ describe("catalog receipts", () => {
   it("shares one attempt and exposes refreshing with the previous receipt", async () => {
     await refreshProviderCatalog("grok");
     let finish!: () => void;
-    state.refresh.mockImplementation(() => new Promise<void>((resolve) => (finish = resolve)));
+    state.refresh.mockImplementation(
+      () => new Promise<Set<string>>((resolve) => (finish = () => resolve(new Set()))),
+    );
     const first = refreshProviderCatalog("grok");
     const second = refreshProviderCatalog("grok");
     expect(second).toBe(first);

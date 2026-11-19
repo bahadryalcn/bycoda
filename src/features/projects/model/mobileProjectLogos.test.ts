@@ -47,3 +47,18 @@ it("does not wait for or fail heartbeat projection when an image fails", async (
   expect(withMobileProjectLogos(directory(), render).projects[0].appearance).toBeUndefined();
   expect(render).toHaveBeenCalledTimes(1);
 });
+
+// #1419: the live beat re-reads chosen logos and mascots only after a stored write.
+it("reads logo and mascot storage once while nothing was written", async () => {
+  saveTabGroupLogo("/visible", "/logos/one.png");
+  const render = vi.fn().mockResolvedValue(undefined);
+  withMobileProjectLogos(directory(), render);
+  const read = vi.spyOn(Storage.prototype, "getItem");
+  for (let tick = 0; tick < 5; tick++) withMobileProjectLogos(directory(), render);
+  expect(read).not.toHaveBeenCalled();
+  saveTabGroupLogo("/visible", "/logos/two.png");
+  withMobileProjectLogos(directory(), render);
+  await flush();
+  expect(render).toHaveBeenLastCalledWith("/logos/two.png");
+  read.mockRestore();
+});

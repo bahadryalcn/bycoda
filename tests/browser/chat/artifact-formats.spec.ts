@@ -244,6 +244,9 @@ test("chat file changes and long content fit a narrow column", async ({ page }, 
   await page.setViewportSize({ width: 320, height: 800 });
   await trigger.focus();
   const preview = page.getByRole("dialog");
+  // Focus alone never opens the preview; ArrowDown opens it explicitly.
+  await expect(preview).toHaveCount(0);
+  await page.keyboard.press("ArrowDown");
   await expect(preview).toBeVisible();
   const previewBox = (await preview.boundingBox())!;
   expect(previewBox.x).toBeGreaterThanOrEqual(0);

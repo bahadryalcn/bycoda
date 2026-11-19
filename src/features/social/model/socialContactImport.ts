@@ -18,6 +18,11 @@ export const CONTACT_IMPORT_MAX_BYTES = 1024 * 1024;
 export const AUDIENCE_IMPORT_FIELDS = [...CONTACT_IMPORT_FIELDS, "email"] as const;
 export const AUDIENCE_IMPORT_MAX_ROWS = 5000;
 export const AUDIENCE_IMPORT_MAX_BYTES = 5 * 1024 * 1024;
+/** Spreadsheet only: physical rows and columns of the first sheet, empty or not. */
+export const AUDIENCE_IMPORT_MAX_SHEET_ROWS = 20_000;
+export const AUDIENCE_IMPORT_MAX_COLUMNS = 200;
+/** Spreadsheet only: what the archive may expand to. A 5 MiB file can otherwise inflate without bound. */
+export const AUDIENCE_IMPORT_MAX_UNZIPPED_BYTES = 64 * 1024 * 1024;
 
 export type ImportContact = {
   accountId: string;

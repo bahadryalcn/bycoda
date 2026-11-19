@@ -2,22 +2,14 @@ import { Text } from "../../../../shared/ui/Text";
 import type { AssistantMessage } from "../../../../shared/model/host-contracts/assistant";
 import { t } from "../../../../shared/i18n";
 import type { MessageTimelineItem } from "../../../../shared/ui/MessageTimeline";
+import { Badge } from "../../../../shared/ui/Badge";
 import { Button } from "../../../../shared/ui/Button";
 import { Disclosure } from "../../../../shared/ui/Disclosure";
 import { Tooltip } from "../../../../shared/ui/Tooltip";
 import { Trash2 } from "../../../../shared/ui/icons";
 import { assistantChatItem } from "./AssistantChat";
 import styles from "./Conversation.module.css";
-
-/** "tasks.get" reads as the verb phrase "Get tasks"; the raw id stays in the tooltip. */
-function recordedActionLabel(action: string): string {
-  const words = action
-    .split(/[._-]+/)
-    .filter(Boolean)
-    .reverse()
-    .join(" ");
-  return words.charAt(0).toUpperCase() + words.slice(1);
-}
+import { recordedActionLabel } from "./recordedActionLabels";
 
 /** One room message as a shared timeline item. */
 export function conversationMessageItem({
@@ -68,7 +60,11 @@ export function conversationMessageItem({
                   <Tooltip label={`${action.family}.${action.action}`} asChild>
                     <span>{recordedActionLabel(action.action)}</span>
                   </Tooltip>
-                  {action.status === "completed" ? "" : ` · ${t("Outcome unknown")}`}
+                  {action.status === "completed" ? null : (
+                    <Badge size="xs" tone="warning">
+                      {t("Outcome unknown")}
+                    </Badge>
+                  )}
                 </li>
               ))}
             </ul>
@@ -89,15 +85,13 @@ export function conversationMessageItem({
                     {job.title}
                   </Button>
                 ) : (
-                  <Text
-                    size="caption"
-                    tone="secondary"
-                    leading="inherit"
-                    key={id}
-                    className={styles.note}
-                  >
-                    {id}
-                  </Text>
+                  <Tooltip key={id} label={id} asChild>
+                    <span>
+                      <Text size="caption" tone="secondary" leading="inherit" className={styles.note}>
+                        {t("Job unavailable")}
+                      </Text>
+                    </span>
+                  </Tooltip>
                 );
               })}
             </div>

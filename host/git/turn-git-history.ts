@@ -58,7 +58,32 @@ export async function turnGit(
   input?: Buffer | string,
   index?: string,
 ): Promise<Buffer> {
-  return new Promise((resolveResult, reject) => {
+  const chunks: Buffer[] = [];
+  await streamTurnGit(cwd, args, input, index, (data) => chunks.push(data));
+  return Buffer.concat(chunks);
+}
+/** Same process, deadline, output cap and errors as turnGit, but stdout is hashed as it arrives
+ * so comparisons of large listings never hold the bytes. */
+export async function turnGitDigest(
+  cwd: string,
+  args: string[],
+  input?: Buffer | string,
+  index?: string,
+): Promise<string> {
+  const hash = createHash("sha256");
+  await streamTurnGit(cwd, args, input, index, (data) => {
+    hash.update(data);
+  });
+  return hash.digest("hex");
+}
+async function streamTurnGit(
+  cwd: string,
+  args: string[],
+  input: Buffer | string | undefined,
+  index: string | undefined,
+  onStdout: (data: Buffer) => void,
+): Promise<void> {
+  return new Promise<void>((resolveResult, reject) => {
     const env = { ...process.env };
     for (const key of [
       "GIT_DIR",
@@ -85,14 +110,13 @@ export async function turnGit(
         ...(index ? { GIT_INDEX_FILE: index } : {}),
       },
     });
-    const chunks: Buffer[] = [];
     let error = "";
     let size = 0;
     const timer = setTimeout(() => child.kill(), 60_000);
     child.stdout.on("data", (data: Buffer) => {
       size += data.length;
       if (size > 256 * 1024 * 1024) child.kill();
-      else chunks.push(data);
+      else onStdout(data);
     });
     child.stderr.on("data", (data: Buffer) => {
       if (error.length < 4000) error += data.toString();
@@ -104,7 +128,7 @@ export async function turnGit(
     child.on("close", (code) => {
       clearTimeout(timer);
       if (code !== 0) reject(new Error(`Git ${args[0]} failed: ${error.trim() || code}`));
-      else resolveResult(Buffer.concat(chunks));
+      else resolveResult();
     });
     child.stdin.on("error", () => undefined);
     child.stdin.end(input);
@@ -296,9 +320,14 @@ export class GitTurnHistory implements TurnGitHistory {
     if (entries.some((entry) => entry.startsWith("160000 ")))
       throw new Error("Submodules are not supported by exact capture");
     // Intent-to-add is not represented by write-tree. Refuse rather than silently normalize it.
-    const visible = await turnGit(cwd, ["diff", "--cached", "--raw", "--ita-visible-in-index"]);
-    const invisible = await turnGit(cwd, ["diff", "--cached", "--raw", "--ita-invisible-in-index"]);
-    if (!visible.equals(invisible))
+    const visible = await turnGitDigest(cwd, ["diff", "--cached", "--raw", "--ita-visible-in-index"]);
+    const invisible = await turnGitDigest(cwd, [
+      "diff",
+      "--cached",
+      "--raw",
+      "--ita-invisible-in-index",
+    ]);
+    if (visible !== invisible)
       throw new Error("Stage or unstage intent-to-add entries before exact capture");
     const markers = await Promise.all(
       ["MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply"].map(

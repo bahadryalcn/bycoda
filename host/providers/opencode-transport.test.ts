@@ -52,7 +52,7 @@ const server = http.createServer((req, res) => {
   }
   res.writeHead(204); res.end();
 });
-server.listen(port, '127.0.0.1', () => console.log('opencode server listening on http://127.0.0.1:' + port));
+server.listen(port, '127.0.0.1', () => console.log('opencode server listening on http://127.0.0.1:' + server.address().port));
 `;
 
 let directory: string;

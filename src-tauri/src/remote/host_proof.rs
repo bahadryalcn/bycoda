@@ -20,6 +20,7 @@ pub(crate) fn verify(
     environment_id: &str,
     secret: &str,
     kind: &str,
+    timeout: std::time::Duration,
 ) -> Result<(), String> {
     let mut bytes = [0u8; 32];
     SystemRandom::new()
@@ -33,11 +34,9 @@ pub(crate) fn verify(
         message(kind, "request", &nonce, environment_id, origin).as_bytes(),
     )
     .as_ref());
-    let response = ureq::AgentBuilder::new()
-        .redirects(0)
-        .timeout(std::time::Duration::from_secs(6))
-        .build()
+    let response = rpc_agent()
         .post(&format!("{origin}/.well-known/bycoda-host/proof"))
+        .timeout(timeout)
         .set("Content-Type", "application/json")
         .send_string(&json!({"kind": kind, "nonce": nonce, "environmentId": environment_id, "origin": origin, "proof": proof}).to_string())
         .map_err(|_| "Host possession proof could not be verified")?;
@@ -157,7 +156,8 @@ mod tests {
                         &origin,
                         "expected-environment",
                         "ticket-or-bearer-secret",
-                        kind
+                        kind,
+                        std::time::Duration::from_secs(6)
                     )
                     .is_ok(),
                     genuine

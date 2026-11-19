@@ -12,6 +12,14 @@ import { ModelSettingsSchema, SessionProviderSchema } from "./session-commands";
  */
 export const HOST_MODEL_ROUTING = "models.routing.v1";
 
+/**
+ * Machine code the Host puts in front of its message (`CODE: message`, like `LEASE_HELD`) when a
+ * save's `expectedVersion` no longer matches the stored document. Hosts without it send only the
+ * exact legacy message, which clients still accept.
+ */
+export const MODEL_ROUTING_CONFLICT_CODE = "MODEL_ROUTING_CONFLICT";
+export const MODEL_ROUTING_CONFLICT_MESSAGE = "Model routing changed; reload before saving.";
+
 const id = z.string().min(1).max(200);
 
 export const MODEL_ROUTING_ROLES = [

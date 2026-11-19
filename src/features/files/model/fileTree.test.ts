@@ -27,12 +27,14 @@ function entry(name: string): FsEntry {
 }
 
 const listDir = vi.fn<(path: string) => Promise<FsEntry[]>>();
+const dirStamp = vi.fn<(path: string) => Promise<string | null>>();
 
 vi.mock("../../../platform/tauri/fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../../platform/tauri/fs")>();
   return {
     ...actual,
     listDir: (path: string) => listDir(path),
+    dirListingStamp: (path: string) => dirStamp(path),
   };
 });
 
@@ -74,6 +76,66 @@ describe("fileTree cache", () => {
     await vi.advanceTimersByTimeAsync(150);
     expect(peekDir(root)?.[0].name).toBe("created.ts");
     stop();
+  });
+  it("skips the read of a polled folder while its stamp is unchanged, and re-reads on a change or after the reverify window", async () => {
+    vi.useFakeTimers();
+    listDir.mockResolvedValue([entry("a.ts")]);
+    dirStamp.mockResolvedValue("1:1");
+    const stop = subscribeDirsChanged(() => {}, root);
+    try {
+      await listCachedDir(root);
+      // The first poll has no recorded stamp, so it reads and records one.
+      await refreshCachedDirs([root], true);
+      expect(listDir).toHaveBeenCalledTimes(2);
+
+      await vi.advanceTimersByTimeAsync(6000);
+      await refreshCachedDirs([root], true);
+      expect(listDir).toHaveBeenCalledTimes(2);
+
+      // An explicit change notification is never answered from the stamp.
+      await refreshCachedDirs([root]);
+      expect(listDir).toHaveBeenCalledTimes(3);
+
+      // The explicit read dropped the recorded stamp; the next poll records it again.
+      await vi.advanceTimersByTimeAsync(24_000);
+      await refreshCachedDirs([root], true);
+      expect(listDir).toHaveBeenCalledTimes(4);
+      await vi.advanceTimersByTimeAsync(30_000);
+      await refreshCachedDirs([root], true);
+      expect(listDir).toHaveBeenCalledTimes(4);
+
+      dirStamp.mockResolvedValue("2:2");
+      listDir.mockResolvedValue([entry("a.ts"), entry("b.ts")]);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(await refreshCachedDirs([root], true)).toEqual([root]);
+      expect(peekDir(root)).toEqual([entry("a.ts"), entry("b.ts")]);
+      const reads = listDir.mock.calls.length;
+
+      // Ignore labels can change without the folder changing: read again eventually.
+      await vi.advanceTimersByTimeAsync(30_000);
+      await refreshCachedDirs([root], true);
+      expect(listDir.mock.calls.length).toBe(reads);
+      await vi.advanceTimersByTimeAsync(30_000);
+      await refreshCachedDirs([root], true);
+      expect(listDir.mock.calls.length).toBe(reads + 1);
+    } finally {
+      stop();
+    }
+  });
+  it("reads every poll when the folder has no stamp", async () => {
+    vi.useFakeTimers();
+    listDir.mockResolvedValue([entry("a.ts")]);
+    dirStamp.mockResolvedValue(null);
+    const stop = subscribeDirsChanged(() => {}, root);
+    try {
+      await listCachedDir(root);
+      await refreshCachedDirs([root], true);
+      await vi.advanceTimersByTimeAsync(6000);
+      await refreshCachedDirs([root], true);
+      expect(listDir).toHaveBeenCalledTimes(3);
+    } finally {
+      stop();
+    }
   });
   it("retires an uncached read when its folder is collapsed", async () => {
     const folder = `${root}/pending`;
@@ -286,6 +348,8 @@ describe("fileTree cache", () => {
   beforeEach(() => {
     forgetDir(root);
     listDir.mockReset();
+    dirStamp.mockReset();
+    dirStamp.mockResolvedValue(null);
   });
 
   afterEach(() => {

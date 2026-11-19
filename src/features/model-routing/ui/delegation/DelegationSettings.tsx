@@ -79,7 +79,7 @@ export function DelegationSettings({
         }
       >
         {layers.map((layer) => (
-          <div key={layerId(layer)}>
+          <div key={layerId(layer)} role="group" aria-label={layerLabel(layer)}>
             <div className="flex min-h-8 items-center justify-between gap-2">
               <Text size="caption" weight="medium" truncate className="min-w-0">
                 {layerLabel(layer)}
@@ -89,8 +89,7 @@ export function DelegationSettings({
                 size="sm"
                 iconOnly
                 type="button"
-                label={t("Remove override")}
-                tooltip={t("Remove override")}
+                label={t("Remove all {p0} overrides", { p0: layerLabel(layer) })}
                 disabled={disabled}
                 onClick={() => {
                   setPending((current) => current.filter((item) => !sameLayer(item, layer)));

@@ -388,7 +388,7 @@ pub async fn session_apply_delta(
             if let Some(git) = &git {
                 delta.session.branch = super::stored_branch(&delta.session, git);
             }
-            let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+            let conn = store.lock_conn()?;
             super::provenance::protect_client_delta(&conn, &mut delta)?;
             let mut written = write_receipts::apply_delta(&store, &conn, &delta, owner)?;
             if let (Some(git), Some(written)) = (git, written.as_mut()) {

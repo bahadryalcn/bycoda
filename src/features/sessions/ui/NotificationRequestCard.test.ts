@@ -63,3 +63,38 @@ it("shows the complete command instead of the shortened notice label and preserv
     host.remove();
   }
 });
+
+it("states an approval once: the request section keeps its name and the decision stays", () => {
+  const session = newSession("codex", "G:/approval-fixture");
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    act(() =>
+      root.render(
+        createElement(NotificationRequestCard, {
+          notice: {
+            session,
+            sessionId: session.id,
+            requestId: 7,
+            kind: "approval",
+            label: "Run command",
+          },
+          onFocusSession: vi.fn(),
+          onApproval: vi.fn(),
+        }),
+      ),
+    );
+    const badgeOnly = [...host.querySelectorAll("*")].some(
+      (element) => element.children.length === 0 && element.textContent === "Approval",
+    );
+    expect(badgeOnly).toBe(false);
+    expect(host.querySelector('section[aria-label="Needs approval"]')).not.toBeNull();
+    const buttons = [...host.querySelectorAll("button")];
+    expect(buttons.some((button) => button.textContent === "Allow")).toBe(true);
+    expect(buttons.some((button) => button.textContent === "Deny")).toBe(true);
+  } finally {
+    act(() => root.unmount());
+    host.remove();
+  }
+});

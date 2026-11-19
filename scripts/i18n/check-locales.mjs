@@ -63,6 +63,11 @@ for (const value of [
   "Zoom",
 ])
   used.add(value);
+// Recorded assistant action labels are chosen by id at render time, so their literals never
+// reach a `t(...)` call; read the Map entries and the generic fallback from their source.
+const recorded = fs.readFileSync("src/features/assistant/ui/room/recordedActionLabels.ts", "utf8");
+for (const match of recorded.matchAll(/\["[^"\n]+",\s*"([^"\n]+)"\]/g)) used.add(match[1]);
+used.add(/RECORDED_ACTION_FALLBACK_LABEL = "([^"\n]+)"/.exec(recorded)[1]);
 if (process.argv.includes("--extract")) {
   for (const key of used) source[key] = key;
   fs.writeFileSync(`${root}/en.json`, JSON.stringify(source, null, 2) + "\n");

@@ -205,6 +205,7 @@ const personFrom = (
 
 export function createXAdapter(http: SocialHttp): SocialAdapter {
   return {
+    ignoresPublishedPosts: true,
     async send(account, job, token, media, checkpoint, beforeSubmit) {
       if (xPostWeight(text(job)) > X_POST_WEIGHT_LIMIT) throw new SocialPlatformError("rejected");
       const extras = ((job.payload as unknown as { x?: XPostExtras }).x ?? {}) as XPostExtras;

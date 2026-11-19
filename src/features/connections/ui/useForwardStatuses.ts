@@ -2,7 +2,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listenWindow } from "../../../platform/tauri/listenWindow";
 import { t } from "../../../shared/i18n";
-import { listSshForwards, type ForwardStatus } from "../model/sshForwards";
+import { listSshForwards, retrySshForwardsNow, type ForwardStatus } from "../model/sshForwards";
 
 export type ForwardChanged = {
   machine: string;
@@ -93,13 +93,23 @@ export function useForwardStatuses(source: string, active: boolean) {
       if (!document.hidden) refresh(source);
       else ++sequence.current;
     };
+    // Native restarts a dropped forward on its own ladder; these only end the wait early.
+    const onWake = () => {
+      if (document.hidden) return;
+      retrySshForwardsNow().catch(() => undefined);
+      refresh(source);
+    };
     document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("online", onWake);
+    window.addEventListener("focus", onWake);
     return () => {
       disposed = true;
       ++sequence.current;
       release();
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("online", onWake);
+      window.removeEventListener("focus", onWake);
     };
   }, [source, active, refresh]);
   return {

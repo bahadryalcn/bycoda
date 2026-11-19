@@ -1,3 +1,5 @@
+import { formatNumber, type BoundFormat } from "../../../shared/i18n";
+
 export type TurnUsage = {
   processCostUsd?: number;
   processApiMs?: number;
@@ -43,9 +45,20 @@ export function resetProcessCounters(usage: SessionUsage): SessionUsage {
   return { ...usage, lastProcessCostUsd: 0, lastProcessApiMs: 0 };
 }
 
-export function formatCost(costUsd: number): string {
-  if (costUsd > 0 && costUsd < 0.01) return "<$0.01";
-  return `$${costUsd.toFixed(2)}`;
+const USD = {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+} as const;
+
+/** Currency in the app language; the caller passes its bound formatter to re-render on change. */
+export function formatCost(
+  costUsd: number,
+  format: Pick<BoundFormat, "formatNumber"> = { formatNumber },
+): string {
+  if (costUsd > 0 && costUsd < 0.01) return `<${format.formatNumber(0.01, USD)}`;
+  return format.formatNumber(costUsd, USD);
 }
 
 export function formatApiTime(ms: number): string {

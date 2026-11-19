@@ -1,12 +1,16 @@
+import type { spawn } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SecretValueStore } from "../secrets/secret-store";
+import { DecisionConfigDamagedError } from "./decision-config";
 import { DecisionModelsService } from "./decision-service";
 import { DEFAULT_THRESHOLD, type DecisionRequest } from "./decision-types";
 import * as discovery from "./discovery";
-import type { LocalInstaller } from "./local-install";
+import { createLocalInstaller, type LocalInstaller } from "./local-install";
+import { LocalRuntime } from "./local-runtime";
 
 const API_KEY = "sk-test-0123456789-do-not-store-in-config";
 
@@ -108,6 +112,65 @@ describe("DecisionModelsService without sources", () => {
       }
     },
   );
+  it("stops the servers the Host started on close and leaves an external one running", async () => {
+    const spawnImpl = vi.fn(() => {
+      const child = new EventEmitter() as EventEmitter & { kill: ReturnType<typeof vi.fn> };
+      child.kill = vi.fn(() => true);
+      return child;
+    });
+    const runtime = new LocalRuntime({
+      spawnImpl: spawnImpl as unknown as typeof spawn,
+      fetchImpl: (async () => new Response("{}", { status: 200 })) as unknown as typeof fetch,
+      allocatePort: async () => 45140,
+    });
+    const installer = createLocalInstaller({
+      root: join(directory, "local"),
+      catalog: () => ({ version: 1, providers: [] }) as never,
+      runtime,
+    });
+    const external = vi.fn(async (input: string | URL | Request) =>
+      String(input).endsWith("/health")
+        ? new Response("{}", { status: 200 })
+        : new Response(JSON.stringify({ answers: { check: { type: "noul", noul: 0.99 } } }), {
+            status: 200,
+          }),
+    );
+    vi.stubGlobal("fetch", external);
+    try {
+      const instance = new DecisionModelsService({
+        directory,
+        secrets,
+        localInstaller: installer,
+      });
+      const owned = await instance.addSource({
+        ...localClef,
+        local: { modelPath: join(directory, "a.gguf"), runtimePath: join(directory, "llama") },
+      });
+      const outside = await instance.addSource({
+        ...localClef,
+        endpoint: "http://127.0.0.1:8767/v1/systemone",
+        local: { modelPath: join(directory, "b.gguf") },
+      });
+      // The owner's own server answers /health, so the Host never spawns one for it.
+      await instance.testSource(outside.id);
+      expect(spawnImpl).not.toHaveBeenCalled();
+      await runtime.start({
+        sourceId: owned.id,
+        executable: join(directory, "llama"),
+        modelPath: join(directory, "a.gguf"),
+      });
+      const child = spawnImpl.mock.results[0]?.value as { kill: ReturnType<typeof vi.fn> };
+      await Promise.all([instance.close(), instance.close()]);
+      expect(child.kill).toHaveBeenCalledTimes(1);
+      expect(spawnImpl).toHaveBeenCalledTimes(1);
+      expect(runtime.isRunning(owned.id)).toBe(false);
+      await expect(
+        runtime.start({ sourceId: owned.id, executable: "llama", modelPath: "/a.gguf" }),
+      ).rejects.toThrow("closed");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
   it("keeps cached candidates when an incomplete retry has no new results", async () => {
     const candidate = { id: "model:cached", label: "Cached model", kind: "model_file" as const };
     const scan = vi
@@ -116,11 +179,93 @@ describe("DecisionModelsService without sources", () => {
       .mockResolvedValueOnce({ found: [], incomplete: true });
     try {
       await service.scanDiscovery();
-      expect(await service.scanDiscovery()).toEqual({ found: [candidate], incomplete: true });
-      expect(service.discoveryResults()).toEqual({ found: [candidate], incomplete: true });
+      expect(await service.scanDiscovery()).toEqual({
+        found: [candidate],
+        incomplete: true,
+        scannedAt: expect.any(Number),
+      });
+      expect(await service.discoveryResults()).toEqual({
+        found: [candidate],
+        incomplete: true,
+        scannedAt: expect.any(Number),
+      });
     } finally {
       scan.mockRestore();
     }
+  });
+  describe("empty discovery cache", () => {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    let clock: number;
+    let cached: DecisionModelsService;
+    const spyScan = () => vi.spyOn(discovery, "scan");
+    let scan: ReturnType<typeof spyScan>;
+
+    beforeEach(() => {
+      clock = 1_000_000;
+      cached = new DecisionModelsService({ directory, secrets, now: () => clock });
+      scan = spyScan();
+    });
+    afterEach(() => {
+      scan.mockRestore();
+    });
+
+    it("has no valid answer before any scan, so a first open may scan", async () => {
+      expect(await cached.discoveryResults()).toEqual({ found: [] });
+    });
+
+    it("serves a confirmed empty scan without scanning again", async () => {
+      scan.mockResolvedValue({ found: [] });
+      await cached.scanDiscovery();
+      clock += DAY_MS - 1;
+      expect(await cached.discoveryResults()).toEqual({ found: [], scannedAt: 1_000_000 });
+      expect(await cached.discoveryResults()).toEqual({ found: [], scannedAt: 1_000_000 });
+      expect(scan).toHaveBeenCalledTimes(1);
+    });
+
+    it("expires an empty answer after the TTL", async () => {
+      scan.mockResolvedValue({ found: [] });
+      await cached.scanDiscovery();
+      clock += DAY_MS;
+      expect(await cached.discoveryResults()).toEqual({ found: [] });
+    });
+
+    it("drops an empty answer when the scan ports or folders change", async () => {
+      scan.mockResolvedValue({ found: [] });
+      await cached.scanDiscovery();
+      await cached.updateDiscoverySettings({ extraPorts: [9001, 9000] });
+      expect(await cached.discoveryResults()).toEqual({ found: [] });
+      await cached.scanDiscovery();
+      expect(await cached.discoveryResults()).toEqual({ found: [], scannedAt: clock });
+      // The same ports in another order are the same scope.
+      await cached.updateDiscoverySettings({ extraPorts: [9000, 9001] });
+      expect(await cached.discoveryResults()).toEqual({ found: [], scannedAt: clock });
+    });
+
+    it("keeps an incomplete empty scan visible instead of treating it as confirmed empty", async () => {
+      scan.mockResolvedValue({ found: [], incomplete: true });
+      await cached.scanDiscovery();
+      expect(await cached.discoveryResults()).toEqual({
+        found: [],
+        incomplete: true,
+        scannedAt: 1_000_000,
+      });
+    });
+
+    it("caches nothing when the scan fails, so the error stays visible", async () => {
+      scan.mockRejectedValue(new Error("scan failed"));
+      await expect(cached.scanDiscovery()).rejects.toThrow("scan failed");
+      expect(await cached.discoveryResults()).toEqual({ found: [] });
+    });
+
+    it("always runs an explicit scan and replaces the cached answer", async () => {
+      const candidate = { id: "env:OPENAI_API_KEY", label: "OpenAI", kind: "api_key" as const };
+      scan.mockResolvedValueOnce({ found: [] }).mockResolvedValueOnce({ found: [candidate] });
+      await cached.scanDiscovery();
+      clock += 1_000;
+      expect(await cached.scanDiscovery()).toEqual({ found: [candidate], scannedAt: clock });
+      expect(scan).toHaveBeenCalledTimes(2);
+      expect(await cached.discoveryResults()).toEqual({ found: [candidate], scannedAt: clock });
+    });
   });
   it("coalesces scans and retains partial results after cancellation", async () => {
     const candidate = { id: "model:partial", label: "Partial model", kind: "model_file" as const };
@@ -141,9 +286,13 @@ describe("DecisionModelsService without sources", () => {
       await vi.waitFor(() => expect(scan).toHaveBeenCalledTimes(1));
       expect(service.cancelDiscovery()).toEqual({ cancelled: true });
       expect(service.cancelDiscovery()).toEqual({ cancelled: false });
-      expect(await first).toEqual({ found: [candidate], incomplete: true });
+      expect(await first).toEqual({
+        found: [candidate],
+        incomplete: true,
+        scannedAt: expect.any(Number),
+      });
       expect(await second).toEqual(await first);
-      expect(service.discoveryResults()).toEqual(await first);
+      expect(await service.discoveryResults()).toEqual(await first);
     } finally {
       scan.mockRestore();
     }
@@ -326,7 +475,6 @@ describe("DecisionModelsService damaged settings", () => {
     const path = join(directory, "config.json");
     writeFileSync(path, "{broken");
 
-    expect(await service.listSources()).toEqual([]);
     await expect(service.addSource(localClef)).rejects.toThrow(
       "Decision model settings are damaged",
     );
@@ -336,6 +484,27 @@ describe("DecisionModelsService damaged settings", () => {
 
     expect(readFileSync(path, "utf8")).toBe("{broken");
     expect(secrets.values.size).toBe(0);
+  });
+
+  it("reports damage on settings reads instead of showing an empty default config", async () => {
+    writeFileSync(join(directory, "config.json"), "{broken");
+
+    await expect(service.listSources()).rejects.toBeInstanceOf(DecisionConfigDamagedError);
+    await expect(service.getRouting()).rejects.toBeInstanceOf(DecisionConfigDamagedError);
+    await expect(service.discoverySettings()).rejects.toBeInstanceOf(DecisionConfigDamagedError);
+    await expect(service.getFirstRun()).rejects.toBeInstanceOf(DecisionConfigDamagedError);
+    await expect(service.testSource("src-1")).rejects.toBeInstanceOf(DecisionConfigDamagedError);
+  });
+
+  it("answers decide with config_damaged for every question, not a silent unavailable", async () => {
+    writeFileSync(join(directory, "config.json"), "{broken");
+
+    const result = await service.decide(request);
+
+    expect(Object.values(result.answers)).toEqual(
+      Object.keys(request.questions).map(() => ({ error: "config_damaged" })),
+    );
+    expect(result.sourceChain).toEqual([]);
   });
 });
 

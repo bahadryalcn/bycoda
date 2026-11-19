@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { listHostSkillCandidatesAsync, skillMatchesProvider } from "./skills";
 import { skillInvocationTokens } from "../../src/features/skills/model/skillTokens";
 import { SKILL_INVOCATION_GUIDANCE } from "../../src/integrations/harness/core/skillGuidance";
-import { readSkillPolicy } from "./skill-policy";
+import { readSkillPolicyAsync } from "./skill-policy";
 import {
   extractChatCitations,
   projectChatCitationsForProvider,
@@ -33,7 +33,7 @@ export async function prepareHostSkillPrompt(
   // invocations. Strip their markers before policy/token discovery and append
   // their readable provider projection only after genuine owner skills expand.
   text = prose;
-  let policy = readSkillPolicy(home);
+  let policy = await readSkillPolicyAsync(home);
   let native = reportedSkillRestrictions(getReportedCommands(sessionId));
   assertSkillInvocationsEnabled(text, policy);
   assertSkillInvocationsEnabled(text, native);
@@ -42,7 +42,7 @@ export async function prepareHostSkillPrompt(
   const inventory = await listHostSkillCandidatesAsync(cwd, home);
   if (inventory.truncated)
     throw new Error("Skill discovery is incomplete; prompt preparation refused.");
-  policy = readSkillPolicy(home);
+  policy = await readSkillPolicyAsync(home);
   native = reportedSkillRestrictions(getReportedCommands(sessionId));
   assertSkillInvocationsEnabled(text, policy);
   assertSkillInvocationsEnabled(text, native);
@@ -82,19 +82,19 @@ export async function prepareHostSkillPrompt(
   const blocks = await Promise.all(
     picked.map(async (skill) => {
       try {
-        const assertCurrent = () => {
-          const current = readSkillPolicy(home);
+        const assertCurrent = async () => {
+          const current = await readSkillPolicyAsync(home);
           const reported = reportedSkillRestrictions(getReportedCommands(sessionId));
           if (skillDisabled(current, skill) || skillDisabled(reported, skill))
             throw new Error("Skill policy changed while preparing the prompt.");
         };
-        assertCurrent();
+        await assertCurrent();
         const file = await open(skill.path, "r");
         let body: string;
         try {
           const size = (await file.stat()).size;
           if (size > 2 * 1024 * 1024) throw new Error("Skill exceeds 2 MiB");
-          assertCurrent();
+          await assertCurrent();
           const buffer = Buffer.alloc(size + 1);
           const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
           if (bytesRead > size) throw new Error("Skill changed while reading");
@@ -108,7 +108,7 @@ export async function prepareHostSkillPrompt(
       }
     }),
   );
-  const finalPolicy = readSkillPolicy(home);
+  const finalPolicy = await readSkillPolicyAsync(home);
   const finalNative = reportedSkillRestrictions(getReportedCommands(sessionId));
   assertSkillInvocationsEnabled(text, finalPolicy);
   assertSkillInvocationsEnabled(text, finalNative);

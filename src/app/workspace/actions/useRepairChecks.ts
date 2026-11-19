@@ -7,6 +7,7 @@ import { isPreparingHandoff } from "../../../features/sessions/model/handoff";
 import { sameProjectPath } from "../../../features/projects/model/recents";
 import { type InboxItem } from "../../../features/inbox/model/githubTasks";
 import type { CiRepairRequest } from "../../../features/inbox/model/ciRepair";
+import { CiRepairStartError } from "../../../features/inbox/model/ciRepairError";
 import { trackCiRepair } from "../../../features/inbox/model/ciRepairTracking";
 import { type SidebarTabId } from "../../../features/settings/model/appearance";
 import type { useSubmitSession } from "../sessions/submit/useSubmitSession";
@@ -46,7 +47,8 @@ export function useRepairChecks(deps: RepairChecksDeps): {
   const onRepairChecks = useCallback(
     async (item: InboxItem, request: CiRepairRequest, sessionId?: string) => {
       const cwd = item.projectPath;
-      if (!cwd) throw new Error("Choose a local project for this PR first.");
+      if (!cwd)
+        throw new CiRepairStartError("projectRequired", "Choose a local project for this PR first.");
       let session = sessionId ? await ensureOpenSession(sessionId) : undefined;
       if (
         sessionId &&
@@ -55,10 +57,13 @@ export function useRepairChecks(deps: RepairChecksDeps): {
           session.orchestrationLeadId ||
           !sameProjectPath(session.cwd, cwd))
       ) {
-        throw new Error("Choose a chat from this project.");
+        throw new CiRepairStartError("chatMismatch", "Choose a chat from this project.");
       }
       if (session && (session.busy || session.pendingSwitch || isPreparingHandoff(session))) {
-        throw new Error("This chat is busy. Choose another chat or start a new one.");
+        throw new CiRepairStartError(
+          "chatBusy",
+          "This chat is busy. Choose another chat or start a new one.",
+        );
       }
       if (!session) {
         session = {

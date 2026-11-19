@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import type {
   Block,
   HarnessId,
@@ -329,7 +330,7 @@ function captureNativeSessionClaim(
   return claim;
 }
 function isClaimHeld(error: unknown): boolean {
-  return (error instanceof Error ? error.message : String(error)) === "CANONICAL_CLAIM_HELD";
+  return (errorText(error)) === "CANONICAL_CLAIM_HELD";
 }
 /** Another window asked for this window's writer; only an idle one is handed over. */
 async function releaseWriterForHandoff(sessionId: string): Promise<boolean> {
@@ -1406,8 +1407,27 @@ export async function refreshHarnessCatalogs(
   ids: Iterable<HarnessId>,
   options?: { force?: boolean },
 ): Promise<void> {
+  // Routine callers fire and forget; failures are visible through the refresh
+  // receipt (`refreshHarnessCatalogsStrict`), so only log them here.
+  await refreshHarnessCatalogsStrict(ids, options).catch((error: unknown) => {
+    console.debug("[bycoda] catalog refresh", error);
+  });
+}
+
+/**
+ * Like `refreshHarnessCatalogs`, but rejects when a probe failed or listed no models
+ * (the previous list is kept either way). Resolves with the harnesses that were
+ * actually probed, so a caller can tell a skipped live catalog from a verified one.
+ * Several failures reject with an `AggregateError`.
+ */
+export async function refreshHarnessCatalogsStrict(
+  ids: Iterable<HarnessId>,
+  options?: { force?: boolean },
+): Promise<Set<HarnessId>> {
   const wanted = new Set(ids);
-  if (wanted.size === 0) return;
+  const probed = new Set<HarnessId>();
+  if (wanted.size === 0) return probed;
+  const failures: unknown[] = [];
   await Promise.all(
     [...adapters.values()]
       .filter((adapter) => wanted.has(adapter.id))
@@ -1416,11 +1436,19 @@ export async function refreshHarnessCatalogs(
         // `force` marks an explicit user action (opening the model dropdown);
         // routine refreshes keep skipping adapters with a live catalog.
         if (!options?.force && hasLiveCatalog(adapter.id)) return;
-        await adapter.refreshCatalog().catch((error: unknown) => {
-          console.debug(`[bycoda] ${adapter.id} catalog`, error);
-        });
+        try {
+          await adapter.refreshCatalog();
+          probed.add(adapter.id);
+        } catch (error: unknown) {
+          failures.push(error);
+        }
       }),
   );
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) {
+    throw new AggregateError(failures, "Several model catalogs could not be refreshed.");
+  }
+  return probed;
 }
 
 export async function generateHarnessTitle(

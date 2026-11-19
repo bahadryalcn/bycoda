@@ -77,4 +77,20 @@ describe("session folder picker", () => {
       name: "Launch work",
     });
   });
+
+  it("closes from the shared picker close control and bounds the list to the standard height", () => {
+    const onDismiss = vi.fn();
+    act(() =>
+      root.render(
+        createElement(SessionFolderPicker, {
+          folders: [],
+          onPick: vi.fn(),
+          onDismiss,
+        }),
+      ),
+    );
+    expect(container.querySelector('[data-list-height="standard"]')).not.toBeNull();
+    act(() => container.querySelector<HTMLButtonElement>('button[aria-label="Cancel"]')!.click());
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
 });

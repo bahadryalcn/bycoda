@@ -18,6 +18,15 @@ export const WS_LIMITS = Object.freeze({
   maxReadJobsPerDevice: 64,
   maxControlJobs: 64,
   maxControlJobsPerDevice: 8,
+  /** Probe, cancel and the other non-subscription controls one socket may have in flight. */
+  maxControlRequestsPerSocket: 8,
+  /**
+   * Subscription open, ack and close have their own lane per socket: running slots, then a FIFO
+   * queue for a burst (reconnect reopens every stream and acks every applied event). Roughly twice
+   * `maxSubscriptionsPerSocket` fits a full reopen plus its first acks; only a full queue refuses.
+   */
+  maxSubscriptionControlsPerSocket: 32,
+  maxQueuedSubscriptionControlsPerSocket: 96,
   handshakeTimeoutMs: 5_000,
   maxSubscriptionsPerSocket: 64,
   maxSubscriptionsPerHost: 512,

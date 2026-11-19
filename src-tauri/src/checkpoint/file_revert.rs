@@ -14,10 +14,26 @@ const FOREIGN: &str = "The file changed after this session last wrote it.";
 struct Journal {
     cwd: String,
     turns: Vec<FileTurn>,
-    #[serde(default)]
+    // Legacy: older builds kept the reusable-baseline inventory here. It now lives in
+    // `BaselineStamps`; these are read once for migration and never written back.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     cached_baseline: BTreeMap<String, SnapshotKind>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     cached_stamps: BTreeMap<String, String>,
+}
+
+/// Per-file baseline kinds and stamps of the latest scan, kept beside the journal so
+/// provider/prepare/capture saves do not rewrite 100k-entry maps. It doubles as the
+/// reusable-baseline inventory of the next send and describes `files-baseline` bytes.
+#[derive(Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BaselineStamps {
+    cwd: String,
+    /// Turn whose scan produced the maps; an active turn only trusts its own.
+    turn: String,
+    baseline: BTreeMap<String, SnapshotKind>,
+    stamps: BTreeMap<String, String>,
+    skipped_stamps: BTreeMap<String, String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -28,14 +44,18 @@ struct FileTurn {
     active: bool,
     unavailable: Option<String>,
     files: BTreeMap<String, Pair>,
-    #[serde(default)]
+    // The three maps below are only populated by legacy journals; new active turns set
+    // `baseline_in_sidecar` and read them from `BaselineStamps`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     baseline: BTreeMap<String, SnapshotKind>,
     #[serde(default)]
     baseline_complete: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     baseline_stamps: BTreeMap<String, String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     baseline_skipped_stamps: BTreeMap<String, String>,
+    #[serde(default)]
+    baseline_in_sidecar: bool,
     #[serde(default)]
     bytes: Option<u64>,
     #[serde(default)]
@@ -103,15 +123,89 @@ fn load(dir: &Path) -> Result<Option<Journal>, String> {
     }
 }
 
-fn save(dir: &Path, journal: &Journal) -> Result<(), String> {
+/// Writes `bytes` to `target` through a synced temp file so a crash leaves either the
+/// old or the new content, never a torn or empty file.
+fn write_synced(dir: &Path, target: &Path, bytes: &[u8]) -> Result<(), String> {
+    use std::io::Write;
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let tmp = dir.join(format!("files-history-{}.tmp", uuid::Uuid::new_v4()));
-    std::fs::write(
-        &tmp,
-        serde_json::to_vec(journal).map_err(|e| e.to_string())?,
+    let written = std::fs::File::create(&tmp).and_then(|mut file| {
+        file.write_all(bytes)?;
+        file.sync_all()
+    });
+    if let Err(error) = written {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(error.to_string());
+    }
+    std::fs::rename(&tmp, target).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp);
+        e.to_string()
+    })
+}
+
+fn save(dir: &Path, journal: &Journal) -> Result<(), String> {
+    write_synced(
+        dir,
+        &journal_path(dir),
+        &serde_json::to_vec(journal).map_err(|e| e.to_string())?,
     )
-    .map_err(|e| e.to_string())?;
-    std::fs::rename(tmp, journal_path(dir)).map_err(|e| e.to_string())
+}
+
+fn stamps_path(dir: &Path) -> PathBuf {
+    dir.join("files-baseline-stamps.json")
+}
+
+/// A missing or unreadable sidecar is "no trusted inventory", never an error: callers
+/// fall back to a full recopy or mark the active turn unavailable.
+fn load_stamps(dir: &Path) -> Option<BaselineStamps> {
+    serde_json::from_slice(&std::fs::read(stamps_path(dir)).ok()?).ok()
+}
+
+fn save_stamps(dir: &Path, stamps: &BaselineStamps) -> Result<(), String> {
+    write_synced(
+        dir,
+        &stamps_path(dir),
+        &serde_json::to_vec(stamps).map_err(|e| e.to_string())?,
+    )
+}
+
+/// Invalidates the inventory on disk. Do this before touching any cached bytes.
+fn remove_stamps(dir: &Path) -> Result<(), String> {
+    match std::fs::remove_file(stamps_path(dir)) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+/// Baseline kinds of an active turn: the legacy in-journal map, or the sidecar written by
+/// that same turn's scan. `None` means the baseline was lost; callers must fail closed.
+fn active_baseline(dir: &Path, turn: &FileTurn) -> Option<BTreeMap<String, SnapshotKind>> {
+    if !turn.baseline_in_sidecar {
+        return Some(turn.baseline.clone());
+    }
+    load_stamps(dir)
+        .filter(|saved| saved.turn == turn.id)
+        .map(|saved| saved.baseline)
+}
+
+/// Moves an active turn's maps from the sidecar into memory (finish only). A lost
+/// sidecar settles the turn as unavailable instead of treating every file as new.
+fn hydrate_turn(dir: &Path, turn: &mut FileTurn) {
+    if !turn.baseline_in_sidecar {
+        return;
+    }
+    match load_stamps(dir).filter(|saved| saved.turn == turn.id) {
+        Some(saved) => {
+            turn.baseline = saved.baseline;
+            turn.baseline_stamps = saved.stamps;
+            turn.baseline_skipped_stamps = saved.skipped_stamps;
+        }
+        None => {
+            turn.unavailable
+                .get_or_insert_with(|| "The file baseline of this turn was lost.".into());
+        }
+    }
 }
 
 fn turn_dir(dir: &Path, id: &str) -> Result<PathBuf, String> {
@@ -237,10 +331,13 @@ pub(super) fn drop_baseline_cache(dir: &Path) -> Result<u64, String> {
         }
         // Invalidate the inventory first: a crash must never leave stamps that
         // describe bytes which are gone.
-        journal.cached_baseline.clear();
-        journal.cached_stamps.clear();
-        save(dir, &journal)?;
+        if !journal.cached_baseline.is_empty() || !journal.cached_stamps.is_empty() {
+            journal.cached_baseline.clear();
+            journal.cached_stamps.clear();
+            save(dir, &journal)?;
+        }
     }
+    remove_stamps(dir)?;
     let freed = disk_bytes(&baseline);
     std::fs::remove_dir_all(&baseline).map_err(|e| e.to_string())?;
     Ok(freed)
@@ -401,6 +498,9 @@ impl CheckpointStore {
             }
             turn.active = false;
             turn.baseline.clear();
+            turn.baseline_stamps.clear();
+            turn.baseline_skipped_stamps.clear();
+            turn.baseline_in_sidecar = false;
             turn.unavailable =
                 Some("This turn was interrupted before its file history settled.".into());
             let _ = turn::leases::release(&self.leases, session, &turn.id);
@@ -411,15 +511,29 @@ impl CheckpointStore {
         // This observation lease never denies or delays admission. Overlap only limits attribution.
         turn::leases::publish(&self.leases, session, id, cwd)?;
         let baseline_dir = dir.join("files-baseline");
-        let cached_baseline = std::mem::take(&mut journal.cached_baseline);
-        let cached_stamps = std::mem::take(&mut journal.cached_stamps);
+        // The inventory is the sidecar of the last scan, or the legacy journal fields
+        // of an older build. Only a sidecar of this checkout is trusted.
+        let legacy_baseline = std::mem::take(&mut journal.cached_baseline);
+        let legacy_stamps = std::mem::take(&mut journal.cached_stamps);
+        let migrating = !legacy_baseline.is_empty() || !legacy_stamps.is_empty();
+        let (cached_baseline, cached_stamps) = match load_stamps(&dir)
+            .filter(|saved| same_cwd(&saved.cwd, cwd))
+        {
+            Some(saved) => (saved.baseline, saved.stamps),
+            None => (legacy_baseline, legacy_stamps),
+        };
         if cached_baseline.is_empty() && baseline_dir.exists() {
             // Legacy/crash-invalidated caches have no trusted inventory.
             std::fs::remove_dir_all(&baseline_dir).map_err(|e| e.to_string())?;
         }
         // Invalidate on disk before touching any cached bytes. A crash during
-        // refresh must never associate old stamps with partially copied files.
-        save(&dir, &journal)?;
+        // refresh must never associate old stamps with partially copied files. The
+        // journal is rewritten only to drop a legacy inventory; otherwise removing
+        // the sidecar is the whole invalidation and the journal is saved once, below.
+        remove_stamps(&dir)?;
+        if migrating {
+            save(&dir, &journal)?;
+        }
         let mut turn = FileTurn {
             id: id.into(),
             user_block_id: user_block_id.into(),
@@ -430,6 +544,7 @@ impl CheckpointStore {
             baseline_complete: false,
             baseline_stamps: BTreeMap::new(),
             baseline_skipped_stamps: BTreeMap::new(),
+            baseline_in_sidecar: false,
             bytes: Some(0),
             provider_calls: BTreeSet::new(),
         };
@@ -503,8 +618,21 @@ impl CheckpointStore {
                         remove_cached_file(&baseline_dir, path)?;
                     }
                 }
-                journal.cached_baseline = turn.baseline.clone();
-                journal.cached_stamps = turn.baseline_stamps.clone();
+                // The scan's maps are stored once, outside the journal. They are the
+                // reusable inventory of the next send and this turn's baseline. Written
+                // before the journal: a crash in between leaves a valid inventory for
+                // the copied bytes and no turn that claims it.
+                save_stamps(
+                    &dir,
+                    &BaselineStamps {
+                        cwd: journal.cwd.clone(),
+                        turn: id.into(),
+                        baseline: std::mem::take(&mut turn.baseline),
+                        stamps: std::mem::take(&mut turn.baseline_stamps),
+                        skipped_stamps: std::mem::take(&mut turn.baseline_skipped_stamps),
+                    },
+                )?;
+                turn.baseline_in_sidecar = true;
             }
             Err(error) => {
                 turn.unavailable = Some(format!("File baseline could not be captured: {error}"))
@@ -532,6 +660,9 @@ impl CheckpointStore {
         let root = PathBuf::from(&journal.cwd);
         let baseline_dir = dir.join("files-baseline");
         let shared = turn::leases::shared(&self.leases, session, id)? || interrupted;
+        if !shared && turn.unavailable.is_none() {
+            hydrate_turn(&dir, turn);
+        }
         if !shared && turn.unavailable.is_none() {
             // A failed listing must not leave the turn recording forever: the
             // turn settles with its history marked unavailable instead.
@@ -625,6 +756,7 @@ impl CheckpointStore {
         turn.baseline.clear();
         turn.baseline_stamps.clear();
         turn.baseline_skipped_stamps.clear();
+        turn.baseline_in_sidecar = false;
         turn.bytes = Some(disk_bytes(&turn_dir(&dir, id)?));
         prune(&dir, &mut journal, HISTORY_BYTES)?;
         save(&dir, &journal)?;
@@ -884,6 +1016,8 @@ fn capture_provider_changes(
         }
     };
     let history = turn_dir(dir, &turn.id)?;
+    // Read once per batch; `None` (lost baseline) makes every add ambiguous below.
+    let baseline = active_baseline(dir, turn);
     for (path, change) in changes {
         let contents = FileState::Contents(change.contents.as_bytes().to_vec());
         let (before, after, before_kind, after_kind) = if change.kind == "update" {
@@ -926,9 +1060,9 @@ fn capture_provider_changes(
                 SnapshotKind::Contents,
             )
         };
-        let baseline_kind = turn
-            .baseline
-            .get(&path)
+        let baseline_kind = baseline
+            .as_ref()
+            .and_then(|kinds| kinds.get(&path))
             .copied()
             .unwrap_or(SnapshotKind::Missing);
         // Codex AddFile can overwrite an existing file. Its new contents alone
@@ -941,7 +1075,8 @@ fn capture_provider_changes(
             .is_some_and(|pair| pair.provider_after && pair.after == Some(SnapshotKind::Missing));
         let ambiguous_add = change.kind == "add"
             && !proven_deletion
-            && (baseline_kind != SnapshotKind::Missing
+            && (baseline.is_none()
+                || baseline_kind != SnapshotKind::Missing
                 || !turn.baseline_complete
                 || add_path_excluded(root, &path));
         let before_mode = if change.kind == "update" {
@@ -2387,5 +2522,109 @@ mod tests {
         assert!(result.reverted.is_empty());
         assert_eq!(result.skipped.len(), 1);
         assert_eq!(std::fs::read_to_string(outside).unwrap(), "owned\n");
+    }
+
+    #[test]
+    fn checkpoint_files_baseline_stamps_are_stored_once_outside_the_journal() {
+        let f = Fixture::new(false);
+        f.begin("session", "one");
+        let dir = f.store.session_dir("session");
+        let journal = load(&dir).unwrap().unwrap();
+        let turn = &journal.turns[0];
+        assert!(turn.baseline_in_sidecar);
+        assert!(turn.baseline.is_empty() && turn.baseline_stamps.is_empty());
+        assert!(journal.cached_baseline.is_empty() && journal.cached_stamps.is_empty());
+        // The journal rewritten by every prepare/capture/provider save stays small.
+        let raw = std::fs::read_to_string(journal_path(&dir)).unwrap();
+        assert!(!raw.contains("a.txt") && !raw.contains("cachedStamps"));
+        let saved = load_stamps(&dir).unwrap();
+        assert_eq!(saved.turn, "one");
+        assert!(saved.baseline.contains_key("a.txt") && saved.stamps.contains_key("a.txt"));
+        f.finish("session", "one");
+        // The inventory outlives the turn so the next send can reuse the copied bytes.
+        assert!(load_stamps(&dir).is_some());
+        assert!(!load(&dir).unwrap().unwrap().turns[0].baseline_in_sidecar);
+    }
+
+    #[test]
+    fn checkpoint_files_revert_reused_baseline_keeps_pre_existing_change() {
+        let f = Fixture::new(false);
+        f.write("a.txt", "dirty before first send\n");
+        f.write("b.txt", "stable\n");
+        f.begin("session", "one");
+        f.write("a.txt", "one\n");
+        f.finish("session", "one");
+        // The second send reuses b.txt from the stored inventory.
+        f.begin("session", "two");
+        f.write("a.txt", "two\n");
+        f.finish("session", "two");
+        let result = f.store.files_revert("session", "message-two").unwrap();
+        assert_eq!(result.reverted, ["a.txt"]);
+        assert_eq!(f.read("a.txt"), "one\n");
+        let result = f.store.files_revert("session", "message-one").unwrap();
+        assert_eq!(result.reverted, ["a.txt"]);
+        assert_eq!(f.read("a.txt"), "dirty before first send\n");
+        assert_eq!(f.read("b.txt"), "stable\n");
+    }
+
+    #[test]
+    fn checkpoint_files_lost_baseline_stamps_fail_closed_and_recover_next_send() {
+        let f = Fixture::new(false);
+        f.begin("session", "one");
+        let dir = f.store.session_dir("session");
+        remove_stamps(&dir).unwrap();
+        f.write("a.txt", "changed\n");
+        f.finish("session", "one");
+        // Without its baseline the turn must not guess that every file is new.
+        let journal = load(&dir).unwrap().unwrap();
+        assert!(journal.turns[0].unavailable.is_some());
+        assert!(journal.turns[0].files.is_empty());
+        // No trusted inventory: the next send recopies the baseline and records normally.
+        f.begin("session", "two");
+        f.write("a.txt", "two\n");
+        f.finish("session", "two");
+        assert!(f
+            .store
+            .files_revert_plan("session", "message-two")
+            .unwrap()
+            .unavailable
+            .is_none());
+        assert_eq!(
+            f.store
+                .files_revert("session", "message-two")
+                .unwrap()
+                .reverted,
+            ["a.txt"]
+        );
+        assert_eq!(f.read("a.txt"), "changed\n");
+    }
+
+    #[test]
+    fn checkpoint_files_legacy_journal_inventory_is_migrated_out_of_the_journal() {
+        let f = Fixture::new(false);
+        f.begin("session", "one");
+        f.finish("session", "one");
+        let dir = f.store.session_dir("session");
+        let mut journal = load(&dir).unwrap().unwrap();
+        journal
+            .cached_baseline
+            .insert("a.txt".into(), SnapshotKind::Contents);
+        journal.cached_stamps.insert("a.txt".into(), "legacy".into());
+        save(&dir, &journal).unwrap();
+        remove_stamps(&dir).unwrap();
+        f.begin("session", "two");
+        let journal = load(&dir).unwrap().unwrap();
+        assert!(journal.cached_baseline.is_empty() && journal.cached_stamps.is_empty());
+        assert!(load_stamps(&dir).is_some_and(|saved| saved.turn == "two"));
+        f.write("a.txt", "two\n");
+        f.finish("session", "two");
+        assert_eq!(
+            f.store
+                .files_revert("session", "message-two")
+                .unwrap()
+                .reverted,
+            ["a.txt"]
+        );
+        assert_eq!(f.read("a.txt"), "base\n");
     }
 }

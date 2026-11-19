@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::sync::Mutex;
+use std::sync::{Condvar, Mutex, PoisonError};
 use std::time::Duration;
 
 use rusqlite::{params, Connection};
@@ -85,11 +85,54 @@ pub struct OpenReminder {
     window_label: Option<String>,
 }
 
+/// Sleeps the delivery thread until the next schedule change, preference change
+/// or computed due time. A generation counter keeps a signal sent between the
+/// thread's snapshot and its wait from being lost.
+#[derive(Default)]
+struct Wake {
+    generation: Mutex<u64>,
+    changed: Condvar,
+}
+
+impl Wake {
+    fn notify(&self) {
+        let mut generation = self.generation.lock().unwrap_or_else(PoisonError::into_inner);
+        *generation = generation.wrapping_add(1);
+        self.changed.notify_all();
+    }
+
+    fn current(&self) -> u64 {
+        *self.generation.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Returns at once if `seen` is stale; otherwise waits for a notify or the timeout.
+    /// `None` waits until notified.
+    fn wait(&self, seen: u64, timeout: Option<Duration>) {
+        let guard = self.generation.lock().unwrap_or_else(PoisonError::into_inner);
+        let _guard = match timeout {
+            Some(timeout) => {
+                match self
+                    .changed
+                    .wait_timeout_while(guard, timeout, |generation| *generation == seen)
+                {
+                    Ok((guard, _)) => guard,
+                    Err(error) => error.into_inner().0,
+                }
+            }
+            None => self
+                .changed
+                .wait_while(guard, |generation| *generation == seen)
+                .unwrap_or_else(PoisonError::into_inner),
+        };
+    }
+}
+
 #[derive(Default)]
 pub struct ReminderService {
     preferences: Mutex<Option<DeliveryPreferences>>,
     pending_open: Mutex<std::collections::VecDeque<OpenReminder>>,
     window_sessions: Mutex<HashMap<String, Vec<String>>>,
+    wake: Wake,
 }
 
 impl ReminderService {
@@ -159,23 +202,72 @@ pub(crate) fn ensure_table(conn: &Connection) -> rusqlite::Result<()> {
     )
 }
 
+const REMINDER_ROWS: &str = "SELECT r.session_id, r.due_at, r.fired_at, s.title, s.harness, s.cwd
+     FROM session_reminders r JOIN sessions s ON s.id = r.session_id";
+
+fn reminder_from_row(row: &rusqlite::Row) -> rusqlite::Result<Reminder> {
+    Ok(Reminder {
+        session_id: row.get(0)?,
+        due_at: row.get(1)?,
+        fired_at: row.get(2)?,
+        title: row.get(3)?,
+        harness: row.get(4)?,
+        cwd: row.get(5)?,
+    })
+}
+
 fn list(conn: &Connection) -> rusqlite::Result<Vec<Reminder>> {
-    let mut statement = conn.prepare(
-        "SELECT r.session_id, r.due_at, r.fired_at, s.title, s.harness, s.cwd
-         FROM session_reminders r JOIN sessions s ON s.id = r.session_id
-         ORDER BY r.due_at, r.session_id",
-    )?;
-    let rows = statement.query_map([], |row| {
-        Ok(Reminder {
-            session_id: row.get(0)?,
-            due_at: row.get(1)?,
-            fired_at: row.get(2)?,
-            title: row.get(3)?,
-            harness: row.get(4)?,
-            cwd: row.get(5)?,
-        })
-    })?;
+    let mut statement =
+        conn.prepare(&format!("{REMINDER_ROWS} ORDER BY r.due_at, r.session_id"))?;
+    let rows = statement.query_map([], reminder_from_row)?;
     rows.collect()
+}
+
+/// Only pending rows that are due at `now`; the ticker never reads the rest.
+fn list_due(conn: &Connection, now: i64) -> rusqlite::Result<Vec<Reminder>> {
+    let mut statement = conn.prepare(&format!(
+        "{REMINDER_ROWS} WHERE r.fired_at IS NULL AND r.due_at <= ?1
+         ORDER BY r.due_at, r.session_id"
+    ))?;
+    let rows = statement.query_map([now], reminder_from_row)?;
+    rows.collect()
+}
+
+/// Earliest pending due time among the sessions the preferences make claimable.
+/// Read-only, using the `session_id` primary key, one lookup per claimable session.
+fn next_due<'a>(
+    conn: &Connection,
+    claimable: impl Iterator<Item = &'a str>,
+) -> rusqlite::Result<Option<i64>> {
+    let mut statement = conn.prepare(
+        "SELECT MIN(due_at) FROM session_reminders WHERE session_id = ?1 AND fired_at IS NULL",
+    )?;
+    let mut earliest: Option<i64> = None;
+    for session_id in claimable {
+        let due_at: Option<i64> = statement.query_row([session_id], |row| row.get(0))?;
+        earliest = match (earliest, due_at) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        };
+    }
+    Ok(earliest)
+}
+
+/// Retry cadence while a due reminder could not be claimed (closed gate or
+/// failure). Also the wait after an error.
+const RETRY_DELAY: Duration = Duration::from_secs(5);
+/// Upper bound for one sleep, so a wall-clock change, which a monotonic timer
+/// cannot see, is noticed within a minute.
+const MAX_SLEEP: Duration = Duration::from_secs(60);
+
+/// `None` means no claimable pending reminder: sleep until a schedule or
+/// preference signal instead of polling.
+fn sleep_until(next_due: Option<i64>, now: i64) -> Option<Duration> {
+    let due_at = next_due?;
+    if due_at <= now {
+        return Some(RETRY_DELAY);
+    }
+    Some(Duration::from_millis((due_at - now) as u64).min(MAX_SLEEP))
 }
 
 fn set(conn: &mut Connection, ids: &[String], due_at: i64, now: i64) -> Result<(), String> {
@@ -232,16 +324,18 @@ fn take_due(
     now: i64,
     is_ready: impl Fn(&Reminder) -> bool,
 ) -> rusqlite::Result<Vec<Reminder>> {
-    let tx = conn.transaction()?;
-    let due = list(&tx)?
+    let due = list_due(conn, now)?
         .into_iter()
-        .filter(|reminder| {
-            reminder.due_at <= now && reminder.fired_at.is_none() && is_ready(reminder)
-        })
+        .filter(|reminder| is_ready(reminder))
         .collect::<Vec<_>>();
+    if due.is_empty() {
+        return Ok(due);
+    }
+    let tx = conn.transaction()?;
     for reminder in &due {
         tx.execute(
-            "UPDATE session_reminders SET fired_at = ?1 WHERE session_id = ?2",
+            "UPDATE session_reminders SET fired_at = ?1
+             WHERE session_id = ?2 AND fired_at IS NULL AND due_at <= ?1",
             params![now, reminder.session_id],
         )?;
     }
@@ -263,9 +357,11 @@ pub fn reminder_set(
     due_at: i64,
 ) -> Result<(), String> {
     native_window_lifecycle::persistence_write_observed(&window, || {
-        set_with(&store, &session_ids, due_at, now_millis, || {
+        let observed = set_with(&store, &session_ids, due_at, now_millis, || {
             app.emit(CHANGED, ()).map_err(|e| e.to_string())
-        })
+        });
+        app.state::<ReminderService>().wake.notify();
+        observed
     })
 }
 
@@ -278,9 +374,11 @@ pub fn reminder_clear(
     expected_due_at: Option<i64>,
 ) -> Result<(), String> {
     native_window_lifecycle::persistence_write_observed(&window, || {
-        clear_with(&store, &session_ids, expected_due_at, || {
+        let observed = clear_with(&store, &session_ids, expected_due_at, || {
             app.emit(CHANGED, ()).map_err(|e| e.to_string())
-        })
+        });
+        app.state::<ReminderService>().wake.notify();
+        observed
     })
 }
 
@@ -339,6 +437,7 @@ pub fn reminder_configure(
         .preferences
         .lock()
         .map_err(|error| error.to_string())? = Some(preferences);
+    service.wake.notify();
     Ok(())
 }
 
@@ -566,14 +665,17 @@ pub(crate) fn init(app: &AppHandle) {
     app.manage(ReminderService::default());
     let app = app.clone();
     std::thread::spawn(move || loop {
-        std::thread::sleep(Duration::from_secs(5));
-        let preferences = app
-            .state::<ReminderService>()
+        // Read before the snapshot so a schedule or preference change made after
+        // this point makes the wait below return at once.
+        let service = app.state::<ReminderService>();
+        let seen = service.wake.current();
+        let preferences = service
             .preferences
             .lock()
             .ok()
             .and_then(|value| value.clone());
         let Some(preferences) = preferences else {
+            service.wake.wait(seen, None);
             continue;
         };
         let store = app.state::<SessionStore>();
@@ -606,9 +708,24 @@ pub(crate) fn init(app: &AppHandle) {
                 .map(|_| ())
             },
         );
-        if let Err(error) = result {
+        if let Err(error) = &result {
             log::warn!("Could not check reminders: {error}");
         }
+        let next = store.with_read_conn(|conn| {
+            next_due(
+                conn,
+                preferences.project_rules.keys().map(String::as_str),
+            )
+            .map_err(|error| error.to_string())
+        });
+        let sleep = match next {
+            Ok(next) => sleep_until(next, now_millis()),
+            Err(error) => {
+                log::warn!("Could not schedule reminders: {error}");
+                Some(RETRY_DELAY)
+            }
+        };
+        service.wake.wait(seen, sleep);
     });
 }
 
@@ -823,5 +940,76 @@ mod tests {
             assert!(take_due(&mut conn, 1000, |_| true).unwrap().is_empty());
         }
         std::fs::remove_dir_all(path).unwrap();
+    }
+
+    #[test]
+    fn next_due_is_earliest_pending_claimable_row_and_moves_past_claims() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let mut conn = store.lock_conn().unwrap();
+        seed(&conn, "early", "/one");
+        seed(&conn, "late", "/two");
+        seed(&conn, "unclaimable", "/three");
+        set(&mut conn, &["late".into()], 400, 100).unwrap();
+        set(&mut conn, &["early".into()], 200, 100).unwrap();
+        set(&mut conn, &["unclaimable".into()], 100, 100).unwrap();
+        let claimable = ["early", "late"];
+        assert_eq!(
+            next_due(&conn, claimable.iter().copied()).unwrap(),
+            Some(200)
+        );
+        assert_eq!(next_due(&conn, std::iter::empty()).unwrap(), None);
+        assert_eq!(
+            take_due(&mut conn, 200, |r| claimable.contains(&r.session_id.as_str()))
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            next_due(&conn, claimable.iter().copied()).unwrap(),
+            Some(400)
+        );
+        clear(&mut conn, &["late".into()], None).unwrap();
+        assert_eq!(next_due(&conn, claimable.iter().copied()).unwrap(), None);
+    }
+
+    #[test]
+    fn take_due_reads_only_due_rows_and_writes_nothing_when_none_are_due() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let mut conn = store.lock_conn().unwrap();
+        seed(&conn, "future", "/one");
+        set(&mut conn, &["future".into()], 500, 100).unwrap();
+        let changes_before = conn.total_changes();
+        assert!(take_due(&mut conn, 499, |_| true).unwrap().is_empty());
+        assert_eq!(conn.total_changes(), changes_before, "no row may be written");
+        assert!(list_due(&conn, 499).unwrap().is_empty());
+        assert_eq!(list_due(&conn, 500).unwrap().len(), 1);
+        assert_eq!(list(&conn).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn sleep_waits_for_next_due_capped_and_retries_stuck_or_failed_ticks() {
+        assert_eq!(sleep_until(None, 100), None);
+        assert_eq!(sleep_until(Some(100), 100), Some(RETRY_DELAY));
+        assert_eq!(sleep_until(Some(50), 100), Some(RETRY_DELAY));
+        assert_eq!(
+            sleep_until(Some(1_100), 100),
+            Some(Duration::from_millis(1_000))
+        );
+        assert_eq!(sleep_until(Some(100 + 3_600_000), 100), Some(MAX_SLEEP));
+    }
+
+    #[test]
+    fn schedule_signal_sent_before_wait_is_not_lost() {
+        let service = ReminderService::default();
+        let seen = service.wake.current();
+        service.wake.notify();
+        let started = std::time::Instant::now();
+        let limit = Duration::from_secs(5);
+        service.wake.wait(seen, Some(limit));
+        assert!(started.elapsed() < limit, "stale generation must not sleep");
+        let current = service.wake.current();
+        let started = std::time::Instant::now();
+        service.wake.wait(current, Some(Duration::from_millis(50)));
+        assert!(started.elapsed() >= Duration::from_millis(50));
     }
 }

@@ -49,6 +49,8 @@ export class AssistantObservationJournal {
       );
       CREATE UNIQUE INDEX IF NOT EXISTS assistant_observation_source_identity
         ON assistant_observation_events(environment_id,source,source_id,source_revision);
+      CREATE INDEX IF NOT EXISTS assistant_observation_expiry
+        ON assistant_observation_events(expires_at,sequence);
       CREATE TABLE IF NOT EXISTS assistant_observation_consumers (
         consumer TEXT NOT NULL, scope TEXT NOT NULL, acknowledged INTEGER NOT NULL,
         offered INTEGER NOT NULL, PRIMARY KEY(consumer,scope)

@@ -98,7 +98,7 @@ or **Talk**. Closing voice never stops coding work.
 
 Cloud voice retries temporary connection failures with fresh credentials: five
 quick attempts (1, 2, 5, 10 and 30 seconds), then once a minute for up to 30
-minutes. It shows **Reconnecting...** with a **Stop** button, and retries at once
+minutes. It shows **Reconnecting…** with a **Stop** button, and retries at once
 when the network comes back. A stable minute restores the quick attempts.
 If the connection dropped before your last request was answered, the assistant
 says so after reconnecting and asks whether to continue instead of repeating it.
@@ -372,7 +372,7 @@ floats, the app shows a **Return voice companion to this window** button in the
 same place.
 
 The floating window offers the same visual, session title, latest line,
-**Start voice**, **Pause mic**/**Resume**, speaker mute, **Silence**, **Disconnect voice** and
+**Start voice**, **Mute microphone** (a toggle: its pressed state is the mute), **Mute speaker** (a toggle), **Stop speaking**, **Disconnect voice** and
 compact/expand actions. Its close button (**Return voice companion to the app**)
 puts the companion back in bycoda and brings the app forward; voice keeps running.
 Use **Disconnect voice** to end the conversation. Drag its visual or empty surface to move it;
@@ -481,7 +481,7 @@ about 0.26 s of clear speech is needed to interrupt it.
 Replies are spoken sentence by sentence: the first sentence plays while the
 provider is still writing the rest. Natural voices play at their own sample rate
 (44.1–48 kHz). The voice model loads on start and stays warm during the connection. Speaking again or choosing
-**Silence** cancels synthesis and scheduled audio. A late response cannot restart
+**Stop speaking** cancels synthesis and scheduled audio. A late response cannot restart
 cancelled playback. The synthesizer is shared between desktop windows; a busy
 window reports that state instead of interrupting another window's voice.
 
@@ -634,7 +634,7 @@ system permission prompt before starting another check.
 camera, screen recording, accessibility, notifications, Full Disk Access) with
 the system's current answer. A permission that is already allowed shows only its
 badge. **Allow** shows the system prompt in place when one exists; if access is
-still missing afterwards, or when the system has no prompt, **Open Settings**
+still missing afterwards, or when the system has no prompt, **Open settings**
 opens a short guide that launches the right settings pane, names the toggle and
 closes itself once the system reports access. On macOS a small card docks to
 System Settings and shows where to add bycoda. Permissions the system does not
@@ -714,7 +714,7 @@ continue while you ask questions. A tracked turn ending can announce its last
 response, without certifying that the work succeeded. Voice has no direct approval
 or publishing action.
 
-**Pause mic** disables actual input tracks. **Silence** stops speech playback.
+**Mute microphone** disables actual input tracks. **Stop speaking** stops speech playback.
 Ask explicitly to stop coding work. Drag the grip or focus it and use arrow keys
 to move the window. Its saved position is clamped to the current viewport. Drag
 it past the app's edge, or choose **Float outside the app**, to move it outside
@@ -982,7 +982,7 @@ accessibility, notifications, camera and Full Disk Access. Each row lists its us
 Opening this page reads status without asking for access. Unknown means bycoda could
 not read the OS answer, not that access is allowed.
 
-Choose **Allow** or **Open Settings** to open the setup guide. Follow the exact OS
+Choose **Allow** or **Open settings** to open the setup guide. Follow the exact OS
 path in the guide; it checks access while open and confirms the OS change. On macOS,
 the helper reveals bycoda in Finder so you can add the running app to the list. A
 screen recording change may still require restarting bycoda if capture fails.

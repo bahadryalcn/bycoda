@@ -16,7 +16,7 @@
 .workspace:not(:has(.work)) {
   grid-template-columns: minmax(0, 1fr);
 }
-@media (max-width: 900px) {
+@container assistant-room (max-width: 900px) {
   .workspace {
     grid-template-columns: minmax(0, 1fr);
     gap: var(--space-6);

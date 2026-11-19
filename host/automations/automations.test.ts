@@ -332,6 +332,19 @@ async function setup(start = at("2026-10-05T08:00:00"), linkedAncestor = false) 
     directory,
   };
 }
+/** Second scheduler over the fixture's store with a short caller wait, so a stalled launch is cheap to observe. */
+function boundedScheduler(f: Awaited<ReturnType<typeof setup>>, launchWaitMs: number) {
+  const scheduler = new HostAutomations(
+    f.store,
+    f.engine,
+    () => f.clock.now,
+    f.workspaces,
+    launchWaitMs,
+  );
+  scheduler.bindTasks(f.tasks);
+  cleanups.push(() => scheduler.close());
+  return scheduler;
+}
 describe("host automations", () => {
   it("defaults writing runs to the current checkout without managed admission", async () => {
     const f = await setup();
@@ -554,6 +567,23 @@ describe("host automations", () => {
       "Automation event identity changed",
     );
   });
+  it("records event rows only for matches and keeps dedupe after the automation is disabled", async () => {
+    const { automations, input, store } = await setup();
+    const trigger = { kind: "event", event: "task.finished" };
+    await automations.save(input({ trigger }));
+    await automations.save(input({ id: "scheduled", name: "Scheduled" }));
+    const event = {
+      id: "task:two:revision:1",
+      kind: "task.finished" as const,
+      projectId: input().projectId,
+    };
+    await automations.recordEvent(event);
+    const rows = await store.db.prepare("SELECT automation_id FROM automation_events").all();
+    expect(rows.map((row) => row.automation_id)).toEqual(["nightly"]);
+    await automations.save(input({ trigger, enabled: false }));
+    await automations.recordEvent(event);
+    expect(await automations.runs("nightly")).toHaveLength(1);
+  });
   it("rejects an automation for an unknown project", async () => {
     const { automations, input } = await setup();
     await expect(
@@ -725,6 +755,83 @@ describe("host automations", () => {
     expect((await automations.list())[0].nextRunAt).toBe(at("2026-10-07T13:00:00"));
     await automations.tick();
     expect(await automations.runs("nightly")).toHaveLength(1);
+  });
+  it("keeps scheduling while one scheduled launch stalls and never fails or replays it", async () => {
+    const f = await setup();
+    const scheduler = boundedScheduler(f, 25);
+    await scheduler.save(f.input({ id: "stalled", name: "Stalled" }));
+    await scheduler.save(f.input({ id: "healthy", name: "Healthy" }));
+    f.clock.now = at("2026-10-05T09:00:10");
+    const release = Promise.withResolvers<void>();
+    const taskReady = f.tasks.ready;
+    let reads = 0;
+    Object.defineProperty(f.tasks, "ready", {
+      get: () => (reads++ === 0 ? release.promise.then(() => taskReady) : taskReady),
+    });
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      // The caller stops waiting after its bound; this tick must not hang on the stalled launch.
+      await scheduler.tick();
+      await scheduler.tick();
+      // The healthy launch finishes beside the stalled one instead of queueing behind it.
+      await vi.waitFor(
+        async () => {
+          const runs = [...(await scheduler.runs("stalled")), ...(await scheduler.runs("healthy"))];
+          expect(runs).toHaveLength(2);
+          const stalled = runs.filter((run) => !run.taskId);
+          expect(stalled).toHaveLength(1);
+          expect(stalled[0]).toMatchObject({ status: "pending", trigger: "scheduled" });
+          expect(stalled[0].error).toBeUndefined();
+          expect(runs.find((run) => run.taskId)).toMatchObject({ status: "pending" });
+        },
+        { timeout: 20000 },
+      );
+      expect(errors).toHaveBeenCalledWith(expect.stringContaining("still running"));
+    } finally {
+      release.resolve();
+    }
+    // The original launch finishes the same run: no second occurrence, no failure.
+    await scheduler.close();
+    const settled = [...(await scheduler.runs("stalled")), ...(await scheduler.runs("healthy"))];
+    expect(settled).toHaveLength(2);
+    expect(settled.every((run) => run.status === "pending" && run.taskId && !run.error)).toBe(true);
+    expect(f.turns).toHaveLength(0);
+    errors.mockRestore();
+  });
+  it("leaves due automations unclaimed while every launch slot is stalled", async () => {
+    const f = await setup();
+    const scheduler = boundedScheduler(f, 25);
+    const ids = ["a1", "a2", "a3", "a4", "a5"];
+    for (const id of ids) await scheduler.save(f.input({ id, name: id }));
+    const due = new Map((await scheduler.list()).map((item) => [item.id, item.nextRunAt]));
+    f.clock.now = at("2026-10-05T09:00:10");
+    const release = Promise.withResolvers<void>();
+    const taskReady = f.tasks.ready;
+    Object.defineProperty(f.tasks, "ready", { get: () => release.promise.then(() => taskReady) });
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      await scheduler.tick();
+      const claimed = (
+        await Promise.all(ids.map(async (id) => ({ id, runs: await scheduler.runs(id) })))
+      ).filter((entry) => entry.runs.length > 0);
+      expect(claimed).toHaveLength(4);
+      const waiting = (await scheduler.list()).filter(
+        (item) => !claimed.some((entry) => entry.id === item.id),
+      );
+      // Not claimed means not advanced: the occurrence is still due on the next tick.
+      expect(waiting).toHaveLength(1);
+      expect(waiting[0].nextRunAt).toBe(due.get(waiting[0].id));
+    } finally {
+      release.resolve();
+    }
+    await vi.waitFor(
+      async () => {
+        await scheduler.tick();
+        for (const id of ids) expect(await scheduler.runs(id)).toHaveLength(1);
+      },
+      { timeout: 20000 },
+    );
+    errors.mockRestore();
   });
   it("does not run a disabled automation and forgets a deleted one", async () => {
     const { automations, input, clock } = await setup();
@@ -1040,4 +1147,45 @@ it("skips exhausted routing without creating a session and retries at the next o
   resolve.mockResolvedValue({ ok: false, reason: "notConfigured", skipped: [] });
   const retried = await f.runAndSchedule("nightly");
   expect(retried).toMatchObject({ status: "running", execution: { model: "claude:test" } });
+});
+
+describe("automation scheduler scans", () => {
+  it("selects only automations that can be due, keeping legacy rows without nextRunAt", async () => {
+    const f = await setup(at("2026-10-05T08:00:00"));
+    await f.automations.save(f.input({ id: "later", name: "Later" }));
+    await f.automations.save(f.input({ id: "legacy", name: "Legacy" }));
+    // Pre-existing rows may lack nextRunAt; the JS due check treats that as due.
+    await f.store.db
+      .prepare("UPDATE automations SET value=json_remove(value, '$.nextRunAt') WHERE id=?")
+      .run("legacy");
+    const dueIds = (now: number) =>
+      (
+        f.automations as unknown as { dueCandidates(now: number): Promise<Array<{ id: string }>> }
+      )
+        .dueCandidates(now)
+        .then((rows) => rows.map((row) => row.id));
+    expect(await dueIds(f.clock.now)).toEqual(["legacy"]);
+    expect(await dueIds(at("2026-10-05T09:00:00"))).toEqual(
+      expect.arrayContaining(["later", "legacy"]),
+    );
+  });
+
+  it("reads only runs that can need settling, never completed history", async () => {
+    const f = await setup();
+    await f.automations.save(f.input());
+    const insert = (id: string, value: Record<string, unknown>) =>
+      f.store.db
+        .prepare("INSERT INTO automation_runs VALUES (?,?,?,?)")
+        .run(id, "nightly", 1, JSON.stringify({ id, automationId: "nightly", createdAt: 1, ...value }));
+    await insert("running", { status: "running" });
+    await insert("done", { status: "completed" });
+    await insert("cleanup", { status: "failed", cleanupPending: true });
+    await insert("failed", { status: "failed" });
+    await insert("work", { status: "pending", workPending: true });
+    await insert("idle", { status: "pending" });
+    const active = await (
+      f.automations as unknown as { activeRuns(): Promise<Array<{ id: string }>> }
+    ).activeRuns();
+    expect(active.map((run) => run.id).sort()).toEqual(["cleanup", "running", "work"]);
+  });
 });

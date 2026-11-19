@@ -6,6 +6,7 @@ import { pathKey } from "../../../shared/lib/paths";
 import { Button } from "../../../shared/ui/Button";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { InlineError } from "../../../shared/ui/InlineError";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
@@ -30,7 +31,7 @@ import {
 import { crewMachineLabel } from "../model/crewActionError";
 import { useProjectCrews } from "../model/crewClient";
 import { crewCwdOn, orderCrewMachines } from "../model/crewMachineScope";
-import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { describeRemoteError, presentRemoteError } from "../../connections/public/remoteFailure";
 
 type CrewState = ReturnType<typeof useProjectCrews>;
 
@@ -84,6 +85,7 @@ export function useCrewMachineScope(cwd: string, state: CrewState) {
     retry: false,
   });
   const projectsShownCentrally = useConnectionErrorShownCentrally(projects.error);
+  const projectsFailure = projects.error ? describeRemoteError(projects.error) : null;
   const [newName, setNewName] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
@@ -208,9 +210,16 @@ export function useCrewMachineScope(cwd: string, state: CrewState) {
             </form>
           </Modal>
         ) : null}
-        {projects.error && !projectsShownCentrally ? (
-          <InlineMessage tone="warning">
-            {projects.error instanceof Error ? projects.error.message : String(projects.error)}
+        {projectsFailure && !projectsShownCentrally ? (
+          <InlineMessage
+            tone="warning"
+            extra={
+              projectsFailure.details && projectsFailure.details !== projectsFailure.message ? (
+                <ErrorDetails title={projectsFailure.message} detail={projectsFailure.details} />
+              ) : undefined
+            }
+          >
+            {projectsFailure.message}
           </InlineMessage>
         ) : null}
       </div>
@@ -239,11 +248,10 @@ export function useCrewMachineScope(cwd: string, state: CrewState) {
         ) : null}
         {machineList.error ? (
           <InlineError
+            details={describeRemoteError(machineList.error).details}
             retry={{ onRetry: () => void machineList.refetch(), pending: machineList.isFetching }}
           >
-            {machineList.error instanceof Error
-              ? machineList.error.message
-              : String(machineList.error)}
+            {describeRemoteError(machineList.error).message}
           </InlineError>
         ) : null}
         {switchError ? <InlineMessage tone="warning">{switchError}</InlineMessage> : null}

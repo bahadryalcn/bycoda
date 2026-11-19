@@ -98,7 +98,6 @@ export function WorkspaceRecoveryDialog({
             onClose={props.onClose}
             closeDisabled={busy}
             size="md"
-            className="session-recovery-dialog"
             fitViewport
           >
             <div className="flex w-full min-h-0 flex-col">

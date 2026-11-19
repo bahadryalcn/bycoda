@@ -1,7 +1,7 @@
 //! Actual guardian and provider subprocesses. The ignored fixture runs only when
 //! an owned test child selects its exact test name; it never contacts a provider.
 use bycoda_provider_process_guardian::protocol::{
-    self, Binding, GuardianReply, Refusal, Retirement, Stream, VERSION,
+    self, Binding, GuardianReply, Refusal, Retirement, StartDetail, StartFailure, Stream, VERSION,
 };
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
@@ -220,6 +220,41 @@ impl Client {
             }
             other => panic!("expected actual started owner, got {other:?}"),
         }
+    }
+    /// Send a start the guardian can validate but the OS cannot execute, and
+    /// return its refusal with the Not-started settlement that must follow.
+    fn start_failure(
+        &mut self,
+        command: &std::path::Path,
+        cwd: &std::path::Path,
+    ) -> (StartFailure, Option<StartDetail>) {
+        let parent = Uuid::new_v4().to_string();
+        let env: BTreeMap<String, String> = BTreeMap::new();
+        self.send(json!({"version":1,"kind":"start","guardianId":self.guardian,"parentId":parent,
+            "command":command,"args":[],"cwd":cwd,"env":env}));
+        let failure = match self.next() {
+            GuardianReply::Failed {
+                guardian_id,
+                parent_id,
+                reason,
+                detail,
+                ..
+            } => {
+                assert_eq!(guardian_id, self.guardian);
+                assert_eq!(parent_id.as_deref(), Some(parent.as_str()));
+                (reason, detail)
+            }
+            other => panic!("expected a failed start, got {other:?}"),
+        };
+        match self.next() {
+            GuardianReply::Settled {
+                owner_id: None,
+                retirement: Retirement::NotStarted,
+                ..
+            } => {}
+            other => panic!("expected a not-started settlement, got {other:?}"),
+        }
+        failure
     }
     fn write(&mut self, id: u64, data: &[u8]) {
         let binding = self.binding.as_ref().unwrap();
@@ -663,4 +698,133 @@ fn guardian_crash_retires_its_actual_provider() {
             0
         );
     }
+}
+
+#[test]
+fn a_missing_provider_binary_reports_its_failing_step_and_os_error() {
+    let missing = std::env::temp_dir().join(format!("bycoda-missing-provider-{}", Uuid::new_v4()));
+    let mut client = Client::new();
+    let (reason, detail) = client.start_failure(&missing, &std::env::current_dir().unwrap());
+    assert_eq!(reason, StartFailure::SpawnFailed);
+    let detail = detail.expect("an OS start failure carries its cause");
+    assert_eq!(
+        detail.step,
+        if cfg!(windows) {
+            "CreateProcess"
+        } else {
+            "spawn"
+        }
+    );
+    assert_eq!(detail.kind, "NotFound");
+    // ENOENT and ERROR_FILE_NOT_FOUND are both 2.
+    assert_eq!(detail.code, Some(2));
+    // The cause is a name and a number: no path or OS message crosses the wire.
+    assert!(!format!("{detail:?}").contains("bycoda-missing-provider"));
+    client.finish();
+}
+
+#[test]
+fn a_missing_working_directory_is_distinguishable_from_a_missing_binary() {
+    let missing = std::env::temp_dir().join(format!("bycoda-missing-cwd-{}", Uuid::new_v4()));
+    let mut client = Client::new();
+    let (reason, detail) = client.start_failure(&std::env::current_exe().unwrap(), &missing);
+    assert_eq!(reason, StartFailure::SpawnFailed);
+    let detail = detail.expect("an OS start failure carries its cause");
+    assert!(detail.code.is_some(), "{detail:?}");
+    #[cfg(unix)]
+    assert_eq!((detail.kind.as_str(), detail.code), ("NotFound", Some(2)));
+    client.finish();
+}
+
+#[test]
+fn validation_refusals_carry_no_os_detail() {
+    let mut client = Client::new();
+    let frame = json!({"version":1,"kind":"start","guardianId":client.guardian,
+        "parentId":Uuid::new_v4().to_string(),"command":"relative-provider","args":[],
+        "cwd":std::env::current_dir().unwrap(),"env":{}});
+    client.send(frame);
+    match client.next() {
+        GuardianReply::Failed {
+            reason: StartFailure::InvalidStart,
+            detail: None,
+            ..
+        } => {}
+        other => panic!("expected a detail-free invalid start, got {other:?}"),
+    }
+    match client.next() {
+        GuardianReply::Settled {
+            retirement: Retirement::NotStarted,
+            ..
+        } => {}
+        other => panic!("expected a not-started settlement, got {other:?}"),
+    }
+    client.finish();
+}
+
+#[cfg(unix)]
+fn is_alive(pid: u32) -> bool {
+    if unsafe { libc::kill(pid as libc::pid_t, 0) } != 0 {
+        return false;
+    }
+    // An orphaned zombie awaiting an init that never reaps it is already dead.
+    #[cfg(target_os = "linux")]
+    if let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) {
+        return !stat
+            .rsplit(')')
+            .next()
+            .is_some_and(|rest| rest.trim_start().starts_with('Z'));
+    }
+    true
+}
+
+#[cfg(unix)]
+fn descendant_pid(client: &mut Client) -> u32 {
+    // The fixture prints this line before fixture-ready, so it is complete here.
+    client.output_contains(b"fixture-ready");
+    String::from_utf8_lossy(&client.output)
+        .lines()
+        .find_map(|line| {
+            line.strip_prefix("descendant:")
+                .and_then(|value| value.trim().parse().ok())
+        })
+        .expect("fixture descendant pid")
+}
+
+#[cfg(unix)]
+fn wait_until_gone(pid: u32) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while is_alive(pid) {
+        assert!(
+            Instant::now() < deadline,
+            "descendant {pid} outlived the provider's retirement"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn stop_retires_the_whole_provider_group_and_not_only_its_direct_child() {
+    let mut client = Client::new();
+    client.start("descendant");
+    let descendant = descendant_pid(&mut client);
+    assert!(is_alive(descendant));
+    client.stop(1);
+    assert_eq!(client.settled().1, Retirement::Unsupported);
+    wait_until_gone(descendant);
+    client.finish();
+}
+
+#[cfg(unix)]
+#[test]
+fn parent_eof_retires_the_whole_provider_group_where_the_guardian_is_the_only_watcher() {
+    let mut client = Client::new();
+    client.start("descendant");
+    let descendant = descendant_pid(&mut client);
+    assert!(is_alive(descendant));
+    // Control-pipe EOF is the only parent-death signal macOS has.
+    client.input.take();
+    assert_eq!(client.settled().1, Retirement::Unsupported);
+    wait_until_gone(descendant);
+    client.finish();
 }

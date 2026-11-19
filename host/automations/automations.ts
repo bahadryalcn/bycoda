@@ -61,6 +61,12 @@ type ManagedAutomationRun = StoredAutomationRun & {
   workPending?: boolean;
 };
 const TICK_MS = 30000;
+/** How long one tick lets its own launches finish before it stops waiting for them. The
+ * wait is only the caller's; a slow launch keeps running and owns its run until it settles. */
+const LAUNCH_WAIT_MS = 10000;
+/** Scheduled launches that may be in flight at once; a stalled few cannot occupy every slot of
+ * settling or time-limit enforcement because ticks never block on them. */
+const MAX_CONCURRENT_LAUNCHES = 4;
 const MAX_RUNS_PER_AUTOMATION = 100;
 const sameSchedule = (a: AutomationSchedule, b: AutomationSchedule) =>
   a.scheduleKind === b.scheduleKind &&
@@ -105,12 +111,16 @@ export class HostAutomations {
   private disposal?: Promise<void>;
   private readonly manualRuns = new Set<Promise<HostAutomationRun>>();
   private readonly launching = new Set<string>();
+  /** Scheduler-started launches by run id. A launch is never cancelled or failed because a
+   * tick stopped waiting; its own outcome, retry and unknown-reply handling stay authoritative. */
+  private readonly inflight = new Map<string, Promise<void>>();
   readonly ready: Promise<void>;
   constructor(
     private readonly store: HostStore,
     engine: SessionRunEngine,
     private readonly now: () => number = Date.now,
     private readonly workspaces?: AutomationWorkspaceServices,
+    private readonly launchWaitMs: number = LAUNCH_WAIT_MS,
   ) {
     const outbox = (this.outbox = new AutomationEventOutbox(store));
     if (engine.withCommandAdmission) bindSessionWork(store, engine);
@@ -136,6 +146,7 @@ export class HostAutomations {
       CREATE TABLE IF NOT EXISTS automation_runs (id TEXT PRIMARY KEY, automation_id TEXT NOT NULL REFERENCES automations(id) ON DELETE CASCADE, created_at INTEGER NOT NULL, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS automation_tasks (run_id TEXT PRIMARY KEY, automation_id TEXT NOT NULL, task_id TEXT NOT NULL UNIQUE);
       CREATE TABLE IF NOT EXISTS automation_events (automation_id TEXT NOT NULL REFERENCES automations(id) ON DELETE CASCADE, event_id TEXT NOT NULL, kind TEXT NOT NULL, project_id TEXT, run_id TEXT NOT NULL, PRIMARY KEY(automation_id,event_id));
+      CREATE INDEX IF NOT EXISTS automation_events_event_idx ON automation_events (event_id);
       CREATE INDEX IF NOT EXISTS automation_runs_history_idx ON automation_runs (automation_id, created_at DESC);
       CREATE INDEX IF NOT EXISTS automation_runs_status_idx ON automation_runs (automation_id, json_extract(value, '$.status'));
       CREATE INDEX IF NOT EXISTS automation_runs_started_idx ON automation_runs (automation_id, json_extract(value, '$.startedAt'));
@@ -167,6 +178,8 @@ export class HostAutomations {
     this.disposal = (async () => {
       await this.ready;
       await Promise.allSettled([this.ticking, ...this.manualRuns]);
+      // Ticking is done, so nothing can start another launch; drain those still running.
+      await Promise.allSettled([...this.inflight.values()]);
     })();
     return this.disposal;
   }
@@ -174,6 +187,21 @@ export class HostAutomations {
     await this.ready;
 
     return (await this.store.db.prepare("SELECT value FROM automations").all())
+      .map((row) => JSON.parse(String(row.value)) as HostAutomation)
+      .sort((a, b) => a.createdAt - b.createdAt);
+  }
+  /** Superset of automations that can be due. Only a numeric nextRunAt past `now` is skipped in
+   * SQL; enabled, event-trigger and missing or legacy nextRunAt keep their JS checks in work(). */
+  private async dueCandidates(now: number): Promise<HostAutomation[]> {
+    await this.ready;
+
+    return (
+      await this.store.db
+        .prepare(
+          "SELECT value FROM automations WHERE NOT COALESCE(json_type(value, '$.nextRunAt') IN ('integer','real') AND json_extract(value, '$.nextRunAt') > ?, 0)",
+        )
+        .all(now)
+    )
       .map((row) => JSON.parse(String(row.value)) as HostAutomation)
       .sort((a, b) => a.createdAt - b.createdAt);
   }
@@ -452,18 +480,28 @@ export class HostAutomations {
     await this.outbox.drain((event) => this.recordEvent(event));
 
     const now = this.now();
+    const started: Promise<void>[] = [];
     for (const run of await this.activeRuns()) {
       try {
         if (run.cleanupPending) await this.releaseFailedRunActivity(run);
-        else await this.settle(run, now);
+        else if (run.status === "pending" && !run.taskId) {
+          // Pending direct/Work occurrences launch from settle; never hold the tick on that.
+          if (!this.hasLaunchSlot()) continue;
+          const launch = this.dispatch(`run:${run.id}`, "Could not settle an automation run:", () =>
+            this.settle(run, now),
+          );
+          if (launch) started.push(launch);
+        } else await this.settle(run, now);
       } catch (error) {
         console.error("Could not settle an automation run:", errorMessage(error));
       }
     }
-    for (const automation of await this.list()) {
-      if (this.closing) return;
+    for (const automation of await this.dueCandidates(now)) {
+      if (this.closing) break;
       if (automation.trigger?.kind === "event") continue;
       if (!automation.enabled || automation.nextRunAt > now) continue;
+      // Leave it due, unclaimed, until a launch slot frees up.
+      if (!this.hasLaunchSlot()) break;
       try {
         if (automation.trigger?.kind === "continuous" && (await this.hasActiveRun(automation.id)))
           continue;
@@ -498,10 +536,56 @@ export class HostAutomations {
               : automation.missedRunGraceMinutes * 60000)
         )
           await this.finish(run, "skipped", MISSED_RUN_SKIP, now);
-        else await this.launch(due, run, now, once);
+        else {
+          const launch = this.dispatch(`run:${run.id}`, "Could not start an automation:", () =>
+            this.launch(due, run, now, once),
+          );
+          if (launch) started.push(launch);
+        }
       } catch (error) {
         console.error("Could not start an automation:", errorMessage(error));
       }
+    }
+    await this.waitForLaunches(started);
+  }
+  private hasLaunchSlot(): boolean {
+    return !this.closing && this.inflight.size < MAX_CONCURRENT_LAUNCHES;
+  }
+  /** Runs a launch beside the tick. Failures are logged, and the run stays owned by launch. */
+  private dispatch(
+    key: string,
+    failure: string,
+    work: () => Promise<unknown>,
+  ): Promise<void> | undefined {
+    if (this.inflight.has(key)) return undefined;
+    const pending = work()
+      .then(
+        () => undefined,
+        (error) => console.error(failure, errorMessage(error)),
+      )
+      .finally(() => {
+        this.inflight.delete(key);
+      });
+    this.inflight.set(key, pending);
+    return pending;
+  }
+  /** Bounds only this tick's wait. Timing out neither fails nor replays a launch. */
+  private async waitForLaunches(launches: Promise<void>[]): Promise<void> {
+    if (!launches.length) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const elapsed = Symbol("launch wait elapsed");
+    const limit = new Promise<typeof elapsed>((resolve) => {
+      timer = setTimeout(() => resolve(elapsed), this.launchWaitMs);
+      timer.unref?.();
+    });
+    try {
+      const outcome = await Promise.race([Promise.all(launches), limit]);
+      if (outcome === elapsed)
+        console.error(
+          "An automation launch is still running; scheduling continues while it settles.",
+        );
+    } finally {
+      clearTimeout(timer);
     }
   }
   /** Producers supply an immutable transition identity; retries never create another run. */
@@ -520,12 +604,16 @@ export class HostAutomations {
     )
       throw new Error("Invalid automation event.");
     await this.store.transaction(async () => {
+      // One probe for the whole event instead of one query per automation.
+      const recorded = new Map(
+        (
+          await this.store.db
+            .prepare("SELECT automation_id,kind,project_id FROM automation_events WHERE event_id=?")
+            .all(event.id)
+        ).map((row) => [String(row.automation_id), row]),
+      );
       for (const automation of await this.list()) {
-        const previous = await this.store.db
-          .prepare(
-            "SELECT kind,project_id FROM automation_events WHERE automation_id=? AND event_id=?",
-          )
-          .get(automation.id, event.id);
+        const previous = recorded.get(automation.id);
         if (previous) {
           if (
             previous.kind !== event.kind ||
@@ -608,7 +696,7 @@ export class HostAutomations {
     return (
       await this.store.db
         .prepare(
-          `SELECT r.value FROM automation_runs r JOIN automations a ON a.id=r.automation_id WHERE json_extract(r.value, '$.status')='running' OR (json_extract(r.value, '$.status')='failed' AND json_type(r.value, '$.cleanupPending')='true') OR (json_extract(r.value, '$.status')='pending' AND (${truthyJson("r.value", "$.workspaceId")} OR json_type(r.value, '$.workPending')='true' OR ${truthyJson("r.value", "$.taskId")})) ORDER BY json_extract(a.value, '$.createdAt'), r.created_at DESC, r.rowid DESC`,
+          `SELECT r.value FROM automation_runs r JOIN automations a ON a.id=r.automation_id WHERE json_extract(r.value, '$.status') IN ('running','failed','pending') AND (json_extract(r.value, '$.status')='running' OR (json_extract(r.value, '$.status')='failed' AND json_type(r.value, '$.cleanupPending')='true') OR (json_extract(r.value, '$.status')='pending' AND (${truthyJson("r.value", "$.workspaceId")} OR json_type(r.value, '$.workPending')='true' OR ${truthyJson("r.value", "$.taskId")}))) ORDER BY json_extract(a.value, '$.createdAt'), r.created_at DESC, r.rowid DESC`,
         )
         .all()
     )
@@ -1143,6 +1231,13 @@ export class HostAutomations {
           "DELETE FROM automation_runs WHERE automation_id=? AND json_extract(value, '$.status') NOT IN ('pending','running') AND NOT COALESCE(json_extract(value, '$.cleanupPending'), 0) AND json_extract(value, '$.nativeRunId') IS NULL AND COALESCE(json_extract(value, '$.startedAt'), 0) < ? AND id NOT IN (SELECT id FROM automation_runs WHERE automation_id=? ORDER BY created_at DESC, rowid DESC LIMIT ?)",
         )
         .run(run.automationId, dayStart, run.automationId, MAX_RUNS_PER_AUTOMATION);
+      // Dedupe rows live as long as their run: a pruned run can never be replayed (the outbox
+      // row is consumed in the same transaction), while pending/running runs keep theirs.
+      await this.store.db
+        .prepare(
+          "DELETE FROM automation_events WHERE automation_id=? AND run_id NOT IN (SELECT id FROM automation_runs WHERE automation_id=?)",
+        )
+        .run(run.automationId, run.automationId);
       return finished;
     });
   }

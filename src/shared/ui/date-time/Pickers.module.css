@@ -69,9 +69,11 @@
     text-align: center;
     padding-block: var(--space-1);
   }
+  /* Block size keeps an empty trailing cell as tall as a day, so six rows hold for every month. */
   .cell {
     display: flex;
     justify-content: center;
+    block-size: var(--ui-control-height-compact);
     margin-block: calc(var(--space-1) / 2);
   }
   .cell[data-range] {

@@ -4,7 +4,8 @@ import { loadRateLimits, useCachedRateLimits } from "../model/rateLimitsCache";
 import { accountStatus, providerAccountSignedOut } from "../model/accountUsage";
 import {
   exhaustedWindowResetAt,
-  formatResetDuration,
+  formatResetCountdown,
+  rateLimitWindowNameWith,
   type ProviderRateLimits,
   type RateLimitWindow,
 } from "../model/rateLimits";
@@ -76,17 +77,14 @@ export function exhaustedExplanation(
 ): string | null {
   if (!limits) return null;
   const names = [
-    windowIsFull(limits.session, now) ? t("5-hour") : null,
-    windowIsFull(limits.weekly, now) ? t("weekly") : null,
-    windowIsFull(limits.monthly, now) ? t("monthly") : null,
+    windowIsFull(limits.session, now) ? rateLimitWindowNameWith("session", t) : null,
+    windowIsFull(limits.weekly, now) ? rateLimitWindowNameWith("weekly", t) : null,
+    windowIsFull(limits.monthly, now) ? rateLimitWindowNameWith("monthly", t) : null,
   ].filter((name): name is string => name != null);
   if (names.length === 0) return null;
   const resetAt = exhaustedWindowResetAt(limits);
-  const limit = names.join(" + ");
+  const sentence = t("The {p0} limit is used up.", { p0: names.join(" + ") });
   return resetAt != null && resetAt > now
-    ? t("The {p0} limit is used up. Back in {p1}.", {
-        p0: limit,
-        p1: formatResetDuration(resetAt - now),
-      })
-    : t("The {p0} limit is used up.", { p0: limit });
+    ? `${sentence} ${formatResetCountdown(resetAt - now)}`
+    : sentence;
 }

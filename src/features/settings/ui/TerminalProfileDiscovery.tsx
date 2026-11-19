@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { Text } from "../../../shared/ui/Text";
 import { SettingsFeedback } from "../../../shared/ui/settings";
 import { invoke } from "@tauri-apps/api/core";
@@ -111,7 +112,7 @@ export function TerminalProfileDiscovery({
       (caught: unknown) => {
         if (!cancelled && revision === discoveryRevision.current) {
           setProfiles(null);
-          setError(caught instanceof Error ? caught.message : String(caught));
+          setError(errorText(caught));
         }
       },
     );
@@ -155,7 +156,7 @@ export function TerminalProfileDiscovery({
     try {
       await action(current);
     } catch (caught) {
-      if (current()) setError(caught instanceof Error ? caught.message : String(caught));
+      if (current()) setError(errorText(caught));
     } finally {
       if (current()) {
         operationBusy.current = false;
@@ -221,14 +222,13 @@ export function TerminalProfileDiscovery({
       {openPopover ? (
         <Popover
           id={`${settingId}-popover`}
-          role="dialog"
+          kind="dialog"
           aria-label={t("Terminal account profiles")}
           anchor={trigger}
           side="bottom"
           align="end"
           width={360}
           className="p-3"
-          autoFocus
           onDismiss={(reason) => closePopover(reason === "escape")}
         >
           <div

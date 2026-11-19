@@ -1,3 +1,4 @@
+import type { DrainLease } from "../../src/features/connections/model/sharedQueue";
 import { type RunLease } from "../../src/features/sync/model/runLease";
 import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps";
 import { createLogger } from "../diagnostics/logger";
@@ -238,19 +239,48 @@ export function createSessionLeasesRuntime(
   const queueLeaseAnswers = new Map<
     string,
     {
-      lease: import("../../src/features/connections/model/sharedQueue").DrainLease;
-      version: number;
+      lease: DrainLease;
+      /** The queue's own revision when the answer was made: a change to that queue ends the answer. */
+      revision: number;
       blocked: boolean;
       checkedAt: number;
     }
   >();
+  type QueueLeaseEntry = { sessionId: string; epoch: number; blocked: boolean };
+  const renewQueueLease = async (
+    holder: string,
+    { sessionId, epoch, blocked }: QueueLeaseEntry,
+  ): Promise<DrainLease | null> => {
+    const key = JSON.stringify([holder, sessionId, epoch]);
+    const cached = queueLeaseAnswers.get(key);
+    // A revision read from before a change can only miss the cache, never hit a changed queue.
+    const { revision } = await dependencies.sessionQueues.get(sessionId);
+    if (
+      cached &&
+      cached.revision === revision &&
+      cached.blocked === blocked &&
+      Date.now() - cached.checkedAt < 5000 &&
+      cached.lease.expiresAt > Date.now() + 5000
+    )
+      return dependencies.sessionQueues.renew(sessionId, holder, epoch);
+    // A holder that cannot send for a reason of its own (a sync conflict on its
+    // copy) is neither stalled nor replaced by the host sending on its own copy.
+    dependencies.queueDrainer.noteBlocked(sessionId, holder, blocked);
+    // A holder that could send but does not is not renewed: its lease ends
+    // and the host sends the row.
+    const lease = (await dependencies.queueDrainer.holderStalled(sessionId))
+      ? await dependencies.sessionQueues.release(sessionId, holder, epoch)
+      : await dependencies.sessionQueues.renew(sessionId, holder, epoch);
+    if (lease) queueLeaseAnswers.set(key, { lease, revision, blocked, checkedAt: Date.now() });
+    else queueLeaseAnswers.delete(key);
+    while (queueLeaseAnswers.size > 1024)
+      queueLeaseAnswers.delete(queueLeaseAnswers.keys().next().value!);
+    return lease;
+  };
   const renewQueueLeases = async (params: Record<string, unknown>) => {
     if (!Array.isArray(params.queueLeases) || typeof params.clientId !== "string") return undefined;
     const holder = `desktop:${params.clientId}`;
-    const leases: Record<
-      string,
-      import("../../src/features/connections/model/sharedQueue").DrainLease | null
-    > = {};
+    const reported: QueueLeaseEntry[] = [];
     for (const entry of params.queueLeases.slice(0, 256)) {
       const { sessionId, epoch, blocked } = (entry ?? {}) as {
         sessionId?: unknown;
@@ -258,42 +288,28 @@ export function createSessionLeasesRuntime(
         blocked?: unknown;
       };
       if (typeof sessionId !== "string" || !Number.isSafeInteger(epoch)) continue;
-      const key = JSON.stringify([holder, sessionId, epoch]);
-      const cached = queueLeaseAnswers.get(key);
-      if (
-        cached &&
-        cached.version === dependencies.engine.store.db.dataMutationVersion &&
-        cached.blocked === (blocked === true) &&
-        Date.now() - cached.checkedAt < 5000 &&
-        cached.lease.expiresAt > Date.now() + 5000
-      ) {
-        leases[sessionId] = await dependencies.sessionQueues.renew(
-          sessionId,
-          holder,
-          Number(epoch),
-        );
-        continue;
-      }
-      // A holder that cannot send for a reason of its own (a sync conflict on its
-      // copy) is neither stalled nor replaced by the host sending on its own copy.
-      dependencies.queueDrainer.noteBlocked(sessionId, holder, blocked === true);
-      // A holder that could send but does not is not renewed: its lease ends
-      // and the host sends the row.
-      leases[sessionId] = (await dependencies.queueDrainer.holderStalled(sessionId))
-        ? await dependencies.sessionQueues.release(sessionId, holder, Number(epoch))
-        : await dependencies.sessionQueues.renew(sessionId, holder, Number(epoch));
-      const lease = leases[sessionId];
-      if (lease)
-        queueLeaseAnswers.set(key, {
-          lease,
-          version: dependencies.engine.store.db.dataMutationVersion,
-          blocked: blocked === true,
-          checkedAt: Date.now(),
-        });
-      else queueLeaseAnswers.delete(key);
-      while (queueLeaseAnswers.size > 1024)
-        queueLeaseAnswers.delete(queueLeaseAnswers.keys().next().value!);
+      reported.push({ sessionId, epoch: Number(epoch), blocked: blocked === true });
     }
+    // One store scope for the whole beat. Entries of one session run in the reported
+    // order (a later one sees the earlier one's write); different sessions run side by side.
+    const bySession = new Map<string, number[]>();
+    reported.forEach(({ sessionId }, index) => {
+      bySession.set(sessionId, [...(bySession.get(sessionId) ?? []), index]);
+    });
+    const answers: (DrainLease | null)[] = [];
+    await dependencies.engine.store.db.scope(() =>
+      Promise.all(
+        [...bySession.values()].map(async (indexes) => {
+          for (const index of indexes)
+            answers[index] = await renewQueueLease(holder, reported[index]);
+        }),
+      ),
+    );
+    // Reported order, so a session listed twice keeps the answer of its last entry.
+    const leases: Record<string, DrainLease | null> = {};
+    reported.forEach(({ sessionId }, index) => {
+      leases[sessionId] = answers[index] ?? null;
+    });
     return leases;
   };
   return {

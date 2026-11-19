@@ -8,6 +8,7 @@ import { PaneHeader, type PaneHeaderProps } from "../../../../shared/ui/PaneHead
 import { TabList, TabPanel, Tabs, type TabItem } from "../../../../shared/ui/Tabs";
 import { LoadingText } from "../../../../shared/ui/LoadingText";
 import { InlineError } from "../../../../shared/ui/InlineError";
+import { describeRemoteError } from "../../../connections/public/remoteFailure";
 import { useActiveCrewMembers, useActiveCrewSupported } from "../../model/crewActive";
 import { useProjectCrews } from "../../model/crewClient";
 import { consumeCrewsPageRequest, usePendingCrewsPageRequest } from "../../model/crewsPage";
@@ -144,9 +145,10 @@ export function CrewsPage({
               {active.error ? (
                 <div className="p-4">
                   <InlineError
+                    details={describeRemoteError(active.error).details}
                     retry={{ onRetry: () => void active.refetch(), pending: active.isFetching }}
                   >
-                    {active.error instanceof Error ? active.error.message : String(active.error)}
+                    {describeRemoteError(active.error).message}
                   </InlineError>
                 </div>
               ) : null}

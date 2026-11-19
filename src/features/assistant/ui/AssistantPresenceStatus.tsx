@@ -3,6 +3,7 @@ import { t } from "../../../shared/i18n";
 import type { AssistantSnapshot } from "../../../shared/model/host-contracts/assistant";
 import { assistantPresenceState } from "../model/assistantBriefing";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { Text } from "../../../shared/ui/Text";
 import { AssistantPresenceIndicator } from "./AssistantPresenceIndicator";
 import styles from "./AssistantPresenceIndicator.module.css";
@@ -42,16 +43,21 @@ export function AssistantPresenceStatus({
   }, []);
   const state = assistantPresenceState(snapshot, Date.now());
   const effective = offline ? "offline" : state.effective;
+  const announcement = (
+    <LiveText className="sr-only" text={t("Current availability: {p0}", { p0: label(effective) })} />
+  );
   if (compact)
     return (
-      <span role="status" aria-label={t("Current availability: {p0}", { p0: label(effective) })}>
+      <span>
         <AssistantPresenceIndicator state={effective} />
+        {announcement}
       </span>
     );
   return (
     <div className={styles.status}>
-      <span role="status" aria-label={t("Current availability: {p0}", { p0: label(effective) })}>
+      <span>
         <AssistantPresenceIndicator state={effective} />
+        {announcement}
       </span>
       {details && (
         <InfoPopover label={t("About computer presence")}>

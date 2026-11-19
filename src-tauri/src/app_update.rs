@@ -6,6 +6,8 @@
 //! fixed here: the renderer picks a channel, never a URL. Signatures are verified by the
 //! updater plugin with the configured public key either way.
 
+use std::{future::Future, time::Duration};
+
 use serde::Serialize;
 use tauri::{Manager, ResourceId, Runtime, Webview};
 use tauri_plugin_updater::{Update, UpdaterBuilder, UpdaterExt};
@@ -27,8 +29,13 @@ pub struct UpdateMetadata {
     raw_json: serde_json::Value,
 }
 
+/// Upper bound for one feed request. The plugin has no default timeout, so a stalled
+/// connection would otherwise leave the check pending forever.
+const FEED_TIMEOUT: Duration = Duration::from_secs(15);
+
 async fn check(builder: UpdaterBuilder) -> Result<Option<Update>, String> {
     let updater = builder
+        .timeout(FEED_TIMEOUT)
         .header("Cache-Control", "no-cache")
         .and_then(|builder| builder.build())
         .map_err(|error| error.to_string())?;
@@ -46,13 +53,31 @@ fn is_newer(candidate: &str, current: &str) -> bool {
     }
 }
 
-fn newer(stable: Option<Update>, preview: Option<Update>) -> Option<Update> {
+fn newer<T>(
+    stable: Option<T>,
+    preview: Option<T>,
+    version: impl Fn(&T) -> &str,
+) -> Option<T> {
     match (stable, preview) {
-        (Some(stable), Some(preview)) if is_newer(&preview.version, &stable.version) => {
+        (Some(stable), Some(preview)) if is_newer(version(&preview), version(&stable)) => {
             Some(preview)
         }
         (Some(stable), _) => Some(stable),
         (None, preview) => preview,
+    }
+}
+
+/// Runs both feed checks concurrently, so the wait is the slower feed rather than the sum.
+/// One failed feed must not hide a release the other feed offers.
+async fn check_both<T>(
+    stable: impl Future<Output = Result<Option<T>, String>>,
+    preview: impl Future<Output = Result<Option<T>, String>>,
+    version: impl Fn(&T) -> &str,
+) -> Result<Option<T>, String> {
+    match tokio::join!(stable, preview) {
+        (Ok(stable), Ok(preview)) => Ok(newer(stable, preview, version)),
+        (Ok(found), Err(_)) | (Err(_), Ok(found)) => Ok(found),
+        (Err(error), Err(_)) => Err(error),
     }
 }
 
@@ -61,21 +86,20 @@ pub async fn app_update_check<R: Runtime>(
     webview: Webview<R>,
     preview: bool,
 ) -> Result<Option<UpdateMetadata>, String> {
-    let stable = check(webview.updater_builder()).await;
     let update = if preview {
         let feed = Url::parse(PREVIEW_FEED_URL).map_err(|error| error.to_string())?;
-        let builder = webview
+        let preview_builder = webview
             .updater_builder()
             .endpoints(vec![feed])
             .map_err(|error| error.to_string())?;
-        // One unreachable feed must not hide a release the other feed offers.
-        match (stable, check(builder).await) {
-            (Ok(stable), Ok(preview)) => newer(stable, preview),
-            (Ok(found), Err(_)) | (Err(_), Ok(found)) => found,
-            (Err(error), Err(_)) => return Err(error),
-        }
+        check_both(
+            check(webview.updater_builder()),
+            check(preview_builder),
+            |update: &Update| update.version.as_str(),
+        )
+        .await?
     } else {
-        stable?
+        check(webview.updater_builder()).await?
     };
     Ok(update.map(|update| UpdateMetadata {
         current_version: update.current_version.clone(),
@@ -88,7 +112,65 @@ pub async fn app_update_check<R: Runtime>(
 
 #[cfg(test)]
 mod tests {
-    use super::is_newer;
+    use std::time::Duration;
+
+    use tokio::sync::Barrier;
+
+    use super::{check_both, is_newer};
+
+    fn version(candidate: &&'static str) -> &'static str {
+        *candidate
+    }
+
+    #[tokio::test]
+    async fn both_feeds_are_requested_concurrently() {
+        // Each mocked feed only answers once the other has started, so a sequential
+        // implementation never finishes and trips the deadline.
+        let barrier = Barrier::new(2);
+        let stable = async {
+            barrier.wait().await;
+            Ok(Some("0.6.94"))
+        };
+        let preview = async {
+            barrier.wait().await;
+            Ok(Some("0.6.95-preview.1.gabc"))
+        };
+        let found = tokio::time::timeout(
+            Duration::from_secs(5),
+            check_both(stable, preview, version),
+        )
+        .await
+        .expect("feeds were not checked concurrently");
+        assert_eq!(found, Ok(Some("0.6.95-preview.1.gabc")));
+    }
+
+    #[tokio::test]
+    async fn a_failed_feed_does_not_hide_the_other_feed() {
+        let stable = async { Err("timed out".to_string()) };
+        let preview = async { Ok(Some("0.6.95-preview.1.gabc")) };
+        assert_eq!(
+            check_both(stable, preview, version).await,
+            Ok(Some("0.6.95-preview.1.gabc"))
+        );
+
+        let stable = async { Ok(Some("0.6.94")) };
+        let preview = async { Err("timed out".to_string()) };
+        assert_eq!(check_both(stable, preview, version).await, Ok(Some("0.6.94")));
+
+        let stable = async { Err::<Option<&'static str>, _>("stable failed".to_string()) };
+        let preview = async { Err("preview failed".to_string()) };
+        assert_eq!(
+            check_both(stable, preview, version).await,
+            Err("stable failed".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn the_newer_signed_release_wins() {
+        let stable = async { Ok(Some("0.6.95")) };
+        let preview = async { Ok(Some("0.6.95-preview.42.gabcdef012345")) };
+        assert_eq!(check_both(stable, preview, version).await, Ok(Some("0.6.95")));
+    }
 
     #[test]
     fn preview_sorts_between_its_stable_base_and_the_next_stable() {

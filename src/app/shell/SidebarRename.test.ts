@@ -116,7 +116,7 @@ function renameInput(): HTMLInputElement {
 }
 
 function projectSearchInput(): HTMLInputElement | null {
-  return document.querySelector('input[placeholder="Search projects..."]');
+  return document.querySelector('input[placeholder="Search projects…"]');
 }
 
 async function openProjectsFlyout() {
@@ -600,7 +600,7 @@ describe("sidebar session bulk actions", () => {
       (entry) => entry.textContent?.includes("Open Side by Side"),
     )!;
     expect(item.disabled).toBe(true);
-    expect(item.textContent).toContain("Select at most 9 conversations");
+    expect(item.textContent).toContain("Select at most 9 sessions");
     act(() => item.click());
     expect(props.onOpenSessionsSideBySide).not.toHaveBeenCalled();
   });
@@ -631,7 +631,7 @@ describe("sidebar session bulk actions", () => {
   it("toggles rows with plain clicks in selection mode and leaves it on Escape", () => {
     act(() => render());
     expect(bar()).toBeNull();
-    act(() => container.querySelector<HTMLElement>('[aria-label="Select conversations"]')!.click());
+    act(() => container.querySelector<HTMLElement>('[aria-label="Select sessions"]')!.click());
     expect(container.querySelectorAll("[data-session-checkbox]")).toHaveLength(3);
     clickCard("session-2");
     clickCard("session-3");
@@ -688,7 +688,7 @@ describe("sidebar session bulk actions", () => {
     await act(async () => barButton("Delete selected").click());
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(confirm).toHaveBeenCalledWith(
-      "Delete 2 conversations? This can’t be undone.\n\n1 running conversation will be skipped.",
+      "Delete 2 conversations?\n\n2 conversations and their history will be permanently deleted. This can’t be undone. 1 running conversation will be skipped.",
     );
     expect(vi.mocked(props.onDeleteSessionNow).mock.calls).toEqual([["session-2"], ["session-3"]]);
     expect(props.onDeleteSession).not.toHaveBeenCalled();
@@ -840,7 +840,9 @@ describe("sidebar session bulk actions", () => {
     await act(async () => {
       pressKey(document.body, "Delete");
     });
-    expect(confirm).toHaveBeenCalledWith("Delete 2 conversations? This can’t be undone.");
+    expect(confirm).toHaveBeenCalledWith(
+      "Delete 2 conversations?\n\n2 conversations and their history will be permanently deleted. This can’t be undone.",
+    );
     expect(props.onDeleteSessionNow).not.toHaveBeenCalled();
     expect(selectedIds()).toEqual(["session-2", "session-3"]);
   });
@@ -1963,7 +1965,7 @@ describe("collapsed rail Inbox actions", () => {
 
     const sidebar = container.querySelector("aside")!;
     expect(container.querySelector("[data-compact-project-rail]")).toBeNull();
-    expect(sidebar.querySelector('button[aria-label^="Toggle Projects"]')).not.toBeNull();
+    expect(sidebar.querySelector('button[aria-label^="Toggle sidebar"]')).not.toBeNull();
     expect(sidebar.querySelector('button[aria-label^="Search"]')).not.toBeNull();
     expect(sidebar.querySelector('button[aria-label^="Settings"]')).not.toBeNull();
   });
@@ -2002,19 +2004,19 @@ describe("collapsed rail Inbox actions", () => {
       button.getAttribute("aria-label"),
     );
     expect(labels.indexOf("Back")).toBeLessThan(labels.indexOf("Forward"));
-    expect(labels.indexOf("Forward")).toBeLessThan(labels.indexOf("Expand projects"));
-    expect(labels.indexOf("Expand projects")).toBeLessThan(labels.indexOf("Search sessions"));
+    expect(labels.indexOf("Forward")).toBeLessThan(labels.indexOf("Toggle sidebar"));
+    expect(labels.indexOf("Toggle sidebar")).toBeLessThan(labels.indexOf("Search sessions"));
     const back = header.querySelector<HTMLButtonElement>('button[aria-label="Back"]')!;
     expect(title.compareDocumentPosition(back) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(back.closest("[data-pane-header-body]")).not.toBeNull();
-    expect(container.querySelectorAll('button[aria-label="Expand projects"]')).toHaveLength(1);
+    expect(container.querySelectorAll('button[aria-label="Toggle sidebar"]')).toHaveLength(1);
     expect(
-      container.querySelector('[data-compact-project-rail] button[aria-label="Expand projects"]'),
+      container.querySelector('[data-compact-project-rail] button[aria-label="Toggle sidebar"]'),
     ).toBeNull();
     act(() => back.click());
     act(() => header.querySelector<HTMLButtonElement>('button[aria-label="Forward"]')!.click());
     act(() =>
-      header.querySelector<HTMLButtonElement>('button[aria-label="Expand projects"]')!.click(),
+      header.querySelector<HTMLButtonElement>('button[aria-label="Toggle sidebar"]')!.click(),
     );
     expect(props.onGoBack).toHaveBeenCalledOnce();
     expect(props.onGoForward).toHaveBeenCalledOnce();
@@ -2091,7 +2093,7 @@ describe("collapsed rail Inbox actions", () => {
     act(() =>
       container
         .querySelector<HTMLButtonElement>(
-          '[data-workspace-header] button[aria-label="Expand projects"]',
+          '[data-workspace-header] button[aria-label="Toggle sidebar"]',
         )!
         .click(),
     );

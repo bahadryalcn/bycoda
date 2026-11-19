@@ -7,9 +7,25 @@ import {
 import { projectKey } from "../../../shared/lib/paths";
 import {
   loadTabGroupLogos,
-  resolveTabGroupLogo,
+  loadTabGroupMascots,
+  resolveTabGroupLogoWith,
   tabGroupLogoDisplayRevision,
 } from "../../workspace/model/tabGroups";
+import { detectedProjectLogo } from "../../workspace/model/projectLogoState";
+import { directoryStorageGeneration } from "./directoryStorageSignal";
+
+type Stored = { logos: Record<string, string>; mascots: Record<string, string> };
+let storedInputs: (Stored & { generation: number }) | undefined;
+
+/** Chosen logos and picked mascots, re-read only after a stored write (this window or
+ * another) because both keys sit under the directory's watched prefixes. */
+function storedLogoInputs(): Stored {
+  const generation = directoryStorageGeneration();
+  if (generation !== undefined && storedInputs?.generation === generation) return storedInputs;
+  const read = { logos: loadTabGroupLogos(), mascots: loadTabGroupMascots() };
+  if (generation !== undefined) storedInputs = { ...read, generation };
+  return read;
+}
 
 type Preview = { value?: string; pending: boolean; retryAt: number };
 const previews = new Map<string, Preview>();
@@ -70,12 +86,18 @@ export function withMobileProjectLogos(
   directory: DesktopProjectDirectory,
   render = renderMobileProjectLogo,
 ): DesktopProjectDirectory {
-  const logos = loadTabGroupLogos();
+  const { logos, mascots } = storedLogoInputs();
   const revision = tabGroupLogoDisplayRevision();
   const visibleKeys = new Set<string>();
   let budget = MAX_DIRECTORY_LOGO_LENGTH;
   const projects = directory.projects.map((project) => {
-    const path = resolveTabGroupLogo(projectKey(project.cwd), logos);
+    const identity = projectKey(project.cwd);
+    const path = resolveTabGroupLogoWith(
+      identity,
+      logos,
+      logos[identity] ? null : detectedProjectLogo(identity),
+      mascots,
+    );
     if (!path) return project;
     const key = `${revision}:${path}`;
     visibleKeys.add(key);

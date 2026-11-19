@@ -123,6 +123,32 @@ export function tabCommand(e: KeyboardEvent): TabCommand | null {
   return null;
 }
 
+const REPEATABLE_TAB_COMMANDS = new Set<TabCommand>([
+  "next",
+  "prev",
+  "cycle-next",
+  "cycle-prev",
+  "back",
+  "forward",
+  "prev-session",
+  "next-session",
+  "prev-session-in-tab",
+  "next-session-in-tab",
+  "prev-project",
+  "next-project",
+]);
+
+/**
+ * Whether holding the chord may keep firing the command. Only stepping through
+ * tabs, history, sessions, projects or panes repeats; every other command is a
+ * one-shot that must run once per physical press, so a held Ctrl+W, Ctrl+T,
+ * Ctrl+D or Ctrl+Shift+W cannot close, spawn, split or escalate in a row.
+ */
+export function isRepeatableTabCommand(command: TabCommand): boolean {
+  if (typeof command === "object") return "focus" in command;
+  return REPEATABLE_TAB_COMMANDS.has(command);
+}
+
 const TAB_COMMAND_KEYBINDINGS: Record<Exclude<TabCommand, object>, string> = {
   new: "Tab: New",
   "new-session": "Session: New",

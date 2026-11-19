@@ -130,4 +130,12 @@ export class SocialPushLedger {
       .run(deviceHash, id, at);
     return Number(result.changes) === 1;
   }
+
+  /** Gives a claim back when Expo certainly did not take its push, so the next tick sends it again. */
+  async release(deviceHash: string, id: string): Promise<void> {
+    await this.prepare();
+    await this.db
+      .prepare("DELETE FROM push_social_sent WHERE device_hash=? AND item_id=?")
+      .run(deviceHash, id);
+  }
 }

@@ -359,7 +359,7 @@ it("keeps the URL and token drafts across method switches and a failed connect",
     return previous(command, args);
   });
   await act(async () => button("Connect").click());
-  expect(document.querySelector('form[aria-label="Add a new machine"]')).toBeTruthy();
+  expect(document.querySelector('form[aria-label="Add a new computer"]')).toBeTruthy();
   expect(document.querySelector<HTMLInputElement>('input[type="url"]')?.value).toBe(
     "https://remote.example.com",
   );
@@ -473,6 +473,52 @@ it("keeps the SSH address after a failed install and cancels active setup when S
   await act(async () => button("Connect").click());
   await act(async () => root.unmount());
   root = createRoot(container);
+  expect(invoke).toHaveBeenCalledWith("remote_ssh_cancel", { jobId: "setup" });
+});
+
+/** Makes the next `count` status reads fail with `message`; other commands keep their mock. */
+function failPolls(count: number, message: string) {
+  const normal = vi.mocked(invoke).getMockImplementation()!;
+  let left = count;
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    if (command === "remote_ssh_poll" && left > 0) {
+      left -= 1;
+      throw new Error(message);
+    }
+    return normal(command, args);
+  });
+}
+
+it("keeps an SSH setup alive through transient status failures and finishes normally", async () => {
+  await start();
+  failPolls(3, "ipc hiccup");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(6_000);
+  });
+  expect(invoke).not.toHaveBeenCalledWith("remote_ssh_cancel", expect.anything());
+  expect(container.textContent).not.toContain("ipc hiccup");
+  machines = [machine];
+  state = { ...state, done: true, machine };
+  await poll();
+  expect(container.textContent).toContain("Home Mac is connected");
+  expect(invoke).not.toHaveBeenCalledWith("remote_ssh_cancel", expect.anything());
+});
+
+it("cancels and reports an SSH setup whose status stays unreachable", async () => {
+  await start();
+  failPolls(Infinity, "ipc hiccup");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(20_000);
+  });
+  expect(invoke).toHaveBeenCalledWith("remote_ssh_cancel", { jobId: "setup" });
+  expect(container.textContent).toContain("ipc hiccup");
+});
+
+it("drops an SSH setup the native side no longer knows without retrying", async () => {
+  await start();
+  failPolls(Infinity, "Connection setup has expired");
+  await poll();
+  expect(container.textContent).toContain("Connection setup has expired");
   expect(invoke).toHaveBeenCalledWith("remote_ssh_cancel", { jobId: "setup" });
 });
 
@@ -606,7 +652,7 @@ it("explains why adding a new machine waits while a setup is in progress", async
   // The dialog closed when setup started; reopening it starts without the old error.
   expect(document.querySelector('[role="dialog"]')).toBeNull();
   await openAdvanced();
-  expect(document.querySelector('form[aria-label="Add a new machine"]')).toBeTruthy();
+  expect(document.querySelector('form[aria-label="Add a new computer"]')).toBeTruthy();
   expect(document.body.textContent).not.toContain("Connection cancelled");
 });
 
@@ -774,7 +820,7 @@ it("only renames without reconnecting, and offers the host's name for a raw IP",
   await fill(address, "me@192.168.1.5");
   await fill('input[placeholder="Optional, e.g. Home Mac mini"]', "Office");
   expect(button("Save")).toBeTruthy();
-  expect(container.textContent).toContain("Saving changes the machine name without reconnecting.");
+  expect(container.textContent).toContain("Saving changes the computer name without reconnecting.");
   await act(async () => button("Save").click());
   expect(requested("remote_ssh_reconnect")).toBe(false);
   expect(container.textContent).toContain("was renamed");
@@ -816,7 +862,7 @@ it("clears edit state after reconnect succeeds so the next connection adds a mac
   state = { ...state, done: true, machine };
   await poll();
   await openAdvanced();
-  expect(document.querySelector('form[aria-label="Add a new machine"]')).toBeTruthy();
+  expect(document.querySelector('form[aria-label="Add a new computer"]')).toBeTruthy();
   await fill(SSH_TARGET, "me@office");
   await act(async () => button("Connect").click());
   expect(invoke).toHaveBeenCalledWith("remote_ssh_begin", {
@@ -837,7 +883,7 @@ it("keeps the other address when saving a new primary address", async () => {
       .querySelector<HTMLButtonElement>("[data-machine-summary] button[aria-expanded]")!
       .click(),
   );
-  expect(container.textContent).toContain("Other address · me@tailnet");
+  expect(container.textContent).toContain("Other address: me@tailnet");
   await editMachine("Home Mac");
   await fill(SSH_TARGET, "me@new-home");
   await act(async () => button("Save and reconnect").click());

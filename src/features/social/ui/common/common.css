@@ -6,13 +6,6 @@
   gap: 0.25rem;
 }
 
-.social-empty-hint-actions {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-}
-
 .social-technical-details {
   overflow-wrap: anywhere;
 }
@@ -70,9 +63,6 @@
   overflow-wrap: anywhere;
 }
 
-.social-capability-reason {
-}
-
 .social-capability-empty {
   margin: 0;
 }
@@ -89,7 +79,7 @@
 }
 
 .social-confirm-autonomy ul {
-  padding-left: 1rem;
+  padding-inline-start: 1rem;
 }
 
 /* Platform marks: monochrome glyphs on a neutral tile; no brand colors. */

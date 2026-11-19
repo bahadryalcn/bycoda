@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { HOST_RPC_METHODS } from "./methods";
 import {
+  DECISION_INSTALL_CAPABILITY,
   DECISION_INSTALL_CONFIRMATION,
   DECISION_MODELS_RPC,
+  DecisionInstallStateSchema,
   DecisionLocalInstallParamsSchema,
   DecisionManualVerifyResultSchema,
   DecisionManualVerifyParamsSchema,
@@ -50,6 +52,49 @@ describe("decision model local install contract", () => {
         confirm: "INSTALL_DECISION_MODEL",
         autoStart: true,
       }).success,
+    ).toBe(false);
+  });
+
+  it("gates install start, progress and cancel behind their own Host capability", () => {
+    expect(DECISION_INSTALL_CAPABILITY).toBe("decisionModels.install.v1");
+    for (const method of [
+      "decisionModels.local.installStart",
+      "decisionModels.local.installProgress",
+      "decisionModels.local.cancelInstall",
+    ] as const)
+      expect(HOST_RPC_METHODS[method].requiredCapability, method).toBe(DECISION_INSTALL_CAPABILITY);
+    // The awaited install keeps its original capability, so older clients and Hosts are unaffected.
+    expect(HOST_RPC_METHODS["decisionModels.local.install"].requiredCapability).toBe(
+      "decisionModels.v1",
+    );
+    expect(
+      DecisionLocalInstallParamsSchema.safeParse({ modelId: "x", confirm: "install" }).success,
+    ).toBe(false);
+    expect(DECISION_MODELS_RPC["decisionModels.local.installStart"].params).toBe(
+      DecisionLocalInstallParamsSchema,
+    );
+  });
+
+  it("accepts a running state with progress and a failed state with a message only", () => {
+    const running = {
+      state: "running",
+      progress: {
+        modelId: "clef-flash-9b",
+        fileName: "clef.gguf",
+        fileIndex: 0,
+        fileCount: 1,
+        bytesDone: 4,
+        bytesTotal: 27,
+      },
+    };
+    expect(DecisionInstallStateSchema.parse(running)).toEqual(running);
+    expect(DecisionInstallStateSchema.parse({ state: "failed", error: "No space." })).toEqual({
+      state: "failed",
+      error: "No space.",
+    });
+    expect(DecisionInstallStateSchema.safeParse({ state: "paused" }).success).toBe(false);
+    expect(
+      DecisionInstallStateSchema.safeParse({ state: "idle", path: "C:/models" }).success,
     ).toBe(false);
   });
 
@@ -110,6 +155,11 @@ describe("decision model RPC inventory", () => {
       incomplete: true,
     });
     expect(DiscoveryResultSchema.parse({ found: [] })).toEqual({ found: [] });
+    expect(DiscoveryResultSchema.parse({ found: [], scannedAt: 1_000_000 })).toEqual({
+      found: [],
+      scannedAt: 1_000_000,
+    });
+    expect(() => DiscoveryResultSchema.parse({ found: [], scannedAt: -1 })).toThrow();
   });
   // Every method the settings client (features/decision-models/model/decisionModelsClient.ts) calls.
   const CLIENT_METHODS: DecisionModelsMethod[] = [
@@ -131,6 +181,9 @@ describe("decision model RPC inventory", () => {
     "decisionModels.local.recommend",
     "decisionModels.local.plan",
     "decisionModels.local.install",
+    "decisionModels.local.installStart",
+    "decisionModels.local.installProgress",
+    "decisionModels.local.cancelInstall",
     "decisionModels.local.start",
     "decisionModels.local.stop",
     "decisionModels.local.uninstall",

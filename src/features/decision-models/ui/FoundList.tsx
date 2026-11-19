@@ -55,7 +55,11 @@ export function FoundList({
       ) : null}
       {scanning ? (
         <div className="px-4 py-2.5">
-          <Progress label={t("Scanning this computer…")} />
+          <Progress
+            label={
+              target ? t("Scanning Host {p1}…", { p1: target }) : t("Scanning this computer…")
+            }
+          />
         </div>
       ) : null}
       {scanError !== null ? (
@@ -84,7 +88,7 @@ export function FoundList({
                   </Text>
                   <div className="flex min-w-0 items-center gap-2">
                     <Text size="caption" tone="secondary" className="shrink-0">
-                      {candidateKindLabel(candidate.kind)}
+                      {candidateKindLabel(candidate.kind, target)}
                     </Text>
                     {candidate.detail ? (
                       <MiddleTruncate size="caption" tone="secondary" className="min-w-0">

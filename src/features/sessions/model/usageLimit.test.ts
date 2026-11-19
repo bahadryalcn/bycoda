@@ -3,6 +3,7 @@ import { newSession, type Session } from "./session";
 import {
   formatUsageLimitReset,
   USAGE_LIMIT_RESUME_GRACE_MS,
+  usageLimitResetDelay,
   usageLimitResumeDue,
 } from "./usageLimit";
 
@@ -27,6 +28,25 @@ describe("usageLimitResumeDue", () => {
     expect(usageLimitResumeDue(limited({ usageLimit: { resumeAtReset: true } }), later)).toBe(
       false,
     );
+  });
+});
+
+describe("usageLimitResetDelay", () => {
+  // Regression for #464: the flip to "Limit has reset" must be scheduled at resetsAt,
+  // not left to the minute clock (which can trail the reset by up to a minute).
+  it("schedules the flip exactly at the reset", () => {
+    expect(usageLimitResetDelay(10_000, 4_000)).toBe(6_000);
+  });
+
+  it("is due immediately once the reset has passed", () => {
+    expect(usageLimitResetDelay(10_000, 10_000)).toBe(0);
+    expect(usageLimitResetDelay(10_000, 25_000)).toBe(0);
+  });
+
+  it("leaves a reset beyond one timer to the minute clock", () => {
+    const maxTimer = 2_147_483_647;
+    expect(usageLimitResetDelay(maxTimer, 0)).toBe(maxTimer);
+    expect(usageLimitResetDelay(maxTimer + 1, 0)).toBeUndefined();
   });
 });
 

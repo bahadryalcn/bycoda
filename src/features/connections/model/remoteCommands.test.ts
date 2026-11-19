@@ -429,6 +429,37 @@ it("translates disabled skill paths only for the addressed machine", async () =>
   });
 });
 
+it("keeps the truncation flag and translates paths of a status-aware skill listing", async () => {
+  remoteRequest.mockResolvedValueOnce({
+    skills: [
+      {
+        name: "tool",
+        description: "",
+        path: "/home/me/.agents/skills/tool/SKILL.md",
+        scope: "user",
+        source: "agents",
+      },
+    ],
+    truncated: true,
+  });
+  expect(await runMachineCommand("env", "list_skills", { cwd: "", withStatus: true })).toEqual({
+    skills: [
+      {
+        name: "tool",
+        description: "",
+        path: "remote://env/home/me/.agents/skills/tool/SKILL.md",
+        scope: "user",
+        source: "agents",
+      },
+    ],
+    truncated: true,
+  });
+  expect(remoteRequest).toHaveBeenLastCalledWith("machine", "workspace.run", {
+    command: "list_skills",
+    args: { cwd: "", withStatus: true },
+  });
+});
+
 it("addresses a machine without a project path for skill commands", async () => {
   remoteRequest.mockResolvedValueOnce([
     {

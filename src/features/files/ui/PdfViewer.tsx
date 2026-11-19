@@ -3,7 +3,7 @@ import { Button } from "../../../shared/ui/Button";
 import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { TextField } from "../../../shared/ui/TextField";
 import { t, useLocale } from "../../../shared/i18n/technical";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { defaultRangeExtractor, useVirtualizer } from "@tanstack/react-virtual";
 import {
   GlobalWorkerOptions,
@@ -18,7 +18,12 @@ import {
 import workerUrl from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 import { Minus, Plus } from "../../../shared/ui/icons";
 import { PdfRasterBudget, pdfRasterSize } from "../model/pdfRasterBudget";
-import { documentErrorMessage } from "../model/documentViewer";
+import { describeDocumentProblem } from "../model/documentProblemText";
+import {
+  documentProblem,
+  documentProblemDetail,
+  type DocumentProblem,
+} from "../model/documentViewer";
 import { DocumentMessage } from "./DocumentMessage";
 import {
   clampZoom,
@@ -54,18 +59,12 @@ type Anchor = {
   y: number;
 };
 
-export default function PdfViewer({
-  bytes,
-  trailing,
-}: {
-  bytes: Uint8Array;
-  trailing?: ReactNode;
-}) {
+export default function PdfViewer({ bytes }: { bytes: Uint8Array }) {
   useLocale();
   const [loaded, setLoaded] = useState<{
     source: Uint8Array;
     doc?: PDFDocumentProxy;
-    error?: string;
+    problem?: DocumentProblem;
   } | null>(null);
   const current = loaded?.source === bytes ? loaded : null;
 
@@ -80,7 +79,7 @@ export default function PdfViewer({
         if (!cancelled) setLoaded({ source: bytes, doc: loaded });
       },
       (cause: unknown) => {
-        if (!cancelled) setLoaded({ source: bytes, error: documentErrorMessage(cause) });
+        if (!cancelled) setLoaded({ source: bytes, problem: documentProblem(cause) });
       },
     );
     return () => {
@@ -89,10 +88,10 @@ export default function PdfViewer({
     };
   }, [bytes]);
 
-  if (current?.error)
+  if (current?.problem)
     return (
       <DocumentMessage title={t("Couldn’t read this PDF")} error>
-        {current.error}
+        {describeDocumentProblem(current.problem)}
       </DocumentMessage>
     );
   return (
@@ -101,14 +100,14 @@ export default function PdfViewer({
       {loaded?.doc ? (
         // A replacement snapshot hides the retired document while retaining page/zoom state.
         <div className={current?.doc ? "contents" : "hidden"}>
-          <PdfPages doc={loaded.doc} trailing={trailing} />
+          <PdfPages doc={loaded.doc} />
         </div>
       ) : null}
     </>
   );
 }
 
-function PdfPages({ doc, trailing }: { doc: PDFDocumentProxy; trailing?: ReactNode }) {
+function PdfPages({ doc }: { doc: PDFDocumentProxy }) {
   useLocale();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
@@ -349,7 +348,6 @@ function PdfPages({ doc, trailing }: { doc: PDFDocumentProxy; trailing?: ReactNo
         >
           {t("Fit width")}
         </Button>
-        {trailing}
       </div>
       <div
         ref={scrollRef}
@@ -412,7 +410,7 @@ function PdfPage({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
   const [near, setNear] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<DocumentProblem | null>(null);
   const [attempt, setAttempt] = useState(0);
 
   // Only pages within a screen or so of the viewport are rasterized; the rest
@@ -532,7 +530,7 @@ function PdfPage({
         canvas.height = 0;
         release?.();
         text.replaceChildren();
-        setError(documentErrorMessage(cause));
+        setError(documentProblem(cause));
       })
       .finally(() => {
         settled = true;
@@ -561,7 +559,7 @@ function PdfPage({
 
   // Keep unmeasured frames visible to IntersectionObserver so their page load
   // (and any page-specific failure) does not depend on eager getPage(1).
-  const errorShownCentrally = useConnectionErrorShownCentrally(error);
+  const errorShownCentrally = useConnectionErrorShownCentrally(documentProblemDetail(error));
   const width = Math.floor((size?.[0] ?? 600) * visualScale);
   const height = Math.floor((size?.[1] ?? 800) * visualScale);
 
@@ -583,7 +581,7 @@ function PdfPage({
       {error && !errorShownCentrally && (
         <div className="absolute inset-0">
           <DocumentMessage title={t("Couldn’t render page {p0}", { p0: number })} error>
-            <p>{error}</p>
+            <p>{describeDocumentProblem(error)}</p>
             <Button
               type="button"
               size="sm"

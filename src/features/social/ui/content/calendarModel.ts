@@ -46,6 +46,19 @@ export function monthCells(anchor: number, weekStart: 0 | 1 = 1): number[] {
   return Array.from({ length: 42 }, (_, index) => addDays(start, index));
 }
 
+/**
+ * Half-open [from, to) window of epoch ms the calendar draws: the first visible local midnight up to the
+ * local midnight after the last visible day. Built from local dates, not 24 h steps, so DST days stay whole.
+ */
+export function visibleRange(
+  view: Exclude<CalendarView, "list">,
+  anchor: number,
+  weekStart: 0 | 1 = 1,
+): { from: number; to: number } {
+  const days = view === "week" ? weekDays(anchor, weekStart) : monthCells(anchor, weekStart);
+  return { from: days[0]!, to: addDays(days[days.length - 1]!, 1) };
+}
+
 export function shiftWeek(anchor: number, weeks: number): number {
   return addDays(anchor, weeks * 7);
 }

@@ -196,7 +196,7 @@ export function settingsHostUnavailableMessage(entry: SettingsHostEntry): string
     case "pair-again":
       return entry.isLocal
         ? t("This computer's connection to its Host was revoked.")
-        : t("{p0} no longer accepts this computer. Pair it again from Settings > Connections.", {
+        : t("{p0} no longer accepts this computer. Pair it again from Settings → Connections.", {
             p0: entry.name,
           });
     case "update-needed":

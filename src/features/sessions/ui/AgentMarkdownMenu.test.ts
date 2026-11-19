@@ -121,33 +121,33 @@ describe("AgentMarkdown file link context menu", () => {
 
     expect(menu).not.toBeNull();
     expect(menu!.textContent).toContain("Open in bycoda");
-    expect(menu!.textContent).toContain("Open in Default App");
+    expect(menu!.textContent).toContain("Open in default app");
     expect(menu!.textContent).toMatch(
-      /Reveal in Finder|Reveal in File Explorer|Open Containing Folder/,
+      /Reveal in Finder|Reveal in File Explorer|Open containing folder/,
     );
-    expect(menu!.textContent).toContain("Copy Path");
-    expect(menu!.textContent).toContain("Copy Relative Path");
+    expect(menu!.textContent).toContain("Copy path");
+    expect(menu!.textContent).toContain("Copy relative path");
   });
 
   it("runs internal-open, external-open, reveal, and copy actions", async () => {
     await pick("Open in bycoda");
     expect(props.onOpenFile).toHaveBeenCalledWith("/repo/docs/guide.md");
 
-    await pick("Open in Default App");
+    await pick("Open in default app");
     expect(actions.openPathWithDefaultApp).toHaveBeenCalledWith("/repo/docs/guide.md");
 
     const revealLabel = IS_MAC
       ? "Reveal in Finder"
       : IS_WIN
         ? "Reveal in File Explorer"
-        : "Open Containing Folder";
+        : "Open containing folder";
     await pick(revealLabel);
     expect(actions.revealPath).toHaveBeenCalledWith("/repo/docs/guide.md");
 
-    await pick("Copy Path");
+    await pick("Copy path");
     expect(actions.copyText).toHaveBeenLastCalledWith("/repo/docs/guide.md");
 
-    await pick("Copy Relative Path");
+    await pick("Copy relative path");
     expect(actions.copyText).toHaveBeenLastCalledWith("docs/guide.md");
   });
 
@@ -208,7 +208,7 @@ describe("AgentMarkdown file link context menu", () => {
 
       await pick("Open in bycoda", link);
       expect(props.onOpenFile).toHaveBeenCalledWith("/repo/src/main.ts", navigation);
-      await pick("Copy Path", link);
+      await pick("Copy path", link);
       expect(actions.copyText).toHaveBeenCalledWith("/repo/src/main.ts");
     },
   );
@@ -228,7 +228,7 @@ describe("AgentMarkdown file link context menu", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     actions.openPathWithDefaultApp.mockRejectedValueOnce("No application can open this file");
 
-    await pick("Open in Default App");
+    await pick("Open in default app");
 
     expect(document.body.querySelector('[role="alert"]')?.textContent).toContain(
       "No application can open this file",

@@ -122,8 +122,9 @@ function DataExportRow() {
               ? t("The export failed. Try again.")
               : status === "expired"
                 ? t("The export expired. Request a new one.")
-                : t("A JSON file with everything bycoda stores about your account.")
+                : undefined
       }
+      info={status ? undefined : t("A JSON file with everything bycoda stores about your account.")}
       feedback={
         error || follow.isError ? (
           <InlineError>{error || t("Could not check the export.")}</InlineError>

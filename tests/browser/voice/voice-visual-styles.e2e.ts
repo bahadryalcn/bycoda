@@ -255,7 +255,7 @@ async function open(
     if (state === "error") cb.error("Local voice disconnected. Start voice again.");
   }, state);
   if (state === "muted")
-    await panel.getByRole("button", { name: "Pause mic", exact: true }).click();
+    await panel.getByRole("button", { name: "Mute microphone", exact: true }).click();
   await expect(panel).toHaveAttribute(
     "data-voice-state",
     state === "working" ? "listening" : state,

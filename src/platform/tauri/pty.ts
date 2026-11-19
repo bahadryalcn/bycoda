@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { UnlistenFn } from "@tauri-apps/api/event";
+import { decodeBase64 } from "../../shared/lib/base64";
 import { listenWindowAsync } from "./listenWindow";
 
 type DataPayload = { id: string; data: string; flow?: { generation: number; sequence: number } };
@@ -27,24 +28,6 @@ let bridge: Promise<UnlistenFn[]> | null = null;
 let bridgeGeneration = 0;
 let users = 0;
 let teardownTimer: ReturnType<typeof setTimeout> | undefined;
-
-/** Portable path: atob plus a byte loop. Exported so tests can compare it with the native one. */
-export function decodeBase64Loop(data: string): Uint8Array {
-  const binary = atob(data);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes;
-}
-
-type NativeBase64 = { fromBase64?: (data: string) => Uint8Array };
-
-/** Native decode where the WebView has it (recent Chromium); throws on malformed input like atob. */
-export function decodeBase64(data: string): Uint8Array {
-  const native = (Uint8Array as unknown as NativeBase64).fromBase64;
-  return native ? native.call(Uint8Array, data) : decodeBase64Loop(data);
-}
 
 /**
  * Same as decodeBase64, but a payload the backend never actually sends

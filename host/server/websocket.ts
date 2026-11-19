@@ -26,6 +26,13 @@ export function createWebsocketRuntime(
   >,
 ) {
   const tailnetHosts = createTailnetServeHosts(() => dependencies.mobileAccess.status());
+  // Any status or enable the owner flow already read (Settings enabling Serve) is
+  // visible to the Host check at once instead of after the next 60 s probe.
+  dependencies.mobileAccess.observe(tailnetHosts.observe);
+  // The first probe at creation runs before the Host listens and cannot know its port;
+  // probe again as soon as the Host listens so the name is known right after boot.
+  if (dependencies.server.listening) tailnetHosts.refresh();
+  else dependencies.server.once("listening", tailnetHosts.refresh);
   const websocket = attachHostWebSocketTransport({
     // Phones away from home reach /ws through this Host's own Tailscale Serve name;
     // the proxy connects from loopback and the bearer credential still authenticates.
@@ -50,7 +57,9 @@ export function createWebsocketRuntime(
       "native.services.workspace.format.bounded.v1",
       "native.buffers.delivery.ack.v1",
       "native.services.delivery.ack.v1",
+      "native.services.delivery.admission.v1",
       "native.delivery.epochs.v2",
+      "native.delivery.epochs.gaps.v1",
       "transport.ws.workspaces.cleanup.v1",
       "transport.ws.sessions.v2",
       "sessions.references.v1",

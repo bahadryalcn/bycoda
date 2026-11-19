@@ -1,6 +1,6 @@
 //! Discord provider: a bot token over the REST API (no gateway). A thread is one configured
 //! channel; direct messages are not listed because REST cannot enumerate them.
-use super::types::{Account, Attachment, Message, Provider, Secret, Thread};
+use super::types::{Account, Attachment, Message, MessagePage, Provider, Secret, Thread};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::time::Duration;
@@ -11,6 +11,8 @@ const HTTP_TIMEOUT: Duration = Duration::from_secs(20);
 const MAX_RETRY_WAIT_SECS: f64 = 5.0;
 const MAX_CHANNELS: usize = 50;
 const MAX_CONTENT_CHARS: usize = 2000;
+/// Messages per history page.
+const PAGE_SIZE: usize = 50;
 const DISCORD_EPOCH_MS: u64 = 1_420_070_400_000;
 const CONTENT_INTENT_HINT: &str =
     "[No text available: enable the Message Content intent for this bot in the Discord Developer Portal (Bot > Privileged Gateway Intents).]";
@@ -80,10 +82,14 @@ pub(crate) fn thread_messages(
     account: &Account,
     secret: &mut Secret,
     thread_id: &str,
-) -> Result<Vec<Message>, String> {
+    before: Option<&str>,
+) -> Result<MessagePage, String> {
     configured_channel(&account.config, thread_id)?;
+    if before.is_some_and(|cursor| !is_snowflake(cursor)) {
+        return Err("This conversation page is invalid. Reload the conversation.".into());
+    }
     let token = bot_token(secret)?;
-    thread_messages_with(&mut UreqHttp::new(&token), thread_id)
+    thread_messages_with(&mut UreqHttp::new(&token), thread_id, before)
 }
 
 pub(crate) fn reply(
@@ -147,8 +153,12 @@ impl Http for UreqHttp {
         };
         let response = match result {
             Ok(response) | Err(ureq::Error::Status(_, response)) => response,
-            Err(ureq::Error::Transport(_)) => {
-                return Err("Could not reach Discord. Check your connection and try again.".into())
+            Err(ureq::Error::Transport(error)) => {
+                return Err(crate::integrations::http::unreachable_text(
+                    "Discord",
+                    &error,
+                    json_body.is_some(),
+                ))
             }
         };
         let status = response.status();
@@ -435,14 +445,26 @@ pub(super) fn channel_thread(
 pub(super) fn thread_messages_with(
     http: &mut dyn Http,
     thread_id: &str,
-) -> Result<Vec<Message>, String> {
+    before: Option<&str>,
+) -> Result<MessagePage, String> {
     let bot = bot_user(http)?;
-    let value = call(
-        http,
-        &format!("/channels/{thread_id}/messages?limit=50"),
-        None,
-    )
-    .map_err(|error| error_text(error, Some(thread_id), false))?;
+    // Both ids are snowflakes (digits only) checked by the caller, so they are safe in the path.
+    let path = match before {
+        Some(cursor) => format!("/channels/{thread_id}/messages?limit={PAGE_SIZE}&before={cursor}"),
+        None => format!("/channels/{thread_id}/messages?limit={PAGE_SIZE}"),
+    };
+    let value = call(http, &path, None)
+        .map_err(|error| error_text(error, Some(thread_id), false))?;
+    // Discord answers newest first and has no "more" flag: a full page may have older messages,
+    // and its last entry is the cursor for them.
+    let earlier = value
+        .as_array()
+        .filter(|items| items.len() >= PAGE_SIZE)
+        .and_then(|items| items.last())
+        .and_then(|raw| raw.get("id"))
+        .and_then(Value::as_str)
+        .filter(|id| is_snowflake(id))
+        .map(str::to_string);
     let mut messages: Vec<Message> = value
         .as_array()
         .map(|items| {
@@ -453,7 +475,7 @@ pub(super) fn thread_messages_with(
         })
         .unwrap_or_default();
     messages.sort_by(|left, right| left.at.cmp(&right.at).then_with(|| left.id.cmp(&right.id)));
-    Ok(messages)
+    Ok(MessagePage { messages, earlier })
 }
 
 pub(super) fn reply_with(

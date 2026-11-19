@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { remoteRequest } from "../../../connections/public/connections";
 import type { HostProject } from "../../../connections/public/protocol";
@@ -22,6 +22,15 @@ export type AccountsData = {
   reload(): void;
 };
 
+const POLL_MS = 60_000;
+// shortcut: the Host request path here sets no per-call deadline, so a round that never settles is abandoned after two intervals, upgrade when remoteRequest has a deadline.
+const POLL_STALE_MS = POLL_MS * 2;
+
+/** Whether a poll tick must wait for an earlier round that is still pending. Explicit reloads never consult this. */
+export function pollRoundPending(round: { startedAt: number } | undefined, now: number): boolean {
+  return round !== undefined && now - round.startedAt < POLL_STALE_MS;
+}
+
 /**
  * Accounts, their capabilities, policies and Host flags for the selected Host and project.
  * Reads only while the screen is active, so a retained hidden screen does not poll the Host.
@@ -39,13 +48,16 @@ export function useAccountsData(input: {
   const [needsHumanKnown, setNeedsHumanKnown] = useState(false);
   const [needsHumanError, setNeedsHumanError] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const [tick, setTick] = useState(0);
+  const pollRound = useRef<{ startedAt: number } | undefined>(undefined);
   const [settled, setSettled] = useState<object>();
   const [error, setError] = useState("");
   const [snapshot, setSnapshot] = useState<SocialSnapshot>();
   const [projects, setProjects] = useState<HostProject[]>([]);
   const [needsHumanIds, setNeedsHumanIds] = useState<ReadonlySet<string>>(() => new Set());
 
-  // A new request object marks every reload as pending until its read settles.
+  // A new request object marks an explicit reload or scope change as pending until its read settles.
+  // Poll ticks do not change it, so background refreshes never show the loading state.
   const request = useMemo(() => ({}), [active, attempt, client, machineId, projectId]);
   const loading = settled !== request && (active || settled === undefined);
 
@@ -56,15 +68,39 @@ export function useAccountsData(input: {
     setNow(Date.now());
     const timer = setInterval(() => {
       setNow(Date.now());
-      setAttempt((value) => value + 1);
-    }, 60_000);
+      if (!pollRoundPending(pollRound.current, Date.now())) setTick((value) => value + 1);
+    }, POLL_MS);
     return () => clearInterval(timer);
   }, [active]);
 
+  // Host projects change rarely, so they are read on mount, project change or explicit reload only.
   useEffect(() => {
     if (!active) return;
     let alive = true;
-    client
+    remoteRequest<HostProject[]>(machineId, "projects.list", {}).then(
+      (list) => {
+        if (alive) {
+          setProjects(list);
+          setProjectsError(false);
+        }
+      },
+      () => {
+        if (alive) setProjectsError(true);
+      },
+    );
+    return () => {
+      alive = false;
+    };
+  }, [active, attempt, machineId, projectId]);
+
+  // A round reads the account snapshot and the needs-human list. Reloads and scope changes always start one;
+  // a tick starts one only through the pending check above, so rounds do not stack on a slow Host.
+  useEffect(() => {
+    if (!active) return;
+    let alive = true;
+    const round = { startedAt: Date.now() };
+    pollRound.current = round;
+    const snapshotRead = client
       .sectionSnapshot({
         section: "accounts",
         ...(projectId ? { projectId } : {}),
@@ -83,18 +119,7 @@ export function useAccountsData(input: {
       .finally(() => {
         if (alive) setSettled(request);
       });
-    remoteRequest<HostProject[]>(machineId, "projects.list", {}).then(
-      (list) => {
-        if (alive) {
-          setProjects(list);
-          setProjectsError(false);
-        }
-      },
-      () => {
-        if (alive) setProjectsError(true);
-      },
-    );
-    client.browser.needsHuman.list().then(
+    const needsHumanRead = client.browser.needsHuman.list().then(
       (result) => {
         if (alive) {
           setNeedsHumanIds(new Set(result.items.map((item) => item.accountId)));
@@ -109,10 +134,13 @@ export function useAccountsData(input: {
         }
       },
     );
+    void Promise.allSettled([snapshotRead, needsHumanRead]).then(() => {
+      if (pollRound.current === round) pollRound.current = undefined;
+    });
     return () => {
       alive = false;
     };
-  }, [active, request, client, machineId, projectId]);
+  }, [active, client, machineId, projectId, request, tick]);
 
   const reload = useCallback(() => setAttempt((value) => value + 1), []);
   return {

@@ -141,7 +141,9 @@ type CommonButtonProps = ComponentPropsWithRef<"button"> & {
   disabledReason?: string;
   startIcon?: ReactNode;
   endIcon?: ReactNode;
-  /** Keep the start icon visible and reveal the text on hover/focus. Use with motion="none" in a bounded toolbar. */
+  /** Icon-only box with a precise pointer, label shown in the tooltip (hover and focus) so the
+   *  control never resizes or displaces neighbours; on touch the label is always visible.
+   *  Needs `label`. Use with motion="none" in a bounded toolbar. */
   revealLabel?: boolean;
   fullWidth?: boolean;
   /** Disable label/press motion for controls that require a stable, direct DOM layout. */
@@ -440,7 +442,7 @@ export function Button({
   const suppressed = props.title === "";
   const tooltipText = suppressed
     ? undefined
-    : props.title || tooltip || (iconOnly ? label : undefined);
+    : props.title || tooltip || (iconOnly || revealLabel ? label : undefined);
   const reason = explained && !suppressed ? disabledReason : undefined;
   const hintLabel = tooltipText ?? reason;
   const hintDetails = suppressed

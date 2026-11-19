@@ -1,7 +1,7 @@
 //! OAuth endpoints of the account provider: discovery, authorize URL, code exchange,
 //! refresh and revocation. Parsing is pure so refresh error mapping is unit tested.
 use super::config::{valid_origin, Config, SCOPES};
-use crate::integrations::http::agent;
+use crate::integrations::http::{agent, transport_reason};
 use serde_json::Value;
 use std::time::Duration;
 
@@ -26,8 +26,8 @@ pub(crate) struct TokenSet {
 pub(crate) enum TokenError {
     /// The grant, code or refresh token is no longer valid.
     InvalidGrant,
-    /// No response: offline, DNS, TLS or timeout.
-    Network,
+    /// No response: offline, DNS, TLS, proxy or timeout. The payload is a fixed phrase.
+    Network(&'static str),
     /// The service answered with an error that does not end the session.
     Failed(String),
 }
@@ -71,7 +71,9 @@ pub(crate) fn discover(issuer: &str) -> Result<Endpoints, TokenError> {
                 "Sign-in is not available right now.".into(),
             ))
         }
-        Err(ureq::Error::Transport(_)) => return Err(TokenError::Network),
+        Err(ureq::Error::Transport(error)) => {
+            return Err(TokenError::Network(transport_reason(&error)))
+        }
     };
     let body: Value = response
         .into_string()
@@ -114,18 +116,20 @@ fn text(body: &Value, key: &str) -> Option<String> {
 /// status; error codes follow RFC 6749 section 5.2.
 pub(crate) fn parse_token_response(status: u16, body: &Value) -> Result<TokenSet, TokenError> {
     if let Some(error) = text(body, "error") {
-        return Err(match error.as_str() {
-            "invalid_grant" | "invalid_token" | "unauthorized_client" | "access_denied" => {
-                TokenError::InvalidGrant
-            }
-            _ => TokenError::Failed(format!(
+        // Only a structured OAuth rejection on a 400/401 proves the grant is gone; a
+        // gateway or proxy answering with anything else must never end the session.
+        let rejected = matches!(
+            error.as_str(),
+            "invalid_grant" | "invalid_token" | "unauthorized_client" | "access_denied"
+        );
+        return Err(if rejected && (status == 400 || status == 401) {
+            TokenError::InvalidGrant
+        } else {
+            TokenError::Failed(format!(
                 "Sign-in failed ({}).",
                 crate::oauth_loopback::sanitize(&error)
-            )),
+            ))
         });
-    }
-    if status == 400 || status == 401 {
-        return Err(TokenError::InvalidGrant);
     }
     if !(200..300).contains(&status) {
         return Err(TokenError::Failed(format!(
@@ -157,10 +161,16 @@ fn post_form(url: &str, fields: &[(&str, &str)]) -> Result<(u16, Value), TokenEr
         .send_string(&body);
     let response = match response {
         Ok(response) | Err(ureq::Error::Status(_, response)) => response,
-        Err(ureq::Error::Transport(_)) => return Err(TokenError::Network),
+        Err(ureq::Error::Transport(error)) => {
+            return Err(TokenError::Network(transport_reason(&error)))
+        }
     };
     let status = response.status();
-    let text = response.into_string().unwrap_or_default();
+    // A truncated body is a transport failure, not an empty (and so unproven) reply.
+    let text = response
+        .into_string()
+        .map_err(|_| TokenError::Network("the response was interrupted"))?;
+    // A non-JSON body (HTML from a proxy or captive portal) stays `Null`: it carries no proof.
     Ok((status, serde_json::from_str(&text).unwrap_or(Value::Null)))
 }
 
@@ -199,7 +209,10 @@ impl HttpBackend {
     }
 
     pub(crate) fn endpoints(&self) -> Result<Endpoints, TokenError> {
-        let mut cached = self.endpoints.lock().map_err(|_| TokenError::Network)?;
+        let mut cached = self
+            .endpoints
+            .lock()
+            .map_err(|_| TokenError::Network("local state is unavailable"))?;
         if let Some(endpoints) = cached.as_ref() {
             return Ok(endpoints.clone());
         }

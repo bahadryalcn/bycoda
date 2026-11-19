@@ -250,15 +250,77 @@ it("shows progress while loading another page and retains existing commits", asy
   const request = deferred<Awaited<ReturnType<typeof gitHistory>>>();
   vi.mocked(gitHistory).mockReturnValueOnce(request.promise);
   await click("Load more");
-  expect(gitHistory).toHaveBeenLastCalledWith("/repo", 400, false);
+  // Only the next page is read, continuing after the 200 commits already loaded.
+  expect(gitHistory).toHaveBeenLastCalledWith("/repo", 200, false, 200);
   expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
   expect(container.textContent).toContain("Commit 199");
   expect(
     [...container.querySelectorAll("button")].some((button) => button.textContent === "Load more"),
   ).toBe(false);
-  await act(async () => request.resolve({ head: commit.sha, commits: page }));
+  await act(async () =>
+    request.resolve({
+      head: commit.sha,
+      commits: [{ ...commit, sha: "f".repeat(40), subject: "Older" }],
+    }),
+  );
   expect(container.querySelector('[aria-busy="true"]')).toBeNull();
   expect(container.querySelector(".animate-spin")).toBeNull();
+  expect(container.textContent).toContain("Commit 199");
+  expect(container.textContent).toContain("Older");
+});
+
+function historyPage(from: number, count: number) {
+  return Array.from({ length: count }, (_, index) => ({
+    ...commit,
+    sha: (from + index).toString(16).padStart(40, "0"),
+    subject: `Commit ${from + index}`,
+  }));
+}
+
+it("appends pages under one cache entry and stops offering more at the end of history", async () => {
+  vi.mocked(gitHistory).mockResolvedValueOnce({ head: commit.sha, commits: historyPage(0, 200) });
+  await graph();
+  vi.mocked(gitHistory).mockResolvedValueOnce({ head: commit.sha, commits: historyPage(200, 5) });
+  await click("Load more");
+  expect(gitHistory).toHaveBeenCalledTimes(2);
+  expect(container.textContent).toContain("Commit 204");
+  expect(container.textContent).not.toContain("Load more");
+  // Neither read repeated the 200 commits already loaded.
+  expect(vi.mocked(gitHistory).mock.calls).toEqual([
+    ["/repo", 200, false],
+    ["/repo", 200, false, 200],
+  ]);
+});
+
+it("re-reads the loaded depth in one request on a Git change and drops stale appended pages", async () => {
+  vi.mocked(gitHistory).mockResolvedValueOnce({ head: commit.sha, commits: historyPage(0, 200) });
+  await graph();
+  vi.mocked(gitHistory).mockResolvedValueOnce({ head: commit.sha, commits: historyPage(200, 200) });
+  await click("Load more");
+  expect(container.textContent).toContain("Commit 399");
+  // A ref change rewrote history: the next read starts over and covers all 400 loaded commits.
+  const rewritten = historyPage(1000, 400);
+  vi.mocked(gitHistory).mockResolvedValueOnce({ head: commit.sha, commits: rewritten });
+  const changed = vi.mocked(subscribeGitChanged).mock.calls.at(-1)![0];
+  await act(async () => changed(null));
+  expect(gitHistory).toHaveBeenLastCalledWith("/repo", 400, false);
+  expect(container.textContent).toContain("Commit 1399");
+  expect(container.textContent).not.toContain("Commit 399 ");
+  expect(container.textContent).not.toContain("Commit 199 ");
+});
+
+it("ignores a page that was requested before a refresh replaced the history", async () => {
+  vi.mocked(gitHistory).mockResolvedValueOnce({ head: commit.sha, commits: historyPage(0, 200) });
+  await graph();
+  const page = deferred<Awaited<ReturnType<typeof gitHistory>>>();
+  vi.mocked(gitHistory).mockReturnValueOnce(page.promise);
+  await click("Load more");
+  vi.mocked(gitHistory).mockResolvedValueOnce({ head: commit.sha, commits: historyPage(500, 200) });
+  const changed = vi.mocked(subscribeGitChanged).mock.calls.at(-1)![0];
+  await act(async () => changed(null));
+  await act(async () => page.resolve({ head: commit.sha, commits: historyPage(200, 200) }));
+  expect(container.textContent).toContain("Commit 699");
+  expect(container.textContent).not.toContain("Commit 399");
 });
 
 it("loads the full branch history when the full graph opens", async () => {

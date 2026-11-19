@@ -800,7 +800,7 @@ for (const theme of ["light", "dark"])
       await pending.getByRole("radio", { name: /Small safe change/ }).check();
       await pending.locator('button[type="submit"]').click();
       await expect(
-        pending.getByText("The answer is unconfirmed. Your original choice is kept.", {
+        pending.getByText("Your answer could not be confirmed. Your original choice is kept.", {
           exact: true,
         }),
       ).toBeVisible();
@@ -825,7 +825,7 @@ for (const theme of ["light", "dark"])
       );
       await openRoomSection(page, "Jobs");
       await page.getByRole("button", { name: "Job actions", exact: true }).click();
-      await page.getByRole("menuitem", { name: "Delete...", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Delete…", exact: true }).click();
       const review = page.getByRole("dialog", { name: "Delete job?", exact: true });
       await expect(
         review.getByRole("checkbox", { name: "Also delete the reviewed tasks", exact: true }),
@@ -873,7 +873,7 @@ for (const theme of ["light", "dark"])
       );
       await openRoomSection(page, "Jobs");
       await page.getByRole("button", { name: "Job actions", exact: true }).click();
-      await page.getByRole("menuitem", { name: "Delete...", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Delete…", exact: true }).click();
       const review = page.getByRole("dialog", { name: "Delete job?", exact: true });
       await review
         .getByRole("checkbox", { name: "Also delete the reviewed tasks", exact: true })
@@ -1362,7 +1362,7 @@ for (const theme of ["light", "dark"])
       const draft = page.getByRole("textbox", { name: "Message Arif", exact: true });
       await draft.fill("Keep this unsent draft");
       await page.getByRole("button", { name: "Conversation actions", exact: true }).click();
-      await page.getByRole("menuitem", { name: "Clear conversation...", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Clear conversation…", exact: true }).click();
       const confirm = page.getByRole("dialog", { name: "Clear this conversation?", exact: true });
       await expect(confirm).toBeVisible();
       await page.screenshot({
@@ -2007,7 +2007,7 @@ for (const theme of ["light", "dark"])
       );
       await expect(page.getByText("Fixture activity unavailable")).toBeVisible();
       await expect(page.getByText("No notes mention this job yet.")).toBeVisible();
-      await expect(page.getByText("Loading...", { exact: true })).toBeVisible();
+      await expect(page.getByText("Loading…", { exact: true })).toBeVisible();
       await mkdir("temp/verification/assistant-callers-visual", { recursive: true });
       await page.screenshot({
         path: `temp/verification/assistant-callers-visual/${theme}-${width}-job-states.png`,

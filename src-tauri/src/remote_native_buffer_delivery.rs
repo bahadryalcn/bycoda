@@ -51,6 +51,49 @@ fn commit_epoch(
     journal::epochs::current(store, &epoch)
 }
 
+fn recover_epoch_gap(
+    channel: &NativeWorkspaceChannel,
+    store: &SessionStore,
+    original: &journal::Original,
+    deadline: std::time::Instant,
+) -> Result<bool, String> {
+    if std::time::Instant::now() >= deadline
+        || original.route_fingerprint() != ws_fingerprint(&channel.selection.machine)
+    {
+        return Ok(false);
+    }
+    let params = epoch_wire::gap_params(original)?;
+    let reply = call_until(
+        channel,
+        epoch_wire::GAP_RESOLVE,
+        params.clone(),
+        None,
+        deadline,
+    )
+    .map_err(|error| error.message)?
+    .reply;
+    if !epoch_wire::gap_outcome(&params, &reply.value)? {
+        return Ok(false);
+    }
+    let admission = journal::completion_admission(store)?;
+    let projection = NativeProjection::new(&reply);
+    let result = NativeProjection::commit(&[&projection], || {
+        let commit = || {
+            authority::with_full_projection_transaction(store, |tx| {
+                journal::epochs::record_gap_tx(tx.connection(), original)
+            })
+        };
+        if reply.guard.is_none() {
+            if let Some(caller) = &channel.caller {
+                return NativeProfileGuard::admit_workspace(&[caller.as_ref()], &[], commit);
+            }
+        }
+        commit()
+    });
+    admission.finish(result)?;
+    Ok(true)
+}
+
 fn ensure_epoch(
     channel: &NativeWorkspaceChannel,
     store: &SessionStore,
@@ -63,8 +106,12 @@ fn ensure_epoch(
     let params = epoch_wire::open_params(store, &route)?;
     let response = call(channel, epoch_wire::OPEN, params, None).map_err(|error| error.message)?;
     let epoch = commit_epoch(channel, store, &response.reply)?;
-    if let Some(params) = epoch_wire::compact_params(store, &epoch)? {
-        let deadline = std::time::Instant::now() + ACK_BUDGET;
+    let deadline = std::time::Instant::now() + ACK_BUDGET;
+    if let Some(params) =
+        epoch_wire::maintenance_params(store, &epoch, channel.delivery_epoch_gaps, |original| {
+            recover_epoch_gap(channel, store, original, deadline)
+        })?
+    {
         if let Ok(response) = call_until(channel, epoch_wire::COMPACT, params, None, deadline) {
             let _ = commit_epoch(channel, store, &response.reply);
         }

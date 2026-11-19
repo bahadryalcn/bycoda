@@ -11,6 +11,9 @@ import {
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { once } from "node:events";
+import { connect, type Socket } from "node:net";
+import { GATEWAY_ADMISSION } from "../security/gateway-admission";
 import { createLanIdentity } from "./mobile-lan-crypto";
 import { createLanGateway, MobileLanAccess, stablePortCandidates } from "./mobile-lan";
 import { lanContext } from "../../src/integrations/mobile-lan";
@@ -379,5 +382,29 @@ describe("encrypted mobile LAN access", () => {
     expect(status.endpoint).toBeUndefined();
     expect(JSON.parse(await readFile(file, "utf8")).port).toBe(43210);
     await access.close();
+  });
+
+  it("answers LAN sockets past the admission cap with 429 instead of dropping them silently", async () => {
+    const gateway = createLanGateway(createLanIdentity(), "pc", () => 1);
+    const port = await listen(gateway);
+    const held: Socket[] = [];
+    try {
+      for (let index = 0; index < GATEWAY_ADMISSION.maxAdmitted; index++) {
+        const accepted = once(gateway, "connection");
+        const socket = connect({ host: "127.0.0.1", port });
+        socket.on("error", () => {});
+        held.push(socket);
+        await accepted;
+      }
+      const refused = connect({ host: "127.0.0.1", port });
+      refused.setEncoding("utf8");
+      refused.on("error", () => {});
+      let text = "";
+      refused.on("data", (chunk: string) => (text += chunk));
+      await once(refused, "close");
+      expect(text).toMatch(/^HTTP\/1\.1 429 Too Many Requests\r\nRetry-After: 1\r\n/);
+    } finally {
+      for (const socket of held) socket.destroy();
+    }
   });
 });

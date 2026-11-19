@@ -7,6 +7,7 @@ import {
   LINKEDIN_POST_LABELS,
 } from "./social-browser-linkedin-composer";
 import type { BrowserRecipeContext } from "./social-browser-recipe";
+import { SEND_LABELS } from "./browser/ui-labels";
 
 const origin = "https://www.linkedin.com";
 const json = JSON.stringify;
@@ -456,7 +457,7 @@ export async function linkedInStartMessage(
     ctx,
     ".msg-thread button.msg-form__send-button,.msg-overlay-conversation-bubble button.msg-form__send-button",
     "message-send",
-    ["Send", "Gönder"],
+    SEND_LABELS,
   );
   const at = ctx.now();
   let submitted = false;

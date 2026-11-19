@@ -80,7 +80,7 @@ it("shows discovery failure and retries without replacing the saved transcriptio
   ]);
   await act(async () =>
     [...container.querySelectorAll("button")]
-      .find((button) => button.textContent === "Retry")!
+      .find((button) => button.textContent === "Try again")!
       .click(),
   );
   await act(async () => {

@@ -55,6 +55,15 @@ messaging surface yet.
 - Thread ids are validated before they reach URLs or IMAP commands.
 - Every network call has a deadline; rate limits are honoured once when short.
 - Messages refresh only while the view is visible and the window is focused.
+- A conversation is read in pages: `messaging_thread_messages` returns the newest page plus
+  an opaque `earlier` cursor each provider validates before it reaches a URL or command; the
+  cursor comes back as `before`. A refresh merges the newest page into the loaded messages
+  (`threadMessages.ts`) and never drops opened earlier pages or a sent reply; only an
+  explicit reload starts over. The timeline is `MessageTimeline windowed`; keep the
+  follow-the-end, earlier-page anchor and focus handling in `MessageThreadView` in step.
+- Renderer caches (`model/messagingCache.ts`) belong to an account. Removing, saving or
+  re-identifying an account, or a group lock engaging, drops its entries; a read that
+  finishes after its account was dropped is discarded, never cached or shown.
 
 ## Focused checks
 

@@ -172,12 +172,12 @@ export function ModelsPage({
     ),
   );
   const saveDraft = async () => {
-    if (retainedTransactionValue<boolean>(`${transactionKey}:saving`)) return;
+    if (retainedTransactionValue<boolean>(`${transactionKey}:saving`)) return false;
     // Defaults are desktop-local: only a still-running probe holds the save back, so a failing
     // Host never blocks it (the Host routing sync is skipped then).
     if (scope.loading || localRouting.pending) {
       setSaveState({ state: "error", message: t("Checking Host capabilities. Try again.") });
-      return;
+      return false;
     }
     const selected = selectedTargetValues(targetChoice).map(targets.parse).filter(targets.has);
     const destinations =
@@ -214,11 +214,14 @@ export function ModelsPage({
           .map(({ target, message }) => `${targets.label(target)}: ${message}`)
           .join("; "),
       });
-      return;
+      return false;
     }
-    if (retainedTransactionValue<typeof draft>(`${transactionKey}:draft`) === draft)
-      setDraft(EMPTY_DRAFT);
+    // An edit made while saving is not part of the acknowledged draft: keep it and do not
+    // acknowledge, so "Save and leave" never drops it.
+    const unchanged = retainedTransactionValue<typeof draft>(`${transactionKey}:draft`) === draft;
+    if (unchanged) setDraft(EMPTY_DRAFT);
     setSaveState({ state: "saved", target: outcome.saved.map(targets.label).join(", ") });
+    return unchanged;
   };
 
   const project = target.kind === "project" ? target.path : null;

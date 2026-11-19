@@ -15,6 +15,7 @@ import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPrefere
 import { useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import { IS_MAC } from "../../../platform/tauri/platform";
+import { errorText } from "../../../shared/lib/errors";
 import { isDesktopGlobal } from "../model/desktopStopKeybinding";
 import { applyDesktopShortcuts } from "../model/desktopTalkShortcut";
 
@@ -37,6 +38,7 @@ import {
 } from "../model/settings";
 
 import { persistQuickComposerShortcut } from "../model/quickComposerPersist";
+import { keybindingActionLabel } from "../model/keybindingLabel";
 import {
   isGlobalShortcut,
   QUICK_COMPOSER_DEFAULT_SHORTCUT,
@@ -114,7 +116,7 @@ export function ShortcutEditor({
       setSaved(true);
       onFeedbackChange?.({ state: "success" });
     } catch (reason) {
-      const message = t("Could not save shortcut: {p0}", { p0: String(reason) });
+      const message = t("Could not save shortcut: {p0}", { p0: errorText(reason) });
       setError(message);
       onFeedbackChange?.({ state: "error", message });
     } finally {
@@ -419,7 +421,7 @@ function KeybindingSettingsRow({
       id={keybindingSettingId(row.command)}
       label={
         <Text size="inherit" tone={disabled ? "disabled" : "inherit"}>
-          {t(row.command).replace(/^[^:]+:\s*/, "")}
+          {keybindingActionLabel(row.command)}
           {modified ? (
             <Text as="span" weight="regular" leading="inherit" className={styles.modified}>
               {t("Modified")}
@@ -568,8 +570,8 @@ export function KeybindingsPage() {
         if (rollbackErrors.length)
           throw new Error(
             t("Shortcut save failed: {p0}. Restoring the native shortcut also failed: {p1}", {
-              p0: String(error),
-              p1: rollbackErrors.map(String).join("; "),
+              p0: errorText(error),
+              p1: rollbackErrors.map(errorText).join("; "),
             }),
           );
         throw error;
@@ -633,10 +635,9 @@ export function KeybindingsPage() {
         {filtersOpen ? (
           <Popover
             anchor={filterAnchor}
-            role="dialog"
+            kind="dialog"
             aria-label={t("Filters")}
             width={280}
-            autoFocus
             flow="scroll"
             onDismiss={() => setFiltersOpen(false)}
           >

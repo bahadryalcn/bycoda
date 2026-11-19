@@ -66,8 +66,6 @@ export function CustomEndpointDialog({
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
     const key = apiKey.trim();
-    // The key leaves component state before the request, so a failed attempt does not keep it.
-    setApiKey("");
     const input: DecisionSourceInput = {
       name: clampName(name),
       kind: endpointSourceKind(endpoint),
@@ -77,7 +75,13 @@ export function CustomEndpointDialog({
       // The Host checks the header name; an empty field keeps Authorization: Bearer.
       ...(authHeader.trim() ? { authHeader: authHeader.trim() } : {}),
     };
-    void flow.submit(input, contractLabel(adapter), key || undefined).catch(() => undefined);
+    // The key stays in state while the add is in flight or after it fails, so a retry needs no retyping.
+    void flow
+      .submit(input, contractLabel(adapter), key || undefined)
+      .then((added) => {
+        if (added) setApiKey("");
+      })
+      .catch(() => undefined);
   };
 
   return (

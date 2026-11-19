@@ -849,6 +849,32 @@ pub async fn list_dir(path: String) -> Result<Vec<DirEntry>, String> {
     crate::harness::run_blocking("list_dir", move || list_dir_sync(&expand_home(&path))).await
 }
 
+/// Cheap change stamp of one folder (its own modified time and entry count). The
+/// tree polls every expanded folder; an unchanged stamp lets it skip reading,
+/// ignore-checking and serializing a huge listing. `None` means "cannot tell"
+/// (unreadable folder, no modified time): the caller then reads the listing, so
+/// a real error still surfaces from `list_dir`.
+#[tauri::command]
+pub async fn list_dir_stamp(path: String) -> Result<Option<String>, String> {
+    crate::harness::run_blocking("list_dir_stamp", move || {
+        Ok(list_dir_stamp_sync(&expand_home(&path)))
+    })
+    .await
+}
+
+fn list_dir_stamp_sync(dir: &Path) -> Option<String> {
+    let modified = std::fs::metadata(dir)
+        .ok()?
+        .modified()
+        .ok()?
+        .duration_since(UNIX_EPOCH)
+        .ok()?;
+    // Counting entries guards a filesystem whose directory mtime is coarse or
+    // not bumped by every add or remove; it allocates nothing per entry.
+    let count = std::fs::read_dir(dir).ok()?.filter(Result::is_ok).count();
+    Some(format!("{}:{count}", modified.as_nanos()))
+}
+
 pub(crate) fn list_dir_sync(dir: &Path) -> Result<Vec<DirEntry>, String> {
     let reader = std::fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
 
@@ -945,7 +971,7 @@ fn compare_natural_names(a: &str, b: &str) -> std::cmp::Ordering {
     (a.len() - i).cmp(&(b.len() - j)).then_with(|| a.cmp(b))
 }
 
-const MAX_PROJECT_FILES: usize = 20_000;
+pub(crate) const MAX_PROJECT_FILES: usize = 20_000;
 const MAX_WALK_DIRS: usize = 4_000;
 
 #[derive(Serialize, Clone, Debug)]
@@ -1010,11 +1036,24 @@ pub(crate) fn list_project_files_sync(cwd: &str) -> Result<Vec<ProjectFile>, Str
 /// so both take the flag: `git ls-files` and the walk it falls back to. The
 /// walk is the one that can run for minutes, but the listing is the one that
 /// can hold a hundred megabytes, so neither is left uninterruptible.
+#[cfg(test)]
 pub(crate) fn list_project_files_sync_cancellable(
     cwd: &str,
     cancel: Option<&AtomicBool>,
 ) -> Result<Vec<ProjectFile>, String> {
-    list_project_files_inner(cwd, cancel, &AtomicBool::new(false))
+    list_project_files_with_completeness(cwd, cancel).map(|(files, _)| files)
+}
+
+/// The cancellable listing plus whether it stopped at a file, directory or
+/// `git ls-files` cap, so a caller that searches the listing can say it did
+/// not cover the whole tree.
+pub(crate) fn list_project_files_with_completeness(
+    cwd: &str,
+    cancel: Option<&AtomicBool>,
+) -> Result<(Vec<ProjectFile>, bool), String> {
+    let truncated = AtomicBool::new(false);
+    let files = list_project_files_inner(cwd, cancel, &truncated)?;
+    Ok((files, truncated.load(Ordering::Relaxed)))
 }
 
 fn list_project_files_inner(
@@ -1367,15 +1406,17 @@ pub struct GitHistory {
 
 /// Recent commits for the Graph view: HEAD, upstream, and the default
 /// branch, or every branch, remote branch, and tag when `all` is set.
-/// Newest first, with parent SHAs for the graph.
+/// Newest first, with parent SHAs for the graph. `skip` continues after that
+/// many commits of the same topological walk, so pages append without re-reading.
 #[tauri::command]
 pub async fn git_history(
     cwd: String,
     limit: Option<u32>,
     all: Option<bool>,
+    skip: Option<u32>,
 ) -> Result<GitHistory, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        git_history_scoped(&expand_home(&cwd), limit, all.unwrap_or(false))
+        git_history_scoped(&expand_home(&cwd), limit, skip, all.unwrap_or(false))
     })
     .await
     .map_err(|e| e.to_string())?
@@ -3504,10 +3545,15 @@ fn git_history_tips(root: &Path) -> Vec<String> {
 
 #[cfg(test)]
 fn git_history_for(root: &Path, limit: Option<u32>) -> Result<GitHistory, String> {
-    git_history_scoped(root, limit, false)
+    git_history_scoped(root, limit, None, false)
 }
 
-fn git_history_scoped(root: &Path, limit: Option<u32>, all: bool) -> Result<GitHistory, String> {
+fn git_history_scoped(
+    root: &Path,
+    limit: Option<u32>,
+    skip: Option<u32>,
+    all: bool,
+) -> Result<GitHistory, String> {
     if !git_is_work_tree(root) {
         return match git_checked(root, &["rev-parse", "--is-inside-work-tree"]) {
             Err(error) if error.to_lowercase().contains("not a git repository") => {
@@ -3540,8 +3586,11 @@ fn git_history_scoped(root: &Path, limit: Option<u32>, all: bool) -> Result<GitH
         "--decorate=short".to_string(),
         "--max-count".to_string(),
         count,
-        "--format=%H%x00%h%x00%P%x00%an%x00%at%x00%D%x00%s%x1e".to_string(),
     ];
+    if let Some(skip) = skip.filter(|skip| *skip > 0) {
+        args.push(format!("--skip={skip}"));
+    }
+    args.push("--format=%H%x00%h%x00%P%x00%an%x00%at%x00%D%x00%s%x1e".to_string());
     args.extend(tips);
     let args_ref: Vec<&str> = args.iter().map(String::as_str).collect();
     let Some(text) = git_run(root, &args_ref) else {
@@ -6258,6 +6307,16 @@ fn git_cmd_for_args_with_path(args: &[&str], gui_path: impl FnOnce() -> String) 
 const GIT_NETWORK_TIMEOUT: Duration = Duration::from_secs(300);
 pub(crate) const GIT_LOCAL_TIMEOUT: Duration = Duration::from_secs(120);
 
+/// First gap between exit checks on a running git child. Most local git commands finish
+/// within milliseconds, so the gap starts short instead of sleeping the full ceiling.
+const GIT_WAIT_POLL_MIN: Duration = Duration::from_millis(1);
+/// Ceiling for that gap. It equals the old fixed sleep, so exit detection is never slower.
+const GIT_WAIT_POLL_MAX: Duration = Duration::from_millis(25);
+
+fn next_git_wait_poll(poll: Duration) -> Duration {
+    (poll * 2).min(GIT_WAIT_POLL_MAX)
+}
+
 fn git_is_network_command(args: &[&str]) -> bool {
     matches!(args.first().copied(), Some("push" | "pull" | "fetch"))
 }
@@ -6304,6 +6363,7 @@ fn wait_with_timeout(
             .map(|pipe| Box::new(pipe) as Box<dyn Read + Send>),
     );
     let deadline = Instant::now() + timeout;
+    let mut poll = GIT_WAIT_POLL_MIN;
     let status = loop {
         if let Some(status) = child.try_wait()? {
             break status;
@@ -6319,7 +6379,9 @@ fn wait_with_timeout(
                 ),
             ));
         }
-        thread::sleep(Duration::from_millis(25));
+        // Never sleep past the deadline, so the timeout still fires on time.
+        thread::sleep(poll.min(deadline.saturating_duration_since(Instant::now())));
+        poll = next_git_wait_poll(poll);
     };
     Ok(std::process::Output {
         status,
@@ -6659,6 +6721,7 @@ fn git_stream_command(
                 let _ = done_tx.send(Err("Git process owner unavailable".into()));
                 return;
             };
+            let mut poll = GIT_WAIT_POLL_MIN;
             let result = loop {
                 match child.try_wait() {
                     Ok(Some(status)) => {
@@ -6694,7 +6757,9 @@ fn git_stream_command(
                     }
                     .to_string());
                 }
-                thread::sleep(Duration::from_millis(25));
+                // Cancel is still seen within the 25 ms ceiling; the sleep never passes the deadline.
+                thread::sleep(poll.min(deadline.saturating_duration_since(Instant::now())));
+                poll = next_git_wait_poll(poll);
             };
             let _ = done_tx.send(result);
         });
@@ -6750,6 +6815,19 @@ fn git_stream_command(
 mod git_stream_process_tests {
     use super::*;
     static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn git_wait_poll_starts_short_and_settles_at_the_old_ceiling() {
+        let mut poll = GIT_WAIT_POLL_MIN;
+        assert_eq!(poll, Duration::from_millis(1));
+        let mut previous = poll;
+        for _ in 0..8 {
+            poll = next_git_wait_poll(poll);
+            assert!(poll >= previous && poll <= GIT_WAIT_POLL_MAX);
+            previous = poll;
+        }
+        assert_eq!(poll, Duration::from_millis(25));
+    }
 
     fn child(name: &str) -> Command {
         let mut command = Command::new(std::env::current_exe().unwrap());
@@ -8499,6 +8577,24 @@ fn stat_files_sync(paths: Vec<String>) -> Result<Vec<FileMtime>, String> {
         .collect())
 }
 
+/// Windows drive roots from the OS logical-drive bitmask. Reads no disk, so an empty or
+/// disconnected drive cannot stall it; callers still stat each root before listing it.
+#[tauri::command]
+pub fn list_windows_drives() -> Vec<String> {
+    #[cfg(windows)]
+    {
+        let mask = unsafe { windows_sys::Win32::Storage::FileSystem::GetLogicalDrives() };
+        (0..26u8)
+            .filter(|bit| mask & (1u32 << bit) != 0)
+            .map(|bit| format!("{}:/", char::from(b'A' + bit)))
+            .collect()
+    }
+    #[cfg(not(windows))]
+    {
+        Vec::new()
+    }
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PathInfo {
@@ -9660,7 +9756,7 @@ mod tests {
     fn git_history_reports_invalid_repository_access() {
         let dir = tmp("git-history-read-state");
         let missing = dir.0.join("missing");
-        assert!(git_history_scoped(&missing, Some(10), false).is_err());
+        assert!(git_history_scoped(&missing, Some(10), None, false).is_err());
     }
 
     #[test]
@@ -10575,6 +10671,22 @@ mod tests {
         let mut ignored = ignored_names(&list_dir_sync(&dir.0).unwrap());
         ignored.sort_unstable();
         assert_eq!(ignored, vec!["a.log", "secret.txt"]);
+    }
+
+    #[test]
+    fn list_dir_stamp_is_stable_until_entries_change_and_unknown_when_unreadable() {
+        let dir = tmp("list-dir-stamp");
+        std::fs::write(dir.0.join("a.ts"), "x\n").unwrap();
+        let first = list_dir_stamp_sync(&dir.0).expect("readable folder has a stamp");
+        assert_eq!(list_dir_stamp_sync(&dir.0).as_deref(), Some(first.as_str()));
+
+        std::fs::write(dir.0.join("b.ts"), "x\n").unwrap();
+        let added = list_dir_stamp_sync(&dir.0).unwrap();
+        assert_ne!(added, first);
+        assert!(added.ends_with(":2"));
+
+        assert_eq!(list_dir_stamp_sync(&dir.0.join("missing")), None);
+        assert_eq!(list_dir_stamp_sync(&dir.0.join("a.ts")), None);
     }
 
     #[test]
@@ -13573,10 +13685,40 @@ mod tests {
         commit_file(&dir.0, "b.txt", "beta\n", "on side");
         assert!(git(&dir.0, &["checkout", "main"]));
 
-        let current = git_history_scoped(&dir.0, None, false).unwrap();
+        let current = git_history_scoped(&dir.0, None, None, false).unwrap();
         assert!(current.commits.iter().all(|c| c.subject != "on side"));
-        let all = git_history_scoped(&dir.0, None, true).unwrap();
+        let all = git_history_scoped(&dir.0, None, None, true).unwrap();
         assert!(all.commits.iter().any(|c| c.subject == "on side"));
+    }
+
+    #[test]
+    fn git_history_skip_continues_the_same_topological_walk() {
+        let dir = tmp("git-history-skip");
+        if !init_git_commit(&dir.0, &[("a.txt", "alpha\n")]) {
+            return;
+        }
+        assert!(git(&dir.0, &["checkout", "-b", "side"]));
+        commit_file(&dir.0, "b.txt", "beta\n", "on side");
+        assert!(git(&dir.0, &["checkout", "main"]));
+        commit_file(&dir.0, "c.txt", "gamma\n", "on main");
+        assert!(git(&dir.0, &["merge", "--no-ff", "-m", "merge side", "side"]));
+        commit_file(&dir.0, "d.txt", "delta\n", "after merge");
+
+        let whole = git_history_scoped(&dir.0, None, None, true).unwrap();
+        let first = git_history_scoped(&dir.0, Some(2), None, true).unwrap();
+        let second = git_history_scoped(&dir.0, Some(2), Some(2), true).unwrap();
+        let rest = git_history_scoped(&dir.0, None, Some(4), true).unwrap();
+
+        let paged: Vec<_> = first
+            .commits
+            .iter()
+            .chain(&second.commits)
+            .chain(&rest.commits)
+            .cloned()
+            .collect();
+        assert_eq!(paged, whole.commits);
+        assert_eq!(first.head, whole.head);
+        assert_eq!(second.head, whole.head);
     }
 
     #[test]

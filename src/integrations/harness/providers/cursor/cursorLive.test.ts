@@ -14,6 +14,7 @@ const sent: string[] = [];
 let heldApprovalWrite: (() => Promise<void>) | null = null;
 let onLine: ((line: string) => void) | undefined;
 let onExit: ((code: number) => void) | undefined;
+let onStderr: ((line: string) => void) | undefined;
 let queueAgent: ((message: Record<string, unknown>) => void) | null = null;
 
 beforeEach(() => {
@@ -26,9 +27,15 @@ vi.mock("../../core/child", () =>
     spawnChild: async () => undefined,
     killChild: async () => undefined,
     unwatchChild: () => undefined,
-    watchChild: (_id: string, line: (value: string) => void, exit: (code: number) => void) => {
+    watchChild: (
+      _id: string,
+      line: (value: string) => void,
+      exit: (code: number) => void,
+      stderr?: (value: string) => void,
+    ) => {
       onLine = line;
       onExit = exit;
+      onStderr = stderr;
     },
     writeChild: async (_id: string, line: string) => {
       sent.push(line);
@@ -862,6 +869,21 @@ it("Cursor exit settles the original approval without writing to the exited proc
   }
 });
 
+it("fails the in-flight turn with the exit code and redacted stderr tail (Windows tty output)", async () => {
+  const { events, turn } = await startTurn("cursor-exit-diagnostics");
+  const failed = turn.catch((error: unknown) => error as Error);
+  expect(onStderr).toBeTypeOf("function");
+  // A Windows pseudo-terminal colors lines and ends them with CRLF.
+  onStderr!("\u001b[31mError: request rejected\u001b[0m\r\n");
+  onStderr!("Authorization: Bearer abcdef0123456789abcdef\r\n");
+  onExit!(3);
+  const error = await failed;
+  expect(error.message).toBe(
+    "Cursor CLI exited (exit code 3):\nError: request rejected\nAuthorization: Bearer …",
+  );
+  expect(events).toContainEqual({ type: "session.ended", code: 3 });
+});
+
 it("owns timer-backed stored-tool enrichment before its actual file read settles", async () => {
   const { events, promptId, turn } = await startTurn("cursor-causal");
   let release!: (value: Array<{ toolCallId: string; toolName: string; args: unknown }>) => void;
@@ -1181,4 +1203,48 @@ describe("cursor model selection", () => {
       vi.useRealTimers();
     }
   });
+});
+
+it("keeps a Cursor turn pending past the former 30 minute wall-clock cap", async () => {
+  const sessionId = "cursor-deadline";
+  const events: HarnessEvent[] = [];
+  vi.useFakeTimers();
+  try {
+    const waitForMethod = async (method: string) => {
+      for (let i = 0; i < 200; i++) {
+        const found = outboundRequest(method);
+        if (found) return found.id as number;
+        await vi.advanceTimersByTimeAsync(5);
+      }
+      throw new Error(`timed out waiting for ${method}`);
+    };
+    const turn = sendCursorTurn({
+      sessionId,
+      cwd: "/repo",
+      model: "cursor:composer-2.5",
+      modelSettings: {},
+      runtimeMode: "supervised",
+      text: "long run",
+      attachments: [],
+      onEvent: (event) => events.push(event),
+    });
+    const outcome = turn.then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    reply(await waitForMethod("initialize"), {});
+    reply(await waitForMethod("authenticate"), {});
+    reply(await waitForMethod("session/new"), {
+      sessionId: "cursor_1",
+      configOptions: [{ id: "model", category: "model", currentValue: "composer-2.5" }],
+    });
+    const promptId = await waitForMethod("session/prompt");
+    await vi.advanceTimersByTimeAsync(31 * 60_000);
+    reply(promptId, { stopReason: "end_turn" });
+    expect(await outcome).toBeUndefined();
+    expect(events.some((event) => event.type === "session.error")).toBe(false);
+  } finally {
+    vi.useRealTimers();
+    await stopCursorSession(sessionId);
+  }
 });

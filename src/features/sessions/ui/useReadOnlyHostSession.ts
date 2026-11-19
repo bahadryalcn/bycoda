@@ -11,6 +11,7 @@ import {
   loadRemoteBlock,
   loadRemoteHistoryPage,
   loadRemoteSession,
+  machineSupportsLazyHistory,
   sessionAccessForMachine,
 } from "../../connections/public/connections";
 import type { HostSession } from "../../connections";
@@ -50,10 +51,23 @@ type ReaderStart = {
   setState: Dispatch<SetStateAction<ReadState>>;
 };
 
+const RUNNING_POLL_MS = 2500;
+const IDLE_POLL_MS = 10_000;
+const MAX_POLL_MS = 60_000;
+
+/** A running session is checked often, an idle one rarely, and failures back off up to a minute. */
+export function readOnlyPollDelay(running: boolean, failures: number): number {
+  if (failures > 0) return Math.min(MAX_POLL_MS, RUNNING_POLL_MS * 2 ** failures);
+  return running ? RUNNING_POLL_MS : IDLE_POLL_MS;
+}
+
 /** Connects to the Host session and polls it until the returned cleanup runs. */
 function startReadOnlyReader({ binding, key, privacy, previous, reader, setState }: ReaderStart) {
   let cancelled = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let onVisibility: (() => void) | undefined;
+  let inFlight = false;
+  let failures = 0;
   let snapshot =
     previous.key === key && previous.privacy === privacy ? previous.snapshot : undefined;
   let historyLoading = false;
@@ -124,6 +138,8 @@ function startReadOnlyReader({ binding, key, privacy, previous, reader, setState
         } catch (error) {
           const message = presentRemoteError(error);
           if (message) publish({ historyError: message });
+          // Nothing was added: the transcript window stays where it is.
+          return 0;
         } finally {
           historyLoading = false;
           publish({ historyLoading: false });
@@ -151,13 +167,24 @@ function startReadOnlyReader({ binding, key, privacy, previous, reader, setState
         publish({ snapshot });
       },
     };
+    // A hidden window is not read; the visibility listener resumes with one immediate poll.
+    const schedule = () => {
+      if (!current() || document.hidden) return;
+      timer = setTimeout(() => {
+        void poll();
+      }, readOnlyPollDelay(snapshot?.status === "running", failures));
+    };
     const poll = async () => {
-      if (!current()) return;
+      if (!current() || inFlight) return;
+      inFlight = true;
+      if (timer) clearTimeout(timer);
       try {
         if (!historyLoading) {
           const original = snapshot;
           const next = await loadRemoteSession(binding.machineId, binding.sessionId, original, {
             pages: true,
+            // Capable Hosts answer an unchanged transcript with a revision check, not a tail page.
+            partialHistory: machineSupportsLazyHistory(binding.machineId),
             executionClient: client,
             isCurrent: current,
           });
@@ -165,20 +192,27 @@ function startReadOnlyReader({ binding, key, privacy, previous, reader, setState
           validate(next);
           // A bounded older-page read can finish during this tail request.
           if (snapshot === original || snapshot?.revision !== next.revision) snapshot = next;
+          failures = 0;
           publish({ snapshot, loading: false, error: undefined });
         }
       } catch (error) {
+        failures += 1;
         // A transient link drop keeps the last snapshot; the shared connection notice covers it.
         // With nothing loaded yet there is no snapshot to keep: show the wait and its retry.
         const message = presentRemoteError(error, { explicit: snapshot === undefined });
         publish(message ? { loading: false, error: message } : { loading: false });
       } finally {
-        if (current())
-          timer = setTimeout(() => {
-            void poll();
-          }, 2500);
+        inFlight = false;
+        schedule();
       }
     };
+    onVisibility = () => {
+      if (document.hidden || !current() || inFlight) return;
+      void poll();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    // Loaded content stays as it is while hidden; only a first read is worth a hidden request.
+    if (document.hidden && snapshot) return;
     await poll();
   };
   void connect().catch((error) =>
@@ -187,6 +221,7 @@ function startReadOnlyReader({ binding, key, privacy, previous, reader, setState
   return () => {
     cancelled = true;
     if (timer) clearTimeout(timer);
+    if (onVisibility) document.removeEventListener("visibilitychange", onVisibility);
     reader.current = null;
   };
 }

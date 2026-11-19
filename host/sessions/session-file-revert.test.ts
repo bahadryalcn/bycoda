@@ -15,11 +15,8 @@ import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 import { execFileAsync } from "../../src/shared/lib/processExecution.node";
 import { HostCheckpoints } from "../checkpoints/checkpoints";
-import {
-  acquireRevertFileGuard,
-  reverseProviderUpdate,
-  SessionFileRevert,
-} from "./session-file-revert";
+import { reverseProviderUpdate, SessionFileRevert } from "./session-file-revert";
+import { acquireRevertFileGuard, createRevertGuardSession } from "./session-file-revert-guard";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -340,6 +337,33 @@ describe("session message file revert", () => {
         await guard.release();
       }
       await rename(join(f.cwd, "dir"), join(f.cwd, "renamed"));
+    },
+  );
+  it.runIf(process.platform === "win32")(
+    "serves several files from one guard helper and survives a busy file",
+    async () => {
+      const f = await fixture();
+      const busy = join(f.cwd, "busy.txt");
+      const other = join(f.cwd, "other.txt");
+      await writeFile(busy, "current\n");
+      await writeFile(other, "current\n");
+      const guards = createRevertGuardSession(f.cwd);
+      const writer = await open(busy, "r+");
+      try {
+        await expect(guards.acquire(busy)).rejects.toThrow(/open for writing/);
+        const guard = await guards.acquire(other);
+        await expect(open(other, "r+")).rejects.toThrow();
+        await guard.release();
+        await (await open(other, "r+")).close();
+        await writer.close();
+        const again = await guards.acquire(busy);
+        again.check();
+        await again.release();
+        await (await open(busy, "r+")).close();
+      } finally {
+        await writer.close().catch(() => {});
+        await guards.close();
+      }
     },
   );
   it("never deletes an existing ignored file with missing pre-edit evidence", async () => {

@@ -528,6 +528,23 @@ it("passes disabled skill copies to host discovery before deduplication", async 
   );
 });
 
+it("lists skills as a bare array unless the caller asks for the truncation status", async () => {
+  const { projects, commands } = await setup();
+  const cwd = projects[104].cwd;
+  const bare = await commands.run("list_skills", { cwd });
+  expect(Array.isArray(bare)).toBe(true);
+  const status = (await commands.run("list_skills", { cwd, withStatus: true })) as {
+    skills: unknown[];
+    truncated: boolean;
+  };
+  expect(status.skills).toEqual(bare);
+  // The listing reads this machine's real home, so only the flag's shape is stable.
+  expect(typeof status.truncated).toBe("boolean");
+  await expect(commands.run("list_skills", { cwd, withStatus: "yes" })).rejects.toThrow(
+    "Invalid skill list option",
+  );
+});
+
 it("opens a file among 105 registered projects without querying Git", async () => {
   const { projects, commands } = await setup();
   const path = join(projects[104].cwd, "hello.txt");

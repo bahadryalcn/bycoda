@@ -4,6 +4,7 @@ const loadDetector = () =>
     detector = undefined;
     throw error;
   }));
+import { errorText } from "../../../shared/lib/errors";
 import { canRunHarnessTextPrompt, runHarnessTextPrompt } from "../../../integrations/harness";
 import { mergeModelSettings, nativeModelId, resolveModel } from "./models";
 import type { HarnessId } from "./session";
@@ -24,7 +25,7 @@ export type TranslationErrorKind =
 
 /** Classify diagnostic text without exposing provider URLs or credentials. */
 export function translationErrorKind(error: unknown): TranslationErrorKind {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = errorText(error);
   if (message === "The selected provider does not support isolated translation requests")
     return "unsupported-provider";
   if (/auth|sign.?in|login|credential|api.?key/i.test(message)) return "authentication";

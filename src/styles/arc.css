@@ -49,8 +49,8 @@ html[data-input-modality="keyboard"]:root {
   --ui-focus-ring-invalid: 0 0 0 2px color-mix(in oklab, var(--ui-tone-danger-fg) 26%, transparent);
 }
 
-/* Arc roles are scoped to control roots. The global Arc foundation reset owns
-   a separate theme/focus system and must not change the rest of the workbench. */
+/* Arc roles are scoped to control roots. The upstream arc/foundation.css is a token
+   reference that is not imported, so its theme and focus rules never apply here. */
 .bycoda-arc {
   --background: var(--color-background-base);
   --foreground: var(--color-content);
@@ -90,20 +90,6 @@ html[data-input-modality="keyboard"]:root {
   --control-thumb-shadow: none;
   --shadow-resting: none;
   --shadow-raised: none;
-  --radius-control: var(--ui-radius-control);
-  --radius-panel: var(--ui-radius-popup);
-  --radius-surface: var(--ui-radius-popup);
-  --radius-pill: 9999px;
-  --space-1: 0.25rem;
-  --space-2: 0.375rem;
-  --space-3: 0.625rem;
-  --space-4: 0.875rem;
-  --space-5: 1rem;
-  --space-6: 1.25rem;
-  --space-8: 1.5rem;
-  --space-10: 2rem;
-  --space-12: 2.5rem;
-  --space-16: 3rem;
   /* Type: 12 label (--text-xs/--text-sm), 13 entry (--text-base; fields and menus re-point
      --text-sm below), 14 reading, 16 title. */
   --text-xs: var(--ui-font-caption);
@@ -628,12 +614,17 @@ select.bycoda-arc-select:focus-visible {
   box-shadow: var(--ui-focus-ring);
 }
 
-:root :is([role="option"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"]) {
-  border: 0 !important;
-  outline: none !important;
-  box-shadow: none !important;
+/* Bare options and menu items start borderless and shadowless at zero specificity and without !important, so a
+   component's own selected border, drag or error ring and shadow win by declaring them. Outline is not reset here:
+   the Arc foundation reset already owns it for these roles. */
+:where(:root)
+  :where([role="option"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"]) {
+  border: 0;
+  box-shadow: none;
 }
-/* Fallback only: shared row controls own their stronger keyboard-focus fill. */
+/* Fallback only: shared row controls (ListRow skin) own their fill-only keyboard focus and set box-shadow: none.
+   Any other option or menu item gets the hover fill plus the shared keyboard focus line, which stays visible when
+   the row is also selected. --ui-focus-ring is transparent under pointer input, so pointer focus draws nothing. */
 :where(:root)
   :where(
     [role="option"],
@@ -642,6 +633,7 @@ select.bycoda-arc-select:focus-visible {
     [role="menuitemcheckbox"]
   ):focus-visible:not(:disabled, [aria-disabled="true"]) {
   background: var(--ui-surface-hover);
+  box-shadow: var(--ui-focus-ring);
 }
 :root
   :is(

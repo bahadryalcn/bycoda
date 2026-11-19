@@ -1,7 +1,7 @@
 import { Text } from "../../../shared/ui/Text";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Spinner } from "../../../shared/ui/Spinner";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useSyncExternalStore } from "react";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { useT } from "../../../shared/i18n";
 import { sameProjectPath } from "../../projects/public/recents";
@@ -11,6 +11,7 @@ import {
   subscribeSessionDeletionStatus,
   type SessionDeletionStatus,
 } from "../model/sessionDeletionStatus";
+import { usePresentationNow } from "./AgentClock";
 import { RemoteActivityNotices } from "./RemoteActivityNotices";
 import {
   SessionBulkDeletionNotice,
@@ -47,15 +48,9 @@ export function SessionDeletionNotice({
 
 function DeletionNotice({ status }: { status: SessionDeletionStatus }) {
   const t = useT();
-  const [elapsed, setElapsed] = useState(0);
   const pending = !status.outcome;
-  useEffect(() => {
-    if (!pending) return;
-    const tick = () => setElapsed(Math.floor((Date.now() - status.startedAt) / 1000));
-    tick();
-    const timer = window.setInterval(tick, 1000);
-    return () => window.clearInterval(timer);
-  }, [pending, status.startedAt]);
+  const now = usePresentationNow(pending);
+  const elapsed = Math.max(0, Math.floor((now - status.startedAt) / 1000));
   const onDismissStatus = () => dismissSessionDeletionStatus(status.sessionId);
   const stages = {
     preparing: t("Preparing deletion…"),

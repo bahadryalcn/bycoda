@@ -315,7 +315,7 @@ it("combines the working copy and branch in one trigger with Worktrees and Branc
   );
   const trigger = container.querySelector("button")!;
   expect(trigger.textContent).toContain("task · main");
-  expect(trigger.getAttribute("aria-label")).toBe("Working copy task · main");
+  expect(trigger.getAttribute("aria-label")).toBe("Worktree task · main");
   await act(async () => trigger.click());
   const picker = document.querySelector<HTMLElement>("[data-branch-picker]")!;
   const tabs = [...picker.querySelectorAll<HTMLElement>('[role="tab"]')].map(
@@ -334,4 +334,61 @@ it("combines the working copy and branch in one trigger with Worktrees and Branc
   await act(async () => other.click());
   expect(onChange).toHaveBeenCalledWith("/t/other");
   expect(document.querySelector("[data-branch-picker]")).toBeNull();
+});
+
+it("windows a repository with thousands of branches and still searches all of them", async () => {
+  const sized = (element: HTMLElement) => (element.getAttribute("role") === "listbox" ? 240 : 32);
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    return sized(this);
+  });
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    return new DOMRect(0, 0, 280, sized(this));
+  });
+  Element.prototype.scrollIntoView = vi.fn();
+  vi.mocked(gitBranches).mockResolvedValueOnce({
+    current: "main",
+    detached: false,
+    branches: [
+      { name: "main", current: true, remote: null },
+      ...Array.from({ length: 3000 }, (_, index) => ({
+        name: `feature-${index}`,
+        current: false,
+        remote: "origin",
+      })),
+    ],
+  });
+  act(() => root.render(createElement(BranchPicker, { cwd: "/repo-many", branch: "main" })));
+  await act(async () => {});
+  await act(async () => container.querySelector("button")!.click());
+  await act(async () => {});
+
+  const rows = () => document.querySelectorAll<HTMLElement>('[role="option"]');
+  expect(rows().length).toBeGreaterThan(0);
+  expect(rows().length).toBeLessThan(60);
+  expect(rows()[0]!.getAttribute("aria-setsize")).toBe("3001");
+
+  const input = document.querySelector<HTMLInputElement>(
+    'input[aria-label="Search or create a branch"]',
+  )!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      input,
+      "feature-2999",
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(rows()).toHaveLength(1);
+  expect(rows()[0]!.textContent).toContain("feature-2999");
 });

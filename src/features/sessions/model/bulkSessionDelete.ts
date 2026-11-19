@@ -1,3 +1,6 @@
+import { errorText } from "../../../shared/lib/errors";
+import { t } from "../../../shared/i18n";
+
 export type BulkSessionDeleteResult = {
   deleted: string[];
   /** Running conversations, left untouched. */
@@ -57,7 +60,7 @@ export async function deleteSessionsInBulk(
         result.deleted.push(sessionId);
       }
     } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
+      const detail = errorText(error);
       if (RUNNING_REFUSAL.test(detail)) result.skipped.push(sessionId);
       else result.failed.push({ sessionId, error: detail });
     }
@@ -75,37 +78,70 @@ export async function deleteSessionsInBulk(
   return result;
 }
 
-export function bulkDeleteOutcome(result: BulkSessionDeleteResult): string {
-  const success =
-    result.deleted.length > 0 ? `${conversations(result.deleted.length)} deleted.` : "";
-  return [success, bulkDeleteSummary(result)].filter(Boolean).join(" ");
+/**
+ * What a bulk delete did, as counts. The words are produced by `bulkDeleteNoticeText`
+ * in the owner's language; `text` is only for a message that was translated where it
+ * was raised (a refused start, an unexpected error).
+ */
+export type BulkDeleteNotice =
+  | {
+      kind: "outcome";
+      deleted: number;
+      skipped: number;
+      failed: number;
+      /** First raw error of a failed deletion, kept verbatim. */
+      failureDetail?: string | undefined;
+    }
+  | { kind: "text"; text: string };
+
+export function bulkDeleteNotice(
+  result: Pick<BulkSessionDeleteResult, "deleted" | "skipped" | "failed">,
+): BulkDeleteNotice {
+  return {
+    kind: "outcome",
+    deleted: result.deleted.length,
+    skipped: result.skipped.length,
+    failed: result.failed.length,
+    failureDetail: result.failed.find((entry) => entry.error)?.error,
+  };
 }
 
-const conversations = (count: number, adjective = "") =>
-  `${count} ${adjective ? `${adjective} ` : ""}conversation${count === 1 ? "" : "s"}`;
-
-export function bulkDeleteConfirmMessage(deletableCount: number, runningCount: number): string {
-  const question = `Delete ${
-    deletableCount === 1 ? "this conversation" : conversations(deletableCount)
-  }? This can’t be undone.`;
-  if (runningCount === 0) return question;
-  return `${question}\n\n${conversations(runningCount, "running")} will be skipped.`;
-}
-
-/** Short notice for what a bulk delete left behind; null when all went. */
-export function bulkDeleteSummary(
-  result: Pick<BulkSessionDeleteResult, "skipped" | "failed">,
-): string | null {
+/** Translated sentences for what a bulk delete left behind; null when nothing needs saying. */
+export function bulkDeleteNoticeText(notice: BulkDeleteNotice): string | null {
+  if (notice.kind === "text") return notice.text;
   const parts: string[] = [];
-  if (result.skipped.length > 0) {
-    const count = result.skipped.length;
-    parts.push(`${conversations(count, "running")} ${count === 1 ? "was" : "were"} skipped`);
-  }
-  if (result.failed.length > 0) {
-    const detail = result.failed.find((entry) => entry.error)?.error;
+  if (notice.deleted > 0) {
     parts.push(
-      `${conversations(result.failed.length)} could not be deleted${detail ? `: ${detail}` : ""}`,
+      notice.deleted === 1
+        ? t("1 conversation deleted.")
+        : t("{p0} conversations deleted.", { p0: notice.deleted }),
     );
   }
-  return parts.length > 0 ? `${parts.join(". ")}.` : null;
+  if (notice.skipped > 0) {
+    parts.push(
+      notice.skipped === 1
+        ? t("1 running conversation was skipped.")
+        : t("{p0} running conversations were skipped.", { p0: notice.skipped }),
+    );
+  }
+  if (notice.failed > 0) {
+    const detail = notice.failureDetail;
+    if (detail) {
+      parts.push(
+        notice.failed === 1
+          ? t("1 conversation could not be deleted: {p0}.", { p0: detail })
+          : t("{p0} conversations could not be deleted: {p1}.", {
+              p0: notice.failed,
+              p1: detail,
+            }),
+      );
+    } else {
+      parts.push(
+        notice.failed === 1
+          ? t("1 conversation could not be deleted.")
+          : t("{p0} conversations could not be deleted.", { p0: notice.failed }),
+      );
+    }
+  }
+  return parts.length > 0 ? parts.join(" ") : null;
 }

@@ -3,6 +3,7 @@ import { Text } from "../../../shared/ui/Text";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
+import { shortSha } from "../../../shared/lib/shortSha";
 import type { WorkspaceCreationPreview } from "../model/workspaceCreation";
 import { shortWorkspaceRef } from "../model/workspaceCreation";
 
@@ -59,7 +60,7 @@ export function WorkspaceCreationStatus({
         <Tooltip
           label={t("Based on {p0} @ {p1}", {
             p0: shortWorkspaceRef(preview.baseRef),
-            p1: preview.baseCommit.slice(0, 8),
+            p1: shortSha(preview.baseCommit),
           })}
           asChild
         >

@@ -37,7 +37,7 @@ const { projectFiles, remoteFiles, loadProjectFiles, rankProjectFiles } = vi.hoi
 });
 
 vi.mock("../model/fileIndex", () => ({
-  loadProjectFiles,
+  revalidateProjectFiles: loadProjectFiles,
   peekProjectFiles: vi.fn((cwd: string) => (cwd.startsWith("remote://") ? null : projectFiles)),
   rankProjectFiles,
   recentOpenedFiles: vi.fn(() => []),
@@ -313,7 +313,7 @@ describe("file picker on a remote project", () => {
       ),
     );
     const dialog = document.querySelector<HTMLElement>("[data-file-picker]")!;
-    expect(loadProjectFiles).toHaveBeenCalledWith(cwd, true);
+    expect(loadProjectFiles).toHaveBeenCalledExactlyOnceWith(cwd);
     expect(dialog.textContent).toContain("App.tsx");
 
     press(dialog.querySelector<HTMLInputElement>("input")!, "Enter");

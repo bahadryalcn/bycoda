@@ -135,7 +135,9 @@ export async function budgetParent(
   }
   if (!task.crewRunId) return;
   const row = await context.store.db
-    .prepare("SELECT value FROM tasks WHERE json_extract(value, '$.crewExecutionId')=? LIMIT 1")
+    .prepare(
+      "SELECT value FROM tasks WHERE CASE WHEN json_valid(value) THEN json_extract(value,'$.crewExecutionId') END=? LIMIT 1",
+    )
     .get(task.crewRunId);
   return row ? (JSON.parse(String(row.value)) as HostTask) : undefined;
 }

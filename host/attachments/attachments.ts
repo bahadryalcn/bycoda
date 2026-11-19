@@ -1,4 +1,4 @@
-import { statSync, lstatSync, unlinkSync } from "node:fs";
+import { lstatSync, unlinkSync } from "node:fs";
 import { join, basename, dirname, resolve } from "node:path";
 import type { Attachment } from "../../src/features/sessions/model/session";
 import type { RemoteAttachment } from "../../src/features/connections/model/protocol";
@@ -81,7 +81,9 @@ export async function attachmentUploadStatus(
       if (!info.isFile() || info.size > Number(input.size))
         throw new Error("Uploaded attachment size mismatch");
       const hash = createHash("sha256");
-      const bytes = Buffer.alloc(Math.min(64 * 1024, info.size));
+      // Full-prefix hash stays mandatory; a larger read window only cuts the
+      // awaited reads per status call (20 MiB: ~20 reads instead of ~320).
+      const bytes = Buffer.alloc(Math.min(1024 * 1024, info.size));
       for (let offset = 0; offset < info.size; offset += bytes.length) {
         const chunk = bytes.subarray(0, Math.min(bytes.length, info.size - offset));
         await readExactly(handle, chunk, offset);
@@ -203,13 +205,19 @@ export function parseRemoteAttachments(value: unknown): RemoteAttachment[] {
     };
   });
 }
-export function resolveAttachments(store: HostStore, refs: RemoteAttachment[]): Attachment[] {
-  return refs.map((ref) => {
+/** Send, draft and queue paths resolve references in order; the first failure still wins. */
+export async function resolveAttachments(
+  store: HostStore,
+  refs: RemoteAttachment[],
+): Promise<Attachment[]> {
+  const resolved: Attachment[] = [];
+  for (const ref of refs) {
     const path = attachmentPath(store, ref.id);
     touchAttachment(join(dirname(resolve(path)), basename(path).toLowerCase()));
-    if (statSync(path).size !== ref.size) throw new Error(`Attachment ${ref.name} is incomplete`);
-    return { ...ref, path };
-  });
+    if ((await stat(path)).size !== ref.size) throw new Error(`Attachment ${ref.name} is incomplete`);
+    resolved.push({ ...ref, path });
+  }
+  return resolved;
 }
 /** Question replies may contain many files; do not block the Host event loop on stat. */
 export async function resolveQuestionAttachments(

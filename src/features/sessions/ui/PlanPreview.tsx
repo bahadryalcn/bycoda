@@ -4,7 +4,7 @@ import { Surface } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
-import { AiIdea, CircleDashed, PanelRight, Play } from "../../../shared/ui/icons";
+import { AiIdea, CircleDashed, Play } from "../../../shared/ui/icons";
 import { planSummary, planTitle } from "../model/plan";
 import type { HarnessId, PlanBlockMeta, PlanBuildTarget } from "../model/session";
 import { BuildTargetButton } from "./SecondOpinionButton";
@@ -99,44 +99,29 @@ export function PlanPreview({
               {summary}
             </ClampText>
           ) : null}
-          {onOpen || onBuild ? (
+          {onBuild ? (
             <div className="mt-2 flex items-center justify-end gap-1.5">
-              {onOpen ? (
+              <div className="flex items-center gap-0.5 font-sans">
                 <Button
-                  variant="ghost"
-                  type="button"
-                  tooltip={t("Open in pane")}
-                  aria-label={t("Open plan in pane")}
                   className="shrink-0"
-                  onClick={onOpen}
+                  variant="secondary"
+                  type="button"
+                  disabled={buildDisabled}
+                  onClick={() => onBuild()}
                 >
-                  <PanelRight className="icon-xs" strokeWidth={1.75} />
-                  {t("Open")}
+                  <Play className="icon-xs" strokeWidth={1.75} />
+                  {buildLabel}
                 </Button>
-              ) : null}
-              {onBuild ? (
-                <div className="flex items-center gap-0.5 font-sans">
-                  <Button
-                    className="shrink-0"
-                    variant="secondary"
-                    type="button"
+                {harness ? (
+                  <BuildTargetButton
+                    from={harness}
+                    model={model}
+                    settings={modelSettings}
                     disabled={buildDisabled}
-                    onClick={() => onBuild()}
-                  >
-                    <Play className="icon-xs" strokeWidth={1.75} />
-                    {buildLabel}
-                  </Button>
-                  {harness ? (
-                    <BuildTargetButton
-                      from={harness}
-                      model={model}
-                      settings={modelSettings}
-                      disabled={buildDisabled}
-                      onPick={onBuild}
-                    />
-                  ) : null}
-                </div>
-              ) : null}
+                    onPick={onBuild}
+                  />
+                ) : null}
+              </div>
             </div>
           ) : null}
         </div>

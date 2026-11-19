@@ -159,16 +159,17 @@ it("resolves a stored reference by id, keeps transcript title and height, and re
     expect(host.textContent).toContain("Preview unavailable");
     fail = false;
     const retry = Array.from(host.querySelectorAll("button")).find((button) =>
-      button.textContent?.includes("Retry"),
+      button.textContent?.includes("Try again"),
     );
     expect(retry).toBeTruthy();
     await act(async () => retry!.click());
     const preview = host.querySelector("[data-preview-source]")!;
     expect(preview.getAttribute("data-preview-source")).toContain("<p>Neo</p>");
     expect(host.querySelector('section[aria-label="Crew"]')).toBeTruthy();
-    expect(
-      (preview.parentElement as HTMLElement).style.getPropertyValue("--inline-visual-height"),
-    ).toBe("900px");
+    // The card slot carries the snapshot height in every view and holds the preview inline.
+    const slot = host.querySelector("section")!.firstElementChild as HTMLElement;
+    expect(slot.style.getPropertyValue("--inline-visual-height")).toBe("900px");
+    expect(slot.contains(preview)).toBe(true);
   } finally {
     await act(async () => root.unmount());
     host.remove();

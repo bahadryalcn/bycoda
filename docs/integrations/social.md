@@ -32,6 +32,12 @@ keeps the last data and shows a retry action.
 AI activity uses **Completed** when an action finishes, including draft creation.
 **Sent** remains the delivery status for successfully sent jobs.
 
+The Accounts activity list merges sent jobs and AI actions newest first. It reads jobs 20 at a
+time (`workspace.snapshot` section `history`, `offsets.jobs`) and AI actions by `ai.actions.list`
+cursor, both with the selected project and the principal's readable accounts. **Load more**
+reads the next page of each source that still has rows; entries older than what an unfinished
+source has loaded wait, so a later page never lands out of order.
+
 ### Social conversation panel
 
 **AI chat** opens a resizable conversation beside the workspace. At narrow widths it
@@ -215,8 +221,10 @@ questions). Expired, revoked or scope-changed connections require reconnection.
 - Browser connection requests, acceptance and personal chat use the same verification and
   challenge handling as other browser recipes.
 - Browser member posts and PDF documents open the composer through `/feed/?shareActive=true`
-  and find controls by role and EN/TR label inside `dialog[open]`; `data-view-name` is only an
-  optional first choice, because LinkedIn serves variants without it.
+  and find controls by role and exact label inside `dialog[open]`; `data-view-name` is only an
+  optional first choice, because LinkedIn serves variants without it. Send, Post, Share and Next
+  labels for every app locale live in `host/social/browser/ui-labels.ts`; matching stays exact and
+  a recipe refuses unless exactly one control matches.
 - A post with no comments reports `comments` as read only on a positive signal: the comment box
   is loaded, the comment list holds no content, and the social counts have no comments item.
   Anything else stays unavailable.
@@ -367,7 +375,12 @@ names never merge people.
   keyword search or a post's commenters, into lists. Rules can be enabled or disabled.
   Browser capture covers public data only, as the owner decided.
 - **Import** (`audience.import`) is owner-only. Imported labels never grant consent and never
-  alter opt-outs.
+  alter opt-outs. A file is at most 5 MiB decoded and 5000 contacts. A spreadsheet reads only its
+  first sheet, in a worker thread, within 20,000 rows by 200 columns and a bounded expanded
+  size. Rows outside the chosen account or its granted projects, and suppressed people, are
+  listed as rejected. Valid rows are written in batches of at most 500, each in one transaction;
+  a failed batch leaves nothing of itself, the error says how many earlier contacts were saved,
+  and importing the file again updates those people instead of duplicating them.
 - **People score** (`people.score`) is a ranking aid for the owner. It is not a send decision.
 
 ## Outreach, sequences and email
@@ -412,13 +425,16 @@ The Inbox screen shows conversations and comments from every connected account a
 platform in one list. Each thread has a status, a timeline of inbound and outbound items,
 and reply options that respect the account's permission and the platform window.
 
-- `inbox.unified` lists threads across accounts. `inbox.timeline` reads one thread. `inbox.setStatus` changes the status. `inbox.replyOptions` lists allowed reply
+- `inbox.unified` lists threads across accounts. `inbox.timeline` reads one person's events across channels a page at a time: the newest 200, then older pages by the returned `next` cursor (`<at>|<eventId>`, the same format as `inbox.unified`), until `next` is absent at the start of the conversation. `inbox.setStatus` changes the status and tags. Each field is optional and an unsent one keeps the stored value: the screen sends only the status, or `addTags`/`removeTags` for one tag, never the list snapshot, and the Host merges in one store transaction after the conversation-visibility check. `tags` still replaces the whole list and cannot be combined with the tag deltas. `inbox.replyOptions` lists allowed reply
   types for the thread.
 - **Auto-refresh is on by default.** Only an explicitly stored "false" turns it off. The
   account-level polling interval is stored with the inbox settings. Without an override an
   account polls every 60 seconds, a browser-session account every 5 minutes and an account
   with a live webhook every 15 minutes; overrides never go below 60 seconds. Every
-  platform's cursor is durable, so a restart resumes from the last read item.
+  platform's cursor is durable, so a restart resumes from the last read item. The Inbox and
+  Content screens refresh by re-reading only their newest page and merging it into the pages
+  already loaded; rows deleted far down a long list disappear on the next full reload
+  (Check now or any change you save).
 - Polling is bounded. Each platform reads a fixed page per cycle, and backlog continues
   on the next cycle. Coverage is reported per channel. A partial or blocked channel never
   reports an empty inbox.
@@ -493,6 +509,11 @@ cannot start in hidden mode, the operation fails without opening a visible windo
 A live view streams frames while the
 owner has it open. It is capped in frame rate and size and stops after idle. Pointer and key input from
 the live view goes to the account's page.
+The panel reads frames one at a time, about every 0.7 seconds. It sends the sequence of the
+picture it holds and the Host answers "unchanged" instead of resending it. It does not read while the
+window is hidden and reads at once when shown again, a failed read doubles the wait (up to
+15 seconds) while the last picture stays, and the error line carries a Retry action. A read that
+finishes after the account changed or the view was hidden is dropped.
 The compact live-view panel separates its status, text input and keyboard actions;
 closing the view hides the panel without stopping the account's browser.
 

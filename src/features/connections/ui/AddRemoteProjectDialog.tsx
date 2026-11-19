@@ -22,6 +22,7 @@ import { subscribeRemoteRecovered } from "../model/remoteHealth";
 import { connectionOutcome } from "../model/remoteConnection";
 import { remoteBackoffDelay } from "../model/remotePollingPolicy";
 import { isImeComposition } from "../../../shared/lib/keyboard";
+import { errorText } from "../../../shared/lib/errors";
 
 type RemoteProjectMachine = ReturnType<typeof remoteProjectMachines>[number];
 
@@ -159,7 +160,7 @@ function AddRemoteProjectForm({
     } catch (reason) {
       if (alive.current && version === requestVersion.current) {
         browseFailures.current++;
-        setBrowseError(String(reason).replace(/^Error: /, ""));
+        setBrowseError(errorText(reason));
       }
     } finally {
       if (version === requestVersion.current) {
@@ -228,7 +229,7 @@ function AddRemoteProjectForm({
       if (alive.current && version === requestVersion.current) onOpen(project.key);
     } catch (reason) {
       if (alive.current && version === requestVersion.current)
-        setError(String(reason).replace(/^Error: /, ""));
+        setError(errorText(reason));
     } finally {
       mutation.current = false;
       if (alive.current && version === requestVersion.current) setOpening(false);
@@ -257,7 +258,7 @@ function AddRemoteProjectForm({
       setVerifiedAt(Date.now());
     } catch (reason) {
       if (alive.current && version === requestVersion.current)
-        setError(String(reason).replace(/^Error: /, ""));
+        setError(errorText(reason));
     } finally {
       mutation.current = false;
       if (alive.current && version === requestVersion.current) setCreating(false);
@@ -292,7 +293,7 @@ function AddRemoteProjectForm({
             size="inline"
             kind="empty"
             description={t(
-              "No machines are connected yet. Pick one found on your account in Settings, then open a folder on it here.",
+              "No computers are connected yet. Pick one found on your account in Settings, then open a folder on it here.",
             )}
           />
         </>
@@ -300,7 +301,7 @@ function AddRemoteProjectForm({
         <>
           {machines.length > 1 ? (
             <SearchableSelect
-              label={t("Machine")}
+              label={t("Computer")}
               value={machine.id}
               options={machines.map((entry) => ({
                 value: entry.id,

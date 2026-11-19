@@ -39,6 +39,9 @@ import { isImeComposition } from "../../../shared/lib/keyboard";
 
 export type TerminalTool = "search" | "command" | "remote" | null;
 const SEARCH_RESULT_LIMIT = 1000;
+// Output-driven refresh window: a flowing process refreshes the count at most
+// this often instead of re-scanning the whole scrollback on every write.
+const SEARCH_OUTPUT_REFRESH_MS = 750;
 
 export function TerminalTools({
   terminalId,
@@ -147,6 +150,27 @@ export function TerminalTools({
         setFound(true);
       }
     };
+    // Output refresh keeps the user's position: findNext would advance from the
+    // selection end, so re-run the search from the selection start instead, and
+    // restore the viewport the addon may have scrolled away from.
+    const refreshWhileStreaming = () => {
+      const addon = searchRef.current;
+      if (!query || !addon) return;
+      const buffer = terminal.buffer.active;
+      const following = buffer.viewportY >= buffer.baseY;
+      const viewportY = buffer.viewportY;
+      const options = { decorations: searchDecorations };
+      if (terminal.hasSelection()) {
+        // Clearing the cached term makes the addon search from the selection start,
+        // so the current match is re-selected and the count is recomputed.
+        addon.clearDecorations();
+        setFound(addon.findPrevious(query, options));
+      } else {
+        setFound(addon.findNext(query, options));
+      }
+      if (following) terminal.scrollToBottom();
+      else if (terminal.buffer.active.viewportY !== viewportY) terminal.scrollToLine(viewportY);
+    };
     refresh();
     // xterm clears its selection when the grid resizes, including when this
     // compact toolbar wraps in a narrow split pane. Restore the active search.
@@ -159,8 +183,8 @@ export function TerminalTools({
       if (!query || pendingRefresh !== undefined) return;
       pendingRefresh = setTimeout(() => {
         pendingRefresh = undefined;
-        refresh();
-      }, 150);
+        refreshWhileStreaming();
+      }, SEARCH_OUTPUT_REFRESH_MS);
     });
     return () => {
       clearTimeout(pendingRefresh);
@@ -487,11 +511,9 @@ export function TerminalTools({
                     anchor={menuAnchor}
                     align="end"
                     width={300}
-                    autoFocus
                     solid
-                    role="dialog"
+                    kind="dialog"
                     aria-label={t("Terminal pane actions")}
-                    tabIndex={-1}
                     onDismiss={() => setMenuOpen(false)}
                   >
                     <div className={styles.menuBody}>
@@ -593,7 +615,7 @@ export function TerminalTools({
         <Popover
           anchor={helpAnchor}
           align="end"
-          role="dialog"
+          kind="dialog"
           aria-label={t("About shell suggestions")}
           width={340}
           onDismiss={() => setHelpOpen(false)}

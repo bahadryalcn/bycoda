@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
@@ -68,7 +69,7 @@ async function retryDraft(id: string, draft: Draft) {
           window.dispatchEvent(new Event(NOTES_CHANGED_EVENT));
           return saved;
         } catch (error: unknown) {
-          draft.error = error instanceof Error ? error.message : String(error);
+          draft.error = errorText(error);
           notifyDrafts();
         }
       },

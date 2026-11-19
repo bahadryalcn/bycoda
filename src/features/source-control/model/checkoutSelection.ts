@@ -139,7 +139,7 @@ export function checkoutTitle(tree: Worktree): string {
 
 /** Checkout title using the caller's reactive translator. */
 export function checkoutTitleWith(tree: Worktree, translate: (message: string) => string): string {
-  return tree.branch ?? `${translate("Detached")} · ${tree.head.slice(0, 7)}`;
+  return tree.branch ?? `${translate("Detached HEAD")} · ${tree.head.slice(0, 7)}`;
 }
 
 const slug = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, "");

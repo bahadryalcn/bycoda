@@ -12,6 +12,9 @@ import { createNativeBufferUploadService } from "../domains/native-workspaces/bu
 import { createNativeServiceUploadService } from "../domains/native-services/upload";
 import { nativeBufferUploadPlatform } from "../ports/native-workspaces";
 import { nativeDeliveryConsumedResult } from "./native-delivery-store";
+import { monotonicNow } from "../../src/shared/lib/time/timestamps";
+import { NATIVE_DELIVERY_ADMISSION_MS } from "../domains/native-delivery/service";
+import { WS_LIMITS } from "../../src/shared/model/host-contracts/policy";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -477,4 +480,205 @@ it("preserves delivery metadata and recorded result across staged buffer/service
     expect(await call("commit", { uploadId })).toEqual(committed);
   }
   expect(f.counts).toEqual({ buffers: 1, finish: 1, format: 0 });
+});
+
+const formatRequest = (extra: Record<string, unknown> = {}) => {
+  const paramsJson = JSON.stringify({
+    command: "format_text_file",
+    args: { path: "/fixture/source.ts", source: "source", cursorOffset: 0 },
+  });
+  const identity = deliveryIdentity(paramsJson);
+  return {
+    identity,
+    status: { ...identity, target: format },
+    apply: { ...identity, target: format, paramsJson, ...extra },
+  };
+};
+const gated = () => {
+  let release!: () => void;
+  const promise = new Promise<void>((resolve) => (release = resolve));
+  return { promise, release };
+};
+
+it("never admits or runs a delivery whose ingress deadline passed before admission", async () => {
+  const f = await fixture();
+  const request = formatRequest();
+  const expired = {
+    ...f.context(),
+    ingressAt: monotonicNow() - NATIVE_DELIVERY_ADMISSION_MS - 1,
+  };
+  await expect(
+    f.call("native.services.delivery.apply", request.apply, expired),
+  ).rejects.toMatchObject({ name: "HostDomainOutcomeError", delivery: "not-sent" });
+  expect(f.counts.format).toBe(0);
+  expect(await f.call("native.services.delivery.status", request.status)).toEqual({
+    state: "absent",
+  });
+  // The same original is still admissible by a caller whose deadline is open.
+  expect(await f.call("native.services.delivery.apply", request.apply)).toMatchObject({
+    state: "recorded",
+  });
+  expect(f.counts.format).toBe(1);
+});
+
+it("counts FIFO queue time against the original ingress deadline and admits nothing once it lapses", async () => {
+  const f = await fixture();
+  const request = formatRequest();
+  const hold = gated();
+  const holder = f.store.db.scope(() => hold.promise);
+  const queued = f.call("native.services.delivery.apply", request.apply, {
+    ...f.context(),
+    ingressAt: monotonicNow() - NATIVE_DELIVERY_ADMISSION_MS + 60,
+  });
+  const outcome = expect(queued).rejects.toMatchObject({ delivery: "not-sent" });
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  hold.release();
+  await holder;
+  await outcome;
+  expect(f.counts.format).toBe(0);
+  expect(await f.call("native.services.delivery.status", request.status)).toEqual({
+    state: "absent",
+  });
+});
+
+it("acknowledges durable admission first and serves the typed result by original id without replay", async () => {
+  const f = await fixture();
+  const request = formatRequest({ acknowledge: "admission" });
+  const hold = gated();
+  f.setFormat(async () => {
+    await hold.promise;
+    return { formatted: "formatted", cursorOffset: 1 };
+  });
+  const accepted = { ...request.identity, target: format, state: "accepted" };
+  expect(await f.call("native.services.delivery.apply", request.apply)).toEqual(accepted);
+  expect(
+    await f.call("native.services.delivery.status", {
+      ...request.status,
+      acknowledge: "admission",
+    }),
+  ).toEqual(accepted);
+  // Without the opt-in a status read keeps the legacy meaning: admitted and outcome unknown.
+  expect(await f.call("native.services.delivery.status", request.status)).toEqual({
+    ...request.identity,
+    target: format,
+    state: "unknown",
+  });
+  // A duplicate, even with the opt-in, never starts a second effect.
+  expect(await f.call("native.services.delivery.apply", request.apply)).toEqual(accepted);
+  expect(f.counts.format).toBe(1);
+  hold.release();
+  await vi.waitFor(async () =>
+    expect(
+      await f.call("native.services.delivery.status", {
+        ...request.status,
+        acknowledge: "admission",
+      }),
+    ).toMatchObject({ state: "recorded", result: { formatted: "formatted", cursorOffset: 1 } }),
+  );
+  expect(await f.call("native.services.delivery.apply", request.apply)).toMatchObject({
+    state: "recorded",
+  });
+  expect(f.counts.format).toBe(1);
+});
+
+it("keeps early admission replies bounded until their physical effects settle", async () => {
+  const f = await fixture();
+  const hold = gated();
+  const start = () =>
+    f.journal.begin(
+      f.principal,
+      finish,
+      deliveryIdentity("{}"),
+      async () => {
+        await hold.promise;
+        return { accepted: true };
+      },
+      { acknowledgeAdmission: true },
+    );
+  const limit = WS_LIMITS.maxControlJobsPerDevice;
+  const pending = Array.from({ length: limit + 1 }, start);
+  try {
+    const started = await Promise.all(pending);
+    expect(started.filter((entry) => entry.acknowledgeEarly)).toHaveLength(limit);
+    expect(started.at(-1)?.acknowledgeEarly).toBe(false);
+  } finally {
+    hold.release();
+    await Promise.allSettled(pending.map(async (entry) => (await entry).settled));
+  }
+  const next = await start();
+  await next.settled;
+  expect(next.acknowledgeEarly).toBe(true);
+});
+
+it("keeps an accepted original unknown and unreplayed after a restart or a failed effect", async () => {
+  const f = await fixture();
+  const crashed = formatRequest({ acknowledge: "admission" });
+  const hold = gated();
+  f.setFormat(async () => {
+    await hold.promise;
+    throw new Error("Formatter failed after acceptance");
+  });
+  expect(await f.call("native.services.delivery.apply", crashed.apply)).toMatchObject({
+    state: "accepted",
+  });
+  hold.release();
+  const unknown = { ...crashed.identity, target: format, state: "unknown" };
+  // The failed effect leaves no live owner: no longer accepted, never retried.
+  await vi.waitFor(async () =>
+    expect(
+      await f.call("native.services.delivery.status", {
+        ...crashed.status,
+        acknowledge: "admission",
+      }),
+    ).toMatchObject({ state: "unknown" }),
+  );
+  await f.reopen();
+  expect(
+    await f.call("native.services.delivery.status", {
+      ...crashed.status,
+      acknowledge: "admission",
+    }),
+  ).toMatchObject(unknown);
+  expect(await f.call("native.services.delivery.apply", crashed.apply)).toMatchObject({
+    state: "unknown",
+  });
+  expect(f.counts.format).toBe(1);
+});
+
+it("does not raise a revoked requester's scope: accepted work cannot record or disclose after revocation", async () => {
+  const f = await fixture();
+  const request = formatRequest({ acknowledge: "admission" });
+  const hold = gated();
+  f.setFormat(async () => {
+    await hold.promise;
+    return { formatted: "late", cursorOffset: 0 };
+  });
+  expect(await f.call("native.services.delivery.apply", request.apply)).toMatchObject({
+    state: "accepted",
+  });
+  f.setAllowed(false);
+  hold.release();
+  await expect(
+    f.call("native.services.delivery.status", { ...request.status, acknowledge: "admission" }),
+  ).rejects.toThrow(/authoriz/i);
+  f.setAllowed(true);
+  await vi.waitFor(async () =>
+    expect(
+      await f.call("native.services.delivery.status", {
+        ...request.status,
+        acknowledge: "admission",
+      }),
+    ).toMatchObject({ state: "unknown" }),
+  );
+  expect(f.counts.format).toBe(1);
+});
+
+it("rejects the admission acknowledgement on buffer deliveries, which stay synchronous", async () => {
+  const f = await fixture();
+  const paramsJson = f.report();
+  const identity = deliveryIdentity(paramsJson);
+  await expect(
+    f.call("native.buffers.delivery.apply", { ...identity, paramsJson, acknowledge: "admission" }),
+  ).rejects.toThrow();
+  expect(f.counts.buffers).toBe(0);
 });

@@ -2,7 +2,8 @@ import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { loadDocx } from "../model/docxClient";
-import { documentErrorMessage } from "../model/documentViewer";
+import { describeDocumentProblem } from "../model/documentProblemText";
+import { documentProblem, type DocumentProblem } from "../model/documentViewer";
 import { sanitizeDocumentBody } from "../model/documentHtml";
 import { DocumentMessage } from "./DocumentMessage";
 import { useAnchoredZoom } from "./documentZoom";
@@ -14,7 +15,7 @@ const MAX_ZOOM = 3;
 type State =
   | { status: "loading" }
   | { status: "ready"; body: HTMLElement; empty: boolean }
-  | { status: "error"; message: string };
+  | { status: "error"; problem: DocumentProblem };
 
 // Descendant styles for the converted markup, which carries no classes of its own.
 const DOCUMENT_CLASS = [
@@ -52,7 +53,7 @@ export default function DocxViewer({ bytes }: { bytes: Uint8Array }) {
       })
       .catch((cause: unknown) => {
         if (!controller.signal.aborted) {
-          setState({ status: "error", message: documentErrorMessage(cause) });
+          setState({ status: "error", problem: documentProblem(cause) });
         }
       });
     return () => {
@@ -66,7 +67,7 @@ export default function DocxViewer({ bytes }: { bytes: Uint8Array }) {
   if (state.status === "error") {
     return (
       <DocumentMessage title={t("Couldn’t read this document")} error>
-        {state.message}
+        {describeDocumentProblem(state.problem)}
       </DocumentMessage>
     );
   }
@@ -116,6 +117,7 @@ function DocxPages({ body }: { body: HTMLElement }) {
     <div className="relative h-full">
       <div
         ref={scrollRef}
+        data-preview-scroll=""
         tabIndex={0}
         role="region"
         aria-label={t("Document preview")}

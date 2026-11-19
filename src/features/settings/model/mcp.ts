@@ -1,3 +1,5 @@
+import { t } from "../../../shared/i18n";
+
 export type McpServer = { name: string; status: string };
 
 export type McpConnection = {
@@ -16,6 +18,10 @@ export const MCP_PROVIDER_LABELS: Record<McpConnection["provider"], string> = {
   cursor: "Cursor",
   opencode: "OpenCode",
 };
+
+export function scopeLabel(scope: McpConnection["scope"]): string {
+  return scope === "user" ? t("Global") : scope === "project" ? t("Project") : t("Local project");
+}
 
 /** Configuration does not prove authentication; these CLIs own remote OAuth. */
 export function canSignInMcp(connection: McpConnection): boolean {

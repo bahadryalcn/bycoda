@@ -88,6 +88,9 @@ export type SyncOp = {
 
 export const SYNC_PUSH_BATCH_BYTES = 1024 * 1024;
 
+/** Most ops one `sync.push` may carry; the host rejects larger pushes before its transaction. */
+export const SYNC_PUSH_MAX_OPS = 100;
+
 /** Batches leave room for the RPC envelope under the host's 4 MiB limit. */
 export function syncPushBatches(ops: readonly SyncOp[]): {
   batches: SyncOp[][];
@@ -104,7 +107,7 @@ export function syncPushBatches(ops: readonly SyncOp[]): {
       invalid.push(op);
       continue;
     }
-    if (batch.length && (bytes + size > SYNC_PUSH_BATCH_BYTES || batch.length >= 100)) {
+    if (batch.length && (bytes + size > SYNC_PUSH_BATCH_BYTES || batch.length >= SYNC_PUSH_MAX_OPS)) {
       batches.push(batch);
       batch = [];
       bytes = 256;

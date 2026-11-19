@@ -270,6 +270,11 @@ function DockBody({
         }`,
       )}
     >
+      {/* Announces a failed stop; the button itself only reads "Retry stop". */}
+      <LiveText
+        className="sr-only"
+        text={stop.failed.size ? t("Could not stop it. Try again.") : ""}
+      />
       <Text as="div" size="inherit" tone="secondary" className="relative" data-activity-status-row>
         <div className="relative flex min-h-8 min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-3 py-1">
           <div className="activity-dock-summary">
@@ -306,7 +311,10 @@ function DockBody({
               className="shrink-0"
               variant="ghost"
               type="button"
-              tooltip={stopAll.title}
+              tooltip={
+                stop.failed.has(STOP_ALL) ? t("Could not stop it. Try again.") : stopAll.title
+              }
+              reserveLabels={[t("Stopping…"), t("Retry stop")]}
               disabled={stop.stopping.has(STOP_ALL)}
               onClick={() => stop.request(STOP_ALL, () => stop.onAll!())}
             >
@@ -314,7 +322,7 @@ function DockBody({
               {stop.stopping.has(STOP_ALL)
                 ? t("Stopping…")
                 : stop.failed.has(STOP_ALL)
-                  ? t("Could not stop. Retry")
+                  ? t("Retry stop")
                   : stopAll.label}
             </Button>
           ) : null}
@@ -335,7 +343,10 @@ function DockBody({
                 onClick={() => setExpanded(!open)}
                 className="shrink-0"
               >
-                <span className="tabular-nums">{counts}</span>
+                <span className="flex items-center gap-1.5">
+                  <span>{t("Background")}</span>
+                  <span className="tabular-nums">{counts}</span>
+                </span>
               </Button>
             </>
           ) : null}
@@ -542,6 +553,7 @@ function DockAgentRow({
           variant="ghost"
           type="button"
           disabled={stopping}
+          reserveLabels={[t("Stopping…"), t("Retry stop")]}
           aria-label={t(stopping ? "Stopping {p0}" : "Stop {p0}", { p0: agent.name })}
           tooltip={
             stop.failed.has(key)
@@ -555,11 +567,7 @@ function DockAgentRow({
           onClick={() => stop.request(key, () => stop.onAgent!(agent))}
         >
           <Square className="icon-xs" strokeWidth={1.75} />
-          {stopping
-            ? t("Stopping…")
-            : stop.failed.has(key)
-              ? t("Could not stop. Retry")
-              : t("Stop")}
+          {stopping ? t("Stopping…") : stop.failed.has(key) ? t("Retry stop") : t("Stop")}
         </Button>
       ) : null}
     </div>

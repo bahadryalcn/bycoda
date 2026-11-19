@@ -8,6 +8,8 @@ export type SkillMachine = { environmentId: string; name: string; cwd: string };
 export type MachineSkillList = {
   machine: SkillMachine | null;
   skills: DiscoveredSkill[] | null;
+  /** The machine cut its list short, so a name missing from `skills` is not known to be absent. */
+  truncated?: boolean;
 };
 
 export type SkillCopy = {
@@ -55,12 +57,14 @@ export function mergeSkillLibrary(lists: MachineSkillList[]): SkillEntry[] {
 /** Whether a skill with this name exists on each machine, in list order. */
 export function skillPresence(name: string, lists: MachineSkillList[]): SkillPresence[] {
   const wanted = nameKey(name);
-  return lists.map(({ skills }) =>
+  return lists.map(({ skills, truncated }) =>
     skills === null
       ? "unknown"
       : skills.some((skill) => nameKey(skill.name) === wanted)
         ? "present"
-        : "missing",
+        : truncated
+          ? "unknown"
+          : "missing",
   );
 }
 

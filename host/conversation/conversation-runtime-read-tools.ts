@@ -1,5 +1,5 @@
 import { basename, resolve } from "node:path";
-import { statSync } from "node:fs";
+import { stat } from "node:fs/promises";
 import type { HostStore } from "../store";
 import type { HostLimits } from "../limits";
 import type { RuntimeLogSubjectPrincipal } from "../execution/runtime-log-tools";
@@ -51,6 +51,55 @@ export function describeRuntimeReadConversationTool(action: string): string | un
   if (action.startsWith("attachments."))
     return "List or read only attachments already accepted into the calling host or desktop session's transcript, including managed generated images. No sessionId/path/owner override. Metadata excludes paths and inline payloads; readable=false means the file is unavailable or unsupported by host chunk reads, including desktop-local files not present in host storage. Read returns exact base64 bytes in bounded chunks (default 12 KiB, max 48 KiB); continue from nextOffset. This never claims, uploads or grants access to drafts/other sessions.";
   return undefined;
+}
+
+type AttachmentListItem = {
+  id: string;
+  name: string;
+  mimeType: string;
+  kind: string;
+  size: number;
+  generated: boolean;
+  readable: boolean;
+};
+/** Everything the readability probe needs, captured while the transcript is scanned (no I/O). */
+type AttachmentProbe = {
+  path: string | undefined;
+  size: number;
+  generated: boolean;
+  sourcePath: string | undefined;
+};
+type PendingAttachment = { entry: AttachmentListItem; probe: AttachmentProbe };
+const LIST_PROBE_CONCURRENCY = 8;
+
+async function isReadableAttachment(probe: AttachmentProbe): Promise<boolean> {
+  const path = probe.path;
+  if (path === undefined) return false;
+  try {
+    const info = await stat(path);
+    return (
+      info.isFile() &&
+      info.size === probe.size &&
+      Number.isSafeInteger(probe.size) &&
+      probe.size >= 0 &&
+      probe.size <= MAX_REMOTE_ATTACHMENT_BYTES &&
+      (!probe.generated || (!!probe.sourcePath && resolve(probe.sourcePath) === resolve(path)))
+    );
+  } catch {
+    return false;
+  }
+}
+
+async function forEachBounded<T>(
+  items: readonly T[],
+  limit: number,
+  task: (item: T) => Promise<void>,
+): Promise<void> {
+  const iterator = items.entries();
+  const worker = async () => {
+    for (const [, item] of iterator) await task(item);
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
 }
 
 export class ConversationRuntimeReadTools {
@@ -135,18 +184,7 @@ export class ConversationRuntimeReadTools {
         nextOffset: next < chunk.size ? next : null,
       };
     }
-    const entries = new Map<
-      string,
-      {
-        id: string;
-        name: string;
-        mimeType: string;
-        kind: string;
-        size: number;
-        generated: boolean;
-        readable: boolean;
-      }
-    >();
+    const entries = new Map<string, PendingAttachment>();
     let unsupportedCount = 0;
     for (const block of session.session.blocks) {
       const candidates = [
@@ -172,39 +210,45 @@ export class ConversationRuntimeReadTools {
           unsupportedCount++;
           continue;
         }
-        let readable = false;
+        let path: string | undefined;
         try {
-          const path = attachmentPath(this.store, file.id);
-          const info = statSync(path);
-          readable =
-            info.isFile() &&
-            info.size === file.size &&
-            Number.isSafeInteger(file.size) &&
-            file.size >= 0 &&
-            file.size <= MAX_REMOTE_ATTACHMENT_BYTES &&
-            (!file.generated || (!!file.path && resolve(file.path) === resolve(path)));
+          path = attachmentPath(this.store, file.id);
         } catch {
           /* inline/local-only attachments have no managed UUID */
         }
         entries.set(file.sourceId, {
-          id: file.sourceId,
-          name: scrubRuntimeLogText(file.name.split(/[\\/]/).at(-1) ?? "Attachment", 255),
-          mimeType: scrubRuntimeLogText(file.mimeType, 128),
-          kind: file.kind,
-          size: file.size,
-          generated: file.generated,
-          readable,
+          entry: {
+            id: file.sourceId,
+            name: scrubRuntimeLogText(file.name.split(/[\\/]/).at(-1) ?? "Attachment", 255),
+            mimeType: scrubRuntimeLogText(file.mimeType, 128),
+            kind: file.kind,
+            size: file.size,
+            generated: file.generated,
+            readable: false,
+          },
+          probe: {
+            path,
+            size: file.size,
+            generated: file.generated,
+            sourcePath: file.path,
+          },
         });
       }
     }
-    const items = [...entries.values()],
+    const pending = [...entries.values()],
       offset = Number(input.offset ?? 0),
-      limit = Number(input.limit ?? 30);
+      limit = Number(input.limit ?? 30),
+      page = pending.slice(offset, offset + limit);
+    // Only the returned page touches the disk, so a long transcript never blocks the Host loop.
+    await forEachBounded(page, LIST_PROBE_CONCURRENCY, async ({ entry, probe }) => {
+      entry.readable = await isReadableAttachment(probe);
+    });
+    await check();
     return {
-      items: items.slice(offset, offset + limit),
-      total: items.length,
+      items: page.map(({ entry }) => entry),
+      total: pending.length,
       unsupportedCount,
-      nextOffset: offset + limit < items.length ? offset + limit : null,
+      nextOffset: offset + limit < pending.length ? offset + limit : null,
     };
   }
 }

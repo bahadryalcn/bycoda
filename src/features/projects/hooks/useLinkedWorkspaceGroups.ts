@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { withRoomPrivacyMutation } from "../../group-lock/model/roomPrivacyProjection";
 import { useEffect } from "react";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
@@ -64,7 +65,7 @@ export async function syncLinkedGroup(groupId: string, onProjectsAdded: () => vo
     } catch (error) {
       setLinkedGroupStatus(groupId, {
         state: "invalid",
-        message: error instanceof Error ? error.message : String(error),
+        message: errorText(error),
       });
       return;
     }
@@ -91,7 +92,7 @@ export async function syncLinkedGroup(groupId: string, onProjectsAdded: () => vo
         JSON.stringify(latest.workspaceFolders ?? []) !==
           JSON.stringify(current.workspaceFolders ?? [])
       )
-        throw new Error("Workspace group changed while synchronizing. Refresh and try again.");
+        throw new Error(t("Workspace group changed while synchronizing. Refresh and try again."));
       if (added.length > 0) {
         rememberImportedProjects(added.map((path) => ({ path, lastUsedAt: Date.now() })));
         onProjectsAdded();
@@ -124,7 +125,7 @@ export async function syncLinkedGroup(groupId: string, onProjectsAdded: () => vo
   } catch (error) {
     setLinkedGroupStatus(groupId, {
       state: "invalid",
-      message: error instanceof Error ? error.message : String(error),
+      message: errorText(error),
     });
   } finally {
     syncing.delete(groupId);

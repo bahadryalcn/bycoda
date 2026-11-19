@@ -34,10 +34,17 @@ export type SessionOrganizationResult =
   | { state: "conflict" }
   | { state: "unknown"; operationId: string };
 
+// Another process cannot emit window events here, so the poll only backs the event path.
+const FALLBACK_POLL_MS = 30_000;
+
+// The store owns `cached`; readers receive copies, so publishing needs no clone.
 let cached: SessionOrganizationState | undefined;
+// Revision of the snapshot `cached` came from; unset for the localStorage fixture path.
+let cachedRevision: number | undefined;
 let pageToken: Promise<string> | undefined;
 let pendingImport: string | undefined;
-let hydration: Promise<SessionOrganizationState> | undefined;
+// `force` marks a read that must notify subscribers even when the revision is unchanged.
+let hydration: { promise: Promise<SessionOrganizationState>; force: boolean } | undefined;
 const runningGestures = new Map<string, Promise<SessionOrganizationResult>>();
 const token = () =>
   (pageToken ??= invoke<string>("canonical_store_page_token").catch((error: unknown) => {
@@ -59,11 +66,13 @@ function fromSnapshot(snapshot: Snapshot): SessionOrganizationState {
   return { folders: parse(raw(FOLDERS)), order: parse(raw(ORDER)) };
 }
 
-function publish(value: SessionOrganizationState): SessionOrganizationState {
-  cached = structuredClone(value);
+/** Takes ownership of `value`; callers must not keep a mutable reference. */
+function publish(value: SessionOrganizationState, revision?: number): SessionOrganizationState {
+  cached = value;
+  cachedRevision = revision;
   if (typeof window !== "undefined")
     window.dispatchEvent(new Event("bycoda:session-organization-change"));
-  return structuredClone(value);
+  return value;
 }
 
 export function cachedSessionOrganization(): SessionOrganizationState | undefined {
@@ -80,15 +89,21 @@ export function subscribeSessionOrganization(
   let unlisten: (() => void) | undefined;
   let requested = 0;
   let refreshing = false;
-  const refresh = () => {
+  let forced = false;
+  // A forced refresh notifies even when the canonical revision is unchanged: the first read
+  // of a subscriber, a focus return, and pin-saga changes that live outside this revision.
+  const refresh = (force: boolean) => {
     requested++;
+    forced ||= force;
     if (refreshing) return;
     refreshing = true;
     void (async () => {
       let seen = 0;
       while (!disposed && seen !== requested) {
         seen = requested;
-        await hydrateSessionOrganization();
+        const notify = forced;
+        forced = false;
+        await loadSessionOrganization(notify);
       }
     })()
       .catch(onError)
@@ -98,33 +113,35 @@ export function subscribeSessionOrganization(
   };
   if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
     // Hydrate now; the refresh after registration catches a change made meanwhile.
-    refresh();
+    refresh(true);
     void listenWindowAsync<{ scope: string; revision: number }>(
       "canonical-store-changed",
       (event) => {
-        if (event.payload.scope === SCOPE || event.payload.scope === "session-pin-saga.v1")
-          refresh();
+        if (event.payload.scope === SCOPE) {
+          // This process already published that revision.
+          if (event.payload.revision !== cachedRevision) refresh(false);
+        } else if (event.payload.scope === "session-pin-saga.v1") refresh(true);
       },
     ).then((release) => {
       if (disposed) release();
       else {
         unlisten = release;
-        refresh();
+        refresh(false);
       }
     }, onError);
-  } else refresh();
-  if (NATIVE_SESSION_ORGANIZATION_ACTIVE) window.addEventListener("focus", refresh);
-  // Other desktop processes cannot receive this process's window events.
+  } else refresh(true);
+  const onFocus = () => refresh(true);
+  if (NATIVE_SESSION_ORGANIZATION_ACTIVE) window.addEventListener("focus", onFocus);
   const poll = NATIVE_SESSION_ORGANIZATION_ACTIVE
     ? window.setInterval(() => {
-        if (document.visibilityState === "visible") refresh();
-      }, 5_000)
+        if (document.visibilityState === "visible") refresh(false);
+      }, FALLBACK_POLL_MS)
     : undefined;
   return () => {
     disposed = true;
     unlisten?.();
     if (poll !== undefined) window.clearInterval(poll);
-    window.removeEventListener("focus", refresh);
+    window.removeEventListener("focus", onFocus);
     window.removeEventListener("bycoda:session-organization-change", onChange);
   };
 }
@@ -196,16 +213,26 @@ export async function unresolvedSessionOrganizationGestures(): Promise<
 
 /** Imports the exact legacy bytes once. Invalid data remains recoverable and blocks edits. */
 export async function hydrateSessionOrganization(): Promise<SessionOrganizationState> {
-  if (hydration) return structuredClone(await hydration);
-  hydration = hydrateOnce();
+  return structuredClone(await loadSessionOrganization(true));
+}
+
+/** Returns the store-owned state; callers must copy before they mutate or retain it. */
+async function loadSessionOrganization(force: boolean): Promise<SessionOrganizationState> {
+  for (let running = hydration; running; running = hydration) {
+    // A read that must notify cannot join one that may skip the notification.
+    if (running.force || !force) return running.promise;
+    await running.promise.catch(() => undefined);
+  }
+  const current = { promise: hydrateOnce(force), force };
+  hydration = current;
   try {
-    return structuredClone(await hydration);
+    return await current.promise;
   } finally {
-    hydration = undefined;
+    if (hydration === current) hydration = undefined;
   }
 }
 
-async function hydrateOnce(): Promise<SessionOrganizationState> {
+async function hydrateOnce(force: boolean): Promise<SessionOrganizationState> {
   if (!NATIVE_SESSION_ORGANIZATION_ACTIVE)
     return publish({
       folders: parse(localStorage.getItem(FOLDERS) ?? "{}"),
@@ -220,7 +247,11 @@ async function hydrateOnce(): Promise<SessionOrganizationState> {
     }
     const snapshot = await read();
     const missing = KEYS.filter((key) => !snapshot.entries.some((entry) => entry.key === key));
-    if (!missing.length) return publish(fromSnapshot(snapshot));
+    if (!missing.length) {
+      // Same revision means the same entries: skip the parse, the clone and the event.
+      if (!force && cached && cachedRevision === snapshot.revision) return cached;
+      return publish(fromSnapshot(snapshot), snapshot.revision);
+    }
     const raw = missing.map((key) => ({ key, raw: localStorage.getItem(key) ?? "{}" }));
     const operationId = newRequestId();
     const args = {
@@ -244,7 +275,10 @@ async function hydrateOnce(): Promise<SessionOrganizationState> {
       outcome = receipt;
     }
     pendingImport = undefined;
-    if (outcome.applied) return publish(fromSnapshot(await read()));
+    if (outcome.applied) {
+      const imported = await read();
+      return publish(fromSnapshot(imported), imported.revision);
+    }
     // Only a durable conflict receipt permits another import attempt.
   }
 }
@@ -275,10 +309,11 @@ export function mutateSessionOrganization(
 async function mutateOnce(gesture: SessionOrganizationGesture): Promise<SessionOrganizationResult> {
   if (!NATIVE_SESSION_ORGANIZATION_ACTIVE) {
     const current = await hydrateSessionOrganization();
-    const next = gesture.apply(structuredClone(current));
+    const next = gesture.apply(current);
     localStorage.setItem(FOLDERS, JSON.stringify(next.folders));
     localStorage.setItem(ORDER, JSON.stringify(next.order));
-    return { state: "applied", value: publish(next) };
+    publish(structuredClone(next));
+    return { state: "applied", value: next };
   }
   await hydrateSessionOrganization();
   const { listPinSagas } = await import("./sessionPinSaga");

@@ -59,16 +59,9 @@
     animation: none;
   }
 }
-/* Docked in the sidebar, the open panel starts above that footer instead of the far corner. */
-:global(:root:has([data-voice-launcher-slot][data-active]:not([data-compact]))) .panel {
-  right: auto;
-  left: 12px;
-  bottom: 56px;
-}
-:global(:root:has([data-voice-launcher-slot][data-active][data-compact])) .panel {
-  right: auto;
-  left: 60px;
-  bottom: 12px;
+/* The launcher pulse stops its clock while the window is behind another app or decorative motion is off; the dot stays on screen. */
+:global(html:is([data-decorative-motion="off"], [data-window-focus="off"])) .launcherAvatar .launcherDot {
+  animation-play-state: paused;
 }
 .panel {
   display: grid;
@@ -76,14 +69,30 @@
   grid-template-rows: auto minmax(0, 1fr) auto auto;
   position: fixed;
   right: 20px;
-  bottom: 36px;
+  --voice-panel-bottom: 36px;
+  bottom: var(--voice-panel-bottom);
   z-index: var(--layer-pane-sheet);
   /* The resize grip (VoicePanelResize) sets both sizes; otherwise the panel fits its content. */
   width: var(--voice-panel-width, min(360px, calc(100vw - 16px)));
   height: var(--voice-panel-height, auto);
   max-width: calc(100vw - 16px);
-  max-height: calc(100dvh - 16px);
+  /* Keep the top edge 8px below the viewport: the panel's bottom offset is part of its height.
+     VoicePanelResize clamps with the same 8px margin (PANEL_TOP_MARGIN). */
+  max-height: calc(100dvh - var(--voice-panel-bottom) - 8px);
   overflow: hidden;
+}
+/* Docked in the sidebar, the open panel starts above that footer instead of the far corner.
+   VoiceCompanion sets data-dock from the slot it docks into; only the offset changes here, and
+   .panel reads it for both its position and its height cap. */
+.panel[data-dock="footer"] {
+  right: auto;
+  left: 12px;
+  --voice-panel-bottom: 56px;
+}
+.panel[data-dock="rail"] {
+  right: auto;
+  left: 60px;
+  --voice-panel-bottom: 12px;
 }
 .header {
   display: flex;

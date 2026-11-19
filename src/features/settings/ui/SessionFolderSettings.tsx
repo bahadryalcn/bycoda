@@ -6,6 +6,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { loadSessionFolder, saveSessionFolder, type SessionFolder } from "../model/sessionFolder";
 import { Group, Row, SettingsFeedback } from "../../../shared/ui/settings";
+import { errorText } from "../../../shared/lib/errors";
 
 /** Page-level "Restore defaults": sessions without a project go back to the home folder. */
 const changes = new EventTarget();
@@ -13,8 +14,6 @@ export const restoreSessionFolderDefault = async () => {
   await saveSessionFolder(null);
   changes.dispatchEvent(new Event("change"));
 };
-
-const message = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
 
 /** The folder sessions started with "No project" run in; empty means the home folder. */
 export function SessionFolderGroup() {
@@ -34,7 +33,7 @@ export function SessionFolderGroup() {
       const value = await loadSessionFolder();
       if (generation.current === current) setFolder(value);
     } catch (cause) {
-      if (generation.current === current) setError(message(cause));
+      if (generation.current === current) setError(errorText(cause));
     } finally {
       if (generation.current === current) setOperation(null);
     }
@@ -54,7 +53,7 @@ export function SessionFolderGroup() {
   }, []);
 
   // choose() and save() report their own failures; this only satisfies the rejection contract.
-  const setErrorFrom = (cause: unknown) => setError(message(cause));
+  const setErrorFrom = (cause: unknown) => setError(errorText(cause));
 
   const save = async (next: string | null) => {
     setError(null);
@@ -64,7 +63,7 @@ export function SessionFolderGroup() {
       const value = await loadSessionFolder();
       if (generation.current === current) setFolder(value);
     } catch (cause) {
-      if (generation.current === current) setError(message(cause));
+      if (generation.current === current) setError(errorText(cause));
     } finally {
       if (generation.current === current) setOperation(null);
     }
@@ -83,7 +82,7 @@ export function SessionFolderGroup() {
       });
       if (typeof path === "string") await save(path);
     } catch (cause) {
-      setError(message(cause));
+      setError(errorText(cause));
     } finally {
       inFlight.current = false;
       setOperation(null);

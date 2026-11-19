@@ -40,6 +40,7 @@ import {
   sendWithFallback,
 } from "./execution/social-job-gates";
 import { enabledOAuthPlatform } from "./oauth/registry";
+import { isPermanentRefreshFailure } from "./oauth/refresh-error";
 import { readInboxSettings } from "./inbox/inbox-settings";
 import { holdForHuman, requeueJobForHuman } from "./execution/social-human-review";
 import { osSecretValues } from "../secrets/secret-store";
@@ -48,7 +49,7 @@ import type { OutreachChannel } from "../../src/features/social/model/outreach";
 import { eraseSocialContact, optOutContact, upsertSocialContact } from "./contacts/social-contacts";
 import { suggestSocialContactTags } from "./contacts/social-contact-tags";
 import { generateQueuedDraftOnce, ingestEvents } from "./rules/social-ingest";
-import { pollOwnedAccount } from "./inbox/social-polling";
+import { pollFailureDelayMs, pollOwnedAccount } from "./inbox/social-polling";
 import { receiveWebhook } from "./inbox/social-webhooks";
 import { runOutreachTick } from "./outreach/outreach-tick";
 import { forEachAsync, mapAsync } from "../async-collections";
@@ -219,6 +220,11 @@ const permissions: SocialPermission[] = ["read", "draft", "publish", "reply", "m
 /** Social scheduler cadence: normal while there is work, longer while idle. */
 const SOCIAL_TICK_MS = 5000;
 const SOCIAL_IDLE_TICK_MS = 30_000;
+/** Failed OAuth refreshes back off exponentially from the base to the cap per account. */
+const SOCIAL_REFRESH_RETRY_MS = 30_000;
+const SOCIAL_REFRESH_RETRY_MAX_MS = 15 * 60_000;
+/** Per-account refresh failure state (social_settings `refreshState:<id>`); holds no token. */
+type SocialRefreshState = { failures: number; nextRefreshAt: number; permanent?: true };
 export class SocialService implements SocialServiceApi {
   private readonly mediaCustody: SocialMediaCustody;
   private readonly mediaQuarantine: SocialMediaQuarantine;
@@ -538,6 +544,13 @@ export class SocialService implements SocialServiceApi {
   }
   private backgroundEpoch = 0;
   private generationPending?: Promise<boolean>;
+  /** The running outreach tick. One at a time: ticks must never overlap on the same enrollments or quotas. */
+  private outreachPending?: Promise<void>;
+  /** Background poll failures per account. In memory on purpose: a Host restart polls again at once. */
+  private readonly pollBackoff = new Map<
+    string,
+    { failures: number; until: number; epoch: string | undefined }
+  >();
   private readonly pollingPending = new Map<
     string,
     Promise<{
@@ -871,6 +884,16 @@ export class SocialService implements SocialServiceApi {
         .all(kind)
     ).map((row) => JSON.parse(String(row.value)) as T);
   }
+  // Completed, cancelled and paused plans with no pending job can never act; the 5 s tick skips their parse.
+  private async listRunnablePublishingPlans(): Promise<PublishingPlanRecord[]> {
+    return (
+      await this.store.db
+        .prepare(
+          "SELECT value FROM social_records WHERE kind='publishing-plan' AND (json_extract(value,'$.enabled')=1 OR json_extract(value,'$.pendingJobId') IS NOT NULL) ORDER BY rowid",
+        )
+        .all()
+    ).map((row) => JSON.parse(String(row.value)) as PublishingPlanRecord);
+  }
   async get<T extends Stored>(kind: string, id: string): Promise<T> {
     const row = await this.store.db
       .prepare("SELECT value FROM social_records WHERE kind=? AND id=?")
@@ -898,6 +921,16 @@ export class SocialService implements SocialServiceApi {
         "INSERT INTO social_settings VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
       )
       .run(key, value);
+    this.wake();
+  }
+  async settingKeys(prefix: string): Promise<string[]> {
+    const rows = await this.store.db
+      .prepare("SELECT key FROM social_settings WHERE substr(key,1,?)=?")
+      .all(prefix.length, prefix);
+    return rows.map((row) => String(row.key));
+  }
+  async deleteSetting(key: string) {
+    await this.store.db.prepare("DELETE FROM social_settings WHERE key=?").run(key);
     this.wake();
   }
   private async changeCredentials<T>(accountId: string, action: () => Promise<T>): Promise<T> {
@@ -1975,6 +2008,7 @@ export class SocialService implements SocialServiceApi {
         this.owner(p);
         const account = await this.access(p, str(input.accountId, "account"), "read");
         account.paused = input.paused !== false;
+        this.pollBackoff.delete(account.id);
         return await this.put("account", account.id, account);
       }
       case "accounts.disconnect": {
@@ -1988,6 +2022,7 @@ export class SocialService implements SocialServiceApi {
         await this.changeCredentials(account.id, async () => {
           await this.store.db.checkAuthorization();
           await this.credentials.delete(account.id);
+          await this.clearRefreshState(account.id);
         });
         // Browser cleanup can await a connection holding the browser lock and waiting for credentials.
         // Release the credential lock first; the connection epoch already revokes pending commits.
@@ -2696,13 +2731,31 @@ export class SocialService implements SocialServiceApi {
         "status",
         "segmentId",
         "since",
+        "scheduledFrom",
+        "scheduledTo",
       ]);
       const normalized: Record<string, string | number> = {};
       for (const [key, value] of Object.entries(raw)) {
         if (value === "" || value === undefined) continue;
         if (key === "since") normalized[key] = finite(value, "history start date");
+        else if (key === "scheduledFrom" || key === "scheduledTo")
+          normalized[key] = finite(value, "scheduled range", 0, 8.64e15);
         else if (typeof value === "string" && !value.trim()) continue;
         else normalized[key] = str(value, "social filter", 1000);
+      }
+      // A scheduled range is a half-open [from, to) window of epoch milliseconds, and only jobs have one.
+      const hasFrom = normalized.scheduledFrom !== undefined,
+        hasTo = normalized.scheduledTo !== undefined;
+      if (hasFrom || hasTo) {
+        if (collection !== "jobs") throw new Error("Only jobs can be filtered by schedule.");
+        if (
+          !hasFrom ||
+          !hasTo ||
+          !Number.isInteger(normalized.scheduledFrom) ||
+          !Number.isInteger(normalized.scheduledTo) ||
+          (normalized.scheduledFrom as number) >= (normalized.scheduledTo as number)
+        )
+          throw new Error("Invalid scheduled range.");
       }
       filters[collection] = normalized;
     }
@@ -2803,6 +2856,11 @@ export class SocialService implements SocialServiceApi {
       if (filter?.since !== undefined) {
         clauses.push(`json_extract(${alias}.value,'$.createdAt')>=?`);
         values.push(filter.since);
+      }
+      if (collection === "jobs" && filter?.scheduledFrom !== undefined) {
+        // The indexed column is the one the calendar draws by (job.scheduledAt), not createdAt.
+        clauses.push(`${alias}.scheduled_at>=? AND ${alias}.scheduled_at<?`);
+        values.push(filter.scheduledFrom, filter.scheduledTo!);
       }
       if (filter?.status && collection !== "campaigns") {
         clauses.push(`json_extract(${alias}.value,'$.status')=?`);
@@ -2917,9 +2975,13 @@ export class SocialService implements SocialServiceApi {
       );
       snapshot.pages![collection] = { offset, limit, total };
       if (!sections[section].includes(collection)) continue;
+      const scheduledWindow =
+        collection === "jobs" && filters.jobs?.scheduledFrom !== undefined;
       const order =
         collection === "jobs"
-          ? "json_extract(r.value,'$.createdAt') DESC,r.scheduled_at DESC,r.id DESC"
+          ? scheduledWindow
+            ? "r.scheduled_at ASC,r.id ASC"
+            : "json_extract(r.value,'$.createdAt') DESC,r.scheduled_at DESC,r.id DESC"
           : collection === "threads"
             ? "json_extract(r.value,'$.lastInboundAt') DESC,r.id DESC"
             : "r.rowid DESC";
@@ -3507,7 +3569,7 @@ export class SocialService implements SocialServiceApi {
     return this.publicPublishingPlan(await this.put("publishing-plan", plan.id, plan));
   }
   private async processPublishingPlans() {
-    for (const saved of await this.list<PublishingPlanRecord>("publishing-plan")) {
+    for (const saved of await this.listRunnablePublishingPlans()) {
       let plan = saved;
       if (plan.pendingJobId) {
         const job = await this.job(plan.pendingJobId);
@@ -4734,6 +4796,8 @@ export class SocialService implements SocialServiceApi {
             if (identity.telegramBotId !== undefined)
               account.telegramBotId = identity.telegramBotId;
             account.connected = true;
+            // Reconnecting is the explicit repair for a rejected or backed-off refresh.
+            await this.clearRefreshState(account.id);
             return await this.put("account", account.id, account);
           });
         } catch (error) {
@@ -4854,8 +4918,7 @@ export class SocialService implements SocialServiceApi {
         credential.expiresAt > this.now() + 60000
       )
         return credential;
-      const account = await this.get<SocialAccount>("account", accountId),
-        before = hash(JSON.stringify(account));
+      const account = await this.get<SocialAccount>("account", accountId);
       if (
         !account.connected ||
         account.paused ||
@@ -4865,19 +4928,115 @@ export class SocialService implements SocialServiceApi {
         !enabledOAuthPlatform(account.platform)?.refresh
       )
         return credential;
-      const refreshed = await this.refreshCredential!(account, credential).catch(() => {
-        throw new SocialPlatformError("expired");
-      });
-      const current = await this.get<SocialAccount>("account", accountId);
-      if (hash(JSON.stringify(current)) !== before) throw new SocialPlatformError("expired");
+      const failed = await this.refreshState(accountId);
+      if (failed && (failed.permanent || failed.nextRefreshAt > this.now())) {
+        // Known-failing grant: never contact the provider again before its backoff ends
+        // (a permanent rejection waits for the owner to reconnect).
+        if (credential.expiresAt <= this.now()) throw new SocialPlatformError("expired");
+        return credential;
+      }
+      // A request that lost authority must not start a rotation it could not complete.
       await this.store.db.checkAuthorization();
+      const epoch = await this.setting(`connectionEpoch:${accountId}`);
+      let refreshed: SocialCredential;
+      try {
+        refreshed = await this.refreshCredential!(account, credential);
+      } catch (error) {
+        await this.recordRefreshFailure(account, failed, error);
+        throw new SocialPlatformError("expired");
+      }
+      // The provider may have rotated the refresh token, so the old one is already dead:
+      // save the result unless the account or credential generation it was issued for is gone.
+      // Unrelated account edits (policy, name, pause, grants) never discard it.
+      const stored = await this.credentials.get(accountId);
+      if (
+        !stored ||
+        stored.accessToken !== credential.accessToken ||
+        stored.refreshToken !== credential.refreshToken
+      )
+        throw new SocialPlatformError("expired");
+      try {
+        const current = await this.get<SocialAccount>("account", accountId);
+        if (
+          !current.connected ||
+          current.platform !== account.platform ||
+          current.platformId !== account.platformId ||
+          epoch !== (await this.setting(`connectionEpoch:${accountId}`))
+        )
+          throw new SocialPlatformError("expired");
+      } catch (error) {
+        // Only a positive mismatch discards the result. A read that fails (a revoked request
+        // can no longer read the account) leaves the vault generation above as the proof, and
+        // a later disconnect deletes the credential, so the rotated token is kept.
+        if (error instanceof SocialPlatformError) throw error;
+      }
       await this.credentials.set(accountId, refreshed);
-      const latest = await this.get<SocialAccount>("account", accountId);
-      if (hash(JSON.stringify(latest)) !== before) throw new SocialPlatformError("expired");
-      latest.expiresAt = refreshed.expiresAt;
-      await this.put("account", latest.id, latest);
+      try {
+        await this.transaction(async () => {
+          await this.clearRefreshState(accountId);
+          const latest = await this.get<SocialAccount>("account", accountId);
+          latest.expiresAt = refreshed.expiresAt;
+          await this.put("account", latest.id, latest);
+        });
+      } catch {
+        // shortcut: the credential is already saved; a failed account.expiresAt sync only
+        // delays the owner-visible expiry, upgrade when account expiry has its own resync.
+      }
+      await this.store.db.checkAuthorization();
       return refreshed;
     });
+  }
+  private async refreshState(accountId: string): Promise<SocialRefreshState | undefined> {
+    const saved = await this.setting(`refreshState:${accountId}`);
+    if (!saved) return undefined;
+    try {
+      const value = JSON.parse(saved) as Partial<SocialRefreshState>;
+      return Number.isFinite(value.failures) && Number.isFinite(value.nextRefreshAt)
+        ? (value as SocialRefreshState)
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  private async clearRefreshState(accountId: string): Promise<void> {
+    await this.store.db
+      .prepare("DELETE FROM social_settings WHERE key=?")
+      .run(`refreshState:${accountId}`);
+  }
+  /** Backoff keeps a failing provider endpoint from being hit every tick; a permanent
+   * rejection also flips the account to the expired (reconnect) state the owner already sees. */
+  private async recordRefreshFailure(
+    account: SocialAccount,
+    previous: SocialRefreshState | undefined,
+    error: unknown,
+  ): Promise<void> {
+    try {
+      const permanent = isPermanentRefreshFailure(error);
+      const failures = (previous?.failures ?? 0) + 1;
+      const delay = Math.min(
+        SOCIAL_REFRESH_RETRY_MS * 2 ** Math.min(failures - 1, 10),
+        SOCIAL_REFRESH_RETRY_MAX_MS,
+      );
+      const state: SocialRefreshState = {
+        failures,
+        nextRefreshAt: this.now() + delay,
+        ...(permanent ? { permanent: true } : {}),
+      };
+      await this.setSetting(`refreshState:${account.id}`, JSON.stringify(state));
+      if (permanent && !previous?.permanent)
+        await this.transaction(async () => {
+          const latest = await this.get<SocialAccount>("account", account.id);
+          if (
+            !latest.connected ||
+            (latest.expiresAt !== undefined && latest.expiresAt <= this.now())
+          )
+            return;
+          latest.expiresAt = this.now();
+          await this.put("account", latest.id, latest);
+        });
+    } catch {
+      // The caller still reports expired; unrecorded state only means one more attempt.
+    }
   }
   private async publicMediaUrl(id: string): Promise<string> {
     const base = url(process.env.BYCODA_SOCIAL_PUBLIC_MEDIA_BASE_URL, "public media base URL");
@@ -5011,6 +5170,7 @@ export class SocialService implements SocialServiceApi {
   }
   async stop(): Promise<void> {
     this.backgroundEpoch++;
+    this.pollBackoff.clear();
     for (const controller of this.generationControllers.values()) controller.abort();
     clearTimeout(this.timer);
     this.timer = undefined;
@@ -5033,7 +5193,8 @@ export class SocialService implements SocialServiceApi {
         this.activeOperations.size ||
         this.credentialChanges.size ||
         this.pollingPending.size ||
-        this.generationPending
+        this.generationPending ||
+        this.outreachPending
       ) {
         await Promise.allSettled([
           ...this.activeTicks,
@@ -5041,6 +5202,7 @@ export class SocialService implements SocialServiceApi {
           ...this.credentialChanges.values(),
           ...this.pollingPending.values(),
           ...(this.generationPending ? [this.generationPending] : []),
+          ...(this.outreachPending ? [this.outreachPending] : []),
         ]);
       }
       if (this.programsValue)
@@ -5089,6 +5251,9 @@ export class SocialService implements SocialServiceApi {
       await this.jobArchive
         .compactIfDue()
         .catch((error) => console.error("Social job archival failed; retrying later:", error));
+      await this.audience
+        .pruneSpentCountersIfDue(this.now())
+        .catch((error) => console.error("Social counter retention failed; retrying later:", error));
       await this.mediaQuarantine
         .sweepIfDue()
         .catch((error) => console.error("Social media retention failed; retrying later:", error));
@@ -5110,26 +5275,48 @@ export class SocialService implements SocialServiceApi {
             account.expiresAt <= this.now() + 60000 &&
             enabledOAuthPlatform(account.platform)?.refresh !== undefined,
         );
-        for (let offset = 0; offset < due.length; offset += 4)
+        // Accounts whose refresh already failed never hold the barrier: a rejected grant waits
+        // for the owner to reconnect, a backed-off one retries beside the tick when its delay ends.
+        const barrier: SocialAccount[] = [];
+        const retrying: SocialAccount[] = [];
+        for (const account of due) {
+          const state = await this.refreshState(account.id);
+          if (!state) barrier.push(account);
+          else if (!state.permanent && state.nextRefreshAt <= this.now()) retrying.push(account);
+        }
+        for (let offset = 0; offset < barrier.length; offset += 4)
           await Promise.allSettled(
-            due
+            barrier
               .slice(offset, offset + 4)
               .map(async (account) => await this.credentialFor(account.id)),
           );
+        for (const account of retrying.slice(0, 4))
+          background.push(this.credentialFor(account.id).catch(() => undefined));
       }
       if (this.disposing || epoch !== this.backgroundEpoch) return;
       await this.programs.tick();
       if (this.disposing || epoch !== this.backgroundEpoch) return;
       await this.processPublishingPlans();
       if (this.disposing || epoch !== this.backgroundEpoch) return;
-      await runOutreachTick({
-        service: this,
-        store: this.audience,
-        now: this.now(),
-        emailSecrets: osSecretValues(this.directory, this.store.environmentId),
-      }).catch((error) =>
-        console.error("Social outreach tick failed; retrying later:", sanitizeSocialError(error)),
-      );
+      // Outreach model calls can run for minutes: it runs beside publishing and drafting, bounded
+      // by its own time budget, and a later tick skips it while this one is still running.
+      if (!this.outreachPending) {
+        const pending = runOutreachTick({
+          service: this,
+          store: this.audience,
+          now: () => this.now(),
+          shouldStop: () => this.disposing || epoch !== this.backgroundEpoch,
+          emailSecrets: osSecretValues(this.directory, this.store.environmentId),
+        })
+          .catch((error) =>
+            console.error("Social outreach tick failed; retrying later:", sanitizeSocialError(error)),
+          )
+          .finally(() => {
+            if (this.outreachPending === pending) this.outreachPending = undefined;
+          });
+        this.outreachPending = pending;
+        background.push(pending);
+      }
       if (this.disposing || epoch !== this.backgroundEpoch) return;
       if (!this.generationPending) {
         const pending = this.generateQueuedDraft().finally(() => {
@@ -5150,21 +5337,12 @@ export class SocialService implements SocialServiceApi {
             ) &&
             account.executorId === this.store.environmentId &&
             Number((await this.setting(`pollRate:${account.id}`)) ?? 0) <= this.now() &&
-            !this.pollingPending.has(account.id)
+            !this.pollingPending.has(account.id) &&
+            !(await this.pollBackedOff(account.id))
           ) {
             this.tickActive = true;
             background.push(
-              this.pollAccount(account.id).catch(async () => {
-                await this.setSetting(
-                  `pollRate:${account.id}`,
-                  String(
-                    Math.max(
-                      Number((await this.setting(`pollRate:${account.id}`)) ?? 0),
-                      this.now() + 60000,
-                    ),
-                  ),
-                );
-              }),
+              this.pollAccount(account.id).catch((error) => this.recordPollFailure(account.id, error)),
             );
           }
         }
@@ -5649,10 +5827,34 @@ export class SocialService implements SocialServiceApi {
       const pending = this.pollAccountOwned(accountId);
       this.pollingPending.set(accountId, pending);
       try {
-        return await pending;
+        const result = await pending;
+        // Any successful poll, including an explicit refresh, ends the background backoff.
+        this.pollBackoff.delete(accountId);
+        return result;
       } finally {
         if (this.pollingPending.get(accountId) === pending) this.pollingPending.delete(accountId);
       }
+    });
+  }
+  /** True while a failed background poll waits out its growing delay. Explicit refresh ignores it. */
+  private async pollBackedOff(accountId: string): Promise<boolean> {
+    const state = this.pollBackoff.get(accountId);
+    if (!state) return false;
+    // A reconnect changes the epoch and ends the wait at once.
+    if (state.epoch !== (await this.setting(`connectionEpoch:${accountId}`))) {
+      this.pollBackoff.delete(accountId);
+      return false;
+    }
+    return state.until > this.now();
+  }
+  private async recordPollFailure(accountId: string, error: unknown): Promise<void> {
+    // A provider rate limit already stored its own retry time in `pollRate`.
+    if (error instanceof SocialPlatformError && error.code === "rate_limit") return;
+    const failures = (this.pollBackoff.get(accountId)?.failures ?? 0) + 1;
+    this.pollBackoff.set(accountId, {
+      failures,
+      until: this.now() + pollFailureDelayMs(failures),
+      epoch: await this.setting(`connectionEpoch:${accountId}`),
     });
   }
   private async pollAccountOwned(accountId: string): Promise<{

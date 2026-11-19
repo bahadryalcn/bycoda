@@ -85,20 +85,25 @@ fn selection(
     channel.check()?;
     Ok(channel)
 }
+// Opening SQLite, the IMMEDIATE transaction's file lock and the commit fsync block,
+// so both commands run on the blocking pool, never the UI thread or a tokio worker.
 #[tauri::command]
-pub fn assistant_consent_get(
+pub async fn assistant_consent_get(
     app: AppHandle,
     window: Window,
     environment_id: String,
 ) -> Result<Option<Grant>, String> {
-    crate::session_store::canonical_store::page(&window)?;
-    let channel = selection(&app, &environment_id)?;
-    let result = read(&database(&app)?, &environment_id)?;
-    channel.check()?;
-    Ok(result)
+    crate::harness::run_blocking("assistant_consent_get", move || {
+        crate::session_store::canonical_store::page(&window)?;
+        let channel = selection(&app, &environment_id)?;
+        let result = read(&database(&app)?, &environment_id)?;
+        channel.check()?;
+        Ok(result)
+    })
+    .await
 }
 #[tauri::command]
-pub fn assistant_consent_set(
+pub async fn assistant_consent_set(
     app: AppHandle,
     window: Window,
     environment_id: String,
@@ -107,42 +112,45 @@ pub fn assistant_consent_set(
     project_ids: Vec<String>,
     critical_exclusions: Vec<String>,
 ) -> Result<Grant, String> {
-    let page = crate::session_store::canonical_store::page(&window)?;
-    if !valid_fields(&permission_level, &project_ids, &critical_exclusions) {
-        return Err("Invalid assistant consent".into());
-    }
-    let channel = selection(&app, &environment_id)?;
-    let webview = app
-        .get_webview_window(window.label())
-        .ok_or("Workspace closed")?;
-    let issuer = crate::control::receipts::capture(&webview)?;
-    let mut db = database(&app)?;
-    let transaction = db
-        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
-        .map_err(|e| e.to_string())?;
-    let revision = read(&transaction, &environment_id)?.map_or(0, |grant| grant.revision);
-    if revision != expected_revision || revision >= 9_007_199_254_740_991 {
-        return Err("Native consent revision changed".into());
-    }
-    let grant = Grant {
-        revision: revision + 1,
-        environment_id,
-        permission_level,
-        project_ids,
-        critical_exclusions,
-        issuer: issuer.identity().to_owned(),
-        principal: channel.consent_principal(),
-    };
-    if crate::session_store::canonical_store::page(&window)? != page {
-        return Err("Workspace changed".into());
-    }
-    let stored_revision = i64::try_from(grant.revision)
-        .map_err(|_| "Native consent revision exhausted".to_owned())?;
-    issuer.with_live(|| channel.admit(|| {
-        transaction.execute("INSERT INTO assistant_consent VALUES(?1,?2,?3) ON CONFLICT(environment) DO UPDATE SET revision=excluded.revision, grant_json=excluded.grant_json", params![grant.environment_id, stored_revision, serde_json::to_string(&grant).map_err(|e| e.to_string())?]).map_err(|e| e.to_string())?;
-        transaction.commit().map_err(|e| e.to_string())
-    }))?;
-    Ok(grant)
+    crate::harness::run_blocking("assistant_consent_set", move || {
+        let page = crate::session_store::canonical_store::page(&window)?;
+        if !valid_fields(&permission_level, &project_ids, &critical_exclusions) {
+            return Err("Invalid assistant consent".into());
+        }
+        let channel = selection(&app, &environment_id)?;
+        let webview = app
+            .get_webview_window(window.label())
+            .ok_or("Workspace closed")?;
+        let issuer = crate::control::receipts::capture(&webview)?;
+        let mut db = database(&app)?;
+        let transaction = db
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(|e| e.to_string())?;
+        let revision = read(&transaction, &environment_id)?.map_or(0, |grant| grant.revision);
+        if revision != expected_revision || revision >= 9_007_199_254_740_991 {
+            return Err("Native consent revision changed".into());
+        }
+        let grant = Grant {
+            revision: revision + 1,
+            environment_id,
+            permission_level,
+            project_ids,
+            critical_exclusions,
+            issuer: issuer.identity().to_owned(),
+            principal: channel.consent_principal(),
+        };
+        if crate::session_store::canonical_store::page(&window)? != page {
+            return Err("Workspace changed".into());
+        }
+        let stored_revision = i64::try_from(grant.revision)
+            .map_err(|_| "Native consent revision exhausted".to_owned())?;
+        issuer.with_live(|| channel.admit(|| {
+            transaction.execute("INSERT INTO assistant_consent VALUES(?1,?2,?3) ON CONFLICT(environment) DO UPDATE SET revision=excluded.revision, grant_json=excluded.grant_json", params![grant.environment_id, stored_revision, serde_json::to_string(&grant).map_err(|e| e.to_string())?]).map_err(|e| e.to_string())?;
+            transaction.commit().map_err(|e| e.to_string())
+        }))?;
+        Ok(grant)
+    })
+    .await
 }
 
 /// Only registered Room threads qualify; coding sessions retain exact prompts.
@@ -365,6 +373,36 @@ pub(crate) fn with_background_effect<T>(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// #1134: a sync `#[tauri::command]` runs on the UI thread, so the consent
+    /// commands must stay async with their whole SQLite body on the blocking lane.
+    #[test]
+    fn consent_commands_run_their_sqlite_work_on_the_blocking_lane() {
+        let source = include_str!("standing_consent.rs")
+            .split_once("#[cfg(test)]")
+            .expect("test module marker")
+            .0
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        for name in ["assistant_consent_get", "assistant_consent_set"] {
+            let signature = format!("#[tauri::command] pub async fn {name}(");
+            let (_, rest) = source
+                .split_once(&signature)
+                .unwrap_or_else(|| panic!("{name} must be an async command"));
+            let body = rest.split_once("#[tauri::command]").map_or(rest, |part| part.0);
+            let lane = format!("crate::harness::run_blocking(\"{name}\", move || {{");
+            let (before, inside) = body
+                .split_once(&lane)
+                .unwrap_or_else(|| panic!("{name} must run in run_blocking"));
+            assert!(
+                !before.contains("database(") && !inside.is_empty(),
+                "{name} opens SQLite outside the blocking lane"
+            );
+            assert!(inside.contains("database(&app)"), "{name} keeps its SQLite work");
+        }
+    }
+
     #[test]
     fn watch_denies_and_unknown_actions_prompt() {
         let mut grant = Grant {

@@ -3,8 +3,16 @@ import { Text } from "../../shared/ui/Text";
 import { Button } from "../../shared/ui/Button";
 import { useT } from "../../shared/i18n";
 import { invoke } from "@tauri-apps/api/core";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import { ContextMenu, type ContextMenuItem } from "../../shared/ui/ContextMenu";
+import { isImeComposition } from "../../shared/lib/keyboard";
 import { ALT, MOD, SHIFT } from "../../platform/tauri/platform";
 import type { TitleBarLayout } from "./TitleBar";
 import {
@@ -44,7 +52,8 @@ type Props = {
   onCloseCurrentTab?: () => void;
   onCloseOtherTabs?: () => void;
   onCloseIdleTabs?: () => void;
-  idleTabCount?: number;
+  /** Read only while the menu renders its items, so the bar never counts idle tabs on its own. */
+  countIdleTabs?: () => number;
   onCloseAllTabs?: () => void;
   onPickProject?: () => void;
   onFindInProject?: () => void;
@@ -68,7 +77,7 @@ const MemoMenuBar = memo(function MenuBar({
   onCloseCurrentTab,
   onCloseOtherTabs,
   onCloseIdleTabs,
-  idleTabCount,
+  countIdleTabs,
   onCloseAllTabs,
   onPickProject,
   onFindInProject,
@@ -89,6 +98,29 @@ const MemoMenuBar = memo(function MenuBar({
   const [keybindingOverrides, refreshShortcuts] = useState(loadKeybindingOverrides);
   const [autosave, setAutosave] = useState(loadAutosave);
   const barRef = useRef<HTMLDivElement>(null);
+  // Roving tab stop of the menubar: the last focused top-level menu button.
+  const [tabStop, setTabStop] = useState<MenuKey>("file");
+
+  const focusMenuButton = (key: MenuKey) => {
+    barRef.current
+      ?.querySelector<HTMLElement>(`[data-menubar-key="${key}"]`)
+      ?.focus({ preventScroll: true });
+  };
+
+  // The bar takes focus when it appears and hands it back to where the user was when it hides,
+  // unless an action already moved focus somewhere real (a dialog, an input).
+  useEffect(() => {
+    if (!open) return;
+    const previous = document.activeElement;
+    const returnTo = previous instanceof HTMLElement && previous !== document.body ? previous : null;
+    focusMenuButton("file");
+    return () => {
+      const current = document.activeElement;
+      if ((!current || current === document.body || !current.isConnected) && returnTo?.isConnected) {
+        returnTo.focus({ preventScroll: true });
+      }
+    };
+  }, [open]);
 
   useEffect(() => subscribeKeybindings(() => refreshShortcuts(loadKeybindingOverrides())), []);
 
@@ -119,6 +151,11 @@ const MemoMenuBar = memo(function MenuBar({
     };
 
     const onKeyDown = (e: KeyboardEvent) => {
+      // Alt and F10 pressed while an IME is composing belong to the IME, not to the menu bar.
+      if (isImeComposition(e)) {
+        altPressedAlone = false;
+        return;
+      }
       if (e.key === "Alt") {
         altPressedAlone = true;
       } else if (altPressedAlone) {
@@ -138,7 +175,7 @@ const MemoMenuBar = memo(function MenuBar({
     };
 
     const onKeyUp = (e: KeyboardEvent) => {
-      if (e.key === "Alt" && altPressedAlone) {
+      if (e.key === "Alt" && altPressedAlone && !isImeComposition(e)) {
         toggle();
         altPressedAlone = false;
       }
@@ -148,13 +185,20 @@ const MemoMenuBar = memo(function MenuBar({
       altPressedAlone = false;
     };
 
+    // Alt+click and Alt+drag are gestures, not taps: a pointer press while Alt is held cancels the tap.
+    const onPointerDown = () => {
+      altPressedAlone = false;
+    };
+
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
     window.addEventListener("blur", onBlur);
+    window.addEventListener("pointerdown", onPointerDown, true);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", onBlur);
+      window.removeEventListener("pointerdown", onPointerDown, true);
     };
   }, []);
 
@@ -280,7 +324,6 @@ const MemoMenuBar = memo(function MenuBar({
       onCloseCurrentTab,
       onCloseOtherTabs,
       onCloseIdleTabs,
-      idleTabCount,
       onCloseAllTabs,
       onFindInProject,
       onGoToFile,
@@ -344,7 +387,10 @@ const MemoMenuBar = memo(function MenuBar({
             kind: "item" as const,
             id: "close_idle_tabs",
             label: t("Close Idle Tabs"),
-            disabled: !idleTabCount,
+            // Counted when the menu renders its items, not when the menu bar renders.
+            get disabled() {
+              return !countIdleTabs?.();
+            },
           },
         ]
       : []),
@@ -379,7 +425,7 @@ const MemoMenuBar = memo(function MenuBar({
           {
             kind: "item",
             id: "new_tab",
-            label: t("New Session"),
+            label: t("New session"),
             shortcut: shortcut("Tab: New", `${MOD}T`),
           },
           {
@@ -388,17 +434,13 @@ const MemoMenuBar = memo(function MenuBar({
             label: t("New Window"),
             shortcut: shortcut("App: New Window", `${MOD}${SHIFT}N`),
           },
-          ...(!compact
-            ? [
-                { kind: "sep" as const },
-                {
-                  kind: "item" as const,
-                  id: "toggle_autosave",
-                  label: t("Autosave"),
-                  checked: autosave,
-                },
-              ]
-            : []),
+          { kind: "sep" },
+          {
+            kind: "item",
+            id: "toggle_autosave",
+            label: t("Autosave"),
+            checked: autosave,
+          },
           { kind: "sep" },
           {
             kind: "item",
@@ -431,7 +473,7 @@ const MemoMenuBar = memo(function MenuBar({
           {
             kind: "item",
             id: "toggle_sidebar",
-            label: t("Toggle Sidebar"),
+            label: t("Toggle sidebar"),
             shortcut: shortcut("App: Toggle Sidebar", `${MOD}B`),
           },
           {
@@ -457,7 +499,7 @@ const MemoMenuBar = memo(function MenuBar({
           {
             kind: "item",
             id: "zoom_in",
-            label: t("Zoom In"),
+            label: t("Zoom in"),
             shortcut: shortcut("View: Zoom In", `${MOD}+`),
           },
           {
@@ -532,10 +574,80 @@ const MemoMenuBar = memo(function MenuBar({
     },
   ];
 
+  const moveToMenu = (from: MenuKey, to: "next" | "previous" | "first" | "last") => {
+    const index = MENUS.findIndex((menu) => menu.key === from);
+    const target =
+      to === "first"
+        ? MENUS[0]
+        : to === "last"
+          ? MENUS[MENUS.length - 1]
+          : MENUS[(index + (to === "next" ? 1 : -1) + MENUS.length) % MENUS.length];
+    if (!target) return;
+    const button = barRef.current?.querySelector<HTMLElement>(
+      `[data-menubar-key="${target.key}"]`,
+    );
+    if (!button) return;
+    // Focus first so the new menu's overlay records the button as its focus return.
+    button.focus({ preventScroll: true });
+    if (activeMenu) openDropdown(target.key, button);
+  };
+
+  // Standard menubar keys: Left/Right between menus (opening the neighbour while one is open),
+  // Down/Up open the focused menu, Home/End jump, Escape hides the bar. Key events from the
+  // dropdown bubble here through the React tree; the dropdown keeps its own item keys.
+  const onBarKeyDown = (e: ReactKeyboardEvent<HTMLElement>) => {
+    if (isImeComposition(e.nativeEvent) || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    const target = e.target instanceof Element ? e.target : null;
+    const menu = target?.closest('[role="menu"]');
+    if (menu) {
+      if (!activeMenu || (e.key !== "ArrowLeft" && e.key !== "ArrowRight")) return;
+      // A submenu owns Left (close it) and Right; a row that opens a submenu owns Right.
+      if (menu.id.endsWith("-submenu")) return;
+      const row = document.getElementById(menu.getAttribute("aria-activedescendant") ?? "");
+      if (e.key === "ArrowRight" && row?.hasAttribute("aria-haspopup")) return;
+      e.preventDefault();
+      moveToMenu(activeMenu, e.key === "ArrowRight" ? "next" : "previous");
+      return;
+    }
+    const key = target?.closest<HTMLElement>("[data-menubar-key]")?.dataset.menubarKey as
+      | MenuKey
+      | undefined;
+    if (!key || e.defaultPrevented) return;
+    const button = target?.closest<HTMLElement>("[data-menubar-key]");
+    switch (e.key) {
+      case "ArrowRight":
+        moveToMenu(key, "next");
+        break;
+      case "ArrowLeft":
+        moveToMenu(key, "previous");
+        break;
+      case "Home":
+        moveToMenu(key, "first");
+        break;
+      case "End":
+        moveToMenu(key, "last");
+        break;
+      case "ArrowDown":
+      case "ArrowUp":
+        if (button) openDropdown(key, button);
+        break;
+      case "Escape":
+        closeMenu();
+        setOpen(false);
+        break;
+      default:
+        return;
+    }
+    e.preventDefault();
+  };
+
   return (
     <Text
       ref={barRef}
       data-workspace-menubar
+      role="menubar"
+      aria-label={t("Application menu")}
+      onKeyDown={onBarKeyDown}
       as="div"
       size="caption"
       tone="inherit"
@@ -555,6 +667,10 @@ const MemoMenuBar = memo(function MenuBar({
             motion="none"
             key={key}
             type="button"
+            role="menuitem"
+            data-menubar-key={key}
+            tabIndex={tabStop === key ? 0 : -1}
+            onFocus={() => setTabStop(key)}
             data-tauri-drag-region="false"
             aria-haspopup="menu"
             aria-expanded={isActive}
@@ -578,6 +694,7 @@ const MemoMenuBar = memo(function MenuBar({
 
       {activeMenu && menuAnchor ? (
         <ContextMenu
+          key={activeMenu}
           x={menuAnchor.x}
           y={menuAnchor.y}
           items={getMenuItems(activeMenu)}

@@ -9,6 +9,40 @@ import { runHarnessTextPrompt } from "../../src/integrations/harness/core/regist
 type Params = z.output<typeof SideQuestionParamsSchema>;
 
 export const SIDE_QUESTION_TIMEOUT_MS = 120_000;
+/** Provider runs one Host starts for side questions at once; the rest wait for a slot. */
+export const SIDE_QUESTION_HOST_CONCURRENCY = 2;
+export const SIDE_QUESTION_BUSY_MESSAGE = "A side question is already running for this session.";
+
+let hostRunning = 0;
+const hostQueue: Array<() => void> = [];
+const sessionsInFlight = new Set<string>();
+
+function releaseHostSlot(): void {
+  const next = hostQueue.shift();
+  if (next) next();
+  else hostRunning -= 1;
+}
+
+function acquireHostSlot(signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return Promise.reject(new Error("The side question was cancelled."));
+  if (hostRunning < SIDE_QUESTION_HOST_CONCURRENCY) {
+    hostRunning += 1;
+    return Promise.resolve();
+  }
+  return new Promise<void>((resolve, reject) => {
+    const granted = () => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    };
+    const onAbort = () => {
+      const index = hostQueue.indexOf(granted);
+      if (index !== -1) hostQueue.splice(index, 1);
+      reject(new Error("The side question was cancelled."));
+    };
+    hostQueue.push(granted);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
 
 /**
  * Answers one by-the-way question from a snapshot of the session, exactly like the desktop side thread:
@@ -16,6 +50,31 @@ export const SIDE_QUESTION_TIMEOUT_MS = 120_000;
  * caller after the transcript is read and before the provider is started.
  */
 export async function askSideQuestion(
+  params: Params,
+  ports: {
+    session(sessionId: string): Promise<{ session: Session }>;
+    authorize(): Promise<void>;
+    run?: typeof runHarnessTextPrompt;
+  },
+  signal?: AbortSignal,
+): Promise<{ answer: string }> {
+  // One question per session at a time: a retry or double tap gets a clear refusal, not a second provider run.
+  if (sessionsInFlight.has(params.sessionId)) throw new Error(SIDE_QUESTION_BUSY_MESSAGE);
+  sessionsInFlight.add(params.sessionId);
+  try {
+    // Waiting for a slot happens before the snapshot is read, so a queued question still reads the current transcript.
+    await acquireHostSlot(signal);
+    try {
+      return await answerSideQuestion(params, ports, signal);
+    } finally {
+      releaseHostSlot();
+    }
+  } finally {
+    sessionsInFlight.delete(params.sessionId);
+  }
+}
+
+async function answerSideQuestion(
   params: Params,
   ports: {
     session(sessionId: string): Promise<{ session: Session }>;

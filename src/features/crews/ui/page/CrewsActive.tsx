@@ -1,7 +1,6 @@
 import { Text } from "../../../../shared/ui/Text";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { t } from "../../../../shared/i18n";
-import { formatDuration } from "../../../../shared/i18n/format";
 import { Badge } from "../../../../shared/ui/Badge";
 import { Button } from "../../../../shared/ui/Button";
 import { EmptyState } from "../../../../shared/ui/EmptyState";
@@ -14,7 +13,6 @@ import {
   type KnownCrewProject,
 } from "../../model/crewActiveTarget";
 import {
-  activeElapsedMs,
   activeMemberFocus,
   activeMemberKey,
   activeMemberWorking,
@@ -27,17 +25,9 @@ import { crewAttentionLabel } from "../../model/crewPresentation";
 import { roleLabel } from "../CrewMemberForm";
 import { MemberAvatar } from "../MemberAvatar";
 import { presentRemoteError } from "../../../connections/public/remoteFailure";
+import { ActiveElapsed } from "./ActiveElapsed";
 
 const FACE_SIZE = 28;
-
-function useNow(intervalMs = 1000) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), intervalMs);
-    return () => window.clearInterval(timer);
-  }, [intervalMs]);
-  return now;
-}
 
 /** The Active tab: every crew member working on any connected host, grouped by project. */
 export function CrewsActive({
@@ -56,7 +46,6 @@ export function CrewsActive({
   onOpenWork: (item: ActiveCrewMemberView) => void;
   onNewWork: () => void;
 }) {
-  const now = useNow();
   const [error, setError] = useState("");
   if (items.length === 0)
     return (
@@ -86,7 +75,6 @@ export function CrewsActive({
               <ActiveRow
                 key={activeMemberKey(item)}
                 item={item}
-                now={now}
                 canOpen={!!onOpenSession && !!item.sessionId}
                 canOpenWork={!!known && activeProjectKey(item) === currentKey}
                 onOpen={open}
@@ -107,20 +95,17 @@ export function CrewsActive({
 
 function ActiveRow({
   item,
-  now,
   canOpen,
   canOpenWork,
   onOpen,
   onOpenWork,
 }: {
   item: ActiveCrewMemberView;
-  now: number;
   canOpen: boolean;
   canOpenWork: boolean;
   onOpen: (item: ActiveCrewMemberView) => void;
   onOpenWork: (item: ActiveCrewMemberView) => void;
 }) {
-  const elapsed = activeElapsedMs(item.startedAt, now);
   const attention = item.attention ? crewAttentionLabel(item.attention) : "";
   const focus = activeMemberFocus(item);
   return (
@@ -167,11 +152,7 @@ function ActiveRow({
             {attention}
           </Badge>
         ) : null}
-        {elapsed !== null ? (
-          <Text tone="inherit" className="shrink-0 tabular-nums">
-            {formatDuration(elapsed)}
-          </Text>
-        ) : null}
+        <ActiveElapsed startedAt={item.startedAt} />
       </Button>
       {item.attention && canOpenWork ? (
         <Button variant="ghost" size="sm" onClick={() => onOpenWork(item)}>

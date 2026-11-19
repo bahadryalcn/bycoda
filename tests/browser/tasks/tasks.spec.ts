@@ -112,9 +112,9 @@ for (const width of [1280, 800])
       await page.getByRole("menuitemcheckbox", { name: "Select tasks", exact: true }).click();
       await page.getByRole("checkbox", { name: "Select all results", exact: true }).check();
       const bulk = page.getByRole("region", { name: "Selected task actions", exact: true });
-      await expect(bulk.getByRole("button", { name: "Start", exact: true })).toBeEnabled();
-      await expect(bulk.getByRole("button", { name: "Retry", exact: true })).toBeEnabled();
-      await expect(bulk.getByRole("button", { name: "Stop", exact: true })).toBeDisabled();
+      await expect(bulk.getByRole("button", { name: /^Start\b/ })).toBeEnabled();
+      await expect(bulk.getByRole("button", { name: /^Retry\b/ })).toBeEnabled();
+      await expect(bulk.getByRole("button", { name: /^Stop\b/ })).toBeDisabled();
       await expect(bulk.getByRole("button", { name: "Delete", exact: true })).toBeEnabled();
       await capture("bulk-eligibility");
       await bulk.getByRole("button", { name: "Delete", exact: true }).click();
@@ -1229,12 +1229,12 @@ test("bulk cleanup uses one confirmation, preserves code and retries only failed
   await page.getByRole("checkbox", { name: "Select all results", exact: true }).check();
   await expect(page.getByText("102 selected", { exact: true })).toBeVisible();
   const actions = page.getByRole("region", { name: "Selected task actions" });
-  await actions.getByRole("button", { name: "Delete", exact: true }).click();
+  await actions.getByRole("button", { name: /^Delete\b/ }).click();
   const confirm = page.getByRole("dialog", { name: "Delete selected tasks", exact: true });
   await expect(confirm).toContainText("100 are eligible");
   await confirm.getByRole("button", { name: "Delete", exact: true }).click();
   await expect(actions).toContainText("99 succeeded, 2 skipped, 1 failed");
-  await actions.getByRole("button", { name: "Retry failed tasks", exact: true }).click();
+  await actions.getByRole("button", { name: /^Retry failed tasks/ }).click();
   await page
     .getByRole("dialog", { name: "Delete selected tasks", exact: true })
     .getByRole("button", { name: "Delete", exact: true })

@@ -40,10 +40,21 @@ function fake(overrides: Partial<ProjectKindsIo> = {}) {
 }
 
 describe("syncProjectKindsWith", () => {
-  it("does nothing when the Host already holds the same map", async () => {
+  it("does nothing, and reports success, when the Host already holds the same map", async () => {
     const io = fake({ get: vi.fn(async () => state(3, { "g:/a": "work" })) });
-    await syncProjectKindsWith(io, { "g:/a": "work" });
+    await expect(syncProjectKindsWith(io, { "g:/a": "work" })).resolves.toBe(true);
     expect(io.save).not.toHaveBeenCalled();
+  });
+
+  it("reports a failed send as false so the caller can retry", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const unsupported = fake({ supported: vi.fn(async () => false) });
+    await expect(syncProjectKindsWith(unsupported, { "g:/a": "work" })).resolves.toBe(false);
+    const offline = fake({ get: vi.fn(async () => Promise.reject(new Error("offline"))) });
+    await expect(syncProjectKindsWith(offline, { "g:/a": "work" })).resolves.toBe(false);
+    const conflicted = fake({ save: vi.fn(async () => Promise.reject(new Error("conflict"))) });
+    await expect(syncProjectKindsWith(conflicted, { "g:/a": "work" })).resolves.toBe(false);
+    await expect(syncProjectKindsWith(fake(), { "g:/a": "work" })).resolves.toBe(true);
   });
 
   it("saves only projectKinds against the read version", async () => {

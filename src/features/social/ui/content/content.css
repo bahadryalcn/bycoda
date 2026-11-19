@@ -31,6 +31,7 @@
 
 /* One outer frame; day columns and month cells are separated by hairlines, not boxes. */
 .content-calendar {
+  container: content-calendar / inline-size;
   overflow: hidden;
   min-width: 0;
 }
@@ -93,6 +94,26 @@
   block-size: 1.5rem;
 }
 
+/* Week view in a narrow calendar (below 40rem): one day per row, an agenda, so post chips keep their
+   text and status word. Month and wide panes keep the seven-column grid. Day hairlines switch from
+   column rules to row rules. The container is the calendar root, not the window. */
+@container content-calendar (max-width: 40rem) {
+  .content-calendar[data-view="week"] .content-calendar-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .content-calendar[data-view="week"] .content-day {
+    min-height: 0;
+  }
+  .content-calendar[data-view="week"] .content-day[data-surface-frame][data-surface-edge] {
+    border-width: 0;
+    border-block-start-width: 1px;
+  }
+  .content-calendar[data-view="week"] .content-day-title {
+    flex-direction: row;
+    align-items: baseline;
+  }
+}
+
 /* Post chip: the surface is the ActionHost wrapper; the item Button inside only supplies the click
    target. Button adds wrapper spans around its children; they must fill the chip and may shrink, or
    long text pushes into the next day. The chip body and everything inside it keep their own layout. */
@@ -146,10 +167,6 @@
     clip-path: inset(50%);
     white-space: nowrap;
   }
-}
-
-.content-entry-more {
-  padding-inline: 0.5rem;
 }
 
 .content-list {
@@ -388,11 +405,6 @@
 }
 .content-list {
   container-type: inline-size;
-}
-.content-draft-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
 }
 
 .content-editor-body {

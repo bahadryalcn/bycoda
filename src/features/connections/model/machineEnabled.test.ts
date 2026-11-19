@@ -3,6 +3,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import {
   isMachineEnabled,
+  isMachineTurningOff,
   loadDisabledMachines,
   setMachineEnabled,
   subscribeDisabledMachines,
@@ -45,6 +46,26 @@ it("reads a damaged list as everything on", () => {
   expect(loadDisabledMachines()).toEqual([]);
   localStorage.setItem("bycoda.disabledMachines", '{"a":1}');
   expect(loadDisabledMachines()).toEqual([]);
+});
+
+it("reads a machine as turning off until native confirms, and retries a failed sync", async () => {
+  // Regression: a rejected sync was discarded, so the switch said off while native still admitted it.
+  vi.useFakeTimers();
+  Object.defineProperty(window, "__TAURI_INTERNALS__", { value: {}, configurable: true });
+  vi.mocked(invoke).mockClear();
+  vi.mocked(invoke).mockRejectedValueOnce(new Error("ipc down"));
+  try {
+    setMachineEnabled("env-pending", false);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(isMachineEnabled("env-pending")).toBe(false);
+    expect(isMachineTurningOff("env-pending")).toBe(true);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(invoke).toHaveBeenCalledTimes(2);
+    expect(isMachineTurningOff("env-pending")).toBe(false);
+  } finally {
+    vi.useRealTimers();
+    delete (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+  }
 });
 
 it("synchronizes disabled environments to native transport admission", async () => {

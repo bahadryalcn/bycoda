@@ -36,7 +36,7 @@ beforeEach(() => {
     }
     if (command === "jira_list_projects") return [{ id: "10000", key: "ENG", name: "Engineering" }];
     if (command === "jira_list_boards")
-      return [{ id: 7, name: "Engineering board", kind: "kanban" }];
+      return [{ id: 7, name: "Engineering board", kind: "kanban", projectId: "10000" }];
     throw new Error(`Unexpected command: ${command}`);
   });
 });
@@ -204,7 +204,74 @@ it("preserves project and board permissions when reconnecting", async () => {
   await submit();
   expect(loadHiddenJiraProjectIds()).toEqual(["10000"]);
   expect(loadAllowedJiraBoardIds()).toEqual([7]);
-  expect(invoke).not.toHaveBeenCalledWith("jira_list_boards", expect.anything());
+  expect(boardRequests()).toEqual([{ projectIds: null }]);
+  expect(container.textContent).toContain("0 of 0 boards selected");
+});
+
+function boardRequests() {
+  return vi
+    .mocked(invoke)
+    .mock.calls.filter(([command]) => command === "jira_list_boards")
+    .map(([, args]) => args);
+}
+
+function boardCheckbox(name: string) {
+  return Array.from(container.querySelectorAll<HTMLLabelElement>("label.inbox-scope-row"))
+    .find((row) => row.textContent?.includes(name))
+    ?.querySelector<HTMLInputElement>("input[type=checkbox]");
+}
+
+it("scopes boards from one cached catalog when project checkboxes change", async () => {
+  let finishBoards!: () => void;
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    if (command === "jira_status") return { connected: false, site: "", email: "" };
+    if (command === "jira_set_config") return { connected: true, ...(args as object) };
+    if (command === "jira_list_projects")
+      return [
+        { id: "10000", key: "ENG", name: "Engineering" },
+        { id: "10001", key: "OPS", name: "Operations" },
+      ];
+    if (command === "jira_list_boards")
+      return new Promise((resolve) => {
+        finishBoards = () =>
+          resolve([
+            { id: 7, name: "Eng board", kind: "scrum", projectId: "10000" },
+            { id: 8, name: "Ops board", kind: "kanban", projectId: "10001" },
+          ]);
+      });
+    throw new Error(`Unexpected command: ${command}`);
+  });
+  await act(async () => root.render(createElement(JiraSettings)));
+  await input("Jira site", "acme.atlassian.net");
+  await input("Atlassian email", "ada@example.com");
+  await input("Jira API token", "secret");
+  await submit();
+  expect(boardRequests()).toEqual([{ projectIds: null }]);
+  await act(async () => finishBoards());
+  expect(container.textContent).toContain("0 of 2 boards selected");
+  await pickOption("Ops board");
+  expect(loadAllowedJiraBoardIds()).toEqual([8]);
+
+  const ops = await pickOption("Operations");
+  expect(ops.checked).toBe(false);
+  expect(loadHiddenJiraProjectIds()).toEqual(["10001"]);
+  expect(boardCheckbox("Ops board")).toBeUndefined();
+  expect(boardCheckbox("Eng board")!.disabled).toBe(false);
+  expect(container.textContent).toContain("0 of 1 boards selected");
+  // The hidden project's board choice stays persisted for when the project returns.
+  expect(loadAllowedJiraBoardIds()).toEqual([8]);
+
+  await pickOption("Engineering");
+  expect(loadHiddenJiraProjectIds()).toEqual(["10000", "10001"]);
+  expect(container.textContent).toContain("0 of 0 boards selected");
+
+  await pickOption("Operations");
+  await pickOption("Engineering");
+  expect(boardCheckbox("Ops board")!.checked).toBe(true);
+  expect(boardCheckbox("Ops board")!.disabled).toBe(false);
+  expect(container.textContent).toContain("1 of 2 boards selected");
+  // Every checkbox above narrowed the first catalog instead of starting another request.
+  expect(boardRequests()).toEqual([{ projectIds: null }]);
 });
 
 it("filters projects by name or key without changing saved scope", async () => {
@@ -237,4 +304,37 @@ it("filters projects by name or key without changing saved scope", async () => {
   expect(project.checked).toBe(false);
   expect(container.textContent).toContain("0 of 1 projects selected");
   expect(loadHiddenJiraProjectIds()).toEqual(["10000"]);
+});
+
+it("names the background refresh setting, not Inbox scope, when its save fails and keeps the saved value", async () => {
+  localStorage.setItem("bycoda.jiraBackgroundSync", "true");
+  const base = vi.mocked(invoke).getMockImplementation()!;
+  vi.mocked(invoke).mockImplementation(async (command, args) =>
+    command === "jira_status"
+      ? { connected: true, site: "acme.atlassian.net", email: "ada@example.com" }
+      : base(command, args),
+  );
+  const original = Storage.prototype.setItem;
+  const setItem = vi
+    .spyOn(Storage.prototype, "setItem")
+    .mockImplementation(function (this: Storage, key: string, value: string) {
+      if (key === "bycoda.jiraBackgroundSync") throw new Error("Storage is full");
+      return original.call(this, key, value);
+    });
+  await act(async () => root.render(createElement(JiraSettings)));
+  for (let round = 0; round < 3; round += 1)
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  const toggle = container.querySelector<HTMLButtonElement>(
+    '[role="switch"][aria-label="Automatically refresh Jira in the background"]',
+  )!;
+  await act(async () => toggle.click());
+  expect(container.textContent).toContain(
+    "The Jira background refresh setting is unavailable. Retry before changing it.",
+  );
+  expect(container.textContent).not.toContain("Saved Inbox scope");
+  expect(localStorage.getItem("bycoda.jiraBackgroundSync")).toBe("true");
+  expect(toggle.getAttribute("aria-checked")).toBe("true");
+  setItem.mockRestore();
 });

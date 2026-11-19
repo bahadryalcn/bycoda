@@ -10,6 +10,7 @@ import { NativePopupHost } from "./NativePopupHost";
 import { SearchableSelect } from "./SearchableSelect";
 import { useDragResize } from "../hooks/useDragResize";
 import { Sash } from "./Sash";
+import { focusToastCard, shouldHandleGlobalEscape } from "./overlay";
 
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
@@ -551,4 +552,136 @@ it("leaves the toast region interactive while a modal is open", async () => {
   expect(document.activeElement).toBe(undo);
   await act(async () => root.render(null));
   toasts.remove();
+});
+
+function toastCards(count: number) {
+  const region = document.createElement("div");
+  region.dataset.toastRegion = "top-center";
+  const buttons: HTMLButtonElement[] = [];
+  for (let index = 0; index < count; index += 1) {
+    const card = document.createElement("article");
+    card.className = "request-card";
+    const first = document.createElement("button");
+    const second = document.createElement("button");
+    card.append(first, second);
+    region.append(card);
+    buttons.push(first, second);
+  }
+  document.body.append(region);
+  return { region, buttons };
+}
+
+it("reaches a toast card from inside a modal and returns without closing the dialog", async () => {
+  const close = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(Modal, {
+        title: "Dialog",
+        onClose: close,
+        children: createElement("input", { "aria-label": "Name" }),
+      }),
+    ),
+  );
+  const input = document.querySelector<HTMLInputElement>('input[aria-label="Name"]')!;
+  input.focus();
+  const { buttons } = toastCards(2);
+  expect(focusToastCard(".request-card")).toBe(true);
+  expect(document.activeElement).toBe(buttons[0]);
+  // The toast stays interactive, the page behind the dialog stays isolated.
+  expect(document.querySelector("[data-toast-region]")!.closest("[inert]")).toBeNull();
+  // Tab walks the toast controls instead of being pulled back into the dialog.
+  await key(buttons[0], "Tab");
+  expect(document.activeElement).toBe(buttons[1]);
+  await key(buttons[1], "Tab", true);
+  expect(document.activeElement).toBe(buttons[0]);
+  // Escape belongs to the toast: focus returns to the field and the dialog stays open.
+  const escape = await key(buttons[0], "Escape");
+  expect(escape.defaultPrevented).toBe(true);
+  expect(close).not.toHaveBeenCalled();
+  expect(document.activeElement).toBe(input);
+  // With no toast hold left, Escape closes the dialog as before.
+  await key(input, "Escape");
+  expect(close).toHaveBeenCalledOnce();
+});
+
+it("keeps focus inside the modal when Tab runs past either end of the toast controls", async () => {
+  await act(async () =>
+    root.render(
+      createElement(Modal, {
+        title: "Dialog",
+        onClose: vi.fn(),
+        children: createElement("input", { "aria-label": "Name" }),
+      }),
+    ),
+  );
+  const { buttons } = toastCards(1);
+  focusToastCard(".request-card");
+  await key(buttons[1], "Tab");
+  const dialog = document.querySelector('[role="dialog"]')!;
+  expect(dialog.contains(document.activeElement)).toBe(true);
+  focusToastCard(".request-card");
+  await key(buttons[0], "Tab", true);
+  expect(dialog.contains(document.activeElement)).toBe(true);
+});
+
+it("moves to the next card on repeat and reports when no card is showing", async () => {
+  expect(focusToastCard(".request-card")).toBe(false);
+  const trigger = document.createElement("button");
+  document.body.append(trigger);
+  trigger.focus();
+  const { buttons } = toastCards(2);
+  focusToastCard(".request-card");
+  expect(document.activeElement).toBe(buttons[0]);
+  focusToastCard(".request-card");
+  expect(document.activeElement).toBe(buttons[2]);
+  focusToastCard(".request-card");
+  expect(document.activeElement).toBe(buttons[0]);
+  // Without a dialog, Escape still hands focus back to where it was.
+  await key(buttons[0], "Escape");
+  expect(document.activeElement).toBe(trigger);
+});
+
+it("returns focus to its origin when the focused toast leaves, and lets go once focus moves on", async () => {
+  const trigger = document.createElement("button");
+  const elsewhere = document.createElement("button");
+  document.body.append(trigger, elsewhere);
+  trigger.focus();
+  const { region, buttons } = toastCards(1);
+  focusToastCard(".request-card");
+  await act(async () => {
+    region.querySelector("article")!.remove();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  expect(document.activeElement).toBe(trigger);
+  expect(buttons[0].isConnected).toBe(false);
+  // Focus the user moved elsewhere on their own is never pulled back.
+  const next = toastCards(1);
+  focusToastCard(".request-card");
+  elsewhere.focus();
+  await act(async () => {
+    next.region.remove();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  expect(document.activeElement).toBe(elsewhere);
+});
+
+it("lets window-level Escape listeners act only on a plain, unclaimed Escape", async () => {
+  const escape = (init: KeyboardEventInit = {}) =>
+    new KeyboardEvent("keydown", { key: "Escape", cancelable: true, ...init });
+  expect(shouldHandleGlobalEscape(escape())).toBe(true);
+  expect(shouldHandleGlobalEscape(new KeyboardEvent("keydown", { key: "Enter" }))).toBe(false);
+  // Escape that cancels an IME candidate window, in both browser flavours.
+  expect(shouldHandleGlobalEscape(escape({ isComposing: true }))).toBe(false);
+  expect(shouldHandleGlobalEscape(escape({ keyCode: 229 }))).toBe(false);
+  // A control that already consumed Escape (a field clearing itself) keeps it.
+  const consumed = escape();
+  consumed.preventDefault();
+  expect(shouldHandleGlobalEscape(consumed)).toBe(false);
+  // An open overlay owns Escape until it closes.
+  await act(async () =>
+    root.render(createElement(Modal, { title: "Owns Escape", onClose: vi.fn(), children: "Body" })),
+  );
+  expect(shouldHandleGlobalEscape(escape())).toBe(false);
+  await act(async () => root.render(null));
+  expect(shouldHandleGlobalEscape(escape())).toBe(true);
 });

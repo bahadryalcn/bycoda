@@ -21,6 +21,7 @@ import {
   type SocialSendResult,
 } from "../../src/integrations/social/adapter";
 import type { BrowserPage } from "./social-browser";
+import { NEXT_OR_DONE_LABELS } from "./browser/ui-labels";
 import {
   LINKEDIN_CAPTURE_FILE_INPUT,
   LINKEDIN_COMPOSER_EDITOR,
@@ -232,7 +233,7 @@ async function linkedInPost(ctx: BrowserRecipeContext, job: SocialJob): Promise<
     // shows the attachment preview.
     for (let step = 0; step < 2; step++) {
       if (await ctx.page.evaluate<boolean>(LINKEDIN_MEDIA_ATTACHED)) break;
-      await click(ctx, "dialog[open] button", "media-next", ["Next", "Done", "İleri", "Bitti"]);
+      await click(ctx, "dialog[open] button", "media-next", NEXT_OR_DONE_LABELS);
       // The editor closes asynchronously; a second step is only needed when it stays open.
       if (await ctx.waitFor<boolean>(LINKEDIN_MEDIA_ATTACHED, 10_000)) break;
     }

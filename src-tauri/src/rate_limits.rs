@@ -547,8 +547,9 @@ fn guarded_claude_usage(
     }
     let result = fetch(&creds.access_token);
     if read().as_ref() != Some(&creds) {
+        // A retryable read failure, not a sign-out: the account is still signed in.
         return usage_result(
-            "unavailable",
+            "error",
             None,
             None,
             Some("Account identity changed while reading quota".into()),
@@ -1227,7 +1228,8 @@ mod tests {
             |_| usage_result("ok", Some(200), Some("private-provider-body".into()), None),
             100,
         );
-        assert_eq!(changed.status, "unavailable");
+        assert_eq!(changed.status, "error");
+        assert!(changed.http_status.is_none());
         assert!(changed.body.is_none());
         let expired = guarded_claude_usage(
             || credential("expired", 99),

@@ -2,9 +2,11 @@ import { MenuRow } from "../../../shared/ui/MenuRow";
 import { Text } from "../../../shared/ui/Text";
 import { TogglePill } from "./ModelExtras";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
+import { usePointerMovement } from "../../../shared/ui/picker/usePointerMovement";
 import { Button } from "../../../shared/ui/Button";
 import { SelectTrigger } from "../../../shared/ui/Select";
 import { Tooltip } from "../../../shared/ui/Tooltip";
+import { formatShortcut, usePlatform } from "../../../shared/ui/shortcut";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { clampActiveIndex } from "../../../shared/hooks/useKeyedActiveIndex";
 import { useLocale, useT } from "../../../shared/i18n";
@@ -53,6 +55,7 @@ import { HARNESSES, HARNESS_TITLE, type HarnessId } from "../model/session";
 import { HarnessIcon } from "./HarnessIcon";
 import { ModelPanel } from "./ModelPanel";
 import { Popover, popupListClassName } from "../../../shared/ui/Popover";
+import { COMPOSER_PICKER_SELECTOR } from "../model/composerPickerSelector";
 import { keybindingPressed } from "../../settings/public/settings";
 import { useKeybindingShortcut } from "../../settings/public/useKeybindingShortcut";
 import { lazySurface } from "../../../shared/ui/lazySurface";
@@ -79,11 +82,11 @@ import {
   fastSetting,
   fastToggleValues,
   isEffortSetting,
-  isSettingLocked,
   pillSettings,
   recentMenuModels,
   settingGroupId,
   settingLabel,
+  settingLock,
   settingValue,
   settingValueLabel,
 } from "../model/modelPickerData";
@@ -132,12 +135,16 @@ type Props = {
   showExtras?: boolean;
   /** Model settings stay readable but locked, e.g. while a turn runs. */
   extrasDisabled?: boolean;
+  /** English reason the extras are locked, shown on each locked row; absent when none is known. */
+  extrasDisabledReason?: string;
   onChange: (harness: HarnessId, model: string, accountId?: string) => void;
   onSettingsChange: (settings: Record<string, string>) => void;
   onClose?: () => void;
 };
 type RecentMenu = { models: AccountModelChoice[] };
 const MENU_WIDTH = 250;
+/** Keyboard chord on the model button that opens the recent-models quick switch. */
+const RECENT_MODELS_SHORTCUT = "alt+down";
 /** Account the provider tab `target` runs on: the one picked while browsing, else the current one, else its default. */
 function accountForTab(
   target: HarnessId,
@@ -177,6 +184,7 @@ export function ModelPicker({
   hideAgentSettings = false,
   showExtras = false,
   extrasDisabled = false,
+  extrasDisabledReason,
   onChange,
   onSettingsChange,
   onClose,
@@ -216,6 +224,7 @@ export function ModelPicker({
   const [seenOpenRequest, setSeenOpenRequest] = useState(0);
   const [recentMenu, setRecentMenu] = useState<RecentMenu | null>(null);
   const [recentActive, setRecentActive] = useState(0);
+  const recentPointerMoved = usePointerMovement();
   // Account picked per provider tab while browsing; the current provider starts on its account.
   const [tabAccounts, setTabAccounts] = useState<Partial<Record<HarnessId, string>>>({});
   const [accountListOpen, setAccountListOpen] = useState(false);
@@ -466,7 +475,14 @@ export function ModelPicker({
     );
   }, [recentMenu, pickerHarnesses, catalogVersion]);
   const recentOpen = recentMenu != null && recentModels.length > 0;
-  const recentIndex = clampActiveIndex(recentActive, recentModels.length);
+  // The keyboard highlight rests on rows the harness can serve; unavailable rows stay visible but disabled.
+  const recentClamped = clampActiveIndex(recentActive, recentModels.length);
+  const recentEnabledIndices = recentModels.flatMap((item, index) =>
+    source.available(item.harness) ? [index] : [],
+  );
+  const recentIndex = recentEnabledIndices.includes(recentClamped)
+    ? recentClamped
+    : (recentEnabledIndices[0] ?? recentClamped);
 
   const visibleModels = useMemo(
     () =>
@@ -597,7 +613,7 @@ export function ModelPicker({
       if (target.closest(".bycoda-terminal")) return true;
       return Boolean(
         target.closest(
-          "[data-file-picker], [data-branch-picker], [data-skill-picker], [data-mention-picker], [data-access-picker], [data-model-control]",
+          `${COMPOSER_PICKER_SELECTOR}, [data-file-picker], [data-branch-picker], [data-access-picker], [data-model-control]`,
         ),
       );
     };
@@ -635,8 +651,9 @@ export function ModelPicker({
     };
   }, [hotkeys, source, providerKey, catalogVersion, visibilityVersion, projectVersion]);
 
-  const settingDisabled = (setting: ModelSetting) =>
-    isSettingLocked(setting, current, values, extrasDisabled);
+  const settingLockOf = (setting: ModelSetting) =>
+    settingLock(setting, current, values, extrasDisabled, extrasDisabledReason);
+  const settingDisabled = (setting: ModelSetting) => settingLockOf(setting) !== undefined;
 
   const setSetting = (setting: ModelSetting, value: string) => {
     if (settingDisabled(setting)) return;
@@ -692,7 +709,12 @@ export function ModelPicker({
         event.preventDefault();
         event.stopPropagation();
         const direction = event.key === "ArrowDown" ? 1 : -1;
-        setRecentActive((recentIndex + direction + recentModels.length) % recentModels.length);
+        const enabled = recentModels.flatMap((item, index) =>
+          source.available(item.harness) ? [index] : [],
+        );
+        if (!enabled.length) return;
+        const position = enabled.indexOf(recentIndex);
+        setRecentActive(enabled[(position + direction + enabled.length) % enabled.length]!);
         return;
       }
       if (event.key !== "Enter" && event.key !== " ") return;
@@ -735,6 +757,26 @@ export function ModelPicker({
   };
 
   const Trigger = field ? SelectTrigger : Button;
+  const platform = usePlatform();
+  const recentShortcut = formatShortcut(RECENT_MODELS_SHORTCUT, platform);
+
+  // The quick switch opens from the keyboard too: Alt+Down (the usual "open the list" chord)
+  // and the context-menu keys, which also stand in for right-click on touch and keyboard.
+  const onTriggerKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (event.nativeEvent.isComposing) return;
+    const opensRecent =
+      event.key === "ContextMenu" ||
+      (event.key === "F10" && event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey) ||
+      (event.key === "ArrowDown" &&
+        event.altKey &&
+        !event.shiftKey &&
+        !event.ctrlKey &&
+        !event.metaKey);
+    if (!opensRecent) return;
+    event.preventDefault();
+    event.stopPropagation();
+    openRecentMenu();
+  };
 
   return (
     <>
@@ -744,6 +786,7 @@ export function ModelPicker({
         shortcut={hotkeys ? switchShortcut : null}
 
         label={triggerTitle}
+        details={[t("Recent models: right-click or {p0}", { p0: recentShortcut.text })]}
       >
         <Trigger
           {...(field
@@ -763,6 +806,8 @@ export function ModelPicker({
           }
           expanded={open || recentOpen}
           aria-haspopup="dialog"
+          aria-keyshortcuts="Alt+ArrowDown Shift+F10"
+          onKeyDown={onTriggerKeyDown}
           onPointerEnter={() => void preloadModelPicker().catch(() => {})}
           onFocus={() => void preloadModelPicker().catch(() => {})}
           onMouseDown={(event) => event.preventDefault()}
@@ -928,7 +973,7 @@ export function ModelPicker({
                   {inherit.label}
                 </Text>
                 {inheritSelected ? (
-                  <Check className="icon-sm shrink-0" tone="neutral" strokeWidth={2} />
+                  <Check className="icon-sm shrink-0" tone="neutral" />
                 ) : null}
               </Button>
             ) : undefined
@@ -941,7 +986,14 @@ export function ModelPicker({
           settings={
             inheritSelected
               ? undefined
-              : { current, settings, values, locked: settingDisabled, onChoose: pickSetting }
+              : {
+                  current,
+                  settings,
+                  values,
+                  locked: settingDisabled,
+                  lockReason: (setting) => settingLockOf(setting)?.reason,
+                  onChoose: pickSetting,
+                }
           }
         />
       ) : null}
@@ -976,7 +1028,9 @@ export function ModelPicker({
                 aria-checked={selected}
                 disabled={disabled}
                 onMouseDown={(event) => event.preventDefault()}
-                onMouseEnter={() => setRecentActive(index)}
+                onPointerMove={(event) => {
+                  if (recentPointerMoved(event) && !disabled) setRecentActive(index);
+                }}
                 onClick={() => pickModel(item)}
               >
                 <HarnessIcon harness={item.harness} className="size-4 shrink-0" />
@@ -991,7 +1045,7 @@ export function ModelPicker({
                 </Text>
 
                 {selected ? (
-                  <Check className="icon-sm shrink-0" tone="secondary" strokeWidth={2} />
+                  <Check className="icon-sm shrink-0" tone="secondary" />
                 ) : null}
               </MenuRow>
             );
@@ -1101,7 +1155,9 @@ function SelectPill({
 
             onMouseDown: (event) => event.preventDefault(),
 
-            title: item.description ? t(item.description) : t(settingLabel(item)),
+            tooltip: item.description
+              ? { label: t(settingLabel(item)), details: [t(item.description)] }
+              : undefined,
           }}
         />
       ))}

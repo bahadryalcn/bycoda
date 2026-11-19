@@ -22,7 +22,7 @@ export type InlineMessageProps = Omit<ComponentPropsWithoutRef<"div">, "role" | 
   live?: "assertive" | "polite" | "off";
   /** Replaces the tone glyph. `null` drops it; the tone alone never carries meaning, so keep the copy explicit. */
   icon?: ReactNode | null;
-  /** Retry recovery. The caller owns the operation; `pending` shows progress and blocks a second press. */
+  /** Retry recovery. The caller owns the operation; `pending` shows progress and blocks a second press. Omit `label` for the shared "Try again" wording. */
   retry?: { onRetry: () => void; label?: string; pending?: boolean; disabled?: boolean };
   /** One follow-up (an "Open settings" link) rendered as a text link after the copy. Prefer `retry` for a plain retry. */
   action?: NoticeAction;
@@ -101,7 +101,7 @@ export function InlineMessage({
             {" "}
             <NoticeLink
               action={{
-                label: retry.label ?? t("Retry"),
+                label: retry.label ?? t("Try again"),
                 onClick: retry.onRetry,
                 pending: retry.pending,
                 disabled: retry.disabled,

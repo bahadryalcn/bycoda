@@ -85,6 +85,9 @@ export function ReportPanel({ report, busy, onLoad }: ReportPanelProps) {
           ) : null}
           <ReportList title={t("Done")} lines={data.done} />
           <ReportList title={t("Results")} lines={data.results} />
+          {data.suggestionsError ? (
+            <InlineMessage tone="warning">{data.suggestionsError}</InlineMessage>
+          ) : null}
           <ReportList title={t("Suggestions")} lines={data.suggestions} />
           {!data.done.length && !data.results.length ? (
             <EmptyState

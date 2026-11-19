@@ -40,9 +40,10 @@ it("does not briefly report new current Host observations as future timestamps b
       }),
     ),
   );
-  expect(container.querySelector('[role="status"]')?.getAttribute("aria-label")).toBe(
+  expect(container.querySelector('[role="status"]')?.textContent).toBe(
     "Current availability: Here",
   );
+  expect(container.querySelector('[role="status"][aria-label]')).toBeNull();
   vi.setSystemTime(20000);
   await act(() =>
     root.render(
@@ -74,7 +75,10 @@ it("keeps the manual DND choice visible while reporting unavailable automatic ev
       }),
     ),
   );
-  expect(container.textContent).toBe("Do not disturb");
+  expect(container.querySelector("[data-presence-state]")?.textContent).toBe("Do not disturb");
+  expect(container.querySelector('[role="status"]')?.textContent).toBe(
+    "Current availability: Do not disturb",
+  );
   await openDetails();
   expect(document.body.textContent).toContain("Computer presence: Away");
 });
@@ -94,7 +98,7 @@ it("shows the Host effective state when computer evidence is unsupported", async
   expect(
     container.querySelector("[data-presence-state]")?.getAttribute("data-presence-state"),
   ).toBe("present");
-  expect(container.querySelector('[role="status"]')?.getAttribute("aria-label")).toBe(
+  expect(container.querySelector('[role="status"]')?.textContent).toBe(
     "Current availability: Here",
   );
   expect(container.querySelector("div")).toBeNull();
@@ -117,7 +121,7 @@ it("shows Offline only while the Host cannot be read, then restores the snapshot
   expect(
     container.querySelector("[data-presence-state]")?.getAttribute("data-presence-state"),
   ).toBe("offline");
-  expect(container.querySelector('[role="status"]')?.getAttribute("aria-label")).toBe(
+  expect(container.querySelector('[role="status"]')?.textContent).toBe(
     "Current availability: Offline",
   );
   await render(false);

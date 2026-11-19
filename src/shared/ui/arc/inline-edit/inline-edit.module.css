@@ -260,6 +260,12 @@ textarea.control {
   border-radius: var(--radius-pill);
   animation: spin var(--motion-spin-duration) linear infinite;
 }
+/* Holds its frame (still visible, still pending) while the window is behind another app or
+   decorative motion is off. */
+:global(html[data-decorative-motion="off"]) .spinner,
+:global(html[data-window-focus="off"]) .spinner {
+  animation-play-state: paused;
+}
 .saved {
   display: grid;
   margin-inline-start: var(--space-1);
@@ -322,12 +328,7 @@ textarea.control {
   }
 }
 .srOnly {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
+  composes: srOnly from "../lib/screen-reader.module.css";
 }
 @keyframes spin {
   to {

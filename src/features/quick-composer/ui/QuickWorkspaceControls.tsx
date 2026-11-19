@@ -16,6 +16,10 @@ import {
 } from "../model/quickGitPopup";
 import type { WorkspaceMode } from "../../sessions/model/session";
 import type { QuickWorkspace } from "../model/quickWorkspace";
+import { describeLocalError } from "../../connections/public/remoteFailure";
+
+const workspaceError = (error: unknown) =>
+  describeLocalError(error, t("Could not open the workspace options."));
 
 export function QuickWorkspaceControls({
   value,
@@ -96,7 +100,7 @@ export function QuickWorkspaceControls({
           setReady(true);
         }
       })
-      .catch((error) => props.current.onError?.(String(error)));
+      .catch((error) => props.current.onError?.(workspaceError(error)));
     return () => {
       disposed = true;
       stop?.();
@@ -160,7 +164,7 @@ export function QuickWorkspaceControls({
       activeKind.current = null;
       setOpen(null);
       props.current.onOpenChange(false);
-      props.current.onError?.(String(error));
+      props.current.onError?.(workspaceError(error));
     }
   };
   const disabled = !enabled || !ready || !branches?.current;

@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { mkdir, mkdtemp, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { browseHostDirectories } from "../../browser/browse";
@@ -8,8 +8,11 @@ import {
   cloneRepository,
   inferCloneName,
   resolveCloneDestination,
+  runGitClone,
   validateCloneName,
   validateCloneUrl,
+  type CloneChild,
+  type CloneFolderPorts,
 } from "./clone";
 import { createProjectsService } from "./service";
 
@@ -22,6 +25,18 @@ const exists = (path: string) =>
     () => true,
     () => false,
   );
+const folders: CloneFolderPorts = {
+  exists,
+  claim: (path) =>
+    mkdir(path).then(
+      () => true,
+      (error: NodeJS.ErrnoException) => {
+        if (error.code === "EEXIST") return false;
+        throw error;
+      },
+    ),
+  remove: (path) => rm(path, { recursive: true, force: true }),
+};
 async function temp() {
   const root = await mkdtemp(join(tmpdir(), "bycoda-clone-"));
   roots.push(root);
@@ -74,7 +89,7 @@ it("runs the clone with a validated destination and records progress", async () 
     { url: "https://github.com/a/b.git", parentPath: root, operationId: "op1" },
     root,
     run,
-    exists,
+    folders,
   );
   expect(result).toEqual({ path: join(root, "b") });
   expect(run).toHaveBeenCalledWith("https://github.com/a/b.git", join(root, "b"), {
@@ -88,10 +103,75 @@ it("runs the clone with a validated destination and records progress", async () 
       async () => {
         throw new Error("boom");
       },
-      exists,
+      folders,
     ),
   ).rejects.toThrow("boom");
   expect(cloneProgress("op2")?.state).toBe("failed");
+});
+
+it("never removes or clones into a folder that existed before the call", async () => {
+  const root = await temp();
+  await mkdir(join(root, "mine"));
+  await writeFile(join(root, "mine", "keep.txt"), "kept");
+  const run = vi.fn(async () => {});
+  await expect(
+    cloneRepository(
+      { url: "https://h/a/mine", parentPath: root, name: "mine" },
+      root,
+      run,
+      folders,
+    ),
+  ).rejects.toThrow("already exists");
+  expect(run).not.toHaveBeenCalled();
+  await expect(readFile(join(root, "mine", "keep.txt"), "utf8")).resolves.toBe("kept");
+});
+
+it("removes the partial folder a failed clone claimed, so a retry can use the name", async () => {
+  const root = await temp();
+  await expect(
+    cloneRepository(
+      { url: "https://h/a/retry", parentPath: root, name: "retry" },
+      root,
+      async (_url, dest) => {
+        await mkdir(join(dest, "partial"));
+        throw new Error("network down");
+      },
+      folders,
+    ),
+  ).rejects.toThrow("network down");
+  await expect(exists(join(root, "retry"))).resolves.toBe(false);
+  const run = vi.fn(async () => {});
+  await expect(
+    cloneRepository(
+      { url: "https://h/a/retry", parentPath: root, name: "retry" },
+      root,
+      run,
+      folders,
+    ),
+  ).resolves.toEqual({ path: join(root, "retry") });
+});
+
+it("kills the whole clone tree when the deadline passes", async () => {
+  const closeListeners: Array<(code: number | null) => void> = [];
+  const kill = vi.fn(() => closeListeners.forEach((listener) => listener(null)));
+  const killTree = vi.fn();
+  const child = {
+    pid: 4242,
+    stderr: { setEncoding() {}, on() {} },
+    once(event: string, listener: (code: number | null) => void) {
+      if (event === "close") closeListeners.push(listener);
+    },
+    kill,
+  } as unknown as CloneChild;
+  await expect(
+    runGitClone("https://h/a/b", "/x/b", {
+      spawn: () => child,
+      killTree,
+      deadlineMs: 5,
+    }),
+  ).rejects.toThrow("git clone timed out");
+  expect(killTree).toHaveBeenCalledWith(4242);
+  expect(kill).toHaveBeenCalled();
 });
 
 it("service rejects a parent that is not an existing absolute directory", async () => {

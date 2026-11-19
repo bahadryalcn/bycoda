@@ -705,6 +705,33 @@ describe("campaign dispatch fairness", () => {
       spy.mockRestore();
     }
   });
+  it("skips the published-ID history query only for an adapter that ignores it, keeping the cursor", async () => {
+    const s = await fixture();
+    const account = await s.account();
+    const campaign = await s.campaign([account]);
+    const [job] = await s.call<SocialJob[]>("campaigns.schedule", { id: campaign.id });
+    await s.call("inbox.polling", { enabled: false });
+    await s.enable();
+    await s.social.tick();
+    expect(s.send).toHaveBeenCalledOnce();
+    // Control: an adapter without the flag still receives the complete pending list.
+    s.poll.mockResolvedValueOnce({ events: [], cursor: "c1" });
+    await s.social.pollAccount(account.id);
+    expect(s.poll.mock.calls[0][2]).toEqual([`post-${job.id}`]);
+    s.adapters.x.ignoresPublishedPosts = true;
+    const prepare = vi.spyOn(s.store.db, "prepare");
+    cleanups.push(() => {
+      prepare.mockRestore();
+    });
+    s.clock.value += 60_000;
+    await s.social.pollAccount(account.id);
+    expect(s.poll.mock.calls[1][2]).toEqual([]);
+    expect(s.poll.mock.calls[1][3]).toBe("c1");
+    expect(s.poll.mock.calls[1][4]).toBeUndefined();
+    expect(
+      prepare.mock.calls.filter(([sql]) => sql.includes("AS platform_id FROM social_jobs")),
+    ).toHaveLength(0);
+  });
   it("admits newly due work on another tick while generation is waiting", async () => {
     const s = await fixture();
     const account = await s.account();
@@ -772,6 +799,51 @@ describe("campaign dispatch fairness", () => {
       release();
       await Promise.all([first, second]);
     }
+  });
+  it("backs off failed background polls exponentially without blocking an explicit refresh", async () => {
+    const s = await fixture();
+    const account = await s.account();
+    await s.enable();
+    await s.call("inbox.polling", { enabled: true });
+    s.poll.mockRejectedValue(new Error("provider outage"));
+    const calls = () => s.poll.mock.calls.length;
+    await s.social.tick();
+    expect(calls()).toBe(1);
+    // First failure waits one minute: nothing is polled inside it, one poll after it.
+    s.clock.value += 30_000;
+    await s.social.tick();
+    expect(calls()).toBe(1);
+    s.clock.value += 30_000;
+    await s.social.tick();
+    expect(calls()).toBe(2);
+    // Second failure doubles the wait.
+    s.clock.value += 60_000;
+    await s.social.tick();
+    expect(calls()).toBe(2);
+    s.clock.value += 60_000;
+    await s.social.tick();
+    expect(calls()).toBe(3);
+    // The owner's refresh is never held back by the backoff, and its success ends it.
+    s.poll.mockReset();
+    s.poll.mockResolvedValueOnce({ events: [] });
+    await expect(s.social.pollAccount(account.id)).resolves.toEqual({ ingested: 0 });
+    expect(calls()).toBe(1);
+  });
+  it("lets an unpause end a failed poll's backoff at once", async () => {
+    const s = await fixture();
+    const account = await s.account();
+    await s.enable();
+    await s.call("inbox.polling", { enabled: true });
+    s.poll.mockRejectedValue(new Error("revoked token"));
+    await s.social.tick();
+    s.clock.value += 60_000;
+    await s.social.tick();
+    expect(s.poll).toHaveBeenCalledTimes(2);
+    // Two failures wait two minutes; an unpause does not.
+    await s.call("accounts.pause", { accountId: account.id, paused: true });
+    await s.call("accounts.pause", { accountId: account.id, paused: false });
+    await s.social.tick();
+    expect(s.poll).toHaveBeenCalledTimes(3);
   });
   it("preserves the credential rotation preflight before dispatch", async () => {
     const s = await fixture();
@@ -1407,6 +1479,25 @@ describe("reviewed draft approval", () => {
 describe("durable owner-approved publishing plans", () => {
   const current = async (s: Awaited<ReturnType<typeof fixture>>, id: string) =>
     (await s.call<SocialPublishingPlan[]>("publishing-plans.list")).find((plan) => plan.id === id)!;
+  it("tick selects only enabled or job-pending plans, never a paused record without a job", async () => {
+    const s = await fixture();
+    const account = await s.account();
+    const campaign = await s.campaign([account]);
+    await createPlan(s, account, [campaign]);
+    const prepare = vi.spyOn(s.store.db, "prepare");
+    await s.enable();
+    await s.social.tick();
+    const plansQueries = prepare.mock.calls
+      .map(([sql]) => String(sql))
+      .filter((sql) => sql.includes("'publishing-plan'"));
+    expect(plansQueries.length).toBeGreaterThan(0);
+    for (const sql of plansQueries) {
+      expect(sql).toContain("json_extract(value,'$.enabled')=1");
+      expect(sql).toContain("json_extract(value,'$.pendingJobId') IS NOT NULL");
+    }
+    expect(s.send).not.toHaveBeenCalled();
+    prepare.mockRestore();
+  });
   it("saves paused; only the owner can activate the exact reviewed revision and approved content", async () => {
     const s = await fixture();
     const account = await s.account();
@@ -1861,6 +1952,146 @@ describe("social workspace performance and authorization", () => {
     expect(accounts.threads).toEqual([]);
     expect(accounts.contacts).toEqual([]);
     expect(accounts.pages!.threads!.total).toBe(186);
+  });
+  it("loads a scheduled window by schedule time, not creation order, inside the principal's scope", async () => {
+    const s = await fixture();
+    const account = await s.account();
+    const campaign = await s.campaign([account]);
+    const insertJob = s.store.db.prepare("INSERT INTO social_jobs VALUES (?,?,?,?,?,?)");
+    const seed = async (
+      id: string,
+      scheduledAt: number,
+      createdAt: number,
+      patch: Partial<SocialJob> = {},
+    ) => {
+      const job: SocialJob = {
+        id,
+        dedupeKey: id,
+        operationId: id,
+        actorId: "owner",
+        provider: "owner",
+        accountId: account.id,
+        projectIds: [s.a.id],
+        campaignId: campaign.id,
+        kind: "publish",
+        payload: { text: id, media: [] },
+        status: "queued",
+        scheduledAt,
+        createdAt,
+        attempts: 0,
+        ...patch,
+      };
+      await insertJob.run(
+        job.id,
+        job.dedupeKey,
+        job.accountId,
+        job.status,
+        job.scheduledAt,
+        JSON.stringify(job),
+      );
+    };
+    const from = 2_000_000;
+    const to = 3_000_000;
+    // 150 jobs created later but scheduled elsewhere push the oldest-created target past a creation page.
+    for (let index = 0; index < 150; index++)
+      await seed(`outside-${index}`, 9_000_000 + index, 10_000 + index);
+    await seed("target", from + 5, 1);
+    await seed("window-start", from, 2);
+    await seed("window-end", to, 3);
+    await seed("just-before", from - 1, 4);
+    await seed("reply", from + 10, 5, { kind: "reply" });
+    await seed("other-project", from + 20, 6, { projectIds: [s.b.id] });
+    const principal = (await s.session()).principal;
+    const query = {
+      section: "campaigns",
+      projectId: s.a.id,
+      limit: 100,
+      filters: { jobs: { kind: "publish", scheduledFrom: from, scheduledTo: to } },
+    };
+
+    const creationPage = await s.social.workspaceSnapshot(principal, {
+      section: "campaigns",
+      projectId: s.a.id,
+      limit: 100,
+    });
+    expect(creationPage.snapshot!.jobs.map((job) => job.id)).not.toContain("target");
+
+    const inWindow = await s.social.workspaceSnapshot(principal, query);
+    // Ascending schedule order; the start is inclusive, the end exclusive; no reply, no other project.
+    expect(inWindow.snapshot!.jobs.map((job) => job.id)).toEqual(["window-start", "target"]);
+    expect(inWindow.snapshot!.pages!.jobs).toEqual({ offset: 0, limit: 100, total: 2 });
+    expect(inWindow.snapshot!.filters!.jobs).toEqual(query.filters.jobs);
+    expect(inWindow.snapshot!.related!.campaigns.map((row) => row.id)).toContain(campaign.id);
+    // Counts describe the whole scope, not the window.
+    expect(Object.values(inWindow.snapshot!.jobCounts!).reduce((sum, count) => sum + count, 0)).toBe(
+      creationPage.snapshot!.pages!.jobs!.total,
+    );
+
+    // A different window is a different cursor, so a cached week is never reused for the next one.
+    const next = await s.social.workspaceSnapshot(principal, {
+      ...query,
+      cursor: inWindow.cursor,
+      filters: { jobs: { kind: "publish", scheduledFrom: to, scheduledTo: to + 1 } },
+    });
+    expect(next.unchanged).toBe(false);
+    expect(next.snapshot!.jobs.map((job) => job.id)).toEqual(["window-end"]);
+
+    // Paging inside a window keeps schedule order and does not repeat rows.
+    const firstPage = await s.social.workspaceSnapshot(principal, { ...query, limit: 1 });
+    const secondPage = await s.social.workspaceSnapshot(principal, {
+      ...query,
+      limit: 1,
+      offsets: { jobs: 1 },
+    });
+    expect(firstPage.snapshot!.jobs.map((job) => job.id)).toEqual(["window-start"]);
+    expect(secondPage.snapshot!.jobs.map((job) => job.id)).toEqual(["target"]);
+
+    // The owner sees the other project's job only without a project; the project filter still scopes it.
+    const ownerAll = await s.social.workspaceSnapshot(owner, {
+      section: "campaigns",
+      filters: query.filters,
+    });
+    expect(ownerAll.snapshot!.jobs.map((job) => job.id)).toEqual([
+      "window-start",
+      "target",
+      "other-project",
+    ]);
+    const other = (await s.session(s.b.id)).principal;
+    expect(
+      (
+        await s.social.workspaceSnapshot(other, {
+          section: "campaigns",
+          projectId: s.b.id,
+          filters: query.filters,
+        })
+      ).snapshot!.jobs.map((job) => job.id),
+    ).not.toContain("target");
+  });
+  it("rejects malformed scheduled windows and windows on collections without a schedule", async () => {
+    const s = await fixture();
+    const principal = (await s.session()).principal;
+    const jobs = (value: Record<string, unknown>) =>
+      s.social.workspaceSnapshot(principal, { section: "campaigns", filters: { jobs: value } });
+    await expect(jobs({ scheduledFrom: 10 })).rejects.toThrow("Invalid scheduled range.");
+    await expect(jobs({ scheduledTo: 10 })).rejects.toThrow("Invalid scheduled range.");
+    await expect(jobs({ scheduledFrom: 10, scheduledTo: 10 })).rejects.toThrow(
+      "Invalid scheduled range.",
+    );
+    await expect(jobs({ scheduledFrom: 20, scheduledTo: 10 })).rejects.toThrow(
+      "Invalid scheduled range.",
+    );
+    await expect(jobs({ scheduledFrom: 1.5, scheduledTo: 10 })).rejects.toThrow(
+      "Invalid scheduled range.",
+    );
+    await expect(jobs({ scheduledFrom: -1, scheduledTo: 10 })).rejects.toThrow(
+      "Invalid scheduled range.",
+    );
+    await expect(
+      s.social.workspaceSnapshot(principal, {
+        section: "campaigns",
+        filters: { campaigns: { scheduledFrom: 1, scheduledTo: 2 } },
+      }),
+    ).rejects.toThrow("Only jobs can be filtered by schedule.");
   });
   it("binds cursors to current principal/grants for LinkedIn threads like any platform", async () => {
     const s = await fixture();

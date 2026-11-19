@@ -6,6 +6,7 @@ import { SettingsFeedback } from "../../../shared/ui/settings";
 import { Text } from "../../../shared/ui/Text";
 import { reconnectLocalHost } from "../model/localHostService";
 import type { RemoteMachine } from "../model/protocol";
+import { errorText } from "../../../shared/lib/errors";
 
 /** One Reconnect at a time for this computer's link; the failure reason stays until the next try. */
 function useReconnect(machine: RemoteMachine, onReconnected?: () => void) {
@@ -19,7 +20,7 @@ function useReconnect(machine: RemoteMachine, onReconnected?: () => void) {
       await reconnectLocalHost(machine);
       onReconnected?.();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(errorText(reason));
     } finally {
       setPending(false);
     }

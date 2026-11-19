@@ -116,7 +116,7 @@ export function useCommitDraft({
           return;
         }
         if (!generated.trim())
-          throw new Error("The provider returned an empty commit message. Retry generation.");
+          throw new Error(t("The provider returned an empty commit message. Retry generation."));
         setMessage(generated);
       }
     } catch (error) {

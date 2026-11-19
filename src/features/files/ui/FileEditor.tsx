@@ -1,4 +1,8 @@
-import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { errorText } from "../../../shared/lib/errors";
+import {
+  isUnsupportedRemoteRoute,
+  presentRemoteError,
+} from "../../connections/public/remoteFailure";
 import { useReloadOnReconnect } from "../../connections/public/useReloadOnReconnect";
 import { Text as UiText } from "../../../shared/ui/Text";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
@@ -89,7 +93,7 @@ const REVEAL_LABEL = IS_MAC
   ? "Reveal in Finder"
   : IS_WIN
     ? "Reveal in File Explorer"
-    : "Open Containing Folder";
+    : "Open containing folder";
 
 type Props = {
   path: string;
@@ -113,7 +117,7 @@ type Props = {
 type LoadState =
   | { status: "loading" }
   | { status: "ready"; content: string }
-  | { status: "error"; message: string };
+  | { status: "error"; message: string; retryable: boolean };
 
 type SaveState = { status: "idle" | "saving" | "saved" } | { status: "error"; message: string };
 
@@ -243,7 +247,7 @@ export function FileEditor({
       await saveQueue.current;
       await openHtmlInChrome(path);
     } catch (error) {
-      setChromeError(error instanceof Error ? error.message : String(error));
+      setChromeError(errorText(error));
     } finally {
       openingRef.current = false;
       setOpeningChrome(false);
@@ -567,13 +571,14 @@ export function FileEditor({
         if (force && dirtyRef.current) {
           setSaveState({
             status: "error",
-            message: error instanceof Error ? error.message : String(error),
+            message: errorText(error),
           });
           return;
         }
         setLoadState({
           status: "error",
-          message: error instanceof Error ? error.message : String(error),
+          message: errorText(error),
+          retryable: !isUnsupportedRemoteRoute(error),
         });
       } finally {
         settled();
@@ -674,7 +679,11 @@ export function FileEditor({
     })()
       .catch((error: unknown) => {
         if (cancelled || generation !== loadGeneration.current) return;
-        setLoadState({ status: "error", message: presentRemoteError(error, { explicit: true }) });
+        setLoadState({
+          status: "error",
+          message: presentRemoteError(error, { explicit: true }),
+          retryable: !isUnsupportedRemoteRoute(error),
+        });
       })
       .finally(settled);
     return () => {
@@ -983,7 +992,7 @@ export function FileEditor({
       } catch (error) {
         setSaveState({
           status: "error",
-          message: error instanceof Error ? error.message : String(error),
+          message: errorText(error),
         });
         return;
       }
@@ -1169,8 +1178,7 @@ export function FileEditor({
         className="grid h-full min-w-0 place-items-center p-3"
       >
         <span className="max-w-full break-words text-center">
-          {t("Opening ")}
-          {basename(path)}…
+          {t("Opening {p0}…", { p0: basename(path) })}
         </span>
       </UiText>
     );
@@ -1181,6 +1189,7 @@ export function FileEditor({
       <FileLoadError
         path={path}
         message={loadState.message}
+        retryable={loadState.retryable}
         onRetry={() => setReloadKey((value) => value + 1)}
       />
     );
@@ -1210,7 +1219,7 @@ export function FileEditor({
       : saveState.status === "saved" && !dirty
         ? t("Saved")
         : saveState.status === "error"
-          ? `${t("Save failed: ")}${saveState.message}`
+          ? t("Save failed: {p0}", { p0: saveState.message })
           : dirty
             ? t("Unsaved changes")
             : "";

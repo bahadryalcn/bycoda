@@ -169,6 +169,19 @@ export async function events(
   });
 }
 
+const TASK_LIST_CACHE_LIMIT = 32;
+
+/** Inserts a keyed cache entry, evicting only the oldest entries that exceed the bound. */
+function setBoundedCacheEntry<K, V>(cache: Map<K, V>, key: K, value: V): void {
+  cache.delete(key);
+  while (cache.size >= TASK_LIST_CACHE_LIMIT) {
+    const oldest = cache.keys().next();
+    if (oldest.done) break;
+    cache.delete(oldest.value);
+  }
+  cache.set(key, value);
+}
+
 export async function list(
   context: TaskContext,
   projectId?: string,
@@ -189,9 +202,8 @@ export async function list(
           async (row) => await context.withReviewNotes(JSON.parse(String(row.value)) as HostTask),
         )
       ).sort((a, b) => a.createdAt - b.createdAt);
-      if (context.projectListCache.size >= 32) context.projectListCache.clear();
       if (!context.store.transactionActive)
-        context.projectListCache.set(projectId, {
+        setBoundedCacheEntry(context.projectListCache, projectId, {
           revision: await context.revisionCounter(),
           tasks,
         });
@@ -237,10 +249,40 @@ export async function list(
     revision === (await context.store.db.scope(() => context.revisionCounter())) &&
     sourceStamp === (await assistantTaskMetadataSourceStamp(context.store, assistantGoalIds))
   ) {
-    if (context.assistantMetadataCache.size >= 32) context.assistantMetadataCache.clear();
-    context.assistantMetadataCache.set(projectId, { revision, sourceStamp, tasks: projected });
+    setBoundedCacheEntry(context.assistantMetadataCache, projectId, {
+      revision,
+      sourceStamp,
+      tasks: projected,
+    });
   }
   return projected.slice();
+}
+
+/**
+ * One crew run's tasks, oldest first, read through the `tasks_crew_run` index so the cost follows
+ * the run's own task count and not the project's history. The predicate repeats the index
+ * expression exactly; tasks of another project that carry the same run id are never returned.
+ */
+export async function listCrewRun(
+  context: TaskContext,
+  runId: string,
+  projectId: string,
+): Promise<HostTask[]> {
+  await context.ready;
+  return await context.store.db.scope(async () => {
+    const rows = await context.store.db
+      .prepare(
+        "SELECT value FROM tasks WHERE CASE WHEN json_valid(value) THEN json_extract(value,'$.crewRunId') END=?",
+      )
+      .all(runId);
+    const tasks: HostTask[] = [];
+    for (const row of rows) {
+      const task = JSON.parse(String(row.value)) as HostTask;
+      if (task.crewRunId === runId && task.projectId === projectId)
+        tasks.push(await context.withReviewNotes(task));
+    }
+    return tasks.sort((a, b) => a.createdAt - b.createdAt);
+  });
 }
 
 export async function taskIndex(
@@ -561,7 +603,7 @@ export async function write(
       task.status === "running" ? task : task.status === "verifying" ? task.reviewer : undefined;
     if (run?.sessionId && run.runId && run.startedAt !== undefined) {
       const key = JSON.stringify([run.sessionId, run.runId]);
-      if (!context.registeredBudgetRuns.has(key)) {
+      if (context.registeredBudgetRuns.get(task.id) !== key) {
         const parent = await context.budgetParent(task);
         const goalId = task.goalId ?? parent?.goalId;
         await context.store.db.checkAuthorization();
@@ -588,9 +630,14 @@ export async function write(
           startedAt: run.startedAt,
         });
         context.store.afterCommit(() => {
-          context.registeredBudgetRuns.add(key);
+          context.registeredBudgetRuns.set(task.id, key);
         });
       }
+    } else {
+      // No active run: reclaim the cache entry. The ledger row itself is kept for accounting.
+      context.store.afterCommit(() => {
+        context.registeredBudgetRuns.delete(task.id);
+      });
     }
     task = { ...task, budgetUsage: await context.budgets.read({ taskId: task.id }) };
     const value = JSON.stringify(task);

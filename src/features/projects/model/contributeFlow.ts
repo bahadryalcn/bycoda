@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { useSyncExternalStore } from "react";
 import { cloneRepo, isLocalDirectory, pickFolders } from "../../../platform/tauri/fs";
 import { t } from "../../../shared/i18n";
@@ -63,7 +64,7 @@ export async function runContribution(deps: ContributeDeps): Promise<ContributeF
     deps.open(path);
     return { status: "opened", path, existed: false };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = errorText(error);
     return {
       status: "failed",
       reason: /git is not installed/i.test(message) ? "git-missing" : "failed",
@@ -108,7 +109,7 @@ export async function startContribution(): Promise<void> {
   }).catch((error: unknown): ContributeFlowState => ({
     status: "failed",
     reason: "failed",
-    message: error instanceof Error ? error.message : String(error),
+    message: errorText(error),
   }));
   if (result?.status === "opened") markContributeDone();
   set(result ?? { status: "idle" });

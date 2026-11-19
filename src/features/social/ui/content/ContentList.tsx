@@ -33,11 +33,23 @@ export type ContentListProps = {
   onOpen: (campaignId: string) => void;
 };
 
+/** The newest publish job per campaign, found in one pass; on a tie the first loaded job wins. */
+export function latestPublishJobs(jobs: SocialJob[]): Map<string, SocialJob> {
+  const latest = new Map<string, SocialJob>();
+  for (const job of jobs) {
+    if (job.kind !== "publish") continue;
+    const current = latest.get(job.campaignId);
+    if (!current || job.scheduledAt > current.scheduledAt) latest.set(job.campaignId, job);
+  }
+  return latest;
+}
+
 /** The campaign's state in one word: its newest job, or Draft / Paused when it has none. */
-export function campaignState(campaign: SocialCampaign, jobs: SocialJob[]): ContentState {
-  const latest = jobs
-    .filter((job) => job.campaignId === campaign.id && job.kind === "publish")
-    .sort((a, b) => b.scheduledAt - a.scheduledAt)[0];
+export function campaignState(
+  campaign: SocialCampaign,
+  latestJobs: ReadonlyMap<string, SocialJob>,
+): ContentState {
+  const latest = latestJobs.get(campaign.id);
   if (latest) return latest.status;
   return campaign.paused ? "paused" : "draft";
 }
@@ -73,12 +85,14 @@ export function ContentList({
   onStatusFilter,
   onOpen,
 }: ContentListProps) {
+  const latestJobs = latestPublishJobs(jobs);
+  const accountsById = new Map(accounts.map((account) => [account.id, account]));
   const rows = campaigns
     .filter(
       (campaign) =>
         !accountFilter || campaign.variants.some((variant) => variant.accountId === accountFilter),
     )
-    .map((campaign) => ({ campaign, state: campaignState(campaign, jobs) }))
+    .map((campaign) => ({ campaign, state: campaignState(campaign, latestJobs) }))
     .filter((row) => matchesStatus(row.state, statusFilter));
   return (
     <div className="content-list">
@@ -142,10 +156,7 @@ export function ContentList({
             const platforms = [
               ...new Set(
                 campaign.variants
-                  .map(
-                    (variant) =>
-                      accounts.find((account) => account.id === variant.accountId)?.platform,
-                  )
+                  .map((variant) => accountsById.get(variant.accountId)?.platform)
                   .filter(
                     (platform): platform is NonNullable<typeof platform> => platform !== undefined,
                   ),
@@ -190,10 +201,7 @@ export function ContentList({
                       </Text>
                       <Text size="caption" tone="muted" truncate>
                         {campaign.variants
-                          .map(
-                            (variant) =>
-                              accounts.find((account) => account.id === variant.accountId)?.name,
-                          )
+                          .map((variant) => accountsById.get(variant.accountId)?.name)
                           .filter(Boolean)
                           .join(", ")}
                       </Text>

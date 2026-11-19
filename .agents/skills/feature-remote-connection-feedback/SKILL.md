@@ -53,6 +53,8 @@ features own their mutations, retained data, drafts and uncertain outcomes.
 - A down machine nobody works in (no open project, session or settings row) is
   checked every few minutes and never redialed on timers or window focus;
   focusing it dials at once.
+- The owner-activity report (`model/ownerActivity.ts`) reaches only connected, enabled
+  machines; it never dials a down or off one and is sent again on the next tick after reconnect.
 - A Host capacity refusal is a not-sent `RPC_WS_OVERLOAD`, classified
   `temporary`. Reads retry it quietly through `model/useQuietRetry.ts` and report
   it only after the last retry; it never resends a write.
@@ -61,6 +63,8 @@ features own their mutations, retained data, drafts and uncertain outcomes.
   name from the paired-device list; a device's own actions never notify itself.
 - Remote activity notices are informational: they never gate sends, replay
   mutations or stand in for connection recovery.
+- A failed user-started action or read shows `describeRemoteError(reason).message` and keeps
+  `.details` behind Details (`RemoteActionError`, or `InlineError details`); never `String(reason)`.
 - Retain loaded content and drafts. Never-loaded content is waiting/unknown,
   not verified empty. Missing log/build evidence is unknown, not healthy.
 - The machine notice is an inline row above the session's composer, never a toast:

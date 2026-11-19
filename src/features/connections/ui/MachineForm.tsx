@@ -40,9 +40,9 @@ function SshHelp({ editing }: { editing: boolean }) {
     <InfoPopover label={t("Connection help")} width={360}>
       <p>
         {editing
-          ? t("Changes apply to this machine. To connect a different computer, choose Add machine.")
+          ? t("Changes apply to this computer. To connect a different computer, choose Add a computer.")
           : t(
-              "Connect a different computer with its own SSH address. Existing machines stay saved.",
+              "Connect a different computer with its own SSH address. Existing computers stay saved.",
             )}
       </p>
       <p>
@@ -132,9 +132,7 @@ function SshFields({
             variant="secondary"
             align="start"
           >
-            {t("Use ")}
-            {suggestion}
-            {t(" instead of the IP")}
+            {t("Use {p0} instead of the IP", { p0: suggestion })}
           </Button>
         )}
       </div>
@@ -238,7 +236,7 @@ export function MachineForm({
   framed?: boolean;
 }) {
   const ssh = Boolean(editing) || method === "ssh";
-  const title = editing ? t("Edit {p0}", { p0: editing.name }) : t("Add a new machine");
+  const title = editing ? t("Edit {p0}", { p0: editing.name }) : t("Add a new computer");
   return (
     <form
       key={editing?.id ?? "new-machine"}
@@ -284,10 +282,10 @@ export function MachineForm({
         <Text as="p" tone="muted">
           {editing
             ? saveLabel === "Save"
-              ? t("Saving changes the machine name without reconnecting.")
-              : t("Saving reconnects this machine with the updated address.")
+              ? t("Saving changes the computer name without reconnecting.")
+              : t("Saving reconnects this computer with the updated address.")
             : ssh
-              ? t("Installs bycoda Host over SSH so you can run agents on this machine.")
+              ? t("Installs bycoda Host over SSH so you can run agents on this computer.")
               : t("Enter the host URL and a device token issued by that host.")}
         </Text>
         {ssh ? (

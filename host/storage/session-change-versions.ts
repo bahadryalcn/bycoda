@@ -73,4 +73,15 @@ export class SessionChangeVersions {
   lastStep(sessionId: string): number {
     return this.steps.get(sessionId) ?? 1;
   }
+  /**
+   * Drops a deleted session's counters and list cursor once its deletion has
+   * committed. Sessions cannot be saved again after deletion. A reader that recorded
+   * a non-zero counter sees it change to 0; a reader that recorded 0 is refreshed by
+   * the project scope move the same deletion commits.
+   */
+  retire(sessionId: string): void {
+    this.sessions.delete(sessionId);
+    this.listed.delete(sessionId);
+    this.steps.delete(sessionId);
+  }
 }

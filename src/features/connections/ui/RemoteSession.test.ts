@@ -1971,7 +1971,7 @@ it("creates a host worktree through the composer and selects it", async () => {
   expect(document.body.textContent).toContain("Existing worktree…");
   expect(document.body.textContent).not.toContain("Worktree settings");
   expect(document.body.querySelector('[aria-label="Existing worktrees"]')).toBeNull();
-  expect(document.body.querySelector('input[placeholder="Search working copies…"]')).toBeNull();
+  expect(document.body.querySelector('input[placeholder="Search worktrees…"]')).toBeNull();
   const create = [...document.body.querySelectorAll<HTMLButtonElement>("button")].find(
     (button) => button.textContent?.trim() === "New worktree",
   );

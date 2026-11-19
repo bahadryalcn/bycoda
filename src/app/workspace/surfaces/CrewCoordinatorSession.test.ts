@@ -6,6 +6,7 @@ import type { Session } from "../../../features/sessions/model/session";
 import { resetSessionsStore } from "../../../features/sessions/model/sessionsStore";
 import { CrewCoordinatorSession } from "./CrewCoordinatorSession";
 import type { WorkspaceSessionPaneProps } from "../layout/WorkspaceMainArea";
+import { setLanguagePreference } from "../../../shared/i18n";
 
 const { pane, stopRequest, managed, confirmStop } = vi.hoisted(() => ({
   pane: vi.fn((_props: Record<string, unknown>) => null),
@@ -53,6 +54,32 @@ it("renders the canonical coordinator with existing app handlers after host adop
     }),
     undefined,
   );
+  await act(async () => root.unmount());
+  resetSessionsStore([]);
+  vi.unstubAllGlobals();
+});
+
+it("re-renders its loading label when the app language changes", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const coordinator = { id: "lead", cwd: "/crew", blocks: [] } as unknown as Session;
+  resetSessionsStore([coordinator]);
+  // onOpen never resolves, so the component stays in its loading state across the switch.
+  const onOpen = vi.fn(() => new Promise<void>(() => undefined));
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  await act(async () =>
+    root.render(
+      createElement(CrewCoordinatorSession, {
+        target: { machineId: "host", projectId: "project", sessionId: "lead", cwd: "/crew" },
+        onOpen,
+        paneProps: {} as unknown as WorkspaceSessionPaneProps,
+      }),
+    ),
+  );
+  expect(container.textContent).toContain("Loading session…");
+  await act(async () => setLanguagePreference("de"));
+  expect(container.textContent).toContain("Sitzung wird geladen…");
+  await act(async () => setLanguagePreference("en"));
   await act(async () => root.unmount());
   resetSessionsStore([]);
   vi.unstubAllGlobals();

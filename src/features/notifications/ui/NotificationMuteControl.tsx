@@ -70,7 +70,6 @@ export function NotificationMuteControl({ projectIds, onChanged, compact = false
       {muted.length ? (
         <Button
           type="button"
-          aria-label={t("Resume notifications")}
           variant="ghost"
           disabled={unavailable}
           onClick={() => change(undefined)}
@@ -82,10 +81,13 @@ export function NotificationMuteControl({ projectIds, onChanged, compact = false
         ref={trigger}
         type="button"
         variant={compact ? "ghost" : "secondary"}
-        iconOnly={compact}
-        label={muted.length ? t("Change mute duration") : t("Mute notifications")}
+        {...(compact
+          ? {
+              iconOnly: true as const,
+              label: muted.length ? t("Change mute duration") : t("Mute notifications"),
+            }
+          : { iconOnly: false as const })}
         tooltip={compact && status ? status : undefined}
-        aria-label={muted.length ? t("Change mute duration") : t("Mute notifications")}
         aria-haspopup={open === "custom" ? "dialog" : "menu"}
         expanded={compact ? undefined : menuOpen}
         aria-expanded={menuOpen}
@@ -128,7 +130,7 @@ export function NotificationMuteControl({ projectIds, onChanged, compact = false
           anchor={trigger}
           align="end"
           width={360}
-          role="dialog"
+          kind="dialog"
           aria-label={t("Mute project notifications")}
           onDismiss={(reason) => close(reason === "escape")}
           className="overflow-y-auto p-3"

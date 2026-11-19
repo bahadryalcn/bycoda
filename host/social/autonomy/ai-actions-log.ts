@@ -64,7 +64,7 @@ export function newAiAction(input: {
 
 export async function listAiActions(
   store: SocialAudienceStore,
-  input: { cursor?: string; accountId?: string; limit?: number } = {},
+  input: { cursor?: string; accountId?: string; since?: number; limit?: number } = {},
 ) {
   return await store.listAiActions(input);
 }

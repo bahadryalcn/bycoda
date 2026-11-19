@@ -1,5 +1,6 @@
 import type { SocialCredential } from "../social-credentials";
 import type { OAuthPlatformConfig, OAuthRuntime } from "./oauth-platform";
+import { SocialRefreshError } from "./refresh-error";
 
 /** Token URLs never leave the host, and provider/network errors must not echo their query secrets. */
 async function instagramToken(
@@ -90,7 +91,8 @@ export const instagramOAuth: OAuthPlatformConfig = {
       credential.expiresAt === undefined ||
       credential.expiresAt <= runtime.now()
     )
-      throw new Error(
+      throw new SocialRefreshError(
+        "permanent",
         "Instagram connection expired or is missing permission. Reconnect the account.",
       );
     // Instagram Login renews its unexpired long-lived access token; it does not issue a separate refresh token.

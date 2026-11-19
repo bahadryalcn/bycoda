@@ -13,6 +13,8 @@ import {
 } from "../turnWriter";
 
 import { killChild } from "../../core/child";
+import { savedConversationUnavailableText } from "../../core/providerNotices";
+import { t } from "../../../../shared/i18n/core";
 import {
   PROVIDER_STARTUP_TIMEOUT_MS,
   announceSlowProviderStartup,
@@ -42,6 +44,8 @@ import {
 } from "../../core/nativeOutputDelivery";
 import { JsonRpcResponseError } from "../../core/jsonRpc";
 import { AcpClient, type AcpHandlers } from "../../core/acp";
+import { ACP_PROMPT_TIMEOUT_MS } from "../../core/acpPromptDeadline";
+import { providerExitError, pushExitStderrTail } from "../../core/exitDiagnostics";
 import { reportAcpStopReason } from "../../core/acpStopReason";
 import { spawnChild, watchChild, invokeProviderCommand } from "../../core/child";
 import { registerHarness, type HarnessAdapter } from "../../core/registry";
@@ -335,20 +339,22 @@ export async function sendGenericAcpTurn(
                 type: "approval.requested",
                 requestId: id,
                 occurrenceId,
-                title: permission.toolCall?.title ?? "ACP permission",
+                title: permission.toolCall?.title ?? t("ACP permission"),
                 callId: permission.toolCall?.toolCallId,
               });
             };
+            const stderrTail: string[] = [];
             watchChild(
               handle,
               (line) => client.pushLine(line),
               (code) => {
                 state.cancelled = true;
                 retireWaitingApprovals(state);
-                client.close(new Error("ACP agent process exited"));
+                client.close(providerExitError("ACP agent process", code, stderrTail));
                 if (lives.get(input.sessionId) === state) lives.delete(input.sessionId);
                 state.onEvent({ type: "session.ended", code });
               },
+              (line) => pushExitStderrTail(stderrTail, line),
             );
             try {
               await predecessor;
@@ -416,7 +422,7 @@ export async function sendGenericAcpTurn(
                   resumes.delete(input.sessionId);
                   emitNative({
                     type: "status",
-                    text: "The saved provider conversation is unavailable. Starting a new session; the app will restore conversation context.",
+                    text: savedConversationUnavailableText(),
                   });
                 }
                 const setup = await startupAcp.request<{
@@ -499,7 +505,7 @@ export async function sendGenericAcpTurn(
                 sessionId: live.providerId,
                 prompt: promptBlocks(input.text, input.attachments),
               },
-              0,
+              ACP_PROMPT_TIMEOUT_MS,
               (value, work) => {
                 responseScope.work?.finish();
                 responseScope.work = work ? retainNativeOutputEventOrigin(work.origin) : null;

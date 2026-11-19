@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { SplitButton } from "../../../shared/ui/SplitButton";
@@ -253,7 +254,7 @@ function GithubPrActionsForItem({
     } catch (error: unknown) {
       if (!active.current) return;
       setConfirmation(null);
-      setActionError(error instanceof Error ? error.message : String(error));
+      setActionError(errorText(error));
     } finally {
       if (active.current) setBusy(false);
     }
@@ -376,10 +377,8 @@ function GithubPrActionsForItem({
           anchor={confirmation.anchor}
           gap={5}
           width={320}
-          autoFocus
           onDismiss={busy ? undefined : dismissConfirmation}
-          role="dialog"
-          tabIndex={-1}
+          kind="dialog"
           aria-label={confirmCopy.title}
           className="p-3"
         >

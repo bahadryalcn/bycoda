@@ -14,6 +14,7 @@ import { InlineError } from "../../../../shared/ui/InlineError";
 import { LiveText } from "../../../../shared/ui/LiveText";
 import { Text } from "../../../../shared/ui/Text";
 import { assistantJobProjectIds } from "../../model/assistantJobs";
+import { createLocalDraftWriter } from "../../model/assistantLocalDraft";
 import rootStyles from "../AssistantView.module.css";
 import styles from "./Jobs.module.css";
 import { type OwnerRequest } from "./assistantRoomHelpers";
@@ -68,6 +69,13 @@ export function JobOwnerEditDialog({
     busy = useRef(false),
     [error, setError] = useState("");
   const [draftStorageError, setDraftStorageError] = useState(() => unsavedJobOwnerDrafts.has(key));
+  const [writer] = useState(() =>
+    createLocalDraftWriter(key, (saved) => {
+      if (saved) unsavedJobOwnerDrafts.delete(key);
+      setDraftStorageError(!saved);
+    }),
+  );
+  useEffect(() => writer.attach(), [writer]);
   const alive = useRef(true);
   useEffect(() => {
     alive.current = true;
@@ -76,19 +84,33 @@ export function JobOwnerEditDialog({
     };
   }, []);
   const live = useStableCallback(current);
+  /**
+   * Keeps the latest draft in memory for remounts and hands storage to the shared writer. A
+   * persistence-required call (durable intent before dispatch) flushes at once; a failed write
+   * stays pending and is retried by the next flush.
+   */
   function retain(next: typeof draft, requirePersistence = false) {
-    if (!requirePersistence) setDraft(next);
-    try {
-      localStorage.setItem(key, JSON.stringify(next));
-      unsavedJobOwnerDrafts.delete(key);
-      setDraftStorageError(false);
-      if (requirePersistence) setDraft(next);
+    if (!requirePersistence) {
+      setDraft(next);
+      unsavedJobOwnerDrafts.set(key, next);
+      writer.schedule(() => JSON.stringify(next));
       return true;
-    } catch {
-      if (!requirePersistence) unsavedJobOwnerDrafts.set(key, next);
-      setDraftStorageError(true);
-      return false;
     }
+    unsavedJobOwnerDrafts.set(key, next);
+    writer.schedule(() => JSON.stringify(next));
+    if (writer.flush()) {
+      setDraft(next);
+      return true;
+    }
+    // An undispatched intent must not reach storage later: keep the pre-intent draft pending instead.
+    unsavedJobOwnerDrafts.set(key, draft);
+    writer.schedule(() => JSON.stringify(draft));
+    return false;
+  }
+  /** Explicit discard or a confirmed save: no pending write may bring the draft back. */
+  function discard() {
+    writer.clear();
+    unsavedJobOwnerDrafts.delete(key);
   }
   function verify(next: AssistantJob | undefined) {
     if (
@@ -117,7 +139,7 @@ export function JobOwnerEditDialog({
           next.version > draft.intent.expectedVersion &&
           (next.priority ?? "normal") === draft.intent.priority
         ) {
-          localStorage.removeItem(key);
+          discard();
           onSaved();
           return;
         }
@@ -159,7 +181,7 @@ export function JobOwnerEditDialog({
         (input.op === "jobs.replan" && next.status !== "planning")
       )
         throw new Error("Job status is unknown. Check the Room before retrying.");
-      localStorage.removeItem(key);
+      discard();
       onSaved();
     } catch (cause) {
       if (alive.current && live()) setError(t(presentRemoteError(cause, { explicit: true })));
@@ -242,7 +264,13 @@ export function JobOwnerEditDialog({
         {draftStorageError && (
           <InlineError className={rootStyles.error}>
             {t("Could not save this draft. It is kept in this window.")}{" "}
-            <Button type="button" onClick={() => retain(draft)}>
+            <Button
+              type="button"
+              onClick={() => {
+                retain(draft);
+                writer.flush();
+              }}
+            >
               {t("Retry saving")}
             </Button>
           </InlineError>

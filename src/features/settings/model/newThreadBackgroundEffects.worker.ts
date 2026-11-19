@@ -1,5 +1,6 @@
 /// <reference lib="webworker" />
 
+import { errorText } from "../../../shared/lib/errors";
 import type { NewThreadBackgroundEffect } from "./appearance";
 import {
   BackgroundEffectCache,
@@ -258,7 +259,7 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
           post(data.id);
         } else post(data.id, await render(data.sourceKey, data.effect, data.light));
       } catch (error) {
-        post(data.id, undefined, error instanceof Error ? error.message : String(error));
+        post(data.id, undefined, errorText(error));
       }
     })
     .catch(() => {});

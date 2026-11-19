@@ -74,3 +74,20 @@ it("serializes a changed morning preference behind its pending acknowledgement a
   );
   expect(mock.request).toHaveBeenCalledTimes(2);
 });
+// Regression: a visible window leaves snapshot reads to the shared 15 s poller (no duplicate read per tick).
+it("does not read the snapshot itself while the window is visible", async () => {
+  vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+  await mount();
+  await vi.waitFor(() =>
+    expect(mock.request).toHaveBeenCalledWith(expect.objectContaining({ op: "briefing.schedule" })),
+  );
+  expect(mock.refresh).not.toHaveBeenCalled();
+  vi.restoreAllMocks();
+});
+// Regression: a hidden window still refreshes itself, because the shared poller pauses there.
+it("refreshes the snapshot itself while the window is hidden", async () => {
+  vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+  await mount();
+  await vi.waitFor(() => expect(mock.refresh).toHaveBeenCalledOnce());
+  vi.restoreAllMocks();
+});

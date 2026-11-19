@@ -277,7 +277,7 @@ export async function pendingNarrationEvents(input: PendingInput): Promise<Narra
       .all()),
     ...(await deps.store.db
       .prepare(
-        "SELECT id FROM assistant_runtime WHERE (id LIKE 'notification:observation:%' OR id LIKE 'notification:reminder:%') AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 100",
+        "SELECT id FROM assistant_runtime WHERE ((id>='notification:observation:' AND id<'notification:observation;') OR (id>='notification:reminder:' AND id<'notification:reminder;')) AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 100",
       )
       .all()),
   ].map((row) => String(row.id));

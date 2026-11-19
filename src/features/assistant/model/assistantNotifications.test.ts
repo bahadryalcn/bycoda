@@ -4,7 +4,7 @@ import type {
   AssistantNotification,
   AssistantSnapshot,
 } from "../../../shared/model/host-contracts/assistant";
-import { AssistantNotificationDelivery } from "./assistantNotifications";
+import { AssistantNotificationDelivery, currentNotification } from "./assistantNotifications";
 const notification: AssistantNotification = {
   id: "event-one",
   kind: "job.done",
@@ -29,6 +29,14 @@ function fixture() {
   const ports = { request, deliver, lead, projectPath, current, storage: localStorage };
   return { ...ports, ports, pump: new AssistantNotificationDelivery(ports) };
 }
+it("reads the full notification from the polled snapshot and only for an enabled, set-up profile", () => {
+  expect(currentNotification(snapshot, "event-one")).toEqual(notification);
+  expect(currentNotification(snapshot, "missing")).toBeUndefined();
+  expect(
+    currentNotification({ ...snapshot, profile: { enabled: false, setupComplete: true } }, "event-one"),
+  ).toBeUndefined();
+  expect(currentNotification(null, "event-one")).toBeUndefined();
+});
 it("retries only acknowledgement after native success, including a new bridge instance", async () => {
   const f = fixture();
   f.request.mockRejectedValueOnce(new Error("Host disconnected"));

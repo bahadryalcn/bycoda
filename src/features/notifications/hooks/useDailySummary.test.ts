@@ -2,15 +2,17 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-const { notify, gather, store, lead, totals } = vi.hoisted(() => ({
+const { notify, gather, store, lead, totals, gate } = vi.hoisted(() => ({
   totals: vi.fn(),
   notify: vi.fn(),
   gather: vi.fn(),
   store: vi.fn(),
   lead: vi.fn(),
+  gate: vi.fn(),
 }));
 vi.mock("../model/notifications", () => ({
   loadNotificationsEnabled: () => true,
+  canNotifyDailySummary: gate,
   notifyDailySummary: notify,
 }));
 vi.mock("../../tasks/model/dailySummaryClient", () => ({
@@ -38,6 +40,7 @@ beforeEach(() => {
   localStorage.clear();
   vi.clearAllMocks();
   lead.mockResolvedValue(true);
+  gate.mockReturnValue(true);
   gather.mockResolvedValue({});
   notify.mockResolvedValue(true);
   totals.mockResolvedValue(null);
@@ -53,16 +56,40 @@ it.each(["permission", "transport"])(
   async (failure) => {
     if (failure === "permission") notify.mockResolvedValueOnce(false);
     else notify.mockRejectedValueOnce(new Error("offline"));
+    const first = Date.now();
     await act(async () => root.render(createElement(Harness)));
     expect(store).toHaveBeenCalledTimes(1);
     expect(loadDailySummarySentAt()).toBeNull();
     await act(async () => vi.advanceTimersByTimeAsync(60_000));
     expect(notify).toHaveBeenCalledTimes(2);
-    expect(loadDailySummarySentAt()).toBe(Date.now());
+    expect(loadDailySummarySentAt()).toBe(first);
     await act(async () => vi.advanceTimersByTimeAsync(120_000));
     expect(notify).toHaveBeenCalledTimes(2);
   },
 );
+it("gathers once and retries delivery with one history identity after a failure", async () => {
+  notify.mockResolvedValueOnce(false).mockResolvedValueOnce(false);
+  await act(async () => root.render(createElement(Harness)));
+  await act(async () => vi.advanceTimersByTimeAsync(120_000));
+  expect(notify).toHaveBeenCalledTimes(3);
+  expect(gather).toHaveBeenCalledTimes(1);
+  expect(store).toHaveBeenCalledTimes(1);
+  const occurredAt = notify.mock.calls.map((call) => call[1]);
+  expect(new Set(occurredAt).size).toBe(1);
+});
+it("does not gather or notify while the notification gate is closed, then gathers fresh", async () => {
+  gate.mockReturnValue(false);
+  await act(async () => root.render(createElement(Harness)));
+  await act(async () => vi.advanceTimersByTimeAsync(180_000));
+  expect(gather).not.toHaveBeenCalled();
+  expect(notify).not.toHaveBeenCalled();
+  expect(loadDailySummarySentAt()).toBeNull();
+  gate.mockReturnValue(true);
+  await act(async () => vi.advanceTimersByTimeAsync(60_000));
+  expect(gather).toHaveBeenCalledTimes(1);
+  expect(notify).toHaveBeenCalledTimes(1);
+  expect(loadDailySummarySentAt()).not.toBeNull();
+});
 it("does not overlap delivery while a notification is pending", async () => {
   let finish!: (sent: boolean) => void;
   notify.mockImplementation(

@@ -11,7 +11,11 @@ import { SearchInput } from "../../../shared/ui/SearchInput";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { Check } from "../../../shared/ui/icons";
-import { accountUsageKey, useProviderAccountUsage } from "../../providers/public/accountUsage";
+import {
+  accountUsageKey,
+  providerAccountSignedOut,
+  useProviderAccountUsage,
+} from "../../providers/public/accountUsage";
 import {
   providerAccountColorValue,
   providerAccounts,
@@ -75,9 +79,9 @@ export function usePanelAccounts(harness: HarnessId, active: boolean) {
       ? undefined
       : !limits || limits.status === "idle" || limits.status === "fetching"
         ? t("Checking…")
-        : limits.status === "unavailable"
+        : providerAccountSignedOut(limits)
           ? t("Not signed in")
-          : limits.status === "error"
+          : limits.status === "error" || limits.status === "unavailable"
             ? t("Usage unavailable")
             : undefined;
     return {
@@ -356,7 +360,7 @@ export function ModelAccountList({
                     </span>
                   ) : null}
                   {selected ? (
-                    <Check className="icon-sm shrink-0" tone="secondary" strokeWidth={2} />
+                    <Check className="icon-sm shrink-0" tone="secondary" />
                   ) : (
                     <span className="size-3.5 shrink-0" aria-hidden />
                   )}

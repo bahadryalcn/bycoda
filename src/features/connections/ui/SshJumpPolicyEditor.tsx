@@ -56,8 +56,8 @@ export function SshJumpPolicyEditor({
           <div className="flex min-w-0 items-end gap-1">
             <TextField
               fieldClassName="min-w-0 flex-1"
-              label={t("Host")}
-              aria-label={`${t("Jump host")} ${index + 1}: ${t("Host")}`}
+              label={t("Hostname")}
+              aria-label={`${t("Jump host")} ${index + 1}: ${t("Hostname")}`}
               value={hop.host}
               maxLength={512}
               onChange={(event) => update(index, "host", event.target.value)}

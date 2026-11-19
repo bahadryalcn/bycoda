@@ -43,7 +43,10 @@ export function WorktreeRow({
 }) {
   const folderName = projectName(tree.path);
   const head = t("Detached at {p0}", { p0: tree.head.slice(0, 7) });
-  const sessions = `${sessionCount}${t(" session")}${sessionCount === 1 ? "" : "s"}${t(" in this worktree")}`;
+  const sessions =
+    sessionCount === 1
+      ? t("{p0} session in this worktree", { p0: sessionCount })
+      : t("{p0} sessions in this worktree", { p0: sessionCount });
   const caption = [tree.branch ?? head, sessions].join(" · ");
   const statusTone =
     tree.missing || tree.dirty ? "warning" : tree.dirty == null ? "neutral" : "success";
@@ -84,9 +87,9 @@ export function WorktreeRow({
           {!!tree.unpushed && (
             <Tooltip label={t("Counted against remote branches already fetched locally.")} asChild>
               <Badge size="sm" tone="info">
-                {tree.unpushed}
-                {t(" unpublished commit")}
-                {tree.unpushed === 1 ? "" : "s"}
+                {tree.unpushed === 1
+                  ? t("{p0} unpublished commit", { p0: tree.unpushed })
+                  : t("{p0} unpublished commits", { p0: tree.unpushed })}
               </Badge>
             </Tooltip>
           )}

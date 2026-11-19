@@ -15,6 +15,7 @@ use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 pub(crate) mod owner_approval;
 #[path = "control_receipts.rs"]
 pub(crate) mod receipts;
+mod listener;
 mod scratch;
 #[path = "control_writes.rs"]
 pub(crate) mod writes;
@@ -635,6 +636,7 @@ pub fn init(app: &AppHandle) -> Result<(), String> {
         .local_addr()
         .map_err(|e| e.to_string())?
         .to_string();
+    scratch::start_retired_sweep();
     let inner = Arc::new(Mutex::new(Inner::default()));
     app.manage(ControlHost {
         endpoint,
@@ -643,7 +645,7 @@ pub fn init(app: &AppHandle) -> Result<(), String> {
     let app = app.clone();
     std::thread::spawn(move || {
         // Limit concurrent readers, including unauthenticated sockets.
-        let (tx, rx) = mpsc::sync_channel::<TcpStream>(32);
+        let (tx, rx) = mpsc::sync_channel::<TcpStream>(listener::QUEUE_CAPACITY);
         let rx = Arc::new(Mutex::new(rx));
         for _ in 0..8 {
             let rx = rx.clone();
@@ -658,86 +660,133 @@ pub fn init(app: &AppHandle) -> Result<(), String> {
                 serve(stream, &app, &inner);
             });
         }
-        for stream in listener.incoming().flatten() {
-            let _ = tx.try_send(stream);
-        }
+        // Full queues get an explicit busy reply and accept errors back off.
+        listener::accept_loop(&listener, &tx);
     });
     Ok(())
 }
 
-fn serve(mut stream: TcpStream, app: &AppHandle, inner: &Arc<Mutex<Inner>>) {
-    let _ = stream.set_read_timeout(Some(Duration::from_secs(3)));
-    let _ = stream.set_write_timeout(Some(Duration::from_secs(3)));
-    let result = (|| -> Result<Value, String> {
-        let mut raw = String::new();
-        BufReader::new(&mut stream)
-            .take(262_145)
-            .read_line(&mut raw)
-            .map_err(|e| e.to_string())?;
-        if raw.len() > 262_144 {
-            return Err("Request exceeds 256 KiB".into());
-        }
-        let request: Request = serde_json::from_str(&raw).map_err(|_| "Invalid control request")?;
-        if !request.input.is_object()
-            || request.request_id.is_empty()
-            || request.request_id.len() > 128
-        {
-            return Err("Invalid input or request ID".into());
-        }
-        let id = uuid::Uuid::new_v4().to_string();
-        let (tx, rx) = mpsc::channel();
-        let grant = {
-            let mut host = inner.lock().map_err(|_| "Control service unavailable")?;
-            let grant = request_grant_for_action(
-                &host,
-                &request.namespace,
-                &request.token,
-                &request.action,
-            )?;
-            if host.pending.len() >= 24 {
-                return Err("Too many pending control requests".into());
-            }
-            host.pending.insert(
-                id.clone(),
-                Pending {
-                    window: grant.window.clone(),
-                    reply: tx,
-                    authority: None,
-                    assistant_source: None,
-                    window_issuer: None,
-                    effect_started: false,
-                },
-            );
-            grant
-        };
-        let event = Event {
-            id: id.clone(),
-            namespace: request.namespace,
-            session_id: grant.session,
-            request_id: request.request_id,
-            action: request.action,
-            input: request.input,
-        };
-        let delivered = app.emit_to(grant.window.as_str(), "bycoda-control-request", event);
-        let result = if delivered.is_err() {
-            Err("bycoda executor is unavailable".into())
-        } else {
-            rx.recv_timeout(Duration::from_secs(35))
-                .map_err(|_| "Control request timed out. Retry with the same request ID.".into())
-        };
-        if let Ok(mut host) = inner.lock() {
-            host.pending.remove(&id);
-        }
-        result
-    })();
+/// A request already registered in `Inner::pending` and delivered to the window.
+struct Admitted {
+    id: String,
+    reply: mpsc::Receiver<Value>,
+}
+
+fn write_response(stream: &mut TcpStream, result: Result<Value, String>) {
     let response = result.unwrap_or_else(|error| {
         if error == APP_TURN_INACTIVE {
             json!({"ok": false, "error": error, "retryable": false})
+        } else if error == listener::BUSY_ERROR {
+            listener::busy_response()
         } else {
             json!({"ok": false, "error": error})
         }
     });
     let _ = writeln!(stream, "{response}");
+}
+
+/// Reads and validates one request, registers it and emits it to the window.
+/// Never waits for the window, so a slow renderer cannot occupy a worker.
+fn admit(
+    stream: &mut TcpStream,
+    app: &AppHandle,
+    inner: &Arc<Mutex<Inner>>,
+) -> Result<Admitted, String> {
+    let mut raw = String::new();
+    BufReader::new(&mut *stream)
+        .take(262_145)
+        .read_line(&mut raw)
+        .map_err(|e| e.to_string())?;
+    if raw.len() > 262_144 {
+        return Err("Request exceeds 256 KiB".into());
+    }
+    let request: Request = serde_json::from_str(&raw).map_err(|_| "Invalid control request")?;
+    if !request.input.is_object() || request.request_id.is_empty() || request.request_id.len() > 128
+    {
+        return Err("Invalid input or request ID".into());
+    }
+    let id = uuid::Uuid::new_v4().to_string();
+    let (tx, rx) = mpsc::channel();
+    let grant = {
+        let mut host = inner.lock().map_err(|_| "Control service unavailable")?;
+        let grant = request_grant_for_action(
+            &host,
+            &request.namespace,
+            &request.token,
+            &request.action,
+        )?;
+        if host.pending.len() >= 24 {
+            return Err(listener::BUSY_ERROR.into());
+        }
+        host.pending.insert(
+            id.clone(),
+            Pending {
+                window: grant.window.clone(),
+                reply: tx,
+                authority: None,
+                assistant_source: None,
+                window_issuer: None,
+                effect_started: false,
+            },
+        );
+        grant
+    };
+    let event = Event {
+        id: id.clone(),
+        namespace: request.namespace,
+        session_id: grant.session,
+        request_id: request.request_id,
+        action: request.action,
+        input: request.input,
+    };
+    if app
+        .emit_to(grant.window.as_str(), "bycoda-control-request", event)
+        .is_err()
+    {
+        if let Ok(mut host) = inner.lock() {
+            host.pending.remove(&id);
+        }
+        return Err("bycoda executor is unavailable".into());
+    }
+    Ok(Admitted { id, reply: rx })
+}
+
+fn serve(mut stream: TcpStream, app: &AppHandle, inner: &Arc<Mutex<Inner>>) {
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(3)));
+    let _ = stream.set_write_timeout(Some(Duration::from_secs(3)));
+    let admitted = match admit(&mut stream, app, inner) {
+        Ok(admitted) => admitted,
+        Err(error) => return write_response(&mut stream, Err(error)),
+    };
+    // The wait for the renderer's reply runs on its own thread so a hidden or
+    // throttled window cannot park a worker. Pending entries are capped, which
+    // bounds these threads.
+    let Ok(mut waiter_stream) = stream.try_clone() else {
+        remove_pending(inner, &admitted.id);
+        return write_response(&mut stream, Err("Control service unavailable".into()));
+    };
+    let waiter_inner = inner.clone();
+    let Admitted { id, reply } = admitted;
+    let waiter_id = id.clone();
+    let spawned = std::thread::Builder::new()
+        .name("control-reply".into())
+        .spawn(move || {
+            let result = reply
+                .recv_timeout(Duration::from_secs(35))
+                .map_err(|_| "Control request timed out. Retry with the same request ID.".into());
+            remove_pending(&waiter_inner, &waiter_id);
+            write_response(&mut waiter_stream, result);
+        });
+    if spawned.is_err() {
+        remove_pending(inner, &id);
+        write_response(&mut stream, Err(listener::BUSY_ERROR.into()));
+    }
+}
+
+fn remove_pending(inner: &Arc<Mutex<Inner>>, id: &str) {
+    if let Ok(mut host) = inner.lock() {
+        host.pending.remove(id);
+    }
 }
 
 fn conversation_ui_window(
@@ -1445,19 +1494,32 @@ pub(crate) fn start_workspace_owner(
     let worker_hash = operation_hash.to_owned();
     let worker_issuer = issuer.clone();
     std::thread::spawn(move || {
+        // A cancelled, completed or re-keyed operation has no pending entry; stop probing then.
+        let still_pending = || {
+            worker_app
+                .state::<ControlHost>()
+                .inner
+                .lock()
+                .is_ok_and(|host| host.pending.contains_key(&worker_id))
+        };
         let allowed =
             crate::conversation_tools_bridge::workspace_operation_owner::wait_for_authority(
                 || {
-                    crate::conversation_tools_bridge::workspace_operation_owner::authorized(
-                        &worker_issuer,
-                        &worker_thread,
-                        &request,
-                        &worker_hash,
-                    )
-                    .unwrap_or(false)
+                    use crate::conversation_tools_bridge::workspace_operation_owner::{
+                        authorized, AuthorityProbe,
+                    };
+                    if !still_pending() {
+                        return AuthorityProbe::Gone;
+                    }
+                    // A probe error (Host changed, malformed reply) fails closed.
+                    match authorized(&worker_issuer, &worker_thread, &request, &worker_hash) {
+                        Ok(true) => AuthorityProbe::Granted,
+                        Ok(false) => AuthorityProbe::Waiting,
+                        Err(_) => AuthorityProbe::Gone,
+                    }
                 },
-                || std::thread::sleep(Duration::from_millis(100)),
-                300,
+                std::thread::sleep,
+                Duration::from_secs(30),
             );
         let current = validate_assistant_source(&worker_app, &worker_thread, &worker_environment);
         let same_source = current.is_ok_and(|(label, owner)| {

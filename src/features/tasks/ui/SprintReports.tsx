@@ -1,5 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocale, useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { BarChart, LineChart, type LineChartDatum } from "../../../shared/ui/Charts";
@@ -15,6 +15,8 @@ import { sprintProjectKey, type SprintReport, type SprintTotals } from "../model
 import type { SprintBoardController } from "../model/sprintClient";
 import { SprintDataTable, SprintKpi } from "./SprintReportParts";
 import { SprintStatusBadge } from "./SprintStatusBadge";
+import { useMinuteNow } from "../../../shared/hooks/useMinuteNow";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import "./sprints.css";
 
 const sumTotals = (rows: readonly SprintTotals[]): SprintTotals =>
@@ -52,6 +54,9 @@ export function SprintReports({
   const t = useT();
   const locale = useLocale();
   const [refresh, setRefresh] = useState(0);
+  // The Refresh button is an explicit action: its failure is always shown, while a
+  // passing disconnect during an automatic read stays with the shared connection notice.
+  const manualRead = useRef(false);
   // The answer belongs to the inputs it was read for; any other key starts empty
   // and loading, with no reset pass after render.
   const [answer, setAnswer] = useState<{
@@ -60,9 +65,8 @@ export function SprintReports({
     history: SprintReport[];
     error: string | null;
   } | null>(null);
-  // Source freshness is measured from this time: when the report arrived, then
-  // every half minute while it can still go stale.
-  const [now, setNow] = useState(() => Date.now());
+  // Source freshness is measured against the shared minute clock, which pauses while hidden.
+  const now = useMinuteNow();
   const revision = board.sprints.map((sprint) => `${sprint.id}:${sprint.revision}`).join("|");
   const sourceRevision = board.sources
     .map((source) => `${source.environmentId}:${source.cursor}`)
@@ -119,16 +123,20 @@ export function SprintReports({
     ]).then(
       ([selected, reports]) => {
         if (cancelled) return;
-        setNow(Date.now());
+        manualRead.current = false;
         setAnswer({ key: readKey, report: selected, history: reports, error: null });
       },
       (reason) => {
         if (cancelled) return;
+        const explicit = manualRead.current;
+        manualRead.current = false;
         setAnswer({
           key: readKey,
           report: null,
           history: [],
-          error: reason instanceof Error ? reason.message : String(reason),
+          error: explicit
+            ? presentRemoteError(reason, { explicit: true })
+            : (presentRemoteError(reason) ?? null),
         });
       },
     );
@@ -143,11 +151,6 @@ export function SprintReports({
   const error = current?.error ?? null;
   const loading = board.supported && !current;
   const staleCheck = !!report && !report.frozen;
-  useEffect(() => {
-    if (!staleCheck) return;
-    const timer = setInterval(() => setNow(Date.now()), 30_000);
-    return () => clearInterval(timer);
-  }, [staleCheck]);
   const visibleKey = (key: string) =>
     allowed.has(key) && (!projectKey || key === projectKey) && matchesEnvironment(key);
   const totalsFor = (value: SprintReport) =>
@@ -314,7 +317,10 @@ export function SprintReports({
             variant="ghost"
             startIcon={<RefreshCw className="icon-xs" />}
             loading={loading}
-            onClick={() => setRefresh((value) => value + 1)}
+            onClick={() => {
+              manualRead.current = true;
+              setRefresh((value) => value + 1);
+            }}
           >
             {t("Refresh")}
           </Button>

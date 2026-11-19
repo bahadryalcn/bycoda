@@ -202,6 +202,15 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
     selectedProvider && orderedHarnesses.includes(selectedProvider)
       ? selectedProvider
       : (orderedHarnesses[0] ?? null);
+  // A provider's detail mounts when first selected and then stays mounted (hidden) so its path
+  // draft and pending inspection survive switching; providers never opened are not mounted.
+  const [openedProviders, setOpenedProviders] = useState<HarnessId[]>([]);
+  if (activeProvider && !openedProviders.includes(activeProvider)) {
+    setOpenedProviders([...openedProviders, activeProvider]);
+  }
+  const detailProviders = orderedHarnesses.filter(
+    (harness) => harness === activeProvider || openedProviders.includes(harness),
+  );
 
   useEffect(() => {
     if (accountBusy) return;
@@ -484,8 +493,8 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
                         signInCompleted={standaloneSignIn === activeProvider}
                         available={isHarnessAvailable(activeProvider)}
                       />
-                      {/* Every provider's CLI state stays mounted so path drafts survive switching. */}
-                      {orderedHarnesses.map((harness) => (
+                      {/* Opened providers keep their CLI state mounted so path drafts survive switching. */}
+                      {detailProviders.map((harness) => (
                         <div key={harness} hidden={activeProvider !== harness}>
                           <ProviderStatusGroup
                             id={settingDomId(`cli-path-${harness}`)}
@@ -515,7 +524,7 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
                     onBusyChange={setAccountBusy}
                     onStandaloneSignIn={setStandaloneSignIn}
                   />
-                  {orderedHarnesses.map((harness) => (
+                  {detailProviders.map((harness) => (
                     <div
                       key={harness}
                       className="provider-cli-panel"

@@ -42,6 +42,18 @@ export function isAbsolutePath(path: string): boolean {
   return /^([A-Za-z]:[\\/]|\\\\|\/)/.test(path);
 }
 
+export type FolderPlatform = "win32" | "darwin" | "linux";
+
+const FOLDER_EXAMPLES: Record<FolderPlatform, string> = {
+  win32: "D:\\Models",
+  darwin: "/Users/you/Models",
+  linux: "/home/you/Models",
+};
+
+export function folderExample(platform: FolderPlatform | undefined): string | undefined {
+  return platform === undefined ? undefined : FOLDER_EXAMPLES[platform];
+}
+
 export function formatPorts(ports: readonly number[]): string {
   return ports.join(", ");
 }

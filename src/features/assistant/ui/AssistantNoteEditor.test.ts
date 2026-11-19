@@ -104,7 +104,7 @@ it("freezes both source and document editing after an uncertain save without dis
   expect(onClose).not.toHaveBeenCalled();
   await act(async () => button("Document").click());
   await act(async () =>
-    host.querySelector<HTMLButtonElement>('[aria-label="Edit note block"]')!.click(),
+    host.querySelector<HTMLButtonElement>("[data-note-block-edit]")!.click(),
   );
   expect(host.querySelector("[data-note-preview] .cm-editor")).toBeNull();
   expect(

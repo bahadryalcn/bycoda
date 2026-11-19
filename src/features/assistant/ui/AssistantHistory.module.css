@@ -58,7 +58,7 @@
 .empty:empty {
   padding-block: 0;
 }
-@media (max-width: 540px) {
+@container assistant-room (max-width: 540px) {
   .event {
     grid-template-columns: 4.5rem minmax(0, 1fr) auto;
   }

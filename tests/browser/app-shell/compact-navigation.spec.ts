@@ -239,7 +239,7 @@ test("workspace picker uses spare header width before clipping names", async ({
   }
   await page.getByRole("tab", { name: /^Sessions/ }).click();
   await header.getByRole("button", { name: "Search sessions", exact: true }).click();
-  const search = header.getByPlaceholder("Search conversations...");
+  const search = header.getByPlaceholder("Search sessions…");
   await expect(search).toBeVisible();
   await search.fill("retained query");
   for (const pane of ["wide", "narrow"]) {
@@ -568,17 +568,17 @@ test("workspace header keeps location before history and project controls", asyn
     const titleFrame = header.locator("[data-pane-header-heading]");
     const workspacePane = page.locator('[data-side-pane="workspace"]');
     const resize = page.getByRole("separator", { name: "Resize sidebar", exact: true });
-    const newSession = header.getByRole("button", { name: "New Session", exact: true });
+    const newSession = header.getByRole("button", { name: "New session", exact: true });
     if (project) {
       await page.setViewportSize({ width: 1280, height: 800 });
       await resize.press("Enter");
       await expect(newSession).toBeVisible({ timeout: 5_000 });
-      await expect(newSession.getByText("New Session", { exact: true })).toBeHidden();
+      await expect(newSession.getByText("New session", { exact: true })).toBeHidden();
       await newSession.press("Enter");
       await expect(page.getByLabel("Selected action")).toHaveText("New session");
       await header.getByRole("button", { name: "More actions", exact: true }).click();
       await page.getByRole("menuitem", { name: "Search sessions", exact: true }).click();
-      const search = header.getByPlaceholder("Search conversations...");
+      const search = header.getByPlaceholder("Search sessions…");
       await expect(search).toBeFocused();
       await expect(newSession).toBeInViewport();
       const actionBounds = (await newSession.boundingBox())!;
@@ -673,7 +673,7 @@ test("workspace header keeps location before history and project controls", asyn
             previousRight = bounds.x + bounds.width;
           }
           if (project) {
-            const label = newSession.getByText("New Session", { exact: true });
+            const label = newSession.getByText("New session", { exact: true });
             const showLabel = pane === "wide" && width === 1280;
             if (showLabel) await expect(label).toBeVisible();
             else await expect(label).toBeHidden();

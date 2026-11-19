@@ -1,3 +1,5 @@
+/* Upstream Arc token reference. Not imported by the app (see docs/reference/arc-ui.md):
+   its root theme attributes, neutral palette and global focus outline do not apply. */
 :root {
   color-scheme: light;
   --neutral-0: var(--palette-oklch_100pct_0_0);

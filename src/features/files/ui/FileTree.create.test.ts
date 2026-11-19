@@ -78,7 +78,9 @@ const entry = (path: string, isDir = false): FsEntry => ({
 const row = (path: string) =>
   container.querySelector<HTMLButtonElement>(`[role="treeitem"][title="${cwd}/${path}"]`);
 const nameInput = () =>
-  container.querySelector<HTMLInputElement>('input[aria-label^="Type file name"]');
+  container.querySelector<HTMLInputElement>(
+    'input[aria-label="File name"], input[aria-label="Folder name"]',
+  );
 const header = (action: string) =>
   container.querySelector<HTMLButtonElement>(`[data-explorer-action="${action}"]`)!;
 const nameRowDepth = () => {
@@ -200,6 +202,17 @@ describe("Explorer create target", () => {
     expect(created).toEqual([{ parent: cwd, name: "new.ts", isDir: false }]);
   });
 
+  it("names a new folder field Folder name, with the key hint only in its description", async () => {
+    await mount(null);
+    await act(async () => header("new-folder").click());
+    expect(nameInput()?.getAttribute("aria-label")).toBe("Folder name");
+    const described = (nameInput()?.getAttribute("aria-describedby") ?? "")
+      .split(" ")
+      .map((id) => document.getElementById(id)?.textContent ?? "")
+      .join(" ");
+    expect(described).toContain("Press Enter to confirm or Escape to cancel.");
+  });
+
   it("creates beside the selected file, at its depth, from the header", async () => {
     await mount("src/deep.ts", ["src"]);
     await act(async () => header("new-file").click());
@@ -238,7 +251,7 @@ describe("Explorer create target", () => {
   it("context menu on a nested file creates in that file's parent", async () => {
     await mount(null, ["src", "src/nested"]);
     await contextMenu(row("src/nested/leaf.ts")!);
-    await pick("New Folder");
+    await pick("New folder");
     expect(container.querySelector("[data-name-caption]")?.textContent).toBe(
       "New folder in nested",
     );
@@ -259,7 +272,7 @@ describe("Explorer create target", () => {
     type("r1.ts");
     await enter();
     await contextMenu(container.querySelector('[role="tree"]')!);
-    await pick("New Folder");
+    await pick("New folder");
     type("r2");
     await enter();
     expect(created).toEqual([
@@ -274,7 +287,7 @@ describe("Explorer create target", () => {
     const items = [...document.querySelectorAll('[role="menuitem"]')];
     expect(items[0].textContent).toContain("New File");
     expect(items[0].textContent).toContain("In src");
-    expect(items[1].textContent).toContain("New Folder");
+    expect(items[1].textContent).toContain("New folder");
   });
 });
 

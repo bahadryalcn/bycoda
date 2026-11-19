@@ -44,6 +44,7 @@ vi.mock("../../../shared/ui/Popover", () => ({
 import { ModelControlPills, ModelPicker, preloadModelPicker } from "./ModelPicker";
 import { ModelSourceContext, type ModelSource } from "./modelSource";
 import { renameProviderAccount, saveProviderAccount } from "../../providers/model/providerAccounts";
+import { setLanguagePreference } from "../../../shared/i18n";
 import {
   resetDisabledModels,
   resetHarnessModelOverlays,
@@ -70,6 +71,7 @@ afterEach(async () => {
   resetHarnessModelOverlays();
   container.remove();
   vi.unstubAllGlobals();
+  await setLanguagePreference("en");
 });
 
 const toggle = (id: string, value: string) => ({
@@ -509,6 +511,37 @@ describe("model picker unsupported Reasoning and Fast", () => {
     expect(container.textContent).not.toContain("Reasoning");
     await act(async () => pill.click());
     expect(onSettingsChange).toHaveBeenCalledWith({ fast: "true" });
+  });
+
+  it("localizes the toggle pill name and its On/Off state in the active language", async () => {
+    await setLanguagePreference("tr");
+    setHarnessModels("cursor", [
+      {
+        id: "cursor:fast-only",
+        harness: "cursor",
+        name: "Fast only",
+        settings: [toggle("fast", "false")],
+      },
+    ]);
+    const render = (values: Record<string, string>) =>
+      act(async () =>
+        root.render(
+          createElement(ModelControlPills, {
+            harness: "cursor",
+            model: "cursor:fast-only",
+            values,
+            onSettingsChange: vi.fn(),
+          }),
+        ),
+      );
+    await render({});
+    const off = container.querySelector<HTMLButtonElement>('button[aria-pressed="false"]')!;
+    expect(off.getAttribute("aria-label")).toBe("Hızlı: Kapalı");
+    expect(off.textContent).toContain("Hızlı");
+    await render({ fast: "true" });
+    const on = container.querySelector<HTMLButtonElement>('button[aria-pressed="true"]')!;
+    expect(on.getAttribute("aria-label")).toBe("Hızlı: Açık");
+    expect(container.textContent).not.toContain("Fast");
   });
 
   it("shows Reasoning and Fast on the trigger when the model supports both", async () => {

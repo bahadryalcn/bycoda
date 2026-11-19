@@ -52,12 +52,27 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function checkbox(label: string): HTMLInputElement | HTMLButtonElement {
-  const input = container.querySelector<HTMLInputElement | HTMLButtonElement>(
-    `input[aria-label="${label}"], input[aria-label^="${label} ("], button[role="switch"][aria-label="${label}"], button[role="switch"][aria-label^="${label} ("]`,
+// Category switches are named by their category; the project is the legend of their group.
+function categoryControl(label: string): HTMLInputElement | HTMLButtonElement | null {
+  const [category, project] = label.split(" for ");
+  if (!project) {
+    return container.querySelector<HTMLInputElement>(
+      `input[aria-label="${label}"], input[aria-label^="${label} ("]`,
+    );
+  }
+  const group = [...container.querySelectorAll("fieldset")].find((fieldset) =>
+    fieldset.querySelector("legend")?.textContent?.startsWith(`${project} (`),
   );
-  expect(input, `Missing membership control: ${label}`).not.toBeNull();
-  return input!;
+  return (
+    [...(group?.querySelectorAll<HTMLButtonElement>('button[role="switch"]') ?? [])].find(
+      (button) => button.textContent?.trim() === category,
+    ) ?? null
+  );
+}
+function checkbox(label: string): HTMLInputElement | HTMLButtonElement {
+  const control = categoryControl(label);
+  expect(control, `Missing membership control: ${label}`).not.toBeNull();
+  return control!;
 }
 function checked(control: HTMLInputElement | HTMLButtonElement) {
   return control instanceof HTMLInputElement
@@ -134,7 +149,7 @@ it("offers only issue notifications for a Linear project", async () => {
   act(() => categoriesButton("Roadmap").click());
   const issue = checkbox("Issues and Linear tasks for Roadmap");
   expect(
-    issue.closest("fieldset")?.querySelectorAll('[role="switch"][aria-label*=" for Roadmap ("]'),
+    issue.closest("fieldset")?.querySelectorAll('[role="switch"]'),
   ).toHaveLength(1);
   act(() => issue.click());
   expect(loadNotificationPreferences()["linear:project:roadmap"]?.disabled).toEqual(["issues"]);
@@ -158,10 +173,8 @@ it("keeps local projects while offering only local notification categories", asy
   expect(checked(checkbox("Agent finished for fun"))).toBe(true);
   expect(checked(checkbox("Agent approvals and questions for fun"))).toBe(true);
   expect(checked(checkbox("Reminders for fun"))).toBe(true);
-  expect(
-    container.querySelector('input[aria-label="Pull requests / Merge requests for fun"]'),
-  ).toBeNull();
-  expect(container.querySelector('input[aria-label="Issues and Linear tasks for fun"]')).toBeNull();
+  expect(categoryControl("Pull requests / Merge requests for fun")).toBeNull();
+  expect(categoryControl("Issues and Linear tasks for fun")).toBeNull();
 });
 
 it("discovers recent projects and focuses the project requested by a quick action", async () => {
@@ -185,34 +198,39 @@ it("discovers recent projects and focuses the project requested by a quick actio
       }),
     ),
   );
-  expect(checked(checkbox("Agent finished for newwork"))).toBe(true);
+  expect(container.querySelector('[aria-label^="Agent finished for newwork ("]')).toBeNull();
   const target = checkbox("Agent finished for newprivate").closest("fieldset");
   expect(document.activeElement).toBe(target);
   expect(categoriesButton("newprivate").getAttribute("aria-expanded")).toBe("true");
   expect(categoriesButton("newwork").getAttribute("aria-expanded")).toBe("false");
 });
 
-it("keeps projects collapsed until opened and preserves choices when switching projects", async () => {
+it("mounts categories only for the expanded project and preserves choices when switching projects", async () => {
   await act(async () => root.render(createElement(ProjectNotificationSettings, { cwd: "" })));
   const personal = categoriesButton("me/private");
   const work = categoriesButton("work/app");
-  const personalPanel = document.getElementById(personal.getAttribute("aria-controls")!)!;
-  const workPanel = document.getElementById(work.getAttribute("aria-controls")!)!;
-  expect(personalPanel.hidden).toBe(true);
-  expect(workPanel.hidden).toBe(true);
+  const categorySwitch = (project: string) =>
+    container.querySelector(`[aria-label^="Issues and Linear tasks for ${project} ("]`);
+  expect(personal.hasAttribute("aria-controls")).toBe(false);
+  expect(work.hasAttribute("aria-controls")).toBe(false);
+  expect(categorySwitch("me/private")).toBeNull();
+  expect(categorySwitch("work/app")).toBeNull();
 
   act(() => personal.click());
-  expect(personalPanel.hidden).toBe(false);
+  const personalPanelId = personal.getAttribute("aria-controls")!;
+  expect(document.getElementById(personalPanelId)).not.toBeNull();
+  expect(work.hasAttribute("aria-controls")).toBe(false);
   act(() => checkbox("Issues and Linear tasks for me/private").click());
   expect(personal.textContent).toContain("5 categories");
   act(() => work.click());
-  expect(personalPanel.hidden).toBe(true);
-  expect(workPanel.hidden).toBe(false);
+  expect(document.getElementById(personalPanelId)).toBeNull();
+  expect(categorySwitch("me/private")).toBeNull();
+  expect(checked(checkbox("Issues and Linear tasks for work/app"))).toBe(true);
   act(() => personal.click());
   expect(checked(checkbox("Issues and Linear tasks for me/private"))).toBe(false);
   act(() => personal.click());
-  expect(personalPanel.hidden).toBe(true);
-  expect(workPanel.hidden).toBe(true);
+  expect(categorySwitch("me/private")).toBeNull();
+  expect(categorySwitch("work/app")).toBeNull();
 });
 
 it("mutes several selected projects without changing another project's notifications", async () => {
@@ -238,7 +256,11 @@ it("mutes several selected projects without changing another project's notificat
   act(() => checkbox("Select me/other").click());
   const bulk = container.querySelector('[aria-label="Mute selected projects"]');
   expect(bulk).not.toBeNull();
-  act(() => bulk!.querySelector<HTMLButtonElement>('[aria-label="Mute notifications"]')!.click());
+  act(() =>
+    [...bulk!.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "Mute")!
+      .click(),
+  );
   const eightHours = [...document.querySelectorAll('[role="menuitem"]')].find((button) =>
     button.textContent?.startsWith("8 hours ("),
   );
@@ -263,8 +285,8 @@ it.each(["manual", "expiry"])(
       disabled: ["issues"],
     });
     await act(async () => root.render(createElement(ProjectNotificationSettings, { cwd: "" })));
-    const project = checkbox("Issues and Linear tasks for me/private").closest("fieldset")!;
     act(() => categoriesButton("me/private").click());
+    const project = categoriesButton("me/private").closest("fieldset")!;
     expect(categoriesButton("me/private").textContent).toContain("Muted");
     const pr = checkbox("Pull requests / Merge requests for me/private");
     const description = document.getElementById(pr.getAttribute("aria-describedby") ?? "");
@@ -276,7 +298,7 @@ it.each(["manual", "expiry"])(
     act(() => checkbox("Reminders for me/private").click());
     expect(categoriesButton("me/private").textContent).toContain("Muted");
     const resume = [...project.querySelectorAll("button")].find(
-      (button) => button.getAttribute("aria-label") === "Resume notifications",
+      (button) => button.textContent === "Resume notifications",
     );
     expect(resume).toBeInstanceOf(HTMLButtonElement);
     if (resumeMode === "manual") {
@@ -296,7 +318,7 @@ it.each(["manual", "expiry"])(
 
 it("dismisses the mute menu and custom date picker without changing preferences", async () => {
   await act(async () => root.render(createElement(ProjectNotificationSettings, { cwd: "" })));
-  const project = checkbox("Issues and Linear tasks for me/private").closest("fieldset")!;
+  const project = categoriesButton("me/private").closest("fieldset")!;
   const trigger = project.querySelector<HTMLButtonElement>('[aria-label="Mute notifications"]')!;
   act(() => trigger.click());
   expect(trigger.getAttribute("aria-expanded")).toBe("true");
@@ -345,4 +367,39 @@ it("shows unreadable saved choices as unavailable, pauses edits and recovers on 
   expect(container.textContent).not.toContain("could not be read");
   expect(checkbox("Issues and Linear tasks for me/private").hasAttribute("disabled")).toBe(false);
   expect(mute.disabled).toBe(false);
+});
+
+it("names each category switch by its category and the list region without repeating the project", async () => {
+  await act(async () => root.render(createElement(ProjectNotificationSettings, { cwd: "" })));
+  act(() => categoriesButton("me/private").click());
+  expect(checkbox("Issues and Linear tasks for me/private").hasAttribute("aria-label")).toBe(false);
+  expect(container.querySelector('[role="region"]')?.getAttribute("aria-label")).toBe("Projects");
+});
+
+it("select-all under a search selects only the projects on screen", async () => {
+  await act(async () => root.render(createElement(ProjectNotificationSettings, { cwd: "" })));
+  const selectMode = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Select projects",
+  )!;
+  await act(async () => selectMode.click());
+  const search = container.querySelector<HTMLInputElement>(".project-notification-toolbar input")!;
+  const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+  await act(async () => {
+    setValue.call(search, "me/private");
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () =>
+    container.querySelector<HTMLInputElement>('input[aria-label="Select all shown"]')!.click(),
+  );
+  expect(container.textContent).toContain("1 selected");
+  await act(async () => {
+    setValue.call(search, "");
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(
+    checked(container.querySelector<HTMLInputElement>('input[aria-label="Select me/private (github.com)"]')!),
+  ).toBe(true);
+  expect(
+    checked(container.querySelector<HTMLInputElement>('input[aria-label="Select work/app (github.com)"]')!),
+  ).toBe(false);
 });

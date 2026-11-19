@@ -18,7 +18,7 @@ import {
   type BoardGoal,
 } from "./goalClient";
 import type { HostGoal, HostGoalInput } from "./hostGoals";
-import { TASK_AGENT_ERROR } from "./taskClient";
+import { taskClientErrors } from "./taskClientErrors";
 
 // Mock the entry the client imports: the model module sits in an import cycle, so spreading
 // its original can hand the client the real transport before the mock exists.
@@ -240,7 +240,7 @@ describe("goal client", () => {
     });
     expect(() =>
       hostGoalFromDraft({ ...draft, harness: "unknown" as never }, "id", ["p"], "p"),
-    ).toThrow(TASK_AGENT_ERROR);
+    ).toThrow(taskClientErrors.agent());
   });
 });
 

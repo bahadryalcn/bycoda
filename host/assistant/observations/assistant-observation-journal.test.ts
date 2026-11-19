@@ -317,3 +317,24 @@ it("expires retained records and reports a gap before any stale replay", async (
     (await store.db.prepare("SELECT COUNT(*) AS n FROM assistant_observation_events").get())?.n,
   ).toBe(0);
 });
+
+it("indexes the expiry lookup used by retention and keeps retained rows when upgrading", async () => {
+  const { store, journal } = await fixture();
+  const kept = await store.transaction(() => journal.append(event));
+  const plan = async (sql: string, ...args: unknown[]) =>
+    (await store.db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...args))
+      .map((row) => String(row.detail))
+      .join("\n");
+  const expiryLookup = "SELECT MAX(sequence) FROM assistant_observation_events WHERE expires_at<=?";
+  expect(await plan(expiryLookup, Date.now())).toContain("assistant_observation_expiry");
+
+  await store.db.exec("DROP INDEX assistant_observation_expiry");
+  const upgraded = new AssistantObservationJournal(store);
+  await upgraded.ready;
+  expect(await plan(expiryLookup, Date.now())).toContain("assistant_observation_expiry");
+  expect(
+    (await store.db.prepare("SELECT sequence FROM assistant_observation_events").all()).map(
+      (row) => Number(row.sequence),
+    ),
+  ).toEqual([kept.sequence]);
+});

@@ -29,7 +29,7 @@
 //! to the highlighter alike, one `char` to one `char`, so offsets in the folded
 //! text are offsets in the original.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::{Duration, Instant};
 
 use rusqlite::{params, Connection, OptionalExtension};
@@ -54,7 +54,8 @@ const MAX_BLOCK_CHARS: usize = 32 * 1024;
 const MAX_TOOL_BLOCK_CHARS: usize = 1024;
 /// Tool output is the bulk of a multi-megabyte transcript. It gets a budget per
 /// session so it can never crowd out the conversation text, which is always
-/// indexed.
+/// indexed. When a transcript exceeds it, the oldest tool blocks are the ones
+/// left out, so the latest activity stays searchable.
 const MAX_TOOL_CHARS_PER_SESSION: usize = 256 * 1024;
 const MAX_RESULT_SESSIONS: usize = 60;
 const MAX_HITS_PER_SESSION: usize = 5;
@@ -374,34 +375,76 @@ struct IndexedBlock {
     text: String,
 }
 
+/// Collects a session's indexed blocks in transcript order while keeping the
+/// tool text within [`MAX_TOOL_CHARS_PER_SESSION`]. Over budget, the oldest
+/// tool blocks are evicted (their text is freed at once), so memory stays
+/// bounded and the newest tool activity is what remains indexed. The newest
+/// tool block is always kept.
+#[derive(Default)]
+struct BlockCollector {
+    /// Transcript order; evicted tool blocks are `None` until `finish`.
+    slots: Vec<Option<IndexedBlock>>,
+    /// Slot indexes of the tool blocks still held, oldest first.
+    tool_slots: VecDeque<usize>,
+    tool_chars: usize,
+    live: usize,
+}
+
+impl BlockCollector {
+    fn is_full(&self) -> bool {
+        self.live >= MAX_BLOCKS_PER_SESSION
+    }
+
+    fn push(&mut self, block: &Value) {
+        let Some((indexed, count)) = extract_block(block) else {
+            return;
+        };
+        if indexed.role == "tool" {
+            self.tool_slots.push_back(self.slots.len());
+            self.tool_chars += count;
+            while self.tool_chars > MAX_TOOL_CHARS_PER_SESSION && self.tool_slots.len() > 1 {
+                let Some(oldest) = self.tool_slots.pop_front() else {
+                    break;
+                };
+                if let Some(evicted) = self.slots[oldest].take() {
+                    self.tool_chars -= evicted.text.chars().count();
+                    self.live -= 1;
+                }
+            }
+        }
+        self.slots.push(Some(indexed));
+        self.live += 1;
+    }
+
+    fn finish(self) -> Vec<IndexedBlock> {
+        self.slots.into_iter().flatten().collect()
+    }
+}
+
 #[cfg(test)]
 fn extract_blocks(blocks: &Value) -> Vec<IndexedBlock> {
     let Some(items) = blocks.as_array() else {
         return Vec::new();
     };
-    let mut out = Vec::new();
-    let mut tool_chars = 0usize;
+    let mut collector = BlockCollector::default();
     for block in items {
-        if out.len() >= MAX_BLOCKS_PER_SESSION {
+        if collector.is_full() {
             break;
         }
-        if let Some(value) = extract_block(block, &mut tool_chars) {
-            out.push(value);
-        }
+        collector.push(block);
     }
-    out
+    collector.finish()
 }
 
-fn extract_block(block: &Value, tool_chars: &mut usize) -> Option<IndexedBlock> {
+/// The indexed form of one block and its char count, or `None` when the block
+/// has no id, an unindexed role or no text.
+fn extract_block(block: &Value) -> Option<(IndexedBlock, usize)> {
     let role = block
         .get("role")
         .and_then(Value::as_str)
         .unwrap_or_default();
     let id = block.get("id").and_then(Value::as_str).unwrap_or_default();
-    if id.is_empty()
-        || !INDEXED_ROLES.contains(&role)
-        || (role == "tool" && *tool_chars >= MAX_TOOL_CHARS_PER_SESSION)
-    {
+    if id.is_empty() || !INDEXED_ROLES.contains(&role) {
         return None;
     }
     let max = if role == "tool" {
@@ -445,14 +488,14 @@ fn extract_block(block: &Value, tool_chars: &mut usize) -> Option<IndexedBlock> 
     if text.is_empty() {
         return None;
     }
-    if role == "tool" {
-        *tool_chars += count;
-    }
-    Some(IndexedBlock {
-        block_id: id.into(),
-        role: role.into(),
-        text,
-    })
+    Some((
+        IndexedBlock {
+            block_id: id.into(),
+            role: role.into(),
+            text,
+        },
+        count,
+    ))
 }
 
 fn may_continue(deadline: Option<Instant>, keep_going: &dyn Fn() -> bool) -> bool {
@@ -498,19 +541,144 @@ pub(super) fn forget_session(conn: &Connection, session_id: &str) -> rusqlite::R
     Ok(())
 }
 
-/// Replaces a session's index rows, unless the session changed since the blocks
-/// were read (then the next sync picks it up again). Returns whether it wrote.
-fn write_index(
+/// A session's index entry: its key and the `updated_at` and source version the
+/// stored rows cover.
+type IndexEntry = (i64, i64, i64);
+
+/// What the index stores for one session at the time it was read.
+struct StoredIndex {
+    entry: Option<IndexEntry>,
+    rows: HashMap<i64, (String, String, String)>,
+}
+
+/// Everything about replacing a session's rows that needs no writer lock: the
+/// block positions to remove and the folded text to insert. `entry` is the
+/// index entry the plan was computed against; [`apply_plan`] re-checks it under
+/// the lock, so a plan made from a superseded read is never applied.
+struct IndexPlan {
+    entry: Option<IndexEntry>,
+    /// Offsets (block positions) whose stored row is changed or no longer used.
+    removals: Vec<i64>,
+    /// Offsets into the block list, with the folded text of that block.
+    insertions: Vec<(usize, String)>,
+}
+
+enum Applied {
+    Wrote,
+    /// The session changed or the work was cancelled; the next sync retries it.
+    Declined,
+    /// The stored rows moved on since the plan was made; plan again.
+    Stale,
+}
+
+/// How often a plan is rebuilt when another writer changed the same session's
+/// rows in between, before the session is left for the next sync.
+const PLAN_ATTEMPTS: usize = 3;
+
+/// Reads a session's stored index rows (the entry first, so a row set that is
+/// newer than the entry can only fail the fence in [`apply_plan`], never pass
+/// it). `None` when the work was cancelled.
+fn read_stored_index(
+    conn: &Connection,
+    session_id: &str,
+    deadline: Option<Instant>,
+    keep_going: &dyn Fn() -> bool,
+) -> rusqlite::Result<Option<StoredIndex>> {
+    if !may_continue(deadline, keep_going) {
+        return Ok(None);
+    }
+    let entry: Option<IndexEntry> = conn
+        .query_row(
+            "SELECT key, source_updated_at, source_version FROM session_search_index
+              WHERE session_id = ?1",
+            params![session_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()?;
+    let mut stored = StoredIndex {
+        entry,
+        rows: HashMap::new(),
+    };
+    if let Some((key, _, _)) = entry {
+        let (low, high) = key_range(key);
+        let mut statement = conn.prepare(
+            "SELECT id, block_id, role, text FROM session_search_blocks
+                 WHERE id BETWEEN ?1 AND ?2",
+        )?;
+        let rows = statement.query_map(params![low, high], |row| {
+            Ok((row.get(0)?, (row.get(1)?, row.get(2)?, row.get(3)?)))
+        })?;
+        for row in rows {
+            if !may_continue(deadline, keep_going) {
+                return Ok(None);
+            }
+            let (id, value) = row?;
+            stored.rows.insert(id, value);
+        }
+    }
+    Ok(Some(stored))
+}
+
+/// Diffs the new blocks against the stored rows and folds the text that has to
+/// be written. Rows are keyed by block position, so an append or a grown last
+/// block leaves every earlier row identical; only rows whose stored text
+/// differs are rewritten, which is also what makes edits, removals and reorders
+/// land exactly as a full rebuild would. `None` when the work was cancelled.
+fn plan_index(
+    stored: StoredIndex,
+    blocks: &[IndexedBlock],
+    deadline: Option<Instant>,
+    keep_going: &dyn Fn() -> bool,
+) -> Option<IndexPlan> {
+    // Without an entry no rows exist, so the base never matches anything.
+    let low = stored.entry.map_or(0, |(key, _, _)| key_range(key).0);
+    let mut removals = Vec::new();
+    let mut insertions = Vec::new();
+    for (offset, block) in blocks.iter().enumerate() {
+        if !may_continue(deadline, keep_going) {
+            return None;
+        }
+        if let Some((block_id, role, text)) = stored.rows.get(&(low + offset as i64)) {
+            if *block_id == block.block_id && *role == block.role && *text == block.text {
+                continue;
+            }
+            removals.push(offset as i64);
+        }
+        insertions.push((offset, fold_text(&block.text)));
+    }
+    for id in stored
+        .rows
+        .keys()
+        .filter(|id| **id >= low + blocks.len() as i64)
+    {
+        if !may_continue(deadline, keep_going) {
+            return None;
+        }
+        removals.push(*id - low);
+    }
+    Some(IndexPlan {
+        entry: stored.entry,
+        removals,
+        insertions,
+    })
+}
+
+/// Writes a prepared plan in one transaction, unless the session changed since
+/// its blocks were read or the stored rows moved on since the plan was made.
+/// Only statements run here, so this is the part that holds the writer.
+#[allow(clippy::too_many_arguments)]
+fn apply_plan(
     conn: &Connection,
     session_id: &str,
     updated_at: i64,
     version: i64,
     blocks: &[IndexedBlock],
+    plan: &IndexPlan,
     deadline: Option<Instant>,
     keep_going: &dyn Fn() -> bool,
-) -> rusqlite::Result<bool> {
+) -> rusqlite::Result<Applied> {
     if !may_continue(deadline, keep_going) {
-        return Ok(false);
+        return Ok(Applied::Declined);
     }
     let tx = conn.unchecked_transaction()?;
     let current: bool = tx.query_row(
@@ -520,17 +688,21 @@ fn write_index(
         |row| row.get(0),
     )?;
     if !current {
-        return Ok(false);
+        return Ok(Applied::Declined);
     }
-    let key: Option<i64> = tx
+    let entry: Option<IndexEntry> = tx
         .query_row(
-            "SELECT key FROM session_search_index WHERE session_id = ?1",
+            "SELECT key, source_updated_at, source_version FROM session_search_index
+              WHERE session_id = ?1",
             params![session_id],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .optional()?;
-    let key = match key {
-        Some(key) => {
+    if entry != plan.entry {
+        return Ok(Applied::Stale);
+    }
+    let key = match entry {
+        Some((key, _, _)) => {
             tx.execute(
                 "UPDATE session_search_index SET source_updated_at=?2,source_version=?3 WHERE key=?1",
                 params![key, updated_at, version],
@@ -547,26 +719,7 @@ fn write_index(
         }
     };
     {
-        // Rows are keyed by block position, so an append or a grown last block
-        // leaves every earlier row identical; only rows whose stored text
-        // differs are rewritten, which is also what makes edits, removals and
-        // reorders land exactly as a full rebuild would.
-        let (low, high) = key_range(key);
-        let mut statement = tx.prepare(
-            "SELECT id, block_id, role, text FROM session_search_blocks
-                 WHERE id BETWEEN ?1 AND ?2",
-        )?;
-        let rows = statement.query_map(params![low, high], |row| {
-            Ok((row.get(0)?, (row.get(1)?, row.get(2)?, row.get(3)?)))
-        })?;
-        let mut existing: HashMap<i64, (String, String, String)> = HashMap::new();
-        for row in rows {
-            if !may_continue(deadline, keep_going) {
-                return Ok(false);
-            }
-            let (id, value) = row?;
-            existing.insert(id, value);
-        }
+        let (low, _) = key_range(key);
         let mut delete_block = tx.prepare("DELETE FROM session_search_blocks WHERE id = ?1")?;
         let mut delete_fts = tx.prepare("DELETE FROM session_search_fts WHERE rowid = ?1")?;
         let mut insert_block = tx.prepare(
@@ -575,30 +728,22 @@ fn write_index(
         )?;
         let mut insert_fts =
             tx.prepare("INSERT INTO session_search_fts (rowid, folded) VALUES (?1, ?2)")?;
-        for (offset, block) in blocks.iter().enumerate() {
+        for offset in &plan.removals {
             if !may_continue(deadline, keep_going) {
-                return Ok(false);
+                return Ok(Applied::Declined);
             }
-            let id = low + offset as i64;
-            if let Some((block_id, role, text)) = existing.get(&id) {
-                if *block_id == block.block_id && *role == block.role && *text == block.text {
-                    continue;
-                }
-                delete_block.execute(params![id])?;
-                delete_fts.execute(params![id])?;
-            }
-            insert_block.execute(params![id, block.block_id, block.role, block.text])?;
-            insert_fts.execute(params![id, fold_text(&block.text)])?;
-        }
-        for id in existing
-            .keys()
-            .filter(|id| **id >= low + blocks.len() as i64)
-        {
-            if !may_continue(deadline, keep_going) {
-                return Ok(false);
-            }
+            let id = low + offset;
             delete_block.execute(params![id])?;
             delete_fts.execute(params![id])?;
+        }
+        for (offset, folded) in &plan.insertions {
+            if !may_continue(deadline, keep_going) {
+                return Ok(Applied::Declined);
+            }
+            let block = &blocks[*offset];
+            let id = low + *offset as i64;
+            insert_block.execute(params![id, block.block_id, block.role, block.text])?;
+            insert_fts.execute(params![id, folded])?;
         }
     }
     tx.execute(
@@ -606,7 +751,38 @@ fn write_index(
         params![session_id, version],
     )?;
     tx.commit()?;
-    Ok(true)
+    Ok(Applied::Wrote)
+}
+
+/// Replaces a session's index rows on one connection: read, plan, apply. The
+/// production path runs the first two on a reader and only the last under the
+/// writer lock (see [`index_session`]). Returns whether it wrote.
+#[cfg(test)]
+fn write_index(
+    conn: &Connection,
+    session_id: &str,
+    updated_at: i64,
+    version: i64,
+    blocks: &[IndexedBlock],
+    deadline: Option<Instant>,
+    keep_going: &dyn Fn() -> bool,
+) -> rusqlite::Result<bool> {
+    for _ in 0..PLAN_ATTEMPTS {
+        let Some(stored) = read_stored_index(conn, session_id, deadline, keep_going)? else {
+            return Ok(false);
+        };
+        let Some(plan) = plan_index(stored, blocks, deadline, keep_going) else {
+            return Ok(false);
+        };
+        match apply_plan(
+            conn, session_id, updated_at, version, blocks, &plan, deadline, keep_going,
+        )? {
+            Applied::Wrote => return Ok(true),
+            Applied::Declined => return Ok(false),
+            Applied::Stale => {}
+        }
+    }
+    Ok(false)
 }
 
 fn es(error: rusqlite::Error) -> String {
@@ -659,8 +835,9 @@ fn prune_orphans(conn: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
-/// Indexes one session. The store lock is held only to read the blob and to
-/// write the rows, not while the JSON is parsed.
+/// Indexes one session. The writer lock is held only to run the prepared
+/// statements: the blob is read, the JSON parsed, the stored rows diffed and the
+/// text folded on a reader.
 fn index_session(
     store: &SessionStore,
     id: &str,
@@ -679,11 +856,10 @@ fn index_session(
     let Some(length) = length else {
         return Ok(false);
     };
-    let mut blocks = Vec::new();
-    let mut tool_chars = 0;
+    let mut collector = BlockCollector::default();
     if length >= 0 {
         let mut cursor = 0i64;
-        while cursor < length && blocks.len() < MAX_BLOCKS_PER_SESSION {
+        while cursor < length && !collector.is_full() {
             if !may_continue(deadline, keep_going) {
                 return Ok(false);
             }
@@ -717,17 +893,15 @@ fn index_session(
                     return Ok(false);
                 }
                 cursor = ordinal + 1;
+                // A damaged block is skipped so the session's other blocks stay
+                // searchable and the session is not retried forever.
                 match serde_json::from_str::<Value>(&raw) {
-                    Ok(value) => {
-                        if let Some(block) = extract_block(&value, &mut tool_chars) {
-                            blocks.push(block);
-                        }
-                    }
-                    Err(error) => {
-                        return Err(format!("Stored transcript could not be indexed: {error}"))
-                    }
+                    Ok(value) => collector.push(&value),
+                    Err(error) => log::warn!(
+                        "session search skipped unreadable block {ordinal} of session {id}: {error}"
+                    ),
                 }
-                if blocks.len() >= MAX_BLOCKS_PER_SESSION {
+                if collector.is_full() {
                     break;
                 }
             }
@@ -753,31 +927,54 @@ fn index_session(
             if !may_continue(deadline, keep_going) {
                 return Ok(false);
             }
-            let block: Value =
-                serde_json::from_str(&raw[start..end]).map_err(|error| error.to_string())?;
-            if let Some(block) = extract_block(&block, &mut tool_chars) {
-                blocks.push(block);
+            match serde_json::from_str::<Value>(&raw[start..end]) {
+                Ok(block) => collector.push(&block),
+                Err(error) => log::warn!(
+                    "session search skipped unreadable legacy block at byte {start} of session {id}: {error}"
+                ),
             }
-            if blocks.len() >= MAX_BLOCKS_PER_SESSION {
+            if collector.is_full() {
                 break;
             }
         }
     }
+    let blocks = collector.finish();
     if !may_continue(deadline, keep_going) {
         return Ok(false);
     }
-    let admission = match store.process_write_admission() {
-        Ok(admission) => admission,
-        Err(super::window_barrier::BarrierError::AdmissionClosed) => return Ok(false),
-        Err(error) => return Err(error.to_string()),
-    };
-    admission.finish((|| {
-        let conn = store.lock_conn()?;
-        write_index(
-            &conn, id, updated_at, version, &blocks, deadline, keep_going,
-        )
-        .map_err(es)
-    })())
+    for _ in 0..PLAN_ATTEMPTS {
+        // The stored rows are diffed and the text folded on a reader; the
+        // writer is taken only to run the resulting statements.
+        let stored = with_index_reader(store, |conn| {
+            read_stored_index(conn, id, deadline, keep_going).map_err(es)
+        })?;
+        let Some(stored) = stored else {
+            return Ok(false);
+        };
+        let Some(plan) = plan_index(stored, &blocks, deadline, keep_going) else {
+            return Ok(false);
+        };
+        let admission = match store.process_write_admission() {
+            Ok(admission) => admission,
+            Err(super::window_barrier::BarrierError::AdmissionClosed) => return Ok(false),
+            Err(error) => return Err(error.to_string()),
+        };
+        let applied = admission.finish((|| {
+            let conn = store.lock_conn()?;
+            apply_plan(
+                &conn, id, updated_at, version, &blocks, &plan, deadline, keep_going,
+            )
+            .map_err(es)
+        })())?;
+        match applied {
+            Applied::Wrote => return Ok(true),
+            Applied::Declined => return Ok(false),
+            Applied::Stale => {}
+        }
+    }
+    // Another writer kept changing this session's rows; it stays dirty and the
+    // next sync plans it again.
+    Ok(false)
 }
 
 /// Brings the index up to date, newest sessions first, until `deadline` passes
@@ -1748,6 +1945,155 @@ mod tests {
         assert!(search(&store, "oldneedle").sessions.is_empty());
     }
 
+    fn indexed_version(store: &SessionStore, id: &str) -> (i64, i64) {
+        let conn = store.lock_conn().unwrap();
+        let (updated_at, version): (i64, i64) = conn
+            .query_row(
+                "SELECT s.updated_at, r.version FROM sessions s
+                 JOIN session_search_source_revision r ON r.session_id=s.id WHERE s.id=?1",
+                params![id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        (updated_at, version)
+    }
+
+    #[test]
+    fn the_plan_is_made_without_a_connection_and_rewrites_only_changed_rows() {
+        let store = SessionStore::open_in_memory().unwrap();
+        {
+            let conn = store.lock_conn().unwrap();
+            insert_session_at(
+                &conn,
+                "s",
+                "/w",
+                "T",
+                &json!([
+                    message("a", "user", "alpha"),
+                    message("b", "assistant", "beta")
+                ]),
+                1000,
+            );
+        }
+        assert_eq!(sync_index(&store, None, &|| true).unwrap(), 0);
+        let stored = {
+            let conn = store.lock_conn().unwrap();
+            read_stored_index(&conn, "s", None, &|| true)
+                .unwrap()
+                .unwrap()
+        };
+        let grown = extract_blocks(&json!([
+            message("a", "user", "alpha"),
+            message("b", "assistant", "beta changed"),
+            message("c", "user", "gamma")
+        ]));
+        // No connection is involved: this is what runs outside the writer lock.
+        let plan = plan_index(stored, &grown, None, &|| true).unwrap();
+        assert_eq!(plan.removals, [1]);
+        let inserted: Vec<(usize, &str)> = plan
+            .insertions
+            .iter()
+            .map(|(offset, folded)| (*offset, folded.as_str()))
+            .collect();
+        assert_eq!(inserted, [(1, "beta changed"), (2, "gamma")]);
+    }
+
+    #[test]
+    fn a_plan_made_from_superseded_rows_is_refused_and_leaves_the_index_alone() {
+        let store = SessionStore::open_in_memory().unwrap();
+        {
+            let conn = store.lock_conn().unwrap();
+            insert_session_at(
+                &conn,
+                "s",
+                "/w",
+                "T",
+                &json!([message("a", "user", "first")]),
+                1000,
+            );
+        }
+        let (updated_at, version) = indexed_version(&store, "s");
+        let blocks = extract_blocks(&json!([message("a", "user", "first")]));
+        // Planned while the session had no index entry yet.
+        let plan = {
+            let conn = store.lock_conn().unwrap();
+            let stored = read_stored_index(&conn, "s", None, &|| true)
+                .unwrap()
+                .unwrap();
+            assert!(stored.entry.is_none());
+            plan_index(stored, &blocks, None, &|| true).unwrap()
+        };
+        // Another indexer publishes the same session before this plan is applied.
+        assert_eq!(sync_index(&store, None, &|| true).unwrap(), 0);
+        let conn = store.lock_conn().unwrap();
+        assert!(matches!(
+            apply_plan(&conn, "s", updated_at, version, &blocks, &plan, None, &|| true).unwrap(),
+            Applied::Stale
+        ));
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM session_search_blocks", [], |row| row
+                .get::<_, i64>(0))
+            .unwrap(),
+            1
+        );
+        // Planning again against the published rows converges without rewrites.
+        let stored = read_stored_index(&conn, "s", None, &|| true)
+            .unwrap()
+            .unwrap();
+        let plan = plan_index(stored, &blocks, None, &|| true).unwrap();
+        assert!(plan.removals.is_empty() && plan.insertions.is_empty());
+        assert!(matches!(
+            apply_plan(&conn, "s", updated_at, version, &blocks, &plan, None, &|| true).unwrap(),
+            Applied::Wrote
+        ));
+        drop(conn);
+        assert_eq!(search(&store, "first").sessions.len(), 1);
+    }
+
+    #[test]
+    fn a_plan_is_not_applied_to_a_session_outside_the_index_scope() {
+        let store = SessionStore::open_in_memory().unwrap();
+        {
+            let conn = store.lock_conn().unwrap();
+            insert_session_at(
+                &conn,
+                "s",
+                "/w",
+                "T",
+                &json!([message("a", "user", "scoped")]),
+                1000,
+            );
+        }
+        let blocks = extract_blocks(&json!([message("a", "user", "scoped")]));
+        let conn = store.lock_conn().unwrap();
+        let stored = read_stored_index(&conn, "s", None, &|| true)
+            .unwrap()
+            .unwrap();
+        let plan = plan_index(stored, &blocks, None, &|| true).unwrap();
+        // A session that became an inbox ask after the read must stay unindexed.
+        conn.execute("UPDATE sessions SET inbox_ask='ask' WHERE id='s'", [])
+            .unwrap();
+        let (updated_at_now, version_now) = conn
+            .query_row(
+                "SELECT s.updated_at, r.version FROM sessions s
+                 JOIN session_search_source_revision r ON r.session_id=s.id WHERE s.id='s'",
+                [],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+            )
+            .unwrap();
+        assert!(matches!(
+            apply_plan(&conn, "s", updated_at_now, version_now, &blocks, &plan, None, &|| true)
+                .unwrap(),
+            Applied::Declined
+        ));
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM session_search_blocks", [], |row| row
+                .get::<_, i64>(0))
+            .unwrap(),
+            0
+        );
+    }
+
     #[test]
     fn turkish_text_folds_to_the_same_tokens() {
         let folded = fold_text("İSPARTA ısparta Isparta çğöşü ÇĞÖŞÜ");
@@ -2017,6 +2363,47 @@ mod tests {
     }
 
     #[test]
+    fn one_unparseable_block_is_skipped_and_its_session_stays_searchable() {
+        let store = SessionStore::open_in_memory().unwrap();
+        {
+            let conn = store.lock_conn().unwrap();
+            insert_session(&conn, "mixed", "/w", "Mixed", &json!([]));
+            conn.execute(
+                "INSERT INTO session_block_state(session_id,revision,length) VALUES('mixed',1,3)",
+                [],
+            )
+            .unwrap();
+            let rows = [
+                (0, "a", json!({"id":"a","role":"user","text":"needle before"}).to_string()),
+                (1, "b", "{not json".to_string()),
+                (2, "c", json!({"id":"c","role":"assistant","text":"needle after"}).to_string()),
+            ];
+            for (ordinal, block_id, raw) in rows {
+                conn.execute(
+                    "INSERT INTO session_blocks(session_id,ordinal,block_id,block_json,revision)
+                     VALUES('mixed',?1,?2,?3,1)",
+                    params![ordinal, block_id, raw],
+                )
+                .unwrap();
+            }
+        }
+        assert_eq!(sync_index(&store, None, &|| true).unwrap(), 0);
+        let found = search_content(&store, &options("needle")).unwrap();
+        assert!(found.index_error.is_none());
+        assert_eq!(found.pending, 0);
+        assert_eq!(found.sessions.len(), 1);
+        let mut block_ids: Vec<&str> = found.sessions[0]
+            .hits
+            .iter()
+            .map(|hit| hit.block_id.as_str())
+            .collect();
+        block_ids.sort_unstable();
+        assert_eq!(block_ids, ["a", "c"]);
+        // The skipped session is marked fresh, so later passes do not re-fail on it.
+        assert_eq!(sync_index(&store, None, &|| true).unwrap(), 0);
+    }
+
+    #[test]
     fn background_failure_keeps_healthy_hits_and_retries_on_explicit_search_or_new_data() {
         let store = SessionStore::open_in_memory().unwrap();
         {
@@ -2178,6 +2565,92 @@ mod tests {
         assert!(tools * MAX_TOOL_BLOCK_CHARS >= MAX_TOOL_CHARS_PER_SESSION);
         assert!(tools < 400);
         assert!(extracted.iter().any(|b| b.block_id == "late"));
+    }
+
+    fn tool_block(id: &str, title: &str, filler: &str) -> Value {
+        json!({
+            "id": id, "role": "tool", "text": "",
+            "tool": { "title": title, "detail": filler }
+        })
+    }
+
+    #[test]
+    fn over_budget_tool_output_keeps_the_newest_blocks_in_transcript_order() {
+        let filler = "x ".repeat(MAX_TOOL_BLOCK_CHARS);
+        let mut blocks = vec![message("first", "user", "start")];
+        for index in 0..400 {
+            blocks.push(tool_block(&format!("t{index}"), "Run", &filler));
+            if index % 100 == 0 {
+                blocks.push(message(&format!("a{index}"), "assistant", "progress"));
+            }
+        }
+        let extracted = extract_blocks(&Value::Array(blocks));
+        let ids: Vec<&str> = extracted.iter().map(|b| b.block_id.as_str()).collect();
+        // Newest tool block survives, the oldest is the one left out.
+        assert!(ids.contains(&"t399"));
+        assert!(!ids.contains(&"t0"));
+        // Conversation text is never evicted, and order is the transcript's.
+        for id in ["first", "a0", "a100", "a200", "a300"] {
+            assert!(ids.contains(&id), "{id} missing");
+        }
+        let tool_positions: Vec<usize> = ids
+            .iter()
+            .filter(|id| id.starts_with('t'))
+            .map(|id| id[1..].parse().unwrap())
+            .collect();
+        assert!(tool_positions.windows(2).all(|pair| pair[0] + 1 == pair[1]));
+        // The kept tool text is still within the unchanged budget.
+        let kept: usize = extracted
+            .iter()
+            .filter(|b| b.role == "tool")
+            .map(|b| b.text.chars().count())
+            .sum();
+        assert!(kept <= MAX_TOOL_CHARS_PER_SESSION);
+        assert!(extracted
+            .iter()
+            .filter(|b| b.role == "tool")
+            .all(|b| b.text.chars().count() <= MAX_TOOL_BLOCK_CHARS));
+    }
+
+    #[test]
+    fn one_tool_block_larger_than_the_budget_still_indexes_the_newest() {
+        let mut collector = BlockCollector::default();
+        collector.push(&tool_block("old", "oldmarker", "a"));
+        collector.tool_chars = MAX_TOOL_CHARS_PER_SESSION + 10;
+        collector.push(&tool_block("new", "newmarker", "b"));
+        let ids: Vec<String> = collector.finish().into_iter().map(|b| b.block_id).collect();
+        assert_eq!(ids, ["new"]);
+    }
+
+    #[test]
+    fn search_finds_the_latest_tool_activity_of_a_long_session_within_its_scope() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let filler = "x ".repeat(MAX_TOOL_BLOCK_CHARS);
+        let mut blocks = vec![message("u", "user", "kick off")];
+        for index in 0..600 {
+            let title = match index {
+                0 => "Run oldestmarker".to_string(),
+                599 => "Run newestmarker".to_string(),
+                _ => "Run".to_string(),
+            };
+            blocks.push(tool_block(&format!("t{index}"), &title, &filler));
+        }
+        {
+            let conn = store.lock_conn().unwrap();
+            insert_session(&conn, "long", "/scoped", "Long", &Value::Array(blocks));
+        }
+        let found = search(&store, "newestmarker");
+        assert_eq!(found.sessions.len(), 1);
+        let hit = &found.sessions[0].hits[0];
+        assert_eq!((hit.block_id.as_str(), hit.role.as_str()), ("t599", "tool"));
+        assert!(search(&store, "oldestmarker").sessions.is_empty());
+        // The folder scope still applies to the newly reachable text.
+        let mut other = options("newestmarker");
+        other.cwds = vec!["/elsewhere".into()];
+        assert!(search_content(&store, &other).unwrap().sessions.is_empty());
+        let mut same = options("newestmarker");
+        same.cwds = vec!["/scoped".into()];
+        assert_eq!(search_content(&store, &same).unwrap().sessions.len(), 1);
     }
 
     #[test]

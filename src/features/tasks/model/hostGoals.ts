@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import {
   ModelRoutingItemChoiceSchema,
   type ModelRoutingItemChoice,
@@ -448,7 +449,7 @@ export function parseGoalPlan(text: string, allowedProjects: readonly string[]):
     raw = JSON.parse(block);
   } catch (error) {
     throw new Error(
-      `The plan is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+      `The plan is not valid JSON: ${errorText(error)}`,
     );
   }
   const list =

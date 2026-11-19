@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import { useFormat, useT } from "../../../shared/i18n";
 import { ActionHost } from "../../../shared/ui/ActionHost";
 import { Badge } from "../../../shared/ui/Badge";
@@ -6,16 +5,11 @@ import { Button } from "../../../shared/ui/Button";
 import { ClampText } from "../../../shared/ui/ClampText";
 import { Text } from "../../../shared/ui/Text";
 import type { OwnerRequestRow as Row } from "./useOwnerNotifications";
+import { usePresentationNow } from "./AgentClock";
 
-/** Remaining milliseconds, re-read every second until the deadline. */
+/** Remaining milliseconds until the deadline, on the shared presentation clock (display only). */
 function useRemaining(deadline: number): number {
-  const [now, setNow] = useState(Date.now);
-  // oxlint-disable-next-line bycoda/effect-names-its-sync -- one-second timer: the deadline is wall-clock time, so the label needs a ticking clock while mounted
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-  return deadline - now;
+  return deadline - usePresentationNow(true);
 }
 
 /**

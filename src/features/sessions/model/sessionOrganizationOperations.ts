@@ -472,8 +472,26 @@ function apply(
   return { folders, order };
 }
 
-const gestureSignatures = new Map<string, string>();
-const completedGestures = new Map<string, SessionOrganizationResult>();
+type GestureRecord = { signature: string; completed?: SessionOrganizationResult };
+// shortcut: 64 recent gestures bound memory; an older retry re-reads the native store ledger, upgrade to a persisted outcome if browser fixtures need exact replay after eviction.
+const MAX_RETAINED_GESTURES = 64;
+const gestures = new Map<string, GestureRecord>();
+
+/** Re-inserts the id as most recent and evicts the oldest records beyond the bound. */
+function retainGesture(gestureId: string, record: GestureRecord): void {
+  gestures.delete(gestureId);
+  gestures.set(gestureId, record);
+  while (gestures.size > MAX_RETAINED_GESTURES) {
+    const oldest = gestures.keys().next();
+    if (oldest.done) break;
+    gestures.delete(oldest.value);
+  }
+}
+
+/** Test seam: the number of gesture records currently retained. */
+export function retainedGestureCount(): number {
+  return gestures.size;
+}
 
 /** Read-only preflight; the actual transaction rechecks against fresh state. */
 export function previewOrganizationOperation(
@@ -489,17 +507,31 @@ export async function executeOrganizationOperation(
 ): Promise<SessionOrganizationResult> {
   const captured = structuredClone(operation);
   const signature = JSON.stringify(captured);
-  const previous = gestureSignatures.get(gestureId);
-  if (previous !== undefined && previous !== signature)
+  const retained = gestures.get(gestureId);
+  if (retained !== undefined && retained.signature !== signature)
     throw new Error("Organization gesture ID was reused with different input.");
-  gestureSignatures.set(gestureId, signature);
-  const completed = completedGestures.get(gestureId);
-  if (completed) return structuredClone(completed);
-  const result = await mutateSessionOrganization({
-    id: gestureId,
-    descriptor: captured,
-    apply: (state) => apply(state, captured),
-  });
-  if (result.state === "applied") completedGestures.set(gestureId, structuredClone(result));
+  if (retained?.completed) {
+    retainGesture(gestureId, retained);
+    return structuredClone(retained.completed);
+  }
+  retainGesture(gestureId, { signature });
+  let result: SessionOrganizationResult;
+  try {
+    result = await mutateSessionOrganization({
+      id: gestureId,
+      descriptor: captured,
+      apply: (state) => apply(state, captured),
+    });
+  } catch (error) {
+    // Cancel cleanup: a failed attempt keeps no record, so its id cannot pin memory.
+    gestures.delete(gestureId);
+    throw error;
+  }
+  retainGesture(
+    gestureId,
+    result.state === "applied"
+      ? { signature, completed: structuredClone(result) }
+      : { signature },
+  );
   return result;
 }

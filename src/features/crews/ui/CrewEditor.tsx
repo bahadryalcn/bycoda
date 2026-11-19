@@ -8,6 +8,7 @@ import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { Modal } from "../../../shared/ui/Modal";
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Plus } from "../../../shared/ui/icons";
 import {
   defaultCrewPolicy,
@@ -358,9 +359,13 @@ function ConnectedCrewEditor({
         {draft.agents.length ? (
           <div className="flex min-w-0 items-center gap-2">
             {unfinished ? (
-              <Text truncate className="min-w-0">
-                {t("Unfinished additions are kept until you add or discard them.")}
-              </Text>
+              <OverflowTooltip
+                label={t("Unfinished additions are kept until you add or discard them.")}
+              >
+                <Text truncate tabIndex={0} className="min-w-0">
+                  {t("Unfinished additions are kept until you add or discard them.")}
+                </Text>
+              </OverflowTooltip>
             ) : null}
             <Button
               variant="secondary"
@@ -539,7 +544,7 @@ function ConnectedCrewEditor({
             error={error}
             catalogError={data.catalogError}
             pending={pending}
-            onRetryCatalog={() => state.refetch().catch(() => {})}
+            onRetryCatalog={state.refreshCatalog}
             conflict={conflict ? (missing ? "missing" : "changed") : undefined}
             onKeepAsNew={() => {
               forgetCrewDraft(draftKey, draft.id);

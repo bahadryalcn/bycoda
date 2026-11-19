@@ -7,7 +7,9 @@ import {
   isShortcut,
   quickComposerShortcutLabel,
   quickComposerShortcutPreview,
+  recorderShortcutFromStored,
   shortcutFromKeyEvent,
+  storedShortcutFromRecorder,
 } from "./quickComposerShortcut";
 
 describe("quick composer shortcut", () => {
@@ -115,5 +117,26 @@ describe("quick composer shortcut", () => {
     expect(isShortcut("Option+KeyK")).toBe(true);
     expect(isGlobalShortcut("Option+KeyK")).toBe(false);
     expect(isGlobalShortcut("Control+Option+KeyK")).toBe(true);
+  });
+
+  it.each([
+    ["mac", "Command+KeyK", "mod+k"],
+    ["mac", "Control+Option+Shift+Digit2", "ctrl+alt+shift+2"],
+    ["other", "Control+KeyK", "mod+k"],
+    ["other", "Command+Option+Comma", "alt+meta+,"],
+    ["other", "Control+Enter", "mod+enter"],
+    ["other", "Control+F5", "mod+f5"],
+  ] as const)("converts between stored and recorder spellings on %s: %s <-> %s", (platform, stored, shared) => {
+    expect(recorderShortcutFromStored(stored, platform)).toBe(shared);
+    expect(storedShortcutFromRecorder(shared, platform)).toBe(stored);
+  });
+
+  it("refuses recorder chords that have no stored form", () => {
+    // A function key alone is a valid recording but not a valid stored chord.
+    expect(storedShortcutFromRecorder("f5", "other")).toBeNull();
+    expect(storedShortcutFromRecorder("shift+k", "other")).toBeNull();
+    expect(storedShortcutFromRecorder("mod+ö", "other")).toBeNull();
+    expect(recorderShortcutFromStored("", "other")).toBeNull();
+    expect(recorderShortcutFromStored("Hyper+KeyK", "other")).toBeNull();
   });
 });

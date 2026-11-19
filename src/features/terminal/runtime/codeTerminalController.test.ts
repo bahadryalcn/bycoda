@@ -143,3 +143,82 @@ it("uses matching native shell and captures bounded output plus real exit", asyn
   run.onOutput("a" + "\u0301".repeat(30_000));
   expect(controller.snapshot().output).toBe("");
 });
+
+it("does not notify listeners for an empty read with unchanged phase and error", async () => {
+  const empty = {
+    output: "",
+    cursor: 0,
+    truncated: false,
+    hasMore: false,
+    terminal: { state: "running", exitCode: null },
+  };
+  mocks.request
+    .mockResolvedValueOnce({ writable: true, profiles: [] })
+    .mockResolvedValueOnce({ id: "terminal", shell: "PowerShell" })
+    .mockResolvedValueOnce(empty)
+    .mockResolvedValueOnce(empty)
+    .mockResolvedValueOnce({ ...empty, output: "next", cursor: 4 });
+  const controller = createCodeTerminal(options);
+  await controller.start();
+  const listener = vi.fn();
+  controller.subscribe(listener);
+  const before = controller.snapshot();
+  await expect(controller.refresh()).resolves.toBe("idle");
+  expect(controller.snapshot()).toBe(before);
+  expect(listener).not.toHaveBeenCalled();
+  await expect(controller.refresh()).resolves.toBe("progress");
+  expect(controller.snapshot().output).toBe("next");
+  expect(listener).toHaveBeenCalledTimes(1);
+});
+
+it("reports failed reads once per distinct error and recovers in one notification", async () => {
+  mocks.request
+    .mockResolvedValueOnce({ writable: true, profiles: [] })
+    .mockResolvedValueOnce({ id: "terminal", shell: "PowerShell" })
+    .mockResolvedValueOnce({
+      output: "a",
+      cursor: 1,
+      truncated: false,
+      hasMore: false,
+      terminal: { state: "running", exitCode: null },
+    })
+    .mockRejectedValueOnce(new Error("offline"))
+    .mockRejectedValueOnce(new Error("offline"))
+    .mockResolvedValueOnce({
+      output: "b",
+      cursor: 2,
+      truncated: false,
+      hasMore: false,
+      terminal: { state: "running", exitCode: null },
+    });
+  const controller = createCodeTerminal(options);
+  await controller.start();
+  const listener = vi.fn();
+  controller.subscribe(listener);
+  await expect(controller.refresh()).resolves.toBe("failed");
+  await expect(controller.refresh()).resolves.toBe("failed");
+  expect(listener).toHaveBeenCalledTimes(1);
+  expect(controller.snapshot()).toMatchObject({ phase: "unknown", error: "offline" });
+  await expect(controller.refresh()).resolves.toBe("progress");
+  expect(listener).toHaveBeenCalledTimes(2);
+  expect(controller.snapshot()).toMatchObject({ phase: "running", output: "ab", error: undefined });
+});
+
+it("trims remote output at a grapheme boundary without losing order", async () => {
+  mocks.request
+    .mockResolvedValueOnce({ writable: true, profiles: [] })
+    .mockResolvedValueOnce({ id: "terminal", shell: "PowerShell" })
+    .mockResolvedValueOnce({
+      output: "x".repeat(29_999) + "é" + "tail",
+      cursor: 1,
+      truncated: false,
+      hasMore: false,
+      terminal: { state: "running", exitCode: null },
+    });
+  const controller = createCodeTerminal(options);
+  await controller.start();
+  const { output, truncated } = controller.snapshot();
+  expect(truncated).toBe(true);
+  expect(output.length).toBeLessThanOrEqual(30_000);
+  expect(output.endsWith("étail")).toBe(true);
+});

@@ -157,6 +157,14 @@ export class SharedQueueClient {
   hold(error: unknown) {
     this.emit(false, String(error).replace(/^Error: /, ""));
   }
+  /**
+   * A request of this queue has not answered in time. The queue stays loaded and its
+   * request keeps running (a late answer is still applied, and clears this reason);
+   * until then nothing counts the queue as settled, so nothing is sent from it.
+   */
+  noteStalled(message: string) {
+    this.emit(this.state.loaded, message);
+  }
   private emit(loaded = this.state.loaded, error?: string) {
     if (this.desired.status !== "paused") this.notice = undefined;
     this.state = {

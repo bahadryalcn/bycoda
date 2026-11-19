@@ -7,6 +7,7 @@ import { confirmInApp } from "../../../shared/model/appConfirm";
 import { InlineTextAction } from "../../../shared/ui/ActionHost";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { CollectionFooter, ContinuousList } from "../../../shared/ui/ContinuousList";
 import { CollectionRow } from "../../../shared/ui/CollectionRow";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -30,6 +31,7 @@ import {
   isMcpConnected,
   MCP_PROVIDER_LABELS,
   needsMcpSignIn,
+  scopeLabel,
   type McpConnection,
   type McpLoadingPolicy,
 } from "../model/mcp";
@@ -41,6 +43,7 @@ import {
   type McpEntryStatus,
 } from "../model/mcpCatalog";
 import {
+  describeMcpConfigWarnings,
   getCachedMcpSettings,
   invalidateMcpSettings,
   loadMcpSettings,
@@ -54,7 +57,6 @@ import {
   AddServerModal,
   PROVIDERS,
   scopeDescription,
-  scopeLabel,
   type Provider,
 } from "./McpAddServer";
 import {
@@ -171,6 +173,7 @@ function McpConnections({
   const [busy, setBusy] = useState("");
   const busyRef = useRef(false);
   const [error, setError] = useState(cached?.error ?? "");
+  const [configWarnings, setConfigWarnings] = useState(cached?.configWarnings ?? []);
   const [claudeError, setClaudeError] = useState(cached?.claudeError ?? "");
   const [claudeChecking, setClaudeChecking] = useState(cached?.claudeChecking ?? false);
   const [claudePartial, setClaudePartial] = useState(cached?.claudePartial ?? false);
@@ -185,6 +188,7 @@ function McpConnections({
   function applySnapshot(snapshot: McpSettingsSnapshot) {
     setServers(snapshot.servers);
     setError(snapshot.error);
+    setConfigWarnings(snapshot.configWarnings ?? []);
     setClaudeError(snapshot.claudeError);
     setClaudeChecking(snapshot.claudeChecking ?? false);
     setClaudePartial(snapshot.claudePartial ?? false);
@@ -406,7 +410,7 @@ function McpConnections({
       {filtersOpen ? (
         <Popover
           anchor={filterAnchor}
-          role="dialog"
+          kind="dialog"
           aria-label={t("Filter MCP servers")}
           width={360}
           onDismiss={() => setFiltersOpen(false)}
@@ -453,6 +457,14 @@ function McpConnections({
           {servers.length ? t("Showing the last successful result.") : undefined}
         </InlineError>
       ) : null}
+      {configWarnings.length ? (
+        <InlineError
+          details={describeMcpConfigWarnings(configWarnings)}
+          retry={{ onRetry: () => void refresh(), pending: loading }}
+        >
+          {t("Some MCP configuration files could not be read, so their servers are not listed.")}
+        </InlineError>
+      ) : null}
       {claudeError ? (
         <InlineError details={claudeError}>
           {t("Claude connection status unavailable.")}
@@ -475,7 +487,8 @@ function McpConnections({
             onReset={resetFilters}
             title={t("No MCP servers match your search.")}
           />
-        ) : (
+        ) : configWarnings.length ? null : (
+          // With unreadable files the warning above explains the empty list; "none configured" would be false.
           <EmptyState
             size="inline"
             context="list"
@@ -575,11 +588,13 @@ function McpConnections({
         <Row
           id="mcp-loading"
           label={t("Start MCP servers")}
-          description={[
-            t("When needed: a server starts the first time a session uses one of its tools."),
-            t("With every session: all servers start when a session opens."),
-            t("Open a server to start just that one with every session."),
-          ].join(" ")}
+          info={
+            <InfoPopover className="shrink-0">
+              <p>{t("When needed: a server starts the first time a session uses one of its tools.")}</p>
+              <p>{t("With every session: all servers start when a session opens.")}</p>
+              <p>{t("Open a server to start just that one with every session.")}</p>
+            </InfoPopover>
+          }
           disabled={!policy || hub.saving || !!hub.loading?.corrupt}
         >
           <SharedSelect

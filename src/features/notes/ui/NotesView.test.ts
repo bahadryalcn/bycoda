@@ -310,6 +310,31 @@ it("finds text beyond summaries with native search and retains the full selected
   expect(invoke.mock.calls.some(([command]) => command === "notes_list")).toBe(false);
 });
 
+it("does not rerun native body search when a list refresh brings the same notes", async () => {
+  vi.useFakeTimers();
+  stored = { ...stored, body: "Needle in body" };
+  invoke.mockImplementation(async (command: string, args?: { query: string }) => {
+    if (command === "notes_list_summaries") return [summarizeNote(stored)];
+    if (command === "notes_get") return stored;
+    if (command === "notes_search") return args?.query === "Needle" ? [stored.id] : [];
+    throw new Error(command);
+  });
+  await render();
+  const filter = container.querySelector<HTMLInputElement>('[aria-label="Filter notes"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(filter, "Needle");
+    filter.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => vi.advanceTimersByTimeAsync(150));
+  const searchCount = () =>
+    invoke.mock.calls.filter(([command]) => command === "notes_search").length;
+  const before = searchCount();
+  await act(async () => window.dispatchEvent(new Event(NOTES_CHANGED_EVENT)));
+  await act(async () => vi.advanceTimersByTimeAsync(150));
+  expect(searchCount()).toBe(before);
+  expect(container.querySelectorAll("button[data-note-id]")).toHaveLength(1);
+});
+
 it("shows a preloaded note immediately while refreshing in the background", async () => {
   await loadNotes();
   let finish!: (notes: Note[]) => void;
@@ -388,7 +413,7 @@ it("uses the searchable rail project picker when moving a note", async () => {
     "/work/Sixth",
     "/work/Active",
   ]);
-  const search = menu.querySelector<HTMLInputElement>('input[placeholder="Search projects..."]');
+  const search = menu.querySelector<HTMLInputElement>('input[placeholder="Search projects…"]');
   expect(search).not.toBeNull();
   expect(document.activeElement).toBe(search);
   await act(async () => {
@@ -499,6 +524,19 @@ it("restores a note's editor mode after returning to the library", async () => {
   expect(tab("Source").getAttribute("aria-selected")).toBe("true");
 });
 
+it("moves focus from the note title into the body on Enter instead of dropping it", async () => {
+  await render();
+  await act(async () => tab("Source").click());
+  const title = container.querySelector<HTMLInputElement>('[aria-label="Note title"]')!;
+  const editor = container.querySelector<HTMLElement>(".cm-content");
+  expect(editor).not.toBeNull();
+  await act(async () => title.focus());
+  const event = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+  await act(async () => title.dispatchEvent(event));
+  expect(event.defaultPrevented).toBe(true);
+  expect(document.activeElement).toBe(editor);
+});
+
 it("replaces regex matches with their groups in the note source", async () => {
   vi.useFakeTimers();
   stored = { ...stored, body: "item_1 and item_22\nItem_3" };
@@ -548,6 +586,30 @@ it("formats the selection from the toolbar and undoes it in one step", async () 
     undo(view);
   });
   expect(view.state.doc.toString()).toBe("make this bold");
+});
+
+it("keeps the formatting toolbar to one roving tab stop and keeps focus in the editor on press", async () => {
+  stored = { ...stored, body: "make this bold" };
+  await render();
+  await act(async () => tab("Source").click());
+  // Regression for #1190: arrows move through the commands, Tab reaches the toolbar once.
+  const toolbar = container.querySelector<HTMLElement>(
+    '[role="toolbar"][aria-label="Markdown formatting"]',
+  )!;
+  const buttons = [...toolbar.querySelectorAll<HTMLButtonElement>("button")];
+  expect(buttons.length).toBeGreaterThan(1);
+  expect(buttons.filter((button) => button.tabIndex === 0)).toHaveLength(1);
+  buttons[0]!.focus();
+  await act(async () => {
+    buttons[0]!.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }),
+    );
+  });
+  expect(document.activeElement).toBe(buttons[1]);
+  const bold = buttons.find((button) => button.getAttribute("aria-label")?.startsWith("Bold"))!;
+  const press = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
+  bold.dispatchEvent(press);
+  expect(press.defaultPrevented).toBe(true);
 });
 
 it("keeps image picker progress local and cancellation leaves the note unchanged", async () => {
@@ -611,6 +673,29 @@ it("adds a pasted image to the note at the caret", async () => {
   expect(invoke.mock.calls.filter(([command]) => command === "notes_image_path")).toHaveLength(1);
 });
 
+it("builds the Source editor on first reveal and keeps it, with its draft and undo, afterwards", async () => {
+  await render();
+  expect(tab("Document").getAttribute("aria-selected")).toBe("true");
+  // A note that is only read never constructs CodeMirror.
+  expect(container.querySelector("[data-note-editor]")).toBeNull();
+  expect(container.querySelector("[data-note-preview]")?.textContent).toContain("Keep this text.");
+  await act(async () => tab("Source").click());
+  const source = editorView();
+  expect(source.state.doc.toString()).toBe("Keep this text.");
+  await act(async () =>
+    source.dispatch({ changes: { from: source.state.doc.length, insert: " Draft." } }),
+  );
+  await act(async () => tab("Document").click());
+  expect(container.querySelector("[data-note-editor]")!.closest("[hidden]")).not.toBeNull();
+  await act(async () => tab("Split").click());
+  expect(editorView()).toBe(source);
+  expect(source.state.doc.toString()).toBe("Keep this text. Draft.");
+  await act(async () => {
+    undo(source);
+  });
+  expect(source.state.doc.toString()).toBe("Keep this text.");
+});
+
 it("updates the split preview while the source is edited", async () => {
   await render();
   await act(async () => tab("Split").click());
@@ -632,7 +717,7 @@ it("opens in the Document view and edits a block with formatting, preserving oth
   expect(tab("Document").getAttribute("aria-selected")).toBe("true");
   await act(async () => tab("Document").click());
   const edit = [
-    ...container.querySelectorAll<HTMLButtonElement>('button[aria-label="Edit note block"]'),
+    ...container.querySelectorAll<HTMLButtonElement>("button[data-note-block-edit]"),
   ][1];
   await act(async () => edit.click());
   const view = EditorView.findFromDOM(
@@ -646,9 +731,8 @@ it("opens in the Document view and edits a block with formatting, preserving oth
       .click(),
   );
   expect(view.state.doc.toString()).toBe("**Keep** this text.");
-  expect(
-    container.querySelector<HTMLElement>("[data-note-editor]")!.closest("[hidden]"),
-  ).not.toBeNull();
+  // Block editing in the Document view never builds the Source editor.
+  expect(container.querySelector("[data-note-editor]")).toBeNull();
   // Leaving block editing only returns to reading; the edit is saved by Ctrl+S/autosave.
   await act(async () =>
     [...container.querySelectorAll<HTMLButtonElement>("button")]
@@ -689,6 +773,8 @@ it("appends a separate block and invalidates preview ranges after a source edit"
     container.querySelector<HTMLElement>(".note-active-block .cm-editor")!,
   )!;
   await act(async () => block.dispatch({ changes: { from: 0, insert: "Second paragraph" } }));
+  // The first Split reveal builds the Source editor from the edited document.
+  await act(async () => tab("Split").click());
   expect(editorView().state.doc.toString()).toBe("Keep this text.\n\nSecond paragraph");
   await act(async () => editorView().dispatch({ changes: { from: 0, to: 4, insert: "Changed" } }));
   expect(container.querySelector(".note-active-block")).toBeNull();

@@ -7,6 +7,8 @@ import { useId, useRef, useState } from "react";
 import { formatNumber, t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
+import { InlineError } from "../../../shared/ui/InlineError";
+import { forEachConcurrent } from "../../../shared/lib/concurrent";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { RefreshCw, Lock } from "../../../shared/ui/icons";
 import { Switch } from "../../../shared/ui/Switch";
@@ -14,7 +16,7 @@ import { Group, Row, SettingsFeedback } from "../../../shared/ui/settings";
 import { useDecisionModels } from "../hooks/useDecisionModels";
 import type { DecisionModelsClient } from "../model/decisionModelsClient";
 import type { DecisionSource, DiscoveryCandidate } from "../model/decisionTypes";
-import { candidateSourceInput } from "../model/decisionView";
+import { candidateSourceInput, errorDetail } from "../model/decisionView";
 import { AddMenu, type AddPath } from "./AddMenu";
 import { ApiProviderDialog } from "./ApiProviderDialog";
 import { CustomEndpointDialog, type CustomPrefill } from "./CustomEndpointDialog";
@@ -27,6 +29,10 @@ import { ManualPathDialog, type ManualPrefill } from "./ManualPathDialog";
 import { RoutingTable } from "./RoutingTable";
 import { ScanSettings } from "./ScanSettings";
 import { SourcesList } from "./SourcesList";
+const TEST_ALL_CONCURRENCY = 2;
+
+type BatchTestFailure = { name: string; detail?: string };
+
 type Dialog =
   | { kind: "folder"; modelPath?: string }
   | { kind: "manual"; prefill?: ManualPrefill; initialMode?: "endpoint" }
@@ -54,6 +60,10 @@ export function DecisionModelsSettings({
   const privacyControlId = useId();
   const [testResults, setTestResults] = useState<Record<string, SourceTestSnapshot>>({});
   const [testingAll, setTestingAll] = useState(false);
+  const [batchTest, setBatchTest] = useState<{
+    total: number;
+    failed: BatchTestFailure[];
+  } | null>(null);
   const [removing, setRemoving] = useState<Record<string, "source" | "local">>({});
   const testGeneration = useRef<Record<string, number>>({});
   const clearTest = (id: string) => {
@@ -154,6 +164,25 @@ export function DecisionModelsSettings({
       });
     }
   };
+  const runTestAll = async () => {
+    const list = sources ?? [];
+    const failed: BatchTestFailure[] = [];
+    setTestingAll(true);
+    setBatchTest(null);
+    try {
+      await forEachConcurrent(list, TEST_ALL_CONCURRENCY, async (source) => {
+        try {
+          const result = await actions.testSource(source.id);
+          if (!result.ok) failed.push({ name: source.name, detail: result.error });
+        } catch (error: unknown) {
+          failed.push({ name: source.name, detail: errorDetail(error) });
+        }
+      });
+      if (failed.length > 0) setBatchTest({ total: list.length, failed });
+    } finally {
+      setTestingAll(false);
+    }
+  };
   const changePersonalData = (value: boolean) => {
     setTopError(null);
     actions.changeLocalOnly(value).catch((error: unknown) => setTopError(error));
@@ -220,6 +249,18 @@ export function DecisionModelsSettings({
           </Row>
         </Group>
         {topError !== null ? <ErrorNotice error={topError} /> : null}
+        {batchTest !== null ? (
+          <InlineError
+            details={batchTest.failed
+              .map((item) => (item.detail ? `${item.name}: ${item.detail}` : item.name))
+              .join("\n")}
+          >
+            {t("{p0} of {p1} connection tests failed", {
+              p0: formatNumber(batchTest.failed.length),
+              p1: formatNumber(batchTest.total),
+            })}
+          </InlineError>
+        ) : null}
         <Group
           title={t("Connected models")}
           action={
@@ -232,21 +273,7 @@ export function DecisionModelsSettings({
                   disabled={
                     testingAll || sources?.some((source) => model.isPending(`test:${source.id}`))
                   }
-                  onClick={() => {
-                    setTestingAll(true);
-                    void Promise.allSettled(
-                      (sources ?? []).map((source) => actions.testSource(source.id)),
-                    )
-                      .then((results) => {
-                        setTestingAll(false);
-                        const failed = results.find((result) => result.status === "rejected");
-                        if (failed?.status === "rejected") setTopError(failed.reason);
-                      })
-                      .catch((error: unknown) => {
-                        setTestingAll(false);
-                        setTopError(error);
-                      });
-                  }}
+                  onClick={() => void runTestAll().catch((error: unknown) => setTopError(error))}
                 >
                   {t("Test all")}
                 </Button>

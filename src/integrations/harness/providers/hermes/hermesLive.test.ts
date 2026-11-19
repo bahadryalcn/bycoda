@@ -15,6 +15,7 @@ const sent: string[] = [];
 let heldApprovalWrite: (() => Promise<void>) | null = null;
 let onLine: ((line: string) => void) | undefined;
 let onStderr: ((line: string) => void) | undefined;
+let onExit: ((code: number | null) => void) | undefined;
 const textFiles = new Map<string, string>();
 let heldFileRead: ((path: string) => Promise<string>) | null = null;
 let queueAgent: ((message: Record<string, unknown>) => void) | null = null;
@@ -32,10 +33,11 @@ vi.mock("../../core/child", () =>
     watchChild: (
       _id: string,
       line: (value: string) => void,
-      _exit: (code: number | null) => void,
+      exit: (code: number | null) => void,
       stderr: (value: string) => void,
     ) => {
       onLine = line;
+      onExit = exit;
       onStderr = stderr;
     },
     writeChild: async (_id: string, line: string) => {
@@ -59,6 +61,7 @@ const {
   sendHermesTurn,
   stopHermesSession,
   cancelHermesTurn,
+  backgroundPollDelay,
 } = await import("./hermes");
 import type { HarnessEvent } from "../../core/types";
 
@@ -92,6 +95,14 @@ async function newSession() {
     models: { currentModelId: "nous:hermes-4" },
   });
 }
+
+describe("Hermes background polling pace", () => {
+  it("polls fast at first, then backs off to a bounded cap", () => {
+    expect([0, 9_999, 10_000, 59_999, 60_000, 30 * 60_000].map(backgroundPollDelay)).toEqual([
+      500, 500, 1_500, 1_500, 3_000, 3_000,
+    ]);
+  });
+});
 
 describe("Hermes live ACP sequence", () => {
   beforeEach(() => {
@@ -230,6 +241,27 @@ describe("Hermes live ACP sequence", () => {
       await stopHermesSession(sessionId);
     },
   );
+
+  it("fails a turn whose process dies with the exit code and redacted stderr", async () => {
+    const turn = sendHermesTurn({
+      sessionId: "hermes-exit-diagnostics",
+      cwd: "/repo",
+      model: "hermes:openrouter:gpt-5",
+      runtimeMode: "supervised",
+      text: "inspect this",
+      attachments: [],
+      onEvent: () => undefined,
+    });
+    const failed = turn.catch((error: unknown) => error as Error);
+    await initialize();
+    onStderr!(
+      "\u001b[31mfatal: provider refused OPENROUTER_API_KEY=sk-or-0123456789abcdef0123\u001b[0m\r\n",
+    );
+    onExit!(4);
+    const message = (await failed).message;
+    expect(message).toContain("Hermes Agent exited (exit code 4):\nfatal: provider refused");
+    expect(message).not.toContain("sk-or-");
+  });
 
   it("starts Hermes ACP, selects model and mode, and sends attachments", async () => {
     const events: HarnessEvent[] = [];
@@ -930,3 +962,49 @@ it.each([true, false])(
     }
   },
 );
+
+it("keeps a Hermes turn pending past the former 30 minute wall-clock cap", async () => {
+  sent.length = 0;
+  onLine = undefined;
+  const sessionId = "hermes-prompt-deadline";
+  const events: HarnessEvent[] = [];
+  vi.useFakeTimers();
+  try {
+    const waitForMethod = async (method: string) => {
+      for (let i = 0; i < 200; i++) {
+        const found = parse().find((message) => message.method === method);
+        if (found) return found;
+        await vi.advanceTimersByTimeAsync(5);
+      }
+      throw new Error(`timed out waiting for ${method}`);
+    };
+    const turn = sendHermesTurn({
+      sessionId,
+      cwd: "/repo",
+      model: "hermes:nous:hermes-4",
+      runtimeMode: "supervised",
+      text: "long run",
+      attachments: [],
+      onEvent: (event) => events.push(event),
+    });
+    const outcome = turn.then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    reply((await waitForMethod("initialize")).id, { protocolVersion: 1 });
+    reply((await waitForMethod("session/new")).id, {
+      sessionId: "hermes-session-1",
+      models: { currentModelId: "nous:hermes-4" },
+    });
+    reply((await waitForMethod("session/set_mode")).id, {});
+    const prompt = await waitForMethod("session/prompt");
+    await vi.advanceTimersByTimeAsync(31 * 60_000);
+    reply(prompt.id, { stopReason: "end_turn" });
+    expect(await outcome).toBeUndefined();
+    expect(events.some((event) => event.type === "session.error")).toBe(false);
+    expect(parse().filter((message) => message.method === "session/prompt")).toHaveLength(1);
+  } finally {
+    vi.useRealTimers();
+    await stopHermesSession(sessionId);
+  }
+});

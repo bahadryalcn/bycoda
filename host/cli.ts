@@ -14,7 +14,6 @@ import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { REMOTE_PROVIDERS, type RemoteProvider } from "../src/features/connections/model/protocol";
 import { version } from "../package.json";
 import { elapsedSince, monotonicNow } from "../src/shared/lib/time/timestamps";
 import { readHostBuildIdentity } from "./build-identity";
@@ -485,16 +484,8 @@ Connect another computer using an SSH forward to the loopback port.`);
     ensureGenericAcpRegistered();
     const release = await acquireHarnessBridge();
     boot?.phase("providers");
-    const available: RemoteProvider[] = [];
-    for (const provider of REMOTE_PROVIDERS) {
-      if (provider === "acp") continue;
-      try {
-        await backend.resolve(provider);
-        available.push(provider);
-      } catch {
-        /* report via descriptor */
-      }
-    }
+    const { discoverAvailableProviders } = await import("./providers/provider-discovery");
+    const available = await discoverAvailableProviders((provider) => backend.resolve(provider));
     boot?.phase("engine-scan");
     const engine = new HostEngine(store, hostProviders, undefined, undefined, runWriters);
     await engine.ready;

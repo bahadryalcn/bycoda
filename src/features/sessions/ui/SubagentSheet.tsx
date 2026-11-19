@@ -56,31 +56,9 @@ export function useSubagentSheet(blocks: Block[], visible: boolean) {
   useLayoutEffect(() => {
     blocksRef.current = blocks;
   }, [blocks]);
-  // Where focus was when the panel opened, so closing puts it back.
-  const returnFocus = useRef<HTMLElement | null>(null);
-
-  const open = useCallback((blockId: string) => {
-    setOpenId((current) => {
-      if (current === null) {
-        returnFocus.current =
-          document.activeElement instanceof HTMLElement ? document.activeElement : null;
-      }
-      return blockId;
-    });
-  }, []);
-
-  const close = () => {
-    setOpenId((current) => {
-      if (current === null) return null;
-      const target = returnFocus.current;
-      returnFocus.current = null;
-      // After the panel has gone, so it cannot reclaim focus first.
-      queueMicrotask(() => {
-        if (target?.isConnected) target.focus({ preventScroll: true });
-      });
-      return null;
-    });
-  };
+  // Focus returns to the opener in the shared `Sheet` when this panel closes.
+  const open = useCallback((blockId: string) => setOpenId(blockId), []);
+  const close = () => setOpenId(null);
 
   useEffect(() => {
     if (!visible) return;
@@ -97,13 +75,6 @@ export function useSubagentSheet(blocks: Block[], visible: boolean) {
   const block = openId ? blocks.find((entry) => entry.id === openId) : undefined;
   // The run vanished (a rewind, a deleted turn): nothing left to show.
   if (openId !== null && !block) setOpenId(null);
-  // The panel is gone without `close`; hand focus back once it has unmounted.
-  useEffect(() => {
-    if (openId !== null) return;
-    const target = returnFocus.current;
-    returnFocus.current = null;
-    if (target?.isConnected) target.focus({ preventScroll: true });
-  }, [openId]);
 
   return { block, open, close };
 }

@@ -140,7 +140,7 @@ for (const theme of ["light", "dark"] as const)
       await page.goto("/tests/browser/source-control/git-workspace.html");
       await page.getByRole("button", { name: "Open full graph", exact: true }).click();
       await applyTheme();
-      const dialog = page.getByRole("dialog", { name: "Commit Graph", exact: true });
+      const dialog = page.getByRole("dialog", { name: "Commit graph", exact: true });
       await expect(
         dialog.getByRole("button", { name: "Working tree actions", exact: true }),
       ).toBeVisible();
@@ -181,7 +181,7 @@ test("Git actions show progress in place without losing focus or repeating mutat
   await page.locator("#root > div.border-r").evaluate((node) => {
     node.style.width = "100%";
   });
-  const sync = page.getByRole("button").filter({ hasText: "Sync Changes" });
+  const sync = page.getByRole("button").filter({ hasText: "Sync changes" });
   await sync.focus();
   await sync.press("Enter");
   await expect(sync).toHaveAttribute("aria-busy", "true");
@@ -467,8 +467,8 @@ test("submodules keep independent drafts, staging, commits and pushes", async ({
   const message = module.getByRole("textbox", { name: "Commit message", exact: true });
   await parentMessage.fill("Parent draft stays here");
   await message.fill("Commit only the submodule");
-  await module.getByRole("button", { name: "Stage All Changes", exact: true }).click();
-  await expect(module.getByRole("button", { name: "Stage All Changes", exact: true })).toHaveCount(
+  await module.getByRole("button", { name: "Stage all changes", exact: true }).click();
+  await expect(module.getByRole("button", { name: "Stage all changes", exact: true })).toHaveCount(
     0,
   );
   // Commit leads; Commit & Push is one menu choice away.
@@ -875,15 +875,15 @@ for (const theme of ["light", "dark"])
           await overview.evaluate((element) => element.scrollWidth <= element.clientWidth),
         ).toBe(true);
       }
-      await mobile.getByRole("button", { name: "Stage All Changes", exact: true }).click();
+      await mobile.getByRole("button", { name: "Stage all changes", exact: true }).click();
       await expect(
-        mobile.getByRole("button", { name: "Stage All Changes", exact: true }),
+        mobile.getByRole("button", { name: "Stage all changes", exact: true }),
       ).toHaveCount(0);
       await expect(
-        main.getByRole("button", { name: "Stage All Changes", exact: true }),
+        main.getByRole("button", { name: "Stage all changes", exact: true }),
       ).toBeAttached();
       await expect(
-        worktree.getByRole("button", { name: "Stage All Changes", exact: true }),
+        worktree.getByRole("button", { name: "Stage all changes", exact: true }),
       ).toBeAttached();
       await expect(message(main)).toHaveValue("Main checkout draft stays here");
       await expect(message(worktree)).toHaveValue("Worktree draft stays here");

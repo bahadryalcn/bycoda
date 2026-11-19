@@ -1,22 +1,19 @@
-import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
-import { Progress } from "../../../shared/ui/Progress";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import {
-  basename,
-  openPathWithDefaultApp,
-  preparedFileSize,
-  prepareLocalFile,
-} from "../../../platform/tauri/fs";
+import { basename, preparedFileSize, prepareLocalFile } from "../../../platform/tauri/fs";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { mediaKind } from "../model/mediaPreview";
 import { MediaVisibilityContext } from "../model/mediaVisibility";
 import { DocumentMessage } from "./DocumentMessage";
+import { FileTransferProgress } from "./FileTransferProgress";
 import { formatFileSize, formatMediaDuration } from "../model/filePreview";
 import { localExplorerPath } from "../../../shared/lib/remoteExplorerPaths";
+import { OpenInDefaultAppButton, ViewerFooter } from "./ViewerFooter";
+import { useDefaultAppOpen } from "./useDefaultAppOpen";
 
 type Props = {
   path: string;
@@ -29,6 +26,7 @@ type Props = {
 type VideoMetadata = { duration?: number; width?: number; height?: number };
 type State =
   | { status: "loading"; received?: number; total?: number }
+  | { status: "cancelled"; source?: object; size?: number }
   | {
       status: "ready";
       url: string;
@@ -51,18 +49,18 @@ export function MediaView({
   const paneVisible = useContext(MediaVisibilityContext);
   const [state, setState] = useState<State>({ status: "loading" });
   const [retry, setRetry] = useState(0);
-  const openingRef = useRef(false);
-  const openGeneration = useRef(0);
   // Do not display the previous file's metadata during the render before effect cleanup.
-  const source = useMemo(() => ({}), [path, readBytes, mimeType, retry, active]);
+  const source = useMemo(() => ({}), [path, readBytes, mimeType, retry]);
+  // Load on first activation only. A hidden tab keeps its loaded player mounted (paused via
+  // `visible`), so switching tabs keeps the playback position and does not re-transfer media.
+  const [shownOnce, setShownOnce] = useState(active);
+  useEffect(() => {
+    // Latch the first activation; the load effect below waits for it.
+    if (active) setShownOnce(true);
+  }, [active]);
   // Open-in-app state belongs to the file/source it started for; a new owner starts clean.
   const actionOwner = useMemo(() => ({}), [externalPath, source]);
-  const [openingOwner, setOpeningOwner] = useState<object | null>(null);
-  const [actionFailure, setActionFailure] = useState<{ owner: object; message: string } | null>(
-    null,
-  );
-  const opening = openingOwner === actionOwner;
-  const actionError = actionFailure?.owner === actionOwner ? actionFailure.message : undefined;
+  const openAction = useDefaultAppOpen(actionOwner, externalPath ?? path);
   const loadShownCentrally = useConnectionErrorShownCentrally(
     state.status === "error" ? state.message : undefined,
   );
@@ -70,19 +68,19 @@ export function MediaView({
   const player = useRef<HTMLMediaElement | null>(null);
   const generation = useRef(0);
   const localCopy = !!externalPath?.startsWith("remote://") && !localExplorerPath(externalPath);
+  // Only a copy from a connected machine has a transfer to abort.
+  const transferable = !readBytes && path.startsWith("remote://") && !localExplorerPath(path);
+  const transfer = useRef<AbortController | null>(null);
+  const cancelTransfer = () => {
+    transfer.current?.abort();
+    setState({ status: "cancelled", source });
+  };
   useEffect(() => {
-    openGeneration.current += 1;
-    openingRef.current = false;
-    return () => {
-      openGeneration.current += 1;
-    };
-  }, [externalPath, source]);
-  useEffect(() => {
-    if (!active) {
-      setState({ status: "loading" });
-      return;
-    }
+    // Keeps loaded media (and its blob) in memory until the tab closes.
+    // shortcut: no release after idle time, upgrade: release a hidden tab's source after a long idle period.
+    if (!shownOnce) return;
     const controller = new AbortController();
+    transfer.current = controller;
     const request = ++generation.current;
     let ownedUrl: string | undefined;
     let size: number | undefined;
@@ -143,7 +141,7 @@ export function MediaView({
         });
       }
     };
-  }, [path, readBytes, mimeType, retry, active, source, isVideo]);
+  }, [path, readBytes, mimeType, retry, shownOnce, source, isVideo]);
 
   const failPlayback = () =>
     setState((current) =>
@@ -192,26 +190,27 @@ export function MediaView({
               {t("Retry")}
             </Button>
           </DocumentMessage>
+        ) : state.status === "cancelled" ? (
+          <DocumentMessage title={t("Cancelled")}>
+            <Button
+              variant="ghost"
+              motion="none"
+              type="button"
+              onClick={() => setRetry((value) => value + 1)}
+            >
+              {t("Retry")}
+            </Button>
+          </DocumentMessage>
         ) : (
-          <div role="status">
-            <Progress
-              compact
-              value={state.total ? (state.received ?? 0) : undefined}
-              max={state.total ?? 1}
-              label={
-                t("Loading…") +
-                (state.total
-                  ? ` ${formatFileSize(state.received ?? 0)} / ${formatFileSize(state.total)}`
-                  : "")
-              }
-            />
-          </div>
+          <FileTransferProgress
+            label={t("Loading…")}
+            received={state.received}
+            total={state.total}
+            onCancel={transferable ? cancelTransfer : undefined}
+          />
         )}
       </div>
-      <footer className="flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center gap-2 border-t border-(--ui-pane-border) px-3 py-1 text-ui-caption text-(--ui-text-secondary)">
-        <OverflowTooltip label={path}>
-          <span className="min-w-0 flex-1 truncate">{basename(path)}</span>
-        </OverflowTooltip>
+      <ViewerFooter name={basename(path)}>
         {isVideo ? (
           <>
             {metadata?.width && metadata.height ? (
@@ -231,42 +230,16 @@ export function MediaView({
           </>
         ) : null}
         {externalPath ? (
-          <Button
-            variant="ghost"
-            motion="none"
-            type="button"
-            loading={opening}
-            tooltip={
-              localCopy
-                ? t("Changes to this local copy are not saved to the connected machine.")
-                : undefined
-            }
-            onClick={() => {
-              if (openingRef.current) return;
-              openingRef.current = true;
-              const request = openGeneration.current;
-              setOpeningOwner(actionOwner);
-              setActionFailure(null);
-              void (async () => {
-                try {
-                  await openPathWithDefaultApp(externalPath);
-                } catch (reason) {
-                  if (request === openGeneration.current)
-                    setActionFailure({ owner: actionOwner, message: String(reason) });
-                } finally {
-                  if (request === openGeneration.current) {
-                    openingRef.current = false;
-                    setOpeningOwner(null);
-                  }
-                }
-              })();
-            }}
-          >
-            {t(localCopy ? "Open local copy" : "Open in default app")}
-          </Button>
+          <OpenInDefaultAppButton
+            localCopy={localCopy}
+            loading={openAction.opening}
+            onOpen={openAction.open}
+          />
         ) : null}
-        {actionError ? <InlineError className="basis-full">{actionError}</InlineError> : null}
-      </footer>
+        {openAction.error ? (
+          <InlineError className="basis-full">{openAction.error}</InlineError>
+        ) : null}
+      </ViewerFooter>
     </div>
   );
 }

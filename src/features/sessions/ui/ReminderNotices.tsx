@@ -3,7 +3,7 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Button } from "../../../shared/ui/Button";
 import { projectDisplayNameFrom, useProjectLabels } from "../../projects/public/projectNames";
-import { useT } from "../../../shared/i18n";
+import { useFormat, useT } from "../../../shared/i18n";
 import { useState, useSyncExternalStore } from "react";
 import { ToastSlot } from "../../../shared/ui/ToastRegion";
 import {
@@ -44,6 +44,7 @@ export function ReminderNotices({
   onOpenSettings: () => void;
 }) {
   const t = useT();
+  const format = useFormat();
   const projectLabels = useProjectLabels();
   const [snooze, setSnooze] = useState<{
     reminder: SessionReminder;
@@ -122,7 +123,7 @@ export function ReminderNotices({
                       reminder,
                       x: rect.left,
                       y: rect.bottom + 4,
-                      presets: sessionReminderPresets(),
+                      presets: sessionReminderPresets(t, format.formatDate),
                     });
                   }}
                 >
@@ -162,7 +163,7 @@ export function ReminderNotices({
           x={snooze.x}
           y={snooze.y}
           items={snooze.presets}
-          ariaLabel="Snooze reminder"
+          ariaLabel={t("Snooze reminder")}
           onClose={() => setSnooze(null)}
           onPick={(id) => {
             const dueAt = reminderTime(id);

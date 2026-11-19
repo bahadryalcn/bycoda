@@ -128,7 +128,7 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
 
   const renderForm = (label: string, submitLabel: string) => (
     <form
-      className="flex h-8 items-center gap-1.5 px-1"
+      className="flex min-h-(--ui-control-height) items-center gap-1.5 px-1"
       onSubmit={(event) => void submitEditing(event)}
     >
       <TextField
@@ -186,9 +186,9 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
       );
     }
     return (
-      <li key={reference} className="flex h-8 items-center gap-1 px-1">
+      <li key={reference} className="flex min-h-(--ui-control-height) items-center gap-1 px-1">
         {isCurrent ? (
-          <Check className="icon-sm shrink-0" strokeWidth={1.75} />
+          <Check className="icon-sm shrink-0" />
         ) : (
           <GitBranch className="icon-sm shrink-0" tone="secondary" strokeWidth={1.75} />
         )}
@@ -338,7 +338,7 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
             className="inline-flex shrink-0 items-center gap-1"
           >
             <Plus className="icon-sm" strokeWidth={1.75} />
-            {t("New Branch…")}
+            {t("Create branch…")}
           </Button>
         </div>
         {editing?.kind === "create" ? renderForm(t("New branch name"), t("Create")) : null}

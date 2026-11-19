@@ -19,6 +19,7 @@ import { decisionsAdapter } from "./contract-adapters/decisions";
 import { llmStructuredAdapter } from "./contract-adapters/llm-structured";
 import { ollamaSystemOneAdapter } from "./contract-adapters/ollama-systemone";
 import { systemOneAdapter } from "./contract-adapters/systemone";
+import { DecisionConfigDamagedError } from "./decision-config";
 import { EVALUATION_SET, evaluationAccuracy } from "./evaluation";
 import { planRoute } from "./router";
 import {
@@ -35,6 +36,7 @@ import {
 } from "./decision-types";
 
 export type DecisionGatewayDeps = {
+  /** Rejects with DecisionConfigDamagedError when the saved settings cannot be read. */
   loadConfig: () => Promise<DecisionConfig>;
   /** Reads API keys from the vault by secretRef. Without it, sources that need a key are unavailable. */
   secrets?: Pick<SecretValueStore, "get">;
@@ -165,15 +167,34 @@ export function createDecisionGateway(deps: DecisionGatewayDeps): DecisionGatewa
     }
   }
 
-  /** Managed local sources resolve their live address, including a stopped recorded endpoint. */
-  async function resolveTarget(source: DecisionSource): Promise<DecisionSource | undefined> {
+  /**
+   * Managed local sources resolve their live address, including a stopped recorded endpoint. A cold
+   * start (model hash, process spawn, health polling) can outlast the decision deadline, so the
+   * caller stops waiting when the signal aborts and the source counts as unavailable for this
+   * call. The start itself is owned by the installer and keeps running, so the next call finds it
+   * ready or joins it; nothing here starts or stops a process.
+   */
+  async function resolveTarget(
+    source: DecisionSource,
+    signal: AbortSignal,
+  ): Promise<DecisionSource | undefined> {
     if (
       source.kind !== "local" ||
       (source.endpoint && !source.local?.runtimePath) ||
       !deps.resolveEndpoint
     )
       return source;
-    const endpoint = await deps.resolveEndpoint(source).catch(() => undefined);
+    if (signal.aborted) return undefined;
+    // The rejection handler also covers a start that fails after the caller stopped waiting.
+    const resolving = deps.resolveEndpoint(source).catch(() => undefined);
+    let onAbort: (() => void) | undefined;
+    const deadline = new Promise<undefined>((resolve) => {
+      onAbort = () => resolve(undefined);
+      signal.addEventListener("abort", onAbort, { once: true });
+    });
+    const endpoint = await Promise.race([resolving, deadline]).finally(() => {
+      if (onAbort) signal.removeEventListener("abort", onAbort);
+    });
     if (!endpoint) return undefined;
     deps.touchLocal?.(source.id);
     return { ...source, endpoint };
@@ -244,9 +265,9 @@ export function createDecisionGateway(deps: DecisionGatewayDeps): DecisionGatewa
       entry({ outcome: "skipped", errorCode: "limit" });
       return found;
     }
-    const target = await resolveTarget(source);
+    const target = await resolveTarget(source, signal);
     if (!target) {
-      entry({ errorCode: "unavailable" });
+      entry({ errorCode: signal.aborted ? "timeout" : "unavailable" });
       return found;
     }
     let inputTokens = 0;
@@ -285,7 +306,21 @@ export function createDecisionGateway(deps: DecisionGatewayDeps): DecisionGatewa
   async function decide(request: DecisionRequest): Promise<DecisionResult> {
     assertValidRequest(request);
     const started = monotonicNow();
-    const config = await deps.loadConfig();
+    let config: DecisionConfig;
+    try {
+      config = await deps.loadConfig();
+    } catch (error) {
+      if (!(error instanceof DecisionConfigDamagedError)) throw error;
+      // Callers already handle error answers (the no-decision fallback); no source is tried and
+      // nothing is routed from default settings, so personal-data rules cannot be bypassed.
+      return {
+        answers: Object.fromEntries(
+          Object.keys(request.questions).map((name) => [name, { error: "config_damaged" as const }]),
+        ),
+        sourceChain: [],
+        durationMs: elapsedSince(started),
+      };
+    }
     const plan = planRoute(config, request.taskType, request.personalData);
     const total = request.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     const deadline = AbortSignal.timeout(total);

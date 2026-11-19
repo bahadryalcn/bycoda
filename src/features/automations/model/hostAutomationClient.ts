@@ -11,6 +11,7 @@ import { parseRemotePath, remotePath } from "../../connections/model/remoteProje
 import { pathKey } from "../../../shared/lib/paths";
 import type { AutomationSchedule } from "./automationSchedule";
 import { collectMachineResults, type LastGoodLists, type MachineResult } from "./machineResults";
+import { sharedMachineListReads } from "./machineListReads";
 import { invalidateMachineSnapshot, machineCapabilities, machineProjects } from "./machineSnapshot";
 import {
   createAutomationTrigger,
@@ -195,6 +196,7 @@ export function automationFromHost(
       environmentId: machine.environmentId,
       machineName: isLocalSyncMachine(machine) ? "this computer" : machine.name,
       projectId: host.projectId,
+      configuration: structuredClone(host),
       ...(host.needsInput ? { needsInput: true } : {}),
     },
   };
@@ -241,42 +243,27 @@ export function hostAutomationFromDraft(
 }
 
 const lastHostAutomations: LastGoodLists<Automation> = new Map();
+const hostAutomationReads = sharedMachineListReads<Automation>();
+
+/** Forgets the shared automation reads of a machine whose list this desktop
+ * changed (or may have changed), so the next read asks the Host again. */
+export function invalidateHostAutomationReads(machineId: string) {
+  hostAutomationReads.invalidate(machineId);
+}
 
 /** Each machine's background automations. A machine that does not answer keeps
- * its last successful list, flagged stale; `down` machines are not asked. */
+ * its last successful list, flagged stale; `down` machines are not asked.
+ * Concurrent reads of one machine share a request; `maxAgeMs` lets a background
+ * reader reuse an answer that recent, where a view reads fresh. */
 export function listHostAutomationResults(
   machines: readonly RemoteMachine[],
   down: readonly RemoteMachine[] = [],
+  options: { maxAgeMs?: number } = {},
 ): Promise<MachineResult<Automation>[]> {
   return collectMachineResults(
     lastHostAutomations,
     machines,
-    async (machine) => {
-      const [automations, projects] = await Promise.all([
-        remoteRequest<HostAutomation[]>(
-          machine.id,
-          "automations.list",
-          {},
-          false,
-          false,
-          machine.environmentId,
-        ),
-        remoteRequest<HostProject[]>(
-          machine.id,
-          "projects.list",
-          {},
-          false,
-          false,
-          machine.environmentId,
-        ),
-      ]);
-      return automations.flatMap((automation) => {
-        const project = projects.find((entry) => entry.id === automation.projectId);
-        return [
-          automationFromHost(machine, project ? hostProjectCwd(machine, project) : "", automation),
-        ];
-      });
-    },
+    (machine) => hostAutomationReads.read(machine, readHostAutomations, options.maxAgeMs),
     (automation) =>
       automation.host ? { ...automation, host: { ...automation.host, stale: true } } : automation,
     down,
@@ -286,8 +273,46 @@ export function listHostAutomationResults(
 /** Every machine's background automations, last-known ones included. */
 export async function listHostAutomations(
   machines: readonly RemoteMachine[],
+  options: { maxAgeMs?: number } = {},
 ): Promise<Automation[]> {
-  return (await listHostAutomationResults(machines)).flatMap((result) => result.data);
+  return (await listHostAutomationResults(machines, [], options)).flatMap((result) => result.data);
+}
+
+async function readHostAutomations(machine: RemoteMachine): Promise<Automation[]> {
+  const [automations, projects] = await Promise.all([
+    remoteRequest<HostAutomation[]>(
+      machine.id,
+      "automations.list",
+      {},
+      false,
+      false,
+      machine.environmentId,
+    ),
+    remoteRequest<HostProject[]>(
+      machine.id,
+      "projects.list",
+      {},
+      false,
+      false,
+      machine.environmentId,
+    ),
+  ]);
+  return automations.flatMap((automation) => {
+    const project = projects.find((entry) => entry.id === automation.projectId);
+    return [
+      automationFromHost(machine, project ? hostProjectCwd(machine, project) : "", automation),
+    ];
+  });
+}
+
+/** Sends an automation write and drops the shared reads of its machine, even when the
+ * outcome is unknown, so no later reader joins a read that began before it. */
+export async function writeHostAutomation<T>(machineId: string, write: () => Promise<T>): Promise<T> {
+  try {
+    return await write();
+  } finally {
+    invalidateHostAutomationReads(machineId);
+  }
 }
 
 export async function saveHostAutomation(
@@ -309,30 +334,60 @@ export async function saveHostAutomation(
   if (draft.hostTemplate && !capabilities.includes(HOST_AUTOMATION_PROJECT_SCAN))
     throw new Error("Update this Host to use Project scan.");
   const project = draft.cwd ? await hostProjectFor(machine, draft.cwd) : undefined;
-  const saved = await remoteRequest<HostAutomation>(
-    machine.id,
-    "automations.save",
-    {
-      automation: hostAutomationFromDraft(
-        draft,
-        draft.id ?? crypto.randomUUID(),
-        project?.id ?? "",
-      ),
-    },
-    false,
-    true,
+  const saved = await writeHostAutomation(machine.id, () =>
+    remoteRequest<HostAutomation>(
+      machine.id,
+      "automations.save",
+      {
+        automation: hostAutomationFromDraft(
+          draft,
+          draft.id ?? draft.hostCreateId ?? crypto.randomUUID(),
+          project?.id ?? "",
+        ),
+      },
+      false,
+      true,
+    ),
   );
   return automationFromHost(machine, project ? hostProjectCwd(machine, project) : "", saved);
 }
 
+/** Pauses or resumes a background automation without rewriting anything else.
+ * The save is built from the Host's record the board showed and names it as
+ * `expectedConfiguration`, so an edit made elsewhere since the last poll is
+ * refused by the Host (never written back over) and the caller reloads. */
+export async function setHostAutomationEnabled(
+  automation: Automation,
+  enabled: boolean,
+): Promise<void> {
+  const configuration = automation.host?.configuration;
+  if (!automation.host || !configuration)
+    throw new Error(
+      "Configuration changed in another client. Reopen it before saving; your changes have not been saved.",
+    );
+  const machineId = automation.host.machineId;
+  await writeHostAutomation(machineId, () =>
+    remoteRequest<HostAutomation>(
+      machineId,
+      "automations.save",
+      {
+        automation: {
+          ...structuredClone(configuration),
+          enabled,
+          expectedConfiguration: configuration,
+        },
+      },
+      false,
+      true,
+    ),
+  );
+}
+
 export async function deleteHostAutomation(automation: Automation): Promise<void> {
   if (!automation.host) return;
-  await remoteRequest(
-    automation.host.machineId,
-    "automations.delete",
-    { automationId: automation.id },
-    false,
-    true,
+  const machineId = automation.host.machineId;
+  await writeHostAutomation(machineId, () =>
+    remoteRequest(machineId, "automations.delete", { automationId: automation.id }, false, true),
   );
 }
 
@@ -345,11 +400,8 @@ export function listHostAutomationRuns(automation: Automation): Promise<Automati
 
 export async function runHostAutomationNow(automation: Automation): Promise<void> {
   if (!automation.host) return;
-  await remoteRequest(
-    automation.host.machineId,
-    "automations.runNow",
-    { automationId: automation.id },
-    false,
-    true,
+  const machineId = automation.host.machineId;
+  await writeHostAutomation(machineId, () =>
+    remoteRequest(machineId, "automations.runNow", { automationId: automation.id }, false, true),
   );
 }

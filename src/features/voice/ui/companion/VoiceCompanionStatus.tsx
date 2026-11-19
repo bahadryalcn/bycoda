@@ -10,6 +10,7 @@ import { Globe, MessageMultiple, Square } from "../../../../shared/ui/icons";
 import { t } from "../../../../shared/i18n";
 import { formatDuration } from "../../../../shared/i18n/format";
 import { elapsedSince, monotonicNow } from "../../../../shared/lib/time/timestamps";
+import { subscribeVoiceSecond } from "../../model/voicePresentationTimers";
 import type { VoiceVisualState } from "../../model/voiceVisualState";
 import { VoiceCore } from "./VoiceCore";
 import { voiceStatusTone } from "./VoiceLauncher";
@@ -150,8 +151,8 @@ function stageTone(state: VoiceVisualState): SurfaceTone {
 
 /**
  * One quiet line under the status: the engine (its tooltip says where audio goes) and, while
- * connected, how long this voice session has run. The clock is painted from a timer, so it does
- * not re-render the panel; the voice core already shows the input level.
+ * connected, how long this voice session has run. The clock is painted from the shared second
+ * timer, so it does not re-render the panel; the voice core already shows the input level.
  */
 function VoiceMeta({ live, engine, privacy }: { live: boolean; engine: string; privacy: string }) {
   const clock = useRef<HTMLSpanElement>(null);
@@ -164,8 +165,8 @@ function VoiceMeta({ live, engine, privacy }: { live: boolean; engine: string; p
         clock.current.textContent = formatDuration(elapsedSince(start), { style: "clock" });
     };
     tick();
-    const timer = setInterval(tick, 1000);
-    return () => clearInterval(timer);
+    // Shared one-second timer: asleep while the window is hidden, caught up when it returns.
+    return subscribeVoiceSecond(tick);
   }, [live]);
   return (
     <div className={styles.meta}>

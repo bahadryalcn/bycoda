@@ -22,6 +22,8 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { ServerForwards } from "./ServerForwards";
 import { ServerActivity } from "./ServerActivity";
 import { ServerOrganization } from "./ServerOrganization";
+import { errorText } from "../../../shared/lib/errors";
+import { sanitizeConnectionError } from "../model/remoteConnection";
 
 export function ServersConnectionTools({
   server,
@@ -85,7 +87,7 @@ export function ServersConnectionTools({
     try {
       await callback();
     } catch (reason) {
-      setError(String(reason));
+      setError(sanitizeConnectionError(errorText(reason)));
     } finally {
       pending.current = false;
       setBusy(false);

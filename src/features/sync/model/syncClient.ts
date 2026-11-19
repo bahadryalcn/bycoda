@@ -382,12 +382,68 @@ async function runSyncCycleInner(
 }
 
 export const CYCLE_INTERVAL_MS = 30_000;
+
+/** True while the window is minimized or hidden to the tray. Periodic polling
+ * pauses then; ownership, explicit syncs and local-change nudges do not. */
+export function isDocumentHidden(): boolean {
+  return typeof document !== "undefined" && document.hidden;
+}
+
 /** Rounds never start closer together than this; requests inside the window collapse into one trailing round. */
 export const MIN_CYCLE_SPACING_MS = 3_000;
 /** At most this many machines sync at once, so one slow host cannot hold the rest back. */
 export const MAX_PARALLEL_SYNCS = 3;
 export const SYNC_BACKOFF_BASE_MS = 60_000;
 export const SYNC_BACKOFF_MAX_MS = 10 * 60_000;
+/** A machine's cycle that has not settled by then is abandoned: it frees its slot and counts as a failure. */
+export const SYNC_CYCLE_DEADLINE_MS = 2 * 60_000;
+/** Shutdown waits this long for running cycles before giving up and keeping ownership. */
+export const SYNC_STOP_DRAIN_MS = 10_000;
+
+class SyncDeadlineError extends Error {
+  constructor() {
+    super("SYNC_CYCLE_DEADLINE");
+  }
+}
+
+/** Settles like `operation`, or rejects with a deadline error once `ms` passes. The operation
+ * itself is not cancelled; its handlers stay attached, so a late outcome is never unhandled. */
+function withDeadline<T>(operation: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new SyncDeadlineError()), ms);
+    operation.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+/** Resolves with `drain`, or `false` after `ms`: `false` means "not proven settled", so window
+ * ownership stays held. A drain that rejects is also `false`. */
+export function boundedDrain(
+  drain: Promise<boolean>,
+  ms: number = SYNC_STOP_DRAIN_MS,
+): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    const timer = setTimeout(() => resolve(false), ms);
+    drain.then(
+      (settled) => {
+        clearTimeout(timer);
+        resolve(settled);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(false);
+      },
+    );
+  });
+}
 
 /** How long a machine is left out of background rounds after its nth
  * consecutive failed sync: exponential with a cap, +-20% jitter so machines
@@ -448,12 +504,18 @@ export function startSyncLoop(
   shouldRunAutomatically: () => boolean = () => true,
   beforeExplicitSync?: () => Promise<void>,
   beginCycle?: (machineId: string, cycleId: string) => Promise<void>,
-  completeCycle?: (machineId: string, cycleId: string) => Promise<void>,
+  completeCycle?: (machineId: string, cycleId: string, signal: AbortSignal) => Promise<void>,
 ): { stop: () => Promise<boolean>; nudge: () => void; recover: (machineId: string) => void } {
   let stopped = false;
+  // Aborts a completion that is still waiting for the native owner when the loop stops.
+  const stopSignal = new AbortController();
   let uncertain = false;
   let stoppedResult: Promise<boolean> | undefined;
   const running = new Set<Promise<void>>();
+  // Cycles abandoned at their deadline whose request or native begin has not settled yet. Each
+  // may still have taken effect on the host, so shutdown keeps ownership until they settle.
+  const lateCycles = new Set<Promise<void>>();
+  // Spacing and backoff use the monotonic clock: a wall-clock change must not stall rounds.
   let lastRoundAt = Number.NEGATIVE_INFINITY;
   let lastEndedAt = Number.NEGATIVE_INFINITY;
   let trailing: ReturnType<typeof setTimeout> | undefined;
@@ -488,37 +550,72 @@ export function startSyncLoop(
     slot.phase = "running";
     running.add(job.promise);
     active += 1;
-    let cycleId: string | undefined;
-    let began = false;
+    // The widened types keep flow analysis from fixing these at their initial values, because the
+    // attempt below assigns them from inside an async closure.
+    let cycleId = undefined as string | undefined;
+    let began = false as boolean;
     let failed = false;
-    try {
+    // Set at the deadline: a response that arrives later is dropped by the cancellation guards.
+    let abandoned = false;
+    let timedOut = false;
+    const attempt = (async () => {
       cycleId = beginCycle ? crypto.randomUUID() : undefined;
       if (cycleId) {
         await beginCycle!(slot.id, cycleId);
         began = true;
       }
-      if (!stopped)
+      if (!stopped && !abandoned)
         await runSyncCycle(
           slot.id,
           requestFor(slot.id, cycleId),
           environmentFor?.(slot.id),
-          () => !stopped && shouldRunAutomatically(),
+          () => !stopped && !abandoned && shouldRunAutomatically(),
         );
+    })();
+    try {
+      await withDeadline(attempt, SYNC_CYCLE_DEADLINE_MS);
     } catch (error) {
       failed = true;
-      // Cancellation guards run only after awaited work settled. A stopped local
-      // continuation is not an unknown transport outcome and may release Web Lock.
-      if (!cycleId && !(error instanceof Error && error.message === "SYNC_STOPPED"))
-        uncertain = true;
-      if (!began)
+      if (error instanceof SyncDeadlineError) {
+        timedOut = true;
+        abandoned = true;
+        // The slot is freed now, but the request may still land. Ownership stays held until it
+        // settles, and a native cycle is completed only then, never while its request is in flight.
+        const late: Promise<void> = attempt
+          .then(
+            () => undefined,
+            () => undefined, // abandoned: neither applied nor shown
+          )
+          .then(async () => {
+            if (!began || !cycleId) return;
+            try {
+              await completeCycle!(slot.id, cycleId, stopSignal.signal);
+            } catch {
+              uncertain = true;
+            }
+          })
+          .finally(() => void lateCycles.delete(late));
+        lateCycles.add(late);
         recordSyncStatus(slot.id, {
           state: "error",
-          lastError: `Sync ownership is unavailable: ${String(error)}`,
+          lastError: "Library sync timed out. It will retry later.",
+          pendingOps: pendingCount(slot.id),
         });
+      } else {
+        // Cancellation guards run only after awaited work settled. A stopped local
+        // continuation is not an unknown transport outcome and may release Web Lock.
+        if (!cycleId && !(error instanceof Error && error.message === "SYNC_STOPPED"))
+          uncertain = true;
+        if (!began)
+          recordSyncStatus(slot.id, {
+            state: "error",
+            lastError: `Sync ownership is unavailable: ${String(error)}`,
+          });
+      }
     }
-    if (began && cycleId) {
+    if (began && cycleId && !timedOut) {
       try {
-        await completeCycle!(slot.id, cycleId);
+        await completeCycle!(slot.id, cycleId, stopSignal.signal);
       } catch (error) {
         uncertain = true;
         failed = true;
@@ -530,13 +627,13 @@ export function startSyncLoop(
     }
     if (failed) {
       slot.failures += 1;
-      slot.nextAt = Date.now() + syncBackoffMs(slot.failures);
+      slot.nextAt = monotonicNow() + syncBackoffMs(slot.failures);
     } else {
       slot.failures = 0;
       slot.nextAt = 0;
     }
     active -= 1;
-    slot.endedAt = lastEndedAt = Date.now();
+    slot.endedAt = lastEndedAt = monotonicNow();
     slot.phase = "idle";
     slot.job = undefined;
     job.resolve();
@@ -544,12 +641,12 @@ export function startSyncLoop(
     const next = slot.next;
     slot.next = undefined;
     if (next) {
-      if (stopped || (!next.explicit && Date.now() < slot.nextAt)) {
+      if (stopped || (!next.explicit && monotonicNow() < slot.nextAt)) {
         next.resolve();
       } else {
         const wait = next.explicit
           ? 0
-          : Math.max(0, slot.endedAt + MIN_CYCLE_SPACING_MS - Date.now());
+          : Math.max(0, slot.endedAt + MIN_CYCLE_SPACING_MS - monotonicNow());
         if (wait === 0) enqueue(slot, next);
         else {
           // Queued meanwhile, so a request now joins this follow-up.
@@ -584,14 +681,14 @@ export function startSyncLoop(
       else if (explicit) slot.next.explicit = true;
       return slot.next.promise;
     }
-    if (!explicit && Date.now() < slot.nextAt) return Promise.resolve();
+    if (!explicit && monotonicNow() < slot.nextAt) return Promise.resolve();
     const job = makeJob(explicit);
     enqueue(slot, job);
     return job.promise;
   };
 
   const round = (): void => {
-    lastRoundAt = Date.now();
+    lastRoundAt = monotonicNow();
     if (trailing !== undefined) {
       clearTimeout(trailing);
       trailing = undefined;
@@ -606,7 +703,7 @@ export function startSyncLoop(
     if (stopped || trailing !== undefined) return;
     const wait = Math.max(
       0,
-      Math.max(lastRoundAt, lastEndedAt) + MIN_CYCLE_SPACING_MS - Date.now(),
+      Math.max(lastRoundAt, lastEndedAt) + MIN_CYCLE_SPACING_MS - monotonicNow(),
     );
     trailing = setTimeout(() => {
       trailing = undefined;
@@ -615,7 +712,7 @@ export function startSyncLoop(
   };
   const requestRun = (): void => {
     if (stopped || !shouldRunAutomatically()) return;
-    if (Date.now() - Math.max(lastRoundAt, lastEndedAt) < MIN_CYCLE_SPACING_MS) schedule();
+    if (elapsedSince(Math.max(lastRoundAt, lastEndedAt)) < MIN_CYCLE_SPACING_MS) schedule();
     else round();
   };
   const runNow = async (only?: string): Promise<void> => {
@@ -647,13 +744,17 @@ export function startSyncLoop(
     const targets = only ? eligible.filter((id) => id === only) : eligible;
     return Promise.all(targets.map((id) => request(id, true))).then(() => undefined);
   };
-  const timer = setInterval(requestRun, CYCLE_INTERVAL_MS);
+  // Nobody sees a hidden window's result; the app's wake on return nudges an immediate catch-up round.
+  const timer = setInterval(() => {
+    if (!isDocumentHidden()) requestRun();
+  }, CYCLE_INTERVAL_MS);
   requestRun();
   activeSyncNow = runNow;
   return {
     stop: () => {
       if (stoppedResult) return stoppedResult;
       stopped = true;
+      stopSignal.abort();
       clearInterval(timer);
       if (trailing !== undefined) clearTimeout(trailing);
       trailing = undefined;
@@ -672,7 +773,13 @@ export function startSyncLoop(
           slot.phase = "idle";
         }
       }
-      stoppedResult = Promise.all(running).then(() => !uncertain);
+      // Late cycles join the wait once their running slot has released; the wait is bounded so a
+      // transport that never answers cannot hang teardown, and then ownership stays held.
+      stoppedResult = boundedDrain(
+        Promise.all(running)
+          .then(() => Promise.all(lateCycles))
+          .then(() => !uncertain && lateCycles.size === 0),
+      );
       return stoppedResult;
     },
     nudge: requestRun,

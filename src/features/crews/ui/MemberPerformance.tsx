@@ -6,6 +6,7 @@ import { ModelLabel } from "../../sessions/public/ModelLabel";
 import { useState } from "react";
 import { formatNumber, t, useLocale } from "../../../shared/i18n";
 import { Disclosure } from "../../../shared/ui/Disclosure";
+import { describeRemoteError, type RemoteErrorView } from "../../connections/public/remoteFailure";
 import type { useProjectCrews } from "../model/crewClient";
 import {
   type CandidateReviewObservation,
@@ -34,7 +35,7 @@ export function MemberPerformance({
   useLocale();
   const [status, setStatus] = useState<Status>("idle");
   const [performance, setPerformance] = useState<Performance>();
-  const [failure, setFailure] = useState("");
+  const [failure, setFailure] = useState<RemoteErrorView>({ message: "", details: "" });
   const load = () => {
     setStatus("loading");
     state
@@ -48,7 +49,7 @@ export function MemberPerformance({
           setStatus("ready");
         },
         (reason: unknown) => {
-          setFailure(reason instanceof Error ? reason.message : String(reason));
+          setFailure(describeRemoteError(reason));
           setStatus("error");
         },
       );
@@ -65,8 +66,9 @@ export function MemberPerformance({
       {status === "loading" || status === "idle" ? (
         <LoadingText delay={false}>{t("Loading performance…")}</LoadingText>
       ) : status === "error" ? (
-        <InlineError details={failure} retry={{ onRetry: load }}>
-          {t("Could not load performance")}
+        // The presented reason is the visible text; the raw Host message sits behind Details.
+        <InlineError details={failure.details} retry={{ onRetry: load }}>
+          {failure.message}
         </InlineError>
       ) : performance && performance.reviewed > 0 ? (
         <div className="flex min-w-0 flex-col gap-2">

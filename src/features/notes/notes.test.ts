@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { setLanguagePreference } from "../../shared/i18n";
 import {
+  deleteNote,
   appendNoteReference,
   composeNoteMessage,
   injectNotePrompt,
@@ -234,5 +236,16 @@ describe("withoutAssistantNotes", () => {
       "project",
       "session",
     ]);
+  });
+});
+
+describe("note operation feedback", () => {
+  it("localizes the stale-delete refusal before persistence", async () => {
+    await setLanguagePreference("tr");
+    try {
+      await expect(deleteNote("note-1")).rejects.toThrow("Silmeden önce bu notu yenileyin.");
+    } finally {
+      await setLanguagePreference("en");
+    }
   });
 });

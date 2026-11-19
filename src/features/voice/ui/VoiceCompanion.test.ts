@@ -583,7 +583,7 @@ it("clears conversational engagement when the microphone is paused", async () =>
   await speech("Orada mısın?");
   presence.value = "idle";
   await render("a");
-  await click("Pause mic");
+  await click("Mute microphone");
   expect(mock.close).toHaveBeenCalledOnce();
 });
 it("omits unheard local speech after a newer admitted request", async () => {
@@ -1162,6 +1162,9 @@ it("compact mode shows the latest spoken line beside a borderless orb", async ()
   await click("Compact voice companion");
   const handle = container.querySelector<HTMLElement>('button[aria-label^="Move voice window"]')!;
   expect(handle.dataset.buttonVariant).toBe("ghost");
+  // Regression #312: the name is short; the arrow-key instruction lives in the description.
+  expect(handle.getAttribute("aria-label")).toBe("Move voice window");
+  expect(handle.getAttribute("aria-description")).toMatch(/Use arrow keys to reposition\./);
   await speech("How are the tests?");
   const title = container.querySelector("h2")!.closest("[data-section-label]");
   expect(title?.nextElementSibling?.textContent).toBe("Tests are passing.");
@@ -1811,7 +1814,7 @@ it("reconnects a recoverable cloud drop with fresh credentials and text context 
   await act(async () => previous.transcript("Continue my work"));
   vi.useFakeTimers();
   await act(async () => previous.error("Connection closed", true, { recoverable: true }));
-  expect(container.textContent).toContain("Reconnecting...");
+  expect(container.textContent).toContain("Reconnecting…");
   await act(async () => vi.advanceTimersByTimeAsync(1000));
   expect(mock.realtimeSecret).toHaveBeenCalledTimes(2);
   expect(mock.realtimeConnect).toHaveBeenLastCalledWith(
@@ -2011,7 +2014,7 @@ it("recovers unconfirmed provider cleanup with fresh credentials while retaining
   const { onSubmit } = await setupGlobal("a", "openai", "project");
   const retired = mock.realtime;
   await act(() => mock.realtime.transcript("Keep my accepted request"));
-  await click("Pause mic");
+  await click("Mute microphone");
   vi.useFakeTimers();
   await act(() =>
     mock.realtime.error("Voice input cleanup was not confirmed. Start voice again.", true, {
@@ -2019,7 +2022,7 @@ it("recovers unconfirmed provider cleanup with fresh credentials while retaining
       code: "input_cleanup_unconfirmed",
     }),
   );
-  expect(container.textContent).toContain("Reconnecting...");
+  expect(container.textContent).toContain("Reconnecting…");
   await act(async () => vi.advanceTimersByTimeAsync(1000));
   expect(mock.realtimeSecret).toHaveBeenCalledTimes(2);
   expect(mock.realtimeConnect).toHaveBeenCalledTimes(2);
@@ -2028,7 +2031,7 @@ it("recovers unconfirmed provider cleanup with fresh credentials while retaining
     text: "Keep my accepted request",
   });
   expect(mock.mute).toHaveBeenLastCalledWith(true);
-  expect(container.querySelector('[aria-label="Resume"]')?.getAttribute("aria-pressed")).toBe(
+  expect(container.querySelector('[aria-label="Mute microphone"]')?.getAttribute("aria-pressed")).toBe(
     "true",
   );
   expect(mock.toolCall).not.toHaveBeenCalled();
@@ -2155,8 +2158,8 @@ it("retries slowly after the fast attempts, retries on online, and Stop ends it"
     await act(async () => vi.advanceTimersByTimeAsync(delay));
   }
   await fail();
-  expect(page.textContent).toContain("Reconnecting...");
-  expect(page.textContent).not.toContain("Couldn't connect voice. Try again.");
+  expect(page.textContent).toContain("Reconnecting…");
+  expect(page.textContent).not.toContain("Couldn’t connect voice. Try again.");
   const attempts = mock.realtimeSecret.mock.calls.length;
   await act(async () => vi.advanceTimersByTimeAsync(60_000));
   expect(mock.realtimeSecret).toHaveBeenCalledTimes(attempts + 1);
@@ -2961,6 +2964,35 @@ it.each(["resolve", "reject"] as const)(
     }
   },
 );
+
+it("keeps mic and speaker names stable while aria-pressed carries mute state", async () => {
+  await setup();
+  const control = (label: string) =>
+    container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!;
+  expect(control("Mute microphone").getAttribute("aria-pressed")).toBe("false");
+  await click("Mute microphone");
+  expect(mock.mute).toHaveBeenLastCalledWith(true);
+  expect(control("Mute microphone").getAttribute("aria-pressed")).toBe("true");
+  expect(container.querySelector('[aria-label="Resume"]')).toBeNull();
+  expect(container.querySelector('[aria-label="Pause mic"]')).toBeNull();
+  await click("Mute microphone");
+  expect(mock.mute).toHaveBeenLastCalledWith(false);
+  expect(control("Mute microphone").getAttribute("aria-pressed")).toBe("false");
+  expect(control("Mute speaker").getAttribute("aria-pressed")).toBe("false");
+  await click("Mute speaker");
+  expect(control("Mute speaker").getAttribute("aria-pressed")).toBe("true");
+  expect(container.querySelector('[aria-label="Unmute speaker"]')).toBeNull();
+});
+
+it("gives Stop speaking a skip glyph, not the pause glyph beside the mic toggle", async () => {
+  await setup();
+  const silence = container.querySelector<HTMLButtonElement>('button[aria-label="Stop speaking"]')!;
+  expect(silence.querySelector("svg")?.getAttribute("class")).toContain("lucide-skip-forward");
+  expect(silence.querySelector("svg")?.getAttribute("class")).not.toContain("lucide-pause");
+  mock.silence.mockClear();
+  await click("Stop speaking");
+  expect(mock.silence).toHaveBeenCalledOnce();
+});
 
 it("speaker mute survives compact changes and never mutes the microphone or stops work", async () => {
   const { onStop } = await setup();

@@ -1,6 +1,9 @@
 /* Room shell: header, tab row, notices, status popovers, undo bars and the setup prompt. */
 
+/* The room is the pane: every breakpoint inside it (shell, tabs, Today, Conversations, History,
+   Memory) queries this container, not the window, so an open side panel narrows the layout too. */
 .room {
+  container: assistant-room / inline-size;
   display: flex;
   flex-direction: column;
   block-size: 100%;
@@ -44,7 +47,7 @@
   flex: none;
 }
 
-@media (max-width: 720px) {
+@container assistant-room (max-width: 720px) {
   .header {
     flex-wrap: wrap;
     padding-inline: 12px;

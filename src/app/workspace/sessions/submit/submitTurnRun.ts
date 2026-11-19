@@ -1,3 +1,4 @@
+import { errorText } from "../../../../shared/lib/errors";
 import type { SubmitDeps, SubmitInput, SubmitPreflight, SubmitSetup } from "./submitTypes";
 import { createSubmitTurnEvents } from "./submitTurnEvents";
 import { runSubmitDispatch } from "./submitTurnDispatch";
@@ -195,7 +196,7 @@ export function startSubmittedTurn(
       turn.controlOutcome = {
         status: "failed",
         text: turn.controlText,
-        error: error instanceof Error ? error.message : String(error),
+        error: errorText(error),
       };
       if (turnGen.current.get(sessionId) === gen) {
         enqueueHarnessEvent(sessionId, {

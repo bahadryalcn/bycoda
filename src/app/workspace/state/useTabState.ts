@@ -1,7 +1,15 @@
 import { useCallback, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { newDefaultSession } from "../../../features/sessions/model/session";
-import { getSessions, useShellSessions } from "../../../features/sessions/model/sessionsStore";
-import { withoutDelegatedTabs } from "../../../features/workspace/model/delegatedWorkspace";
+import {
+  getSessions,
+  useShellSessionsSelector,
+} from "../../../features/sessions/model/sessionsStore";
+import { shallowArrayEqual } from "../../../features/sessions/model/stableBlocks";
+import {
+  delegatedSessionIds,
+  withoutDelegatedTabs,
+  withoutHiddenSessionTabs,
+} from "../../../features/workspace/model/delegatedWorkspace";
 import { lastProjectPath } from "../../../features/projects/model/recents";
 import {
   isolateTerminalPanes,
@@ -36,7 +44,9 @@ export interface TabStateDeps {
 
 /** Tab list (with pane isolation on every write) and the active tab id. */
 export function useTabState({ seed, windowTransfer, resumed }: TabStateDeps) {
-  const sessions = useShellSessions();
+  // Only the ids of hidden child sessions matter here, so the root does not
+  // re-render for a status, tool or title change of an ordinary conversation.
+  const hiddenSessionIds = useShellSessionsSelector(delegatedSessionIds, shallowArrayEqual);
   const [storedTabs, setTabsState] = useState<WorkspaceTab[]>(() =>
     (windowTransfer?.tabs ?? resumed?.tabs ?? [seed.tab]).map(isolateTerminalPanes),
   );
@@ -63,7 +73,10 @@ export function useTabState({ seed, windowTransfer, resumed }: TabStateDeps) {
   const [activeTabId, setActiveTabIdState] = useState(
     () => windowTransfer?.activeTabId ?? resumed?.activeTabId ?? seed.tab.id,
   );
-  const tabs = useMemo(() => withoutDelegatedTabs(storedTabs, sessions), [storedTabs, sessions]);
+  const tabs = useMemo(
+    () => withoutHiddenSessionTabs(storedTabs, hiddenSessionIds),
+    [storedTabs, hiddenSessionIds],
+  );
   if (tabs !== storedTabs) {
     // Drop a delegated child's pane for good: a shell that reloads without its
     // lineage must not bring the tab back and pull focus from the parent.

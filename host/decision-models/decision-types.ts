@@ -31,8 +31,11 @@ export type DecisionAnswer = {
   model: string;
 };
 
+/** A decision can also fail because the owner's saved settings are damaged; source tests never report that. */
+export type DecisionAnswerErrorCode = DecisionErrorCode | "config_damaged";
+
 export type DecisionResult = {
-  answers: Record<string, DecisionAnswer | { error: DecisionErrorCode }>;
+  answers: Record<string, DecisionAnswer | { error: DecisionAnswerErrorCode }>;
   sourceChain: string[];
   durationMs: number;
 };
@@ -116,7 +119,12 @@ export type DiscoveryCandidate = {
   detail?: string;
 };
 
-export type DiscoveryResult = { found: DiscoveryCandidate[]; incomplete?: boolean };
+export type DiscoveryResult = {
+  found: DiscoveryCandidate[];
+  incomplete?: boolean;
+  /** Epoch ms when the scan finished; set by the service, never by `discovery.scan`. */
+  scannedAt?: number;
+};
 
 export type LocalTier = "strong" | "medium" | "cpu" | "insufficient";
 

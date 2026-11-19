@@ -66,19 +66,19 @@ export function useWorktreeSelection({
         removingSessionIds.current.has(sessionId) ||
         switchingWorktrees.current.has(sessionId)
       ) {
-        throw new Error("Wait for this session to finish before changing working copies.");
+        throw new Error("Wait for this session to finish before changing worktrees.");
       }
       if (!current.worktreeRemoved && pathKey(sessionWorkCwd(current)) === pathKey(tree.path))
         return;
       if ([...removingWorktreePaths.current].some((path) => isEqualOrInside(tree.path, path))) {
-        throw new Error("This worktree is being deleted. Select another working copy.");
+        throw new Error("This worktree is being deleted. Select another worktree.");
       }
       if (!current.worktreeRemoved && current.queuedMessages?.length) {
-        throw new Error("Clear queued messages before changing working copies.");
+        throw new Error("Clear queued messages before changing worktrees.");
       }
       const run = orchestrator.forSession(sessionId);
       if (run && ["active", "paused"].includes(run.status)) {
-        throw new Error("Stop this orchestration run before changing working copies.");
+        throw new Error("Stop this orchestration run before changing worktrees.");
       }
       switchingWorktrees.current.set(sessionId, tree.path);
       pendingPersist.current.delete(sessionId);
@@ -98,7 +98,7 @@ export function useWorktreeSelection({
           source.cwd !== current.cwd ||
           sessionWorkCwd(source) !== sessionWorkCwd(current)
         ) {
-          throw new Error("The session changed. Try selecting the working copy again.");
+          throw new Error("The session changed. Try selecting the worktree again.");
         }
         const selected = sessionInWorktree(source, target);
         if (selected.id !== sessionId) {
@@ -126,7 +126,7 @@ export function useWorktreeSelection({
           latest.cwd !== current.cwd ||
           sessionWorkCwd(latest) !== sessionWorkCwd(current)
         ) {
-          throw new Error("The session changed. Try selecting the working copy again.");
+          throw new Error("The session changed. Try selecting the worktree again.");
         }
         const next = sessionInWorktree(latest, target);
         if (fromComposer) workspacePins.current.set(sessionId, currentWorkspace(latest.cwd));

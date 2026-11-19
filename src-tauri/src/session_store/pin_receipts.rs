@@ -148,7 +148,7 @@ pub async fn session_pin_state(
     let captured_page = crate::harness::page_incarnation(&window)?;
     crate::harness::run_blocking("session_pin_state", move || {
         let store = app.state::<super::SessionStore>();
-        let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+        let conn = store.lock_conn()?;
         if crate::harness::page_incarnation(&window)? != captured_page {
             return Err("PIN_PAGE_STALE".into());
         }
@@ -171,7 +171,7 @@ pub async fn session_pin_receipt(
     let captured_page = crate::harness::page_incarnation(&window)?;
     crate::harness::run_blocking("session_pin_receipt", move || {
         let store = app.state::<super::SessionStore>();
-        let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+        let conn = store.lock_conn()?;
         if crate::harness::page_incarnation(&window)? != captured_page { return Err("PIN_PAGE_STALE".into()); }
         let raw: Option<String> = conn.query_row("SELECT result FROM session_pin_receipts WHERE operation_id=?1 AND session_id=?2 AND cwd_key=?3", params![operation_id,session_id,path_key(&cwd)], |r| r.get(0)).optional().map_err(|e| e.to_string())?;
         raw.map(|value| serde_json::from_str(&value).map_err(|e| e.to_string())).transpose()
@@ -206,7 +206,7 @@ pub async fn session_pin_apply(
     crate::harness::run_blocking("session_pin_apply", move || {
         let store = app.state::<super::SessionStore>();
         crate::native_window_lifecycle::session_persistence_write(&window, &session_id, || {
-            let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+            let conn = store.lock_conn()?;
             if !captured_issuer.is_live() { return Err("PIN_PAGE_STALE".into()); }
             let cwd_key = path_key(&cwd);
             let request = serde_json::to_vec(&(&session_id, &cwd_key, desired_pinned, expected_version, &expected_authority)).map_err(|e| e.to_string())?;

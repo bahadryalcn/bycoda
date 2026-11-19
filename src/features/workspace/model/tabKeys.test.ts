@@ -3,6 +3,7 @@ import {
   adjacentItemId,
   deferUnhandledEscape,
   focusedBusyAgentSessionId,
+  isRepeatableTabCommand,
   shouldHandleListNavigation,
   shouldStopFocusedTurnOnEscape,
   tabCommand,
@@ -40,6 +41,45 @@ function key(
     ...partial,
   } as KeyboardEvent;
 }
+
+describe("isRepeatableTabCommand", () => {
+  it.each([
+    "next",
+    "prev",
+    "cycle-next",
+    "cycle-prev",
+    "back",
+    "forward",
+    "prev-session",
+    "next-session",
+    "prev-session-in-tab",
+    "next-session-in-tab",
+    "prev-project",
+    "next-project",
+    { focus: "left" },
+  ] as const)("lets a held key keep stepping with %j", (command) => {
+    expect(isRepeatableTabCommand(command)).toBe(true);
+  });
+
+  it.each([
+    "new",
+    "new-session",
+    "close-others",
+    "close-all",
+    "close",
+    "split-right",
+    "split-down",
+    "new-terminal",
+    "new-terminal-tab",
+    "toggle-terminal",
+    "archive-session",
+    "toggle-notes",
+    { activate: 0 },
+    { activate: -1 },
+  ] as const)("keeps %j to one run per press", (command) => {
+    expect(isRepeatableTabCommand(command)).toBe(false);
+  });
+});
 
 describe("tabCommand", () => {
   it("toggles the terminal with Ctrl+double quote on Turkish and shifted layouts", () => {

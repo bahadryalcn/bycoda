@@ -1,10 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync, unlinkSync } from "node:fs";
+import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { HostStore } from "../store";
 import { attachmentPath, writeAttachmentChunk } from "../attachments/attachments";
 import { ConversationRuntimeReadTools } from "./conversation-runtime-read-tools";
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  return { ...actual, stat: vi.fn(actual.stat) };
+});
 
 const closes: (() => void)[] = [];
 afterEach(() => {
@@ -166,6 +172,22 @@ describe("runtime read conversation tools", () => {
     expect(await call("attachments.list", { offset: 2 })).toMatchObject({
       items: [{ id: "local-ref", readable: false }],
     });
+  });
+
+  it("probes host storage only for the attachments on the returned page", async () => {
+    const { call } = await setup();
+    vi.mocked(stat).mockClear();
+    const page = (await call("attachments.list", { limit: 1 })) as {
+      items: { readable: boolean }[];
+      total: number;
+    };
+    expect(page.total).toBe(3);
+    expect(page.items).toHaveLength(1);
+    expect(page.items[0]?.readable).toBe(true);
+    expect(stat).toHaveBeenCalledTimes(1);
+    vi.mocked(stat).mockClear();
+    await call("attachments.list", { offset: 2 });
+    expect(stat).toHaveBeenCalledTimes(0);
   });
 
   it("reuses accepted-session attachment reads with bounded exact byte pagination", async () => {

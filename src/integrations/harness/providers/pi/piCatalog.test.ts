@@ -238,9 +238,9 @@ it("discovers extension-only catalogs after initially empty responses", async ()
   expectStopped();
 });
 
-it("finishes an empty catalog without replacing existing models", async () => {
+it("reports an empty catalog as a failed refresh without replacing existing models", async () => {
   mocks.writeChild.mockImplementation(async (id, line) => reply(id, line, []));
-  const result = refreshPiCatalog();
+  const result = expect(refreshPiCatalog()).rejects.toThrow("pi reported no models.");
   await vi.runAllTimersAsync();
   await result;
   expect(Date.now()).toBe(5_000);

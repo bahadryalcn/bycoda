@@ -6,6 +6,13 @@ const { history } = vi.hoisted(() => ({ history: [] as Record<string, unknown>[]
 vi.mock("../../providers/model/rateLimitHistory", () => ({ useRateLimitHistory: () => history }));
 import { QuotaHistory } from "./UsageQuotaHistory";
 const at = (s: string) => Date.parse(s);
+// The table mounts only while its disclosure is open; open it the way a native toggle does.
+const openTable = (host: HTMLElement) =>
+  act(async () => {
+    const details = host.querySelector("details")!;
+    details.open = true;
+    details.dispatchEvent(new Event("toggle"));
+  });
 it("shows distinct accounts together by default and obeys provider/account filters", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   history.splice(
@@ -45,6 +52,7 @@ it("shows distinct accounts together by default and obeys provider/account filte
       "Claude Code · Work80.0%",
       "Claude Code · UnusedNo records",
     ]);
+    await openTable(host);
     expect(
       new Set(
         [...host.querySelectorAll("tbody tr")].map((row) =>
@@ -59,6 +67,45 @@ it("shows distinct accounts together by default and obeys provider/account filte
     await render([], ["codex:default"]);
     expect(host.querySelectorAll(".usage-quota-point")).toHaveLength(1);
     expect(host.querySelector("tbody")?.textContent).toContain("Codex · Personal");
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+    vi.unstubAllGlobals();
+  }
+});
+it("mounts the history table only while its disclosure is open", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  history.splice(0, history.length, {
+    at: 100,
+    account: "codex:default",
+    kind: "session",
+    used: 10,
+    minutes: 300,
+    resetsAt: null,
+  });
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () =>
+      root.render(
+        createElement(QuotaHistory, {
+          window: { start: 0, end: 200 },
+          filters: { provider: [], account: [], project: [], model: [], group: [] },
+          accounts: [{ id: "default", provider: "codex", label: "Default", color: "pink" }],
+        }),
+      ),
+    );
+    const details = host.querySelector("details")!;
+    expect(details.open).toBe(false);
+    expect(host.querySelector("tbody")).toBeNull();
+    await openTable(host);
+    expect(host.querySelectorAll("tbody tr")).toHaveLength(1);
+    await act(async () => {
+      details.open = false;
+      details.dispatchEvent(new Event("toggle"));
+    });
+    expect(host.querySelector("tbody")).toBeNull();
   } finally {
     await act(async () => root.unmount());
     host.remove();
@@ -110,6 +157,7 @@ it("sorts Time and Reset chronologically over year boundaries, with missing rese
         }),
       ),
     );
+    await openTable(host);
     const order = () =>
       [...host.querySelectorAll("tbody tr")].map((row) =>
         row.getAttribute("data-row-key")?.replace(/^codex:default:session:/, ""),
@@ -129,6 +177,42 @@ it("sorts Time and Reset chronologically over year boundaries, with missing rese
     expect(order()).toEqual([String(recent), String(old), String(recent + 1000)]);
     await sort("Reset");
     expect(order()).toEqual([String(old), String(recent), String(recent + 1000)]);
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+    vi.unstubAllGlobals();
+  }
+});
+it("bounds plot nodes for thousands of samples while the review table and count keep the data", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  history.splice(
+    0,
+    history.length,
+    ...Array.from({ length: 5000 }, (_, i) => ({
+      at: i,
+      account: "codex:default",
+      kind: "session",
+      used: i % 100,
+      minutes: 300,
+      resetsAt: null,
+    })),
+  );
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () =>
+      root.render(
+        createElement(QuotaHistory, {
+          window: { start: 0, end: 5000 },
+          filters: { provider: [], account: [], project: [], model: [], group: [] },
+          accounts: [{ id: "default", provider: "codex", label: "Default", color: "pink" }],
+        }),
+      ),
+    );
+    expect(host.querySelectorAll(".usage-quota-point").length).toBeLessThanOrEqual(180);
+    expect(host.querySelector('[role="img"]')?.getAttribute("aria-label")).toContain("5000");
+    expect(host.querySelectorAll("tbody tr")).toHaveLength(100);
   } finally {
     await act(async () => root.unmount());
     host.remove();

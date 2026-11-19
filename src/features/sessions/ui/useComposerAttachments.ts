@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import {
   useCallback,
   useEffect,
@@ -10,7 +11,8 @@ import {
 import type { ComposerPreparation } from "../data/composerClosure";
 import type { ParentAdmission, ParentInputHandle } from "../data/parentInputClosure";
 import type { useMountedComposerClosure } from "../hooks/useMountedComposerClosure";
-import { MAX_ATTACHMENTS, MAX_EMBED_BYTES, revokeAttachment } from "../model/attachments";
+import { MAX_ATTACHMENTS, revokeAttachment, type SkippedAttachment } from "../model/attachments";
+import { collectSkippedAttachments } from "../model/attachmentSkips";
 import { setComposerAttachments } from "../model/draftCache";
 import { releaseAttachments } from "../model/releaseAttachments";
 import { harnessSupportsAttachments, type Attachment, type HarnessId } from "../model/session";
@@ -22,7 +24,8 @@ type MountedClosure = ReturnType<typeof useMountedComposerClosure>;
 export type AttachmentSink = {
   attachmentsSupported: boolean;
   remote: boolean;
-  addAttachments: (incoming: Attachment[]) => void;
+  /** `notice` says which files this read left out; it joins any over-limit notice. */
+  addAttachments: (incoming: Attachment[], notice?: string | null) => void;
 };
 
 /**
@@ -69,21 +72,6 @@ export function releaseOverLimit(
     p0: next.length - previous.length,
     p1: fresh.length,
     p2: MAX_ATTACHMENTS,
-  });
-}
-
-/**
- * Pasted blobs that could not be read (over the embed limit, or unreadable) are
- * left out by the reader. Says so when every pasted file was a blob.
- */
-export function skippedPastedFiles(files: File[], attached: Attachment[]): string | null {
-  if (files.some((file) => (file as File & { path?: string }).path?.trim())) return null;
-  const skipped = files.length - attached.length;
-  if (skipped <= 0) return null;
-  return t("{p0} of {p1} pasted files could not be attached (larger than {p2} MB or unreadable).", {
-    p0: skipped,
-    p1: files.length,
-    p2: Math.round(MAX_EMBED_BYTES / (1024 * 1024)),
   });
 }
 
@@ -240,7 +228,7 @@ export function useComposerAttachmentReads({
           // later reset/send still makes its explicit retry stale before work.
           generation = pasteGenerationRef.current;
           failures = pasteFailuresRef.current;
-          setPasteError(reason instanceof Error ? reason.message : String(reason));
+          setPasteError(errorText(reason));
         },
       );
       const previous = pasteFlightRef.current;
@@ -264,30 +252,36 @@ export function useComposerAttachmentReads({
   );
 
   const readDroppedAttachments = useCallback(
-    (read: () => Promise<Attachment[]>) => {
+    (read: (onSkipped: (skipped: SkippedAttachment[]) => void) => Promise<Attachment[]>) => {
       setPasteError(null);
       rememberAttachmentRead((accepted) =>
         Promise.resolve()
-          .then(read)
-          .then((incoming) =>
+          .then(() => {
+            // Per read, so an explicit retry never reports an earlier attempt twice.
+            const skips = collectSkippedAttachments();
+            return read(skips.onSkipped).then((incoming) => ({ incoming, notice: skips.notice() }));
+          })
+          .then(({ incoming, notice }) =>
             accepted.apply(() => {
               if (!accepted.isCurrent() || !sinkRef.current.attachmentsSupported) {
                 incoming.forEach(revokeAttachment);
                 return;
               }
               if (incoming.length === 0) {
+                // Skipped blobs are named; only a vanished path gets the generic line.
                 setPasteError(
-                  t("Nothing to attach. The file may have been moved, renamed, or deleted."),
+                  notice ??
+                    t("Nothing to attach. The file may have been moved, renamed, or deleted."),
                 );
                 return;
               }
-              sinkRef.current.addAttachments(incoming);
+              sinkRef.current.addAttachments(incoming, notice);
             }),
           )
           .catch((reason: unknown) => {
             if (!accepted.isCurrent()) return;
             accepted.fail(reason);
-            setPasteError(reason instanceof Error ? reason.message : String(reason));
+            setPasteError(errorText(reason));
           }),
       );
     },

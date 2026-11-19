@@ -13,6 +13,7 @@ import { executionUserIndex } from "./executionTurn";
 import { isSessionErrorBlock } from "./sessionIssue";
 import { sessionIssue } from "./sessionIssue";
 import { sessionNeedsInput } from "./session";
+import { selectSessionById } from "./sessionsStore";
 import { hostSessionBinding } from "../../connections/public/sessionExecutionBinding";
 import { remoteSessionFor } from "../../connections/public/connections";
 import { parseRemotePath } from "../../connections/public/remoteProjects";
@@ -91,10 +92,36 @@ export function isDelegatedChildOf(child: Session, parent: Session): boolean {
   }
 }
 
-/** Children of one parent, oldest first. */
-export function delegatedChildren(sessions: readonly Session[], parentId: string): Session[] {
-  const parent = sessions.find((session) => session.id === parentId);
-  return sessions
+const linkedIndexes = new WeakMap<readonly Session[], Session[]>();
+
+/**
+ * The sessions of one array that carry a delegation link: the only ones that can
+ * be a delegated child. Built once per array identity, so a lookup scans the few
+ * linked sessions instead of every session.
+ */
+function linkedSessions(sessions: readonly Session[]): Session[] {
+  let linked = linkedIndexes.get(sessions);
+  if (!linked) {
+    linked = sessions.filter((session) => delegationParentOf(session) !== undefined);
+    linkedIndexes.set(sessions, linked);
+  }
+  return linked;
+}
+
+/**
+ * Children of one parent, oldest first. Who is whose child is decided on
+ * `structure` (default `sessions`); the returned objects are `sessions`'. A
+ * reactive caller passes the shell as `structure`: lineage never changes on a
+ * streamed-text frame, so the family is found once per shell change while the
+ * children themselves stay live.
+ */
+export function delegatedChildren(
+  sessions: readonly Session[],
+  parentId: string,
+  structure: readonly Session[] = sessions,
+): Session[] {
+  const parent = selectSessionById(structure, parentId);
+  const family = linkedSessions(structure)
     .filter((session) =>
       parent
         ? isDelegatedChildOf(session, parent)
@@ -103,16 +130,34 @@ export function delegatedChildren(sessions: readonly Session[], parentId: string
     .sort(
       (a, b) => (delegationParentOf(a)?.startedAt ?? 0) - (delegationParentOf(b)?.startedAt ?? 0),
     );
+  if (structure === sessions) return family;
+  return family.flatMap((session) => selectSessionById(sessions, session.id) ?? []);
 }
 
 /** A subagent's own subagents (`delegatedChildren` one level down), oldest first. */
 export function nestedDelegatedChildren(
   sessions: readonly Session[],
   children: readonly Session[],
+  structure: readonly Session[] = sessions,
 ): Session[] {
   return children.flatMap((child) =>
-    delegationParentOf(child)?.kind === "subagent" ? delegatedChildren(sessions, child.id) : [],
+    delegationParentOf(child)?.kind === "subagent"
+      ? delegatedChildren(sessions, child.id, structure)
+      : [],
   );
+}
+
+/** The subagent that started `childId`, when that one is itself a subagent. */
+export function nestedDelegationOwner(
+  sessions: readonly Session[],
+  childId: string | undefined,
+  structure: readonly Session[] = sessions,
+): Session | undefined {
+  const child = selectSessionById(structure, childId);
+  if (!child) return undefined;
+  const owner = linkedSessions(structure).find((session) => isDelegatedChildOf(child, session));
+  if (!owner) return undefined;
+  return structure === sessions ? owner : selectSessionById(sessions, owner.id);
 }
 
 /** Whether `session` is `root`'s child, or the child of one of `root`'s children. */

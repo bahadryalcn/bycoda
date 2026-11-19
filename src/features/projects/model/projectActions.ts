@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { pathKey } from "../../../shared/lib/paths";
 import { canonicalShortcut } from "../../quick-composer/model/quickComposerShortcut";
 import { validateKeybindingShortcut } from "../../settings/public/settings";
@@ -45,7 +46,7 @@ export function projectActionShortcutError(
   try {
     validateKeybindingShortcut(`project-action:${id}`, shortcut);
   } catch (error) {
-    return error instanceof Error ? error.message : String(error);
+    return errorText(error);
   }
   const other = actions.find(
     (action) =>

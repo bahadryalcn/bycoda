@@ -183,13 +183,13 @@ const menuAction = async (relative: string, label: string) => {
   await openMenu(relative);
   await click(button(label, document));
 };
-const FILE_SECTIONS = ["Merge Conflicts", "Staged Changes", "Changes"];
+const FILE_SECTIONS = ["Merge conflicts", "Staged Changes", "Changes"];
 const sectionTitles = () =>
   [...container.querySelectorAll("[data-file-section-title]")]
     .map((node) => node.textContent)
     .filter((title) => FILE_SECTIONS.includes(title ?? ""));
 
-describe("Merge Conflicts section", () => {
+describe("Merge conflicts section", () => {
   it("lists conflicts first, with a count and a badge per kind, and no duplicate rows", async () => {
     vi.mocked(gitDiffIndex).mockResolvedValue(
       index({
@@ -200,7 +200,7 @@ describe("Merge Conflicts section", () => {
     );
     await renderPanel();
 
-    expect(sectionTitles()).toEqual(["Merge Conflicts", "Staged Changes", "Changes"]);
+    expect(sectionTitles()).toEqual(["Merge conflicts", "Staged Changes", "Changes"]);
     expect(container.textContent).toContain("Merge in progress · 2 conflicts");
     expect(row("a.ts").textContent).toContain("UU");
     expect(row("sub/gone.ts").textContent).toContain("DU");
@@ -318,7 +318,7 @@ describe("operation banner", () => {
       index({ conflicts: [conflict("a.ts")], operation: null }),
     );
     await renderPanel();
-    expect(sectionTitles()).toEqual(["Merge Conflicts"]);
+    expect(sectionTitles()).toEqual(["Merge conflicts"]);
     expect(button("Continue")).toBeUndefined();
     expect(container.textContent).not.toContain("in progress");
   });
@@ -387,7 +387,7 @@ describe("a host that predates conflict info", () => {
     await renderPanel();
     await act(async () => {});
 
-    expect(sectionTitles()).toEqual(["Merge Conflicts", "Changes"]);
+    expect(sectionTitles()).toEqual(["Merge conflicts", "Changes"]);
     expect(row("a.ts").textContent).toContain("U");
     expect(container.textContent).toContain("Merge in progress · 1 conflict");
     expect(container.querySelectorAll('[data-git-file][aria-label="a.ts"]')).toHaveLength(0);

@@ -20,6 +20,7 @@ import type {
 } from "../../src/features/connections/model/protocol";
 import { canonicalHostPath, hostProjectId } from "../../src/features/sync/model/syncProjectId";
 import { RUN_LEASE_TTL_MS } from "../../src/features/sync/model/runLease";
+import { AwakeClock } from "../../src/shared/lib/time/awakeClock";
 import { createDedupedWarn } from "../diagnostics/log-dedupe";
 import { createLogger } from "../diagnostics/logger";
 import {
@@ -262,7 +263,22 @@ export class DesktopLive {
   });
   /** Remote unlock requests for the desktop renderer, and the grants phones earned. */
   readonly groupLock: DesktopGroupLock;
-  constructor(private readonly now: () => number = Date.now) {
+  /**
+   * Window liveness (heartbeats, directory snapshots, writers, silent busy marks) is measured on
+   * this clock, which skips the time the Host machine slept: after waking, no window is stale
+   * just because the whole machine was suspended, and a window that really went quiet still
+   * expires one window length after. Revisions and command retention stay on the wall clock.
+   */
+  private readonly clock: AwakeClock;
+  /**
+   * `watchSuspension` starts the clock's own sampling with the first heartbeat. It defaults on only
+   * for the real wall clock: a test clock is moved by hand and would read as one long sleep.
+   */
+  constructor(
+    private readonly now: () => number = Date.now,
+    private readonly watchSuspension: boolean = now === Date.now,
+  ) {
+    this.clock = new AwakeClock(now);
     this.groupLock = new DesktopGroupLock(now);
     // A grant given or ended changes what a phone sees of the directory.
     this.groupLock.onChange = () => this.onDirectoryChange?.();
@@ -277,13 +293,19 @@ export class DesktopLive {
     return states;
   }
 
+  /** Liveness time: wall time without the spans the Host machine slept. */
+  private awake(): number {
+    return this.clock.now();
+  }
+
   private reclaimCommands(): void {
     const now = this.now();
+    const awake = this.awake();
     this.commands = this.commands.filter((command) => {
       const owner = this.sessions.get(command.sessionId)?.clientId;
       const heartbeat = owner ? this.clients.get(owner) : undefined;
       return (
-        (heartbeat !== undefined && now - heartbeat <= DESKTOP_BEAT_STALE_MS) ||
+        (heartbeat !== undefined && awake - heartbeat <= DESKTOP_BEAT_STALE_MS) ||
         now - command.queuedAt < DESKTOP_COMMAND_RETAIN_MS
       );
     });
@@ -309,6 +331,7 @@ export class DesktopLive {
         ? (input as Record<string, unknown>)
         : {};
     if (!Array.isArray(value.sessions)) throw new Error("Invalid desktop sessions");
+    if (this.watchSuspension) this.clock.start();
     const clientId =
       typeof value.clientId === "string" && value.clientId ? value.clientId : "legacy";
     const pageToken =
@@ -327,24 +350,24 @@ export class DesktopLive {
       directoryChanged =
         JSON.stringify(this.directories.get(clientId)?.value) !== JSON.stringify(projection);
       this.directories.set(clientId, {
-        at: this.now(),
+        at: this.awake(),
         value: projection,
         revision: projection ? revision : undefined,
       });
     } else if (revision) {
       const previous = this.directories.get(clientId);
-      if (previous?.value && previous.revision === revision) previous.at = this.now();
+      if (previous?.value && previous.revision === revision) previous.at = this.awake();
     }
     const acked = new Set(Array.isArray(value.acked) ? value.acked.map(String) : []);
     const writers = value.writers as { version?: number; sessionIds?: unknown } | undefined;
     if (writers?.version === 1 && Array.isArray(writers.sessionIds))
       this.writerClients.set(clientId, {
         sessions: new Set(writers.sessionIds.filter((id): id is string => typeof id === "string")),
-        at: this.now(),
+        at: this.awake(),
       });
     else {
       const known = this.writerClients.get(clientId);
-      if (known) known.at = this.now();
+      if (known) known.at = this.awake();
     }
     this.pruneWriterClients();
     for (const id of acked) {
@@ -476,10 +499,10 @@ export class DesktopLive {
       (command) =>
         !acked.has(command.id) || this.sessions.get(command.sessionId)?.clientId !== clientId,
     );
-    this.clients.set(clientId, this.now());
+    this.clients.set(clientId, this.awake());
     this.storedSince.clear();
     for (const [id, beatAt] of this.clients) {
-      if (this.now() - beatAt <= DESKTOP_BEAT_STALE_MS) continue;
+      if (this.awake() - beatAt <= DESKTOP_BEAT_STALE_MS) continue;
       this.clients.delete(id);
       if (this.directories.delete(id)) directoryChanged = true;
       for (const [sessionId, session] of this.sessions)
@@ -516,6 +539,19 @@ export class DesktopLive {
     };
   }
 
+  /**
+   * Which desktop snapshots `projectDirectory` still counts. It moves when a snapshot crosses
+   * the stale threshold, the one directory change no beat or commit announces.
+   */
+  freshDirectoryClients(): string {
+    return JSON.stringify(
+      [...this.directories]
+        .filter(([, snapshot]) => this.awake() - snapshot.at <= DESKTOP_BEAT_STALE_MS)
+        .map(([clientId]) => clientId)
+        .sort(),
+    );
+  }
+
   /** Never substitute raw sync records when a desktop privacy snapshot is absent. */
   projectDirectory(
     registered: readonly HostProject[],
@@ -524,7 +560,7 @@ export class DesktopLive {
     access: GroupAccess = NO_GROUP_ACCESS,
   ): HostProjectDirectory {
     const snapshots = [...this.directories.values()]
-      .filter((snapshot) => this.now() - snapshot.at <= DESKTOP_BEAT_STALE_MS)
+      .filter((snapshot) => this.awake() - snapshot.at <= DESKTOP_BEAT_STALE_MS)
       .sort((a, b) => b.at - a.at);
     if (!snapshots.length || snapshots.some((snapshot) => !snapshot.value))
       return { version: 1, privacyReady: false, groups: [], projects: [] };
@@ -646,7 +682,7 @@ export class DesktopLive {
 
   private clientAlive(clientId: string): boolean {
     const beatAt = this.clients.get(clientId);
-    return beatAt !== undefined && this.now() - beatAt <= DESKTOP_BEAT_STALE_MS;
+    return beatAt !== undefined && this.awake() - beatAt <= DESKTOP_BEAT_STALE_MS;
   }
 
   /** Whether the desktop reports itself alive; undefined if it never has
@@ -667,11 +703,11 @@ export class DesktopLive {
       }
       // No app has beat since this host started: the mark is all there is. It is
       // believed for a while; a crashed app leaves it behind for good.
-      const since = this.storedSince.get(id) ?? this.now();
+      const since = this.storedSince.get(id) ?? this.awake();
       this.storedSince.set(id, since);
       while (this.storedSince.size > 512)
         this.storedSince.delete(this.storedSince.keys().next().value!);
-      if (this.now() - since < DESKTOP_STORED_RUNNING_MS) return true;
+      if (this.awake() - since < DESKTOP_STORED_RUNNING_MS) return true;
       this.warnExpiredStored(id);
       return false;
     }
@@ -683,11 +719,13 @@ export class DesktopLive {
   nextStoredExpiry(): number | undefined {
     if (this.alive() !== undefined) return undefined;
     let earliest: number | undefined;
+    const awake = this.awake();
     for (const since of this.storedSince.values()) {
       const at = since + DESKTOP_STORED_RUNNING_MS;
-      if (at > this.now()) earliest = Math.min(earliest ?? at, at);
+      if (at > awake) earliest = Math.min(earliest ?? at, at);
     }
-    return earliest;
+    // The caller schedules on the wall clock.
+    return earliest === undefined ? undefined : this.clock.toWall(earliest);
   }
 
   /** The window that reports `id` busy right now, if it is alive. */
@@ -707,14 +745,14 @@ export class DesktopLive {
     if (live) return live;
     const last = this.lastBusyBeat.get(id);
     if (!last || this.clientAlive(last.clientId)) return undefined;
-    if (this.now() - last.at <= DESKTOP_SILENT_BUSY_MS) return last.clientId;
+    if (this.awake() - last.at <= DESKTOP_SILENT_BUSY_MS) return last.clientId;
     this.lastBusyBeat.delete(id);
     return undefined;
   }
 
   private noteBusyBeat(id: string, clientId: string): void {
     this.lastBusyBeat.delete(id);
-    this.lastBusyBeat.set(id, { clientId, at: this.now() });
+    this.lastBusyBeat.set(id, { clientId, at: this.awake() });
     while (this.lastBusyBeat.size > 1024)
       this.lastBusyBeat.delete(this.lastBusyBeat.keys().next().value!);
   }
@@ -727,7 +765,7 @@ export class DesktopLive {
   /** A client silent past the stale window cannot hold a writer any more. */
   private pruneWriterClients(): void {
     for (const [clientId, known] of this.writerClients)
-      if (this.now() - known.at > DESKTOP_WRITER_STALE_MS) this.writerClients.delete(clientId);
+      if (this.awake() - known.at > DESKTOP_WRITER_STALE_MS) this.writerClients.delete(clientId);
   }
 
   /** Before Host continuation, every live window that holds this session's writer must release it.

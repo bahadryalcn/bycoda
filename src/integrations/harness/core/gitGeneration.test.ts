@@ -43,9 +43,8 @@ describe("shared Git text generation", () => {
     expect(fs.gitStagedContext).not.toHaveBeenCalled();
     expect(run).not.toHaveBeenCalled();
   });
-  it("falls back to the commit summary on a PR model error", async () => {
+  it("rejects a PR model error instead of returning the commit summary as generated text", async () => {
     const run = vi.fn().mockRejectedValue(new Error("offline"));
-    const debug = vi.spyOn(console, "debug").mockImplementation(() => {});
     const account = vi.fn();
     const generation = createGitTextGeneration({
       run,
@@ -53,14 +52,22 @@ describe("shared Git text generation", () => {
       label: "Grok Build",
       commitAccount: account,
     });
-    expect(await generation.generatePrContent("/p")).toEqual({
-      title: "First change",
-      body: "First change\nSecond",
+    await expect(generation.generatePrContent("/p")).rejects.toThrow("offline");
+    expect(account).not.toHaveBeenCalled();
+  });
+  it("rejects an unusable PR reply and returns parsed content otherwise", async () => {
+    const run = vi.fn().mockResolvedValueOnce("not json");
+    const generation = createGitTextGeneration({ run, timeoutMs: 60000, label: "Grok Build" });
+    await expect(generation.generatePrContent("/p")).rejects.toThrow(
+      "Grok Build returned no usable text",
+    );
+    run.mockResolvedValueOnce('{"title":"Add file","body":"Details"}');
+    await expect(generation.generatePrContent("/p")).resolves.toEqual({
+      title: "Add file",
+      body: "Details",
       base: "main",
       head: "feature",
     });
-    expect(account).not.toHaveBeenCalled();
-    debug.mockRestore();
   });
   it("preserves the provider-specific error text on an empty response", async () => {
     const generation = createGitTextGeneration({

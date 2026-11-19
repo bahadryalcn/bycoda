@@ -23,7 +23,7 @@ export function normalizeVoiceMemory(value: unknown): VoiceMemory {
   const unique = notes.filter(
     (note, index) => notes.findIndex((other) => other.id === note.id) === index,
   );
-  return { enabled: raw.enabled !== false, notes: unique.slice(-MEMORY_LIMITS.notes) };
+  return { enabled: raw.enabled !== false, notes: unique };
 }
 
 const preference = createStoredSetting<VoiceMemory>({
@@ -52,7 +52,7 @@ const newId = (notes: readonly VoiceMemoryNote[]) => {
 
 export type MemoryResult = { saved: true; id: string } | { saved: false; error: string };
 
-/** Adds a note. The oldest notes make room when the list is full. */
+/** Adds a note. A full list refuses the save; it never drops a saved note to make room. */
 export function rememberVoiceNote(text: unknown, now = Date.now()): MemoryResult {
   const memory = loadVoiceMemory();
   if (!memory.enabled) return { saved: false, error: "Memory is turned off in Settings." };
@@ -63,11 +63,10 @@ export function rememberVoiceNote(text: unknown, now = Date.now()): MemoryResult
     (note) => note.text.toLocaleLowerCase() === clean.toLocaleLowerCase(),
   );
   if (existing) return { saved: true, id: existing.id };
+  if (memory.notes.length >= MEMORY_LIMITS.notes)
+    return { saved: false, error: "Memory is full. Forget a note to make room." };
   const id = newId(memory.notes);
-  saveVoiceMemory({
-    ...memory,
-    notes: [...memory.notes, { id, text: clean, at: now }].slice(-MEMORY_LIMITS.notes),
-  });
+  saveVoiceMemory({ ...memory, notes: [...memory.notes, { id, text: clean, at: now }] });
   return { saved: true, id };
 }
 

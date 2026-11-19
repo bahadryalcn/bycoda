@@ -64,6 +64,98 @@ it("cleared Host settings suppress stale reserved recent values but preserve unr
   expect(JSON.parse(localStorage.getItem("bycoda.lastModelSettings")!).fast).toBe("true");
 });
 
+/** A fresh module: the sync starts once per module, and recovery listeners live in remoteHealth. */
+async function freshSync() {
+  vi.resetModules();
+  const [{ invoke: fresh }, caps, connections, sync, health, defaults] = await Promise.all([
+    import("@tauri-apps/api/core"),
+    import("../../automations/model/machineSnapshot"),
+    import("../../connections/public/connections"),
+    import("./delegationProfileSync"),
+    import("../../connections/model/remoteHealth"),
+    import("../../sessions/public/providerSessionDefaults"),
+  ]);
+  return {
+    invoke: vi.mocked(fresh),
+    capabilities: vi.mocked(caps.machineCapabilities),
+    request: vi.mocked(connections.remoteRequest),
+    start: sync.startDelegationProfileSync,
+    recover: health.announceRemoteRecovery,
+    global: defaults.loadGlobalSessionDefaults,
+  };
+}
+const localMachine = { id: "local", localHost: true, endpoint: "http://127.0.0.1:7777" };
+const routedState = (effort: "high" | "low"): ModelRoutingState => {
+  const remote = state();
+  remote.delegation.global = { crossSubagentMaxEffort: effort };
+  return remote;
+};
+
+it("cold start: retries on the short backoff until the local Host answers, not after 60 s", async () => {
+  vi.useFakeTimers();
+  try {
+    const sync = await freshSync();
+    sync.invoke.mockResolvedValue([]);
+    sync.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sync.request).not.toHaveBeenCalled();
+    sync.invoke.mockResolvedValue([localMachine]);
+    sync.capabilities.mockResolvedValue(["models.routing.v1"]);
+    sync.request.mockResolvedValue({ state: routedState("high") });
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(sync.request).toHaveBeenCalledTimes(1);
+    expect(sync.global().claude?.extras?.crossSubagentMaxEffort).toBe("high");
+  } finally {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  }
+});
+
+it("a Host request that fails while booting is retried; backoff stops once it answered", async () => {
+  vi.useFakeTimers();
+  try {
+    const sync = await freshSync();
+    sync.invoke.mockResolvedValue([localMachine]);
+    sync.capabilities.mockResolvedValue(["models.routing.v1"]);
+    sync.request.mockRejectedValueOnce(new Error("Host is starting"));
+    sync.request.mockResolvedValue({ state: routedState("low") });
+    sync.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sync.request).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(sync.request).toHaveBeenCalledTimes(2);
+    expect(sync.global().claude?.extras?.crossSubagentMaxEffort).toBe("low");
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(sync.request).toHaveBeenCalledTimes(2);
+  } finally {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  }
+});
+
+it("after the backoff is spent a recovery report refreshes at once", async () => {
+  vi.useFakeTimers();
+  try {
+    const sync = await freshSync();
+    sync.invoke.mockResolvedValue([]);
+    sync.start();
+    await vi.advanceTimersByTimeAsync(0);
+    // Past every backoff step the attempts are spent; the 60 s poll still finds no machine.
+    sync.request.mockResolvedValue({ state: routedState("high") });
+    await vi.advanceTimersByTimeAsync(300_000);
+    expect(sync.request).not.toHaveBeenCalled();
+    sync.invoke.mockResolvedValue([localMachine]);
+    sync.capabilities.mockResolvedValue(["models.routing.v1"]);
+    sync.recover("local-env");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sync.request).toHaveBeenCalledTimes(1);
+    expect(sync.global().claude?.extras?.crossSubagentMaxEffort).toBe("high");
+  } finally {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  }
+});
+
 it("startup waits for capability, then refreshes Host changes while Settings stays closed", async () => {
   vi.useFakeTimers();
   try {

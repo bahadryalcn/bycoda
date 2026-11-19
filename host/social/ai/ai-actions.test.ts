@@ -173,4 +173,72 @@ describe("AI actions: undo, stop and reports", () => {
       "Choose day or week.",
     );
   });
+
+  it("reports a failed suggestion model as a sanitized suggestionsError, not as no suggestions", async () => {
+    const kit = makeKit({
+      generateError: new Error("token=abc123 failed"),
+      aiActions: [action({ id: "ok" })],
+    });
+    const report = (await aiActions["ai.report"].run(kit.ctx, { period: "day" })) as {
+      done: string[];
+      suggestions: string[];
+      suggestionsError?: string;
+    };
+    expect(report.done).toEqual(["1 × replies.send"]);
+    expect(report.suggestions).toEqual([]);
+    expect(report.suggestionsError).toBe("token=[redacted] failed");
+  });
+
+  it("omits suggestionsError when the model answers", async () => {
+    const kit = makeKit({
+      modelReply: { suggestions: ["Reply to the new lead."] },
+      aiActions: [action({ id: "ok" })],
+    });
+    const report = (await aiActions["ai.report"].run(kit.ctx, { period: "day" })) as Record<
+      string,
+      unknown
+    >;
+    expect(report.suggestions).toEqual(["Reply to the new lead."]);
+    expect(report).not.toHaveProperty("suggestionsError");
+  });
+
+  it("flags the needs-human count as unavailable when its read fails, and keeps the summary", async () => {
+    const kit = makeKit({
+      call: async () => {
+        throw new Error("browser layer down");
+      },
+      aiActions: [action({ id: "wait", status: "queued", reason: "Waiting for owner approval." })],
+    });
+    expect(await aiActions["ai.summary"].run(kit.ctx, {})).toMatchObject({
+      pending: 1,
+      waitingForYou: 1,
+      needsHumanUnavailable: true,
+    });
+  });
+
+  it("reads the summary's 7-day window through the store and ignores older queued rows", async () => {
+    const kit = makeKit({
+      aiActions: [
+        action({ id: "recent", status: "queued", at: NOW - DAY }),
+        action({ id: "stale", status: "queued", at: NOW - 8 * DAY }),
+      ],
+    });
+    expect(await aiActions["ai.summary"].run(kit.ctx, {})).toMatchObject({
+      pending: 1,
+      needsHumanUnavailable: false,
+    });
+    expect(kit.store.listAiActions).toHaveBeenCalledWith(
+      expect.objectContaining({ since: NOW - 7 * DAY }),
+    );
+  });
+
+  it("computes the reply rate with one store aggregate over the sampled people", async () => {
+    const kit = makeKit({
+      people: [{ id: "p1" }, { id: "p2" }],
+      replyCounts: { contacted: 4, replied: 1 },
+    });
+    expect(await aiActions["ai.summary"].run(kit.ctx, {})).toMatchObject({ replyRate: 0.25 });
+    expect(kit.store.replyStats).toHaveBeenCalledWith(["p1", "p2"], NOW - 30 * DAY);
+    expect(kit.store.listInteractions).not.toHaveBeenCalled();
+  });
 });

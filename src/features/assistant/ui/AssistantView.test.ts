@@ -145,9 +145,9 @@ async function render(props: Parameters<typeof AssistantView>[0] = {}) {
 it("keeps background privacy qualification out of the Room layout", async () => {
   mock.roomPrivacy = { pending: true, error: null };
   await render();
-  expect(container.textContent).not.toContain("Confirming Room privacy protection...");
+  expect(container.textContent).not.toContain("Confirming Room privacy protection…");
   await click("Assistant status");
-  expect(document.body.textContent).toContain("Confirming Room privacy protection...");
+  expect(document.body.textContent).toContain("Confirming Room privacy protection…");
 });
 
 it("opens Room at its global conversation even when a coding project is selected", async () => {
@@ -463,11 +463,11 @@ it("shows recorded actions with their transcript and hides the whole row when a 
   await act(async () => sourceThread.click());
   expect(container.textContent).toContain("Accepted owner request with recorded activity");
   expect(container.querySelector("details summary")?.textContent).toContain("Recorded actions");
-  expect(container.textContent).toContain("Get tasks");
+  expect(container.textContent).toContain("Get task");
   expect(container.textContent).toContain("accepted-job");
   await render({ initialTab: "conversations", projectPath: "/one", visibleProjectPaths: ["/one"] });
   expect(container.textContent).not.toContain("Accepted owner request with recorded activity");
-  expect(container.textContent).not.toContain("Get tasks");
+  expect(container.textContent).not.toContain("Get task");
   expect(container.textContent).not.toContain("accepted-job");
 });
 it("keeps global emergency-stop uncertainty visible without leaking a hidden source after a lock", async () => {
@@ -662,7 +662,7 @@ it("restores the composite trash identity after deleting a job", async () => {
   mock.snapshot!.jobs = [job()];
   await render();
   await click("Job actions");
-  await click("Delete...");
+  await click("Delete…");
   await click("Delete job only");
   expect(container.textContent).toContain("Deleted");
   await click("Undo");
@@ -705,7 +705,7 @@ it("defaults to job-only deletion while showing every canonical task beyond the 
   );
   await render({ initialTab: "jobs" });
   await click("Job actions");
-  await click("Delete...");
+  await click("Delete…");
   expect(document.body.textContent).toContain("Another canonical task");
   const check = document.querySelector<HTMLInputElement>('[role="dialog"] input[type="checkbox"]')!;
   expect(check.checked).toBe(false);
@@ -757,7 +757,7 @@ it("freezes selected task scope after an uncertain deletion and Keeps the actual
   });
   await render({ initialTab: "jobs" });
   await click("Job actions");
-  await click("Delete...");
+  await click("Delete…");
   const check = document.querySelector<HTMLInputElement>('[role="dialog"] input[type="checkbox"]')!;
   await act(async () => check.click());
   await click("Delete job and tasks");
@@ -1103,7 +1103,7 @@ it("clears the captured complete conversation while retaining its unsent draft a
   });
   await render({ initialTab: "conversations" });
   await click("Conversation actions");
-  await click("Clear conversation...");
+  await click("Clear conversation…");
   expect(document.body.textContent).toContain("Move all messages in this conversation");
   await click("Clear all messages");
   expect(mock.request).toHaveBeenCalledWith(
@@ -1801,7 +1801,7 @@ it("parks a legacy attempted job review without a captured Host and preserves it
   await render();
   await click("Review jobs");
   await click("Check and retry");
-  expect(document.body.textContent).toContain("original Host could not be verified");
+  expect(document.body.textContent).toContain("original computer could not be verified");
   expect(mock.request.mock.calls.some(([input]) => input.op === "jobs.create")).toBe(false);
   expect(JSON.parse(localStorage.getItem("bycoda.assistant.job-review")!).rows[0].key).toBe(
     "stable-key",

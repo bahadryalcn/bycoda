@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { LAYER } from "../lib/layers";
 import { ImagePlus, Maximize2, Minus, Plus, X } from "./icons";
-import { useOverlay } from "./overlay";
+import { OverlayMenuLayer, OverlayParent, useOverlay } from "./overlay";
 import { useImageZoom } from "../hooks/useImageZoom";
 import { ImageCompare } from "./ImageCompare";
 import { Button } from "./Button";
@@ -118,7 +118,7 @@ function ImageLightboxContent({
     [comparison],
   );
   // The stage control (viewport, compare divider or Retry) takes initial focus, before the Close button.
-  useOverlay(dialogRef, true, onClose, true, "[data-lightbox-focus], [data-handle]");
+  const overlayId = useOverlay(dialogRef, true, onClose, true, "[data-lightbox-focus], [data-handle]");
 
   const stopComparison = () => {
     setComparison(null);
@@ -126,6 +126,10 @@ function ImageLightboxContent({
   };
 
   return createPortal(
+    // Tooltips and menus opened inside the viewer are its children: they stack above it and stay
+    // inside the modal's keyboard and inert scope.
+    <OverlayMenuLayer.Provider value={LAYER.dialogPopover}>
+      <OverlayParent.Provider value={overlayId}>
     <div
       ref={dialogRef}
       role="dialog"
@@ -341,7 +345,9 @@ function ImageLightboxContent({
           </Button>
         ) : null}
       </div>
-    </div>,
+    </div>
+      </OverlayParent.Provider>
+    </OverlayMenuLayer.Provider>,
     document.body,
   );
 }

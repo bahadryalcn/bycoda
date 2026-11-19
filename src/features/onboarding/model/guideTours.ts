@@ -87,7 +87,7 @@ const CHAT_STEPS = [
 ];
 
 const CHAT_SHORTCUT_LABELS: Record<string, string> = {
-  "Tab: New": "New Tab",
+  "Tab: New": "New tab",
   "App: Switch Model": "Switch Model…",
   "Composer: Queue Message": "Queue message",
   "Session: Stop Turn": "Stop",

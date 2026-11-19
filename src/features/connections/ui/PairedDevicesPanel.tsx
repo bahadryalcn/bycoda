@@ -94,6 +94,7 @@ function ComputerDevices({
   entry: PairedDevicesEntry | undefined;
   onChanged: () => void;
 }) {
+  const format = useFormat();
   const title = isLocalSyncMachine(machine) ? t("This computer") : machine.name;
   const list = entry?.phase === "ready" ? entry.list : undefined;
   const devices = list?.state === "ready" ? list.devices : [];
@@ -105,6 +106,13 @@ function ComputerDevices({
       <InlineError retry={{ onRetry: onChanged }}>
         {t("Could not read the devices of {p0}.", { p0: title })}
       </InlineError>
+    ) : entry.stale ? (
+      // The last good list stays (and stays revocable); it just must not pass for current.
+      <InlineMessage tone="warning" retry={{ onRetry: onChanged }}>
+        {t("Could not refresh. Showing the list from {p0}.", {
+          p0: format.formatRelativeTime(entry.updatedAt, { now: wallClockNow() }),
+        })}
+      </InlineMessage>
     ) : list?.state === "unsupported" ? (
       <InlineMessage tone="neutral">
         {t("Update the host on {p0} to see its devices.", { p0: title })}

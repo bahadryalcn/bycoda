@@ -1,5 +1,8 @@
 import { t, useLocale, useT } from "../../../shared/i18n";
-import { Button } from "../../../shared/ui/Button";
+import {
+  FloatingButtonGroup,
+  type FloatingButtonGroupItem,
+} from "../../../shared/ui/FloatingButtonGroup";
 import { indentWithTab, redo } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { openSearchPanel } from "@codemirror/search";
@@ -43,7 +46,8 @@ import type {
 } from "../../../shared/lib/native-input-observer";
 import { consumeNativeInputPublication } from "../../../shared/lib/native-input-observer";
 import { installEditorInputGate } from "../../files/ui/useMountedEditorClosure";
-import { canRetainNoteInputText } from "../notesInputOwners";
+import { canRetainNoteInputBytes, canRetainNoteInputText } from "../notesInputOwners";
+import { nextDocumentBytes, utf8ByteLength } from "../model/noteTextBytes";
 
 export type NoteEditorViewRef = { current: EditorView | null };
 
@@ -281,11 +285,23 @@ export function NoteMarkdownEditor({
       ],
     });
     let gate: ReturnType<typeof installEditorInputGate> | undefined;
+    // The UTF-8 size of the last admitted document, carried forward from each edit so the budget
+    // never has to serialize or encode the whole document per keystroke. A document it did not
+    // see (initial, setState, a multi-range edit) is counted once, exactly.
+    let admitted: { doc: Text; bytes: number } | undefined;
+    const bytesOf = (doc: Text) =>
+      admitted?.doc === doc ? admitted.bytes : utf8ByteLength(documentText(doc));
     const registration = inputObserver?.attach(
       () => ({
         snapshot: {
           inputKind: "codemirror",
           text: documentValue.current ?? view.state.doc.toString(),
+          // Exact size of `text` when it is the live document's string; absent otherwise, so the
+          // owner encodes the text itself.
+          ...(documentValue.current !== undefined &&
+          documentValue.current === documentTexts.get(view.state.doc)
+            ? { textBytes: bytesOf(view.state.doc) }
+            : {}),
           canonicalValue: valueRef.current,
           readOnly: view.state.readOnly,
           composing,
@@ -317,14 +333,20 @@ export function NoteMarkdownEditor({
     const setState = view.setState;
     const budgetedUpdate: EditorView["update"] = (transactions) => {
       const next = transactions[transactions.length - 1]?.newDoc;
-      if (
-        next &&
-        transactions.some((transaction) => transaction.docChanged) &&
-        !canRetainNoteInputText(inputObserver, documentText(next))
-      ) {
-        if (!transactions.every((transaction) => transaction.annotation(externalChange)))
-          onRejectedRef.current?.(documentText(next));
-        return;
+      if (next && transactions.some((transaction) => transaction.docChanged)) {
+        let bytes: number | null = bytesOf(transactions[0].startState.doc);
+        for (const transaction of transactions) {
+          if (bytes !== null && transaction.docChanged)
+            bytes = nextDocumentBytes(transaction.startState.doc, transaction.changes, bytes);
+        }
+        const size = bytes ?? utf8ByteLength(documentText(next));
+        if (!canRetainNoteInputBytes(inputObserver, size)) {
+          if (!transactions.every((transaction) => transaction.annotation(externalChange)))
+            onRejectedRef.current?.(documentText(next));
+          return;
+        }
+        // Set before the update so the listeners it fires already see this document's size.
+        admitted = { doc: next, bytes: size };
       }
       update.call(view, transactions);
     };
@@ -552,57 +574,50 @@ export function NoteMarkdownToolbar({
     const view = viewRef.current;
     if (view) action(view);
   };
+  // The commands this mode offers. With none, there is no toolbar to render or to tab into.
+  const items: FloatingButtonGroupItem[] = [
+    ...(editing ? TOOLBAR : []).map(({ command, label, icon: Icon }) => ({
+      id: command,
+      label,
+      icon: <Icon className="icon-sm" />,
+      onSelect: () => run((view) => runMarkdownCommand(view, command)),
+    })),
+    ...(editing
+      ? [
+          {
+            id: "find",
+            label: t("Find and replace"),
+            icon: <Search className="icon-sm" />,
+            shortcut: [findShortcut, replaceShortcut].filter(Boolean).join(" / ") || undefined,
+            onSelect: () => run(openSearchPanel),
+          },
+        ]
+      : []),
+    ...(onInsertImage
+      ? [
+          {
+            id: "image",
+            label: t("Insert image"),
+            icon: <ImagePlus className="icon-sm" />,
+            tooltip: t("Insert image · or paste ({p0}V) / drop one", { p0: MOD }),
+            loading: imageBusy,
+            onSelect: onInsertImage,
+          },
+        ]
+      : []),
+  ];
+  if (items.length === 0) return null;
   return (
-    <div
-      role="toolbar"
-      aria-label={t("Markdown formatting")}
-      className="note-markdown-toolbar ms-auto flex min-w-0 flex-wrap items-center gap-0.5"
+    <FloatingButtonGroup
+      label={t("Markdown formatting")}
+      items={items}
+      variant="muted"
+      padding="none"
+      size="sm"
+      iconOnly
       // Keep the selection in the editor while a button is pressed.
-      onMouseDown={(event) => event.preventDefault()}
-    >
-      {(editing ? TOOLBAR : []).map(({ command, label, icon: Icon }) => (
-        <Button
-          variant="ghost"
-          size="sm"
-          iconOnly
-          label={label}
-          motion="none"
-          key={command}
-          type="button"
-          onClick={() => run((view) => runMarkdownCommand(view, command))}
-        >
-          <Icon className="icon-sm" />
-        </Button>
-      ))}
-      {editing ? (
-        <Button
-          variant="ghost"
-          size="sm"
-          iconOnly
-          label={t("Find and replace")}
-          motion="none"
-          type="button"
-          shortcut={[findShortcut, replaceShortcut].filter(Boolean).join(" / ") || undefined}
-          onClick={() => run(openSearchPanel)}
-        >
-          <Search className="icon-sm" />
-        </Button>
-      ) : null}
-      {onInsertImage ? (
-        <Button
-          variant="ghost"
-          size="sm"
-          iconOnly
-          label={t("Insert image")}
-          motion="none"
-          type="button"
-          tooltip={t("Insert image · or paste ({p0}V) / drop one", { p0: MOD })}
-          loading={imageBusy}
-          onClick={onInsertImage}
-        >
-          <ImagePlus className="icon-sm" />
-        </Button>
-      ) : null}
-    </div>
+      preserveSelection
+      className="note-markdown-toolbar ms-auto min-w-0"
+    />
   );
 }

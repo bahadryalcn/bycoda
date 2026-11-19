@@ -6,10 +6,11 @@ import type {
   DecisionManualVerifyParamsSchema,
   DecisionManualVerifyResultSchema,
 } from "../../src/shared/model/host-contracts/decision-models";
+import { elapsedSince } from "../../src/shared/lib/time/timestamps";
 import type { SecretValueStore } from "../secrets/secret-store";
 import { type AdapterTransport, isAllowedAuthHeader } from "./contract-adapters/common";
 import { type CatalogProvider, loadCatalog } from "./catalog";
-import { loadDecisionConfig, MAX_DECISION_SOURCES, saveDecisionConfig } from "./decision-config";
+import { MAX_DECISION_SOURCES, requireDecisionConfig, saveDecisionConfig } from "./decision-config";
 import { createDecisionGateway, type DecisionGateway } from "./decision-gateway";
 import type {
   DecisionConfig,
@@ -29,7 +30,12 @@ import type {
 import * as discovery from "./discovery";
 import { assertLoopback, probeRequest } from "./contract-probe";
 import { readHardware } from "./hardware";
-import { type InstallPlan, createLocalInstaller, type LocalInstaller } from "./local-install";
+import {
+  type InstallPlan,
+  type InstallState,
+  createLocalInstaller,
+  type LocalInstaller,
+} from "./local-install";
 import {
   verifyEndpoint,
   verifyInstallationFolder,
@@ -40,6 +46,22 @@ import {
 const CONFIG_FILE = "config.json";
 const LOCAL_FOLDER = "local";
 const SCAN_TIMEOUT_MS = 30_000;
+/**
+ * How long an empty scan answer is trusted before a first open may scan again. The machine can
+ * gain a model or runtime at any time, so the owner can also rescan explicitly.
+ */
+const EMPTY_SCAN_TTL_MS = 24 * 60 * 60 * 1000;
+
+/** The last finished scan, tagged with the discovery settings it ran under. */
+type ScanCache = { result: DiscoveryResult; scannedAt: number; scope: string };
+
+/** A scan answers for these ports and folders only; changing either makes an empty answer stale. */
+function scanScope(settings: DecisionConfig["discovery"]): string {
+  return JSON.stringify([
+    [...settings.extraPorts].sort((a, b) => a - b),
+    [...settings.extraFolders].sort(),
+  ]);
+}
 
 export type DecisionModelsServiceOptions = {
   /** The decision-models folder: holds config.json, the secret vault and local model folders. */
@@ -49,6 +71,8 @@ export type DecisionModelsServiceOptions = {
   runTextPrompt?: AdapterTransport["runTextPrompt"];
   /** Tests inject a fake; production uses the bundled catalog and the real local runtime. */
   localInstaller?: LocalInstaller;
+  /** Wall-clock milliseconds; tests inject a fake to age the discovery cache. */
+  now?: () => number;
 };
 
 export type CatalogEntry = z.output<typeof DecisionCatalogEntrySchema>;
@@ -117,18 +141,24 @@ export class DecisionModelsService implements DecisionService {
   private readonly gateway: DecisionGateway;
   private readonly installer: LocalInstaller;
   private queue: Promise<unknown> = Promise.resolve();
-  private lastScan: DiscoveryResult = { found: [] };
+  private lastScan?: ScanCache;
   private activeScan?: { controller: AbortController; promise: Promise<DiscoveryResult> };
+  private readonly now: () => number;
 
   constructor(options: DecisionModelsServiceOptions) {
     this.directory = options.directory;
+    this.now = options.now ?? Date.now;
     this.configPath = join(options.directory, CONFIG_FILE);
     this.secrets = options.secrets;
     this.installer =
       options.localInstaller ??
-      createLocalInstaller({ root: join(options.directory, LOCAL_FOLDER), catalog: loadCatalog });
+      createLocalInstaller({
+        root: join(options.directory, LOCAL_FOLDER),
+        catalog: loadCatalog,
+        onInstalled: (modelId) => this.registerInstalled(modelId),
+      });
     this.gateway = createDecisionGateway({
-      loadConfig: async () => (await loadDecisionConfig(this.configPath)).config,
+      loadConfig: () => requireDecisionConfig(this.configPath),
       secrets: this.secrets,
       runTextPrompt: options.runTextPrompt,
       resolveEndpoint: (source) => this.localAddress(source),
@@ -227,19 +257,20 @@ export class DecisionModelsService implements DecisionService {
   async scanDiscovery(): Promise<DiscoveryResult> {
     if (this.activeScan) return this.activeScan.promise;
     const controller = new AbortController();
+    // A scan that throws (damaged config, Host error) caches nothing, so the failure stays visible.
     const promise = this.load()
-      .then((config) =>
-        discovery.scan(
+      .then(async (config) => {
+        const result = await discovery.scan(
           config,
           AbortSignal.any([controller.signal, AbortSignal.timeout(SCAN_TIMEOUT_MS)]),
-        ),
-      )
-      .then((result) => {
-        this.lastScan =
-          result.incomplete && result.found.length === 0
-            ? { ...result, found: this.lastScan.found }
-            : result;
-        return this.lastScan;
+        );
+        const keptEarlier = result.incomplete && result.found.length === 0;
+        this.lastScan = {
+          result: keptEarlier ? { ...result, found: this.lastScan?.result.found ?? [] } : result,
+          scannedAt: this.now(),
+          scope: scanScope(config.discovery),
+        };
+        return { ...this.lastScan.result, scannedAt: this.lastScan.scannedAt };
       })
       .finally(() => {
         if (this.activeScan?.controller === controller) this.activeScan = undefined;
@@ -254,8 +285,22 @@ export class DecisionModelsService implements DecisionService {
     return { cancelled };
   }
 
-  discoveryResults(): DiscoveryResult {
-    return this.lastScan;
+  /**
+   * The cached answer of the last finished scan. `scannedAt` is present only while the answer is
+   * trusted: candidates found are always shown, but an empty answer (including an incomplete one,
+   * which keeps `incomplete` so it stays visible) expires with the TTL or when the scan ports or
+   * folders change. Without `scannedAt` the caller may scan; `scanDiscovery` itself never reads this cache.
+   */
+  async discoveryResults(): Promise<DiscoveryResult> {
+    const cached = this.lastScan;
+    if (!cached) return { found: [] };
+    const answer = { ...cached.result, scannedAt: cached.scannedAt };
+    if (cached.result.found.length > 0) return answer;
+    const settings = (await this.load()).discovery;
+    const fresh =
+      cached.scope === scanScope(settings) &&
+      elapsedSince(cached.scannedAt, this.now()) < EMPTY_SCAN_TTL_MS;
+    return fresh ? answer : { found: [] };
   }
 
   async discoverySettings(): Promise<DiscoverySettings> {
@@ -318,6 +363,23 @@ export class DecisionModelsService implements DecisionService {
     return status;
   }
 
+  /**
+   * Starts the install and returns at once, for callers that cannot hold a request open for a
+   * multi-GB download. A finished install is already registered as a source when it reports success.
+   */
+  startInstallLocal(input: { modelId: string; confirm: string }): Promise<InstallState> {
+    return this.installer.startInstall(input);
+  }
+
+  /** Bytes of the running install of a model, or how its last install ended. */
+  installState(modelId: string): InstallState {
+    return this.installer.installState(modelId);
+  }
+
+  cancelInstall(modelId: string): { cancelled: boolean } {
+    return { cancelled: this.installer.cancelInstall(modelId) };
+  }
+
   async startLocal(sourceId: string): Promise<LocalStatus> {
     return this.installer.start(await this.requireSource(sourceId));
   }
@@ -329,6 +391,11 @@ export class DecisionModelsService implements DecisionService {
 
   async uninstallLocal(sourceId: string): Promise<LocalStatus> {
     return this.installer.uninstall(await this.requireSource(sourceId));
+  }
+
+  /** Host shutdown: stops the model servers this Host started. Servers the owner runs are untouched. */
+  close(): Promise<void> {
+    return this.installer.close();
   }
 
   async localStatus(sourceId: string): Promise<LocalStatus> {
@@ -362,8 +429,9 @@ export class DecisionModelsService implements DecisionService {
     return { version: catalog.version, entries: catalogEntries(catalog.providers) };
   }
 
-  private async load(): Promise<DecisionConfig> {
-    return (await loadDecisionConfig(this.configPath)).config;
+  /** Settings reads fail with DecisionConfigDamagedError instead of showing defaults as the owner's config. */
+  private load(): Promise<DecisionConfig> {
+    return requireDecisionConfig(this.configPath);
   }
 
   private async requireSource(id: string): Promise<DecisionSource> {
@@ -426,8 +494,9 @@ export class DecisionModelsService implements DecisionService {
   }
 
   /**
-   * Writes are serialized and refused while the stored file is damaged. The damaged original
-   * stays on disk (readStateFile keeps an evidence copy), so a repair can still recover it.
+   * Writes are serialized and refused (DecisionConfigDamagedError) while the stored file is
+   * damaged. The damaged original stays on disk (readStateFile keeps an evidence copy), so a
+   * repair can still recover it.
    */
   private mutate<T>(
     change: (config: DecisionConfig) => { config: DecisionConfig; result: T },
@@ -435,10 +504,7 @@ export class DecisionModelsService implements DecisionService {
     const run = this.queue
       .catch(() => undefined)
       .then(async () => {
-        const loaded = await loadDecisionConfig(this.configPath);
-        if (loaded.damaged)
-          throw new Error("Decision model settings are damaged; the original file was kept.");
-        const next = change(loaded.config);
+        const next = change(await requireDecisionConfig(this.configPath));
         await saveDecisionConfig(this.configPath, next.config);
         return next.result;
       });

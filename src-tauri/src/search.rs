@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 
-use crate::fs::{expand_home, list_project_files_sync_cancellable, MAX_TEXT_FILE_BYTES};
+use crate::fs::{expand_home, list_project_files_with_completeness, MAX_TEXT_FILE_BYTES};
 
 const MAX_MATCHES: usize = 500;
 const MAX_FILE_BYTES: u64 = 512 * 1024;
@@ -297,7 +297,10 @@ fn scan_files(
     }
     let pattern = replace::pattern(options)?;
 
-    let files = list_project_files_sync_cancellable(&root.to_string_lossy(), Some(cancel))?;
+    // A capped listing means files past the cap were never searched, so the
+    // result must not read as complete even when it holds fewer than MAX_MATCHES.
+    let (files, index_capped) =
+        list_project_files_with_completeness(&root.to_string_lossy(), Some(cancel))?;
     if cancel.load(Ordering::Acquire) {
         return Ok(SearchResult {
             matches: Vec::new(),
@@ -313,7 +316,7 @@ fn scan_files(
     };
 
     let mut matches = Vec::new();
-    let mut truncated = false;
+    let mut truncated = index_capped;
 
     'files: for file in files {
         if cancel.load(Ordering::Acquire) {
@@ -679,6 +682,25 @@ mod tests {
         let found = scan_files(&dir.0, &options(&dir.0, "needle"), "needle", &live).unwrap();
         assert_eq!(found.matches.len(), 1);
         assert!(!found.truncated);
+    }
+
+    #[test]
+    fn a_capped_fallback_listing_marks_the_search_truncated() {
+        let dir = tmp("scan-files-capped");
+        // One past the listing cap: the walk stops before it can see every file.
+        for index in 0..=crate::fs::MAX_PROJECT_FILES {
+            std::fs::write(dir.0.join(format!("f{index}.txt")), "x").unwrap();
+        }
+        let live = AtomicBool::new(false);
+        let capped = scan_files(&dir.0, &options(&dir.0, "absent"), "absent", &live).unwrap();
+        assert!(capped.matches.is_empty());
+        assert!(capped.truncated);
+
+        // A tree under the cap with no matches stays a complete, empty answer.
+        let small = tmp("scan-files-uncapped");
+        std::fs::write(small.0.join("a.txt"), "x").unwrap();
+        let complete = scan_files(&small.0, &options(&small.0, "absent"), "absent", &live).unwrap();
+        assert!(!complete.truncated);
     }
 
     #[test]

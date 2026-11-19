@@ -57,6 +57,10 @@ async function fixture() {
     ready: Promise.resolve(),
     admissionClosed: false,
     list: vi.fn(async () => rows),
+    get: vi.fn(async (id: string) => rows.find((row) => row.id === id)),
+    listCrewRun: vi.fn(async (runId: string, projectId: string) =>
+      rows.filter((row) => row.crewRunId === runId && row.projectId === projectId),
+    ),
     tick: vi.fn(async () => {
       await store.db.checkAuthorization();
     }),

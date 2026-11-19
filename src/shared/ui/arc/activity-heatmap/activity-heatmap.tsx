@@ -58,6 +58,8 @@ export interface ActivityHeatmapProps {
   moreLabel?: string;
   /** Levels two to four also carry a growing centre dot, so intensity never depends on colour alone. On by default. */
   markers?: boolean;
+  /** Accessible name of the level buttons group. Defaults to English. */
+  legendLabel?: string;
 }
 
 type Model = {
@@ -328,6 +330,7 @@ export function ActivityHeatmap({
   lessLabel = "Less",
   moreLabel = "More",
   markers = true,
+  legendLabel = "Highlight days by level",
 }: ActivityHeatmapProps) {
   const reduced = useReducedMotionSafe();
   const id = useId();
@@ -758,7 +761,7 @@ export function ActivityHeatmap({
           <div
             className={styles.swatches}
             role="group"
-            aria-label="Highlight days by level"
+            aria-label={legendLabel}
             onKeyDown={onLegendKeyDown}
           >
             {LEVELS.map((level) => (

@@ -1,6 +1,7 @@
 import { read, utils, type WorkBook } from "xlsx";
 import {
   columnLabel,
+  DocumentProblemError,
   looksLikeSpreadsheet,
   MAX_DOCUMENT_BYTES,
   MAX_SHEET_COLUMNS,
@@ -75,10 +76,8 @@ export function workbookPreview(book: WorkBook): Spreadsheet {
 }
 
 export function parseSpreadsheet(bytes: Uint8Array): Spreadsheet {
-  if (bytes.byteLength > MAX_DOCUMENT_BYTES)
-    throw new Error("File is too large to preview (maximum 25 MB).");
-  if (!looksLikeSpreadsheet(bytes))
-    throw new Error("This isn’t a valid Excel workbook; the file may be corrupt.");
+  if (bytes.byteLength > MAX_DOCUMENT_BYTES) throw new DocumentProblemError({ reason: "tooLarge" });
+  if (!looksLikeSpreadsheet(bytes)) throw new DocumentProblemError({ reason: "notWorkbook" });
   // Discover names without loading worksheet contents, then limit worksheet
   // parsing too (not just the returned preview) for many-sheet workbooks.
   const names = read(bytes, { type: "array", bookSheets: true }).SheetNames;

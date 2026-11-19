@@ -1,4 +1,4 @@
-import { AccountApiError } from "@bycoda/account-contracts";
+import { AccountApiError, DEFAULT_ACCOUNT_TIMEOUT_MS } from "@bycoda/account-contracts";
 import { createMockAccountServer } from "@bycoda/account-contracts/mock";
 import { describe, expect, it, vi } from "vitest";
 import { createAccountController } from "./accountController";
@@ -15,12 +15,15 @@ function setup(
   const server = createMockAccountServer();
   const requests: { url: string; headers: Record<string, string> }[] = [];
   let online = true;
+  // While set, requests are sent but their answers wait, like a slow service.
+  let gate: Promise<void> | null = null;
   const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
     if (!online) throw new TypeError("Failed to fetch");
     requests.push({
       url: String(input),
       headers: { ...(init?.headers as Record<string, string>) },
     });
+    await gate;
     return server.fetch(input, init);
   }) as typeof fetch;
   let signedIn = options.signedIn ?? false;
@@ -75,6 +78,15 @@ function setup(
     openExternal,
     requests,
     server,
+    /** Holds every answer until the returned function is called. */
+    holdAnswers: () => {
+      let release = () => {};
+      gate = new Promise<void>((resolve) => (release = resolve));
+      return () => {
+        gate = null;
+        release();
+      };
+    },
     goOffline: () => (online = false),
     goOnline: () => (online = true),
     failToken: (error: AccountNativeError) => (tokenError = error),
@@ -201,6 +213,27 @@ describe("account controller", () => {
     expect(second.controller.getState()).toMatchObject({ phase: "signed-in", stale: false });
   });
 
+  it("keeps the cached view, marked stale, when the service accepts the call but never answers", async () => {
+    const first = setup();
+    await first.controller.start();
+    first.setSignedIn(true);
+    await first.controller.signIn();
+
+    const second = setup({ signedIn: true, storage: Object.fromEntries(first.storage.data) });
+    second.holdAnswers(); // never released: a stalled connection after the handshake
+    vi.useFakeTimers();
+    try {
+      const started = second.controller.start();
+      await vi.advanceTimersByTimeAsync(DEFAULT_ACCOUNT_TIMEOUT_MS);
+      await started;
+      expect(second.controller.getState()).toMatchObject({ phase: "signed-in", stale: true });
+      expect(second.native.signOut).not.toHaveBeenCalled();
+      expect(second.storage.data.has(CACHE_KEY)).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("revalidates a stale view on its own, at most once a minute", async () => {
     const first = setup();
     await first.controller.start();
@@ -290,6 +323,71 @@ describe("account controller", () => {
     await expect(t.controller.signOut()).rejects.toThrow("no store");
     expect(t.controller.getState().phase).toBe("signed-in");
   });
+
+  describe("a verification in flight when the session ends", () => {
+    async function signedInWithSlowRefresh() {
+      const t = setup();
+      await t.controller.start();
+      t.setSignedIn(true);
+      await t.controller.signIn();
+      const requestsBefore = t.requests.length;
+      const release = t.holdAnswers();
+      const refresh = t.controller.refresh();
+      await vi.waitFor(() => expect(t.requests.length).toBeGreaterThan(requestsBefore));
+      return { t, release, refresh };
+    }
+
+    it("cannot write the signed-out account back after sign-out", async () => {
+      const { t, release, refresh } = await signedInWithSlowRefresh();
+      await t.controller.signOut();
+      const writes = vi.spyOn(t.storage, "setItem");
+      release();
+      await refresh;
+      expect(writes).not.toHaveBeenCalled();
+      expect(t.storage.data.has(CACHE_KEY)).toBe(false);
+      expect(t.controller.getState()).toMatchObject({ phase: "signed-out", notice: null });
+      // The module-level device id stayed cleared: later calls carry no device header.
+      await t.controller
+        .api()
+        .listDevices()
+        .catch(() => undefined); // -- the signed-out call is rejected; only its headers matter.
+      expect(t.requests.at(-1)!.headers["X-Bycoda-Device"]).toBeUndefined();
+    });
+
+    it("cannot write the account back after the session ended elsewhere", async () => {
+      const { t, release, refresh } = await signedInWithSlowRefresh();
+      await t.controller.handleFailure(
+        new AccountNativeError("sessionExpired", "Your bycoda session ended."),
+      );
+      const writes = vi.spyOn(t.storage, "setItem");
+      release();
+      await refresh;
+      expect(writes).not.toHaveBeenCalled();
+      expect(t.storage.data.has(CACHE_KEY)).toBe(false);
+      expect(t.controller.getState()).toMatchObject({
+        phase: "signed-out",
+        notice: "session-ended",
+      });
+    });
+
+    it("does not register a device or cache anything once the sign-in is cancelled", async () => {
+      const t = setup();
+      await t.controller.start();
+      t.setSignedIn(true);
+      const release = t.holdAnswers();
+      const signIn = t.controller.signIn();
+      await vi.waitFor(() => expect(t.requests.length).toBeGreaterThan(0)); // verify(true) is running
+      await t.controller.cancelSignIn();
+      const writes = vi.spyOn(t.storage, "setItem");
+      release();
+      await signIn;
+      expect(writes).not.toHaveBeenCalled();
+      expect(t.storage.data.has(CACHE_KEY)).toBe(false);
+      expect(t.server.state.devices.size).toBe(0);
+      expect(t.controller.getState()).toMatchObject({ phase: "signed-out", notice: null });
+    });
+  });
+
   describe("deactivation", () => {
     async function signedIn() {
       const t = setup({ signedIn: true });

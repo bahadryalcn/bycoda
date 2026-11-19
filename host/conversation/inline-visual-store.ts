@@ -12,8 +12,8 @@ export const INLINE_VISUAL_DIRECTORY = "inline-visuals";
 /**
  * Content-addressed and immutable: the same source maps to the same file, so a
  * rewrite never changes what an earlier transcript shows.
- * shortcut: files are never pruned; add retention tied to session deletion if
- * the folder grows large in practice.
+ * shortcut: a file is reclaimed only when its session is permanently deleted
+ * (inline-visual-retention.ts); orphans from crashed writes are never pruned.
  */
 export async function storeInlineVisual(
   dataDir: string,

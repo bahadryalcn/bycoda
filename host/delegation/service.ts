@@ -103,6 +103,10 @@ function nextRoundParent(link: string, round: number): string {
 }
 
 const KIND_LABEL: Record<DelegationKind, string> = { subagent: "Subagent", advisor: "Advisor" };
+/** A committed store change re-reads waiting children at most this often. */
+const WAIT_CHANGE_RECHECK_MS = 1000;
+/** Re-reads children this often even without a change signal (missed-wakeup safety net). */
+const WAIT_SAFETY_RECHECK_MS = 5000;
 
 /** Subagents one caller may run at once: fewer for a subagent's own (grandchildren). */
 const subagentLimit = (depth: 0 | 1) =>
@@ -214,8 +218,8 @@ export class ConversationDelegation {
       !(options.keepNotifying && record.notifyOnCompletion);
     for (const record of await this.store.list())
       if (stopped(record)) await this.store.patch(record.runId, { communicationClosed: true });
-    const records = (await this.refresh(await this.store.list())).filter(
-      (record) => stopped(record) && record.finishedAt === undefined,
+    const records = (await this.refresh((await this.store.list()).filter(stopped))).filter(
+      (record) => record.finishedAt === undefined,
     );
     await Promise.all(
       records.map(async (record) => {
@@ -855,12 +859,28 @@ export class ConversationDelegation {
     }
     records = await Promise.all(ids.map((id) => this.owned(id, caller)));
     const started = monotonicNow();
+    // Children report progress through committed session writes, so the store's change
+    // signal wakes this wait. Reads run only after a change (throttled) or on a slow safety tick.
+    const changes = this.deps.engine.store.changes;
+    let readVersion = changes.version;
+    let readAt: number | undefined;
+    let statuses: { status: RunStatus }[] = [];
     for (;;) {
-      records = await Promise.all(records.map((record) => this.follow(record)));
-      const statuses = await Promise.all(records.map((record) => this.statusOf(record)));
+      const changed = changes.version !== readVersion;
+      const age = readAt === undefined ? Infinity : elapsedSince(readAt);
+      if (
+        readAt === undefined ||
+        (changed && age >= WAIT_CHANGE_RECHECK_MS) ||
+        age >= WAIT_SAFETY_RECHECK_MS
+      ) {
+        readVersion = changes.version;
+        readAt = monotonicNow();
+        records = await Promise.all(records.map((record) => this.follow(record)));
+        statuses = await Promise.all(records.map((record) => this.statusOf(record)));
+      }
       const remaining = seconds * 1000 - elapsedSince(started);
       if (statuses.every((status) => status.status !== "running") || remaining <= 0) break;
-      await new Promise((resolve) => setTimeout(resolve, Math.min(1000, remaining)));
+      await changes.wait(Date.now() + remaining, () => false, changes.version);
     }
     const runs = await Promise.all(records.map((record) => this.describe(record, locate)));
     return args.runIds === undefined ? runs[0] : { runs };
@@ -908,17 +928,18 @@ export class ConversationDelegation {
     }
     // A queued launch has no child session yet; there is nothing to follow.
     if (!record.childSessionId) return record;
-    let child: HostSession;
+    let childRunId: string | undefined;
     try {
-      child = await this.deps.engine.store.session(record.childSessionId);
+      // Only the turn id is compared, so read it from the state row, not the transcript.
+      childRunId = await this.deps.engine.store.sessionRunId(record.childSessionId);
     } catch (error) {
       // A transient read error must not be mistaken for a vanished child: look again later.
       if (!isSessionNotFound(error)) throw error;
       return record;
     }
-    if (!child.runId || child.runId === record.childRunId) return record;
+    if (!childRunId || childRunId === record.childRunId) return record;
     await this.store.patch(record.runId, {
-      childRunId: child.runId,
+      childRunId,
       ownerFollowUp: true,
       finishedAt: undefined,
       status: undefined,
@@ -962,12 +983,13 @@ export class ConversationDelegation {
   }
 
   private async runningCounts(parentSessionId: string, exceptRunId?: string) {
-    const records = (await this.refresh(await this.store.list())).filter(
+    // Only this parent's rows are refreshed; other conversations' records stay untouched.
+    const own = (await this.store.list()).filter(
+      (record) => record.parentSessionId === parentSessionId,
+    );
+    const records = (await this.refresh(own)).filter(
       (record) =>
-        record.parentSessionId === parentSessionId &&
-        !!record.childSessionId &&
-        record.runId !== exceptRunId &&
-        record.finishedAt === undefined,
+        !!record.childSessionId && record.runId !== exceptRunId && record.finishedAt === undefined,
     );
     return {
       subagent: records.filter((record) => record.kind === "subagent").length,

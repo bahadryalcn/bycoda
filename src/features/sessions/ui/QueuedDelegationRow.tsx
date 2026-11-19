@@ -15,11 +15,14 @@ export function QueuedDelegationRow({
   message,
   itemRef,
   disabled,
+  disabledReason,
   onRemove,
 }: {
   message: QueuedMessage;
   itemRef: Ref<HTMLDivElement>;
   disabled: boolean;
+  /** Shown while `disabled`, naming why the notice cannot be removed. */
+  disabledReason?: string;
   onRemove: () => void;
 }) {
   const t = useT();
@@ -59,6 +62,7 @@ export function QueuedDelegationRow({
         iconOnly
         label={t("Remove queued message")}
         disabled={disabled}
+        disabledReason={disabledReason}
         onClick={onRemove}
       >
         <Trash2 className="icon-sm" />

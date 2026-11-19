@@ -15,7 +15,6 @@ import { automationKey } from "../model/automationKey";
 import {
   createManualAutomationRun,
   deleteAutomation,
-  draftFromAutomation,
   saveAutomation,
   setAutomationEnabled,
   type Automation,
@@ -26,6 +25,7 @@ import {
   deleteHostAutomation,
   runHostAutomationNow,
   saveHostAutomation,
+  setHostAutomationEnabled,
 } from "../model/hostAutomationClient";
 
 type Params = {
@@ -97,6 +97,7 @@ export function useAutomationActions({
     setFailure(message === null ? null : { message, stamp: stampRef.current });
   const failWith = (reason: unknown) =>
     setActionError(presentRemoteError(reason, { explicit: true }));
+  const refreshAccepted = () => refreshHost().catch(() => undefined);
 
   const onSave = async (event: FormEvent, nextDraft: AutomationDraft) => {
     event.preventDefault();
@@ -115,7 +116,7 @@ export function useAutomationActions({
       setDraft(null);
       setSelectedId(automationKey(saved));
       setActionError(null);
-      if (saved.host) await refreshHost();
+      if (saved.host) await refreshAccepted();
     } catch (reason: unknown) {
       failWith(reason);
     } finally {
@@ -132,7 +133,7 @@ export function useAutomationActions({
     try {
       if (automation.host) {
         await runHostAutomationNow(automation);
-        await refreshHost();
+        await refreshAccepted();
         return;
       }
       const run = await createManualAutomationRun(automation.id);
@@ -193,10 +194,13 @@ export function useAutomationActions({
     setToggling(new Set(togglingRef.current));
     try {
       if (automation.host) {
-        await saveHostAutomation(machines, {
-          ...draftFromAutomation(automation),
-          enabled,
-        });
+        try {
+          await setHostAutomationEnabled(automation, enabled);
+        } catch (reason: unknown) {
+          // A refused guard means the list is stale; show the Host's current copy.
+          await refreshHost().catch(() => undefined);
+          throw reason;
+        }
         await refreshHost();
         return;
       }

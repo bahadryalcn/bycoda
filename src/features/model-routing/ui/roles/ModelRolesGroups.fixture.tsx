@@ -390,6 +390,31 @@ it("describes helper fallback when every entry is ineligible", async () => {
   expect(row.textContent).not.toContain("Runs wait");
 });
 
+it("does not claim the helper's own model when the preview fails or is slow", async () => {
+  const roles = { "text.title": { kind: "order" } } as const;
+  mocks.resolve.mockRejectedValue(new Error("offline"));
+  await render(<Groups initial={draftOf({ entries: [entry], roles })} />);
+  const failed = rowOf("Title").textContent;
+  expect(failed).toContain("Current model could not be checked.");
+  expect(failed).not.toContain("helper's own model selection");
+
+  // A Host slower than the old 500 ms deadline still gets to answer.
+  client.clear();
+  mocks.resolve.mockImplementation(
+    () =>
+      new Promise((resolve) =>
+        setTimeout(() => resolve({ ok: false, reason: "noEligibleEntry", skipped: [] }), 700),
+      ),
+  );
+  await render(<Groups initial={draftOf({ entries: [entry], roles })} />);
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 800));
+  });
+  const slow = rowOf("Title").textContent;
+  expect(slow).toContain("Automatic uses this helper's own model selection.");
+  expect(slow).not.toContain("could not be checked");
+});
+
 it("says which model every job uses now, on the order and on groups, only while live", async () => {
   const draft = draftOf({
     entries: [entry],

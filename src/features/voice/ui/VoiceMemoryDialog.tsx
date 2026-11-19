@@ -3,6 +3,7 @@ import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { InlineMessage } from "../../../shared/ui/InlineError";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { TextField } from "../../../shared/ui/TextField";
 import { Plus, Trash2 } from "../../../shared/ui/icons";
@@ -24,6 +25,7 @@ export function VoiceMemoryDialog({ onClose }: { onClose: () => void }) {
   const memory = useVoiceMemory();
   const [draft, setDraft] = useState("");
   const [error, setError] = useState("");
+  const full = memory.notes.length >= MEMORY_LIMITS.notes;
   const add = () => {
     const result = rememberVoiceNote(draft);
     if (result.saved) {
@@ -67,6 +69,20 @@ export function VoiceMemoryDialog({ onClose }: { onClose: () => void }) {
       }
     >
       <div className={styles.body}>
+        <div className={styles.status}>
+          {!memory.enabled ? (
+            <InlineMessage tone="info">{t("Memory is turned off in Settings.")}</InlineMessage>
+          ) : full ? (
+            <InlineMessage tone="warning">
+              {t("Memory is full. Forget a note to make room.")}
+            </InlineMessage>
+          ) : (
+            <span />
+          )}
+          <Text size="caption" tone="secondary">
+            {`${memory.notes.length} / ${MEMORY_LIMITS.notes}`}
+          </Text>
+        </div>
         <form
           className={styles.add}
           onSubmit={(event) => {
@@ -87,7 +103,7 @@ export function VoiceMemoryDialog({ onClose }: { onClose: () => void }) {
               setError("");
             }}
           />
-          <Button type="submit" disabled={!memory.enabled || !draft.trim()}>
+          <Button type="submit" disabled={!memory.enabled || full || !draft.trim()}>
             <Plus aria-hidden className="icon-sm" />
             {t("Add")}
           </Button>
@@ -106,7 +122,8 @@ export function VoiceMemoryDialog({ onClose }: { onClose: () => void }) {
                   variant="ghost"
                   size="sm"
                   iconOnly
-                  label={t("Forget note")}
+                  label={t("Forget note: {p0}", { p0: note.text })}
+                  tooltip={t("Forget note")}
                   onClick={() => forgetVoiceNote(note.id)}
                 >
                   <Trash2 aria-hidden className="icon-sm" />

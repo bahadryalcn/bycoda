@@ -109,8 +109,9 @@ export function NotificationRequestCard({
           <X className="icon-sm" />
         </Button>
       ) : null}
-      {/* One footer row: source, harness and time on the left, kind and the
-          decision or the way to answer on the right. */}
+      {/* One footer row: source, harness and time on the left, the question badge
+          or the way to answer on the right. An approval's identity is its
+          ApprovalRequest title, so it gets no second badge. */}
       <Text
         as="div"
         size="caption"
@@ -132,7 +133,7 @@ export function NotificationRequestCard({
           className="notification-request-actions flex shrink-0 items-center gap-1"
           data-no-drag=""
         >
-          <Badge tone="warning">{notice.kind === "question" ? t("Question") : t("Approval")}</Badge>
+          {notice.kind === "question" ? <Badge tone="warning">{t("Question")}</Badge> : null}
           {notice.kind === "question" ? (
             <Button
               variant="ghost"

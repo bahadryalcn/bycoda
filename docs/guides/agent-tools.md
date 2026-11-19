@@ -363,8 +363,13 @@ not sent anything yet to another account applies that account's defaults.
 The model panel opens from the model button (click, Enter or Space), **Switch Model**
 in the app menu, or **Ctrl+Shift+.** on Windows / **Command+Shift+.** on macOS.
 Change or disable this binding in Settings > Keybindings. The shortcut toggles the
-panel; right-click the model button for recent models. Search receives focus on
-open: type to filter, use Up/Down and Enter to select. Escape closes and returns
+panel; right-click the model button, or focus it and press **Alt+Down**
+(**Option+Down** on macOS), the context-menu key or **Shift+F10**, for recent
+models; the button's tooltip says so. Search receives focus on
+open: type to filter, use Up/Down and Enter to select. Pointing at a provider on
+the rail previews it only while the search is empty; once you type, click the
+provider (or use the arrow keys on the rail) to switch, so a drifting pointer
+never clears your search. Escape closes and returns
 focus to the composer or model button. Tab / Shift+Tab move through the provider
 rail, search, model actions and settings; arrow keys move within provider tabs,
 Settings/Agents tabs, effort bars and Automatic/Custom/Off. Custom opens a searchable

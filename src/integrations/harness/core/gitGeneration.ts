@@ -64,32 +64,26 @@ export function createGitTextGeneration(options: GitTextOptions) {
   ): Promise<(PrContent & { base: string; head: string }) | null> {
     const captured = captureTextInput({ operationContext }).operationContext;
     const range = await gitRangeContext(cwd);
-    let parsed: PrContent | null = null;
-    try {
-      const output = await options.run({
-        cwd,
-        operationContext: captured,
-        prompt: buildPrContentPrompt({
-          baseBranch: range.base,
-          headBranch: range.head,
-          commitSummary: range.commitSummary,
-          diffSummary: range.diffSummary,
-          diffPatch: range.diffPatch,
-        }),
-        timeoutMs: options.timeoutMs,
-      });
-      parsed = parsePrContent(output);
-    } catch (error) {
-      console.debug("[bycoda] pr content", error);
-    }
-    const title =
-      parsed?.title || range.commitSummary.split(/\r?\n/)[0]?.trim() || `Update ${range.head}`;
-    return {
-      title,
-      body: parsed?.body || range.commitSummary.trim(),
-      base: range.base,
-      head: range.head,
-    };
+    // A provider failure or an unusable reply rejects: the caller decides whether to offer the
+    // commit summary, so a fallback is never presented as generated text.
+    const output = await options.run({
+      cwd,
+      operationContext: captured,
+      prompt: buildPrContentPrompt({
+        baseBranch: range.base,
+        headBranch: range.head,
+        commitSummary: range.commitSummary,
+        diffSummary: range.diffSummary,
+        diffPatch: range.diffPatch,
+      }),
+      timeoutMs: options.timeoutMs,
+    });
+    const parsed = parsePrContent(output);
+    if (!parsed)
+      throw new Error(
+        `Could not generate pull request content. ${options.label} returned no usable text.`,
+      );
+    return { ...parsed, base: range.base, head: range.head };
   }
 
   async function generateBranchName(

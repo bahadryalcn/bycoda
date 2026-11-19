@@ -811,7 +811,8 @@ it("an allowed failure stays failed and the synthetic pipeline SHA shows separat
   );
   expect(markup.textContent).toContain("Optional checks failed");
   expect(markup.textContent).toContain("Failure allowed");
-  expect(markup.textContent).toContain("Pipeline commit");
+  expect(markup.textContent).toContain("Pipeline commit merge-result, source commit source-head");
+  expect(markup.textContent?.split("source-head")).toHaveLength(2);
   expect(markup.textContent).toContain("merge-result");
   expect(markup.textContent).toContain("source-head");
   expect(markup.textContent).not.toContain("Checks passed");

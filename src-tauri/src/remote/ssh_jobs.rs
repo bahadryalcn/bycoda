@@ -146,8 +146,8 @@ pub(super) fn start_ssh_job(
                 }
                 Err(error) => return Err(error),
             };
-            if descriptor.get("protocolVersion").and_then(Value::as_u64) != Some(1) {
-                return Err("This host uses an incompatible protocol version".into());
+            if let Some(message) = crate::remote::protocol::protocol_mismatch(&descriptor) {
+                return Err(message.into());
             }
             if descriptor.get("environmentId").and_then(Value::as_str)
                 != Some(&machine.environment_id)
@@ -186,6 +186,10 @@ pub(super) fn start_ssh_job(
         job.complete(|| {
             let (mut machine, mut tunnel) = prepared?;
             let state = app.state::<RemoteConnections>();
+            // Old tunnels leave the registry under the store lock; ending their
+            // ssh can wait seconds, so they are dropped after it is released.
+            // Declared before the guard so every early return drops them after it.
+            let mut retired = Vec::new();
             let _guard = state
                 .store
                 .lock()
@@ -210,15 +214,19 @@ pub(super) fn start_ssh_job(
                 if !named {
                     machine.name = old.name.clone();
                 }
-                state.tunnels.remove(&machine.id);
+                retired.push(state.tunnels.detach(&machine.id));
             }
             machines.retain(|m| m.id != machine.id);
             machines.push(machine.clone());
             write(&path, &machines)?;
             state.invalidate_ws(&machine.id);
-            state
-                .tunnels
-                .insert(machine.id.clone(), &machine.environment_id, tunnel);
+            retired.push(state.tunnels.insert(
+                machine.id.clone(),
+                &machine.environment_id,
+                tunnel,
+            ));
+            drop(_guard);
+            drop(retired);
             Ok(machine.public())
         });
     });

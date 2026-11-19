@@ -8,8 +8,21 @@ export type McpServerRow = McpConnection & {
   auth?: "signed_in" | "signed_out" | "none";
 };
 
+/** A configuration file that exists but could not be read; its servers are absent from the list. */
+export type McpConfigWarning = {
+  provider: string;
+  scope: string;
+  configPath: string;
+  /** Parse or I/O reason from the native reader; never file content. */
+  message: string;
+};
+
+type McpDiscoveryResult = { connections: McpConnection[]; warnings?: McpConfigWarning[] };
+
 export type McpSettingsSnapshot = {
   servers: McpServerRow[];
+  /** Files that could not be read: the list is incomplete, which is not the same as "no servers". */
+  configWarnings?: McpConfigWarning[];
   error: string;
   claudeError: string;
   /** Claude's health check is still running; Claude rows show their configured state. */
@@ -27,6 +40,11 @@ const CODEX_AUTH: Record<string, { status: string; auth: NonNullable<McpServerRo
   not_logged_in: { status: "Needs authentication", auth: "signed_out" },
   unsupported: { status: "Configured", auth: "none" },
 };
+
+/** One line per unreadable file: its path and the native reason. */
+export function describeMcpConfigWarnings(warnings: readonly McpConfigWarning[]): string {
+  return warnings.map((warning) => `${warning.configPath}: ${warning.message}`).join("\n");
+}
 
 const snapshots = new Map<string, McpSettingsSnapshot>();
 export const MCP_LOCAL_ONLY_ERROR =
@@ -118,17 +136,25 @@ async function fetchMcpSettings(
   globalOnly: boolean,
 ): Promise<McpSettingsSnapshot> {
   try {
-    const configured = await invoke<McpConnection[]>(
+    const found = await invoke<McpConnection[] | McpDiscoveryResult>(
       "mcp_discover",
       globalOnly ? { cwd, globalOnly: true } : { cwd },
     );
-    const servers = configured
+    // A bare connection list carries no warnings.
+    const { connections, warnings = [] } = Array.isArray(found) ? { connections: found } : found;
+    const servers = connections
       .filter((server) => !globalOnly || server.scope === "user")
       .map((server) => ({
         ...server,
         status: server.enabled === false ? "Disabled" : "Configured",
       }));
-    return { servers, error: "", claudeError: "" };
+    const configWarnings = warnings.filter((warning) => !globalOnly || warning.scope === "user");
+    return {
+      servers,
+      ...(configWarnings.length ? { configWarnings } : {}),
+      error: "",
+      claudeError: "",
+    };
   } catch (cause) {
     const previous = snapshots.get(key);
     return {
@@ -136,6 +162,8 @@ async function fetchMcpSettings(
         ...server,
         status: server.enabled === false ? "Disabled" : "Configured",
       })),
+      // The last good read still describes these files; a failed refresh does not clear it.
+      ...(previous?.configWarnings ? { configWarnings: previous.configWarnings } : {}),
       error: String(cause),
       claudeError: "",
     };

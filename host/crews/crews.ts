@@ -28,6 +28,8 @@ import { crewHistoryQuery } from "./crew-history-query";
 import { THREAD_CREW_WRITES } from "../conversation/conversation-thread-crew-tools";
 import { candidateObservations } from "./crew-observations";
 import * as membership from "./crew-membership";
+import { updateLibraryGroup } from "./crew-groups";
+import { CrewsAgentGroupUpdateParamsSchema } from "../../src/shared/model/host-contracts/crews";
 import {
   initializeCrewSchedulerProjection,
   readCrewSchedulerRuns,
@@ -44,6 +46,7 @@ import {
   COORDINATOR_DELETED,
   COORDINATOR_STOPPED,
   LAUNCH_GENERATION,
+  crewMemberRunIds,
   launchGeneration,
 } from "./crew-managed-session";
 import { finishRunDuration } from "../execution/run-duration";
@@ -1318,6 +1321,18 @@ export class HostCrews {
         return { deleted: true };
       });
     }
+    if (action === "crews.agent.group.update") {
+      // One transaction and one state write: the group moves as a whole or not at all.
+      return this.store.db.scope(async () => {
+        if (principal) throw new Error("Only the owner may change a library group");
+        // The legacy owner path hands raw params over, so the shape is checked here.
+        const { group, rename, members } = CrewsAgentGroupUpdateParamsSchema.parse(input);
+        const state = await this.read();
+        const updated = updateLibraryGroup(state, { projectId, group, rename, members }, this.now);
+        if (updated) await this.write(state);
+        return { updated };
+      });
+    }
     if (action === "crews.save")
       return await this.save(
         input.definition ?? JSON.parse(message(input.definitionJson, 100000)),
@@ -1621,7 +1636,10 @@ export class HostCrews {
     )
       return;
     const text = input.text;
-    for (const run of (await this.read()).runs.filter((r) => r.status !== "finished")) {
+    // Resolve crew membership by index first: an ordinary conversation must not decode run history.
+    for (const runId of await crewMemberRunIds(this.store, String(input.sessionId))) {
+      const run = await readCrewRun(this.store, runId);
+      if (!run || run.status === "finished") continue;
       const task = (await this.tasks.list(run.projectId)).find(
         (t) =>
           t.crewRunId === run.id &&
@@ -1705,15 +1723,15 @@ export class HostCrews {
       const active = await this.readActiveRuns();
       for (const run of active) {
         if (run.routingWait && !run.coordinatorSessionId) {
-          if (
-            run.sourceTaskId &&
-            !(await this.tasks.list(run.projectId)).some(
-              (task) =>
-                task.id === run.sourceTaskId &&
-                (task.status === "queued" || task.status === "running"),
+          if (run.sourceTaskId) {
+            // Point read of the one source task; the project's task history is never listed per tick.
+            const source = await this.tasks.get(run.sourceTaskId);
+            if (
+              source?.projectId !== run.projectId ||
+              (source.status !== "queued" && source.status !== "running")
             )
-          )
-            continue;
+              continue;
+          }
           await this.launchCoordinator(run);
           continue;
         }
@@ -1743,10 +1761,9 @@ export class HostCrews {
           notifications[key] = signature;
           return true;
         };
-        for (const task of (await this.tasks.list(run.projectId)).filter(
-          (t) =>
-            t.crewRunId === run.id &&
-            (t.status === "review" || t.status === "blocked" || t.needsInput),
+        // Only this run's tasks, through the run index; a task write elsewhere costs this run nothing.
+        for (const task of (await this.tasks.listCrewRun(run.id, run.projectId)).filter(
+          (t) => t.status === "review" || t.status === "blocked" || t.needsInput,
         )) {
           const signature = `${task.status}:${task.updatedAt}`;
           if (run.notifications[`task:${task.id}`] !== signature) {

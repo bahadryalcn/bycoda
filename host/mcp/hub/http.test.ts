@@ -68,6 +68,49 @@ const headers = (token?: string) => ({
 });
 const body = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} });
 
+describe("hubbed MCP route limiter accounting", () => {
+  // Mock clock and stub hub: admit() never touches the hub, so no child process is started.
+  function limiter(clock: { now: number }) {
+    const auth = { principalForToken: async () => undefined, projectCwd: async () => undefined };
+    const route = new ExternalMcpRoute({} as McpHub, auth, () => clock.now);
+    const admit = (token: string) =>
+      (route as unknown as { admit(t: string): { release(): void } | undefined }).admit(token);
+    const tokens = (route as unknown as { tokens: Map<string, unknown> }).tokens;
+    return { admit, tokens };
+  }
+
+  it("drops idle credential entries after their window so the map stays bounded", () => {
+    const clock = { now: 1_000_000 };
+    const { admit, tokens } = limiter(clock);
+    for (let i = 0; i < 500; i++) admit(String(i).padStart(43, "x"))?.release();
+    expect(tokens.size).toBe(500);
+    clock.now += 60_000;
+    admit("y".repeat(43))?.release();
+    expect(tokens.size).toBe(1);
+  });
+
+  it("keeps an entry with an in-flight request so release() settles the same counts", () => {
+    const clock = { now: 1_000_000 };
+    const { admit, tokens } = limiter(clock);
+    const held = admit("z".repeat(43));
+    expect(held).toBeDefined();
+    clock.now += 120_000;
+    admit("w".repeat(43))?.release();
+    expect(tokens.size).toBe(2);
+    held!.release();
+  });
+
+  it("still enforces the per-credential active cap", () => {
+    const clock = { now: 1_000_000 };
+    const { admit } = limiter(clock);
+    const token = "q".repeat(43);
+    const held = Array.from({ length: 16 }, () => admit(token));
+    expect(held.every(Boolean)).toBe(true);
+    expect(admit(token)).toBeUndefined();
+    held.forEach((limit) => limit!.release());
+  });
+});
+
 describe("hubbed MCP route", () => {
   it("accepts the session token and answers from the hub", async () => {
     const base = await start();

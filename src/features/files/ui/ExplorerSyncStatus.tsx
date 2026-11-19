@@ -3,13 +3,15 @@ import { Text } from "../../../shared/ui/Text";
 import { InlineAction } from "../../../shared/ui/ActionHost";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { LiveText } from "../../../shared/ui/LiveText";
+import { ErrorDetails, errorHeadline, fitsOneLine } from "../../../shared/ui/ErrorDetails";
 import { formatDate } from "../../../shared/i18n";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { CircleAlert, RefreshCw } from "../../../shared/ui/icons";
 import { type RemoteDataState } from "../../connections";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 
-/** Root freshness at the end of the project row: icon, time, refresh. */
+/** Root freshness at the end of the project row: icon, time, error, refresh. */
 export function ExplorerSyncStatus({
   state,
   onRefresh,
@@ -24,29 +26,26 @@ export function ExplorerSyncStatus({
   const time = state.updatedAt
     ? formatDate(state.updatedAt, { hour: "2-digit", minute: "2-digit" })
     : undefined;
-  const title = [
-    state.updatedAt
-      ? t("Last verified {p0}", {
-          p0: formatDate(state.updatedAt, {
-            year: "numeric",
-            month: "numeric",
-            day: "numeric",
-            hour: "numeric",
-            minute: "numeric",
-            second: "numeric",
-          }),
-        })
-      : undefined,
-    shownCentrally ? undefined : state.error,
-  ]
-    .filter(Boolean)
-    .join("\n");
+  // The failure is visible text in the row, so keyboard and screen-reader users reach it too;
+  // a long or multi-line error keeps its full text behind Details.
+  const shownError = warn && state.error ? presentRemoteError(state.error, { explicit: true }) : undefined;
+  const verified = state.updatedAt
+    ? t("Last verified {p0}", {
+        p0: formatDate(state.updatedAt, {
+          year: "numeric",
+          month: "numeric",
+          day: "numeric",
+          hour: "numeric",
+          minute: "numeric",
+          second: "numeric",
+        }),
+      })
+    : undefined;
   return (
-    <Tooltip label={title || undefined} asChild>
+    <Tooltip label={verified} asChild>
       <Text
         data-remote-data-state={state.phase}
         aria-busy={busy}
-
         as="div"
         size="micro"
         tone="muted"
@@ -64,12 +63,22 @@ export function ExplorerSyncStatus({
             ) : null}
           </span>
         ) : null}
+        {shownError ? (
+          <span className="min-w-0 max-w-40 truncate">{errorHeadline(shownError)}</span>
+        ) : null}
+        {shownError && !fitsOneLine(shownError) ? (
+          <ErrorDetails
+            className="shrink-0"
+            title={shownError}
+            detail={state.error ?? shownError}
+          />
+        ) : null}
         <InlineAction
           reveal="always"
           label={
             state.phase === "error" && !shownCentrally
-              ? t("Retry loading {p0}", { p0: "files" })
-              : t("Refresh {p0}", { p0: "files" })
+              ? t("Retry loading files")
+              : t("Refresh files")
           }
           motion="none"
           type="button"

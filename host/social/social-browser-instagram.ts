@@ -6,6 +6,12 @@ import {
 } from "../../src/integrations/social/adapter";
 import type { BrowserRecipeContext, BrowserPollResult } from "./social-browser-recipe";
 import {
+  COMMENT_SUBMIT_LABELS,
+  NEXT_LABELS,
+  SEND_LABELS,
+  SHARE_LABELS,
+} from "./browser/ui-labels";
+import {
   numeric,
   object,
   values,
@@ -247,20 +253,22 @@ export async function instagramPublish(context: BrowserRecipeContext, job: Socia
   );
   if (!phase) throw new SocialPlatformError("unsupported");
   if (!phase.caption && phase.filters)
-    await click(context, '[role="dialog"] button,[role="dialog"] [role="button"]', [
-      "Next",
-      "İleri",
-    ]);
+    await click(
+      context,
+      '[role="dialog"] button,[role="dialog"] [role="button"]',
+      NEXT_LABELS,
+    );
   else if (!phase.caption) throw new SocialPlatformError("unsupported");
   const editor = await mark(
     context,
     '[role="dialog"] [contenteditable="true"][role="textbox"],[role="dialog"] textarea[aria-label="Write a caption..."],[role="dialog"] textarea[aria-label="Bir açıklama yaz..."]',
   );
   await context.page.fill(editor, text);
-  const submit = await mark(context, '[role="dialog"] button,[role="dialog"] [role="button"]', [
-    "Share",
-    "Paylaş",
-  ]);
+  const submit = await mark(
+    context,
+    '[role="dialog"] button,[role="dialog"] [role="button"]',
+    SHARE_LABELS,
+  );
   return capture(
     context,
     /\/api\/v1\/media\/(?:configure|configure_sidecar|configure_to_clips)\/?(?:\?|$)/,
@@ -305,11 +313,7 @@ export async function instagramComment(context: BrowserRecipeContext, job: Socia
     'main textarea[aria-label="Add a comment…"],main textarea[aria-label="Add a comment..."],main textarea[aria-label="Yorum ekle…"],main textarea[aria-label="Yorum ekle..."]',
   );
   await context.page.fill(editor, text);
-  const submit = await mark(context, 'main button,main [role="button"]', [
-    "Post",
-    "Paylaş",
-    "Gönder",
-  ]);
+  const submit = await mark(context, 'main button,main [role="button"]', COMMENT_SUBMIT_LABELS);
   return capture(
     context,
     new RegExp(`/api/v1/web/comments/${post.id}/add/(?:\\?|$)`),
@@ -345,7 +349,7 @@ export async function instagramMessage(context: BrowserRecipeContext, job: Socia
     'main [contenteditable="true"][role="textbox"],main textarea[placeholder="Message..."],main textarea[placeholder="Mesaj..."]',
   );
   await context.page.fill(editor, text);
-  const submit = await mark(context, 'main button,main [role="button"]', ["Send", "Gönder"]);
+  const submit = await mark(context, 'main button,main [role="button"]', SEND_LABELS);
   let itemId = "";
   await capture(
     context,

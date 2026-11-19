@@ -32,7 +32,9 @@ export function createModelsService(ports: ModelsPorts) {
         params.progressive === true,
         params.refresh === true,
       );
-      const disabled = await ports.disabledModels?.().catch(() => undefined);
+      // A failed settings read rejects the list: serving the catalog unfiltered would show
+      // models the owner turned off as selectable. `undefined` still means "never published".
+      const disabled = await ports.disabledModels?.();
       await assertDomainAuthority(context);
       return {
         ...applyDisabledModels(catalog, disabled),

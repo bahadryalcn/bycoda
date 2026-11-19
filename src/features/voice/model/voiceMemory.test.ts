@@ -24,15 +24,28 @@ describe("voice memory", () => {
     expect(loadVoiceMemory().notes).toEqual([]);
   });
 
-  it("rejects empty, oversized and disabled saves and keeps the newest notes", () => {
+  it("refuses a note past the limit and never drops a saved note", () => {
+    for (let index = 0; index < MEMORY_LIMITS.notes; index++) rememberVoiceNote(`note ${index}`);
+    const before = loadVoiceMemory().notes;
+    expect(before).toHaveLength(MEMORY_LIMITS.notes);
+    expect(rememberVoiceNote("one more")).toEqual({
+      saved: false,
+      error: "Memory is full. Forget a note to make room.",
+    });
+    expect(loadVoiceMemory().notes).toEqual(before);
+    expect(rememberVoiceNote("NOTE 3")).toEqual({ saved: true, id: before[3].id });
+    expect(forgetVoiceNote(before[0].id)).toEqual({ forgotten: true });
+    expect(rememberVoiceNote("one more")).toMatchObject({ saved: true });
+    const notes = loadVoiceMemory().notes.map((note) => note.text);
+    expect(notes).toHaveLength(MEMORY_LIMITS.notes);
+    expect(notes.slice(0, 2)).toEqual(["note 1", "note 2"]);
+    expect(notes.at(-1)).toBe("one more");
+  });
+
+  it("rejects empty, oversized and disabled saves", () => {
     expect(rememberVoiceNote("")).toMatchObject({ saved: false });
     expect(rememberVoiceNote(42)).toMatchObject({ saved: false });
     expect(rememberVoiceNote("x".repeat(MEMORY_LIMITS.text + 1))).toMatchObject({ saved: false });
-    for (let index = 0; index < MEMORY_LIMITS.notes + 5; index++)
-      rememberVoiceNote(`note ${index}`);
-    const notes = loadVoiceMemory().notes;
-    expect(notes).toHaveLength(MEMORY_LIMITS.notes);
-    expect(notes.at(-1)?.text).toBe(`note ${MEMORY_LIMITS.notes + 4}`);
     saveVoiceMemory({ ...loadVoiceMemory(), enabled: false });
     expect(rememberVoiceNote("new")).toEqual({
       saved: false,

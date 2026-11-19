@@ -108,3 +108,58 @@ it("publishes the selected provider default for Automatic delegation", async () 
     true,
   );
 });
+
+function hostReads() {
+  return mocks.request.mock.calls.filter((call) => call[1] === "host.settings.get").length;
+}
+function setHidden(hidden: boolean) {
+  Object.defineProperty(document, "hidden", { configurable: true, value: hidden });
+}
+afterEach(() => setHidden(false));
+
+it("backs off while reads find nothing and resets after an applied change", async () => {
+  stop = startProviderAccountHostSync();
+  await flush();
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(hostReads()).toBe(1);
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(hostReads()).toBe(1);
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(hostReads()).toBe(2);
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(hostReads()).toBeLessThanOrEqual(4);
+  mocks.request.mockResolvedValue({
+    providerAccountStyles: { codex: { "account-a": { label: "Remote", kind: "work" } } },
+  });
+  await vi.advanceTimersByTimeAsync(60_000);
+  const applied = hostReads();
+  await vi.advanceTimersByTimeAsync(5000);
+  await flush();
+  expect(hostReads()).toBe(applied + 1);
+});
+
+it("reads nothing while hidden and catches up on visibility and focus", async () => {
+  stop = startProviderAccountHostSync();
+  await flush();
+  setHidden(true);
+  await vi.advanceTimersByTimeAsync(300_000);
+  expect(hostReads()).toBe(0);
+  setHidden(false);
+  document.dispatchEvent(new Event("visibilitychange"));
+  await flush();
+  expect(hostReads()).toBe(1);
+  window.dispatchEvent(new Event("focus"));
+  await flush();
+  expect(hostReads()).toBe(2);
+});
+
+it("stops reading after the sync is stopped", async () => {
+  stop = startProviderAccountHostSync();
+  await flush();
+  stop();
+  stop = undefined;
+  await vi.advanceTimersByTimeAsync(300_000);
+  window.dispatchEvent(new Event("focus"));
+  await flush();
+  expect(hostReads()).toBe(0);
+});

@@ -13,11 +13,13 @@ import { effortChoices } from "./orderBulk";
 function PickMenu({
   label,
   disabled,
+  disabledReason,
   items,
   onPick,
 }: {
   label: string;
   disabled: boolean;
+  disabledReason?: string;
   items: DropdownMenuAction[];
   onPick: (id: string) => void;
 }) {
@@ -29,6 +31,7 @@ function PickMenu({
         ref={anchor}
         size="sm"
         disabled={disabled}
+        disabledReason={disabled ? disabledReason : undefined}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
@@ -83,12 +86,14 @@ export function OrderSelectionBar({
       <PickMenu
         label={t("Set effort…")}
         disabled={!efforts.length}
+        disabledReason={t("The selected models have no effort setting.")}
         items={efforts.map(({ value, label }) => ({ kind: "item", id: value, label }))}
         onPick={onEffort}
       />
       <PickMenu
         label={t("Add to group…")}
         disabled={!pools.length}
+        disabledReason={t("Create a group first.")}
         items={pools.map((pool) => ({
           kind: "item",
           id: pool.id,

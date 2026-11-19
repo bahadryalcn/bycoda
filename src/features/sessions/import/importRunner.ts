@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { withRoomPrivacyMutation } from "../../group-lock/model/roomPrivacyProjection";
 import { forgetHarnessSession } from "../../../integrations/harness/core/registry";
 import {
@@ -8,6 +9,7 @@ import {
   type CodexTranscript,
   type ImportCandidate,
 } from "../../../platform/tauri/sessionImport";
+import { t } from "../../../shared/i18n";
 import { pathKey } from "../../../shared/lib/paths";
 import { proposeProjectGroups } from "../../projects/public/importGrouping";
 import {
@@ -45,7 +47,24 @@ export const MAX_BLOCKS_BYTES = 6 * 1024 * 1024;
 
 export const MISSING_FOLDERS_GROUP = "Missing folders";
 
-export type ImportFailure = { candidate: ImportCandidate; error: string };
+/** Failures the app itself raises; the dialog shows their translated text. */
+export type ImportFailureReason = "noMessages" | "unsupportedId";
+
+export class ImportFailureError extends Error {
+  readonly reason: ImportFailureReason;
+
+  constructor(reason: ImportFailureReason) {
+    super(reason);
+    this.reason = reason;
+  }
+}
+
+export type ImportFailure = {
+  candidate: ImportCandidate;
+  /** Raw message, shown only when `reason` is absent (provider or IO errors). */
+  error: string;
+  reason?: ImportFailureReason;
+};
 
 export type ImportProgress = {
   total: number;
@@ -154,27 +173,37 @@ export function importNote(
   options: { resumable: boolean; truncated: boolean },
 ): string {
   const source = candidate.provider === "claude" ? "Claude Code" : "Codex";
-  const parts = [`Imported from ${source}.`];
+  const parts = [t("Imported from {p0}.", { p0: source })];
   if (!target.real) {
     parts.push(
-      `The original folder (${target.original}) ${
-        candidate.cwdExists ? "is not a project folder" : "no longer exists"
-      }, so this is read-only history; sending a message starts a new conversation.`,
+      candidate.cwdExists
+        ? t(
+            "The original folder ({p0}) is not a project folder, so this is read-only history; sending a message starts a new conversation.",
+            { p0: target.original },
+          )
+        : t(
+            "The original folder ({p0}) no longer exists, so this is read-only history; sending a message starts a new conversation.",
+            { p0: target.original },
+          ),
     );
   } else if (!options.resumable) {
     parts.push(
-      "Its transcript could not be matched to this folder, so this is read-only history; sending a message starts a new conversation.",
+      t(
+        "Its transcript could not be matched to this folder, so this is read-only history; sending a message starts a new conversation.",
+      ),
     );
   } else {
     parts.push(
-      `Sending a message continues the same ${source === "Codex" ? "Codex thread" : "conversation"}.`,
+      source === "Codex"
+        ? t("Sending a message continues the same Codex thread.")
+        : t("Sending a message continues the same conversation."),
     );
   }
   if (candidate.provider === "codex") {
-    parts.push("Tool calls are shown as simple rows and reasoning is not included.");
+    parts.push(t("Tool calls are shown as simple rows and reasoning is not included."));
   }
   if (options.truncated) {
-    parts.push("Only the most recent part was imported because of its size.");
+    parts.push(t("Only the most recent part was imported because of its size."));
   }
   return parts.join(" ");
 }
@@ -214,7 +243,7 @@ async function buildSession(
       !truncated ||
       !built.blocks.some((block) => block.role === "assistant" || block.role === "tool")
     ) {
-      throw new Error("The conversation has no messages to import");
+      throw new ImportFailureError("noMessages");
     }
   }
 
@@ -225,7 +254,9 @@ async function buildSession(
       {
         id: crypto.randomUUID(),
         role: "system",
-        text: "The retained history starts inside a turn; its user prompt is outside the imported portion.",
+        text: t(
+          "The retained history starts inside a turn; its user prompt is outside the imported portion.",
+        ),
       },
       ...fitted.blocks,
     ];
@@ -348,7 +379,7 @@ export async function runSessionImport(input: {
     }
     try {
       if (!isPersistableId(importedSessionId(candidate))) {
-        throw new Error("Unsupported conversation id");
+        throw new ImportFailureError("unsupportedId");
       }
       if (isAlreadyImported(candidate, stored)) {
         progress.skipped += 1;
@@ -380,7 +411,8 @@ export async function runSessionImport(input: {
     } catch (error) {
       progress.failed.push({
         candidate,
-        error: error instanceof Error ? error.message : String(error),
+        error: errorText(error),
+        reason: error instanceof ImportFailureError ? error.reason : undefined,
       });
     }
     progress.done += 1;

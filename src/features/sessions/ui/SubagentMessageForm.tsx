@@ -43,6 +43,7 @@ export function SubagentMessageForm({ name, relay }: { name: string; relay: Suba
         label={t("Message for {p0}", { p0: name })}
         rows={2}
         value={relay.draft}
+        aria-keyshortcuts="Control+Enter Meta+Enter"
         onChange={(event) => relay.setDraft(event.target.value)}
         onKeyDown={(event) => {
           if (
@@ -97,7 +98,7 @@ export function SubagentMessageForm({ name, relay }: { name: string; relay: Suba
             {t("Open session")}
           </Button>
         ) : null}
-        <Button type="submit" variant="primary" disabled={!canSend}>
+        <Button type="submit" variant="primary" disabled={!canSend} shortcut="Mod+Enter">
           {direct ? t("Send") : t("Relay via main agent")}
         </Button>
       </div>

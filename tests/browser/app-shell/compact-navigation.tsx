@@ -134,7 +134,7 @@ function ApplicationMenuFixture() {
         Application menu
       </Button>
       <MenuBar
-        onNew={() => setSelected("New Session")}
+        onNew={() => setSelected("New session")}
         onOpenInbox={() => setSelected("Inbox")}
         onOpenNotes={() => setSelected("Notes")}
         onToggleSidebar={() => setSelected("Toggle Sidebar")}

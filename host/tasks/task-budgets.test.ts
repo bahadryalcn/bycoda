@@ -1,7 +1,12 @@
 import { forEachAsync } from "../async-collections";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HostStore } from "../store";
-import { HostTaskBudgets, type BudgetRunRegistration } from "./task-budgets";
+import {
+  BUDGET_RUN_SEAL_AFTER_MS,
+  HostTaskBudgets,
+  type BudgetRunRegistration,
+} from "./task-budgets";
+import { readWorkUsage } from "../work/usage";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -595,5 +600,238 @@ describe("durable task/goal family budgets", () => {
       agentMinutes: 0,
     });
     expect((await restarted.read({ goalId: "goal" })).historyComplete).toBe(false);
+  });
+});
+
+describe("bounded ledger lookups with sealed runs", () => {
+  const sealedAt = async (s: Awaited<ReturnType<typeof setup>>, runId = "run") =>
+    (
+      await s.store.db
+        .prepare("SELECT sealed_settled_at FROM task_run_budget_ledger WHERE run_id=?")
+        .get(runId)
+    )?.sealed_settled_at;
+  async function settledRun(
+    s: Awaited<ReturnType<typeof setup>>,
+    sessionId = "session",
+    runId = "run",
+    patch: Partial<BudgetRunRegistration> = {},
+  ) {
+    await s.save(sessionId, runId);
+    await s.store.transaction(() =>
+      admitRunDuration(s.store, sessionId, runId, s.clock.now, s.clock.now),
+    );
+    await s.register(sessionId, runId, patch);
+    s.clock.now += 30_000;
+    await finishRunDuration(s.store, sessionId, runId, s.clock.now, s.clock.now);
+    await s.finish(sessionId, { durationMs: 30_000, metrics: reported, cost: 2 });
+    // Observe the settlement now, so its age counts from here.
+    await s.budgets.sync();
+  }
+  /** A later sent turn: provider usage now merges into it and the session's run is another one. */
+  async function supersede(s: Awaited<ReturnType<typeof setup>>, sessionId = "session") {
+    await s.save(sessionId, "next-run", {
+      previous: await s.store.session(sessionId),
+      status: "idle",
+    });
+    await s.budgets.sync();
+  }
+  const stable = <T extends { measuredAt: number }>(usage: T) => ({ ...usage, measuredAt: 0 });
+  const late = { inputTokens: 200, outputTokens: 50 };
+
+  it("keeps charging provider usage that arrives long after settlement while the run can still receive it", async () => {
+    const s = await setup();
+    await settledRun(s, "session", "run", { parentTaskId: "parent" });
+    s.clock.now += 30 * BUDGET_RUN_SEAL_AFTER_MS;
+    await s.budgets.sync();
+    await s.budgets.sync();
+    // Age alone never seals: this is still the session's latest turn and current run.
+    expect(await sealedAt(s)).toBeNull();
+    await s.finish("session", { durationMs: 30_000, metrics: late, cost: 5 });
+    await s.budgets.syncGoalUsage();
+    for (const scope of [{ taskId: "task" }, { taskId: "parent" }, { goalId: "goal" }])
+      expect(await s.budgets.read(scope)).toMatchObject({
+        attempts: 1,
+        reportedTokens: 250,
+        reportedCostUsd: 5,
+      });
+    expect((await s.budgets.readGoalUsage(["goal"])).get("goal")).toMatchObject({
+      attempts: 1,
+      reportedTokens: 250,
+      reportedCostUsd: 5,
+    });
+    expect(await sealedAt(s)).toBeNull();
+  });
+
+  it("seals only once a later turn proves the run cannot receive usage, with the late usage included", async () => {
+    const s = await setup();
+    await settledRun(s, "session", "run", { parentTaskId: "parent" });
+    s.clock.now += 24 * 60 * 60 * 1000;
+    await s.finish("session", { durationMs: 30_000, metrics: late, cost: 5 });
+    await s.budgets.sync();
+    expect(await sealedAt(s)).toBeNull();
+    await supersede(s);
+    // Superseded, but not yet old enough: the grace window still applies.
+    expect(await sealedAt(s)).toBeNull();
+    s.clock.now += BUDGET_RUN_SEAL_AFTER_MS;
+    await s.budgets.syncGoalUsage();
+    expect(await sealedAt(s)).not.toBeNull();
+    // The next turn's usage is that turn's, never added to the sealed receipt.
+    await s.finish("session", { durationMs: 1000, metrics: reported, cost: 9 });
+    await s.budgets.sync();
+    for (const scope of [{ taskId: "task" }, { taskId: "parent" }, { goalId: "goal" }])
+      expect(await s.budgets.read(scope)).toMatchObject({
+        attempts: 1,
+        reportedTokens: 250,
+        reportedCostUsd: 5,
+      });
+  });
+
+  it("does not treat a draft as a later turn", async () => {
+    const s = await setup();
+    await settledRun(s);
+    const previous = await s.store.session("session");
+    await s.store.save(
+      {
+        ...previous,
+        runId: "next-run",
+        revision: previous.revision + 1,
+        session: {
+          ...previous.session,
+          blocks: [
+            ...previous.session.blocks,
+            { id: "draft", role: "user", text: "unsent", draft: true },
+          ],
+        },
+      },
+      {},
+    );
+    await s.budgets.sync();
+    s.clock.now += BUDGET_RUN_SEAL_AFTER_MS;
+    await s.budgets.sync();
+    expect(await sealedAt(s)).toBeNull();
+  });
+
+  it("seals a settled run once and keeps every scope total, even after its transcript is gone", async () => {
+    const s = await setup();
+    await settledRun(s, "session", "run", { parentTaskId: "parent" });
+    await supersede(s);
+    const before = {
+      task: stable(await s.budgets.read({ taskId: "task" })),
+      parent: stable(await s.budgets.read({ taskId: "parent" })),
+      goal: stable(await s.budgets.read({ goalId: "goal" })),
+    };
+    expect(before.task).toMatchObject({ attempts: 1, agentMinutes: 0.5, tokens: 89 });
+    expect(await sealedAt(s)).toBeNull();
+    s.clock.now += BUDGET_RUN_SEAL_AFTER_MS;
+    await s.budgets.sync();
+    await s.budgets.sync();
+    expect(await sealedAt(s)).not.toBeNull();
+    const transcripts = vi.spyOn(s.store, "session");
+    const after = {
+      task: stable(await s.budgets.read({ taskId: "task" })),
+      parent: stable(await s.budgets.read({ taskId: "parent" })),
+      goal: stable(await s.budgets.read({ goalId: "goal" })),
+    };
+    expect(after).toEqual(before);
+    expect(transcripts).not.toHaveBeenCalled();
+    await s.store.deleteSession("session");
+    s.clock.now += 1000;
+    expect(stable(await s.budgets.read({ goalId: "goal" }))).toEqual(before.goal);
+    expect(
+      (await s.budgets.evaluate({ taskId: "task" }, { maxAgentMinutes: 0.5 })).blocked,
+    ).toBe(true);
+  });
+
+  it("never seals an active debit or a run still awaiting its finish checkpoint", async () => {
+    const s = await setup();
+    await s.save("session", "run");
+    await s.register();
+    s.clock.now += 30_000;
+    await s.save("late", "late-run");
+    await s.store.transaction(() =>
+      admitRunDuration(s.store, "late", "late-run", s.clock.now, s.clock.now),
+    );
+    await s.register("late", "late-run");
+    await s.finish("late", { durationMs: 1000, metrics: reported });
+    await s.budgets.sync();
+    s.clock.now += BUDGET_RUN_SEAL_AFTER_MS;
+    await s.budgets.sync();
+    expect(await sealedAt(s, "run")).toBeNull();
+    expect(await sealedAt(s, "late-run")).toBeNull();
+    expect(await s.budgets.read({ taskId: "task" })).toMatchObject({
+      attempts: 2,
+      runningRuns: 1,
+    });
+    // The missing checkpoint can still arrive and is then accounted exactly once.
+    await finishRunDuration(s.store, "late", "late-run", s.clock.now, s.clock.now);
+    await s.budgets.sync();
+    expect(await s.budgets.read({ taskId: "task" })).toMatchObject({ attempts: 2 });
+  });
+
+  it("counts a sealed run once across repeated registration, enrichment and reads", async () => {
+    const s = await setup();
+    await settledRun(s, "session", "run", { goalId: undefined });
+    await supersede(s);
+    s.clock.now += BUDGET_RUN_SEAL_AFTER_MS;
+    await s.budgets.sync();
+    expect(await sealedAt(s)).not.toBeNull();
+    await s.register("session", "run", { goalId: undefined });
+    await s.register("session", "run", { goalId: "goal", parentTaskId: "parent" });
+    await s.register("session", "run", { goalId: "goal", parentTaskId: "parent" });
+    await s.budgets.sync();
+    for (const scope of [{ taskId: "task" }, { taskId: "parent" }, { goalId: "goal" }])
+      expect(await s.budgets.read(scope)).toMatchObject({
+        attempts: 1,
+        agentMinutes: 0.5,
+        reportedTokens: 89,
+        reportedCostUsd: 2,
+      });
+  });
+
+  it("combines sealed and open runs in goal lists, once per distinct goal", async () => {
+    const s = await setup();
+    await settledRun(s);
+    await supersede(s);
+    s.clock.now += BUDGET_RUN_SEAL_AFTER_MS;
+    await s.budgets.sync();
+    await s.save("open", "open-run");
+    await s.register("open", "open-run", { role: "reviewer" });
+    await s.budgets.markUnknownHistory({ goalId: "legacy" });
+    await s.budgets.sync();
+    const usage = await s.budgets.readGoalUsage(["goal", "fresh", "legacy", "goal"]);
+    expect(stable(usage.get("goal")!)).toEqual(stable(await s.budgets.read({ goalId: "goal" })));
+    expect(usage.get("goal")).toMatchObject({ attempts: 2, runningRuns: 1, completedRuns: 1 });
+    expect(usage.get("fresh")).toMatchObject({ attempts: 0, historyComplete: true });
+    expect(usage.get("legacy")).toMatchObject({ attempts: 0, historyComplete: false });
+    await s.budgets.syncGoalUsage();
+    expect(stable((await s.budgets.readGoalUsage(["goal"])).get("goal")!)).toEqual(
+      stable(usage.get("goal")!),
+    );
+  });
+
+  it("keeps sealed history in the budget decision and reads only recent runs for Work windows", async () => {
+    const s = await setup();
+    await settledRun(s);
+    await supersede(s);
+    s.clock.now += 60 * 24 * 60 * 60 * 1000;
+    await s.budgets.sync();
+    expect(await sealedAt(s)).not.toBeNull();
+    expect(
+      (await s.budgets.evaluate({ goalId: "goal" }, { maxAttempts: 1 }, { starting: true }))
+        .blocked,
+    ).toBe(true);
+    const reading = await readWorkUsage(s.store, s.budgets, {
+      now: s.clock.now,
+      coverageSince: 0,
+    });
+    // The run settled two months earlier, outside every calendar window.
+    expect(reading.monthly.tokens).toMatchObject({ reported: 0, complete: true });
+    await s.save("recent", "recent-run");
+    await s.register("recent", "recent-run", { startedAt: s.clock.now });
+    await s.finish("recent", { durationMs: 1000, metrics: reported });
+    expect(
+      (await readWorkUsage(s.store, s.budgets, { now: s.clock.now, coverageSince: 0 })).monthly
+        .tokens.reported,
+    ).toBe(89);
   });
 });

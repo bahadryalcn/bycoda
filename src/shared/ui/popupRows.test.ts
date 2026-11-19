@@ -32,18 +32,47 @@ describe("popup choice surfaces", () => {
   });
 
   it("normalizes semantic options without removing container or input focus", () => {
-    const css = readFileSync(join(__dirname, "../../styles/arc.css"), "utf8");
-    const reset = css.match(/:root :is\(\s*\[role="option"\][\s\S]*?\{([^}]+)\}/)?.[1];
+    const css = readFileSync(join(__dirname, "../../styles/arc.css"), "utf8").replace(
+      /\/\*[\s\S]*?\*\//g,
+      "",
+    );
+    const roles = ["option", "menuitem", "menuitemradio", "menuitemcheckbox"];
+    const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, selector, body]) => ({
+      selector: selector.replace(/\s+/g, " ").trim(),
+      body,
+    }));
+    const forRoles = (rule: { selector: string }) =>
+      roles.every((role) => rule.selector.includes(`[role="${role}"]`));
+    const reset = rules.find(
+      (rule) =>
+        forRoles(rule) && !rule.selector.includes(":focus-visible") && /border: 0/.test(rule.body),
+    );
     expect(reset).toBeDefined();
-    expect(reset).toContain("border: 0 !important;");
-    expect(reset).toContain("outline: none !important;");
-    expect(reset).toContain("box-shadow: none !important;");
-    for (const role of ["option", "menuitem", "menuitemradio", "menuitemcheckbox"]) {
-      expect(css.match(/:root :is\(\s*\[role="option"\][\s\S]*?\{/)?.[0]).toContain(
-        `[role="${role}"]`,
-      );
+    // Zero specificity and no !important: a component's own ring, border or shadow on a role row wins.
+    expect(reset!.selector.startsWith(":where(:root) :where(")).toBe(true);
+    expect(reset!.body).toContain("border: 0;");
+    expect(reset!.body).toContain("box-shadow: none;");
+    // The global reset must never again hold a role row's border, outline or shadow with !important.
+    for (const rule of rules.filter(forRoles)) {
+      expect(rule.body).not.toMatch(/(?:border|outline|box-shadow)[\w-]*\s*:[^;]*!important/);
     }
-    const arc = readFileSync(join(__dirname, "../../styles/arc.css"), "utf8");
+    // Keyboard focus keeps the hover fill and gains the shared focus line (transparent under pointer input).
+    const focus = rules.find(
+      (rule) =>
+        forRoles(rule) &&
+        rule.selector.includes(":focus-visible") &&
+        /--ui-surface-hover/.test(rule.body),
+    );
+    expect(focus).toBeDefined();
+    expect(focus!.selector.startsWith(":where(:root) :where(")).toBe(true);
+    expect(focus!.body).toContain("box-shadow: var(--ui-focus-ring);");
+    // The shared row skin owns its fill-only focus, so the fallback line never frames a ListRow.
+    const row = readFileSync(join(__dirname, "ListRow.module.css"), "utf8").replace(
+      /\/\*[\s\S]*?\*\//g,
+      "",
+    );
+    expect(row).toMatch(/\.row\s*\{[^}]*box-shadow: none;/);
+    const arc = css;
     expect(arc).toContain("outline: var(--ui-focus-width) solid var(--ui-focus-ring-color)");
     const picker = readFileSync(join(__dirname, "picker/picker.module.css"), "utf8");
     expect(picker).toMatch(/\.list\.list:focus-visible\s*\{\s*box-shadow: inset/);

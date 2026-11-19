@@ -72,3 +72,27 @@ it("preserves legacy bytes changed since native backup", async () => {
   await storage.hydrateHostSessionBindings();
   expect(localStorage.getItem("bycoda.host-session-binding.v1:shell")).toBe("changed");
 });
+
+it("reads every owner page once when the first flush hydrates the window", async () => {
+  const database = await import("./hostSessionBindingDatabase");
+  const storage = await import("./sessionExecutionBinding");
+  vi.mocked(database.readBindingEvidencePage).mockClear();
+  await storage.flushHostSessionBindings();
+  expect(database.readBindingEvidencePage).toHaveBeenCalledTimes(1);
+  expect(storage.hostSessionBinding({ id: "shell" })?.sessionId).toBe("first");
+  // A hydrated window still re-reads on the next admission flush.
+  state.rows = [evidence("second", 2)];
+  await storage.flushHostSessionBindings();
+  expect(database.readBindingEvidencePage).toHaveBeenCalledTimes(2);
+  expect(storage.hostSessionBinding({ id: "shell" })?.sessionId).toBe("second");
+});
+
+it("re-reads after joining a hydration another caller started", async () => {
+  const database = await import("./hostSessionBindingDatabase");
+  const storage = await import("./sessionExecutionBinding");
+  vi.mocked(database.readBindingEvidencePage).mockClear();
+  const hydrating = storage.hydrateHostSessionBindings();
+  await storage.flushHostSessionBindings();
+  await hydrating;
+  expect(database.readBindingEvidencePage).toHaveBeenCalledTimes(2);
+});

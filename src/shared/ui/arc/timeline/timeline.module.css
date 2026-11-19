@@ -225,12 +225,7 @@ button.trigger:active {
 }
 
 .srOnly {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
+  composes: srOnly from "../lib/screen-reader.module.css";
 }
 
 @media (max-width: 420px) {

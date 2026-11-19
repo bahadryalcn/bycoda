@@ -6,6 +6,7 @@ import {
 import { closeTurnedOffMachine } from "./machineTurnOff";
 import { isMachineFocused, subscribeMachineFocused } from "./machineFocus";
 import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
+import { withTimeout } from "../../../shared/lib/withTimeout";
 import {
   knownRemoteMachine,
   recordRemoteCapabilities,
@@ -106,13 +107,18 @@ function reconnectFailureReason(reason: unknown): string {
   return presentRemoteError(reason, { explicit: true });
 }
 
+/** Longest wait for one reconnect's describe. Past it the attempt fails and the
+ * backoff schedules the next one; a late answer to the old request is ignored. */
+export const RECONNECT_DESCRIBE_TIMEOUT_MS = 30_000;
+
 /** One quiet attempt: never prompts. `fresh` skips the desktop's short memory
  * of a just-failed attempt. Attempts for one machine share a single request. */
 function attempt(environmentId: string, fresh: boolean): Promise<ReconnectOutcome> {
   const running = attempts.get(environmentId);
   if (running && isCurrentConnectionAttempt(environmentId, running.token)) return running.promise;
   const token = beginConnectionAttempt(environmentId);
-  lastAttemptAt.set(environmentId, monotonicNow());
+  const startedAt = monotonicNow();
+  lastAttemptAt.set(environmentId, startedAt);
   setReconnecting(environmentId, true);
   let unregistered = false;
   const run = (async (): Promise<ReconnectOutcome> => {
@@ -135,11 +141,10 @@ function attempt(environmentId: string, fresh: boolean): Promise<ReconnectOutcom
       return { ok: false, error: t("This machine is not connected on this computer.") };
     }
     try {
-      const host = await remoteRequest<{ capabilities?: unknown }>(
-        machine.id,
-        "environment.describe",
-        {},
-        fresh,
+      const host = await withTimeout(
+        remoteRequest<{ capabilities?: unknown }>(machine.id, "environment.describe", {}, fresh),
+        RECONNECT_DESCRIBE_TIMEOUT_MS,
+        "Machine reconnect",
       );
       if (!isCurrentConnectionAttempt(environmentId, token))
         return { ok: false, error: SUPERSEDED_CONNECTION };
@@ -153,7 +158,8 @@ function attempt(environmentId: string, fresh: boolean): Promise<ReconnectOutcom
     } catch (reason) {
       if (!isCurrentConnectionAttempt(environmentId, token))
         return { ok: false, error: SUPERSEDED_CONNECTION };
-      recordRemoteConnection(environmentId, reason);
+      // `startedAt` lets a deadline expiry count toward "unreachable" like any other timeout.
+      recordRemoteConnection(environmentId, reason, { startedAt });
       recordFeatureHealth(environmentId, "host", false);
       const status = readRemoteConnection(environmentId).status;
       setConnectionPhase(environmentId, needsSignIn(status) ? "waiting" : "failed", status);
@@ -286,11 +292,11 @@ function schedule() {
     if (pending || attempts.has(environmentId)) continue;
     const count =
       state.status === "connection-blocked" ? blocked : (retryCounts.get(environmentId) ?? 0);
-    setConnectionRetry(environmentId, now + autoRetryDelay(count));
-    retries.set(
-      environmentId,
-      setTimeout(() => void retry(environmentId, false), autoRetryDelay(count)),
-    );
+    // One jittered delay drives both the countdown label and the timer, so the
+    // label always names the moment the attempt actually runs.
+    const delay = autoRetryDelay(count);
+    setConnectionRetry(environmentId, now + delay);
+    retries.set(environmentId, setTimeout(() => void retry(environmentId, false), delay));
   }
 }
 

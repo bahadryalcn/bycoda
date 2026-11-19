@@ -1239,6 +1239,25 @@ describe("unified managed-server log capture", () => {
     )) as { output: string };
     expect(legacy.output).not.toContain("SYNTHETIC");
   });
+  it("logs only the final state of carriage-return redrawn lines and keeps replaced warnings", async () => {
+    const runtimeLogs = new RuntimeLogsService();
+    const { service, children } = fixture({ runtimeLogs });
+    await service.handle(
+      "devServers.start",
+      { projectId: "project", command: "node server.js", name: "Web" },
+      projects,
+    );
+    children[0].stdout!.emit("data", Buffer.from("progress 10%\rprogress 100%\n"));
+    children[0].stderr!.emit("data", Buffer.from("fetching 1%\rnpm WARN deprecated x\rdone\n"));
+    const entries = runtimeLogs.read().entries;
+    const messages = entries.map((entry) => entry.message);
+    expect(messages.filter((message) => /^progress|^fetching/.test(message))).toEqual([
+      "progress 100%",
+    ]);
+    expect(messages).toContain("npm WARN deprecated x");
+    expect(messages).toContain("done");
+    expect(entries.find((entry) => entry.message === "npm WARN deprecated x")?.level).toBe("warn");
+  });
   it("decodes split UTF-8, keeps streams line-safe, redacts secrets and infers stderr severity conservatively", async () => {
     const runtimeLogs = new RuntimeLogsService();
     const { service, children } = fixture({ runtimeLogs });

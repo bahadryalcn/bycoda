@@ -7,7 +7,12 @@ import { MAX_DOCUMENT_BYTES } from "../../files/model/documentViewer";
 import { AttachmentChip } from "./AttachmentChip";
 import { AttachmentTokenText } from "./AttachmentTokenText";
 
-const mocks = vi.hoisted(() => ({ read: vi.fn(), prepare: vi.fn(), open: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  read: vi.fn(),
+  prepare: vi.fn(),
+  open: vi.fn(),
+  saveCopy: vi.fn(),
+}));
 vi.mock("../../../integrations/harness", () => ({
   canRunHarnessTextPrompt: () => false,
   runHarnessTextPrompt: vi.fn(),
@@ -17,6 +22,7 @@ vi.mock("../../../platform/tauri/fs", () => ({
   readBinaryFile: mocks.read,
   prepareLocalFile: mocks.prepare,
   openPathWithDefaultApp: mocks.open,
+  saveFileCopy: mocks.saveCopy,
   saveGeneratedImage: vi.fn(),
   deleteGeneratedImages: vi.fn(),
 }));
@@ -53,6 +59,7 @@ beforeEach(() => {
   mocks.read.mockReset();
   mocks.prepare.mockReset();
   mocks.open.mockReset();
+  mocks.saveCopy.mockReset();
   vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:attachment-media");
   vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
 });
@@ -274,6 +281,192 @@ describe("document attachment integration", () => {
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain("maximum 25 MB");
     expect(decode).not.toHaveBeenCalled();
     expect(mocks.read).not.toHaveBeenCalled();
+  });
+});
+
+describe("save a copy of an attachment", () => {
+  const zip = (overrides: Partial<Attachment> = {}) =>
+    file({ name: "bundle.zip", mimeType: "application/zip", ...overrides });
+  const saveButton = (name = "bundle.zip") =>
+    container.querySelector<HTMLButtonElement>(`button[aria-label="Save ${name}"]`);
+  const clickSave = (name?: string) =>
+    act(async () => {
+      saveButton(name)!.click();
+      await vi.dynamicImportSettled();
+    });
+
+  it("saves an unknown file through its session reader without opening a viewer", async () => {
+    const loadPreview = vi.fn(async () => btoa("PK\u0003\u0004"));
+    mocks.saveCopy.mockResolvedValue(true);
+    act(() =>
+      root.render(createElement(AttachmentChip, { attachment: zip({ loadPreview, size: 4 }) })),
+    );
+    expect(container.querySelector('button[aria-haspopup="dialog"]')).toBeNull();
+    expect(loadPreview).not.toHaveBeenCalled();
+    await clickSave();
+    expect(loadPreview).toHaveBeenCalledOnce();
+    expect(mocks.saveCopy).toHaveBeenCalledWith({
+      name: "bundle.zip",
+      data: btoa("PK\u0003\u0004"),
+    });
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(mocks.open).not.toHaveBeenCalled();
+    expect(mocks.prepare).not.toHaveBeenCalled();
+    expect(mocks.read).not.toHaveBeenCalled();
+  });
+
+  it("drops an old download and blocks duplicate clicks before opening the save dialog", async () => {
+    let finishRead!: (data: string) => void;
+    const loadPreview = vi.fn(
+      () =>
+        new Promise<string>((resolve) => {
+          finishRead = resolve;
+        }),
+    );
+    const original = file({ name: "bundle.zip", mimeType: "application/zip", loadPreview });
+    act(() => root.render(createElement(AttachmentChip, { attachment: original })));
+    act(() => {
+      const button = saveButton()!;
+      button.click();
+      button.click();
+    });
+    expect(loadPreview).toHaveBeenCalledOnce();
+    act(() =>
+      root.render(
+        createElement(AttachmentChip, {
+          attachment: { ...original, id: "other-file", loadPreview: vi.fn() },
+        }),
+      ),
+    );
+    await act(async () => finishRead(btoa("hello")));
+    expect(mocks.saveCopy).not.toHaveBeenCalled();
+  });
+
+  it("offers the same action next to an inline preview", async () => {
+    const loadPreview = vi.fn(async () => btoa("owner"));
+    mocks.saveCopy.mockResolvedValue(true);
+    act(() => root.render(createElement(AttachmentChip, { attachment: file({ loadPreview }) })));
+    expect(container.querySelector('button[aria-haspopup="dialog"]')).not.toBeNull();
+    await clickSave("report.pdf");
+    expect(mocks.saveCopy).toHaveBeenCalledWith({ name: "report.pdf", data: btoa("owner") });
+  });
+
+  it("reads a local path through the existing reader and encodes it for the native save", async () => {
+    mocks.read.mockResolvedValue(new Uint8Array([0, 255, 128]));
+    mocks.saveCopy.mockResolvedValue(true);
+    act(() => root.render(createElement(AttachmentChip, { attachment: zip({ size: 3 }) })));
+    await clickSave();
+    expect(mocks.read).toHaveBeenCalledWith("/host/attachments/opaque-id");
+    expect(mocks.saveCopy).toHaveBeenCalledWith({
+      name: "bundle.zip",
+      data: btoa("\u0000ÿ\u0080"),
+    });
+  });
+
+  it("keeps the host-owned path routing for saved remote attachments", async () => {
+    mocks.read.mockResolvedValue(new Uint8Array([1]));
+    mocks.saveCopy.mockResolvedValue(true);
+    act(() =>
+      root.render(
+        createElement(AttachmentChip, {
+          attachment: zip({
+            size: 1,
+            path: "C:\\project\\bundle.zip",
+            hostEnvironmentId: "windows-peer",
+          }),
+        }),
+      ),
+    );
+    await clickSave();
+    expect(mocks.read).toHaveBeenCalledWith("remote://windows-peer/C:/project/bundle.zip");
+  });
+
+  it("stays silent when the owner cancels the destination dialog", async () => {
+    mocks.saveCopy.mockResolvedValue(false);
+    act(() =>
+      root.render(
+        createElement(AttachmentChip, {
+          attachment: zip({ loadPreview: async () => btoa("x"), size: 1 }),
+        }),
+      ),
+    );
+    await clickSave();
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(saveButton()!.disabled).toBe(false);
+  });
+
+  it("reports a failed save and allows another attempt", async () => {
+    mocks.saveCopy.mockRejectedValueOnce(new Error("disk full")).mockResolvedValue(true);
+    act(() =>
+      root.render(
+        createElement(AttachmentChip, {
+          attachment: zip({ loadPreview: async () => btoa("x"), size: 1 }),
+        }),
+      ),
+    );
+    await clickSave();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("disk full");
+    await clickSave();
+    expect(mocks.saveCopy).toHaveBeenCalledTimes(2);
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it("keeps the 20 MiB Host read cap: oversized metadata or payloads never reach the native save", async () => {
+    const loadPreview = vi.fn(async () => btoa("x"));
+    act(() =>
+      root.render(
+        createElement(AttachmentChip, {
+          attachment: zip({ size: 20 * 1024 * 1024 + 1, loadPreview }),
+        }),
+      ),
+    );
+    await clickSave();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("maximum 20 MB");
+    expect(loadPreview).not.toHaveBeenCalled();
+    expect(mocks.saveCopy).not.toHaveBeenCalled();
+    act(() =>
+      root.render(
+        createElement(AttachmentChip, {
+          attachment: zip({
+            size: 5,
+            loadPreview: async () => "a".repeat(Math.ceil((20 * 1024 * 1024) / 3) * 4 + 4),
+          }),
+        }),
+      ),
+    );
+    await clickSave();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("maximum 20 MB");
+    expect(mocks.saveCopy).not.toHaveBeenCalled();
+  });
+
+  it("saves image attachments from the session reader", async () => {
+    act(() =>
+      root.render(
+        createElement(AttachmentChip, {
+          attachment: zip({
+            kind: "image",
+            mimeType: "image/png",
+            name: "a.png",
+            size: 5,
+            loadPreview: async () => btoa("hello"),
+          }),
+        }),
+      ),
+    );
+    await clickSave("a.png");
+    expect(mocks.saveCopy).toHaveBeenCalledWith({ name: "a.png", data: btoa("hello") });
+  });
+
+  it("offers no save for missing files, folders or sources without a reader", () => {
+    const unsupported: Partial<Attachment>[] = [
+      { missing: true, loadPreview: async () => "" },
+      { mimeType: "inode/directory", loadPreview: async () => "" },
+      { path: undefined, loadPreview: undefined },
+    ];
+    for (const overrides of unsupported) {
+      act(() => root.render(createElement(AttachmentChip, { attachment: zip(overrides) })));
+      expect(container.querySelector('button[aria-label^="Save "]')).toBeNull();
+    }
   });
 });
 

@@ -27,7 +27,7 @@ import { type GoalDraft, toggleGoalProject } from "../model/goalClient";
 import { MAX_GOAL_PROJECTS } from "../model/hostGoals";
 import type { HostSettings } from "../model/hostSettings";
 import type { MachineLimits } from "../model/settingsClient";
-import { TASK_MACHINE_ERROR } from "../model/taskClient";
+import { taskClientErrors } from "../model/taskClientErrors";
 import {
   GoalConcurrencyOption,
   GoalExecutionModeOption,
@@ -328,7 +328,7 @@ export function GoalForm({
                     </Text>
                   ) : draft.cwds.length ? (
                     <InlineMessage tone="warning" live="assertive">
-                      {TASK_MACHINE_ERROR}
+                      {taskClientErrors.machine()}
                     </InlineMessage>
                   ) : (
                     <Text size="caption" tone="secondary">

@@ -8,7 +8,12 @@ import {
   loadRateLimits,
   setCachedRateLimits,
 } from "../model/rateLimitsCache";
-import { grokSignInState, providerAuthState, useGrokSignInState } from "./providerStatus";
+import {
+  exhaustedExplanation,
+  grokSignInState,
+  providerAuthState,
+  useGrokSignInState,
+} from "./providerStatus";
 
 vi.mock("../model/rateLimitsCache", async (importOriginal) => {
   const cache = await importOriginal<typeof import("../model/rateLimitsCache")>();
@@ -23,10 +28,35 @@ it("derives Grok sign-in from the cached authenticated usage result", () => {
   const signedIn = { ...idleRateLimits("grok"), status: "ok" as const };
   expect(grokSignInState(signedIn)).toEqual({ tone: "ready", label: "Signed in" });
   expect(providerAuthState(signedIn, 0)).toEqual({ tone: "ready", label: "Signed in" });
-  expect(grokSignInState(unavailableRateLimits("grok", "no cached token"))).toEqual({
-    tone: "signedOut",
-    label: "Signed out",
-  });
+  expect(
+    grokSignInState(unavailableRateLimits("grok", "no cached token", "signedOut")),
+  ).toEqual({ tone: "signedOut", label: "Signed out" });
+});
+
+it("shows a missing CLI or an unclassified failure as not checked, never as signed out", () => {
+  for (const limits of [
+    unavailableRateLimits("grok", "Grok CLI not found", "cliMissing"),
+    unavailableRateLimits("grok", "Authentication required: proxy"),
+    errorRateLimits("grok", "Sign-in expired (TLS)"),
+  ]) {
+    expect(grokSignInState(limits)).toEqual({ tone: "unknown", label: "Not checked" });
+  }
+});
+
+it("names used-up windows and their reset with the shared labels", () => {
+  const now = 1_000_000;
+  const limits = {
+    ...idleRateLimits("claude"),
+    status: "ok" as const,
+    session: { usedPercent: 100, windowMinutes: 300, resetsAt: now + 31 * 60_000 },
+    weekly: { usedPercent: 100, windowMinutes: 10_080, resetsAt: null },
+  };
+  expect(exhaustedExplanation(limits, now)).toBe(
+    "The 5-hour + Weekly limit is used up. Resets in 31m",
+  );
+  expect(exhaustedExplanation({ ...limits, session: null }, now)).toBe(
+    "The Weekly limit is used up.",
+  );
 });
 
 it("does not treat a failed usage request as signed out or signed in", () => {

@@ -93,3 +93,10 @@ it("keeps a review row with its plain reason", async () => {
   await act(async () => undefined);
   expect(element.textContent).toContain("Waiting for your approval");
 });
+
+it("names a job whose account was removed without a dangling separator", async () => {
+  render([job({ accountId: "removed" })]);
+  await act(async () => undefined);
+  expect(element.textContent).toContain("Publishing · Removed account");
+  expect(element.textContent).not.toContain("Publishing · Studio");
+});

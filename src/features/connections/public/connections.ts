@@ -10,3 +10,4 @@ export {
   sessionAccessForMachine,
   useRemoteMachines,
 } from "../model/connections";
+export { machineSupportsLazyHistory } from "../model/remoteSessionSnapshotCache";

@@ -110,3 +110,128 @@ it("reports model size and download progress", async () => {
     await rm(home, { recursive: true, force: true });
   }
 });
+
+const inspectReady = () => vi.fn(async () => ({ ready: false, missing: [], python: "python" }));
+const failure = (extra: Record<string, unknown>) =>
+  Object.assign(new Error("Command failed: python -c ..."), extra);
+
+it("stops a download that stops receiving bytes and names the stall, not a cancel", async () => {
+  const home = await mkdtemp(join(tmpdir(), "voice-models-"));
+  const run = vi.fn(
+    (_python: string, _args: string[], signal: AbortSignal) =>
+      new Promise<void>((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+      }),
+  );
+  const service = new VoiceModelsService(home, run, inspectReady(), { stallMs: 60, pollMs: 10 });
+  try {
+    service.start("download", "small", false, {});
+    await vi.waitFor(() => expect(service.status().state).toBe("error"), { timeout: 3000 });
+    expect(service.status().detail).toMatch(/stalled/);
+    expect(service.status().detail).not.toMatch(/cancelled/);
+    // The job slot and progress timer are released, so the owner can retry at once.
+    expect(() => service.start("delete", "small", false, {})).not.toThrow();
+    await vi.waitFor(() => expect(service.status().state).toBe("ready"));
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+it("keeps a slow download alive past the stall window while bytes keep arriving", async () => {
+  const home = await mkdtemp(join(tmpdir(), "voice-models-"));
+  const run = vi.fn(async (_python: string, args: string[], signal: AbortSignal) => {
+    const folder = args[3];
+    await mkdir(folder, { recursive: true });
+    for (let step = 1; step <= 12; step += 1) {
+      signal.throwIfAborted();
+      await writeFile(join(folder, "model.bin"), "x".repeat(step * 100));
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    await Promise.all(
+      ["config.json", "tokenizer.json"].map((file) => writeFile(join(folder, file), "y")),
+    );
+  });
+  // 12 steps x 25 ms is far longer than the 120 ms stall window.
+  const service = new VoiceModelsService(home, run, inspectReady(), { stallMs: 120, pollMs: 10 });
+  try {
+    service.start("download", "small", false, {});
+    await vi.waitFor(() => expect(service.status().state).toBe("ready"), { timeout: 5000 });
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+it("passes the absolute download ceiling to the runner instead of a flat 30 minutes", async () => {
+  const home = await mkdtemp(join(tmpdir(), "voice-models-"));
+  const run = vi.fn(async (_python: string, _args: string[]) => {
+    throw failure({ killed: true, signal: "SIGTERM", code: null });
+  });
+  const service = new VoiceModelsService(home, run, inspectReady(), { maxMs: 7_000_000 });
+  try {
+    service.start("download", "small", false, {});
+    await vi.waitFor(() => expect(service.status().state).toBe("error"));
+    expect(run.mock.calls[0][3]).toBe(7_000_000);
+    expect(service.status().detail).toMatch(/maximum allowed time/);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+it.each([
+  [{ code: "ENOENT" }, /Python runtime could not be started/],
+  [
+    { code: 1, stderr: "ModuleNotFoundError: No module named 'huggingface_hub'" },
+    /huggingface_hub package is missing/,
+  ],
+  [{ code: 1, stderr: "OSError: [Errno 28] No space left on device" }, /Not enough disk space/],
+  [{ code: 1, stderr: "PermissionError: [WinError 5] Access is denied" }, /permissions/],
+  [
+    { code: 1, stderr: "ValueError: Consistency check failed: file should be of size 5" },
+    /failed verification/,
+  ],
+  [
+    { code: 1, stderr: "huggingface_hub.errors.RepositoryNotFoundError: 404 Client Error" },
+    /repository is not available/,
+  ],
+  [
+    { code: 1, stderr: "requests.exceptions.ConnectionError: Max retries exceeded" },
+    /connection to the model download service failed/,
+  ],
+  [{ code: "ERR_CHILD_PROCESS_STDIO_MAXBUFFER", killed: true }, /too much output/],
+  [
+    { code: 3, stderr: "Traceback (most recent call last):\r\nRuntimeError: boom\u0007" },
+    /\(exit code 3\): RuntimeError: boom$/,
+  ],
+  [{ code: 9 }, /\(exit code 9\) without an error message/],
+])("reports a specific download failure for %j", async (extra, expected) => {
+  const home = await mkdtemp(join(tmpdir(), "voice-models-"));
+  const run = vi.fn(async (_python: string, _args: string[]) => {
+    throw failure(extra);
+  });
+  const service = new VoiceModelsService(home, run, inspectReady());
+  try {
+    service.start("download", "small", false, {});
+    await vi.waitFor(() => expect(service.status().state).toBe("error"));
+    const detail = service.status().detail ?? "";
+    expect(detail).toMatch(expected);
+    expect(detail).not.toMatch(/Check the connection and available disk space/);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+it("reports an incomplete download as an integrity problem, not a connection problem", async () => {
+  const home = await mkdtemp(join(tmpdir(), "voice-models-"));
+  const run = vi.fn(async (_python: string, args: string[]) => {
+    await mkdir(args[3], { recursive: true });
+    await writeFile(join(args[3], "model.bin"), "partial");
+  });
+  const service = new VoiceModelsService(home, run, inspectReady());
+  try {
+    service.start("download", "small", false, {});
+    await vi.waitFor(() => expect(service.status().state).toBe("error"));
+    expect(service.status().detail).toMatch(/incomplete/);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});

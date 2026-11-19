@@ -328,8 +328,8 @@ export function ImportDialog({ client, accounts, lists, onClose, onImported }: I
             {result.rejected.length ? (
               <ul className="audience-list">
                 {result.rejected.slice(0, REPORT_LIMIT).map((item) => (
-                  <li key={`${item.row}:${item.reason}`}>
-                    {t("Row {p0}: {p1}", { p0: item.row, p1: item.reason })}
+                  <li key={item.row}>
+                    {t("Row {p0}: {p1}", { p0: item.row, p1: item.issues.join(" ") })}
                   </li>
                 ))}
               </ul>

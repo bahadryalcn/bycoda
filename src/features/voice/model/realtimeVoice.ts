@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { boundToolOutput } from "./voiceToolOutput";
 import captureUrl from "./voiceCapture.js?url&no-inline";
 import type { RealtimeProvider, RealtimeSecret } from "./realtimeVoiceClient";
@@ -1122,7 +1123,7 @@ export class RealtimeVoice {
       .catch((error: unknown) => ({
         status: "uncertain",
         requestId: args.requestId,
-        error: error instanceof Error ? error.message : String(error),
+        error: errorText(error),
         retry: "Read the operation state before retrying. No automatic resend was made.",
       }))
       .then((output) => {

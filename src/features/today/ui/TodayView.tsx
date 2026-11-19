@@ -34,6 +34,15 @@ const run = (ms: number) => (ms < 60_000 ? formatDuration(ms) : formatActiveMinu
 const range = (from: Date, to: Date) =>
   `${formatDate(from, { month: "short", day: "numeric" })} - ${formatDate(to, { month: "short", day: "numeric", year: "numeric" })}`;
 
+/** Clock time of the last complete read; the date is added once it is not the day the figures are for. */
+const updatedLabel = (at: number, figuresAt: number) =>
+  formatDate(
+    at,
+    new Date(at).toDateString() === new Date(figuresAt).toDateString()
+      ? { hour: "numeric", minute: "2-digit" }
+      : { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" },
+  );
+
 function Stat({ label, value, hint }: { label: string; value: ReactNode; hint?: ReactNode }) {
   return (
     <Surface variant="page" padding="md" className={styles.stat}>
@@ -68,10 +77,16 @@ export function TodayView() {
   const locale = useLocale();
   const titleId = useId();
   const [period, setPeriod] = useState<TodayPeriod>("today");
-  const { data, pricing, loading, refreshing, failed, reload } = useTodayData(period);
+  const { data, loadedPeriod, pricing, loading, refreshing, failed, updatedAt, reload } =
+    useTodayData(period);
   const overview = useActivityOverview();
   const { summary: activity, failed: activityFailed } = overview;
-  const activeMinutes = activity ? (period === "today" ? activity.today : activity.week) : null;
+  // Every figure beside the loaded data follows the period it was loaded for, not the selected one.
+  const activeMinutes = activity
+    ? loadedPeriod === "today"
+      ? activity.today
+      : activity.week
+    : null;
   const activeStat = (
     <Stat
       label={t("Active time")}
@@ -95,6 +110,11 @@ export function TodayView() {
       <div className={styles.header}>
         <SectionLabel labelId={titleId}>{t("Activity")}</SectionLabel>
         <div className={styles.controls}>
+          {updatedAt && data ? (
+            <Text size="caption" tone="muted" leading="inherit" className={styles.updated}>
+              {t("Updated")} {updatedLabel(updatedAt, data.window.end)}
+            </Text>
+          ) : null}
           <SegmentedControl
             label={t("Period")}
             value={period}
@@ -123,9 +143,25 @@ export function TodayView() {
       {!data ? (
         <LoadingText>{t("Loading activity")}</LoadingText>
       ) : empty ? (
-        <div className={styles.stats}>{activeStat}</div>
-      ) : (
         <>
+          <div className={styles.stats}>{activeStat}</div>
+          {/* A failed read is explained by the alert above; it must not read as "no activity". */}
+          {failed ? null : (
+            <EmptyState
+              kind="empty"
+              description={
+                loadedPeriod === "today"
+                  ? t("No agent activity recorded today. Start a session to see it here.")
+                  : t("No agent activity recorded this week. Start a session to see it here.")
+              }
+            />
+          )}
+        </>
+      ) : (
+        <div
+          className={loadedPeriod !== period ? `${styles.body} ${styles.pending}` : styles.body}
+          aria-busy={refreshing}
+        >
           <div className={styles.stats}>
             <Stat label={t("Sessions")} value={data.totals.sessions} />
             <Stat label={t("Agent run time")} value={run(data.totals.runMs)} />
@@ -141,14 +177,14 @@ export function TodayView() {
           <ProjectTable data={data} />
           <div className={styles.summary}>
             <SummaryPanel
-              key={`${period}:${locale}`}
+              key={`${loadedPeriod}:${locale}`}
               data={data}
               pricing={pricing}
               activeMinutes={activeMinutes}
               language={locale}
             />
           </div>
-        </>
+        </div>
       )}
     </section>
   );

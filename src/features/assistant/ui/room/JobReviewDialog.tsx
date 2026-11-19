@@ -105,7 +105,7 @@ export function JobReviewDialog() {
         {jobReview.map((draft, index) => (
           <div {...surfaceAttributes({ separator: "pane-block" }, styles.reviewJob)} key={draft.id}>
             <div className={styles.reviewHead}>
-              <SectionLabel as="h3">{t("Request {p0}", { p0: index + 1 })}</SectionLabel>
+              <SectionLabel as="h3">{t("Job {p0}", { p0: index + 1 })}</SectionLabel>
               <div className={styles.reviewTools}>
                 <Select
                   hideLabel
@@ -162,7 +162,7 @@ export function JobReviewDialog() {
               </div>
             </div>
             <TextareaField
-              label={t("Request {p0}", { p0: index + 1 })}
+              label={t("Job {p0}", { p0: index + 1 })}
               hideLabel
               value={draft.request}
               minRows={3}

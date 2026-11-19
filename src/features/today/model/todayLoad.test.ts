@@ -19,9 +19,31 @@ vi.mock("../../providers/public/providerUsage", () => ({
   },
 }));
 
-import { fetchTodaySources } from "./todayLoad";
+import { fetchTodaySources, type TodaySources } from "./todayLoad";
+
+const row = { project: "p" } as unknown as TodaySources["usage"][number]["rows"][number];
+const earlier = (since: number): TodaySources => ({
+  usage: [{ account: accounts[1]!, rows: [row] }] as unknown as TodaySources["usage"],
+  turns: [],
+  pricing: { earlier: true } as unknown as TodaySources["pricing"],
+  at: 1,
+  since,
+});
 
 describe("fetchTodaySources", () => {
+  it("keeps the earlier rows of an account that cannot be read now", async () => {
+    const { value, failed } = await fetchTodaySources("today", earlier(0));
+    expect(failed).toBe(true);
+    expect(value.usage.find((entry) => entry.account.id === "b")?.rows).toEqual([row]);
+    expect(value.usage.find((entry) => entry.account.id === "a")?.rows).toEqual([]);
+    expect(value.since).toBeGreaterThan(0);
+  });
+
+  it("does not reuse earlier rows that start after the window it needs", async () => {
+    const { value } = await fetchTodaySources("today", earlier(Number.MAX_SAFE_INTEGER));
+    expect(value.usage.find((entry) => entry.account.id === "b")?.rows).toEqual([]);
+  });
+
   it("reports failure when only some provider accounts could not be read", async () => {
     const { failed } = await fetchTodaySources("today");
     expect(failed).toBe(true);

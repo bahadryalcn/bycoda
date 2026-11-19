@@ -309,8 +309,24 @@ it("attaches a screenshot and preserves the draft on cancellation or failure", a
     await api.takeScreenshot();
   });
   expect(api.files).toHaveLength(1);
-  expect(onError).toHaveBeenLastCalledWith("Capture failed");
+  expect(onError).toHaveBeenLastCalledWith({ message: "Capture failed" });
   expect(api.loading).toBe(false);
+});
+
+it("reports a screen-recording block as a recoverable notice and keeps the draft", async () => {
+  await act(async () => {
+    await api.takeScreenshot();
+  });
+  const kept = api.files;
+  vi.mocked(invoke).mockRejectedValueOnce("screen-recording-permission-required");
+  await act(async () => {
+    await api.takeScreenshot();
+  });
+  expect(api.files).toEqual(kept);
+  expect(onError).toHaveBeenLastCalledWith({
+    message: "Screenshots need Screen Recording access. Review access to set it up, then try again.",
+    recovery: "screen-recording",
+  });
 });
 
 it("retains attachments when switching to an unsupported provider", async () => {
@@ -357,16 +373,16 @@ it("shows a recoverable error when persisting a pasted image fails", async () =>
       preventDefault: vi.fn(),
     } as never);
     await vi.waitFor(() => {
-      expect(onError).toHaveBeenLastCalledWith(
-        "Could not attach pasted.png: Disk full. Paste or attach the file again.",
-      );
+      expect(onError).toHaveBeenLastCalledWith({
+        message: "Could not attach pasted.png: Disk full. Paste or attach the file again.",
+      });
       expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:preview");
     });
   });
   expect(api.files).toEqual([]);
-  expect(onError).toHaveBeenLastCalledWith(
-    "Could not attach pasted.png: Disk full. Paste or attach the file again.",
-  );
+  expect(onError).toHaveBeenLastCalledWith({
+    message: "Could not attach pasted.png: Disk full. Paste or attach the file again.",
+  });
   expect(api.loading).toBe(false);
   expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:preview");
 });

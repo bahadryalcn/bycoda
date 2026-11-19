@@ -85,6 +85,13 @@ A toast waiting behind the visible three keeps its countdown and returns as the 
 front close. Reminder and
 approval cards stay fully visible beside the stack.
 
+Press Ctrl+Shift+J (⌘⇧J on macOS) to move keyboard focus to a pending request popup,
+also while a dialog is open; press it again to reach the next popup. Focus lands on the
+card's conversation button, so nothing is allowed or denied until you press **Allow** or
+**Deny** yourself. Tab moves through the popup controls, Escape returns focus to where you
+were without closing the dialog, and Tab past the last control returns to the dialog. The
+shortcut can be changed in **Settings > Keybindings** (App: Focus Approval Requests).
+
 Dragging the project rail much narrower than its minimum width switches to the compact rail when the compact rail is enabled; reopening the full rail restores its previous width.
 The compact rail keeps its width and uses standard-sized navigation targets and icons.
 The footer places the voice companion first, followed by GitHub and available updates,
@@ -103,7 +110,7 @@ Collapsed project navigation uses a 56px icon rail with a centered divider and a
 small-size vector mark. Expanded sections share label and count columns; Last
 sessions keeps separate collapse and open actions. The workspace header emphasizes
 the current location. Back, Forward, Expand projects and conversation tools align
-to the right. **New Session** sits at the far right, with a label when the workspace
+to the right. **New session** sits at the far right, with a label when the workspace
 pane is wide and a conversation icon when space is limited. In narrow panes, **More
 actions** contains conversation search, selection and filters. Crews, Servers, Notes,
 Automations, Social Media, Tasks and Room appear directly as stacked rail icons.
@@ -430,7 +437,9 @@ indented under the header on a guide line.
 A single conversation shows one compact title row with its tabs and actions; a
 pane gets its own header only when the workspace is split. On Windows and Linux
 the menu button at the start of the title row opens the application menus, and
-Alt or F10 still opens them from the keyboard. The Changes tab always shows how
+Alt or F10 still opens them from the keyboard: the menu bar takes focus, Left and
+Right move between menus, Down opens one, and Escape hides the bar and returns
+focus to where you were. The Changes tab always shows how
 many files changed; the added and removed line totals appear when the tab has
 room, and its tooltip names both counts. Keyboard focus on a session row opens
 a small detail card with the title, model, branch or worktree, path, status and

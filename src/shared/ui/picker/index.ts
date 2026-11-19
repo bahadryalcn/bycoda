@@ -1,4 +1,5 @@
 export { PickerPopover, type PickerPopoverProps } from "./PickerPopover";
+export { PickerCloseButton } from "./PickerCloseButton";
 export {
   PickerList,
   PickerFooter,
@@ -13,6 +14,11 @@ export {
   type PickerListOptions,
   type PickerListController,
 } from "./usePickerList";
+export {
+  usePointerMovement,
+  createPointerMovement,
+  type PointerMovement,
+} from "./usePointerMovement";
 export {
   PopoverSearchHeader,
   type PopoverSearchHeaderProps,

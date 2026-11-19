@@ -8,9 +8,21 @@ use std::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         OnceLock,
     },
+    thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use url::Url;
+
+/// Attempts per chunk (first try plus retries), each at the last confirmed offset.
+const CHUNK_ATTEMPTS: usize = 3;
+const CHUNK_RETRY_DELAYS: [Duration; CHUNK_ATTEMPTS - 1] =
+    [Duration::from_millis(100), Duration::from_millis(300)];
+
+/// Only `Transient` failures are retried; `Fatal` keeps the reply failing immediately.
+enum ChunkFailure {
+    Transient,
+    Fatal(&'static str),
+}
 
 pub(super) fn millis() -> u64 {
     SystemTime::now()
@@ -88,6 +100,51 @@ pub(super) fn reference<'a>(
     Ok(Some(&result["$bulk"]))
 }
 
+fn fetch_chunk(
+    agent: &ureq::Agent,
+    endpoint: &mut Url,
+    token: &str,
+    offset: usize,
+    expected: usize,
+    deadline: Instant,
+) -> Result<Vec<u8>, ChunkFailure> {
+    endpoint.set_query(Some(&format!("offset={offset}")));
+    let remaining = deadline.saturating_duration_since(Instant::now());
+    let response = match agent
+        .get(endpoint.as_str())
+        .set("Authorization", &format!("Bearer {token}"))
+        .set("Accept-Encoding", "identity")
+        .timeout(remaining.min(Duration::from_secs(12)))
+        .call()
+    {
+        Ok(response) => response,
+        Err(ureq::Error::Status(status, _)) if status >= 500 => {
+            return Err(ChunkFailure::Transient)
+        }
+        Err(ureq::Error::Status(..)) => return Err(ChunkFailure::Fatal("unavailable")),
+        Err(ureq::Error::Transport(_)) => return Err(ChunkFailure::Transient),
+    };
+    if response.status() != 200
+        || response.header("Content-Type") != Some("application/octet-stream")
+        || response
+            .header("Content-Length")
+            .and_then(|value| value.parse::<usize>().ok())
+            != Some(expected)
+    {
+        return Err(ChunkFailure::Fatal("schema"));
+    }
+    let mut buffer = Vec::with_capacity(expected + 1);
+    response
+        .into_reader()
+        .take(expected as u64 + 1)
+        .read_to_end(&mut buffer)
+        .map_err(|_| ChunkFailure::Transient)?;
+    if buffer.len() != expected {
+        return Err(ChunkFailure::Fatal("schema"));
+    }
+    Ok(buffer)
+}
+
 pub(super) fn resolve(
     route: &NativeRoute,
     descriptor: &Value,
@@ -146,34 +203,37 @@ pub(super) fn resolve(
         if Instant::now() >= deadline || expires <= millis() {
             return Err("deadline");
         }
-        endpoint.set_query(Some(&format!("offset={}", output.len())));
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        let response = agent
-            .get(endpoint.as_str())
-            .set("Authorization", &format!("Bearer {}", route.token.as_str()))
-            .set("Accept-Encoding", "identity")
-            .timeout(remaining.min(Duration::from_secs(12)))
-            .call()
-            .map_err(|_| "unavailable")?;
         let expected = (total as usize - output.len()).min(chunk as usize);
-        if response.status() != 200
-            || response.header("Content-Type") != Some("application/octet-stream")
-            || response
-                .header("Content-Length")
-                .and_then(|value| value.parse::<usize>().ok())
-                != Some(expected)
-        {
-            return Err("schema");
-        }
-        let mut buffer = Vec::with_capacity(expected + 1);
-        response
-            .into_reader()
-            .take(expected as u64 + 1)
-            .read_to_end(&mut buffer)
-            .map_err(|_| "unavailable")?;
-        if buffer.len() != expected {
-            return Err("schema");
-        }
+        let mut attempt = 0;
+        // The offset is `output.len()`, which only advances after a verified-length chunk.
+        let buffer = loop {
+            if cancelled.load(Ordering::Acquire) || !disclosure.live() {
+                return Err("cancelled");
+            }
+            if Instant::now() >= deadline || expires <= millis() {
+                return Err("deadline");
+            }
+            attempt += 1;
+            match fetch_chunk(
+                agent,
+                &mut endpoint,
+                route.token.as_str(),
+                output.len(),
+                expected,
+                deadline,
+            ) {
+                Ok(buffer) => break buffer,
+                Err(ChunkFailure::Fatal(reason)) => return Err(reason),
+                Err(ChunkFailure::Transient) if attempt < CHUNK_ATTEMPTS => {
+                    let delay = CHUNK_RETRY_DELAYS[attempt - 1];
+                    if Instant::now() + delay >= deadline {
+                        return Err("unavailable");
+                    }
+                    thread::sleep(delay);
+                }
+                Err(ChunkFailure::Transient) => return Err("unavailable"),
+            }
+        };
         output.extend_from_slice(&buffer);
     }
     if cancelled.load(Ordering::Acquire) || !disclosure.live() {

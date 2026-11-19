@@ -59,9 +59,39 @@ fn rejected_grants_end_the_session() {
         );
     }
     assert_eq!(
-        parse_token_response(401, &json!(null)),
+        parse_token_response(401, &json!({ "error": "invalid_grant" })),
         Err(TokenError::InvalidGrant)
     );
+}
+
+#[test]
+fn unproven_rejections_keep_the_session() {
+    // Gateway, proxy or captive portal replies: HTML or truncated bodies parse to null,
+    // and non-OAuth JSON carries no `error` code.
+    for status in [400, 401, 403] {
+        for body in [
+            json!(null),
+            json!({}),
+            json!({ "message": "blocked" }),
+            json!({ "error": { "code": "invalid_grant" } }),
+            json!({ "error": "" }),
+        ] {
+            assert!(
+                matches!(
+                    parse_token_response(status, &body),
+                    Err(TokenError::Failed(_))
+                ),
+                "{status} {body}"
+            );
+        }
+    }
+    // An invalid_grant code outside a 400/401 answer is not proof either.
+    for status in [200, 403, 502] {
+        assert!(matches!(
+            parse_token_response(status, &json!({ "error": "invalid_grant" })),
+            Err(TokenError::Failed(_))
+        ));
+    }
 }
 
 #[test]

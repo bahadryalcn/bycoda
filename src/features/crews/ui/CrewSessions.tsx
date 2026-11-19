@@ -2,6 +2,7 @@ import { Text } from "../../../shared/ui/Text";
 import { useEffect, useState, type ComponentProps } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { ChevronRight } from "../../../shared/ui/icons";
 import { taskSessionIds } from "../../tasks/model/backgroundSession";
 import { useProjectCrews } from "../model/crewClient";
@@ -9,7 +10,11 @@ import { crewRunMatchesQuery } from "../model/crewPresentation";
 import { crewRunTitle } from "../model/crewRoster";
 import { CrewWorkManager } from "./CrewWorkManager";
 import { CrewWorkStatusText } from "./CrewWorkState";
-import { classifyRemoteError, isConnectionFailure } from "../../connections/model/remoteFailure";
+import {
+  classifyRemoteError,
+  isConnectionFailure,
+  presentRemoteError,
+} from "../../connections/model/remoteFailure";
 import { reportRemoteConnection } from "../../connections/model/remoteHealth";
 import { useRemoteConnectionFeedback } from "../../connections/ui/RemoteConnectionFeedback";
 
@@ -110,9 +115,14 @@ export function CrewSessions({
         </Button>
       </div>
       {state.error && !sharedConnectionIssue ? (
-        <Button variant="ghost" onClick={() => void state.refetch()} tooltip={state.error.message}>
-          {t("Crew host unavailable. Retry")}
-        </Button>
+        // The presented reason is the visible text; the raw Host message sits behind Details.
+        <InlineError
+          className="px-2.5 py-1"
+          details={state.error.message}
+          retry={{ onRetry: () => void state.refetch(), pending: state.isFetching }}
+        >
+          {presentRemoteError(state.error, { explicit: true })}
+        </InlineError>
       ) : null}
       {sharedConnectionIssue && !data ? (
         <Text role="status" as="p" tone="muted" className="px-2.5 py-1">

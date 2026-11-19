@@ -99,6 +99,14 @@ function nextWakeExpiry(listedRemote: readonly RemoteRailSession[], now: number)
   return next;
 }
 
+/** setTimeout fires at once above 2^31-1 ms, so re-check at least this often. */
+const MAX_WAKE_RECHECK_MS = 60_000;
+
+/** Delay until a wake expiry is re-read; capped so far expiries re-arm instead of overflowing. */
+export function wakeRecheckDelay(expiry: number, now: number): number {
+  return Math.min(Math.max(0, expiry - now) + 1, MAX_WAKE_RECHECK_MS);
+}
+
 function waitMapsEqual(a: ReadonlyMap<string, SessionWait>, b: ReadonlyMap<string, SessionWait>) {
   if (a.size !== b.size) return false;
   for (const [id, wait] of a) if (!sessionWaitsEqual(wait, b.get(id) ?? null)) return false;
@@ -117,11 +125,12 @@ export function useSessionWaits(
     [sessions, listedRemote, now],
   );
   const expiry = nextWakeExpiry(listedRemote, now);
+  // `now` in deps re-arms the capped timer on each tick until the expiry is near.
   useEffect(() => {
     if (expiry === undefined) return;
-    const timer = setTimeout(() => setNow(Date.now()), Math.max(0, expiry - Date.now()) + 1);
+    const timer = setTimeout(() => setNow(Date.now()), wakeRecheckDelay(expiry, Date.now()));
     return () => clearTimeout(timer);
-  }, [expiry]);
+  }, [expiry, now]);
   return useStableState(next, waitMapsEqual);
 }
 

@@ -1,6 +1,7 @@
 import { Search } from "../../shared/ui/icons";
 import { useT } from "../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../shared/lib/productIdentity";
+import { BrandMark } from "../../shared/ui/BrandMark";
 import { RailSearch } from "./RailAction";
 
 /**
@@ -30,16 +31,15 @@ export function RailBrand({
       className={`bycoda-rail-brand bycoda-rail-brand--${placement} ${narrowOnly ? "bycoda-rail-brand--narrow-only" : ""}`}
     >
       <span className="bycoda-rail-lockup">
-        <img
+        <BrandMark
+          variant="smallMark"
           className="bycoda-rail-mark"
-          src={PRODUCT_IDENTITY.smallLogoSrc}
           alt={PRODUCT_IDENTITY.displayName}
           draggable={false}
         />
-        <img
+        <BrandMark
+          variant="wordmark"
           className="bycoda-brand-lettering bycoda-rail-wordmark"
-          src={PRODUCT_IDENTITY.wordmarkSrc}
-          alt=""
           draggable={false}
         />
       </span>
@@ -62,9 +62,9 @@ export function RailBrand({
 export function CompactRailLogo() {
   return (
     <span data-compact-rail-logo className="bycoda-rail-lockup shrink-0 select-none">
-      <img
+      <BrandMark
+        variant="smallMark"
         className="bycoda-rail-mark"
-        src={PRODUCT_IDENTITY.smallLogoSrc}
         alt={PRODUCT_IDENTITY.displayName}
         draggable={false}
       />

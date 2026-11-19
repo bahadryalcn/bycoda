@@ -20,18 +20,21 @@ export function Segmented<T extends string>({
   options,
   onChange,
   optionIdPrefix,
+  disabled = false,
 }: {
   label: string;
   value: T;
   options: { value: T; label: string }[];
   onChange: (value: T) => void;
   optionIdPrefix?: string;
+  /** Blocks every option, e.g. while this row's save is pending. */
+  disabled?: boolean;
 }) {
   return (
     <SegmentedControl
       label={label}
       value={value}
-      options={options}
+      options={disabled ? options.map((option) => ({ ...option, disabled: true })) : options}
       onValueChange={(next) => {
         const selected = options.find((option) => option.value === next);
         if (selected) onChange(selected.value);

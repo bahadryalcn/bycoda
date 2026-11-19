@@ -1,9 +1,18 @@
+use std::collections::BTreeMap;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use serde_json::Value;
 
-use crate::harness::{exec_output_with_env, is_resolved_harness_binary};
+use crate::harness::process_lifecycle::ProcessOwner;
+use crate::harness::{exec_output_with_env_observed, is_resolved_harness_binary};
+
+/// Returned when another update of the same binary is already running, in any window.
+pub(crate) const ALREADY_UPDATING: &str = "harness_update: already updating";
+/// Returned when the user cancelled the update before it finished.
+pub(crate) const CANCELLED: &str = "harness_update: cancelled";
 
 const REGISTRY_URL: &str = "https://registry.npmjs.org";
 const CURSOR_INSTALL_URL: &str = "https://cursor.com/install";
@@ -149,6 +158,98 @@ fn fetch_text(url: &str, accept: &str) -> Result<String, String> {
         .map_err(|error| format!("{url} response unreadable: {error}"))
 }
 
+/// The updates running now, keyed by resolved binary, so a second window or
+/// a double click joins the refusal instead of starting a second package
+/// manager on the same install.
+static IN_FLIGHT: Mutex<BTreeMap<String, Arc<UpdateSlot>>> = Mutex::new(BTreeMap::new());
+
+fn in_flight() -> MutexGuard<'static, BTreeMap<String, Arc<UpdateSlot>>> {
+    IN_FLIGHT.lock().unwrap_or_else(|error| error.into_inner())
+}
+
+fn update_key(command: &str) -> String {
+    let path = std::fs::canonicalize(command).unwrap_or_else(|_| PathBuf::from(command));
+    let key = path.to_string_lossy().into_owned();
+    if cfg!(windows) {
+        key.to_ascii_lowercase()
+    } else {
+        key
+    }
+}
+
+#[derive(Default)]
+struct UpdateSlot {
+    cancelled: AtomicBool,
+    /// The updater process currently running for this binary, if any.
+    owner: Mutex<Option<Arc<ProcessOwner>>>,
+}
+
+impl UpdateSlot {
+    fn attach(&self, owner: Arc<ProcessOwner>) {
+        *self.owner.lock().unwrap_or_else(|error| error.into_inner()) = Some(owner.clone());
+        // A cancel that arrived between spawn and attach must still stop it.
+        if self.cancelled.load(Ordering::SeqCst) {
+            let _ = owner.request_stop();
+        }
+    }
+
+    fn cancel(&self) {
+        self.cancelled.store(true, Ordering::SeqCst);
+        let owner = self
+            .owner
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clone();
+        if let Some(owner) = owner {
+            // Stopping a finished process is a no-op, so a late cancel is harmless.
+            let _ = owner.request_stop();
+        }
+    }
+}
+
+/// Holds the binary's slot for one update. Dropping it, on success, error or
+/// panic, frees the binary for the next update.
+struct UpdateClaim {
+    key: String,
+    slot: Arc<UpdateSlot>,
+}
+
+impl Drop for UpdateClaim {
+    fn drop(&mut self) {
+        let mut map = in_flight();
+        if map
+            .get(&self.key)
+            .is_some_and(|slot| Arc::ptr_eq(slot, &self.slot))
+        {
+            map.remove(&self.key);
+        }
+    }
+}
+
+fn claim_update(command: &str) -> Result<UpdateClaim, String> {
+    let key = update_key(command);
+    let mut map = in_flight();
+    if map.contains_key(&key) {
+        return Err(ALREADY_UPDATING.to_string());
+    }
+    let slot = Arc::new(UpdateSlot::default());
+    map.insert(key.clone(), slot.clone());
+    Ok(UpdateClaim { key, slot })
+}
+
+/// Stops the update of `command` that is running now. Returns false when no
+/// update of that binary is in flight, including during the version check and
+/// catalog refresh that follow the updater.
+#[tauri::command]
+pub fn harness_update_cancel(command: String) -> bool {
+    let slot = in_flight().get(&update_key(&command)).cloned();
+    let Some(slot) = slot else {
+        return false;
+    };
+    slot.cancel();
+    true
+}
+
 /// Runs the harness's self-update against the binary Bycoda resolved for
 /// it. stdin is closed, so an updater that stops to ask fails instead of
 /// hanging.
@@ -168,6 +269,7 @@ pub async fn harness_update(
         if !is_resolved_harness_binary(&command, Some(&binary_provider), binary_path.as_deref()) {
             return Err("harness_update: not a resolved harness CLI".to_string());
         }
+        let claim = claim_update(&command)?;
         let resolved = std::fs::canonicalize(&command).ok();
         let npm_prefix = (binary_provider == "opencode")
             .then(|| resolved.as_deref().and_then(opencode_npm_prefix))
@@ -189,9 +291,18 @@ pub async fn harness_update(
             .map(|prefix| vec![("NPM_CONFIG_PREFIX", prefix)])
             .unwrap_or_default();
         let execute = |args: &[String]| {
-            let output = exec_output_with_env(&command, args, None, UPDATE_TIMEOUT, &env)?;
+            // OpenCode runs several updater stages; a cancel stops the next one from starting.
+            if claim.slot.cancelled.load(Ordering::SeqCst) {
+                return Err(CANCELLED.to_string());
+            }
+            let output = exec_output_with_env_observed(&command, args, UPDATE_TIMEOUT, &env, |owner| {
+                claim.slot.attach(owner)
+            })?;
             if output.status.success() {
                 return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
+            }
+            if claim.slot.cancelled.load(Ordering::SeqCst) {
+                return Err(CANCELLED.to_string());
             }
             Err(format!(
                 "{binary_provider} update failed ({}):\n{}",
@@ -626,6 +737,43 @@ mod tests {
         assert_eq!(first_line_version("v0.0.12"), Some("v0.0.12".to_string()));
         assert_eq!(first_line_version("<html>"), None);
         assert_eq!(first_line_version(""), None);
+    }
+
+    #[test]
+    fn a_second_update_of_the_same_binary_is_refused_until_the_first_ends() {
+        let binary = "harness-updates-test/single-flight/opencode";
+        let first = claim_update(binary).unwrap();
+        assert_eq!(claim_update(binary).err().as_deref(), Some(ALREADY_UPDATING));
+        drop(first);
+        assert!(claim_update(binary).is_ok());
+    }
+
+    #[test]
+    fn different_binaries_update_independently() {
+        let first = claim_update("harness-updates-test/independent/claude").unwrap();
+        let second = claim_update("harness-updates-test/independent/codex");
+        assert!(second.is_ok());
+        drop(first);
+    }
+
+    #[test]
+    fn cancel_reports_only_an_update_that_is_running() {
+        let binary = "harness-updates-test/cancel/grok";
+        assert!(!harness_update_cancel(binary.to_string()));
+        let claim = claim_update(binary).unwrap();
+        assert!(harness_update_cancel(binary.to_string()));
+        assert!(claim.slot.cancelled.load(Ordering::SeqCst));
+        drop(claim);
+        assert!(!harness_update_cancel(binary.to_string()));
+    }
+
+    #[test]
+    fn a_cancelled_slot_is_released_so_the_next_update_can_run() {
+        let binary = "harness-updates-test/cancel-release/fx";
+        let claim = claim_update(binary).unwrap();
+        harness_update_cancel(binary.to_string());
+        drop(claim);
+        assert!(claim_update(binary).is_ok());
     }
 
     #[test]

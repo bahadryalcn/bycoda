@@ -58,6 +58,8 @@ export type HostDispatchContext = {
   /** Grant check independent of socket attachment for already admitted work. */
   executionAuthorized?: () => boolean | Promise<boolean>;
   signal?: AbortSignal;
+  /** `monotonicNow()` instant the transport received the request. */
+  ingressAt?: number;
   exposeQueueAttachments?: HostDomainContext["exposeQueueAttachments"];
   retargetTask?: HostDomainContext["retargetTask"];
   devServerAccess?: HostDomainContext["devServerAccess"];
@@ -206,6 +208,7 @@ export function createHostDispatcher(services: HostServices) {
             ? context.signal
             : options.signal,
         closing: () => !!options.signal?.aborted,
+        ingressAt: context.ingressAt,
         exposeQueueAttachments: context.exposeQueueAttachments,
         retargetTask: context.retargetTask,
         devServerAccess: context.devServerAccess,

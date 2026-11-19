@@ -1,3 +1,4 @@
+import { errorText } from "../../shared/lib/errors";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getNote, peekNoteDetail, type Note, type NoteSummary } from "./notes";
 import { beginNoteWork, deriveNoteInputResult, noteInputWorkError } from "./notesInputOwners";
@@ -49,7 +50,7 @@ export function useNoteDetail(summary: NoteSummary | Note | null) {
         if (!active) return;
         if (note && note.updatedAt < version)
           throw new Error(t("This note changed on the computer. Refresh it before saving."));
-        setResult({ id, version, note, error: note ? null : "Note was not found" });
+        setResult({ id, version, note, error: note ? null : t("Note was not found") });
       })
       .catch((cause: unknown) => {
         if (active)
@@ -57,7 +58,7 @@ export function useNoteDetail(summary: NoteSummary | Note | null) {
             id,
             version,
             note: null,
-            error: cause instanceof Error ? cause.message : String(cause),
+            error: errorText(cause),
           });
       })
       .finally(() => {

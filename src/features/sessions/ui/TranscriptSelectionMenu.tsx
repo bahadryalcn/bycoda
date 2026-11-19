@@ -1,4 +1,5 @@
 /** Different job: Selection toolbar and comment editor act on transcript ranges; they are not a value picker. */
+import { errorText } from "../../../shared/lib/errors";
 import { Text } from "../../../shared/ui/Text";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { InlineError } from "../../../shared/ui/InlineError";
@@ -22,7 +23,11 @@ import {
   FloatingButtonGroup,
   type FloatingButtonGroupAction,
 } from "../../../shared/ui/FloatingButtonGroup";
-import { type TranscriptSelection } from "../model/transcriptSelection";
+import {
+  resolveTranscriptSelection,
+  type TranscriptSelection,
+} from "../model/transcriptSelection";
+import { sameRect } from "../model/selectionGeometry";
 import {
   translationTargets,
   type TranslationTarget,
@@ -78,7 +83,7 @@ async function settleSelectionOperation({
     }
   } catch (error) {
     if (owner !== epoch.current) return;
-    const message = error instanceof Error ? error.message : String(error);
+    const message = errorText(error);
     update((current) => ({ ...current, errors: { ...current.errors, [id]: message } }));
   } finally {
     if (owner === epoch.current) {
@@ -149,14 +154,9 @@ export function TranscriptSelectionMenu({
       ? citationDraft.selection
       : liveSelection;
   const [copied, setCopied] = useState<string | null>(null);
+  // Identity only: response text would make every render serialize the whole reply.
   const selectionKey = selection
-    ? JSON.stringify([
-        sessionId,
-        selection.responseId,
-        selection.occurrence,
-        selection.text,
-        selection.responseText,
-      ])
+    ? JSON.stringify([sessionId, selection.responseId, selection.text])
     : null;
 
   const rail = useRef<HTMLDivElement>(null);
@@ -192,27 +192,56 @@ export function TranscriptSelectionMenu({
     };
   }, [selection?.text, Boolean(onTranslate)]);
 
-  // Scrolling or resizing moves the text out from under the menu, so the
-  // selection it acts on is gone; drop it rather than chase the range.
+  // Scrolling (also auto-scroll while a reply streams) or resizing moves the text under the menu.
+  // Follow the live range instead of dropping the selection; only the loss of the selected text
+  // dismisses. A selection that cannot be re-measured would keep a stale rect, so it is dismissed.
+  const [geometry, setGeometry] = useState<{
+    selection: TranscriptSelection;
+    rect: DOMRect;
+    visible: boolean;
+  } | null>(null);
+  const commentOpen = Boolean(citationDraft?.open && citationDraft.sessionId === sessionId);
   useEffect(() => {
     if (!selection) return;
-    const dismiss = (event: Event) => {
-      // Scrolling the action rail or comment must not discard its selection.
+    let frame = 0;
+    const dismiss = () => {
+      setCitationDraft((current) => current && { ...current, open: false });
+      dismissSelection();
+    };
+    const refresh = () => {
+      frame = 0;
+      const next = selection.measure?.();
+      if (!next) {
+        // An open comment keeps the user's draft and its frozen source; only the anchor is lost.
+        if (!commentOpen) dismiss();
+        return;
+      }
+      setGeometry((current) =>
+        current?.selection === selection &&
+        current.visible === next.visible &&
+        sameRect(current.rect, next.rect)
+          ? current
+          : { selection, ...next },
+      );
+    };
+    const onMove = (event: Event) => {
+      // Scrolling the action rail or comment must not move or discard its selection.
       if (
         event.target instanceof Element &&
         event.target.closest("[data-citation-comment], [data-selection-menu]")
       )
         return;
-      setCitationDraft((current) => current && { ...current, open: false });
-      dismissSelection();
+      if (!selection.measure) return dismiss();
+      if (!frame) frame = requestAnimationFrame(refresh);
     };
-    window.addEventListener("scroll", dismiss, true);
-    window.addEventListener("resize", dismiss);
+    window.addEventListener("scroll", onMove, true);
+    window.addEventListener("resize", onMove);
     return () => {
-      window.removeEventListener("scroll", dismiss, true);
-      window.removeEventListener("resize", dismiss);
+      cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", onMove, true);
+      window.removeEventListener("resize", onMove);
     };
-  }, [selection]);
+  }, [selection, commentOpen]);
 
   // Operation state belongs to the text it was started for: a selection that
   // goes away or is replaced directly by another drops pending/error state, and
@@ -234,6 +263,12 @@ export function TranscriptSelectionMenu({
     onDismiss();
   });
   if (!selection) return null;
+  // A measurement belongs to the selection it was read for; a new selection starts from its own rect.
+  const live = geometry?.selection === selection ? geometry : null;
+  const anchor = live?.rect ?? selection.rect;
+  // Scrolled out of view the toolbar is hidden, not discarded; it returns with the text. An open
+  // comment stays, anchored at the nearest edge.
+  if (live && !live.visible && !commentOpen) return null;
 
   const action = (
     id: string,
@@ -276,19 +311,21 @@ export function TranscriptSelectionMenu({
         () => onAddToChat(selection.text),
       ),
       onSelect: () => {
-        if (!sessionId || !selection.responseId || !selection.responseText) {
+        // Read the occurrence now, while the live selection still exists; the draft keeps it.
+        const resolved = resolveTranscriptSelection(selection);
+        if (!sessionId || !selection.responseId || !resolved?.responseText) {
           void run("chat", () => onAddToChat(selection.text));
           return;
         }
         setCitationDraft((current) => ({
           sessionId,
-          selection,
+          selection: resolved,
           comment:
             current &&
             current.sessionId === sessionId &&
-            current.selection.responseId === selection.responseId &&
-            current.selection.text === selection.text &&
-            current.selection.occurrence === selection.occurrence
+            current.selection.responseId === resolved.responseId &&
+            current.selection.text === resolved.text &&
+            current.selection.occurrence === resolved.occurrence
               ? current.comment
               : "",
           open: true,
@@ -323,7 +360,7 @@ export function TranscriptSelectionMenu({
     };
     return (
       <Popover
-        anchor={selection.rect}
+        anchor={anchor}
         side="bottom"
         align="start"
         width={336}
@@ -400,7 +437,7 @@ export function TranscriptSelectionMenu({
 
   return (
     <Popover
-      anchor={selection.rect}
+      anchor={anchor}
       side="top"
       align="center"
       width={menuWidth}

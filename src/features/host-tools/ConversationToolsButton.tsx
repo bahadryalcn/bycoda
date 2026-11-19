@@ -53,7 +53,7 @@ export function ConversationToolsButton({ tools }: { tools: ConversationTools })
           maxHeight={expanded ? window.innerHeight - 70 : 680}
           onDismiss={dismiss}
           ignore="select, option, [data-dialog-popover]"
-          role="dialog"
+          kind="dialog"
           aria-label={t("Conversation tools")}
           className={`flex flex-col ${expanded ? "h-[calc(100dvh-70px)]" : "h-[min(680px,80dvh)]"}`}
         >

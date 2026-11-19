@@ -12,9 +12,11 @@
     "maxAuthenticationJobsPerSource": 4,
     "maxControlJobs": 64,
     "maxControlJobsPerDevice": 8,
+    "maxControlRequestsPerSocket": 8,
     "maxHostReplayBytes": 67108864,
     "maxMessageBytes": 1048576,
     "maxPendingRpc": 64,
+    "maxQueuedSubscriptionControlsPerSocket": 96,
     "maxReadJobs": 256,
     "maxReadJobsPerDevice": 64,
     "maxReplayAgeMs": 300000,
@@ -23,6 +25,7 @@
     "maxResponseTimeoutMs": 600000,
     "maxSocketQueuedBytes": 8388608,
     "maxSocketsPerDevice": 12,
+    "maxSubscriptionControlsPerSocket": 32,
     "maxSubscriptionWindowBytes": 2097152,
     "maxSubscriptionsPerHost": 512,
     "maxSubscriptionsPerSocket": 64,
@@ -9260,6 +9263,10 @@
                 "properties": {
                   "at": { "type": "number" },
                   "id": { "type": "string" },
+                  "kind": {
+                    "enum": ["remaining_finding", "external_check", "auto_continued", "info"],
+                    "type": "string"
+                  },
                   "message": { "type": "string" }
                 },
                 "required": ["id", "message", "at"],
@@ -9631,6 +9638,50 @@
         "additionalProperties": false,
         "properties": { "deleted": { "const": true, "type": "boolean" } },
         "required": ["deleted"],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "crews.agent.group.update": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "group": { "type": "string" },
+          "members": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "agentId": { "type": "string" },
+                "expectedUpdatedAt": { "type": "number" }
+              },
+              "required": ["agentId", "expectedUpdatedAt"],
+              "type": "object"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          },
+          "projectId": { "type": "string" },
+          "rename": { "type": "string" }
+        },
+        "required": ["projectId", "group", "members"],
+        "type": "object"
+      },
+      "requiredCapability": "transport.ws.crews.v2",
+      "responseTimeoutMs": 12000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "updated": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+        },
+        "required": ["updated"],
         "type": "object"
       },
       "retry": "never",
@@ -12899,6 +12950,10 @@
                       "properties": {
                         "at": { "type": "number" },
                         "id": { "type": "string" },
+                        "kind": {
+                          "enum": ["remaining_finding", "external_check", "auto_continued", "info"],
+                          "type": "string"
+                        },
                         "message": { "type": "string" }
                       },
                       "required": ["id", "message", "at"],
@@ -17323,6 +17378,15 @@
                             "properties": {
                               "at": { "type": "number" },
                               "id": { "type": "string" },
+                              "kind": {
+                                "enum": [
+                                  "remaining_finding",
+                                  "external_check",
+                                  "auto_continued",
+                                  "info"
+                                ],
+                                "type": "string"
+                              },
                               "message": { "type": "string" }
                             },
                             "required": ["id", "message", "at"],
@@ -22979,7 +23043,10 @@
                 {
                   "additionalProperties": false,
                   "properties": {
-                    "error": { "enum": ["below_threshold", "unavailable"], "type": "string" }
+                    "error": {
+                      "enum": ["below_threshold", "unavailable", "config_damaged"],
+                      "type": "string"
+                    }
                   },
                   "required": ["error"],
                   "type": "object"
@@ -23068,7 +23135,8 @@
             "maxItems": 200,
             "type": "array"
           },
-          "incomplete": { "type": "boolean" }
+          "incomplete": { "type": "boolean" },
+          "scannedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
         },
         "required": ["found"],
         "type": "object"
@@ -23115,7 +23183,8 @@
             "maxItems": 200,
             "type": "array"
           },
-          "incomplete": { "type": "boolean" }
+          "incomplete": { "type": "boolean" },
+          "scannedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
         },
         "required": ["found"],
         "type": "object"
@@ -23253,6 +23322,36 @@
       "retry": "never",
       "scope": "device"
     },
+    "decisionModels.local.cancelInstall": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "modelId": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+            "type": "string"
+          }
+        },
+        "required": ["modelId"],
+        "type": "object"
+      },
+      "requiredCapability": "decisionModels.install.v1",
+      "responseTimeoutMs": 12000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "cancelled": { "type": "boolean" } },
+        "required": ["cancelled"],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
     "decisionModels.local.hardware": {
       "admissionTimeoutMs": 5000,
       "cancellation": "query",
@@ -23326,6 +23425,125 @@
           },
           "state": {
             "enum": ["unsupported", "not_installed", "installed", "running", "stopped", "error"],
+            "type": "string"
+          }
+        },
+        "required": ["state"],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "decisionModels.local.installProgress": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "query",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "query",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "modelId": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+            "type": "string"
+          }
+        },
+        "required": ["modelId"],
+        "type": "object"
+      },
+      "requiredCapability": "decisionModels.install.v1",
+      "responseTimeoutMs": 12000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "error": { "maxLength": 500, "minLength": 1, "type": "string" },
+          "progress": {
+            "additionalProperties": false,
+            "properties": {
+              "bytesDone": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+              "bytesTotal": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+              "fileCount": { "maximum": 8, "minimum": 0, "type": "integer" },
+              "fileIndex": { "maximum": 7, "minimum": 0, "type": "integer" },
+              "fileName": { "maxLength": 260, "minLength": 1, "type": "string" },
+              "modelId": {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                "type": "string"
+              }
+            },
+            "required": [
+              "modelId",
+              "fileName",
+              "fileIndex",
+              "fileCount",
+              "bytesDone",
+              "bytesTotal"
+            ],
+            "type": "object"
+          },
+          "state": {
+            "enum": ["idle", "running", "installed", "failed", "cancelled"],
+            "type": "string"
+          }
+        },
+        "required": ["state"],
+        "type": "object"
+      },
+      "retry": "safe-query",
+      "scope": "device"
+    },
+    "decisionModels.local.installStart": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "confirm": { "const": "INSTALL_DECISION_MODEL", "type": "string" },
+          "modelId": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+            "type": "string"
+          }
+        },
+        "required": ["modelId", "confirm"],
+        "type": "object"
+      },
+      "requiredCapability": "decisionModels.install.v1",
+      "responseTimeoutMs": 12000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "error": { "maxLength": 500, "minLength": 1, "type": "string" },
+          "progress": {
+            "additionalProperties": false,
+            "properties": {
+              "bytesDone": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+              "bytesTotal": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+              "fileCount": { "maximum": 8, "minimum": 0, "type": "integer" },
+              "fileIndex": { "maximum": 7, "minimum": 0, "type": "integer" },
+              "fileName": { "maxLength": 260, "minLength": 1, "type": "string" },
+              "modelId": {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                "type": "string"
+              }
+            },
+            "required": [
+              "modelId",
+              "fileName",
+              "fileIndex",
+              "fileCount",
+              "bytesDone",
+              "bytesTotal"
+            ],
+            "type": "object"
+          },
+          "state": {
+            "enum": ["idle", "running", "installed", "failed", "cancelled"],
             "type": "string"
           }
         },
@@ -34819,6 +35037,110 @@
       "retry": "never",
       "scope": "device"
     },
+    "native.delivery.epochs.gap.resolve": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "byteLength": { "maximum": 16777216, "minimum": 1, "type": "integer" },
+          "generation": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
+          "kind": {
+            "enum": [
+              "buffer",
+              "native.services.conversation.desktop.finish",
+              "native.services.workspace.format"
+            ],
+            "type": "string"
+          },
+          "ownerId": {
+            "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}(?![\\s\\S])",
+            "type": "string"
+          },
+          "sequence": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
+          "sha256": { "pattern": "^[a-f0-9]{64}(?![\\s\\S])", "type": "string" }
+        },
+        "required": ["ownerId", "generation", "sequence", "kind", "sha256", "byteLength"],
+        "type": "object"
+      },
+      "requiredCapability": "native.delivery.epochs.gaps.v1",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "byteLength": { "maximum": 16777216, "minimum": 1, "type": "integer" },
+              "generation": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
+              "kind": {
+                "enum": [
+                  "buffer",
+                  "native.services.conversation.desktop.finish",
+                  "native.services.workspace.format"
+                ],
+                "type": "string"
+              },
+              "outcome": { "const": "not_admitted", "type": "string" },
+              "ownerId": {
+                "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}(?![\\s\\S])",
+                "type": "string"
+              },
+              "sequence": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
+              "sha256": { "pattern": "^[a-f0-9]{64}(?![\\s\\S])", "type": "string" }
+            },
+            "required": [
+              "ownerId",
+              "generation",
+              "sequence",
+              "kind",
+              "sha256",
+              "byteLength",
+              "outcome"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "byteLength": { "maximum": 16777216, "minimum": 1, "type": "integer" },
+              "generation": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
+              "kind": {
+                "enum": [
+                  "buffer",
+                  "native.services.conversation.desktop.finish",
+                  "native.services.workspace.format"
+                ],
+                "type": "string"
+              },
+              "outcome": { "const": "admitted", "type": "string" },
+              "ownerId": {
+                "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}(?![\\s\\S])",
+                "type": "string"
+              },
+              "sequence": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
+              "sha256": { "pattern": "^[a-f0-9]{64}(?![\\s\\S])", "type": "string" }
+            },
+            "required": [
+              "ownerId",
+              "generation",
+              "sequence",
+              "kind",
+              "sha256",
+              "byteLength",
+              "outcome"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "retry": "never",
+      "scope": "device"
+    },
     "native.delivery.epochs.open": {
       "admissionTimeoutMs": 5000,
       "cancellation": "wait-only",
@@ -36695,7 +37017,7 @@
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
-        "properties": {},
+        "properties": { "waitMs": { "maximum": 25000, "minimum": 0, "type": "integer" } },
         "type": "object"
       },
       "requiredCapability": "native.services.v1",
@@ -36856,6 +37178,7 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
         "properties": {
+          "acknowledge": { "const": "admission", "type": "string" },
           "byteLength": { "maximum": 16777216, "minimum": 1, "type": "integer" },
           "originalId": {
             "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
@@ -36999,6 +37322,27 @@
               },
               "sha256": { "pattern": "^[a-f0-9]{64}(?![\\s\\S])", "type": "string" },
               "state": { "const": "unknown", "type": "string" },
+              "target": {
+                "enum": [
+                  "native.services.conversation.desktop.finish",
+                  "native.services.workspace.format"
+                ],
+                "type": "string"
+              }
+            },
+            "required": ["originalId", "byteLength", "sha256", "target", "state"],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "byteLength": { "maximum": 16777216, "minimum": 1, "type": "integer" },
+              "originalId": {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                "type": "string"
+              },
+              "sha256": { "pattern": "^[a-f0-9]{64}(?![\\s\\S])", "type": "string" },
+              "state": { "const": "accepted", "type": "string" },
               "target": {
                 "enum": [
                   "native.services.conversation.desktop.finish",
@@ -37201,6 +37545,7 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
         "properties": {
+          "acknowledge": { "const": "admission", "type": "string" },
           "byteLength": { "maximum": 16777216, "minimum": 1, "type": "integer" },
           "originalId": {
             "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
@@ -37343,6 +37688,27 @@
               },
               "sha256": { "pattern": "^[a-f0-9]{64}(?![\\s\\S])", "type": "string" },
               "state": { "const": "unknown", "type": "string" },
+              "target": {
+                "enum": [
+                  "native.services.conversation.desktop.finish",
+                  "native.services.workspace.format"
+                ],
+                "type": "string"
+              }
+            },
+            "required": ["originalId", "byteLength", "sha256", "target", "state"],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "byteLength": { "maximum": 16777216, "minimum": 1, "type": "integer" },
+              "originalId": {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                "type": "string"
+              },
+              "sha256": { "pattern": "^[a-f0-9]{64}(?![\\s\\S])", "type": "string" },
+              "state": { "const": "accepted", "type": "string" },
               "target": {
                 "enum": [
                   "native.services.conversation.desktop.finish",
@@ -40130,7 +40496,6 @@
             "anyOf": [{ "maximum": 365, "minimum": 1, "type": "integer" }, { "type": "null" }]
           }
         },
-        "required": ["afterDays"],
         "type": "object"
       },
       "requiredCapability": "sessions.lifecycle.v2",
@@ -47642,6 +48007,10 @@
                 "properties": {
                   "at": { "type": "number" },
                   "id": { "type": "string" },
+                  "kind": {
+                    "enum": ["remaining_finding", "external_check", "auto_continued", "info"],
+                    "type": "string"
+                  },
                   "message": { "type": "string" }
                 },
                 "required": ["id", "message", "at"],
@@ -48408,6 +48777,10 @@
                 "properties": {
                   "at": { "type": "number" },
                   "id": { "type": "string" },
+                  "kind": {
+                    "enum": ["remaining_finding", "external_check", "auto_continued", "info"],
+                    "type": "string"
+                  },
                   "message": { "type": "string" }
                 },
                 "required": ["id", "message", "at"],
@@ -49104,6 +49477,10 @@
                   "properties": {
                     "at": { "type": "number" },
                     "id": { "type": "string" },
+                    "kind": {
+                      "enum": ["remaining_finding", "external_check", "auto_continued", "info"],
+                      "type": "string"
+                    },
                     "message": { "type": "string" }
                   },
                   "required": ["id", "message", "at"],
@@ -49809,6 +50186,10 @@
                 "properties": {
                   "at": { "type": "number" },
                   "id": { "type": "string" },
+                  "kind": {
+                    "enum": ["remaining_finding", "external_check", "auto_continued", "info"],
+                    "type": "string"
+                  },
                   "message": { "type": "string" }
                 },
                 "required": ["id", "message", "at"],
@@ -50502,6 +50883,10 @@
                 "properties": {
                   "at": { "type": "number" },
                   "id": { "type": "string" },
+                  "kind": {
+                    "enum": ["remaining_finding", "external_check", "auto_continued", "info"],
+                    "type": "string"
+                  },
                   "message": { "type": "string" }
                 },
                 "required": ["id", "message", "at"],
@@ -51196,6 +51581,10 @@
                 "properties": {
                   "at": { "type": "number" },
                   "id": { "type": "string" },
+                  "kind": {
+                    "enum": ["remaining_finding", "external_check", "auto_continued", "info"],
+                    "type": "string"
+                  },
                   "message": { "type": "string" }
                 },
                 "required": ["id", "message", "at"],
@@ -52153,6 +52542,15 @@
                         "properties": {
                           "at": { "type": "number" },
                           "id": { "type": "string" },
+                          "kind": {
+                            "enum": [
+                              "remaining_finding",
+                              "external_check",
+                              "auto_continued",
+                              "info"
+                            ],
+                            "type": "string"
+                          },
                           "message": { "type": "string" }
                         },
                         "required": ["id", "message", "at"],
@@ -52623,6 +53021,10 @@
                     "properties": {
                       "at": { "type": "number" },
                       "id": { "type": "string" },
+                      "kind": {
+                        "enum": ["remaining_finding", "external_check", "auto_continued", "info"],
+                        "type": "string"
+                      },
                       "message": { "type": "string" }
                     },
                     "required": ["id", "message", "at"],
@@ -52914,7 +53316,14 @@
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
-        "properties": { "taskIds": { "items": { "type": "string" }, "type": "array" } },
+        "properties": {
+          "expectedUpdatedAt": {
+            "additionalProperties": { "type": "number" },
+            "propertyNames": { "type": "string" },
+            "type": "object"
+          },
+          "taskIds": { "items": { "type": "string" }, "type": "array" }
+        },
         "required": ["taskIds"],
         "type": "object"
       },
@@ -53354,6 +53763,10 @@
                   "properties": {
                     "at": { "type": "number" },
                     "id": { "type": "string" },
+                    "kind": {
+                      "enum": ["remaining_finding", "external_check", "auto_continued", "info"],
+                      "type": "string"
+                    },
                     "message": { "type": "string" }
                   },
                   "required": ["id", "message", "at"],
@@ -54065,6 +54478,10 @@
                 "properties": {
                   "at": { "type": "number" },
                   "id": { "type": "string" },
+                  "kind": {
+                    "enum": ["remaining_finding", "external_check", "auto_continued", "info"],
+                    "type": "string"
+                  },
                   "message": { "type": "string" }
                 },
                 "required": ["id", "message", "at"],
@@ -54755,6 +55172,10 @@
                 "properties": {
                   "at": { "type": "number" },
                   "id": { "type": "string" },
+                  "kind": {
+                    "enum": ["remaining_finding", "external_check", "auto_continued", "info"],
+                    "type": "string"
+                  },
                   "message": { "type": "string" }
                 },
                 "required": ["id", "message", "at"],
@@ -55712,6 +56133,15 @@
                         "properties": {
                           "at": { "type": "number" },
                           "id": { "type": "string" },
+                          "kind": {
+                            "enum": [
+                              "remaining_finding",
+                              "external_check",
+                              "auto_continued",
+                              "info"
+                            ],
+                            "type": "string"
+                          },
                           "message": { "type": "string" }
                         },
                         "required": ["id", "message", "at"],
@@ -56182,6 +56612,10 @@
                     "properties": {
                       "at": { "type": "number" },
                       "id": { "type": "string" },
+                      "kind": {
+                        "enum": ["remaining_finding", "external_check", "auto_continued", "info"],
+                        "type": "string"
+                      },
                       "message": { "type": "string" }
                     },
                     "required": ["id", "message", "at"],
@@ -56862,6 +57296,10 @@
                 "properties": {
                   "at": { "type": "number" },
                   "id": { "type": "string" },
+                  "kind": {
+                    "enum": ["remaining_finding", "external_check", "auto_continued", "info"],
+                    "type": "string"
+                  },
                   "message": { "type": "string" }
                 },
                 "required": ["id", "message", "at"],
@@ -57598,6 +58036,10 @@
                 "properties": {
                   "at": { "type": "number" },
                   "id": { "type": "string" },
+                  "kind": {
+                    "enum": ["remaining_finding", "external_check", "auto_continued", "info"],
+                    "type": "string"
+                  },
                   "message": { "type": "string" }
                 },
                 "required": ["id", "message", "at"],
@@ -63467,6 +63909,79 @@
               "type": "string"
             },
             "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "decisionModels.local.installStart", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "confirm": { "const": "INSTALL_DECISION_MODEL", "type": "string" },
+                "modelId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                  "type": "string"
+                }
+              },
+              "required": ["modelId", "confirm"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "decisionModels.local.installProgress", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "modelId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                  "type": "string"
+                }
+              },
+              "required": ["modelId"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "decisionModels.local.cancelInstall", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "modelId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                  "type": "string"
+                }
+              },
+              "required": ["modelId"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
             "method": { "const": "decisionModels.routing.get", "type": "string" },
             "params": { "additionalProperties": false, "properties": {}, "type": "object" }
           },
@@ -64126,7 +64641,6 @@
                   "anyOf": [{ "maximum": 365, "minimum": 1, "type": "integer" }, { "type": "null" }]
                 }
               },
-              "required": ["afterDays"],
               "type": "object"
             }
           },
@@ -64344,6 +64858,42 @@
               "type": "string"
             },
             "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "native.delivery.epochs.gap.resolve", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "byteLength": { "maximum": 16777216, "minimum": 1, "type": "integer" },
+                "generation": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
+                "kind": {
+                  "enum": [
+                    "buffer",
+                    "native.services.conversation.desktop.finish",
+                    "native.services.workspace.format"
+                  ],
+                  "type": "string"
+                },
+                "ownerId": {
+                  "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}(?![\\s\\S])",
+                  "type": "string"
+                },
+                "sequence": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
+                "sha256": { "pattern": "^[a-f0-9]{64}(?![\\s\\S])", "type": "string" }
+              },
+              "required": ["ownerId", "generation", "sequence", "kind", "sha256", "byteLength"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
             "method": { "const": "native.buffers.delivery.ack", "type": "string" },
             "params": {
               "additionalProperties": false,
@@ -64478,6 +65028,7 @@
             "params": {
               "additionalProperties": false,
               "properties": {
+                "acknowledge": { "const": "admission", "type": "string" },
                 "byteLength": { "maximum": 16777216, "minimum": 1, "type": "integer" },
                 "originalId": {
                   "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
@@ -64512,6 +65063,7 @@
             "params": {
               "additionalProperties": false,
               "properties": {
+                "acknowledge": { "const": "admission", "type": "string" },
                 "byteLength": { "maximum": 16777216, "minimum": 1, "type": "integer" },
                 "originalId": {
                   "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
@@ -65422,7 +65974,11 @@
             },
             "jsonrpc": { "const": "2.0", "type": "string" },
             "method": { "const": "native.services.conversation.desktop.take", "type": "string" },
-            "params": { "additionalProperties": false, "properties": {}, "type": "object" }
+            "params": {
+              "additionalProperties": false,
+              "properties": { "waitMs": { "maximum": 25000, "minimum": 0, "type": "integer" } },
+              "type": "object"
+            }
           },
           "required": ["jsonrpc", "id", "method", "params"],
           "type": "object"
@@ -69028,6 +69584,42 @@
               "additionalProperties": false,
               "properties": { "agentId": { "type": "string" }, "projectId": { "type": "string" } },
               "required": ["projectId", "agentId"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "crews.agent.group.update", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "group": { "type": "string" },
+                "members": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "agentId": { "type": "string" },
+                      "expectedUpdatedAt": { "type": "number" }
+                    },
+                    "required": ["agentId", "expectedUpdatedAt"],
+                    "type": "object"
+                  },
+                  "maxItems": 1000,
+                  "type": "array"
+                },
+                "projectId": { "type": "string" },
+                "rename": { "type": "string" }
+              },
+              "required": ["projectId", "group", "members"],
               "type": "object"
             }
           },
@@ -73379,6 +73971,15 @@
                               "properties": {
                                 "at": { "type": "number" },
                                 "id": { "type": "string" },
+                                "kind": {
+                                  "enum": [
+                                    "remaining_finding",
+                                    "external_check",
+                                    "auto_continued",
+                                    "info"
+                                  ],
+                                  "type": "string"
+                                },
                                 "message": { "type": "string" }
                               },
                               "required": ["id", "message", "at"],
@@ -73884,6 +74485,15 @@
                           "properties": {
                             "at": { "type": "number" },
                             "id": { "type": "string" },
+                            "kind": {
+                              "enum": [
+                                "remaining_finding",
+                                "external_check",
+                                "auto_continued",
+                                "info"
+                              ],
+                              "type": "string"
+                            },
                             "message": { "type": "string" }
                           },
                           "required": ["id", "message", "at"],
@@ -74228,7 +74838,14 @@
             "method": { "const": "tasks.reorder", "type": "string" },
             "params": {
               "additionalProperties": false,
-              "properties": { "taskIds": { "items": { "type": "string" }, "type": "array" } },
+              "properties": {
+                "expectedUpdatedAt": {
+                  "additionalProperties": { "type": "number" },
+                  "propertyNames": { "type": "string" },
+                  "type": "object"
+                },
+                "taskIds": { "items": { "type": "string" }, "type": "array" }
+              },
               "required": ["taskIds"],
               "type": "object"
             }
@@ -75127,6 +75744,15 @@
                               "properties": {
                                 "at": { "type": "number" },
                                 "id": { "type": "string" },
+                                "kind": {
+                                  "enum": [
+                                    "remaining_finding",
+                                    "external_check",
+                                    "auto_continued",
+                                    "info"
+                                  ],
+                                  "type": "string"
+                                },
                                 "message": { "type": "string" }
                               },
                               "required": ["id", "message", "at"],
@@ -75632,6 +76258,15 @@
                           "properties": {
                             "at": { "type": "number" },
                             "id": { "type": "string" },
+                            "kind": {
+                              "enum": [
+                                "remaining_finding",
+                                "external_check",
+                                "auto_continued",
+                                "info"
+                              ],
+                              "type": "string"
+                            },
                             "message": { "type": "string" }
                           },
                           "required": ["id", "message", "at"],
@@ -81012,5 +81647,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "574753083c792204fbf7cce7e6c404359784af48e2a4f4d74c6087396959e79c"
+  "schemaHash": "c528cc2b2dfdeb7bcebe2d69d2e51e41037f15ed295e069c3789da0ae2a6d8ff"
 }

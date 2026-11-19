@@ -116,7 +116,7 @@ import { useRemoteConnection } from "../../features/connections/model/useRemoteC
 import { machineLabel } from "../../features/connections/model/machineIdentity";
 import { ProjectGitChangeRow } from "../../features/projects/ui/ProjectGitChangeRow";
 import { reconnectRemoteMachine } from "../../features/connections/model/remoteReconnect";
-import { useRemoteProject } from "./useRemoteProject";
+import { useRemoteProject } from "../../features/connections/public/useRemoteProject";
 import { remoteProjectFor } from "../../features/connections/model/remoteProjects";
 import {
   knownRemoteMachine,
@@ -599,7 +599,7 @@ export function useProjectMenu({
                   id: "new-local-host-session",
                   label: localHostCreating
                     ? t("Connecting…")
-                    : t("New conversation on this computer's Host"),
+                    : t("New session on this computer's Host"),
                   icon: AppWindow,
                   disabled: localHostCreating,
                 },
@@ -857,7 +857,7 @@ export function useProjectMenu({
       deleteItems.push({
         id: "delete-group-with-projects",
         label: t("Delete group with projects"),
-        description: t("Projects and saved conversations will be removed. Folders stay on disk."),
+        description: t("Projects and saved sessions will be removed. Folders stay on disk."),
         icon: Trash2,
         danger: true,
         disabled: !onRemoveProject || pathsForGroup(group.id).some((path) => isProjectBusy?.(path)),
@@ -1159,8 +1159,8 @@ export function useProjectMenu({
           key={notificationMenu.path}
           anchor={{ x: notificationMenu.x, y: notificationMenu.y }}
           gap={0}
-          width={280}
-          role="dialog"
+          size="md"
+          kind="dialog"
           aria-label={t("Mute project notifications")}
           onDismiss={closeNotificationMenu}
           className="space-y-1 overflow-y-auto p-3"

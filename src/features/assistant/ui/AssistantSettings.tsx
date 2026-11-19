@@ -306,7 +306,7 @@ export function AssistantSettings({
         consentEnvironment,
       );
       if (!result.profile)
-        throw new Error(t("The settings save was not confirmed. Check before retrying."));
+        throw new Error(t("Saving settings could not be confirmed. Check before retrying."));
       version.current = result.profile.version;
       setSavedDraft(JSON.stringify(draft));
     } catch (cause) {
@@ -330,8 +330,9 @@ export function AssistantSettings({
     }
   }
   /** Profile, then project scope, computer use, then folders. The first failure stops the chain. */
-  async function save() {
-    if (busy) return;
+  /** True only after every dirty section was acknowledged; the first failure keeps the draft. */
+  async function save(): Promise<boolean> {
+    if (busy) return false;
     setPending(true);
     setError("");
     setSavedNotice(false);
@@ -346,12 +347,14 @@ export function AssistantSettings({
       shownInline = true;
       if (foldersState.dirty) await foldersSave.current?.();
       setSavedNotice(true);
+      return true;
     } catch (cause) {
       if (savingAccess) {
         setPage("access");
         setCustomAccessOpen(true);
       }
       if (!shownInline) setError(presentRemoteError(cause, { explicit: true }));
+      return false;
     } finally {
       setPending(false);
     }
@@ -741,7 +744,7 @@ export function AssistantSettings({
             onDiscard={discard}
             // Save goes through the form so native validation still reveals the invalid field.
             onSave={() => {
-              if (formRef.current?.reportValidity()) return save();
+              return formRef.current?.reportValidity() ? save() : false;
             }}
             leading={
               <Button

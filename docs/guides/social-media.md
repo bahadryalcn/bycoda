@@ -41,7 +41,7 @@ Accounts refresh their metadata while the screen is active and show when that sn
 
 Unsaved content belongs to its original computer and project. Switching projects preserves that project's in-memory work. Editing a saved post and closing the editor retains the changes for **Resume draft**; discarding them requires confirmation. Pending saves and publishes protect the submitted revision and attachments.
 
-Content lists and calendars can contain more records than one loaded page. **Load more** includes older posts; the partial-result notice remains until all available pages are loaded. Filters apply to the loaded records.
+The Content calendar (Week and Month) asks the Host for the posts scheduled in the days it shows, whenever they were created, so moving to another week or month always loads that range and never needs **Load more**. The Content list can contain more records than one loaded page. **Load more** includes older posts; the partial-result notice remains until all available pages are loaded. Filters apply to the loaded records.
 
 AI planning preserves text entered after a request started. Conflicting plan operations cannot overlap. Activity refreshes while Command is active and provides continuation and retry for older records. A navigation prompt can populate an empty request or be explicitly added to an existing one. Generated reports identify their actual period when the Day/Week selection changes.
 

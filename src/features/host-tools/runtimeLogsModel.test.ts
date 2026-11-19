@@ -81,6 +81,20 @@ describe("runtime log view buffer", () => {
     ).toEqual([3]);
   });
 
+  it("appends without rebuilding retained entries and sorts out-of-order or repeated rows", () => {
+    const first = mergeRuntimeLogs(createRuntimeLogsBuffer(), snapshot([entry(1), entry(2)]));
+    const next = mergeRuntimeLogs(first, snapshot([entry(4), entry(3), entry(4), entry(2)]));
+    expect(next.entries.map((value) => value.cursor)).toEqual([1, 2, 3, 4]);
+    expect(next.entries[0]).toBe(first.entries[0]);
+    expect(mergeRuntimeLogs(next, snapshot([entry(3), entry(4)])).entries).toBe(next.entries);
+  });
+
+  it("still merges a row that lands inside the retained range", () => {
+    const first = mergeRuntimeLogs(createRuntimeLogsBuffer(), snapshot([entry(1), entry(3)], 3));
+    const next = mergeRuntimeLogs(first, snapshot([entry(2), entry(3), entry(4)], 4));
+    expect(next.entries.map((value) => value.cursor)).toEqual([1, 2, 3, 4]);
+  });
+
   it("does not resurrect cleared entries when a host replays its retained page", () => {
     const initial = mergeRuntimeLogs(createRuntimeLogsBuffer(), snapshot([entry(1), entry(2)], 8));
     const cleared = clearRuntimeLogs(initial);

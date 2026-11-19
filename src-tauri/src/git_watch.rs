@@ -475,15 +475,33 @@ pub async fn git_watch(app: AppHandle, webview: tauri::Webview, cwd: String) -> 
     .map_err(|error| error.to_string())?
 }
 
+/// Takes the watcher lock, which `watch` may hold while it registers paths, so it
+/// runs on the blocking pool rather than the UI thread.
 #[tauri::command]
-pub fn git_unwatch(state: tauri::State<'_, GitWatchHost>, webview: tauri::Webview, cwd: String) {
-    state.unwatch(webview.label(), &cwd);
+pub async fn git_unwatch(
+    app: AppHandle,
+    webview: tauri::Webview,
+    cwd: String,
+) -> Result<(), String> {
+    let label = webview.label().to_string();
+    tauri::async_runtime::spawn_blocking(move || {
+        use tauri::Manager;
+        app.state::<GitWatchHost>().unwatch(&label, &cwd);
+    })
+    .await
+    .map_err(|error| error.to_string())
 }
 
 /// Forgets this webview's watches; a reloaded page starts from none.
 #[tauri::command]
-pub fn git_watch_reset(state: tauri::State<'_, GitWatchHost>, webview: tauri::Webview) {
-    state.window_closed(webview.label());
+pub async fn git_watch_reset(app: AppHandle, webview: tauri::Webview) -> Result<(), String> {
+    let label = webview.label().to_string();
+    tauri::async_runtime::spawn_blocking(move || {
+        use tauri::Manager;
+        app.state::<GitWatchHost>().window_closed(&label);
+    })
+    .await
+    .map_err(|error| error.to_string())
 }
 
 #[cfg(test)]
@@ -492,6 +510,37 @@ mod tests {
     use std::process::Command;
 
     const GIT: &str = "/r/.git";
+
+    /// #508: a sync `#[tauri::command]` runs on the UI thread and would wait on the
+    /// watcher lock that `watch` holds while registering paths, so both release
+    /// commands must stay async and take that lock on the blocking pool.
+    #[test]
+    fn release_commands_take_the_watcher_lock_on_the_blocking_lane() {
+        let source = include_str!("git_watch.rs")
+            .split_once("#[cfg(test)]")
+            .expect("test module marker")
+            .0
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        for (name, call) in [
+            ("git_unwatch", "unwatch(&label, &cwd)"),
+            ("git_watch_reset", "window_closed(&label)"),
+        ] {
+            let signature = format!("#[tauri::command] pub async fn {name}(");
+            let (_, rest) = source
+                .split_once(&signature)
+                .unwrap_or_else(|| panic!("{name} must be an async command"));
+            let body = rest.split_once("#[tauri::command]").map_or(rest, |part| part.0);
+            let (before, inside) = body
+                .split_once("spawn_blocking(move ||")
+                .unwrap_or_else(|| panic!("{name} must run on the blocking pool"));
+            assert!(
+                !before.contains(call) && inside.contains(call),
+                "{name} takes the watcher lock outside the blocking pool"
+            );
+        }
+    }
 
     #[test]
     fn classifies_checkout_files() {
@@ -737,7 +786,7 @@ mod tests {
             crate::fs::git_diff_index(cwd.clone()).await.unwrap();
             crate::fs::git_branches(cwd.clone()).await.unwrap();
             crate::fs::git_stash_list(cwd.clone()).await.unwrap();
-            crate::fs::git_history(cwd.clone(), Some(50), Some(true))
+            crate::fs::git_history(cwd.clone(), Some(50), Some(true), None)
                 .await
                 .unwrap();
         });

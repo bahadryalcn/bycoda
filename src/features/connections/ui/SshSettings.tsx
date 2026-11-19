@@ -10,6 +10,8 @@ import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { LoadingText } from "../../../shared/ui/LoadingText";
+import { errorText } from "../../../shared/lib/errors";
+import { sanitizeConnectionError } from "../model/remoteConnection";
 
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { SearchInput } from "../../../shared/ui/SearchInput";
@@ -52,7 +54,7 @@ function useSshInventory<T>(command: string) {
           if (current) setValue(result);
         },
         (reason) => {
-          if (current) setError(String(reason));
+          if (current) setError(sanitizeConnectionError(errorText(reason)));
         },
       )
       .finally(() => {
@@ -137,7 +139,7 @@ export function SshSettings({
     try {
       await callback();
     } catch (reason) {
-      setError(String(reason));
+      setError(sanitizeConnectionError(errorText(reason)));
     } finally {
       pending.current = false;
       setBusy(false);

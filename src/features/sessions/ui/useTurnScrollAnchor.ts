@@ -1,6 +1,23 @@
 import { useLayoutEffect, type RefObject } from "react";
 import { deferDuringResize, resizeGestureActive } from "../../../shared/lib/resizeGesture";
 
+const classTokens = (value: string | null) =>
+  new Set((value ?? "").split(/\s+/).filter(Boolean));
+
+// React rewrites `class` with the same names in a different order or with no
+// change at all. Such a write cannot move content, so it keeps the turn contained.
+function unchangedClassList(record: MutationRecord) {
+  if (
+    record.type !== "attributes" ||
+    record.attributeName !== "class" ||
+    !(record.target instanceof Element)
+  )
+    return false;
+  const before = classTokens(record.oldValue);
+  const after = classTokens(record.target.getAttribute("class"));
+  return before.size === after.size && [...before].every((token) => after.has(token));
+}
+
 /**
  * Hold the reader's place when loaded turns above the viewport change height
  * (images, expanded work or Markdown). Native scroll anchoring is disabled;
@@ -118,10 +135,11 @@ export function useTurnScrollAnchor(
         liveTurn = inner.querySelector(".transcript-turn-live");
       const relevant = records.filter(
         (record) =>
-          !liveTurn?.contains(record.target) ||
-          (record.target === liveTurn &&
-            record.type === "attributes" &&
-            record.attributeName === "class"),
+          !unchangedClassList(record) &&
+          (!liveTurn?.contains(record.target) ||
+            (record.target === liveTurn &&
+              record.type === "attributes" &&
+              record.attributeName === "class")),
       );
       if (!relevant.length) return;
       const listChanged = relevant.some(
@@ -150,6 +168,7 @@ export function useTurnScrollAnchor(
       subtree: true,
       characterData: true,
       attributes: true,
+      attributeOldValue: true,
       attributeFilter: [
         "class",
         "data-collapsed",

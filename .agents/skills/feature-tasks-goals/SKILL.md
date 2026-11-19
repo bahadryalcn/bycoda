@@ -25,6 +25,8 @@ Model order, pools, role bindings and delegation defaults belong to [model routi
 ## Preserve
 
 - Preserve multi-machine board scope, query/event cursors, ordering, bulk-action populations and honest disconnected state.
+- Board, daily-summary and background-notifier reads share one request per machine (`sharedMachineListReads` for goals and automations, the task read cache for tasks). A write drops that machine's shared read; only the notifier may accept a recent automation answer, and its poll has a deadline that retires late results.
+- `tasks.reorder` places the listed ids into the slots they already hold in the Host's full status queue, so tasks a client cannot see keep their place; with `expectedUpdatedAt` (`tasks.reorder-guard`) a changed listed task rejects the whole move.
 - Scope initial reads and retries to the selected project Host; optional collections and unrelated Host failures must not make a successfully read empty task list unavailable. Publish project and sprint data incrementally; coalesce slow polling and retain stale limits with explicit read errors.
 - New-task creation keeps a stable receipt identity separate from edit mode. Reconcile an uncertain save before resending; optional metadata must not invalidate an accepted save. Start acknowledges persisted queue admission, not completion of the global scheduler pass.
 - Keep custom provider/model/reasoning values, drafts, budgets/concurrency and manual-start policy. Omitted reviewer configuration differs from explicit null.

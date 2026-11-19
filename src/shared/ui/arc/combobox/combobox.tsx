@@ -1,5 +1,6 @@
 "use client";
 import { PickerChoice } from "../../picker/PickerChoice";
+import { usePointerMovement } from "../../picker/usePointerMovement";
 import { Popover, popupListClassName } from "../../Popover";
 import { isImeComposition } from "../../../lib/keyboard";
 import { useT } from "../../../i18n";
@@ -174,6 +175,7 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
   const [query, setQuery] = useState("");
   const draftDirty = useRef(false);
   const [activeIndex, setActiveIndex] = useState(-1);
+  const pointerMoved = usePointerMovement();
   const selectedValue = controlledValue ?? uncontrolledValue;
   const selectedOption = options.find((option) => option.value === selectedValue);
 
@@ -376,7 +378,9 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
               aria-selected={option.value === selectedValue}
               aria-disabled={option.disabled || undefined}
               onMouseDown={(event) => event.preventDefault()}
-              onMouseEnter={() => !option.disabled && setActiveIndex(index)}
+              onPointerMove={(event) => {
+                if (pointerMoved(event) && !option.disabled) setActiveIndex(index);
+              }}
               onClick={() => choose(option)}
             >
               <ComboboxChoice selected={option.value === selectedValue} label={option.label} />

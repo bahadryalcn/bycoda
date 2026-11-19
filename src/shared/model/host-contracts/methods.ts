@@ -19,6 +19,10 @@ import {
   type NativeDeviceMethod,
 } from "./native-devices";
 import { NATIVE_DELIVERY_RPC_SCHEMAS, type NativeDeliveryMethod } from "./native-delivery";
+import {
+  NATIVE_DELIVERY_EPOCH_GAP_CAPABILITY,
+  NATIVE_DELIVERY_EPOCH_GAP_METHOD,
+} from "./native-delivery-epochs";
 import { z } from "zod";
 import { AssistantRequestSchema, AssistantResponseSchema } from "./assistant";
 import { DesktopControlRequestSchema, DesktopControlResponseSchema } from "./desktop-control";
@@ -385,15 +389,18 @@ const nativeDeliveryOperation = (method: NativeDeliveryMethod): HostRpcMethodDef
         NATIVE_DELIVERY_RPC_SCHEMAS[method].result,
       )),
   cost: "read",
-  requiredCapability: method.startsWith("native.delivery.epochs.")
-    ? "native.delivery.epochs.v2"
-    : method.endsWith(".ack")
-      ? method.startsWith("native.buffers.")
-        ? "native.buffers.delivery.ack.v1"
-        : "native.services.delivery.ack.v1"
-      : method.startsWith("native.buffers.")
-        ? "native.buffers.delivery.v1"
-        : "native.services.delivery.v1",
+  requiredCapability:
+    method === NATIVE_DELIVERY_EPOCH_GAP_METHOD
+      ? NATIVE_DELIVERY_EPOCH_GAP_CAPABILITY
+      : method.startsWith("native.delivery.epochs.")
+        ? "native.delivery.epochs.v2"
+        : method.endsWith(".ack")
+          ? method.startsWith("native.buffers.")
+            ? "native.buffers.delivery.ack.v1"
+            : "native.services.delivery.ack.v1"
+          : method.startsWith("native.buffers.")
+            ? "native.buffers.delivery.v1"
+            : "native.services.delivery.v1",
   responseTimeoutMs: 30_000,
 });
 /** A voice call owns its own socket; recognizer start and transcription may load a model first. */
@@ -432,6 +439,7 @@ export const HOST_RPC_METHODS = Object.freeze({
   "native.delivery.epochs.status": nativeDeliveryOperation("native.delivery.epochs.status"),
   "native.delivery.epochs.compact": nativeDeliveryOperation("native.delivery.epochs.compact"),
   "native.delivery.epochs.close": nativeDeliveryOperation("native.delivery.epochs.close"),
+  [NATIVE_DELIVERY_EPOCH_GAP_METHOD]: nativeDeliveryOperation(NATIVE_DELIVERY_EPOCH_GAP_METHOD),
   "native.buffers.delivery.ack": nativeDeliveryOperation("native.buffers.delivery.ack"),
   "native.services.delivery.ack": nativeDeliveryOperation("native.services.delivery.ack"),
   "native.buffers.delivery.apply": nativeDeliveryOperation("native.buffers.delivery.apply"),
@@ -596,6 +604,7 @@ export const HOST_RPC_METHODS = Object.freeze({
   "crews.deleteRun": crewOperation("crews.deleteRun"),
   "crews.agent.save": crewOperation("crews.agent.save"),
   "crews.agent.delete": crewOperation("crews.agent.delete"),
+  "crews.agent.group.update": crewOperation("crews.agent.group.update"),
   "modelRouting.get": {
     ...read(
       modelRoutingDto.ModelRoutingGetParamsSchema,

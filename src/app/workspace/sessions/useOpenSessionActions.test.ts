@@ -214,7 +214,7 @@ it("rejects an oversized composition explicitly before loading or changing any t
   await actions.onOpenSessionsSideBySide(sessions.slice(0, 10).map((entry) => entry.id));
   expect(toast.show).toHaveBeenCalledWith({
     tone: "warning",
-    message: "Select at most 9 conversations to open side by side.",
+    message: "Select at most 9 sessions to open side by side.",
   });
   expect(deps.ensureOpenSession).not.toHaveBeenCalled();
   expect(deps.tabsRef.current).toEqual([]);

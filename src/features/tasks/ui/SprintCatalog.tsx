@@ -29,7 +29,12 @@ export function SprintCatalog({
     const index = sources.findIndex(
       (source) => source.machine.environmentId === board.coordinatorEnvironmentId,
     );
-    const current = { machine: board.coordinator, sprints: board.sprints, error: null };
+    const current = {
+      machine: board.coordinator,
+      sprints: board.sprints,
+      failed: false,
+      error: null,
+    };
     if (index < 0) sources.push(current);
     else sources[index] = current;
   }
@@ -50,11 +55,11 @@ export function SprintCatalog({
           catalogKey: sprintCatalogKey(source.machine, sprint),
           serverName: source.machine.name,
           serverEnvironmentId: source.machine.environmentId,
-          unavailable: Boolean(source.error),
+          unavailable: source.failed,
         })),
     );
   const failures = sources.filter(
-    (source) => source.error && (!environmentId || source.machine.environmentId === environmentId),
+    (source) => source.failed && (!environmentId || source.machine.environmentId === environmentId),
   );
   return (
     <>
@@ -75,11 +80,13 @@ export function SprintCatalog({
       ) : !failures.length ? (
         <EmptyState size="inline" description={t("No sprints match these filters.")} />
       ) : null}
-      {failures.map((source) => (
-        <InlineError key={source.machine.environmentId}>
-          {source.machine.name}: {source.error}
-        </InlineError>
-      ))}
+      {failures.map((source) =>
+        source.error ? (
+          <InlineError key={source.machine.environmentId}>
+            {source.machine.name}: {source.error}
+          </InlineError>
+        ) : null,
+      )}
     </>
   );
 }

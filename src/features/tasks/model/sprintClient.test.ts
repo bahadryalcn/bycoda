@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   planningCoordinator,
   planningTaskRef,
+  SPRINT_POLL_MS,
   useSprintBoard,
   type SprintBoardController,
 } from "./sprintClient";
@@ -538,6 +539,92 @@ describe("sprint planning authority", () => {
     expect(ingests).toHaveLength(10);
     expect(ingests.at(-1)?.[2].input).toMatchObject({ cursor: 15, caughtUp: false });
     expect(board.syncErrors.join()).toContain("More task history remains");
+  });
+  describe("polling lifecycle", () => {
+    const calls = (method: string, id?: string) =>
+      mocks.request.mock.calls.filter(
+        (call) => call[1] === method && (id === undefined || call[0] === id),
+      ).length;
+    afterEach(() => vi.useRealTimers());
+
+    it("backs off while the coordinator fails, keeps the last board, and a requested refresh restores the cadence", async () => {
+      vi.useFakeTimers();
+      const sprint = { id: "kept", name: "Kept", projects: [] } as unknown as HostSprint;
+      let offline = false;
+      mocks.request.mockImplementation(async (_id, method) => {
+        if (method === "sprints.list") {
+          if (offline) throw new Error("Host offline");
+          return { sprints: [sprint], planning: [], sources: [] };
+        }
+        throw new Error(`Unexpected ${method}`);
+      });
+      await act(async () => root!.render(createElement(Harness, {})));
+      await act(async () => vi.advanceTimersByTimeAsync(0));
+      expect(board.sprints).toEqual([sprint]);
+      offline = true;
+      // Healthy polls run every interval; the first failure doubles the wait.
+      await act(async () => vi.advanceTimersByTimeAsync(SPRINT_POLL_MS));
+      const failed = calls("sprints.list");
+      expect(board.error).toBe("Host offline");
+      expect(board.sprints).toEqual([sprint]);
+      await act(async () => vi.advanceTimersByTimeAsync(SPRINT_POLL_MS * 2));
+      expect(calls("sprints.list")).toBe(failed + 1);
+      // Two failures: the next attempt waits four intervals, not one.
+      await act(async () => vi.advanceTimersByTimeAsync(SPRINT_POLL_MS * 3));
+      expect(calls("sprints.list")).toBe(failed + 1);
+      offline = false;
+      await act(async () => board.refresh());
+      const restored = calls("sprints.list");
+      await act(async () => vi.advanceTimersByTimeAsync(SPRINT_POLL_MS));
+      expect(calls("sprints.list")).toBeGreaterThan(restored);
+      expect(board.error).toBeNull();
+    });
+    it("backs off only the failing source machine and retries it on a requested refresh", async () => {
+      vi.useFakeTimers();
+      const projects: SprintProjectRef[] = [
+        { environmentId: "windows", projectId: "a", cwd: "C:/a", name: "A" },
+        { environmentId: "mac", projectId: "b", cwd: "/b", name: "B" },
+      ];
+      mocks.capabilities.mockResolvedValue([HOST_SPRINTS, HOST_TASK_HISTORY]);
+      mocks.request.mockImplementation(async (id, method) => {
+        if (method === "sprints.list")
+          return {
+            sprints: [],
+            planning: [],
+            sources: [
+              { environmentId: "windows", cursor: 5, syncedAt: Date.now(), visibleProjectIds: ["a"] },
+              { environmentId: "mac", cursor: 3, syncedAt: Date.now(), visibleProjectIds: ["b"] },
+            ],
+          };
+        if (method === "tasks.events") {
+          if (id === "remote") throw new Error("Offline");
+          return { cursor: 5, hasMore: false, events: [] };
+        }
+        throw new Error(`Unexpected ${method}`);
+      });
+      await act(async () => root!.render(createElement(Harness, { projects })));
+      await act(async () => vi.advanceTimersByTimeAsync(0));
+      expect(calls("tasks.events", "remote")).toBe(1);
+      const healthy = calls("tasks.events", "local");
+      // The offline machine waits out its backoff while the healthy one keeps polling.
+      await act(async () => vi.advanceTimersByTimeAsync(SPRINT_POLL_MS));
+      expect(calls("tasks.events", "local")).toBe(healthy + 1);
+      expect(calls("tasks.events", "remote")).toBe(1);
+      expect(board.syncFailures.mac).toContain("Offline");
+      await act(async () => board.refresh());
+      expect(calls("tasks.events", "remote")).toBe(2);
+    });
+    it("does not poll while hidden and reads again when shown", async () => {
+      vi.useFakeTimers();
+      await act(async () => root!.render(createElement(Harness, {})));
+      await act(async () => vi.advanceTimersByTimeAsync(0));
+      const before = calls("sprints.list");
+      await act(async () => focusManager.setFocused(false));
+      await act(async () => vi.advanceTimersByTimeAsync(SPRINT_POLL_MS * 4));
+      expect(calls("sprints.list")).toBe(before);
+      await act(async () => focusManager.setFocused(true));
+      expect(calls("sprints.list")).toBeGreaterThan(before);
+    });
   });
   it("does not block an online sprint because an unrelated project's machine is offline", async () => {
     const projects: SprintProjectRef[] = [

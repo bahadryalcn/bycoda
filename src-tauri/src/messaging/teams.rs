@@ -3,7 +3,7 @@
 mod html;
 
 use super::microsoft;
-use super::types::{now_ms, Account, Attachment, Message, Provider, Secret, Thread};
+use super::types::{now_ms, Account, Attachment, Message, MessagePage, Provider, Secret, Thread};
 use serde_json::{json, Map, Value};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -87,21 +87,37 @@ pub(crate) fn thread_messages(
     _account: &Account,
     secret: &mut Secret,
     thread_id: &str,
-) -> Result<Vec<Message>, String> {
+    before: Option<&str>,
+) -> Result<MessagePage, String> {
     let chat = chat_segment(thread_id)?;
+    let first = format!("{GRAPH}/chats/{chat}/messages?$top=50");
+    // An older page is Graph's own next link for this chat; anything else never gets the token.
+    let url = match before {
+        Some(cursor) if chat_next_link(cursor, &chat) => cursor.to_string(),
+        Some(_) => return Err("This conversation page is invalid. Reload the conversation.".into()),
+        None => first,
+    };
     let me = me_id(secret)?;
-    let page = graph(
-        secret,
-        Method::Get,
-        &format!("{GRAPH}/chats/{chat}/messages?$top=50"),
-        None,
-    )?;
+    let page = graph(secret, Method::Get, &url, None)?;
     let mut messages: Vec<Message> = items(&page)
         .iter()
         .filter_map(|item| graph_message(thread_id, &me, item))
         .collect();
     messages.sort_by(|a, b| a.at.cmp(&b.at).then_with(|| a.id.cmp(&b.id)));
-    Ok(messages)
+    Ok(MessagePage {
+        messages,
+        earlier: next_link(&page).filter(|link| chat_next_link(link, &chat)),
+    })
+}
+
+/// Whether `link` is a Graph URL for the messages of `chat` (the percent-encoded segment).
+pub(crate) fn chat_next_link(link: &str, chat: &str) -> bool {
+    let prefix = format!("{GRAPH}/chats/{chat}/messages");
+    let safe = link.starts_with(GRAPH_ORIGIN) && !link.chars().any(char::is_control);
+    let bytes = link.as_bytes();
+    safe && bytes.len() > prefix.len()
+        && bytes[..prefix.len()].eq_ignore_ascii_case(prefix.as_bytes())
+        && matches!(bytes[prefix.len()], b'?' | b'/')
 }
 
 pub(crate) fn reply(

@@ -132,18 +132,18 @@ export function createDiagnosticsScheduler(deps: DiagnosticsDeps) {
     },
     /**
      * The notice's Send and Always send actions. Always send switches to automatic mode only
-     * after this upload, so the consent change does not start a second report beside it.
+     * after the upload succeeded (or there was nothing to send), so a failed upload keeps the
+     * marker and the choice open for a retry instead of enabling automatic reporting unannounced.
      */
     async sendPending(always = false): Promise<DiagnosticSendStatus> {
       const crash = pending;
-      try {
-        if (!crash) return "empty";
-        const status = await reportCrash(crash);
-        if (pending === crash && (status === "sent" || status === "empty")) setPending(null);
-        return status;
-      } finally {
+      if (!crash) return "empty";
+      const status = await reportCrash(crash);
+      if (status === "sent" || status === "empty") {
         if (always) setDiagnosticsMode("auto");
+        if (pending === crash) setPending(null);
       }
+      return status;
     },
     /** The notice's Don't send action. */
     async dismissPending(): Promise<void> {

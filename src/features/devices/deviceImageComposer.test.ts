@@ -17,6 +17,31 @@ const transport = vi.hoisted(() => ({
   dropAck: false,
   listenStarted: 0,
 }));
+// The native attachment store: one file per write, readable by path from any window.
+const store = vi.hoisted(() => ({
+  files: new Map<string, Uint8Array>(),
+  counter: 0,
+  invoke: vi.fn(async (command: string, args: { name?: string; data?: string; path?: string }) => {
+    if (command === "write_attachment") {
+      const path = `/tmp/bycoda-attachments/${++store.counter}-${store.counter}-${args.name}`;
+      store.files.set(path, Uint8Array.from(atob(args.data!), (char) => char.charCodeAt(0)));
+      return path;
+    }
+    if (command === "delete_path") {
+      store.files.delete(args.path!);
+      return undefined;
+    }
+    throw new Error(`unexpected command ${command}`);
+  }),
+  read: vi.fn(async (path: string) => {
+    const bytes = store.files.get(path);
+    if (!bytes) throw new Error("missing file");
+    return bytes;
+  }),
+}));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: store.invoke }));
+vi.mock("../../platform/tauri/fs", () => ({ readBinaryFile: store.read }));
+const commands = (name: string) => store.invoke.mock.calls.filter((call) => call[0] === name);
 vi.mock("@tauri-apps/api/webviewWindow", () => ({
   getCurrentWebviewWindow: () => {
     const label = transport.label;
@@ -59,6 +84,7 @@ export const image: DeviceImageDraft = {
   comment: "Adjust the marked area",
 };
 const event = "bycoda:device-image-draft";
+Object.assign(URL, { createObjectURL: vi.fn(() => "blob:device-preview"), revokeObjectURL: vi.fn() });
 const stops: (() => void)[] = [];
 afterEach(async () => {
   stops.splice(0).forEach((stop) => stop());
@@ -69,6 +95,10 @@ afterEach(async () => {
   transport.delayedListen = undefined;
   transport.dropAck = false;
   transport.listenStarted = 0;
+  store.files.clear();
+  store.counter = 0;
+  store.invoke.mockClear();
+  store.read.mockClear();
   vi.useRealTimers();
   delete (window as any).__TAURI_INTERNALS__;
 });
@@ -111,6 +141,7 @@ it("refuses invalid images, metadata and oversized payloads before touching the 
     },
     { ...image, computer: { ...image.computer, target: { kind: "machine", machineId: "" } } },
     { ...image, comment: "a".repeat(4001) },
+    { ...image, frame: { ...image.frame, base64: `${image.frame.base64.slice(0, -4)}!!!!` } },
   ]) {
     expect(() => attachDeviceImage("/project", "session", value as DeviceImageDraft)).toThrow(
       "Invalid device",
@@ -147,8 +178,28 @@ it("waits for detached-window acceptance and deduplicates replayed request IDs",
     replyTo: "tools-window",
     mode: "attach",
   });
+  // The event carries a stored-file reference, never the encoded screenshot.
+  expect(JSON.stringify(request)).not.toContain(image.frame.base64);
+  expect(request.image.frame.base64).toBeUndefined();
+  expect(request.image.file).toMatchObject({
+    size: 68,
+    path: expect.stringContaining("bycoda-attachments"),
+  });
+  // The accepted attachment points at the stored file and keeps its bytes out of the draft.
+  const [attached] = receive.mock.calls[0];
+  expect(attached).toMatchObject({
+    kind: "image",
+    name: "device-screen.png",
+    mimeType: "image/png",
+    size: 68,
+    path: request.image.file.path,
+  });
+  expect(attached.data).toBeUndefined();
+  expect(commands("write_attachment")).toHaveLength(1);
+  expect(commands("delete_path")).toHaveLength(0);
   await transport.handlers.get(`main:${event}`)!({ payload: request });
   expect(receive).toHaveBeenCalledOnce();
+  expect(store.read).toHaveBeenCalledOnce();
   expect(transport.handlers.has(`tools-window:${event}-ack`)).toBe(false);
 });
 
@@ -170,18 +221,56 @@ it("ignores another conversation and rejects malformed events at the receiving b
     payload: { ...request, operation: { ...request.operation, sessionId: "other" } },
   });
   expect(transport.emit).not.toHaveBeenCalled();
-  await handle({
-    payload: { ...request, image: { ...image, frame: { ...image.frame, base64: "YWJj" } } },
-  });
+  const file = request.image.file;
+  store.read.mockClear();
+  for (const image of [
+    // Inline bytes and a changed digest, size, path or comment are never accepted.
+    { ...request.image, file: undefined },
+    { ...request.image, file: { ...file, digest: "b".repeat(64) } },
+    { ...request.image, file: { ...file, size: file.size + 1 } },
+    { ...request.image, comment: "edited" },
+    { ...request.image, file: { ...file, path: "/etc/passwd" } },
+    { ...request.image, file: { ...file, path: "/tmp/bycoda-attachments/../1-1-device-screen.png" } },
+    { ...request.image, file: { ...file, path: "/tmp/other/1-1-device-screen.png" } },
+  ]) {
+    transport.emit.mockClear();
+    await handle({ payload: { ...request, image } });
+    expect(transport.emit).toHaveBeenCalledWith(
+      "tools-window",
+      `${event}-ack`,
+      expect.objectContaining({ operation: request.operation, result: "conflict" }),
+    );
+  }
   expect(receive).not.toHaveBeenCalled();
-  expect(transport.emit).toHaveBeenCalledWith(
-    "tools-window",
-    `${event}-ack`,
-    expect.objectContaining({
-      operation: request.operation,
-      result: "conflict",
-    }),
-  );
+  expect(store.read).not.toHaveBeenCalled();
+});
+
+it("refuses stored bytes that are not the described image and frees the file", async () => {
+  const receive = vi.fn(() => true);
+  const { detached } = await windows(receive);
+  store.read.mockResolvedValueOnce(new Uint8Array(68));
+  await expect(
+    detached.attachDeviceImageAcrossWindows("/project", "session", image, "main"),
+  ).rejects.toBeInstanceOf(detached.DeviceImageDraftChangedError);
+  expect(receive).not.toHaveBeenCalled();
+  expect(commands("delete_path")).toHaveLength(1);
+  expect(store.files.size).toBe(0);
+});
+
+it("reports an unreadable stored screenshot as not attached and frees the file", async () => {
+  const receive = vi.fn(() => true);
+  const { detached } = await windows(receive);
+  store.read.mockRejectedValueOnce(new Error("gone"));
+  await expect(
+    detached.attachDeviceImageAcrossWindows("/project", "session", image, "main"),
+  ).rejects.toBeInstanceOf(detached.DeviceImageDraftRejectedError);
+  const [stored] = commands("write_attachment");
+  expect(receive).not.toHaveBeenCalled();
+  expect(commands("delete_path")).toEqual([
+    ["delete_path", { path: expect.stringContaining("device-screen.png") }],
+  ]);
+  expect(store.files.size).toBe(0);
+  expect(stored).toBeDefined();
 });
 
 it("cleans late listeners without sending after an unacknowledged timeout", async () => {
@@ -201,6 +290,9 @@ it("cleans late listeners without sending after an unacknowledged timeout", asyn
   await vi.advanceTimersByTimeAsync(0);
   expect(transport.emit).not.toHaveBeenCalled();
   expect(transport.handlers.has(`tools-window:${event}-ack`)).toBe(false);
+  // Nothing reached the destination, so the stored file is freed.
+  expect(commands("delete_path")).toHaveLength(1);
+  expect(store.files.size).toBe(0);
 });
 
 async function windows(receive: (file: Attachment, context: string) => boolean) {
@@ -249,6 +341,9 @@ it("recovers a lost acknowledgement using the immutable receipt without attachin
   expect(retry.mode).toBe("receipt");
   expect(retry.image).toBeUndefined();
   expect(receive).toHaveBeenCalledOnce();
+  // The lost acknowledgement never stored the bytes again, and the accepted file stays.
+  expect(commands("write_attachment")).toHaveLength(1);
+  expect(commands("delete_path")).toHaveLength(0);
 
   // Receipt survives composer unmount/remount and redocking into its original window.
   stop();
@@ -350,6 +445,11 @@ it("reports definitive denial separately and permits a fresh explicit attempt af
   const requests = transport.emit.mock.calls.filter((call) => call[1] === event);
   expect(requests[0][2].operation.id).not.toBe(requests[1][2].operation.id);
   expect(receive).toHaveBeenCalledTimes(2);
+  // The refused attempt's file was freed; the accepted one is still referenced by the draft.
+  expect(commands("delete_path").map((call) => call[1].path)).toEqual([
+    requests[0][2].image.file.path,
+  ]);
+  expect(store.files.has(requests[1][2].image.file.path)).toBe(true);
 });
 
 it("ignores acknowledgements bound to another source, destination, payload or attempt", async () => {

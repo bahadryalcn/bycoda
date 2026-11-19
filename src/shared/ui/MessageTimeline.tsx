@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import type { FocusEvent, ReactNode } from "react";
+import { useTimelineWindow } from "../hooks/useTimelineWindow";
 import { useLocale, useT } from "../i18n";
 import { dateTimeFormat } from "../lib/intl";
 import { useToday } from "./arc/lib/use-today";
@@ -25,6 +26,8 @@ export type MessageTimelineItem = {
   /** Hover actions on the meta line. */
   actions?: ReactNode;
 };
+
+const noKeys: readonly string[] = [];
 
 const dayKey = (at: number) => {
   const date = new Date(at);
@@ -57,7 +60,9 @@ export function messageDayLabel(
  * The one message thread: oldest first, a centered day separator between days, the owner's
  * messages end-aligned and others start-aligned in the same quiet bubble the transcript uses
  * for the user's prompt, and author (others only), time and optional actions under the bubble.
- * The caller owns data, scrolling and the composer.
+ * The caller owns data, scrolling and the composer. With `windowed`, a long list (past the shared
+ * collection threshold) mounts only the rows near the nearest scrolling ancestor, plus the focused
+ * row; rows keep a stable `item` identity so unchanged messages skip rendering.
  * @group data
  * @use Any message conversation: email or chat threads, the social inbox, the assistant room.
  * @avoid Agent session transcript: AgentTranscript. Event history that is not a conversation: Timeline.
@@ -66,23 +71,55 @@ export function MessageTimeline({
   items,
   label,
   className,
+  windowed = false,
+  onSizeChange,
 }: {
   items: readonly MessageTimelineItem[];
   /** Accessible name of the list. */
   label: string;
   className?: string;
+  /** Mount only the rows near the viewport of a long list. The scroller must be an ancestor. */
+  windowed?: boolean;
+  /** Windowed only: called after measured rows change the content height. */
+  onSizeChange?: () => void;
 }) {
   const locale = useLocale();
   const translate = useT();
   // Today turns over at local midnight, so the separators follow it.
   const now = useToday()?.getTime() ?? 0;
+  const timeline = useTimelineWindow({
+    keys: windowed ? items.map((item) => item.id) : noKeys,
+    onSizeChange,
+  });
   return (
-    <ol className={[styles.timeline, className].filter(Boolean).join(" ")} aria-label={label}>
-      {items.flatMap((item, index) => {
+    <ol
+      ref={timeline.listRef}
+      className={[styles.timeline, className].filter(Boolean).join(" ")}
+      aria-label={label}
+      style={
+        timeline.windowed
+          ? {
+              paddingBlockStart: timeline.padStart,
+              paddingBlockEnd: timeline.padEnd,
+              // The window owns scroll corrections for rows that appear above the reader.
+              overflowAnchor: "none",
+            }
+          : undefined
+      }
+    >
+      {(timeline.windowed ? timeline.indexes : items.map((_, index) => index)).flatMap((index) => {
+        const item = items[index];
         const separator = index === 0 || dayKey(items[index - 1].time) !== dayKey(item.time);
         return [
           separator ? (
-            <Text as="li" size="caption" tone="muted" leading="inherit" key={`day-${item.id}`}>
+            <Text
+              as="li"
+              size="caption"
+              tone="muted"
+              leading="inherit"
+              key={`day-${item.id}`}
+              data-timeline-day=""
+            >
               <Divider
                 label={messageDayLabel(item.time, now, translate, locale)}
                 className={styles.day}
@@ -95,6 +132,19 @@ export function MessageTimeline({
             data-message-id={item.id}
             data-own={item.own ? "true" : undefined}
             data-plain={item.plain ? "true" : undefined}
+            {...(timeline.windowed
+              ? {
+                  ref: timeline.measureRow,
+                  "data-index": index,
+                  "aria-posinset": index + 1,
+                  "aria-setsize": items.length,
+                  onFocusCapture: () => timeline.focus(item.id),
+                  onBlurCapture: (event: FocusEvent<HTMLLIElement>) => {
+                    if (!event.currentTarget.contains(event.relatedTarget as Node | null))
+                      timeline.focus(null);
+                  },
+                }
+              : {})}
           >
             <Text as="div" size="body" tone="secondary" className={styles.bubble} dir="auto">
               {item.body}

@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { invoke } from "@tauri-apps/api/core";
 import {
   killPty,
@@ -155,7 +156,7 @@ export function createTerminalPtyRuntime(options: TerminalPtyRuntimeOptions) {
     },
     (error) => {
       if (closed) return;
-      options.onInputFailure(error instanceof Error ? error.message : String(error));
+      options.onInputFailure(errorText(error));
     },
   );
 
@@ -333,7 +334,7 @@ export function createTerminalPtyRuntime(options: TerminalPtyRuntimeOptions) {
         .catch((error) => {
           options.lifecycle("failed");
           spawned = false;
-          const message = error instanceof Error ? error.message : String(error);
+          const message = errorText(error);
           failRun(message);
           if (!closed) {
             exited = true;

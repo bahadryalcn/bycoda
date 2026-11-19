@@ -10,7 +10,7 @@ import {
   saveTabGroupCustomColor,
   saveTabGroupMascot,
 } from "../../features/workspace/model/tabGroups";
-import { needsProviderLogin } from "../../features/providers/model/accountUsage";
+import { providerAccountSignedOut } from "../../features/providers/model/accountUsage";
 import { UsageProviderChip } from "./UsageProviderChip";
 import { saveShowRemainingUsage } from "../../features/settings/model/displayPrefs";
 import { PROVIDER_ACCOUNT_PROVIDERS } from "../../features/providers/model/providerAccounts";
@@ -389,6 +389,7 @@ describe("UsageProviderChip", () => {
       updatedAt: now,
       error: "Claude sign-in expired",
       status: "error",
+      reason: "signedOut",
     };
     const onReconnect = vi.fn(async () => undefined);
     act(() => root.render(createElement(UsageProviderChip, { limits, now, onReconnect })));
@@ -412,7 +413,7 @@ describe("UsageProviderChip", () => {
       error: "Claude usage is unavailable for this account",
       status: "error",
     };
-    expect(needsProviderLogin(limits)).toBe(false);
+    expect(providerAccountSignedOut(limits)).toBe(false);
   });
 
   it("opens a column of detailed quota meters", async () => {
@@ -519,6 +520,36 @@ describe("UsageProviderChip", () => {
 
     expect(onSelectAccount).toHaveBeenCalledWith("account-work");
     expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it("keeps the usage popover width when switching to the accounts view", async () => {
+    act(() =>
+      root.render(
+        createElement(UsageProviderChip, {
+          limits: codexLimits(),
+          now,
+          accountId: "default",
+          accounts: [
+            {
+              id: "default",
+              provider: "codex",
+              label: "Default account",
+              isDefault: true,
+            },
+            { id: "account-work", provider: "codex", label: "Work" },
+          ],
+          onSelectAccount: vi.fn(),
+          onAddAccount: vi.fn(),
+        }),
+      ),
+    );
+
+    await act(async () => button("Codex usage details").click());
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    expect(dialog.style.width).toBe("340px");
+    await act(async () => button("Switch Codex account").click());
+    expect(document.body.textContent).toContain("Codex accounts");
+    expect(document.querySelector<HTMLElement>('[role="dialog"]')!.style.width).toBe("340px");
   });
 
   it("reveals emails independently of account switching and hides them on reopening", async () => {

@@ -1,5 +1,7 @@
 import {
   EMPTY_MODEL_ROUTING,
+  MODEL_ROUTING_CONFLICT_CODE,
+  MODEL_ROUTING_CONFLICT_MESSAGE,
   ModelRoutingStateSchema,
   type ModelRoutingDraft,
   type ModelRoutingState,
@@ -39,7 +41,10 @@ export async function saveModelRouting(
     await prepare(store);
     const old = await read(store);
     if (old.version !== expectedVersion)
-      throw new Error("Model routing changed; reload before saving.");
+      throw Object.assign(
+        new Error(`${MODEL_ROUTING_CONFLICT_CODE}: ${MODEL_ROUTING_CONFLICT_MESSAGE}`),
+        { code: MODEL_ROUTING_CONFLICT_CODE },
+      );
     const state = { ...draft, version: old.version + 1, updatedAt: now };
     await authorize();
     await store.db

@@ -42,11 +42,9 @@ export function AccountColorPopover({
       anchor={anchor}
       side="bottom"
       align="start"
-      autoFocus
       onDismiss={onDismiss}
-      role="dialog"
+      kind="dialog"
       aria-label={t("Color for {p0}", { p0: account.label })}
-      tabIndex={-1}
       className="p-2"
     >
       <ColorSwatchRow

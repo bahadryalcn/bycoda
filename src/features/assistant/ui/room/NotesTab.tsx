@@ -79,7 +79,9 @@ export function NotesTab({ snapshot }: { snapshot: AssistantSnapshot }) {
           setUndo({
             id: outcome.trashIds[0]!,
             ids: outcome.trashIds,
-            label: t("{p0} notes", { p0: outcome.trashIds.length }),
+            label: t(outcome.trashIds.length === 1 ? "{p0} note" : "{p0} notes", {
+              p0: outcome.trashIds.length,
+            }),
             environmentId,
           });
         } else if (outcome.deleted) setUndo(null);
@@ -107,7 +109,7 @@ export function NotesTab({ snapshot }: { snapshot: AssistantSnapshot }) {
           expectedUpdatedAt: note.updatedAt,
         });
         if (result.ok !== true)
-          throw new Error(t("Note deletion is uncertain. Review the Room before retrying."));
+          throw new Error(t("Note deletion could not be confirmed. Review the Room before retrying."));
         if (result.trashId?.startsWith("notetrash:")) {
           setDeletedNoteWithoutReceipt(null);
           setUndo({ id: result.trashId, label: note.title, environmentId });

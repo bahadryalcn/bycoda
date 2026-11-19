@@ -1,13 +1,21 @@
 //! Transparent, per-user Host supervision. Never evaluates a shell command.
+mod job;
+mod log;
+
+use log::{describe, record, Level, RotatingLog};
 use serde::Deserialize;
-use std::fs::{self, File, OpenOptions};
+use std::fs::File;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::mpsc;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
-const LOG_LIMIT: u64 = 10 * 1024 * 1024;
 const RESTART_DELAYS: [u64; 5] = [2, 5, 15, 30, 60];
+/// How long a finished Host's console pipes may stay open (a descendant can keep one)
+/// before the launcher stops waiting for the last output and restarts or exits.
+const PIPE_DRAIN: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -58,32 +66,6 @@ impl Configuration {
     }
 }
 
-pub fn open_log(directory: &Path) -> io::Result<File> {
-    let log = directory.join("host.log");
-    match fs::metadata(&log) {
-        Ok(metadata) => {
-            let mut prefix = Vec::with_capacity(2);
-            File::open(&log)?.take(2).read_to_end(&mut prefix)?;
-            // Windows PowerShell 5.1 wrote UTF-16 logs; never append UTF-8 to them.
-            if metadata.len() > LOG_LIMIT
-                || matches!(prefix.as_slice(), [0xff, 0xfe] | [0xfe, 0xff])
-            {
-                let previous = directory.join("host.log.old");
-                match fs::remove_file(&previous) {
-                    Ok(()) => {}
-                    Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-                    Err(error) => return Err(error),
-                }
-                // ast-grep-ignore: rust-rename-without-fsync -- Rotates a diagnostic log, not durable application state.
-                fs::rename(&log, previous)?;
-            }
-        }
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-        Err(error) => return Err(error),
-    }
-    OpenOptions::new().create(true).append(true).open(log)
-}
-
 fn supervise(
     limit: u32,
     mut launch: impl FnMut() -> io::Result<(i32, Duration)>,
@@ -107,25 +89,180 @@ fn supervise(
     unreachable!()
 }
 
-pub fn run(path: &Path) -> io::Result<i32> {
-    let configuration: Configuration = serde_json::from_reader(File::open(path)?)?;
-    configuration.validate()?;
+type SharedLog = Arc<Mutex<RotatingLog>>;
+
+fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    // A panicked pump thread must not stop supervision or console draining.
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// Keeps the failing step and the `io::ErrorKind` in a message that reaches `host.log`.
+fn step(name: &str, error: io::Error) -> io::Error {
+    io::Error::new(error.kind(), format!("{name}: {}", describe(&error)))
+}
+
+/// Copies one console stream into the shared rotating log. It never stops before
+/// end of stream, even when a write fails: a full pipe would block the Host.
+fn pump(mut stream: impl Read + Send + 'static, log: SharedLog, finished: mpsc::Sender<()>) {
+    std::thread::spawn(move || {
+        // shortcut: chunks, not lines, so a stdout and stderr line can interleave mid-line;
+        // upgrade to line buffering if a log reader ever needs whole lines per stream.
+        let mut buffer = [0u8; 8192];
+        loop {
+            match stream.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(length) => {
+                    let mut log = locked(&log);
+                    let _ = log.write(&buffer[..length]);
+                    if let Some(error) = log.take_rotation_error() {
+                        let message = format!("rotate Host log: {}", describe(&error));
+                        let _ = log.event(Level::Warn, &message);
+                    }
+                }
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+                Err(_) => break,
+            }
+        }
+        let _ = finished.send(());
+    });
+}
+
+struct Launcher<'a> {
+    configuration: &'a Configuration,
+    log: Mutex<Option<SharedLog>>,
+}
+
+impl Launcher<'_> {
+    /// One log for every Host launch, opened lazily so an unwritable `host.log` is a
+    /// retried launch failure rather than the end of supervision.
+    fn log(&self) -> io::Result<SharedLog> {
+        let mut slot = locked(&self.log);
+        if let Some(log) = slot.as_ref() {
+            return Ok(log.clone());
+        }
+        let (mut log, rotation_error) = RotatingLog::open(&self.configuration.directory)?;
+        if let Some(error) = rotation_error {
+            let message = format!("rotate Host log: {}", describe(&error));
+            let _ = log.event(Level::Warn, &message);
+        }
+        let log = Arc::new(Mutex::new(log));
+        *slot = Some(log.clone());
+        Ok(log)
+    }
+
+    fn note(&self, level: Level, message: &str) {
+        let log = locked(&self.log).clone();
+        match log {
+            Some(log) => {
+                let _ = locked(&log).event(level, message);
+            }
+            None => record(&self.configuration.directory, level, message),
+        }
+    }
+
+    fn launch(&self) -> io::Result<(i32, Duration)> {
+        let log = match self.log() {
+            Ok(log) => log,
+            Err(error) => {
+                // Housekeeping never ends supervision: report it and let the normal
+                // backoff retry the append open.
+                self.note(Level::Error, &format!("open Host log: {}", describe(&error)));
+                return Ok((1, Duration::ZERO));
+            }
+        };
+        let mut command = self.configuration.command();
+        command.stdout(Stdio::piped()).stderr(Stdio::piped());
+        let started = Instant::now();
+        let mut child = command.spawn().map_err(|error| step("start Host", error))?;
+        let (done, finished) = mpsc::channel();
+        let mut pumps = 0;
+        if let Some(stream) = child.stdout.take() {
+            pump(stream, log.clone(), done.clone());
+            pumps += 1;
+        }
+        if let Some(stream) = child.stderr.take() {
+            pump(stream, log.clone(), done.clone());
+            pumps += 1;
+        }
+        drop(done);
+        let status = child.wait().map_err(|error| step("wait for Host", error))?;
+        let uptime = started.elapsed();
+        let deadline = Instant::now() + PIPE_DRAIN;
+        for _ in 0..pumps {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if finished.recv_timeout(remaining).is_err() {
+                break;
+            }
+        }
+        let code = status.code().unwrap_or(1);
+        self.note(
+            if code == 0 { Level::Info } else { Level::Warn },
+            &format!("Host exited code={code} uptime_s={}", uptime.as_secs()),
+        );
+        Ok((code, uptime))
+    }
+}
+
+fn run_configured(path: &Path, directory: &mut Option<PathBuf>) -> io::Result<i32> {
+    let file = File::open(path).map_err(|error| step("read launcher configuration", error))?;
+    let configuration: Configuration = serde_json::from_reader(file)
+        .map_err(|error| step("parse launcher configuration", error.into()))?;
+    configuration
+        .validate()
+        .map_err(|error| step("validate launcher configuration", error))?;
+    *directory = Some(configuration.directory.clone());
+    let launcher = Launcher {
+        configuration: &configuration,
+        log: Mutex::new(None),
+    };
+    // Joining before the first spawn puts every Host process in a kill-on-close job, so a
+    // killed launcher cannot leave an unsupervised Host holding the port and database.
+    let _job = match job::bind_children_to_launcher() {
+        Ok(job) => Some(job),
+        Err(error) => {
+            launcher.note(
+                Level::Warn,
+                &format!(
+                    "bind Host lifetime to launcher: {}; a killed launcher can leave the Host running",
+                    describe(&error)
+                ),
+            );
+            None
+        }
+    };
     let limit = std::env::var("BYCODA_LAUNCHER_RESTARTS")
         .ok()
         .and_then(|value| value.parse::<u32>().ok())
         .unwrap_or(u32::MAX);
     supervise(
         limit,
-        || {
-            let log = open_log(&configuration.directory)?;
-            let mut command = configuration.command();
-            command.stdout(log.try_clone()?).stderr(log);
-            let started = Instant::now();
-            let status = command.status()?;
-            Ok((status.code().unwrap_or(1), started.elapsed()))
+        || launcher.launch(),
+        |delay| {
+            launcher.note(
+                Level::Warn,
+                &format!("Restarting Host in {} s", delay.as_secs()),
+            );
+            std::thread::sleep(delay);
         },
-        std::thread::sleep,
     )
+}
+
+pub fn run(path: &Path) -> io::Result<i32> {
+    // Until the configuration validates, its own folder is where the Host data lives.
+    let mut directory = path
+        .parent()
+        .filter(|parent| parent.is_absolute())
+        .map(Path::to_path_buf);
+    let result = run_configured(path, &mut directory);
+    if let (Err(error), Some(directory)) = (&result, &directory) {
+        // A windowless launcher has no stderr: host.log is where support will look.
+        record(
+            directory,
+            Level::Error,
+            &format!("Host launcher failed: {error}"),
+        );
+    }
+    result
 }
 
 #[cfg(test)]
@@ -176,5 +313,15 @@ mod tests {
             |_| panic!("must not retry uncertain launch"),
         );
         assert_eq!(result.unwrap_err().kind(), io::ErrorKind::PermissionDenied);
+    }
+
+    #[test]
+    fn step_errors_keep_their_kind_and_name_the_failing_step() {
+        let error = step(
+            "start Host",
+            io::Error::new(io::ErrorKind::NotFound, "no node"),
+        );
+        assert_eq!(error.kind(), io::ErrorKind::NotFound);
+        assert_eq!(error.to_string(), "start Host: no node (kind NotFound)");
     }
 }

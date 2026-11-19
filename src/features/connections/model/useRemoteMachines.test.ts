@@ -71,3 +71,43 @@ it("retries an initial machine inventory failure automatically without opening c
     vi.unstubAllGlobals();
   }
 });
+
+it("shares one machine read between instances and does not re-render for an unchanged list", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const machine: RemoteMachine = {
+    id: "host-2",
+    name: "Shared",
+    endpoint: "ssh://owner@shared",
+    environmentId: "env-2",
+  };
+  vi.mocked(invoke)
+    .mockReset()
+    .mockImplementation(async () => [{ ...machine }]);
+  const root = createRoot(document.createElement("div"));
+  let renders = 0;
+  const seen: Array<ReturnType<typeof useRemoteMachines>> = [];
+  function Probe({ index }: { index: number }) {
+    seen[index] = useRemoteMachines();
+    renders += 1;
+    return null;
+  }
+  try {
+    await act(async () =>
+      root.render(createElement("div", null, createElement(Probe, { index: 0 }), createElement(Probe, { index: 1 }))),
+    );
+    expect(vi.mocked(invoke)).toHaveBeenCalledTimes(1);
+    expect(seen[0].machines).toEqual([machine]);
+    expect(seen[1].machines).toBe(seen[0].machines);
+    const settledRenders = renders;
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    expect(vi.mocked(invoke)).toHaveBeenCalledTimes(2);
+    expect(renders).toBe(settledRenders);
+    expect(seen[0].loading).toBe(false);
+    expect(seen[1].machines).toBe(seen[0].machines);
+  } finally {
+    act(() => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});

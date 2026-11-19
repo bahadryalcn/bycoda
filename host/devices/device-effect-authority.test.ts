@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
+import { randomUUID } from "node:crypto";
 import { AGENT_DEVICE_VERSION, DEVICE_HUB_VERSION, DeviceHost } from "./device-host";
 import * as processes from "./device-process";
 import * as expo from "./expo-go";
@@ -111,7 +112,7 @@ it("blocks queued setup before entering SDK or filesystem work after revocation"
   await host.dispose();
 });
 
-it("leaves admitted install work staged without publishing a completion marker after revocation", async () => {
+it("removes admitted install staging without publishing a completion marker after revocation", async () => {
   const directory = await mkdtemp(join(tmpdir(), "bycoda-device-lifecycle-"));
   const host = setupFixture(directory);
   let authorized = true;
@@ -124,10 +125,7 @@ it("leaves admitted install work staged without publishing a completion marker a
     );
     expect(command).toHaveBeenCalledOnce();
     const parent = join(directory, "tools", "expo-device-hub");
-    const names = await readdir(parent);
-    expect(names).toHaveLength(1);
-    expect(names[0]).toMatch(new RegExp(`^${DEVICE_HUB_VERSION.replaceAll(".", "\\.")}\\.stage-`));
-    expect(existsSync(join(parent, names[0], ".install-complete"))).toBe(false);
+    expect(await readdir(parent)).toEqual([]);
     expect(existsSync(join(parent, DEVICE_HUB_VERSION))).toBe(false);
     expect(existsSync(join(directory, "tools", "agent-device"))).toBe(false);
   } finally {
@@ -162,10 +160,7 @@ it("restores the exact preserved cache if authority is revoked between promotion
     expect(existsSync(join(live, ".install-complete"))).toBe(false);
     const names = await readdir(parent);
     expect(names.some((n) => n.includes(".previous-"))).toBe(false);
-    const stage = names.find((n) => n.includes(".stage-"))!;
-    expect(await readFile(join(parent, stage, ".install-complete"), "utf8")).toBe(
-      DEVICE_HUB_VERSION,
-    );
+    expect(names.some((n) => n.includes(".stage-"))).toBe(false);
   } finally {
     await host.dispose();
     await removeFixture(directory);
@@ -230,7 +225,7 @@ it("retains a completed pinned installation and stops before the next requested 
   }
 });
 
-it("promotes pinned tools with the real cache owner and preserves explicit setup flags and prior data", async () => {
+it("promotes pinned tools with the real cache owner, preserves explicit setup flags and drops the replaced cache", async () => {
   const directory = await mkdtemp(join(tmpdir(), "bycoda-device-lifecycle-"));
   const sdk = join(directory, "fixture-sdk");
   await mkdir(join(sdk, "platform-tools"), { recursive: true });
@@ -252,10 +247,8 @@ it("promotes pinned tools with the real cache owner and preserves explicit setup
     });
     expect(command).toHaveBeenCalledOnce();
     expect(existsSync(join(directory, "tools", "agent-device"))).toBe(false);
-    const previous = (await readdir(hubParent)).find((name) => name.includes(".previous-"))!;
-    expect(await readFile(join(hubParent, previous, "preserved.txt"), "utf8")).toBe(
-      "original cache",
-    );
+    expect(await readdir(hubParent)).toEqual([DEVICE_HUB_VERSION]);
+    expect(existsSync(join(hub, "preserved.txt"))).toBe(false);
     expect(await host.setup(true, { authorized: () => true })).toMatchObject({
       installed: true,
       agentInstalled: true,
@@ -268,6 +261,26 @@ it("promotes pinned tools with the real cache owner and preserves explicit setup
         "utf8",
       ),
     ).toBe(AGENT_DEVICE_VERSION);
+  } finally {
+    await host.dispose();
+    await removeFixture(directory);
+  }
+});
+
+it("sweeps stale stage and previous leftovers on the next install without touching unrelated siblings", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "bycoda-device-lifecycle-"));
+  const host = setupFixture(directory);
+  const parent = join(directory, "tools", "expo-device-hub");
+  const staleStage = join(parent, `${DEVICE_HUB_VERSION}.stage-${randomUUID()}`);
+  const stalePrevious = join(parent, `${DEVICE_HUB_VERSION}.previous-${randomUUID()}`);
+  const unrelated = join(parent, "notes");
+  for (const dir of [staleStage, stalePrevious, unrelated])
+    await mkdir(dir, { recursive: true });
+  const command = fakeInstaller(directory);
+  try {
+    await host.setup(false, { authorized: () => true });
+    expect(command).toHaveBeenCalledOnce();
+    expect((await readdir(parent)).sort()).toEqual([DEVICE_HUB_VERSION, "notes"]);
   } finally {
     await host.dispose();
     await removeFixture(directory);

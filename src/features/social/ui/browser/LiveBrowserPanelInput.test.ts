@@ -107,7 +107,7 @@ it("requests frames repeatedly without ever sending input by itself", async () =
   await mount(client);
   await advance(3_000);
   expect(browserViewFrame.mock.calls.length).toBeGreaterThanOrEqual(3);
-  expect(browserViewFrame).toHaveBeenCalledWith("acc");
+  expect(browserViewFrame).toHaveBeenCalledWith("acc", undefined);
   expect(browserViewInput).not.toHaveBeenCalled();
 });
 
@@ -121,8 +121,25 @@ it("shows an unavailable message when frames fail and recovers when the Host ans
   expect(element.textContent).toContain("The live view is unavailable. Try again.");
   expect(element.querySelector("img")).toBeNull();
   failing = false;
-  await advance(700);
+  // The first failure doubles the wait, so the next read comes after 1400 ms.
+  await advance(1_400);
   expect(browserViewFrame.mock.calls.length).toBeGreaterThanOrEqual(2);
+  expect(element.textContent).toContain("Live. Click the page to interact.");
+  expect(button("Retry")).toBeUndefined();
+});
+
+it("offers Retry next to the error, which reads again at once", async () => {
+  let failing = true;
+  const { client, browserViewFrame } = clientWith(async () => {
+    if (failing) throw new Error("offline");
+    return FRAME;
+  });
+  await mount(client);
+  const calls = browserViewFrame.mock.calls.length;
+  failing = false;
+  await act(async () => button("Retry").click());
+  await settle();
+  expect(browserViewFrame.mock.calls.length).toBe(calls + 1);
   expect(element.textContent).toContain("Live. Click the page to interact.");
 });
 

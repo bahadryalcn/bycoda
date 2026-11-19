@@ -53,6 +53,7 @@ it("explains a deferred host update with both versions and the reason", async ()
   status.value = {
     state: "deferred",
     message: "The host update waits until running sessions finish.",
+    reason: "waiting-for-sessions",
     bundled: "0.5.54",
     installed: "0.5.53",
   };

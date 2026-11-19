@@ -14,6 +14,8 @@ export const HOST_CREW_RUN_DELETE = "crews.run-delete.v1";
 export const HOST_CREW_DELETE = "crews.delete.v1";
 /** Library members carry specialty groups and crews remember which profile a member came from. */
 export const HOST_CREW_AGENT_GROUPS = "crews.agent-groups.v1";
+/** Renaming or deleting a library group is one atomic Host call (`crews.agent.group.update`). */
+export const HOST_CREW_AGENT_GROUP_UPDATE = "crews.agent-group-update.v1";
 export const HOST_CREW_ACCESS = "crews.access.v1";
 /** Members carry an avatar choice and handle; crews carry their appearance. */
 export const HOST_CREW_IDENTITY = "crews.identity.v1";

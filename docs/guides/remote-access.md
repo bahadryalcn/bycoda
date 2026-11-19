@@ -36,6 +36,9 @@ shared contract explicitly marks it as a safe query. Writes and unknown methods
 are never replayed by this recovery. Old consumed buffer reports check the Host's
 receipt before sending a cleanup acknowledgement; missing receipts remain held
 locally for recovery instead of repeatedly sending an unprovable acknowledgement.
+When both ends support separate admission for native service deliveries, the
+desktop checks the original receipt for the final result. A delivery that expires
+before admission leaves no receipt and cannot start later from the Host queue.
 Queued turns retain file history under their original message IDs, including
 Host-generated queue IDs, so their file review and revert remain available.
 Host discovery waits at most 250 ms for optional Tailscale routes. A slow lookup
@@ -68,6 +71,10 @@ No Cloudflare account, token or paid service is needed. bycoda uses an installed
 cloudflared or downloads a pinned, checksum-verified copy into its private data
 directory. The URL changes whenever the tunnel starts. The Host starts it again
 after restart or verified unexpected exit. Stopping the tunnel disables this setting.
+A running tunnel keeps its URL through isolated origin errors, such as the Host
+restarting, and through a single lost connection; it is retired and reported as a
+connection failure only when every connection stays down for 30 seconds or the
+provider reports none left.
 
 With account computer discovery enabled and the desktop signed in, URL changes
 are published within the next five-second check. Paired desktop clients re-fetch
@@ -75,7 +82,10 @@ account routes during reconnect and require a nonce-based HMAC-SHA256 possession
 proof before sending their saved credential. The proof uses the device credential's
 SHA-256 hash, stays bound to the expected environment and a Host-owned published
 origin, and never discloses the credential or its hash. Public environment identity
-alone does not authenticate a Host. Account listing permission remains required.
+alone does not authenticate a Host. A completed proof is reused for 60 seconds, only
+for the same route, machine and credential. It ends early when the route fails or is
+retired, and a proof that has to be repeated counts against the call's own timeout.
+Account listing permission remains required.
 Pairing and device permissions still apply. A headless Host does not run the
 desktop account publisher. Quick Tunnels have no uptime guarantee and do not
 support SSE; HTTP RPC remains the fallback transport.
@@ -211,7 +221,7 @@ capacity is full, new operations wait while the retained input stays available.
 When inserting several images, a later failure preserves references to images
 already saved so their outcome can be checked before another attempt.
 
-For a local project, open its project menu and choose **New conversation on this
+For a local project, open its project menu and choose **New session on this
 computer's Host**. bycoda connects to this computer's Host before opening the new
 conversation. Send the first message to create it there. The project and selected
 worktree remain on this computer, while the Host owns execution and transcript
@@ -252,6 +262,16 @@ cross-device acceptance of this new local entry point is still pending.
 SSH forwarding rules show **Stopping** while a stop is in progress. If the local
 process exit cannot be confirmed, the rule shows **Status unknown** and offers
 **Retry stop** before it can be started or removed again.
+
+A forward you started that loses its SSH process, for example after Wi-Fi drops or
+the computer sleeps, shows **Reconnecting…** and is restarted without a prompt: after
+2 seconds, then waiting about twice as long each time up to 5 minutes, and at once
+when the network returns or the window regains focus. After 12 attempts in a row that
+did not hold for 30 seconds it shows **Failed**. A restart uses the saved connection
+and the same host-key and sign-in checks as **Start**. A changed host key, a
+rejected key, an edited connection, or a route that needs a new proxy approval stops
+it at **Failed** instead, and you start it again. **Stop** ends the rule for good;
+it is never restarted afterwards.
 
 When a Host connection is blocked, the conversation shows one connection recovery
 notice above the message box; a machine whose project is not open shows none.

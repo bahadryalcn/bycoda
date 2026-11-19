@@ -22,11 +22,12 @@ The language selector applies immediately. Reopen the flow from Settings → Gen
   later in Settings → Account. A cancelled or failed sign-in returns to the step with
   the reason and keeps the guest choice. Existing users are not asked.
 - Statistics (builds with accounts, until you have answered) asks whether to share anonymous
-  statistics: "Share anonymous statistics" or "Don't share", equal choices. It explains what is
-  sent (a random install id, app version, operating system, release channel and date, at most
-  once a day) and what never is (sessions, prompts, code, file names, projects, account
-  details). Statistics are off unless you say yes; change it any time in Settings → Account →
-  Privacy & data, or Settings → Privacy without an account. Installations that skip setup get
+  statistics: "Share anonymous statistics" or "Don't share", equal choices. The info icon holds
+  the shared statistics disclosure (`statsDisclosure` in `src/features/account`): what is sent
+  (a random install id, app version, operating system, release channel and date, at most once
+  a day), what never is (sessions, prompts, code, file names, projects, account details), that
+  it is off unless you say yes, and where to change it (Settings → Privacy). The consent toast
+  and Settings show the same text. Installations that skip setup get
   the same question once in a small notice that never blocks work.
 - Workspace selects Tasks, Automations, Inbox, Notes and Social Media navigation.
   Coding, files, terminal and Git remain available. Choices save immediately and

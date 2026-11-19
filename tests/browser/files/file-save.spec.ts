@@ -248,7 +248,7 @@ test("same-name file tabs keep independent drafts and expose their full path fro
   await page.keyboard.type("Second unsaved draft");
   await second.focus();
   await page.keyboard.press("Shift+F10");
-  await page.getByRole("menuitem", { name: "Copy Path", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Copy path", exact: true }).click();
   expect(
     await page.evaluate(
       () =>

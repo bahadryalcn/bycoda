@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Worker } from "node:worker_threads";
 import { HostStore } from "./store";
+import { monotonicNow } from "../src/shared/lib/time/timestamps";
 import { RequestAuthorizationError, StoreDatabase } from "./store-db";
 import type { HostSession } from "../src/features/connections/model/protocol";
 
@@ -24,9 +25,13 @@ it("names the caller that held the store queue past a second, and how many waite
     await Promise.all([held, waiting]);
     await database.scope(async () => undefined);
     const lines = warn.mock.calls.map(([line]) => String(line));
-    expect(lines).toHaveLength(1);
-    expect(lines[0]).toMatch(/^Host database queue held by .*holdTheQueue.* ms=1\d{3} queued=1$/);
-    expect(lines[0]).not.toMatch(/StoreDatabase|file:|[\\/]/);
+    // The holder, and the request that waited behind it: both name their stages.
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toMatch(
+      /^Host database queue held by .*holdTheQueue.* ms=1\d{3} queued=1 queue=\d+ms guard=\d+ms worker=\d+ms roundTrip=\d+ms commit=\d+ms requests=\d+$/,
+    );
+    expect(lines[1]).toMatch(/ ms=\d+ queued=0 queue=1\d{3}ms /);
+    for (const line of lines) expect(line).not.toMatch(/StoreDatabase|file:|[\\/]/);
   } finally {
     warn.mockRestore();
   }
@@ -1101,4 +1106,88 @@ it("reads cold Host snapshots in the original cancellable scope while retaining 
   expect((await store.session("session", controller.signal)).session.title).toBe(
     "Unflushed owner value",
   );
+});
+
+it("rejects a request still queued past its admission deadline before it enters or runs", async () => {
+  const database = new StoreDatabase(":memory:");
+  await database.ready;
+  cleanups.push(() => database.close());
+  const work = vi.fn(async () => "ran");
+  const held = database.scope(() => new Promise<void>((resolve) => setTimeout(resolve, 200)));
+  // Queue time counts: the holder outlasts this request's whole deadline.
+  const expired = database.scope(work, undefined, { admitBefore: monotonicNow() + 40 });
+  await expect(expired).rejects.toMatchObject({
+    name: "StoreAdmissionExpiredError",
+    code: "HOST_STORE_ADMISSION_EXPIRED",
+    admitted: false,
+  });
+  await held;
+  expect(work).not.toHaveBeenCalled();
+  // The queue moves on and a later request is unaffected.
+  await expect(database.scope(async () => "next")).resolves.toBe("next");
+});
+
+it("never interrupts a request that was admitted before its deadline", async () => {
+  const database = new StoreDatabase(":memory:");
+  await database.ready;
+  cleanups.push(() => database.close());
+  const admitted = database.scope(
+    () => new Promise<string>((resolve) => setTimeout(() => resolve("finished"), 120)),
+    undefined,
+    { admitBefore: monotonicNow() + 60 },
+  );
+  await expect(admitted).resolves.toBe("finished");
+});
+
+it("refuses an expired transaction before BEGIN and before its queue admission", async () => {
+  const { store } = await fixture();
+  const exec = vi.spyOn(store.db, "exec");
+  const body = vi.fn();
+  await expect(
+    store.transaction(body, "critical", { admitBefore: monotonicNow() - 1 }),
+  ).rejects.toMatchObject({ name: "StoreAdmissionExpiredError", admitted: false });
+  // The same deadline lapsing while queued behind another owner.
+  const release = gate();
+  const holder = store.db.scope(() => release.promise);
+  const queued = store.transaction(body, "critical", { admitBefore: monotonicNow() + 30 });
+  const rejected = expect(queued).rejects.toMatchObject({ name: "StoreAdmissionExpiredError" });
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  release.resolve();
+  await holder;
+  await rejected;
+  expect(body).not.toHaveBeenCalled();
+  expect(exec.mock.calls.filter(([sql]) => /BEGIN/i.test(String(sql)))).toEqual([]);
+  // An unexpired deadline still commits normally.
+  await expect(
+    store.transaction(async () => "ok", "critical", { admitBefore: monotonicNow() + 5_000 }),
+  ).resolves.toBe("ok");
+});
+
+async function stageTimingProbe(store: HostStore) {
+  await store.transaction(async () => {
+    await store.db.exec("CREATE TABLE IF NOT EXISTS stage_probe (value TEXT)");
+    await store.db.prepare("INSERT INTO stage_probe VALUES (?)").run("secret-payload-value");
+  }, "critical");
+}
+it("logs bounded stage timings: queue wait, guard, worker execution, round trip and commit", async () => {
+  const { store } = await fixture();
+  store.db.slowScopeMs = 0;
+  const lines: string[] = [];
+  store.db.scopeWarn = (message, detail) => lines.push(`${message} ${detail ?? ""}`);
+  await store.db.withAuthorization(
+    async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      return true;
+    },
+    () => stageTimingProbe(store),
+  );
+  const line = lines.find((text) => /requests=([5-9]|\d{2,})$/.test(text));
+  expect(line).toMatch(
+    /queue=\d+ms guard=\d+ms worker=\d+ms roundTrip=\d+ms commit=\d+ms requests=\d+$/,
+  );
+  expect(Number(/guard=(\d+)ms/.exec(line!)?.[1])).toBeGreaterThanOrEqual(25);
+  const roundTrip = Number(/roundTrip=(\d+)ms/.exec(line!)?.[1]);
+  expect(Number(/worker=(\d+)ms/.exec(line!)?.[1])).toBeLessThanOrEqual(roundTrip);
+  // Numbers only: no SQL text, bound parameters or payloads.
+  expect(line).not.toMatch(/stage_probe|secret-payload-value|INSERT|BEGIN/);
 });

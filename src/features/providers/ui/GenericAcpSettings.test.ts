@@ -8,9 +8,14 @@ const mock = vi.hoisted(() => ({
   remote: vi.fn(),
   catalog: vi.fn(),
   probe: vi.fn(),
+  machine: vi.fn(),
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mock.invoke }));
 vi.mock("../../connections/model/hostFeatureClient", () => ({ hostFeatureRequest: mock.remote }));
+vi.mock("../../connections/model/connections", () => ({
+  knownRemoteMachine: mock.machine,
+  useRemoteMachines: () => ({ machines: [], loaded: true, loading: false, refresh: () => {} }),
+}));
 vi.mock("../../../integrations/harness/providers/generic-acp/genericAcpAdapter", () => ({
   refreshGenericAcpCatalog: mock.catalog,
 }));
@@ -36,6 +41,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mock.invoke.mockResolvedValue([config]);
   mock.remote.mockResolvedValue([config]);
+  mock.machine.mockReturnValue(undefined);
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -57,7 +63,8 @@ function button(text: string) {
 it("keeps every advanced value when editing and saves on the selected host without overwriting stored environment", async () => {
   const cwd = "remote://host-one/project";
   await render(cwd);
-  expect(container.textContent).toContain("remote host host-one");
+  expect(container.textContent).toContain("Target machine: Remote host.");
+  expect(container.textContent).not.toContain("host-one");
   act(() => button("Edit").click());
   expect(
     container.querySelector("#acp-agent-form-disclosure section")?.getAttribute("aria-labelledby"),
@@ -137,9 +144,26 @@ it("does not show an empty list before loading finishes or replace a new machine
   expect(button("Save agent").disabled).toBe(true);
   await render("remote://new-host/project");
   await act(async () => resolveOld([config]));
-  expect(container.textContent).toContain("remote host new-host");
+  expect(container.textContent).toContain("Target machine: Remote host.");
+  expect(container.textContent).not.toContain("new-host");
   expect(container.textContent).toContain("No ACP agents configured");
   expect(container.textContent).not.toContain(config.name);
+});
+
+it("names the remote machine in the scope line instead of its environment id", async () => {
+  mock.machine.mockImplementation((environmentId: string) =>
+    environmentId === "host-one" ? { name: "Studio Mac" } : undefined,
+  );
+  await render("remote://host-one/project");
+  expect(container.textContent).toContain("Target machine: Studio Mac.");
+  expect(container.textContent).not.toContain("host-one");
+});
+
+it("shows a load failure as its message without a raw Error prefix", async () => {
+  mock.invoke.mockRejectedValue(new Error("Host offline"));
+  await render();
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Host offline");
+  expect(container.textContent).not.toContain("Error: Host offline");
 });
 
 it("reveals a collapsed agent form without discarding its draft", async () => {
@@ -242,4 +266,24 @@ it("retains install cancellation across a language change for the original opera
       await setLanguagePreference("en");
     });
   }
+});
+
+it("keeps the status line mounted through a reload so the agent list does not move", async () => {
+  await render();
+  const status = container.querySelector<HTMLElement>("[data-acp-status]")!;
+  let finish!: (value: (typeof config)[]) => void;
+  mock.invoke.mockImplementation((command) =>
+    command === "generic_acp_list"
+      ? new Promise<(typeof config)[]>((resolve) => {
+          finish = resolve;
+        })
+      : Promise.resolve([config]),
+  );
+  act(() => button("Reload agents").click());
+  expect(container.querySelector("[data-acp-status]")).toBe(status);
+  expect(status.textContent).toContain("Loading ACP agents…");
+  await act(async () => finish([config]));
+  expect(container.querySelector("[data-acp-status]")).toBe(status);
+  expect(status.textContent).toBe("");
+  expect(container.textContent).toContain(config.name);
 });

@@ -1,0 +1,35 @@
+/* Hover card for the editor's blame gutter. It sits on <body>, outside the
+   editor's own theme scope, because the gutter clips its children. */
+.cm-blameCard {
+  position: fixed;
+  z-index: var(--layer-hover-card);
+  max-width: 320px;
+  padding: 8px 10px;
+  border: 1px solid var(--ui-fill-strong);
+  border-radius: var(--ui-radius-popup);
+  background: var(--ui-surface-floating);
+  color: var(--color-content);
+  box-shadow: var(--ui-elevation-floating);
+  font-size: 12px;
+  line-height: 1.45;
+  pointer-events: none;
+}
+
+.cm-blameCardSha {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ui-text-muted);
+}
+
+.cm-blameCardAuthor {
+  font-weight: 600;
+}
+
+.cm-blameCardDate {
+  color: var(--ui-text-secondary);
+}
+
+.cm-blameCardSubject {
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}

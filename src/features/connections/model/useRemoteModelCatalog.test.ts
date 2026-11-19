@@ -262,6 +262,28 @@ describe("useRemoteModelCatalog", () => {
     expect(ids(latest.catalog)).toEqual(["a1"]);
   });
 
+  it("reports loading from a refresh until its read answers or fails", async () => {
+    let finish: (value: HostModelCatalog) => void = () => {};
+    let hang = false;
+    const request = vi.fn(async () => {
+      if (hang) return new Promise<HostModelCatalog>((resolve) => (finish = resolve));
+      throw new Error("host down");
+    });
+    await render({ scope: scopeA, enabled: true, request: asRequest(request) });
+    await flush();
+    expect(latest.error).toContain("host down");
+    expect(latest.loading).toBe(false);
+    hang = true;
+    await act(async () => latest.refresh());
+    // The earlier error stays visible while the retry is in flight.
+    expect(latest.loading).toBe(true);
+    expect(latest.error).toContain("host down");
+    await act(async () => finish(catalog("a1")));
+    await flush();
+    expect(latest.loading).toBe(false);
+    expect(latest.error).toBe("");
+  });
+
   it("returning to scope A uses its cache immediately", async () => {
     const request = vi.fn(async (_method: string, params?: unknown) =>
       projectOf(params) === "project-a" ? catalog("from-a") : catalog("from-b"),
@@ -311,12 +333,110 @@ describe("useRemoteModelCatalog", () => {
       expect(request).toHaveBeenCalledTimes(2);
       expect(ids(latest.catalog)).toEqual(["p2"]);
 
-      await advance(1000);
+      // The next wait doubles: 2 s.
+      await advance(1999);
+      expect(request).toHaveBeenCalledTimes(2);
+      await advance(1);
       expect(request).toHaveBeenCalledTimes(3);
       expect(ids(latest.catalog)).toEqual(["done"]);
 
       await advance(10_000);
       expect(request).toHaveBeenCalledTimes(3);
+    });
+
+    it("backs off while pending, caps the wait at 30 s and stops after ten re-reads", async () => {
+      const request = vi.fn(async () => catalog("slow", ["codex"]));
+      await render({ scope: scopeA, enabled: true, request: asRequest(request) });
+      await flush();
+      const waits = [1000, 2000, 4000, 8000, 16_000, 30_000, 30_000, 30_000, 30_000, 30_000];
+      for (const [index, wait] of waits.entries()) {
+        await advance(wait - 1);
+        expect(request).toHaveBeenCalledTimes(index + 1);
+        await advance(1);
+        expect(request).toHaveBeenCalledTimes(index + 2);
+      }
+      await advance(120_000);
+      expect(request).toHaveBeenCalledTimes(waits.length + 1);
+      expect(ids(latest.catalog)).toEqual(["slow"]);
+
+      // A refresh starts over with a fresh budget.
+      await act(async () => latest.refresh());
+      await flush();
+      expect(request).toHaveBeenCalledTimes(waits.length + 2);
+      await advance(1000);
+      expect(request).toHaveBeenCalledTimes(waits.length + 3);
+    });
+
+    it("retries a failed read with backoff, keeps the last catalog and recovers", async () => {
+      let calls = 0;
+      const request = vi.fn(async () => {
+        calls++;
+        if (calls === 1) return catalog("good", ["codex"]);
+        if (calls <= 3) throw new Error("blip");
+        return catalog("recovered", []);
+      });
+      await render({ scope: scopeA, enabled: true, request: asRequest(request) });
+      await flush();
+      await advance(1000);
+      expect(latest.error).toContain("blip");
+      expect(ids(latest.catalog)).toEqual(["good"]);
+      expect(latest.stale).toBe(true);
+
+      // First retry after 1 s fails again, the second waits 2 s and succeeds.
+      await advance(1000);
+      expect(request).toHaveBeenCalledTimes(3);
+      expect(latest.error).toContain("blip");
+      await advance(1999);
+      expect(request).toHaveBeenCalledTimes(3);
+      await advance(1);
+      expect(request).toHaveBeenCalledTimes(4);
+      expect(latest.error).toBe("");
+      expect(ids(latest.catalog)).toEqual(["recovered"]);
+      expect(latest.stale).toBe(false);
+
+      await advance(60_000);
+      expect(request).toHaveBeenCalledTimes(4);
+    });
+
+    it("gives up retrying a failing read after eight retries until refresh", async () => {
+      const request = vi.fn(async () => {
+        throw new Error("host down");
+      });
+      await render({ scope: scopeA, enabled: true, request: asRequest(request) });
+      await flush();
+      await advance(300_000);
+      expect(request).toHaveBeenCalledTimes(9);
+      expect(latest.error).toContain("host down");
+
+      await act(async () => latest.refresh());
+      await flush();
+      expect(request).toHaveBeenCalledTimes(10);
+      await advance(1000);
+      expect(request).toHaveBeenCalledTimes(11);
+    });
+
+    it("holds a due read while the window is hidden and runs it when shown", async () => {
+      const request = vi.fn(async () => catalog("p", ["codex"]));
+      await render({ scope: scopeA, enabled: true, request: asRequest(request) });
+      await flush();
+      Object.defineProperty(document, "hidden", { configurable: true, value: true });
+      try {
+        await advance(60_000);
+        expect(request).toHaveBeenCalledTimes(1);
+        Object.defineProperty(document, "hidden", { configurable: true, value: false });
+        await act(async () => {
+          document.dispatchEvent(new Event("visibilitychange"));
+        });
+        await flush();
+        expect(request).toHaveBeenCalledTimes(2);
+        // Showing the window again without a held read starts nothing.
+        await act(async () => {
+          document.dispatchEvent(new Event("visibilitychange"));
+        });
+        expect(request).toHaveBeenCalledTimes(2);
+      } finally {
+        Reflect.deleteProperty(document, "hidden");
+      }
     });
 
     it("does not re-poll when pending is absent", async () => {

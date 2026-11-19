@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { t, useLocale } from "../../../shared/i18n";
+import { t, useLocale, warmSourceMessages } from "../../../shared/i18n";
 import { ExpandingSearch } from "../../../shared/ui/ExpandingSearch";
 import { searchSettings, type SettingsSectionId } from "../model/settings";
 
@@ -28,6 +28,17 @@ export function SettingsSearch({
     },
     [],
   );
+  useEffect(() => {
+    // Reason: the first keystroke would otherwise walk the whole message catalog on the main
+    // thread. Build the reverse lookup while idle after Settings opens, and again per language.
+    const warm = () => warmSourceMessages();
+    if (typeof window.requestIdleCallback === "function") {
+      const idle = window.requestIdleCallback(warm, { timeout: 2_000 });
+      return () => window.cancelIdleCallback(idle);
+    }
+    const timeout = window.setTimeout(warm, 0);
+    return () => window.clearTimeout(timeout);
+  }, [locale]);
 
   return (
     <ExpandingSearch

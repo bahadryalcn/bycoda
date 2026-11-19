@@ -35,8 +35,8 @@ controls at its upper right, visible on hover or keyboard focus (always availabl
 on touch). **Terminal pane actions** offers Scroll to bottom, Clear terminal and
 text size for that pane. The terminal list and split panes retain their layout.
 
-**Hide Terminal** (the collapse-panel icon, Ctrl/Cmd+J, or Ctrl+" on Turkish
-layouts) only hides the dock; every shell keeps running. The X beside it closes the
+**Hide Terminal** (the collapse-panel icon, Ctrl/Cmd+J outside a focused terminal, or
+Ctrl+" on Turkish layouts) only hides the dock; every shell keeps running. The X beside it closes the
 active terminal. Closing asks first when a process is still running in that terminal,
 or when it is the last one, because closing the last terminal also closes the panel.
 Holding the toggle chord switches the dock once, not on every key repeat.
@@ -62,6 +62,11 @@ terminal text.
 IME candidate confirmation leaves Find and suggestion selection unchanged,
 including WebKit's final composition key event. Shell editing shortcuts also
 leave composition to the terminal input handler.
+
+While a terminal has focus, plain Ctrl+letter chords (Ctrl+W, D, T, N, B, P, O, J,
+K and the rest) go to the shell instead of the app's default shortcuts. Ctrl+Shift
+chords, Ctrl+Tab, Ctrl+Alt+arrows, zoom, full screen and Escape keep working, and
+a chord you record yourself in Keybindings still runs the app command.
 
 Terminal colors follow the surrounding pane and shared appearance roles. Where the
 pane's effective solid background can be resolved, the renderer applies its normal

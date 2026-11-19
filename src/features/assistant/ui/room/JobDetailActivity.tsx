@@ -1,3 +1,4 @@
+import { errorText } from "../../../../shared/lib/errors";
 import { LoadingText } from "../../../../shared/ui/LoadingText";
 import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { useEffect, useEffectEvent, useState } from "react";
@@ -36,7 +37,7 @@ export function JobDetailActivity({ jobId, request }: { jobId: string; request: 
             key,
             value: {
               status: "error",
-              message: cause instanceof Error ? cause.message : String(cause),
+              message: errorText(cause),
             },
           });
       },
@@ -49,7 +50,7 @@ export function JobDetailActivity({ jobId, request }: { jobId: string; request: 
   if (state.status === "loading")
     return (
       <LoadingText delay={false} className={styles.muted}>
-        {t("Loading...")}
+        {t("Loading…")}
       </LoadingText>
     );
   if (state.status === "error")

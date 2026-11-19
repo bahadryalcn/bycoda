@@ -98,6 +98,9 @@ Bound discovery, context, tools, speech and cleanup waits. Late results cannot r
 discovery caches or terminal synthesis; quiet observation never clears busy or proves provider
 completion. Preserve streaming UTF-8 across chunks. Detection is install-free. Keep separate
 capture/output audio contexts and engine-specific timing. Local recognition/runtime errors
-remain specific/recoverable. Source/protocol fixtures cannot prove speed, accuracy, acoustic
+remain specific/recoverable. The shared local worker fails only the slow or unwritable request
+(timed-out requests still count as queued and their late replies are dropped) and ignores
+non-protocol stdout; only worker exit, a dead pipe or a worker silent while owing replies
+restarts it for every lease. Source/protocol fixtures cannot prove speed, accuracy, acoustic
 rejection, live-provider interpretation or installed inclusion. Real audio must qualify short
 words, breath, cough, echo, pauses and pending genuine speech.

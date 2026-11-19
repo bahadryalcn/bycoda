@@ -65,6 +65,7 @@ function DraftEditor({ wait }: { wait?: Promise<void> }) {
       await wait;
       setDirty(false);
       setPending(false);
+      return true;
     },
     onDiscard: () => setDirty(false),
   });
@@ -97,15 +98,19 @@ describe("providers scope inheritance", () => {
       command === "generic_acp_list" ? [] : undefined,
     );
     await render();
+    const providerButton = (name: string) =>
+      Array.from(
+        container.querySelectorAll<HTMLButtonElement>(".provider-cli-selector button"),
+      ).find((button) => button.textContent?.trim().startsWith(name))!;
+    // ACP is not the selected provider yet, so its management is not mounted.
+    expect(container.querySelector("#setting-acp-agents")).toBeNull();
+    await act(async () => providerButton("ACP Agent").click());
     expect(container.querySelectorAll("#setting-acp-agents")).toHaveLength(1);
     const management = container.querySelector<HTMLElement>("#setting-acp-agents")!;
     const panel = management.closest<HTMLElement>(".provider-cli-panel")!;
     expect(panel).not.toBeNull();
     expect(management.closest(".provider-cli-workspace")).not.toBeNull();
-    const providerButton = (name: string) =>
-      Array.from(
-        container.querySelectorAll<HTMLButtonElement>(".provider-cli-selector button"),
-      ).find((button) => button.textContent?.trim().startsWith(name))!;
+    expect(panel.hidden).toBe(false);
     await act(async () => providerButton("Claude Code").click());
     expect(panel.hidden).toBe(true);
     await act(async () => providerButton("ACP Agent").click());
@@ -116,7 +121,7 @@ describe("providers scope inheritance", () => {
   });
 });
 
-it("lists the three Models tabs and keeps provider setup rows mounted across tabs", async () => {
+it("lists the three Models tabs and mounts a provider's setup rows only once it is opened", async () => {
   await render();
   const tabs = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
   expect(tabs.map((node) => node.textContent?.trim())).toEqual([
@@ -124,18 +129,31 @@ it("lists the three Models tabs and keeps provider setup rows mounted across tab
     "Background work",
     "Defaults",
   ]);
-  const row = container.querySelector('[data-setting-id="cli-path-codex"]')!;
-  expect(row.closest<HTMLElement>("[hidden]")).not.toBeNull();
+  // Only the selected provider's detail is mounted; the others wait until they are opened.
+  expect(container.querySelector('[data-setting-id="cli-path-claude"]')).not.toBeNull();
+  expect(container.querySelector('[data-setting-id="cli-path-codex"]')).toBeNull();
+  expect(container.querySelectorAll('[data-setting-id^="cli-path-"]')).toHaveLength(1);
   await act(async () => tabs.find((node) => node.textContent === "Providers")!.click());
   await act(async () =>
     [...container.querySelectorAll<HTMLButtonElement>(".provider-cli-selector button")]
       .find((button) => button.textContent?.trim().startsWith("Codex"))!
       .click(),
   );
+  const row = container.querySelector('[data-setting-id="cli-path-codex"]')!;
+  expect(row).not.toBeNull();
   expect(row.closest("[hidden]")).toBeNull();
+  // Leaving the provider or the tab keeps the opened detail (and its drafts) mounted but hidden.
+  await act(async () =>
+    [...container.querySelectorAll<HTMLButtonElement>(".provider-cli-selector button")]
+      .find((button) => button.textContent?.trim().startsWith("Claude Code"))!
+      .click(),
+  );
+  expect(container.querySelector('[data-setting-id="cli-path-codex"]')).toBe(row);
+  expect(row.closest<HTMLElement>("[hidden]")).not.toBeNull();
   await act(async () => tabs.find((node) => node.textContent === "Defaults")!.click());
   expect(container.querySelector('[data-setting-id="cli-path-codex"]')).toBe(row);
   expect(row.closest<HTMLElement>("[hidden]")).not.toBeNull();
+  expect(container.querySelectorAll('[data-setting-id^="cli-path-"]')).toHaveLength(2);
 });
 
 it("asks before switching Models tabs while an editor has pending changes", async () => {

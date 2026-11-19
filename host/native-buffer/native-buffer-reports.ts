@@ -1052,7 +1052,7 @@ export function createNativeBufferReports(deps: Dependencies) {
         await immutable(snapshotPath(reportKey(hold.value)), JSON.stringify(hold.value));
       await authenticate(owner, device);
       await writeSnapshot(id, bytes);
-      const committed = () => beats.remember(id, incoming);
+      const committed = () => beats.remember(id, incoming, report.receivedAt);
       if (retention) retention.afterCommit(committed);
       else committed();
       await authenticate(owner, device);
@@ -1080,6 +1080,7 @@ export function createNativeBufferReports(deps: Dependencies) {
       await archive(captured);
       await authenticate(owner, device);
       await writeSnapshot(id, JSON.stringify({ ...captured.value, retiredAt: now() }));
+      beats.retire(id);
       await authenticate(owner, device);
       return { acknowledged: true as const };
     });
@@ -1135,6 +1136,7 @@ export function createNativeBufferReports(deps: Dependencies) {
         await archive(captured);
         await authenticate(owner, device);
         await writeSnapshot(captured.reportId, JSON.stringify({ ...prior, retiredAt: now() }));
+        beats.retire(captured.reportId);
         await authenticate(owner, device);
         if (retention) await retention.flush(authorizeOwner(owner));
       }

@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { newRequestId } from "../../../shared/lib/id/requestId";
 import { createStore } from "../../../shared/lib/store";
@@ -31,7 +32,7 @@ const HOST_BUSY =
   /RPC_WS_OVERLOAD|Host read capacity is busy|Host pending (read request|control queue) limit reached/;
 /** Whether a held failure is Host capacity pushback rather than a privacy defect. */
 export function isRoomPrivacyHostBusy(error: unknown): boolean {
-  return HOST_BUSY.test(error instanceof Error ? error.message : String(error));
+  return HOST_BUSY.test(errorText(error));
 }
 let wakeBackoff: (() => void) | null = null;
 let ready = false;
@@ -194,7 +195,7 @@ export function withRoomPrivacyMutation<T>(
         throw error;
       }
       queuedMutations--;
-      publish({ pending: false, error: error instanceof Error ? error.message : String(error) });
+      publish({ pending: false, error: errorText(error) });
       throw error;
     },
   );
@@ -222,7 +223,7 @@ export function deactivateRoomPrivacyProjection(): void {
 export function failRoomPrivacyProjection(error: unknown): void {
   ready = false;
   wakeBackoff?.();
-  publish({ pending: false, error: error instanceof Error ? error.message : String(error) });
+  publish({ pending: false, error: errorText(error) });
 }
 export function retryRoomPrivacyProjection(): void {
   // An inactive window cannot drain: keep the held error visible rather than showing a spinner
@@ -323,7 +324,7 @@ export async function rebuildClosedRoomPrivacyProjection(): Promise<void> {
     }
     await recoverRoomPrivacyProjection();
   } catch (error) {
-    publish({ pending: false, error: error instanceof Error ? error.message : String(error) });
+    publish({ pending: false, error: errorText(error) });
     throw error;
   }
 }
@@ -356,7 +357,7 @@ async function drain(): Promise<void> {
         if (delay === undefined || !ready || !isRoomPrivacyHostBusy(error)) {
           publish({
             pending: false,
-            error: error instanceof Error ? error.message : String(error),
+            error: errorText(error),
           });
           return;
         }

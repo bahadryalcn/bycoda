@@ -340,7 +340,9 @@ fn thread_messages_are_oldest_first_with_authors_files_and_outbound() {
         .ok("user=UBOT", json!({ "ok": true, "user": { "name": "bycoda" } }))
         .ok("user=U111", json!({ "ok": true, "user": { "real_name": "Ana K" } }))
         .ok("user=U222", json!({ "ok": false, "error": "user_not_found" }));
-    let messages = thread_messages_with(&mut fake, "C0000000001").unwrap();
+    let page = thread_messages_with(&mut fake, "C0000000001", None).unwrap();
+    assert_eq!(page.earlier, None);
+    let messages = page.messages;
     assert_eq!(messages.len(), 3);
     assert_eq!(messages[0].author, "Ana K");
     assert_eq!(messages[0].body, "hi @U222\n(2 replies in thread)");
@@ -370,6 +372,43 @@ fn thread_messages_are_oldest_first_with_authors_files_and_outbound() {
 }
 
 #[test]
+fn history_pages_continue_before_the_oldest_loaded_message() {
+    let mut first = Fake::default()
+        .ok("auth.test", json!({ "ok": true, "user_id": "UBOT" }))
+        .ok(
+            "conversations.history",
+            json!({ "ok": true, "has_more": true, "messages": [
+                { "ts": "3.000100", "text": "c" },
+                { "ts": "2.000100", "text": "b" }
+            ]}),
+        );
+    let page = thread_messages_with(&mut first, "C0000000001", None).unwrap();
+    assert_eq!(page.earlier.as_deref(), Some("2.000100"));
+    assert!(!first.calls[1].0.contains("latest="));
+
+    let mut older = Fake::default()
+        .ok("auth.test", json!({ "ok": true, "user_id": "UBOT" }))
+        .ok(
+            "conversations.history",
+            json!({ "ok": true, "has_more": false, "messages": [
+                { "ts": "1.000100", "text": "a" }
+            ]}),
+        );
+    let page = thread_messages_with(&mut older, "C0000000001", page.earlier.as_deref()).unwrap();
+    assert_eq!(page.earlier, None);
+    assert_eq!(page.messages.len(), 1);
+    assert!(older.calls[1].0.contains("latest=2.000100"));
+}
+
+#[test]
+fn history_cursor_must_be_a_message_timestamp() {
+    for cursor in ["", "abc", "1700000000", "1.2.3", "1.0&channel=C1", "../x"] {
+        assert!(valid_cursor(cursor).is_err(), "{cursor}");
+    }
+    assert!(valid_cursor("1700000000.000200").is_ok());
+}
+
+#[test]
 fn user_lookups_stop_after_rate_limit() {
     let mut fake = Fake::default()
         .ok("auth.test", json!({ "ok": true, "user_id": "UBOT" }))
@@ -381,7 +420,9 @@ fn user_lookups_stop_after_rate_limit() {
             ]}),
         )
         .raw("users.info", rate_limited(1.0));
-    let messages = thread_messages_with(&mut fake, "C0000000001").unwrap();
+    let messages = thread_messages_with(&mut fake, "C0000000001", None)
+        .unwrap()
+        .messages;
     assert_eq!(fake.count("users.info"), 1);
     assert_eq!(messages[0].author, "U0000001");
 }
@@ -490,7 +531,9 @@ fn user_token_marks_own_messages_outbound() {
             "user=UBOB",
             json!({ "ok": true, "user": { "name": "bob" } }),
         );
-    let messages = thread_messages_with(&mut fake, "C0000000001").unwrap();
+    let messages = thread_messages_with(&mut fake, "C0000000001", None)
+        .unwrap()
+        .messages;
     let outbound: Vec<(&str, bool)> = messages
         .iter()
         .map(|message| (message.body.as_str(), message.outbound))

@@ -80,6 +80,7 @@ export function AccountProfile({
       >
         <Row
           label={t("Time zone")}
+          descriptionVisible
           description={
             user.timeZone === here ? t("Same as this computer.") : t("Differs from this computer.")
           }

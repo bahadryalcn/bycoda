@@ -20,6 +20,13 @@ import {
 } from "../model/taskWorkflows";
 import type { TaskPreflightReport, TaskPreflightRequirement } from "../model/taskPreflight";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { truncateGraphemes } from "../../../shared/lib/text/truncate";
+import {
+  alignRequirementRowKeys,
+  appendRequirementRowKey,
+  EMPTY_REQUIREMENT_ROW_KEYS,
+  removeRequirementRowKey,
+} from "../model/taskRequirementRows";
 
 type Props = {
   scope: TaskWorkflowScope;
@@ -62,6 +69,7 @@ function ScopedTaskWorkflowControls({
   const [activeOperation, setActiveOperation] = useState<string | null>(null);
   const working = activeOperation !== null;
   const operationGate = useRef(false);
+  const [rowKeys, setRowKeys] = useState(EMPTY_REQUIREMENT_ROW_KEYS);
   useEffect(() => {
     if (!scope.machineId || !scope.projectId) return;
     let current = true;
@@ -101,6 +109,13 @@ function ScopedTaskWorkflowControls({
     }
   };
   const requirements = draft.requirements ?? [];
+  const rows = alignRequirementRowKeys(rowKeys, requirements.length);
+  const kindOptions = [
+    { value: "source", label: t("Source") },
+    { value: "skill", label: t("Skill") },
+    { value: "connection", label: t("Connection") },
+    { value: "tool", label: t("Tool") },
+  ];
   const updateRequirement = (index: number, patch: Partial<TaskPreflightRequirement>) =>
     onApply({
       ...draft,
@@ -279,19 +294,27 @@ function ScopedTaskWorkflowControls({
             </>
           }
         >
-          {requirements.map((requirement, index) => (
-            <div key={index} className="flex min-w-0 flex-wrap items-end gap-2">
+          {requirements.map((requirement, index) => {
+            const kindName =
+              kindOptions.find((option) => option.value === requirement.kind)?.label ??
+              requirement.kind;
+            const reference = requirement.id.trim();
+            const shownReference = reference
+              ? truncateGraphemes(reference, 60)
+              : t("No reference yet");
+            return (
+            <div
+              key={rows.keys[index]}
+              role="group"
+              aria-label={t("{p1}: {p2}", { p1: kindName, p2: shownReference })}
+              className="flex min-w-0 flex-wrap items-end gap-2"
+            >
               <SearchableSelect
                 label={t("Resource type")}
                 value={requirement.kind}
                 searchable={false}
                 disabled={blocked}
-                options={[
-                  { value: "source", label: t("Source") },
-                  { value: "skill", label: t("Skill") },
-                  { value: "connection", label: t("Connection") },
-                  { value: "tool", label: t("Tool") },
-                ]}
+                options={kindOptions}
                 onChange={(kind) =>
                   void updateRequirement(index, { kind: kind as TaskPreflightRequirement["kind"] })
                 }
@@ -318,26 +341,29 @@ function ScopedTaskWorkflowControls({
               <Button
                 variant="ghost"
                 disabled={blocked}
-                onClick={() =>
+                onClick={() => {
+                  setRowKeys(removeRequirementRowKey(rowKeys, requirements.length, index));
                   void onApply({
                     ...draft,
                     requirements: requirements.filter((_, at) => at !== index),
-                  })
-                }
+                  });
+                }}
               >
-                {t("Remove resource")}
+                {t("Remove {p1}: {p2}", { p1: kindName, p2: shownReference })}
               </Button>
             </div>
-          ))}
+            );
+          })}
           <Button
             variant="ghost"
             disabled={blocked || requirements.length >= 40}
-            onClick={() =>
+            onClick={() => {
+              setRowKeys(appendRequirementRowKey(rowKeys, requirements.length));
               void onApply({
                 ...draft,
                 requirements: [...requirements, { kind: "source", id: "", required: true }],
-              })
-            }
+              });
+            }}
           >
             {t("Add resource")}
           </Button>

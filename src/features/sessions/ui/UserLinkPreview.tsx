@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import type { CSSProperties, MouseEvent } from "react";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { ClampText } from "../../../shared/ui/ClampText";
 import { Text, type TextTone } from "../../../shared/ui/Text";
@@ -6,7 +6,7 @@ import { Heading } from "../../../shared/ui/Heading";
 import { Badge } from "../../../shared/ui/Badge";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Link, linkContentAttributes } from "../../../shared/ui/Link";
-import { Tooltip } from "../../../shared/ui/Tooltip";
+import { HOVER_CARD_OPEN_MS, Tooltip } from "../../../shared/ui/Tooltip";
 import { t, useLocale, useT } from "../../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -22,6 +22,9 @@ import {
 } from "../../../shared/ui/icons";
 import { useHoverCard } from "../../../shared/ui/HoverCard";
 import { Skeleton } from "../../../shared/ui/Skeleton";
+import { FileActionError } from "../../files/public/FileActionError";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { isHostDevelopmentUrl, openWorkspaceUrl } from "../../connections/public/workspaceUrls";
 import { UserLinkIcon } from "./UserLinkIcon";
 import {
   formatRelativeTime,
@@ -61,39 +64,84 @@ export function UserLinkPreview({
       />
     );
   }
-  return <GenericLinkPreview key={link.url} link={link} />;
+  return <GenericLinkPreview key={`${cwd ?? ""}:${link.url}`} link={link} cwd={cwd} />;
 }
 
-function GenericLinkPreview({ link }: { link: UserLink }) {
+function GenericLinkPreview({ link, cwd }: { link: UserLink; cwd?: string }) {
   const t = useT();
   const [metadata, setMetadata] = useState<LinkPreviewMetadata | null>(null);
   const [faviconFailed, setFaviconFailed] = useState(false);
+  const [openError, setOpenError] = useState<string>();
+  const development = isHostDevelopmentUrl(link.url);
 
+  const mounted = useRef(true);
+  const requested = useRef(false);
+  const restTimer = useRef<number | null>(null);
+
+  // Drops a pending rest timer and ignores a late page title once the chip unmounts.
   useEffect(() => {
-    let cancelled = false;
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      if (restTimer.current !== null) window.clearTimeout(restTimer.current);
+    };
+  }, []);
+
+  // Fetching a page title and icon contacts the linked host, so it starts only from user
+  // intent (a rested pointer or keyboard focus), once per chip, never from mounting.
+  const load = () => {
+    if (development || requested.current) return;
+    requested.current = true;
     void fetchLinkPreviewMetadata(link.url)
       .then((value) => {
-        if (!cancelled) setMetadata(value);
+        if (mounted.current) setMetadata(value);
       })
       .catch((error) => {
         console.warn("UserLinkPreview operation failed", error);
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [link.url]);
+  };
+  const cancelRest = () => {
+    if (restTimer.current === null) return;
+    window.clearTimeout(restTimer.current);
+    restTimer.current = null;
+  };
+
+  const open = (event: MouseEvent<HTMLAnchorElement>) => {
+    event.stopPropagation();
+    if (!development || !cwd || event.defaultPrevented) return;
+    event.preventDefault();
+    setOpenError(undefined);
+    void openWorkspaceUrl(cwd, link.url).catch((error: unknown) => {
+      setOpenError(presentRemoteError(error, { explicit: true }));
+    });
+  };
 
   const title = metadata?.title?.trim() || link.host;
   const favicon = faviconFailed ? null : metadata?.faviconDataUrl;
 
-  return (
+  const preview = (
     <Tooltip label={link.url}>
       <Link
         href={link.url}
         data-user-link-preview
         aria-label={t("Open {p0}", { p0: title })}
         className="user-link-preview group mx-0.5"
-        onClick={(event) => event.stopPropagation()}
+        onClick={open}
+        onPointerEnter={(event) => {
+          if (event.pointerType === "touch" || development || requested.current) return;
+          cancelRest();
+          restTimer.current = window.setTimeout(() => {
+            restTimer.current = null;
+            load();
+          }, HOVER_CARD_OPEN_MS);
+        }}
+        onPointerLeave={cancelRest}
+        onFocus={(event) => {
+          if (event.target.matches(":focus-visible")) load();
+        }}
+        onAuxClick={(event) => {
+          if (event.button === 1 && development && cwd) open(event);
+        }}
       >
         <Text
           as="span"
@@ -127,6 +175,14 @@ function GenericLinkPreview({ link }: { link: UserLink }) {
         </Text>
       </Link>
     </Tooltip>
+  );
+  return (
+    <>
+      {preview}
+      {openError ? (
+        <FileActionError message={openError} onDismiss={() => setOpenError(undefined)} />
+      ) : null}
+    </>
   );
 }
 
@@ -207,9 +263,16 @@ function GithubWorkItemPreview({
     },
   });
 
-  const kindLabel = workItem.kind === "pr" ? "Pull request" : "Issue";
-  const compactKind = workItem.kind === "pr" ? "PR" : "Issue";
   const itemTitle = item?.title.trim();
+  const kindLabel = t(workItem.kind === "pr" ? "Pull request" : "Issue");
+  const openLabel = t(
+    workItem.kind === "pr" ? "Open pull request #{p1} in {p2}{p3}" : "Open issue #{p1} in {p2}{p3}",
+    {
+      p1: workItem.number,
+      p2: workItem.repo,
+      p3: itemTitle ? `: ${itemTitle}` : "",
+    },
+  );
 
   return (
     <>
@@ -220,12 +283,7 @@ function GithubWorkItemPreview({
         data-user-link-preview
         data-github-work-item-chip={workItem.kind}
         data-compact={compact || undefined}
-        aria-label={t("Open {p0} #{p1} in {p2}{p3}", {
-          p0: kindLabel.toLowerCase(),
-          p1: workItem.number,
-          p2: workItem.repo,
-          p3: itemTitle ? `: ${itemTitle}` : "",
-        })}
+        aria-label={openLabel}
         appearance="chip"
         className={`mx-0.5 inline-flex max-w-full items-center gap-1 ${compact ? "align-middle" : "align-[-0.25em]"}`}
         onClick={(event) => {
@@ -247,7 +305,7 @@ function GithubWorkItemPreview({
           ) : (
             <CircleDot className={compact ? "icon-xs" : "icon-sm"} aria-hidden="true" />
           )}
-          {compactKind} #{workItem.number}
+          {kindLabel} #{workItem.number}
         </Text>
       </Link>
       {hover.card(() => (

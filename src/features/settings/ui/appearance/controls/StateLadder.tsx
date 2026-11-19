@@ -14,7 +14,7 @@ import {
   type InteractionTintSource,
 } from "../../../model/interactionTint";
 import { Group, Row, Segmented } from "../../../../../shared/ui/settings";
-import { DraftSlider } from "./ToneSliders";
+import { DraftSlider } from "./DraftSlider";
 import "./ThemeControls.css";
 
 const snapshot = () => JSON.stringify(loadInteractionTint());

@@ -227,7 +227,7 @@ export default function GuideHub({
                       startTour("first-run");
                     }}
                   >
-                    {tourState.startsWith("paused:") ? t("Resume tour") : t("Tour")}
+                    {tourState.startsWith("paused:") ? t("Resume tour") : t("Take the tour")}
                   </Button>
                 </div>
               </Text>
@@ -301,7 +301,7 @@ export default function GuideHub({
                       startIcon={<Play className="icon-sm" />}
                       onClick={() => onStartTour(topic.id)}
                     >
-                      {t("Tour")}
+                      {t("Tour this topic")}
                     </Button>
                   ) : null}
                   <Button
@@ -312,7 +312,7 @@ export default function GuideHub({
                       wikiTab.current?.focus();
                     }}
                   >
-                    {t("Wiki")}
+                    {t("Read the {p0} article", { p0: topic.title })}
                   </Button>
                 </div>
                 {blocker ? (

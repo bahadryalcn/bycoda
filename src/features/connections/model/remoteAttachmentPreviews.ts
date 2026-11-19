@@ -3,6 +3,7 @@ import type { Attachment } from "../../sessions";
 
 type Chunk = { data: string; offset: number; size: number };
 type PreviewRead = (params: { sessionId: string; id: string; offset: number }) => Promise<Chunk>;
+type AttachmentSource = Pick<Attachment, "id" | "size" | "path">;
 const downloads = new Map<string, Promise<string>>();
 export const PREVIEW_BUDGET_BYTES = 40 * 1024 * 1024;
 const MAX_PREVIEWS = 32;
@@ -38,11 +39,7 @@ async function limitedDownload(run: () => Promise<string>): Promise<string> {
   }
 }
 
-function downloadKey(
-  machine: string,
-  session: string,
-  file: { id: string; size: number; path?: string },
-): string {
+function downloadKey(machine: string, session: string, file: AttachmentSource): string {
   return JSON.stringify([machine, session, file.id, file.size, file.path]);
 }
 
@@ -58,7 +55,7 @@ function canPreview(file: Attachment): boolean {
 async function downloadPreview(
   machineId: string,
   sessionId: string,
-  file: Attachment,
+  file: AttachmentSource,
   read: PreviewRead,
   manual = false,
 ): Promise<string> {
@@ -119,20 +116,24 @@ export function bindRemoteAttachmentReaders(
   snapshot: HostSession,
   read: PreviewRead,
 ): HostSession {
+  const sessionId = snapshot.session.id;
+  const load = (file: AttachmentSource) => () =>
+    downloadPreview(machineId, sessionId, file, read, true);
   let changed = false;
   const blocks = snapshot.session.blocks.map((block) => {
-    if (!block.attachments?.length) return block;
     let blockChanged = false;
-    const attachments = block.attachments.map((file) => {
-      if (file.kind === "image" || file.mimeType === "inode/directory" || file.loadPreview)
-        return file;
-      changed = blockChanged = true;
-      return {
-        ...file,
-        loadPreview: () => downloadPreview(machineId, snapshot.session.id, file, read, true),
-      };
+    const attachments = block.attachments?.map((file) => {
+      if (file.mimeType === "inode/directory" || file.loadPreview) return file;
+      blockChanged = true;
+      return { ...file, loadPreview: load(file) };
     });
-    return blockChanged ? { ...block, attachments } : block;
+    const image =
+      block.image && !block.image.loadPreview
+        ? { ...block.image, loadPreview: load({ ...block.image, id: block.id }) }
+        : block.image;
+    if (!blockChanged && image === block.image) return block;
+    changed = true;
+    return { ...block, attachments, image };
   });
   return changed ? { ...snapshot, session: { ...snapshot.session, blocks } } : snapshot;
 }

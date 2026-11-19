@@ -2,6 +2,7 @@ import { useEffect, useRef, type Dispatch, type SetStateAction } from "react";
 import { SOCIAL_PANEL_EVENT } from "../../../features/social/ui/SocialShortcut";
 import { getGroupLockView } from "../../../features/group-lock/model/groupLock";
 import { isProjectLockedIn } from "../../../features/group-lock/model/lockState";
+import { useCrewsPageOpen } from "../../../features/crews/model/crewsPage";
 import { canOpenTerminalIn } from "../../../features/projects/model/recents";
 import { loadNotesEnabled } from "../../../features/settings/model/settings";
 import type { SidebarTabId } from "../../../features/settings/model/appearance";
@@ -16,6 +17,8 @@ import {
   type AppUiContext,
   type AppUiInput,
 } from "../../model/appUiControl";
+import type { AuxiliaryToolId } from "../../model/toolWindows";
+import { workspaceActiveTool } from "../layout/workspaceActiveTool";
 import { useNavigationBreadcrumbs } from "./useNavigationBreadcrumbs";
 import type { useOpenSessionTargets } from "../sessions/useOpenSessionTargets";
 import type {
@@ -39,6 +42,8 @@ export interface AppUiControlDeps {
     automationsViewOpen: boolean;
     socialBoardShown: boolean;
     taskBoardShown: boolean;
+    /** Auxiliary tool page shown over the automations surface; absent or null when none. */
+    auxiliaryTool?: AuxiliaryToolId | null;
     settingsSection: SettingsSurfaceState["settingsSection"];
     projectCwd: string;
     activeTab: WorkspaceTab | null | undefined;
@@ -94,6 +99,7 @@ export function useAppUiControl({
     automationsViewOpen,
     socialBoardShown,
     taskBoardShown,
+    auxiliaryTool,
     settingsSection,
     projectCwd,
     activeTab,
@@ -101,6 +107,7 @@ export function useAppUiControl({
     sidebarTab,
     dockVisible,
   } = surface;
+  const crewsOpen = useCrewsPageOpen();
   const {
     setSettingsOpen,
     setSearchViewOpen,
@@ -169,7 +176,8 @@ export function useAppUiControl({
       Array.from(document.querySelectorAll<HTMLElement>(marker)).some(
         (element) => element.getClientRects().length > 0,
       );
-    const view = settingsOpen
+    // Navigation (close targets and acknowledgements) keeps its legacy precedence, where Crews is part of Servers.
+    const navigationView = settingsOpen
       ? "settings"
       : searchViewOpen
         ? "search"
@@ -186,13 +194,34 @@ export function useAppUiControl({
                     ? "tasks"
                     : "automations"
                 : "conversation";
+    // The reported screen comes from the same derivation the workspace renders with.
+    const view = settingsOpen
+      ? "settings"
+      : searchViewOpen
+        ? "search"
+        : (workspaceActiveTool({
+            crewsOpen,
+            auxiliaryTool,
+            automationsViewOpen,
+            serversViewOpen,
+            inboxViewOpen,
+            notesViewOpen,
+            socialBoardShown,
+            taskBoardShown,
+          }) ?? "conversation");
     const ownProject = pathKey(projectCwd) === pathKey(source.cwd);
-    const state = () => ({
-      view,
+    const surfaceState = (current: string) => ({
+      view: current,
       cwd: projectCwd,
       sessionId: activeTab?.kind === "session" ? activeTab.focusedId : null,
       section: settingsOpen ? settingsSection : null,
-      mounted: view === "conversation" ? !!activeTab : visible(`[data-app-${view}]`),
+      // Auxiliary tool pages have no mount marker; their panel is active exactly when reported.
+      mounted:
+        current === "conversation"
+          ? !!activeTab
+          : current === "conversation-tools" || current === "terminal" || current === "assistant"
+            ? true
+            : visible(`[data-app-${current}]`),
       filesOpen:
         ownProject &&
         !isDetachedSessionWindow() &&
@@ -219,7 +248,9 @@ export function useAppUiControl({
         })),
         settingsSections: APP_UI_SETTINGS,
       };
-    if (action === "ui.workspace.status") return state();
+    if (action === "ui.workspace.status") return surfaceState(view);
+    // Internal only (not in the wire request allow-list): acknowledges navigation on the legacy view.
+    if (action === "ui.workspace.acknowledge") return surfaceState(navigationView);
     if (input.view === "servers" && isDetachedSessionWindow())
       throw new Error("Servers navigation is unavailable in this window.");
     if (action === "ui.workspace.close") {
@@ -232,7 +263,7 @@ export function useAppUiControl({
       if (input.view === "files") {
         if (sidebarTab === "files") setSessionSidebarOpen(false);
       } else if (input.view === "terminal") onHideProjectTerminal();
-      else if (view === input.view) {
+      else if (navigationView === input.view) {
         setSettingsOpen(false);
         setSearchViewOpen(false);
         setInboxViewOpen(false);
@@ -265,7 +296,7 @@ export function useAppUiControl({
       }
       if (needsFocus) {
         const focused = (await appUiLive.current(context, "ui.workspace.status", {})) as ReturnType<
-          typeof state
+          typeof surfaceState
         >;
         if (pathKey(focused.cwd) !== pathKey(source.cwd) || focused.sessionId !== source.id)
           throw new Error(
@@ -317,8 +348,11 @@ export function useAppUiControl({
     const deadline = Date.now() + 10000;
     while (Date.now() < deadline) {
       await new Promise((resolve) => window.setTimeout(resolve, 40));
-      const result = await appUiLive.current(context, "ui.workspace.status", {});
-      const current = result as ReturnType<typeof state>;
+      const current = (await appUiLive.current(
+        context,
+        "ui.workspace.acknowledge",
+        {},
+      )) as ReturnType<typeof surfaceState>;
       if (
         action === "ui.workspace.close"
           ? input.view === "files"
@@ -334,7 +368,7 @@ export function useAppUiControl({
                 current.mounted &&
                 (!input.section || current.section === input.section)
       )
-        return result;
+        return appUiLive.current(context, "ui.workspace.status", {});
     }
     throw new Error(
       "Workspace UI acknowledgement timed out; read ui.workspace.status before retrying.",

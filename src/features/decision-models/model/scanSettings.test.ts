@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   MAX_EXTRA_FOLDERS,
   MAX_EXTRA_PORTS,
+  folderExample,
   formatFolders,
   formatPorts,
   isAbsolutePath,
@@ -58,6 +59,24 @@ describe("isAbsolutePath", () => {
     expect(isAbsolutePath("/var/models")).toBe(true);
     expect(isAbsolutePath("C:x")).toBe(false);
     expect(isAbsolutePath("models")).toBe(false);
+  });
+});
+
+describe("folderExample", () => {
+  it("uses a path in the style of the platform the scan runs on", () => {
+    expect(folderExample("win32")).toBe("D:\\Models");
+    expect(folderExample("darwin")).toBe("/Users/you/Models");
+    expect(folderExample("linux")).toBe("/home/you/Models");
+  });
+
+  it("returns no example when the platform is unknown", () => {
+    expect(folderExample(undefined)).toBeUndefined();
+  });
+
+  it("only offers examples that the folder parser accepts as absolute", () => {
+    for (const platform of ["win32", "darwin", "linux"] as const) {
+      expect(isAbsolutePath(folderExample(platform) ?? "")).toBe(true);
+    }
   });
 });
 

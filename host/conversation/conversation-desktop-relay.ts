@@ -3,14 +3,25 @@ import { SecretInputAnswerParamsSchema } from "../../src/shared/model/host-contr
 import { AsyncResource } from "node:async_hooks";
 import type { RuntimeLogSubjectPrincipal } from "../execution/runtime-log-tools";
 import { isRoomWorkspaceAction } from "../assistant/room/assistant-room-workspace";
+import { AwakeClock } from "../../src/shared/lib/time/awakeClock";
+import { DESKTOP_TAKE_WAIT_MS } from "../../src/shared/model/host-contracts/native-services";
+import { ChangeSignal } from "../changeSignal";
 
 /**
- * How long the desktop may stay silent before the relay counts as offline. The desktop poller
- * (src-tauri/src/conversation_tools_bridge/relay.rs `next_poll_delay`) polls at most every 15 s
- * when idle and backs off to 30 s after failures, so the window must cover that gap plus latency.
+ * How long the desktop may stay silent before the relay counts as offline. A desktop that holds
+ * its take open (`DESKTOP_TAKE_WAIT_MS`) beats at least that often; older desktops poll at most every
+ * 15 s when idle and back off to 30 s after failures. Either way the window covers the gap plus latency.
  */
 export const DESKTOP_RELAY_STALE_MS = 45_000;
 const CLAIM_SWEEP_MS = 5_000;
+
+type TakeOptions = {
+  /** Hold an empty claim open for up to this long; clamped to `DESKTOP_TAKE_WAIT_MS`. */
+  waitMs?: number;
+  signal?: AbortSignal;
+  /** Rechecked while held, so revoked owner authority ends the wait. */
+  authorized?: () => boolean | Promise<boolean>;
+};
 
 /** Owner-authenticated desktop relay. Requests expire without replaying mutations. */
 export class ConversationDesktopRelay {
@@ -18,10 +29,14 @@ export class ConversationDesktopRelay {
     private readonly environmentId?: string,
     private readonly requireAssistantApproval?: (operation: unknown) => Promise<boolean>,
   ) {}
+  /** Polls are aged on a clock that skips Host sleep, so waking never reads as a silent desktop. */
+  private readonly clock = new AwakeClock();
   private lastSeen = 0;
-  /** Last poll per desktop; a claimed request is only as alive as the desktop that claimed it. */
+  /** Last poll per desktop (on `clock`); a claimed request is only as alive as the desktop that claimed it. */
   private readonly ownerSeen = new Map<string, number>();
   private sweeper: ReturnType<typeof setTimeout> | undefined;
+  /** Wakes held takes when a request is queued, so delivery does not wait for the next poll. */
+  private readonly arrivals = new ChangeSignal();
   private pending = new Map<
     string,
     {
@@ -250,7 +265,10 @@ export class ConversationDesktopRelay {
     fullAccess?: () => boolean | Promise<boolean>,
     policyPrepared = false,
   ): Promise<unknown> {
-    if (Date.now() - this.lastSeen > DESKTOP_RELAY_STALE_MS)
+    // A request aimed at one device is only reachable while that device polls; an untargeted one
+    // can be claimed by any desktop, so any poll counts.
+    const seen = expectedOwner ? (this.ownerSeen.get(expectedOwner) ?? 0) : this.lastSeen;
+    if (this.clock.now() - seen > DESKTOP_RELAY_STALE_MS)
       throw new Error(
         "Desktop relay is offline. Open the updated bycoda desktop connected to this host.",
       );
@@ -330,6 +348,7 @@ export class ConversationDesktopRelay {
           ? { secretSignature: randomBytes(32).toString("hex") }
           : {}),
       });
+      this.arrivals.notify();
     });
   }
   /** Metadata only, scoped to the open session. Values never enter this registry. */
@@ -399,7 +418,7 @@ export class ConversationDesktopRelay {
 
   /** A claimed request cannot be re-offered, so one whose desktop went silent fails now, not at its deadline. */
   private failStaleClaims() {
-    const now = Date.now();
+    const now = this.clock.now();
     for (const [id, entry] of this.pending) {
       if (
         !entry.claimed ||
@@ -422,9 +441,31 @@ export class ConversationDesktopRelay {
       this.sweeper.unref();
     }
   }
-  async take(owner = "desktop") {
-    this.lastSeen = Date.now();
+  /**
+   * Claims the requests waiting for `owner`. With `waitMs`, an empty claim is held until a request
+   * arrives, the wait ends, the caller aborts or authority is revoked; each hold is also a heartbeat.
+   * Without it the claim returns at once, as older desktops expect.
+   */
+  async take(owner = "desktop", options: TakeOptions = {}) {
+    this.clock.start();
+    this.lastSeen = this.clock.now();
     this.ownerSeen.set(owner, this.lastSeen);
+    const waitMs =
+      typeof options.waitMs === "number" && Number.isFinite(options.waitMs)
+        ? Math.min(Math.max(0, options.waitMs), DESKTOP_TAKE_WAIT_MS)
+        : 0;
+    const deadline = Date.now() + waitMs;
+    const { signal, authorized } = options;
+    const cancelled = async () => signal?.aborted === true || !(await (authorized?.() ?? true));
+    for (;;) {
+      // Read the version before claiming, so a request queued during the claim still wakes the wait.
+      const version = this.arrivals.version;
+      const requests = await this.claim(owner);
+      if (requests.length || Date.now() >= deadline || (await cancelled())) return requests;
+      await this.arrivals.wait(deadline, cancelled, version, signal);
+    }
+  }
+  private async claim(owner: string) {
     this.failStaleClaims();
     const requests: Record<string, unknown>[] = [];
     for (const [id, entry] of this.pending)
@@ -538,6 +579,7 @@ export class ConversationDesktopRelay {
   close() {
     clearTimeout(this.sweeper);
     this.sweeper = undefined;
+    this.clock.stop();
     for (const entry of this.pending.values()) {
       clearTimeout(entry.timer);
       entry.reject(new Error("Host stopped."));

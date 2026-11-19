@@ -1,0 +1,52 @@
+.plan-step-dot {
+  position: absolute;
+  bottom: -16px;
+  left: -8px;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--mode-color);
+  border-radius: 9999px;
+  color: var(--mode-color);
+  font-size: var(--ui-font-micro);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  box-shadow: 0 0 8px var(--mode-glow);
+  animation: plan-step-dot var(--duration) var(--delay) ease-out both;
+}
+
+@keyframes plan-step-dot {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
+    background: color-mix(in srgb, var(--mode-color) 12%, transparent);
+  }
+  10% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+  20%,
+  38% {
+    transform: scale(1);
+  }
+  34% {
+    background: color-mix(in srgb, var(--mode-color) 12%, transparent);
+  }
+  44% {
+    transform: scale(1.14);
+    background: var(--mode-color);
+  }
+  52% {
+    transform: scale(1);
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.8);
+    background: var(--mode-color);
+  }
+}

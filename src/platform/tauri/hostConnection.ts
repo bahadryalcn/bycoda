@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listenWindowAsync } from "./listenWindow";
+import { currentWindowLabel, listenWindowAsync } from "./listenWindow";
 import { z } from "zod";
 import {
   BulkDescriptorSchema,
@@ -97,6 +97,120 @@ export function normalizeNativeHostFailure(
 }
 const responseTimeoutSchema = z.number().int().min(1).max(WS_LIMITS.maxResponseTimeoutMs);
 
+const KNOWN_NATIVE_KINDS = new Set(["state", "subscription"]);
+
+/**
+ * Diagnostic only: reports the schema-level reason for one rejected native event.
+ * Never logs the payload; the event kind is reduced to a fixed vocabulary.
+ */
+function reportRejectedNativeEvent(payload: unknown, reported: Set<string>): void {
+  const kind =
+    typeof payload === "object" &&
+    payload !== null &&
+    "event" in payload &&
+    typeof payload.event === "object" &&
+    payload.event !== null &&
+    "kind" in payload.event &&
+    typeof payload.event.kind === "string" &&
+    KNOWN_NATIVE_KINDS.has(payload.event.kind)
+      ? payload.event.kind
+      : "unknown";
+  if (reported.has(kind)) return;
+  reported.add(kind);
+  console.warn(
+    `Host connection event rejected by schema (kind: ${kind}); later rejections of this kind are not logged.`,
+  );
+}
+
+function routedMachineId(payload: unknown): string | undefined {
+  return typeof payload === "object" &&
+    payload !== null &&
+    "machineId" in payload &&
+    typeof payload.machineId === "string"
+    ? payload.machineId
+    : undefined;
+}
+
+type NativeEventListener = {
+  listener: (event: ManagedHostEvent) => void;
+  onRejected: (() => void) | undefined;
+  reported: Set<string>;
+};
+type WindowRouter = {
+  routes: Map<string, Set<NativeEventListener>>;
+  ready: Promise<() => void>;
+  unlisten?: () => void;
+};
+/** One native registration per window, however many machines are connected. */
+const windowRouters = new Map<string, WindowRouter>();
+
+/**
+ * Identity is read cheaply first: an event for a machine nobody here listens to is never
+ * deeply validated. A connected machine's event is validated strictly exactly once and then
+ * delivered to that machine's listeners; a rejected one is never applied and only tells them
+ * their view of the machine may be stale.
+ */
+function routeNativeEvent(routes: Map<string, Set<NativeEventListener>>, payload: unknown): void {
+  const machineId = routedMachineId(payload);
+  const entries = machineId === undefined ? undefined : routes.get(machineId);
+  if (!entries?.size) return;
+  const parsed = nativeEnvelopeSchema.safeParse(payload);
+  const event =
+    parsed.success && parsed.data.machineId === machineId
+      ? (parsed.data.event as ManagedHostEvent)
+      : undefined;
+  for (const entry of [...entries]) {
+    // One consumer's failure must not starve the other listeners of this machine.
+    try {
+      if (event) entry.listener(event);
+      else {
+        reportRejectedNativeEvent(payload, entry.reported);
+        entry.onRejected?.();
+      }
+    } catch (error) {
+      console.error("Host connection listener failed", error);
+    }
+  }
+}
+
+function windowRouter(label: string): WindowRouter {
+  const existing = windowRouters.get(label);
+  if (existing) return existing;
+  const routes = new Map<string, Set<NativeEventListener>>();
+  const router: WindowRouter = {
+    routes,
+    ready: listenWindowAsync<unknown>("host-connection-event", ({ payload }) => {
+      // Native batches one tick of events into an ordered array; a lone envelope is still valid.
+      if (Array.isArray(payload)) for (const envelope of payload) routeNativeEvent(routes, envelope);
+      else routeNativeEvent(routes, payload);
+    }),
+  };
+  windowRouters.set(label, router);
+  router.ready.then(
+    (unlisten) => {
+      router.unlisten = unlisten;
+    },
+    () => {
+      if (windowRouters.get(label) === router) windowRouters.delete(label);
+    },
+  );
+  return router;
+}
+
+function removeNativeListener(
+  label: string,
+  router: WindowRouter,
+  machineId: string,
+  entry: NativeEventListener,
+): void {
+  const entries = router.routes.get(machineId);
+  entries?.delete(entry);
+  if (entries?.size === 0) router.routes.delete(machineId);
+  if (router.routes.size > 0) return;
+  if (windowRouters.get(label) === router) windowRouters.delete(label);
+  router.unlisten?.();
+}
+
 /** IPC only: device credentials, TLS, SSH and retry ownership remain native. */
 export function createTauriHostConnection(
   machineId: string,
@@ -104,17 +218,24 @@ export function createTauriHostConnection(
 ): ManagedHostConnectionPort {
   IdentifierSchema.parse(machineId);
   return {
-    async listen(listener) {
-      const unlisten = await listenWindowAsync<unknown>("host-connection-event", ({ payload }) => {
-        const parsed = nativeEnvelopeSchema.safeParse(payload);
-        if (parsed.success && parsed.data.machineId === machineId)
-          listener(parsed.data.event as ManagedHostEvent);
-      });
+    async listen(listener, onRejected) {
+      const label = currentWindowLabel();
+      const router = windowRouter(label);
+      const entry: NativeEventListener = { listener, onRejected, reported: new Set<string>() };
+      const entries = router.routes.get(machineId) ?? new Set<NativeEventListener>();
+      entries.add(entry);
+      router.routes.set(machineId, entries);
+      try {
+        await router.ready;
+      } catch (error) {
+        removeNativeListener(label, router, machineId, entry);
+        throw error;
+      }
       let released = false;
       return () => {
         if (!released) {
           released = true;
-          unlisten();
+          removeNativeListener(label, router, machineId, entry);
         }
       };
     },

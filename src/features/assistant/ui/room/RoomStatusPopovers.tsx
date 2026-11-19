@@ -40,7 +40,7 @@ export function RoomStatusPopovers({ snapshot }: { snapshot: AssistantSnapshot }
             />
             {roomPrivacy.pending && (
               <Text as="p" tone="secondary" leading="normal">
-                {t("Confirming Room privacy protection...")}
+                {t("Confirming Room privacy protection…")}
               </Text>
             )}
             <Text as="p" leading="normal">
@@ -77,7 +77,7 @@ export function RoomStatusPopovers({ snapshot }: { snapshot: AssistantSnapshot }
               ].map(([value, label]) => ({ value, label: t(label) }))}
               disabled={Boolean(pending)}
               onValueChange={(state) =>
-                mutate("presence", t("Updating..."), {
+                mutate("presence", t("Updating…"), {
                   op: "presence.set",
                   state: state as "present" | "away" | "dnd" | "idle",
                 })

@@ -1,7 +1,9 @@
 //! Window glass on Windows. WebView2 composites a transparent window on the CPU
 //! for every frame, so the main window is created opaque unless the user keeps
 //! Window glass on. The saved choice lives in `window-glass.json` and decides how
-//! the next launch creates the window; the frontend sends it on every sync.
+//! the next launch creates the window; the frontend sends it on every sync, with
+//! the opaque page colour that the same file keeps so an opaque launch does not
+//! flash black before the page paints.
 
 #[cfg(any(target_os = "windows", test))]
 use std::io::Write;
@@ -20,6 +22,9 @@ static CREATED_TRANSPARENT: OnceLock<bool> = OnceLock::new();
 #[derive(Serialize, Deserialize)]
 struct Stored {
     enabled: bool,
+    /// Read leniently (raw JSON) so a malformed colour never drops `enabled`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    background: Option<serde_json::Value>,
 }
 
 #[cfg(any(target_os = "windows", test))]
@@ -103,19 +108,33 @@ fn flag_path(identifier: &str) -> Option<PathBuf> {
     std::env::var_os("APPDATA").map(|dir| PathBuf::from(dir).join(identifier).join(FILE_NAME))
 }
 
-/// A missing or unreadable file means opaque, the cheap default.
-fn read_flag(path: &Path) -> bool {
+fn read_stored(path: &Path) -> Option<Stored> {
     std::fs::read_to_string(path)
         .ok()
         .and_then(|text| serde_json::from_str::<Stored>(&text).ok())
-        .is_some_and(|stored| stored.enabled)
+}
+
+/// A missing or unreadable file means opaque, the cheap default.
+fn read_flag(path: &Path) -> bool {
+    read_stored(path).is_some_and(|stored| stored.enabled)
+}
+
+/// The opaque page colour the last sync saved; None when missing or malformed.
+fn read_background(path: &Path) -> Option<Rgb> {
+    read_stored(path)?
+        .background
+        .and_then(|value| serde_json::from_value::<Rgb>(value).ok())
 }
 
 #[cfg(any(target_os = "windows", test))]
-fn write_flag(path: &Path, enabled: bool) -> Result<(), String> {
+fn write_flag(path: &Path, enabled: bool, background: Rgb) -> Result<(), String> {
     let dir = path.parent().ok_or("Window glass folder is unavailable")?;
     std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-    let body = serde_json::to_string(&Stored { enabled }).map_err(|e| e.to_string())?;
+    let stored = Stored {
+        enabled,
+        background: Some(serde_json::to_value(background).map_err(|e| e.to_string())?),
+    };
+    let body = serde_json::to_string(&stored).map_err(|e| e.to_string())?;
     let temp = path.with_extension("json.tmp");
     let mut file = std::fs::File::create(&temp).map_err(|e| format!("{}: {e}", temp.display()))?;
     file.write_all(body.as_bytes())
@@ -124,8 +143,16 @@ fn write_flag(path: &Path, enabled: bool) -> Result<(), String> {
     std::fs::rename(&temp, path).map_err(|e| format!("{}: {e}", path.display()))
 }
 
-pub fn windows_window_transparent(identifier: &str) -> bool {
-    flag_path(identifier).is_some_and(|path| read_flag(&path))
+/// The opaque `main` window's creation colour: the page colour saved by the last
+/// sync, so the launch matches the app instead of the config's black. A glass
+/// (transparent) window keeps the config value, and so does a launch with no
+/// saved colour yet.
+pub fn creation_background(transparent: bool, saved: Option<Rgb>) -> Option<Rgb> {
+    if transparent {
+        None
+    } else {
+        saved
+    }
 }
 
 /// Chooses the `main` window's transparency from the saved flag before the app
@@ -133,10 +160,15 @@ pub fn windows_window_transparent(identifier: &str) -> bool {
 /// `transparent: true` and this runtime decision overrides it on Windows only.
 pub fn apply_to_context(mut context: tauri::Context<tauri::Wry>) -> tauri::Context<tauri::Wry> {
     if cfg!(windows) {
-        let transparent = windows_window_transparent(&context.config().identifier);
+        let path = flag_path(&context.config().identifier);
+        let transparent = path.as_deref().is_some_and(read_flag);
+        let page = creation_background(transparent, path.as_deref().and_then(read_background));
         for window in &mut context.config_mut().app.windows {
             if window.label == MAIN_LABEL {
                 window.transparent = transparent;
+                if let Some(Rgb { r, g, b }) = page {
+                    window.background_color = Some(tauri::utils::config::Color(r, g, b, 255));
+                }
             }
         }
         let _ = CREATED_TRANSPARENT.set(transparent);
@@ -217,7 +249,7 @@ fn apply_windows(
 
     let identifier = window.app_handle().config().identifier.clone();
     let path = flag_path(&identifier).ok_or("Window glass folder is unavailable")?;
-    write_flag(&path, preference)?;
+    write_flag(&path, preference, background)?;
 
     let plan = glass_plan(enabled, preference, created_transparent());
     if plan.glass {
@@ -289,11 +321,36 @@ mod tests {
     fn written_flag_round_trips_and_replaces_previous_value() {
         let dir = temp_dir("round-trip");
         let path = dir.join(FILE_NAME);
-        write_flag(&path, true).unwrap();
+        write_flag(&path, true, PAGE).unwrap();
         assert!(read_flag(&path));
-        write_flag(&path, false).unwrap();
+        write_flag(&path, false, PAGE).unwrap();
         assert!(!read_flag(&path));
         assert!(!dir.join("window-glass.json.tmp").exists());
+    }
+
+    const PAGE: Rgb = Rgb { r: 12, g: 14, b: 18 };
+
+    #[test]
+    fn saved_page_colour_survives_and_a_bad_one_keeps_the_flag() {
+        let dir = temp_dir("page-colour");
+        let path = dir.join(FILE_NAME);
+        write_flag(&path, true, Rgb { r: 250, g: 249, b: 246 }).unwrap();
+        let saved = read_background(&path).unwrap();
+        assert_eq!((saved.r, saved.g, saved.b), (250, 249, 246));
+        assert!(read_flag(&path));
+
+        std::fs::write(&path, r#"{"enabled":true,"background":{"r":"x"}}"#).unwrap();
+        assert!(read_background(&path).is_none());
+        assert!(read_flag(&path));
+    }
+
+    #[test]
+    fn creation_colour_is_the_saved_page_only_when_opaque() {
+        let saved = Some(PAGE);
+        assert!(creation_background(true, saved).is_none());
+        let opaque = creation_background(false, saved).unwrap();
+        assert_eq!((opaque.r, opaque.g, opaque.b), (12, 14, 18));
+        assert!(creation_background(false, None).is_none());
     }
 
     #[test]

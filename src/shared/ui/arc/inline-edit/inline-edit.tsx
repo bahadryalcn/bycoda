@@ -404,7 +404,8 @@ function InlineEditControl({
       for (const type of ["beforeinput", "paste", "drop"])
         node.removeEventListener(type, guard, true);
     };
-  });
+    // The guard reads inputPort and composing through refs, so it stays current without rebinding on each render. The control element mounts only while editing and swaps between textarea and input with multiline, so those are the only changes that move the node.
+  }, [inputObserver, editing, multiline]);
 
   function mutateInput(_kind: string, apply: () => void) {
     const port = inputPort.current;

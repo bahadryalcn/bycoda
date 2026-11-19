@@ -68,6 +68,15 @@ it("requires control for Duo fold presets and sends each under the current lease
     );
   }
 });
+it("explains a running host with no devices and offers refresh and setup", async () => {
+  const api = makeApi();
+  vi.mocked(api.list).mockResolvedValue({ devices: [], errors: [] });
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  expect(container.querySelector('[role="status"]')?.textContent).toBe("No devices found");
+  expect(container.querySelector('[role="status"] button')).toBeNull();
+  expect(button("Refresh devices")).toBeTruthy();
+  expect(button("Setup and access")).toBeTruthy();
+});
 it("restores device draft without claiming control", async () => {
   const scope = { cwd: "/repo", sessionId: "device-transfer", targetValue: "project" };
   restoreToolsDraftTransfer(scope.cwd, scope.sessionId, scope.targetValue, {

@@ -276,7 +276,7 @@ for (const theme of ["light", "dark"])
         conversation.getByRole("listitem").and(panel.locator('[data-role="assistant"]')),
       ).toBeVisible();
       await panel.screenshot({ path: join(output, `${theme}-${width}-listening.png`) });
-      const controls = ["Pause mic", "Silence", "Disconnect voice"];
+      const controls = ["Mute microphone", "Stop speaking", "Disconnect voice"];
       // The controls share one row once the listening layout has settled.
       await expect
         .poll(async () => {
@@ -750,7 +750,7 @@ for (const theme of ["light", "dark"]) {
     expect(await panel.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
     await page.screenshot({ path: join(captures, `${theme}-compact.png`) });
 
-    await page.getByRole("button", { name: "Pause mic" }).click();
+    await page.getByRole("button", { name: "Mute microphone" }).click();
     await page.getByRole("button", { name: "Return voice companion to the app" }).click();
     const sent = await page.evaluate(() =>
       (window as any).fixtureOverlay.calls

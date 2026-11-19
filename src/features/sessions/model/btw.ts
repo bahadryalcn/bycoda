@@ -5,6 +5,7 @@ import { displayPath } from "../../../shared/lib/paths";
 import { truncateCodeUnits } from "../../../shared/lib/text/truncate";
 import type { Attachment, Block, BtwMessage, BtwThread, HarnessId } from "./session";
 import { newSession } from "./session";
+import { BtwThreadError } from "./btwError";
 import type { BuiltinSkill } from "../../skills/model/skills";
 import { harnessForTurn } from "./secondOpinion";
 import { groupTurns } from "./transcriptActivity";
@@ -310,7 +311,7 @@ export function serializeBtwSnapshot(
 ): string {
   const visible = btwVisibleBlocks(blocks, sourceEndBlockId);
   if (visible.length === 0) {
-    throw new Error("The completed turn is no longer available.");
+    throw new BtwThreadError("turnUnavailable", "The completed turn is no longer available.");
   }
   const serialized = visible
     .map((block) => serializeBtwBlock(block, cwd))

@@ -98,7 +98,7 @@ export function useChangedFileMenu({
           kind: "item",
           id: "default",
           get label() {
-            return t("Open in Default App");
+            return t("Open in default app");
           },
           disabled: targets.every((target) => target.deleted) || remote,
         },
@@ -109,21 +109,21 @@ export function useChangedFileMenu({
             ? t("Reveal in Finder")
             : IS_WIN
               ? t("Reveal in File Explorer")
-              : t("Open Containing Folder"),
+              : t("Open containing folder"),
         },
         { kind: "sep" },
         {
           kind: "item",
           id: "copy-path",
           get label() {
-            return t("Copy Path");
+            return t("Copy path");
           },
         },
         {
           kind: "item",
           id: "copy-relative",
           get label() {
-            return t("Copy Relative Path");
+            return t("Copy relative path");
           },
         },
         ...(actions.length

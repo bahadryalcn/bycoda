@@ -11,6 +11,7 @@ import {
   useDurableRemoteOutboxIssues,
 } from "../model/remoteOutbox";
 import { exportOversizedOutboxRecord } from "../model/remoteOutboxDatabase";
+import { errorText } from "../../../shared/lib/errors";
 
 export function RemoteOutboxNotice({
   project,
@@ -61,7 +62,7 @@ export function RemoteOutboxNotice({
                     if (!result.cancelled) setExportedFor(`${record.key}:${record.version}`);
                   })
                   .catch((cause: unknown) =>
-                    setError(cause instanceof Error ? cause.message : String(cause)),
+                    setError(errorText(cause)),
                   )
                   .finally(() => setSaving(false));
               }}

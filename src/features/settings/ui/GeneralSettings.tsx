@@ -64,7 +64,13 @@ import { UpdateChannelRow } from "./UpdateChannelRow";
 import { SessionFolderGroup, restoreSessionFolderDefault } from "./SessionFolderSettings";
 import { NewProjectFolderGroup, restoreNewProjectFolderDefault } from "./NewProjectFolderSettings";
 import { DiagnosticsGroup, restorePerformanceTraceDefault } from "./DiagnosticsSettings";
-import { Group, Row, Toggle, useSettingsPageReset } from "../../../shared/ui/settings";
+import {
+  Group,
+  Row,
+  Toggle,
+  useConfirmedPreferences,
+  useSettingsPageReset,
+} from "../../../shared/ui/settings";
 import { ProductDetails } from "./GeneralProductDetails";
 import "./GeneralSettings.css";
 
@@ -95,48 +101,21 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
     loadKeepAwakeScreen,
     () => false,
   );
-  const [powerPending, setPowerPending] = useState<Record<string, boolean>>({});
-  const [powerFailures, setPowerFailures] = useState<Record<string, () => void>>({});
-  const savePower = async (id: string, write: () => Promise<boolean>) => {
-    setPowerPending((current) => ({ ...current, [id]: true }));
-    try {
-      if (!(await write())) throw new Error("Preference not persisted");
-      setPowerFailures((current) => {
-        const next = { ...current };
-        delete next[id];
-        return next;
-      });
-    } catch {
-      setPowerFailures((current) => ({
-        ...current,
-        [id]: () => {
-          void savePower(id, write).catch(console.error);
-        },
-      }));
-    } finally {
-      setPowerPending((current) => ({ ...current, [id]: false }));
-    }
-  };
-  const powerFeedback = (id: string) =>
-    powerPending[id] ? (
-      <SettingsFeedback state="loading" immediate>
-        {t("Saving…")}
-      </SettingsFeedback>
-    ) : powerFailures[id] ? (
-      <SettingsFeedback state="error" action={{ label: t("Retry"), onClick: powerFailures[id] }}>
-        {t("Could not save changes")}
-      </SettingsFeedback>
-    ) : undefined;
+  const {
+    commit: commitPower,
+    pending: powerPending,
+    feedback: powerFeedback,
+  } = useConfirmedPreferences();
   const onKeepAwake = (next: boolean) => {
-    void savePower("keep-awake", () =>
-      saveAgentDefaultConfirmed("keepAwakeWhileAgentsWork", next),
-    ).catch(console.error);
+    commitPower("keep-awake", {
+      write: () => saveAgentDefaultConfirmed("keepAwakeWhileAgentsWork", next),
+    });
   };
   const onKeepAwakeHoldAfter = (next: string) => {
     if (isKeepAwakeHoldAfter(next))
-      void savePower("keep-awake-duration", () =>
-        saveAgentDefaultConfirmed("keepAwakeHoldAfter", next),
-      ).catch(console.error);
+      commitPower("keep-awake-duration", {
+        write: () => saveAgentDefaultConfirmed("keepAwakeHoldAfter", next),
+      });
   };
   const onKeepAwakeScreen = (next: boolean) => {
     saveKeepAwakeScreen(next);
@@ -230,7 +209,6 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
           label={t("Prevent sleep while agents work")}
           info={
             <InfoPopover className="shrink-0" label={t("Sleep behavior")}>
-              <p>{t("Keep this computer awake while an agent is working.")}</p>
               <p>{sleepBehavior}</p>
             </InfoPopover>
           }
@@ -239,16 +217,13 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
             label={t("Prevent sleep while agents work")}
             on={keepAwake}
             onChange={onKeepAwake}
-            disabled={powerPending["keep-awake"]}
+            disabled={powerPending("keep-awake")}
           />
         </Row>
         <Row
           id="keep-awake-duration"
           feedback={powerFeedback("keep-awake-duration")}
           label={t("After agents finish")}
-          description={t(
-            "Choose when this computer can sleep again after the last agent finishes.",
-          )}
           dependsOn={keepAwake}
           disabledReason={t("Turn on Prevent sleep while agents work first")}
         >
@@ -258,13 +233,12 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
             value={keepAwakeHoldAfter}
             options={[...KEEP_AWAKE_HOLD_AFTER]}
             onValueChange={onKeepAwakeHoldAfter}
-            disabled={!keepAwake || powerPending["keep-awake-duration"]}
+            disabled={!keepAwake || powerPending("keep-awake-duration")}
           />
         </Row>
         <Row
           id="keep-awake-screen"
           label={t("Keep the screen on")}
-          description={t("Keep the display awake while sleep prevention is active.")}
           dependsOn={keepAwake}
           disabledReason={t("Turn on Prevent sleep while agents work first")}
         >
@@ -450,7 +424,7 @@ export function UpdateRow({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string
               ? t("You're on the latest version.")
               : snapshot.phase === "error"
                 ? (snapshot.error ?? t("Update check failed."))
-                : t("Check for a newer version.");
+                : null;
 
   return (
     <>
@@ -470,7 +444,6 @@ export function UpdateRow({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string
             </Text>
           </span>
         }
-        description={snapshot.phase === "idle" && updatesEnabled !== false ? status : undefined}
         feedback={
           <div className="grid min-w-0 gap-2">
             {metadataError ? (

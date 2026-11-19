@@ -317,6 +317,24 @@ it("uses cloud recognition without a local recognizer and reports provider error
   expect(backend.release).not.toHaveBeenCalled();
   expect(backend.transcribe).not.toHaveBeenCalled();
 });
+it("uploads a long cloud phrase once at its pause instead of previewing it", async () => {
+  const events = setup();
+  backend.cloudTranscribe.mockResolvedValue({ text: "uzun bulut cümlesi" });
+  const dictation = new Dictation(events, "tr", undefined, undefined, "openai");
+  await dictation.start();
+  await vi.waitFor(() => expect(events.state).toHaveBeenLastCalledWith("listening"));
+  // About four seconds of continuous speech: several preview steps for a local engine.
+  speak(60);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(backend.cloudTranscribe).not.toHaveBeenCalled();
+  expect(events.text).not.toHaveBeenCalled();
+  pause();
+  await vi.waitFor(() => expect(events.text).toHaveBeenCalledWith("uzun bulut cümlesi", true));
+  expect(backend.cloudTranscribe).toHaveBeenCalledTimes(1);
+  expect(events.text.mock.calls).toEqual([["uzun bulut cümlesi", true]]);
+  dictation.cancel();
+});
+
 it("retains quiet recording when silence filtering is disabled", async () => {
   const events = setup();
   backend.transcribe.mockResolvedValueOnce({

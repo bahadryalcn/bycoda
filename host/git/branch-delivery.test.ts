@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -303,6 +304,26 @@ describe("SHA-bound branch delivery", () => {
     ).rejects.toThrow("Unauthorized");
     const receipt = await r.service.merge(r.mutation(plan.token), owner);
     expect(receipt.sourceHead).toBe(r.sourceHead);
+  });
+  it("fingerprints a diff and untracked file beyond the buffer cap exactly as before", async () => {
+    const r = await fixture();
+    const big = "line of tracked text\n".repeat(500_000); // ~10 MiB diff, over the old 8 MiB cap
+    r.write("shared.txt", big);
+    r.write("video.bin", "x".repeat(9 * 1024 * 1024));
+    const plan = await r.review();
+    const git = (...args: string[]) =>
+      execFileSync("git", args, { cwd: r.cwd, maxBuffer: 64 * 1024 * 1024 });
+    const expected = createHash("sha256")
+      .update(git("status", "--porcelain=v1", "-z", "--untracked-files=all").toString("utf8"))
+      .update(git("ls-files", "--stage", "-z").toString("utf8"))
+      .update(git("diff", "--binary", "--no-ext-diff", "--no-textconv").toString("utf8"))
+      .update("");
+    for (const path of ["shared.txt", "video.bin"]) {
+      expected.update(path).update(readFileSync(join(r.cwd, path)));
+    }
+    expect(plan.targetStatusFingerprint).toBe(expected.digest("hex"));
+    r.write("video.bin", `y${"x".repeat(9 * 1024 * 1024 - 1)}`);
+    expect((await r.review()).targetStatusFingerprint).not.toBe(plan.targetStatusFingerprint);
   });
   it("blocks an ignored owner file that a source commit would overwrite", async () => {
     const r = await fixture();

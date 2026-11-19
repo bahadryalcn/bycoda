@@ -1,4 +1,4 @@
-import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { describeLocalError, presentRemoteError } from "../../connections/public/remoteFailure";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
@@ -309,11 +309,13 @@ export function WorktreesPage({
               try {
                 if (sessionIds.length && deleteSessions) {
                   if (!onDeleteSessions) {
-                    throw new Error("Sessions still use this worktree and could not be deleted.");
+                    throw new Error(
+                      t("Sessions still use this worktree and could not be deleted."),
+                    );
                   }
                   if (!(await onDeleteSessions(sessionIds))) {
                     throw new Error(
-                      "Some sessions could not be deleted, so the worktree was kept.",
+                      t("Some sessions could not be deleted, so the worktree was kept."),
                     );
                   }
                   sessionsDeleted = true;
@@ -324,9 +326,13 @@ export function WorktreesPage({
                   if (main) setProject(main.path);
                 }
               } catch (error) {
+                // The cause keeps the redaction and `Error:` stripping of describeLocalError.
                 const failure = sessionsDeleted
                   ? new Error(
-                      `The sessions were deleted, but the worktree was kept. ${String(error)}`,
+                      describeLocalError(
+                        error,
+                        t("The sessions were deleted, but the worktree was kept."),
+                      ),
                     )
                   : error;
                 setError(presentRemoteError(failure, { explicit: true }));

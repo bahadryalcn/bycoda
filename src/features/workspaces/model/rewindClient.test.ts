@@ -80,14 +80,19 @@ it("requires the undo capability before requesting an undo preview", async () =>
   ).rejects.toThrow("Update bycoda Host");
   expect(request).not.toHaveBeenCalled();
 });
-it("does not apply blocked or expired plans", async () => {
-  for (const invalid of [
-    { ...plan, blockers: ["Uncaptured file"] },
-    { ...plan, expiresAt: 1 },
-  ])
-    await expect(applyWorkspaceRewind(session, invalid, "stable-key")).rejects.toThrow(
-      "blocked or expired",
-    );
+it("does not apply blocked plans and names blockers rather than expiry", async () => {
+  await expect(
+    applyWorkspaceRewind(session, { ...plan, blockers: ["Uncaptured file"] }, "stable-key"),
+  ).rejects.toThrow("is blocked");
+  expect(request).not.toHaveBeenCalled();
+});
+it("does not apply expired plans and names expiry rather than blockers", async () => {
+  const error = await applyWorkspaceRewind(session, { ...plan, expiresAt: 1 }, "stable-key").catch(
+    (cause: unknown) => cause,
+  );
+  expect(error).toBeInstanceOf(Error);
+  expect((error as Error).message).toContain("has expired");
+  expect((error as Error).message).not.toContain("blocked");
   expect(request).not.toHaveBeenCalled();
 });
 it("reconciles only the receipt revision and resets provider binding", async () => {

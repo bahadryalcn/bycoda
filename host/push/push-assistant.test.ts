@@ -214,15 +214,11 @@ it("dispatches reminders after restart only while the same notification is pendi
 it("keeps a send with a lost receipt unknown across restart", async () => {
   const t = await setup();
   t.set([notification("lost-send", "owner.question")]);
-  await expect(
-    t
-      .create({
-        send: async () => {
-          throw new Error("receipt lost");
-        },
-      })
-      .tick(),
-  ).rejects.toThrow("receipt lost");
+  const send = vi.fn(async () => {
+    throw new Error("receipt lost");
+  });
+  await t.create({ send }).tick();
+  expect(send).toHaveBeenCalledOnce();
   t.advance(60 * 60000);
   await t.create().tick();
   expect(t.sent).toEqual([]);

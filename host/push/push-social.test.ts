@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { StoreDatabase } from "../store-db";
-import type { ExpoPushMessage } from "./expo-push";
+import { ExpoPushError, type ExpoPushMessage } from "./expo-push";
 import { createSocialPushSource, SocialPushLedger, type SocialPushItem } from "./push-social";
 import { PushNotifications } from "./push-service";
 import { parsePushRegistration, PushDeviceStore } from "./push-store";
@@ -38,6 +38,9 @@ async function setup(settings: Record<string, unknown> = {}) {
   await store.register("phone", parsePushRegistration({ ...registration, ...settings }));
   let waiting: SocialPushItem[] = [];
   const sent: ExpoPushMessage[] = [];
+  // "retryable": explicitly throttled; "unknown": network/5xx outcome; "later": the first message has an
+  // unknown outcome and the rest were never sent.
+  let expoDown: "retryable" | "unknown" | "later" | undefined;
   const create = () =>
     new PushNotifications({
       store,
@@ -47,11 +50,31 @@ async function setup(settings: Record<string, unknown> = {}) {
       socialLedger: new SocialPushLedger(db),
       wallNow: () => NOW,
       send: async (messages) => {
+        if (expoDown)
+          throw new ExpoPushError(
+            expoDown === "retryable" ? "Expo push rejected the request (429)" : "fetch failed",
+            {
+              unregistered: [],
+              failed: 0,
+              // An unknown outcome is not listed, so it is never replayed; unsent batches are.
+              retry:
+                expoDown === "retryable"
+                  ? [...messages]
+                  : expoDown === "later"
+                    ? messages.slice(1)
+                    : [],
+            },
+          );
         sent.push(...messages);
         return { unregistered: [], failed: 0 };
       },
     });
-  return { sent, create, set: (items: SocialPushItem[]) => (waiting = items) };
+  return {
+    sent,
+    create,
+    set: (items: SocialPushItem[]) => (waiting = items),
+    expoDown: (mode: typeof expoDown) => (expoDown = mode),
+  };
 }
 
 describe("social pushes", () => {
@@ -64,6 +87,40 @@ describe("social pushes", () => {
     t.set([item("request:1"), item("signin:a:5", { kind: "signIn" })]);
     await t.create().tick();
     expect(t.sent).toHaveLength(2);
+  });
+
+  it("sends an item after Expo was down, but never replays one with an unknown outcome", async () => {
+    const t = await setup();
+    t.set([item("request:1")]);
+    const service = t.create();
+    t.expoDown("retryable");
+    await service.tick();
+    expect(t.sent).toEqual([]);
+    t.expoDown(undefined);
+    await service.tick();
+    await service.tick();
+    expect(t.sent).toHaveLength(1);
+
+    t.set([item("request:2")]);
+    t.expoDown("unknown");
+    await service.tick();
+    t.expoDown(undefined);
+    await service.tick();
+    expect(t.sent).toHaveLength(1);
+  });
+
+  it("sends a later unsent item after an ambiguous one, never the ambiguous one again", async () => {
+    const t = await setup();
+    t.set([item("request:1"), item("request:2")]);
+    const service = t.create();
+    t.expoDown("later");
+    await service.tick();
+    expect(t.sent).toEqual([]);
+    t.expoDown(undefined);
+    await service.tick();
+    await service.tick();
+    // Only the item whose batch was never sent goes out; the unknown one stays claimed.
+    expect(t.sent).toHaveLength(1);
   });
 
   it("carries the platform and reason only, with the recipient's own text", async () => {

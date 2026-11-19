@@ -45,20 +45,70 @@ describe("antigravity catalog on the stream-json transport", () => {
       undefined,
       "management",
     );
-    expect(mock.setModels).toHaveBeenCalledWith("antigravity", [
-      {
-        id: "antigravity:gemini-3.8-flash-high",
-        harness: "antigravity",
-        name: "Gemini 3.8 Flash (High)",
-        nativeId: "gemini-3.8-flash-high",
-      },
-    ]);
+    expect(mock.setModels).toHaveBeenCalledWith(
+      "antigravity",
+      [
+        {
+          id: "antigravity:gemini-3.8-flash-high",
+          harness: "antigravity",
+          name: "Gemini 3.8 Flash (High)",
+          nativeId: "gemini-3.8-flash-high",
+        },
+      ],
+      true,
+    );
   });
 
-  it("keeps the previous catalog when agy is signed out", async () => {
+  it("keeps the previous catalog and reports the refresh as failed when agy is signed out", async () => {
     mock.exec.mockResolvedValue("Please sign in to view available models.\n");
     expect(await discoverAntigravityModels()).toEqual([]);
+    await expect(refreshAntigravityCatalog()).rejects.toThrow("antigravity reported no models.");
+    expect(mock.setModels).not.toHaveBeenCalled();
+  });
+
+  it("publishes every Gemini 4 family and listed effort without inventing account entitlements", async () => {
+    const rows = [
+      ...["carbon", "argon", "neon", "hydrogen"].flatMap((family) =>
+        ["low", "medium", "high", ...(["neon", "hydrogen"].includes(family) ? ["xhigh"] : [])].map(
+          (effort) => [`gemini-4-${family}-${effort}`, `Gemini 4 ${family} (${effort})`],
+        ),
+      ),
+      ["orchestrator-neon", "Orchestrator (Neon)"],
+      ["orchestrator-carbon", "Orchestrator (Carbon)"],
+      ["orchestrator-argon", "Orchestrator (Argon)"],
+    ];
+    mock.exec.mockResolvedValue(rows.map((row) => row.join("\t")).join("\n"));
     await refreshAntigravityCatalog();
+    expect(mock.setModels).toHaveBeenLastCalledWith(
+      "antigravity",
+      rows.map(([nativeId, name]) => ({
+        id: `antigravity:${nativeId}`,
+        harness: "antigravity",
+        nativeId,
+        name,
+      })),
+      true,
+    );
+
+    mock.exec.mockResolvedValue("gemini-4-neon-xhigh\tGemini 4 Neon (Extra)\n");
+    await refreshAntigravityCatalog();
+    expect(mock.setModels).toHaveBeenLastCalledWith(
+      "antigravity",
+      [
+        {
+          id: "antigravity:gemini-4-neon-xhigh",
+          harness: "antigravity",
+          nativeId: "gemini-4-neon-xhigh",
+          name: "Gemini 4 Neon (Extra)",
+        },
+      ],
+      true,
+    );
+  });
+
+  it("rejects instead of swallowing a failed probe", async () => {
+    mock.exec.mockRejectedValue(new Error("agy crashed"));
+    await expect(refreshAntigravityCatalog()).rejects.toThrow("agy crashed");
     expect(mock.setModels).not.toHaveBeenCalled();
   });
 });

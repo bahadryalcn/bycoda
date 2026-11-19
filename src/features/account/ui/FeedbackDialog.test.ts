@@ -59,6 +59,50 @@ it("keeps the unsent feedback when its mounted dialog closes and reopens", async
   }
 });
 
+it("does not reopen with a stale failure banner next to the kept draft", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  feedback.send.mockRejectedValueOnce(new TypeError("network"));
+  try {
+    await act(async () => {
+      root.render(createElement(FeedbackDialog));
+      openFeedbackDialog();
+    });
+    const field = () => container.querySelector("textarea")!;
+    const type = async (text: string) =>
+      act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+          field(),
+          text,
+        );
+        field().dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    await type("Unsent feedback");
+    await act(async () => {
+      container
+        .querySelector("form")!
+        .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    expect(container.textContent).toContain("Could not send your feedback");
+    const close = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Close dialog",
+    )!;
+    await act(async () => close.click());
+    await act(async () => openFeedbackDialog());
+    expect(container.textContent).not.toContain("Could not send your feedback");
+    expect(field().value).toBe("Unsent feedback");
+  } finally {
+    await act(async () => {
+      root.unmount();
+      closeFeedbackDialog();
+    });
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
 it.each([false, true])(
   "keeps feedback receipt and newer draft separate (newer=%s)",
   async (newer) => {

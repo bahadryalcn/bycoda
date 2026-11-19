@@ -157,28 +157,36 @@ function InboxApprovalDialog({
 }) {
   const t = useT();
   return (
-    <Modal size={request.inbox ? "lg" : "sm"} fitViewport title={request.title} onClose={onClose}>
-      <ApprovalRequest
-        title={request.title}
-        detail={request.message}
-        allow={{
-          label: t(request.confirmLabel),
-          onClick: () => settleOwnerApproval(request.id, true),
-        }}
-        deny={{
-          label: t(request.cancelLabel),
-          onClick: () => settleOwnerApproval(request.id, false),
-        }}
-        details={
-          request.inbox
-            ? {
-                label: t("Details"),
-                defaultOpen: true,
-                content: <InboxApprovalPreview details={request.inbox} message={request.message} />,
-              }
-            : undefined
-        }
-      />
+    <Modal
+      size={request.inbox ? "lg" : "sm"}
+      fitViewport
+      title={request.title}
+      minimalHeader
+      onClose={onClose}
+    >
+      <div className="pe-7">
+        <ApprovalRequest
+          title={request.title}
+          detail={request.message}
+          allow={{
+            label: t(request.confirmLabel),
+            onClick: () => settleOwnerApproval(request.id, true),
+          }}
+          deny={{
+            label: t(request.cancelLabel),
+            onClick: () => settleOwnerApproval(request.id, false),
+          }}
+          details={
+            request.inbox
+              ? {
+                  label: t("Details"),
+                  defaultOpen: true,
+                  content: <InboxApprovalPreview details={request.inbox} message={request.message} />,
+                }
+              : undefined
+          }
+        />
+      </div>
     </Modal>
   );
 }

@@ -130,8 +130,27 @@ const deletionHolds = new Map<string, number>();
 export function attachmentDeletionHeld(attachmentDir: string): boolean {
   return (deletionHolds.get(resolve(attachmentDir)) ?? 0) > 0;
 }
-async function filesBelow(root: string): Promise<string[]> {
-  const result: string[] = [];
+/** Raised before any attachment is copied, so a refused snapshot leaves no large partial copy. */
+function captureFileLimitError(): Error {
+  return new Error(
+    `Snapshot file limit exceeded: a snapshot holds at most ${MAX_FILES} files. Delete unused attachments or old sessions, then retry.`,
+  );
+}
+function captureSizeLimitError(): Error {
+  return new Error(
+    `Snapshot size limit exceeded: a snapshot holds at most ${MAX_BYTES / 1024 ** 3} GiB. Delete large attachments or old sessions, then retry.`,
+  );
+}
+/**
+ * Lists attachment files with the sizes seen while walking. The walk stops as soon as the
+ * remaining file or byte budget is exceeded, so memory and time stay bounded by the caps.
+ */
+async function filesBelow(
+  root: string,
+  budget: { files: number; bytes: number },
+): Promise<Array<{ path: string; bytes: number }>> {
+  const result: Array<{ path: string; bytes: number }> = [];
+  let totalBytes = 0;
   const walk = async (path: string) => {
     for (const entry of await readdir(path, { withFileTypes: true })) {
       const target = join(path, entry.name);
@@ -139,8 +158,10 @@ async function filesBelow(root: string): Promise<string[]> {
       if (info.isSymbolicLink()) throw new Error("Snapshot refuses linked external files.");
       if (info.isDirectory()) await walk(target);
       else if (info.isFile()) {
-        result.push(target);
-        if (result.length > MAX_FILES) throw new Error("Snapshot file limit exceeded.");
+        if (result.length >= budget.files) throw captureFileLimitError();
+        totalBytes += info.size;
+        if (totalBytes > budget.bytes) throw captureSizeLimitError();
+        result.push({ path: target, bytes: info.size });
       } else throw new Error("Snapshot refuses special external files.");
     }
   };
@@ -211,27 +232,27 @@ export async function captureHostSnapshot(input: {
       schemaDigest: createHash("sha256").update(JSON.stringify(schema)).digest("hex"),
       files: [],
     };
+    // Running total: each file adds its size once, never re-summing the manifest.
     let totalBytes = 0;
-    const admit = (bytes: number) => {
-      if (totalBytes + bytes > MAX_BYTES || manifest.files.length >= MAX_FILES)
-        throw new Error("Snapshot size limit exceeded.");
-    };
     const record = (path: string, bytes: number, sha256: string) => {
       totalBytes += bytes;
       manifest.files.push({ path: inside(destination, path), bytes, sha256 });
     };
     const databaseBytes = (await lstat(databasePath)).size;
-    admit(databaseBytes);
+    if (databaseBytes > MAX_BYTES) throw captureSizeLimitError();
+    // Both caps are checked against the whole attachment tree before the first copy.
+    const attachments = await filesBelow(input.attachmentDir, {
+      files: MAX_FILES - 1,
+      bytes: MAX_BYTES - databaseBytes,
+    });
     await durableFile(databasePath);
     record(databasePath, databaseBytes, await digest(databasePath));
-    for (const path of await filesBelow(input.attachmentDir)) {
-      const bytes = (await lstat(path)).size;
-      admit(bytes);
+    for (const { path } of attachments) {
       const target = join(destination, "attachments", inside(input.attachmentDir, path));
       await mkdir(dirname(target), { recursive: true, mode: 0o700 });
       const copied = await copyHashed(path, target);
-      // The source may have grown since its size was admitted; bound the copied size too.
-      if (totalBytes + copied.bytes > MAX_BYTES) throw new Error("Snapshot size limit exceeded.");
+      // The source may have grown since the walk; bound the copied size too.
+      if (totalBytes + copied.bytes > MAX_BYTES) throw captureSizeLimitError();
       record(target, copied.bytes, copied.sha256);
     }
     await writeFile(join(destination, "manifest.json"), JSON.stringify(manifest), {

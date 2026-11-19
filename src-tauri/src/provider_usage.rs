@@ -20,6 +20,7 @@ use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::{Duration, Instant, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
 
@@ -73,11 +74,15 @@ pub async fn provider_usage_report(
             fnv1a(&config_dir.to_string_lossy())
         ))
     });
+    // Scans share a lock only when they share a cache file (or the log
+    // directory when there is no cache dir); other accounts and providers run
+    // side by side.
+    let scan_key = cache.clone().unwrap_or_else(|| config_dir.clone());
     tauri::async_runtime::spawn_blocking(move || {
-        // Two views asking at once would both parse the same cold logs; the
-        // second waits and then reads what the first cached.
-        static SCAN_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-        let _scan = SCAN_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        // Two views of one account asking at once would both parse the same
+        // cold logs; the second waits and then reads what the first cached.
+        let lock = scan_lock(&scan_key);
+        let _scan = lock.lock().unwrap_or_else(|error| error.into_inner());
         let since = since_ms.div_euclid(1000);
         Ok(match provider.as_str() {
             "claude" => scan(
@@ -390,16 +395,129 @@ fn file_stamp(path: &Path) -> Option<(u64, i64)> {
 /// cached state to continue from when it only grew.
 type StaleFile = (String, PathBuf, u64, i64, Option<CachedFile>);
 
-/// Parses every changed file, spread across the available cores.
+type ScanLocks = HashMap<PathBuf, Arc<Mutex<()>>>;
+
+static SCAN_LOCKS: Mutex<Option<ScanLocks>> = Mutex::new(None);
+
+/// The lock serializing scans that share `key` (a cache file or log directory).
+fn scan_lock(key: &Path) -> Arc<Mutex<()>> {
+    let mut held = SCAN_LOCKS.lock().unwrap_or_else(|error| error.into_inner());
+    let locks = held.get_or_insert_with(HashMap::new);
+    // A lock nobody holds or waits on is only referenced by the map, so the map
+    // stays as small as the scans in flight.
+    locks.retain(|known, lock| known == key || Arc::strong_count(lock) > 1);
+    Arc::clone(locks.entry(key.to_path_buf()).or_default())
+}
+
+/// A counting gate on parse threads, shared by every scan in flight.
+struct ParseSlots {
+    free: Mutex<usize>,
+    freed: Condvar,
+}
+
+/// One parse thread's share of the gate, returned when dropped.
+struct ParseSlot<'a>(&'a ParseSlots);
+
+impl ParseSlots {
+    fn new(count: usize) -> Self {
+        Self {
+            free: Mutex::new(count),
+            freed: Condvar::new(),
+        }
+    }
+
+    /// Waits for a free slot.
+    fn acquire(&self) -> ParseSlot<'_> {
+        let mut free = self.free.lock().unwrap_or_else(|error| error.into_inner());
+        while *free == 0 {
+            free = self
+                .freed
+                .wait(free)
+                .unwrap_or_else(|error| error.into_inner());
+        }
+        *free -= 1;
+        ParseSlot(self)
+    }
+
+    fn try_acquire(&self) -> Option<ParseSlot<'_>> {
+        let mut free = self.free.lock().unwrap_or_else(|error| error.into_inner());
+        if *free == 0 {
+            return None;
+        }
+        *free -= 1;
+        Some(ParseSlot(self))
+    }
+}
+
+impl Drop for ParseSlot<'_> {
+    fn drop(&mut self) {
+        *self.0.free.lock().unwrap_or_else(|error| error.into_inner()) += 1;
+        self.0.freed.notify_one();
+    }
+}
+
+/// Half the cores (at least one), so a cold scan leaves the window, terminals
+/// and agents room to run.
+fn parse_slots() -> &'static ParseSlots {
+    static SLOTS: OnceLock<ParseSlots> = OnceLock::new();
+    SLOTS.get_or_init(|| {
+        let cores = std::thread::available_parallelism().map_or(1, |n| n.get());
+        ParseSlots::new((cores / 2).max(1))
+    })
+}
+
+/// Runs the calling parse thread below normal priority where the platform has a
+/// per-thread setting; elsewhere the slot cap alone bounds the load.
+fn lower_thread_priority() {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::System::Threading::{
+            GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_BELOW_NORMAL,
+        };
+        // SAFETY: the pseudo handle of the current thread is always valid and
+        // is not closed.
+        unsafe {
+            SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+        }
+    }
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    {
+        // SAFETY: who 0 names the calling thread on Linux; failure is ignored
+        // because the priority is only a courtesy.
+        unsafe {
+            libc::setpriority(libc::PRIO_PROCESS, 0, 10);
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        // SAFETY: only adjusts the calling thread's quality-of-service class.
+        unsafe {
+            libc::pthread_set_qos_class_self_np(libc::qos_class_t::QOS_CLASS_UTILITY, 0);
+        }
+    }
+}
+
+/// Parses every changed file on a bounded number of low-priority threads.
 fn parse_files(provider: Provider, stale: &[StaleFile]) -> Vec<CachedFile> {
     let next = AtomicUsize::new(0);
-    let workers = std::thread::available_parallelism()
-        .map_or(1, |n| n.get())
-        .min(stale.len().max(1));
+    // The first worker waits for a slot, so a scan always progresses; extra
+    // workers only join while slots are free, so scans running at once never
+    // exceed the cap together.
+    let slots = parse_slots();
+    let mut held = vec![slots.acquire()];
+    while held.len() < stale.len() {
+        let Some(slot) = slots.try_acquire() else {
+            break;
+        };
+        held.push(slot);
+    }
     let mut parsed: Vec<(usize, CachedFile)> = std::thread::scope(|scope| {
-        let handles: Vec<_> = (0..workers)
-            .map(|_| {
+        let handles: Vec<_> = held
+            .into_iter()
+            .map(|slot| {
                 scope.spawn(|| {
+                    let _slot = slot;
+                    lower_thread_priority();
                     let mut out = Vec::new();
                     loop {
                         let index = next.fetch_add(1, Ordering::Relaxed);
@@ -948,7 +1066,8 @@ pub struct ModelPrices {
 ///
 /// Only the public list is downloaded; nothing about local usage is sent.
 /// The list is cached on disk for a day, and a stale copy is returned when
-/// the download fails.
+/// the download fails. After a failed download the next attempts are skipped
+/// for a growing, bounded delay, and only one download runs at a time.
 #[tauri::command]
 pub async fn provider_model_prices(app: AppHandle) -> Result<ModelPrices, String> {
     let cache = app
@@ -961,6 +1080,80 @@ pub async fn provider_model_prices(app: AppHandle) -> Result<ModelPrices, String
         .map_err(|error| error.to_string())?
 }
 
+/// First wait after a failed download; it doubles per consecutive failure.
+const PRICES_RETRY_BASE_SECS: u64 = 5 * 60;
+/// Longest wait between download attempts while the list keeps failing.
+const PRICES_RETRY_MAX_SECS: u64 = 60 * 60;
+
+/// What the last download attempts for one cache file did. Only a successful
+/// download touches the cache file, so `fetched_at` always means "downloaded".
+#[derive(Default)]
+struct PriceFetchState {
+    failures: u32,
+    retry_at: u64,
+    last_error: String,
+}
+
+impl PriceFetchState {
+    fn backing_off(&self, now: u64) -> bool {
+        // A clock moved back far enough to leave `retry_at` out of range must
+        // not block downloads for longer than the longest wait.
+        self.failures > 0
+            && now < self.retry_at
+            && self.retry_at - now <= PRICES_RETRY_MAX_SECS
+    }
+
+    fn record_failure(&mut self, now: u64, error: String) {
+        self.failures = self.failures.saturating_add(1);
+        let wait = PRICES_RETRY_BASE_SECS
+            .saturating_mul(1u64 << (self.failures - 1).min(16))
+            .min(PRICES_RETRY_MAX_SECS);
+        self.retry_at = now.saturating_add(wait);
+        self.last_error = error;
+    }
+}
+
+type PriceSlot = std::sync::Arc<std::sync::Mutex<PriceFetchState>>;
+
+static PRICE_SLOTS: std::sync::Mutex<Option<HashMap<PathBuf, PriceSlot>>> =
+    std::sync::Mutex::new(None);
+
+/// One slot per cache file; holding its lock is what makes a download
+/// single-flight.
+fn price_slot(cache: &Path) -> PriceSlot {
+    let mut slots = PRICE_SLOTS.lock().unwrap_or_else(|error| error.into_inner());
+    slots
+        .get_or_insert_with(HashMap::new)
+        .entry(cache.to_path_buf())
+        .or_default()
+        .clone()
+}
+
+fn read_cached_prices(cache: &Path) -> Option<ModelPrices> {
+    std::fs::read(cache)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<ModelPrices>(&bytes).ok())
+}
+
+fn prices_are_fresh(prices: &ModelPrices, now: u64) -> bool {
+    now.saturating_sub(prices.fetched_at) < PRICES_MAX_AGE_SECS
+}
+
+/// Replaces the cache file in one step so a crash never leaves a half-written
+/// last-good copy.
+fn write_cached_prices(cache: &Path, prices: &ModelPrices) {
+    if let Some(dir) = cache.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let Ok(bytes) = serde_json::to_vec(prices) else {
+        return;
+    };
+    let temp = cache.with_extension("json.tmp");
+    if std::fs::write(&temp, bytes).is_ok() && std::fs::rename(&temp, cache).is_err() {
+        let _ = std::fs::remove_file(&temp);
+    }
+}
+
 fn now_secs() -> u64 {
     std::time::SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -971,15 +1164,43 @@ fn now_secs() -> u64 {
 fn model_prices(
     cache: &Path,
     now: u64,
-    download: fn() -> Result<Vec<ModelPrice>, String>,
+    download: impl FnOnce() -> Result<Vec<ModelPrice>, String>,
 ) -> Result<ModelPrices, String> {
-    let cached = std::fs::read(cache)
-        .ok()
-        .and_then(|bytes| serde_json::from_slice::<ModelPrices>(&bytes).ok());
+    let cached = read_cached_prices(cache);
     if let Some(cached) = &cached {
-        if now.saturating_sub(cached.fetched_at) < PRICES_MAX_AGE_SECS {
+        if prices_are_fresh(cached, now) {
             return Ok(cached.clone());
         }
+    }
+    let slot = price_slot(cache);
+    let mut state = match slot.try_lock() {
+        Ok(state) => state,
+        Err(std::sync::TryLockError::Poisoned(error)) => error.into_inner(),
+        Err(std::sync::TryLockError::WouldBlock) => {
+            // Another call is downloading. A stale copy answers immediately;
+            // without one this call waits for that download and reuses it.
+            if let Some(cached) = cached {
+                return Ok(cached);
+            }
+            let state = slot.lock().unwrap_or_else(|error| error.into_inner());
+            return match read_cached_prices(cache) {
+                Some(prices) => Ok(prices),
+                None if state.last_error.is_empty() => {
+                    Err("Model prices are not available".into())
+                }
+                None => Err(state.last_error.clone()),
+            };
+        }
+    };
+    // The download that just finished may have refreshed the file.
+    let cached = read_cached_prices(cache).or(cached);
+    if let Some(cached) = &cached {
+        if prices_are_fresh(cached, now) {
+            return Ok(cached.clone());
+        }
+    }
+    if state.backing_off(now) {
+        return cached.ok_or_else(|| state.last_error.clone());
     }
     match download() {
         Ok(models) => {
@@ -987,15 +1208,14 @@ fn model_prices(
                 models,
                 fetched_at: now,
             };
-            if let Some(dir) = cache.parent() {
-                let _ = std::fs::create_dir_all(dir);
-            }
-            if let Ok(bytes) = serde_json::to_vec(&prices) {
-                let _ = std::fs::write(cache, bytes);
-            }
+            write_cached_prices(cache, &prices);
+            *state = PriceFetchState::default();
             Ok(prices)
         }
-        Err(error) => cached.ok_or(error),
+        Err(error) => {
+            state.record_failure(now, error.clone());
+            cached.ok_or(error)
+        }
     }
 }
 
@@ -1066,6 +1286,39 @@ mod tests {
             std::env::temp_dir().join(format!("bycoda-usage-{name}-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    #[test]
+    fn scan_locks_are_shared_per_cache_and_dropped_when_idle() {
+        let first = scan_lock(Path::new("usage-lock-test-a"));
+        let again = scan_lock(Path::new("usage-lock-test-a"));
+        let other = scan_lock(Path::new("usage-lock-test-b"));
+        assert!(Arc::ptr_eq(&first, &again));
+        assert!(!Arc::ptr_eq(&first, &other));
+        // A held lock for one key never blocks another key.
+        let held_first = first.lock().unwrap();
+        assert!(other.try_lock().is_ok());
+        // Idle locks are pruned by the next lookup of another key.
+        drop(held_first);
+        drop((first, again, other));
+        scan_lock(Path::new("usage-lock-test-c"));
+        let held = SCAN_LOCKS.lock().unwrap_or_else(|error| error.into_inner());
+        let locks = held.as_ref().unwrap();
+        assert!(!locks.contains_key(Path::new("usage-lock-test-a")));
+        assert!(!locks.contains_key(Path::new("usage-lock-test-b")));
+    }
+
+    #[test]
+    fn parse_slots_cap_workers_and_release_on_drop() {
+        let slots = ParseSlots::new(2);
+        let first = slots.acquire();
+        let second = slots.try_acquire().expect("second slot is free");
+        assert!(slots.try_acquire().is_none());
+        drop(first);
+        let third = slots.try_acquire().expect("a dropped slot is reusable");
+        assert!(slots.try_acquire().is_none());
+        drop((second, third));
+        assert!(slots.try_acquire().is_some());
     }
 
     #[test]
@@ -1357,10 +1610,10 @@ mod tests {
         }
 
         assert_eq!(model_prices(&cache, 1_000, offline).unwrap_err(), "offline");
-        let first = model_prices(&cache, 1_000, fresh).unwrap();
+        let first = model_prices(&cache, 1_000 + PRICES_RETRY_BASE_SECS, fresh).unwrap();
         assert_eq!(
             (first.models[0].id.as_str(), first.fetched_at),
-            ("openai/fresh", 1_000)
+            ("openai/fresh", 1_000 + PRICES_RETRY_BASE_SECS)
         );
 
         std::fs::write(
@@ -1383,10 +1636,152 @@ mod tests {
             model_prices(&cache, stale, offline).unwrap().models[0].id,
             "openai/cached"
         );
+        // The failed attempt is not written to the cache, so the copy keeps
+        // its original download time.
+        assert_eq!(read_cached_prices(&cache).unwrap().fetched_at, 1_000);
         assert_eq!(
-            model_prices(&cache, stale, fresh).unwrap().models[0].id,
+            model_prices(&cache, stale + PRICES_RETRY_BASE_SECS, fresh)
+                .unwrap()
+                .models[0]
+                .id,
             "openai/fresh"
         );
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    fn counted_price(id: &str) -> Vec<ModelPrice> {
+        vec![ModelPrice {
+            id: id.into(),
+            input: 1.0,
+            output: 2.0,
+            cache_read: None,
+            cache_write: None,
+            cache_write_1h: None,
+        }]
+    }
+
+    #[test]
+    fn failed_downloads_back_off_with_a_bounded_growing_delay_and_recover() {
+        let dir = temp_dir("prices-backoff");
+        let cache = dir.join(PRICES_FILE);
+        let calls = AtomicUsize::new(0);
+        let offline = || {
+            calls.fetch_add(1, Ordering::SeqCst);
+            Err::<Vec<ModelPrice>, String>("offline".into())
+        };
+
+        // No cache: the error comes back, then repeats without downloading.
+        assert_eq!(model_prices(&cache, 100, offline).unwrap_err(), "offline");
+        for now in [101, 200, 100 + PRICES_RETRY_BASE_SECS - 1] {
+            assert_eq!(model_prices(&cache, now, offline).unwrap_err(), "offline");
+        }
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+        // After the wait one more attempt runs and the next wait doubles.
+        let second = 100 + PRICES_RETRY_BASE_SECS;
+        assert!(model_prices(&cache, second, offline).is_err());
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        assert!(model_prices(&cache, second + 2 * PRICES_RETRY_BASE_SECS - 1, offline).is_err());
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+
+        // The wait never grows past the cap.
+        let mut now = second;
+        for _ in 0..12 {
+            now += PRICES_RETRY_MAX_SECS;
+            assert!(model_prices(&cache, now, offline).is_err());
+        }
+        let before = calls.load(Ordering::SeqCst);
+        assert!(model_prices(&cache, now + PRICES_RETRY_MAX_SECS, offline).is_err());
+        assert_eq!(calls.load(Ordering::SeqCst), before + 1);
+
+        // Back online: the next allowed attempt succeeds and clears the wait.
+        now += 2 * PRICES_RETRY_MAX_SECS;
+        let online = || Ok(counted_price("openai/back"));
+        let prices = model_prices(&cache, now, online).unwrap();
+        assert_eq!((prices.models[0].id.as_str(), prices.fetched_at), ("openai/back", now));
+        assert_eq!(read_cached_prices(&cache).unwrap().fetched_at, now);
+
+        // A stale copy plus a failing network answers from the copy during the wait.
+        let stale = now + PRICES_MAX_AGE_SECS;
+        let hits = AtomicUsize::new(0);
+        let failing = || {
+            hits.fetch_add(1, Ordering::SeqCst);
+            Err::<Vec<ModelPrice>, String>("offline".into())
+        };
+        for offset in [0, 1, 10] {
+            let served = model_prices(&cache, stale + offset, failing).unwrap();
+            assert_eq!(served.fetched_at, now);
+        }
+        assert_eq!(hits.load(Ordering::SeqCst), 1);
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_clock_moved_back_does_not_block_downloads() {
+        let dir = temp_dir("prices-clock");
+        let cache = dir.join(PRICES_FILE);
+        let offline = || Err::<Vec<ModelPrice>, String>("offline".into());
+        assert!(model_prices(&cache, 10_000_000, offline).is_err());
+        let online = || Ok(counted_price("openai/now"));
+        assert_eq!(model_prices(&cache, 1_000, online).unwrap().models[0].id, "openai/now");
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn concurrent_callers_share_one_download() {
+        let dir = temp_dir("prices-single-flight");
+        let cache = dir.join(PRICES_FILE);
+        let calls = std::sync::Arc::new(AtomicUsize::new(0));
+        let handles: Vec<_> = (0..6)
+            .map(|_| {
+                let cache = cache.clone();
+                let calls = calls.clone();
+                std::thread::spawn(move || {
+                    model_prices(&cache, 500, || {
+                        calls.fetch_add(1, Ordering::SeqCst);
+                        std::thread::sleep(Duration::from_millis(150));
+                        Ok(counted_price("openai/shared"))
+                    })
+                })
+            })
+            .collect();
+        for handle in handles {
+            let prices = handle.join().unwrap().unwrap();
+            assert_eq!(prices.models[0].id, "openai/shared");
+        }
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_stale_copy_is_served_while_another_call_downloads() {
+        let dir = temp_dir("prices-stale-flight");
+        let cache = dir.join(PRICES_FILE);
+        write_cached_prices(
+            &cache,
+            &ModelPrices {
+                models: counted_price("openai/old"),
+                fetched_at: 1,
+            },
+        );
+        let now = 1 + PRICES_MAX_AGE_SECS;
+        let (started, wait_started) = std::sync::mpsc::channel();
+        let downloader = {
+            let cache = cache.clone();
+            std::thread::spawn(move || {
+                model_prices(&cache, now, || {
+                    started.send(()).unwrap();
+                    std::thread::sleep(Duration::from_millis(300));
+                    Ok(counted_price("openai/new"))
+                })
+            })
+        };
+        wait_started.recv().unwrap();
+        let began = Instant::now();
+        let served = model_prices(&cache, now, || panic!("must not download")).unwrap();
+        assert_eq!(served.models[0].id, "openai/old");
+        assert!(began.elapsed() < Duration::from_millis(250));
+        assert_eq!(downloader.join().unwrap().unwrap().models[0].id, "openai/new");
         std::fs::remove_dir_all(dir).ok();
     }
 

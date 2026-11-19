@@ -1,4 +1,5 @@
 import type { AssistantProfile } from "../../../src/shared/model/host-contracts/assistant";
+import { stallConfirmed } from "../../execution/confirmed-silence";
 import type { AssistantRepository, RecordValue } from "../repository";
 
 export const JOBS_STALL_NUDGE =
@@ -54,7 +55,7 @@ export async function nudgeStalledJobSessions(
         record.status !== "running" ||
         !activity ||
         activity.runId !== record.runId ||
-        deps.now() - activity.lastActivityAt < profile.stallMinutes * 60000
+        !stallConfirmed(store, activity.lastActivityAt, profile.stallMinutes * 60000, deps.now())
       )
         continue;
       // One stall is one (session, run, last activity); a later stall has a new activity time.

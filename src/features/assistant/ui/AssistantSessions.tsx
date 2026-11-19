@@ -171,7 +171,7 @@ function ManagedSessionRow({
         : status === "idle"
           ? t("Idle")
           : loading
-            ? t("Loading...")
+            ? t("Loading…")
             : t("Unknown");
   return (
     <ActionHost

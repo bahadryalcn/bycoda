@@ -2,7 +2,13 @@ import { describe, expect, it } from "vitest";
 import { pathKey } from "../../../shared/lib/paths";
 import { newSession } from "./session";
 import type { SessionSummary } from "../data/sessionStore";
-import { buildGlobalRecentSessions, GLOBAL_RECENT_WINDOW_MS } from "./globalRecentSessions";
+import { summaryFromSession } from "../data/sessionHistory";
+import {
+  buildGlobalRecentSessions,
+  GLOBAL_RECENT_WINDOW_MS,
+  mergeGlobalRecentSessions,
+  withinGlobalRecentWindow,
+} from "./globalRecentSessions";
 
 const now = 2_000_000_000;
 const cutoff = now - GLOBAL_RECENT_WINDOW_MS;
@@ -90,5 +96,37 @@ describe("global recent sessions", () => {
       "newer",
       "older",
     ]);
+  });
+
+  it("merges independent of the clock and applies the window to the ordered rows afterwards", () => {
+    const rows = [
+      row("fresh", "G:/project", now),
+      row("edge", "G:/project", cutoff + 5),
+      row("stale", "G:/project", cutoff - 5),
+      row("hidden", "G:/hidden", now),
+    ];
+    const merged = mergeGlobalRecentSessions(rows, [], [], allowed);
+    expect(merged.map((entry) => entry.id)).toEqual(["fresh", "edge", "stale"]);
+    expect(withinGlobalRecentWindow(merged, now).map((entry) => entry.id)).toEqual([
+      "fresh",
+      "edge",
+    ]);
+    // One merge serves every later tick: the cutoff moving past a row only drops it.
+    expect(withinGlobalRecentWindow(merged, now + 10).map((entry) => entry.id)).toEqual(["fresh"]);
+    expect(withinGlobalRecentWindow(merged, now + 10)).toEqual(
+      buildGlobalRecentSessions(rows, [], [], allowed, now + 10),
+    );
+  });
+
+  it("takes provider history of a fully loaded live session from its summary", () => {
+    const session = {
+      ...newSession("codex", "G:/project"),
+      id: "live",
+      runningModelTarget: { harness: "claude" as const, model: "other", modelSettings: {} },
+      blocks: [{ id: "u", role: "user" as const, text: "Hi", startedAt: now }],
+    };
+    const [result] = buildGlobalRecentSessions([], [], [session], allowed, now);
+    expect(result.providerHistory).toEqual(summaryFromSession(session).providerHistory);
+    expect(result.providerHistory?.activeHarness).toBe("claude");
   });
 });

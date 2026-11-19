@@ -25,6 +25,8 @@ export async function handleCrewsRpc(
 
     case "crews.agent.delete":
 
+    case "crews.agent.group.update":
+
     case "crews.start":
 
     case "crews.get":

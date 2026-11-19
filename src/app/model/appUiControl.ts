@@ -45,6 +45,7 @@ export type AppUiAction =
   | "ui.workspace.status"
   | "ui.workspace.open"
   | "ui.workspace.close"
+  | "ui.workspace.acknowledge"
   | "terminals.create"
   | "terminals.interrupt"
   | "terminals.close"

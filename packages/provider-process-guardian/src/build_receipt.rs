@@ -66,16 +66,19 @@ impl BuildReceipt {
     }
 }
 
+/// Publishes the receipt for a verified, waited retirement. A write failure is
+/// returned so the caller can report the retirement as unproven.
 pub fn publish_if_verified(
     receipt: Option<BuildReceipt>,
     retirement: Retirement,
     child_waited: bool,
-) {
+) -> io::Result<()> {
     if retirement == Retirement::Verified && child_waited {
         if let Some(receipt) = receipt {
-            let _ = receipt.publish();
+            receipt.publish()?;
         }
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -114,9 +117,22 @@ mod tests {
             nonce,
             path: path.to_string_lossy().into_owned(),
         };
-        publish_if_verified(Some(proof.clone()), Retirement::Unknown, true);
-        publish_if_verified(Some(proof), Retirement::Verified, false);
+        publish_if_verified(Some(proof.clone()), Retirement::Unknown, true).unwrap();
+        publish_if_verified(Some(proof), Retirement::Verified, false).unwrap();
         assert!(!path.exists());
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn verified_retirement_reports_a_receipt_write_failure() {
+        let nonce = Uuid::new_v4().to_string();
+        let dir = std::env::temp_dir().join(format!("bycoda-receipt-missing-{}", Uuid::new_v4()));
+        let path = dir.join(format!(".bycoda-build-retired-{nonce}.json"));
+        let proof = BuildReceipt {
+            nonce,
+            path: path.to_string_lossy().into_owned(),
+        };
+        assert!(publish_if_verified(Some(proof), Retirement::Verified, true).is_err());
+        assert!(!path.exists());
     }
 }

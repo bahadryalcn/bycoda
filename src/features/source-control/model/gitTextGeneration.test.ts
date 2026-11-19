@@ -14,8 +14,18 @@ vi.mock("../../../integrations/harness/core/textHarness", () => ({
   generatePrContent: vi.fn(),
 }));
 vi.mock("./gitGenerationPreferences", () => ({ resolveGitGenerationChoice: vi.fn() }));
-import { generateCommitMessage, generatePrContent } from "./gitTextGeneration";
-import { generateCommitMessage as localCommit } from "../../../integrations/harness/core/textHarness";
+vi.mock("../../../platform/tauri/fs", () => ({ gitRangeContext: vi.fn() }));
+import {
+  generateCommitMessage,
+  generatePrContent,
+  prContentFromCommits,
+} from "./gitTextGeneration";
+import { PrGenerationError } from "./prGenerationError";
+import { gitRangeContext } from "../../../platform/tauri/fs";
+import {
+  generateCommitMessage as localCommit,
+  generatePrContent as localPr,
+} from "../../../integrations/harness/core/textHarness";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -56,6 +66,35 @@ it("routes PR generation to the same Host", async () => {
     true,
     "env",
   );
+});
+
+it("reports a failed PR generation without provider text, locally and on a Host", async () => {
+  vi.spyOn(console, "debug").mockImplementation(() => {});
+  vi.mocked(localPr).mockRejectedValueOnce(new Error("401 for account owner@example.com"));
+  const local = await generatePrContent("/repo").catch((error: unknown) => error);
+  expect(local).toBeInstanceOf(PrGenerationError);
+  expect((local as Error).message).not.toContain("owner@example.com");
+  remote.request.mockRejectedValueOnce(new Error("quota exceeded for sk-private"));
+  const hosted = await generatePrContent("remote://env/home/repo").catch((error: unknown) => error);
+  expect(hosted).toBeInstanceOf(PrGenerationError);
+  expect((hosted as Error).message).not.toContain("sk-private");
+  expect(gitRangeContext).not.toHaveBeenCalled();
+});
+
+it("builds the commit-summary text only on request", async () => {
+  vi.mocked(gitRangeContext).mockResolvedValue({
+    base: "main",
+    head: "feature",
+    commitSummary: "First change\nSecond\n",
+    diffSummary: "",
+    diffPatch: "",
+  });
+  await expect(prContentFromCommits("/repo")).resolves.toEqual({
+    title: "First change",
+    body: "First change\nSecond",
+    base: "main",
+    head: "feature",
+  });
 });
 
 it("opens an unregistered remote checkout and keeps its explicit model/account on that Host", async () => {

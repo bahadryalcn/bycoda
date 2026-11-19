@@ -15,7 +15,7 @@
    form their own stacking context so a slider thumb or preview can never paint over it. */
 .appearance-generator {
   position: sticky;
-  inset-block-start: calc(var(--ui-control-height-compact) + 20px);
+  inset-block-start: var(--settings-page-bar-height);
   z-index: 1;
   display: grid;
   gap: 8px;

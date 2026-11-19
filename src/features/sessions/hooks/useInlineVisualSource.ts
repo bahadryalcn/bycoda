@@ -7,8 +7,10 @@ import {
   type InlineVisualSource,
 } from "../model/inlineVisual";
 
-// Stored visuals are immutable, so a resolved id never needs refetching.
+// Stored visuals are immutable and the desktop verifies each id against its content, so a
+// resolved id never needs refetching. Concurrent mounts of one id share a single native read.
 const cache = new Map<string, InlineVisualSource>();
+const pending = new Map<string, Promise<InlineVisualSource>>();
 const CACHE_LIMIT = 24;
 
 export type InlineVisualSourceState =
@@ -16,14 +18,32 @@ export type InlineVisualSourceState =
   | { state: "ready"; source: InlineVisualSource }
   | { state: "error"; retry: () => void };
 
-async function readStored(id: string): Promise<InlineVisualSource> {
-  const cached = cache.get(id);
-  if (cached) return cached;
+async function fetchStored(id: string): Promise<InlineVisualSource> {
   const source = inlineVisualSource(JSON.parse(await invoke<string>("inline_visual_read", { id })));
   if (!source) throw new Error("Invalid stored visual");
-  cache.set(id, source);
-  if (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value!);
   return source;
+}
+
+function readStored(id: string): Promise<InlineVisualSource> {
+  const cached = cache.get(id);
+  if (cached) {
+    // A hit refreshes recency: Map order is the eviction order.
+    cache.delete(id);
+    cache.set(id, cached);
+    return Promise.resolve(cached);
+  }
+  const inFlight = pending.get(id);
+  if (inFlight) return inFlight;
+  // A failed read is settled without being cached, so a retry or remount reads again.
+  const read = fetchStored(id)
+    .then((source) => {
+      cache.set(id, source);
+      while (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value!);
+      return source;
+    })
+    .finally(() => pending.delete(id));
+  pending.set(id, read);
+  return read;
 }
 
 /** Resolves a legacy embedded snapshot directly and a stored reference through the desktop. */

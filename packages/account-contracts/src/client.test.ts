@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { emptyMinutes, encodeMinutes, setMinute } from "./activity.ts";
 import { ACCOUNT_API, buildPath } from "./api.ts";
 import { createAccountClient } from "./client.ts";
-import { AccountApiError } from "./errors.ts";
+import { AccountApiError, AccountRequestTimeoutError } from "./errors.ts";
 import { createMockAccountServer } from "./mock/index.ts";
 import { NOTIFICATION_EVENTS, defaultNotificationSettings } from "./notifications.ts";
 import { CONTRACT_HEADER, CONTRACT_VERSION } from "./version.ts";
@@ -441,6 +441,169 @@ describe("auth and error handling", () => {
     const error = await failure(client.getMe());
     expect(error.status).toBe(502);
     expect(error.code).toBe("internal");
+  });
+});
+
+describe("request deadline and abort (#1445)", () => {
+  const stalled: typeof fetch = () => new Promise<Response>(() => undefined);
+  const make = (fetchImpl: typeof fetch, timeoutMs?: number) =>
+    createAccountClient({
+      baseUrl: "https://x.test",
+      getAccessToken: () => "mock-a",
+      fetch: fetchImpl,
+      ...(timeoutMs === undefined ? {} : { timeoutMs }),
+    });
+
+  it("rejects a stalled request with a timeout error that is not an AccountApiError", async () => {
+    const error = await make(stalled, 20)
+      .getMe()
+      .then(
+        () => null,
+        (e: unknown) => e,
+      );
+    expect(error).toBeInstanceOf(AccountRequestTimeoutError);
+    // Existing offline classification is `TypeError && !AccountApiError`.
+    expect(error).toBeInstanceOf(TypeError);
+    expect(error).not.toBeInstanceOf(AccountApiError);
+  });
+
+  it("passes an abort signal to fetch", async () => {
+    let seen: AbortSignal | null | undefined;
+    const client = make(async (_input, init) => {
+      seen = init?.signal;
+      return new Response(JSON.stringify({ nope: true }), { status: 200 });
+    });
+    await client.getMe().catch(() => undefined);
+    expect(seen).toBeInstanceOf(AbortSignal);
+  });
+
+  it("times out while the response body never arrives", async () => {
+    const hanging = new Response(null, { status: 200 });
+    hanging.json = () => new Promise(() => undefined);
+    await expect(make(async () => hanging, 20).getMe()).rejects.toBeInstanceOf(
+      AccountRequestTimeoutError,
+    );
+  });
+
+  it("times out a stalled export download", async () => {
+    await expect(make(stalled, 20).downloadExport("exp_1")).rejects.toBeInstanceOf(
+      AccountRequestTimeoutError,
+    );
+  });
+
+  it("rethrows the caller's abort reason from a per-call signal", async () => {
+    const controller = new AbortController();
+    const reason = new Error("user cancelled");
+    const pending = make(stalled, 60_000).getMe({ signal: controller.signal });
+    controller.abort(reason);
+    await expect(pending).rejects.toBe(reason);
+  });
+
+  it("rejects at once for a signal that is already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort(new Error("early"));
+    await expect(make(stalled, 60_000).getMe({ signal: controller.signal })).rejects.toThrow(
+      "early",
+    );
+  });
+
+  it("accepts the per-call options after the input and a per-call timeout", async () => {
+    const client = make(stalled, 60_000);
+    await expect(
+      client.getActivitySummary(
+        { query: { timeZone: "UTC", date: "2026-11-08" } },
+        { timeoutMs: 20 },
+      ),
+    ).rejects.toBeInstanceOf(AccountRequestTimeoutError);
+  });
+
+  it("does not time out a prompt response", async () => {
+    const { client } = setup();
+    expect((await client.getMe()).user.email).toBe("mock@example.com");
+  });
+});
+
+describe("error causes (#1446)", () => {
+  const make = (response: () => Response) =>
+    createAccountClient({
+      baseUrl: "https://x.test",
+      getAccessToken: () => "mock-a",
+      fetch: async () => response(),
+    });
+
+  it("names the drifted field and code, never the value", async () => {
+    const secret = "do-not-leak-this-value";
+    const error = await failure(
+      make(
+        () => new Response(JSON.stringify({ user: { email: secret } }), { status: 200 }),
+      ).getMe(),
+    );
+    expect(error.code).toBe("internal");
+    expect(error.message).toMatch(/^Response did not match the contract at \S+ \(\w+\)$/);
+    expect(error.message).not.toContain(secret);
+    expect(JSON.stringify(error.cause)).not.toContain(secret);
+    expect(error.cause).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: expect.any(String), code: expect.any(String) }),
+      ]),
+    );
+  });
+
+  it("maps a bare 429 to rate_limited and keeps Retry-After", async () => {
+    const error = await failure(
+      make(
+        () => new Response("slow down", { status: 429, headers: { "Retry-After": "7" } }),
+      ).getMe(),
+    );
+    expect(error.status).toBe(429);
+    expect(error.code).toBe("rate_limited");
+    expect(error.retryAfterMs).toBe(7000);
+    expect(error.message).not.toContain("slow down");
+  });
+
+  it("keeps internal for a 503 and reads an HTTP-date Retry-After", async () => {
+    const at = new Date(Date.now() + 30_000).toUTCString();
+    const error = await failure(
+      make(
+        () => new Response("<html>down</html>", { status: 503, headers: { "Retry-After": at } }),
+      ).getMe(),
+    );
+    expect(error.code).toBe("internal");
+    expect(error.retryAfterMs).toBeGreaterThan(20_000);
+    expect(error.retryAfterMs).toBeLessThanOrEqual(30_000);
+  });
+
+  it("ignores an unusable Retry-After and leaves it unset without the header", async () => {
+    const bad = await failure(
+      make(() => new Response("x", { status: 429, headers: { "Retry-After": "soon" } })).getMe(),
+    );
+    expect(bad.retryAfterMs).toBeUndefined();
+    const none = await failure(make(() => new Response("x", { status: 502 })).getMe());
+    expect(none.retryAfterMs).toBeUndefined();
+    expect(none.requestId).toBe("");
+  });
+
+  it("attaches Retry-After to an enveloped error too", async () => {
+    const body = { error: { code: "rate_limited", message: "Too many", requestId: "req_1" } };
+    const error = await failure(
+      make(
+        () => new Response(JSON.stringify(body), { status: 429, headers: { "Retry-After": "2" } }),
+      ).getMe(),
+    );
+    expect(error).toMatchObject({ code: "rate_limited", requestId: "req_1", retryAfterMs: 2000 });
+  });
+
+  it("formats request validation from issues, not raw zod JSON", async () => {
+    const { client } = setup();
+    const error = await failure(
+      client.updateProfile({ body: { displayName: "x", project: "secret" } as never }),
+    );
+    expect(error.code).toBe("validation_failed");
+    expect(error.message.startsWith("Invalid request body: ")).toBe(true);
+    expect(error.message).not.toMatch(/[\[{]\s*"/);
+    expect(error.cause).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: expect.any(String) })]),
+    );
   });
 });
 

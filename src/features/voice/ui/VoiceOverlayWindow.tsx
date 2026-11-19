@@ -12,11 +12,11 @@ import {
   Minimize2,
   Mic,
   MicOff,
+  SkipForward,
   Square,
   TriangleAlert,
   VolumeX,
   Volume2,
-  Pause,
   X,
 } from "../../../shared/ui/icons";
 import { listenWindowAsync } from "../../../platform/tauri/listenWindow";
@@ -243,22 +243,20 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
   const speakerButton = (
     <Button
       iconOnly
-      label={t(speakerMuted ? "Unmute speaker" : "Mute speaker")}
-      selected={speakerMuted}
-      aria-pressed={speakerMuted}
+      label={t("Mute speaker")}
+      pressed={speakerMuted}
       disabled={!state}
       onClick={() => send("toggleSpeaker")}
     >
       {speakerMuted ? <VolumeX className="icon-sm" /> : <Volume2 className="icon-sm" />}
     </Button>
   );
-  const statusText = state?.statusText ?? t("Connecting voice...");
+  const statusText = state?.statusText ?? t("Connecting voice…");
   const summary = state ? voiceSummaryLine(state) : statusText;
-  const moveLabel = t("Move voice window. Use arrow keys to reposition.");
+  const moveName = t("Move voice window");
+  const moveHint = t("Use arrow keys to reposition.");
   const canTalk = status === "idle" || status === "sleeping" || status === "ready";
-  const micLabel = t(
-    canTalk ? (status === "idle" ? "Start voice" : "Talk") : muted ? "Resume" : "Pause mic",
-  );
+  const micLabel = t(canTalk ? (status === "idle" ? "Start voice" : "Talk") : "Mute microphone");
   // One close: the floating window returns to the app and voice keeps running,
   // matching the native close. Disconnect stays an explicit body action.
   const backLabel = t("Return voice companion to the app");
@@ -305,7 +303,8 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
     <Button
       iconOnly
       variant="ghost"
-      label={moveLabel}
+      label={moveName}
+      aria-description={moveHint}
       className={styles.handle}
       onPointerDown={(event) => {
         if (event.button !== 0 || event.detail > 1) return;
@@ -356,7 +355,8 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
         <header
           className={styles.header}
           tabIndex={compact ? undefined : 0}
-          aria-label={compact ? undefined : moveLabel}
+          aria-label={compact ? undefined : moveName}
+          aria-description={compact ? undefined : moveHint}
           onKeyDown={(event) => {
             if (!compact && event.target === event.currentTarget) onHandleKey(event);
           }}
@@ -430,7 +430,7 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
               loading={status === "connecting" || status === "reconnecting"}
               disabled={!state || (canTalk ? !state.canStart : status !== "live")}
               selected={status === "live" && muted}
-              aria-pressed={canTalk ? undefined : muted}
+              pressed={canTalk ? undefined : muted}
               onClick={() => send(canTalk ? "start" : "toggleMute")}
             >
               {muted || status === "ready" || status === "sleeping" ? (
@@ -586,11 +586,10 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
                     iconOnly
                     shape="pill"
                     size="lg"
-                    label={t(muted ? "Resume" : "Pause mic")}
+                    label={t("Mute microphone")}
                     variant={muted ? "secondary" : "primary"}
                     tone={muted ? "danger" : undefined}
-                    selected={muted}
-                    aria-pressed={muted}
+                    pressed={muted}
                     onClick={() => send("toggleMute")}
                   >
                     {muted ? <MicOff className="icon-sm" /> : <Mic className="icon-sm" />}
@@ -599,10 +598,10 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
                     iconOnly
                     shape="pill"
                     size="lg"
-                    label={t("Silence")}
+                    label={t("Stop speaking")}
                     onClick={() => send("silence")}
                   >
-                    <Pause className="icon-sm" />
+                    <SkipForward className="icon-sm" />
                   </Button>
                   {speakerButton}
                   <Button
@@ -627,7 +626,7 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
           size="inherit"
           tone="neutral"
           ref={sideScroller}
-          aria-label={t("Question")}
+          aria-label={state?.choice ? t("Question") : t("Review jobs before starting")}
           {...surfaceAttributes(
             { frame: "card", edge: "all", radius: "panel", variant: "floating" },
             styles.side,

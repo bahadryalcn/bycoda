@@ -7,8 +7,8 @@ import {
   type ReactNode,
 } from "react";
 import { useStableCallback } from "../hooks/useStableCallback";
-import type { PopoverAlign, PopoverSide } from "../lib/popover";
-import { Popover } from "./Popover";
+import type { PopoverAlign, PopoverSide, PopoverSize } from "../lib/popover";
+import { Popover, type PopoverFlow } from "./Popover";
 import {
   HOVER_CARD_CLOSE_MS,
   HOVER_CARD_OPEN_MS,
@@ -22,6 +22,12 @@ export type HoverCardOptions = {
   align?: PopoverAlign;
   /** Card width in px. Defaults to the content's own width. */
   width?: number;
+  /** A named popup width (see Popover `size`); use instead of `width` for shared widths. */
+  size?: PopoverSize;
+  /** Height bound in px; the card scrolls past it (or the viewport room, when smaller). */
+  maxHeight?: number;
+  /** `"scroll"` when the card can outgrow its bound: the pointer may cross into it, so wheel and touch must reach it. */
+  flow?: PopoverFlow;
   /** Pointer rest time before opening. Default {@link HOVER_CARD_OPEN_MS} (300 ms). */
   openDelay?: number;
   /** Grace period after the pointer leaves the trigger or card. Default {@link HOVER_CARD_CLOSE_MS} (150 ms). */
@@ -65,6 +71,9 @@ export function useHoverCard({
   side = "bottom",
   align = "start",
   width,
+  size,
+  maxHeight,
+  flow,
   openDelay = HOVER_CARD_OPEN_MS,
   closeDelay = HOVER_CARD_CLOSE_MS,
   disabled = false,
@@ -128,6 +137,9 @@ export function useHoverCard({
         side={side}
         align={align}
         width={width}
+        size={size}
+        maxHeight={maxHeight}
+        flow={flow}
         restoreFocus={false}
         aria-label={ariaLabel}
         data-hover-card=""

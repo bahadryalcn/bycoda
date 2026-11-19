@@ -1,4 +1,6 @@
+import { errorText } from "../../../shared/lib/errors";
 import { PickerListRoot } from "../../../shared/ui/picker/PickerList";
+import { usePointerMovement } from "../../../shared/ui/picker/usePointerMovement";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Tooltip } from "../../../shared/ui/Tooltip";
@@ -67,7 +69,7 @@ import {
 } from "../../sessions/model/attachmentTokens";
 import { quickLaunchAttachments } from "../model/quickAttachments";
 import { useQuickAttachments } from "./useQuickAttachments";
-import { isScreenRecordingBlocked } from "../model/screenCaptureAccess";
+import type { QuickNotice } from "../model/screenCaptureAccess";
 import { PermissionRecoveryAction } from "../../permissions";
 import { HarnessIcon } from "../../sessions/public/HarnessIcon";
 import { QuickPermissionIcon, QuickPermissions } from "./QuickPermissions";
@@ -216,7 +218,7 @@ export function QuickComposer({
   const skillNames = new Set(
     skills.filter((skill) => skill.kind !== "template").map((skill) => skill.invocation),
   );
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<QuickNotice | null>(null);
   const [uiBusy, setBusy] = useState(false);
   const busy = uiBusy || owner.launching;
   const submitting = useRef(false);
@@ -294,6 +296,8 @@ export function QuickComposer({
     setCwd,
     setWorkspaceChoice,
   });
+  // Keyboard scrolling slides rows under a resting pointer; only a real pointer move may take the highlight.
+  const pointerMoved = usePointerMovement();
   const resetTransient = useCallback(() => {
     resetPickers();
     setError(null);
@@ -379,7 +383,7 @@ export function QuickComposer({
   };
 
   const dismiss = () =>
-    void invoke("quick_composer_dismiss").catch((reason) => setError(String(reason)));
+    void invoke("quick_composer_dismiss").catch((reason) => setError({ message: String(reason) }));
 
   const submit = async (reveal: boolean) => {
     if (!owner.canMutate() || owner.pending) return;
@@ -418,7 +422,7 @@ export function QuickComposer({
         ? quickLaunchRefusal(selectedModel.harness, selectedRuntime, intent)
         : null;
     if (refusal) {
-      setError(refusal);
+      setError({ message: refusal });
       return;
     }
     submitting.current = true;
@@ -485,7 +489,7 @@ export function QuickComposer({
         });
       }, "launch");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError({ message: errorText(reason) });
     } finally {
       submitting.current = false;
       setBusy(false);
@@ -806,12 +810,12 @@ export function QuickComposer({
           tone="danger"
           className="mx-3 mb-2 min-w-0 break-words"
           extra={
-            isScreenRecordingBlocked(error) ? (
+            error.recovery === "screen-recording" ? (
               <PermissionRecoveryAction id="screen-recording" />
             ) : undefined
           }
         >
-          {error}
+          {error.message}
         </Alert>
       ) : null}
       <div className="flex shrink-0 items-center gap-1.5 border-t border-stroke px-3 py-2">
@@ -973,7 +977,9 @@ export function QuickComposer({
                     aria-selected={index === highlight}
                     active={index === highlight}
                     tabIndex={-1}
-                    onMouseEnter={() => setHighlight(index)}
+                    onPointerMove={(event) => {
+                      if (pointerMoved(event)) setHighlight(index);
+                    }}
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={() => chooseAt(index)}
                   >
@@ -1030,8 +1036,8 @@ export function QuickComposer({
                       closePicker();
                     }
                   }}
-                  placeholder={t("Find a project")}
-                  aria-label={t("Find a project")}
+                  placeholder={t("Search projects…")}
+                  aria-label={t("Search projects")}
                   spellCheck={false}
                   autoComplete="off"
                   className="min-w-0 flex-1"
@@ -1058,7 +1064,9 @@ export function QuickComposer({
                       aria-selected={index === highlight}
                       active={index === highlight}
                       tabIndex={-1}
-                      onMouseEnter={() => setHighlight(index)}
+                      onPointerMove={(event) => {
+                        if (pointerMoved(event)) setHighlight(index);
+                      }}
                       onMouseDown={(event) => event.preventDefault()}
                       onClick={() => chooseAt(index)}
                     >
@@ -1086,12 +1094,12 @@ export function QuickComposer({
 }
 
 function CommandLabel({ name }: { name: string }) {
-  useLocale();
+  const locale = useLocale();
   const style = MODE_COMMAND_STYLES[name];
   return (
     <span className="flex items-center gap-1.5">
       {style ? <style.Icon className="size-3.5 shrink-0" tone={style.menu?.tone} /> : null}
-      {name.charAt(0).toUpperCase() + name.slice(1)}
+      {name.charAt(0).toLocaleUpperCase(locale) + name.slice(1)}
     </span>
   );
 }

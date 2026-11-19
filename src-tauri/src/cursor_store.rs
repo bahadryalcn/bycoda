@@ -15,18 +15,48 @@ const MAX_BLOB_BYTES: usize = 256 * 1024;
 
 static STORE_PATHS: Mutex<Option<HashMap<String, PathBuf>>> = Mutex::new(None);
 
-/// How long remembered child stores are trusted before the next full sweep.
+/// How long the store index is trusted before the directories are listed again.
+/// A listing only stats files; a store is opened again only when it changed.
 const CHILD_SWEEP_INTERVAL: std::time::Duration = std::time::Duration::from_secs(3);
-const MAX_CHILD_CACHE_SESSIONS: usize = 64;
+const MAX_INDEXED_ROOTS: usize = 8;
 const MAX_CHILD_STORES: usize = 256;
 
-struct ChildStores {
-    children: Vec<PathBuf>,
+type FileStamp = (u64, Option<std::time::SystemTime>);
+
+/// Size and modification time of a store and its WAL. A store that was written
+/// to (including a not yet checkpointed WAL) no longer matches its signature.
+#[derive(Clone, PartialEq)]
+struct StoreSignature {
+    db: FileStamp,
+    wal: Option<FileStamp>,
+}
+
+#[derive(Clone)]
+struct IndexedStore {
+    signature: StoreSignature,
+    /// `subagentInfo.parentAgentId` from the store metadata; `None` for a
+    /// store that is not a subagent store or whose metadata is not readable yet.
+    parent: Option<String>,
+}
+
+struct StoreIndex {
+    stores: HashMap<PathBuf, IndexedStore>,
     swept_at: std::time::Instant,
 }
 
-type ChildStoreKey = (PathBuf, String);
-static CHILD_STORES: Mutex<Option<HashMap<ChildStoreKey, ChildStores>>> = Mutex::new(None);
+impl StoreIndex {
+    fn children_of(&self, session_id: &str) -> Vec<PathBuf> {
+        self.stores
+            .iter()
+            .filter(|(_, store)| store.parent.as_deref() == Some(session_id))
+            .map(|(path, _)| path.clone())
+            .take(MAX_CHILD_STORES)
+            .collect()
+    }
+}
+
+/// Per `~/.cursor` directory: what every known store said about its parent.
+static STORE_INDEX: Mutex<Option<HashMap<PathBuf, StoreIndex>>> = Mutex::new(None);
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -101,38 +131,11 @@ fn lookup_subagent_runs(
     tool_call_ids: &[String],
     known_revisions: &HashMap<String, String>,
 ) -> Vec<CursorSubagentRun> {
-    // Child stores of this parent are remembered between polls. A full sweep of
-    // every store under ~/.cursor only happens when the cache is stale, so a
-    // new child is still noticed within CHILD_SWEEP_INTERVAL.
-    let key = (cursor_dir.to_path_buf(), session_id.to_owned());
-    let cached = {
-        let guard = CHILD_STORES.lock().unwrap_or_else(|e| e.into_inner());
-        guard
-            .as_ref()
-            .and_then(|map| map.get(&key))
-            .filter(|entry| entry.swept_at.elapsed() < CHILD_SWEEP_INTERVAL)
-            .map(|entry| entry.children.clone())
-    };
-    let swept = cached.is_none();
-    let mut candidates = match cached {
-        Some(children) => children,
-        None => {
-            let mut roots = vec![cursor_dir.join("acp-sessions")];
-            if let Ok(projects) = std::fs::read_dir(cursor_dir.join("chats")) {
-                roots.extend(projects.flatten().map(|entry| entry.path()));
-            }
-            roots
-                .into_iter()
-                .filter_map(|root| std::fs::read_dir(root).ok())
-                .flat_map(|sessions| sessions.flatten())
-                .map(|entry| entry.path().join("store.db"))
-                .collect()
-        }
-    };
+    // Only stores that name this session as their parent are opened here; the
+    // rest of ~/.cursor is classified once and re-opened only after it changes.
+    let candidates = child_stores(cursor_dir, session_id);
     let mut runs = Vec::new();
     let mut seen = HashSet::new();
-    let mut children = Vec::new();
-    candidates.retain(|path| path.is_file());
     for path in candidates {
         let Ok(connection) = open_cursor_store(&path) else {
             continue;
@@ -147,7 +150,6 @@ fn lookup_subagent_runs(
         if info.get("parentAgentId").and_then(Value::as_str) != Some(session_id) {
             continue;
         }
-        children.push(path);
         let Some(stored_call) = info.get("toolCallId").and_then(Value::as_str) else {
             continue;
         };
@@ -187,24 +189,89 @@ fn lookup_subagent_runs(
             model,
         });
     }
-    {
-        let mut guard = CHILD_STORES.lock().unwrap_or_else(|e| e.into_inner());
-        let map = guard.get_or_insert_with(HashMap::new);
-        if swept {
-            if map.len() >= MAX_CHILD_CACHE_SESSIONS && !map.contains_key(&key) {
-                map.clear();
-            }
-            children.truncate(MAX_CHILD_STORES);
-            map.insert(
-                key,
-                ChildStores {
-                    children,
-                    swept_at: std::time::Instant::now(),
-                },
-            );
-        }
-    }
     runs
+}
+
+/// Child stores of `session_id`. The index is refreshed at most every
+/// CHILD_SWEEP_INTERVAL, so a new child is still noticed within that time.
+fn child_stores(cursor_dir: &Path, session_id: &str) -> Vec<PathBuf> {
+    let known = {
+        let guard = STORE_INDEX.lock().unwrap_or_else(|e| e.into_inner());
+        match guard.as_ref().and_then(|map| map.get(cursor_dir)) {
+            Some(index) if index.swept_at.elapsed() < CHILD_SWEEP_INTERVAL => {
+                return index.children_of(session_id);
+            }
+            Some(index) => index.stores.clone(),
+            None => HashMap::new(),
+        }
+    };
+    let index = sweep_stores(cursor_dir, known, &mut read_parent_agent_id);
+    let children = index.children_of(session_id);
+    let mut guard = STORE_INDEX.lock().unwrap_or_else(|e| e.into_inner());
+    let map = guard.get_or_insert_with(HashMap::new);
+    if map.len() >= MAX_INDEXED_ROOTS && !map.contains_key(cursor_dir) {
+        map.clear();
+    }
+    map.insert(cursor_dir.to_path_buf(), index);
+    children
+}
+
+/// Lists every store and re-reads the metadata of only those that are new or
+/// whose signature changed since `known`. Stores that vanished are dropped.
+fn sweep_stores(
+    cursor_dir: &Path,
+    mut known: HashMap<PathBuf, IndexedStore>,
+    probe: &mut dyn FnMut(&Path) -> Option<String>,
+) -> StoreIndex {
+    let mut roots = vec![cursor_dir.join("acp-sessions")];
+    if let Ok(projects) = std::fs::read_dir(cursor_dir.join("chats")) {
+        roots.extend(projects.flatten().map(|entry| entry.path()));
+    }
+    let mut stores = HashMap::new();
+    for entry in roots
+        .into_iter()
+        .filter_map(|root| std::fs::read_dir(root).ok())
+        .flat_map(|sessions| sessions.flatten())
+    {
+        let path = entry.path().join("store.db");
+        // Stamp before reading so a write during the read is seen next sweep.
+        let Some(signature) = store_signature(&path) else {
+            continue;
+        };
+        let parent = match known.remove(&path) {
+            Some(previous) if previous.signature == signature => previous.parent,
+            _ => probe(&path),
+        };
+        stores.insert(path, IndexedStore { signature, parent });
+    }
+    StoreIndex {
+        stores,
+        swept_at: std::time::Instant::now(),
+    }
+}
+
+fn file_stamp(path: &Path) -> Option<FileStamp> {
+    let metadata = std::fs::metadata(path).ok()?;
+    metadata.is_file().then(|| (metadata.len(), metadata.modified().ok()))
+}
+
+fn store_signature(path: &Path) -> Option<StoreSignature> {
+    let db = file_stamp(path)?;
+    let mut wal = path.as_os_str().to_os_string();
+    wal.push("-wal");
+    Some(StoreSignature {
+        db,
+        wal: file_stamp(Path::new(&wal)),
+    })
+}
+
+fn read_parent_agent_id(path: &Path) -> Option<String> {
+    let connection = open_cursor_store(path).ok()?;
+    let metadata = read_cursor_metadata(&connection).ok()?;
+    metadata
+        .pointer("/subagentInfo/parentAgentId")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
 }
 
 fn read_cursor_metadata(connection: &Connection) -> Result<Value, String> {
@@ -668,6 +735,51 @@ mod tests {
             &HashMap::new()
         )
         .is_empty());
+    }
+
+    #[test]
+    fn sweep_reopens_only_new_or_changed_stores() {
+        let fixture = TestStore::new();
+        let write_store = |dir: &str, content: &[u8]| {
+            let path = fixture.0.join(dir).join("store.db");
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, content).unwrap();
+            path
+        };
+        let history = write_store("chats/project/old", b"old");
+        let child = write_store("acp-sessions/child", b"child");
+        let probed = std::cell::RefCell::new(Vec::<PathBuf>::new());
+        let mut probe = |path: &Path| {
+            probed.borrow_mut().push(path.to_path_buf());
+            path.ends_with("child/store.db").then(|| "parent".to_owned())
+        };
+
+        let first = sweep_stores(&fixture.0, HashMap::new(), &mut probe);
+        assert_eq!(probed.borrow().len(), 2);
+        assert_eq!(first.children_of("parent"), vec![child.clone()]);
+
+        // Nothing changed: no store is opened, the answer is the same.
+        probed.borrow_mut().clear();
+        let second = sweep_stores(&fixture.0, first.stores, &mut probe);
+        assert!(probed.borrow().is_empty());
+        assert_eq!(second.children_of("parent"), vec![child.clone()]);
+
+        // A new child is found by opening only that store.
+        let late = write_store("chats/project/late", b"late");
+        let third = sweep_stores(&fixture.0, second.stores, &mut probe);
+        assert_eq!(*probed.borrow(), vec![late]);
+
+        // A store whose metadata was not readable yet is retried once it changes.
+        probed.borrow_mut().clear();
+        write_store("chats/project/old", b"old with metadata");
+        let fourth = sweep_stores(&fixture.0, third.stores, &mut probe);
+        assert_eq!(*probed.borrow(), vec![history.clone()]);
+
+        // Deleted stores leave the index.
+        std::fs::remove_dir_all(fixture.0.join("chats/project/old")).unwrap();
+        let fifth = sweep_stores(&fixture.0, fourth.stores, &mut probe);
+        assert!(!fifth.stores.contains_key(&history));
+        assert_eq!(fifth.stores.len(), 2);
     }
 
     #[test]

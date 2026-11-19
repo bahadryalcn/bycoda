@@ -22,7 +22,12 @@ type DataState = {
 };
 const state: { data: DataState } = { data: { programs: [], loading: false, refetch: () => {} } };
 vi.mock("./useContentData", () => ({
-  useContentData: () => state.data,
+  useContentData: () => ({
+    scheduledJobs: [],
+    scheduledCampaigns: [],
+    scheduledLoading: false,
+    ...state.data,
+  }),
 }));
 
 let element: HTMLDivElement;
@@ -137,5 +142,61 @@ describe("ContentScreen states", () => {
     act(() => buttonWith("List")?.click());
     expect(element.textContent).toContain("Launch week");
     expect(element.querySelector(".content-rows")).not.toBeNull();
+  });
+});
+
+describe("ContentScreen scheduled range", () => {
+  const farJob = {
+    id: "far",
+    kind: "publish",
+    campaignId: "c1",
+    status: "queued",
+    accountId: "x1",
+    scheduledAt: Date.now(),
+    payload: { text: "Created long ago, scheduled today" },
+  };
+
+  it("draws the posts scheduled in the visible days even when the newest pages hold none of them", () => {
+    state.data = {
+      snapshot,
+      programs: [],
+      loading: false,
+      refetch: vi.fn(),
+      scheduledJobs: [farJob],
+      scheduledCampaigns: [campaign],
+    } as DataState;
+    render(props());
+    expect(element.querySelector(".content-calendar")?.textContent).toContain(
+      "Created long ago, scheduled today",
+    );
+  });
+
+  it("shows loading instead of an empty calendar while the visible range is read", () => {
+    state.data = {
+      snapshot,
+      programs: [],
+      loading: false,
+      refetch: vi.fn(),
+      scheduledLoading: true,
+    } as DataState;
+    render(props());
+    expect(element.querySelector(".content-calendar")).toBeNull();
+    expect(element.textContent).toContain("Loading…");
+  });
+
+  it("offers older pages only in the list, not in the calendar that reads by schedule", () => {
+    state.data = {
+      snapshot,
+      programs: [],
+      loading: false,
+      refetch: vi.fn(),
+      hasMore: true,
+      loadMore: vi.fn(),
+    } as DataState;
+    render(props());
+    expect(buttonWith("Load more")).toBeUndefined();
+    expect(element.textContent).not.toContain("More posts are available");
+    act(() => buttonWith("List")?.click());
+    expect(buttonWith("Load more")).toBeDefined();
   });
 });

@@ -121,7 +121,6 @@ export function SessionFiltersMenu({
 
   const toggleArchived = () => {
     onChange({ ...filters, showArchived: !filters.showArchived });
-    onClose();
   };
 
   const onPatchDisplay = (patch: Partial<SessionListDisplay>) => updateSessionListDisplay(patch);
@@ -144,17 +143,13 @@ export function SessionFiltersMenu({
   );
   const items: DropdownMenuItem[] = [
     toggle(
-      check("archived", t("Archived"), filters.showArchived, { closeOnSelect: true }),
+      check("archived", t("Archived"), filters.showArchived),
       toggleArchived,
     ),
     ...(settled
       ? [
-          toggle(
-            check("settled", t("Settled"), filters.showSettled, { closeOnSelect: true }),
-            () => {
-              onChange({ ...filters, showSettled: !filters.showSettled });
-              onClose();
-            },
+          toggle(check("settled", t("Settled"), filters.showSettled), () =>
+            onChange({ ...filters, showSettled: !filters.showSettled }),
           ),
         ]
       : []),

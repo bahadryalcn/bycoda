@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import {
   useCallback,
   useEffect,
@@ -151,7 +152,7 @@ export function useWindowMoveActions(deps: WindowMoveActionDeps): {
         toast.show({
           tone: "danger",
           title: t("Could not open the file in a new window. The original editor is still here."),
-          message: error instanceof Error ? error.message : String(error),
+          message: errorText(error),
         });
       } finally {
         openingFileWindowIds.current.delete(fileId);

@@ -216,7 +216,7 @@ export function AssistantView(props: AssistantViewProps) {
                   loading={stopping || pending?.key === "pauseAll"}
                   onClick={() =>
                     snapshot.paused
-                      ? void mutate("pauseAll", t("Updating..."), {
+                      ? void mutate("pauseAll", t("Updating…"), {
                           op: "resumeAll",
                         })
                       : void stopEverything()
@@ -343,7 +343,7 @@ export function AssistantView(props: AssistantViewProps) {
         {!snapshot ? (
           loading ? (
             <LoadingText className={shell.empty} delay={false}>
-              {t("Loading...")}
+              {t("Loading…")}
             </LoadingText>
           ) : (
             <FailureState
@@ -387,7 +387,7 @@ export function AssistantView(props: AssistantViewProps) {
                   pending: pending?.key === "chief.retry",
                   onClick: () =>
                     snapshot.profile.autonomy === "chief"
-                      ? void mutate("chief.retry", t("Updating..."), {
+                      ? void mutate("chief.retry", t("Updating…"), {
                           op: "chief.retry",
                         })
                       : setSettings(true),

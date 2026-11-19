@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useJiraListContinuation } from "./useJiraListContinuation";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
@@ -95,7 +96,7 @@ export function useInboxCollection({
         return result;
       } catch (reason) {
         if (cached) return cached;
-        const message = reason instanceof Error ? reason.message : String(reason);
+        const message = errorText(reason);
         return {
           items: [] as InboxItem[],
           errors: {

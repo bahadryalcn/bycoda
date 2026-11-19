@@ -89,6 +89,28 @@ it("retains legacy non-string project and literal-true flags without weakening c
   expect(f.ports.read).toHaveBeenCalledExactlyOnceWith(123, false, true);
   await expect(f.service.list(raw, f.context)).rejects.toThrow();
 });
+it("fails the list when the disabled-models read fails instead of exposing disabled models", async () => {
+  const f = fixture();
+  const service = createModelsService({
+    ...f.ports,
+    disabledModels: async () => {
+      throw new Error("settings read failed");
+    },
+  });
+  await expect(service.list({}, f.context)).rejects.toThrow("settings read failed");
+});
+it("keeps every model when the owner published an empty disabled list", async () => {
+  const f = fixture();
+  const service = createModelsService({ ...f.ports, disabledModels: async () => [] });
+  const result = await service.list({}, f.context);
+  expect(result).toMatchObject({ models: { codex: [{ id: "codex:özgün" }] } });
+});
+it("keeps every model when the disabled list was never published", async () => {
+  const f = fixture();
+  const service = createModelsService({ ...f.ports, disabledModels: async () => undefined });
+  const result = await service.list({}, f.context);
+  expect(result).toMatchObject({ models: { codex: [{ id: "codex:özgün" }] } });
+});
 it("rejects a non-owner before inventory and rechecks revocation after catalog IO", async () => {
   const f = fixture();
   await expect(f.service.list({}, { authorized: async () => false })).rejects.toThrow("revoked");

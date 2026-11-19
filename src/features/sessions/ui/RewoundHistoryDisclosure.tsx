@@ -14,14 +14,15 @@ export function RewoundHistoryDisclosure({
   truncated?: boolean;
 }) {
   const t = useT();
+  const summary = t("Rewound history ({p0})", { p0: history.length });
   return (
     <Disclosure
       data-rewind-history=""
       size="sm"
-      summary={t("Rewound history ({p0})", { p0: history.length })}
+      summary={summary}
       {...surfaceAttributes(
         { frame: "pane", edge: "bottom" },
-        "mx-auto max-h-64 w-full max-w-4xl shrink-0 overflow-y-auto px-3 py-2",
+        "mx-auto w-full max-w-4xl shrink-0 px-3 py-2",
       )}
     >
       {truncated ? (
@@ -29,7 +30,14 @@ export function RewoundHistoryDisclosure({
           {t("Showing a preview of rewound history.")}
         </Text>
       ) : null}
-      <div className="mt-2 flex flex-col gap-3">
+      {/* The list owns its scroll inside a cap relative to the session pane, so the summary row
+          stays put and the transcript keeps most of the pane. Focusable so keyboard users can scroll. */}
+      <div
+        role="region"
+        aria-label={summary}
+        tabIndex={0}
+        className="mt-2 flex max-h-[min(16rem,40cqb)] flex-col gap-3 overflow-y-auto overscroll-contain"
+      >
         {[...history].reverse().map((entry) => (
           <section key={entry.id} className="flex flex-col gap-2">
             <Timestamp

@@ -33,6 +33,10 @@ const remoteIndexes = new Map<
 >();
 const REMOTE_INDEX_TTL_MS = 30_000;
 const MAX_REMOTE_INDEXES = 12;
+// Local listings are kept current by change notifications; this only bounds how
+// long an opened picker trusts a listing that no notification marked stale.
+const LOCAL_INDEX_TTL_MS = 30_000;
+const loadedAtByCwd = new Map<string, number>();
 
 function normCwd(cwd: string): string {
   return slash(cwd).replace(/\/+$/, "") || "/";
@@ -65,9 +69,11 @@ export function invalidateProjectFiles(cwd?: string) {
     if (!cache.has(cwd) && !inflight.has(cwd)) return;
     cache.delete(cwd);
     inflight.delete(cwd);
+    loadedAtByCwd.delete(cwd);
   } else {
     cache.clear();
     inflight.clear();
+    loadedAtByCwd.clear();
     lastCwd = null;
     if (refreshTimer != null) {
       clearTimeout(refreshTimer);
@@ -144,7 +150,12 @@ export function loadProjectFiles(cwd: string, refresh = false): Promise<ProjectF
       if (inflight.get(cwd) !== promise) return files;
       cache.delete(cwd);
       cache.set(cwd, files);
-      if (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value!);
+      loadedAtByCwd.set(cwd, Date.now());
+      if (cache.size > CACHE_LIMIT) {
+        const evicted = cache.keys().next().value!;
+        cache.delete(evicted);
+        loadedAtByCwd.delete(evicted);
+      }
       notifyProjectFilesChanged();
       return files;
     })
@@ -153,6 +164,24 @@ export function loadProjectFiles(cwd: string, refresh = false): Promise<ProjectF
     });
   inflight.set(cwd, promise);
   return promise;
+}
+
+/**
+ * Index for a picker that opens often: joins a scan already running, reuses a
+ * listing no change notification has marked stale and that is younger than the
+ * TTL, and otherwise rescans once. `loadProjectFiles(cwd, true)` stays for
+ * callers that must supersede a running scan.
+ */
+export function revalidateProjectFiles(cwd: string): Promise<ProjectFile[]> {
+  if (!looksLikeProject(cwd)) return Promise.resolve([]);
+  if (cwd.startsWith(REMOTE_PATH_PREFIX)) return loadRemoteProjectFiles(cwd, false);
+  const pending = inflight.get(cwd);
+  if (pending) {
+    lastCwd = cwd;
+    return pending;
+  }
+  const fresh = Date.now() - (loadedAtByCwd.get(cwd) ?? 0) < LOCAL_INDEX_TTL_MS;
+  return loadProjectFiles(cwd, !fresh);
 }
 
 function loadRemoteProjectFiles(cwd: string, refresh: boolean): Promise<ProjectFile[]> {
@@ -449,6 +478,9 @@ function pickOpenableFile(candidates: ProjectFile[], cwd: string, relHint: strin
 subscribeDirsChanged((_roots, paths) => {
   for (const [cwd, entry] of remoteIndexes) {
     if (!paths || paths.some((path) => dirBelongsToRoot(path, cwd))) entry.loadedAt = 0;
+  }
+  for (const cwd of loadedAtByCwd.keys()) {
+    if (!paths || paths.some((path) => dirBelongsToRoot(path, cwd))) loadedAtByCwd.set(cwd, 0);
   }
   if (!paths || (lastCwd && paths.some((path) => dirBelongsToRoot(path, lastCwd!))))
     scheduleIndexRefresh();

@@ -16,10 +16,13 @@ import { presentRemoteError } from "../../../connections/public/remoteFailure";
 
 export type BulkAction = "list" | "tag" | "sequence";
 
+/** Failure rows shown before the "and N more" line, as in the import report. */
+const RESULT_LIMIT = 20;
+
 export type BulkDialogProps = {
   client: SocialClient;
   action: BulkAction;
-  people: readonly Pick<SocialPerson, "id" | "tags">[];
+  people: readonly Pick<SocialPerson, "id" | "name" | "tags">[];
   lists: readonly SocialList[];
   onClose: () => void;
   /** Called after the action ran, so the table can reload. */
@@ -184,11 +187,31 @@ export function BulkDialog({ client, action, people, lists, onClose, onDone }: B
               {summaryOf(result)}
             </InlineMessage>
             {result.failed.length ? (
-              <ul className="audience-list">
-                {result.failed.slice(0, 20).map((item) => (
-                  <li key={item.personId}>{item.reason}</li>
-                ))}
-              </ul>
+              <>
+                <ul className="audience-list">
+                  {result.failed.slice(0, RESULT_LIMIT).map((item) => {
+                    const name = people.find((person) => person.id === item.personId)?.name;
+                    return (
+                      <li key={item.personId}>
+                        {name ? t("{p0}: {p1}", { p0: name, p1: item.reason }) : item.reason}
+                      </li>
+                    );
+                  })}
+                </ul>
+                {result.failed.length > RESULT_LIMIT ? (
+                  <Text
+                    as="p"
+                    size="caption"
+                    tone="muted"
+                    leading="inherit"
+                    className="audience-muted"
+                  >
+                    {t("And {p0} more could not be updated.", {
+                      p0: formatNumber(result.failed.length - RESULT_LIMIT),
+                    })}
+                  </Text>
+                ) : null}
+              </>
             ) : null}
           </section>
         ) : null}

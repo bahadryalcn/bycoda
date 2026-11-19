@@ -109,7 +109,7 @@ mod tests {
                 routes: routes.clone(),
                 path,
                 pin: RecoveryRoute {
-                    revision: routes.capture().unwrap(),
+                    revision: routes.capture(&machine.id).unwrap(),
                     selected_endpoint: machine.endpoint.clone(),
                 },
                 machine,
@@ -143,7 +143,7 @@ mod tests {
     #[test]
     fn native_projection_commit_rejects_retired_route_before_sql() {
         let fixture = Fixture::new();
-        fixture.reply.selection.routes.retire();
+        fixture.reply.selection.routes.retire("local");
         let called = AtomicBool::new(false);
         assert!(
             NativeProjection::commit(&[&NativeProjection::new(&fixture.reply)], || {
@@ -185,7 +185,7 @@ mod tests {
                 .recv_timeout(std::time::Duration::from_secs(5))
                 .unwrap();
             let retire = scope.spawn(move || {
-                routes.retire();
+                routes.retire("local");
                 retired_tx.send(()).unwrap();
             });
             let blocked = retired_rx

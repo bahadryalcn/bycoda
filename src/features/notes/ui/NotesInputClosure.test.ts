@@ -189,6 +189,13 @@ async function render(both = false, strict = false) {
     both ? createElement(SessionNotesPanel, { cwd: "/repo/project", sessionId: "target" }) : null,
   );
   await act(async () => root.render(strict ? createElement(StrictMode, null, tree) : tree));
+  // Notes open in the Document view, which builds no Source editor; Split shows both panes.
+  const split = () =>
+    [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
+      (node) => node.textContent === "Split",
+    );
+  await vi.waitFor(() => expect(split()).toBeTruthy());
+  await act(async () => split()!.click());
   await vi.waitFor(() =>
     expect(host.querySelector("[data-note-editor] .cm-editor")).not.toBeNull(),
   );
@@ -449,7 +456,7 @@ it("keeps ordinary unregistered Skills-style Markdown editing and callback seman
 
 it("gates the actual editable preview range without rewriting its unsupported neighbours", async () => {
   await render();
-  const edit = host.querySelector<HTMLElement>("[data-note-preview] [data-action-primary]")!;
+  const edit = host.querySelector<HTMLElement>("[data-note-preview] [data-note-block-edit]")!;
   await act(async () => edit.click());
   const view = EditorView.findFromDOM(
     host.querySelector<HTMLElement>("[data-note-preview] .cm-editor")!,
@@ -1132,6 +1139,40 @@ it("refuses an oversized private paste and a direct filter:false CM document bef
   );
   expect(view.state.doc.toString()).toBe(original);
   expect(invoke.mock.calls.some(([command]) => command === "notes_upsert")).toBe(false);
+});
+
+it("admits each keystroke from the tracked document size without encoding the whole note", async () => {
+  await render();
+  const view = source();
+  act(() =>
+    view.dispatch({
+      changes: { from: 0, to: view.state.doc.length, insert: "x".repeat(300_000) },
+    }),
+  );
+  const encode = vi.spyOn(TextEncoder.prototype, "encode");
+  try {
+    for (const key of ["a", "b", "🦀"])
+      act(() =>
+        view.dispatch({
+          changes: { from: view.state.doc.length, insert: key },
+          userEvent: "input.type",
+        }),
+      );
+    expect(view.state.doc.length).toBe(300_000 + 4);
+    expect(
+      encode.mock.calls.filter(([value]) => typeof value === "string" && value.length > 100_000),
+    ).toEqual([]);
+  } finally {
+    encode.mockRestore();
+  }
+  // The exact bound still holds from the tracked size: one byte past it is refused.
+  const before = view.state.doc.toString();
+  act(() =>
+    view.dispatch({
+      changes: { from: 0, to: view.state.doc.length, insert: "x".repeat(8 * 1024 * 1024 + 1) },
+    }),
+  );
+  expect(view.state.doc.toString()).toBe(before);
 });
 
 it("holds a new same-key Tag generation before input/effects while the original real async callback still owns its retired port", async () => {

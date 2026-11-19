@@ -62,3 +62,48 @@ it.each([
     }
   },
 );
+
+it("re-reads the selection geometry from the live range and reports loss only when the text is gone", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const surface = document.createElement("div");
+  surface.innerHTML = `<div ${SELECTABLE_AGENT_RESPONSE_ATTR}="answer"><p>Streaming reply.</p></div>`;
+  document.body.append(surface);
+  const mount = document.createElement("div");
+  const root = createRoot(mount);
+  let selected: TranscriptSelection | null = null;
+  function Harness() {
+    selected = useTranscriptSelection(surface, true).selection;
+    return null;
+  }
+  let rect = new DOMRect(10, 100, 100, 20);
+  vi.spyOn(Range.prototype, "getClientRects").mockImplementation(
+    () => ({ length: 1, item: () => rect }) as unknown as DOMRectList,
+  );
+  try {
+    await act(async () => root.render(createElement(Harness)));
+    const range = document.createRange();
+    range.selectNodeContents(surface.querySelector("p")!);
+    window.getSelection()!.removeAllRanges();
+    window.getSelection()!.addRange(range);
+    await act(async () => {
+      document.dispatchEvent(new Event("selectionchange"));
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    });
+    expect(selected?.rect.y).toBe(100);
+    // Scrolling moves the text; the next measurement follows it instead of keeping the old rect.
+    rect = new DOMRect(10, 40, 100, 20);
+    expect(selected?.measure?.()?.rect.y).toBe(40);
+    // Text appended after the selection (streaming) does not disturb it.
+    surface.querySelector("p")!.append(document.createElement("span"));
+    expect(selected?.measure?.()).not.toBeNull();
+    // The selected text being replaced is an actual loss.
+    surface.querySelector("p")!.replaceChildren("Different reply.");
+    expect(selected?.measure?.()).toBeNull();
+  } finally {
+    act(() => root.unmount());
+    window.getSelection()?.removeAllRanges();
+    surface.remove();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  }
+});

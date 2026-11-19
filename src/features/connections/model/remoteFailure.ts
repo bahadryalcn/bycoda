@@ -1,5 +1,6 @@
 import { t } from "../../../shared/i18n";
 import { TimeoutError } from "../../../shared/lib/withTimeout";
+import { actionableUnreachableReason, sanitizeConnectionError } from "./connectionReason";
 
 /** Why a request to a connected machine failed, as far as the user can act on it. */
 export type RemoteFailureKind =
@@ -13,6 +14,9 @@ export type RemoteFailureKind =
   | "unsupported"
   /** The machine is busy or a request timed out; the same request can be sent again. */
   | "temporary"
+  /** The owner turned this machine off here: native admission refused the request locally, so
+   * nothing was sent. It is no answer and no outage; it says nothing about the machine. */
+  | "disabled"
   /** The machine answered with an error of its own (a git failure, a bad path). */
   | "other";
 
@@ -25,6 +29,8 @@ const UNREACHABLE =
 const SUPERSEDED = /Connection changed while the request was running/;
 /** `TimeoutError` after it was turned into text (`String(error)`). */
 const LOCAL_TIMEOUT = /TimeoutError: .*timed out after \d+ ?ms/i;
+/** `account_routes.rs` refused the request because the machine is switched off on this computer. */
+const MACHINE_DISABLED = /^(?:Error: )?(?:RPC_WS_DISABLED:\s*)?Machine connection is disabled\.?$/;
 const OUTDATED =
   /Unsupported (host method|remote operation|workspace command)|Update bycoda Host in (?:Connections|Machines) settings/i;
 const UNSUPPORTED = /isn.t available for projects on another machine/i;
@@ -58,8 +64,15 @@ export function nativeConnectionFailureCode(error: unknown): string | undefined 
  * original text is kept as the message, minus the host's own prefix. */
 export function classifyRemoteError(error: unknown): RemoteFailure {
   const text = remoteErrorText(error);
-  const message = text.replace(/^Host rejected request:\s*/i, "").trim() || text;
+  // Checkpoint review errors carry a typed marker for programs; people never need to read it.
+  const message =
+    text
+      .replace(/^Host rejected request:\s*/i, "")
+      .replace(/\s*\[CHECKPOINT_(?:RECORDING|FAILED)\]/g, "")
+      .trim() || text;
   const code = nativeConnectionFailureCode(error);
+  if (code === "RPC_WS_DISABLED" || MACHINE_DISABLED.test(text.trim()))
+    return { kind: "disabled", message };
   if (code === "RPC_WS_IDENTITY") return { kind: "identity", message };
   if (code === "RPC_WS_UNSUPPORTED") return { kind: "outdated", message };
   // CANCELLED never reached the Host (its window or issuer was replaced mid-reconnect).
@@ -151,6 +164,13 @@ function localizeRemoteMessage(message: string): string {
 export const isConnectionFailure = (failure: RemoteFailure) =>
   failure.kind === "unreachable" || failure.kind === "outdated" || failure.kind === "identity";
 
+/** The request cannot succeed by being sent again: the Host is too old to know the command, or this
+ * app does not offer it for another machine. Retry buttons stay hidden for these. */
+export function isUnsupportedRemoteRoute(error: unknown): boolean {
+  const kind = classifyRemoteError(error).kind;
+  return kind === "outdated" || kind === "unsupported";
+}
+
 /** Codes of native failures the owner must act on; never treated as a passing outage. */
 const HARD_WS_CODES = ["RPC_WS_BLOCKED", "RPC_WS_SCHEMA", "RPC_WS_TLS"];
 
@@ -181,6 +201,8 @@ export function presentRemoteError(
   error: unknown,
   options: { explicit?: boolean } = {},
 ): string | undefined {
+  if (classifyRemoteError(error).kind === "disabled")
+    return t("This machine is turned off. Turn it on in Machines settings.");
   if (!isTransientTransportError(error))
     // An error with no text still needs a visible message.
     return (
@@ -192,11 +214,47 @@ export function presentRemoteError(
     return t(
       "The connection changed while the request was running. Its outcome is unknown; refresh before retrying an action.",
     );
-  // An action is never replayed on its own, since it could apply twice: tell the
-  // user to repeat it once the link is back instead of showing transport text.
-  return classifyRemoteError(error).kind === "unreachable"
-    ? t("Waiting for the connection to this computer. Try again once it is back.")
-    : t("This computer is busy right now. Try again in a moment.");
+  if (classifyRemoteError(error).kind !== "unreachable")
+    return t("This computer is busy right now. Try again in a moment.");
+  // A cause the user can fix (address, proxy, stopped Host, SSH sign-in) is named, since
+  // waiting never clears it. Only a plain outage gets the wait advice; an action is never
+  // replayed on its own, as it could apply twice.
+  return (
+    actionableUnreachableReason(remoteErrorText(error)) ??
+    t("Waiting for the connection to this computer. Try again once it is back.")
+  );
+}
+
+/** A failed request as a screen shows it: the presented sentence and the raw text for Details. */
+export type RemoteErrorView = { message: string; details: string };
+
+/**
+ * Presented message (always present, so an explicit action never fails silently) plus the raw
+ * Host or transport text without the `Error:` and `Host rejected request:` prefixes. Show
+ * `message`; keep `details` behind a Details disclosure and give it to the connection gate.
+ */
+export function describeRemoteError(error: unknown): RemoteErrorView {
+  const failure = classifyRemoteError(error);
+  return {
+    message: presentRemoteError(error, { explicit: true }),
+    // SSH and proxy failures can carry command lines or credentials: redact before display.
+    details:
+      failure.kind === "unreachable" ? sanitizeConnectionError(failure.message) : failure.message,
+  };
+}
+
+/**
+ * A local action's failure as the text a toast or inline notice shows: a translated `summary`
+ * for the action, then the cause with the `Error:` prefix removed and secrets or command lines
+ * redacted, so the user can still act on it. A machine that is off or cannot be reached gets its
+ * fixed sentence instead of `summary`, and a turned-off machine shows no native text at all.
+ */
+export function describeLocalError(error: unknown, summary: string): string {
+  const failure = classifyRemoteError(error);
+  if (failure.kind === "disabled") return presentRemoteError(error, { explicit: true });
+  const lead = actionableUnreachableReason(remoteErrorText(error)) ?? summary;
+  const cause = sanitizeConnectionError(failure.message.replace(/^Error:\s*/, ""));
+  return cause ? `${lead}\n\n${cause}` : lead;
 }
 
 /** How long to wait before asking an unreachable machine again, given how

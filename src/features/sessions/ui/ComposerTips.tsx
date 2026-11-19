@@ -63,7 +63,6 @@ export const ComposerTips = memo(function ComposerTips({ active }: { active: boo
   const locale = useLocale();
   const [index, setTip] = useState(() => Math.floor(Math.random() * COMPOSER_TIPS.length));
   const [open, setOpen] = useState(false);
-  const [focusWithin, setFocusWithin] = useState(false);
   const anchor = useRef<HTMLButtonElement>(null);
   const tipId = useId();
   const [hidden, setHidden] = useState(() => typeof document !== "undefined" && document.hidden);
@@ -72,14 +71,16 @@ export const ComposerTips = memo(function ComposerTips({ active }: { active: boo
     document.addEventListener("visibilitychange", update);
     return () => document.removeEventListener("visibilitychange", update);
   }, []);
+  // Rotate only while the popover is closed: a tip that is open must stay put for the reader,
+  // and the next opening shows the advanced tip. Timer is cleared on close, hide or inactivity.
   useEffect(() => {
-    if (!active || !open || focusWithin || hidden) return;
+    if (!active || open || hidden) return;
     const timer = window.setInterval(
       () => setTip((index) => (index + 1) % COMPOSER_TIPS.length),
       COMPOSER_TIP_INTERVAL,
     );
     return () => window.clearInterval(timer);
-  }, [active, open, focusWithin, hidden]);
+  }, [active, open, hidden]);
 
   return (
     <Text
@@ -103,8 +104,6 @@ export const ComposerTips = memo(function ComposerTips({ active }: { active: boo
         aria-expanded={open}
         className="composer-tips-icon"
         textTone="muted"
-        onFocus={() => setFocusWithin(true)}
-        onBlur={() => setFocusWithin(false)}
         onClick={() => {
           if (open) setTip((current) => (current + 1) % COMPOSER_TIPS.length);
           else setOpen(true);

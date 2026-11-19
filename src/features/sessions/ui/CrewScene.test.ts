@@ -218,7 +218,9 @@ it("labels roles, hides them for the background aria tree, and keeps sessions ap
       .map((label) => label.getAttribute("data-role"))
       .sort(),
   ).toEqual(["advisor", "lead"]);
-  expect(container.querySelector(".crew-scene__labels")?.getAttribute("aria-hidden")).toBe("true");
+  expect(container.querySelector(".crew-scene__labels")?.hasAttribute("aria-hidden")).toBe(false);
+  expect(container.querySelector(".crew-scene")?.getAttribute("role")).toBe("group");
+  expect(labels.every((label) => label.hasAttribute("data-tooltip-owner"))).toBe(true);
   // Idle sessions seat everyone regardless of other sessions' work.
   act(() => root.render(createElement(CrewScene, { sessionId: "quiet" })));
   expect(container.querySelectorAll('[data-working="true"]')).toHaveLength(0);
@@ -283,6 +285,24 @@ it("keeps decorative backgrounds out of the accessibility tree", () => {
   container.innerHTML = renderToStaticMarkup(createElement(CrewScene, { variant: "background" }));
   expect(container.firstElementChild?.getAttribute("aria-hidden")).toBe("true");
   expect(container.querySelector('[role="img"]')).toBeNull();
+});
+it("keeps backdrop labels inert, hidden and free of tooltips", () => {
+  state.enabled = false;
+  act(() => root.render(createElement(CrewScene, { variant: "background", workingCount: 2 })));
+  const labels = [...container.querySelectorAll(".crew-scene__label")];
+  expect(labels).toHaveLength(6);
+  expect(container.querySelector(".crew-scene__labels")?.getAttribute("aria-hidden")).toBe("true");
+  expect(labels.every((label) => !label.hasAttribute("data-tooltip-owner"))).toBe(true);
+  expect(labels.every((label) => !label.hasAttribute("tabindex"))).toBe(true);
+  expect(labels.every((label) => !label.hasAttribute("data-clipped"))).toBe(true);
+});
+it("leaves fully visible hero labels out of the tab order and out of hit testing", () => {
+  state.enabled = false;
+  act(() => root.render(createElement(CrewScene, { workingCount: 2 })));
+  const labels = [...container.querySelectorAll(".crew-scene__label")];
+  expect(labels).toHaveLength(6);
+  expect(labels.every((label) => !label.hasAttribute("tabindex"))).toBe(true);
+  expect(labels.every((label) => !label.hasAttribute("data-clipped"))).toBe(true);
 });
 it("staggers quiet tea sips across all six men without simultaneous motion", () => {
   for (let id = 0; id < 6; id++) {

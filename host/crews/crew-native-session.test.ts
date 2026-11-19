@@ -48,6 +48,10 @@ async function fixture() {
     ready: Promise.resolve(),
     admissionClosed: false,
     list: vi.fn(async () => rows),
+    get: vi.fn(async (id: string) => rows.find((row) => row.id === id)),
+    listCrewRun: vi.fn(async (runId: string, projectId: string) =>
+      rows.filter((row) => row.crewRunId === runId && row.projectId === projectId),
+    ),
     tick: vi.fn(async () => undefined),
     save: vi.fn(async (value: HostTask) => {
       rows.push({ ...value, status: "queued", updatedAt: 1 });

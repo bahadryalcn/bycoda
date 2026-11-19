@@ -33,8 +33,8 @@ afterEach(() => {
 });
 
 const people = [
-  { id: "p1", tags: ["vip"] },
-  { id: "p2", tags: [] },
+  { id: "p1", name: "Ada Lovelace", tags: ["vip"] },
+  { id: "p2", name: "Grace Hopper", tags: [] },
 ];
 
 const sequence = {
@@ -147,12 +147,42 @@ describe("BulkDialog tag", () => {
 
   it("does not add a tag the person already has twice", async () => {
     const mock = clientMock();
-    renderDialog(mock, { action: "tag", people: [{ id: "p1", tags: ["vip"] }] });
+    renderDialog(mock, {
+      action: "tag",
+      people: [{ id: "p1", name: "Ada Lovelace", tags: ["vip"] }],
+    });
     await flush();
     setFieldValue(fieldByLabel("Tag"), "vip");
     clickButton("Add a tag");
     await flush();
     expect(mock.people.update).toHaveBeenCalledWith({ personId: "p1", patch: { tags: ["vip"] } });
+  });
+});
+
+describe("BulkDialog failure report", () => {
+  it("names each failed person and counts the failures past the display limit", async () => {
+    const many = Array.from({ length: 22 }, (_, index) => ({
+      id: `p${index}`,
+      name: `Person ${index}`,
+      tags: [],
+    }));
+    const mock = clientMock({
+      people: {
+        ...clientMock().people,
+        update: vi.fn(async () => {
+          throw new Error("Not allowed");
+        }),
+      },
+    });
+    renderDialog(mock, { action: "tag", people: many });
+    await flush();
+    setFieldValue(fieldByLabel("Tag"), "lead");
+    clickButton("Add a tag");
+    await flush();
+    expect(bodyText()).toContain("Person 0: Not allowed");
+    expect(bodyText()).toContain("Person 19: Not allowed");
+    expect(bodyText()).not.toContain("Person 20: Not allowed");
+    expect(bodyText()).toContain("And 2 more could not be updated.");
   });
 });
 

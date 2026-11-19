@@ -1,24 +1,38 @@
 import { useSyncExternalStore } from "react";
 import {
   providerAccounts,
+  providerAccountsStorageVersion,
   subscribeProviderAccounts,
   type ProviderAccount,
   type ProviderAccountProvider,
 } from "./providerAccounts";
 
 const NONE: ProviderAccount[] = [];
-const snapshots = new Map<ProviderAccountProvider, { key: string; accounts: ProviderAccount[] }>();
+const snapshots = new Map<
+  ProviderAccountProvider,
+  { version: readonly (string | null)[]; key: string; accounts: ProviderAccount[] }
+>();
+
+function sameVersion(left: readonly (string | null)[], right: readonly (string | null)[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
 
 /**
- * Referentially stable `providerAccounts(provider)`: `providerAccounts` builds a fresh array
- * on every call, so the last array is reused while its serialised content is unchanged.
+ * Referentially stable `providerAccounts(provider)`. Every render compares only the raw stored
+ * strings; the record is parsed and serialised again only after storage changed, and the last
+ * array is reused while its content is unchanged.
  */
 function providerAccountsSnapshot(provider: ProviderAccountProvider): ProviderAccount[] {
+  const version = providerAccountsStorageVersion();
+  const cached = snapshots.get(provider);
+  if (cached && sameVersion(cached.version, version)) return cached.accounts;
   const accounts = providerAccounts(provider);
   const key = JSON.stringify(accounts);
-  const cached = snapshots.get(provider);
-  if (cached?.key === key) return cached.accounts;
-  snapshots.set(provider, { key, accounts });
+  if (cached?.key === key) {
+    snapshots.set(provider, { version, key, accounts: cached.accounts });
+    return cached.accounts;
+  }
+  snapshots.set(provider, { version, key, accounts });
   return accounts;
 }
 

@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { useEffect, useRef, useState } from "react";
 import { pathKey } from "../../../shared/lib/paths";
 import type {
@@ -51,7 +52,7 @@ export function manualEnrollmentVersion(
 }
 
 const reason = (cause: unknown) => {
-  const message = cause instanceof Error ? cause.message : String(cause);
+  const message = errorText(cause);
   return message === "The assistant already has 100 active manual supervision grants."
     ? "No more conversations can be enrolled. Revoke supervision before adding another."
     : presentRemoteError(cause, { explicit: true });

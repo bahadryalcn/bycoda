@@ -131,7 +131,6 @@ describe("MessageReplyComposer", () => {
     const onSent = vi.fn();
     render(onSent);
 
-    expect(container.textContent).toContain("Sends to #general in Slack");
     await pressSend();
     expect(container.textContent).toContain("network down");
     expect(container.querySelector("textarea")?.value).toBe("Hello");
@@ -148,6 +147,23 @@ describe("MessageReplyComposer", () => {
     expect(second.requestId).toBe(first.requestId);
     expect(container.querySelector("textarea")?.value).toBe("");
     expect(readReplyDraft(key).body).toBe("");
+  });
+
+  it("does not repeat a Slack thread title in the reply hint, but keeps the Teams destination", () => {
+    render(vi.fn());
+    expect(container.textContent).not.toContain("#general");
+    expect(container.textContent).not.toContain("Sends to");
+    act(() =>
+      root.render(
+        createElement(MessageReplyComposer, {
+          thread: { ...thread, provider: "teams", title: "Design sync" },
+          replyAddress: null,
+          onSent: vi.fn(),
+        }),
+      ),
+    );
+    expect(container.textContent).toContain("Sends to this Teams chat");
+    expect(container.textContent).not.toContain("Design sync");
   });
 
   it("does not send an empty draft", async () => {

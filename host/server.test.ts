@@ -10,6 +10,7 @@ import { request } from "node:http";
 import { HostEngine } from "./engine";
 import { HostStore } from "./store";
 import { createHostServer } from "./server";
+import { MAX_BODY, REQUEST_RECEIVE_TIMEOUT_MS } from "./server/support";
 import { BrowserRuntime } from "./browser/browser-runtime";
 import { DeviceHost } from "./devices/device-host";
 import * as expoGo from "./devices/expo-go";
@@ -573,6 +574,16 @@ it("keeps an idle client connection open well past the desktop's 5 s heartbeat",
   const s = await setup([]);
   expect(s.server.keepAliveTimeout).toBeGreaterThanOrEqual(30_000);
   expect(s.server.headersTimeout).toBeLessThanOrEqual(s.server.requestTimeout);
+});
+
+it("gives a full-size RPC upload a finite receive deadline on slow remote links", async () => {
+  // A 16 MiB body must arrive within the request deadline at a slow tunnel rate (~93 KB/s
+  // here). The deadline stays finite so stalled clients still release their sockets.
+  const s = await setup([]);
+  expect(s.server.requestTimeout).toBe(REQUEST_RECEIVE_TIMEOUT_MS);
+  expect(Number.isFinite(s.server.requestTimeout)).toBe(true);
+  expect(s.server.requestTimeout).toBeGreaterThanOrEqual(180_000);
+  expect(MAX_BODY / (s.server.requestTimeout / 1000)).toBeLessThanOrEqual(100 * 1024);
 });
 
 it("routes owner crew work deletion through authenticated RPC", async () => {

@@ -160,6 +160,106 @@ it("retains worker, transferred canvas and last frame across repeated pauses", a
   expect(container.querySelector("canvas[style*=none]")?.nextElementSibling).toBe(canvas);
 });
 
+const seats = (context: number) =>
+  Array.from({ length: 6 }, () => ({ role: "subagent" as const, working: false, context }));
+const acknowledge = (worker: FakeWorker) => {
+  act(() => {
+    for (const frame of worker.frames()) worker.reply("drawn", { sequence: frame.sequence });
+  });
+  advance(100);
+  act(() => {
+    for (const frame of worker.frames()) worker.reply("drawn", { sequence: frame.sequence });
+  });
+};
+const chargesOf = (worker: FakeWorker) =>
+  worker
+    .frames()
+    .at(-1)!
+    .frame.activity!.map((seat) => seat.charge);
+
+it("keeps one worker and transferred canvas across focus, visibility and seat percent", async () => {
+  saveCrewGrowthEnabled(false);
+  await show({ crew: seats(0.2) });
+  const worker = start();
+  const canvas = container.querySelector("canvas[style*=none]")?.nextElementSibling;
+  expect(canvas).toBeTruthy();
+  const workers = FakeWorker.instances.length;
+  const creations = state.painters.length;
+  const frames = worker.frames().length;
+
+  state.focused = false;
+  await show({ crew: seats(0.2) });
+  expect(container.querySelector(".crew-scene")?.getAttribute("data-motion")).toBe("still");
+  expect(vi.getTimerCount()).toBe(0);
+  state.focused = true;
+  await show({ crew: seats(0.2) });
+
+  vi.spyOn(document, "hidden", "get").mockReturnValue(true);
+  act(() => document.dispatchEvent(new Event("visibilitychange")));
+  expect(vi.getTimerCount()).toBe(0);
+  vi.spyOn(document, "hidden", "get").mockReturnValue(false);
+  act(() => document.dispatchEvent(new Event("visibilitychange")));
+
+  await show({ crew: seats(0.6) });
+  acknowledge(worker);
+  // The retained worker received the changed percent as a real frame, not a rebuilt scene.
+  expect(worker.frames().length).toBeGreaterThan(frames);
+  expect(chargesOf(worker)).toEqual(seats(0.6).map((seat) => seat.context));
+
+  expect(FakeWorker.instances).toHaveLength(workers);
+  expect(state.painters).toHaveLength(creations);
+  expect(worker.terminate).not.toHaveBeenCalled();
+  expect(container.querySelector("canvas[style*=none]")?.nextElementSibling).toBe(canvas);
+});
+
+it("draws a changed seat percent once while paused and then holds without timers", async () => {
+  saveCrewGrowthEnabled(false);
+  await show({ paused: true, crew: seats(0.2) });
+  const worker = start();
+  const frames = worker.frames().length;
+  await show({ paused: true, crew: seats(0.2) });
+  acknowledge(worker);
+  expect(worker.frames()).toHaveLength(frames);
+
+  await show({ paused: true, crew: seats(0.6) });
+  acknowledge(worker);
+  expect(worker.frames().length).toBeGreaterThan(frames);
+  expect(chargesOf(worker)).toEqual(seats(0.6).map((seat) => seat.context));
+  expect(vi.getTimerCount()).toBe(0);
+  const held = worker.frames().length;
+  advance(5_000);
+  expect(worker.frames()).toHaveLength(held);
+  expect(worker.terminate).not.toHaveBeenCalled();
+});
+
+it("keeps the main painter across focus, visibility and seat percent when the worker is off", async () => {
+  setCanvasWorkerEnabled("classic-crew", false);
+  saveCrewGrowthEnabled(false);
+  await show({ crew: seats(0.2) });
+  advance(1_000);
+  const [painter] = state.painters;
+  expect(state.painters).toHaveLength(1);
+
+  state.focused = false;
+  await show({ crew: seats(0.2) });
+  state.focused = true;
+  await show({ crew: seats(0.2) });
+  vi.spyOn(document, "hidden", "get").mockReturnValue(true);
+  act(() => document.dispatchEvent(new Event("visibilitychange")));
+  vi.spyOn(document, "hidden", "get").mockReturnValue(false);
+  act(() => document.dispatchEvent(new Event("visibilitychange")));
+  const paints = painter.draw.mock.calls.length;
+  await show({ crew: seats(0.6) });
+  advance(1_000);
+
+  expect(painter.draw.mock.calls.length).toBeGreaterThan(paints);
+  expect(painter.draw.mock.calls.at(-1)?.[1].map((seat: { charge?: number }) => seat.charge)).toEqual(
+    seats(0.6).map((seat) => seat.context),
+  );
+  expect(state.painters).toHaveLength(1);
+  expect(painter.draw.dispose).not.toHaveBeenCalled();
+});
+
 it.each(["constructor", "init-timeout", "paint-timeout", "crash"])(
   "real scene holds prepainted fallback after %s without retrying on pause",
   async (mode) => {

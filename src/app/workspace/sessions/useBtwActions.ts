@@ -85,6 +85,7 @@ export function useBtwActions({
             status: "running",
             updatedAt: now,
             error: undefined,
+            errorCode: undefined,
             pendingBlocks: [],
             messages: [...existing.messages, { id: messageId, role: "user", text, createdAt: now }],
           }
@@ -216,6 +217,7 @@ export function useBtwActions({
           updatedAt: now,
           pendingBlocks: undefined,
           error: undefined,
+          errorCode: undefined,
           messages: blocks.length
             ? [
                 ...thread.messages,
@@ -260,6 +262,7 @@ export function useBtwActions({
         status: "running",
         updatedAt: Date.now(),
         error: undefined,
+        errorCode: undefined,
         pendingBlocks: [],
       };
       const updated = updateBtwThread(sessionId, sourceUserId, threadId, () => thread);

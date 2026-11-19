@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
@@ -245,14 +246,23 @@ export function NotesView({
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searchingBody, setSearchingBody] = useState(false);
   const [searchRevision, setSearchRevision] = useState(0);
+  // Body search reruns when the note set or a note's saved revision changes, not on every
+  // new array identity (list refetch, draft merge that changed no row).
+  const noteSearchSignature = useMemo(
+    () => notes.map((note) => `${note.id}\u0000${note.updatedAt}`).join("\n"),
+    [notes],
+  );
+  // Query whose body matches are currently shown; a refresh for it keeps them on screen.
+  const shownBodyQuery = useRef<string | null>(null);
   useEffect(() => {
     const needle = deferredQuery.trim();
     if (!needle) {
+      shownBodyQuery.current = null;
       setSearchError(null);
       setSearchingBody(false);
       return;
     }
-    setSearchingBody(true);
+    setSearchingBody(shownBodyQuery.current !== needle);
     let active = true;
     // Coalesce typing before asking the native body index. Stale query results
     // never join a newer set of metadata filters.
@@ -260,6 +270,7 @@ export function NotesView({
       void searchNotes(needle).then(
         (ids) => {
           if (active) {
+            shownBodyQuery.current = needle;
             setBodyMatches({ query: needle, ids: new Set(ids) });
             setSearchError(null);
             setSearchingBody(false);
@@ -267,7 +278,7 @@ export function NotesView({
         },
         (cause: unknown) => {
           if (active) {
-            setSearchError(cause instanceof Error ? cause.message : String(cause));
+            setSearchError(errorText(cause));
             setSearchingBody(false);
           }
         },
@@ -277,7 +288,7 @@ export function NotesView({
       active = false;
       clearTimeout(timer);
     };
-  }, [deferredQuery, notes, searchRevision]);
+  }, [deferredQuery, noteSearchSignature, searchRevision]);
   const [libraryPreferences, setLibraryPreferences] = useState(loadNoteLibraryPreferences);
   const [projectFilter, setProjectFilter] = useState<string | null>(null);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
@@ -591,7 +602,7 @@ export function NotesView({
     } catch (err: unknown) {
       setActionFailure({
         kind: "create",
-        message: err instanceof Error ? err.message : String(err),
+        message: errorText(err),
         retry: () => void onCreate(scope),
       });
     } finally {
@@ -635,7 +646,7 @@ export function NotesView({
     try {
       targets = copyNativeCaptureData(deleteTargets);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = errorText(error);
       setActionFailure({ kind: "bulk", message });
       return message;
     }
@@ -685,7 +696,7 @@ export function NotesView({
           const draft = drafts.get(note.id);
           if (draft) draft.skipSave.current = false;
           failures.push(
-            `${note.title}: ${reason instanceof Error ? reason.message : String(reason)}`,
+            `${note.title}: ${errorText(reason)}`,
           );
           failedNotes.push(note);
         }
@@ -745,7 +756,7 @@ export function NotesView({
     } catch (err: unknown) {
       setActionFailure({
         kind: "chat",
-        message: err instanceof Error ? err.message : String(err),
+        message: errorText(err),
         retry,
       });
     } finally {
@@ -1610,6 +1621,10 @@ function NoteEditor({
     setToolbarTarget,
     toolbarTargetRef,
   } = useNoteEditorMode(note.id, previewEditing);
+  // The Source editor is built the first time Source/Split is shown and then stays mounted, so a
+  // note that is only read never pays for CodeMirror and a revealed one keeps its undo history.
+  const [sourceMounted, setSourceMounted] = useState(visibleMode !== "preview");
+  if (!sourceMounted && visibleMode !== "preview") setSourceMounted(true);
   const blank = !note.body.trim() && note.title === "Untitled";
   const [draftState] = useState(() => {
     const existing = drafts.get(note.id);
@@ -1821,7 +1836,7 @@ function NoteEditor({
       else publish();
       return saved;
     } catch (err: unknown) {
-      const failed = () => setSaveError(err instanceof Error ? err.message : String(err));
+      const failed = () => setSaveError(errorText(err));
       if (parent) parent.apply(failed);
       else failed();
       return current;
@@ -1921,10 +1936,24 @@ function NoteEditor({
     };
   }, [saveNow, draftState, note.id, inputOwner]);
 
+  const commitTitle = () => {
+    if (!inputOwner.allowed() || draftState.unadmittedInputs?.includes("title")) return;
+    const next = title.trim() || noteTitle(body);
+    if (next !== title) editNote({ title: next });
+    if (noteRef.current.slugPending) finalizeRef.current = { title: next };
+    void saveNow();
+  };
+
   const onTitleKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
     if (event.key !== "Enter" || isImeComposition(event.nativeEvent)) return;
     event.preventDefault();
-    event.currentTarget.blur();
+    // Moving focus into the body commits the title through its blur, and keeps the keyboard position.
+    if (visibleMode === "source" && editorViewRef.current) {
+      editorViewRef.current.focus();
+      return;
+    }
+    // No source editor to receive focus: commit here and keep focus on the title.
+    commitTitle();
   };
 
   const onEditorShortcut = (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -2024,13 +2053,7 @@ function NoteEditor({
                 editNote({ title: value });
                 scheduleSave();
               }}
-              onBlur={() => {
-                if (!inputOwner.allowed() || draftState.unadmittedInputs?.includes("title")) return;
-                const next = title.trim() || noteTitle(body);
-                if (next !== title) editNote({ title: next });
-                if (noteRef.current.slugPending) finalizeRef.current = { title: next };
-                void saveNow();
-              }}
+              onBlur={commitTitle}
               onKeyDown={onTitleKeyDown}
               readOnly={preparing}
               fieldClassName="note-detail-title"
@@ -2076,10 +2099,9 @@ function NoteEditor({
                   anchor={actionsButton}
                   align="end"
                   width={340}
-                  role="dialog"
+                  kind="dialog"
                   aria-label={t("Details")}
                   onDismiss={() => setActionsOpen(false)}
-                  autoFocus
                   className="note-details-popover"
                 >
                   <Text
@@ -2220,7 +2242,7 @@ function NoteEditor({
                     setSaveError(null);
                     window.dispatchEvent(new Event(NOTES_CHANGED_EVENT));
                   } catch (error) {
-                    setSaveError(error instanceof Error ? error.message : String(error));
+                    setSaveError(errorText(error));
                   } finally {
                     recoveringRef.current = false;
                     setRecovering(false);
@@ -2273,13 +2295,14 @@ function NoteEditor({
             {...dropZoneHandlers}
           >
             <div className={visibleMode === "split" ? "note-layout note-split" : "note-layout"}>
-              {/* Stays mounted in preview so undo history survives the switch. */}
+              {/* Built on first reveal; stays mounted afterwards so undo history survives the switch. */}
               <NoteEditorPane
                 label={t("Source")}
                 scrollKey={`${note.id}:source`}
                 hidden={visibleMode === "preview"}
                 split={visibleMode === "split"}
               >
+                {sourceMounted ? (
                 <NoteMarkdownEditor
                   inputObserver={inputOwner.observer("source")}
                   inputPublication={
@@ -2299,6 +2322,7 @@ function NoteEditor({
                   onPasteImages={pasteImages}
                   onFocus={() => setToolbarTarget("source")}
                 />
+                ) : null}
               </NoteEditorPane>
               <NoteEditorPane
                 label={t("Document")}

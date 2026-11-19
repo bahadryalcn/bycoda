@@ -101,6 +101,7 @@ async function mount(session: Session) {
   deps = {
     activeTab: tab,
     onFocusPane: vi.fn(),
+    onMovePane: vi.fn(),
     windowTransferPendingRef: { current: false },
     movingTabIds: { current: new Set() },
     setTabs: (update) => {

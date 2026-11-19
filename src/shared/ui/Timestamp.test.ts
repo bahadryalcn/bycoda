@@ -112,3 +112,21 @@ it("renders relative, clock, date-only and prefixed variants with a full-date ti
     act(() => root.unmount());
   }
 });
+
+it("re-reads relative labels on each shared minute", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.setSystemTime(new Date(2026, 9, 17, 15, 0, 0));
+  await setLanguagePreference("en");
+  const value = new Date(2026, 9, 17, 14, 58).getTime();
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  try {
+    act(() => root.render(createElement(Timestamp, { value, format: "relative" })));
+    expect(container.textContent).toBe("2 minutes ago");
+    act(() => vi.advanceTimersByTime(60_000));
+    expect(container.textContent).toBe("3 minutes ago");
+  } finally {
+    act(() => root.unmount());
+  }
+});

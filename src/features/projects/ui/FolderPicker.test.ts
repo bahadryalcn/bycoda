@@ -8,6 +8,7 @@ import { openFolderPicker } from "./openFolderPicker";
 const fs = vi.hoisted(() => ({
   homeDir: vi.fn(),
   listDir: vi.fn(),
+  listWindowsDrives: vi.fn(),
   statFiles: vi.fn(),
   createPath: vi.fn(),
   openPathWithDefaultApp: vi.fn(),
@@ -67,6 +68,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.spyOn(HTMLElement.prototype, "scrollIntoView").mockImplementation(() => {});
   fs.homeDir.mockResolvedValue("C:/Users/me");
+  fs.listWindowsDrives.mockResolvedValue(["C:/", "G:/"]);
   fs.statFiles.mockResolvedValue([
     { path: "C:/", isDir: true },
     { path: "G:/", isDir: true },
@@ -103,6 +105,11 @@ function button(label: string) {
     (item) => item.textContent === label,
   )!;
 }
+function option(label: string) {
+  return [...container.querySelectorAll<HTMLElement>('[role="option"]')].find(
+    (item) => item.textContent === label,
+  )!;
+}
 async function click(label: string) {
   await act(async () => button(label).click());
 }
@@ -128,7 +135,7 @@ describe("project folder browser", () => {
     const target = list.getAttribute("aria-activedescendant");
     const scroll = vi.mocked(HTMLElement.prototype.scrollIntoView);
     scroll.mockClear();
-    const notes = button("Notes");
+    const notes = option("Notes");
     await act(async () => {
       notes.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
     });
@@ -143,8 +150,7 @@ describe("project folder browser", () => {
 
   it("filters growing folder lists without losing selected paths and opens the filtered keyboard target", async () => {
     await render(true);
-    const selected = container.querySelector<HTMLInputElement>('[aria-label="Select Projects"]')!;
-    await act(async () => selected.click());
+    await act(async () => option("Projects").click());
     type("Search folders", "note");
     expect(container.querySelectorAll('[role="option"]')).toHaveLength(1);
     expect(container.querySelector('[role="option"]')?.textContent).toContain("Notes");
@@ -300,5 +306,49 @@ describe("project folder browser", () => {
     await act(async () => close.click());
     expect(await result).toEqual([]);
     expect(document.body.children.length).toBe(before);
+  });
+
+  it("keeps the previous listing visible while the next one loads", async () => {
+    await render();
+    let resolveNext!: (items: typeof folders) => void;
+    fs.listDir.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveNext = resolve;
+        }),
+    );
+    await act(async () => option("Notes").click());
+    const list = container.querySelector('[role="listbox"]')!;
+    expect(list.querySelectorAll('[role="option"]')).toHaveLength(2);
+    expect(list.textContent).not.toContain("Loading folders");
+    expect(container.textContent).toContain("Loading folders");
+    await act(async () => resolveNext([]));
+    expect(list.querySelectorAll('[role="option"]')).toHaveLength(0);
+    expect(container.textContent).toContain("No subfolders");
+  });
+
+  it("keeps folder options free of nested interactive controls", async () => {
+    await render(true);
+    const items = [...container.querySelectorAll('[role="option"]')];
+    expect(items).toHaveLength(2);
+    for (const item of items) expect(item.querySelector("button, input")).toBeNull();
+  });
+
+  it("mounts only a window of a long folder listing", async () => {
+    fs.listDir.mockImplementation(async (path) =>
+      path === "C:/Users/me"
+        ? Array.from({ length: 500 }, (_, index) => ({
+            name: `Folder ${index}`,
+            path: `C:/Users/me/Folder ${index}`,
+            isDir: true,
+            ignored: false,
+          }))
+        : [],
+    );
+    await render();
+    const items = container.querySelectorAll('[role="option"]');
+    expect(items.length).toBeGreaterThan(0);
+    expect(items.length).toBeLessThan(500);
+    expect(items[0]?.getAttribute("aria-setsize")).toBe("500");
   });
 });

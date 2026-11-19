@@ -6,6 +6,9 @@
   --settings-column: 80rem;
   --settings-column-maximized: 96rem;
   --settings-group-gap: 28px;
+  /* Block size of the sticky page bar: 16px top padding, 4px bottom, one compact title line.
+     Pages that stick beneath the bar offset from this token, never from a hard-coded sum. */
+  --settings-page-bar-height: calc(var(--ui-control-height-compact) + 20px);
   container-type: inline-size;
   container-name: settings-workbench;
 }
@@ -167,6 +170,8 @@
 }
 @container settings-workbench (max-width: 760px) {
   .bycoda-settings-form {
+    /* The narrow page bar drops its top padding to 12px (see .settings-page-bar-inner). */
+    --settings-page-bar-height: calc(var(--ui-control-height-compact) + 16px);
     padding: 8px 16px 48px;
   }
 }

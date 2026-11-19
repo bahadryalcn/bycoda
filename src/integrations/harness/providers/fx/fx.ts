@@ -1,3 +1,4 @@
+import { errorText } from "../../../../shared/lib/errors";
 import {
   assertProviderOperation,
   observeProviderProcess,
@@ -15,6 +16,8 @@ import {
 
 import { killChild } from "../../core/child";
 import { retireProviderEpoch } from "../turnWriter";
+import { savedConversationUnavailableText } from "../../core/providerNotices";
+import { t } from "../../../../shared/i18n/core";
 import {
   announceSlowProviderStartup,
   PROVIDER_STARTUP_TIMEOUT_MS,
@@ -33,6 +36,13 @@ import { nativeModelId } from "../../../../features/sessions/model/models";
 import { AcpSubagents } from "../../core/acpSubagents";
 import type { RuntimeMode } from "../../../../features/sessions/model/session";
 import { AcpClient, type AcpHandlers } from "../../core/acp";
+import { ACP_PROMPT_TIMEOUT_MS } from "../../core/acpPromptDeadline";
+import {
+  providerExitError,
+  pushExitStderrTail,
+  redactExitStderrLine,
+} from "../../core/exitDiagnostics";
+import { ignoreMissingControlMethod } from "../../core/acpControlRejection";
 import { reportAcpStopReason } from "../../core/acpStopReason";
 import { JsonRpcResponseError } from "../../core/jsonRpc";
 import { resolveFxBinary, spawnChild, watchChild } from "../../core/child";
@@ -93,25 +103,28 @@ type Resume = {
 const INIT_TIMEOUT_MS = PROVIDER_STARTUP_TIMEOUT_MS;
 const SESSION_TIMEOUT_MS = 45_000;
 const CONTROL_TIMEOUT_MS = 15_000;
-const PROMPT_TIMEOUT_MS = 30 * 60_000;
 
-const AUTH_HELP =
-  "fx has no Vercel AI Gateway credential it can read from here. " +
-  "Run `fx login` (or `fx setup`) in a terminal, or export AI_GATEWAY_API_KEY " +
-  "so it does not depend on the macOS Keychain.";
+function authHelp(): string {
+  return t(
+    "fx has no Vercel AI Gateway credential it can read from here. Run `fx login` (or `fx setup`) in a terminal, or export AI_GATEWAY_API_KEY so it does not depend on the macOS Keychain.",
+  );
+}
 
 /** fx rejects `initialize` itself when it cannot read a credential. */
 function fxStartupError(error: unknown): Error {
-  const detail = error instanceof Error ? error.message : String(error);
+  const detail = errorText(error);
   if (/needs access|AI Gateway|API key|Keychain/i.test(detail)) {
-    return new Error(`${detail.trim()}\n\n${AUTH_HELP}`);
+    return new Error(`${detail.trim()}\n\n${authHelp()}`);
   }
   if (/timed out/i.test(detail)) {
     return new Error(
-      `fx did not answer initialize within ${INIT_TIMEOUT_MS / 1000}s. ${AUTH_HELP}`,
+      t("fx did not answer initialize within {p0}s. {p1}", {
+        p0: INIT_TIMEOUT_MS / 1000,
+        p1: authHelp(),
+      }),
     );
   }
-  return new Error(`fx did not start. ${detail}`);
+  return new Error(t("fx did not start. {p0}", { p0: detail }));
 }
 
 const CLIENT_CAPABILITIES = {
@@ -368,19 +381,21 @@ async function ensureStartedLive(input: SendTurnInput): Promise<Live> {
       (liveRef.current?.onEvent ?? input.onEvent)(event);
     };
 
+    const stderrTail: string[] = [];
     watchChild(
       handle,
       (line) => acp.pushLine(line),
       (code) => {
-        acp.close(new Error("fx exited"));
+        acp.close(providerExitError("fx", code, stderrTail));
         if (liveByThread.get(input.sessionId)?.handle === handle)
           liveByThread.delete(input.sessionId);
         emit({ type: "session.ended", code });
       },
       (line) => {
-        console.debug("[bycoda] fx stderr", line);
+        pushExitStderrTail(stderrTail, line);
+        console.debug("[bycoda] fx stderr", redactExitStderrLine(line));
         if (/Fx needs access|AI Gateway|not start/i.test(line)) {
-          emit({ type: "session.error", message: line.trim() });
+          emit({ type: "session.error", message: redactExitStderrLine(line) });
         }
       },
     );
@@ -440,7 +455,7 @@ async function ensureStartedLive(input: SendTurnInput): Promise<Live> {
           resumeByThread.delete(input.sessionId);
           input.onEvent({
             type: "status",
-            text: "The saved provider conversation is unavailable. Starting a new session; the app will restore conversation context.",
+            text: savedConversationUnavailableText(),
           });
         } finally {
           muteGate.current = false;
@@ -505,12 +520,19 @@ async function applyModelSelection(
   const settings = input.modelSettings ?? {};
   const modelConfigId = live.modelConfigId === "provider" ? "model" : live.modelConfigId;
 
+  const advertises = (configId: string) => live.configOptions.some((o) => o.id === configId);
+
+  // An advertised model option must take effect. When fx lists no such option
+  // this request is only a probe, so an answered rejection is not a failure.
   await setConfigOption(live, modelConfigId, base, acp).catch((error: unknown) => {
-    ignoreUnsupportedControl("set_config_option", error);
+    ignoreMissingControlMethod("fx", "set_config_option", error, {
+      probe: !advertises(modelConfigId),
+    });
   });
-  if (modelConfigId !== "model") {
+  // The alias is only worth setting when fx really lists a separate "model" option.
+  if (modelConfigId !== "model" && advertises("model")) {
     await setConfigOption(live, "model", base, acp).catch((error: unknown) => {
-      ignoreUnsupportedControl("set_config_option", error);
+      ignoreMissingControlMethod("fx", "set_config_option", error);
     });
   }
 
@@ -518,7 +540,7 @@ async function applyModelSelection(
     const configId = resolveSettingConfigId(live.configOptions, settingId);
     if (!configId || configId === "provider") continue;
     await setConfigOption(live, configId, value, acp).catch((error: unknown) => {
-      ignoreUnsupportedControl("set_config_option", error);
+      ignoreMissingControlMethod("fx", "set_config_option", error);
     });
   }
 }
@@ -529,9 +551,10 @@ async function applyRuntimeMode(
   planning = false,
   acp: AcpWriterView,
 ): Promise<void> {
-  // Unsupported mode control is non-fatal because handlePermission remains a
-  // backstop. Transport failures and timeouts are rethrown so the wedged child
-  // is recycled rather than leaving this turn pending forever.
+  // A missing set_mode method (-32601) is non-fatal because handlePermission
+  // remains a backstop. A rejected mode, transport failures and timeouts are
+  // rethrown so the turn never runs in the wrong mode and a wedged child is
+  // recycled rather than leaving this turn pending forever.
   await acp
     .request(
       "session/set_mode",
@@ -542,7 +565,7 @@ async function applyRuntimeMode(
       CONTROL_TIMEOUT_MS,
     )
     .catch((error: unknown) => {
-      ignoreUnsupportedControl("set_mode", error);
+      ignoreMissingControlMethod("fx", "set_mode", error);
     });
 }
 
@@ -590,7 +613,7 @@ async function prompt(live: Live, input: SendTurnInput, acp: AcpWriterView): Pro
           sessionId: live.acpSessionId,
           prompt: blocks,
         },
-        PROMPT_TIMEOUT_MS,
+        ACP_PROMPT_TIMEOUT_MS,
         (value, work) => {
           responseScope.work?.finish();
           responseScope.work = work ? retainNativeOutputEventOrigin(work.origin) : null;
@@ -605,11 +628,11 @@ async function prompt(live: Live, input: SendTurnInput, acp: AcpWriterView): Pro
       reportAcpStopReason(result, emitNative);
     } catch (error) {
       if (live.cancelled) return;
-      const detail = error instanceof Error ? error.message : String(error);
+      const detail = errorText(error);
       emitNative({
         type: "session.error",
         message: /needs access|AI Gateway|API key|Keychain/i.test(detail)
-          ? `${detail.trim()}\n\n${AUTH_HELP}`
+          ? `${detail.trim()}\n\n${authHelp()}`
           : detail,
       });
       throw error;
@@ -617,12 +640,6 @@ async function prompt(live: Live, input: SendTurnInput, acp: AcpWriterView): Pro
   } finally {
     responseScope.work?.finish();
   }
-}
-
-function ignoreUnsupportedControl(method: string, error: unknown): void {
-  console.debug(`[bycoda] fx ${method} failed`, error);
-  const detail = error instanceof Error ? error.message : String(error);
-  if (/timed out|not running|exited|closed|pipe/i.test(detail)) throw error;
 }
 
 function handleNotification(live: Live, method: string, params: unknown) {

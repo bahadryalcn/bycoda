@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
@@ -6,14 +7,24 @@ import { lockCooldownMs, type VerifyResult } from "../model/groupLock";
 import { PasswordField } from "../../../shared/ui/PasswordField";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
+import { CooldownNotice } from "./CooldownNotice";
 
-/** What to tell the user about a refused password, or `null` when it was accepted. */
+/** The live cool-down notice; rendered from the running timer, never stored. */
+export function cooldownMessage(remainingMs: number): string | null {
+  return remainingMs > 0
+    ? t("Too many wrong passwords. Try again in {p0}.", { p0: formatCooldown(remainingMs) })
+    : null;
+}
+
+/**
+ * What to tell the user about a refused password to keep as a stored error, or
+ * `null` when it was accepted or a cool-down is running (the live timer owns
+ * that notice, so it cannot outlive the cool-down).
+ */
 export function verifyFailureMessage(result: VerifyResult, cooldownMs: number): string | null {
   if (result.ok) return null;
   if (result.reason === "no-password") return t("No lock password is set.");
-  if (cooldownMs > 0) {
-    return t("Too many wrong passwords. Try again in {p0}.", { p0: formatCooldown(cooldownMs) });
-  }
+  if (cooldownMs > 0) return null;
   return t("Wrong password.");
 }
 
@@ -91,10 +102,13 @@ export function PasswordPromptDialog({
     };
   }, []);
 
+  const message = cooldownMessage(cooldown.remainingMs) ?? error;
+  const hasMessage = message != null;
+
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Synchronizes retry focus with the password input becoming editable after a failed verification.
   useEffect(() => {
-    if (!busy && error) input.current?.focus();
-  }, [busy, error]);
+    if (!busy && hasMessage) input.current?.focus();
+  }, [busy, hasMessage]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -126,18 +140,11 @@ export function PasswordPromptDialog({
     } catch (reason) {
       if (!alive.current) return;
       if (input.current) input.current.value = "";
-      setError(t(reason instanceof Error ? reason.message : String(reason)));
+      setError(t(errorText(reason)));
     } finally {
       if (alive.current) setBusy(false);
     }
   };
-
-  const message =
-    cooldown.remainingMs > 0
-      ? t("Too many wrong passwords. Try again in {p0}.", {
-          p0: formatCooldown(cooldown.remainingMs),
-        })
-      : error;
 
   return (
     // The running check cannot be cancelled, so the dialog stays until it finishes.
@@ -177,7 +184,9 @@ export function PasswordPromptDialog({
           aria-invalid={message != null || undefined}
           aria-describedby={message ? "lock-password-error" : undefined}
         />
-        {message ? (
+        {cooldown.remainingMs > 0 ? (
+          <CooldownNotice id="lock-password-error">{message}</CooldownNotice>
+        ) : message ? (
           <Alert id="lock-password-error" tone="danger">
             {message}
           </Alert>

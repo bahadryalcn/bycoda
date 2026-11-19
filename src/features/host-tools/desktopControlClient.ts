@@ -1,4 +1,5 @@
 import { hostToolRequest } from "../connections/model/hostFeatureClient";
+import { watchNativeDesktopControl } from "./desktopControlIndicator";
 import {
   DesktopControlRequestValidationSchema,
   DesktopControlResponseSchema,
@@ -12,9 +13,13 @@ import {
 
 export async function desktopControlRequest(input: DesktopControlRequest) {
   const request = DesktopControlRequestValidationSchema.parse(input);
-  return DesktopControlResponseSchema.parse(
+  const response = DesktopControlResponseSchema.parse(
     await hostToolRequest("", "desktop.control.v1", "desktop.request", request, { kind: "local" }),
   );
+  // The native indicator watcher retires while control is off; a saved settings change or
+  // resume is what can turn it on, so wake it only then.
+  if (request.op === "configure" || request.op === "resume") void watchNativeDesktopControl();
+  return response;
 }
 export async function desktopHelperRequest(input: DesktopHelperRequest) {
   return DesktopHelperResponseSchema.parse(

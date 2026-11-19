@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider, notifyManager } from "@tanstack/react
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
-import { CrewManagedSessionsFeed } from "./crewManagedFeed";
+import { CrewManagedSessionsFeed, feedRefetchInterval } from "./crewManagedFeed";
 import { HOST_CREWS } from "./crew";
 
 vi.mock("../../automations/public/hostMachines", () => ({
@@ -22,6 +22,13 @@ const cwds = ["/a"];
 
 afterEach(() => {
   document.body.innerHTML = "";
+});
+
+it("backs off only projects that confirmed no managed session", () => {
+  const managed = [{ sessionId: "coord", runId: "run" }] as Parameters<typeof feedRefetchInterval>[0];
+  expect(feedRefetchInterval(undefined)).toBe(10_000); // not answered yet: discover quickly
+  expect(feedRefetchInterval(managed)).toBe(10_000);
+  expect(feedRefetchInterval([])).toBe(30_000);
 });
 
 it("polling with unchanged data does not re-render the host component", async () => {

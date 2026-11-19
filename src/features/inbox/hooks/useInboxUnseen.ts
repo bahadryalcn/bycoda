@@ -74,6 +74,18 @@ const MAX_CONCURRENT_LOOKUPS = 3;
 
 type ProjectSeenEntry = InboxSeenEntry & NotificationSubject;
 
+type PollFn = (force: boolean) => Promise<void>;
+/** Pull state shared by every run of the poll effect, so replacing a run never overlaps the network read of the last one. */
+type PollState = {
+  pulling: boolean;
+  /** The pull currently in flight. */
+  owner: PollFn | null;
+  pending: boolean;
+  pendingForce: boolean;
+  /** The live run's pull; a queued refresh goes only to it, never to a replaced run. */
+  run: PollFn | null;
+};
+
 function seenEntries(items: readonly InboxItem[]): ProjectSeenEntry[] {
   return items.map((item) => ({
     key: inboxItemKey(item),
@@ -153,9 +165,18 @@ export function useInboxActivity(
   const sessionsRef = useRef(sessions);
   const onActivityRef = useRef(options?.onActivity);
   const fallbackFetchedAt = useRef(new Map<string, number>());
-  const targetKey = linkedWorkItemTargets(sessions)
-    .map((target) => target.key)
-    .join("\0");
+  const pollState = useRef<PollState>({
+    pulling: false,
+    owner: null,
+    pending: false,
+    pendingForce: false,
+    run: null,
+  });
+  const railProjects = inboxProjectsForRail(recents, cwd);
+  const projectsRef = useRef(railProjects);
+  // The poll lifecycle keys on project paths and cwd only; a recents reorder or a
+  // linked-session change must not restart the timer or the in-flight read.
+  const projectKey = railProjects.map((project) => project.path).join("\0");
 
   const applyUnseen = useCallback(() => {
     const preferences = loadNotificationPreferences();
@@ -172,6 +193,12 @@ export function useInboxActivity(
   useLayoutEffect(() => {
     sessionsRef.current = sessions;
   }, [sessions]);
+
+  // Reason: the poll effect is keyed on projectKey, so it reads the latest
+  // project list from this ref when it runs, without restarting for each change.
+  useLayoutEffect(() => {
+    projectsRef.current = railProjects;
+  }, [railProjects]);
 
   useLayoutEffect(() => {
     onActivityRef.current = options?.onActivity;
@@ -195,23 +222,31 @@ export function useInboxActivity(
   );
 
   useEffect(() => {
-    const projects = inboxProjectsForRail(recents, cwd);
+    const projects = projectsRef.current;
+    const poll = pollState.current;
     if (projects.length === 0) {
       entriesRef.current = [];
       applyUnseen();
       return;
     }
 
+    // Set false by cleanup: results from a replaced run are rejected.
     let cancelled = false;
-    let pulling = false;
-    let pullAgain = false;
 
     const pull = async (force: boolean) => {
-      if (pulling) {
-        pullAgain ||= force;
+      if (poll.pulling) {
+        if (poll.owner !== pull) {
+          // The in-flight pull belongs to a replaced run; this run must read again after it.
+          poll.pending = true;
+          poll.pendingForce ||= force;
+        } else if (force) {
+          poll.pending = true;
+          poll.pendingForce = true;
+        }
         return;
       }
-      pulling = true;
+      poll.pulling = true;
+      poll.owner = pull;
       const projectPaths = projects.map((project) => project.path);
       const filters = pruneInboxFilters(loadInboxFilters(), projectPaths);
       const query: InboxQuery = {
@@ -340,14 +375,18 @@ export function useInboxActivity(
       } catch {
         // Leave the last known badges; a later poll can try again.
       } finally {
-        pulling = false;
-        if (!cancelled && pullAgain) {
-          pullAgain = false;
-          void pull(true);
+        poll.pulling = false;
+        poll.owner = null;
+        if (poll.pending) {
+          const force = poll.pendingForce;
+          poll.pending = false;
+          poll.pendingForce = false;
+          void poll.run?.(force);
         }
       }
     };
 
+    poll.run = pull;
     void pull(false);
     const stopSelfActivity = subscribeInboxSelfActivity(() => void pull(true));
     // Keep polling while minimized or closed-to-tray: the webview is still
@@ -374,12 +413,13 @@ export function useInboxActivity(
     window.addEventListener(JIRA_CHANGE_EVENT, onJiraChange);
     return () => {
       cancelled = true;
+      if (poll.run === pull) poll.run = null;
       window.clearTimeout(timer);
       document.removeEventListener("visibilitychange", onVis);
       window.removeEventListener(JIRA_CHANGE_EVENT, onJiraChange);
       stopSelfActivity();
     };
-  }, [applyUnseen, cwd, recents, targetKey]);
+  }, [applyUnseen, cwd, projectKey]);
 
   const updates = useMemo(
     () => linkedSessionUpdates(sessions, workItems, linkedSessionSeenAt),

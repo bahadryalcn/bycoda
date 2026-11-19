@@ -22,7 +22,9 @@ The selected host uses an existing native `ngrok` or `cloudflared` executable on
 PATH (standard Homebrew/local binary locations are also checked). If cloudflared
 is absent, bycoda downloads release **2026.1.2**, verifies the official SHA-256
 against constants in source, and installs it privately under the Host's data
-directory. A checksum mismatch prevents installation and execution. No global
+directory. The download does not block tunnel status or Stop: the tunnel stays
+Starting meanwhile, and Stop cancels it before anything launches. A checksum
+mismatch prevents installation and execution. No global
 provider service is modified. ngrok requires an authtoken
 saved through this panel. It uses the existing host credential vault implementation:
 Windows DPAPI CurrentUser, macOS Keychain, or Linux Secret Service, with no

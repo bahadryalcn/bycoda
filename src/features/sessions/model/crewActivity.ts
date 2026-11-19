@@ -116,6 +116,52 @@ export function crewSeats(sessionId: string | undefined, sessions: readonly Sess
   return seats;
 }
 
+/** Equal when every seat has the same role, working state, context and name, so a scene that
+ * keeps the previous array does not re-render for an update that leaves the crew unchanged. */
+export function sameCrewSeats(a: readonly CrewSeat[], b: readonly CrewSeat[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every((seat, id) => {
+      const other = b[id];
+      return (
+        seat.role === other.role &&
+        seat.working === other.working &&
+        seat.context === other.context &&
+        seat.name === other.name
+      );
+    })
+  );
+}
+
+/** A `crewSeats` for one mounted scene that reuses its last result while the sessions it reads
+ * keep their identity. The shell list changes on every update of any session, but `crewSeats`
+ * only reads the crew's own session and the sessions it leads, so an unrelated update returns
+ * the same seats without walking any transcript again. */
+export function createCrewSeatsSelector(): (
+  sessionId: string | undefined,
+  sessions: readonly Session[],
+) => CrewSeat[] {
+  let inputs: readonly Session[] = [];
+  let seats: CrewSeat[] | undefined;
+  return (sessionId, sessions) => {
+    const read =
+      sessionId === undefined
+        ? []
+        : sessions.filter(
+            (item) => item.id === sessionId || item.orchestrationLeadId === sessionId,
+          );
+    if (
+      seats &&
+      read.length === inputs.length &&
+      read.every((item, index) => item === inputs[index])
+    )
+      return seats;
+    inputs = read;
+    seats = crewSeats(sessionId, sessions);
+    return seats;
+  };
+}
+
 /** Preview/test crew: `count` working seats, filled lead, advisor, then subagents. */
 export function previewCrewSeats(count: number): CrewSeat[] {
   const n = Math.max(0, Math.floor(count));

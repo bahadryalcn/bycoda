@@ -415,6 +415,9 @@ export function useMessageRewind({
     fileRevertResult: revertResultFor(sessionId),
   });
 
+  // Clears only the displayed notice; the remembered result (retry guard) stays in fileRevertResult.
+  const dismissFileRevertNotice = () => setFileRevertNotice(null);
+
   return {
     pendingRewind,
     rewindingMessage,
@@ -423,6 +426,7 @@ export function useMessageRewind({
     filePlanLoading,
     rewindMode,
     fileRevertNotice,
+    dismissFileRevertNotice,
     rewindDraftSignal,
     requestMessageRewind,
     rewindLastTurnToDraft,

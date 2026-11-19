@@ -755,6 +755,50 @@ it("bounds original private generations upfront without evicting any retained da
   data.release();
 });
 
+it("admits a tracked editor size at exactly the limits canRetainText enforces, without the text", () => {
+  const input = owner();
+  const controls = { canClose: () => true, close: () => {} };
+  const port = input.observer("source").attach(
+    () => ({ snapshot: { inputKind: "codemirror", text: "", canonicalValue: "" } }),
+    controls,
+  );
+  const limit = 8 * 1024 * 1024;
+  expect(input.canRetainBytes("source", limit)).toBe(true);
+  expect(input.canRetainBytes("source", limit + 1)).toBe(false);
+  expect(input.canRetainText("source", "x".repeat(1024))).toBe(true);
+  // Typing within the reservation the port already holds stays admitted after a refusal clears.
+  expect(input.canRetainBytes("source", limit)).toBe(true);
+  expect(input.canRetainBytes("source", 1)).toBe(true);
+  expect(input.canRetainBytes("missing", 1)).toBe(false);
+  port.unregister();
+});
+
+it("admits an editor snapshot from its tracked size instead of encoding the whole text", () => {
+  const input = owner();
+  const controls = { canClose: () => true, close: () => {} };
+  const encode = vi.spyOn(TextEncoder.prototype, "encode");
+  try {
+    const port = input.observer("source").attach(
+      () => ({
+        snapshot: {
+          inputKind: "codemirror",
+          text: "x".repeat(200_000),
+          textBytes: 200_000,
+          canonicalValue: "",
+        },
+      }),
+      controls,
+    );
+    port.changed();
+    expect(
+      encode.mock.calls.filter(([value]) => typeof value === "string" && value.length > 100_000),
+    ).toEqual([]);
+    port.unregister();
+  } finally {
+    encode.mockRestore();
+  }
+});
+
 it("never charges the first same-key generation's larger reservation on behalf of a different port near the aggregate byte bound", () => {
   const input = owner();
   const controls = { canClose: () => true, close: () => {} };

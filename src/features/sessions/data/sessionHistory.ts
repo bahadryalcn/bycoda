@@ -1,7 +1,10 @@
 import { sessionIssue } from "../model/sessionIssue";
 import { sessionDelegationParent } from "../../../shared/model/host-contracts/delegation";
 import { wasTurnInterrupted } from "../model/inFlight";
-import { sessionProviderHistory } from "../model/sessionProviderHistory";
+import {
+  sameSessionProviderHistory,
+  sessionProviderHistory,
+} from "../model/sessionProviderHistory";
 import { sessionActivityAt } from "../model/sessionActivity";
 import type { OrchestrationRun } from "../../orchestration/model/orchestration";
 import { summarizeOrchestration } from "../../orchestration/model/orchestrationSummary";
@@ -140,6 +143,15 @@ function gitOverlayForCwd(cwd: string, git?: SessionGitHint): SessionGitHint {
   return { ...git, repo: name };
 }
 
+/** First row index per id, so a live session finds its stored row without a scan. */
+function indexRowsById(rows: readonly SessionSummary[]): Map<string, number> {
+  const index = new Map<string, number>();
+  rows.forEach((row, position) => {
+    if (!index.has(row.id)) index.set(row.id, position);
+  });
+  return index;
+}
+
 export function historyWithLiveSessions(
   history: SessionSummary[],
   sessions: Session[],
@@ -163,6 +175,7 @@ export function historyWithLiveSessions(
       !workerIds.has(entry.id) &&
       sameProjectPath(entry.cwd, cwd),
   );
+  let rowIndex = indexRowsById(rows);
   const hint = projectGitHint(rows, gitOverlayForCwd(cwd, git));
   for (const session of sessions) {
     if (session.inboxAsk || workerIds.has(session.id)) continue;
@@ -170,8 +183,8 @@ export function historyWithLiveSessions(
     // A blank conversation with unsent composer text is listed as a draft.
     const live = session.busy || sessionNeedsInput(session) || composerDraftIds.has(session.id);
     if (!shouldPersistSession(session) && !live) continue;
-    const storedIndex = rows.findIndex((row) => row.id === session.id);
-    if (storedIndex >= 0) {
+    const storedIndex = rowIndex.get(session.id);
+    if (storedIndex !== undefined) {
       const stored = rows[storedIndex];
       const draft = !!sessionDraftBlock(session);
       const automationId = session.automationId || stored.automationId;
@@ -184,8 +197,10 @@ export function historyWithLiveSessions(
         session.historyPartial || session.historyLoading
           ? (stored.providerHistory ?? sessionProviderHistory(session))
           : sessionProviderHistory(session);
-      const providerHistoryChanged =
-        JSON.stringify(stored.providerHistory) !== JSON.stringify(providerHistory);
+      const providerHistoryChanged = !sameSessionProviderHistory(
+        stored.providerHistory,
+        providerHistory,
+      );
       const interrupted =
         session.historyPartial || session.historyLoading
           ? stored.interrupted
@@ -219,6 +234,7 @@ export function historyWithLiveSessions(
       ...(session.branch ? { branch: session.branch } : {}),
     };
     rows = mergeHistorySummary(rows, summaryFromSession(session, sessionHint));
+    rowIndex = indexRowsById(rows);
   }
   const byLead = new Map(runs.map((run) => [run.leadId, run]));
   return rows

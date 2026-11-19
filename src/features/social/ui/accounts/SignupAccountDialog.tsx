@@ -1,13 +1,15 @@
-import { useEffect, useId, useState } from "react";
+import { useId, useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { Badge } from "../../../../shared/ui/Badge";
 import { Button } from "../../../../shared/ui/Button";
 import { DatePicker } from "../../../../shared/ui/DatePicker";
+import { toLocalDateTime } from "../../../../shared/ui/DateTimePicker";
 import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
 import { Modal, ModalActions } from "../../../../shared/ui/Modal";
 import { Text } from "../../../../shared/ui/Text";
 import { TextField } from "../../../../shared/ui/TextField";
+import { usePollingRefresh } from "../../hooks/usePollingRefresh";
 import { SOCIAL_PLATFORM_NAMES, type SocialAccount, type SocialPlatform } from "../../model/social";
 import type { SocialBrowserWorkflow, SocialRegistrationField } from "../../model/socialBrowser";
 import type { SocialClient } from "../../model/socialClient";
@@ -75,35 +77,24 @@ export function SignupAccountDialog({
   const live = isSignupLive(workflow);
 
   // Keep the signup status current while the Host drives the window; the owner works there, not here.
-  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Poll the Host's signup status only while this dialog shows a live workflow.
-  useEffect(() => {
-    if (!accountId || !live) return;
-    let alive = true;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const tick = () => {
-      client
-        .browserWorkflowStatus(accountId)
-        .then(
-          (state) => {
-            if (!alive) return;
-            setPollError("");
-            const next = latestSignup(state, accountId);
-            if (next) setWorkflow(next);
-          },
-          () => {
-            if (alive) setPollError(t("The signup status could not be read. Retrying."));
-          },
-        )
-        .finally(() => {
-          if (alive) timer = setTimeout(tick, POLL_MS);
-        });
-    };
-    timer = setTimeout(tick, POLL_MS);
-    return () => {
-      alive = false;
-      clearTimeout(timer);
-    };
-  }, [client, accountId, live]);
+  usePollingRefresh({
+    active: Boolean(accountId && live),
+    scope: accountId,
+    intervalMs: POLL_MS,
+    load: async (isCurrent) => {
+      if (!accountId) return;
+      try {
+        const state = await client.browserWorkflowStatus(accountId);
+        if (!isCurrent()) return;
+        setPollError("");
+        const next = latestSignup(state, accountId);
+        if (next) setWorkflow(next);
+      } catch (error) {
+        if (isCurrent()) setPollError(t("The signup status could not be read. Retrying."));
+        throw error;
+      }
+    },
+  });
 
   const registration = workflow?.registration;
   const required = SIGNUP_FIELD_ORDER.filter((field) =>
@@ -265,7 +256,7 @@ export function SignupAccountDialog({
                   key={field}
                   label={registrationFieldLabel(field)}
                   value={draft[field] ?? ""}
-                  max={new Date().toISOString().slice(0, 10)}
+                  max={toLocalDateTime(new Date()).slice(0, 10)}
                   disabled={busy}
                   onChange={(value) => update(field, value)}
                 />

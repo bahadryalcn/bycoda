@@ -63,7 +63,7 @@ test("conversation HTML links retain the chat and draft beside a reusable previe
       await draft.fill("Keep this unsent conversation draft");
       const link = page.getByRole("link", { name: "Open updated HTML", exact: true });
       await link.click();
-      await expect(page.getByRole("separator", { name: "Resize columns" })).toHaveCount(1);
+      await expect(page.getByRole("separator", { name: /^Resize between column / })).toHaveCount(1);
       await expect(page.getByTestId("html-workspace-count")).toHaveText("1");
       await expect(page.getByTestId("html-editor-count")).toHaveText("1");
       await expect(draft).toBeVisible();
@@ -124,7 +124,7 @@ test("pane maximization preserves ratios and mounted drafts, and restores the sp
 });
 
 test("sashes resize with keyboard and pointer, and Escape cancels a drag", async ({ page }) => {
-  const separator = page.getByRole("separator", { name: "Resize columns" }).first();
+  const separator = page.getByRole("separator", { name: /^Resize between column / }).first();
   const layout = page.getByTestId("layout");
   const original = await layout.textContent();
   await separator.focus();

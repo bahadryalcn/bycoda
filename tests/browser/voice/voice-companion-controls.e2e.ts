@@ -65,7 +65,7 @@ for (const theme of ["light", "dark"])
       await expect(finish).toBeEnabled();
       await page.getByRole("menuitemcheckbox", { name: "Mute speaker", exact: true }).click();
       expect(await page.evaluate(() => (window as any).fixtureVoice.speakerMuted)).toBe(true);
-      await panel.getByRole("button", { name: "Pause mic", exact: true }).click();
+      await panel.getByRole("button", { name: "Mute microphone", exact: true }).click();
       await more.click();
       await expect(finish).toBeDisabled();
       await page.keyboard.press("Escape");
@@ -73,7 +73,7 @@ for (const theme of ["light", "dark"])
       expect(await page.evaluate(() => (window as any).fixtureVoice.connects)).toBe(1);
       expect(await panel.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
       await page.emulateMedia({ reducedMotion: "reduce" });
-      await panel.getByRole("button", { name: "Resume", exact: true }).click();
+      await panel.getByRole("button", { name: "Mute microphone", exact: true }).click();
       await expect(panel).toHaveAttribute("data-voice-state", "listening");
       await capture("compact-reduced-motion");
       await panel.getByRole("button", { name: "Expand voice companion", exact: true }).click();
@@ -156,7 +156,7 @@ for (const theme of ["light", "dark"])
       );
       await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
       await panel.getByRole("button", { name: "Start voice", exact: true }).click();
-      await panel.getByRole("button", { name: "Pause mic", exact: true }).click();
+      await panel.getByRole("button", { name: "Mute microphone", exact: true }).click();
       await expect(panel.getByText(/Hold .* to talk/)).toBeVisible();
       await expect(panel.getByText(/Hold .* to talk/)).not.toContainText("{");
       await expect(panel.getByText(/Hold .* to talk/)).toContainText("J");
@@ -172,7 +172,9 @@ for (const theme of ["light", "dark"])
       await page.keyboard.up("Shift");
       await page.keyboard.up("Control");
       expect(await page.evaluate(() => (window as any).fixtureVoice.pushToTalkEnds)).toBe(1);
-      await expect(panel.getByRole("button", { name: "Resume", exact: true })).toBeVisible();
+      await expect(
+        panel.getByRole("button", { name: "Mute microphone", exact: true }),
+      ).toHaveAttribute("aria-pressed", "true");
       await page.evaluate(() => (window as any).fixtureVoice.speech("List projects"));
       // Running voice actions collapse into one trigger that opens the activity list.
       await panel.getByRole("button", { name: /Taking action/ }).click();

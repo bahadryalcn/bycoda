@@ -41,23 +41,32 @@ fn private_directory(dir: &Path) -> Result<(), String> {
     }
     #[cfg(windows)]
     {
+        use crate::termius_command::{
+            run_bounded, HelperFailure, HELPER_OUTPUT_LIMIT, HELPER_TIMEOUT,
+        };
         use std::os::windows::process::CommandExt;
         std::fs::create_dir_all(dir).map_err(|_| "Could not create the private SSH key folder")?;
         // This command returns only account metadata, never a credential or key.
-        let account = std::process::Command::new("whoami.exe")
+        let mut lookup = std::process::Command::new("whoami.exe");
+        lookup
             .args(["/user", "/fo", "csv", "/nh"])
-            .creation_flags(0x08000000)
-            .output()
-            .map_err(|_| "Could not identify the SSH key owner")?;
-        let csv = String::from_utf8_lossy(&account.stdout);
+            .creation_flags(0x08000000);
+        let account = run_bounded(&mut lookup, HELPER_TIMEOUT, HELPER_OUTPUT_LIMIT).map_err(
+            |failure| match failure {
+                HelperFailure::TimedOut => {
+                    "Windows did not identify the SSH key owner in time. Try the import again."
+                }
+                _ => "Could not identify the SSH key owner",
+            },
+        )?;
+        let csv = String::from_utf8_lossy(&account);
         let sid = csv
             .trim()
             .rsplit(',')
             .next()
             .unwrap_or("")
             .trim_matches('"');
-        if !account.status.success()
-            || !sid.starts_with("S-1-")
+        if !sid.starts_with("S-1-")
             || !sid
                 .chars()
                 .all(|c| c.is_ascii_digit() || c == '-' || c == 'S')

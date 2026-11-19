@@ -63,6 +63,7 @@ export function useAutomationDraftStart({
     setPickerOpen(false);
     setDraft({
       ...newAutomationDraft(project, harness, model),
+      hostCreateId: crypto.randomUUID(),
       ...(routingHost.supported ? { modelChoice: { kind: "default" as const } } : {}),
     });
   };
@@ -72,6 +73,7 @@ export function useAutomationDraftStart({
     const { project, harness, model } = defaultDraftTarget();
     setPickerOpen(false);
     setDraft({
+      hostCreateId: crypto.randomUUID(),
       ...draftFromTemplate(project, harness, model, {
         ...template,
         name: t(template.name),

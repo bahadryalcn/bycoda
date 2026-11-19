@@ -53,9 +53,11 @@
   transition-property:
     color, background-color, border-color, outline-color, text-decoration-color, fill, stroke;
 }
+/* Box sizes (width, height, max-height, ...) re-run layout for every frame and its
+   siblings; they change immediately instead. Only a contained clip element may animate its
+   grid rows. */
 .motion[data-transition="size"] {
-  transition-property:
-    width, height, inline-size, block-size, max-height, max-block-size, grid-template-rows;
+  transition-property: grid-template-rows;
 }
 .motion[data-transition="all"] {
   transition-property: all;

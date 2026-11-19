@@ -15,6 +15,10 @@ import {
 } from "../model/localDictationModels";
 import { voiceRuntimeSettings, type VoiceSettings } from "../model/voiceSettings";
 
+const STATUS_POLL_MS = 1000;
+const MAX_STATUS_RETRIES = 5;
+const MAX_STATUS_RETRY_DELAY_MS = 16_000;
+
 /** Browse and manage the two local Whisper models owned by voice setup. */
 export function LocalDictationModels({
   settings,
@@ -39,6 +43,9 @@ export function LocalDictationModels({
   useEffect(() => {
     let active = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    // Last observed state is "working": keep polling it through transient failures.
+    let working = false;
+    let failures = 0;
     async function refresh() {
       try {
         const [next, state] = await Promise.all([
@@ -46,6 +53,8 @@ export function LocalDictationModels({
           localDictationModels.status(),
         ]);
         if (!active) return;
+        if (failures > 0) setError("");
+        failures = 0;
         setModels(next);
         setJob(state);
         setLoading(false);
@@ -55,11 +64,19 @@ export function LocalDictationModels({
           if (deleted && !deleted.installed && settings.dictationLocalModelPath === deleted.path)
             change({ dictationLocalModelPath: "" });
         }
-        if (state.state === "working") timer = setTimeout(() => void refresh(), 1000);
+        working = state.state === "working";
+        if (working) timer = setTimeout(() => void refresh(), STATUS_POLL_MS);
       } catch {
-        if (active) {
-          setLoading(false);
-          setError(t("Could not load local models."));
+        if (!active) return;
+        setLoading(false);
+        setError(t("Could not load local models."));
+        // Bounded retries with backoff; the last known job stays visible. "Try again" re-arms polling after the limit.
+        if (working && failures < MAX_STATUS_RETRIES) {
+          failures += 1;
+          timer = setTimeout(
+            () => void refresh(),
+            Math.min(STATUS_POLL_MS * 2 ** failures, MAX_STATUS_RETRY_DELAY_MS),
+          );
         }
       }
     }

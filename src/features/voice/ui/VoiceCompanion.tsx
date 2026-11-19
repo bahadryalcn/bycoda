@@ -43,6 +43,7 @@ import { elapsedSince } from "../../../shared/lib/time/timestamps";
 import { LocalVoice, type SpeechBinding } from "../model/localVoice";
 import {
   useVoicePresence,
+  useWindowShown,
   readNativeVoicePresence,
   deriveCapturePresence,
   markAcceptedVoiceSpeech,
@@ -52,6 +53,7 @@ import { shouldSilentlyAcknowledgeVoice, shouldWaitForVoice } from "../model/voi
 import { classifyVoiceFailure } from "../model/voiceReconnect";
 import { VoiceReconnectScheduler } from "../model/voiceReconnectScheduler";
 import { VoiceCompanionRecovery } from "./companion/VoiceCompanionRecovery";
+import { useVoiceHearing } from "./companion/useVoiceHearing";
 import { voiceStatusText } from "./companion/voiceStatusText";
 import { useVoiceReturnCall } from "./useVoiceReturnCall";
 import { useVoiceTalkEvent } from "./useVoiceTalkEvent";
@@ -109,6 +111,7 @@ import { voiceLanguageCode } from "../model/voiceLanguage";
 import { VoiceThreadTranscript, voiceThreadSeed, voiceThreadSummary } from "../model/voiceThreads";
 import { withVoiceSessionBoundary } from "../model/voiceSessionGap";
 import { VoicePanelResize } from "./companion/VoicePanelResize";
+import { useVoiceLauncherSlot } from "./companion/voiceLauncherSlot";
 import { VoiceCausalGeneration, VoiceContextScopeUnavailable } from "../model/voiceCausalContext";
 import {
   VoiceHistoryBindings,
@@ -279,15 +282,6 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   const briefingAbort = useRef<AbortController | null>(null);
   const generation = useRef(0);
   const pushToTalkHeld = useRef(false);
-  const [hearingInput, setHearingInput] = useState(false);
-  useEffect(() => {
-    if (status !== "live" || muted) {
-      setHearingInput(false);
-      return;
-    }
-    const timer = setInterval(() => setHearingInput(audioLevel.current > 0.04), 120);
-    return () => clearInterval(timer);
-  }, [status, muted]);
   const [message, setMessage] = useState("");
   const [transcript, setTranscript, transcriptTurn] = useVoiceTranscript();
   const [error, setError] = useState("");
@@ -883,7 +877,13 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     settings.mode,
     settings.experimentalSemanticVad,
   ]);
-  const detectedPresence = useVoicePresence(open, settings.idleSleepMinutes);
+  // Hidden companion with no live conversation has no consumer that needs a native read;
+  // live capture (safety stop on away) keeps polling even when the page is not shown.
+  const windowShown = useWindowShown();
+  const detectedPresence = useVoicePresence(
+    open && (windowShown || conversationActive),
+    settings.idleSleepMinutes,
+  );
   const [lastAdmittedSpeechAt, setLastAdmittedSpeechAt] = useState<number | null>(null);
   const markAdmittedSpeech = useCallback(
     () => setLastAdmittedSpeechAt(markAcceptedVoiceSpeech()),
@@ -2376,7 +2376,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     // Slow retries continue until Stop, sleep, a fatal error or the 30 minute cap.
     if (!reconnect.schedule(retry, rotation)) {
       stopCapture("idle");
-      setError(t("Couldn't connect voice. Try again."));
+      setError(t("Couldn’t connect voice. Try again."));
     }
   }
   useEffect(() => {
@@ -2830,6 +2830,9 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   const sessionStatusText = t(
     sessionProgress === "quiet" ? "No recent session updates" : "Session working",
   );
+  // One shared sampler: the panel re-renders when hearing flips, not for each level value. The
+  // detached window mirrors this text, so it keeps sampling while the main window is hidden.
+  const hearingInput = useVoiceHearing(audioLevel, status === "live" && !muted, detached);
   const statusText = voiceStatusText({
     status,
     muted,
@@ -3046,10 +3049,18 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     onPosition: setPosition,
     onPopOut: (placement) => void popOut(placement),
   });
-  const moveLabel = t(
+  // Where the closed launcher docks; the open panel follows the same footer or rail (styles .panel[data-dock]).
+  const launcherSlot = useVoiceLauncherSlot();
+  const dockMode = launcherSlot
+    ? launcherSlot.hasAttribute("data-compact")
+      ? "rail"
+      : "footer"
+    : undefined;
+  const moveName = t("Move voice window");
+  const moveHint = t(
     canDetach
-      ? "Move voice window. Drag outside the app to float it. Use arrow keys to reposition."
-      : "Move voice window. Use arrow keys to reposition.",
+      ? "Drag outside the app to float it. Use arrow keys to reposition."
+      : "Use arrow keys to reposition.",
   );
   if (open && detached) return <VoiceReturnButton ref={launcher} onReturn={dock} />;
   if (!open)
@@ -3085,7 +3096,8 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       touchTarget="control"
       iconOnly
       variant="ghost"
-      label={moveLabel}
+      label={moveName}
+      aria-description={moveHint}
       className={styles.drag}
       onDoubleClick={() => {
         if (compact) setCompact(false);
@@ -3123,6 +3135,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         styles.panel,
       )}
       data-compact={compact || undefined}
+      data-dock={dockMode}
       data-detaching={detaching || undefined}
       data-voice-state={visualState}
       tabIndex={-1}

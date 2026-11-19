@@ -2,6 +2,7 @@ import type { HostStore } from "../../store";
 import type { HostGoal } from "../../../src/features/tasks/model/hostGoals";
 import type { HostTask } from "../../../src/features/tasks/model/hostTasks";
 import type { CrewRun } from "../../../src/features/crews/model/crew";
+import { confirmedSilence } from "../../execution/confirmed-silence";
 import { describeVerification } from "./assistant-goal-verification";
 
 export type TrackedKind = "goal" | "task" | "crew";
@@ -43,7 +44,8 @@ async function silent(
   now: number,
   stallMs: number,
 ) {
-  let latest = 0,
+  // The quietest running session decides: any recent output keeps the work active.
+  let quietest = Infinity,
     running = false;
   for (const id of new Set(sessionIds)) {
     if (!id) continue;
@@ -53,12 +55,12 @@ async function silent(
       running = true;
       const activity = record.runActivity;
       if (!activity || activity.runId !== record.runId) return false;
-      latest = Math.max(latest, activity.lastActivityAt);
+      quietest = Math.min(quietest, confirmedSilence(store, activity.lastActivityAt, now));
     } catch {
       return false;
     }
   }
-  return running && now - latest >= stallMs;
+  return running && quietest >= stallMs;
 }
 
 const row = async (store: HostStore, sql: string, id: string) => {

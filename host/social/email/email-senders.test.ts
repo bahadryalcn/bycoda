@@ -4,7 +4,7 @@ import type { EmailAccount } from "../../../src/features/social/model/outreach";
 import { deliverEmail, parseEmailSecret, verifyEmailAccount } from "./email-sender";
 import { sendPostmark, verifyPostmark } from "./postmark-sender";
 import { sendResend } from "./resend-sender";
-import { sendSmtp, type SmtpTransport } from "./smtp-sender";
+import { createSmtpPool, sendSmtp, type SmtpTransport } from "./smtp-sender";
 import type { EmailMessage } from "./email-types";
 
 const message: EmailMessage = {
@@ -191,6 +191,93 @@ describe("SMTP sender", () => {
       ),
     );
     expect(String((error as Error).message)).toContain("do not match");
+  });
+
+  it("reuses one pooled transport per account until the pool closes", async () => {
+    const transports: SmtpTransport[] = [];
+    const create = vi.fn(() => {
+      const transport: SmtpTransport = {
+        sendMail: vi.fn(async () => ({ messageId: "<pooled>" })),
+        verify: vi.fn(async () => true),
+        close: vi.fn(),
+      };
+      transports.push(transport);
+      return transport;
+    });
+    const smtpAccount: EmailAccount = {
+      ...resendAccount,
+      kind: "smtp",
+      host: "smtp.example.com",
+      port: 587,
+      secure: false,
+    };
+    const pool = createSmtpPool(create);
+    const credentials = { user: "u", pass: "p" };
+    await sendSmtp(smtpAccount, credentials, message, pool);
+    await sendSmtp(smtpAccount, credentials, message, pool);
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(transports[0].sendMail).toHaveBeenCalledTimes(2);
+    // A sender's close() must not end the shared connection.
+    expect(transports[0].close).not.toHaveBeenCalled();
+    pool.close();
+    expect(transports[0].close).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens a separate transport for each account and replaces it when the credential changes", async () => {
+    const created: SmtpTransport[] = [];
+    const create = vi.fn(() => {
+      const transport: SmtpTransport = {
+        sendMail: vi.fn(async () => ({})),
+        verify: vi.fn(async () => true),
+        close: vi.fn(),
+      };
+      created.push(transport);
+      return transport;
+    });
+    const base: EmailAccount = {
+      ...resendAccount,
+      kind: "smtp",
+      host: "smtp.example.com",
+      port: 587,
+      secure: false,
+    };
+    const pool = createSmtpPool(create);
+    await sendSmtp({ ...base, id: "mail-a" }, { user: "u", pass: "p" }, message, pool);
+    await sendSmtp({ ...base, id: "mail-b" }, { user: "u", pass: "p" }, message, pool);
+    expect(create).toHaveBeenCalledTimes(2);
+    // The stored password changed: the old connection is closed and a new one opens.
+    await sendSmtp({ ...base, id: "mail-a" }, { user: "u", pass: "new" }, message, pool);
+    expect(create).toHaveBeenCalledTimes(3);
+    expect(created[0].close).toHaveBeenCalledTimes(1);
+    expect(created[1].close).not.toHaveBeenCalled();
+    pool.close();
+    expect(created[2].close).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the pooled connection after a failed send and never resends the message", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const transport: SmtpTransport = {
+      sendMail: vi.fn(async () => {
+        throw new Error("connection reset");
+      }),
+      verify: vi.fn(async () => true),
+      close: vi.fn(),
+    };
+    const smtpAccount: EmailAccount = {
+      ...resendAccount,
+      kind: "smtp",
+      host: "smtp.example.com",
+      port: 587,
+    };
+    const pool = createSmtpPool(() => transport);
+    const error = await failure(
+      sendSmtp(smtpAccount, { user: "u", pass: "p" }, message, pool),
+    );
+    expect((error as SocialPlatformError).code).toBe("unknown");
+    expect(transport.sendMail).toHaveBeenCalledTimes(1);
+    expect(transport.close).not.toHaveBeenCalled();
+    pool.close();
+    expect(transport.close).toHaveBeenCalledTimes(1);
   });
 
   it("verifies an account through the provider's read-only call", async () => {

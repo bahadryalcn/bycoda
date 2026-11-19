@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { useEffect, useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -41,7 +42,7 @@ export function AutoGroupDialog({ cwd, skills }: { cwd: string; skills: Grouping
       if (!controller.signal.aborted) setProposal(result);
     } catch (cause) {
       if (!controller.signal.aborted)
-        setError(cause instanceof Error ? cause.message : String(cause));
+        setError(errorText(cause));
     } finally {
       if (request.current === controller) {
         request.current = null;
@@ -57,7 +58,7 @@ export function AutoGroupDialog({ cwd, skills }: { cwd: string; skills: Grouping
       setProposal(null);
       setError(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(errorText(cause));
     }
   };
   return (

@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { monotonicNow } from "../../../shared/lib/time/timestamps";
 import { activityClient } from "../model/activityClient";
+import { saveOutbox, takeOutbox } from "../model/activityOutbox";
 import { ActivityTracker, TICK_MS } from "../model/activityTracker";
 
 const FLUSH_MS = 60_000;
@@ -14,11 +15,14 @@ const foreground = () => document.visibilityState === "visible" && document.hasF
  * minute maps leaves the window. `machineId` is the local Host; without one nothing is tracked.
  */
 export function useActivityTracker(machineId: string | undefined): void {
+  // Subscribes to window input and timers for one Host; a new Host or unmount runs a last flush
+  // and keeps whatever that flush could not deliver in the outbox for the same Host.
   useEffect(() => {
     if (!machineId) return;
     const client = activityClient(machineId);
     const tracker = new ActivityTracker();
     let flushing = false;
+    let disposed = false;
     const onInput = () => tracker.noteInput(monotonicNow());
     const tick = () =>
       tracker.tick({ wall: Date.now(), mono: monotonicNow() }, { foreground: foreground() });
@@ -38,7 +42,13 @@ export function useActivityTracker(machineId: string | undefined): void {
       } finally {
         flushing = false;
       }
+      // The effect may have been cleaned up while this send was in flight (its own final flush
+      // returned early): nothing will retry on this tracker, so hand the rest to the outbox.
+      if (disposed) saveOutbox(machineId, tracker.drain());
     };
+    // Minutes a previous run for this Host could not deliver.
+    tracker.restore(takeOutbox(machineId));
+    flush().catch(() => undefined);
     const onHidden = () => {
       if (document.visibilityState === "hidden") {
         tick();
@@ -56,7 +66,9 @@ export function useActivityTracker(machineId: string | undefined): void {
       window.removeEventListener("pagehide", onHidden);
       clearInterval(tickTimer);
       clearInterval(flushTimer);
+      disposed = true;
       tick();
+      // A failed final send ends in the outbox (see `flush`); a send already in flight does the same.
       flush().catch(() => undefined);
     };
   }, [machineId]);

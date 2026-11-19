@@ -20,6 +20,17 @@ export function createMobileAccessService(
   },
 ) {
   let enabling: Promise<MobileAccessStatus> | undefined;
+  const observers = new Set<(status: MobileAccessStatus) => void>();
+  const observed = (status: MobileAccessStatus): MobileAccessStatus => {
+    for (const observer of observers) {
+      try {
+        observer(status);
+      } catch {
+        /* An observer must never fail the owner's status or enable call. */
+      }
+    }
+    return status;
+  };
   const port = () => {
     const current = getPort();
     if (!Number.isInteger(current) || current < 1 || current > 65535)
@@ -51,10 +62,10 @@ export function createMobileAccessService(
   const status = async (): Promise<MobileAccessStatus> => {
     try {
       const program = await dependencies.executable();
-      if (!program) return { state: "install-required" };
-      return (await inspect(program)).status;
+      if (!program) return observed({ state: "install-required" });
+      return observed((await inspect(program)).status);
     } catch (error) {
-      return mobileAccessFailure(error);
+      return observed(mobileAccessFailure(error));
     }
   };
   const enable = async (): Promise<MobileAccessStatus> => {
@@ -85,10 +96,15 @@ export function createMobileAccessService(
     })();
     enabling = operation;
     try {
-      return await operation;
+      return observed(await operation);
     } finally {
       if (enabling === operation) enabling = undefined;
     }
   };
-  return { status, enable };
+  /** Reports every status or enable result this service reads; returns the unsubscribe. */
+  const observe = (observer: (status: MobileAccessStatus) => void) => {
+    observers.add(observer);
+    return () => observers.delete(observer);
+  };
+  return { status, enable, observe };
 }

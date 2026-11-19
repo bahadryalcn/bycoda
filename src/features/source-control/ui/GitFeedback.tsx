@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { OutputBlock } from "../../../shared/ui/OutputBlock";
 import { Text } from "../../../shared/ui/Text";
 import { LoadingText } from "../../../shared/ui/LoadingText";
@@ -114,7 +115,7 @@ function GitFeedbackContent({
                     if (alive.current) setSaved(true);
                   } catch (error) {
                     if (alive.current)
-                      setCopyError(error instanceof Error ? error.message : String(error));
+                      setCopyError(errorText(error));
                   } finally {
                     notePending.current = false;
                     if (alive.current) setSaving(false);

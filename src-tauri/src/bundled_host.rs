@@ -26,6 +26,10 @@ const MAX_RETRY_INTERVAL: Duration = Duration::from_secs(60 * 60);
 pub(crate) const HOST_BOOT_GRACE: Duration = Duration::from_secs(120);
 const HOST_STARTING: &str = "The host is starting.";
 const OTHER_INSTALL: &str = "Another host update is being installed.";
+const WAITING_FOR_SESSIONS: &str = "The host update waits until running sessions finish.";
+/// Machine-readable `reason` of a status deferred for running sessions. The
+/// renderer branches on this value; `message` is display text only.
+const REASON_WAITING_FOR_SESSIONS: &str = "waiting-for-sessions";
 /// Another installer usually finishes within a minute; checking again soon clears
 /// the notice right after it does instead of up to a full retry interval later.
 const OTHER_INSTALL_POLL: Duration = Duration::from_secs(15);
@@ -37,6 +41,11 @@ fn deferred_retry(reason: &str) -> Duration {
         OTHER_INSTALL => OTHER_INSTALL_POLL,
         _ => RETRY_INTERVAL,
     }
+}
+
+/// The machine-readable reason for a deferred status with this display text.
+fn deferred_reason(message: &str) -> Option<String> {
+    (message == WAITING_FOR_SESSIONS).then(|| REASON_WAITING_FOR_SESSIONS.to_string())
 }
 
 #[derive(Default, Deserialize, Serialize)]
@@ -110,7 +119,11 @@ const SCRIPT_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 pub struct BundledHostStatus {
     /// installed | upgraded | current | deferred | failed | unavailable
     pub state: String,
+    /// Display text only; never branch on it. Older renderers ignore `reason`.
     pub message: Option<String>,
+    /// Why a `deferred` state waits: `waiting-for-sessions` while running sessions
+    /// finish. Absent for every other state and deferral.
+    pub reason: Option<String>,
     pub bundled: Option<String>,
     pub installed: Option<String>,
 }
@@ -149,7 +162,7 @@ fn plan(
         // running. Keep the same activity gate as an ordinary upgrade.
         return match busy {
             Ok(false) => Plan::Install,
-            Ok(true) => Plan::Deferred("The host update waits until running sessions finish."),
+            Ok(true) => Plan::Deferred(WAITING_FOR_SESSIONS),
             Err(()) => Plan::Deferred("Could not check whether the host is busy."),
         };
     };
@@ -164,7 +177,7 @@ fn plan(
                 Plan::Repair
             }
         }
-        Ok(true) => Plan::Deferred("The host update waits until running sessions finish."),
+        Ok(true) => Plan::Deferred(WAITING_FOR_SESSIONS),
         Err(()) => Plan::Deferred("Could not check whether the host is busy."),
     }
 }
@@ -863,6 +876,7 @@ fn ensure_once(app: &AppHandle, owner_approved: bool) -> Option<Duration> {
             record(BundledHostStatus {
                 state: "deferred".into(),
                 message: Some(OTHER_INSTALL.into()),
+                reason: None,
                 bundled: Some(bundled),
                 installed: installed_version(&base),
             });
@@ -890,6 +904,9 @@ fn ensure_once(app: &AppHandle, owner_approved: bool) -> Option<Duration> {
     ));
     let status = |state: &str, message: Option<String>| BundledHostStatus {
         state: state.into(),
+        reason: (state == "deferred")
+            .then(|| message.as_deref().and_then(deferred_reason))
+            .flatten(),
         message,
         bundled: Some(bundled.clone()),
         installed: installed.clone(),
@@ -967,6 +984,7 @@ fn ensure_once(app: &AppHandle, owner_approved: bool) -> Option<Duration> {
                     record(BundledHostStatus {
                         state: if upgrade { "upgraded" } else { "installed" }.into(),
                         message: None,
+                        reason: None,
                         bundled: Some(bundled.clone()),
                         installed: installed_version(&base),
                     });
@@ -1048,9 +1066,15 @@ mod tests {
         assert!(OTHER_INSTALL_POLL < RETRY_INTERVAL);
         assert_eq!(deferred_retry(HOST_STARTING), HOST_BOOT_GRACE);
         assert_eq!(
-            deferred_retry("The host update waits until running sessions finish."),
+            deferred_retry(WAITING_FOR_SESSIONS),
             RETRY_INTERVAL
         );
+        assert_eq!(
+            deferred_reason(WAITING_FOR_SESSIONS).as_deref(),
+            Some("waiting-for-sessions")
+        );
+        assert_eq!(deferred_reason(OTHER_INSTALL), None);
+        assert_eq!(deferred_reason(HOST_STARTING), None);
         assert!(matches!(
             plan(Some("0.7.8"), "0.7.9", Ok(false), true, true, false),
             Plan::Deferred(OTHER_INSTALL)
@@ -1072,7 +1096,7 @@ mod tests {
     fn missing_version_metadata_does_not_bypass_the_activity_gate() {
         assert_eq!(
             plan(None, "0.6.75", Ok(true), false, false, false),
-            Plan::Deferred("The host update waits until running sessions finish.")
+            Plan::Deferred(WAITING_FOR_SESSIONS)
         );
         assert_eq!(
             plan(None, "0.6.75", Err(()), false, false, false),

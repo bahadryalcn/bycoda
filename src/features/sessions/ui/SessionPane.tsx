@@ -213,6 +213,8 @@ export type SessionPaneProps = {
   onWorktreeChange?: (sessionId: string, tree: Worktree) => Promise<void>;
   onRemoteSnapshot?: (shellId: string, snapshot?: HostSession) => void;
   onRefreshAdoptedSession?: RefreshAdoptedSession;
+  /** Reads this conversation's stored history again after it failed to load. */
+  onRetrySessionHistory?: (sessionId: string) => void;
   onWorkspaceModeChange: (sessionId: string, mode: WorkspaceMode, base?: string) => void;
   onWorktreeBaseChange: (sessionId: string, base: string) => void;
   onManageWorktrees?: () => void;
@@ -434,6 +436,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   onBranchChange: onBranchChangeProp,
   onWorktreeChange: onWorktreeChangeProp,
   onRefreshAdoptedSession,
+  onRetrySessionHistory,
   onWorkspaceModeChange: onWorkspaceModeChangeProp,
   onWorktreeBaseChange: onWorktreeBaseChangeProp,
   onManageWorktrees,
@@ -780,6 +783,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
     filePlanLoading,
     rewindMode,
     fileRevertNotice,
+    dismissFileRevertNotice,
     rewindDraftSignal,
     requestMessageRewind,
     rewindLastTurnToDraft,
@@ -985,18 +989,30 @@ const LocalSessionPane = memo(function LocalSessionPane({
     blocked: !!session.pendingQuestion || editingLastTurn || btw.open,
   });
   useComposerReadingMotion(composerDockedRef, dockComposer, composerReading);
+  // Typing never re-renders this pane: the hook commits only presence and the consumed
+  // seed, and hands the latest text to the closure snapshot on demand.
   const {
-    value: composerDraft,
+    present: composerDraftPresent,
     initialDraft: composerDraftSeed,
+    text: composerDraftText,
     change: setComposerDraftState,
   } = useSessionComposerDraft(session.id);
-  const draftRef = useRef<string | undefined>(composerDraft);
   const parentChanged = useParentInputClosure({
     kind: "session-parent",
     sessionId: session.id,
+    // Replaced, never mutated, by the session store: streamed-token renders skip their deep compare.
+    stableKeys: [
+      "composerSeed",
+      "inboxCard",
+      "noteCard",
+      "handoffCard",
+      "pendingQuestion",
+      "submittedQuestions",
+      "modelSettings",
+    ],
     snapshot: () => ({
-      draft: draftRef.current,
-      committedDraft: composerDraft,
+      draft: composerDraftText(),
+      committedDraftPresent: composerDraftPresent,
       composerSeed: session.composerSeed,
       inboxCard: session.inboxCard,
       noteCard: session.noteCard,
@@ -1019,7 +1035,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
   // Composer is memoized: every handler keeps one identity and calls the
   // latest closure, so it re-renders only when something it shows changed.
   const composerDraftChange = useStableCallback((text: string) => {
-    draftRef.current = text;
     setComposerDraftState(text);
     setComposerDraft(session.id, text);
     parentChanged();
@@ -1383,7 +1398,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       quoteRequest={quoteRequest}
       initialDraft={
         savedDraftProjection.initialDraft ??
-        (composerDraft === undefined
+        (!composerDraftPresent
           ? session.inboxCard || session.noteCard || session.handoffCard
             ? undefined
             : session.composerSeed
@@ -1750,7 +1765,10 @@ const LocalSessionPane = memo(function LocalSessionPane({
             </Alert>
           ) : null}
           {fileRevertNotice ? (
-            <Alert tone={fileRevertNotice.skipped.length ? "warning" : "info"}>
+            <Alert
+              tone={fileRevertNotice.skipped.length ? "warning" : "info"}
+              onDismiss={dismissFileRevertNotice}
+            >
               <Text
                 as="div"
                 size="body"
@@ -1807,7 +1825,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                   message={
                     embedded
                       ? t("Plan and manage your social accounts here.")
-                      : "Explore this item with your agent."
+                      : t("Explore this item with your agent.")
                   }
                 />
               </ScrollArea>
@@ -1865,6 +1883,9 @@ const LocalSessionPane = memo(function LocalSessionPane({
                       performanceTraceId={performanceTraceId}
                       historyLoading={session.historyLoading}
                       historyLoadError={session.historyLoadError}
+                      onRetryHistory={
+                        onRetrySessionHistory ? () => onRetrySessionHistory(session.id) : undefined
+                      }
                       remoteHistoryHasMore={remoteHistoryHasMore}
                       remoteHistoryLoading={remoteHistoryLoading}
                       remoteHistoryError={remoteHistoryError}

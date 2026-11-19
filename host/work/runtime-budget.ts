@@ -50,7 +50,8 @@ export async function stopTaskRuntimeRuns(
 ): Promise<void> {
   const rows = await store.db
     .prepare(
-      "SELECT session_id,run_id FROM task_run_budget_ledger WHERE task_id=? OR parent_task_id=?",
+      // Only open receipts can still be running; sealed runs settled long ago.
+      "SELECT session_id,run_id FROM task_run_budget_ledger WHERE (task_id=? OR parent_task_id=?) AND sealed_settled_at IS NULL",
     )
     .all(taskId, taskId);
   const receipts = new Map(

@@ -61,6 +61,7 @@ const {
   stopClaudeBackgroundWork,
   stopClaudeSession,
   __claudeTestReset,
+  nextOutputPollDelay,
 } = await import("./claude");
 // Imports `claude.ts`, so it has to be loaded after the child mock like the rest.
 const { buildImportedSession } =
@@ -2549,6 +2550,17 @@ describe("claude subagents", () => {
 });
 
 describe("claude background tasks", () => {
+  it("backs off while output is unchanged and resets on new output", () => {
+    let delay = 1_000;
+    const seen: number[] = [];
+    for (let i = 0; i < 8; i++) {
+      delay = nextOutputPollDelay(delay, false);
+      seen.push(delay);
+    }
+    expect(seen).toEqual([1500, 2250, 3375, 5000, 5000, 5000, 5000, 5000]);
+    expect(nextOutputPollDelay(5_000, true)).toBe(1_000);
+  });
+
   it("reads output reported only by the completion notification", async () => {
     readHarnessTaskOutput.mockClear();
     readHarnessTaskOutput.mockResolvedValue({ text: "completed output\n", truncated: false });

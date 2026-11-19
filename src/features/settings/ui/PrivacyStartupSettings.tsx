@@ -5,6 +5,7 @@ import {
   AnonymousUsageSetting,
   isAnonymousStatsEnabled,
   setAnonymousStatsEnabled,
+  statsDisclosure,
   subscribeAnonymousStats,
 } from "../../account";
 import { DiagnosticsSharingSetting } from "../../diagnostics";
@@ -87,9 +88,7 @@ export function PrivacyStartupSettings() {
           id="anonymous-statistics"
           label={t("Share anonymous usage statistics")}
           descriptionVisible
-          description={t(
-            "Once a day bycoda sends the app version and operating system with a random install id. Never your sessions, prompts, code or file names. Off by default.",
-          )}
+          description={statsDisclosure()}
         >
           <Toggle
             label={t("Share anonymous usage statistics")}

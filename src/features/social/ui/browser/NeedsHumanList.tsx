@@ -2,10 +2,11 @@ import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { FailureState } from "../../../../shared/ui/FailureState";
 import { LoadingText } from "../../../../shared/ui/LoadingText";
 import { Text } from "../../../../shared/ui/Text";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { InlineError } from "../../../../shared/ui/InlineError";
+import { usePollingRefresh } from "../../hooks/usePollingRefresh";
 import { SOCIAL_PLATFORM_NAMES } from "../../model/social";
 import type { NeedsHumanItem } from "../../model/socialActions";
 import { EmptyHint } from "../common/EmptyHint";
@@ -57,30 +58,22 @@ export function NeedsHumanList({
     if (count !== undefined) onCountChange?.(count);
   }, [count, onCountChange]);
 
-  const refresh = useCallback(async () => {
-    try {
-      const result = await client.browser.needsHuman.list();
-      setItems(result.items);
-      setFailed(false);
-    } catch {
-      setFailed(true);
-    }
-  }, [client]);
-
-  useEffect(() => {
-    if (!active) return;
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const tick = async () => {
-      await refresh();
-      if (!cancelled) timer = setTimeout(tick, POLL_MS);
-    };
-    void tick().catch(() => setFailed(true));
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [active, refresh]);
+  const refresh = usePollingRefresh({
+    active,
+    scope: client,
+    intervalMs: POLL_MS,
+    load: async (isCurrent) => {
+      try {
+        const result = await client.browser.needsHuman.list();
+        if (!isCurrent()) return;
+        setItems(result.items);
+        setFailed(false);
+      } catch (error) {
+        if (isCurrent()) setFailed(true);
+        throw error;
+      }
+    },
+  });
 
   const done = async (id: string) => {
     setBusyId(id);

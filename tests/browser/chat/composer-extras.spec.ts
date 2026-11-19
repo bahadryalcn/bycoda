@@ -416,6 +416,8 @@ test("Steer explains a prolonged wait and preserves the paused queue at narrow w
     await expect(progress).toHaveAttribute("data-delivery-progress", "rejected");
     // The outcome is a dismissible pane card, not part of the queue card.
     await expect(progress).toHaveAttribute("role", "alert");
+    // It takes space in the pane flow (#283): an overlay would cover the transcript and Find.
+    await expect(page.locator("[data-delivery-notice-slot]")).toHaveCSS("position", "static");
     await expect(
       progress.getByText("Queue paused: the last message was not accepted"),
     ).toBeVisible();

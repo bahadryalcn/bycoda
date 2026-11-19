@@ -16,49 +16,83 @@ pub(super) fn run(
 pub(super) fn run_with_mode(
     store: &SessionStore,
     session_id: &str,
-    mut image_paths: Vec<String>,
+    image_paths: Vec<String>,
     allow_recreate: bool,
     cleanup: impl FnOnce(&[String]) -> Result<(), String>,
 ) -> (Result<(), String>, Result<(), ()>) {
     let mut observation = Ok(());
-    let result = (|| {
-        validate_id(session_id, "session")?;
-        {
-            let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-            let persisted_paths = match get_session(&conn, session_id) {
-                Ok(record) => record
-                    .map(|record| generated_image_paths(&record.blocks))
-                    .unwrap_or_default(),
-                Err(_) => {
-                    observation = Err(());
-                    Vec::new()
-                }
-            };
-            image_paths.extend(persisted_paths);
-            delete_session_with_mode(&conn, session_id, allow_recreate)
-                .map_err(|error| error.to_string())?;
-        }
-        if image_paths.is_empty() {
-            return Ok(());
-        }
-        // Finding the surviving references parses every stored transcript. Do
-        // that on a read snapshot without the write lock, then hold the lock
-        // only to re-check records that changed since and delete the files.
-        // Any failure keeps the files (they need a retry, nothing is lost).
-        let cleaned = store
-            .with_background_conn(|reader| unreferenced_generated_images(reader, &image_paths))
-            .and_then(|(candidates, since)| {
-                let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-                cleanup_unreferenced_since(&conn, candidates, since, cleanup)
-            });
-        if let Err(error) = cleaned {
-            observation = Err(());
-            log::warn!("Generated image cleanup will need a retry: {error}");
-        }
-        Ok(())
-    })();
+    let result = delete_row(
+        store,
+        session_id,
+        image_paths,
+        allow_recreate,
+        None,
+        &mut observation,
+    )
+    .map(|paths| clean_images(store, paths.unwrap_or_default(), cleanup, &mut observation));
     // The connection/cleanup reservation is released before any native finish.
     (result, observation)
+}
+
+/// Deletes one row and returns the generated-image paths it referenced. With
+/// `only_in_project`, a row that is no longer listed under that exact project
+/// is left alone and reported as `None`; the check shares the delete's lock.
+pub(super) fn delete_row(
+    store: &SessionStore,
+    session_id: &str,
+    mut image_paths: Vec<String>,
+    allow_recreate: bool,
+    only_in_project: Option<&str>,
+    observation: &mut Result<(), ()>,
+) -> Result<Option<Vec<String>>, String> {
+    validate_id(session_id, "session")?;
+    let conn = store.lock_conn()?;
+    if let Some(cwd) = only_in_project {
+        if !super::project_sessions::is_listed_in_project(&conn, cwd, session_id)
+            .map_err(|error| error.to_string())?
+        {
+            return Ok(None);
+        }
+    }
+    let persisted_paths = match get_session(&conn, session_id) {
+        Ok(record) => record
+            .map(|record| generated_image_paths(&record.blocks))
+            .unwrap_or_default(),
+        Err(_) => {
+            *observation = Err(());
+            Vec::new()
+        }
+    };
+    image_paths.extend(persisted_paths);
+    delete_session_with_mode(&conn, session_id, allow_recreate)
+        .map_err(|error| error.to_string())?;
+    Ok(Some(image_paths))
+}
+
+/// Removes the image files no surviving transcript references. Any failure
+/// keeps the files for a retry and only withholds the idle observation.
+pub(super) fn clean_images(
+    store: &SessionStore,
+    image_paths: Vec<String>,
+    cleanup: impl FnOnce(&[String]) -> Result<(), String>,
+    observation: &mut Result<(), ()>,
+) {
+    if image_paths.is_empty() {
+        return;
+    }
+    // Finding the surviving references parses every stored transcript. Do
+    // that on a read snapshot without the write lock, then hold the lock
+    // only to re-check records that changed since and delete the files.
+    let cleaned = store
+        .with_background_conn(|reader| unreferenced_generated_images(reader, &image_paths))
+        .and_then(|(candidates, since)| {
+            let conn = store.lock_conn()?;
+            cleanup_unreferenced_since(&conn, candidates, since, cleanup)
+        });
+    if let Err(error) = cleaned {
+        *observation = Err(());
+        log::warn!("Generated image cleanup will need a retry: {error}");
+    }
 }
 
 #[cfg(test)]

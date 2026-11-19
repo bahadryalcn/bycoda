@@ -5,6 +5,7 @@ import { Text } from "../../shared/ui/Text";
 import { Badge } from "../../shared/ui/Badge";
 import { StatusDot } from "../../shared/ui/StatusDot";
 import { InlineError } from "../../shared/ui/InlineError";
+import { errorText } from "../../shared/lib/errors";
 import { withRoomPrivacyMutation } from "../../features/group-lock/model/roomPrivacyProjection";
 import { Checkbox } from "../../shared/ui/Checkbox";
 import { Button } from "../../shared/ui/Button";
@@ -60,7 +61,7 @@ import {
 } from "react";
 import { useProjectLogoPath } from "./useProjectLogoPath";
 import { useRailBackground } from "./useRailBackground";
-import { useRemoteProject } from "./useRemoteProject";
+import { useRemoteProject } from "../../features/connections/public/useRemoteProject";
 import { useMuteStatuses } from "./useMuteStatuses";
 import { useStableCallback } from "../../shared/hooks/useStableCallback";
 import { useDragResize } from "../../shared/hooks/useDragResize";
@@ -385,7 +386,11 @@ export function ProjectRail({
     projectGroupAssignments,
     remoteOnly,
   } = useProjectRailData();
-  const [groupMutationError, setGroupMutationError] = useState(false);
+  // The group the failed add targeted keeps Retry pointed at it; Dismiss clears it.
+  const [groupMutationError, setGroupMutationError] = useState<{
+    groupId: string;
+    details: string;
+  } | null>(null);
   const [revealDismissed, setRevealDismissed] = useState<{ cwd: string; ids: string[] }>({
     cwd,
     ids: [],
@@ -437,14 +442,12 @@ export function ProjectRail({
     });
   };
   // Detect picker additions by comparing remembered projects; cancellation changes nothing.
+  // A picker or open failure rejects into the same inline error as a failed group update.
   const handleAddProjectToGroup = (groupId: string) => {
     const before = loadRecents().map((item) => item.path);
+    setGroupMutationError(null);
     void (async () => {
-      try {
-        await onOpenProject();
-      } catch {
-        return;
-      }
+      await onOpenProject();
       const added = newProjectPaths(
         before,
         loadRecents().map((item) => item.path),
@@ -454,9 +457,8 @@ export function ProjectRail({
         changeProjectGroupMembers(groupId, added, []);
         updateProjectGroup(groupId, (current) => ({ ...current, collapsed: false }));
       });
-      setGroupMutationError(false);
       revealProject(added[added.length - 1]);
-    })().catch(() => setGroupMutationError(true));
+    })().catch((error: unknown) => setGroupMutationError({ groupId, details: errorText(error) }));
   };
   const busy = new Set<string>(busyPaths ?? []);
   const allProjects = useMemo(() => collectRailProjects(recents, cwd), [cwd, recents]);
@@ -986,7 +988,7 @@ export function ProjectRail({
         focusHint={!navigator}
         emptyLabel={
           sections.projects.length === 0 && projectGroups.length === 0
-            ? "No projects yet"
+            ? t("No projects yet")
             : filterQuery &&
                 pinnedProjects.length === 0 &&
                 groupedProjectSections.ungrouped.length === 0 &&
@@ -1057,7 +1059,13 @@ export function ProjectRail({
       )}
     >
       {groupMutationError && (
-        <InlineError>{t("Could not add projects to the group. Please try again.")}</InlineError>
+        <InlineError
+          details={groupMutationError.details}
+          retry={{ onRetry: () => handleAddProjectToGroup(groupMutationError.groupId) }}
+          secondaryAction={{ label: t("Dismiss"), onClick: () => setGroupMutationError(null) }}
+        >
+          {t("Could not add projects to the group. Please try again.")}
+        </InlineError>
       )}
       {!navigator ? (
         <div
@@ -1081,7 +1089,7 @@ export function ProjectRail({
               onGoBack={onGoBack}
               onGoForward={onGoForward}
               onTogglePanel={settingsOpen ? undefined : onTogglePanel}
-              panelActive
+              panelActive={visible}
             />
           </div>
         </div>
@@ -1261,7 +1269,7 @@ export function ProjectRail({
             </ProjectMultiSelect>
             {!navigator ? (
               <>
-                <div className="shrink-0 px-2 @max-[140px]/rail:hidden">
+                <div className="shrink-0 px-2">
                   <SidebarUpdateFooter
                     noticesOnly
                     update={updateNotice}
@@ -2234,11 +2242,22 @@ function ProjectCard({
   useRemoteMachineOnline(machine?.id);
   const remoteConnection = useRemoteConnection(item.path);
   const indicator = connectionIndicator(remoteConnection, remoteConnection.reconnecting);
-  const connection = !remote
+  // A short translated status is the accessible name; the raw error text stays visible in the tooltip only.
+  const connectionStatus = !remote
     ? ""
     : !machine
-      ? "Machine not connected on this computer"
-      : indicator.label;
+      ? t("Machine not connected on this computer")
+      : remoteConnection.reconnecting
+        ? t("Reconnecting")
+        : indicator.tone === "connected"
+          ? t("Connected")
+          : indicator.tone === "connecting"
+            ? t("Connecting")
+            : t("Not connected");
+  const connectionDetail =
+    remote && machine && (indicator.tone === "down" || remoteConnection.status === "outdated-host")
+      ? (remoteConnection.error ?? "")
+      : "";
   // The row's second label tells same-named projects apart: the machine for a remote project, the parent
   // folder for a local project whose name another rail project shares. The stored name never changes.
   const hostLabel = machine ? machineLabel(machines, machine) : "";
@@ -2248,14 +2267,18 @@ function ProjectCard({
   const changeSummary = change ? projectGitChangeSummary(change, t, format.formatNumber) : "";
   // The tooltip shows on hover and on keyboard focus: the name, then the path and state as muted lines.
   const rowTipDetails = [
-    remote ? `${remote.cwd} on ${hostLabel || "another machine"} (${connection})` : item.path,
+    remote
+      ? t("{p0} on {p1}", { p0: remote.cwd, p1: hostLabel || t("another machine") })
+      : item.path,
+    connectionStatus,
+    connectionDetail,
     busy && t("Working"),
     change && t("{p0} uncommitted", { p0: changeSummary }),
     muteStatus,
   ];
   const cardAriaLabel = [
     machine ? `${name} on ${hostLabel}` : context ? `${name} (${context})` : name,
-    busy ? "working" : "",
+    busy ? t("Working") : "",
     change ? projectGitChangeSpoken(change, t, format.formatNumber) : "",
     muteStatus,
   ]
@@ -2442,14 +2465,14 @@ function ProjectCard({
           {remote ? (
             <Text
               role="img"
-              aria-label={connection}
+              aria-label={connectionStatus}
               size="inherit"
               tone="secondary"
               className="relative grid size-4 shrink-0 place-items-center @max-[140px]/rail:hidden"
             >
               <Internet className="icon-xs" strokeWidth={1.75} aria-hidden="true" />
               <StatusDot
-                label={connection}
+                label={connectionStatus}
                 aria-hidden="true"
                 tone={
                   indicator.tone === "connected"

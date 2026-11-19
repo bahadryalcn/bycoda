@@ -131,6 +131,7 @@ export async function editRedditText(
 /** Reddit adapter. Operations not listed in capabilities/reddit.ts stay unsupported by the shared fallback. */
 export function createRedditAdapter(http: SocialHttp = new SocialHttp()): SocialAdapter {
   return {
+    ignoresPublishedPosts: true,
     send: (account, job, token, _media, _checkpoint, beforeSubmit) => {
       if (job.kind === "publish") return submitPost(http, account, job, token, beforeSubmit);
       if (job.kind === "message" && !job.payload.threadId)

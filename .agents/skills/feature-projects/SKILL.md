@@ -22,6 +22,7 @@ Use for project rail/pickers, groups, add/rename/remove/archive, remote project 
 - Project identity, selected workspace and actual execution directory are different. Preserve worktree/remote identity, full paths and duplicate-name context.
 - Retain groups, ordering/pinning, selection, drafts, keyboard/context menus, drag/drop and compact/wide navigation capabilities.
 - Pins belong only to ungrouped projects. Groups and linked workspaces have no pin action; a grouped project is never pinned and its old pin is pruned.
+- Removing a project counts and deletes exactly the conversations its list shows (one native filter in `session_store/project_sessions.rs`): ids only, Native rows in bounded bulk calls, Host-owned or owner-fenced ones through their owner, stopping at the first failure with progress reported.
 - Remove/archive/delete/open are distinct operations with their own dirty/busy/count/confirmation/lock gates. UI filtering grants no new operation scope.
 - Compact flyout search filters that list without a second competing picker; keep per-project actions reachable.
 - A working project row (`data-project-working`) shows a translucent active tint with a light sweep (`projectRailRow.css`, `--ui-working-row-*` in `src/styles/index.css`) above custom grounds and state fills, below content. Reduced motion and `data-performance-no-shimmer` keep the static tint; the spinner, tooltip and accessible name still say "Working".

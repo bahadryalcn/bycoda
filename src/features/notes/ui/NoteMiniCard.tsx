@@ -2,7 +2,6 @@ import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { File, X } from "../../../shared/ui/icons";
-import { useState } from "react";
 import { Surface } from "../../../shared/ui/Surface";
 import { ProjectLogoIcon } from "../../projects/ui/ProjectLogoIcon";
 import { ProjectMascot } from "../../projects/ui/ProjectMascot";
@@ -10,12 +9,12 @@ import { useTabGroupLogos } from "../../projects/hooks/useTabGroupLogos";
 import { noteSourceProject, type NoteCardMeta } from "../notes";
 import { projectKey } from "../../../shared/lib/paths";
 import {
-  loadTabGroupColors,
-  loadTabGroupCustomColors,
-  loadTabGroupMascots,
   resolveTabGroupColor,
-  resolveTabGroupLogo,
   resolveTabGroupMascot,
+  useResolvedTabGroupLogo,
+  useTabGroupColors,
+  useTabGroupCustomColors,
+  useTabGroupMascots,
 } from "../../workspace/model/tabGroups";
 
 type Props = {
@@ -27,12 +26,14 @@ type Props = {
 export function NoteMiniCard({ card, onDismiss, embedded = false }: Props) {
   useLocale();
   const logos = useTabGroupLogos();
-  const [mascots] = useState(loadTabGroupMascots);
-  const [colors] = useState(loadTabGroupColors);
-  const [customColors] = useState(loadTabGroupCustomColors);
+  const mascots = useTabGroupMascots();
+  const colors = useTabGroupColors();
+  const customColors = useTabGroupCustomColors();
   const project = noteSourceProject(card.sourceCwd);
   const key = card.sourceCwd ? projectKey(card.sourceCwd) : null;
-  const logoPath = key ? resolveTabGroupLogo(key, logos) : null;
+  // Hooks run for every card; with no source project the empty key resolves to no logo.
+  const resolvedLogo = useResolvedTabGroupLogo(key ?? "", logos);
+  const logoPath = key ? resolvedLogo : null;
   const mascotName = key ? resolveTabGroupMascot(key, mascots) : null;
   const mascotColor =
     key && project ? resolveTabGroupColor(key, colors, customColors, project) : undefined;

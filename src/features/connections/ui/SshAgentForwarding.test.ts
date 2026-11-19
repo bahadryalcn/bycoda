@@ -76,6 +76,17 @@ it("expires without renewing or reconnecting and only an explicit retry gets a f
   expect(native.invoke).toHaveBeenCalledTimes(2);
   expect(button("Approve and connect").disabled).toBe(false);
 });
+it("stops the countdown tick at expiry and restarts it only for a new review", async () => {
+  vi.useFakeTimers();
+  await render();
+  await act(async () => vi.advanceTimersByTimeAsync(30_000));
+  // Regression for #1239: the expired review must leave no clock interval behind.
+  expect(vi.getTimerCount()).toBe(0);
+  native.invoke.mockResolvedValue({ ...review(), reviewId: "new-review" });
+  await act(async () => button("Request new review").click());
+  expect(vi.getTimerCount()).toBeGreaterThan(0);
+  expect(button("Approve and connect").disabled).toBe(false);
+});
 it("invalidates a changed endpoint before approval and does not auto-review the replacement", async () => {
   await render();
   const changed = { ...server, sshEndpoint: { ...server.sshEndpoint!, host: "other.invalid" } };

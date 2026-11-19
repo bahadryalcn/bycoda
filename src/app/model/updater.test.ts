@@ -235,6 +235,80 @@ describe("disabled updater", () => {
   });
 });
 
+describe("manual check during a background flow", () => {
+  it("answers a manual check that joined a background flow with the install prompt", async () => {
+    mocks.updaterEnabled = true;
+    mocks.downloadAndInstall.mockResolvedValue(undefined);
+    mocks.check.mockResolvedValue({
+      version: "0.1.23",
+      downloadAndInstall: mocks.downloadAndInstall,
+    });
+    let finish!: (version: string) => void;
+    mocks.getVersion.mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const updater = await import("./updater");
+    const background = updater.runUpdateFlow(false);
+    const manual = updater.runUpdateFlow(true);
+    finish("0.1.22");
+    const [, result] = await Promise.all([background, manual]);
+    expect(mocks.ask).toHaveBeenCalledOnce();
+    expect(mocks.downloadAndInstall).toHaveBeenCalledOnce();
+    expect(mocks.relaunch).toHaveBeenCalledOnce();
+    expect(result.phase).toBe("current");
+  });
+
+  it("shows the latest-version toast when a manual check joined a background flow that found nothing", async () => {
+    mocks.updaterEnabled = true;
+    mocks.check.mockResolvedValue(null);
+    let finish!: (version: string) => void;
+    mocks.getVersion.mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const updater = await import("./updater");
+    const background = updater.runUpdateFlow(false);
+    const manual = updater.runUpdateFlow(true);
+    finish("0.1.22");
+    await Promise.all([background, manual]);
+    expect(mocks.ask).not.toHaveBeenCalled();
+    expect(mocks.check).toHaveBeenCalledTimes(2);
+    expect(mocks.toastShow).toHaveBeenCalledWith({
+      tone: "info",
+      message: "You're on the latest version.",
+    });
+  });
+
+  it("keeps the update a running flow prompted with when a background probe finds a newer one", async () => {
+    mocks.updaterEnabled = true;
+    const flowInstall = vi.fn().mockResolvedValue(undefined);
+    const newerInstall = vi.fn().mockResolvedValue(undefined);
+    mocks.check
+      .mockResolvedValueOnce({ version: "0.1.23", downloadAndInstall: flowInstall })
+      .mockResolvedValueOnce({ version: "0.1.24", downloadAndInstall: newerInstall });
+    let answer!: (approved: boolean) => void;
+    mocks.ask.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          answer = resolve;
+        }),
+    );
+    const updater = await import("./updater");
+    const flow = updater.runUpdateFlow(true);
+    await vi.waitFor(() => expect(mocks.ask).toHaveBeenCalledOnce());
+    await expect(updater.probeForUpdate()).resolves.toMatchObject({ version: "0.1.24" });
+    answer(true);
+    await flow;
+    expect(flowInstall).toHaveBeenCalledOnce();
+    expect(newerInstall).not.toHaveBeenCalled();
+  });
+});
+
 describe("background probe back-off", () => {
   const MINUTE = 60 * 1000;
 

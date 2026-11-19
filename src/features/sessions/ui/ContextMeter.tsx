@@ -3,7 +3,7 @@ import { Text, textAttributes } from "../../../shared/ui/Text";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Button } from "../../../shared/ui/Button";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
-import { useT } from "../../../shared/i18n";
+import { useFormat, useT } from "../../../shared/i18n";
 import { useId, useRef, useState } from "react";
 import { contextRatio, formatTokens, type ContextUsage } from "../model/contextUsage";
 import { formatApiTime, formatCost, type SessionUsage } from "../model/sessionUsage";
@@ -55,6 +55,7 @@ export function ContextMeter({
   empty?: boolean;
 }) {
   const t = useT();
+  const format = useFormat();
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   // Hover and keyboard focus preview the panel; a click pins it (the Popover below).
@@ -73,6 +74,9 @@ export function ContextMeter({
   const ratio = contextRatio(usage);
   // Scans the whole transcript: only redo it when the blocks change, not per keystroke.
   const speed = completedResponseSpeed(contextBlocks);
+  const tps = speed
+    ? `${format.formatNumber(speed.tps, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} TPS`
+    : null;
   const agents = subagentReadings(contextBlocks);
   if ((!usage || ratio === null) && agents.size === 0 && !speed) {
     return empty && !usage && !sessionUsage ? (
@@ -94,7 +98,7 @@ export function ContextMeter({
     : t("Unavailable");
   const label = [
     detail,
-    ...(sessionUsage ? [`${t("Cost")}: ${formatCost(sessionUsage.costUsd)}`] : []),
+    ...(sessionUsage ? [`${t("Cost")}: ${formatCost(sessionUsage.costUsd, format)}`] : []),
     ...(sessionUsage && sessionUsage.apiMs > 0
       ? [`${t("API time")}: ${formatApiTime(sessionUsage.apiMs)}`]
       : []),
@@ -152,7 +156,7 @@ export function ContextMeter({
         >
           <span className="inline-flex items-center gap-1">{t("Response speed")}</span>
           <Text as="strong" size="secondary" tone="inherit" weight="medium" leading="inherit">
-            {speed ? `${speed.tps.toFixed(1)} TPS` : t("Unavailable")}
+            {tps ?? t("Unavailable")}
           </Text>
         </Text>
         <Text as="p" size="inherit" tone="secondary" className="context-meter-hint">
@@ -202,7 +206,9 @@ export function ContextMeter({
           size="sm"
           {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "context-meter-stats")}
         >
-          <DescriptionItem term={t("Cost")}>{formatCost(sessionUsage.costUsd)}</DescriptionItem>
+          <DescriptionItem term={t("Cost")}>
+            {formatCost(sessionUsage.costUsd, format)}
+          </DescriptionItem>
           {sessionUsage.apiMs > 0 ? (
             <DescriptionItem term={t("API time")}>
               {formatApiTime(sessionUsage.apiMs)}
@@ -249,7 +255,7 @@ export function ContextMeter({
         type="button"
         // The hover/focus card already previews the full panel; a hint would cover it twice.
         title=""
-        aria-label={`${t("Context usage")}: ${percent}. ${speed ? `${t("Response speed")}: ${speed.tps.toFixed(1)} TPS. ` : ""}${label}`}
+        aria-label={`${t("Context usage")}: ${percent}. ${tps ? `${t("Response speed")}: ${tps}. ` : ""}${label}`}
         aria-haspopup="dialog"
         aria-expanded={panelOpen}
         selected={open}
@@ -263,10 +269,8 @@ export function ContextMeter({
           side="top"
           align="end"
           width={280}
-          role="dialog"
+          kind="dialog"
           aria-label={t("Context usage")}
-          autoFocus
-          tabIndex={-1}
           onDismiss={(reason) => {
             closeActions();
             if (reason === "escape") root.current?.querySelector("button")?.focus();

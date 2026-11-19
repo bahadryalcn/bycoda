@@ -332,7 +332,7 @@ export async function deleteNote(
   expectedUpdatedAt?: number,
   parent?: NoteInputWork,
 ): Promise<void> {
-  if (expectedUpdatedAt === undefined) throw new Error("Refresh this note before deleting it.");
+  if (expectedUpdatedAt === undefined) throw new Error(t("Refresh this note before deleting it."));
   const work = requireNoteWork("notes-delete", parent);
   try {
     const args = { id, expectedUpdatedAt };

@@ -9,6 +9,7 @@ import {
 } from "../../automations/model/hostAutomationClient";
 import { remoteRequest } from "../../connections/model/connections";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { useRemoteModelCatalog } from "../../connections/model/useRemoteModelCatalog";
 import { crewHasRunningWork } from "./crewPresentation";
 import type {
   HostModelCatalog,
@@ -22,6 +23,7 @@ import {
   HOST_CREW_DELETE,
   HOST_CREW_RUN_DELETE,
   HOST_CREW_AGENT_GROUPS,
+  HOST_CREW_AGENT_GROUP_UPDATE,
   HOST_CREW_ACCESS,
   HOST_CREW_IDENTITY,
   HOST_CREW_TOOLS,
@@ -48,6 +50,8 @@ export type ProjectCrews = {
   runDeleteSupported?: boolean;
   /** Older hosts drop member groups and library sources, so their controls stay hidden. */
   groupsSupported?: boolean;
+  /** Group rename/delete is one atomic Host call; older hosts could only split a group, so the controls stay hidden. */
+  groupUpdateSupported?: boolean;
   accessSupported?: boolean;
   /** Older hosts drop member handles and avatar choices, so their controls stay hidden. */
   identitySupported?: boolean;
@@ -64,6 +68,9 @@ export type ProjectCrews = {
   catalog: HostModelCatalog;
   catalogError?: string;
 };
+/** What the fast `crews.list` query holds; the catalog is merged in from its own read. */
+type CrewsSnapshot = Omit<ProjectCrews, "catalog" | "catalogError">;
+const EMPTY_CATALOG: HostModelCatalog = { models: {}, errors: {} };
 /** Calls `method` on every connected host that advertises `capability`; a failing host is skipped unless all fail. */
 export async function requestCrewHosts<T>(
   capability: string,
@@ -101,37 +108,26 @@ export function useProjectCrews(cwd: string, enabled = true) {
   const query = useQuery({
     queryKey: key,
     enabled: enabled && !!cwd && cwd !== "~",
-    queryFn: async (): Promise<ProjectCrews> => {
+    queryFn: async (): Promise<CrewsSnapshot> => {
       const machines = await backgroundMachines(HOST_CREWS);
       const machine = backgroundMachineFor(machines, cwd);
       if (!machine) throw new Error("Update and connect this project's host to use Crews.");
       const project = await hostProjectFor(machine, cwd);
-      const [state, modelState] = await Promise.all([
-        remoteRequest<Pick<ProjectCrews, "definitions" | "runs" | "agents" | "historyNextCursor">>(
-          machine.id,
-          "crews.list",
-          { projectId: project.id, historyLimit: 40 },
-        ),
-        remoteRequest<HostModelCatalog>(machine.id, "models.list", {
-          projectId: project.id,
-          progressive: true,
-        })
-          .then((catalog) => ({ catalog, catalogError: undefined as string | undefined }))
-          .catch((reason: unknown) => ({
-            catalog: { models: {}, errors: {} } as HostModelCatalog,
-            catalogError: reason instanceof Error ? reason.message : String(reason),
-          })),
-      ]);
+      // The model catalog is not read here: it changes far more slowly than run state and
+      // has its own scoped read (`useRemoteModelCatalog`) below.
+      const state = await remoteRequest<
+        Pick<ProjectCrews, "definitions" | "runs" | "agents" | "historyNextCursor">
+      >(machine.id, "crews.list", { projectId: project.id, historyLimit: 40 });
       const capabilities = await machineCapabilities(machine);
       return {
         machine,
         project,
         ...state,
-        ...modelState,
         taskExecutionSupported: capabilities.includes(HOST_CREW_TASKS),
         deleteSupported: capabilities.includes(HOST_CREW_DELETE),
         runDeleteSupported: capabilities.includes(HOST_CREW_RUN_DELETE),
         groupsSupported: capabilities.includes(HOST_CREW_AGENT_GROUPS),
+        groupUpdateSupported: capabilities.includes(HOST_CREW_AGENT_GROUP_UPDATE),
         accessSupported: capabilities.includes(HOST_CREW_ACCESS),
         identitySupported: capabilities.includes(HOST_CREW_IDENTITY),
         toolsSupported: capabilities.includes(HOST_CREW_TOOLS),
@@ -142,13 +138,31 @@ export function useProjectCrews(cwd: string, enabled = true) {
     // Active runs change quickly. Without one, this app's own calls invalidate the
     // query, and a slower poll still picks up runs that agents start through the host.
     refetchInterval: (query) =>
-      query.state.data?.catalog.pending?.length
-        ? 1000
-        : query.state.data?.runs.some((run) => run.status === "active" || crewHasRunningWork(run))
-          ? 5000
-          : 15_000,
+      query.state.data?.runs.some((run) => run.status === "active" || crewHasRunningWork(run))
+        ? 5000
+        : 15_000,
     retry: false,
   });
+  const machine = query.data?.machine;
+  const project = query.data?.project;
+  const catalogRead = useRemoteModelCatalog({
+    scope: {
+      machineId: machine?.id ?? "",
+      environmentId: machine?.environmentId ?? "",
+      projectId: project?.id ?? "",
+    },
+    enabled: !!machine && !!project,
+    hostEnvironmentId: machine?.environmentId,
+    // Pinned to the machine's environment, like every other read of this Host.
+    request: <T,>(method: string, params: unknown = {}) =>
+      remoteRequest<T>(machine!.id, method, params, false, false, machine!.environmentId),
+  });
+  // A remembered catalog that could not be refreshed is not trusted for model choices.
+  const catalog =
+    catalogRead.catalog && !(catalogRead.error && catalogRead.stale)
+      ? catalogRead.catalog
+      : EMPTY_CATALOG;
+  const catalogError = catalogRead.error ? catalogRead.error.replace(/^Error: /, "") : undefined;
   useEffect(() => {
     if (firstCursor.current === query.data?.historyNextCursor) return;
     firstCursor.current = query.data?.historyNextCursor;
@@ -171,7 +185,11 @@ export function useProjectCrews(cwd: string, enabled = true) {
     } finally {
       // Stop can pause the crew before a provider cancellation fails.
       // Refresh that authoritative partial result without retrying the mutation.
-      await client.invalidateQueries({ queryKey: key });
+      // The managed-session feed backs off idle projects, so refresh it too: this app's own runs lock at once.
+      await Promise.all([
+        client.invalidateQueries({ queryKey: key }),
+        client.invalidateQueries({ queryKey: [HOST_CREWS, "managed", cwd] }),
+      ]);
     }
   };
   const loadMoreHistory = async () => {
@@ -209,16 +227,20 @@ export function useProjectCrews(cwd: string, enabled = true) {
     () =>
       fresh && {
         ...fresh,
+        catalog,
+        catalogError,
         runs: [
           ...fresh.runs,
           ...older.filter((run) => !fresh.runs.some((current) => current.id === run.id)),
         ],
       },
-    [fresh, older],
+    [fresh, older, catalog, catalogError],
   );
   return {
     ...query,
     data,
+    /** Explicit retry of the model catalog only; `refetch` reads the crew list only. */
+    refreshCatalog: catalogRead.refresh,
     call,
     loadMoreHistory,
     historyLoading,

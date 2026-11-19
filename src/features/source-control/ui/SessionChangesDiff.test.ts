@@ -52,7 +52,8 @@ it("reuses parsed models per content while fetching every file on each review ev
     binary: relative === "a" && binary,
     tooLarge: relative === "a" && tooLarge,
   }));
-  const root = createRoot(document.createElement("div"));
+  const host = document.createElement("div");
+  const root = createRoot(host);
   const refresh = async () => {
     await act(async () => {
       api.changed("s");
@@ -108,6 +109,22 @@ it("reuses parsed models per content while fetching every file on each review ev
     expect(api.models[0].additions).toBe(9);
     expect(api.models[0].path).toBe("renamed/a");
     expect(api.models[1]).toBe(first[1]);
+    // A failed status read keeps the last good review and shows a notice with Retry.
+    const kept = api.models;
+    api.status.mockRejectedValueOnce(new Error("status unavailable"));
+    await refresh();
+    expect(api.models).toBe(kept);
+    expect(host.textContent).toContain("Couldn’t refresh. Showing the last available snapshot.");
+    expect(host.textContent).not.toContain("Couldn’t load session changes");
+    const retry = [...host.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Retry refresh"),
+    );
+    await act(async () => {
+      retry!.click();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(host.textContent).not.toContain("Couldn’t refresh");
+    expect(api.models.map((file) => file.id)).toEqual(kept.map((file) => file.id));
   } finally {
     await act(async () => root.unmount());
     vi.useRealTimers();

@@ -26,8 +26,13 @@ export function subscribePreferenceChanges(
   };
 }
 
-/** Storage failures retain the existing fallback contract; subscriptions are opt-in. */
+/**
+ * Storage failures retain the existing fallback contract; subscriptions are opt-in.
+ * `save` returns whether the value was persisted. A failed write is not broadcast, so
+ * subscribers keep the last confirmed value and the caller can report the failure.
+ */
 export function createStoredSetting<T>(options: StoredSettingOptions<T>) {
+  let failureLogged = false;
   const load = (): T => {
     try {
       const raw = localStorage.getItem(options.key);
@@ -36,15 +41,21 @@ export function createStoredSetting<T>(options: StoredSettingOptions<T>) {
       return options.fallback;
     }
   };
-  const save = (value: T): void => {
+  const save = (value: T): boolean => {
     try {
       localStorage.setItem(options.key, options.serialize(value));
-    } catch {
-      // Existing settings remain usable in private mode / at quota.
+    } catch (error) {
+      // Existing settings remain usable in private mode / at quota; log the first failure only.
+      if (!failureLogged) {
+        failureLogged = true;
+        console.warn(`Could not persist setting "${options.key}"`, error);
+      }
+      return false;
     }
     if (options.event && typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent(options.event, { detail: value }));
     }
+    return true;
   };
   const subscribe = (onChange: () => void) => {
     if (typeof window === "undefined") return () => {};

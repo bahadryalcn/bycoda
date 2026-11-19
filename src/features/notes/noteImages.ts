@@ -1,3 +1,4 @@
+import { errorText } from "../../shared/lib/errors";
 import { invoke } from "@tauri-apps/api/core";
 import {
   attachmentsFromFiles,
@@ -16,6 +17,7 @@ import {
 } from "./notes";
 import { requireNoteWork, type NoteInputWork } from "./notesInputOwners";
 import { beginNoteServiceIntent } from "./noteServiceIntents";
+import { t } from "../../shared/i18n";
 
 export const NOTE_IMAGE_PREFIX = "/note-assets/";
 
@@ -31,7 +33,7 @@ export class NoteImageApplicationError extends Error {
     cause: unknown,
   ) {
     super(
-      `Image saved; display preparation failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+      `Image saved; display preparation failed: ${errorText(cause)}`,
     );
     this.name = "NoteImageApplicationError";
   }
@@ -172,7 +174,7 @@ async function saveNoteImageAttachments(
 ): Promise<NoteImageAsset[]> {
   const images = attachments.filter((file) => file.kind === "image");
   if (images.length === 0) {
-    throw new Error("Drop a PNG, JPG, GIF, WebP, or SVG image.");
+    throw new Error(t("Drop a PNG, JPG, GIF, WebP, or SVG image."));
   }
 
   const saved: NoteImageAsset[] = [];
@@ -213,7 +215,7 @@ async function saveNoteImageAttachments(
       throw failure;
     }
     if (failure) throw new Error(String(failure));
-    throw new Error("None of the dropped images could be added to the note.");
+    throw new Error(t("None of the dropped images could be added to the note."));
   }
   if (applicationErrors.length)
     imageApplicationOutcomes.set(saved, Object.freeze(applicationErrors));

@@ -9,13 +9,17 @@ export const UI_LOG_MAX_LINES = 1000;
 export const UI_LOG_MAX_CHARS = 200_000;
 const MESSAGE_MAX_GRAPHEMES = 2000;
 
-type Entry = { key: string; text: string; count: number; size: number };
+type Entry = { key: string; level: DiagnosticLogLevel; text: string; count: number; size: number };
 
 const render = (entry: Entry) =>
   entry.count > 1 ? `${entry.text} (repeated ${entry.count} times)` : entry.text;
 
+/** Warnings and errors are what a crash report needs; routine breadcrumbs go first. */
+const isProtected = (level: DiagnosticLogLevel) => level === "warn" || level === "error";
+
 /**
- * Bounded ring of recent UI lines in the shared diagnostic format; oldest lines go first.
+ * Bounded ring of recent UI lines in the shared diagnostic format. When the ring is full the
+ * oldest routine line goes first; warnings and errors are evicted only when no routine line is left.
  * An identical consecutive line (same level, category, message and fields) is folded into the
  * previous one with a "repeated N times" suffix instead of taking a new slot.
  */
@@ -26,6 +30,11 @@ export function createLogBuffer(limits = { lines: UI_LOG_MAX_LINES, chars: UI_LO
     const next = render(entry).length + 1;
     chars += next - entry.size;
     entry.size = next;
+  };
+  const evictOne = () => {
+    const routine = entries.findIndex((entry) => !isProtected(entry.level));
+    const [removed] = entries.splice(routine === -1 ? 0 : routine, 1);
+    chars -= (removed as Entry).size;
   };
   return {
     push(
@@ -45,6 +54,7 @@ export function createLogBuffer(limits = { lines: UI_LOG_MAX_LINES, chars: UI_LO
       }
       const entry: Entry = {
         key,
+        level,
         text: formatDiagnosticLine(now(), level, category, body, fields),
         count: 1,
         size: 0,
@@ -52,7 +62,7 @@ export function createLogBuffer(limits = { lines: UI_LOG_MAX_LINES, chars: UI_LO
       measure(entry);
       entries.push(entry);
       while (entries.length > limits.lines || (chars > limits.chars && entries.length > 1)) {
-        chars -= (entries.shift() as Entry).size;
+        evictOne();
       }
     },
     snapshot: (): string => entries.map(render).join("\n"),

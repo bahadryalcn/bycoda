@@ -25,11 +25,53 @@ mod mac {
     use std::collections::HashMap;
     use std::ptr::NonNull;
     use std::sync::{Mutex, Once, OnceLock};
+    use std::time::Duration;
     use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
 
     static APP: OnceLock<AppHandle> = OnceLock::new();
     static INSTALL: Once = Once::new();
     static ENABLED: Mutex<Option<HashMap<isize, String>>> = Mutex::new(None);
+    /// Pinch events arrive at display rate. Deltas are summed per window and
+    /// emitted once per frame, because each `emit` is a JS eval.
+    const MAGNIFY_FRAME: Duration = Duration::from_millis(16);
+    /// Deltas waiting for the next flush, keyed by window label. A present key
+    /// means a flush is already scheduled for that window.
+    static PENDING: Mutex<Option<HashMap<String, f64>>> = Mutex::new(None);
+
+    /// Adds a delta to a window's pending total. Returns true when the window
+    /// had nothing pending, so the caller schedules its flush.
+    fn push_magnify(pending: &mut HashMap<String, f64>, label: String, delta: f64) -> bool {
+        let opened = !pending.contains_key(&label);
+        *pending.entry(label).or_insert(0.0) += delta;
+        opened
+    }
+
+    fn queue_magnify(app: &AppHandle, label: String, delta: f64) {
+        let opened = match PENDING.lock() {
+            Ok(mut pending) => push_magnify(pending.get_or_insert_with(HashMap::new), label, delta),
+            Err(_) => return,
+        };
+        if opened {
+            let app = app.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(MAGNIFY_FRAME);
+                flush_magnify(&app);
+            });
+        }
+    }
+
+    fn flush_magnify(app: &AppHandle) {
+        let due: Vec<(String, f64)> = match PENDING.lock() {
+            Ok(mut pending) => pending.get_or_insert_with(HashMap::new).drain().collect(),
+            Err(_) => return,
+        };
+        for (label, delta) in due {
+            // A zero net delta (zoom in and out within one frame) has no effect.
+            if delta != 0.0 && app.get_webview_window(&label).is_some() {
+                let _ = app.emit_to(label.as_str(), "trackpad_magnify", delta);
+            }
+        }
+    }
     pub(super) fn set_enabled(window: &WebviewWindow, enabled: bool) {
         let Some(native) = crate::macos::ns_window(window) else {
             return;
@@ -57,7 +99,7 @@ mod mac {
                     if app.get_webview_window(&label).is_none() {
                         return event.as_ptr();
                     }
-                    let _ = app.emit_to(label.as_str(), "trackpad_magnify", native.magnification());
+                    queue_magnify(app, label, native.magnification());
                     std::ptr::null_mut()
                 });
                 // AppKit retains the process-wide monitor; per-window claims
@@ -70,6 +112,38 @@ mod mac {
                 };
                 std::mem::forget(monitor);
             });
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn same_window_sums_signed_deltas_and_schedules_one_flush() {
+            let mut pending = HashMap::new();
+            assert!(push_magnify(&mut pending, "main".into(), 0.1));
+            assert!(!push_magnify(&mut pending, "main".into(), -0.3));
+            assert!(!push_magnify(&mut pending, "main".into(), 0.05));
+            let total = pending["main"];
+            assert!((total - -0.15).abs() < 1e-9, "net direction and total kept, got {total}");
+        }
+
+        #[test]
+        fn windows_keep_their_own_totals() {
+            let mut pending = HashMap::new();
+            assert!(push_magnify(&mut pending, "a".into(), 0.1));
+            assert!(push_magnify(&mut pending, "b".into(), 0.2));
+            assert!((pending["a"] - 0.1).abs() < 1e-9);
+            assert!((pending["b"] - 0.2).abs() < 1e-9);
+        }
+
+        #[test]
+        fn a_drained_window_schedules_again() {
+            let mut pending = HashMap::new();
+            assert!(push_magnify(&mut pending, "main".into(), 0.1));
+            pending.clear();
+            assert!(push_magnify(&mut pending, "main".into(), 0.2));
         }
     }
 }

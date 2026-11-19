@@ -602,6 +602,10 @@ describe("a queue restored after a restart", () => {
     ]);
     const card = container.querySelector("[data-message-queue-card]")!;
     expect(card.textContent).toContain("Attachment missing");
+    // The recovery step is visible text, not a hover-only tooltip.
+    expect(card.querySelector("[data-queue-attachment-missing]")?.textContent).toContain(
+      "Edit to drop it, or remove the message.",
+    );
     const send = [...card.querySelectorAll("button")].find((b) => b.textContent === "Send next")!;
     expect(send.disabled).toBe(true);
     act(() => send.click());

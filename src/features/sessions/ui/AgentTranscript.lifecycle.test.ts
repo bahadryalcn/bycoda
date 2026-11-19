@@ -170,7 +170,7 @@ it("holds pending follow-ups and prevents send or removal while delivery is acti
   expect(send.disabled).toBe(true);
   expect(remove.disabled).toBe(true);
   expect(await tooltipText(send)).toContain("still being delivered");
-  expect(host.querySelector('[role="status"]')?.textContent).toContain("Sending...");
+  expect(host.querySelector('[role="status"]')?.textContent).toContain("Sending…");
   await act(async () => {
     send.click();
     remove.click();

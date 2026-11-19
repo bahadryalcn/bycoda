@@ -137,7 +137,33 @@ describe("PeopleTable", () => {
     renderTable({ hasMore: false });
     expect(buttonByText("Load more people")).toBeUndefined();
   });
+
+  it("keeps the Host order and offers no sort while more pages remain", () => {
+    renderTable({ people: [grace, ada], hasMore: true });
+    expect(document.querySelector('[aria-label="Sort by Name"]')).toBeNull();
+    expect(document.querySelector('[aria-label="Sort by Score"]')).toBeNull();
+    expect(firstRowCell()?.textContent).toContain("Grace");
+  });
+
+  it("sorts the rows once every page is loaded", () => {
+    renderTable({ people: [grace, ada], hasMore: false });
+    act(() => document.querySelector<HTMLButtonElement>('[aria-label="Sort by Name"]')!.click());
+    expect(firstRowCell()?.textContent).toContain("Ada");
+  });
+
+  it("drops an earlier sort when more pages appear, so the loaded page is not reordered", () => {
+    renderTable({ people: [grace, ada], hasMore: false });
+    act(() => document.querySelector<HTMLButtonElement>('[aria-label="Sort by Name"]')!.click());
+    expect(firstRowCell()?.textContent).toContain("Ada");
+
+    renderTable({ people: [grace, ada], hasMore: true });
+    expect(firstRowCell()?.textContent).toContain("Grace");
+  });
 });
+
+function firstRowCell(): Element | null {
+  return document.querySelector("tbody tr td[data-primary]");
+}
 
 it("reserves intrinsic categorical cells and bounds long identities with full value access", () => {
   const name = "Alexandria " + "VeryLongFamilyName".repeat(12);

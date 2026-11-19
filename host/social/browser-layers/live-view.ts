@@ -8,7 +8,10 @@ export type ScreencastPort = {
   on(listener: (method: string, params: any, sessionId?: string) => void): () => void;
 };
 
-export type LiveViewFrame = { jpegBase64: string; width: number; height: number };
+/** `seq` only grows, so a client can say which frame it already holds. */
+export type LiveViewFrame = { seq: number; jpegBase64: string; width: number; height: number };
+/** Answer to a read whose cursor already names the current frame; no picture is sent. */
+export type LiveViewUnchanged = { unchanged: true };
 
 export type LiveViewOptions = {
   /** Accepted frames per second. */
@@ -59,6 +62,8 @@ type Command = { method: string; params: Record<string, unknown> };
  */
 export class LiveViewRegistry {
   private readonly watches = new Map<string, Watch>();
+  // Starts from the clock, so a cursor from an earlier registry cannot hide newer frames.
+  private sequence = Date.now();
   private readonly maxFps: number;
   private readonly maxFrameBytes: number;
   private readonly idleStopMs: number;
@@ -99,8 +104,15 @@ export class LiveViewRegistry {
     return () => this.detachWatch(accountId, watch);
   }
 
-  /** One frame for the panel. Starts the screencast on first use and returns null until a frame arrives. */
-  async frame(accountId: string): Promise<LiveViewFrame | null> {
+  /**
+   * One frame for the panel. Starts the screencast on first use and returns null until a frame arrives.
+   * With `after` (the `seq` the client already holds), a frame it has is answered `{ unchanged: true }`.
+   */
+  async frame(
+    accountId: string,
+    after?: unknown,
+  ): Promise<LiveViewFrame | LiveViewUnchanged | null> {
+    const cursor = frameCursor(after);
     const watch = this.require(accountId);
     watch.lastRequestAt = this.clock();
     if (!watch.running) {
@@ -114,7 +126,10 @@ export class LiveViewRegistry {
       watch.running = true;
     }
     this.armIdle(accountId, watch);
-    return watch.frame ?? null;
+    const frame = watch.frame;
+    if (!frame) return null;
+    if (cursor !== undefined && frame.seq <= cursor) return { unchanged: true };
+    return frame;
   }
 
   /** Owner input. Coordinates are frame pixels, checked against the last frame. */
@@ -188,13 +203,21 @@ export class LiveViewRegistry {
     const height = Number(params?.metadata?.deviceHeight);
     if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1) return;
     if (width > 10_000 || height > 10_000) return;
-    watch.frame = { jpegBase64: data, width, height };
+    watch.frame = { seq: ++this.sequence, jpegBase64: data, width, height };
     watch.lastAcceptedAt = now;
   }
 }
 
 const finite = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value);
+
+/** Frame cursor from an owner request. A malformed one is refused rather than read as "no cursor". */
+function frameCursor(after: unknown): number | undefined {
+  if (after === undefined) return undefined;
+  if (typeof after !== "number" || !Number.isSafeInteger(after) || after < 0)
+    throw new Error("Invalid live view cursor.");
+  return after;
+}
 
 /** Validates owner input and maps it to CDP commands. Anything outside these shapes is refused. */
 export function commandsFor(event: unknown, frame: LiveViewFrame | undefined): Command[] {
@@ -265,8 +288,11 @@ export function commandsFor(event: unknown, frame: LiveViewFrame | undefined): C
 /** Process-wide registry used by the browser launcher and the Social transport. */
 export const liveViews = new LiveViewRegistry();
 
-export async function liveViewFrame(accountId: string): Promise<LiveViewFrame | null> {
-  return liveViews.frame(accountId);
+export async function liveViewFrame(
+  accountId: string,
+  after?: unknown,
+): Promise<LiveViewFrame | LiveViewUnchanged | null> {
+  return liveViews.frame(accountId, after);
 }
 
 export async function liveViewInput(accountId: string, event: unknown): Promise<void> {

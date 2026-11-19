@@ -61,7 +61,7 @@
   .inbox-discussion-panel {
     position: absolute;
     inset: 0;
-    z-index: 10;
+    z-index: var(--layer-pane-sheet);
     width: auto !important;
   }
   .inbox-discussion-resizer {

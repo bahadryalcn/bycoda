@@ -1,3 +1,4 @@
+import { errorText } from "../../shared/lib/errors";
 import { Tooltip } from "../../shared/ui/Tooltip";
 import { Text } from "../../shared/ui/Text";
 import { LEVEL_LABELS, RuntimeLogRow } from "./ui/RuntimeLogRow";
@@ -10,6 +11,7 @@ import { Alert } from "../../shared/ui/Alert";
 import { Popover } from "../../shared/ui/Popover";
 import { DropdownMenu } from "../../shared/ui/DropdownMenu";
 import { Badge } from "../../shared/ui/Badge";
+import { LiveText } from "../../shared/ui/LiveText";
 import { Switch } from "../../shared/ui/Switch";
 import { SegmentedControl } from "../../shared/ui/SegmentedControl";
 import { Select } from "../../shared/ui/Select";
@@ -45,13 +47,12 @@ import {
   clearRuntimeLogs,
   createRuntimeLogsBuffer,
   exportRuntimeLogs,
-  filterRuntimeLogs,
-  groupRuntimeLogs,
   MAX_RENDERED_RUNTIME_LOGS,
   mergeRuntimeLogs,
   runtimeLogsAgentPrompt,
   type RuntimeLogGroup,
 } from "./runtimeLogsModel";
+import { RuntimeLogsView } from "./runtimeLogsView";
 import type { RuntimeLogEntry, RuntimeLogSnapshot } from "./runtimeLogTypes";
 import {
   patchToolsDraftPart,
@@ -277,14 +278,19 @@ function ScopedRuntimeLogsPanel({
         if (!alive.current || !visible.current || revision !== generation.current) return;
         const next = mergeRuntimeLogs(bufferRef.current, snapshot);
         if (next !== bufferRef.current) {
+          const head = bufferRef.current.entries[0];
+          // Entries only leave the buffer from its front, so a plain append keeps every selection.
+          const leftFront = head !== undefined && next.entries[0] !== head;
           bufferRef.current = next;
           setBuffer(next);
-          const availableIds = new Set(next.entries.map((entry) => entry.id));
-          setSelected((previous) =>
-            [...previous].some((id) => !availableIds.has(id))
-              ? new Set([...previous].filter((id) => availableIds.has(id)))
-              : previous,
-          );
+          if (leftFront || !next.entries.length)
+            setSelected((previous) => {
+              if (!previous.size) return previous;
+              const availableIds = new Set(next.entries.map((entry) => entry.id));
+              return [...previous].some((id) => !availableIds.has(id))
+                ? new Set([...previous].filter((id) => availableIds.has(id)))
+                : previous;
+            });
         }
         failures.current = 0;
         setLoaded(true);
@@ -292,7 +298,7 @@ function ScopedRuntimeLogsPanel({
         if (next.restarted) setNotice(t("The host restarted. A new log stream is now active."));
       } catch (cause) {
         if (alive.current && revision === generation.current) {
-          setError(cause instanceof Error ? cause.message : String(cause));
+          setError(errorText(cause));
           failures.current += 1;
           if (failures.current >= MAX_POLL_FAILURES) {
             pausedRef.current = true;
@@ -344,17 +350,23 @@ function ScopedRuntimeLogsPanel({
     read,
   );
 
-  const filtered = useMemo(
+  // The view applies each poll's appended and trimmed entries; a filter change rebuilds it.
+  const [logsView] = useState(() => new RuntimeLogsView());
+  const view = useMemo(
     () =>
-      filterRuntimeLogs(buffer.entries, {
-        source: source === "all" ? undefined : source,
-        sourceIds,
-        levels: LEVEL_FILTERS[level],
-        search,
-      }),
-    [buffer.entries, source, sourceIds, level, search],
+      logsView.update(
+        buffer,
+        {
+          source: source === "all" ? undefined : source,
+          sourceIds,
+          levels: LEVEL_FILTERS[level],
+          search,
+        },
+        grouped,
+      ),
+    [logsView, buffer, source, sourceIds, level, search, grouped],
   );
-  const groups = useMemo(() => groupRuntimeLogs(filtered, grouped), [filtered, grouped]);
+  const groups = view.groups;
   const visibleGroups = groups.slice(-MAX_RENDERED_RUNTIME_LOGS);
   const visibleEntries = visibleGroups.flatMap((group) => group.entries);
   const chosen = useMemo(
@@ -365,18 +377,8 @@ function ScopedRuntimeLogsPanel({
     () => new Map(buffer.sources.map((entry) => [entry.id, entry])),
     [buffer.sources],
   );
-  const errorCount = filtered.reduce(
-    (count, entry) => count + Number(runtimeLogDisplayLevel(entry) === "error"),
-    0,
-  );
-  const warningCount = filtered.reduce((count, entry) => count + Number(entry.level === "warn"), 0);
-  const typeCounts = useMemo(
-    () => ({
-      browser: buffer.entries.filter((entry) => entry.source === "browser").length,
-      server: buffer.entries.filter((entry) => entry.source === "server").length,
-    }),
-    [buffer.entries],
-  );
+  const { errorCount, warningCount, typeCounts } = view;
+  const filteredCount = view.count;
 
   useLayoutEffect(() => {
     const area = timeline.current;
@@ -394,7 +396,7 @@ function ScopedRuntimeLogsPanel({
     )
       return;
     area.scrollTop = area.scrollHeight;
-  }, [buffer.cursor, filtered.length, source, sourceIds, level, search, grouped, follow, paused]);
+  }, [buffer.cursor, filteredCount, source, sourceIds, level, search, grouped, follow, paused]);
 
   const togglePause = () => {
     setStarted(true);
@@ -443,7 +445,7 @@ function ScopedRuntimeLogsPanel({
       }
       await read();
     } catch (cause) {
-      if (alive.current) setActionError(cause instanceof Error ? cause.message : String(cause));
+      if (alive.current) setActionError(errorText(cause));
     } finally {
       monitorPending.current = false;
       if (alive.current) {
@@ -465,7 +467,7 @@ function ScopedRuntimeLogsPanel({
         if (active && revision === monitorRevision.current) setMonitors(items ?? []);
       })
       .catch((cause) => {
-        if (active) setActionError(cause instanceof Error ? cause.message : String(cause));
+        if (active) setActionError(errorText(cause));
       });
     return () => {
       active = false;
@@ -510,7 +512,7 @@ function ScopedRuntimeLogsPanel({
       if (alive.current)
         setNotice(t("Logs added to conversation draft. Review and send when ready."));
     } catch (cause) {
-      if (alive.current) setActionError(t(cause instanceof Error ? cause.message : String(cause)));
+      if (alive.current) setActionError(t(errorText(cause)));
     } finally {
       inspectingRef.current = false;
       if (alive.current) setInspecting(false);
@@ -518,7 +520,7 @@ function ScopedRuntimeLogsPanel({
   };
   const exportLogs = async () => {
     if (exportingRef.current) return;
-    const entries = chosen.length ? chosen : filtered;
+    const entries = chosen.length ? chosen : view.entries();
     if (!entries.length) return;
     exportingRef.current = true;
     setExporting(true);
@@ -537,7 +539,7 @@ function ScopedRuntimeLogsPanel({
       if (alive.current && revision === generation.current) setNotice(t("Logs exported."));
     } catch (cause) {
       if (alive.current && revision === generation.current)
-        setActionError(cause instanceof Error ? cause.message : String(cause));
+        setActionError(errorText(cause));
     } finally {
       exportingRef.current = false;
       if (alive.current) setExporting(false);
@@ -550,7 +552,7 @@ function ScopedRuntimeLogsPanel({
     : t("{p0} visible events", { p0: visibleEntries.length });
   const exportScope = chosen.length
     ? t("{p0} selected logs", { p0: chosen.length })
-    : t("{p0} visible events", { p0: filtered.length });
+    : t("{p0} visible events", { p0: filteredCount });
   const empty =
     !started && !busy
       ? t(
@@ -562,7 +564,7 @@ function ScopedRuntimeLogsPanel({
           ? t("Logs are unavailable. Check the selected computer's host connection and retry.")
           : paused && !buffer.entries.length
             ? t("The view is paused. Resume or refresh to read new events.")
-            : buffer.entries.length && !filtered.length
+            : buffer.entries.length && !filteredCount
               ? t("No logs match these filters. Adjust the source, level or search.")
               : t(
                   "Open a page in Browser or start a managed server in Servers to begin capturing.",
@@ -586,7 +588,7 @@ function ScopedRuntimeLogsPanel({
         ? undefined
         : paused && !buffer.entries.length
           ? { label: t("Resume"), onClick: togglePause }
-          : buffer.entries.length && !filtered.length
+          : buffer.entries.length && !filteredCount
             ? {
                 label: t("Reset filters"),
                 onClick: () => {
@@ -607,7 +609,18 @@ function ScopedRuntimeLogsPanel({
                 }
               : undefined;
   const emptyRetry =
-    started && !(buffer.entries.length && !filtered.length) ? () => void read() : undefined;
+    started && !(buffer.entries.length && !filteredCount) ? () => void read() : undefined;
+  const stateLabel = error
+    ? t("Disconnected")
+    : !started
+      ? t("Stopped")
+      : paused
+        ? t("Paused")
+        : loaded
+          ? buffer.entries.length
+            ? t("Live")
+            : `${t("Live")} · ${t("Waiting for logs")}`
+          : t("Connecting…");
 
   return (
     <section
@@ -651,12 +664,11 @@ function ScopedRuntimeLogsPanel({
         {filtersOpen ? (
           <Popover
             anchor={filterTrigger}
-            role="dialog"
+            kind="dialog"
             aria-label={t("Log filters")}
             side="bottom"
             align="start"
             width={360}
-            autoFocus
             onDismiss={(reason) => {
               setFiltersOpen(false);
               if (reason === "escape") filterTrigger.current?.focus();
@@ -819,7 +831,7 @@ function ScopedRuntimeLogsPanel({
                   id: "export",
                   label: t("Export logs"),
                   description: exportScope,
-                  disabled: exporting || (!chosen.length && !filtered.length),
+                  disabled: exporting || (!chosen.length && !filteredCount),
                 },
                 { kind: "sep" },
                 { kind: "item", id: "clear", label: t("Clear view"), danger: true },
@@ -839,12 +851,11 @@ function ScopedRuntimeLogsPanel({
       {target.kind === "project" && monitorsOpen ? (
         <Popover
           anchor={monitorTrigger}
-          role="dialog"
+          kind="dialog"
           aria-label={t("Website monitors")}
           side="bottom"
           align="end"
           width={380}
-          autoFocus
           solid
           onDismiss={() => setMonitorsOpen(false)}
           className="runtime-logs-monitors-popover"
@@ -1041,7 +1052,7 @@ function ScopedRuntimeLogsPanel({
               }
               title={loaded && !buffer.entries.length ? t("Waiting for logs") : t("Runtime logs")}
               description={empty}
-              kind={buffer.entries.length && !filtered.length ? "filtered" : "empty"}
+              kind={buffer.entries.length && !filteredCount ? "filtered" : "empty"}
               action={emptyAction}
               onRetry={emptyRetry}
               retryLabel={t("Refresh")}
@@ -1057,21 +1068,11 @@ function ScopedRuntimeLogsPanel({
             variant="dot"
             size="sm"
             tone={error ? "danger" : paused || !started ? "neutral" : loaded ? "success" : "info"}
-            role="status"
           >
-            {error
-              ? t("Disconnected")
-              : !started
-                ? t("Stopped")
-                : paused
-                  ? t("Paused")
-                  : loaded
-                    ? buffer.entries.length
-                      ? t("Live")
-                      : `${t("Live")} · ${t("Waiting for logs")}`
-                    : t("Connecting…")}
+            {stateLabel}
           </Badge>
         </Tooltip>
+        <LiveText className="sr-only" text={stateLabel} />
         <Text
           size="micro"
           tone="inherit"

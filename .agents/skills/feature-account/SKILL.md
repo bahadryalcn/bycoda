@@ -28,6 +28,7 @@ The account is optional. The app works fully signed out and sign-in is never req
 - Sign-in is a public PKCE S256 client on `http://127.0.0.1:<random port>/callback`; a callback with another `state` is ignored, and the flow has a timeout and a cancel that frees the port.
 - A rejected refresh token ends the session and is forgotten; an unreachable service keeps it.
 - Signing out forgets tokens and the cached account view only. Sessions, projects, drafts and settings are never touched; the per-account device id survives sign-out.
+- Every account API call runs under one deadline (`createAccountApi`, contract default 15 s, request plus body read, caller `signal`/`timeoutMs` honored). A timeout is a `TypeError` subclass, so it takes the offline path; background pollers (announcements, machine discovery) recover on their next tick, and mutations are never retried automatically.
 - The account cache is non-secret, validated on read, trusted seven days offline.
 - `organizations` is always empty and the UI renders nothing for it. No team features.
 - Feedback carries only the typed message, kind, rating and, if ticked, version/OS context. A ticked "Attach diagnostic logs" adds a linked report after the receipt (feature-diagnostics).

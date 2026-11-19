@@ -66,6 +66,11 @@ function sessionStatusBadge(status: string | undefined) {
 }
 const paneKey = (pane: ToolsSession) => `${toolsSessionKey(pane)}:${pane.onlyTab ?? "all"}`;
 const FOLLOW_KEY = "bycoda.tools-hub.follow.v1";
+function sameWindowSet(previous: ReadonlySet<string> | null, next: ReadonlySet<string>) {
+  return (
+    !!previous && previous.size === next.size && [...next].every((id) => previous.has(id))
+  );
+}
 function initialFollow() {
   try {
     return localStorage.getItem(FOLLOW_KEY) !== "false";
@@ -344,19 +349,27 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
       void requestToolsSources()
         .then((windows) => {
           if (disposed) return;
-          setAvailableWindows(windows);
-          setSources((previous) => new Map([...previous].filter(([owner]) => windows.has(owner))));
+          setAvailableWindows((previous) => (sameWindowSet(previous, windows) ? previous : windows));
+          setSources((previous) => {
+            const kept = [...previous].filter(([owner]) => windows.has(owner));
+            return kept.length === previous.size ? previous : new Map(kept);
+          });
         })
         .catch((cause) => {
           if (!disposed) setError(toolsTransferError(cause));
         });
     };
+    const refreshVisible = () => {
+      if (!document.hidden) refresh();
+    };
     window.addEventListener("focus", refresh);
-    const timer = setInterval(refresh, 10000);
+    document.addEventListener("visibilitychange", refreshVisible);
+    const timer = setInterval(refreshVisible, 10000);
     return () => {
       disposed = true;
       clearInterval(timer);
       window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refreshVisible);
     };
   }, []);
   // Mount acknowledgement follows actual domain-view readiness, never window creation.

@@ -27,7 +27,7 @@ export const REVEAL_LABEL = IS_MAC
   ? "Reveal in Finder"
   : IS_WIN
     ? "Reveal in File Explorer"
-    : "Open Containing Folder";
+    : "Open containing folder";
 
 /** What the Machine item shows for a remote project: the machine and its connection, as plain text. */
 type MachineMenuStatus = {

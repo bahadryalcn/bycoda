@@ -138,6 +138,31 @@ it("retains incomplete results if an indexing poll fails and stops polling until
   expect(searchSessionContent).toHaveBeenCalledTimes(2);
 });
 
+it("keeps the loading state off during background index polls and backs off between them", async () => {
+  const partial = { ...empty, pending: 1, truncated: true };
+  let resolvePoll!: (value: SessionContentResult) => void;
+  searchSessionContent
+    .mockResolvedValueOnce(partial)
+    .mockReturnValueOnce(
+      new Promise<SessionContentResult>((yes) => {
+        resolvePoll = yes;
+      }),
+    )
+    .mockResolvedValue(partial);
+  await render("hello");
+  await advance(200);
+  expect(view.loading).toBe(false);
+  await advance(2000);
+  expect(searchSessionContent).toHaveBeenCalledTimes(2);
+  expect(view.loading).toBe(false);
+  expect(view.result).toEqual(partial);
+  await act(async () => resolvePoll(partial));
+  await advance(2000);
+  expect(searchSessionContent).toHaveBeenCalledTimes(2);
+  await advance(2000);
+  expect(searchSessionContent).toHaveBeenCalledTimes(3);
+});
+
 it("shows healthy committed hits with a background index error and retries only on request", async () => {
   const healthy: SessionContentResult = {
     ...empty,

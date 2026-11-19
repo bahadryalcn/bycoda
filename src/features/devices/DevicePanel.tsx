@@ -9,12 +9,14 @@ import { NumberField } from "../../shared/ui/NumberField";
 import { DeviceBar } from "./ui/DeviceBar";
 import { DeviceSetupPanel } from "./ui/DeviceSetupPanel";
 import { DeviceConnectState, DeviceWaitingState } from "./ui/DeviceStageStates";
+import { DeviceFrameState } from "./ui/DeviceFrameState";
 import { DeviceOptionsMenu } from "./ui/DeviceOptionsMenu";
 import { DeviceInspector } from "./ui/DeviceInspector";
 import { presentRemoteError } from "../connections/public/remoteFailure";
 import { useDeviceStatus } from "./hooks/useDeviceStatus";
 import { useDeviceLiveStream } from "./hooks/useDeviceLiveStream";
 import { kindLabel, platformVersionLabel, stateLabel } from "./model/deviceLabels";
+import { createAnnotationDraftCache } from "./model/annotationDraftCache";
 import {
   peekToolsDraftPart,
   subscribeToolsDraftTransfer,
@@ -76,7 +78,7 @@ import type {
   DeviceControlLease,
   DeviceInspection,
 } from "./types";
-const { dateTimeFormat, getLocale, relativeTimeFormat, t, useLocale } = technicalI18n;
+const { t, useLocale } = technicalI18n;
 type DeviceOperation =
   | "status"
   | "connect"
@@ -106,40 +108,9 @@ type AnnotationDraft = {
 /** Consecutive failed control-status reads before the UI treats control as lost (10 s apart). */
 const CONTROL_STATUS_MAX_FAILURES = 3;
 
-const annotationDraftCache = new Map<string, Record<string, AnnotationDraft>>();
+const annotationDraftCache = createAnnotationDraftCache<AnnotationDraft>();
 type DeviceInputs = Record<string, { app: string; text: string }>;
 const inputDraftCache = new Map<string, DeviceInputs>();
-/** Readable capture time and age for a retained frame; undefined when the Host sent no real timestamp. */
-function capturedLabel(capturedAt: string, now: number): string | undefined {
-  const at = Date.parse(capturedAt);
-  if (!Number.isFinite(at)) return undefined;
-  let locale: string | undefined;
-  try {
-    locale = getLocale();
-    dateTimeFormat(locale);
-  } catch {
-    locale = undefined;
-  }
-  const seconds = Math.max(0, Math.round((now - at) / 1000));
-  const relative = relativeTimeFormat(locale, {
-    numeric: "auto",
-    style: "short",
-  });
-  const age =
-    seconds < 2
-      ? relative.format(0, "second")
-      : seconds < 60
-        ? relative.format(-seconds, "second")
-        : seconds < 3600
-          ? relative.format(-Math.round(seconds / 60), "minute")
-          : relative.format(-Math.round(seconds / 3600), "hour");
-  const time = new Date(at).toLocaleTimeString(locale, {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-  return t("Captured {p0} · {p1}", { p0: time, p1: age });
-}
 const unavailableTransport = (cause: unknown) =>
   /RPC_HOST_UNAVAILABLE|host unavailable|host connection.*(?:closed|refused)/i.test(String(cause));
 
@@ -258,7 +229,6 @@ function DevicePanelSurface({
   >(saved?.notice);
   // Set when the device action itself succeeded but the follow-up frame read failed.
   const [actionCompleted, setActionCompleted] = useState(saved?.actionCompleted ?? false);
-  const [now, setNow] = useState(() => Date.now());
   const [x, setX] = useState(0);
   const [y, setY] = useState(0);
   const [endX, setEndX] = useState(0);
@@ -276,6 +246,11 @@ function DevicePanelSurface({
     () => saved?.annotations ?? (draftScope ? (annotationDraftCache.get(draftScope) ?? {}) : {}),
   );
   const annotationsRef = useRef(annotations);
+  // Pins this scope while the panel is mounted so the bounded draft cache never evicts a draft the user is editing.
+  useEffect(
+    () => (draftScope ? annotationDraftCache.pin(draftScope) : undefined),
+    [draftScope],
+  );
   useEffect(() => {
     if (!transferScope) return;
     return subscribeToolsDraftTransfer(transferScope, ({ device }) => {
@@ -371,10 +346,7 @@ function DevicePanelSurface({
     // not inside a state updater that React may repeat or discard.
     const next = typeof change === "function" ? change(annotationsRef.current) : change;
     annotationsRef.current = next;
-    if (draftScope) {
-      annotationDraftCache.delete(draftScope);
-      if (Object.keys(next).length) annotationDraftCache.set(draftScope, next);
-    }
+    if (draftScope) annotationDraftCache.set(draftScope, next);
     setAnnotationState(next);
   };
   const gesture = useRef<{
@@ -1109,32 +1081,6 @@ function DevicePanelSurface({
       },
     );
   const shownFrame = annotating ? draft?.frame : frame;
-  const liveFrameDelayed =
-    !!frame &&
-    live &&
-    !streaming &&
-    Number.isFinite(Date.parse(frame.capturedAt)) &&
-    now - Date.parse(frame.capturedAt) >= 3000;
-  const frameStateVisible =
-    !!frame &&
-    (!live ||
-      annotating ||
-      frameStale ||
-      captureFailed ||
-      connectionUnavailable ||
-      liveFrameDelayed);
-  useEffect(() => {
-    if (!visible || !frame || streaming) return;
-    setNow(Date.now());
-    const timer = setInterval(
-      () => {
-        if (!document.hidden) setNow(Date.now());
-      },
-      live ? 1000 : 5000,
-    );
-    return () => clearInterval(timer);
-  }, [!!frame, live, visible, streaming]);
-  const frameCaptured = shownFrame ? capturedLabel(shownFrame.capturedAt, now) : undefined;
   const ownershipLabel = control
     ? t("Device control claimed by this controller")
     : controlStatus?.busy
@@ -1846,28 +1792,18 @@ function DevicePanelSurface({
                 </div>
               </ScrollArea>
             )}
-            {frameStateVisible && (
-              <Tooltip label={shownFrame?.capturedAt} asChild>
-                <Text
-                  truncate
-                  size="micro"
-                  tone="primary"
-                  leading="inherit"
-                  {...surfaceAttributes(
-                    { variant: "floating", frame: "pane", radius: "pill", elevation: "floating" },
-                    "device-panel-frame-state",
-                  )}
-                >
-                  {annotating
-                    ? t("Marking · Frozen frame")
-                    : captureFailed || connectionUnavailable || frameStale
-                      ? t("Last frame · Not live")
-                      : liveFrameDelayed
-                        ? t("Last frame · Refreshing")
-                        : t("Paused")}
-                  {frameCaptured ? ` · ${frameCaptured}` : ""}
-                </Text>
-              </Tooltip>
+            {frame && (
+              <DeviceFrameState
+                frame={frame}
+                shownFrame={shownFrame}
+                live={live}
+                streaming={streaming}
+                visible={visible}
+                annotating={annotating}
+                frameStale={frameStale}
+                captureFailed={captureFailed}
+                connectionUnavailable={connectionUnavailable}
+              />
             )}
             {annotating && draft && (
               <div

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, createElement, StrictMode } from "react";
+import { act, createElement, Profiler, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { resetRetainedState } from "../../shared/hooks/useRetainedState";
@@ -181,6 +181,26 @@ it("uses saved refresh defaults while keeping manual discovery available", async
   expect(button("Resume automatic refresh")).toBeDefined();
 });
 
+it("does not repaint the panel when a background poll returns the same servers", async () => {
+  toolPreferences.serversRefreshInterval.save(15_000);
+  let commits = 0;
+  await act(async () =>
+    root.render(
+      createElement(
+        Profiler,
+        { id: "dev-servers", onRender: () => void (commits += 1) },
+        createElement(DevServersPanel, { cwd: "/repo" }),
+      ),
+    ),
+  );
+  expect(hostFeatureRequest).toHaveBeenCalledTimes(1);
+  const committed = commits;
+  await act(async () => vi.advanceTimersByTimeAsync(15_000));
+  expect(hostFeatureRequest).toHaveBeenCalledTimes(2);
+  expect(commits).toBe(committed);
+  expect(container.querySelectorAll(".dev-server-row")).toHaveLength(1);
+});
+
 it("uses the saved discovery interval for a new server view", async () => {
   toolPreferences.serversRefreshInterval.save(30_000);
   await mount();
@@ -267,6 +287,22 @@ it("distinguishes an empty successful scan from a failed scan", async () => {
   expect(container.textContent).not.toContain("No servers found");
   await openDetails();
   expect(document.body.textContent).toContain("Permission denied");
+});
+
+it("keeps the polled server count out of the live region and announces only scan failures", async () => {
+  await mount();
+  const announced = () =>
+    container.querySelector<HTMLElement>("[role='status'].sr-only")?.textContent;
+  expect(container.querySelector(".dev-servers-status")?.hasAttribute("role")).toBe(false);
+  expect(announced()).toBe("");
+  vi.mocked(hostFeatureRequest).mockResolvedValueOnce({
+    status: "error",
+    servers: [],
+    scannedAt: 2,
+    error: "Permission denied",
+  });
+  await act(async () => button("Refresh").click());
+  expect(announced()).toBe("Scan failed");
 });
 
 it("shows affected ports before graceful stop and requires a separate explicit force choice", async () => {

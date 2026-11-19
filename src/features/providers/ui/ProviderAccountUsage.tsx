@@ -6,6 +6,7 @@ import {
   formatResetDuration,
   formatUsagePercent,
   formatWindowLabel,
+  rateLimitWindowNameWith,
   type ProviderRateLimits,
   type RateLimitWindow,
 } from "../model/rateLimits";
@@ -77,41 +78,29 @@ export function AccountUsageRefresh({ usage }: { usage: AccountUsage }) {
   );
 }
 
-/** Titled 5h / weekly / monthly windows an account has data for, titled with `translate`. */
+/** Titled 5-hour / weekly / monthly windows an account has data for, titled with `translate`. */
 export function meterWindowsWith(
   limits: ProviderRateLimits | undefined,
   translate: (message: string, values?: Record<string, unknown>) => string,
 ): { title: string; window: RateLimitWindow }[] {
   return [
-    limits?.session ? { title: "5h", window: limits.session } : null,
-    limits?.weekly ? { title: translate("Weekly"), window: limits.weekly } : null,
-    limits?.monthly ? { title: translate("Monthly"), window: limits.monthly } : null,
+    limits?.session
+      ? { title: rateLimitWindowNameWith("session", translate), window: limits.session }
+      : null,
+    limits?.weekly
+      ? { title: rateLimitWindowNameWith("weekly", translate), window: limits.weekly }
+      : null,
+    limits?.monthly
+      ? { title: rateLimitWindowNameWith("monthly", translate), window: limits.monthly }
+      : null,
   ].filter((entry) => entry != null);
 }
 
-/** Titled 5h / weekly / monthly windows an account has data for. */
+/** Titled 5-hour / weekly / monthly windows an account has data for. */
 export function meterWindows(
   limits: ProviderRateLimits | undefined,
 ): { title: string; window: RateLimitWindow }[] {
-  return [
-    limits?.session ? { title: "5h", window: limits.session } : null,
-    limits?.weekly
-      ? {
-          get title() {
-            return t("Weekly");
-          },
-          window: limits.weekly,
-        }
-      : null,
-    limits?.monthly
-      ? {
-          get title() {
-            return t("Monthly");
-          },
-          window: limits.monthly,
-        }
-      : null,
-  ].filter((entry) => entry != null);
+  return meterWindowsWith(limits, t);
 }
 
 /** Compact 5h / weekly meters for one account row. */
@@ -127,23 +116,19 @@ export function AccountUsageMeters({
 
   if (windows.length === 0) {
     const loading = !limits || limits.status === "idle" || limits.status === "fetching";
+    // The row's status line already explains why there is no data, so nothing reserves its space.
+    if (!loading) return null;
     return (
-      <div className="hidden shrink-0 gap-4 sm:flex">
-        {loading ? (
-          <>
-            <MeterSkeleton />
-            <MeterSkeleton />
-          </>
-        ) : (
-          // The row's status line already explains why there is no data.
-          <span className="w-[19rem]" aria-hidden />
-        )}
+      <div className="flex min-w-0 flex-wrap gap-x-4 gap-y-2">
+        <MeterSkeleton />
+        <MeterSkeleton />
       </div>
     );
   }
 
   return (
-    <div className="hidden shrink-0 gap-4 sm:flex">
+    // Meters wrap below the account name when the row is narrow instead of disappearing.
+    <div className="flex min-w-0 flex-wrap gap-x-4 gap-y-2">
       {windows.map((entry) => (
         <UsageMeter key={entry.title} title={entry.title} window={entry.window} now={now} />
       ))}
@@ -171,20 +156,19 @@ export function UsageMeter({
     window.resetsAt == null
       ? formatWindowLabel(window.windowMinutes)
       : window.resetsAt <= now
-        ? t("reset due")
+        ? t("Resets now")
         : formatResetDuration(window.resetsAt - now);
+  const resetsAtLabel =
+    window.resetsAt == null
+      ? undefined
+      : t("Resets {p0}", {
+          p0: formatDate(window.resetsAt, { dateStyle: "medium", timeStyle: "short" }),
+        });
   return (
-    <Tooltip
-      label={
-        window.resetsAt == null
-          ? undefined
-          : t("Resets {p0}", {
-              p0: formatDate(window.resetsAt, { dateStyle: "medium", timeStyle: "short" }),
-            })
-      }
-      asChild
-    >
-      <div className={className}>
+    <Tooltip label={resetsAtLabel} describe={false} asChild>
+      {/* Focusable with the exact reset time as text, so keyboard and screen-reader users reach it without hover. */}
+      <div className={className} tabIndex={resetsAtLabel ? 0 : undefined}>
+        {resetsAtLabel ? <span className="sr-only">{resetsAtLabel}</span> : null}
         <Text as="div" className="flex items-baseline justify-between gap-2">
           <Text size="inherit" tone="secondary" truncate className="min-w-0">
             {title} · <span className="tabular-nums">{reset}</span>

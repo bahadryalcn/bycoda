@@ -1,17 +1,19 @@
-import { read, utils } from "xlsx";
-import type { ContactEmail } from "../../../src/features/social/model/audience";
+import type { ContactEmail, SocialList } from "../../../src/features/social/model/audience";
+import type { SocialAccount } from "../../../src/features/social/model/social";
 import {
   AUDIENCE_IMPORT_FIELDS,
   AUDIENCE_IMPORT_MAX_BYTES,
-  AUDIENCE_IMPORT_MAX_ROWS,
+  CONTACT_IMPORT_MAX_ROWS,
   parseDelimitedRows,
   previewAudienceRecords,
   recordsFromRows,
+  type ContactImportRow,
 } from "../../../src/features/social/model/socialContactImport";
 import type { SocialActionContext } from "../core/social-actions";
 import { exact, str } from "../core/social-helpers";
 import { ensurePerson, identityBlocked, isTurkish } from "./audience-person";
 import { mergeEmailMatches } from "./audience-merge";
+import { readAudienceWorkbook } from "./audience-sheet";
 
 export type ImportResult = {
   imported: number;
@@ -19,6 +21,15 @@ export type ImportResult = {
 };
 
 const SUPPRESSED = "This person opted out or was deleted. It is not imported.";
+const TOO_BIG = "The file can be at most 5 MiB.";
+/** Base64 grows 4/3, and senders may wrap lines; anything past this cannot decode to the cap. */
+const MAX_ENCODED_CHARS = Math.ceil((AUDIENCE_IMPORT_MAX_BYTES / 3) * 4 * 1.1);
+/**
+ * Valid rows written per transaction. It equals the legacy `contacts.import` batch, so a file
+ * of that size or less is all-or-nothing, while a larger one never holds the Host database
+ * queue for the whole file.
+ */
+const BATCH_ROWS = CONTACT_IMPORT_MAX_ROWS;
 
 function parseMapping(value: unknown): Partial<Record<string, string>> | undefined {
   if (value === undefined) return undefined;
@@ -33,52 +44,50 @@ function parseMapping(value: unknown): Partial<Record<string, string>> | undefin
   return mapping;
 }
 
-/** First worksheet as rows of text. The file size is capped before parsing. */
-function rowsFromWorkbook(content: string): string[][] {
+/**
+ * Text content under the byte cap. A string's length counts UTF-16 units, which never exceed
+ * its UTF-8 bytes, so the cheap check runs first and the exact one only for what passes it.
+ */
+function textWithinLimit(content: string): string {
+  if (
+    content.length > AUDIENCE_IMPORT_MAX_BYTES ||
+    Buffer.byteLength(content) > AUDIENCE_IMPORT_MAX_BYTES
+  )
+    throw new Error(TOO_BIG);
+  return content;
+}
+
+/** Decoded workbook bytes. The encoded size is capped before decoding, the decoded size after. */
+function workbookBytes(content: string): Buffer {
+  if (content.length > MAX_ENCODED_CHARS)
+    throw new Error("The spreadsheet is empty or larger than 5 MiB.");
   const bytes = Buffer.from(content, "base64");
   if (!bytes.length || bytes.length > AUDIENCE_IMPORT_MAX_BYTES)
     throw new Error("The spreadsheet is empty or larger than 5 MiB.");
-  const book = read(bytes, { type: "buffer" });
-  const name = book.SheetNames[0];
-  const sheet = name === undefined ? undefined : book.Sheets[name];
-  if (!sheet) throw new Error("The workbook has no sheet.");
-  const rows = utils.sheet_to_json<unknown[]>(sheet, {
-    header: 1,
-    raw: false,
-    defval: "",
-    blankrows: false,
-  });
-  if (rows.length > AUDIENCE_IMPORT_MAX_ROWS + 1)
-    throw new Error(
-      `Import at most ${AUDIENCE_IMPORT_MAX_ROWS} contacts per file. Split the file.`,
-    );
-  return rows.map((row) => row.map((cell) => String(cell ?? "")));
+  return bytes;
 }
 
 /** Raw records for the chosen format. Rows are validated afterwards, one by one. */
-function recordsFrom(
+async function recordsFrom(
   format: "csv" | "xlsx" | "json",
   content: string,
   mapping: Partial<Record<string, string>> | undefined,
-): unknown[] {
+): Promise<unknown[]> {
   if (format === "json") {
-    if (content.length > AUDIENCE_IMPORT_MAX_BYTES)
-      throw new Error("The file can be at most 5 MiB.");
     let parsed: unknown;
     try {
-      parsed = JSON.parse(content);
-    } catch {
+      parsed = JSON.parse(textWithinLimit(content));
+    } catch (error) {
+      if (error instanceof Error && error.message === TOO_BIG) throw error;
       throw new Error("The file is not valid JSON.");
     }
     if (!Array.isArray(parsed)) throw new Error("The file must contain a JSON contact list.");
     return parsed;
   }
-  let rows: string[][];
-  if (format === "csv") {
-    if (content.length > AUDIENCE_IMPORT_MAX_BYTES)
-      throw new Error("The file can be at most 5 MiB.");
-    rows = parseDelimitedRows(content);
-  } else rows = rowsFromWorkbook(content);
+  const rows =
+    format === "csv"
+      ? parseDelimitedRows(textWithinLimit(content))
+      : await readAudienceWorkbook(workbookBytes(content));
   const { records, error } = recordsFromRows(rows, mapping);
   if (error) throw new Error(error);
   return records;
@@ -97,41 +106,22 @@ function withDefaults(
   return record;
 }
 
+type Batch = { personIds: string[]; blocked: ImportResult["rejected"] };
+
 /**
- * audience.import (owner only). CSV, XLSX or JSON, at most 5000 rows. Each row is validated on
- * its own; valid rows become contacts (import provenance) and people. The import records
- * "imported" consent as information only. Suppressed identities are refused.
+ * Writes one batch inside the caller's transaction. Suppression is checked in the same
+ * transaction as the write, so an opt-out recorded meanwhile cannot slip through.
  */
-export async function importAudience(
+async function writeBatch(
   ctx: SocialActionContext,
-  input: Record<string, unknown>,
-): Promise<ImportResult> {
-  exact(input, ["format", "content", "mapping", "accountId", "listId"]);
-  const format = input.format;
-  if (format !== "csv" && format !== "xlsx" && format !== "json")
-    throw new Error("Invalid import format.");
-  if (typeof input.content !== "string" || !input.content)
-    throw new Error("Invalid import content.");
-  const accountId = str(input.accountId, "account", 300);
-  const account = await ctx.service.account(accountId);
-  const listId = input.listId === undefined ? undefined : str(input.listId, "list", 300);
-  const list = listId ? await ctx.store.getList(listId) : undefined;
-  if (listId && !list) throw new Error("List not found.");
-  if (list && list.kind !== "static") throw new Error("Imported people fill a static list.");
-  const mapping = parseMapping(input.mapping);
-  const projectIds = Object.keys(account.grants);
-  const defaultProject = projectIds.length === 1 ? projectIds[0] : undefined;
-  const records = recordsFrom(format, input.content, mapping).map((raw) =>
-    withDefaults(raw, accountId, defaultProject),
-  );
-  const preview = previewAudienceRecords(records, { accounts: [account], projectIds });
-  if (preview.error) throw new Error(preview.error);
-  const now = ctx.now();
-  const rejected: ImportResult["rejected"] = preview.rows
-    .filter((row) => !row.contact)
-    .map((row) => ({ row: row.row, issues: row.issues }));
+  account: SocialAccount,
+  list: SocialList | undefined,
+  rows: ContactImportRow[],
+  now: number,
+): Promise<Batch> {
   const personIds: string[] = [];
-  for (const row of preview.rows) {
+  const blocked: Batch["blocked"] = [];
+  for (const row of rows) {
     const item = row.contact;
     if (!item) continue;
     const existing = await ctx.store.findPersonByHandle(account.id, item.platformId);
@@ -142,7 +132,7 @@ export async function importAudience(
         existing?.id,
       )
     ) {
-      rejected.push({ row: row.row, issues: [SUPPRESSED] });
+      blocked.push({ row: row.row, issues: [SUPPRESSED] });
       continue;
     }
     const contact = await ctx.service.upsertContact(ctx.principal, {
@@ -189,5 +179,72 @@ export async function importAudience(
   }
   // Owner only, so the automatic merge may see every person.
   if (personIds.length) await mergeEmailMatches(ctx, personIds);
-  return { imported: personIds.length, rejected };
+  return { personIds, blocked };
+}
+
+const rowRange = (rows: ContactImportRow[]) =>
+  rows.length > 1 ? `${rows[0]!.row}-${rows[rows.length - 1]!.row}` : String(rows[0]?.row ?? 0);
+
+/**
+ * audience.import (owner only). CSV, XLSX or JSON, at most 5000 rows and 5 MiB. A spreadsheet
+ * is read in a worker thread. Each row is validated on its own; valid rows become contacts
+ * (import provenance) and people. The import records "imported" consent as information only.
+ * Suppressed identities are refused.
+ *
+ * Valid rows are written in batches of at most 500, each batch in one transaction (a failure
+ * rolls the whole batch back, nothing of it stays). The result lists every row that was not
+ * imported. If a batch fails the call throws and says how many contacts earlier batches
+ * saved; importing the same file again is safe, because it updates existing people instead
+ * of duplicating them.
+ */
+export async function importAudience(
+  ctx: SocialActionContext,
+  input: Record<string, unknown>,
+): Promise<ImportResult> {
+  exact(input, ["format", "content", "mapping", "accountId", "listId"]);
+  const format = input.format;
+  if (format !== "csv" && format !== "xlsx" && format !== "json")
+    throw new Error("Invalid import format.");
+  if (typeof input.content !== "string" || !input.content)
+    throw new Error("Invalid import content.");
+  const accountId = str(input.accountId, "account", 300);
+  const account = await ctx.service.account(accountId);
+  const listId = input.listId === undefined ? undefined : str(input.listId, "list", 300);
+  const list = listId ? await ctx.store.getList(listId) : undefined;
+  if (listId && !list) throw new Error("List not found.");
+  if (list && list.kind !== "static") throw new Error("Imported people fill a static list.");
+  const mapping = parseMapping(input.mapping);
+  const projectIds = Object.keys(account.grants);
+  const defaultProject = projectIds.length === 1 ? projectIds[0] : undefined;
+  const records = (await recordsFrom(format, input.content, mapping)).map((raw) =>
+    withDefaults(raw, accountId, defaultProject),
+  );
+  const preview = previewAudienceRecords(records, { accounts: [account], projectIds });
+  if (preview.error) throw new Error(preview.error);
+  const now = ctx.now();
+  const rejected: ImportResult["rejected"] = preview.rows
+    .filter((row) => !row.contact)
+    .map((row) => ({ row: row.row, issues: row.issues }));
+  const valid = preview.rows.filter((row) => row.contact);
+  let imported = 0;
+  for (let at = 0; at < valid.length; at += BATCH_ROWS) {
+    const rows = valid.slice(at, at + BATCH_ROWS);
+    let batch: Batch;
+    try {
+      batch = await ctx.store.transaction(() => writeBatch(ctx, account, list, rows, now));
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "Unknown error.";
+      throw new Error(
+        `The import stopped at rows ${rowRange(rows)}: ${reason} ${
+          imported
+            ? `${imported} contacts from earlier rows were saved.`
+            : "Nothing was imported."
+        } Import the file again to continue; people already saved are updated, not duplicated.`,
+        { cause: error },
+      );
+    }
+    imported += batch.personIds.length;
+    rejected.push(...batch.blocked);
+  }
+  return { imported, rejected: rejected.sort((a, b) => a.row - b.row) };
 }

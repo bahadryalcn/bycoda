@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -168,6 +168,31 @@ describe("activity store", () => {
         minutes: "abc",
       }),
     ).rejects.toThrow();
+  });
+
+  it("keeps the file in key order when records arrive out of order", async () => {
+    const service = new ActivityService(directory);
+    await service.recordMinutes({ date: "2026-11-09", timeZone: zone, minutes: map(1) });
+    await service.recordMinutes({
+      deviceId: "b",
+      date: "2026-11-08",
+      timeZone: zone,
+      minutes: map(2),
+    });
+    await service.recordMinutes({
+      deviceId: "a",
+      date: "2026-11-08",
+      timeZone: zone,
+      minutes: map(3),
+    });
+    const file = JSON.parse(readFileSync(join(directory, "activity.json"), "utf8")) as {
+      days: { date: string; deviceId: string }[];
+    };
+    expect(file.days.map((day) => `${day.date}|${day.deviceId}`)).toEqual([
+      "2026-11-08|a",
+      "2026-11-08|b",
+      "2026-11-09|local",
+    ]);
   });
 
   it("serves the RPC handler and rejects unknown params", async () => {

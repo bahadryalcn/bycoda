@@ -36,6 +36,23 @@ describe("inbox.replyOptions", () => {
     expect(await inboxReplyOptions(ctx, { threadId: "t1" })).toEqual({ canReply: true });
   });
 
+  it("loads one conversation without scanning the inbox and hides other projects' conversations", async () => {
+    const { ctx, reads } = inboxContext({
+      accounts,
+      contacts,
+      now: NOW,
+      threads: [thread({ id: "t1", accountId: "tg-main", contactId: "c-tg", projectId: "p2" })],
+      principal: { kind: "session", actorId: "session-1", provider: "test", projectId: "p1" },
+    });
+    await expect(inboxReplyOptions(ctx, { threadId: "t1" })).rejects.toThrow(
+      "Conversation not found.",
+    );
+    await expect(inboxReplyOptions(ctx, { threadId: "missing" })).rejects.toThrow(
+      "Conversation not found.",
+    );
+    expect(reads.fullScans).toBe(0);
+  });
+
   it("reports the expired 24-hour window with a template-only answer", async () => {
     const { ctx } = inboxContext({
       accounts,
@@ -179,6 +196,78 @@ describe("inbox.timeline", () => {
       "message",
     ]);
     expect(timeline.truncated).toBe(false);
+  });
+
+  it("pages older events with the cursor and reports the start of the conversation", async () => {
+    const { ctx } = inboxContext({
+      accounts: [account("x-main", "x", all)],
+      contacts: [],
+      persons: [{ id: "person-1", name: "Ana", handles: [] } as unknown as SocialPerson],
+      threads: [],
+      interactions: Array.from({ length: 201 }, (_, index) =>
+        interaction({ id: `i-${index}`, at: index + 1, text: `m${index}`, accountId: "x-main" }),
+      ),
+    });
+    const first = await inboxTimeline(ctx, { personId: "person-1" });
+    expect(first.events).toHaveLength(200);
+    expect(first.events[0].text).toBe("m1");
+    expect(first.next).toBe("2|interaction:i-1");
+    const second = await inboxTimeline(ctx, { personId: "person-1", cursor: first.next });
+    expect(second.events.map((event) => event.text)).toEqual(["m0"]);
+    expect(second.truncated).toBe(false);
+    expect(second.next).toBeUndefined();
+  });
+
+  it("reads only the person's own readable conversations, never the whole inbox", async () => {
+    const person = {
+      id: "person-1",
+      name: "Ana",
+      handles: [
+        { accountId: "x-main", platform: "x", platformId: "ana-x", contactId: "c-ana" },
+        { accountId: "hidden-x", platform: "x", platformId: "ana-h", contactId: "c-hidden" },
+      ],
+    } as unknown as SocialPerson;
+    const message = (id: string, at: number) => ({
+      id,
+      text: id,
+      at,
+      direction: "inbound" as const,
+      platformId: id,
+    });
+    const { ctx, reads } = inboxContext({
+      accounts: [account("x-main", "x", all)],
+      contacts: [
+        contact("c-ana", "x-main", "ana-x", "Ana"),
+        contact("c-other", "x-main", "other-x", "Other"),
+        contact("c-hidden", "hidden-x", "ana-h", "Ana hidden"),
+      ],
+      persons: [person],
+      threads: [
+        thread({ id: "mine", accountId: "x-main", contactId: "c-ana", events: [message("a", 1)] }),
+        thread({
+          id: "other-person",
+          accountId: "x-main",
+          contactId: "c-other",
+          events: [message("b", 2)],
+        }),
+        thread({
+          id: "unreadable",
+          accountId: "hidden-x",
+          contactId: "c-hidden",
+          events: [message("c", 3)],
+        }),
+      ],
+    });
+    const timeline = await inboxTimeline(ctx, { personId: "person-1" });
+    expect(timeline.events.map((item) => item.text)).toEqual(["a"]);
+    expect(reads.fullScans).toBe(0);
+  });
+
+  it("rejects a malformed cursor", async () => {
+    const { ctx } = inboxContext();
+    await expect(
+      inboxTimeline(ctx, { personId: "person-1", cursor: "not-a-cursor" }),
+    ).rejects.toThrow("Invalid inbox cursor.");
   });
 
   it("rejects an unknown person", async () => {

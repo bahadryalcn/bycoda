@@ -10,6 +10,7 @@ import {
   type DiagnosticSection,
   type DiagnosticTrigger,
 } from "@bycoda/account-contracts";
+import { bytesToBase64 } from "../../../shared/lib/base64";
 import { truncateGraphemes } from "../../../shared/lib/text/truncate";
 import { isoTimestamp } from "../../../shared/lib/time/timestamps";
 import type { DiagnosticsNative, NativeCrash } from "./diagnosticsNative";
@@ -79,11 +80,7 @@ export async function gzipBase64(text: string): Promise<string | null> {
   if (typeof CompressionStream === "undefined") return null;
   const stream = new Blob([text]).stream().pipeThrough(new CompressionStream("gzip"));
   const bytes = new Uint8Array(await new Response(stream).arrayBuffer());
-  let binary = "";
-  for (let i = 0; i < bytes.length; i += 0x8000) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  }
-  return btoa(binary);
+  return bytesToBase64(bytes);
 }
 
 /** The webview's `CompressionStream` first, the native `diagnostics_gzip_base64` second. */

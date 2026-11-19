@@ -107,7 +107,7 @@ it("shows denial recovery without treating opening settings as a grant", async (
   expect(element.textContent).toContain("Microphone blocked");
   await click("Review access");
   expect(mock.open).not.toHaveBeenCalled();
-  expect(document.body.textContent).toContain("Check access");
+  expect(document.body.textContent).toContain("Check again");
   expect(element.textContent).not.toContain("Microphone allowed");
 });
 

@@ -408,7 +408,6 @@ export function ApprovalToasts({
             <Popover
               id={`${panelId}-options`}
               anchor={optionsAnchor}
-              layer={LAYER.toastPopover}
               role="region"
               aria-label={t("Notification options")}
               className="notification-options bycoda-arc"

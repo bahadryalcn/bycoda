@@ -7,6 +7,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import * as clipboard from "../../../platform/tauri/clipboard";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { SettingsView } from "./SettingsView";
+import { settingDomId } from "../../../shared/ui/settings/settingsContexts";
 import { DEFAULT_AGENT_DEFAULTS } from "../../tasks/public/agentDefaults";
 import { acceptAgentDefaults } from "../model/agentDefaultsStore";
 import { loadKeepAwakeEnabled, loadKeepAwakeHoldAfter } from "../model/settings";
@@ -1525,6 +1526,37 @@ describe("settings pages", () => {
     expect(section.querySelector("[data-highlighted]")).toBeNull();
     expect(project.getAttribute("aria-expanded")).toBe("true");
     expect(document.activeElement).toBe(project.closest("fieldset"));
+  });
+
+  it("stops watching the panel for a reveal target that never renders", async () => {
+    vi.useFakeTimers();
+    const lookup = vi.spyOn(document, "getElementById");
+    await render("general", { anchor: "never-rendered-setting" });
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    lookup.mockClear();
+
+    const title = container.querySelector<HTMLElement>(".settings-page-title")!;
+    await act(async () => title.parentElement!.append(document.createElement("span")));
+
+    expect(lookup).not.toHaveBeenCalledWith(settingDomId("never-rendered-setting"));
+  });
+
+  it("still reveals and focuses a setting that renders shortly after the page opens", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(HTMLElement.prototype, "getClientRects").mockReturnValue([
+      {},
+    ] as unknown as DOMRectList);
+    await render("general", { anchor: "late-rendered-setting" });
+    await act(async () => vi.advanceTimersByTimeAsync(1000));
+
+    const late = document.createElement("button");
+    late.id = settingDomId("late-rendered-setting");
+    await act(async () => {
+      container.querySelector<HTMLElement>(".settings-page-title")!.parentElement!.append(late);
+      await vi.advanceTimersByTimeAsync(100);
+    });
+
+    expect(document.activeElement).toBe(late);
   });
 
   it("gives every section a rail group", () => {

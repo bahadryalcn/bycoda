@@ -118,7 +118,7 @@ export class AssistantNoteDraft {
     )
       return Promise.reject(
         new Error(
-          "The original Host could not be verified. Keep this draft and reconnect its original computer.",
+          "The original computer could not be verified. Keep this draft and reconnect that computer.",
         ),
       );
     const retry = Boolean(this.draft.intent);

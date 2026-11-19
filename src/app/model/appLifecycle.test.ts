@@ -51,11 +51,15 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
   ask: vi.fn().mockResolvedValue(true),
   message: vi.fn().mockResolvedValue("Save"),
 }));
+vi.mock("../../features/projects/model/recents", async (original) => ({
+  ...(await original<typeof import("../../features/projects/model/recents")>()),
+  lastProjectPath: vi.fn().mockReturnValue(null),
+}));
 vi.mock("./windowTransferBootstrap", () => ({
   loadWindowTransfer: vi.fn().mockResolvedValue(null),
 }));
 vi.mock("./sessionWindowOwnership", () => ({
-  claimRestoredSession: vi.fn().mockResolvedValue(true),
+  claimRestoredSessions: vi.fn().mockResolvedValue(new Set()),
   abortRestoredSession: vi.fn().mockResolvedValue(undefined),
   remoteSessionOwnershipKey: (cwd: string, id: string) => `remote:${cwd}:${id}`,
 }));
@@ -738,6 +742,19 @@ it("paints transferred tabs without waiting for sidebar history", async () => {
   expect(listSessionsByProject).not.toHaveBeenCalled();
 });
 
+it("boots with sidebar history that resolves after the restore finishes", async () => {
+  vi.resetModules();
+  const recents = await import("../../features/projects/model/recents");
+  const store = await import("../../features/sessions/data/sessionStore");
+  const { loadBootWorkspace } = await import("./appLifecycle");
+  const rows = [{ id: "history-1", cwd: "/hinted/project" }] as never;
+  vi.mocked(recents.lastProjectPath).mockReturnValueOnce("/hinted/project");
+  vi.mocked(store.listSessionsByProject).mockImplementationOnce(
+    () => new Promise((resolve) => setTimeout(() => resolve(rows), 20)),
+  );
+  expect((await loadBootWorkspace()).history).toEqual(rows);
+});
+
 it("boots secondary windows blank without reading the shared recovery snapshot", async () => {
   vi.resetModules();
   const store = await import("../../features/sessions/data/sessionStore");
@@ -809,13 +826,45 @@ it("restores only sessions whose native window ownership is confirmed", async ()
   vi.mocked(store.loadWorkspaceSnapshot).mockResolvedValue(
     collectWorkspaceSnapshot(tabs, [first, second], tabs[0].id, "/repo", new Map()),
   );
-  vi.mocked(ownership.claimRestoredSession).mockImplementation(async (id) => id !== "first");
+  vi.mocked(ownership.claimRestoredSessions).mockImplementation(
+    async (ids) => new Set([...ids].filter((id) => id === "first")),
+  );
   const { loadResumedWorkspace } = await import("./appLifecycle");
   const restored = await loadResumedWorkspace();
   expect(restored?.sessions.map((session) => session.id)).toEqual(["second"]);
   expect(restored?.tabs).toHaveLength(2);
   expect(restored?.tabs[0].editorPanes[0].files[0].path).toBe("/repo/a.txt");
-  expect(ownership.claimRestoredSession).toHaveBeenCalledTimes(2);
+});
+
+it("claims every restored session in one batch before any remote Host key", async () => {
+  vi.resetModules();
+  const store = await import("../../features/sessions/data/sessionStore");
+  const ownership = await import("./sessionWindowOwnership");
+  const sessions = ["a", "b", "c", "d"].map((id) => ({ ...newSession("cursor", "/repo"), id }));
+  const tabs = sessions.map((session) => newTab(session.id));
+  const snapshot = collectWorkspaceSnapshot(tabs, sessions, tabs[0].id, "/repo", new Map());
+  for (const id of ["b", "c"]) {
+    const stub = snapshot.sessions.find((session) => session.id === id)!;
+    Object.assign(stub, { cwd: "remote://machine/repo", remoteSessionId: `host-${id}` });
+  }
+  vi.mocked(store.loadWorkspaceSnapshot).mockResolvedValue(snapshot);
+  // Window ownership of "a" and the Host key of "c" belong to another window.
+  vi.mocked(ownership.claimRestoredSessions).mockImplementation(
+    async (ids) =>
+      new Set([...ids].filter((id) => id === "a" || id === "remote:remote://machine/repo:host-c")),
+  );
+  vi.mocked(ownership.abortRestoredSession).mockClear();
+  const { loadResumedWorkspace } = await import("./appLifecycle");
+  await loadResumedWorkspace();
+  const calls = vi.mocked(ownership.claimRestoredSessions).mock.calls;
+  expect(calls).toHaveLength(2);
+  expect([...calls[0][0]]).toEqual(["a", "b", "c", "d"]);
+  // Only the remote key of a conversation this window won is claimed.
+  expect([...calls[1][0]]).toEqual([
+    "remote:remote://machine/repo:host-b",
+    "remote:remote://machine/repo:host-c",
+  ]);
+  expect(vi.mocked(ownership.abortRestoredSession).mock.calls.map(([id]) => id)).toContain("c");
 });
 
 it("keeps saved workspace protected when a boot ownership read fails", async () => {
@@ -827,7 +876,7 @@ it("keeps saved workspace protected when a boot ownership read fails", async () 
   vi.mocked(store.loadWorkspaceSnapshot).mockResolvedValue(
     collectWorkspaceSnapshot([tab], [session], tab.id, "/repo", new Map()),
   );
-  vi.mocked(ownership.claimRestoredSession).mockRejectedValueOnce(new Error("offline"));
+  vi.mocked(ownership.claimRestoredSessions).mockRejectedValueOnce(new Error("offline"));
   const lifecycle = await import("./appLifecycle");
   expect(await lifecycle.loadResumedWorkspace()).toBeNull();
   expect(lifecycle.workspaceSnapshotWriteBlocked()).toBe(true);
@@ -846,15 +895,15 @@ it("does not restore a remote shell whose Host session is owned elsewhere", asyn
     remoteSessionId: "host-session",
   };
   vi.mocked(store.loadWorkspaceSnapshot).mockResolvedValue(snapshot);
-  vi.mocked(ownership.claimRestoredSession).mockImplementation(
-    async (id) => !id.startsWith("remote:"),
+  vi.mocked(ownership.claimRestoredSessions).mockImplementation(
+    async (ids) => new Set([...ids].filter((id) => id.startsWith("remote:"))),
   );
   vi.mocked(ownership.abortRestoredSession).mockClear();
   const { loadResumedWorkspace } = await import("./appLifecycle");
   expect(await loadResumedWorkspace()).toBeNull();
-  expect(ownership.claimRestoredSession).toHaveBeenCalledWith(
+  expect(ownership.claimRestoredSessions).toHaveBeenCalledWith([
     "remote:remote://machine/repo:host-session",
-  );
+  ]);
   expect(ownership.abortRestoredSession).toHaveBeenCalledWith("remote-shell");
 });
 

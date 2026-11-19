@@ -108,12 +108,9 @@ export function PermissionSetupSheet({ id, onClose }: { id: PermissionId; onClos
     <Sheet title={permissionInfo(id).label} onClose={onClose} motion="none">
       <div className="flex flex-col gap-4">
         {entry.canRequest && (
-          <>
-            <Text as="p">{t("Ask for access")}</Text>
-            <Text as="p" tone="secondary">
-              {t("bycoda asks your operating system for access. Choose Allow if a prompt appears.")}
-            </Text>
-          </>
+          <Text as="p" tone="secondary">
+            {t("bycoda asks your operating system for access. Choose Allow if a prompt appears.")}
+          </Text>
         )}
         <div className="flex flex-wrap gap-2">
           {entry.canRequest && (
@@ -131,19 +128,15 @@ export function PermissionSetupSheet({ id, onClose }: { id: PermissionId; onClos
               disabled={busy !== null}
               onClick={() => void act(false)}
             >
-              {t("Open Settings")}
+              {t("Open settings")}
             </Button>
           )}
         </div>
         {entry.canOpenSettings && entry.state !== "restricted" && (
-          <>
-            <Text as="p">{t("Change the system setting")}</Text>
-            <Text as="p" tone="secondary">
-              {permissionInstructions(id, report?.platform)}
-            </Text>
-          </>
+          <Text as="p" tone="secondary">
+            {permissionInstructions(id, report?.platform)}
+          </Text>
         )}
-        <Text as="p">{t("Check access")}</Text>
         <InlineMessage tone={ready ? "success" : "neutral"}>{status}</InlineMessage>
         {ready && observedBlocked && id === "screen-recording" && report?.platform === "macos" && (
           <InlineMessage>
@@ -153,7 +146,7 @@ export function PermissionSetupSheet({ id, onClose }: { id: PermissionId; onClos
         {error && (
           <InlineError>
             {t(
-              "Could not open the permission prompt or settings. Follow the steps above, then check again.",
+              "Couldn’t open the permission prompt or settings. Follow the steps above, then check again.",
             )}
           </InlineError>
         )}

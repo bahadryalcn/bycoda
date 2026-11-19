@@ -14,7 +14,10 @@ import { boundedSet } from "../../../shared/lib/store";
 const noop = () => {};
 export const cachedSessionSnapshots = new Map<string, HostSession>();
 export const cachedDescriptors = new Map<string, HostDescriptor>();
-export const snapshotKey = (machineId: string, sessionId: string) => `${machineId}:${sessionId}`;
+/** False while the machine's descriptor is not cached yet, so callers use the safe full read. */
+export const machineSupportsLazyHistory = (machineId: string) =>
+  !!cachedDescriptors.get(machineId)?.capabilities.includes("sessions.lazyHistory");
+export const snapshotKey =(machineId: string, sessionId: string) => `${machineId}:${sessionId}`;
 export function rememberSessionSnapshot(
   key: string,
   snapshot: HostSession,

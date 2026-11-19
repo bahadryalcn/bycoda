@@ -105,10 +105,17 @@
   border-radius: 9999px;
   cursor: ew-resize;
 }
-.plane:focus-visible,
-.hue:focus-visible {
+.hue:focus-visible,
+.plane:has(.axis:focus-visible) {
   outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
   outline-offset: 2px;
+}
+/* The two axis sliders are keyboard and assistive-technology targets over the plane; the plane stays the pointer surface. */
+.axis {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
 }
 /* A handle is a white-edged disc over any colour; the value fill is the user's colour. */
 .handle {

@@ -26,11 +26,11 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import {
-  loadProjectFiles,
   peekProjectFiles,
   rankProjectFiles,
   recentOpenedFiles,
   rememberOpenedFile,
+  revalidateProjectFiles,
   type RankedFile,
 } from "../model/fileIndex";
 import { fuzzyMatch } from "../../../shared/lib/fuzzy";
@@ -268,7 +268,7 @@ export function FilePicker({
       return;
     }
     let cancelled = false;
-    void loadProjectFiles(cwd, true)
+    void revalidateProjectFiles(cwd)
       .then((next) => {
         if (cancelled) return;
         setFiles(next);

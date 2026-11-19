@@ -93,6 +93,8 @@ export async function handleNativeRpc(
 
     case "native.delivery.epochs.close":
 
+    case "native.delivery.epochs.gap.resolve":
+
     case "native.buffers.delivery.status":
 
     case "native.buffers.delivery.ack":

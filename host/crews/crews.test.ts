@@ -38,6 +38,11 @@ async function setup() {
   const sourceRows: HostTask[] = [];
   const tasks = {
     list: () => [...rows, ...sourceRows],
+    get: async (id: string) => [...rows, ...sourceRows].find((task) => task.id === id),
+    listCrewRun: async (runId: string, projectId: string) =>
+      [...rows, ...sourceRows].filter(
+        (task) => task.crewRunId === runId && task.projectId === projectId,
+      ),
     reserveCrewExecution: vi.fn(async (id: string, runId: string) => {
       sourceRows.find((task) => task.id === id)!.crewExecutionId = runId;
     }),

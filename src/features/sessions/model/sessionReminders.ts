@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { formatDate } from "../../../shared/i18n";
 import type { HarnessId } from "./session";
 
 export const REMINDERS_CHANGED = "bycoda:reminders-changed";
@@ -34,7 +35,7 @@ export function reminderTime(preset: string, now = new Date()): number | null {
 }
 
 export function formatReminderTime(dueAt: number): string {
-  return new Date(dueAt).toLocaleString(undefined, {
+  return formatDate(dueAt, {
     weekday: "short",
     month: "short",
     day: "numeric",

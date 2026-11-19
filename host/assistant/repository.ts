@@ -68,6 +68,22 @@ export class AssistantRepository {
       .get(id);
     return row ? (JSON.parse(row.value) as T) : undefined;
   }
+  /** Live (not deleted) records for `ids` in one query per chunk; absent ids are simply missing. */
+  async getMany<T>(table: AssistantTable, ids: readonly string[]): Promise<Map<string, T>> {
+    const found = new Map<string, T>(),
+      unique = [...new Set(ids)];
+    // Chunked to stay below SQLite's bound-variable limit.
+    for (let start = 0; start < unique.length; start += 500) {
+      const chunk = unique.slice(start, start + 500),
+        rows = await this.store.db
+          .prepare(
+            `SELECT id,value FROM assistant_${table} WHERE deleted_at IS NULL AND id IN (${chunk.map(() => "?").join(",")})`,
+          )
+          .all(...chunk);
+      for (const row of rows) found.set(row.id, JSON.parse(row.value) as T);
+    }
+    return found;
+  }
   async byKey<T>(table: AssistantTable, key: string): Promise<T | undefined> {
     const row = await this.store.db
       .prepare(`SELECT value,deleted_at FROM assistant_${table} WHERE request_key=?`)
@@ -236,5 +252,13 @@ export class AssistantRepository {
     await this.store.db
       .prepare(`UPDATE assistant_${table} SET deleted_at=? WHERE id=?`)
       .run(now, id);
+  }
+  /** Soft-deletes every live activity row in one statement, or only those of `jobId` when given; like `trash`, versions are not bumped. */
+  async trashActivity(jobId: string | undefined, now: number) {
+    await this.store.db
+      .prepare(
+        "UPDATE assistant_activity SET deleted_at=? WHERE deleted_at IS NULL AND (? IS NULL OR json_extract(value,'$.jobId')=?)",
+      )
+      .run(now, jobId || null, jobId || null);
   }
 }

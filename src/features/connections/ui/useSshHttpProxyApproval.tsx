@@ -14,6 +14,8 @@ import {
   validHttpProxyCredentials,
   type SshHttpProxyRequest,
 } from "../model/sshHttpProxyApproval";
+import { errorText } from "../../../shared/lib/errors";
+import { sanitizeConnectionError } from "../model/remoteConnection";
 
 function ProxyApprovalDialog({
   request,
@@ -98,7 +100,7 @@ function ProxyApprovalDialog({
                   else void revokeSshHttpProxyApproval(approval.ticketId).catch(() => {});
                 })
                 .catch((reason) => {
-                  if (mounted.current) setError(String(reason));
+                  if (mounted.current) setError(sanitizeConnectionError(errorText(reason)));
                 })
                 .finally(() => {
                   locked.current = false;

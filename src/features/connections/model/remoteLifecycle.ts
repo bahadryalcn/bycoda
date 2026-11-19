@@ -28,6 +28,8 @@ const initial: RemoteLifecycle = {
   features: {},
   activity: [],
 };
+/** How long a ready feature's "verified at" time may lag behind successful requests. */
+export const FEATURE_VERIFIED_REFRESH_MS = 10_000;
 const states = new Map<string, RemoteLifecycle>();
 let generationSequence = 0;
 const listeners = new Set<() => void>();
@@ -129,13 +131,28 @@ export function recordFeatureHealth(
   const state = readRemoteLifecycle(environmentId);
   if (generation !== undefined && generation !== state.generation) return;
   const previous = state.features[feature];
+  const now = Date.now();
+  // A poll that confirms what is already shown changes nothing visible, and every
+  // write wakes every lifecycle subscriber: keep the stored object until the status
+  // moves (failed/stale -> ready, ready -> failed) or the verification time is old
+  // enough to matter to its relative display. A repeated failure keeps its last
+  // verified time, so it is no change either.
+  if (ok) {
+    if (
+      previous?.status === "ready" &&
+      previous.verifiedAt !== undefined &&
+      now - previous.verifiedAt >= 0 &&
+      now - previous.verifiedAt < FEATURE_VERIFIED_REFRESH_MS
+    )
+      return;
+  } else if (previous?.status === "failed") return;
   write(environmentId, {
     ...state,
     features: {
       ...state.features,
       [feature]: {
         status: ok ? "ready" : "failed",
-        verifiedAt: ok ? Date.now() : previous?.verifiedAt,
+        verifiedAt: ok ? now : previous?.verifiedAt,
       },
     },
   });

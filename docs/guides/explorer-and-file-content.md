@@ -33,6 +33,16 @@ works when the conversation already runs inside `ui-tests`. Existing direct
 paths take precedence; fallback paths must exist on the conversation's owning
 computer. This applies to HTML, PDF and Word links as well as other files.
 
+Images, documents, audio and video on a connected machine are copied to this
+computer before they open. The opening state shows received and total bytes and
+a **Cancel** button that stops the copy; **Retry** starts it again. Images stop at
+10 MB and documents at 25 MB. Local files open directly with nothing to cancel.
+
+A text file too large to edit opens as a read-only preview with Previous and Next
+pages, on this computer or on a connected machine. If that machine's Host is too old
+to page files, the preview names the update to make and offers Copy path instead of
+Retry, since retrying cannot succeed.
+
 The Explorer header identifies the current tree root, which may be a worktree
 branch rather than the project name. Its full path remains available separately
 from workspace switching. Use the root control to collapse or expand the tree;
@@ -40,7 +50,10 @@ file and folder context menus retain their filesystem actions.
 
 If you switch projects while a submitted file creation finishes, the file stays
 in its original folder without opening over your current editor. IME candidate
-confirmation in the tree does not open files or change the selection.
+confirmation in the tree does not open files or change the selection. The tree is a
+single Tab stop: Tab enters it once on the selected row (or the nearest visible
+parent, or the first row when nothing is selected) and the next Tab leaves it; use
+the arrow keys, Home/End and typing to move between rows.
 
 The compact header keeps New File, New Folder, Collapse All, search and refresh
 as icon actions next to the root name; each has a name and a tooltip. In a narrow
@@ -138,7 +151,9 @@ once it is reloaded; typing into it starts a new shared history from its text.
 
 Draft text, undo history, selection and scroll position keep their existing owners.
 Closing Find returns keyboard focus to the preview's scroll region independently
-of interface language. Code blocks and wide tables retain their own necessary
+of interface language. Word (.docx) previews support Ctrl/Cmd+F over their converted
+text; the scroll position stays put unless the next match is off screen. PDF and
+spreadsheet previews do not have Find yet; use Open in default app to search them. Code blocks and wide tables retain their own necessary
 overflow; the file preview remains the document scroll owner.
 
 Editor change ticks complement the document scrollbar. Inactive source editors

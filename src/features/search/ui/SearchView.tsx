@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import {
   actionContentAttributes,
@@ -254,7 +255,7 @@ export function SearchView({
           if (!cancelled && revision === requestedRevision)
             setFileIndexError({
               cwd,
-              error: error instanceof Error ? error.message : String(error),
+              error: errorText(error),
             });
         });
     };
@@ -538,11 +539,13 @@ export function SearchView({
   const indexNotice =
     pendingIndex > 0 && !conversationError && conversationMode ? (
       <Text as="p" size="micro" tone="muted" className="px-2.5 py-1">
-        {t("Application-wide indexing")}: {t("Indexing ")}
-        {pendingIndex}
-        {t(" conversation")}
-        {pendingIndex === 1 ? "" : "s"}
-        {t(". Results may be incomplete.")}
+        {pendingIndex === 1
+          ? t("Application-wide indexing: Indexing {p0} conversation. Results may be incomplete.", {
+              p0: pendingIndex,
+            })
+          : t("Application-wide indexing: Indexing {p0} conversations. Results may be incomplete.", {
+              p0: pendingIndex,
+            })}
       </Text>
     ) : null;
 

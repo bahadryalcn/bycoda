@@ -29,6 +29,10 @@ export type ParentInputAdapter = {
   composing?(): boolean;
   ownsCurrent?(): boolean;
   externalIdentity?: readonly unknown[];
+  /** Top-level snapshot keys whose values the producer replaces, never mutates in
+   * place (React state/props). The per-render observation skips the deep compare
+   * of such a key while its reference is unchanged; refs and DOM reads stay unlisted. */
+  stableKeys?: readonly string[];
   missingCoverage?: readonly string[];
 };
 export type ParentInputSnapshot = Readonly<{
@@ -74,6 +78,8 @@ type Binding = {
   retired: boolean;
   applying: number;
   observed?: Record<string, unknown>;
+  /** Raw references of the stable keys last proven equal to `observed`. */
+  stableRefs?: Map<string, unknown>;
   observedCharge?: number;
   observationFailed?: boolean;
 };
@@ -173,7 +179,12 @@ function equal(a: unknown, b: unknown): boolean {
 }
 
 /** `equal` against a validated copy, also rejecting shapes copy would refuse. */
-function sameAsObserved(observed: unknown, raw: unknown): boolean {
+function sameAsObserved(
+  observed: unknown,
+  raw: unknown,
+  /** Top-level only: a key whose value is already proven equal by reference. */
+  skip?: (key: string) => boolean,
+): boolean {
   if (typeof raw === "number") return Object.is(observed, raw) && Number.isFinite(raw);
   if (!observed || !raw || typeof observed !== "object" || typeof raw !== "object")
     return Object.is(observed, raw);
@@ -188,10 +199,11 @@ function sameAsObserved(observed: unknown, raw: unknown): boolean {
   return keys.every(
     (key, index) =>
       key === rawKeys[index] &&
-      sameAsObserved(
-        (observed as Record<string, unknown>)[key],
-        (raw as Record<string, unknown>)[key],
-      ),
+      (skip?.(key) ||
+        sameAsObserved(
+          (observed as Record<string, unknown>)[key],
+          (raw as Record<string, unknown>)[key],
+        )),
   );
 }
 
@@ -478,6 +490,9 @@ export class ParentInputRegistry {
       kind,
       snapshot: () => original.snapshot(),
       composing: () => !!original.composing?.(),
+      get stableKeys() {
+        return original.stableKeys;
+      },
       ownsCurrent: () =>
         original.sessionId === sessionId &&
         original.scope === scope &&
@@ -606,13 +621,30 @@ export class ParentInputRegistry {
         // mutable alias as the value of an already-notified producer mutation.
         const snapshot = adapter.snapshot();
         if (!isNativeCaptureObject(snapshot)) throw new NativeCaptureJsonError("invalid");
+        // A declared-stable key whose reference is unchanged was already proven equal
+        // to the retained copy; only keys that may mutate in place are re-compared.
+        const stable = adapter.stableKeys;
+        const refs = entry.stableRefs;
+        const stableRefs = () =>
+          stable?.length ? new Map(stable.map((key) => [key, snapshot[key]] as const)) : undefined;
         // Cheap path: raw snapshot already equals the validated copy; skip charge/copy.
-        if (entry.observed && !entry.observationFailed && sameAsObserved(entry.observed, snapshot))
+        if (
+          entry.observed &&
+          !entry.observationFailed &&
+          sameAsObserved(
+            entry.observed,
+            snapshot,
+            refs && ((key) => refs.has(key) && Object.is(refs.get(key), snapshot[key])),
+          )
+        ) {
+          entry.stableRefs = stableRefs();
           return;
+        }
         const copied = this.copy(snapshot, "observedBytes");
         const different = !entry.observed || !equal(entry.observed, copied.data);
         this.observedBytes -= entry.observedCharge ?? 0;
         entry.observed = copied.data;
+        entry.stableRefs = stableRefs();
         entry.observedCharge = copied.charge;
         if (entry.observationFailed) this.failedRecords--;
         entry.observationFailed = false;
@@ -620,6 +652,7 @@ export class ParentInputRegistry {
       } catch {
         if (!entry.observationFailed) this.failedRecords++;
         entry.observationFailed = true;
+        entry.stableRefs = undefined;
         // Observation must never throw into ordinary edits. This exact record
         // is held until a later bounded observation succeeds or it retires.
         this.invalidate(adapter.sessionId, adapter.scope);
@@ -1003,6 +1036,9 @@ export function useParentInputClosure(
       scope: adapter.scope,
       snapshot: () => latest.current.snapshot(),
       composing: () => composing.current || !!latest.current.composing?.(),
+      get stableKeys() {
+        return latest.current.stableKeys;
+      },
       ownsCurrent: () =>
         binding.current === owner &&
         latest.current.sessionId === adapter.sessionId &&

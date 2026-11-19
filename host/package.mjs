@@ -294,6 +294,7 @@ for (const target of targets) {
   await copyFile("build/host/store-worker.mjs", join(folder, "store-worker.mjs"));
   await copyFile("build/host/session-read-helper.mjs", join(folder, "session-read-helper.mjs"));
   await copyFile("build/host/snapshot-worker.mjs", join(folder, "snapshot-worker.mjs"));
+  await copyFile("build/host/audience-sheet-worker.mjs", join(folder, "audience-sheet-worker.mjs"));
   await copyFile(
     "build/host/workspace-cleanup-worker.mjs",
     join(folder, "workspace-cleanup-worker.mjs"),

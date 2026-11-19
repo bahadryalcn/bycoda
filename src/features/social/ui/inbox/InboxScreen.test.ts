@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { focusManager } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { withQueryClient } from "../../../../../tests/browser/support/queryTest";
 import type { SocialClient } from "../../model/socialClient";
@@ -65,12 +66,20 @@ function fakeClient(
     if (!handler) throw new Error(`Unexpected ${action}`);
     return handler(input);
   });
-  const snapshot = vi.fn(async () => ({
-    accounts: options.accounts ?? [account("a1", "Main X")],
-    pollingEnabled: options.pollingEnabled ?? true,
-    profiles: [],
+  // `snapshot` stays a failing stub: the Inbox must read the accounts section, never the full workspace.
+  const snapshot = vi.fn(async () => {
+    throw new Error("The Inbox must not read the full workspace snapshot.");
+  });
+  const sectionSnapshot = vi.fn(async (_input: Record<string, unknown>) => ({
+    cursor: "c",
+    unchanged: false,
+    snapshot: {
+      accounts: options.accounts ?? [account("a1", "Main X")],
+      pollingEnabled: options.pollingEnabled ?? true,
+      profiles: [],
+    },
   }));
-  const client = { request, snapshot } as unknown as SocialClient;
+  const client = { request, snapshot, sectionSnapshot } as unknown as SocialClient;
   const of = (action: string) => calls.filter((call) => call.action === action);
   return { client, calls, of };
 }
@@ -156,6 +165,50 @@ it("opens another conversation on click and still sends nothing", async () => {
   expect(rows()[1].getAttribute("aria-current")).toBe("true");
   expect(fake.of("thread.read").map((call) => call.input)).toEqual([{ id: "t1" }, { id: "t2" }]);
   expect(fake.calls.filter((call) => REPLY_WRITES.includes(call.action))).toEqual([]);
+});
+
+it("reads the accounts section once, never the full workspace, while conversations open", async () => {
+  const fake = fakeClient();
+  await mount(fake.client);
+  await act(async () => rows()[1].click());
+  await flush();
+  expect(fake.client.snapshot).not.toHaveBeenCalled();
+  expect(vi.mocked(fake.client.sectionSnapshot).mock.calls.map((call) => call[0])).toEqual([
+    { section: "accounts", limit: 1 },
+  ]);
+});
+
+it("keeps the accounts read on a tag change but reloads the list and not on window focus", async () => {
+  const fake = fakeClient();
+  await mount(fake.client);
+  const sectionReads = () => vi.mocked(fake.client.sectionSnapshot).mock.calls.length;
+  const listReads = fake.of("inbox.unified").length;
+  const tagInput = element.querySelector<HTMLInputElement>('input[placeholder="Add tag"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(tagInput, "lead");
+    tagInput.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => {
+    tagInput.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  });
+  await flush();
+  expect(fake.of("inbox.setStatus")).toHaveLength(1);
+  expect(fake.of("inbox.unified").length).toBeGreaterThan(listReads);
+  expect(sectionReads()).toBe(1);
+  await act(async () => {
+    focusManager.setFocused(false);
+    focusManager.setFocused(true);
+  });
+  await flush();
+  expect(sectionReads()).toBe(1);
+});
+
+it("reloads the accounts read after Check now because connection state can change", async () => {
+  const fake = fakeClient();
+  await mount(fake.client);
+  await act(async () => button("Check now")!.click());
+  await flush();
+  expect(vi.mocked(fake.client.sectionSnapshot)).toHaveBeenCalledTimes(2);
 });
 
 it("does not load the list while the screen is retained but hidden", async () => {
@@ -353,10 +406,14 @@ it("reloads Host auto-refresh settings after returning from account settings", a
   await mount(fake.client);
   expect(toggle().getAttribute("aria-checked")).toBe("true");
   await mount(fake.client, { active: false });
-  vi.mocked(fake.client.snapshot).mockResolvedValue({
-    accounts: [account("a1", "Main X")],
-    profiles: [],
-    pollingEnabled: false,
+  vi.mocked(fake.client.sectionSnapshot).mockResolvedValue({
+    cursor: "c2",
+    unchanged: false,
+    snapshot: {
+      accounts: [account("a1", "Main X")],
+      profiles: [],
+      pollingEnabled: false,
+    },
   } as never);
   await mount(fake.client, { active: true });
   expect(toggle().getAttribute("aria-checked")).toBe("false");
@@ -387,4 +444,93 @@ it("handles later navigation occurrences on a retained screen and preserves each
   expect(rows()[1].getAttribute("aria-current")).toBe("true");
   expect(editor().value).toBe("Draft for Bo");
   expect(fake.calls.filter((call) => REPLY_WRITES.includes(call.action))).toEqual([]);
+});
+
+/** Serves a different list per round so a refresh can reorder, add or drop conversations. */
+function listRounds(...rounds: InboxItem[][]) {
+  let round = 0;
+  return {
+    next: () => {
+      round += 1;
+    },
+    handler: (): InboxUnifiedResult => ({
+      items: rounds[Math.min(round, rounds.length - 1)],
+      unreadable: [],
+    }),
+  };
+}
+
+const refresh = async () => {
+  await act(async () => button("Check now")!.click());
+  await flush();
+};
+const current = () => rows().findIndex((row) => row.getAttribute("aria-current") === "true");
+const readIds = (fake: ReturnType<typeof fakeClient>) =>
+  new Set(fake.of("thread.read").map((call) => call.input?.id));
+
+it("keeps the auto-opened conversation open when a refresh puts a new row first", async () => {
+  const list = listRounds(
+    [item("t1", "Ana"), item("t2", "Bo")],
+    [item("t3", "Cy"), item("t1", "Ana"), item("t2", "Bo")],
+  );
+  const fake = fakeClient({ handlers: { "inbox.unified": list.handler } });
+  await mount(fake.client);
+  list.next();
+  await refresh();
+  expect(rows().map((row) => row.textContent)).toEqual([
+    expect.stringContaining("Cy"),
+    expect.stringContaining("Ana"),
+    expect.stringContaining("Bo"),
+  ]);
+  expect(current()).toBe(1);
+  expect(readIds(fake)).toEqual(new Set(["t1"]));
+});
+
+it("keeps an explicitly chosen conversation open across a reorder", async () => {
+  const list = listRounds(
+    [item("t1", "Ana"), item("t2", "Bo")],
+    [item("t3", "Cy"), item("t1", "Ana"), item("t2", "Bo")],
+  );
+  const fake = fakeClient({ handlers: { "inbox.unified": list.handler } });
+  await mount(fake.client);
+  await act(async () => rows()[1].click());
+  await flush();
+  list.next();
+  await refresh();
+  expect(current()).toBe(2);
+  expect(readIds(fake)).toEqual(new Set(["t1", "t2"]));
+  expect(fake.of("thread.read").at(-1)!.input).toEqual({ id: "t2" });
+});
+
+it("moves to the first remaining row when the open conversation leaves the list", async () => {
+  const list = listRounds([item("t1", "Ana"), item("t2", "Bo")], [item("t2", "Bo")]);
+  const fake = fakeClient({ handlers: { "inbox.unified": list.handler } });
+  await mount(fake.client);
+  list.next();
+  await refresh();
+  expect(rows()).toHaveLength(1);
+  expect(current()).toBe(0);
+  expect(fake.of("thread.read").at(-1)!.input).toEqual({ id: "t2" });
+});
+
+it("shows the empty prompt instead of a stale conversation when the list empties", async () => {
+  const list = listRounds([item("t1", "Ana")], []);
+  const fake = fakeClient({ handlers: { "inbox.unified": list.handler } });
+  await mount(fake.client);
+  list.next();
+  await refresh();
+  expect(rows()).toHaveLength(0);
+  expect(element.querySelector(".inbox-reply textarea")).toBeNull();
+  expect(element.textContent).toContain("Choose a conversation to read and reply.");
+});
+
+it("keeps a navigation target the first page has not listed yet", async () => {
+  const fake = fakeClient({
+    handlers: {
+      "inbox.unified": () => ({ items: [item("t1", "Ana")], unreadable: [], next: "cursor-1" }),
+    },
+  });
+  await mount(fake.client, { target: { threadId: "t9" } });
+  expect(current()).toBe(-1);
+  expect(readIds(fake)).toEqual(new Set(["t9"]));
 });

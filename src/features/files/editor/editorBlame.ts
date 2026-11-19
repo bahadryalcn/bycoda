@@ -16,6 +16,7 @@ import {
   formatRelativeTime,
 } from "../../source-control/public/gitGraphDisplay";
 import { editorDocChanges } from "./editorDoc";
+import "./editorBlame.css";
 
 /**
  * A blame gutter: per line, the commit that last changed it, drawn on the

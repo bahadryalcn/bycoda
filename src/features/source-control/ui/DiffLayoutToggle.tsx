@@ -118,10 +118,9 @@ export function DiffLayoutToggle({ className = "" }: { className?: string }) {
       {failed !== undefined ? (
         <Popover
           anchor={anchor}
-          role="dialog"
+          kind="dialog"
           aria-label={t("Diff view")}
           onDismiss={() => setFailed(undefined)}
-          autoFocus
         >
           <Text as="div" size="secondary" tone="inherit" className="flex flex-col gap-2 p-3">
             <InlineError>{t("Could not save changes")}</InlineError>

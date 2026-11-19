@@ -3,8 +3,42 @@ use super::*;
 use serde_json::json;
 
 use std::io::Read;
+use std::sync::{Mutex, MutexGuard};
+use std::time::{Duration, Instant};
 
 const MAX_LOG_BYTES: usize = 64 * 1024;
+const LOG_READ_CHUNK: usize = 8 * 1024;
+const PROJECT_PAGE_LIMIT: u32 = 50;
+const PROJECT_LIST_DEADLINE: Duration = Duration::from_secs(60);
+const PROJECT_CACHE_TTL: Duration = Duration::from_secs(60);
+const PROJECT_LIMIT_NOTICE: &str =
+    "GitLab has more projects than the picker loads (5,000). Showing the first 5,000.";
+const PROJECT_DEADLINE_NOTICE: &str =
+    "Loading GitLab projects reached its time limit. Showing the projects loaded so far.";
+
+struct ProjectPage {
+    projects: Vec<Value>,
+    has_next_page: bool,
+}
+
+/// One successful, complete list for one GitLab instance and token. Never persisted.
+struct ProjectCacheEntry {
+    url: String,
+    token: String,
+    stored_at: Instant,
+    value: Value,
+}
+
+struct ProjectCache {
+    /// Bumped when the connection changes, so a fetch started before that cannot store its result.
+    generation: u64,
+    entry: Option<ProjectCacheEntry>,
+}
+
+static PROJECT_CACHE: Mutex<ProjectCache> = Mutex::new(ProjectCache {
+    generation: 0,
+    entry: None,
+});
 
 #[tauri::command]
 pub async fn gitlab_pr_checks(app: AppHandle, repo: String, number: i64) -> Result<Value, String> {
@@ -159,29 +193,7 @@ pub async fn gitlab_check_details(
 
         let job = gitlab_get(&config, &base)?.value;
 
-        let url = format!("{}/api/v4{base}/trace", config.url.trim_end_matches('/'));
-
-        let response = gitlab_agent()
-            .get(&url)
-            .set("PRIVATE-TOKEN", &config.token)
-            .set("User-Agent", USER_AGENT)
-            .call()
-            .map_err(|e| match e {
-                ureq::Error::Status(401 | 403, _) => {
-                    "GitLab access token is invalid or lacks permission".to_string()
-                }
-                _ => "GitLab job log is unavailable".into(),
-            })?;
-
-        let mut bytes = Vec::new();
-        response
-            .into_reader()
-            .take(MAX_LOG_BYTES as u64 + 1)
-            .read_to_end(&mut bytes)
-            .map_err(|_| "GitLab log is unreadable")?;
-
-        let truncated = bytes.len() > MAX_LOG_BYTES;
-        bytes.truncate(MAX_LOG_BYTES);
+        let (bytes, truncated) = fetch_log_tail(&config, &base)?;
 
         Ok(json!({
         "steps":[{"name":job["name"],
@@ -190,7 +202,7 @@ pub async fn gitlab_check_details(
         "completedAt":job["finished_at"]}],
         "annotations":[],
         "log":String::from_utf8_lossy(&bytes),
-        "notice":if truncated{Some("Job log truncated to 64 KiB.")}
+        "notice":if truncated{Some("Showing the last 64 KiB of the job log.")}
         else {
         job["failure_reason"].as_str()}
         }))
@@ -202,42 +214,208 @@ pub async fn gitlab_check_details(
 pub async fn gitlab_list_projects(app: AppHandle) -> Result<Value, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let config = require_config(&app)?;
-
-        let mut projects = Vec::new();
-
-        for page in 1..=50 {
-            let response = gitlab_get(
-                &config,
-                &format!("/projects?membership=true&simple=true&per_page=100&page={page}"),
-            )?;
-
-            projects.extend(
-                response
-                    .value
-                    .as_array()
-                    .ok_or("GitLab returned invalid projects")?
-                    .iter()
-                    .filter_map(|p| {
-                        Some(json!({
-                        "id":p["id"].as_u64()?.to_string(),
-                        "path":p["path_with_namespace"].as_str()?,
-                        "name":p["name_with_namespace"].as_str().or_else(||p["name"].as_str())?
-                        }))
-                    }),
-            );
-
-            if !response.has_next_page {
-                return Ok(json!({
-                "instance":config.url,
-                "projects":projects
-                }));
-            }
+        let now = Instant::now();
+        if let Some(cached) = cached_projects(&config, now) {
+            return Ok(cached);
         }
-        Err("GitLab projects exceeded the pagination limit".into())
+
+        let generation = lock_project_cache().generation;
+        let (projects, incomplete) = collect_projects(
+            |page| fetch_project_page(&config, page),
+            || now.elapsed() >= PROJECT_LIST_DEADLINE,
+        )?;
+        let complete = incomplete.is_none();
+        let value = json!({
+        "instance":config.url,
+        "projects":projects,
+        "incomplete":incomplete
+        });
+        if complete {
+            store_projects(&config, generation, &value);
+        }
+        Ok(value)
     })
     .await
     .map_err(|e| e.to_string())?
 }
+
+/// Drops the cached project list. Called whenever the GitLab connection is saved or removed.
+pub(crate) fn clear_project_cache() {
+    let mut cache = lock_project_cache();
+    cache.generation += 1;
+    cache.entry = None;
+}
+
+fn lock_project_cache() -> MutexGuard<'static, ProjectCache> {
+    PROJECT_CACHE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+fn cached_projects(config: &GitlabConfig, now: Instant) -> Option<Value> {
+    let cache = lock_project_cache();
+    let entry = cache.entry.as_ref()?;
+    project_entry_matches(entry, config, now).then(|| entry.value.clone())
+}
+
+/// A cached list serves only the same instance and token, within the TTL.
+fn project_entry_matches(entry: &ProjectCacheEntry, config: &GitlabConfig, now: Instant) -> bool {
+    entry.url == config.url
+        && entry.token == config.token
+        && now.saturating_duration_since(entry.stored_at) < PROJECT_CACHE_TTL
+}
+
+fn store_projects(config: &GitlabConfig, generation: u64, value: &Value) {
+    let mut cache = lock_project_cache();
+    if cache.generation != generation {
+        return;
+    }
+    cache.entry = Some(ProjectCacheEntry {
+        url: config.url.clone(),
+        token: config.token.clone(),
+        stored_at: Instant::now(),
+        value: value.clone(),
+    });
+}
+
+fn fetch_project_page(config: &GitlabConfig, page: u32) -> Result<ProjectPage, String> {
+    let response = gitlab_get(
+        config,
+        &format!("/projects?membership=true&simple=true&per_page=100&page={page}"),
+    )?;
+    let projects = response
+        .value
+        .as_array()
+        .ok_or("GitLab returned invalid projects")?
+        .iter()
+        .filter_map(|p| {
+            Some(json!({
+            "id":p["id"].as_u64()?.to_string(),
+            "path":p["path_with_namespace"].as_str()?,
+            "name":p["name_with_namespace"].as_str().or_else(||p["name"].as_str())?
+            }))
+        })
+        .collect();
+    Ok(ProjectPage {
+        projects,
+        has_next_page: response.has_next_page,
+    })
+}
+
+/// Reads project pages in order. A failed first page is an error; a later failure, the page
+/// limit or the deadline keeps the pages already read and returns a notice for the UI.
+fn collect_projects(
+    mut fetch_page: impl FnMut(u32) -> Result<ProjectPage, String>,
+    mut expired: impl FnMut() -> bool,
+) -> Result<(Vec<Value>, Option<String>), String> {
+    let mut projects = Vec::new();
+    for page in 1..=PROJECT_PAGE_LIMIT {
+        if page > 1 && expired() {
+            return Ok((projects, Some(PROJECT_DEADLINE_NOTICE.into())));
+        }
+        match fetch_page(page) {
+            Ok(next) => {
+                projects.extend(next.projects);
+                if !next.has_next_page {
+                    return Ok((projects, None));
+                }
+            }
+            Err(error) if page == 1 => return Err(error),
+            Err(error) => return Ok((projects, Some(error))),
+        }
+    }
+    Ok((projects, Some(PROJECT_LIMIT_NOTICE.into())))
+}
+/// Returns the last `MAX_LOG_BYTES` of a job trace and whether earlier bytes were dropped.
+///
+/// The request asks for a suffix `Range`, so GitLab can send only the tail. A server
+/// that ignores the header answers 200; its body is then streamed and only the tail
+/// is kept. The HTTP agent's total timeout bounds the request either way.
+fn fetch_log_tail(config: &GitlabConfig, base: &str) -> Result<(Vec<u8>, bool), String> {
+    let url = format!("{}/api/v4{base}/trace", config.url.trim_end_matches('/'));
+
+    let response = match gitlab_agent()
+        .get(&url)
+        .set("PRIVATE-TOKEN", &config.token)
+        .set("User-Agent", USER_AGENT)
+        .set("Range", &format!("bytes=-{MAX_LOG_BYTES}"))
+        .call()
+    {
+        Ok(response) => response,
+        // An empty trace cannot satisfy a suffix range.
+        Err(ureq::Error::Status(416, _)) => return Ok((Vec::new(), false)),
+        Err(ureq::Error::Status(401 | 403, _)) => {
+            return Err("GitLab access token is invalid or lacks permission".into());
+        }
+        Err(_) => return Err("GitLab job log is unavailable".into()),
+    };
+
+    let ranged = response.status() == 206;
+    let range_start = response
+        .header("Content-Range")
+        .and_then(content_range_start);
+    let mut reader = response.into_reader();
+    let mut tail = Vec::new();
+    let mut total: u64 = 0;
+    let mut chunk = [0u8; LOG_READ_CHUNK];
+    loop {
+        let read = reader
+            .read(&mut chunk)
+            .map_err(|_| "GitLab log is unreadable")?;
+        if read == 0 {
+            break;
+        }
+        total += read as u64;
+        push_tail(&mut tail, &chunk[..read]);
+    }
+
+    let truncated = if ranged {
+        range_start.is_none_or(|start| start > 0)
+    } else {
+        total > MAX_LOG_BYTES as u64
+    };
+    finish_tail(&mut tail, truncated);
+    Ok((tail, truncated))
+}
+
+/// Parses the first offset from `bytes <start>-<end>/<total>`.
+fn content_range_start(value: &str) -> Option<u64> {
+    value
+        .strip_prefix("bytes ")?
+        .split('-')
+        .next()?
+        .trim()
+        .parse()
+        .ok()
+}
+
+/// Appends `chunk`, compacting only when the buffer reaches twice the limit, so memory
+/// stays within 2 × `MAX_LOG_BYTES` plus one chunk and the copy cost is amortised.
+fn push_tail(tail: &mut Vec<u8>, chunk: &[u8]) {
+    tail.extend_from_slice(chunk);
+    if tail.len() > 2 * MAX_LOG_BYTES {
+        let cut = tail.len() - MAX_LOG_BYTES;
+        tail.drain(..cut);
+    }
+}
+
+/// Trims to the final `MAX_LOG_BYTES`. A cut that starts inside a UTF-8 sequence drops
+/// its leftover continuation bytes so the log does not open with a broken character.
+fn finish_tail(tail: &mut Vec<u8>, truncated: bool) {
+    if tail.len() > MAX_LOG_BYTES {
+        let cut = tail.len() - MAX_LOG_BYTES;
+        tail.drain(..cut);
+    }
+    if truncated {
+        let partial = tail
+            .iter()
+            .take(3)
+            .take_while(|byte| **byte & 0xC0 == 0x80)
+            .count();
+        tail.drain(..partial);
+    }
+}
+
 fn ensure_instance(actual: &str, expected: &str) -> Result<(), String> {
     if actual.trim_end_matches('/') != expected.trim_end_matches('/') {
         return Err("GitLab instance changed; reload checks".into());
@@ -362,8 +540,158 @@ mod tests {
         assert!(server.join().unwrap()[1].contains("/repository/commits/synthetic"));
     }
     #[test]
+    fn job_log_keeps_the_tail_of_a_long_trace() {
+        let body: &'static str = Box::leak(
+            format!("{}ERROR: exit 1", "setup line\n".repeat(20_000)).into_boxed_str(),
+        );
+        let (url, server) = fixture(vec![body]);
+        let config = GitlabConfig {
+            url,
+            token: "test-only".into(),
+        };
+        let (log, truncated) = fetch_log_tail(&config, "/projects/g%2Fr/jobs/3").unwrap();
+        assert!(truncated);
+        assert_eq!(log.len(), MAX_LOG_BYTES);
+        assert!(log.ends_with(b"ERROR: exit 1"));
+        assert!(server.join().unwrap()[0].contains("/projects/g%2Fr/jobs/3/trace"));
+    }
+    #[test]
+    fn job_log_reports_a_complete_short_trace() {
+        let (url, server) = fixture(vec!["short\n"]);
+        let config = GitlabConfig {
+            url,
+            token: "test-only".into(),
+        };
+        let (log, truncated) = fetch_log_tail(&config, "/projects/g%2Fr/jobs/3").unwrap();
+        assert!(!truncated);
+        assert_eq!(log, b"short\n");
+        server.join().unwrap();
+    }
+    #[test]
+    fn tail_buffer_stays_bounded_while_streaming() {
+        let mut tail = Vec::new();
+        for _ in 0..1_000 {
+            push_tail(&mut tail, &[b'x'; LOG_READ_CHUNK]);
+            assert!(tail.len() <= 2 * MAX_LOG_BYTES + LOG_READ_CHUNK);
+        }
+        tail.extend_from_slice(b"end");
+        finish_tail(&mut tail, true);
+        assert_eq!(tail.len(), MAX_LOG_BYTES);
+        assert!(tail.ends_with(b"xxend"));
+    }
+    #[test]
+    fn tail_cut_inside_a_utf8_character_drops_its_remainder() {
+        // "é" is two bytes; cutting one byte leaves a lone continuation byte at the start.
+        let mut tail = format!("é{}", "a".repeat(MAX_LOG_BYTES - 1)).into_bytes();
+        finish_tail(&mut tail, true);
+        assert_eq!(tail.len(), MAX_LOG_BYTES - 1);
+        assert_eq!(tail[0], b'a');
+    }
+    #[test]
+    fn content_range_start_reads_the_first_offset() {
+        assert_eq!(content_range_start("bytes 100-200/300"), Some(100));
+        assert_eq!(content_range_start("bytes 0-9/10"), Some(0));
+        assert_eq!(content_range_start("items 1-2/3"), None);
+    }
+    #[test]
     fn account_instance_change_rejects_detail_reads() {
         assert!(ensure_instance("https://b.example", "https://a.example").is_err());
         assert!(ensure_instance("https://a.example/", "https://a.example").is_ok());
+    }
+
+    fn project_page(has_next_page: bool) -> ProjectPage {
+        ProjectPage {
+            projects: vec![json!({"id": "1"})],
+            has_next_page,
+        }
+    }
+
+    fn test_config(url: &str, token: &str) -> GitlabConfig {
+        GitlabConfig {
+            url: url.into(),
+            token: token.into(),
+        }
+    }
+
+    #[test]
+    fn project_first_page_failure_is_an_error() {
+        assert!(collect_projects(|_| Err("Could not reach GitLab".into()), || false).is_err());
+    }
+
+    #[test]
+    fn project_later_page_failure_keeps_loaded_pages_with_a_notice() {
+        let (projects, notice) = collect_projects(
+            |page| match page {
+                1 => Ok(project_page(true)),
+                _ => Err("Could not reach GitLab".into()),
+            },
+            || false,
+        )
+        .unwrap();
+        assert_eq!(projects.len(), 1);
+        assert_eq!(notice.as_deref(), Some("Could not reach GitLab"));
+    }
+
+    #[test]
+    fn project_pages_without_a_next_page_are_complete() {
+        let (projects, notice) = collect_projects(|_| Ok(project_page(false)), || false).unwrap();
+        assert_eq!(projects.len(), 1);
+        assert!(notice.is_none());
+    }
+
+    #[test]
+    fn project_pages_stop_at_the_deadline_after_the_first_page() {
+        let mut calls = 0;
+        let (projects, notice) = collect_projects(
+            |_| {
+                calls += 1;
+                Ok(project_page(true))
+            },
+            || true,
+        )
+        .unwrap();
+        assert_eq!(calls, 1);
+        assert_eq!(projects.len(), 1);
+        assert_eq!(notice.as_deref(), Some(PROJECT_DEADLINE_NOTICE));
+    }
+
+    #[test]
+    fn project_pages_stop_at_the_page_limit_with_a_notice() {
+        let mut calls = 0;
+        let (projects, notice) = collect_projects(
+            |_| {
+                calls += 1;
+                Ok(project_page(true))
+            },
+            || false,
+        )
+        .unwrap();
+        assert_eq!(calls, PROJECT_PAGE_LIMIT);
+        assert_eq!(projects.len(), PROJECT_PAGE_LIMIT as usize);
+        assert_eq!(notice.as_deref(), Some(PROJECT_LIMIT_NOTICE));
+    }
+
+    #[test]
+    fn cached_projects_serve_only_the_same_instance_and_token_within_the_ttl() {
+        let now = Instant::now();
+        let entry = ProjectCacheEntry {
+            url: "https://gitlab.example".into(),
+            token: "token-a".into(),
+            stored_at: now,
+            value: json!({}),
+        };
+        let same = test_config("https://gitlab.example", "token-a");
+        assert!(project_entry_matches(&entry, &same, now));
+        assert!(!project_entry_matches(
+            &entry,
+            &test_config("https://gitlab.example", "token-b"),
+            now
+        ));
+        assert!(!project_entry_matches(
+            &entry,
+            &test_config("https://other.example", "token-a"),
+            now
+        ));
+        assert!(!project_entry_matches(&entry, &same, now + PROJECT_CACHE_TTL));
     }
 }

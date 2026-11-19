@@ -43,13 +43,13 @@ const render = async (pending = false, switchError?: string) => {
   );
 };
 const trigger = () =>
-  container.querySelector<HTMLButtonElement>('[aria-label="Switch working copy"]')!;
+  container.querySelector<HTMLButtonElement>('[aria-label="Switch worktree"]')!;
 const option = (name: string) =>
   [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find((button) =>
     button.textContent?.includes(name),
   )!;
 const search = () =>
-  document.querySelector<HTMLInputElement>('input[placeholder="Search or create a worktree..."]')!;
+  document.querySelector<HTMLInputElement>('input[placeholder="Search or create a worktree…"]')!;
 const typeQuery = async (value: string) => {
   await act(async () => {
     const input = search();
@@ -322,4 +322,20 @@ it("does not navigate another project when an earlier creation finishes", async 
   );
   await act(async () => finish(tree("/picker-new", "new-worktree")));
   expect(select).not.toHaveBeenCalled();
+});
+
+it("labels detached and folder-only working copies with the shared messages", async () => {
+  vi.mocked(useProjectWorktrees).mockReturnValue({
+    data: {
+      worktrees: [tree("/picker", null, true), tree("/picker-d", null)],
+      defaultRoot: "/picker-worktrees",
+    },
+    refresh,
+  });
+  setWorktreeFocus("/picker", { path: "/picker-d", branch: null });
+  await render();
+  expect(trigger().textContent).toBe("pickerDetached abcdef1");
+  await act(async () => trigger().click());
+  expect(option("Project folder · all sessions").textContent).toContain("Project folder");
+  expect(option("Detached abcdef1").textContent).toContain("Detached abcdef1");
 });

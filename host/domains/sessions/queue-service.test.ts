@@ -38,7 +38,8 @@ function mockFixture() {
     attachments: {
       validateExposure: vi.fn(async (_params: Record<string, unknown>) => {}),
       normalize: vi.fn(
-        (raw: unknown) => (raw as { id: string; hostEnvironmentId?: string }[] | undefined) ?? [],
+        async (raw: unknown) =>
+          (raw as { id: string; hostEnvironmentId?: string }[] | undefined) ?? [],
       ),
     },
   };
@@ -173,7 +174,7 @@ it("rechecks delayed attachment disclosure and reports cancellation after accept
 
 it("normalizes attachment references with authoritative environment while preserving legacy extension fields", async () => {
   const f = mockFixture();
-  f.ports.attachments.normalize.mockReturnValue([
+  f.ports.attachments.normalize.mockResolvedValue([
     { id: "normalized", hostEnvironmentId: "spoofed" },
   ]);
   const params = {
@@ -288,7 +289,7 @@ async function realFixture() {
     queues,
     attachments: {
       validateExposure: async () => {},
-      normalize: (raw: unknown) => (raw as { id: string }[] | undefined) ?? [],
+      normalize: async (raw: unknown) => (raw as { id: string }[] | undefined) ?? [],
     },
   });
   const row = { id: "row", text: "queued", attachments: [] };

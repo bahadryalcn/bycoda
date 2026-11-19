@@ -10,6 +10,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from "react";
+import { t } from "../../../i18n";
 import { LAYER } from "../../../lib/layers";
 import { Check, ChevronRight } from "../../icons";
 import { Popover, popupListClassName } from "../../Popover";
@@ -81,7 +82,7 @@ export function NativeContextMenu({
   ownerId,
   onBack,
   items,
-  ariaLabel = "File actions",
+  ariaLabel = t("Actions"),
   header,
   width = MENU_WIDTH,
   side,
@@ -357,7 +358,7 @@ export function NativeContextMenu({
           </span>
         ) : item.checked ? (
           <span className={slot.trailing} aria-hidden="true">
-            <Check strokeWidth={2.25} />
+            <Check />
           </span>
         ) : item.shortcut ? (
           <span className={`${slot.trailing} ${slot.shortcut}`} aria-hidden="true">

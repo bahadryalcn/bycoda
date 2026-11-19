@@ -25,7 +25,12 @@ vi.mock("../../../../shared/ui/ConfirmDialog", () => ({
 const refetch = vi.fn();
 const state: { data: Record<string, unknown> } = { data: {} };
 vi.mock("./useContentData", () => ({
-  useContentData: () => state.data,
+  useContentData: () => ({
+    scheduledJobs: [],
+    scheduledCampaigns: [],
+    scheduledLoading: false,
+    ...state.data,
+  }),
 }));
 
 let element: HTMLDivElement;

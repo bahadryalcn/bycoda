@@ -31,7 +31,27 @@ vi.mock("./InboxDetail", () => ({
     createElement("output", { "aria-label": "Selected inbox item" }, item?.title ?? ""),
 }));
 vi.mock("./JiraBoardView", () => ({
-  JiraBoardView: () => createElement("div", { "data-jira-board-fixture": "" }),
+  JiraBoardView: ({ onSelect }: { onSelect: (issue: never) => void }) =>
+    createElement("button", {
+      "data-jira-board-fixture": "",
+      onClick: () =>
+        onSelect({
+          id: "jira-1",
+          kind: "jira",
+          provider: "jira",
+          identifier: "ENG-1",
+          number: 1,
+          title: "Board issue",
+          url: "https://acme.atlassian.net/browse/ENG-1",
+          state: "open",
+          updatedAt: "2026-10-22T08:00:00Z",
+          labels: [],
+          assignees: [],
+          draft: false,
+          repo: "ENG",
+          projectPath: "/work/project",
+        } as never),
+    }),
 }));
 vi.mock("../model/githubTasks", async (original) => ({
   ...(await original<typeof import("../model/githubTasks")>()),
@@ -164,6 +184,54 @@ it("groups Jira view and read/refresh icons beside search and retains the select
     ),
   );
   expect(button("List").getAttribute("aria-pressed")).toBe("true");
+});
+
+it("closes the open Jira board detail on Escape before leaving the Inbox", async () => {
+  saveInboxSource("jira");
+  saveInboxConnections({
+    github: false,
+    jira: true,
+    linear: false,
+    gitlab: false,
+    azuredevops: false,
+  });
+  invoke.mockImplementation(async (command) =>
+    command.endsWith("_status") ? { connected: command === "jira_status" } : [],
+  );
+  const onClose = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(InboxView, {
+        cwd: "/work/project",
+        recents: [],
+        onClose,
+        onAsk: async () => "session",
+        onAskRestart: async () => "session",
+        onAskMount: () => {},
+        onOpenIntegrations: () => {},
+      }),
+    ),
+  );
+  const escape = () =>
+    act(async () => {
+      document.body.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+      );
+    });
+  await act(async () =>
+    container
+      .querySelector<HTMLButtonElement>('[data-button-group="joined"] button[aria-label="Board"]')!
+      .click(),
+  );
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>("[data-jira-board-fixture]")!.click(),
+  );
+  expect(container.querySelector('aside[aria-label="ENG-1"]')).not.toBeNull();
+  await escape();
+  expect(container.querySelector('aside[aria-label="ENG-1"]')).toBeNull();
+  expect(onClose).not.toHaveBeenCalled();
+  await escape();
+  expect(onClose).toHaveBeenCalledTimes(1);
 });
 
 it("keeps active filters on an icon button and clears them through the menu", async () => {

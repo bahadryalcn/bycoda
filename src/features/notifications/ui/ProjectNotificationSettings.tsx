@@ -16,7 +16,6 @@ import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { Heading } from "../../../shared/ui/Heading";
-import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Segmented, SettingsFeedback } from "../../../shared/ui/settings";
 import { CollectionToolbar } from "../../settings/ui/SettingsCollection";
 import "./ProjectNotificationSettings.css";
@@ -152,7 +151,15 @@ export function ProjectNotificationSettings({
     }),
     groupLogos,
   );
+  // Selection is kept across filters. Select-all and bulk actions only act on the rows on screen;
+  // selected rows hidden by the current search or scope are kept but not touched.
+  const isFiltered = search !== "" || scope !== "all";
+  const selectAllLabel = isFiltered ? t("Select all shown") : t("Select all known projects");
+  const visibleIds = visibleProjects.map((project) => project.id);
+  const visibleIdSet = new Set(visibleIds);
   const selectedIds = selected.filter((id) => projects.some((project) => project.id === id));
+  const selectedVisibleIds = selectedIds.filter((id) => visibleIdSet.has(id));
+  const allVisibleSelected = visibleIds.length > 0 && selectedVisibleIds.length === visibleIds.length;
   const targetCard = useRef<HTMLFieldSetElement>(null);
   const focusedRequest = useRef<{ path: string; request: number } | null>(null);
   const targetId = notificationProjectPath
@@ -283,25 +290,29 @@ export function ProjectNotificationSettings({
                 <ProjectSelection
                   className="flex cursor-pointer items-center gap-2.5"
                   interactionTone="neutral"
-                  label={t("Select all known projects")}
+                  label={selectAllLabel}
                   text={
-                    selectedIds.length
-                      ? t("{p0} selected", { p0: selectedIds.length })
-                      : t("Select all known projects")
+                    selectedVisibleIds.length
+                      ? t("{p0} selected", { p0: selectedVisibleIds.length })
+                      : selectAllLabel
                   }
-                  checked={selectedIds.length === projects.length}
-                  mixed={selectedIds.length > 0 && selectedIds.length < projects.length}
+                  checked={allVisibleSelected}
+                  mixed={selectedVisibleIds.length > 0 && !allVisibleSelected}
                   onChange={(checked) =>
-                    setSelected(checked ? projects.map((project) => project.id) : [])
+                    setSelected((current) =>
+                      checked
+                        ? [...new Set([...current, ...visibleIds])]
+                        : current.filter((id) => !visibleIdSet.has(id)),
+                    )
                   }
                 />
-                {selectedIds.length ? (
+                {selectedVisibleIds.length ? (
                   <div
                     className="settings-collection-actions"
                     role="group"
                     aria-label={t("Mute selected projects")}
                   >
-                    <NotificationMuteControl projectIds={selectedIds} />
+                    <NotificationMuteControl projectIds={selectedVisibleIds} />
                   </div>
                 ) : null}
               </ActionHost>
@@ -313,7 +324,7 @@ export function ProjectNotificationSettings({
                 "project-notification-list settings-collection-list",
               )}
               role="region"
-              aria-label={t("Project notifications")}
+              aria-label={t("Projects")}
               tabIndex={0}
             >
               {visibleProjects.length === 0 ? (
@@ -387,9 +398,8 @@ export function ProjectNotificationSettings({
                           aria-label={t("Notification categories for {p0}", {
                             p0: `${project.name} (${project.detail})`,
                           })}
-                          tooltip={t("Notification categories for {p0}", { p0: project.name })}
                           expanded={isExpanded}
-                          aria-controls={panelId}
+                          aria-controls={isExpanded ? panelId : undefined}
                           onClick={() => setExpanded(isExpanded ? null : project.id)}
                           className="project-notification-trigger"
                         >
@@ -417,19 +427,17 @@ export function ProjectNotificationSettings({
                             )}
                           </span>
                           <div className="flex min-w-0 flex-1 items-center gap-2">
-                            <Tooltip label={project.name} details={[project.detail]}>
-                              <Text
-                                as="p"
-                                size="secondary"
-                                tone="primary"
-                                weight="medium"
-                                leading="inherit"
-                                truncate
-                                className="project-notification-name min-w-0 flex-1"
-                              >
-                                {project.name.replace(/^\s*\u21b3\s*/, "")}
-                              </Text>
-                            </Tooltip>
+                            <Text
+                              as="p"
+                              size="secondary"
+                              tone="primary"
+                              weight="medium"
+                              leading="inherit"
+                              truncate
+                              className="project-notification-name min-w-0 flex-1"
+                            >
+                              {project.name.replace(/^\s*\u21b3\s*/, "")}
+                            </Text>
                             <Text
                               as="p"
                               size="caption"
@@ -471,9 +479,9 @@ export function ProjectNotificationSettings({
                         </SettingsFeedback>
                       </div>
                     ) : null}
+                    {isExpanded ? (
                     <div
                       id={panelId}
-                      hidden={!isExpanded}
                       {...surfaceAttributes(
                         { radius: "control", variant: "page" },
                         "project-notification-categories",
@@ -511,10 +519,6 @@ export function ProjectNotificationSettings({
                             labelText={{ size: "secondary", tone: "primary", leading: "inherit" }}
                             label={t(category.label)}
                             labelPosition="start"
-                            aria-label={t("{p0} for {p1}", {
-                              p0: t(category.label),
-                              p1: `${project.name} (${project.detail})`,
-                            })}
                             aria-describedby={muted ? muteHintId : undefined}
                             checked={!preferences[project.id]?.disabled.includes(category.id)}
                             disabled={preferencesUnavailable}
@@ -525,6 +529,7 @@ export function ProjectNotificationSettings({
                         ))}
                       </div>
                     </div>
+                    ) : null}
                   </FieldGroup>
                 );
               })}

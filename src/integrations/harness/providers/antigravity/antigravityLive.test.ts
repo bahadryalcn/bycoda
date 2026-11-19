@@ -637,6 +637,26 @@ describe.each(providers)("$id offline ACP transport", (provider) => {
     }
   });
 
+  it("keeps a quiet prompt pending past the former 30 minute wall-clock cap", async () => {
+    vi.useFakeTimers();
+    try {
+      const turn = provider.send(input);
+      const outcome = turn.then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      await flush();
+      expect(mock.sent.some((m) => m.method === "session/prompt")).toBe(true);
+      await vi.advanceTimersByTimeAsync(31 * 60_000);
+      finishPrompt();
+      expect(await outcome).toBeUndefined();
+      expect(events.some((e) => e.type === "session.error")).toBe(false);
+      expect(events).toContainEqual({ type: "message.completed" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("settles a pending approval and the turn when the process exits", async () => {
     const turn = provider.send(input);
     await waitPrompt();

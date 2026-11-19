@@ -91,15 +91,6 @@ export function PickerShell({
                 event.preventDefault();
                 show();
               }
-              if (
-                !disabled &&
-                !readOnly &&
-                canClear &&
-                (event.key === "Delete" || event.key === "Backspace")
-              ) {
-                event.preventDefault();
-                onClear?.();
-              }
             }}
           >
             <span id={valueId} className={styles.value} data-placeholder={!shown || undefined}>

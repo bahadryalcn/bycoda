@@ -13,6 +13,8 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   const reply = (result) => send({ jsonrpc: "2.0", id: message.id, result });
   switch (message.method) {
     case "initialize":
+      // FAKE_MCP_NO_INIT simulates a server that never finishes its handshake.
+      if (process.env.FAKE_MCP_NO_INIT) return;
       return reply({
         protocolVersion: message.params.protocolVersion,
         capabilities: { tools: {}, prompts: {} },
@@ -24,6 +26,13 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       return reply({ prompts: [] });
     case "tools/call":
       if (message.params.name === "crash") process.exit(3);
+      // "hold" never answers; "slow" answers after arguments.ms.
+      if (message.params.name === "hold") return;
+      if (message.params.name === "slow")
+        return void setTimeout(
+          () => reply({ content: [{ type: "text", text: `slow:${process.pid}` }] }),
+          Number(message.params.arguments?.ms ?? 0),
+        );
       return reply({
         content: [{ type: "text", text: `${message.params.arguments?.text ?? ""}:${process.pid}` }],
       });

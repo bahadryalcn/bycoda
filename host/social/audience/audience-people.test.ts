@@ -1,9 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { SocialPerson } from "../../../src/features/social/model/audience";
 import { contactOf, fixture, NOW, AI, OWNER, account } from "./audience-test-support";
 import { addMembers, removeMembers, saveList } from "./audience-lists";
 import { deletePerson, listPeople, updatePerson } from "./audience-people";
-import { matchSuggestions } from "./audience-merge";
+import { matchSuggestions, mergeEmailMatches } from "./audience-merge";
 
 function person(id: string, patch: Partial<SocialPerson> = {}): SocialPerson {
   return {
@@ -165,6 +165,40 @@ describe("delete, merge and matching", () => {
     expect(await f.store.getPerson("p-1")).toBeUndefined();
     const target = await f.store.getPerson("p-2");
     expect(target?.handles.map((item) => item.platformId).sort()).toEqual(["u1", "u2"]);
+  });
+
+  it("merges by e-mail without scanning people and carries static list membership", async () => {
+    const f = await fixture();
+    const address = { address: "ada@example.com", source: "import" as const, verified: false };
+    await f.store.putPerson(person("p-1", { emails: [address] }));
+    await f.store.putPerson(person("p-2"));
+    await f.store.putPerson(person("p-3", { emails: [{ ...address, address: "other@example.com" }] }));
+    await saveList(f.ctx(OWNER), { id: "team", name: "Team", kind: "static" });
+    await saveList(f.ctx(OWNER), { id: "other", name: "Other", kind: "static" });
+    await f.store.addMembers("team", ["p-1"], { source: "test", at: NOW });
+    await f.store.addMembers("other", ["p-3"], { source: "test", at: NOW });
+    const scan = vi.spyOn(f.store, "listPeople");
+    const members = vi.spyOn(f.store, "listMembers");
+    await updatePerson(f.ctx(OWNER), { personId: "p-2", patch: { emails: [address] } });
+    expect(scan).not.toHaveBeenCalled();
+    expect(members).not.toHaveBeenCalled();
+    expect(await f.store.getPerson("p-1")).toBeUndefined();
+    expect(await f.store.getPerson("p-3")).toBeDefined();
+    expect((await f.store.listMembers("team")).personIds).toEqual(["p-2"]);
+    expect((await f.store.listMembers("other")).personIds).toEqual(["p-3"]);
+  });
+
+  it("rolls the whole merge back when a source cannot be merged", async () => {
+    const f = await fixture();
+    const address = { address: "ada@example.com", source: "import" as const, verified: false };
+    await f.store.putPerson(person("p-1", { emails: [address] }));
+    await f.store.putPerson(person("p-2", { emails: [address] }));
+    await saveList(f.ctx(OWNER), { id: "team", name: "Team", kind: "static" });
+    await f.store.addMembers("team", ["p-1"], { source: "test", at: NOW });
+    vi.spyOn(f.store, "putPerson").mockRejectedValueOnce(new Error("disk full"));
+    await expect(mergeEmailMatches(f.ctx(OWNER), ["p-2"])).rejects.toThrow("disk full");
+    expect(await f.store.getPerson("p-1")).toBeDefined();
+    expect((await f.store.listMembers("team")).personIds).toEqual(["p-1"]);
   });
 
   it("suggests same-username pairs across platforms without merging them", async () => {

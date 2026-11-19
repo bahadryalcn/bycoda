@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { handleOwnerApprovalControl, type AppControlRequest } from "./ownerApprovalControl";
 import { useEffect, useRef, type MutableRefObject } from "react";
 import { flushSync } from "react-dom";
@@ -22,7 +23,10 @@ import { remoteProjectFor } from "../../../features/connections/model/remoteProj
 import { getSession, listSessionsByProject } from "../../../features/sessions/data/sessionStore";
 import { sessionDraftBlock, sessionWorkCwd } from "../../../features/sessions/model/session";
 import { useHistorySourceRegistration } from "./useHistorySourceRegistration";
-import { sessionsRef } from "../../../features/sessions/model/sessionsStore";
+import {
+  sessionsRef,
+  subscribeSessionCommits,
+} from "../../../features/sessions/model/sessionsStore";
 import { createWorktree, listWorktrees } from "../../../features/source-control/model/worktrees";
 import type { useQuickSessionLaunch } from "../bridges/useQuickSessionLaunch";
 import type { useSessionDraftActions } from "../sessions/useSessionDraftActions";
@@ -836,6 +840,11 @@ export function useAppControlRequests({
               ? target
               : null;
           },
+          subscribeSession: (id, listener) =>
+            subscribeSessionCommits((previous, next) => {
+              // Only this session's record identity matters; streamed text commits still re-read it.
+              if (previous.find((s) => s.id === id) !== next.find((s) => s.id === id)) listener();
+            }),
           send: async (id, prompt, requestId) => {
             const target = await ensureOpenSessionRef.current(id);
             if (
@@ -916,7 +925,7 @@ export function useAppControlRequests({
               id: payload.id,
               response: {
                 ok: false,
-                error: error instanceof Error ? error.message : String(error),
+                error: errorText(error),
               },
             }),
         )

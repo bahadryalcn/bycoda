@@ -1,3 +1,5 @@
+import { errorText } from "../../../shared/lib/errors";
+
 /**
  * Provider and model defaults are written to browser storage by helpers that
  * keep working in memory when the write fails (private mode, quota). This
@@ -17,7 +19,7 @@ export function persistProviderPreference(
   } catch (error) {
     return {
       state: "unsaved",
-      message: error instanceof Error ? error.message : String(error),
+      message: errorText(error),
     };
   }
 }

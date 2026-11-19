@@ -1,3 +1,4 @@
+import { errorText } from "../../../../shared/lib/errors";
 import {
   assertProviderOperation,
   observeProviderProcess,
@@ -15,6 +16,10 @@ import {
 
 import { killChild } from "../../core/child";
 import { retireProviderEpoch } from "../turnWriter";
+import { savedConversationUnavailableText } from "../../core/providerNotices";
+import { t } from "../../../../shared/i18n/core";
+import { withTimeout } from "../../../../shared/lib/withTimeout";
+import { elapsedSince, monotonicNow } from "../../../../shared/lib/time/timestamps";
 import {
   announceSlowProviderStartup,
   PROVIDER_STARTUP_TIMEOUT_MS,
@@ -46,11 +51,17 @@ import type { RuntimeMode } from "../../../../features/sessions/model/session";
 import { JsonRpcResponseError } from "../../core/jsonRpc";
 import { DeliveryUnknownError } from "../../../../shared/lib/deliveryUnknown";
 import { AcpClient, type AcpHandlers } from "../../core/acp";
+import { ACP_PROMPT_TIMEOUT_MS } from "../../core/acpPromptDeadline";
+import {
+  providerExitError,
+  pushExitStderrTail,
+  redactExitStderrLine,
+} from "../../core/exitDiagnostics";
 import { reportAcpStopReason } from "../../core/acpStopReason";
 import { AcpSubagents } from "../../core/acpSubagents";
 import { resolveHermesBinary, spawnChild, watchChild, readHarnessTextFile } from "../../core/child";
 import {
-  HERMES_AUTH_HELP,
+  hermesAuthHelp,
   hermesBackgroundDispatch,
   hermesCurrentModelId,
   hermesModeId,
@@ -125,9 +136,21 @@ type Resume = { acpSessionId: string; cwd: string };
 const INIT_TIMEOUT_MS = PROVIDER_STARTUP_TIMEOUT_MS;
 const SESSION_TIMEOUT_MS = 45_000;
 const CONTROL_TIMEOUT_MS = 20_000;
-const PROMPT_TIMEOUT_MS = 30 * 60_000;
 const BACKGROUND_POLL_MS = 500;
-const BACKGROUND_TIMEOUT_MS = PROMPT_TIMEOUT_MS;
+/** A manifest read that never settles counts as "not finished yet" and is retried. */
+const BACKGROUND_READ_TIMEOUT_MS = 15_000;
+
+/**
+ * Poll quickly at first, then back off the longer nothing finishes; the 3 s cap
+ * bounds how late a completion is noticed. Waiting restarts when the tracked
+ * delegations change.
+ */
+export function backgroundPollDelay(idleMs: number): number {
+  if (idleMs < 10_000) return BACKGROUND_POLL_MS;
+  return idleMs < 60_000 ? 1_500 : 3_000;
+}
+// Background-task completion wait after the turn answered; expiry is a true unknown.
+const BACKGROUND_TIMEOUT_MS = 30 * 60_000;
 const TRANSCRIPT_TAIL_CHARS = 6_000;
 
 const CLIENT_CAPABILITIES = {
@@ -420,6 +443,7 @@ async function ensureStartedLive(input: HarnessSessionInput): Promise<Live> {
     const emit = (event: HarnessEvent) => {
       (liveRef.current?.onEvent ?? input.onEvent)(event);
     };
+    const stderrTail: string[] = [];
     watchChild(
       handle,
       (line) => acp.pushLine(line),
@@ -429,18 +453,19 @@ async function ensureStartedLive(input: HarnessSessionInput): Promise<Live> {
           live.cancelled = true;
           clearBackgroundInputs(live);
         }
-        acp.close(new Error("Hermes Agent exited"));
+        acp.close(providerExitError("Hermes Agent", code, stderrTail));
         if (liveByThread.get(input.sessionId)?.handle === handle)
           liveByThread.delete(input.sessionId);
         emit({ type: "session.ended", code });
       },
       (line) => {
-        console.debug("[bycoda] hermes stderr", line);
+        pushExitStderrTail(stderrTail, line);
+        console.debug("[bycoda] hermes stderr", redactExitStderrLine(line));
         const message = hermesStderrAuthError(line);
         if (message) {
           emit({
             type: "session.error",
-            message,
+            message: redactExitStderrLine(message),
           });
         }
       },
@@ -486,7 +511,7 @@ async function ensureStartedLive(input: HarnessSessionInput): Promise<Live> {
         resumeByThread.delete(input.sessionId);
         input.onEvent({
           type: "status",
-          text: "The saved provider conversation is unavailable. Starting a new session; the app will restore conversation context.",
+          text: savedConversationUnavailableText(),
         });
       } finally {
         muteGate.current = false;
@@ -561,7 +586,7 @@ async function applyModelSelection(
     if (!(error instanceof JsonRpcResponseError)) throw error;
     live.onEvent({
       type: "status",
-      text: "Hermes could not apply the selected model; continuing with its current setting.",
+      text: t("Hermes could not apply the selected model; continuing with its current setting."),
     });
   }
 }
@@ -585,7 +610,7 @@ async function applyRuntimeMode(
     if (!(error instanceof JsonRpcResponseError)) throw error;
     live.onEvent({
       type: "status",
-      text: "Hermes could not apply the selected mode; continuing with its current setting.",
+      text: t("Hermes could not apply the selected mode; continuing with its current setting."),
     });
   }
 }
@@ -603,7 +628,7 @@ async function prompt(live: Live, input: SendTurnInput, acp: AcpWriterView): Pro
         const response = acp.request(
           "session/prompt",
           { sessionId: live.acpSessionId, prompt: blocks },
-          PROMPT_TIMEOUT_MS,
+          ACP_PROMPT_TIMEOUT_MS,
           (value, work) => {
             responseScope.work?.finish();
             responseScope.work = work ? retainNativeOutputEventOrigin(work.origin) : null;
@@ -639,11 +664,11 @@ async function prompt(live: Live, input: SendTurnInput, acp: AcpWriterView): Pro
       }
     } catch (error) {
       if (live.cancelled) return;
-      const detail = error instanceof Error ? error.message : String(error);
+      const detail = errorText(error);
       emitNative({
         type: "session.error",
         message: /auth|credential|api key|provider|configure/i.test(detail)
-          ? `${detail.trim()}\n\n${HERMES_AUTH_HELP}`
+          ? `${detail.trim()}\n\n${hermesAuthHelp()}`
           : detail,
       });
       throw error;
@@ -682,8 +707,12 @@ async function waitForBackground(live: Live): Promise<RetainedBackgroundDispatch
   let expired = false;
   const work = runNativeOutputWork(
     async () => {
+      let idleSince = monotonicNow();
+      let tracked = -1;
       while (!expired && !live.cancelled && live.background.size > 0) {
         const entries = [...live.background.values()];
+        if (entries.length !== tracked) idleSince = monotonicNow();
+        tracked = entries.length;
         const states = await Promise.all(
           entries.map(async (entry) => ({
             entry,
@@ -698,7 +727,7 @@ async function waitForBackground(live: Live): Promise<RetainedBackgroundDispatch
           for (const entry of finished) live.background.delete(entry.delegationId);
           return finished;
         }
-        await delay(BACKGROUND_POLL_MS);
+        await delay(backgroundPollDelay(elapsedSince(idleSince)));
       }
       return [];
     },
@@ -728,7 +757,13 @@ async function backgroundFinished(dispatch: HermesBackgroundDispatch): Promise<b
   const states = await Promise.all(
     manifests.map(async (path) => {
       try {
-        const manifest = JSON.parse(await readHarnessTextFile(path));
+        const manifest = JSON.parse(
+          await withTimeout(
+            readHarnessTextFile(path),
+            BACKGROUND_READ_TIMEOUT_MS,
+            "Hermes manifest read",
+          ),
+        );
         const tasks = Array.isArray(manifest?.tasks) ? manifest.tasks : [];
         return (
           Boolean(manifest?.completed) &&

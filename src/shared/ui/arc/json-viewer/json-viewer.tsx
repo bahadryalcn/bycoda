@@ -387,7 +387,12 @@ export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function J
   const [queryInternal, setQueryInternal] = useState(defaultQuery);
   const query = queryProp ?? queryInternal;
   const [needle, setNeedle] = useState(() => query.trim().toLowerCase());
-  const searchIndex = useMemo(() => indexJson(data, rootName), [data, rootName]);
+  const searching = needle !== "";
+  // Indexing walks every node, so it waits for the first settled query and is dropped when the query clears.
+  const searchIndex = useMemo(
+    () => (searching ? indexJson(data, rootName) : null),
+    [data, rootName, searching],
+  );
   const updateNeedle = useMemo(() => debounce(setNeedle, 150), []);
   useEffect(() => {
     updateNeedle(query.trim().toLowerCase());
@@ -398,7 +403,7 @@ export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function J
     onQueryChange?.(next);
   };
   const search = useMemo<SearchResult | null>(
-    () => (needle ? searchJson(searchIndex, needle) : null),
+    () => (searchIndex && needle ? searchJson(searchIndex, needle) : null),
     [searchIndex, needle],
   );
   const [closedWhileSearching, setClosedWhileSearching] = useState<{

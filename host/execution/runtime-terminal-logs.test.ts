@@ -174,3 +174,27 @@ it("keeps closed packets without valid exit facts free of exit details", () => {
   expect(entries.map((entry) => entry.message)).toEqual(["done"]);
   expect(entries.map((entry) => exitOf(entry))).toEqual([undefined]);
 });
+
+it("logs only the final state of a carriage-return redrawn line, across packets", () => {
+  const logs = new RuntimeLogsService();
+  const terminals = new RuntimeTerminalLogs(logs);
+  terminals.append("project", packet("progress 10%\rprogress 50%", 0));
+  terminals.append("project", packet("\rprogress 100%\r\n", 1));
+  terminals.append("project", packet("warning: stale\rbuilt\n", 2));
+  expect(logs.read({ projectId: "project" }).entries.map((entry) => entry.message)).toEqual([
+    "progress 100%",
+    "warning: stale",
+    "built",
+  ]);
+});
+
+it("keeps PEM redaction state when a carriage return redraws a marker line", () => {
+  const logs = new RuntimeLogsService();
+  const terminals = new RuntimeTerminalLogs(logs);
+  terminals.append(
+    "project",
+    packet("-----BEGIN PRIVATE KEY-----\rSYNTHETIC_BODY\n-----END PRIVATE KEY-----\nrecovered\n", 0),
+  );
+  expect(JSON.stringify(logs.read())).not.toContain("SYNTHETIC");
+  expect(logs.read().entries.map((entry) => entry.message)).toContain("recovered");
+});

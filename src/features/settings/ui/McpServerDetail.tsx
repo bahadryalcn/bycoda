@@ -6,15 +6,16 @@ import { DescriptionItem, DescriptionList } from "../../../shared/ui/Description
 import { InlineError } from "../../../shared/ui/InlineError";
 import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
 import { Sheet } from "../../../shared/ui/Sheet";
-import { Group, Row, Toggle } from "../../../shared/ui/settings";
+import { Group, Row, Toggle, useLeaveGuard } from "../../../shared/ui/settings";
 import { FolderOpen } from "../../../shared/ui/icons";
 import { CopyButton } from "../../../shared/ui/CopyButton";
 import { revealPath } from "../../../platform/tauri/fs";
-import { canSignInMcp, MCP_PROVIDER_LABELS } from "../model/mcp";
+import { canSignInMcp, MCP_PROVIDER_LABELS, scopeLabel } from "../model/mcp";
 import type { McpCatalogEntry, McpEntryStatus } from "../model/mcpCatalog";
 import type { McpServerRow } from "../model/mcpSettingsCache";
 import type { McpHub } from "../hooks/useMcpHub";
-import { ProviderIcon, scopeLabel } from "./McpAddServer";
+import { errorText } from "../../../shared/lib/errors";
+import { ProviderIcon } from "./McpAddServer";
 import { McpServerConfigEditor } from "./McpServerConfigEditor";
 
 export const STATUS_TONE: Record<McpEntryStatus, BadgeTone> = {
@@ -85,13 +86,16 @@ export function McpServerDetail({
   const transport = hubEntry?.kind ?? entry.configs[0]?.transport ?? "";
   const hubLocked = hub.saving || !!hub.busy || !!hub.loading?.corrupt;
   const [fileError, setFileError] = useState("");
+  // Close button, Escape and backdrop all reach `onClose`; Remove can end the entry the draft belongs to.
+  const leave = useLeaveGuard();
   return (
+    <>
     <Sheet
       side="end"
       size="40rem"
       title={entry.name}
       description={[transport.toUpperCase(), statusLabel(status)].filter(Boolean).join(" · ")}
-      onClose={onClose}
+      onClose={() => leave.guard(onClose)}
     >
       <div className="grid gap-6">
         {hub.error ? (
@@ -227,7 +231,7 @@ export function McpServerDetail({
                       label={t("Show in folder")}
                       onClick={() =>
                         void revealPath(server.configPath).catch((cause) =>
-                          setFileError(String(cause)),
+                          setFileError(errorText(cause)),
                         )
                       }
                     >
@@ -239,7 +243,7 @@ export function McpServerDetail({
                       label={t("Copy config path")}
                       text={server.configPath}
                       resetKeys={[server.configPath]}
-                      onCopyError={(cause) => setFileError(String(cause))}
+                      onCopyError={(cause) => setFileError(errorText(cause))}
                     />
                   </span>
                 </Row>
@@ -278,7 +282,7 @@ export function McpServerDetail({
                     tone="danger"
                     loading={actions.busyKey === `${key}:remove`}
                     disabled={actions.locked}
-                    onClick={() => void actions.remove(server)}
+                    onClick={() => leave.guard(() => void actions.remove(server))}
                   >
                     {t("Remove")}
                   </Button>
@@ -298,5 +302,7 @@ export function McpServerDetail({
         ) : null}
       </div>
     </Sheet>
+    {leave.dialog}
+    </>
   );
 }

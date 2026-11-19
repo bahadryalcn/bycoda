@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { useReloadOnReconnect } from "../../connections/public/useReloadOnReconnect";
 import { FailureState } from "../../../shared/ui/FailureState";
@@ -42,6 +43,7 @@ import {
 import { LINE_DIFF_CONFIG } from "../model/lineDiff";
 import { confirmDiscardFile } from "../model/gitConfirmation";
 import { withGitOperation } from "../model/gitPanelState";
+import { StaleReviewNotice } from "./StaleReviewNotice";
 import { UnifiedDiffView, type UnifiedDiffFileModel } from "./UnifiedDiffView";
 
 type Props = {
@@ -133,7 +135,13 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
   const [busyId, setBusyId] = useState<string | null>(null);
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
-  const refreshNow = useRef<((paths: readonly string[]) => void) | null>(null);
+  // `null` re-reads everything; read by the in-place retry and by our own actions.
+  const refreshNow = useRef<((paths: readonly string[] | null) => void) | null>(null);
+  // A failed refresh leaves the last good review on screen, but it may no longer match the
+  // working tree: staging and discarding act only on a review the latest read confirmed.
+  const stale = error !== null && files !== null;
+  const staleRef = useRef(false);
+  staleRef.current = stale;
   const mutationQueue = useRef(Promise.resolve());
   const pendingIds = useRef(new Set<string>());
   const mutationContext = useRef({ cwd, active: true });
@@ -155,7 +163,8 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
       pendingIds.current.add(key);
       const task = mutationQueue.current
         .then(async () => {
-          if (!context.active) return;
+          // A refresh may have failed while this waited in the queue.
+          if (!context.active || staleRef.current) return;
           setBusyId(id);
           setMutationError(null);
           try {
@@ -261,7 +270,7 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
           original: "",
           current: "",
           unified: null,
-          error: caught instanceof Error ? caught.message : String(caught),
+          error: errorText(caught),
         };
       }
       inFlight.delete(entry.id);
@@ -316,7 +325,8 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
     const run = () => {
       const current = ++generation;
       const since = lastEventAt ? lastEventAt - GIT_INDEX_EVENT_SLACK_MS : undefined;
-      setError(null);
+      // The error stays until a read succeeds, so the stale notice and the disabled actions
+      // do not flicker while a retry is in flight.
       void fetchGitIndex(cwd, { since })
         .then(async (index) => {
           if (disposed || current !== generation) return;
@@ -360,8 +370,9 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
         })
         .catch((caught: unknown) => {
           if (disposed || current !== generation) return;
+          // Keeps `files` and the loaded diffs: a failed refresh must not drop a review that
+          // was valid a moment ago. Pending change hints stay queued for the next read.
           setError(presentRemoteError(caught, { explicit: true }));
-          setFiles([]);
         });
     };
 
@@ -408,8 +419,14 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
       document.removeEventListener("visibilitychange", onFocus);
     };
   }, [cwd, focusKind, retry]);
-  // A failed first load reruns once the machine's link is back.
-  useReloadOnReconnect(cwd, () => setRetry((value) => value + 1), { active: error !== null });
+  // Retry before anything loaded restarts the load; after a failed refresh it re-reads in
+  // place, so the review on screen keeps its scroll, focus and expanded files.
+  const reload = () => {
+    if (files !== null && refreshNow.current) refreshNow.current(null);
+    else setRetry((value) => value + 1);
+  };
+  // A failed load or refresh reruns once the machine's link is back.
+  useReloadOnReconnect(cwd, reload, { active: error !== null });
 
   // A focus change only reorders the loads that are still pending; the diffs
   // already on screen stay loaded.
@@ -448,6 +465,20 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
     modelCache.current = next;
     return built;
   }, [diffs, diffVersion, entries, files, locale]);
+
+  // While the review is stale it stays readable but offers no action on its rows.
+  const reviewModels = useMemo(
+    () =>
+      stale
+        ? models.map((model) => ({
+            ...model,
+            canStage: false,
+            canDiscard: false,
+            canStageHunk: false,
+          }))
+        : models,
+    [models, stale],
+  );
 
   const totals = useMemo(
     () =>
@@ -510,17 +541,17 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
       </div>
     );
   }
-  if (error) {
+  // The full-panel failure is only for a review that never loaded.
+  if (error && files == null) {
     if (shownCentrally) return null;
     return (
       <div className="grid h-full place-items-center p-6">
         <FailureState
           key="load-error"
-
           context="panel"
           title={t("Couldn’t load changes")}
           description={error}
-          onRetry={() => setRetry((value) => value + 1)}
+          onRetry={reload}
         />
       </div>
     );
@@ -531,9 +562,10 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      {stale && error ? <StaleReviewNotice error={error} onRetry={reload} /> : null}
       {mutationError && <InlineError className="shrink-0 px-3 py-2">{mutationError}</InlineError>}
       <UnifiedDiffView
-        files={models}
+        files={reviewModels}
         fileCount={focusKind ? entries.length : files.length}
         focusId={focusId}
         focusRequest={focusRequest}

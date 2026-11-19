@@ -3,14 +3,24 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { FileAccessSettings } from "./FileAccessSettings";
-import { configureFileAccess, getFileAccessMode } from "../../../platform/tauri/fileAccess";
+import {
+  configureFileAccess,
+  dismissFileAccessRecovery,
+  getFileAccessMode,
+  getFileAccessRecoveries,
+} from "../../../platform/tauri/fileAccess";
 
 vi.mock("../../../platform/tauri/fileAccess", () => ({
   getFileAccessMode: vi.fn().mockResolvedValue("all-files"),
   configureFileAccess: vi.fn().mockResolvedValue("selected-folders"),
+  getFileAccessRecoveries: vi.fn().mockResolvedValue([]),
+  dismissFileAccessRecovery: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("../../../shared/i18n", () => ({
-  t: (text: string) => text,
+  t: (text: string, values?: Record<string, string>) =>
+    values
+      ? text.replace(/\{(\w+)\}/g, (match, key: string) => values[key] ?? match)
+      : text,
   useT: () => (text: string) => text,
   useLocale: () => "en",
 }));
@@ -124,4 +134,38 @@ it("ignores a read that finishes after the surface closed", async () => {
   await act(async () => finish("all-files"));
   expect(errors).not.toHaveBeenCalled();
   errors.mockRestore();
+});
+
+const dismissButton = () =>
+  [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent?.trim() === "Dismiss",
+  )!;
+
+it("shows a corrupt-file notice with the preserved copy until the owner dismisses it", async () => {
+  vi.mocked(getFileAccessRecoveries).mockResolvedValueOnce([
+    { id: "r1", kind: "mode", quarantine: "C:/data/access-mode.json.corrupt-1" },
+  ]);
+  await act(async () => root.render(createElement(FileAccessSettings)));
+  expect(container.textContent).toContain(
+    "Your saved file access choice could not be read, so access is off until you choose it again.",
+  );
+  expect(container.textContent).toContain("Unreadable copy kept at C:/data/access-mode.json.corrupt-1");
+  // The notice is the only signal that prior access was lost, so it must not
+  // be replaced by an automatic consent prompt.
+  expect(configureFileAccess).not.toHaveBeenCalled();
+  await act(async () => dismissButton().click());
+  expect(dismissFileAccessRecovery).toHaveBeenCalledWith("r1");
+  expect(container.textContent).not.toContain("could not be read");
+});
+
+it("keeps the notice visible when dismissing it fails", async () => {
+  vi.mocked(getFileAccessRecoveries).mockResolvedValueOnce([
+    { id: "r2", kind: "grants", quarantine: "C:/data/grants.json.corrupt-2" },
+  ]);
+  vi.mocked(dismissFileAccessRecovery).mockRejectedValueOnce(new Error("Disk full"));
+  await act(async () => root.render(createElement(FileAccessSettings)));
+  await act(async () => dismissButton().click());
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Disk full");
+  expect(container.textContent).toContain("Saved folder permissions could not be read");
+  expect(dismissButton()).toBeDefined();
 });

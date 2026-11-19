@@ -81,6 +81,8 @@ export function UsageTrend({
   const [active, setActive] = useState<string | null>(null);
   const [singleSeries, setSingleSeries] = useState<ReadonlySet<string> | null>(null);
   const [hiddenSeries, setHiddenSeries] = useState<string[]>([]);
+  // The shared Disclosure keeps closed bodies mounted, so the table is only built while open.
+  const [tableOpen, setTableOpen] = useState(false);
   // Series without any value in the interval only add flat lines and $0 tooltip rows.
   const series = useMemo(() => allSeries.filter((entry) => entry[metric] > 0), [allSeries, metric]);
   const point = buckets.find((bucket) => bucket.key === active);
@@ -135,6 +137,7 @@ export function UsageTrend({
           size="sm"
           variant="ghost"
           disabled={!point && buckets.length !== 1}
+          disabledReason={t("Hover or focus a point first")}
           onClick={() => {
             const interval = point ?? (buckets.length === 1 ? buckets[0] : undefined);
             if (interval) onSelect({ start: interval.start, end: interval.end });
@@ -213,20 +216,26 @@ export function UsageTrend({
             onHiddenSeriesChange={setHiddenSeries}
             formatValue={format}
             formatTick={percent ? formatUsagePercent : (value) => formatMetricTick(value, metric)}
-            onActiveChange={(_, datum) => {
-              if (datum) setActive(datum.key);
-            }}
+            // The chart reports null when the pointer leaves, focus leaves or the data changes; clear the selection with it.
+            onActiveChange={(_, datum) => setActive(datum?.key ?? null)}
           />
         </>
       )}
-      <Disclosure size="sm" summary={t("Show as table")}>
-        <Text as="div" leading="inherit">
-          <ContinuousUsageTable
-            caption={t("Usage over time")}
-            rows={buckets.map((b) => ({ ...b, label: formatBucket(b.start, resolution) }))}
-            metric={metric}
-          />
-        </Text>
+      <Disclosure
+        size="sm"
+        summary={t("Show as table")}
+        open={tableOpen}
+        onOpenChange={setTableOpen}
+      >
+        {tableOpen ? (
+          <Text as="div" leading="inherit">
+            <ContinuousUsageTable
+              caption={t("Usage over time")}
+              rows={buckets.map((b) => ({ ...b, label: formatBucket(b.start, resolution) }))}
+              metric={metric}
+            />
+          </Text>
+        ) : null}
       </Disclosure>
     </section>
   );
@@ -244,6 +253,7 @@ export function UsageShare({
   onSelect: (key: string) => void;
 }) {
   useLocale();
+  const totals = usageTotals(rows);
   return (
     <section
       {...surfaceAttributes(
@@ -284,7 +294,7 @@ export function UsageShare({
             <Button key={row.key} variant="ghost" onClick={() => onSelect(row.key)}>
               <UsageProviderIdentity provider={row.key} />
               <strong>{formatMetric(row[metric], metric)}</strong>
-              <span>{formatUsagePercent((row[metric] / usageTotals(rows)[metric]) * 100)}</span>
+              <span>{formatUsagePercent((row[metric] / totals[metric]) * 100)}</span>
             </Button>
           ))}
       </div>
@@ -306,7 +316,36 @@ export function Contribution({
   colors: Colors;
 }) {
   useLocale();
+  const [expanded, setExpanded] = useState(false);
+  // Shares are against the whole list, so rows revealed below keep the same percentages.
   const total = usageTotals(rows)[metric];
+  const renderRow = (row: (typeof rows)[number]) => (
+    <div className="usage-contribution" key={row.key}>
+      <Button variant="link" truncate onClick={() => onSelect(row.key)}>
+        {row.providers?.map((provider) => (
+          <UsageProviderIdentity key={provider} provider={provider} label="" />
+        ))}
+        {usageLabel(row.label)}
+      </Button>
+      <Text size="caption" tone="primary" leading="inherit">
+        {formatMetric(row[metric], metric)}{" "}
+        <Text as="small" size="inherit" tone="secondary">
+          {formatUsagePercent(total ? (row[metric] / total) * 100 : 0)}
+        </Text>
+      </Text>
+      <div className="usage-rank-track" aria-hidden="true">
+        <span
+          {...surfaceAttributes({ variant: "user-color" })}
+          style={
+            {
+              "--usage-rank-share": `${total ? (row[metric] / total) * 100 : 0}%`,
+              "--surface-user-color": usageChartColor(colors, row.key),
+            } as CSSProperties
+          }
+        />
+      </div>
+    </div>
+  );
   return (
     <section
       {...surfaceAttributes(
@@ -322,35 +361,7 @@ export function Contribution({
           {t("Share of selected usage")}
         </Text>
       </div>
-      <div className="usage-contributions">
-        {rows.slice(0, 5).map((row) => (
-          <div className="usage-contribution" key={row.key}>
-            <Button variant="link" truncate onClick={() => onSelect(row.key)}>
-              {row.providers?.map((provider) => (
-                <UsageProviderIdentity key={provider} provider={provider} label="" />
-              ))}
-              {usageLabel(row.label)}
-            </Button>
-            <Text size="caption" tone="primary" leading="inherit">
-              {formatMetric(row[metric], metric)}{" "}
-              <Text as="small" size="inherit" tone="secondary">
-                {formatUsagePercent(total ? (row[metric] / total) * 100 : 0)}
-              </Text>
-            </Text>
-            <div className="usage-rank-track" aria-hidden="true">
-              <span
-                {...surfaceAttributes({ variant: "user-color" })}
-                style={
-                  {
-                    "--usage-rank-share": `${total ? (row[metric] / total) * 100 : 0}%`,
-                    "--surface-user-color": usageChartColor(colors, row.key),
-                  } as CSSProperties
-                }
-              />
-            </div>
-          </div>
-        ))}
-      </div>
+      <div className="usage-contributions">{rows.slice(0, 5).map(renderRow)}</div>
       {!rows.length && (
         <EmptyState
           size="inline"
@@ -360,9 +371,21 @@ export function Contribution({
         />
       )}
       {rows.length > 5 && (
-        <Text as="p" leading="inherit" className="usage-muted">
-          {t("Top 5 shown")}
-        </Text>
+        <>
+          <Text as="p" leading="inherit" className="usage-muted">
+            {t("Top 5 shown")}
+          </Text>
+          <Disclosure
+            size="sm"
+            summary={t("Show all")}
+            count={rows.length - 5}
+            open={expanded}
+            onOpenChange={setExpanded}
+          >
+            {/* Rows past the first five mount only while open, so long tails stay cheap. */}
+            {expanded && <div className="usage-contributions">{rows.slice(5).map(renderRow)}</div>}
+          </Disclosure>
+        </>
       )}
     </section>
   );
@@ -377,6 +400,69 @@ const addDays = (at: number, days: number) => {
   date.setDate(date.getDate() + days);
   return date.getTime();
 };
+// An hour cell is unselectable when its local hour lies entirely outside the usage window.
+export const isHourOutside = (day: number, hour: number, window: UsageWindow) => {
+  const start = new Date(day);
+  start.setHours(hour);
+  const end = new Date(day);
+  end.setHours(hour + 1);
+  return end.getTime() <= window.start || start.getTime() >= window.end;
+};
+// Walks from a cell in the arrow direction and returns the first selectable cell on the way,
+// or the origin when none exists before the grid edge. Never wraps and never lands on a
+// disabled cell, because disabled buttons cannot receive focus.
+export function nextSelectableCell(
+  from: { row: number; column: number },
+  rowStep: number,
+  columnStep: number,
+  size: { rows: number; columns: number },
+  isSelectable: (row: number, column: number) => boolean,
+) {
+  let row = from.row + rowStep;
+  let column = from.column + columnStep;
+  while (row >= 0 && row < size.rows && column >= 0 && column < size.columns) {
+    if (isSelectable(row, column)) return { row, column };
+    row += rowStep;
+    column += columnStep;
+  }
+  return from;
+}
+
+type HourEntries = ReadonlyMap<string, { sample: UsageSample; value: number }>;
+
+// Hour-cell tooltip body. Cells only pass this element as a tooltip line, so the sort and the
+// ModelLabel rows are built when the shared Tooltip renders it (open), not for all 168 cells on
+// every grid render. Every model/project entry stays in the data; the list is capped at six rows
+// with an explicit "+N records" remainder.
+export function HourDetails({
+  entries,
+  metric,
+}: {
+  entries: HourEntries | undefined;
+  metric: UsageMetric;
+}) {
+  const sorted = [...(entries?.values() ?? [])].sort((a, b) => b.value - a.value);
+  if (!sorted.length) return <>{t("No usage recorded in this period.")}</>;
+  return (
+    <span className="usage-hour-details">
+      {sorted.slice(0, 6).map(({ sample, value }) => (
+        <span
+          key={JSON.stringify([sample.provider, sample.model, sample.project, sample.priced])}
+          className="usage-hour-detail"
+        >
+          <ModelLabel model={sample.model} harness={sample.provider} />
+          <span>· {usageLabel(sample.projectLabel)}</span>
+          <strong>
+            {metric === "cost" && !sample.priced ? t("Unavailable") : formatMetric(value, metric)}
+          </strong>
+        </span>
+      ))}
+      {sorted.length > 6 ? (
+        <span>{`+${formatNumber(sorted.length - 6)} ${t("records")}`}</span>
+      ) : null}
+    </span>
+  );
+}
 
 export function TimeDistribution({
   samples,
@@ -627,7 +713,7 @@ export function TimeDistribution({
                 const end = new Date(day);
                 end.setHours(rowIndex + 1);
                 const key = `${rowIndex}:${columnIndex}`;
-                const outside = end.getTime() <= window.start || start.getTime() >= window.end;
+                const outside = isHourOutside(day, rowIndex, window);
                 return (
                   <Button
                     role="gridcell"
@@ -652,37 +738,13 @@ export function TimeDistribution({
                     aria-label={`${formatBucket(start.getTime(), "hour")}: ${formatMetric(amount, metric)}`}
                     tooltip={`${formatBucket(start.getTime(), "hour")}: ${formatMetric(amount, metric)}`}
                     tooltipWide
-                    tooltipDetails={(() => {
-                      const entries = [
-                        ...(details.get(`${dayKey(day)}:${rowIndex}`)?.values() ?? []),
-                      ].sort((a, b) => b.value - a.value);
-                      return entries.length
-                        ? [
-                            ...entries.slice(0, 6).map(({ sample, value }) => (
-                              <span
-                                key={JSON.stringify([
-                                  sample.provider,
-                                  sample.model,
-                                  sample.project,
-                                  sample.priced,
-                                ])}
-                                className="usage-hour-detail"
-                              >
-                                <ModelLabel model={sample.model} harness={sample.provider} />
-                                <span>· {usageLabel(sample.projectLabel)}</span>
-                                <strong>
-                                  {metric === "cost" && !sample.priced
-                                    ? t("Unavailable")
-                                    : formatMetric(value, metric)}
-                                </strong>
-                              </span>
-                            )),
-                            ...(entries.length > 6
-                              ? [`+${formatNumber(entries.length - 6)} ${t("records")}`]
-                              : []),
-                          ]
-                        : [t("No usage recorded in this period.")];
-                    })()}
+                    tooltipDetails={[
+                      <HourDetails
+                        key="details"
+                        entries={details.get(`${dayKey(day)}:${rowIndex}`)}
+                        metric={metric}
+                      />,
+                    ]}
                     onFocus={() => setFocus(key)}
                     onClick={() =>
                       onSelect({
@@ -699,15 +761,17 @@ export function TimeDistribution({
                       }[event.key];
                       if (!delta) return;
                       event.preventDefault();
-                      const row = Math.max(0, Math.min(23, rowIndex + delta[0]));
-                      const column = Math.max(
-                        0,
-                        Math.min(dates.length - 1, columnIndex + delta[1]),
+                      const next = nextSelectableCell(
+                        { row: rowIndex, column: columnIndex },
+                        delta[0],
+                        delta[1],
+                        { rows: hours.length, columns: dates.length },
+                        (row, column) => !isHourOutside(dates[column], row, window),
                       );
                       const grid = event.currentTarget.closest('[role="grid"]');
                       const target =
                         grid?.querySelectorAll<HTMLButtonElement>('[role="gridcell"]')[
-                          row * dates.length + column
+                          next.row * dates.length + next.column
                         ];
                       target?.focus();
                     }}

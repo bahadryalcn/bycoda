@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { parseProviderAccountId } from "../../providers/public/providerAccountId";
 import {
   ModelRoutingItemChoiceSchema,
@@ -182,7 +183,7 @@ export function parseStewardProposals(text: string, max: number): StewardProposa
     raw = JSON.parse(block);
   } catch (error) {
     throw new Error(
-      `The proposals are not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+      `The proposals are not valid JSON: ${errorText(error)}`,
     );
   }
   const list = Array.isArray(raw)

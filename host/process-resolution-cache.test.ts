@@ -60,6 +60,17 @@ it("reuses inspected FX identity without rescanning its large launcher and rejec
   }
 });
 
+it("shares one in-flight scan between concurrent resolutions of the same provider identity", async () => {
+  const f = fixture();
+  try {
+    const results = await Promise.all(Array.from({ length: 5 }, () => resolveProvider("fx")));
+    expect(results).toEqual(Array(5).fill(f.candidate));
+    expect(createReadStream).toHaveBeenCalledTimes(1);
+  } finally {
+    f.cleanup();
+  }
+});
+
 it("does not republish a remembered result when resolution is cleared during original identity read", async () => {
   const f = fixture();
   let entered!: () => void, release!: () => void;

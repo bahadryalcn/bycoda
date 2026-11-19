@@ -334,6 +334,139 @@ fn trim_history_preserves_nonterminal_runs() {
     assert_eq!(count, MAX_RUNS_PER_AUTOMATION + 1);
 }
 
+fn insert_raw_run(conn: &Connection, id: &str, created_at: i64, raw: &str) {
+    conn.execute(
+        "INSERT INTO automation_runs (id, automation_id, created_at, run_json)
+         VALUES (?1, 'automation-id', ?2, ?3)",
+        params![id, created_at, raw],
+    )
+    .unwrap();
+}
+
+fn conn_with_automation() -> Connection {
+    let conn = Connection::open_in_memory().unwrap();
+    ensure_tables(&conn).unwrap();
+    conn.execute(
+        "INSERT INTO automations (id, definition_json, enabled, next_run_at, updated_at)
+             VALUES ('automation-id', '{}', 1, 1, 1)",
+        [],
+    )
+    .unwrap();
+    conn
+}
+
+fn run_count(conn: &Connection) -> i64 {
+    conn.query_row(
+        "SELECT COUNT(*) FROM automation_runs WHERE automation_id = 'automation-id'",
+        [],
+        |row| row.get(0),
+    )
+    .unwrap()
+}
+
+#[test]
+fn trim_history_drops_unparsable_overflow_rows_instead_of_failing() {
+    let conn = conn_with_automation();
+    // Oldest rows: invalid JSON, a missing status and an unparsable pending-looking row.
+    insert_raw_run(&conn, "corrupt-text", 0, "not json");
+    insert_raw_run(&conn, "corrupt-empty", 1, "{}");
+    for index in 2..2 + MAX_RUNS_PER_AUTOMATION {
+        let mut run = new_run("automation-id", "manual", index, index, "prompt");
+        run.id = format!("run-{index}");
+        run.status = "succeeded".into();
+        write_run(&conn, &run).unwrap();
+    }
+
+    trim_history(&conn, "automation-id").unwrap();
+
+    assert_eq!(run_count(&conn), MAX_RUNS_PER_AUTOMATION);
+    let corrupt: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM automation_runs WHERE id LIKE 'corrupt-%'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(corrupt, 0);
+}
+
+#[test]
+fn trim_history_never_reads_or_deletes_the_newest_rows() {
+    let conn = conn_with_automation();
+    // A corrupt row inside the kept window stays untouched and does not abort the trim.
+    insert_raw_run(&conn, "corrupt-newest", 1_000_000, "not json");
+    for index in 0..MAX_RUNS_PER_AUTOMATION {
+        let mut run = new_run("automation-id", "manual", index, index, "prompt");
+        run.id = format!("run-{index}");
+        run.status = "succeeded".into();
+        write_run(&conn, &run).unwrap();
+    }
+
+    trim_history(&conn, "automation-id").unwrap();
+
+    // 101 rows: the oldest run is the only overflow row.
+    assert_eq!(run_count(&conn), MAX_RUNS_PER_AUTOMATION);
+    let kept: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM automation_runs WHERE id = 'corrupt-newest'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(kept, 1);
+}
+
+#[test]
+fn run_history_strips_prompts_in_sql_while_recovery_listing_keeps_them() {
+    let conn = conn_with_automation();
+    let run = new_run("automation-id", "manual", 1, 1, "a very long launch prompt");
+    write_run(&conn, &run).unwrap();
+
+    let history = list_run_history(&conn, "automation-id").unwrap();
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].id, run.id);
+    assert!(history[0].prompt.is_none());
+
+    let recovery = list_runs(&conn, "automation-id").unwrap();
+    assert_eq!(recovery[0].prompt.as_deref(), Some("a very long launch prompt"));
+}
+
+#[test]
+fn claim_backfill_runs_once_and_tolerates_invalid_rows() {
+    let conn = Connection::open_in_memory().unwrap();
+    // Pre-ledger store: runs exist, the claims table has no owner column yet.
+    conn.execute_batch(
+        "CREATE TABLE automations (id TEXT PRIMARY KEY, definition_json TEXT NOT NULL, enabled INTEGER NOT NULL, next_run_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+         CREATE TABLE automation_runs (id TEXT PRIMARY KEY, automation_id TEXT NOT NULL REFERENCES automations(id) ON DELETE CASCADE, created_at INTEGER NOT NULL, run_json TEXT NOT NULL);
+         CREATE TABLE automation_event_claims (automation_id TEXT NOT NULL, event_key TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (automation_id, event_key));
+         INSERT INTO automations VALUES ('automation-id', '{}', 1, 1, 1);",
+    )
+    .unwrap();
+    let event_run = new_event_run("automation-id", "tasks:event-a", "tasks", "task_blocked", 1, 5, "p");
+    insert_raw_run(&conn, "event-run", 5, &serde_json::to_string(&event_run).unwrap());
+    insert_raw_run(&conn, "corrupt", 6, "not json");
+    insert_raw_run(&conn, "manual", 7, "{\"id\":\"manual\"}");
+
+    ensure_tables(&conn).unwrap();
+
+    let claims = |conn: &Connection| -> Vec<(String, Option<String>, i64)> {
+        let mut statement = conn
+            .prepare("SELECT event_key, claim_owner, created_at FROM automation_event_claims")
+            .unwrap();
+        statement
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect()
+    };
+    assert_eq!(claims(&conn), vec![("tasks:event-a".to_string(), None, 5)]);
+
+    // A later open must not rescan history: a removed claim stays removed.
+    conn.execute("DELETE FROM automation_event_claims", []).unwrap();
+    ensure_tables(&conn).unwrap();
+    assert!(claims(&conn).is_empty());
+}
+
 #[test]
 fn accepts_inbox_event_keys() {
     assert!(validate_event_key("github:pr:acme/web:12").is_ok());

@@ -1,6 +1,7 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useState, useSyncExternalStore } from "react";
@@ -12,12 +13,14 @@ import { isPickerProviderVisible } from "../../sessions/model/models";
 import { HARNESS_TITLE, type HarnessId } from "../../sessions/model/session";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import {
+  cancelHarnessUpdateRun,
   checkInstalledHarnessVersions,
   getHarnessUpdateSnapshot,
   runHarnessUpdate,
   subscribeHarnessUpdates,
   type HarnessUpdateRun,
 } from "../model/harnessUpdateActions";
+import { describeHarnessUpdateFailure, type HarnessUpdateFailure } from "../model/harnessUpdateFailure";
 import {
   claimLaunchHarnessUpdateCheck,
   onHarnessUpdated,
@@ -167,36 +170,64 @@ function HarnessUpdateRow({
             className="flex flex-wrap items-center justify-end gap-1 tabular-nums"
           >
             <Check className="icon-sm" />
-            {t("Updated to ")}
-            {state.version}
+            {t("Updated to {p0}", { p0: state.version })}
           </Text>
         ) : (
-          <Button
-            variant="ghost"
-            size="sm"
-            type="button"
-            disabled={state.status === "updating"}
-            className="inline-flex shrink-0 items-center gap-1.5"
-            onClick={onUpdate}
-          >
+          <div className="flex shrink-0 items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              type="button"
+              disabled={state.status === "updating"}
+              className="inline-flex shrink-0 items-center gap-1.5"
+              onClick={onUpdate}
+            >
+              {state.status === "updating" ? (
+                <>
+                  <Spinner size="xs" />
+                  {t("Updating")}
+                </>
+              ) : state.status === "failed" ? (
+                t("Retry")
+              ) : (
+                t("Update")
+              )}
+            </Button>
             {state.status === "updating" ? (
-              <>
-                <Spinner size="xs" />
-                {t("Updating")}
-              </>
-            ) : state.status === "failed" ? (
-              t("Retry")
-            ) : (
-              t("Update")
-            )}
-          </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                type="button"
+                onClick={() => void cancelHarnessUpdateRun(update.harness).catch(() => undefined)}
+              >
+                {t("Cancel")}
+              </Button>
+            ) : null}
+          </div>
         )}
       </div>
       {state.status === "failed" ? (
-        <Alert tone="danger">
-          <div className="max-h-40 overflow-auto whitespace-pre-wrap">{state.error}</div>
-        </Alert>
+        <FailedUpdate harness={update.harness} failure={state.failure} />
       ) : null}
     </article>
+  );
+}
+
+function FailedUpdate({
+  harness,
+  failure,
+}: {
+  harness: HarnessId;
+  failure: HarnessUpdateFailure;
+}) {
+  useLocale();
+  const { headline, detail } = describeHarnessUpdateFailure(harness, failure);
+  return (
+    <Alert
+      tone="danger"
+      extra={detail ? <ErrorDetails title={headline} detail={detail} /> : undefined}
+    >
+      {headline}
+    </Alert>
   );
 }

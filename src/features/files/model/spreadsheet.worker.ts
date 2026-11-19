@@ -1,4 +1,4 @@
-import { documentErrorMessage } from "./documentViewer";
+import { documentProblem } from "./documentViewer";
 import { parseDelimitedPreview } from "./delimitedPreview";
 
 self.onmessage = async (
@@ -13,6 +13,7 @@ self.onmessage = async (
           : parseDelimitedPreview(event.data.bytes, event.data.format),
     });
   } catch (cause) {
-    self.postMessage({ ok: false, message: documentErrorMessage(cause) });
+    // Errors lose their class crossing the worker boundary; send the plain reason.
+    self.postMessage({ ok: false, problem: documentProblem(cause) });
   }
 };

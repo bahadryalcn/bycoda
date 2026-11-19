@@ -8,6 +8,13 @@ export type RateLimitProvider = "claude" | "codex" | "opencode" | "grok";
 
 export type RateLimitStatus = "idle" | "fetching" | "ok" | "error" | "unavailable";
 
+/**
+ * Why usage could not be read, set only from structured evidence at the fetch
+ * layer (an HTTP status, an unauthenticated provider answer, a missing binary).
+ * Absent means unclassified: the `error` text is for display, never for branching.
+ */
+export type RateLimitFailureReason = "signedOut" | "cliMissing";
+
 export type RateLimitWindow = {
   /** Percentage of the window consumed (0–100). */
   usedPercent: number;
@@ -48,6 +55,8 @@ export type ProviderRateLimits = {
   updatedAt: number;
   error: string | null;
   status: RateLimitStatus;
+  /** Structured cause of an `error` or `unavailable` status, when the fetch layer knew it. */
+  reason?: RateLimitFailureReason;
   /**
    * Claude's local access token expired and awaits renewal by the CLI. Reading
    * it again is local-only, so the cache checks back sooner than its backoff.
@@ -84,7 +93,8 @@ export function fetchingRateLimits(
     previous &&
     (previous.session || previous.weekly || previous.monthly || previous.resetCredits)
   ) {
-    return { ...previous, status: "fetching" };
+    const { reason: _previousReason, ...retained } = previous;
+    return { ...retained, status: "fetching" };
   }
   return {
     provider,
@@ -101,6 +111,7 @@ export function fetchingRateLimits(
 export function unavailableRateLimits(
   provider: RateLimitProvider,
   error: string,
+  reason?: RateLimitFailureReason,
 ): ProviderRateLimits {
   return {
     provider,
@@ -111,23 +122,28 @@ export function unavailableRateLimits(
     updatedAt: Date.now(),
     error,
     status: "unavailable",
+    ...(reason ? { reason } : {}),
   };
 }
 
+/** `reason` replaces the retained snapshot's: a new failure never inherits an old cause. */
 export function errorRateLimits(
   provider: RateLimitProvider,
   error: string,
   previous?: ProviderRateLimits | null,
+  reason?: RateLimitFailureReason,
 ): ProviderRateLimits {
   if (
     previous &&
     (previous.session || previous.weekly || previous.monthly || previous.resetCredits)
   ) {
+    const { reason: _previousReason, ...retained } = previous;
     return {
-      ...previous,
+      ...retained,
       error,
       status: "error",
       updatedAt: Date.now(),
+      ...(reason ? { reason } : {}),
     };
   }
   return {
@@ -139,6 +155,7 @@ export function errorRateLimits(
     updatedAt: Date.now(),
     error,
     status: "error",
+    ...(reason ? { reason } : {}),
   };
 }
 
@@ -189,6 +206,15 @@ export function formatResetCountdownWith(
 
 export function formatResetCountdown(ms: number): string {
   return formatResetCountdownWith(ms, t, moduleFormat);
+}
+
+export type RateLimitWindowKind = "session" | "weekly" | "monthly";
+
+/** The one localized name of a window; meters, status copy and the usage chip all read it. */
+export function rateLimitWindowNameWith(kind: RateLimitWindowKind, translate: Translate): string {
+  if (kind === "session") return translate("5-hour");
+  if (kind === "weekly") return translate("Weekly");
+  return translate("Monthly");
 }
 
 /**

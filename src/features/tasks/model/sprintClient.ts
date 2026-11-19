@@ -1,9 +1,14 @@
+import { errorText } from "../../../shared/lib/errors";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryVisible } from "../../../shared/hooks/useQueryVisible";
 import { remoteRequest } from "../../connections/public/connections";
 import { isLocalSyncMachine } from "../../connections/public/localSync";
 import type { RemoteMachine } from "../../connections";
 import { machineCapabilities } from "../../automations/model/machineSnapshot";
+import {
+  createRefreshScheduler,
+  type RefreshScheduler,
+} from "../../automations/model/refreshScheduler";
 import type { BoardTask } from "./taskClient";
 import {
   HOST_SPRINTS,
@@ -29,6 +34,8 @@ const COORDINATOR_KEY = "bycoda.tasks.planning-environment.v1";
 const EMPTY_BOARD: SprintBoard = { sprints: [], planning: [], sources: [] };
 const EMPTY_SYNC_ERRORS: string[] = [];
 const EMPTY_SYNC_FAILURES: Record<string, string> = {};
+export const SPRINT_POLL_MS = 15_000;
+export const SPRINT_MAX_BACKOFF_MS = 300_000;
 
 /** Everything the planning Host last told us, tagged with the coordinator it
  * came from. State from another coordinator is ignored when read, so changing
@@ -128,7 +135,12 @@ export function useSprintBoard(
   }>({ epoch: -1, failures: {} });
   // Polls share a single catch-up; coordinator-only readbacks use their own lane
   // so an offline source cannot hold up an acknowledged planning operation.
-  const syncRead = useRef<{ epoch: number; promise: Promise<void> } | null>(null);
+  const syncRead = useRef<{ epoch: number; poll: boolean; promise: Promise<void> } | null>(null);
+  // A failing source machine waits out its own backoff during polls only, so the
+  // others keep their cadence; a user-requested read always tries every source.
+  const sourceBackoff = useRef(new Map<string, { failures: number; until: number; message: string }>());
+  const pollSkipped = useRef(false);
+  const scheduler = useRef<RefreshScheduler | null>(null);
   const listRead = useRef<{
     epoch: number;
     promise: Promise<void>;
@@ -182,9 +194,10 @@ export function useSprintBoard(
     return id;
   };
   const performRead = useCallback(
-    async (sync = true) => {
+    async (sync = true, poll = false) => {
       if (!coordinatorId || !visibleRef.current) return;
       const epoch = generation.current;
+      if (poll) pollSkipped.current = false;
       const current = () => epoch === generation.current;
       const key = boardKeyOf(coordinatorId, effectiveEnvironment);
       const patchBoard = (patch: Partial<Omit<BoardState, "key">>) =>
@@ -253,6 +266,14 @@ export function useSprintBoard(
           }
           for (const source of sourceMachines) {
             if (!current()) return;
+            const waiting = sourceBackoff.current.get(source.environmentId);
+            if (poll && waiting && waiting.until > Date.now()) {
+              // Keep reporting its last failure; the next poll after the wait retries it.
+              pollSkipped.current = true;
+              failures.push(waiting.message);
+              sourceFailures[source.environmentId] = waiting.message;
+              continue;
+            }
             try {
               const caps = await machineCapabilities(source);
               if (!current()) return;
@@ -417,10 +438,21 @@ export function useSprintBoard(
                 throw new Error(
                   "More task history remains. Refresh again before changing this sprint.",
                 );
+              sourceBackoff.current.delete(source.environmentId);
             } catch (reason) {
-              const message = `${source.name}: ${reason instanceof Error ? reason.message : String(reason)}`;
+              const message = `${source.name}: ${errorText(reason)}`;
               failures.push(message);
               sourceFailures[source.environmentId] = message;
+              if (current()) {
+                const count = (waiting?.failures ?? 0) + 1;
+                sourceBackoff.current.set(source.environmentId, {
+                  failures: count,
+                  until:
+                    Date.now() +
+                    Math.min(SPRINT_POLL_MS * 2 ** Math.min(count, 16), SPRINT_MAX_BACKOFF_MS),
+                  message,
+                });
+              }
             }
           }
           if (!current()) return;
@@ -434,7 +466,7 @@ export function useSprintBoard(
         }
       } catch (reason) {
         if (current()) {
-          const message = reason instanceof Error ? reason.message : String(reason);
+          const message = errorText(reason);
           patchBoard({ error: message });
           if (sync) latestSync.current = { epoch, coordinatorError: message, failures: {} };
         }
@@ -445,12 +477,20 @@ export function useSprintBoard(
     [coordinatorId, effectiveEnvironment, loadingKey],
   );
   const read = useCallback(
-    function read(sync = true): Promise<void> {
+    function read(sync = true, poll = false): Promise<void> {
       const epoch = generation.current;
       if (sync) {
-        if (syncRead.current?.epoch === epoch) return syncRead.current.promise;
-        const entry = { epoch, promise: Promise.resolve() };
-        entry.promise = performRead(true).finally(() => {
+        const active = syncRead.current;
+        if (active?.epoch === epoch) {
+          // A requested read must not inherit a poll's skipped (backed-off) sources.
+          if (!poll && active.poll)
+            return active.promise.then(() => {
+              if (pollSkipped.current && epoch === generation.current) return read(true);
+            });
+          return active.promise;
+        }
+        const entry = { epoch, poll, promise: Promise.resolve() };
+        entry.promise = performRead(true, poll).finally(() => {
           if (syncRead.current === entry) syncRead.current = null;
         });
         syncRead.current = entry;
@@ -480,16 +520,52 @@ export function useSprintBoard(
     latestSync.current = { epoch: -1, failures: {} };
     coordinatorReads.current.clear();
     knownTasks.current.clear();
+    sourceBackoff.current.clear();
     return () => {
       generation.current++;
     };
   }, [coordinatorId, effectiveEnvironment, projectScope, routeScope]);
+  // Polls run only while the window is visible and focused (nothing at all while
+  // hidden, which is cheaper than a slow cadence) and start at once on return.
+  // The scheduler never overlaps polls and backs off while the coordinator fails.
   useEffect(() => {
     if (!visible) return;
-    void read();
-    const timer = setInterval(() => void read(), 15_000);
-    return () => clearInterval(timer);
+    const poller = createRefreshScheduler({
+      run: async (isCurrent) => {
+        await read(true, true);
+        if (
+          isCurrent() &&
+          latestSync.current.epoch === generation.current &&
+          latestSync.current.coordinatorError
+        )
+          throw new Error(latestSync.current.coordinatorError);
+      },
+      intervalMs: SPRINT_POLL_MS,
+      hiddenIntervalMs: SPRINT_POLL_MS,
+      isHidden: () => false,
+      maxBackoffMs: SPRINT_MAX_BACKOFF_MS,
+    });
+    scheduler.current = poller;
+    poller.start();
+    return () => {
+      poller.stop();
+      if (scheduler.current === poller) scheduler.current = null;
+    };
   }, [read, visible, projectScope, routeScope]);
+  /** A read the user or a save asked for: bypasses backoff, and a confirmed
+   * catch-up restores the normal polling cadence. */
+  const refresh = useCallback(
+    async (sync = true) => {
+      await read(sync);
+      if (
+        sync &&
+        latestSync.current.epoch === generation.current &&
+        !latestSync.current.coordinatorError
+      )
+        scheduler.current?.resetBackoff();
+    },
+    [read],
+  );
   const setCoordinatorEnvironmentId = useCallback((value: string) => {
     try {
       localStorage.setItem(COORDINATOR_KEY, value);
@@ -695,7 +771,7 @@ export function useSprintBoard(
     allowedProjects,
     coordinatorEnvironmentId: effectiveEnvironment,
     setCoordinatorEnvironmentId,
-    refresh: read,
+    refresh,
     plan,
     create,
     update,

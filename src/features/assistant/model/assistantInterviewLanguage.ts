@@ -1,48 +1,45 @@
-/** Interview content uses its own language, without changing the app or assistant profile. */
-const languages = [
-  {
-    value: "tr-TR",
+import { LANGUAGES, type Locale } from "../../../shared/i18n/languages";
+
+/** Interview-only copy per app language: name aliases and the first question. Tags come from the shared list. */
+const INTERVIEW_COPY: Record<Locale, { aliases: readonly string[]; question: string }> = {
+  tr: {
     aliases: ["tr", "turkish", "türkçe"],
     question: "Asistanınızın ne yapmasını veya neyi değiştirmesini istersiniz?",
   },
-  {
-    value: "en-US",
+  en: {
     aliases: ["en", "english"],
     question: "What would you like your assistant to do or change?",
   },
-  {
-    value: "de-DE",
+  de: {
     aliases: ["de", "german", "deutsch"],
     question: "Was soll Ihr Assistent tun oder ändern?",
   },
-  {
-    value: "fr-FR",
+  fr: {
     aliases: ["fr", "french", "français"],
     question: "Que souhaitez-vous que votre assistant fasse ou change ?",
   },
-  {
-    value: "es-ES",
+  es: {
     aliases: ["es", "spanish", "español"],
     question: "¿Qué le gustaría que hiciera o cambiara su asistente?",
   },
-  {
-    value: "pt-PT",
+  pt: {
     aliases: ["pt", "portuguese", "português"],
     question: "O que gostaria que o seu assistente fizesse ou mudasse?",
   },
-  { value: "zh-CN", aliases: ["zh", "chinese", "中文"], question: "您希望助手做什么或改变什么？" },
-  {
-    value: "ja-JP",
+  "zh-CN": { aliases: ["zh", "chinese", "中文"], question: "您希望助手做什么或改变什么？" },
+  ja: {
     aliases: ["ja", "japanese", "日本語"],
     question: "アシスタントに何をしてほしいですか、または何を変えてほしいですか？",
   },
-] as const;
+};
+
+const languages = LANGUAGES.map(({ value, tag }) => ({ tag, ...INTERVIEW_COPY[value] }));
 
 function matchLanguage(value: string | undefined) {
   const normalized = value?.trim().toLowerCase().replace(/_/g, "-") ?? "";
   return languages.find(
     (item) =>
-      item.value.toLowerCase() === normalized ||
+      item.tag.toLowerCase() === normalized ||
       item.aliases.some((alias) => alias === normalized || alias === normalized.split("-")[0]),
   );
 }
@@ -51,7 +48,7 @@ export function resolveInterviewLanguage(
   profileLanguage: string | undefined,
   appLocale: string,
 ): string {
-  return (matchLanguage(profileLanguage) ?? matchLanguage(appLocale) ?? languages[1]).value;
+  return (matchLanguage(profileLanguage) ?? matchLanguage(appLocale) ?? languages[1]).tag;
 }
 
 export function interviewFirstQuestion(language: string): string {

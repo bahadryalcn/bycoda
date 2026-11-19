@@ -875,3 +875,44 @@ it("refuses an over-budget TagInput callback before effects while keeping exact 
   expect(data.snapshots[0].snapshot).toMatchObject({ draft: original, acceptedChanges: [] });
   data.release();
 });
+
+function guardListenerCalls(calls: unknown[][]) {
+  return calls.filter(([type]) => ["beforeinput", "paste", "drop"].includes(type as string));
+}
+
+it("keeps the TagInput paste guard bound across keystroke re-renders and still refuses paste while closed", async () => {
+  const owner = observed();
+  await act(async () =>
+    root.render(createElement(TagInput, { label: "Tags", inputObserver: owner.observer })),
+  );
+  const field = container.querySelector<HTMLInputElement>("input")!;
+  const add = vi.spyOn(field, "addEventListener");
+  const remove = vi.spyOn(field, "removeEventListener");
+  await type("a");
+  await type("ab");
+  await type("abc");
+  expect(guardListenerCalls(add.mock.calls)).toHaveLength(0);
+  expect(guardListenerCalls(remove.mock.calls)).toHaveLength(0);
+  await close(owner.registry);
+  const paste = new Event("paste", { bubbles: true, cancelable: true });
+  await act(async () => field.dispatchEvent(paste));
+  expect(paste.defaultPrevented).toBe(true);
+  expect(field.value).toBe("abc");
+});
+
+it("binds the InlineEdit paste guard on the control mounted for editing and does not re-bind it per keystroke", async () => {
+  const owner = observed();
+  await inline(owner.observer);
+  const field = await edit("draft");
+  const add = vi.spyOn(field, "addEventListener");
+  const remove = vi.spyOn(field, "removeEventListener");
+  await type("draft 2");
+  await type("draft 3");
+  expect(guardListenerCalls(add.mock.calls)).toHaveLength(0);
+  expect(guardListenerCalls(remove.mock.calls)).toHaveLength(0);
+  await close(owner.registry);
+  const paste = new Event("paste", { bubbles: true, cancelable: true });
+  await act(async () => field.dispatchEvent(paste));
+  expect(paste.defaultPrevented).toBe(true);
+  expect(field.value).toBe("draft 3");
+});

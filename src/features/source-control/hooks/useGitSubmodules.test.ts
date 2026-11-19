@@ -9,6 +9,8 @@ vi.mock("../../../platform/tauri/fs", () => ({
   invokeWorkspace: bridge.invoke,
   subscribeGitChanged: bridge.subscribe,
 }));
+type Found = { paths: string[]; limit: string | null };
+const found = (paths: string[], limit: string | null = null): Found => ({ paths, limit });
 let root: Root;
 let host: HTMLDivElement;
 let current: ReturnType<typeof useGitSubmodules>;
@@ -97,10 +99,10 @@ it("opts into standalone repository discovery without sharing incomplete submodu
   bridge.invoke.mockResolvedValueOnce(["core-pack"]);
   await render("/repo");
   expect(bridge.invoke).toHaveBeenLastCalledWith("git_submodules", { cwd: "/repo" });
-  let finish!: (value: string[]) => void;
+  let finish!: (value: Found) => void;
   bridge.invoke.mockImplementationOnce(
     () =>
-      new Promise<string[]>((resolve) => {
+      new Promise<Found>((resolve) => {
         finish = resolve;
       }),
   );
@@ -110,7 +112,7 @@ it("opts into standalone repository discovery without sharing incomplete submodu
     includeRepositories: true,
   });
   expect(current!.modules).toEqual({});
-  await act(async () => finish(["core-pack", "mobile"]));
+  await act(async () => finish(found(["core-pack", "mobile"])));
   expect(current!.modules).toEqual({ "/repo": ["/repo/core-pack", "/repo/mobile"] });
   bridge.invoke.mockRejectedValueOnce(new Error("Repository discovery timed out"));
   await act(async () => current!.refresh());
@@ -126,4 +128,20 @@ it("opts into standalone repository discovery without sharing incomplete submodu
   await render("/repo");
   expect(current!.modules["/repo"]).toEqual(["/repo/core-pack"]);
   await act(async () => finishSubmodules(["core-pack"]));
+});
+
+it("keeps repositories found before a size limit and names the limited checkout until a complete scan", async () => {
+  bridge.invoke.mockResolvedValueOnce(found(["core-pack", "mobile"], "entries"));
+  await render("/repo", true, true);
+  expect(current!.modules["/repo"]).toEqual(["/repo/core-pack", "/repo/mobile"]);
+  expect(current!.limits).toEqual({ "/repo": "entries" });
+  expect(current!.error).toBeUndefined();
+  // A failed refresh keeps the last partial inventory and its limit instead of calling it complete.
+  bridge.invoke.mockRejectedValueOnce(new Error("offline"));
+  await act(async () => current!.refresh());
+  expect(current!.modules["/repo"]).toEqual(["/repo/core-pack", "/repo/mobile"]);
+  expect(current!.limits).toEqual({ "/repo": "entries" });
+  bridge.invoke.mockResolvedValueOnce(found(["core-pack", "mobile"]));
+  await act(async () => current!.refresh());
+  expect(current!.limits).toEqual({});
 });

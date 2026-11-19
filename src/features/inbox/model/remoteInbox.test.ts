@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  REMOTE_INBOX_PROJECT_LIMIT,
   inboxReplyTarget,
   inboxOperationWrites,
   nativeInboxCommand,
@@ -19,6 +20,30 @@ const item = {
   projectPath: "/project",
 };
 describe("pure remote provider inbox contract", () => {
+  it("bounds the list to the first projects and reports every omitted one, in order", () => {
+    const many = Array.from({ length: REMOTE_INBOX_PROJECT_LIMIT + 3 }, (_, index) => ({
+      id: `p${index}`,
+      cwd: `/repo-${index}`,
+    }));
+    const operation = parseRemoteInboxOperation({ action: "list" }, many);
+    expect(operation.action === "list" && operation.projects).toHaveLength(REMOTE_INBOX_PROJECT_LIMIT);
+    expect(operation.action === "list" && operation.omittedProjects).toEqual([
+      { id: "p40", path: "/repo-40" },
+      { id: "p41", path: "/repo-41" },
+      { id: "p42", path: "/repo-42" },
+    ]);
+  });
+
+  it("omits the field when every project fits, and scoping by project reaches an omitted one", () => {
+    const operation = parseRemoteInboxOperation({ action: "list" }, projects);
+    expect(operation).not.toHaveProperty("omittedProjects");
+    const scoped = parseRemoteInboxOperation(
+      { action: "list", projectId: "project-2" },
+      projects,
+    );
+    expect(scoped.action === "list" && scoped.projects).toEqual([{ path: "/other" }]);
+  });
+
   it.each(["merge", "squash", "rebase"])("binds %s to the exact reviewed SHA", (prAction) => {
     const input = { action: "pr-action", item: { ...item, kind: "pr" }, prAction };
     expect(() => parseRemoteInboxOperation(input, projects)).toThrow(/head|expectedHeadOid/);

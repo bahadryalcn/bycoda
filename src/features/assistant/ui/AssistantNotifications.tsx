@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import {
   assistantRequest,
+  latestAssistantSnapshot,
   refreshAssistantQuietly,
   watchAssistantSnapshot,
   useAssistantSnapshot,
@@ -8,6 +9,7 @@ import {
 } from "../model/assistantClient";
 import {
   AssistantNotificationDelivery,
+  currentNotification,
   type AssistantNotificationInput,
 } from "../model/assistantNotifications";
 import { isLeadWindow } from "../../notifications/hooks/useBackgroundNotifications";
@@ -51,17 +53,7 @@ export function AssistantNotifications() {
     pump.current = new AssistantNotificationDelivery({
       request: assistantRequest,
       lead: isLeadWindow,
-      current: async (id) => {
-        const state = (
-          await assistantRequest({
-            op: "snapshot",
-            limit: 100,
-          })
-        ).snapshot;
-        return state?.profile.enabled && state.profile.setupComplete
-          ? state.notifications?.find((notification) => notification.id === id)
-          : undefined;
-      },
+      current: async (id) => currentNotification(latestAssistantSnapshot(), id),
       storage: notificationStorage(),
       projectPath: async (id) =>
         (await assistantRequest({ op: "projects.list" })).projects?.find(
@@ -113,8 +105,9 @@ export function AssistantNotifications() {
           scheduleKey = key;
         }
         if (cancelled) return;
-        // Keep notification intake alive when the main webview is in the background.
-        await refreshAssistantQuietly();
+        // The shared poller refreshes while the webview is visible, so this read is only needed
+        // in the background, where the poller pauses; it keeps notification intake alive there.
+        if (document.visibilityState === "hidden") await refreshAssistantQuietly();
         const state = current.current;
         if (!state?.profile.enabled || !state.profile.setupComplete || !loadDailySummaryEnabled())
           return;

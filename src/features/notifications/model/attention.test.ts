@@ -200,6 +200,49 @@ describe("state transitions", () => {
     ).toBe("background");
   });
 
+  it("does not rescan an unchanged transcript, and recomputes when a dock input changes", () => {
+    const blocks: Block[] = [{ id: "u1", role: "user", text: "go" }, reply("x")];
+    const scans = vi.spyOn(blocks, "filter");
+    const working = chat([], { busy: true, backgroundTasks: ["dev"], backgroundAgents: 0 });
+    working.blocks = blocks;
+
+    expect(sessionPhase(working)).toBe("background");
+    expect(scans).toHaveBeenCalledTimes(1);
+
+    // A new session object with the same transcript and inputs (title, usage...) reuses the result.
+    expect(sessionPhase({ ...working, title: "renamed", backgroundTasks: ["dev"] })).toBe(
+      "background",
+    );
+    expect(scans).toHaveBeenCalledTimes(1);
+
+    // Each dock input still moves the phase; a stale cache must not hide it.
+    expect(sessionPhase({ ...working, backgroundAgents: 1 })).toBe("waiting");
+    expect(sessionPhase({ ...working, backgroundTasks: ["dev", "test"] })).toBe("background");
+    expect(sessionPhase({ ...working, busy: false })).toBe("idle");
+    expect(
+      sessionPhase({
+        ...working,
+        pendingQuestion: {
+          requestId: 1,
+          title: "?",
+          questions: [],
+        } as unknown as Session["pendingQuestion"],
+      }),
+    ).toBe("needs-input");
+    expect(sessionPhase({ ...working, pendingOwnerApproval: true })).toBe("needs-input");
+    expect(scans.mock.calls.length).toBeGreaterThan(1);
+
+    // New blocks (a pending approval arriving) are never served from the old entry.
+    const asking = {
+      ...working,
+      blocks: [
+        ...blocks,
+        { id: "p", role: "approval" as const, text: "x", approval: { requestId: 2 } },
+      ],
+    };
+    expect(sessionPhase(asking)).toBe("needs-input");
+  });
+
   it("counts only entering background-only as a finish", () => {
     expect(enteredBackgroundFinish("working", "background")).toBe(true);
     expect(enteredBackgroundFinish("waiting", "background")).toBe(true);

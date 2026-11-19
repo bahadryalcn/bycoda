@@ -49,6 +49,7 @@ function renderList(props: Partial<Parameters<typeof InboxList>[0]> = {}) {
           }),
         ],
         selectedId: "t-2",
+        stateKey: "social:1:acc::all",
         loading: false,
         hasMore: true,
         loadingMore: false,
@@ -61,26 +62,34 @@ function renderList(props: Partial<Parameters<typeof InboxList>[0]> = {}) {
   return { onSelect, onMore };
 }
 
-it("renders one row per conversation with its title, status and tags", () => {
+it("renders one row per conversation with its title and status, and the unread state once", () => {
   renderList();
-  const rows = [...element.querySelectorAll("li button")] as HTMLButtonElement[];
+  const rows = [...element.querySelectorAll('[role="listitem"] button')] as HTMLButtonElement[];
   expect(rows).toHaveLength(2);
   expect(rows[0].textContent).toContain("Ana");
-  expect(rows[0].textContent).toContain("Unread");
-  expect(rows[0].textContent).toContain("vip");
+  expect(rows[0].querySelector('[role="img"][aria-label="Unread"]')).not.toBeNull();
+  expect(rows[0].textContent).not.toContain("Unread");
   expect(rows[1].textContent).toContain("Replied");
+});
+
+it("keeps tags beside the row button, so the row is one interactive control", () => {
+  renderList();
+  const rows = [...element.querySelectorAll('[role="listitem"] button')] as HTMLButtonElement[];
+  expect(rows[0].querySelector("button")).toBeNull();
+  expect(rows[0].textContent).not.toContain("vip");
+  expect(element.textContent).toContain("vip");
 });
 
 it("marks the selected conversation with aria-current", () => {
   renderList();
-  const rows = [...element.querySelectorAll("li button")] as HTMLButtonElement[];
+  const rows = [...element.querySelectorAll('[role="listitem"] button')] as HTMLButtonElement[];
   expect(rows[0].getAttribute("aria-current")).toBeNull();
   expect(rows[1].getAttribute("aria-current")).toBe("true");
 });
 
 it("selects a conversation on click and loads the next page on Load more", () => {
   const { onSelect, onMore } = renderList();
-  const rows = [...element.querySelectorAll("li button")] as HTMLButtonElement[];
+  const rows = [...element.querySelectorAll('[role="listitem"] button')] as HTMLButtonElement[];
   act(() => rows[0].click());
   expect(onSelect).toHaveBeenCalledWith("t-1");
   const more = [...element.querySelectorAll("button")].find((button) =>

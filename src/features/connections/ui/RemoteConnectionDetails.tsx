@@ -39,8 +39,11 @@ export function RemoteConnectionDetails({ environmentId }: { environmentId: stri
   }, [ticking]);
   return (
     <Text as="div" tone="inherit" className="flex min-w-0 flex-col gap-2">
-      <Text role="status" as="p" size="inherit" tone="muted">
-        {t(lifecycle.paused ? "Automatic reconnect paused" : phases[lifecycle.phase])}
+      <Text as="p" size="inherit" tone="muted">
+        {/* Only the phase is live: it changes on real transitions, not every tick. */}
+        <Text role="status" as="span" size="inherit" tone="inherit">
+          {t(lifecycle.paused ? "Automatic reconnect paused" : phases[lifecycle.phase])}
+        </Text>
         {lifecycle.phase === "checking" && lifecycle.startedAt != null && now != null ? (
           <span className="tabular-nums">
             {" "}

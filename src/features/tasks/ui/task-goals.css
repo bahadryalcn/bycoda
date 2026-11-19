@@ -1,7 +1,8 @@
 /* Goals: the board section, goal cards, plan steps and the goal dialogs. */
 .goal-list {
   display: flex;
-  max-block-size: 18rem;
+  /* Capped by the window too: an open goals list cannot crowd the board out of a short window. */
+  max-block-size: min(18rem, 30dvh);
   min-inline-size: 0;
   flex-direction: column;
   gap: 0.5rem;

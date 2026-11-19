@@ -57,6 +57,13 @@ export function popupListWidth(naturalWidth: number, minWidth = 0): number {
   return Math.min(POPUP_MAX_WIDTH, Math.max(minWidth, naturalWidth));
 }
 
+export const POPUP_SIZE_REM = { sm: 15.5, md: 17.5, lg: 20 } as const;
+export type PopoverSize = keyof typeof POPUP_SIZE_REM;
+
+export function popupSizeWidth(size: PopoverSize, rootFontSize: number): number {
+  return POPUP_SIZE_REM[size] * rootFontSize;
+}
+
 const OPPOSITE: Record<PopoverSide, PopoverSide> = {
   top: "bottom",
   bottom: "top",

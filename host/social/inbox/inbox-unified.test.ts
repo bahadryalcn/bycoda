@@ -129,6 +129,45 @@ describe("inbox.unified", () => {
     expect(statuses.get("t-msg")).toMatchObject({ status: "replied", tags: ["sales"] });
   });
 
+  it("adds and removes one tag against the stored record without replaying a stale status or list", async () => {
+    const { ctx, statuses } = inboxContext(fixture());
+    await setInboxStatus(ctx, { threadId: "t-msg", status: "assigned", tags: ["sales"] });
+    // Another window changed the status after this client loaded its snapshot.
+    await setInboxStatus(ctx, { threadId: "t-msg", status: "done" });
+    await setInboxStatus(ctx, { threadId: "t-msg", addTags: ["lead", "sales"] });
+    expect(statuses.get("t-msg")).toMatchObject({ status: "done", tags: ["sales", "lead"] });
+    const removed = await setInboxStatus(ctx, { threadId: "t-msg", removeTags: ["sales", "gone"] });
+    expect(removed).toEqual({ threadId: "t-msg", status: "done", tags: ["lead"] });
+  });
+
+  it("derives the status for a tag change on a conversation with no stored record", async () => {
+    const { ctx, statuses } = inboxContext(fixture());
+    const added = await setInboxStatus(ctx, { threadId: "t-old", addTags: ["vip"] });
+    expect(added).toEqual({ threadId: "t-old", status: "replied", tags: ["vip"] });
+    expect(statuses.get("t-old")).toMatchObject({ status: "replied", tags: ["vip"] });
+  });
+
+  it("writes nothing for a tag change that leaves the stored tags as they are", async () => {
+    const { ctx, statuses } = inboxContext(fixture());
+    await setInboxStatus(ctx, { threadId: "t-msg", status: "done", tags: ["vip"] });
+    const stored = statuses.get("t-msg");
+    await setInboxStatus(ctx, { threadId: "t-msg", addTags: ["vip"] });
+    await setInboxStatus(ctx, { threadId: "t-msg", removeTags: ["absent"] });
+    expect(statuses.get("t-msg")).toBe(stored);
+  });
+
+  it("rejects mixing a replacement list with tag deltas and a tag list over the limit", async () => {
+    const { ctx } = inboxContext(fixture());
+    await expect(
+      setInboxStatus(ctx, { threadId: "t-msg", tags: ["a"], addTags: ["b"] }),
+    ).rejects.toThrow("Invalid inbox tags.");
+    const ten = Array.from({ length: 10 }, (_, index) => `tag-${index}`);
+    await setInboxStatus(ctx, { threadId: "t-msg", tags: ten });
+    await expect(setInboxStatus(ctx, { threadId: "t-msg", addTags: ["extra"] })).rejects.toThrow(
+      "Invalid inbox tags.",
+    );
+  });
+
   it("shows a project principal only the conversations of its project on readable accounts", async () => {
     const principal: SocialPrincipal = {
       kind: "session",
@@ -188,6 +227,17 @@ describe("inbox.unified", () => {
       ],
     });
     await expect(setInboxStatus(ctx, { threadId: "foreign", status: "done" })).rejects.toThrow(
+      "Conversation not found.",
+    );
+  });
+
+  it("changes one conversation's status and tags without scanning every thread and contact", async () => {
+    const { ctx, statuses, reads } = inboxContext(fixture());
+    await setInboxStatus(ctx, { threadId: "t-msg", status: "done" });
+    await setInboxStatus(ctx, { threadId: "t-msg", addTags: ["vip"] });
+    expect(statuses.get("t-msg")).toMatchObject({ status: "done", tags: ["vip"] });
+    expect(reads.fullScans).toBe(0);
+    await expect(setInboxStatus(ctx, { threadId: "missing", status: "done" })).rejects.toThrow(
       "Conversation not found.",
     );
   });

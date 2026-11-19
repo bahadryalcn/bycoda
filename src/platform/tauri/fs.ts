@@ -1,10 +1,12 @@
 import { createWorkspacePathMutations } from "./fs/pathMutations";
+import { downloadRemoteChunks, retryTransient, type RemoteChunk } from "./fs/remoteFileCopy";
 export type { MovePathResult } from "./fs/pathMutations";
 import { invoke as invokeLocal } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { withGithubRead } from "../../shared/lib/githubReadGate";
 import { open } from "@tauri-apps/plugin-dialog";
 import { t } from "../../shared/i18n/core";
+import { decodeBase64 } from "../../shared/lib/base64";
 import { parentPath, slash, joinPath } from "../../shared/lib/paths";
 import { REMOTE_PATH_PREFIX } from "../../shared/lib/remotePaths";
 import { localExplorerPath } from "../../shared/lib/remoteExplorerPaths";
@@ -14,12 +16,28 @@ import type { InterjectionMeta } from "../../features/sessions/model/session";
 
 export { REMOTE_PATH_PREFIX } from "../../shared/lib/remotePaths";
 
+const PROJECT_IMAGE_MAX_BYTES = 20 * 1024 * 1024;
+const PROJECT_IMAGE_TOO_LARGE = "Document image exceeds 20 MB";
+
 /** Read only a project-contained image; the backend checks symlink containment. */
 export async function readProjectImage(root: string, path: string): Promise<Uint8Array> {
-  const bytes = root.startsWith(REMOTE_PATH_PREFIX)
-    ? await readBinaryFile(joinPath(root, path))
-    : new Uint8Array(await invokeLocal<ArrayBuffer>("read_project_image", { root, path }));
-  if (bytes.byteLength > 20 * 1024 * 1024) throw new Error("Document image exceeds 20 MB");
+  if (root.startsWith(REMOTE_PATH_PREFIX)) {
+    const remotePath = joinPath(root, path);
+    // Stat first so an oversized remote image is refused before any bytes (or base64) move.
+    const info = await invokeWorkspace<{ size: number }>("read_file_info", { path: remotePath });
+    if (!Number.isSafeInteger(info.size) || info.size < 0)
+      throw new Error("Document image size is unknown");
+    if (info.size > PROJECT_IMAGE_MAX_BYTES) throw new Error(PROJECT_IMAGE_TOO_LARGE);
+    // shortcut: the read is still unbounded and the size can change after the stat;
+    // the byte check below is the hard limit, add a read cap when read_binary_file takes one.
+    const bytes = await readBinaryFile(remotePath);
+    if (bytes.byteLength > PROJECT_IMAGE_MAX_BYTES) throw new Error(PROJECT_IMAGE_TOO_LARGE);
+    return bytes;
+  }
+  const bytes = new Uint8Array(
+    await invokeLocal<ArrayBuffer>("read_project_image", { root, path }),
+  );
+  if (bytes.byteLength > PROJECT_IMAGE_MAX_BYTES) throw new Error(PROJECT_IMAGE_TOO_LARGE);
   return bytes;
 }
 
@@ -197,6 +215,22 @@ export function claudeSessions(
 
 export function listDir(path: string): Promise<FsEntry[]> {
   return invoke<FsEntry[]>("list_dir", { path });
+}
+
+/**
+ * Cheap change stamp (the folder's own modified time and entry count) of a
+ * local folder. `null` means "cannot tell": the caller reads the listing, which
+ * reports any real error. Remote folders have no stamp.
+ */
+export async function dirListingStamp(path: string): Promise<string | null> {
+  if (path.startsWith(REMOTE_PATH_PREFIX)) return null;
+  try {
+    const stamp = await invokeLocal<string | null>("list_dir_stamp", { path });
+    return typeof stamp === "string" ? stamp : null;
+  } catch {
+    // A failed stamp only costs the optimization; the full read follows.
+    return null;
+  }
 }
 
 export type FolderListing = {
@@ -474,9 +508,13 @@ export type GitHistory = {
   commits: GitHistoryCommit[];
 };
 
-/** `all` widens the graph from the current branch to every branch and tag. */
-export function gitHistory(cwd: string, limit = 200, all = false): Promise<GitHistory> {
-  return invoke<GitHistory>("git_history", { cwd, limit, all });
+/**
+ * `all` widens the graph from the current branch to every branch and tag.
+ * `skip` continues after that many commits of the same walk, so a next page is
+ * read without walking the pages already loaded.
+ */
+export function gitHistory(cwd: string, limit = 200, all = false, skip = 0): Promise<GitHistory> {
+  return invoke<GitHistory>("git_history", { cwd, limit, all, skip });
 }
 
 export function gitCommitFiles(cwd: string, sha: string): Promise<GitChangedFile[]> {
@@ -606,10 +644,13 @@ export type GitPr = {
   state: string;
 };
 
+/** Keep the remote router: accounts on another host have a separate quota. */
+export function githubReadScope(cwd: string): string {
+  return cwd.startsWith(REMOTE_PATH_PREFIX) ? (cwd.split("/")[2] ?? cwd) : "local";
+}
+
 export function gitPrStatus(cwd: string): Promise<GitPr | null> {
-  // Keep the remote router: accounts on another host have a separate quota.
-  const scope = cwd.startsWith(REMOTE_PATH_PREFIX) ? (cwd.split("/")[2] ?? cwd) : "local";
-  return withGithubRead(() => invoke<GitPr | null>("git_pr_status", { cwd }), scope);
+  return withGithubRead(() => invoke<GitPr | null>("git_pr_status", { cwd }), githubReadScope(cwd));
 }
 
 export function gitPrCreate(
@@ -864,7 +905,8 @@ const GIT_CHANGED = "bycoda-git-changed";
  */
 export type GitChangeScope = "index" | "checkout" | "refs";
 
-export type GitChange = { cwd?: string; scope: GitChangeScope };
+/** `environmentId` limits a change to the checkouts of that connected machine. */
+export type GitChange = { cwd?: string; scope: GitChangeScope; environmentId?: string };
 
 /**
  * Tell git UIs (diff pane, branch picker) to reload after a local git mutation.
@@ -875,11 +917,31 @@ export function notifyGitChanged(cwd?: string, scope: GitChangeScope = "refs") {
   window.dispatchEvent(new CustomEvent<GitChange>(GIT_CHANGED, { detail: { cwd, scope } }));
 }
 
+/**
+ * Tell git views of one connected machine to reload after it answered again.
+ * Views of this computer and of other machines keep what they show.
+ */
+export function notifyMachineGitChanged(environmentId: string) {
+  window.dispatchEvent(
+    new CustomEvent<GitChange>(GIT_CHANGED, { detail: { scope: "refs", environmentId } }),
+  );
+}
+
+/** The machine behind a `remote://<environment>/…` path; `undefined` on this computer. */
+function remoteEnvironmentOf(path: string): string | undefined {
+  if (!path.startsWith(REMOTE_PATH_PREFIX)) return undefined;
+  const rest = path.slice(REMOTE_PATH_PREFIX.length);
+  const end = rest.indexOf("/");
+  return (end < 0 ? rest : rest.slice(0, end)) || undefined;
+}
+
 type GitWatch = {
   count: number;
   state: "pending" | "watching" | "failed";
   /** Releases a remote watch. */
   stop?: () => void;
+  /** Whether the native side holds this entry's local watch. */
+  registered?: boolean;
 };
 
 const GIT_WATCH_EVENT = "bycoda-git-watch";
@@ -939,6 +1001,24 @@ function acquireRemoteGitWatch(cwd: string): () => void {
   };
 }
 
+/**
+ * The native side keys a local watch by checkout alone, without counting. Its
+ * `git_watch` and `git_unwatch` calls for one checkout run in order, so a
+ * release that settles late cannot remove the watch a newer acquire asked for.
+ */
+const gitWatchCalls = new Map<string, Promise<void>>();
+
+function queueGitWatchCall(cwd: string, call: () => Promise<void>): Promise<void> {
+  const run = (gitWatchCalls.get(cwd) ?? Promise.resolve()).then(call);
+  const tail = run.catch(() => {});
+  gitWatchCalls.set(cwd, tail);
+  // A settled queue leaves nothing behind for the checkout.
+  void tail.then(() => {
+    if (gitWatchCalls.get(cwd) === tail) gitWatchCalls.delete(cwd);
+  });
+  return run;
+}
+
 /** Ask the app to report `.git` changes of a local checkout while held. */
 function acquireGitWatch(cwd: string): () => void {
   let entry = gitWatches.get(cwd);
@@ -946,18 +1026,19 @@ function acquireGitWatch(cwd: string): () => void {
     const created: GitWatch = { count: 0, state: "pending" };
     entry = created;
     gitWatches.set(cwd, created);
-    gitWatchSetup()
-      .then(() => invokeLocal<void>("git_watch", { cwd }))
-      .then(
-        () => {
-          if (gitWatches.get(cwd) === created) created.state = "watching";
-          else void invokeLocal("git_unwatch", { cwd }).catch(() => {});
-        },
-        () => {
-          // Not a repository, or no app to ask: views keep their own triggers.
-          created.state = "failed";
-        },
-      );
+    queueGitWatchCall(cwd, async () => {
+      await gitWatchSetup();
+      await invokeLocal<void>("git_watch", { cwd });
+      created.registered = true;
+    }).then(
+      () => {
+        if (gitWatches.get(cwd) === created) created.state = "watching";
+      },
+      () => {
+        // Not a repository, or no app to ask: views keep their own triggers.
+        created.state = "failed";
+      },
+    );
   }
   entry.count += 1;
   let released = false;
@@ -968,8 +1049,11 @@ function acquireGitWatch(cwd: string): () => void {
     if (!current || --current.count > 0) return;
     gitWatches.delete(cwd);
     gitWatchCoalescer.cancel(cwd);
-    // A pending start unwatches itself once it settles.
-    if (current.state === "watching") void invokeLocal("git_unwatch", { cwd }).catch(() => {});
+    // Queued behind this entry's own start, so a pending start is undone once
+    // it settles and a newer acquire's start runs after it.
+    void queueGitWatchCall(cwd, async () => {
+      if (current.registered) await invokeLocal("git_unwatch", { cwd });
+    }).catch(() => {});
   };
 }
 
@@ -992,6 +1076,9 @@ export function subscribeGitChanged(
 ): () => void {
   const onChange = (event: Event) => {
     const change = (event as CustomEvent<GitChange | null>).detail;
+    // A machine's change skips views of another checkout owner; unscoped views still reload.
+    if (change?.environmentId && filter?.cwd && remoteEnvironmentOf(filter.cwd) !== change.environmentId)
+      return;
     if (change && change.scope !== "refs") {
       if (change.scope === "index" && filter?.refsOnly) return;
       if (filter?.cwd && change.cwd && !sameCheckout(filter.cwd, change.cwd)) {
@@ -1075,6 +1162,17 @@ export async function openLiveRemoteFolder(path: string): Promise<void> {
   });
 }
 
+/** Whether a failed remote read may be asked again; anything else ends the download. */
+async function transientRemoteFailure(): Promise<(error: unknown) => boolean> {
+  try {
+    return (await import("../../features/connections/model/remoteFailure"))
+      .isTransientTransportError;
+  } catch {
+    // Without the classifier no failure is known to be passing, so none is retried.
+    return () => false;
+  }
+}
+
 export type LocalFilePreparation = {
   signal?: AbortSignal;
   onProgress?: (received: number, total: number) => void;
@@ -1116,7 +1214,13 @@ export async function prepareLocalFileCopy(
     if (options.signal?.aborted) throw new DOMException("Cancelled", "AbortError");
   };
   checkCancelled();
-  const info = await invokeWorkspace<{ size: number; version: string }>("read_file_info", { path });
+  const isTransient = await transientRemoteFailure();
+  const readInfo = () =>
+    retryTransient(() => invokeWorkspace<{ size: number; version: string }>("read_file_info", { path }), {
+      signal: options.signal,
+      isTransient,
+    });
+  const info = await readInfo();
   if (
     !Number.isSafeInteger(info.size) ||
     info.size < 0 ||
@@ -1142,37 +1246,24 @@ export async function prepareLocalFileCopy(
     key,
   });
   try {
-    let offset = 0;
-    options.onProgress?.(0, info.size);
-    while (offset < info.size) {
-      checkCancelled();
-      const requested = Math.min(1024 * 1024, info.size - offset);
-      const chunk = await invokeWorkspace<{ data: string; offset: number; length: number }>(
-        "read_file_chunk",
-        {
+    await downloadRemoteChunks({
+      size: info.size,
+      signal: options.signal,
+      // The exact version read above rides on every chunk; the Host rejects a changed file.
+      read: (offset, length) =>
+        invokeWorkspace<RemoteChunk>("read_file_chunk", {
           path,
           version: info.version,
           offset,
-          length: requested,
-        },
-      );
-      checkCancelled();
-      if (
-        chunk.offset !== offset ||
-        !Number.isSafeInteger(chunk.length) ||
-        chunk.length < 1 ||
-        chunk.length > requested ||
-        typeof chunk.data !== "string"
-      )
-        throw new Error("The connected machine returned an invalid file chunk.");
-      await invokeLocal<void>("append_remote_file_copy", { id, offset, data: chunk.data });
-      offset += chunk.length;
-      options.onProgress?.(offset, info.size);
-    }
-    checkCancelled();
-    const current = await invokeWorkspace<{ size: number; version: string }>("read_file_info", {
-      path,
+          length,
+        }),
+      append: (offset, data) =>
+        invokeLocal<void>("append_remote_file_copy", { id, offset, data }),
+      isTransient,
+      onProgress: options.onProgress,
     });
+    checkCancelled();
+    const current = await readInfo();
     if (current.version !== info.version || current.size !== info.size)
       throw new Error("The file changed while downloading. Try again.");
     checkCancelled();
@@ -1293,8 +1384,19 @@ export type FileMtime = {
   isDir?: boolean;
 };
 
-export function statFiles(paths: string[]): Promise<FileMtime[]> {
-  if (paths.length === 0) return Promise.resolve([]);
+/**
+ * One path's stat. `unavailable` means its machine could not be asked, which says
+ * nothing about the file: never read it as "missing" (`mtimeMs: null`).
+ */
+export type FileStatOutcome = FileMtime | { path: string; unavailable: unknown };
+
+/**
+ * Stats paths in input order, one `stat_files` call per owning machine. A machine
+ * that fails marks only its own paths `unavailable`; other machines and this
+ * computer keep their results.
+ */
+export async function statFilesSettled(paths: string[]): Promise<FileStatOutcome[]> {
+  if (paths.length === 0) return [];
   const groups = new Map<string, string[]>();
   for (const path of paths) {
     const machine = path.startsWith(REMOTE_PATH_PREFIX)
@@ -1304,12 +1406,35 @@ export function statFiles(paths: string[]): Promise<FileMtime[]> {
     group.push(path);
     groups.set(machine, group);
   }
-  return Promise.all(
+  const settled = await Promise.allSettled(
     [...groups.values()].map((group) => invoke<FileMtime[]>("stat_files", { paths: group })),
-  ).then((results) => {
-    const byPath = new Map(results.flat().map((entry) => [entry.path, entry]));
-    return paths.map((path) => byPath.get(path) ?? { path, mtimeMs: null });
+  );
+  const byPath = new Map<string, FileStatOutcome>();
+  [...groups.values()].forEach((group, index) => {
+    const result = settled[index];
+    if (result.status === "fulfilled") {
+      for (const entry of result.value) byPath.set(entry.path, entry);
+    } else {
+      for (const path of group) byPath.set(path, { path, unavailable: result.reason });
+    }
   });
+  return paths.map((path) => byPath.get(path) ?? { path, mtimeMs: null });
+}
+
+/** This computer's Windows drive roots (`C:/`) from the OS bitmask; empty elsewhere. Reads no disk. */
+export function listWindowsDrives(): Promise<string[]> {
+  return invoke<string[]>("list_windows_drives");
+}
+
+/** All-or-nothing stat: rejects with the first machine's error when any machine fails. */
+export async function statFiles(paths: string[]): Promise<FileMtime[]> {
+  const outcomes = await statFilesSettled(paths);
+  const stats: FileMtime[] = [];
+  for (const outcome of outcomes) {
+    if ("unavailable" in outcome) throw outcome.unavailable;
+    stats.push(outcome);
+  }
+  return stats;
 }
 
 export function readTextFile(path: string): Promise<string> {
@@ -1323,7 +1448,7 @@ export async function readBinaryFile(path: string): Promise<Uint8Array<ArrayBuff
   });
   // A connected machine sends the bytes as base64 inside its JSON reply.
   return typeof buffer === "string"
-    ? Uint8Array.from(atob(buffer), (char) => char.charCodeAt(0))
+    ? decodeBase64(buffer)
     : new Uint8Array(buffer);
 }
 
@@ -1334,6 +1459,14 @@ export function saveGeneratedImage(input: {
   name: string;
 }): Promise<import("./generatedImages").GeneratedImageAsset> {
   return invoke<import("./generatedImages").GeneratedImageAsset>("save_generated_image", input);
+}
+
+/**
+ * Native "Save as" for base64 bytes the app already holds. The owner picks the destination;
+ * resolves `false` when they cancel. Always runs on this computer.
+ */
+export function saveFileCopy(input: { name: string; data: string }): Promise<boolean> {
+  return invokeLocal<boolean>("save_file_copy", input);
 }
 
 export function deleteGeneratedImages(paths: string[]): Promise<void> {

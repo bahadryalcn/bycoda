@@ -52,6 +52,26 @@ describe("host shutdown drains", () => {
     expect(closing.pendingDrains()).toEqual(["tunnels"]);
   });
 
+  it("stops the decision-model servers on shutdown and names a stalled stop", async () => {
+    const stopped = vi.fn(async () => undefined);
+    const runtime = await createLifecycleRuntime(
+      dependenciesWith({ decisionModels: { close: stopped } }) as never,
+      () => undefined,
+    );
+    await runtime.closeResources();
+    expect(stopped).toHaveBeenCalledTimes(1);
+
+    const stalled = await createLifecycleRuntime(
+      dependenciesWith({
+        decisionModels: { close: () => new Promise<void>(() => undefined) },
+      }) as never,
+      () => undefined,
+    );
+    const closing = stalled.closeResources();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(closing.pendingDrains()).toEqual(["decisionModels"]);
+  });
+
   it("settles with no pending drains when everything closes", async () => {
     const runtime = await createLifecycleRuntime(dependenciesWith({}) as never, () => undefined);
     const closing = runtime.closeResources();

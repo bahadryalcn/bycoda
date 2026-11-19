@@ -4,6 +4,7 @@ import { LiveText } from "../../../shared/ui/LiveText";
 import { Badge } from "../../../shared/ui/Badge";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Button } from "../../../shared/ui/Button";
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { useT } from "../../../shared/i18n";
 import { useId, useState } from "react";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
@@ -290,6 +291,18 @@ export function liveHeadline(
   };
 }
 
+export function liveAgentHint({
+  waitReason,
+  remote,
+  remoteLabel,
+}: {
+  waitReason: string;
+  remote: boolean;
+  remoteLabel: string;
+}) {
+  return [waitReason, remote ? remoteLabel : ""].filter(Boolean).join("\n");
+}
+
 function LiveAgentCard({
   agent,
   now,
@@ -333,14 +346,7 @@ function LiveAgentCard({
   const live = !agent.issue && !agent.needsApproval && !agent.done && !agent.waiting;
   const remote = isRemoteProjectPath(agent.cwd);
   const waitReason = agent.waiting && !agent.done ? sessionWaitReasonWith(t, agent.waiting) : "";
-  const title = [
-    agent.title,
-    remote ? `${project} (remote)` : project,
-    waitReason || activity,
-    elapsed,
-  ]
-    .filter(Boolean)
-    .join("\n");
+  const hint = liveAgentHint({ waitReason, remote, remoteLabel: t("On another machine") });
 
   const flagged = agent.issue || agent.needsApproval || agent.done || agent.waiting;
   const tone = agent.issue
@@ -365,8 +371,7 @@ function LiveAgentCard({
       selected={selected}
       variant="item"
       type="button"
-      tooltip={title}
-      tooltipWhen={remote || !flagged ? "always" : "overflow"}
+      tooltip={hint || undefined}
       aria-label={[agent.title, project, waitReason || activity, elapsed]
         .filter(Boolean)
         .join(", ")}
@@ -387,9 +392,11 @@ function LiveAgentCard({
     >
       <span className="flex min-w-0 flex-1 items-center gap-1.5" data-live-agent-title>
         <HarnessIcon harness={agent.harness} className="icon-sm shrink-0" />
-        <Text size="secondary" tone="inherit" leading="snug" truncate className="min-w-0 flex-1">
-          {agent.title}
-        </Text>
+        <OverflowTooltip label={agent.title}>
+          <Text size="secondary" tone="inherit" leading="snug" truncate className="min-w-0 flex-1">
+            {agent.title}
+          </Text>
+        </OverflowTooltip>
         <Text
           size="caption"
           tone={tone}

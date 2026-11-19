@@ -12,8 +12,8 @@ import { processDictationText, type DictationProcessingOptions } from "./dictati
 
 const noop = () => {};
 /** New speech (seconds) before the next live preview of the phrase in progress.
- * Cloud previews are sparser because each one is a billed request. */
-const PREVIEW_SECONDS = { local: 0.9, cloud: 1.4 };
+ * Local only: cloud engines transcribe each phrase once, since every preview is billed. */
+const PREVIEW_SECONDS = 0.9;
 
 export type DictationState = "idle" | "starting" | "listening" | "finishing";
 type Callbacks = {
@@ -31,9 +31,10 @@ type Callbacks = {
 
 /**
  * Microphone-to-text for the composer, with the local recognizer (no natural
- * speech) or a cloud speech-to-text provider through the Host. While a phrase is
- * spoken it is previewed about every second; each pause ends the phrase, which is
- * transcribed and handed over at once; stopping transcribes the unfinished phrase.
+ * speech) or a cloud speech-to-text provider through the Host. With the local
+ * recognizer a phrase in progress is previewed about every second; cloud phrases are
+ * not previewed. Each pause ends the phrase, which is transcribed and handed over at
+ * once; stopping transcribes the unfinished phrase.
  */
 export class Dictation {
   private lease?: string;
@@ -193,10 +194,13 @@ export class Dictation {
    * a finished phrase is pending, so previews never delay or reorder final text.
    */
   private preview(rate: number) {
+    // Cloud previews would re-upload and bill the whole phrase so far every step
+    // (quadratic in phrase length); the phrase is transcribed once at its pause.
+    if (this.engine !== "local") return;
     if (this.closed || !this.ready || this.previewing || this.finals) return;
-    const audio = this.vad?.current();
-    const step = PREVIEW_SECONDS[this.engine === "local" ? "local" : "cloud"];
-    if (!audio || audio.length - this.previewed < rate * step) return;
+    // The buffer is copied only once enough new speech has accumulated.
+    const audio = this.vad?.current(this.previewed + rate * PREVIEW_SECONDS);
+    if (!audio) return;
     this.previewed = audio.length;
     this.previewing = true;
     const phrase = this.phrase;

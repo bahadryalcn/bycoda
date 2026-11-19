@@ -1,6 +1,7 @@
 import { dateTimeFormat } from "../lib/intl";
 import { numberFormat } from "./numberFormat";
 import english from "./en-overrides.json";
+import { NATIVE_LABEL_KEYS } from "./nativeLabelKeys";
 
 import { isLocale, resolveLocale, type Locale, type LanguagePreference } from "./languages";
 export { LANGUAGES, isLocale, resolveLocale } from "./languages";
@@ -51,16 +52,6 @@ const loaders: Record<Exclude<Locale, "en">, () => Promise<{ default: Catalog }>
 };
 const catalogs = new Map<Locale, Catalog>([["en", english]]);
 const loads = new Map<Locale, Promise<Catalog>>();
-let sourceCatalog: Promise<Catalog> | undefined;
-/** The full identity-key catalog is only needed for native menu synchronization. */
-function loadSourceCatalog(): Promise<Catalog> {
-  return (sourceCatalog ??= import("./locales/en.json?raw")
-    .then((module) => JSON.parse(module.default) as Catalog)
-    .catch((error) => {
-      sourceCatalog = undefined;
-      throw error;
-    }));
-}
 const listeners = new Set<() => void>();
 let revision = 0;
 let request = 0;
@@ -118,12 +109,13 @@ function notify() {
   ) {
     const sentLocale = locale;
     nativeLabelsLocale = sentLocale;
-    void Promise.all([loadSourceCatalog(), import("@tauri-apps/api/core")])
-      .then(([source, { invoke }]) => {
-        // A slower previous catalog load must not overwrite the newest language.
+    // Only the messages the native shell renders cross IPC, not the whole catalog.
+    void import("@tauri-apps/api/core")
+      .then(({ invoke }) => {
+        // A slower previous import must not overwrite the newest language.
         if (nativeLabelsLocale !== sentLocale) return;
         const labels = Object.fromEntries(
-          Object.keys(source).map((key) => [key, translateAt(sentLocale, key)]),
+          NATIVE_LABEL_KEYS.map((key) => [key, translateAt(sentLocale, key)]),
         );
         return invoke("native_language_set", { labels });
       })
@@ -234,20 +226,26 @@ export function formatDate(value: Date | number, options?: Intl.DateTimeFormatOp
 
 let searchLocale: Locale | undefined;
 let sourceLookup = new Map<string, string[]>();
+function ensureSourceLookup(): void {
+  if (searchLocale === locale) return;
+  sourceLookup = new Map();
+  // Non-English catalogs already carry their English source keys. Identity
+  // English text is its own search alias; the full source catalog adds nothing.
+  for (const message of Object.keys(catalogs.get(locale) ?? english)) {
+    const value = t(message);
+    const matches = sourceLookup.get(value) ?? [];
+    matches.push(message);
+    sourceLookup.set(value, matches);
+  }
+  searchLocale = locale;
+}
+/** Builds the reverse lookup for the current language ahead of a search keystroke. */
+export function warmSourceMessages(): void {
+  ensureSourceLookup();
+}
 /** Keep English search terms available alongside translated settings labels. */
 export function sourceMessages(translated: string): readonly string[] {
-  if (searchLocale !== locale) {
-    sourceLookup = new Map();
-    // Non-English catalogs already carry their English source keys. Identity
-    // English text is its own search alias; the full source catalog adds nothing.
-    for (const message of Object.keys(catalogs.get(locale) ?? english)) {
-      const value = t(message);
-      const matches = sourceLookup.get(value) ?? [];
-      matches.push(message);
-      sourceLookup.set(value, matches);
-    }
-    searchLocale = locale;
-  }
+  ensureSourceLookup();
   return sourceLookup.get(translated) ?? (locale === "en" ? [translated] : []);
 }
 

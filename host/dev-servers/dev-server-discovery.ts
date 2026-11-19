@@ -1,4 +1,4 @@
-import { WindowsBirthBatch, type WindowsBirthLookup } from "./windows-birth-batch";
+import { WindowsBirthBatch, type WindowsBirth, type WindowsBirthLookup } from "./windows-birth-batch";
 import {
   loadBundledWindowsProcessBirths,
   loadBundledWindowsListeners,
@@ -78,8 +78,15 @@ const runCommand: DiscoveryCommand = (executable, args, options) =>
 const psProcessProjection = `@{pid=[int]$p.ProcessId;parentPid=[int]$p.ParentProcessId;name=[string]$p.Name;command=[string]$p.CommandLine;startedAt=$birth}`;
 // Birth comes from the native process handle, retaining all FILETIME precision.
 const psBirth = `$birth='';try{$native=[System.Diagnostics.Process]::GetProcessById([int]$p.ProcessId);$ticks=$native.StartTime.ToUniversalTime().Ticks;if([Math]::Abs($ticks-$p.CreationDate.ToUniversalTime().Ticks) -le 10){$birth=$ticks.ToString()};$native.Dispose()}catch{}`;
-const windowsProcesses = `$ErrorActionPreference='Stop';$rows=@(Get-CimInstance Win32_Process | ForEach-Object {$p=$_;${psBirth};${psProcessProjection}});ConvertTo-Json -InputObject $rows -Compress -Depth 4`;
-const windowsListeners = `$ErrorActionPreference='Stop';$tcp=@(Get-NetTCPConnection -State Listen -ErrorAction Stop);$ids=@($tcp.OwningProcess | Select-Object -Unique);$rows=@(Get-CimInstance Win32_Process | Where-Object {$ids -contains $_.ProcessId} | ForEach-Object {$p=$_;${psBirth};${psProcessProjection}});ConvertTo-Json -InputObject @{processes=$rows;listeners=@($tcp | ForEach-Object {@{pid=[int]$_.OwningProcess;address=[string]$_.LocalAddress;port=[int]$_.LocalPort}})} -Compress -Depth 5`;
+// Native-helper path: one CIM enumeration without per-process handle lookups. The
+// CIM creation ticks travel with each row so the bundled helper's birth can be
+// cross-checked in TypeScript, exactly as `psBirth` does inside PowerShell.
+const psCreatedProjection = `@{pid=[int]$p.ProcessId;parentPid=[int]$p.ParentProcessId;name=[string]$p.Name;command=[string]$p.CommandLine;created=$p.CreationDate.ToUniversalTime().Ticks.ToString()}`;
+const windowsProcessRows = `$ErrorActionPreference='Stop';$rows=@(Get-CimInstance Win32_Process | ForEach-Object {$p=$_;${psCreatedProjection}});ConvertTo-Json -InputObject $rows -Compress -Depth 4`;
+// Legacy path (bundled helper unavailable): one shared snapshot serves the
+// listener and process scans, so a refresh spawns PowerShell and walks CIM once.
+const windowsSnapshotScript = `$ErrorActionPreference='Stop';$tcp=@(Get-NetTCPConnection -State Listen -ErrorAction Stop);$rows=@(Get-CimInstance Win32_Process | ForEach-Object {$p=$_;${psBirth};${psProcessProjection}});ConvertTo-Json -InputObject @{processes=$rows;listeners=@($tcp | ForEach-Object {@{pid=[int]$_.OwningProcess;address=[string]$_.LocalAddress;port=[int]$_.LocalPort}})} -Compress -Depth 5`;
+const BIRTH_BATCH = 4_096;
 
 // Darwin proc_info syscall / PROC_PIDTBSDINFO. The native proc_bsdinfo ABI is
 // 136 bytes on supported 64-bit Macs; validate the PID and timeval before use.
@@ -157,7 +164,21 @@ function jsonProcesses(value: unknown): DevProcess[] {
       };
     });
 }
-export function parseWindowsListeners(output: string): DiscoveredDevProcess[] {
+/** A native birth is trusted only when it matches the CIM creation time to within one tick burst. */
+function verifiedNativeBirth(birth: WindowsBirth | undefined, created: unknown): string {
+  if (
+    birth?.state !== "alive" ||
+    typeof birth.startedAt !== "string" ||
+    !/^\d+$/.test(birth.startedAt) ||
+    typeof created !== "string" ||
+    !/^\d+$/.test(created)
+  )
+    return "";
+  const difference = BigInt(birth.startedAt) - BigInt(created);
+  return (difference < 0n ? -difference : difference) <= 10n ? birth.startedAt : "";
+}
+type WindowsSnapshot = { processes: DevProcess[]; listeners: Listener[] };
+function parseWindowsSnapshot(output: string): WindowsSnapshot {
   const data = parseProcessJson(output) as {
     processes: unknown;
     listeners: unknown;
@@ -176,6 +197,10 @@ export function parseWindowsListeners(output: string): DiscoveredDevProcess[] {
       throw new Error("Invalid discovered listener");
     return { pid: Number(row.pid), address: row.address, port: Number(row.port) };
   });
+  return { processes, listeners };
+}
+export function parseWindowsListeners(output: string): DiscoveredDevProcess[] {
+  const { processes, listeners } = parseWindowsSnapshot(output);
   return groupListeners(listeners, processes);
 }
 export function parseLsofListeners(output: string): Listener[] {
@@ -328,6 +353,7 @@ export class DevServerDiscovery implements ProcessDiscovery {
   private listenerFlight?: Promise<DiscoveredDevProcess[]>;
   private processCache?: { time: number; value: DevProcess[] };
   private processFlight?: Promise<DevProcess[]>;
+  private windowsFlight?: Promise<WindowsSnapshot>;
   private cacheRevision = 0;
   private activeCommands = 0;
   private commandQueue: (() => void)[] = [];
@@ -407,6 +433,37 @@ export class DevServerDiscovery implements ProcessDiscovery {
     this.processCache = undefined;
     this.listenerFlight = undefined;
     this.processFlight = undefined;
+    this.windowsFlight = undefined;
+  }
+  /** Legacy Windows scan: concurrent listener and process requests share one PowerShell run. */
+  private windowsSnapshot(): Promise<WindowsSnapshot> {
+    if (this.windowsFlight) return this.windowsFlight;
+    const flight = this.powershell(windowsSnapshotScript)
+      .then(parseWindowsSnapshot)
+      .finally(() => {
+        if (this.windowsFlight === flight) this.windowsFlight = undefined;
+      });
+    this.windowsFlight = flight;
+    return flight;
+  }
+  /** One CIM pass for names and commands; births come from the native helper in batches. */
+  private async scanWindowsProcesses(): Promise<DevProcess[]> {
+    const rows = parseProcessJson(await this.powershell(windowsProcessRows));
+    const processes = jsonProcesses(rows);
+    if (processes.length > MAX_PROCESSES)
+      throw new Error("Process discovery exceeded its process limit");
+    const created = new Map(
+      (rows as Record<string, unknown>[]).map((row) => [Number(row.pid), row.created]),
+    );
+    const births = new Map<number, WindowsBirth>();
+    const ids = processes.map((item) => item.pid);
+    for (let index = 0; index < ids.length; index += BIRTH_BATCH)
+      for (const row of this.windowsBirths!(ids.slice(index, index + BIRTH_BATCH)))
+        births.set(row.pid, row);
+    return processes.map((item) => ({
+      ...item,
+      startedAt: verifiedNativeBirth(births.get(item.pid), created.get(item.pid)),
+    }));
   }
   listeners(): Promise<DiscoveredDevProcess[]> {
     if (this.listenerCache && Date.now() - this.listenerCache.time < this.cacheMs)
@@ -542,7 +599,9 @@ kill -"$sig" "$pid" 2>/dev/null || [ ! -e "/proc/$pid" ]`,
   }
   private async scanProcesses(): Promise<DevProcess[]> {
     if (this.platform === "win32")
-      return jsonProcesses(parseProcessJson(await this.powershell(windowsProcesses)));
+      return this.windowsBirths
+        ? this.scanWindowsProcesses()
+        : (await this.windowsSnapshot()).processes;
     if (this.platform === "darwin") {
       const items = parsePsProcesses(await this.run("ps", ["-axo", "pid=,ppid=,lstart=,args="]));
       if (items.length > MAX_PROCESSES)
@@ -621,8 +680,11 @@ kill -"$sig" "$pid" 2>/dev/null || [ ! -e "/proc/$pid" ]`,
   }
   private async scanListeners(): Promise<DiscoveredDevProcess[]> {
     if (this.platform === "win32") {
-      if (!this.windowsBirths || !this.windowsListeners)
-        return parseWindowsListeners(await this.powershell(windowsListeners));
+      const legacy = async () => {
+        const snapshot = await this.windowsSnapshot();
+        return groupListeners(snapshot.listeners, snapshot.processes);
+      };
+      if (!this.windowsBirths || !this.windowsListeners) return legacy();
       try {
         const first = this.windowsListeners();
         const processes = await this.processes();
@@ -655,7 +717,7 @@ kill -"$sig" "$pid" 2>/dev/null || [ ! -e "/proc/$pid" ]`,
         });
         return groupListeners(third, owners);
       } catch {
-        return parseWindowsListeners(await this.powershell(windowsListeners));
+        return legacy();
       }
     }
     if (this.platform === "darwin") {

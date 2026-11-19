@@ -345,7 +345,7 @@ it("keeps the save action busy until the Host confirms and never reports an unco
   expect(control("Saving…")!.getAttribute("aria-busy")).toBe("true");
   expect(footerText()).not.toContain("Saved");
   await act(async () => finish({}));
-  expect(footerText()).toContain("The settings save was not confirmed.");
+  expect(footerText()).toContain("Saving settings could not be confirmed.");
   expect(footerText()).not.toContain("Saved");
   expect(control("Save")!.disabled).toBe(false);
 });

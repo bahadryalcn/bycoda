@@ -66,10 +66,7 @@ export function CrewWorkList({
   const selectedHidden =
     !!selectedId && !!query.trim() && !runs.some((run) => run.id === selectedId);
   return (
-    <nav
-      aria-label={t("Crew work")}
-      {...surfaceAttributes({ variant: "page" }, "flex min-w-0 flex-col")}
-    >
+    <div {...surfaceAttributes({ variant: "page" }, "flex min-w-0 flex-col")}>
       <div className="flex flex-col gap-2 px-3 pb-2 pt-3">
         <SegmentedControl
           label={t("Crew work view")}
@@ -102,19 +99,20 @@ export function CrewWorkList({
       <div
         ref={listRef}
         className="overflow-y-auto px-2 pb-2 @min-[640px]/crew-management:max-h-[55vh]"
-        role="list"
-        aria-label={t("Work list")}
       >
+        <ul aria-label={t("Work list")}>
         {runs.map((run) => (
-          <div key={run.id} role="listitem">
+          <li key={run.id}>
+            {/* Runs are a master-detail selection, not toggles: `aria-current` marks the open
+                run, and a pending action only blocks selection, so rows stay in the tab order. */}
             <Button
               variant="item"
               data-crew-work-choice={run.id}
               selected={selectedId === run.id}
               motion="none"
               className="w-full min-w-0"
-              aria-pressed={selectedId === run.id}
-              disabled={disabled}
+              aria-current={selectedId === run.id ? "true" : undefined}
+              aria-disabled={disabled || undefined}
               onClick={() => onSelect(run.id)}
               tooltip={crewRunTitle(run)}
               tooltipWhen="overflow"
@@ -140,8 +138,9 @@ export function CrewWorkList({
                 </Text>
               </span>
             </Button>
-          </div>
+          </li>
         ))}
+        </ul>
         {!runs.length ? (
           <Text as="p" className="px-2 py-3">
             {query.trim() && listedCount
@@ -167,6 +166,6 @@ export function CrewWorkList({
           />
         ) : null}
       </div>
-    </nav>
+    </div>
   );
 }

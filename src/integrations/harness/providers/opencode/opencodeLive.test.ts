@@ -141,7 +141,6 @@ vi.mock("../../core/child", () =>
         : args[1] === "get"
           ? "secret"
           : "http://127.0.0.1:4096",
-    freeHarnessPort: async () => 4096,
     harnessHttp,
     captureHostHarnessHttp,
     killChild,
@@ -299,6 +298,31 @@ it("isolates v1 compaction settings and resumes the same conversation on changes
     idle();
     await turn;
   }
+});
+
+it("starts a v1 live server with an OS-assigned port, not a pre-probed one", async () => {
+  let accepted = false;
+  const turn = sendOpenCodeTurn({
+    sessionId: "opencode-live",
+    cwd: "/repo",
+    model: "opencode:openai/gpt-5",
+    runtimeMode: "supervised",
+    text: "test",
+    attachments: [],
+    modelSettings: { autoCompact: "default" },
+    onEvent: () => undefined,
+    onAccepted: () => {
+      accepted = true;
+    },
+  });
+  await vi.waitFor(() => expect(accepted).toBe(true));
+  expect((spawnChild.mock.calls.at(-1) as unknown[] | undefined)?.[2]).toEqual([
+    "serve",
+    "--hostname=127.0.0.1",
+    "--port=0",
+  ]);
+  idle();
+  await turn;
 });
 
 it("refuses a stale v1 compaction override on a shared v2 service", async () => {

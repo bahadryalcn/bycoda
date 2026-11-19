@@ -103,6 +103,9 @@ function acquireNative(): Promise<KeepAwakeHandle> {
     timeout.unref?.();
   });
 }
+/** Restart budget after an unexpected helper exit: 1s, 2s, 4s, 8s, 16s, then give up. */
+const RESTART_ATTEMPTS = 5;
+const RESTART_BASE_DELAY_MS = 1000;
 /** Opt-in system sleep inhibition. The helper owns only its own native thread's
  * request; it never changes a power plan, display timeout, or another process. */
 export class HostAssistantKeepAwake {
@@ -112,6 +115,8 @@ export class HostAssistantKeepAwake {
   private error?: string;
   private closing = false;
   private tail: Promise<unknown> = Promise.resolve();
+  private restartAttempts = 0;
+  private restartTimer?: ReturnType<typeof setTimeout>;
   constructor(private readonly ports: KeepAwakePorts = {}) {
     this.supported = (ports.platform ?? process.platform) === "win32";
   }
@@ -129,45 +134,79 @@ export class HostAssistantKeepAwake {
   setEnabled(enabled: boolean): Promise<KeepAwakeStatus> {
     if (this.closing && enabled) return Promise.reject(new Error("Keep-awake service is closing."));
     this.requested = enabled;
-    const operation = this.tail.then(async () => {
-      if (!this.supported) {
-        this.publish();
-        return this.status;
-      }
-      if (!this.requested || this.closing) {
-        const handle = this.handle;
-        if (handle) {
-          await handle.release();
-          if (this.handle === handle) this.handle = undefined;
-        }
-        this.error = undefined;
-        this.publish();
-        return this.status;
-      }
-      if (this.handle) return this.status;
-      try {
-        const handle = await (this.ports.acquire ?? acquireNative)();
-        if (!this.requested || this.closing) {
-          await handle.release();
-          return this.status;
-        }
-        this.handle = handle;
-        this.error = undefined;
-        void handle.closed?.then(() => {
-          if (this.handle === handle) {
-            this.handle = undefined;
-            if (this.requested && !this.closing) this.error = "The system-awake helper stopped.";
-            this.publish();
-          }
-        });
-      } catch (error) {
-        this.error = error instanceof Error ? error.message : "The system-awake request failed.";
-      }
-      this.publish();
-      return this.status;
-    });
+    // Owner stop cancels any pending restart; owner start gets a fresh restart budget.
+    this.cancelRestart();
+    if (enabled) this.restartAttempts = 0;
+    return this.enqueue(() => this.reconcile());
+  }
+  /** Runs one task at a time on the serialized queue so acquire/release never overlap. */
+  private enqueue(task: () => Promise<KeepAwakeStatus>): Promise<KeepAwakeStatus> {
+    const operation = this.tail.then(task);
     this.tail = operation.catch(() => undefined);
     return operation;
+  }
+  private async reconcile(): Promise<KeepAwakeStatus> {
+    if (!this.supported) {
+      this.publish();
+      return this.status;
+    }
+    if (!this.requested || this.closing) {
+      const handle = this.handle;
+      if (handle) {
+        await handle.release();
+        if (this.handle === handle) this.handle = undefined;
+      }
+      this.error = undefined;
+      this.publish();
+      return this.status;
+    }
+    // Queued restart may run after another path already re-acquired: never hold two helpers.
+    if (this.handle) return this.status;
+    try {
+      const handle = await (this.ports.acquire ?? acquireNative)();
+      if (!this.requested || this.closing) {
+        await handle.release();
+        return this.status;
+      }
+      this.handle = handle;
+      this.error = undefined;
+      void handle.closed?.then(() => {
+        if (this.handle === handle) {
+          this.handle = undefined;
+          if (this.requested && !this.closing) {
+            this.error = "The system-awake helper stopped.";
+            this.scheduleRestart();
+          }
+          this.publish();
+        }
+      });
+    } catch (error) {
+      this.error = error instanceof Error ? error.message : "The system-awake request failed.";
+      // Only a restart attempt (budget spent > 0) retries; a failed first owner request reports once.
+      if (this.restartAttempts > 0 && this.requested && !this.closing) this.scheduleRestart();
+    }
+    this.publish();
+    return this.status;
+  }
+  private scheduleRestart() {
+    if (this.restartTimer) return;
+    if (this.restartAttempts >= RESTART_ATTEMPTS) {
+      // shortcut: retry budget resets only on owner re-enable, not after a long stable run; upgrade if helper crashes recur for days.
+      this.error = "The system-awake helper could not be restarted.";
+      return;
+    }
+    const delay = RESTART_BASE_DELAY_MS * 2 ** this.restartAttempts;
+    this.restartAttempts++;
+    this.restartTimer = setTimeout(() => {
+      this.restartTimer = undefined;
+      void this.enqueue(() => this.reconcile()).catch(() => undefined);
+    }, delay);
+    this.restartTimer.unref?.();
+  }
+  private cancelRestart() {
+    if (!this.restartTimer) return;
+    clearTimeout(this.restartTimer);
+    this.restartTimer = undefined;
   }
   async close() {
     this.closing = true;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   isMacTerminalClearShortcut,
+  isTerminalControlKey,
   macTerminalShortcutData,
   terminalToolShortcut,
 } from "./terminalKeys";
@@ -72,4 +73,24 @@ describe("mac terminal clear shortcut", () => {
     expect(isMacTerminalClearShortcut(key("k", { metaKey: true, altKey: true }))).toBe(false);
     expect(isMacTerminalClearShortcut(key("j", { metaKey: true }))).toBe(false);
   });
+});
+
+it("claims only plain Ctrl+letter as terminal control input", () => {
+  for (const letter of ["w", "d", "t", "n", "b", "p", "o", "j", "k"]) {
+    expect(isTerminalControlKey(key(letter, { ctrlKey: true }))).toBe(true);
+  }
+  // Non-Latin layouts report a non-ASCII key; the physical code still identifies the letter.
+  expect(isTerminalControlKey({ ...key("ц", { ctrlKey: true }), code: "KeyW" })).toBe(true);
+  for (const event of [
+    key("w"),
+    key("w", { ctrlKey: true, shiftKey: true }),
+    key("w", { ctrlKey: true, altKey: true }),
+    key("w", { ctrlKey: true, metaKey: true }),
+    key("Tab", { ctrlKey: true }),
+    key("1", { ctrlKey: true }),
+    key(",", { ctrlKey: true }),
+    key("`", { ctrlKey: true }),
+  ]) {
+    expect(isTerminalControlKey(event)).toBe(false);
+  }
 });

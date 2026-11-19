@@ -256,7 +256,11 @@ function FilePaneComponent({
                   visible={visible && file.id === pane.activeFileId}
                 />
               ) : kind && !delimited && !file.recoveredEditorDraft ? (
-                <DocumentView path={file.path} cwd={file.cwd} />
+                <DocumentView
+                  path={file.path}
+                  cwd={file.cwd}
+                  visible={visible && file.id === pane.activeFileId}
+                />
               ) : (
                 <Editor
                   documentId={file.id}

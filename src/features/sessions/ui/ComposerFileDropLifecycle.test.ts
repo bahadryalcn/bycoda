@@ -419,6 +419,64 @@ describe("Composer image drops", () => {
     expect(container.querySelector('[role="alert"]')?.textContent).toContain("Nothing to attach");
   });
 
+  describe("dropped blobs over the embed limit", () => {
+    function oversizedBlob(name: string) {
+      const file = new File(["x"], name, { type: "application/zip" });
+      Object.defineProperty(file, "size", { value: 20 * 1024 * 1024 + 1 });
+      return file;
+    }
+    const alertText = () => container.querySelector('[role="alert"]')?.textContent;
+
+    it("names the oversized file and keeps its valid sibling and the draft", async () => {
+      invoke.mockImplementation(async (command: string) =>
+        command === "write_attachment" ? "/owned/notes.txt" : [],
+      );
+      const session = await render();
+      await act(async () => {
+        domDrag(session, "drop", [
+          oversizedBlob("backup.zip"),
+          new File(["notes"], "notes.txt", { type: "text/plain" }),
+        ]);
+      });
+
+      expect(attachmentCount()).toBe(1);
+      expect(alertText()).toBe("backup.zip is larger than 20 MB and was not attached.");
+      expect(invoke).not.toHaveBeenCalledWith(
+        "write_attachment",
+        expect.objectContaining({ name: "backup.zip" }),
+      );
+    });
+
+    it("explains an all-oversized drop instead of saying the file was moved or deleted", async () => {
+      const session = await render();
+      await act(async () => {
+        domDrag(session, "drop", [oversizedBlob("backup.zip")]);
+      });
+
+      expect(attachmentCount()).toBe(0);
+      expect(alertText()).toBe("backup.zip is larger than 20 MB and was not attached.");
+      expect(alertText()).not.toContain("Nothing to attach");
+    });
+
+    it("keeps a large dropped file with a disk path as a path reference", async () => {
+      invoke.mockImplementation(async (command: string, args: { paths?: string[] }) =>
+        command === "inspect_paths"
+          ? (args.paths ?? []).map((path) => ({
+              path,
+              name: "backup.zip",
+              size: 500 * 1024 * 1024,
+              isDir: false,
+            }))
+          : [],
+      );
+      await render();
+      await nativeDrop(["/project/backup.zip"]);
+
+      expect(attachmentCount()).toBe(1);
+      expect(alertText()).toBeUndefined();
+    });
+  });
+
   it("allows a DOM image drop after an empty native drop", async () => {
     const session = await render();
     await nativeDrop([]);

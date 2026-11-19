@@ -14,6 +14,7 @@ import type { AutonomyDecision } from "../autonomy/autonomy-gate";
 import { policyDay, readAutonomyPolicy } from "../autonomy/autonomy-policy";
 import { recordOutboundEmail, sendEmailToPerson } from "../email/email-dispatch";
 import { emailAddressFor } from "../email/email-message";
+import type { SmtpTransportFactory } from "../email/smtp-sender";
 import { sanitizeSocialError } from "../core/social-helpers";
 import type { SocialServiceApi } from "../core/social-service-api";
 import type { SocialPrincipal } from "../social";
@@ -45,6 +46,8 @@ export type StepContext = {
   now: number;
   personalize?: Personalize;
   emailSecrets?: SecretValueStore;
+  /** SMTP transports shared by one tick; absent means each send connects on its own. */
+  smtp?: SmtpTransportFactory;
 };
 
 export type StepPlan = {
@@ -344,6 +347,7 @@ export async function dispatchStep(
       subject: plan.subject,
       body: plan.text,
       idempotencyKey: `outreach:${enrollment.id}:${step.id}`,
+      deps: { smtp: ctx.smtp },
       assertSendable: (target, channel) => service.assertSendable(target, channel),
     });
     await store.incrementCounter(

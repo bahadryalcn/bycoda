@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState, type Dispatch, type SetStateAction }
 import { loadNotesEnabled } from "../../../features/settings/model/settings";
 import { setCrewsPageOpen, useCrewsPageOpen } from "../../../features/crews/model/crewsPage";
 import type { AuxiliaryToolId } from "../../model/toolWindows";
+import { workspaceActiveTool } from "../layout/workspaceActiveTool";
 
 export interface SettingsReturnView {
   servers?: boolean;
@@ -65,28 +66,31 @@ export function useRailNavigation(d: RailNavigationDeps) {
     ? "settings"
     : d.searchViewOpen
       ? "search"
-      : d.serversViewOpen
-        ? crewsOpen
-          ? "crews"
-          : "servers"
-        : d.inboxViewOpen
-          ? "inbox"
-          : d.notesViewOpen
-            ? "notes"
-            : d.automationsViewOpen
-              ? (d.auxiliaryTool ??
-                (d.socialBoardShown ? "social" : d.taskBoardShown ? "tasks" : "automations"))
-              : "workspace";
+      : (workspaceActiveTool({
+          crewsOpen,
+          auxiliaryTool: d.auxiliaryTool,
+          automationsViewOpen: d.automationsViewOpen,
+          serversViewOpen: d.serversViewOpen,
+          inboxViewOpen: d.inboxViewOpen,
+          notesViewOpen: d.notesViewOpen,
+          socialBoardShown: d.socialBoardShown,
+          taskBoardShown: d.taskBoardShown,
+        }) ?? "workspace");
   const current: Visit = {
     view,
     // Tool windows have a bootstrap session underneath their chrome. It is not a destination.
     tabId: d.toolWindow ? "" : d.activeTabId,
     cwd: view === "social" && d.socialPanelCwd ? d.socialPanelCwd : d.projectCwd,
   };
+  const { toolWindow, openTabIds } = d;
+  // The caller builds a new Set each render, so gate on its contents, not its identity.
+  const openTabKey = JSON.stringify([...openTabIds]);
+  // One settings read per commit; it is the only validity input outside React state.
+  const notesEnabled = loadNotesEnabled();
   const valid = (visit: Visit) =>
-    (!d.toolWindow || visit.view !== "workspace") &&
-    (d.toolWindow || d.openTabIds.has(visit.tabId)) &&
-    (visit.view !== "notes" || loadNotesEnabled());
+    (!toolWindow || visit.view !== "workspace") &&
+    (toolWindow || openTabIds.has(visit.tabId)) &&
+    (visit.view !== "notes" || notesEnabled);
   const history = useRef({ back: [] as Visit[], current, forward: [] as Visit[] });
   const [navigation, setNavigation] = useState({ canBack: false, canForward: false });
   const updateNavigation = () => {
@@ -96,6 +100,9 @@ export function useRailNavigation(d: RailNavigationDeps) {
       prev.canBack === canBack && prev.canForward === canForward ? prev : { canBack, canForward },
     );
   };
+  // Reason: the stacks change only when the location, the open tabs, the tool-window
+  // mode or the notes setting change. Re-filtering them on unrelated App commits
+  // (issue #780) is avoidable work on the blocking layout path.
   useLayoutEffect(() => {
     const h = history.current;
     const back = h.back.filter(valid);
@@ -124,7 +131,7 @@ export function useRailNavigation(d: RailNavigationDeps) {
       history.current = { ...h, back, forward };
     }
     updateNavigation();
-  });
+  }, [current.view, current.tabId, current.cwd, toolWindow, openTabKey, notesEnabled]);
 
   const restore = (visit: Visit, previous: Visit) => {
     if (!d.toolWindow && visit.tabId !== previous.tabId) d.activateTab(visit.tabId);

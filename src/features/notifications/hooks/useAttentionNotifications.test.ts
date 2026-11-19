@@ -274,3 +274,32 @@ it("hides unseen finishes from the taskbar when the taskbar setting is off, but 
   expect(calls("set_taskbar_attention")).toEqual([]);
   expect(unseenFinishedSnapshot().has("done")).toBe(true);
 });
+
+it("rescans only the session whose transcript changed on a sessions update", async () => {
+  const quiet = session({ id: "quiet", busy: true });
+  const streaming = session({ id: "streaming", busy: true });
+  const quietScan = vi.spyOn(quiet.blocks, "filter");
+  await render([quiet, streaming], "other");
+  expect(quietScan).toHaveBeenCalledTimes(1);
+
+  // A streaming flush replaces only the streaming session's blocks.
+  const flushed = {
+    ...streaming,
+    blocks: [...streaming.blocks, { id: "a2", role: "assistant" as const, text: "more" }],
+  };
+  const streamingScan = vi.spyOn(flushed.blocks, "filter");
+  await render([quiet, flushed], "other");
+  expect(streamingScan).toHaveBeenCalledTimes(1);
+  expect(quietScan).toHaveBeenCalledTimes(1);
+
+  // The cache never hides a phase change: the quiet session now waits for approval.
+  const asking = {
+    ...quiet,
+    blocks: [
+      ...quiet.blocks,
+      { id: "p", role: "approval" as const, text: "Run", approval: { requestId: 3 } },
+    ],
+  };
+  await render([asking, flushed], "other");
+  expect(calls("set_taskbar_attention").at(-1)).toEqual({ count: 1, flash: "critical" });
+});

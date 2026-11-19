@@ -78,14 +78,18 @@ export class ProviderInboxBridge {
     return this.db.scope(async () => {
       await this.ready;
       await this.prune();
-      return [...this.clients.values()].some((time) => this.now() - time <= CLIENT_STALE_MS)
-        ? { available: true }
-        : {
-            available: false,
-            reason:
-              "Open the updated bycoda desktop app on this computer to manage its connected inbox providers.",
-          };
+      return this.availabilityNow();
     });
+  }
+  /** Client liveness only. Callers prune in their own scope first; `request` relies on that to prune once. */
+  private availabilityNow(): RemoteInboxAvailability {
+    return [...this.clients.values()].some((time) => this.now() - time <= CLIENT_STALE_MS)
+      ? { available: true }
+      : {
+          available: false,
+          reason:
+            "Open the updated bycoda desktop app on this computer to manage its connected inbox providers.",
+        };
   }
   async request(
     ownerHash: string,
@@ -96,13 +100,13 @@ export class ProviderInboxBridge {
     return this.db.scope(async () => {
       await this.ready;
       await this.prune();
-      const receipt = await this.existingRequest(ownerHash, requestId, operation);
+      const receipt = await this.findReceipt(ownerHash, requestId, operation);
       if (receipt) return receipt;
       if (typeof requestId !== "string" || !/^[A-Za-z0-9_-]{1,200}$/.test(requestId))
         throw new Error("Invalid inbox request ID.");
       const encoded = JSON.stringify(operation);
       const signature = operationSignature(operation);
-      const available = await this.availability();
+      const available = this.availabilityNow();
       if (!available.available) throw new Error(available.reason);
       const count = (await this.db
         .prepare(
@@ -167,16 +171,24 @@ export class ProviderInboxBridge {
     return this.db.scope(async () => {
       await this.ready;
       await this.prune();
-      if (typeof requestId !== "string" || !/^[A-Za-z0-9_-]{1,200}$/.test(requestId))
-        throw new Error("Invalid inbox request ID.");
-      const row = (await this.db
-        .prepare("SELECT * FROM remote_inbox_jobs WHERE owner_hash=? AND request_id=?")
-        .get(ownerHash, requestId)) as JobRow | undefined;
-      if (!row) return null;
-      if (row.signature !== operationSignature(operation))
-        throw new Error("This inbox request ID already belongs to another operation.");
-      return this.receipt(row);
+      return this.findReceipt(ownerHash, requestId, operation);
     });
+  }
+  /** Receipt lookup without pruning; callers prune in the same scope first. */
+  private async findReceipt(
+    ownerHash: string,
+    requestId: unknown,
+    operation: RemoteInboxOperation,
+  ): Promise<RemoteInboxReceipt | null> {
+    if (typeof requestId !== "string" || !/^[A-Za-z0-9_-]{1,200}$/.test(requestId))
+      throw new Error("Invalid inbox request ID.");
+    const row = (await this.db
+      .prepare("SELECT * FROM remote_inbox_jobs WHERE owner_hash=? AND request_id=?")
+      .get(ownerHash, requestId)) as JobRow | undefined;
+    if (!row) return null;
+    if (row.signature !== operationSignature(operation))
+      throw new Error("This inbox request ID already belongs to another operation.");
+    return this.receipt(row);
   }
   /** Agent targets must come from a completed, scoped provider discovery receipt. */
   async assertListedTarget(ownerHash: string, item: RemoteInboxTarget, cwd: string): Promise<void> {

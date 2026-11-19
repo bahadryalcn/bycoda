@@ -16,6 +16,15 @@ import type { HostSession } from "../../connections";
 import type { BackgroundSessionTarget } from "../model/backgroundSession";
 import { AgentMarkdown } from "../../sessions/public/AgentMarkdown";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
+import {
+  createRefreshScheduler,
+  HIDDEN_REFRESH_MS,
+} from "../../automations/model/refreshScheduler";
+
+const PREVIEW_POLL_MS = 3000;
+const PREVIEW_MAX_BACKOFF_MS = 60_000;
+// Consecutive failures before the poll stops on its own; only the owner's Retry restarts it.
+const PREVIEW_MAX_ATTEMPTS = 5;
 
 /** Host-owned transcript preview. Navigation only happens through the explicit action. */
 export function TaskSessionSheet({
@@ -35,42 +44,68 @@ export function TaskSessionSheet({
   const session = sessionState?.key === targetKey ? sessionState.value : undefined;
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
+  // The poll gave up after repeated failures; Retry is offered only then.
+  const [stalled, setStalled] = useState(false);
   const [opening, setOpening] = useState(false);
   const openingRequest = useRef(false);
+  // Polls this session's preview from the Host while the sheet is open; Retry
+  // (revision) restarts it, and the cleanup stops it so nothing publishes late.
   useEffect(() => {
-    let alive = true;
-    let timer: ReturnType<typeof setTimeout>;
     let known: HostSession | undefined;
-    const load = async () => {
+    let failures = 0;
+    const load = async (isCurrent: () => boolean) => {
       try {
         const next = await remoteRequest<HostSession | null>(target.machineId, "sessions.get", {
           sessionId: target.sessionId,
           preview: true,
           revision: known?.revision,
         });
-        if (!alive) return;
+        if (!isCurrent()) return;
         if (next) known = next;
         if (!known) {
           setError(t("This session is no longer available."));
+          scheduler.stop();
           return;
         }
         if (!known.session) throw new Error(t("This session is no longer available."));
         if (next) setSessionState({ key: `${target.machineId}:${target.sessionId}`, value: next });
         setError("");
-        if (known.status === "running") timer = setTimeout(load, 3000);
+        setStalled(false);
+        failures = 0;
+        // Only a running session changes; polling ends once it settles.
+        if (known.status !== "running") scheduler.stop();
       } catch (reason) {
-        if (alive) {
-          // The poll retries itself; a passing outage is covered by the global notice.
-          const message = presentRemoteError(reason);
-          if (message) setError(message);
-          if (!known || known.status === "running") timer = setTimeout(load, 3000);
+        if (!isCurrent()) return;
+        // A passing outage is covered by the global notice.
+        const message = presentRemoteError(reason);
+        if (message) setError(message);
+        if (known && known.status !== "running") {
+          scheduler.stop();
+          return;
         }
+        failures += 1;
+        if (failures >= PREVIEW_MAX_ATTEMPTS) {
+          setError(message || t("This session could not be loaded."));
+          setStalled(true);
+          scheduler.stop();
+          return;
+        }
+        // Rejecting makes the scheduler back off before the next attempt.
+        throw reason;
       }
     };
-    void load();
+    const scheduler = createRefreshScheduler({
+      run: load,
+      intervalMs: PREVIEW_POLL_MS,
+      hiddenIntervalMs: HIDDEN_REFRESH_MS,
+      maxBackoffMs: PREVIEW_MAX_BACKOFF_MS,
+    });
+    const onVisibility = () => scheduler.visibilityChanged();
+    document.addEventListener("visibilitychange", onVisibility);
+    scheduler.start();
     return () => {
-      alive = false;
-      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+      scheduler.stop();
     };
   }, [target.machineId, target.sessionId, revision]);
   // Conversation (what was asked and answered) reads first; operational history
@@ -96,25 +131,26 @@ export function TaskSessionSheet({
           leading="inherit"
           className="task-session-toolbar"
         >
+          {/* While loading, the body's LoadingText is the one indicator. */}
           <span role="status">
-            <Badge
-              tone={session?.status === "running" ? "accent" : "neutral"}
-              icon={
-                session?.status === "running" ? (
-                  <StatusDot tone="accent" label={t("Running")} />
-                ) : undefined
-              }
-            >
-              {session
-                ? t(
-                    session.status === "running"
-                      ? "Running"
-                      : session.status === "interrupted"
-                        ? "Interrupted"
-                        : "Idle",
-                  )
-                : t("Loading…")}
-            </Badge>
+            {session ? (
+              <Badge
+                tone={session.status === "running" ? "accent" : "neutral"}
+                icon={
+                  session.status === "running" ? (
+                    <StatusDot tone="accent" label={t("Running")} />
+                  ) : undefined
+                }
+              >
+                {t(
+                  session.status === "running"
+                    ? "Running"
+                    : session.status === "interrupted"
+                      ? "Interrupted"
+                      : "Idle",
+                )}
+              </Badge>
+            ) : null}
           </span>
           <Button
             variant="secondary"
@@ -140,9 +176,17 @@ export function TaskSessionSheet({
         {error ? (
           <Alert tone="danger">
             <span>{error}</span>
-            <Button variant="ghost" onClick={() => setRevision((value) => value + 1)}>
-              {t("Retry")}
-            </Button>
+            {stalled ? (
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setStalled(false);
+                  setRevision((value) => value + 1);
+                }}
+              >
+                {t("Retry")}
+              </Button>
+            ) : null}
           </Alert>
         ) : null}
         {!session && !error ? <LoadingText /> : null}

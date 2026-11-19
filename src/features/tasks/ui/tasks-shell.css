@@ -182,6 +182,10 @@
   margin: 0;
   padding: 0.5rem 1rem 0;
 }
+/* The board keeps a floor so the optional panels above it shrink first; the board scrolls itself. */
+.task-board-area {
+  min-block-size: min(10rem, 30dvh);
+}
 .task-scope-summary {
   flex: none;
   min-inline-size: 0;

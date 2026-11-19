@@ -154,4 +154,53 @@ describe("DocumentImage", () => {
     expect(createObjectURL).toHaveBeenCalledTimes(1);
     expect(container.querySelector("img")?.dataset.documentImage).toBe("/repo/new.png");
   });
+
+  // Keeps the image out of view so it stays a placeholder and never reads its file.
+  function keepFarFromView() {
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+  }
+
+  it("reserves the declared size before the image is read", async () => {
+    keepFarFromView();
+    await show("pending.png", { width: "600", height: "400" });
+
+    const placeholder = container.querySelector<HTMLElement>("[data-document-image]")!;
+    expect(placeholder.tagName).toBe("SPAN");
+    expect(placeholder.style.getPropertyValue("--document-image-width")).toBe("600px");
+    expect(placeholder.style.getPropertyValue("--document-image-height")).toBe("400px");
+    expect(readProjectImage).not.toHaveBeenCalled();
+  });
+
+  it("reserves the size an image last rendered at when it mounts again", async () => {
+    const widthSpy = vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(320);
+    const heightSpy = vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(180);
+    try {
+      readProjectImage.mockResolvedValue(PNG);
+      await show("shots/wide.png");
+      act(() => {
+        container.querySelector("img")!.dispatchEvent(new Event("load"));
+      });
+      act(() => root.unmount());
+      root = createRoot(container);
+
+      readProjectImage.mockClear();
+      keepFarFromView();
+      await show("shots/wide.png");
+
+      const placeholder = container.querySelector<HTMLElement>("[data-document-image]")!;
+      expect(placeholder.style.getPropertyValue("--document-image-reserved-width")).toBe("320px");
+      expect(placeholder.style.getPropertyValue("--document-image-reserved-height")).toBe("180px");
+      expect(readProjectImage).not.toHaveBeenCalled();
+    } finally {
+      widthSpy.mockRestore();
+      heightSpy.mockRestore();
+    }
+  });
 });

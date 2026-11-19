@@ -177,26 +177,45 @@ export async function createSessionListRuntime(
       throw new Error("Session read owner changed; retry");
     return epoch;
   };
+  // Compared field by field: the decoration inputs are primitives, so an identity check
+  // is exact and avoids serializing the same project fields for every row.
   const decoratedSummaries = new WeakMap<
     HostSessionSummary,
-    { key: string; value: HostSessionSummary }
+    {
+      name: string;
+      cwd: string;
+      branch: string | undefined;
+      crewRunId: string | undefined;
+      value: HostSessionSummary;
+    }
   >();
   /** Other registered ids of the same folder (legacy path spellings), in a stable order. */
-  const siblingProjectIds = async (project: { id: string; cwd: string }) =>
-    (await dependencies.engine.store.projects())
+  // The registry changes only in addProject, which moves projectRegistryVersion; reuse the
+  // loaded rows until then instead of scanning every registered project on each poll.
+  let registeredProjects: { version: number; rows: { id: string; cwd: string }[] } | undefined;
+  const siblingProjectIds = async (project: { id: string; cwd: string }) => {
+    const { store } = dependencies.engine;
+    const version = store.projectRegistryVersion;
+    let registry = registeredProjects;
+    if (registry?.version !== version) {
+      registry = { version, rows: await store.projects() };
+      registeredProjects = registry;
+    }
+    return registry.rows
       .filter(
         (other) => other.id !== project.id && dependencies.desktop.samePath(other.cwd, project.cwd),
       )
       .map((other) => other.id)
       .sort();
+  };
   const buildProjectSessionList = async (
-    projectId: string,
+    project: { id: string; name: string; cwd: string },
     local: HostSessionSummary[],
     etagPrefix: string,
     wakeSources: ReturnType<ServerBindings["pullRequestWatch"]["wakeSources"]>,
     siblingIds?: string[],
   ) => {
-    const project = await dependencies.engine.store.project(projectId);
+    const projectId = project.id;
     const stamps = new Map(local.map((session) => [session.id, session]));
     for (const adopted of await dependencies.engine.store.adopted(projectId)) {
       const stamp = stamps.get(adopted.id);
@@ -240,18 +259,20 @@ export async function createSessionListRuntime(
     const crews = await crewSessionRuns(dependencies.engine.store, projectId);
     const decorated = summaries.map((session) => {
       const crewRunId = crews.get(session.id);
-      const decorationKey = JSON.stringify([
-        project.name,
-        project.cwd,
-        branches.get(session.cwd ?? project.cwd),
-        crewRunId,
-      ]);
+      const branch = branches.get(session.cwd ?? project.cwd);
       const cached = decoratedSummaries.get(session);
-      if (cached?.key === decorationKey) return cached.value;
+      if (
+        cached &&
+        cached.name === project.name &&
+        cached.cwd === project.cwd &&
+        cached.branch === branch &&
+        cached.crewRunId === crewRunId
+      )
+        return cached.value;
       const value = {
         ...session,
         repo: project.name,
-        branch: branches.get(session.cwd ?? project.cwd) || undefined,
+        branch: branch || undefined,
         // Desktop rows keep the desktop's path spelling; compare normalized paths.
         worktreeCwd:
           session.cwd && !dependencies.desktop.samePath(session.cwd, project.cwd)
@@ -259,7 +280,13 @@ export async function createSessionListRuntime(
             : undefined,
         ...(crewRunId ? { crewRunId } : {}),
       };
-      decoratedSummaries.set(session, { key: decorationKey, value });
+      decoratedSummaries.set(session, {
+        name: project.name,
+        cwd: project.cwd,
+        branch,
+        crewRunId,
+        value,
+      });
       return value;
     });
     const list = withSessionWaits(decorated, wakeSources);
@@ -331,18 +358,25 @@ export async function createSessionListRuntime(
     const key = `${prefix}\0${JSON.stringify(paths.map((cwd, index) => [cwd, branches[index]]))}`;
     const current = projectChangeCache.get(projectId);
     if (current && current.key === key && now - current.refreshed < PROJECT_LIST_SAFETY_MS) {
+      // A hit makes the entry the newest, so the byte budget and count cap evict
+      // the least recently used project, not the one polled on every request.
+      projectChangeCache.delete(projectId);
+      projectChangeCache.set(projectId, current);
       const result = await current.promise;
       await currentProject();
       return result;
     }
     const promise = buildProjectSessionList(
-      projectId,
+      project,
       local.sessions,
       prefix,
       wakeSources,
       siblingIds,
     );
     const entry = { key, refreshed: now, paths, bytes: 0, promise };
+    // Map.set on an existing key keeps its old position; delete first so a rebuilt
+    // project is also the newest entry.
+    projectChangeCache.delete(projectId);
     projectChangeCache.set(projectId, entry);
     void promise.then(
       ({ bytes, paths, branchKey }) => {

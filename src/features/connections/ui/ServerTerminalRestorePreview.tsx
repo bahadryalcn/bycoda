@@ -12,6 +12,8 @@ import type {
   ServerTerminalRestore,
   ServerTerminalRestoreTab,
 } from "../model/serverTerminalRestore";
+import { errorText } from "../../../shared/lib/errors";
+import { sanitizeConnectionError } from "../model/remoteConnection";
 
 /** Read-only cold-restore preview. The parent owns persistence and must open a
  * fresh raw terminal ONLY in onConnect; mounting this never invokes callbacks.
@@ -121,7 +123,7 @@ export function ServerTerminalRestorePreview({
                     try {
                       await onConnect(tab, server);
                     } catch (reason) {
-                      setError(String(reason));
+                      setError(sanitizeConnectionError(errorText(reason)));
                     } finally {
                       setPending(undefined);
                     }

@@ -36,7 +36,9 @@ it("enforces a conversion deadline and releases worker listeners", async () => {
   vi.useFakeTimers();
   const instance = worker();
   const pending = loadDocx(new Uint8Array(), new AbortController().signal, () => instance, 100);
-  const rejection = expect(pending).rejects.toThrow("exceeded 15 seconds");
+  const rejection = expect(pending).rejects.toMatchObject({
+    problem: { reason: "timeout", ms: 100 },
+  });
   await vi.advanceTimersByTimeAsync(100);
   await rejection;
   expect(instance.terminate).toHaveBeenCalledOnce();
@@ -45,9 +47,12 @@ it("enforces a conversion deadline and releases worker listeners", async () => {
 });
 
 it("rejects expanded HTML/node limits before sanitizer insertion and returns safe-sized complete conversion", async () => {
-  expect(() => checkDocxHtml("a".repeat(MAX_DOCX_HTML_CHARACTERS + 1))).toThrow("too large");
+  const contentTooLarge = { problem: { reason: "contentTooLarge" } };
+  expect(() => checkDocxHtml("a".repeat(MAX_DOCX_HTML_CHARACTERS + 1))).toThrow(
+    expect.objectContaining(contentTooLarge),
+  );
   expect(() => checkDocxHtml("<section>text</section>".repeat(MAX_DOCX_ELEMENTS + 1))).toThrow(
-    "too large",
+    expect.objectContaining(contentTooLarge),
   );
   const instance = worker();
   const pending = loadDocx(new Uint8Array(), new AbortController().signal, () => instance);
@@ -57,7 +62,10 @@ it("rejects expanded HTML/node limits before sanitizer insertion and returns saf
 });
 
 it("preflights highly expanded or malformed ZIP directories before conversion", () => {
-  expect(() => checkDocxExpansion(new Uint8Array([1]))).toThrow("not a readable DOCX");
+  const contentTooLarge = expect.objectContaining({ problem: { reason: "contentTooLarge" } });
+  expect(() => checkDocxExpansion(new Uint8Array([1]))).toThrow(
+    expect.objectContaining({ problem: { reason: "notDocx" } }),
+  );
   const bytes = new Uint8Array(46 + 22);
   const view = new DataView(bytes.buffer);
   view.setUint32(0, 0x02014b50, true);
@@ -65,9 +73,22 @@ it("preflights highly expanded or malformed ZIP directories before conversion", 
   view.setUint32(46, 0x06054b50, true);
   view.setUint16(46 + 10, 1, true);
   view.setUint32(46 + 12, 46, true);
-  expect(() => checkDocxExpansion(bytes)).toThrow("too large");
+  expect(() => checkDocxExpansion(bytes)).toThrow(contentTooLarge);
   view.setUint32(24, 100, true);
   expect(() => checkDocxExpansion(bytes)).not.toThrow();
   view.setUint32(46 + 16, 67, true);
-  expect(() => checkDocxExpansion(bytes)).toThrow("too large");
+  expect(() => checkDocxExpansion(bytes)).toThrow(contentTooLarge);
+});
+
+it("hands the viewer typed reasons, never English sentences, for worker failures", async () => {
+  const failed = worker();
+  const replied = loadDocx(new Uint8Array(), new AbortController().signal, () => failed);
+  failed.onmessage!({
+    data: { ok: false, problem: { reason: "imagesTooLarge" } },
+  } as MessageEvent);
+  await expect(replied).rejects.toMatchObject({ problem: { reason: "imagesTooLarge" } });
+  const crashed = worker();
+  const crash = loadDocx(new Uint8Array(), new AbortController().signal, () => crashed);
+  crashed.onerror!(new Event("error") as ErrorEvent);
+  await expect(crash).rejects.toMatchObject({ problem: { reason: "workerFailed" } });
 });

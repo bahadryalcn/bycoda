@@ -17,7 +17,7 @@ export type RailTool = {
   onOpenContextMenu?: (x: number, y: number) => void;
 };
 
-/** Workspace tools as one joined row of icon buttons; each name lives in its tooltip. */
+/** Workspace tools as one joined group of icon buttons that wraps into rows on a narrow rail (bycoda.css); each name lives in its tooltip. */
 export function RailToolGroup({ label, tools }: { label: string; tools: readonly RailTool[] }) {
   return (
     <ButtonGroup aria-label={label} surface="navigation" selection="plate" className="w-full">

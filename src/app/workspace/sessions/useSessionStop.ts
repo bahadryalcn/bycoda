@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { hostSessionBinding } from "../../../features/connections/model/sessionExecutionBinding";
 import type { DesktopControlGuard } from "../../../features/connections/model/desktopLive";
 import {
@@ -118,7 +119,7 @@ export function useSessionStop(deps: SessionStopDeps) {
                         id: `stop-error:${sessionId}`,
                         role: "system" as const,
                         notice: "error" as const,
-                        text: `Stop failed: ${error instanceof Error ? error.message : String(error)}. Try Stop again.`,
+                        text: `Stop failed: ${errorText(error)}. Try Stop again.`,
                       },
                     ],
                   }
@@ -171,7 +172,7 @@ export function useSessionStop(deps: SessionStopDeps) {
           const failure = cancellations.find((result) => result.status === "rejected");
           if (failure?.status === "rejected") {
             const detail =
-              failure.reason instanceof Error ? failure.reason.message : String(failure.reason);
+              errorText(failure.reason);
             setSessions((prev) =>
               prev.map((s) =>
                 s.id === sessionId

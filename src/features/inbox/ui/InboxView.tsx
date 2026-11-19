@@ -30,7 +30,7 @@ import { useInboxProviderScopes } from "../hooks/useInboxProviderScopes";
 import { useInboxSourceSelection } from "../hooks/useInboxSourceSelection";
 import { useLinkedTarget, useLinkedTargetItem } from "../hooks/useLinkedTarget";
 import { visibleInboxItems } from "../model/inboxVisibleItems";
-import { hasActiveOverlay } from "../../../shared/ui/overlay";
+import { shouldHandleGlobalEscape } from "../../../shared/ui/overlay";
 import {
   ChevronsUpDown,
   ChevronLeft,
@@ -62,6 +62,7 @@ import { WindowControls } from "../../../app/shell/WindowControls";
 import { useDragResize } from "../../../shared/hooks/useDragResize";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { useTabGroupLogos } from "../../projects/hooks/useTabGroupLogos";
+import { releaseGithubReadBlock } from "../model/githubReadGate";
 import {
   inboxItemKey,
   inboxProjectsForRail,
@@ -194,6 +195,9 @@ export function InboxView({
   const [refresh, setRefresh] = useState(0);
   const requestRefresh = (action: "toolbar" | "retry", retryFailedOnly = false) => {
     if (refreshActionRef.current) return;
+    // Both actions are explicit: a pause GitHub did not time may be probed again. A reset time
+    // GitHub stated still holds, so the read fails at once with that time and spends no request.
+    if (source === "github") releaseGithubReadBlock();
     refreshActionRef.current = action;
     collection.setRetryFailedOnly(retryFailedOnly);
     setRefreshAction(action);
@@ -408,9 +412,25 @@ export function InboxView({
     },
   });
 
+  const visibleSources = visibleInboxSources(connections).filter(
+    (source) => !pullRequestsOnly || !isTrackerSource(source),
+  );
+  const connectableSources = connectableInboxSources(connections);
+  const sourceAvailable = visibleSources.includes(source);
+  const noSourcesConnected = visibleSources.length === 0;
+  const hasMessaging = messaging.accounts.length > 0;
+  const messagesOpen = hasMessaging && (messagesChosen || noSourcesConnected);
+  const connectMessages = !pullRequestsOnly && messaging.loaded && !hasMessaging;
+  const boardDetailOpen =
+    boardIssue !== null && !messagesOpen && source === "jira" && jiraView === "board";
+
   useEffect(() => {
+    // Bubble phase on purpose: a Jira drag cancel (window, capture) and any control that
+    // consumed Escape (a field) have already marked the event handled, so this only acts
+    // on an Escape nothing deeper wanted: close a menu, then the open board detail, then
+    // leave the Inbox.
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented || hasActiveOverlay()) return;
+      if (!shouldHandleGlobalEscape(event)) return;
       event.preventDefault();
       event.stopPropagation();
       if (filterMenu) {
@@ -421,21 +441,15 @@ export function InboxView({
         setConnectMenuOpen(false);
         return;
       }
+      if (boardDetailOpen) {
+        closeBoardIssue();
+        return;
+      }
       onCloseRef.current?.();
     };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [connectMenuOpen, filterMenu]);
-
-  const visibleSources = visibleInboxSources(connections).filter(
-    (source) => !pullRequestsOnly || !isTrackerSource(source),
-  );
-  const connectableSources = connectableInboxSources(connections);
-  const sourceAvailable = visibleSources.includes(source);
-  const noSourcesConnected = visibleSources.length === 0;
-  const hasMessaging = messaging.accounts.length > 0;
-  const messagesOpen = hasMessaging && (messagesChosen || noSourcesConnected);
-  const connectMessages = !pullRequestsOnly && messaging.loaded && !hasMessaging;
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [boardDetailOpen, connectMenuOpen, filterMenu]);
 
   const collection = useInboxCollection({
     projects,
@@ -1006,6 +1020,7 @@ export function InboxView({
       codeHostProjects={codeScopes.scopes?.projects}
       hiddenCodeHostProjects={codeScopes.hidden}
       codeHostError={codeScopes.error}
+      codeHostIncomplete={codeScopes.scopes?.incomplete ?? null}
       onCodeHostProjectsChange={codeScopes.save}
       x={filterMenu.x}
       y={filterMenu.y}
@@ -1132,12 +1147,6 @@ export function InboxView({
                   "jira-board-detail",
                 )}
                 aria-label={boardIssue.identifier}
-                onKeyDown={(event) => {
-                  if (event.key === "Escape" && !hasActiveOverlay()) {
-                    event.preventDefault();
-                    closeBoardIssue();
-                  }
-                }}
               >
                 <Button
                   variant="ghost"

@@ -115,6 +115,7 @@ it.each([false, true])(
     host.status = {
       state: "deferred",
       message: "The host update waits until running sessions finish.",
+      reason: "waiting-for-sessions",
     };
     await draw({ hideTopBar, workspaceMode: "worktree" });
     expect(container.textContent).toContain(
@@ -149,6 +150,7 @@ it("does not describe a local pending update as the remote machine's update", as
   host.status = {
     state: "deferred",
     message: "The host update waits until running sessions finish.",
+    reason: "waiting-for-sessions",
   };
   await draw({
     cwd: "remote://older/repo",
@@ -170,6 +172,7 @@ it("keeps update recovery available when the owner changes language while the er
   host.status = {
     state: "deferred",
     message: "The host update waits until running sessions finish.",
+    reason: "waiting-for-sessions",
   };
   await draw();
   await act(async () => setLanguagePreference("tr"));

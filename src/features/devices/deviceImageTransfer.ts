@@ -62,12 +62,17 @@ export function deviceImageTransferBinding(operation: DeviceImageTransferOperati
   ]);
 }
 
-export async function deviceImageTransferFingerprint(value: unknown): Promise<string> {
+/** SHA-256 as lowercase hex. The digest itself runs natively, off the main thread. */
+export async function deviceImageTransferDigest(value: string | BufferSource): Promise<string> {
   const digest = await crypto.subtle.digest(
     "SHA-256",
-    new TextEncoder().encode(JSON.stringify(value)),
+    typeof value === "string" ? new TextEncoder().encode(value) : value,
   );
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+export function deviceImageTransferFingerprint(value: unknown): Promise<string> {
+  return deviceImageTransferDigest(JSON.stringify(value));
 }
 
 /** Never evict receipts: eviction would let an old request apply twice. At capacity,

@@ -4,6 +4,7 @@ import { isImeComposition } from "../../../../../shared/lib/keyboard";
 import { Button } from "../../../../../shared/ui/Button";
 import { Modal, ModalActions } from "../../../../../shared/ui/Modal";
 import { TextField } from "../../../../../shared/ui/TextField";
+import { errorText } from "../../../../../shared/lib/errors";
 import { SAVED_THEME_NAME_MAX, normalizeThemeName } from "../../../model/savedThemes";
 
 /** Asks for a saved theme's name; Enter confirms, and an empty name cannot be confirmed. */
@@ -35,7 +36,7 @@ export function ThemeNameDialog({
       await onSubmit(clean);
       onClose();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(errorText(cause));
       setBusy(false);
     }
   };

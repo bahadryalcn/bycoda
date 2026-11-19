@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { McpConnection } from "./mcp";
 import {
   clearMcpSettingsCache,
+  describeMcpConfigWarnings,
   getCachedMcpSettings,
   invalidateMcpSettings,
   loadMcpSettings,
@@ -227,4 +228,31 @@ it("rereads both views after mutation while retaining last-good rows", async () 
   await loadMcpSettings("/repo", false, { claudeHealth: false });
   await loadMcpSettings("/repo", false, { globalOnly: true });
   expect(invoke.mock.calls.filter(([command]) => command === "mcp_discover")).toHaveLength(4);
+});
+
+it("reports unreadable configuration files apart from an empty server list", async () => {
+  const warning = {
+    provider: "claude",
+    scope: "user",
+    configPath: "/home/.claude.json",
+    message: "Invalid JSON (EOF while parsing an object at line 1 column 20)",
+  };
+  invoke.mockResolvedValue({ connections: [], warnings: [warning] });
+  const snapshot = await loadMcpSettings("/repo", false, { claudeHealth: false });
+  expect(snapshot.servers).toEqual([]);
+  expect(snapshot.error).toBe("");
+  expect(snapshot.configWarnings).toEqual([warning]);
+  expect(describeMcpConfigWarnings(snapshot.configWarnings!)).toBe(
+    "/home/.claude.json: Invalid JSON (EOF while parsing an object at line 1 column 20)",
+  );
+  // A failed refresh keeps the last good read, including which files were unreadable.
+  invoke.mockRejectedValue(new Error("busy"));
+  const failed = await loadMcpSettings("/repo", true, { claudeHealth: false });
+  expect(failed.error).toContain("busy");
+  expect(failed.configWarnings).toEqual([warning]);
+  // Once the file is readable again the warning is gone.
+  invoke.mockResolvedValue({ connections: configured, warnings: [] });
+  const repaired = await loadMcpSettings("/repo", true, { claudeHealth: false });
+  expect(repaired.configWarnings).toBeUndefined();
+  expect(repaired.servers).toHaveLength(1);
 });

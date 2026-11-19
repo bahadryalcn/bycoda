@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { AssistantSessionManagement } from "../model/session";
@@ -118,7 +119,7 @@ function LocalControl({
           if (next.detached) setUncertain(false);
         },
         error: (cause) => {
-          if (current()) setError(cause instanceof Error ? cause.message : String(cause));
+          if (current()) setError(errorText(cause));
         },
         done: () => {
           if (current()) setBusy(false);

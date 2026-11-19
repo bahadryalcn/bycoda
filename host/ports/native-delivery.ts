@@ -10,7 +10,8 @@ import type {
 } from "../domains/native-delivery/ports";
 import type { NativeWorkspaceOwnerScope } from "../domains/native-workspaces/ports";
 import type { NativeServiceOwnerPorts } from "../domains/native-services/ports";
-import { HostDomainAuthorizationError } from "../domains/context";
+import { HostDomainAuthorizationError, HostDomainOutcomeError } from "../domains/context";
+import { StoreAdmissionExpiredError } from "../store-db";
 import {
   NativeDeliveryIdentitySchema,
   NativeDeliveryResultSourceSchema,
@@ -20,6 +21,7 @@ import { NativeBufferUpdateParamsSchema } from "../../src/shared/model/host-cont
 import { NativeServiceUploadTargetSchema } from "../../src/shared/model/host-contracts/native-service-upload";
 import { NATIVE_SERVICES_RPC_SCHEMAS } from "../../src/shared/model/host-contracts/native-services";
 import {
+  NATIVE_DELIVERY_EPOCH_GAP_METHOD,
   NATIVE_DELIVERY_EPOCH_RPC_SCHEMAS,
   NativeDeliveryEpochRefSchema,
   parseNativeDeliveryEpochCompactParams,
@@ -44,9 +46,16 @@ export function bindNativeDeliveryOwner(
     if (!(await authorized())) throw new HostDomainAuthorizationError();
   };
   return {
-    call: (method, params, retain) =>
+    call: (method, params, retain, ingress) =>
       store.db.withAuthorization(authorized, async () => {
         await authorize();
+        if (method === NATIVE_DELIVERY_EPOCH_GAP_METHOD) {
+          retain(authorized);
+          const request = NATIVE_DELIVERY_EPOCH_RPC_SCHEMAS[method].params.parse(params);
+          const result = await journal.epochs.resolveGap(principal, request);
+          await authorize();
+          return result;
+        }
         if (method.startsWith("native.delivery.epochs.")) {
           retain(authorized);
           const value = await (async () => {
@@ -163,7 +172,7 @@ export function bindNativeDeliveryOwner(
               : NATIVE_SERVICES_RPC_SCHEMAS[kind as Exclude<NativeDeliveryKind, "buffer">].params
           ).parse(JSON.parse(params.paramsJson));
           await authorize();
-          await journal.execute(principal, kind, identity, async () => {
+          const effect = async () => {
             let result: unknown;
             if (kind === "buffer") {
               result = await adapters.workspaceOwner(async (owner) => {
@@ -196,8 +205,37 @@ export function bindNativeDeliveryOwner(
             }
             await authorize();
             return result;
-          });
+          };
+          // Fast acknowledgement exists only for the service targets (see the contract).
+          const acknowledge = !buffer && params.acknowledge === "admission";
+          // The Host's own continuation owns the effect; the request's ingress deadline
+          // bounds only its admission. A request that waited out that deadline in the queue
+          // is refused here with nothing admitted, never run late for a caller that left.
+          const started = await journal
+            .begin(principal, kind, identity, effect, {
+              admitBefore: ingress?.admitBefore,
+              acknowledgeAdmission: acknowledge,
+            })
+            .catch((error: unknown) => {
+              if (error instanceof StoreAdmissionExpiredError)
+                throw new HostDomainOutcomeError(
+                  "Native delivery was not admitted before its request deadline; nothing ran.",
+                  "not-sent",
+                  { cause: error },
+                );
+              throw error;
+            });
+          if (started.acknowledgeEarly) {
+            // Durable admission is the whole answer: no business result is claimed, and the
+            // effect keeps running on the Host. The caller reads the outcome by original id.
+            await authorize();
+            return { ...identity, target: kind, state: "accepted" as const };
+          }
+          await started.settled;
         }
+        // Sampled before the read: the registry entry is added before admission commits and
+        // dropped after the record commits, so (live, admitted row) never mislabels a finished one.
+        const live = journal.isInflight(principal, kind, identity);
         let row = method.endsWith(".ack")
           ? await journal.readMetadata(principal, kind, identity)
           : await journal.read(principal, kind, identity);
@@ -276,6 +314,12 @@ export function bindNativeDeliveryOwner(
             return { ...scope, state: "recorded" as const, resultSource };
           const result = NATIVE_SERVICES_RPC_SCHEMAS[kind].result.parse(row.result);
           return { ...scope, state: "recorded" as const, result };
+        }
+        if (row.state === "admitted" && params.acknowledge === "admission" && live) {
+          // Still executing on this Host process. This is liveness only; a restart or a
+          // failed effect leaves the admitted original unknown, never re-run.
+          await authorize();
+          return { ...scope, state: "accepted" as const };
         }
         if (kind === "native.services.workspace.format" && row.resultUnavailable) {
           // This proves only that the exact original can never publish a result.

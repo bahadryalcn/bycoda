@@ -9,6 +9,7 @@ import { agentDefaultsCapabilities } from "../settings-defaults/archive-capabili
 import { WORKSPACE_CAPABILITIES } from "../workspaces/workspace-contracts";
 import type { ServerBindings } from "./bindings";
 import { GROUP_LOCK_REMOTE_CAPABILITY } from "../../src/shared/model/host-contracts/group-lock";
+import { DECISION_INSTALL_CAPABILITY } from "../../src/shared/model/host-contracts/decision-models";
 export function createEnvironmentRuntime(
   dependencies: Pick<
     ServerBindings,
@@ -124,8 +125,14 @@ export function createEnvironmentRuntime(
         "native.services.workspace.format.bounded.v1",
         "native.buffers.delivery.ack.v1",
         "native.services.delivery.ack.v1",
+        "native.services.delivery.admission.v1",
+        // An idle desktop take may be held open for `waitMs` (see the desktop relay).
+        "native.services.conversation.desktop.take.wait.v1",
         "native.delivery.epochs.v2",
+        "native.delivery.epochs.gaps.v1",
         "transport.ws.workspaces.cleanup.v1",
+        // Install start, progress and cancel for decision models (owner RPC; see the contract).
+        DECISION_INSTALL_CAPABILITY,
         ...(dependencies.buildIdentity ? ["build.identity.v1"] : []),
         // Offered only while a desktop window that can verify the password is beating.
         ...(dependencies.desktop.live.groupLock.ready() ? [GROUP_LOCK_REMOTE_CAPABILITY] : []),
@@ -182,6 +189,7 @@ export function createEnvironmentRuntime(
         "crews.delete.v1",
         "crews.run-delete.v1",
         "crews.agent-groups.v1",
+        "crews.agent-group-update.v1",
         "crews.access.v1",
         "crews.identity.v1",
         "crews.active.v1",
@@ -254,6 +262,7 @@ export function createEnvironmentRuntime(
         "tasks.notes",
         "tasks.review-recheck",
         "tasks.finish-with-findings",
+        "tasks.reorder-guard",
         "tasks.blocked-takeover",
         "tasks.continue-until-done",
         "goals",

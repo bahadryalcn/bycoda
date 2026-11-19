@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isGitWatched, subscribeGitChanged } from "../../../platform/tauri/fs";
@@ -35,6 +36,7 @@ function estimateBytes(value: unknown): number {
       for (const child of Array.isArray(item) ? item : Object.values(item)) pending.push(child);
     } else bytes += 8;
   }
+  if (pending.length) return Number.POSITIVE_INFINITY;
   return bytes;
 }
 
@@ -47,10 +49,15 @@ function readCached<T>(key: string): T | undefined {
   return value as T;
 }
 
-function writeCached(key: string, data: unknown) {
+function writeCached(key: string, data: unknown): boolean {
   cachedBytes -= cacheSizes.get(key) ?? 0;
   cache.delete(key);
+  cacheSizes.delete(key);
   const size = estimateBytes(data);
+  if (!Number.isFinite(size)) {
+    completed.delete(key);
+    return false;
+  }
   cache.set(key, data);
   cacheSizes.set(key, size);
   cachedBytes += size;
@@ -64,6 +71,7 @@ function writeCached(key: string, data: unknown) {
     // Without its data a "completed" mark would make a refresh interval skip the read.
     completed.delete(oldest);
   }
+  return true;
 }
 
 /** Retain good data on refresh failure; ignore replies from a previous resource. */
@@ -132,8 +140,7 @@ export function useGitResource<T>(
             group.latest === flight;
           flight = read()
             .then((data) => {
-              if (current()) {
-                writeCached(key, data);
+              if (current() && writeCached(key, data)) {
                 completed.set(key, { at: Date.now(), error: null });
               }
               return data;
@@ -142,7 +149,7 @@ export function useGitResource<T>(
               if (current())
                 completed.set(key, {
                   at: Date.now(),
-                  error: error instanceof Error ? error.message : String(error),
+                  error: errorText(error),
                 });
               throw error;
             })

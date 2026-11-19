@@ -9,6 +9,7 @@ import {
 } from "../../../integrations/harness/core/handoffPhase";
 import { t, useFormat, useLocale, useT, type BoundFormat } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
+import { BrandMark } from "../../../shared/ui/BrandMark";
 import {
   ChatPending,
   ChatNote,
@@ -45,7 +46,11 @@ import { useReportApprovalCardOnScreen } from "./approvalCardVisibility";
 import { approvalDetail } from "../model/approvalDetail";
 import { useApprovalDecisionControl } from "./useApprovalDecisionControl";
 import type { ApprovalDecision } from "../../../integrations/harness";
-import { isEditTool, stubFilePreview } from "../../../integrations/harness/core/preview";
+import {
+  isEditTool,
+  isExecuteTool,
+  stubFilePreview,
+} from "../../../integrations/harness/core/preview";
 import { useToolCallDisplay } from "../model/reactiveReads";
 import {
   HARNESS_TITLE,
@@ -293,12 +298,19 @@ const ActivityPhaseGroup = memo(function ActivityPhaseGroup({
 
   const titledLabel = <OverflowTooltip label={title}>{label}</OverflowTooltip>;
 
-  // A line the agent wrote with nothing under it is just that line.
+  // A line the agent wrote with nothing under it is just that line. It has no
+  // steps to disclose, so a cut note is read in full through the overflow
+  // tooltip, which the focusable wrapper opens from the keyboard as well.
   if (inert) {
     return (
       <div className="flex min-w-0 items-center gap-1.5 py-1">
         <ActivityPhaseIcon kind={phase.kind} />
-        {label}
+        <OverflowTooltip label={title}>
+          {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- a note cut at the pane width must stay reachable by keyboard to open its full-text tooltip */}
+          <span className="flex min-w-0 flex-1" tabIndex={0}>
+            {label}
+          </span>
+        </OverflowTooltip>
       </div>
     );
   }
@@ -344,7 +356,7 @@ const ActivityPhaseGroup = memo(function ActivityPhaseGroup({
                 ref={setLiveScroller}
                 className={
                   active && override !== true && !revealed && !needsAttention
-                    ? "zen-phase-live zen-phase-summary"
+                    ? "zen-phase-live"
                     : undefined
                 }
               >
@@ -850,11 +862,15 @@ function ActivityToolRow({
   const pending = needsApproval(block);
   const errorDetail = !pending && state === "rejected" ? block.tool?.detail?.trim() : undefined;
   const hasResult = !pending && hasToolInspection(block);
+  const command =
+    block.tool?.preview?.kind === "shell" ||
+    isExecuteTool(block.tool?.kind, block.text || block.tool?.title);
   const inspectionLabel =
     block.tool?.preview?.kind === "write" ? "Show changes for {p2}" : "Show output for {p2}";
   const summary = (
     <ToolCallSummary
       label={label}
+      command={command}
       preview={block.tool?.preview}
       cwd={cwd}
       chip={bare}
@@ -947,7 +963,7 @@ function errorSummaryLine(detail: string): string {
 
 function BycodaMark({ className = "size-4" }: { className?: string }) {
   useLocale();
-  return <img src={PRODUCT_IDENTITY.logoSrc} alt="" className={`shrink-0 ${className}`} />;
+  return <BrandMark className={`shrink-0 ${className}`} />;
 }
 
 /** Bycoda commands keep both successful results and failures available on demand. */
@@ -1151,6 +1167,7 @@ export function ToolCall({
 
 function ToolCallSummary({
   label,
+  command,
   preview,
   cwd,
   onOpenFile,
@@ -1162,6 +1179,7 @@ function ToolCallSummary({
   working = false,
 }: {
   label: string;
+  command: boolean;
   preview?: ToolPreview;
   cwd?: string;
   onOpenFile?: (path: string) => void;
@@ -1182,40 +1200,33 @@ function ToolCallSummary({
   );
   // A running command or search reads as one live line: verb and command sweep together.
   if (working && (!action || !target || !isFile)) {
-    return (
-      <OverflowTooltip label={label}>
-        <span className="flex min-w-0 flex-1 font-sans">
-          <WorkingIndicator
-            className="min-w-0 flex-1"
-            text={{ size: "body" }}
-            truncate
-            glyph={false}
-          >
-            {action && target ? (
-              <>
-                {t(action)}{" "}
-                <span className="font-mono text-ui-secondary text-(--color-content)">{target}</span>
-              </>
-            ) : (
-              <span className="font-mono text-ui-secondary">{label}</span>
-            )}
-          </WorkingIndicator>
-        </span>
-      </OverflowTooltip>
+    const summary = (
+      <span className="flex min-w-0 flex-1 font-sans">
+        <WorkingIndicator className="min-w-0 flex-1" text={{ size: "body" }} truncate glyph={false}>
+          {action && target ? (
+            <>
+              {t(action)}{" "}
+              <span className="font-mono text-ui-secondary text-(--color-content)">{target}</span>
+            </>
+          ) : (
+            <span className="font-mono text-ui-secondary">{label}</span>
+          )}
+        </WorkingIndicator>
+      </span>
     );
+    return command ? summary : <OverflowTooltip label={label}>{summary}</OverflowTooltip>;
   }
   if (!action || !target) {
-    return (
-      <OverflowTooltip label={label}>
-        <span
-          className={`min-w-0 flex-1 truncate font-mono text-ui-secondary ${
-            failed ? "text-(--ui-tone-danger-fg)" : "text-(--transcript-tool-ink)"
-          }`}
-        >
-          {label}
-        </span>
-      </OverflowTooltip>
+    const summary = (
+      <span
+        className={`min-w-0 flex-1 truncate font-mono text-ui-secondary ${
+          failed ? "text-(--ui-tone-danger-fg)" : "text-(--transcript-tool-ink)"
+        }`}
+      >
+        {label}
+      </span>
     );
+    return command ? summary : <OverflowTooltip label={label}>{summary}</OverflowTooltip>;
   }
   const openFile =
     action === "Edit" || action === "Write" ? (onOpenDiff ?? onOpenFile) : onOpenFile;

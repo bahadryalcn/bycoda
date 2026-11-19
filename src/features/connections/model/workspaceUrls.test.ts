@@ -106,6 +106,40 @@ describe("workspace development URLs", () => {
     expect(featureHost).not.toHaveBeenCalled();
   });
 
+  it.each([
+    "10.example.com",
+    "127.example.com",
+    "100.97.example.com",
+    "192.168.example.com",
+    "172.16.example.com",
+  ])(
+    "opens public DNS name %s without searching the owning host's development servers",
+    async (host) => {
+      const url = `http://${host}:5173/docs`;
+      await openWorkspaceUrl(cwd, url);
+      expect(openUrl).toHaveBeenCalledWith(url);
+      expect(featureHost).not.toHaveBeenCalled();
+    },
+  );
+
+  it("routes a fully qualified localhost name through the owning host", async () => {
+    await openWorkspaceUrl(cwd, "http://localhost.:5173/nested?x=1#here");
+    expect(featureHost).toHaveBeenCalledWith(cwd, "dev.servers.private-access");
+    expect(openUrl).toHaveBeenCalledWith("http://127.0.0.1:49123/nested?x=1#here");
+  });
+
+  it.each(["http", "https"])(
+    "rejects credentialed %s development links before opening",
+    async (protocol) => {
+      await expect(
+        openWorkspaceUrl(cwd, `${protocol}://user:example@localhost:5173/`),
+      ).rejects.toThrow("Choose an HTTP or HTTPS development server URL without credentials.");
+      expect(featureHost).not.toHaveBeenCalled();
+      expect(openUrl).not.toHaveBeenCalled();
+      expect(openHostToolsWindow).not.toHaveBeenCalled();
+    },
+  );
+
   it("matches private IP links only to their exact discovered listening address", async () => {
     await expect(accessibleDevelopmentUrl(cwd, "http://192.168.2.8:5173/")).rejects.toThrow(
       "No running",

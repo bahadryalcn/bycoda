@@ -33,6 +33,10 @@ parentPort.on("message", async ({ id, owner, method, sql, params }) => {
     parentPort.postMessage({ id });
     return;
   }
+  const startedAt = performance.now();
+  // Worker-side execution time, so the owner can tell it apart from queueing and thread hops.
+  const post = (message) =>
+    parentPort.postMessage({ ...message, ms: performance.now() - startedAt });
   try {
     if (!Number.isSafeInteger(id) || typeof owner !== "string" || !Array.isArray(params))
       throw new Error("Invalid database request.");
@@ -90,7 +94,7 @@ parentPort.on("message", async ({ id, owner, method, sql, params }) => {
         if (cursors.size >= 16) throw new Error("Too many open database cursors.");
         const cursor = ++cursorSequence;
         cursors.set(cursor, { owner, iterator: db.prepare(sql).iterate(...params) });
-        parentPort.postMessage({ id, value: cursor });
+        post({ id, value: cursor });
         return;
       } else if (method === "cursorNext" || method === "cursorClose") {
         const cursor = cursors.get(params[0]);
@@ -118,7 +122,7 @@ parentPort.on("message", async ({ id, owner, method, sql, params }) => {
                     ? value.byteLength
                     : 8;
           }
-          parentPort.postMessage({ id, value: { rows, done } });
+          post({ id, value: { rows, done } });
           return;
         }
       } else if (method === "batchWrites") {
@@ -163,13 +167,13 @@ parentPort.on("message", async ({ id, owner, method, sql, params }) => {
         }
       } else if (method === "get" || method === "all" || method === "run") {
         const value = prepare(sql)[method](...params);
-        parentPort.postMessage({ id, value });
+        post({ id, value });
         return;
       } else throw new Error("Unknown database operation.");
     }
-    parentPort.postMessage({ id });
+    post({ id });
   } catch (error) {
-    parentPort.postMessage({
+    post({
       id,
       error: error instanceof Error ? error.message : "Database operation failed.",
       code: error?.code,

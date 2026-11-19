@@ -4,6 +4,7 @@ import { runPlan, stepGate } from "./ai-plan-run";
 import { savePlan, type StoredPlan } from "./ai-plan-store";
 import { AI_PRINCIPAL, makeKit, NOW, OWNER } from "./ai-fixtures";
 import type { AiPlanStep } from "../../../src/features/social/model/socialActions";
+import { SocialPlatformError } from "../../../src/integrations/social/adapter";
 
 const PLAN_ID = "3f2a9c1e-7b4d-4e8f-9a6b-1c2d3e4f5a6b";
 
@@ -119,6 +120,40 @@ describe("AI plan run", () => {
     await expect(runPlan(kit.ctx, { planId: PLAN_ID, approvedStepIds: [] })).rejects.toThrow(
       "belongs to another actor",
     );
+  });
+
+  it("keeps a completed step saved when its audit write fails, so a rerun does not replay it", async () => {
+    const kit = makeKit();
+    const SECOND: AiPlanStep = { ...READ, id: "s3" };
+    await savePlan(kit.ctx, plan("owner", [READ, SECOND]));
+    kit.store.putAiAction.mockRejectedValueOnce(new Error("Audit store is full."));
+    await expect(runPlan(kit.ctx, { planId: PLAN_ID, approvedStepIds: [] })).rejects.toThrow(
+      "Audit store is full.",
+    );
+    expect(JSON.parse(kit.settings.get(`ai.plan.${PLAN_ID}`) ?? "{}").completed).toEqual(["s1"]);
+
+    const rerun = await runPlan(kit.ctx, { planId: PLAN_ID, approvedStepIds: [] });
+    expect(kit.call.mock.calls.map((args) => args[2])).toEqual([{ id: "d1" }, { id: "d1" }]);
+    expect(rerun.results).toEqual([
+      { stepId: "s1", status: "done", message: "Already done." },
+      { stepId: "s3", status: "done" },
+    ]);
+  });
+
+  it("does not retry a rate-limited step at once, and reports when it may run again", async () => {
+    const RETRY_AT = NOW + 60_000;
+    const kit = makeKit({
+      call: async () => {
+        throw new SocialPlatformError("rate_limit", RETRY_AT);
+      },
+    });
+    await savePlan(kit.ctx, plan("owner", [READ]));
+    const result = await runPlan(kit.ctx, { planId: PLAN_ID, approvedStepIds: [] });
+    expect(kit.call).toHaveBeenCalledTimes(1);
+    expect(result.results[0]).toMatchObject({ stepId: "s1", status: "failed", retryAt: RETRY_AT });
+    expect(result.results[0].message).toContain("rate limit");
+    const stored = JSON.parse(kit.settings.get(`ai.plan.${PLAN_ID}`) ?? "{}");
+    expect(stored.completed).toEqual([]);
   });
 
   it("asks for an account before it can decide a step's autonomy", async () => {

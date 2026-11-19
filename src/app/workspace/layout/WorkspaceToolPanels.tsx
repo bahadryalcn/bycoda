@@ -300,6 +300,7 @@ function WorkspaceToolPanelsComponent({
   return (
     <ToolNavigationContext.Provider value={toolNavigation}>
       <ToolPanel active={automationsViewOpen && auxiliaryTool === "assistant"}>
+        <NavigationBoundary name="Assistant" onBack={onLeaveAutomations}>
         {auxiliaryHeader}
         <AssistantView
           projectPath={projectCwd}
@@ -512,6 +513,7 @@ function WorkspaceToolPanelsComponent({
             });
           }}
         />
+        </NavigationBoundary>
       </ToolPanel>
       <ToolPanel active={automationsViewOpen && auxiliaryTool === "conversation-tools"}>
         <NavigationBoundary name="Conversation tools" onBack={onLeaveAutomations}>

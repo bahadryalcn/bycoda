@@ -20,7 +20,6 @@ it("serializes reusable crews as parent tasks without branch or continuation set
 import { LOCAL_SYNC_MACHINE_NAME } from "../../connections/model/localSync";
 import type { RemoteMachine } from "../../connections/model/protocol";
 import {
-  TASK_AGENT_ERROR,
   boardTaskFromHost,
   boardTasksFromHost,
   draftFromTask,
@@ -32,6 +31,7 @@ import {
   tasksInColumn,
   todoUnsupportedMessage,
 } from "./taskClient";
+import { taskClientErrors } from "./taskClientErrors";
 import {
   NO_VERDICT,
   TASK_COLUMNS,
@@ -171,7 +171,7 @@ describe("task board", () => {
     ).toMatchObject({ isolate: false, verifyCommand: "npm test", review: false });
     expect(() =>
       hostTaskFromDraft({ ...draft, harness: "unknown" as never }, "id", "project-1"),
-    ).toThrow(TASK_AGENT_ERROR);
+    ).toThrow(taskClientErrors.agent());
   });
 
   it("pins the selected host and refuses mismatched or disconnected destinations", () => {

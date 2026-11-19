@@ -22,7 +22,7 @@ says you are signed in, return to bycoda. Sign-in finishes within five minutes; 
 - **Sign out** removes the secret from this computer. Your local data is not touched.
 - If your session ends (for example you signed this computer out from another device),
   bycoda says so and returns to the signed-out state.
-- Offline, bycoda shows the account details it last confirmed for up to seven days.
+- Offline, bycoda shows the account details it last confirmed for up to seven days. A connection that stops answering is treated the same way after 15 seconds, so sign-in and sync never wait forever.
 
 ## The account center
 

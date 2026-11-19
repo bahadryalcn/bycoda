@@ -1430,8 +1430,14 @@ function matchScore(needle: string, label: string, keywords?: string): number | 
   return null;
 }
 
+/**
+ * Upper bound on search results. The search panel scrolls, so every match up to this cap stays
+ * reachable; a short query such as "e" can match hundreds of rows, which keeps work bounded.
+ */
+export const SETTINGS_SEARCH_LIMIT = 50;
+
 /** Individual settings first, then whole sections, so a row wins its own name. */
-export function searchSettings(query: string, limit = 8): SettingsSearchResult[] {
+export function searchSettings(query: string, limit = SETTINGS_SEARCH_LIMIT): SettingsSearchResult[] {
   const needle = query.trim().toLowerCase();
   if (!needle) return [];
   const scored: { score: number; result: SettingsSearchResult }[] = [];
@@ -2212,6 +2218,7 @@ export const KEYBINDINGS: KeybindingRow[] = [
   { command: "App: Open Tasks", keys: `${MOD}${SHIFT}Y`, when: "Always" },
   { command: "App: Open Automations", keys: `${MOD}${SHIFT}U`, when: "Always" },
   { command: "App: Open Crews", keys: `${MOD}${SHIFT}E`, when: "Always" },
+  { command: "App: Focus Approval Requests", keys: `${MOD}${SHIFT}J`, when: "Always" },
   ...(IS_MAC || IS_WIN
     ? [
         {
@@ -2322,6 +2329,10 @@ export const KEYBINDINGS: KeybindingRow[] = [
   { command: "Pane: Focus Right", keys: `${MOD}${ALT}→`, when: "Always" },
   { command: "Pane: Focus Up", keys: `${MOD}${ALT}↑`, when: "Always" },
   { command: "Pane: Focus Down", keys: `${MOD}${ALT}↓`, when: "Always" },
+  { command: "Pane: Move Left", keys: `${MOD}${ALT}${SHIFT}←`, when: "workspaceFocus" },
+  { command: "Pane: Move Right", keys: `${MOD}${ALT}${SHIFT}→`, when: "workspaceFocus" },
+  { command: "Pane: Move Up", keys: `${MOD}${ALT}${SHIFT}↑`, when: "workspaceFocus" },
+  { command: "Pane: Move Down", keys: `${MOD}${ALT}${SHIFT}↓`, when: "workspaceFocus" },
   { command: "Terminal: New", keys: `${MOD}\``, when: "Always" },
   { command: "Terminal: New Tab", keys: `${MOD}${SHIFT}\``, when: "Always" },
   { command: "Terminal: Toggle Dock", keys: `${MOD}J`, when: "Always" },

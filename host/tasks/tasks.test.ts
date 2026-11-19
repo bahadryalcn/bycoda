@@ -1000,6 +1000,25 @@ describe("explicit task workspaces and owner controls", () => {
     });
     expect(s.provider.send).not.toHaveBeenCalled();
   });
+  it("reclaims a finished run's budget cache entry while keeping its ledger row once", async () => {
+    const s = await setup();
+    await s.tasks.save(await s.input({ budget: { maxAgentMinutes: 60 } }));
+    await s.store.db
+      .prepare("UPDATE tasks SET value=json_set(value, '$.status', 'verifying') WHERE id='main'")
+      .run();
+    s.clock.now += MINUTE;
+    await s.tasks.tick();
+    await s.tasks.idle();
+    const cache = (s.tasks as unknown as { registeredBudgetRuns: Map<string, string> })
+      .registeredBudgetRuns;
+    const ledgerRows = async () =>
+      Number((await s.store.db.prepare("SELECT COUNT(*) AS n FROM task_run_budget_ledger").get())?.n);
+    const rows = await ledgerRows();
+    expect(rows).toBeGreaterThan(0);
+    // The run has finished, so its cache entry must be gone (bounded by live tasks, not runs).
+    expect(cache.has("main")).toBe(false);
+    expect(await ledgerRows()).toBe(rows);
+  });
   it("does not write task history or notify for a measuredAt-only budget refresh", async () => {
     const s = await setup();
     await s.tasks.save(await s.input({ budget: { maxAgentMinutes: 60 }, review: true }));
@@ -1799,6 +1818,50 @@ describe("explicit task workspaces and owner controls", () => {
     await tasks.reorder(["two", "one"]);
     expect((await tasks.get("two"))?.position).toBe(0);
     expect((await tasks.get("one"))?.position).toBe(1);
+  });
+  it("keeps unlisted tasks in place when a client reorders only the tasks it can see", async () => {
+    const { tasks, input, clock } = await setup();
+    for (const id of ["a", "hidden", "c"]) await tasks.save(input({ id }));
+    await tasks.reorder(["a", "hidden", "c"]);
+    const before = await tasks.get("hidden");
+    clock.now += 1000;
+    await tasks.reorder(["c", "a"]);
+    expect(await tasks.get("c")).toMatchObject({ position: 0 });
+    expect(await tasks.get("hidden")).toEqual(before);
+    expect(await tasks.get("a")).toMatchObject({ position: 2 });
+    // A task another client added after this client read the board stays last.
+    await tasks.save(input({ id: "late" }));
+    await tasks.reorder(["a", "c"]);
+    expect((await tasks.get("a"))?.position).toBe(0);
+    expect((await tasks.get("hidden"))?.position).toBe(1);
+    expect((await tasks.get("c"))?.position).toBe(2);
+    expect((await tasks.get("late"))?.position ?? Infinity).toBeGreaterThan(2);
+  });
+  it("rejects a reorder built from a stale revision and leaves the queue untouched", async () => {
+    const { tasks, input, clock } = await setup();
+    for (const id of ["one", "two"]) await tasks.save(input({ id }));
+    await tasks.reorder(["one", "two"]);
+    const one = (await tasks.get("one"))!;
+    const two = (await tasks.get("two"))!;
+    const seen = { one: one.updatedAt, two: two.updatedAt };
+    // Another client reorders first; its write changes both revisions.
+    clock.now += 1000;
+    await tasks.reorder(["two", "one"]);
+    clock.now += 1000;
+    await expect(
+      (async () => await tasks.reorder(["one", "two"], seen))(),
+    ).rejects.toThrow("changed");
+    expect((await tasks.get("two"))?.position).toBe(0);
+    expect((await tasks.get("one"))?.position).toBe(1);
+    await expect(
+      (async () => await tasks.reorder(["one", "two"], { one: seen.one }))(),
+    ).rejects.toThrow("Invalid task order");
+    const fresh = {
+      one: (await tasks.get("one"))!.updatedAt,
+      two: (await tasks.get("two"))!.updatedAt,
+    };
+    await tasks.reorder(["one", "two"], fresh);
+    expect((await tasks.get("one"))?.position).toBe(0);
   });
 });
 describe("host tasks", () => {
@@ -4308,6 +4371,23 @@ it("caches unchanged lists and filters projects before JSON parsing", async () =
   parse.mockRestore();
   await tasks.save(input({ title: "Changed" }));
   expect((await tasks.list(first[0].projectId))[0].title).toBe("Changed");
+});
+it("evicts one project list cache entry at the cap instead of clearing every project", async () => {
+  const { store, tasks, input } = await setup();
+  const projectIds: string[] = [];
+  for (let index = 0; index < 33; index++) {
+    const project = await store.addProject(join(tmpdir(), `bounded-list-${index}`), `P${index}`);
+    projectIds.push(project.id);
+    await tasks.save(input({ id: `task-${index}`, projectId: project.id }));
+  }
+  for (const projectId of projectIds) await tasks.list(projectId);
+  const parse = vi.spyOn(JSON, "parse");
+  try {
+    await tasks.list(projectIds[1]);
+    expect(parse).not.toHaveBeenCalled();
+  } finally {
+    parse.mockRestore();
+  }
 });
 it(
   "stops a real verification tree and holds retry/delete until it exits",

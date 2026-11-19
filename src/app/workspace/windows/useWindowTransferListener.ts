@@ -27,7 +27,9 @@ import {
 import {
   publishWindowTransferNotice,
   rejectedTransferMessage,
+  unknownTransferResultMessage,
 } from "../../model/windowTransferNotice";
+import { WorkspaceActionError } from "../../model/workspaceActionError";
 import { windowDropPointToClient } from "../../model/windowTransferPopout";
 import type { TabActivation } from "../tabs/useTabActivation";
 
@@ -104,15 +106,25 @@ export function useWindowTransferListener(deps: WindowTransferListenerDeps): voi
             transferId,
           });
           if (!raw) return;
-          if (disposed) throw new Error("The destination window is no longer ready.");
+          if (disposed)
+            throw new WorkspaceActionError(
+              "transferDestinationClosed",
+              "The destination window is no longer ready.",
+            );
           const incoming = parseWindowTransfer(raw);
           const dropPoint = incoming.dropPoint ? windowDropPointToClient(incoming.dropPoint) : null;
           const paneTarget = dropPoint ? paneDropFromPoint(dropPoint.x, dropPoint.y) : null;
           const titleTarget = dropPoint ? titleTabDropFromPoint(dropPoint.x, dropPoint.y) : null;
           if (paneTarget?.invalid && !titleTarget)
-            throw new Error("This panel is not ready to receive a transfer.");
+            throw new WorkspaceActionError(
+              "transferPanelNotReady",
+              "This panel is not ready to receive a transfer.",
+            );
           if (incoming.dropPoint && !paneTarget && !titleTarget)
-            throw new Error("Drop the tab on a tab group or a panel to place it in this window.");
+            throw new WorkspaceActionError(
+              "transferNoDropTarget",
+              "Drop the tab on a tab group or a panel to place it in this window.",
+            );
           if (
             paneTarget &&
             !titleTarget &&
@@ -121,7 +133,8 @@ export function useWindowTransferListener(deps: WindowTransferListenerDeps): voi
                 movingTabIds.current.has(tab.id) && leafIds(tab.layout).includes(paneTarget.id),
             )
           )
-            throw new Error(
+            throw new WorkspaceActionError(
+              "transferPanelMoving",
               "This panel is moving to another window. Wait for that move to finish.",
             );
           const beforeTabs = tabsRef.current;
@@ -239,10 +252,7 @@ export function useWindowTransferListener(deps: WindowTransferListenerDeps): voi
               // The acknowledgement may have committed despite a lost response.
               // Keep both copies and let native ownership prevent execution until recovery.
               rollback = undefined;
-              publishWindowTransferNotice(
-                "danger",
-                "The transfer result is unknown. Check both windows before retrying.",
-              );
+              publishWindowTransferNotice("danger", unknownTransferResultMessage());
               return;
             }
           }

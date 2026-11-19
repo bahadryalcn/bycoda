@@ -28,12 +28,12 @@ import {
 } from "react";
 import { X } from "../../../shared/ui/icons";
 import {
-  formatRelativeTime,
   githubReviewStateLabel,
   inboxPersonAvatarUrl,
   type InboxProvider,
 } from "../model/githubTasks";
 import { InboxAvatar } from "./InboxPresentation";
+import { InboxRelativeTime, hasInboxRelativeTime } from "./InboxRelativeTime";
 import { MOD } from "../../../platform/tauri/platform";
 import { AgentMarkdown } from "../../sessions/ui/AgentMarkdown";
 import { SurfaceSelection } from "../../sessions/ui/SurfaceSelection";
@@ -406,7 +406,7 @@ export function InboxCommentForm({
             type="submit"
             disabled={!canPost}
             loading={busy}
-            loadingLabel={t("Posting...")}
+            loadingLabel={t("Posting…")}
             className="shrink-0"
           >
             {replyTo ? t("Reply") : t("Comment")}
@@ -446,16 +446,12 @@ function InboxComment({
   onReply?: (target: InboxReplyTarget) => void;
 }) {
   useLocale();
-  const time = formatRelativeTime(comment.createdAt);
   const review = githubReviewStateLabel(comment.state);
   const location = commentLocation(comment);
   const resolvedLabel = t("Resolved");
-  const meta = [
-    review ? t(review) : "",
-    location,
-    comment.resolved ? resolvedLabel : "",
-    time,
-  ].filter((part) => part.length > 0);
+  const meta = [review ? t(review) : "", location, comment.resolved ? resolvedLabel : ""].filter(
+    (part) => part.length > 0,
+  );
   const hasBody = comment.body.trim().length > 0;
   const hasReplies = !nested && comment.replies.length > 0;
   const canReply =
@@ -485,35 +481,17 @@ function InboxComment({
         {meta.map((part, index) => (
           <span key={`${part}-${index}`} className="flex min-w-0 items-center gap-2">
             <span aria-hidden>·</span>
-            {comment.url && part === time ? (
-              <Button
-                variant="ghost"
-                type="button"
-                tooltip={
-                  provider === "linear"
-                    ? t("Open in Linear")
-                    : provider === "jira"
-                      ? t("Open in Jira")
-                      : provider === "gitlab"
-                        ? t("Open on GitLab")
-                        : provider === "azuredevops"
-                          ? t("Open on ADO")
-                          : t("Open on GitHub")
-                }
-                onClick={() => openUrlSafely(comment.url)}
-              >
-                {part}
-              </Button>
-            ) : (
-              <InboxReviewBadge
-                state={comment.state}
-                resolved={comment.resolved && part === resolvedLabel}
-              >
-                {part}
-              </InboxReviewBadge>
-            )}
+            <InboxReviewBadge
+              state={comment.state}
+              resolved={comment.resolved && part === resolvedLabel}
+            >
+              {part}
+            </InboxReviewBadge>
           </span>
         ))}
+        {hasInboxRelativeTime(comment.createdAt) ? (
+          <InboxCommentTime comment={comment} provider={provider} />
+        ) : null}
         {canReply ? (
           <span className="flex items-center gap-2">
             <span aria-hidden>·</span>
@@ -682,7 +660,6 @@ function InboxTimelineComment({
   const author = comment.author || "ghost";
   const state = comment.state.trim().toUpperCase();
   if (isReviewEvent(comment)) {
-    const time = formatRelativeTime(comment.createdAt);
     const verb =
       state === "APPROVED"
         ? "approved"
@@ -693,7 +670,7 @@ function InboxTimelineComment({
             : "reviewed";
     return (
       <TimelineStop first={first} last={last} node={<InboxReviewBadge state={state} />}>
-        <TimelineEventLine name={author} action={t(verb)} time={time} />
+        <TimelineEventLine name={author} action={t(verb)} at={comment.createdAt} />
       </TimelineStop>
     );
   }
@@ -737,7 +714,6 @@ function InboxCommitRun({
 }) {
   useLocale();
   const name = author || "ghost";
-  const time = formatRelativeTime(commits[commits.length - 1].committedDate);
   return (
     <>
       <TimelineStop
@@ -752,7 +728,7 @@ function InboxCommitRun({
               ? t("added a commit")
               : t("added {p0} commits", { p0: formatNumber(commits.length) })
           }
-          time={time}
+          at={commits[commits.length - 1].committedDate}
         />
       </TimelineStop>
       {commits.map((commit, index) => (
@@ -766,8 +742,40 @@ function InboxCommitRun({
   );
 }
 
+/** Comment age in the header meta; opens the comment on its provider when it has a URL. */
+function InboxCommentTime({ comment, provider }: { comment: InboxComment; provider: InboxProvider }) {
+  const age = <InboxRelativeTime at={comment.createdAt} />;
+  return (
+    <span className="flex min-w-0 items-center gap-2">
+      <span aria-hidden>·</span>
+      {comment.url ? (
+        <Button
+          variant="ghost"
+          type="button"
+          tooltip={
+            provider === "linear"
+              ? t("Open in Linear")
+              : provider === "jira"
+                ? t("Open in Jira")
+                : provider === "gitlab"
+                  ? t("Open on GitLab")
+                  : provider === "azuredevops"
+                    ? t("Open on ADO")
+                    : t("Open on GitHub")
+          }
+          onClick={() => openUrlSafely(comment.url)}
+        >
+          {age}
+        </Button>
+      ) : (
+        <InboxReviewBadge state={comment.state}>{age}</InboxReviewBadge>
+      )}
+    </span>
+  );
+}
+
 /** "name action · time" on a 20px row, the height every rail row shares. */
-function TimelineEventLine({ name, action, time }: { name: string; action: string; time: string }) {
+function TimelineEventLine({ name, action, at }: { name: string; action: string; at: string }) {
   useLocale();
   return (
     <Text as="p" size="caption" tone="secondary" className="flex h-5 min-w-0 items-center gap-1.5">
@@ -775,10 +783,12 @@ function TimelineEventLine({ name, action, time }: { name: string; action: strin
         {name}
       </Text>
       <span className="shrink-0">{action}</span>
-      {time ? (
+      {hasInboxRelativeTime(at) ? (
         <>
           <span aria-hidden>·</span>
-          <span className="shrink-0">{time}</span>
+          <span className="shrink-0">
+            <InboxRelativeTime at={at} />
+          </span>
         </>
       ) : null}
     </Text>

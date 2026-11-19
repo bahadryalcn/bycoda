@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from "react";
+import type { CSSProperties } from "react";
 import { t, useLocale } from "../../../../../shared/i18n";
 import { useColorScheme } from "../../../../../shared/hooks/useColorScheme";
 import { Text } from "../../../../../shared/ui/Text";
@@ -14,8 +14,9 @@ import {
 } from "../../../model/appearance";
 import { applyAppearancePreferences } from "../../../model/appearancePreferences";
 import { APPEARANCE_RANGES } from "../../../model/themeRanges";
-import { Row, Slider } from "../../../../../shared/ui/settings";
+import { Row } from "../../../../../shared/ui/settings";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
+import { DraftSlider } from "./DraftSlider";
 import "./ThemeControls.css";
 import "./ToneSliders.css";
 import { ThemePreview } from "./ThemePreview";
@@ -25,47 +26,6 @@ const HUE_TRACK = `linear-gradient(to right, ${[0, 60, 120, 180, 240, 300, 360]
   .map((stop) => `hsl(${stop} 80% 55%)`)
   .join(", ")})`;
 const HUE_TRACK_STYLE = { "--ui-hue-track": HUE_TRACK } as CSSProperties;
-
-/**
- * Settings slider that previews while dragging and persists once on release: `apply` paints the
- * value live, `commit` writes it. The draft clears on commit, so the stored value shows again.
- */
-export function DraftSlider({
-  value,
-  format,
-  apply,
-  commit,
-  ...slider
-}: {
-  label: string;
-  value: number;
-  format: (value: number) => string;
-  min: number;
-  max: number;
-  step?: number;
-  disabled?: boolean;
-  className?: string;
-  apply: (value: number) => void;
-  commit: (value: number) => void;
-}) {
-  const [draft, setDraft] = useState<number | null>(null);
-  const shown = draft ?? value;
-  return (
-    <Slider
-      {...slider}
-      value={shown}
-      display={format(shown)}
-      onChange={(next) => {
-        setDraft(next);
-        apply(next);
-      }}
-      onValueCommit={(next) => {
-        setDraft(null);
-        commit(next);
-      }}
-    />
-  );
-}
 
 /** Hue, saturation and depth as labelled sliders, then the four surface steps they produce. */
 export function ToneSliders({ appearance }: { appearance: AppearanceSettings }) {

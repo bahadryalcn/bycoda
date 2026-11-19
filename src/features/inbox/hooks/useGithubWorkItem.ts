@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import type { LinkedWorkItem } from "../../sessions/model/session";
@@ -65,7 +66,7 @@ export function useGithubWorkItem(
   return {
     item: target ? (query.data ?? null) : null,
     loading: target != null && query.isPending,
-    error: error ? (error instanceof Error ? error.message : String(error)) : null,
+    error: error ? (errorText(error)) : null,
     setItem,
   };
 }

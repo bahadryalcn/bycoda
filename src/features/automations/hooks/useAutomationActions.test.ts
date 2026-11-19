@@ -6,7 +6,7 @@ import type { Automation, AutomationRun } from "../model/automations";
 import { automationKey } from "../model/automationKey";
 import { useAutomationActions } from "./useAutomationActions";
 
-const api = vi.hoisted(() => ({ manual: vi.fn(), host: vi.fn() }));
+const api = vi.hoisted(() => ({ manual: vi.fn(), host: vi.fn(), pause: vi.fn() }));
 vi.mock("../model/automations", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../model/automations")>()),
   createManualAutomationRun: api.manual,
@@ -14,6 +14,7 @@ vi.mock("../model/automations", async (importOriginal) => ({
 vi.mock("../model/hostAutomationClient", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../model/hostAutomationClient")>()),
   runHostAutomationNow: api.host,
+  setHostAutomationEnabled: api.pause,
 }));
 
 let root: Root;
@@ -119,4 +120,15 @@ it("releases a rejected manual request for retry and retains its error feedback"
   expect(api.manual).toHaveBeenCalledTimes(2);
   expect(deps.onLaunch).toHaveBeenCalledExactlyOnceWith(automation, run);
   expect(actions.running).toBeNull();
+});
+
+it("reloads the Host list and reports the refusal when a pause was based on a stale copy", async () => {
+  const conflict = new Error("Configuration changed in another client. Reopen it.");
+  api.pause.mockRejectedValueOnce(conflict);
+  const hosted = { ...automation, host: { machineId: "first" } } as Automation;
+  await act(async () => actions.onToggle(hosted, false));
+  expect(api.pause).toHaveBeenCalledExactlyOnceWith(hosted, false);
+  expect(deps.refreshHost).toHaveBeenCalledOnce();
+  expect(actions.actionError).toContain("Configuration changed in another client");
+  expect(actions.toggling.size).toBe(0);
 });

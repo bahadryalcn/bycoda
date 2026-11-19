@@ -10,13 +10,19 @@ import { isIP } from "node:net";
 import type { Duplex } from "node:stream";
 import { WS_LIMITS, WS_SUBPROTOCOL } from "../../src/shared/model/host-contracts";
 import type { MobileTlsMaterial } from "./mobile-tls";
+import { GATEWAY_ADMISSION, OVER_CAPACITY_RETRY_AFTER_SECONDS } from "./gateway-admission";
 
 export type MobileWssOptions = {
   address: string;
   getPort: () => number;
   material: MobileTlsMaterial;
   ingressSecret?: string;
-  limits?: Partial<{ maxConnections: number; maxPending: number; handshakeTimeoutMs: number }>;
+  limits?: Partial<{
+    maxConnections: number;
+    rejectReserve: number;
+    maxPending: number;
+    handshakeTimeoutMs: number;
+  }>;
 };
 
 const token = /^Bearer [A-Za-z0-9_-]{43}$/;
@@ -48,8 +54,9 @@ function uniqueHeaders(request: IncomingMessage): boolean {
 
 function rejectSocket(socket: Duplex, status: number) {
   if (socket.destroyed) return;
+  const retry = status === 429 ? `Retry-After: ${OVER_CAPACITY_RETRY_AFTER_SECONDS}\r\n` : "";
   socket.end(
-    `HTTP/1.1 ${status} ${STATUS_CODES[status]}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`,
+    `HTTP/1.1 ${status} ${STATUS_CODES[status]}\r\n${retry}Connection: close\r\nContent-Length: 0\r\n\r\n`,
     () => socket.destroy(),
   );
 }
@@ -60,7 +67,8 @@ function rejectSocket(socket: Duplex, status: number) {
 export function createMobileWssGateway(options: MobileWssOptions) {
   if (!isIP(options.address)) throw new Error("Mobile WSS requires an exact local IP address.");
   const limits = {
-    maxConnections: 32,
+    maxConnections: GATEWAY_ADMISSION.maxAdmitted,
+    rejectReserve: GATEWAY_ADMISSION.rejectReserve,
     maxPending: 16,
     handshakeTimeoutMs: WS_LIMITS.handshakeTimeoutMs,
     ...options.limits,
@@ -68,7 +76,11 @@ export function createMobileWssGateway(options: MobileWssOptions) {
   for (const limit of Object.values(limits))
     if (!Number.isSafeInteger(limit) || limit < 1)
       throw new Error("Invalid mobile WSS resource limit.");
+  // Hard ceiling on TCP sockets. Sockets past `maxConnections` only get a TLS 429 while the reserve lasts.
+  const ceiling = limits.maxConnections + limits.rejectReserve;
   const raw = new Set<Duplex>();
+  const admitted = new Set<Duplex>();
+  const overCapacity = new WeakSet<Duplex>();
   const upstreams = new Set<Duplex>();
   let pending = 0;
   let closing = false;
@@ -82,7 +94,7 @@ export function createMobileWssGateway(options: MobileWssOptions) {
     maxHeaderSize: 8192,
     keepAliveTimeout: 1000,
   });
-  server.maxConnections = limits.maxConnections;
+  server.maxConnections = ceiling;
 
   function valid(request: IncomingMessage): boolean {
     const active = server.address();
@@ -123,11 +135,13 @@ export function createMobileWssGateway(options: MobileWssOptions) {
     request.resume();
     response.setHeader("Cache-Control", "no-store");
     response.setHeader("Connection", "close");
+    if (status === 429)
+      response.setHeader("Retry-After", String(OVER_CAPACITY_RETRY_AFTER_SECONDS));
     response.writeHead(status).end(() => request.socket.destroy());
   }
 
   server.on("connection", (socket) => {
-    if (closing || raw.size >= limits.maxConnections) {
+    if (closing || raw.size >= ceiling) {
       socket.destroy();
       return;
     }
@@ -135,8 +149,17 @@ export function createMobileWssGateway(options: MobileWssOptions) {
     socket.once("close", () => raw.delete(socket));
     socket.on("error", () => socket.destroy());
   });
+  // Admission counts established TLS sessions, not raw TCP, so handshakes and refused
+  // peers cannot use up the phones' share. Sessions past the cap keep TLS and get a 429.
   server.on("secureConnection", (socket) => {
-    if (socket.servername && socket.servername !== options.address) socket.destroy();
+    if (socket.servername && socket.servername !== options.address) {
+      socket.destroy();
+      return;
+    }
+    if (admitted.size < limits.maxConnections) {
+      admitted.add(socket);
+      socket.once("close", () => admitted.delete(socket));
+    } else overCapacity.add(socket);
   });
   server.on("checkContinue", (request, response) => deny(request, response, 400));
   server.on("checkExpectation", (request, response) => deny(request, response, 417));
@@ -153,7 +176,7 @@ export function createMobileWssGateway(options: MobileWssOptions) {
       deny(request, response, 403);
       return;
     }
-    if (pending >= limits.maxPending) {
+    if (overCapacity.has(request.socket) || pending >= limits.maxPending) {
       deny(request, response, 429);
       return;
     }
@@ -254,7 +277,7 @@ export function createMobileWssGateway(options: MobileWssOptions) {
       rejectSocket(socket, 403);
       return;
     }
-    if (pending >= limits.maxPending) {
+    if (overCapacity.has(socket) || pending >= limits.maxPending) {
       rejectSocket(socket, 429);
       return;
     }

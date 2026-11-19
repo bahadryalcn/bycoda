@@ -3,7 +3,8 @@ import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { Surface } from "../../../shared/ui/Surface";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { HtmlPreview } from "../../files/public/HtmlPreview";
 import { Button } from "../../../shared/ui/Button";
 import { Modal } from "../../../shared/ui/Modal";
@@ -19,6 +20,9 @@ import {
   type InlineVisualTheme,
 } from "../model/inlineVisual";
 import { useInlineVisualSource } from "../hooks/useInlineVisualSource";
+import { createInlineVisualFrameHost, moveInlineVisualFrameHost } from "./inlineVisualFrameHost";
+
+type View = "inline" | "panel" | "expanded";
 
 function readTheme(): InlineVisualTheme {
   const style = getComputedStyle(document.documentElement);
@@ -58,9 +62,28 @@ export function InlineVisual({ snapshot }: { snapshot: InlineVisualValue }) {
 
 function InlineVisualFrame({ valid }: { valid: InlineVisualSource }) {
   const t = useT();
-  const [view, setView] = useState<"inline" | "panel" | "expanded">("inline");
+  const [view, setView] = useState<View>("inline");
   const [sourceOpen, setSourceOpen] = useState(false);
   const [expandedToolbar, setExpandedToolbar] = useState<HTMLDivElement | null>(null);
+  // One host element holds the preview for the card's whole life; the views only provide the slot
+  // it sits in. The card slot stays mounted in every view, so the host always has a place to
+  // wait in while a panel or dialog is torn down, and the card keeps its transcript height.
+  const [host] = useState(createInlineVisualFrameHost);
+  const [inlineSlot, setInlineSlot] = useState<HTMLDivElement | null>(null);
+  const [panelSlot, setPanelSlot] = useState<HTMLDivElement | null>(null);
+  const [expandedSlot, setExpandedSlot] = useState<HTMLDivElement | null>(null);
+  const slot = view === "inline" ? inlineSlot : view === "panel" ? panelSlot : expandedSlot;
+  // Layout effect: the move lands in the commit that opens the view, before it paints. A slot
+  // that is not mounted yet leaves the host where it is until its ref reports it.
+  useLayoutEffect(() => {
+    if (slot) moveInlineVisualFrameHost(host, slot);
+  }, [host, slot]);
+  // Every view change goes through here: the host leaves a panel or dialog before React removes
+  // it, so closing never takes the live frame down with the overlay.
+  const go = (next: View) => {
+    if (view !== "inline" && inlineSlot) moveInlineVisualFrameHost(host, inlineSlot);
+    setView(next);
+  };
   const root = useRef<HTMLElement>(null);
   const previousView = useRef(view);
   useEffect(() => {
@@ -78,7 +101,7 @@ function InlineVisualFrame({ valid }: { valid: InlineVisualSource }) {
     return () => window.removeEventListener(SCHEME_CHANGE_EVENT, update);
   }, []);
   const source = sandboxedInlineVisual(valid.html, scheme.dark, scheme.theme);
-  const controls = (location: typeof view) => (
+  const controls = (location: View) => (
     <>
       {location !== "expanded" ? (
         <OverflowTooltip label={valid.title}>
@@ -105,7 +128,7 @@ function InlineVisualFrame({ valid }: { valid: InlineVisualSource }) {
           iconOnly
           label={t("Open in panel")}
           data-visual-action="panel"
-          onClick={() => setView("panel")}
+          onClick={() => go("panel")}
         >
           <PanelRight className="icon-sm" />
         </Button>
@@ -117,7 +140,7 @@ function InlineVisualFrame({ valid }: { valid: InlineVisualSource }) {
           iconOnly
           label={t("Expand")}
           data-visual-action="expanded"
-          onClick={() => setView("expanded")}
+          onClick={() => go("expanded")}
         >
           <Maximize2 className="icon-sm" />
         </Button>
@@ -128,24 +151,12 @@ function InlineVisualFrame({ valid }: { valid: InlineVisualSource }) {
           size="sm"
           iconOnly
           label={t("Close")}
-          onClick={() => setView("inline")}
+          onClick={() => go("inline")}
         >
           <X className="icon-sm" />
         </Button>
       ) : null}
     </>
-  );
-  const preview = (location: typeof view) => (
-    <HtmlPreview
-      path="remote://inline-visual/snapshot.html"
-      source={source}
-      active
-      compact
-      toolbar={controls(location)}
-      toolbarTarget={location === "expanded" ? expandedToolbar : undefined}
-      sourceVisible={sourceOpen}
-      originalSource={valid.html}
-    />
   );
   return (
     <Surface
@@ -156,30 +167,49 @@ function InlineVisualFrame({ valid }: { valid: InlineVisualSource }) {
       aria-label={valid.title}
       className="my-2 min-w-0 overflow-hidden font-sans"
     >
-      {view === "inline" ? (
-        <div
-          className="h-(--inline-visual-height)"
-          style={{ "--inline-visual-height": `${valid.height}px` } as React.CSSProperties}
-        >
-          {preview("inline")}
-        </div>
-      ) : (
-        <div className="flex min-w-0 items-center gap-2 px-2 py-1">
-          <PanelRight className="icon-sm" />
-          <Text size="caption" tone="inherit" truncate className="min-w-0 flex-1">
-            {valid.title}
-          </Text>
-          <Button
-            variant="ghost"
-            size="sm"
-            iconOnly
-            label={t("Close")}
-            onClick={() => setView("inline")}
-          >
-            <X className="icon-sm" />
-          </Button>
-        </div>
+      {/* The only preview in the tree: it renders into the host, which sits in the active slot. */}
+      {createPortal(
+        <HtmlPreview
+          path="remote://inline-visual/snapshot.html"
+          source={source}
+          active
+          compact
+          toolbar={controls(view)}
+          toolbarTarget={view === "expanded" ? expandedToolbar : undefined}
+          sourceVisible={sourceOpen}
+          originalSource={valid.html}
+        />,
+        host,
       )}
+      {/* Same height in every view, so opening a panel or dialog never shifts the transcript. */}
+      <div
+        className="relative h-(--inline-visual-height)"
+        style={{ "--inline-visual-height": `${valid.height}px` } as React.CSSProperties}
+      >
+        <div ref={setInlineSlot} className="h-full min-h-0" />
+        {view !== "inline" ? (
+          <div
+            data-inline-visual-row
+            className="absolute inset-0 flex items-center justify-center px-2 py-1"
+          >
+            <div className="flex min-w-0 max-w-full items-center gap-2">
+              <PanelRight className="icon-sm shrink-0" />
+              <Text size="caption" tone="inherit" truncate className="min-w-0">
+                {valid.title}
+              </Text>
+              <Button
+                variant="ghost"
+                size="sm"
+                iconOnly
+                label={t("Close")}
+                onClick={() => go("inline")}
+              >
+                <X className="icon-sm" />
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </div>
       {view === "panel" ? (
         <Sheet
           padding="none"
@@ -194,9 +224,9 @@ function InlineVisualFrame({ valid }: { valid: InlineVisualSource }) {
             max: 960,
             defaultSize: Math.max(320, Math.min(640, window.innerWidth / 2)),
           }}
-          onClose={() => setView("inline")}
+          onClose={() => go("inline")}
         >
-          {preview("panel")}
+          <div ref={setPanelSlot} className="h-full min-h-0" />
         </Sheet>
       ) : null}
       {view === "expanded" ? (
@@ -207,9 +237,9 @@ function InlineVisualFrame({ valid }: { valid: InlineVisualSource }) {
           scroll="none"
           toolbar={<div ref={setExpandedToolbar} />}
           className="h-[calc(100dvh-32px)]"
-          onClose={() => setView("inline")}
+          onClose={() => go("inline")}
         >
-          <div className="h-full min-h-0">{preview("expanded")}</div>
+          <div ref={setExpandedSlot} className="h-full min-h-0" />
         </Modal>
       ) : null}
     </Surface>

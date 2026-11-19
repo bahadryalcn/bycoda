@@ -53,11 +53,10 @@ export function RemoveMachineDialog({
       <Text as="div" tone="muted" leading="relaxed" className="flex flex-col gap-3">
         {isLocalSyncMachine(machine) ? (
           <p>
-            {t("Removing this stops syncing projects and groups with the")}{" "}
-            {PRODUCT_IDENTITY.displayName}
-            {t(" on this computer. It is created again automatically the next time")}{" "}
-            {PRODUCT_IDENTITY.displayName}
-            {t(" starts.")}
+            {t(
+              "Removing this stops syncing projects and groups with the {p0} on this computer. It is created again automatically the next time {p1} starts.",
+              { p0: PRODUCT_IDENTITY.displayName, p1: PRODUCT_IDENTITY.displayName },
+            )}
           </p>
         ) : (
           <p>
@@ -88,17 +87,27 @@ export function RemoveMachineDialog({
         />
         <div>
           <p>
-            {t("To stop the host and turn off its background service, run")}{" "}
-            <Code>{"~/.bycoda-host/bin/bycoda-host service uninstall"}</Code>{" "}
-            {t("on that machine (")}
-            <Code>
-              {"%USERPROFILE%\\.bycoda-host\\bin\\bycoda-host.cmd service uninstall"}
-            </Code>{" "}
-            {t("on Windows). Its sessions and history are kept.")}
+            {renderCodeSentence(
+              t(
+                "To stop the host and turn off its background service, run {p0} on that machine ({p1} on Windows). Its sessions and history are kept.",
+              ),
+              {
+                p0: "~/.bycoda-host/bin/bycoda-host service uninstall",
+                p1: "%USERPROFILE%\\.bycoda-host\\bin\\bycoda-host.cmd service uninstall",
+              },
+            )}
           </p>
         </div>
         {error ? <Alert tone="danger">{error}</Alert> : null}
       </Text>
     </Modal>
   );
+}
+
+/** Renders a translated sentence whose {pN} slots are inline code, keeping the slot in the message. */
+function renderCodeSentence(message: string, code: Record<string, string>) {
+  return message.split(/(\{p\d+\})/).map((part, index) => {
+    const slot = /^\{(p\d+)\}$/.exec(part)?.[1];
+    return slot ? <Code key={index}>{code[slot]}</Code> : part;
+  });
 }

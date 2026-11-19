@@ -1,8 +1,11 @@
 import { createContext, useContext, useSyncExternalStore } from "react";
+import { TranscriptLayoutWatch } from "./transcriptLayoutWatch";
 import { firstTurnBelow } from "./transcriptScroll";
 
 /** Presentation only; no source bytes, provider effects or approval decisions. */
 export class TranscriptVirtualization {
+  /** The one observer set every virtual list of this transcript watches its layout through. */
+  readonly layout = new TranscriptLayoutWatch();
   private target: string | null;
   private listeners = new Set<() => void>();
   private workVersion = 0;
@@ -27,21 +30,35 @@ export class TranscriptVirtualization {
   private scrolls = new Map<HTMLElement, { references: number; anchor: ScrollAnchor }>();
   private turnUsers = new Map<HTMLElement, number>();
   readonly disclosures = new Map<string, boolean | null>();
-  readonly codeFolds = new Map<string, Record<string, boolean>>();
+  /** Per list, the code-block fold state of each row that has one, by row id. */
+  readonly codeFolds = new Map<string, Map<string, Record<string, boolean>>>();
   readonly measurements = new Map<string, Map<string, { width: number; height: number }>>();
   /** The measured row sizes of one list, created on first use. */
   measurementsFor(listId: string): Map<string, { width: number; height: number }> {
-    let cache = this.measurements.get(listId);
-    if (!cache) {
-      cache = new Map();
-      this.measurements.set(listId, cache);
-    }
-    return cache;
+    return listCache(this.measurements, listId);
   }
-  /** Drops the measured sizes of rows the list no longer has. */
-  retainMeasurements(listId: string, retained: ReadonlySet<string>): void {
-    const cache = this.measurements.get(listId);
-    if (cache) for (const key of cache.keys()) if (!retained.has(key)) cache.delete(key);
+  /** The code-block fold state of one list's rows, created on first use. */
+  codeFoldsFor(listId: string): Map<string, Record<string, boolean>> {
+    return listCache(this.codeFolds, listId);
+  }
+  /** Keeps a mounted list's sizes and fold state here; the release drops them once it unmounts.
+   * A newer hold of the same list is not dropped by an older release. */
+  holdList(
+    listId: string,
+    sizes: Map<string, { width: number; height: number }>,
+    folds: Map<string, Record<string, boolean>>,
+  ): () => void {
+    this.measurements.set(listId, sizes);
+    this.codeFolds.set(listId, folds);
+    return () => {
+      if (this.measurements.get(listId) === sizes) this.measurements.delete(listId);
+      if (this.codeFolds.get(listId) === folds) this.codeFolds.delete(listId);
+    };
+  }
+  /** Drops the measured sizes and fold state of rows the list no longer has. */
+  retainRows(listId: string, retained: ReadonlySet<string>): void {
+    dropUnretained(this.measurements.get(listId), retained);
+    dropUnretained(this.codeFolds.get(listId), retained);
   }
   readonly rowScroll = new WeakMap<HTMLElement, HTMLElement>();
   adjusted?: (element: HTMLElement) => void;
@@ -210,6 +227,17 @@ class ScrollAnchor {
     this.scroll.removeEventListener("scroll", this.remember);
     this.anchor = null;
   }
+}
+function listCache<V>(caches: Map<string, Map<string, V>>, listId: string): Map<string, V> {
+  let cache = caches.get(listId);
+  if (!cache) {
+    cache = new Map();
+    caches.set(listId, cache);
+  }
+  return cache;
+}
+function dropUnretained(cache: Map<string, unknown> | undefined, retained: ReadonlySet<string>) {
+  if (cache) for (const key of cache.keys()) if (!retained.has(key)) cache.delete(key);
 }
 function firstVisibleRow(
   scroll: HTMLElement,

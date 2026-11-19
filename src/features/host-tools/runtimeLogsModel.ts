@@ -57,9 +57,17 @@ export function mergeRuntimeLogs(
   let entries = base.entries;
   let trimmed = base.trimmed;
   if (incoming.length) {
-    const byId = new Map(base.entries.map((entry) => [entry.id, entry]));
-    for (const entry of incoming) byId.set(entry.id, entry);
-    const merged = [...byId.values()].sort((a, b) => a.cursor - b.cursor);
+    // Hosts emit entries in cursor order, so a poll normally only appends. Rebuild by id only
+    // for a page that lands inside the retained range.
+    const appended = appendableRuntimeLogs(base.entries, incoming);
+    let merged = base.entries;
+    if (appended) {
+      if (appended.length) merged = base.entries.length ? base.entries.concat(appended) : appended;
+    } else {
+      const byId = new Map(base.entries.map((entry) => [entry.id, entry]));
+      for (const entry of incoming) byId.set(entry.id, entry);
+      merged = [...byId.values()].sort((a, b) => a.cursor - b.cursor);
+    }
     const excess = Math.max(0, merged.length - Math.max(1, maximum));
     entries = excess ? merged.slice(excess) : merged;
     trimmed += excess;
@@ -94,6 +102,38 @@ export function mergeRuntimeLogs(
   };
 }
 
+/**
+ * The entries of `incoming` that extend `existing` in cursor order, without the ones already
+ * retained. Returns undefined when an unseen entry falls inside the retained range, which needs
+ * the full merge. Ids are unique per cursor, so the retained duplicates are found by cursor.
+ */
+function appendableRuntimeLogs(
+  existing: readonly RuntimeLogEntry[],
+  incoming: readonly RuntimeLogEntry[],
+): RuntimeLogEntry[] | undefined {
+  const last = existing.at(-1)?.cursor ?? -Infinity;
+  const fresh: RuntimeLogEntry[] = [];
+  const seen = new Set<string>();
+  for (const entry of incoming) {
+    if (entry.cursor > last) {
+      if (!seen.has(entry.id)) fresh.push(entry);
+      seen.add(entry.id);
+      continue;
+    }
+    let low = 0;
+    let high = existing.length - 1;
+    while (low <= high) {
+      const middle = (low + high) >> 1;
+      if (existing[middle].cursor < entry.cursor) low = middle + 1;
+      else high = middle - 1;
+    }
+    if (existing[low]?.id !== entry.id) return undefined;
+  }
+  return fresh.some((entry, index) => index > 0 && entry.cursor < fresh[index - 1].cursor)
+    ? fresh.sort((a, b) => a.cursor - b.cursor)
+    : fresh;
+}
+
 /** A local clear is a watermark; replayed pages cannot bring cleared entries back. */
 export function clearRuntimeLogs(buffer: RuntimeLogsBuffer): RuntimeLogsBuffer {
   return { ...buffer, entries: [], clearAfter: buffer.cursor, trimmed: 0, restarted: false };
@@ -121,11 +161,12 @@ export function runtimeLogDetailsText(value: unknown, maximum = 12_000): string 
   }
 }
 
-export function filterRuntimeLogs(entries: readonly RuntimeLogEntry[], filters: RuntimeLogFilters) {
+/** One entry's view filter; build it once per filter change, not per entry. */
+export function createRuntimeLogFilter(filters: RuntimeLogFilters) {
   const query = filters.search?.trim().toLocaleLowerCase();
   const levels = filters.levels ? new Set(filters.levels) : undefined;
   const sourceIds = filters.sourceIds?.length ? new Set(filters.sourceIds) : undefined;
-  return entries.filter((entry) => {
+  return (entry: RuntimeLogEntry) => {
     if (filters.source && entry.source !== filters.source) return false;
     if (sourceIds && !sourceIds.has(entry.sourceId)) return false;
     if (levels && !levels.has(runtimeLogDisplayLevel(entry))) return false;
@@ -136,7 +177,45 @@ export function filterRuntimeLogs(entries: readonly RuntimeLogEntry[], filters: 
       entry.location?.file,
       runtimeLogDetailsText(entry.details),
     ].some((text) => text?.toLocaleLowerCase().includes(query));
-  });
+  };
+}
+
+export function filterRuntimeLogs(entries: readonly RuntimeLogEntry[], filters: RuntimeLogFilters) {
+  return entries.filter(createRuntimeLogFilter(filters));
+}
+
+/** Repeated errors and warnings share a group per source and value; everything else is alone. */
+export function runtimeLogGroupId(entry: RuntimeLogEntry, groupRepeated: boolean) {
+  return groupRepeated && (entry.level === "error" || entry.level === "warn")
+    ? JSON.stringify([
+        entry.sourceId,
+        entry.level,
+        entry.message,
+        entry.stack,
+        entry.location,
+        runtimeLogDetailsText(entry.details),
+      ])
+    : entry.id;
+}
+
+/** Display order: last occurrence's event time, then host cursor. */
+export function compareRuntimeLogGroups(a: RuntimeLogGroup, b: RuntimeLogGroup) {
+  return a.entry.timestamp - b.entry.timestamp || a.entry.cursor - b.entry.cursor;
+}
+
+/** The group a set of entries (in cursor order) forms: last occurrence and first timestamp. */
+export function createRuntimeLogGroup(id: string, entries: RuntimeLogEntry[]): RuntimeLogGroup {
+  let last = entries[0];
+  let firstTimestamp = last.timestamp;
+  for (const entry of entries) {
+    firstTimestamp = Math.min(firstTimestamp, entry.timestamp);
+    if (
+      entry.timestamp > last.timestamp ||
+      (entry.timestamp === last.timestamp && entry.cursor > last.cursor)
+    )
+      last = entry;
+  }
+  return { id, entry: last, entries, firstTimestamp };
 }
 
 /** Group repeated errors within a source, preserving the last occurrence's position. */
@@ -144,35 +223,16 @@ export function groupRuntimeLogs(
   entries: readonly RuntimeLogEntry[],
   groupRepeated: boolean,
 ): RuntimeLogGroup[] {
-  const groups = new Map<string, RuntimeLogGroup>();
+  const members = new Map<string, RuntimeLogEntry[]>();
   for (const entry of entries) {
-    const id =
-      groupRepeated && (entry.level === "error" || entry.level === "warn")
-        ? JSON.stringify([
-            entry.sourceId,
-            entry.level,
-            entry.message,
-            entry.stack,
-            entry.location,
-            runtimeLogDetailsText(entry.details),
-          ])
-        : entry.id;
-    const group = groups.get(id);
-    if (group) {
-      group.entries.push(entry);
-      group.firstTimestamp = Math.min(group.firstTimestamp, entry.timestamp);
-      if (
-        entry.timestamp > group.entry.timestamp ||
-        (entry.timestamp === group.entry.timestamp && entry.cursor > group.entry.cursor)
-      )
-        group.entry = entry;
-    } else {
-      groups.set(id, { id, entry, entries: [entry], firstTimestamp: entry.timestamp });
-    }
+    const id = runtimeLogGroupId(entry, groupRepeated);
+    const list = members.get(id);
+    if (list) list.push(entry);
+    else members.set(id, [entry]);
   }
-  return [...groups.values()].sort(
-    (a, b) => a.entry.timestamp - b.entry.timestamp || a.entry.cursor - b.entry.cursor,
-  );
+  return [...members]
+    .map(([id, list]) => createRuntimeLogGroup(id, list))
+    .sort(compareRuntimeLogGroups);
 }
 
 /** Resolve diagnostic locations through the editor API; never open a log's URL. */

@@ -15,10 +15,14 @@ import type { ChatCitation } from "../model/chatCitation";
 
 export function UserMessageMarkdown({
   text,
+  cwd,
+  onOpenFile,
   attachments,
   citations,
 }: {
   text: string;
+  cwd?: string;
+  onOpenFile?: (path: string) => void;
   attachments?: Attachment[];
   citations?: readonly ChatCitation[];
 }) {
@@ -26,6 +30,8 @@ export function UserMessageMarkdown({
     <CodeExecutionDisabled>
       <AgentMarkdown
         text={text}
+        cwd={cwd}
+        onOpenFile={onOpenFile}
         hardBreaks
         className="[&>div:first-child>[data-streamdown^=heading-]]:mt-0"
         renderProse={(prose) => (
@@ -39,6 +45,8 @@ export function UserMessageMarkdown({
 function TextCard({
   part,
   messageId,
+  cwd,
+  onOpenFile,
   attachments,
   citations,
   renderActions,
@@ -46,6 +54,8 @@ function TextCard({
 }: {
   part: UserTextPart;
   messageId: string;
+  cwd?: string;
+  onOpenFile?: (path: string) => void;
   attachments?: Attachment[];
   citations?: readonly ChatCitation[];
   renderActions: (dismiss: () => void, showLabels?: boolean) => ReactNode;
@@ -56,7 +66,8 @@ function TextCard({
   const trigger = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const focusTrigger = useStableCallback(() => trigger.current?.focus());
-  const label = part.kind === "json" ? "JSON" : "Long text";
+  const label = part.kind === "json" ? t("JSON") : t("Long text");
+  const fullLabel = part.kind === "json" ? t("Show full JSON") : t("Show full long text");
   const excerpt = boundedTextPreview(part.text, 160, 2);
   const literalJson = part.kind === "json" && !part.text.trimStart().startsWith("```");
   const dismiss = () => {
@@ -71,7 +82,7 @@ function TextCard({
           variant="item"
           ref={trigger}
           type="button"
-          aria-label={t("Show full {p0}", { p0: label.toLowerCase() })}
+          aria-label={fullLabel}
           aria-haspopup="dialog"
           aria-expanded={open}
           onClick={() => setOpen(true)}
@@ -83,8 +94,7 @@ function TextCard({
               {label}
             </Text>
             <Text size="inherit" tone="secondary">
-              {part.text.length.toLocaleString(locale)}
-              {t(" characters")}
+              {t("{p0} characters", { p0: part.text.length.toLocaleString(locale) })}
             </Text>
           </Text>
           {part.kind === "json" || !markdown ? (
@@ -133,6 +143,8 @@ function TextCard({
             ) : (
               <UserMessageMarkdown
                 text={part.text}
+                cwd={cwd}
+                onOpenFile={onOpenFile}
                 attachments={attachments}
                 citations={citations}
               />
@@ -147,6 +159,8 @@ function TextCard({
 export const UserTextPreview = memo(function UserTextPreview({
   parts,
   messageId,
+  cwd,
+  onOpenFile,
   attachments,
   citations,
   renderActions,
@@ -154,6 +168,8 @@ export const UserTextPreview = memo(function UserTextPreview({
 }: {
   parts: UserTextPart[];
   messageId: string;
+  cwd?: string;
+  onOpenFile?: (path: string) => void;
   attachments?: Attachment[];
   citations?: readonly ChatCitation[];
   renderActions: (dismiss: () => void, showLabels?: boolean) => ReactNode;
@@ -168,6 +184,8 @@ export const UserTextPreview = memo(function UserTextPreview({
             key={index}
             part={part}
             messageId={messageId}
+            cwd={cwd}
+            onOpenFile={onOpenFile}
             attachments={attachments}
             citations={citations}
             renderActions={renderActions}
@@ -175,7 +193,13 @@ export const UserTextPreview = memo(function UserTextPreview({
           />
         ) : markdown ? (
           <div key={index} data-selectable-agent-response={messageId} className="select-text">
-            <UserMessageMarkdown text={part.text} attachments={attachments} citations={citations} />
+            <UserMessageMarkdown
+              text={part.text}
+              cwd={cwd}
+              onOpenFile={onOpenFile}
+              attachments={attachments}
+              citations={citations}
+            />
           </div>
         ) : (
           <pre

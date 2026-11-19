@@ -641,10 +641,9 @@ export class DesktopSessions {
 
   private summaryOf({ row, inFlight }: Found, projectId: string): HostSessionSummary {
     const updatedAt = Number(row.updated_at);
+    const managedBy = managementOf(row);
     return {
-      ...(assistantSessionManagement(parse(row.assistant_management_json))
-        ? { managedBy: assistantSessionManagement(parse(row.assistant_management_json)) }
-        : {}),
+      ...(managedBy ? { managedBy } : {}),
       projectId,
       revision: updatedAt,
       status: inFlight ? "running" : row.interrupted ? "interrupted" : "idle",
@@ -1451,12 +1450,11 @@ export class DesktopSessions {
   ): Omit<HostSession, "session"> & { session: Omit<Session, "blocks"> } {
     const { row } = found;
     const updatedAt = Number(row.updated_at);
+    const managedBy = managementOf(row);
     // The transcript this desktop last agreed on with the host; an older app has no column.
     const adoptedBase = parseHead(parse(row.adopted_base));
     const session: Omit<Session, "blocks"> = {
-      ...(assistantSessionManagement(parse(row.assistant_management_json))
-        ? { managedBy: assistantSessionManagement(parse(row.assistant_management_json)) }
-        : {}),
+      ...(managedBy ? { managedBy } : {}),
       id: String(row.id),
       harness: String(row.harness) as Session["harness"],
       model: String(row.model ?? ""),
@@ -1497,6 +1495,12 @@ export class DesktopSessions {
 /** Where the provider ran: the selected worktree, else the project folder. */
 function workCwd(row: Row): string {
   return String(row.worktree_cwd || row.cwd);
+}
+
+/** The validated assistant provenance of a desktop row. A null, malformed or legacy column
+ * yields `undefined`. Each builder calls this once per row and reuses the result. */
+function managementOf(row: Row) {
+  return assistantSessionManagement(parse(row.assistant_management_json));
 }
 
 function parse(value: unknown): any {

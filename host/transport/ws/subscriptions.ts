@@ -26,6 +26,11 @@ export type HostStreamSnapshot =
       baseRevision?: number;
       sourceEpoch?: string;
       data: JsonValue;
+      /**
+       * The loader's one serialization of `data`, already schema-checked. Used only when its
+       * wire is this exact `data` object; otherwise `data` is validated and captured here.
+       */
+      capture?: NormalizedJsonWire;
     }
   | { kind: "unchanged"; revision: number; sourceEpoch?: string };
 export type HostStreamLoadContext = {
@@ -39,9 +44,15 @@ export type HostStreamConsumer = {
   principalId: string;
   authorized: () => Promise<boolean>;
   executionAuthorized?: () => Promise<boolean>;
-  send: (event: SubscriptionEvent) => boolean;
-  sendNormalized?: (capture: NormalizedJsonWire) => boolean;
+  send: (event: SubscriptionEvent, essential?: boolean) => HostStreamSend;
+  sendNormalized?: (capture: NormalizedJsonWire, essential?: boolean) => HostStreamSend;
 };
+/**
+ * `false`: the connection is gone. `"slow"`: the socket queue refused this frame while the
+ * connection is alive, so only this subscription sheds and resyncs. `essential` frames
+ * (resync, close) are tiny and may use the transport's control reserve.
+ */
+export type HostStreamSend = boolean | "slow";
 type Event = Omit<SubscriptionEvent["params"], "subscriptionId">;
 type Retained = { event: Event; bytes: number; at: number };
 // One physical load. `held` is its logical read slot. An abandoned load keeps
@@ -104,6 +115,9 @@ type Stream = {
   readingBaseline?: boolean;
   refreshAt?: number;
   failures: number;
+  // Connection whose authorization could not be verified on the last read; the next
+  // read prefers another consumer's connection so one reader cannot stall the stream.
+  avoidConnection?: string;
   consumers: Map<string, Consumer>;
 };
 
@@ -401,16 +415,21 @@ export class HostSubscriptionHub {
   }
 
   private overflow(stream: Stream, consumer: Consumer): void {
-    this.send(consumer, {
-      jsonrpc: "2.0",
-      method: "subscription.event",
-      params: {
-        subscriptionId: consumer.id,
-        streamId: stream.id,
-        cursor: { epoch: stream.epoch, sequence: consumer.sent },
-        kind: "resync-required",
+    this.send(
+      consumer,
+      {
+        jsonrpc: "2.0",
+        method: "subscription.event",
+        params: {
+          subscriptionId: consumer.id,
+          streamId: stream.id,
+          cursor: { epoch: stream.epoch, sequence: consumer.sent },
+          kind: "resync-required",
+        },
       },
-    });
+      undefined,
+      true,
+    );
     consumer.active = false;
     consumer.replaying = false;
     consumer.pending.clear();
@@ -452,7 +471,14 @@ export class HostSubscriptionHub {
       consumer.sent = event.cursor.sequence;
       if (event.kind === "snapshot") consumer.needsSnapshot = false;
     }
-    if (!this.send(consumer, message, normalized)) consumer.active = false;
+    const essential = event.kind === "resync-required" || event.kind === "closed";
+    const sent = this.send(consumer, message, normalized, essential);
+    if (sent === "slow") {
+      // Only this subscription lags; it resyncs while the socket and its siblings stay up.
+      this.overflow(stream, consumer);
+      return true;
+    }
+    if (!sent) consumer.active = false;
     return true;
   }
 
@@ -460,16 +486,18 @@ export class HostSubscriptionHub {
     consumer: Consumer,
     message: SubscriptionEvent,
     normalized?: NormalizedJsonWire,
-  ): boolean {
+    essential = false,
+  ): HostStreamSend {
     try {
       if (normalized && consumer.owner.sendNormalized)
-        return consumer.owner.sendNormalized(normalized);
+        return consumer.owner.sendNormalized(normalized, essential);
       // Compatibility consumers receive their own wire copy, so mutation cannot
       // corrupt retained bytes or the next consumer's validation view.
       return consumer.owner.send(
         normalized
           ? (JSON.parse(readNormalizedJsonWire(normalized).serialized) as SubscriptionEvent)
           : message,
+        essential,
       );
     } catch {
       return false;
@@ -499,11 +527,15 @@ export class HostSubscriptionHub {
           ![...stream.consumers.values()].some((consumer) => consumer.active)
         )
           continue;
-        const owner = [...stream.consumers.values()].find(
+        const eligible = [...stream.consumers.values()].filter(
           (consumer) =>
             consumer.active &&
             (this.connectionReads.get(consumer.owner.connectionId) ?? 0) <
               (this.options.maxConcurrentReadsPerConnection ?? 2),
+        );
+        const owner = (
+          eligible.find((consumer) => consumer.owner.connectionId !== stream.avoidConnection) ??
+          eligible[0]
         )?.owner;
         if (!owner) continue;
         const delay = (stream.refreshAt ?? 0) - Date.now();
@@ -586,6 +618,20 @@ export class HostSubscriptionHub {
     controller: AbortController,
     owner: HostStreamConsumer,
   ): Promise<void> {
+    // Records why the reading owner's own authorization failed, so a failure of the
+    // reader is not charged to the consumers that share the stream.
+    let ownerFault: "denied" | "unavailable" | undefined;
+    const readerAuthorized = owner.executionAuthorized ?? owner.authorized;
+    const ownerAuthorized = async () => {
+      try {
+        const allowed = await readerAuthorized();
+        if (!allowed) ownerFault = "denied";
+        return allowed;
+      } catch (error) {
+        ownerFault = "unavailable";
+        throw error;
+      }
+    };
     try {
       const live = [...stream.consumers.values()].filter((consumer) => consumer.active);
       if (!stream.consumers.size || this.stopped || controller.signal.aborted) return;
@@ -605,7 +651,7 @@ export class HostSubscriptionHub {
           forceSnapshot,
           revision: forceSnapshot ? undefined : stream.revision,
           sourceEpoch: forceSnapshot ? undefined : stream.sourceEpoch,
-          authorized: owner.executionAuthorized ?? owner.authorized,
+          authorized: ownerAuthorized,
         },
       );
       if (
@@ -618,10 +664,20 @@ export class HostSubscriptionHub {
       // Check each consumer once, after the asynchronous load. This also checks
       // unchanged refreshes and rejects revocation during a protected read.
       const authorized = new Set<Consumer>();
-      for (const consumer of live) {
-        if (await consumer.owner.authorized()) authorized.add(consumer);
-        else this.detach(consumer.owner.connectionId);
-      }
+      await Promise.all(
+        live.map(async (consumer) => {
+          let allowed: boolean;
+          try {
+            allowed = await consumer.owner.authorized();
+          } catch {
+            // An unverifiable consumer resyncs alone; the others keep this snapshot.
+            if (consumer.active) this.overflow(stream, consumer);
+            return;
+          }
+          if (allowed) authorized.add(consumer);
+          else this.detach(consumer.owner.connectionId);
+        }),
+      );
       if (
         !stream.consumers.size ||
         this.stopped ||
@@ -641,7 +697,10 @@ export class HostSubscriptionHub {
       }
       if (snapshot.kind === "delta" && (forceSnapshot || snapshot.baseRevision !== stream.revision))
         throw new Error("Stream delta does not follow its committed baseline.");
-      const dataCapture = normalizeJsonWire(JsonValueSchema.parse(snapshot.data));
+      const dataCapture =
+        snapshot.capture && readNormalizedJsonWire(snapshot.capture).wire === snapshot.data
+          ? snapshot.capture
+          : normalizeJsonWire(JsonValueSchema.parse(snapshot.data));
       const dataWire = readNormalizedJsonWire(dataCapture);
       const text = dataWire.serialized;
       if (dataWire.byteLength + 1024 > this.limits.streamChunkBytes)
@@ -679,6 +738,7 @@ export class HostSubscriptionHub {
       stream.revision = revision;
       stream.sourceEpoch = snapshot.sourceEpoch;
       stream.failures = 0;
+      stream.avoidConnection = undefined;
       stream.touched = this.now();
       this.prune();
       for (const consumer of stream.consumers.values()) {
@@ -691,8 +751,18 @@ export class HostSubscriptionHub {
     } catch (error) {
       // An aborted read was already settled by whoever aborted it (deadline,
       // deletion, resnapshot or the last consumer leaving).
-      if (!controller.signal.aborted)
-        this.failed(stream, generation, error instanceof StreamResyncRequired);
+      if (controller.signal.aborted) return;
+      if (ownerFault === "denied") {
+        // A revoked reader leaves alone; the other consumers are not charged for it.
+        this.detach(owner.connectionId);
+        if (!this.stopped && !stream.deleted && generation === stream.generation) {
+          stream.forceSnapshot = true;
+          stream.dirty = true;
+        }
+        return;
+      }
+      if (ownerFault === "unavailable") stream.avoidConnection = owner.connectionId;
+      this.failed(stream, generation, error instanceof StreamResyncRequired);
     }
   }
 
@@ -710,6 +780,9 @@ export class HostSubscriptionHub {
       this.deliver(stream, consumer, this.event(stream, "resync-required"));
       consumer.active = false;
     }
+    // The failed streak ended with these consumers; later subscribers get a fresh one.
+    stream.failures = 0;
+    stream.avoidConnection = undefined;
   }
 
   private tombstone(stream: Stream): void {

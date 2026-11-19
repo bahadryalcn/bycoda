@@ -3,8 +3,9 @@ import {
   MAX_DOCUMENT_BYTES,
   buildSheetGrid,
   columnLabel,
-  documentErrorMessage,
+  DocumentProblemError,
   documentKind,
+  documentProblem,
   documentSizeProblem,
   looksLikeSpreadsheet,
 } from "./documentViewer";
@@ -31,23 +32,34 @@ describe("documentKind", () => {
 });
 
 describe("documentSizeProblem", () => {
-  it("allows files up to the cap and names the cap beyond it", () => {
+  it("allows files up to the cap and reports a typed reason beyond it", () => {
     expect(documentSizeProblem(MAX_DOCUMENT_BYTES)).toBeNull();
-    expect(documentSizeProblem(MAX_DOCUMENT_BYTES + 1)).toContain("25 MB");
+    expect(documentSizeProblem(MAX_DOCUMENT_BYTES + 1)).toEqual({ reason: "tooLarge" });
   });
 });
 
-describe("documentErrorMessage", () => {
-  it("explains password-protected files", () => {
-    expect(documentErrorMessage(new Error("No password given"))).toContain("password-protected");
-    expect(documentErrorMessage("File is password-protected")).toContain("password-protected");
+describe("documentProblem", () => {
+  it("classifies password-protected files", () => {
+    expect(documentProblem(new Error("No password given"))).toEqual({
+      reason: "passwordProtected",
+    });
+    expect(documentProblem("File is password-protected")).toEqual({
+      reason: "passwordProtected",
+    });
   });
 
-  it("passes other messages through", () => {
-    expect(documentErrorMessage(new Error("Invalid PDF structure."))).toBe(
-      "Invalid PDF structure.",
-    );
-    expect(documentErrorMessage(new Error(""))).toContain("corrupt");
+  it("keeps other messages as detail and empty ones as corrupt", () => {
+    expect(documentProblem(new Error("Invalid PDF structure."))).toEqual({
+      reason: "unreadable",
+      detail: "Invalid PDF structure.",
+    });
+    expect(documentProblem(new Error(""))).toEqual({ reason: "corrupt" });
+  });
+
+  it("returns a thrown typed reason unchanged", () => {
+    expect(documentProblem(new DocumentProblemError({ reason: "binaryData" }))).toEqual({
+      reason: "binaryData",
+    });
   });
 });
 

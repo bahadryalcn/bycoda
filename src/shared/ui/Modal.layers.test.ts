@@ -72,6 +72,32 @@ it("holds every dismissal path during a bounded operation and restores them afte
   expect(onClose).toHaveBeenCalledTimes(2);
 });
 
+it("leaves Escape to a capturing shortcut recorder and gives it back to the dialog afterwards", async () => {
+  const onClose = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(Modal, {
+        title: "Recorder",
+        onClose,
+        children: createElement(
+          "div",
+          { "data-shortcut-recorder-active": "true" },
+          createElement("button", { id: "capture" }, "Press keys"),
+        ),
+      }),
+    ),
+  );
+  const escape = () =>
+    document
+      .getElementById("capture")!
+      .dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+  await act(async () => escape());
+  expect(onClose).not.toHaveBeenCalled();
+  document.getElementById("capture")!.parentElement!.removeAttribute("data-shortcut-recorder-active");
+  await act(async () => escape());
+  expect(onClose).toHaveBeenCalledOnce();
+});
+
 describe("modal scrim layers", () => {
   it("renders one scrim per dialog layer, in opening order, for the nested-stack CSS", async () => {
     const Stack = ({ inner }: { inner: boolean }) =>

@@ -1,4 +1,5 @@
 import { createStoredSetting } from "../../../shared/lib/storedSetting";
+import { t } from "../../../shared/i18n";
 import { isRemoteProjectPath } from "./recents";
 
 const KEY = "bycoda.newProjectFolder";
@@ -60,6 +61,6 @@ export function projectFolderName(name: string): string {
     .slice(0, 80)
     .replace(/[-.]+$/g, "");
   if (!folder || /^(con|prn|aux|nul|com\d|lpt\d)$/i.test(folder))
-    throw new Error("Choose a project name with letters or numbers.");
+    throw new Error(t("Choose a project name with letters or numbers."));
   return folder;
 }

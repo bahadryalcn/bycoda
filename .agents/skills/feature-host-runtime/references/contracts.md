@@ -49,6 +49,14 @@ Read for the affected authority, persistence or delivery boundary;
 
 - Browser preview settlement includes verified presentation when requested. Read-only status failures can retire; uncertain claim/navigation/presentation work cannot. Token revocation removes disclosure authority, not evidence of an accepted effect. Recheck both original and current authority after delayed waits.
 
+## Native delivery admission
+
+- Queue time counts against the transport's ingress deadline. `HostDomainContext.ingressAt` is the transport receipt instant; `StoreDatabase.scope`/`HostStore.transaction` take `admitBefore` and refuse an expired request with `StoreAdmissionExpiredError` before it enters, selects durability or runs BEGIN. The deadline bounds admission only: an admitted original's effect and record run on the Host's continuation and are never cut by it or by a lost observer.
+- Service targets may send `acknowledge: "admission"` (`native.services.delivery.admission.v1`). Durable admission answers `accepted`; `native.services.delivery.status` with the same field reports `accepted` only while this Host process still runs the effect, otherwise the legacy `unknown`/`recorded`. The caller reads the typed result by original id; no business result is invented, nothing is reapplied and there is no worker retry. Buffers and upload commits stay synchronous, and a Host without the capability keeps the synchronous reply.
+- Early admission replies reserve a Host-wide and per-principal physical slot through effect settlement. When that budget is busy, the original caller keeps the synchronous reply path.
+- Delivery epoch recovery uses `native.delivery.epochs.gaps.v1` for an exact original allocated by a retired desktop runtime. The Host serializes the terminal no-admission fence with receipt insertion. The desktop persists the authenticated proof before advancing through the gap. A retained Host receipt stays on the ordinary result recovery path.
+- Slow DB scopes log queue wait, guard, worker execution, round trip and COMMIT milliseconds, never SQL, parameters or payloads.
+
 ## Evidence boundaries
 
 - Snapshot/unit evidence does not prove crash/power-loss durability, all-actor closure, native sandbox enforcement or installed source inclusion.

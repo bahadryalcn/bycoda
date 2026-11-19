@@ -23,6 +23,7 @@ pub(crate) mod native_delivery;
 mod native_projection_join_tests;
 pub(crate) mod native_raw_capture;
 pub(crate) mod pin_receipts;
+pub(crate) mod project_sessions;
 mod provenance;
 mod provider_history;
 mod reader;
@@ -33,6 +34,7 @@ pub(crate) mod row_identity;
 pub mod usage;
 mod visibility;
 mod wal_watchdog;
+pub(crate) mod writer_lock;
 pub(crate) mod window_barrier;
 pub(crate) mod write_receipts;
 /// Project path identity shared with the frontend's `pathKey`.
@@ -110,8 +112,12 @@ impl SessionStore {
         // fsync on every autocommit write. The size limit truncates the WAL
         // back down after each checkpoint reset; without it one write burst
         // (an index rebuild, a migration) left a 700 MB file behind for good.
+        // `auto_vacuum` only takes effect on a file with no tables yet: a new
+        // database starts incremental and never needs the writer-holding rewrite
+        // in compaction.rs; an existing one ignores it.
         conn.execute_batch(
-            "PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;
+            "PRAGMA auto_vacuum = INCREMENTAL;
+             PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;
              PRAGMA journal_size_limit = 67108864; PRAGMA cache_size = -65536;",
         )
         .map_err(|e| e.to_string())?;
@@ -199,7 +205,7 @@ impl SessionStore {
         if let Some(conn) = list_conn.as_ref() {
             reader::run(conn, read)
         } else {
-            let conn = self.conn.lock().map_err(|_| "Session store is locked")?;
+            let conn = self.lock_conn()?;
             read(&conn)
         }
     }
@@ -241,9 +247,7 @@ impl SessionStore {
     pub(crate) fn lock_conn(
         &self,
     ) -> Result<std::sync::MutexGuard<'_, cohort::RegisteredConnection>, String> {
-        self.conn
-            .lock()
-            .map_err(|_| "Session store is locked".into())
+        writer_lock::lock_writer(&self.conn)
     }
 
     #[cfg(test)]
@@ -561,7 +565,7 @@ pub async fn session_upsert(
             // Git lookups can spawn processes; never do that while holding the
             // connection every other store command waits on.
             let git = upsert_git_info(&session);
-            let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+            let conn = store.lock_conn()?;
             provenance::protect_client_upsert(&conn, &mut session)?;
             write_receipts::upsert(
                 &store,
@@ -797,7 +801,7 @@ pub async fn session_import(
         crate::native_window_lifecycle::session_persistence_write(&window, &session_id, || {
             validate_upsert(&session)?;
             let git = upsert_git_info(&session);
-            let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+            let conn = store.lock_conn()?;
             if import_already_stored(&conn, &session).map_err(|e| e.to_string())? {
                 return Ok(None);
             }
@@ -832,7 +836,7 @@ fn import_already_stored(conn: &Connection, session: &SessionUpsert) -> rusqlite
 pub async fn session_import_keys(app: tauri::AppHandle) -> Result<Vec<String>, String> {
     crate::harness::run_blocking("session_import_keys", move || {
         let store = app.state::<crate::session_store::SessionStore>();
-        let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+        let conn = store.lock_conn()?;
         import_keys(&conn).map_err(|e| e.to_string())
     })
     .await
@@ -1009,7 +1013,7 @@ pub async fn session_rebase_project(
             if from_cwd.trim().is_empty() || to_cwd.trim().is_empty() {
                 return Err("project paths are required".into());
             }
-            let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+            let conn = store.lock_conn()?;
             rebase_project(&conn, &from_cwd, &to_cwd).map_err(|error| error.to_string())
         })
     })
@@ -1380,7 +1384,7 @@ fn search_store(
                 search_sessions_with_connection(db, options, token.as_ref())
             })?
         } else {
-            let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+            let conn = store.lock_conn()?;
             search_sessions_with_connection(&conn, options, token.as_ref())?
         }
     };
@@ -1457,7 +1461,7 @@ pub async fn session_set_archived(
         let store = app.state::<crate::session_store::SessionStore>();
         crate::native_window_lifecycle::session_persistence_write(&window, &session_id, || {
             validate_id(&session_id, "session")?;
-            let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+            let conn = store.lock_conn()?;
             set_archived(&conn, &session_id, archived).map_err(|e| e.to_string())
         })
     })
@@ -1475,7 +1479,7 @@ pub async fn session_set_pinned(
         let store = app.state::<crate::session_store::SessionStore>();
         crate::native_window_lifecycle::session_persistence_write(&window, &session_id, || {
             validate_id(&session_id, "session")?;
-            let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+            let conn = store.lock_conn()?;
             set_pinned(&conn, &session_id, pinned).map_err(|e| e.to_string())
         })
     })
@@ -1493,7 +1497,7 @@ pub async fn session_set_linked_work_item(
         let store = app.state::<crate::session_store::SessionStore>();
         crate::native_window_lifecycle::session_persistence_write(&window, &session_id, || {
             validate_id(&session_id, "session")?;
-            let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+            let conn = store.lock_conn()?;
             set_linked_work_item(&conn, &session_id, linked_work_item.as_ref())
                 .map_err(|e| e.to_string())
         })
@@ -1517,7 +1521,7 @@ pub async fn session_set_queue(
         let store = app.state::<crate::session_store::SessionStore>();
         crate::native_window_lifecycle::session_persistence_write(&window, &session_id, || {
             validate_id(&session_id, "session")?;
-            let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+            let conn = store.lock_conn()?;
             set_session_queue(&conn, &session_id, queue.as_ref())
         })
     })
@@ -1532,7 +1536,7 @@ pub async fn session_get_queue(
     crate::harness::run_blocking("session_get_queue", move || {
         let store = app.state::<crate::session_store::SessionStore>();
         validate_id(&session_id, "session")?;
-        let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+        let conn = store.lock_conn()?;
         get_session_queue(&conn, &session_id).map_err(|e| e.to_string())
     })
     .await
@@ -1600,7 +1604,7 @@ pub async fn session_set_draft(
         let store = app.state::<crate::session_store::SessionStore>();
         crate::native_window_lifecycle::session_persistence_write(&window, &session_id, || {
             validate_id(&session_id, "session")?;
-            let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+            let conn = store.lock_conn()?;
             set_composer_draft(&conn, &session_id, draft.as_ref())
         })
     })
@@ -1616,7 +1620,7 @@ pub async fn session_list_drafts(
     crate::harness::run_blocking("session_list_drafts", move || {
         let store = app.state::<crate::session_store::SessionStore>();
         crate::native_window_lifecycle::persistence_write(&window, || {
-            let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+            let conn = store.lock_conn()?;
             list_composer_drafts(&conn).map_err(|e| e.to_string())
         })
     })
@@ -1634,7 +1638,7 @@ pub async fn session_attachment_references(
 ) -> Result<Value, String> {
     crate::harness::run_blocking("session_attachment_references", move || {
         let store = app.state::<crate::session_store::SessionStore>();
-        let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+        let conn = store.lock_conn()?;
         read_attachment_references(
             &conn,
             &session_id,
@@ -1826,7 +1830,7 @@ pub async fn session_set_in_flight(
                     return Err("cwd is required".into());
                 }
             }
-            let mut conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+            let mut conn = store.lock_conn()?;
             let page = crate::harness::page_incarnation(&window)?;
             if page != captured_page {
                 return Err("In-flight owner page has changed".into());
@@ -1864,7 +1868,7 @@ pub async fn session_set_in_flight(
 pub async fn session_list_in_flight(app: tauri::AppHandle) -> Result<Vec<InFlightSession>, String> {
     crate::harness::run_blocking("session_list_in_flight", move || {
         let store = app.state::<crate::session_store::SessionStore>();
-        let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+        let conn = store.lock_conn()?;
         list_interrupted_in_flight(&conn, |id, page| {
             if id == store.native_instance_id().to_string() {
                 matches!(
@@ -2086,7 +2090,7 @@ pub async fn session_recovery_candidates(
     let owner_page = crate::harness::page_incarnation(&window)?;
     crate::harness::run_blocking("session_recovery_candidates", move || {
         let store = app.state::<SessionStore>();
-        let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+        let conn = store.lock_conn()?;
         let process = store.native_instance_id().to_string();
         let mut statement = conn
             .prepare("SELECT DISTINCT page_id FROM in_flight_window_sessions WHERE process_id = ?1")
@@ -2143,7 +2147,7 @@ pub async fn session_take_in_flight(
     crate::harness::run_blocking("session_take_in_flight", move || {
         let store = app.state::<crate::session_store::SessionStore>();
         crate::native_window_lifecycle::persistence_write(&window, || {
-            let mut conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+            let mut conn = store.lock_conn()?;
             if !crate::window::is_primary_workspace(&app, window.label()) {
                 return Err("Only the primary workspace can take interrupted sessions".into());
             }
@@ -2193,7 +2197,7 @@ pub async fn workspace_set_snapshot(
             if !snapshot.is_object() {
                 return Err("workspace snapshot must be an object".into());
             }
-            let mut conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+            let mut conn = store.lock_conn()?;
             // The primary check above guarantees this window owns the snapshot.
             let owner = true;
             let previous = if owner && snapshot.get("serversRestore").is_some() {
@@ -2251,7 +2255,7 @@ pub async fn workspace_set_snapshot(
 pub async fn workspace_get_snapshot(app: tauri::AppHandle) -> Result<Option<Value>, String> {
     crate::harness::run_blocking("workspace_get_snapshot", move || {
         let store = app.state::<crate::session_store::SessionStore>();
-        let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+        let conn = store.lock_conn()?;
         let json = get_workspace_snapshot(&conn).map_err(|e| e.to_string())?;
         match json {
             None => Ok(None),
@@ -3695,7 +3699,9 @@ fn list_by_project_with_git(
     cwd: &str,
     git: crate::fs::GitInfo,
 ) -> rusqlite::Result<Vec<SessionSummary>> {
-    let mut statement = conn.prepare(
+    // The filter is shared with `project_sessions`, which counts and deletes
+    // exactly the rows this list shows.
+    let mut statement = conn.prepare(&format!(
         "SELECT id, cwd, harness, model, runtime_mode, title, provider_session_id,
                 created_at, updated_at, branch, archived, pinned,
                 linked_work_item_json,
@@ -3704,12 +3710,10 @@ fn list_by_project_with_git(
                 projection.interrupted, projection.provider_history, projection.activity_at, projection.management_json
          FROM sessions INDEXED BY sessions_activity_project_cover_v2_idx
          LEFT JOIN session_list_summaries projection ON projection.session_id=sessions.id
-         WHERE cwd = ?1
-           AND has_user_message = 1
-           AND id NOT IN (SELECT id FROM sessions WHERE inbox_ask IS NOT NULL)
-           AND id NOT IN (SELECT session_id FROM orchestration_workers) AND NOT EXISTS (SELECT 1 FROM delegated_session_ids d WHERE d.id=sessions.id)
+         WHERE {}
          ORDER BY COALESCE(last_activity_at,updated_at) DESC, id ASC",
-    )?;
+        project_sessions::LISTED_IN_PROJECT
+    ))?;
     let rows = statement.query_map(params![cwd], |row| {
         let stored_branch: Option<String> = row.get(9)?;
         let archived: i64 = row.get(10)?;

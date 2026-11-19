@@ -6,7 +6,9 @@ import { isLocalSyncMachine } from "../../connections/public/localSync";
 import type { RemoteMachine } from "../../connections/public/protocol";
 import type { z } from "zod";
 
-export type SetupCatalog = Pick<z.infer<typeof ModelsListResultSchema>, "models">;
+/** `errors` and `pending` name the Host's probed providers too; older fixtures may omit them. */
+export type SetupCatalog = Pick<z.infer<typeof ModelsListResultSchema>, "models"> &
+  Partial<Pick<z.infer<typeof ModelsListResultSchema>, "errors" | "pending">>;
 
 export const setupCatalogQuery = (machineId: string) => ({
   queryKey: ["model-routing-setup-catalog", machineId] as const,

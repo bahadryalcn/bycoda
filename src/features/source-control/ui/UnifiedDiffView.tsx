@@ -648,6 +648,7 @@ function VirtualRows({
   const hoverNodes = useRef(new Map<string, HTMLElement[]>());
   const hoverActions = useRef(new Map<HTMLElement, HTMLElement[]>());
   const markedHoverNodes = useRef<HTMLElement[]>([]);
+  const pinnedRows = useRef<{ start: number; end: number } | null>(null);
   const [commentTarget, setCommentTarget] = useState<DiffCommentDraft | null>(null);
   const rows = useMemo(
     () =>
@@ -708,13 +709,28 @@ function VirtualRows({
       ? root.getBoundingClientRect()
       : new DOMRect(0, 0, window.innerWidth, window.innerHeight);
     const bodyRect = body.getBoundingClientRect();
-    const next = windowRows(
+    const windowed = windowRows(
       sizedRows,
       rootRect.top - bodyRect.top,
       rootRect.bottom - bodyRect.top,
       UNIFIED_OVERSCAN_PX,
       rowLayout,
     );
+    const pin = pinnedRows.current;
+    const start = Math.min(windowed.start, pin?.start ?? windowed.start);
+    const end = Math.min(
+      sizedRows.length,
+      Math.max(windowed.end, pin?.end ?? windowed.end),
+    );
+    const next =
+      start === windowed.start && end === windowed.end
+        ? windowed
+        : {
+            start,
+            end,
+            padTop: rowLayout.offsets[start] ?? rowLayout.totalHeight,
+            padBottom: rowLayout.totalHeight - (rowLayout.offsets[end] ?? rowLayout.totalHeight),
+          };
     setRange((current) =>
       current.start === next.start &&
       current.end === next.end &&
@@ -786,8 +802,9 @@ function VirtualRows({
     [range.end, range.padTop, range.start, rows, sizedRows, splitRows],
   );
 
-  // DOM membership changes on commit, not on every pointer movement. Keep only
-  // currently mounted rows/actions so virtual windows and comment drafts refresh it.
+  // Re-index hover nodes only when the mounted DOM can change: the virtual window,
+  // the row set, the comment draft (it mounts its own gutter actions), or visibility.
+  // Unrelated commits (comment keystrokes, staging state, hover) must not rescan.
   useLayoutEffect(() => {
     const nodes = new Map<string, HTMLElement[]>();
     const actions = new Map<HTMLElement, HTMLElement[]>();
@@ -805,7 +822,7 @@ function VirtualRows({
     hoverActions.current = actions;
     markedHoverNodes.current = marked;
     if (!marked.length) hover.current = null;
-  });
+  }, [commentTarget, near, range.end, range.start, rows, splitRows]);
 
   useLayoutEffect(() => {
     if (!near) return;
@@ -905,6 +922,33 @@ function VirtualRows({
     };
   }, [near, rowMetrics, scrollerRef, split]);
 
+  useEffect(() => {
+    if (!near) return;
+    const onSelectionChange = () => {
+      const body = bodyRef.current;
+      const selection = document.getSelection();
+      const rowIndexOf = (node: Node | null) => {
+        if (!body || !node) return null;
+        const element = node instanceof Element ? node : node.parentElement;
+        const row = element?.closest<HTMLElement>("[data-row-index]");
+        return row && body.contains(row) ? Number(row.dataset.rowIndex) : null;
+      };
+      const indices = [
+        rowIndexOf(selection?.anchorNode ?? null),
+        rowIndexOf(selection?.focusNode ?? null),
+      ].filter((index): index is number => index !== null);
+      const next = indices.length
+        ? { start: Math.min(...indices), end: Math.max(...indices) + 1 }
+        : null;
+      const current = pinnedRows.current;
+      if (current?.start === next?.start && current?.end === next?.end) return;
+      pinnedRows.current = next;
+      updateWindow();
+    };
+    document.addEventListener("selectionchange", onSelectionChange);
+    return () => document.removeEventListener("selectionchange", onSelectionChange);
+  }, [near, updateWindow]);
+
   const stageHunk = useStableCallback(onStageHunk);
   const revealFold = useStableCallback(onReveal);
   const commentOnLine = useCallback(
@@ -924,32 +968,35 @@ function VirtualRows({
   const visible = rows.slice(range.start, range.end);
   const renderLane = (lane: Lane) =>
     visible.map((row, index) => {
-      const key = diffRowKey(row, range.start + index);
+      const rowIndex = range.start + index;
+      const key = diffRowKey(row, rowIndex);
       return (
-        <DiffLane
-          hoverKey={key}
-          fileId={fileId}
-          key={`${lane}-${key}`}
-          row={row}
-          lane={lane}
-          hovered={false}
-          commenting={commentTarget?.key === key}
-          tokens={row.type === "line" ? tokens?.get(row.line) : undefined}
-          onReveal={revealFold}
-          onStage={row.type === "line" && row.stage && row.line.pos != null ? stageHunk : undefined}
-          onComment={
-            lane === "gutter" && row.type === "line" && row.line.kind !== "hunk"
-              ? commentOnLine
-              : undefined
-          }
-        />
+        <div key={`${lane}-${key}`} data-row-index={rowIndex} className="relative">
+          <DiffLane
+            hoverKey={key}
+            fileId={fileId}
+            row={row}
+            lane={lane}
+            hovered={false}
+            commenting={commentTarget?.key === key}
+            tokens={row.type === "line" ? tokens?.get(row.line) : undefined}
+            onReveal={revealFold}
+            onStage={row.type === "line" && row.stage && row.line.pos != null ? stageHunk : undefined}
+            onComment={
+              lane === "gutter" && row.type === "line" && row.line.kind !== "hunk"
+                ? commentOnLine
+                : undefined
+            }
+          />
+        </div>
       );
     });
 
   const visibleSplit = splitRows ? splitRows.slice(range.start, range.end) : [];
   const renderSplitLane = (side: DiffSide, lane: Lane) =>
     visibleSplit.map((row, index) => {
-      const key = splitRowKey(row, range.start + index);
+      const rowIndex = range.start + index;
+      const key = splitRowKey(row, rowIndex);
       const sideKey = `${key}:${side}`;
       const line = row.type === "pair" ? (side === "before" ? row.left : row.right) : null;
       // One stage button per row, on the after side unless that side is empty.
@@ -958,24 +1005,25 @@ function VirtualRows({
         row.stagePos !== undefined &&
         (side === "after" || row.right === null);
       return (
-        <SplitLane
-          hoverKey={key}
-          fileId={fileId}
-          key={`${side}-${lane}-${key}`}
-          row={row}
-          side={side}
-          lane={lane}
-          hovered={false}
-          rowHovered={false}
-          commenting={commentTarget?.key === sideKey}
-          tokens={line ? tokens?.get(line) : undefined}
-          onReveal={revealFold}
-          stagePos={row.type === "pair" ? row.stagePos : undefined}
-          onStage={
-            stageHere && row.type === "pair" && row.stagePos !== undefined ? stageHunk : undefined
-          }
-          onComment={lane === "gutter" && line && line.kind !== "hunk" ? commentOnLine : undefined}
-        />
+        <div key={`${side}-${lane}-${key}`} data-row-index={rowIndex} className="relative">
+          <SplitLane
+            hoverKey={key}
+            fileId={fileId}
+            row={row}
+            side={side}
+            lane={lane}
+            hovered={false}
+            rowHovered={false}
+            commenting={commentTarget?.key === sideKey}
+            tokens={line ? tokens?.get(line) : undefined}
+            onReveal={revealFold}
+            stagePos={row.type === "pair" ? row.stagePos : undefined}
+            onStage={
+              stageHere && row.type === "pair" && row.stagePos !== undefined ? stageHunk : undefined
+            }
+            onComment={lane === "gutter" && line && line.kind !== "hunk" ? commentOnLine : undefined}
+          />
+        </div>
       );
     });
 
@@ -1278,9 +1326,9 @@ function FoldBar({
         onClick={() => onReveal(foldId, "all")}
         className="min-w-0 flex-1 text-left font-mono"
       >
-        {hidden}
-        {t(" unmodified ")}
-        {hidden === 1 ? t("line") : t("lines")}
+        {hidden === 1
+          ? t("{p0} unmodified line", { p0: hidden })
+          : t("{p0} unmodified lines", { p0: hidden })}
       </Button>
     </div>
   );

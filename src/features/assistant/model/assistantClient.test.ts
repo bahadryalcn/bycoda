@@ -20,6 +20,7 @@ vi.mock("../../../shared/i18n", () => ({
 }));
 import { hostToolRequest } from "../../connections/model/hostFeatureClient";
 import {
+  assistantRequest,
   possessiveName,
   assistantIdentity,
   refreshAssistant,
@@ -145,6 +146,91 @@ it("selected consumers skip heartbeat-only changes and background refreshes, and
     await act(() => refreshAssistantQuietly());
     expect(selected).toBe("env-2");
     expect(selectedRenders).toBe(selectedBase + 1);
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+it("keeps unchanged snapshot slices by reference and shows only the changed one", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  let jobsRenders = 0;
+  let jobs: unknown;
+  let notes: unknown;
+  function Jobs() {
+    jobsRenders++;
+    jobs = useAssistantSnapshot((state) => state.snapshot?.jobs);
+    notes = useAssistantSnapshot((state) => state.snapshot?.notes);
+    return null;
+  }
+  const reply = (state: string) => ({
+    snapshot: {
+      profile: { name: "A" },
+      jobs: [{ id: "j1", state }],
+      notes: [{ id: "n1", text: "same" }],
+    },
+  });
+  try {
+    vi.mocked(hostToolRequest).mockResolvedValue(reply("running") as never);
+    await act(async () => root.render(createElement(Jobs)));
+    await act(() => refreshAssistantQuietly());
+    const notesBefore = notes;
+    const rendersBefore = jobsRenders;
+
+    vi.mocked(hostToolRequest).mockResolvedValue(reply("done") as never);
+    await act(() => refreshAssistantQuietly());
+    expect(jobs).toEqual([{ id: "j1", state: "done" }]);
+    expect(notes).toBe(notesBefore);
+    expect(jobsRenders).toBe(rendersBefore + 1);
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+it("a mutation refresh reads after an in-flight poll and never flips loading", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  const seenLoading: boolean[] = [];
+  const seenNames: (string | undefined)[] = [];
+  let name: string | undefined;
+  function Watcher() {
+    const current = useAssistantSnapshot();
+    seenLoading.push(current.loading);
+    name = current.snapshot?.profile.name;
+    seenNames.push(name);
+    return null;
+  }
+  const reply = (name: string) => ({ snapshot: { profile: { name } } });
+  try {
+    vi.mocked(hostToolRequest).mockResolvedValue(reply("Old") as never);
+    await act(async () => root.render(createElement(Watcher)));
+    await act(() => refreshAssistant());
+    seenLoading.length = 0;
+
+    let release!: (value: unknown) => void;
+    vi.mocked(hostToolRequest).mockImplementationOnce(
+      () => new Promise((resolve) => (release = resolve)) as never,
+    );
+    let poll!: Promise<void>;
+    await act(async () => {
+      poll = refreshAssistantQuietly();
+    });
+    vi.mocked(hostToolRequest).mockResolvedValueOnce({ ok: true } as never);
+    vi.mocked(hostToolRequest).mockResolvedValue(reply("New") as never);
+    const mutation = assistantRequest({ op: "profile.update", name: "New" } as never);
+    await act(async () => release(reply("Stale")));
+    await act(async () => {
+      await poll;
+      await mutation;
+    });
+    expect(seenLoading).not.toContain(true);
+    // The pre-mutation poll result is dropped, so the UI never shows it even briefly.
+    expect(seenNames).not.toContain("Stale");
+    expect(name).toBe("New");
   } finally {
     await act(async () => root.unmount());
     vi.unstubAllGlobals();

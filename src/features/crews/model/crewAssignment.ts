@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { t } from "../../../shared/i18n/core";
 import {
   parseCrewDefinition,
@@ -26,7 +27,7 @@ function definitionProblem(definition: CrewDefinition): string | undefined {
     parseCrewDefinition(structuredClone(definition));
     return undefined;
   } catch (reason) {
-    return reason instanceof Error ? reason.message : String(reason);
+    return errorText(reason);
   }
 }
 

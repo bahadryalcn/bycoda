@@ -120,7 +120,7 @@ it.each(["workspace", "base"] as const)(
     git.available = false;
     git.settled = false;
     await render(kind, { cwd: "/cold-repo", mode: "worktree" });
-    expect(container.textContent).toContain("Loading branches…");
+    expect(container.textContent).toContain("Loading…");
     expect(onFinish).not.toHaveBeenCalled();
 
     git.available = true;

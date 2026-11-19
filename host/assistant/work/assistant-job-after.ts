@@ -19,7 +19,7 @@ type Notice = Omit<AssistantNotification, "eligible" | "deferredReason">;
 export async function loadJobDependencies(db: Db): Promise<Record<string, string>> {
   const rows = await db
     .prepare(
-      "SELECT id,json_extract(value,'$.value.after') AS after FROM assistant_runtime WHERE id LIKE 'jobAfter:%' AND deleted_at IS NULL LIMIT 1000",
+      "SELECT id,json_extract(value,'$.value.after') AS after FROM assistant_runtime WHERE id>='jobAfter:' AND id<'jobAfter;' AND deleted_at IS NULL LIMIT 1000",
     )
     .all();
   const links: Record<string, string> = {};

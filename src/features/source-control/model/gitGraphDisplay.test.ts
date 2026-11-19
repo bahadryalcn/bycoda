@@ -1,13 +1,29 @@
 import { describe, expect, it } from "vitest";
+import { t } from "../../../shared/i18n/git";
 import {
   authorColor,
   authorInitials,
+  fileCountLabel,
   formatAbsoluteTime,
   formatRelativeTime,
   isMergeCommit,
   orderGraphRefs,
   splitRefsForBudget,
 } from "./gitGraphDisplay";
+
+describe("fileCountLabel", () => {
+  // Stub a fixed-grouping formatter so the test does not depend on the runtime locale.
+  const format = { formatNumber: (value: number) => value.toLocaleString("en-US") };
+
+  it("uses the singular noun for exactly one file, never '1 files'", () => {
+    expect(fileCountLabel(1, format)).toBe(t("{p0} file", { p0: "1" }));
+  });
+
+  it("uses the plural noun and the formatted count otherwise", () => {
+    expect(fileCountLabel(0, format)).toBe(t("{p0} files", { p0: "0" }));
+    expect(fileCountLabel(1234, format)).toBe(t("{p0} files", { p0: "1,234" }));
+  });
+});
 
 describe("authorInitials", () => {
   it("uses first and last word", () => {

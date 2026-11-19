@@ -6,7 +6,7 @@ import {
   subscribeProjectFiles,
 } from "../../files/public/fileIndex";
 import { buildMentionIndex, rankMentionFiles } from "../../files/public/fileMentions";
-import type { ProjectFile } from "../../../platform/tauri/fs";
+import { projectFilesTruncated, type ProjectFile } from "../../../platform/tauri/fs";
 import { looksLikeProject } from "../../projects/public/recents";
 import {
   loadNoteSummaries,
@@ -26,6 +26,20 @@ const NO_NOTES: NoteSummary[] = [];
 /** A file list read for another directory is never shown for this one. */
 export function visibleProjectFiles(state: ScopedProjectFiles, cwd: string): ProjectFile[] {
   return state.cwd === cwd ? state.files : NO_FILES;
+}
+
+export type ProjectIndexNotice = "incomplete" | "unknown";
+
+/**
+ * Whether a loaded index may be missing files. An empty list is "not loaded or
+ * nothing to index", never a notice; a Host that does not report completeness
+ * is "unknown", matching the file picker.
+ */
+export function projectIndexNotice(files: ProjectFile[]): ProjectIndexNotice | undefined {
+  if (files.length === 0) return undefined;
+  const truncated = projectFilesTruncated(files);
+  if (truncated === false) return undefined;
+  return truncated ? "incomplete" : "unknown";
 }
 
 /**
@@ -157,6 +171,9 @@ export function useComposerMentionSources(input: {
     mentionIndex,
     rankedFiles,
     filesFailed: !workItems.scoped && filesFailed,
+    // Work-item and crew rows do not come from the file index.
+    filesIndexNotice:
+      !workItems.scoped && looksLikeProject(executionCwd) ? projectIndexNotice(files) : undefined,
     retryFiles,
     workItemsLoading: workItems.loading,
     workItemsScoped: workItems.scoped,

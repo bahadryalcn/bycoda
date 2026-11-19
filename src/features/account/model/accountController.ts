@@ -56,6 +56,9 @@ export function createAccountController(deps: AccountControllerDeps) {
   let deviceId: string | null = null;
   let api: AccountClient | null = null;
   let activeSignIn: { handle: string | null; cancelled: boolean } | null = null;
+  // Bumped whenever the session ends or a sign-in is given up. A verification that started
+  // under an older value must not assign the device id, write the cache or change the state.
+  let sessionEpoch = 0;
   // The start-up verification counts as the first attempt.
   let lastRevalidate = now();
 
@@ -88,6 +91,7 @@ export function createAccountController(deps: AccountControllerDeps) {
   }
 
   async function endSession(reason: "session-ended" | "device-revoked") {
+    sessionEpoch += 1;
     deviceId = null;
     clearAccountCache(storage);
     dispatch({ type: "session-ended", reason });
@@ -117,9 +121,11 @@ export function createAccountController(deps: AccountControllerDeps) {
   /** True when the account is deactivated: the view then stays signed in without a device. */
   async function probeDeactivated(): Promise<boolean> {
     const known = deviceId;
+    const epoch = sessionEpoch;
     deviceId = null;
     try {
       const context = await client().getMe();
+      if (epoch !== sessionEpoch) return false; // -- the session ended meanwhile; write nothing.
       if (context.user.status === "deactivated") {
         const verifiedAt = now();
         writeAccountCache({ context, deviceId: null, verifiedAt }, storage);
@@ -129,33 +135,59 @@ export function createAccountController(deps: AccountControllerDeps) {
     } catch {
       // -- the probe failing means the session is really gone; the caller signs out.
     }
-    deviceId = known;
+    if (epoch === sessionEpoch) deviceId = known;
     return false;
   }
 
-  async function registerDevice(userId: string, fresh: boolean): Promise<string | null> {
+  /** Registers this computer; a stale `epoch` registers nothing and stores nothing. */
+  async function registerDevice(
+    userId: string,
+    fresh: boolean,
+    epoch: number,
+  ): Promise<string | null> {
     const known = readDeviceId(userId, storage);
     const info = await deps.native.deviceInfo();
+    if (epoch !== sessionEpoch) return known;
     const attempt = (id: string | null) =>
       client().registerDevice({ body: buildDeviceRegistration(info, id) });
+    const remember = (id: string): string => {
+      if (epoch === sessionEpoch) writeDeviceId(userId, id, storage);
+      return id;
+    };
     try {
-      const device = await attempt(known);
-      writeDeviceId(userId, device.id, storage);
-      return device.id;
+      return remember((await attempt(known)).id);
     } catch (error) {
       // After a fresh sign-in a revoked id is simply replaced by a new device.
-      if (fresh && known && error instanceof AccountApiError && error.code === "device_revoked") {
-        const device = await attempt(null);
-        writeDeviceId(userId, device.id, storage);
-        return device.id;
+      if (
+        epoch === sessionEpoch &&
+        fresh &&
+        known &&
+        error instanceof AccountApiError &&
+        error.code === "device_revoked"
+      ) {
+        return remember((await attempt(null)).id);
       }
       throw error;
     }
   }
 
-  /** Confirms the session with the service, registers this device and caches the result. */
+  /**
+   * Confirms the session with the service, registers this device and caches the result.
+   * When the session ended or the sign-in was cancelled meanwhile it resolves quietly without
+   * touching the device id, the cache or the state, and its failures are not reported.
+   */
   async function verify(fresh: boolean): Promise<void> {
+    const epoch = sessionEpoch;
+    try {
+      await verifyUnder(epoch, fresh);
+    } catch (error) {
+      if (epoch === sessionEpoch) throw error;
+    }
+  }
+
+  async function verifyUnder(epoch: number, fresh: boolean): Promise<void> {
     const context = await client().getMe();
+    if (epoch !== sessionEpoch) return;
     deviceId = readDeviceId(context.user.id, storage);
     // A deactivated account has no live device; it registers a new one when it is reactivated.
     if (context.user.status === "deactivated") {
@@ -165,12 +197,16 @@ export function createAccountController(deps: AccountControllerDeps) {
       dispatch({ type: "verified", context, deviceId, now: verifiedAt });
       return;
     }
+    let registered: string | null = deviceId;
     try {
-      deviceId = await registerDevice(context.user.id, fresh);
+      registered = await registerDevice(context.user.id, fresh, epoch);
     } catch (error) {
+      if (epoch !== sessionEpoch) return;
       if (error instanceof AccountApiError && error.code === "device_revoked") throw error;
       // Registration is retried at the next start; the account view itself is verified.
     }
+    if (epoch !== sessionEpoch) return;
+    deviceId = registered;
     const verifiedAt = now();
     writeAccountCache({ context, deviceId, verifiedAt }, storage);
     dispatch({ type: "verified", context, deviceId, now: verifiedAt });
@@ -238,7 +274,10 @@ export function createAccountController(deps: AccountControllerDeps) {
           else dispatch({ type: "sign-in-failed", message: poll.error?.message ?? null });
           return;
         }
+        // A cancel that arrived while the last poll was in flight must not register a device.
+        if (flow.cancelled) return;
         baseUrl ??= (await deps.native.status()).apiBaseUrl;
+        if (flow.cancelled) return;
         await verify(true);
       } catch (error) {
         if (flow.cancelled) return;
@@ -257,6 +296,7 @@ export function createAccountController(deps: AccountControllerDeps) {
       const flow = activeSignIn;
       if (!flow) return;
       flow.cancelled = true;
+      sessionEpoch += 1;
       dispatch({ type: "sign-in-cancelled" });
       if (flow.handle) await deps.native.signInCancel(flow.handle).catch(() => undefined); // -- already gone is fine.
     },
@@ -264,6 +304,9 @@ export function createAccountController(deps: AccountControllerDeps) {
     /** Forgets the tokens and the cached view. Sessions, projects and settings are untouched. */
     async signOut(): Promise<void> {
       await deps.native.signOut();
+      // No await between the bump and the clearing: a verification still in flight is stale
+      // from here on and cannot write the account back.
+      sessionEpoch += 1;
       deviceId = null;
       clearAccountCache(storage);
       dispatch({ type: "signed-out" });

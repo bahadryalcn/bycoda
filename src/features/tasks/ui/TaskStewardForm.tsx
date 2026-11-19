@@ -31,7 +31,7 @@ import { AccessPicker } from "../../sessions/public/AccessPicker";
 import { ModelPicker } from "../../sessions/public/ModelPicker";
 import { MAX_OPEN_LIMIT, MAX_PROPOSALS_LIMIT } from "../model/hostStewards";
 import type { StewardDraft } from "../model/stewardClient";
-import { TASK_MACHINE_ERROR } from "../model/taskClient";
+import { taskClientErrors } from "../model/taskClientErrors";
 import { SettingFrame, SettingRow } from "./TaskLimitsRow";
 import { AutoMergeField } from "./TaskFormFields";
 
@@ -168,6 +168,8 @@ export function StewardForm({
                       onChange({
                         ...draft,
                         cwd,
+                        // Another project is another create intent: its steward needs a new id.
+                        creationId: crypto.randomUUID(),
                         modelChoice: undefined,
                         providerAccountId: undefined,
                       })
@@ -187,7 +189,7 @@ export function StewardForm({
                   </Text>
                 ) : (
                   <InlineMessage tone="warning" live="assertive">
-                    {TASK_MACHINE_ERROR}
+                    {taskClientErrors.machine()}
                   </InlineMessage>
                 )}
               </SettingRow>

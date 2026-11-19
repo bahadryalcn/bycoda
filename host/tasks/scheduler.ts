@@ -5,6 +5,7 @@ import {
 } from "../assistant/work/assistant-worker-recovery";
 import { isDeepStrictEqual } from "node:util";
 
+import type { TaskRunBudgetUsage } from "../../src/features/tasks/model/taskBudget";
 import {
   canTakeOverBlockedTask,
   TASK_INPUT_REQUIRED,
@@ -18,6 +19,29 @@ import { TICK_MS } from "./constants";
 import { TASK_HISTORY_RETAINED } from "./constants";
 import type { TaskContext } from "./context";
 import { stopTaskRuntimeRuns } from "../work/runtime-budget";
+
+/**
+ * Whether a fresh ledger reading differs from the persisted usage enough to rewrite the
+ * task row. Every row write bumps the global task cache, the change etag and the history
+ * journal, so the measurement time and the elapsed minutes of a still-running run (which
+ * grow on every tick) never count: the ledger stays the metering source, budget deadlines
+ * read it directly, and any real transition rewrites the row with exact usage.
+ */
+export function budgetUsageChanged(
+  previous: TaskRunBudgetUsage | undefined,
+  current: TaskRunBudgetUsage,
+): boolean {
+  const { measuredAt: _measuredAt, ...material } = current;
+  if (previous && current.runningRuns > 0 && previous.runningRuns === current.runningRuns) {
+    const { agentMinutes: _minutes, ...stable } = material;
+    const { agentMinutes: _previousMinutes, measuredAt: _previousMeasuredAt, ...stableBefore } =
+      previous;
+    return !isDeepStrictEqual(stable, stableBefore);
+  }
+  const { measuredAt: _previousMeasuredAt, ...before } = previous ?? {};
+  return !isDeepStrictEqual(material, before);
+}
+
 export function start(context: TaskContext): void {
   if (context.closing || context.timer) return;
   context.store.db.outsideScope(() => {
@@ -71,12 +95,20 @@ export function tick(context: TaskContext): Promise<void> {
   return context.ticking;
 }
 
+const historyCutoff = (context: TaskContext) =>
+  context.store.db
+    .prepare("SELECT sequence FROM task_history ORDER BY sequence DESC LIMIT 1 OFFSET ?")
+    .get(TASK_HISTORY_RETAINED);
+
 export async function work(context: TaskContext): Promise<void> {
   const now = context.now();
+  // Idle Hosts have nothing to prune on most ticks: look without BEGIN IMMEDIATE, keeping the
+  // read in the same SQL FIFO as writers, and open the write transaction only when a row is due.
+  const due = await context.store.db.scope(async () => Boolean(await historyCutoff(context)));
+  if (!due) return;
   await context.store.transaction(async () => {
-    const cutoff = await context.store.db
-      .prepare("SELECT sequence FROM task_history ORDER BY sequence DESC LIMIT 1 OFFSET ?")
-      .get(TASK_HISTORY_RETAINED);
+    // Re-check inside the transaction: another writer may have pruned or shrunk history since.
+    const cutoff = await historyCutoff(context);
     if (!cutoff) return;
     const sequence = Number(cutoff.sequence);
     const removed = await context.store.db
@@ -161,12 +193,9 @@ export async function work(context: TaskContext): Promise<void> {
         (activeStatus && goalId ? (await context.owningGoal(goalId))?.budget : undefined);
       if (activeStatus && configuredBudget && task.budgetUsage?.measuredAt !== now) {
         const usage = await context.budgets.read({ taskId: task.id });
-        const { measuredAt: _measuredAt, ...materialUsage } = usage;
-        const { measuredAt: _previousMeasuredAt, ...previousMaterialUsage } =
-          task.budgetUsage ?? {};
         const fresh = await context.unchangedTask(task.id, maintenanceRows.get(task.id));
         if (!fresh) continue;
-        if (!isDeepStrictEqual(materialUsage, previousMaterialUsage)) {
+        if (budgetUsageChanged(task.budgetUsage, usage)) {
           // Owner edits made by onChange still invalidate the queued operation.
           task = await context.write(fresh, maintenanceRows);
         }

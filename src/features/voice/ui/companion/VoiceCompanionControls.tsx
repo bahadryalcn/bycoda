@@ -3,7 +3,7 @@ import {
   MessageSquare,
   Mic,
   MicOff,
-  Pause,
+  SkipForward,
   Square,
   Volume2,
   VolumeX,
@@ -53,15 +53,13 @@ export function VoiceCompanionControls({
 }) {
   const canTalk = status === "idle" || status === "sleeping" || status === "ready";
   const connecting = status === "connecting" || status === "reconnecting";
-  const speakerLabel = t(speakerMuted ? "Unmute speaker" : "Mute speaker");
   const chat = (
     <Button
       iconOnly
       shape="pill"
       size="lg"
       label={t("Conversation")}
-      selected={chatShown}
-      aria-pressed={chatShown}
+      pressed={chatShown}
       onClick={onToggleChat}
     >
       <MessageSquare className="icon-sm" />
@@ -128,26 +126,24 @@ export function VoiceCompanionControls({
           iconOnly
           shape="pill"
           size="lg"
-          label={t(muted ? "Resume" : "Pause mic")}
+          label={t("Mute microphone")}
           variant={muted ? "secondary" : "primary"}
           tone={muted ? "danger" : undefined}
           disabled={status !== "live"}
-          selected={muted}
-          aria-pressed={muted}
+          pressed={muted}
           onClick={onToggleMute}
         >
           {muted ? <MicOff className="icon-sm" /> : <Mic className="icon-sm" />}
         </Button>
-        <Button iconOnly shape="pill" size="lg" label={t("Silence")} onClick={onSilence}>
-          <Pause className="icon-sm" />
+        <Button iconOnly shape="pill" size="lg" label={t("Stop speaking")} onClick={onSilence}>
+          <SkipForward className="icon-sm" />
         </Button>
         <Button
           iconOnly
           shape="pill"
           size="lg"
-          label={speakerLabel}
-          selected={speakerMuted}
-          aria-pressed={speakerMuted}
+          label={t("Mute speaker")}
+          pressed={speakerMuted}
           onClick={onToggleSpeaker}
         >
           {speakerMuted ? <VolumeX className="icon-sm" /> : <Volume2 className="icon-sm" />}

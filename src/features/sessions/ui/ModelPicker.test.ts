@@ -581,6 +581,60 @@ describe("model picker", () => {
     expect(onSettingsChange).toHaveBeenCalledWith({ fast: "true" });
   });
 
+  it("gives a described pill the shared tooltip and never a native title", async () => {
+    setHarnessModels("cursor", [
+      {
+        id: "cursor:composer-2.5",
+        harness: "cursor",
+        name: "Composer 2.5",
+        nativeId: "composer-2.5",
+        settings: [
+          {
+            id: "serviceTier",
+            label: "Service Tier",
+            kind: "select",
+            value: "standard",
+            description: "Priority routing for faster responses.",
+            options: [
+              { value: "standard", label: "Standard" },
+              { value: "priority", label: "Priority" },
+            ],
+          },
+          {
+            id: "context",
+            label: "Context",
+            kind: "select",
+            value: "standard",
+            options: [
+              { value: "standard", label: "Standard" },
+              { value: "extended", label: "Extended" },
+            ],
+          },
+        ],
+      },
+    ]);
+    await act(async () =>
+      root.render(
+        createElement(ModelControlPills, {
+          harness: "cursor",
+          model: "cursor:composer-2.5",
+          values: { serviceTier: "standard", context: "standard" },
+          onSettingsChange: vi.fn(),
+        }),
+      ),
+    );
+
+    const describedPill = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Service Tier: Standard"]',
+    )!;
+    const plainPill = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Context: Standard"]',
+    )!;
+    expect(describedPill.hasAttribute("title")).toBe(false);
+    expect(plainPill.hasAttribute("title")).toBe(false);
+    expect(describedPill.textContent).toBe("Standard");
+  });
+
   it("renders the OpenCode variant as a beside-picker pill", async () => {
     setHarnessModels("opencode", [
       {
@@ -1101,6 +1155,89 @@ describe("model picker", () => {
     expect(
       container.querySelector('[role="dialog"][aria-label="Model and settings"]'),
     ).not.toBeNull();
+  });
+
+  describe("recent-models quick switch from the keyboard", () => {
+    const chords: { name: string; init: KeyboardEventInit }[] = [
+      { name: "Alt+ArrowDown", init: { key: "ArrowDown", altKey: true } },
+      { name: "ContextMenu", init: { key: "ContextMenu" } },
+      { name: "Shift+F10", init: { key: "F10", shiftKey: true } },
+    ];
+
+    async function renderRecentTrigger() {
+      saveRecentModelChoice("claude", "claude:opus-5");
+      saveRecentModelChoice("cursor", "cursor:composer-2.5");
+      await act(async () =>
+        root.render(
+          createElement(ModelPicker, {
+            harness: "grok",
+            model: "grok:grok-4.6",
+            values: { effort: "high" },
+            hotkeys: true,
+            onChange: vi.fn(),
+            onSettingsChange: vi.fn(),
+          }),
+        ),
+      );
+      return container.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!;
+    }
+
+    const recentMenu = () =>
+      container.querySelector<HTMLElement>('[role="menu"][aria-label="Recently used models"]');
+
+    it.each(chords)("opens the menu with $name on the model button", async ({ init }) => {
+      const trigger = await renderRecentTrigger();
+      trigger.focus();
+      expect(recentMenu()).toBeNull();
+      await act(async () => {
+        trigger.dispatchEvent(new KeyboardEvent("keydown", { ...init, bubbles: true, cancelable: true }));
+      });
+      expect(recentMenu()).not.toBeNull();
+      expect(
+        container.querySelector('[role="dialog"][aria-label="Model and settings"]'),
+      ).toBeNull();
+    });
+
+    it("leaves a plain ArrowDown alone and advertises the chords", async () => {
+      const trigger = await renderRecentTrigger();
+      trigger.focus();
+      await keyDown(trigger, "ArrowDown");
+      expect(recentMenu()).toBeNull();
+      expect(trigger.getAttribute("aria-keyshortcuts")).toContain("Alt+ArrowDown");
+    });
+
+    it("selects a recent model with the keyboard alone", async () => {
+      const onChange = vi.fn();
+      saveRecentModelChoice("cursor", "cursor:composer-2.5");
+      await act(async () =>
+        root.render(
+          createElement(ModelPicker, {
+            harness: "grok",
+            model: "grok:grok-4.6",
+            values: {},
+            hotkeys: true,
+            onChange,
+            onSettingsChange: vi.fn(),
+          }),
+        ),
+      );
+      const trigger = container.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!;
+      trigger.focus();
+      await act(async () => {
+        trigger.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: "ArrowDown",
+            altKey: true,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+      });
+      await keyDown(trigger, "ArrowDown");
+      await keyDown(trigger, "Enter");
+      expect(onChange).toHaveBeenCalledWith("cursor", "cursor:composer-2.5");
+      expect(recentMenu()).toBeNull();
+    });
   });
 });
 

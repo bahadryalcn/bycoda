@@ -49,7 +49,7 @@ export function ToolDiffPreview({
 
   function dismiss(restoreFocus = false) {
     clearTimer();
-    // Restore before closing so focus does not reopen the preview.
+    // Restore before closing so focus returns to the chip the preview belongs to.
     if (restoreFocus && surface.current?.contains(document.activeElement)) {
       trigger.current?.focus();
     }
@@ -72,12 +72,12 @@ export function ToolDiffPreview({
 
   const description =
     status === "pending"
-      ? "Proposed changes"
+      ? t("Proposed changes")
       : status === "rejected"
-        ? "Attempted changes · tool did not complete"
+        ? t("Attempted changes · tool did not complete")
         : preview.contentOnly
-          ? "Written content · previous contents unavailable"
-          : "Change preview";
+          ? t("Written content · previous contents unavailable")
+          : t("Change preview");
 
   return (
     <>
@@ -108,7 +108,8 @@ export function ToolDiffPreview({
           hovered.current = false;
           scheduleClose();
         }}
-        onFocus={show}
+        // Focus alone never opens the dialog: tabbing through a transcript must not
+        // pop a surface open. Keyboard users open it with ArrowDown (aria-haspopup).
         onBlur={scheduleClose}
         onClick={(event) => {
           event.stopPropagation();
@@ -120,9 +121,10 @@ export function ToolDiffPreview({
           }
         }}
         onKeyDown={(event) => {
-          if (event.key === "ArrowDown" && open) {
+          if (event.key === "ArrowDown") {
             event.preventDefault();
-            surface.current?.focus();
+            if (open) surface.current?.focus();
+            else show();
           } else if (event.key === "Tab" && !event.shiftKey && open) {
             event.preventDefault();
             surface.current?.querySelector<HTMLElement>("button, [tabindex='0']")?.focus();
@@ -151,7 +153,8 @@ export function ToolDiffPreview({
             hovered.current = false;
             scheduleClose();
           }}
-          onFocus={show}
+          // Focus moving inside the open surface only keeps it from closing.
+          onFocus={clearTimer}
           onBlur={scheduleClose}
           onKeyDown={(event) => {
             if (event.key !== "Tab" || !event.shiftKey) return;

@@ -135,6 +135,7 @@ export class AssistantOwnerQuestionDraft {
   readonly scope: string;
   private record: RecordValue;
   private sending?: Promise<AssistantOwnerQuestion>;
+  private unsaved = false;
   constructor(
     question: AssistantOwnerQuestion,
     readonly environmentId: string,
@@ -146,7 +147,7 @@ export class AssistantOwnerQuestionDraft {
     const captured = AssistantOwnerQuestionSchema.parse(structuredClone(question));
     if (!environmentId || environmentId.length > 200)
       throw new Error(
-        "The original Host could not be verified. Keep this draft and reconnect its original computer.",
+        "The original computer could not be verified. Keep this draft and reconnect that computer.",
       );
     this.scope = ownerQuestionDraftScope(environmentId, captured);
     const saved = readRecord(storage, this.scope);
@@ -221,15 +222,22 @@ export class AssistantOwnerQuestionDraft {
       );
     }
   }
+  /** Draft-store notifications reach every card; only the card whose answer changed writes or fails. */
   saveDraft(draft: QuestionDraft) {
-    this.assert();
-    this.adoptPending();
+    let parsed: z.infer<typeof draftSchema>;
     try {
-      this.record = { ...this.record, draft: draftSchema.parse(draft) };
+      parsed = draftSchema.parse(draft);
     } catch (error) {
       throw new Error(ownerQuestionError(error));
     }
+    if (!this.unsaved && same(parsed, this.record.draft)) return;
+    this.assert();
+    this.adoptPending();
+    this.record = { ...this.record, draft: parsed };
+    // A failed write stays unsaved so a later capacity notification retries it.
+    this.unsaved = true;
     this.persist();
+    this.unsaved = false;
   }
   private clear() {
     this.record = {

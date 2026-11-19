@@ -54,7 +54,19 @@ artifact; arbitrary copies/independent nonparticipants are not a discovery or
 security boundary.
 
 Lost tokens intentionally remain held until process death. There is no recovery
-by claimed ID. Therefore the later Host adapter should own reservations in a
+by claimed ID. `registry.listReservations()` is a read-only diagnostic of the
+owner's live reservations (`kind`, `nativeFormat`, `ageMs`, oldest first) so a
+leaked writer can be found and its database named; it carries no authority and
+releases nothing. Collecting the registry, store or handle objects also releases
+nothing, because the kernel lock may still protect a live SQLite connection.
+
+Filesystem admission (`tryWriter`, `tryBeginClose`, `tryUpgrade`) holds the
+process registry mutex only to reserve a capacity-counted slot and to commit the
+record. It is serialized per physical file within the process, so same-process
+contenders keep the previous Busy semantics, while other files, `release*` and
+`statistics` no longer wait behind a slow filesystem. The calls stay
+synchronous by contract: Host `accept` must try every database before tail
+publication with no await. Therefore the later Host adapter should own reservations in a
 surviving coordinator environment and retain the real job's opaque token until
 its actual terminal or EXIT; a worker environment that disappears with the only
 token leaves conservative unknown ownership. Process death closes OS handles

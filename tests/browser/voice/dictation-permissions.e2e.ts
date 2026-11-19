@@ -381,7 +381,7 @@ for (const platform of ["macOS", "Windows", "Linux"])
             const guide = page.getByRole("dialog", { name: "Microphone", exact: true });
             await guide.getByRole("button", { name: "Open Settings", exact: true }).click();
             await expect(guide).toContainText(
-              "Could not open the permission prompt or settings. Follow the steps above, then check again.",
+              "Couldn’t open the permission prompt or settings. Follow the steps above, then check again.",
             );
             await guide.getByRole("button", { name: "Close", exact: true }).click();
             expect(

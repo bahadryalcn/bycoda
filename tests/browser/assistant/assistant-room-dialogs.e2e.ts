@@ -43,7 +43,7 @@ for (const theme of ["light", "dark"])
 
       await page.getByRole("tab", { name: "Conversations", exact: true }).click();
       await page.getByRole("button", { name: "Conversation actions", exact: true }).click();
-      await page.getByRole("menuitem", { name: "Clear conversation...", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Clear conversation…", exact: true }).click();
       const clear = page.getByRole("dialog", { name: "Clear this conversation?", exact: true });
       await expect(clear).toContainText("The summary and unsent draft stay.");
       await capture("conversation-clear");

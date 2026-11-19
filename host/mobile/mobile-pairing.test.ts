@@ -1,8 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { hostProof } from "./host-proof";
-import { createServer, request as httpRequest, type Server } from "node:http";
+import {
+  createServer,
+  request as httpRequest,
+  type IncomingMessage,
+  type Server,
+  type ServerResponse,
+} from "node:http";
 import { once } from "node:events";
+import { Readable } from "node:stream";
 import { MOBILE_PAIRING_TTL_MS } from "../../src/integrations/mobile-pairing";
 import { MobilePairing, MobilePairingError, type MobilePairingCreated } from "./mobile-pairing";
 
@@ -355,6 +362,24 @@ describe("short-lived mobile pairing", () => {
     expect(issueDevice).toHaveBeenCalledTimes(2);
   });
 
+  it("recovers a redeem response lost near QR expiry with the same claim, then drops the credential", async () => {
+    const { manager, owner, redeem, advance, issueDevice } = setup();
+    const input = redeem(await manager.create(owner));
+    advance(MOBILE_PAIRING_TTL_MS - 1_000);
+    const result = await manager.redeem(input);
+    // The response is lost; the retry arrives after the QR itself has expired.
+    advance(2_000);
+    expect(await manager.redeem(input)).toEqual(result);
+    await expect(
+      (async () => await manager.redeem({ ...input, claimId: secret() }))(),
+    ).rejects.toThrow("invalid or expired");
+    expect(await manager.redeem(input)).toEqual(result);
+    expect(issueDevice).toHaveBeenCalledOnce();
+    advance(MOBILE_PAIRING_TTL_MS);
+    await expect((async () => await manager.redeem(input))()).rejects.toThrow("invalid or expired");
+    expect(issueDevice).toHaveBeenCalledOnce();
+  });
+
   it("rechecks revoked issuer authorization before first redemption and every retry", async () => {
     const { manager, owner, otherOwner, deviceHashes, redeem, issueDevice } = setup();
     const pending = redeem(await manager.create(owner));
@@ -509,5 +534,85 @@ describe("native pairing redemption HTTP boundary", () => {
     expect(issueDevice).not.toHaveBeenCalled();
     await manager.redeem(input);
     expect(issueDevice).toHaveBeenCalledTimes(1);
+  });
+});
+
+function fakeRequest(source: string, body: unknown, options: { method?: string; contentType?: string } = {}) {
+  return Object.assign(Readable.from([Buffer.from(JSON.stringify(body))]), {
+    method: options.method ?? "POST",
+    url: "/mobile/pairing/redeem",
+    headers: { "content-type": options.contentType ?? "application/json" },
+    socket: { remoteAddress: source },
+  }) as unknown as IncomingMessage;
+}
+
+async function send(
+  manager: MobilePairing,
+  source: string,
+  body: unknown,
+  options?: { method?: string; contentType?: string },
+): Promise<{ status: number }> {
+  const reply = { status: 200 };
+  const response = {
+    setHeader: () => undefined,
+    writeHead: (status: number) => {
+      reply.status = status;
+      return { end: () => undefined };
+    },
+    end: () => undefined,
+    destroyed: false,
+  } as unknown as ServerResponse;
+  await manager.handle(fakeRequest(source, body, options), response);
+  return reply;
+}
+
+describe("pairing redemption HTTP rate accounting", () => {
+  it("does not count requests rejected before ticket validation", async () => {
+    const { manager, owner, redeem, issueDevice } = setup();
+    const input = redeem(await manager.create(owner));
+    for (let index = 0; index < 130; index++) {
+      expect((await send(manager, "192.0.2.10", input, { method: "GET" })).status).toBe(403);
+      expect(
+        (await send(manager, "192.0.2.10", input, { contentType: "text/plain" })).status,
+      ).toBe(415);
+    }
+    expect((await send(manager, "192.0.2.10", input)).status).toBe(200);
+    expect(issueDevice).toHaveBeenCalledTimes(1);
+  });
+
+  it("limits one source without locking out another source's valid redemption", async () => {
+    const { manager, owner, redeem, issueDevice } = setup();
+    const input = redeem(await manager.create(owner));
+    for (let index = 0; index < 120; index++) {
+      expect((await send(manager, "198.51.100.7", { ...input, ticket: secret() })).status).toBe(
+        400,
+      );
+    }
+    expect((await send(manager, "198.51.100.7", input)).status).toBe(429);
+    expect(issueDevice).not.toHaveBeenCalled();
+    expect((await send(manager, "203.0.113.4", input)).status).toBe(200);
+    expect(issueDevice).toHaveBeenCalledTimes(1);
+  });
+
+  it("enforces a Host-wide ceiling across sources", async () => {
+    const { manager, owner, redeem } = setup();
+    const bogus = { ...redeem(await manager.create(owner)), ticket: secret() };
+    for (let source = 0; source < 5; source++) {
+      for (let index = 0; index < 120; index++) {
+        await send(manager, `10.0.0.${source}`, bogus);
+      }
+    }
+    expect((await send(manager, "10.0.1.1", bogus)).status).toBe(429);
+  });
+
+  it("bounds the per-source table", async () => {
+    const { manager, owner, redeem } = setup();
+    const bogus = { ...redeem(await manager.create(owner)), ticket: secret() };
+    for (let source = 0; source < 100; source++) {
+      await send(manager, `10.1.0.${source}`, bogus);
+    }
+    const sources = (manager as unknown as { sourceRedemptionRates: Map<string, unknown> })
+      .sourceRedemptionRates;
+    expect(sources.size).toBeLessThanOrEqual(64);
   });
 });

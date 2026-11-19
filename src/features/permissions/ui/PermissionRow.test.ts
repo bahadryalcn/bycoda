@@ -102,7 +102,7 @@ it("opens the guide when the prompt leaves access missing", async () => {
 it("opens the guide from Review access without prompting", async () => {
   state.entry = { id: "microphone", state: "denied", canRequest: false, canOpenSettings: true };
   const host = await render();
-  await act(async () => button(host, "Review access…")!.click());
+  await act(async () => button(host, "Review access")!.click());
   expect(state.request).not.toHaveBeenCalled();
   expect(host.querySelector("[data-testid=setup-sheet]")).not.toBeNull();
 });

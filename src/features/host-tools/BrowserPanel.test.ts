@@ -514,8 +514,9 @@ it("rechecks the lease at actual dispatch after a queued frame read", async () =
   ).toHaveLength(0);
 });
 
-it("blocks further input after a failed frame until a successful explicit refresh", async () => {
-  let frames = 0;
+it("keeps input available when the frame after an input fails only briefly", async () => {
+  let inputSent = false;
+  let failuresLeft = 1;
   const state = {
     open: true,
     controlling: true,
@@ -523,8 +524,103 @@ it("blocks further input after a failed frame until a successful explicit refres
     documentId: "doc",
     navigationId: "nav",
   };
-  vi.mocked(hostFeatureRequest).mockImplementation(async (_cwd, _capability, method) => {
-    if (method === "browser.frame" && ++frames === 2) throw new Error("capture failed");
+  vi.mocked(hostFeatureRequest).mockImplementation(async (_cwd, _capability, method, params) => {
+    if (method === "browser.input") inputSent = true;
+    if (method === "browser.frame" && params?.after === undefined && inputSent && failuresLeft-- > 0)
+      throw new Error("capture timed out");
+    return {
+      ...state,
+      ...(method === "browser.frame"
+        ? { data: "YWJj", mimeType: "image/jpeg", width: 800, height: 600 }
+        : {}),
+    };
+  });
+  await act(async () =>
+    root.render(createElement(BrowserPanel, { cwd: "/project", sessionId: "transient-frame" })),
+  );
+  const image = container.querySelector("img")!;
+  vi.spyOn(image, "getBoundingClientRect").mockReturnValue({
+    left: 0,
+    top: 0,
+    width: 800,
+    height: 600,
+  } as DOMRect);
+  const inputs = () =>
+    vi.mocked(hostFeatureRequest).mock.calls.filter((call) => call[2] === "browser.input").length;
+  await act(async () => image.click());
+  await act(async () => vi.advanceTimersByTimeAsync(50));
+  // The failed read is retried after the first back-off and succeeds.
+  await act(async () => vi.advanceTimersByTimeAsync(600));
+  await act(async () => image.click());
+  expect(inputs()).toBe(2);
+  expect(container.textContent).not.toContain("capture timed out");
+});
+
+it("keeps live view and input through brief live read failures, then blocks input once they persist", async () => {
+  let briefFailures = 2;
+  let outage = false;
+  const state = {
+    open: true,
+    controlling: true,
+    leaseId: "lease",
+    documentId: "doc",
+    navigationId: "nav",
+  };
+  vi.mocked(hostFeatureRequest).mockImplementation(async (_cwd, _capability, method, params) => {
+    // Live reads carry `after`; the explicit refresh does not.
+    const live = method === "browser.frame" && params?.after !== undefined;
+    if (live && (outage || briefFailures-- > 0)) throw new Error("browser.frame timed out");
+    return {
+      ...state,
+      ...(method === "browser.frame"
+        ? { data: "YWJj", mimeType: "image/jpeg", width: 800, height: 600 }
+        : {}),
+    };
+  });
+  await act(async () =>
+    root.render(createElement(BrowserPanel, { cwd: "/project", sessionId: "live-transient" })),
+  );
+  const image = container.querySelector("img")!;
+  vi.spyOn(image, "getBoundingClientRect").mockReturnValue({
+    left: 0,
+    top: 0,
+    width: 800,
+    height: 600,
+  } as DOMRect);
+  const inputs = () =>
+    vi.mocked(hostFeatureRequest).mock.calls.filter((call) => call[2] === "browser.input").length;
+  // Two live reads fail, the third succeeds: no error, input still goes through.
+  await act(async () => vi.advanceTimersByTimeAsync(2500));
+  expect(container.textContent).not.toContain("browser.frame timed out");
+  await act(async () => image.click());
+  expect(inputs()).toBe(1);
+  // A lasting outage reaches the panel only after the retries are spent.
+  outage = true;
+  await act(async () => vi.advanceTimersByTimeAsync(10_000));
+  expect(container.textContent).toContain("browser.frame timed out");
+  await act(async () => image.click());
+  expect(inputs()).toBe(1);
+  outage = false;
+  await act(async () => button("Refresh frame").click());
+  await act(async () => image.click());
+  expect(inputs()).toBe(2);
+});
+
+it("blocks further input after a failed frame until a successful explicit refresh", async () => {
+  let inputSent = false;
+  let recovered = false;
+  const state = {
+    open: true,
+    controlling: true,
+    leaseId: "lease",
+    documentId: "doc",
+    navigationId: "nav",
+  };
+  vi.mocked(hostFeatureRequest).mockImplementation(async (_cwd, _capability, method, params) => {
+    if (method === "browser.input") inputSent = true;
+    // The read after the input keeps failing until recovery; live reads (with `after`) are fine.
+    if (method === "browser.frame" && params?.after === undefined && inputSent && !recovered)
+      throw new Error("capture failed");
     return {
       ...state,
       ...(method === "browser.frame"
@@ -543,12 +639,14 @@ it("blocks further input after a failed frame until a successful explicit refres
     height: 600,
   } as DOMRect);
   await act(async () => image.click());
-  await act(async () => vi.advanceTimersByTimeAsync(50));
+  // The read is retried with back-off (500 + 1000 + 2000 ms) before input is blocked.
+  await act(async () => vi.advanceTimersByTimeAsync(4000));
   expect(container.querySelector("img")).toBe(image);
   await act(async () => image.click());
   expect(
     vi.mocked(hostFeatureRequest).mock.calls.filter((call) => call[2] === "browser.input"),
   ).toHaveLength(1);
+  recovered = true;
   await act(async () => button("Refresh frame").click());
   await act(async () => image.click());
   expect(
@@ -1350,4 +1448,39 @@ it("uses the mounted home and search defaults without opening or claiming on mou
     localStorage.removeItem(home);
     localStorage.removeItem(engine);
   }
+});
+
+it("retries a failed lease renewal only while the original lease lasts, then stops", async () => {
+  vi.mocked(hostFeatureRequest).mockImplementation(async (_cwd, _capability, method) => {
+    if (method === "browser.claim") throw new Error("Host unreachable");
+    return {
+      open: true,
+      url: "http://localhost:3000/",
+      controlling: true,
+      leaseId: "lease",
+      leaseExpiresAt: 1_030_000,
+      navigationId: "page",
+    };
+  });
+  const claims = () =>
+    vi.mocked(hostFeatureRequest).mock.calls.filter((call) => call[2] === "browser.claim").length;
+  await act(async () =>
+    root.render(createElement(BrowserPanel, { cwd: "/project", sessionId: "session" })),
+  );
+  await act(async () => vi.advanceTimersByTimeAsync(21_000));
+  expect(claims()).toBe(1);
+  await act(async () => vi.advanceTimersByTimeAsync(3000));
+  expect(claims()).toBe(2);
+  await act(async () => vi.advanceTimersByTimeAsync(30_000));
+  const attempts = claims();
+  expect(attempts).toBeGreaterThan(2);
+  expect(attempts).toBeLessThanOrEqual(6);
+  await act(async () => vi.advanceTimersByTimeAsync(60_000));
+  expect(claims()).toBe(attempts);
+  // Renewals never ask to take control over, so a revoked lease cannot be won back.
+  expect(
+    vi
+      .mocked(hostFeatureRequest)
+      .mock.calls.some((call) => call[2] === "browser.claim" && call[3]?.takeover === true),
+  ).toBe(false);
 });

@@ -18,12 +18,15 @@ import {
   writeReplyDraftBody,
 } from "../model/replyDrafts";
 
+/**
+ * Only the destinations the header does not already show. Slack and Discord replies go to the
+ * open thread, which the heading and provider subtitle above the timeline already name.
+ */
 function destinationHint(thread: MessageThread, replyAddress: string | null): string | null {
   if (thread.provider === "email")
     return replyAddress ? t("Reply to {p0}", { p0: replyAddress }) : null;
   if (thread.provider === "teams") return t("Sends to this Teams chat");
-  if (thread.provider === "slack") return t("Sends to {p0} in Slack", { p0: thread.title });
-  return t("Sends to {p0} in Discord", { p0: thread.title });
+  return null;
 }
 
 /**

@@ -20,6 +20,13 @@ import { AgentMarkdown } from "../../sessions/ui/AgentMarkdown";
 import { NotePreviewParser, notePreviewReferences, replacePreviewBlock } from "../previewBlocks";
 import { NoteMarkdownEditor } from "./NoteMarkdownEditor";
 import type { NativeInputObserver } from "../../../shared/lib/native-input-observer";
+import { truncateGraphemes } from "../../../shared/lib/text/truncate";
+
+/** Names a block's edit action after its first words so repeated actions stay distinguishable. */
+function blockEditLabel(t: ReturnType<typeof useT>, text: string) {
+  const excerpt = truncateGraphemes(text.replace(/\s+/g, " ").trim(), 40);
+  return excerpt ? t("Edit block: {text}", { text: excerpt }) : t("Edit note block");
+}
 
 export function NoteEditablePreview({
   value,
@@ -138,7 +145,7 @@ export function NoteEditablePreview({
     // reached the canonical draft/autosave owner; explicit Save stays separate.
     requestAnimationFrame(() => {
       previewRoot.current
-        ?.querySelector<HTMLElement>(`[data-note-block-from="${from}"] [data-action-primary]`)
+        ?.querySelector<HTMLElement>(`[data-note-block-from="${from}"] [data-note-block-edit]`)
         ?.focus();
     });
   };
@@ -170,22 +177,14 @@ export function NoteEditablePreview({
             className="note-preview-block items-start gap-1 [content-visibility:auto] [contain-intrinsic-size:var(--layout-contain-intrinsic-size)]"
             style={{ "--layout-contain-intrinsic-size": "auto 64px" } as CSSProperties}
           >
+            {/* Pointer-only click-to-edit: the pencil action is the one keyboard stop, so the
+                rendered links and controls inside stay independent of a button role. */}
             <div
-              role="button"
-              data-action-primary
-              tabIndex={0}
-              aria-label={t("Edit note block")}
               className="note-preview-content"
               onClick={(event) => {
                 if ((event.target as HTMLElement).closest("a, button, input, [role='menu']"))
                   return;
                 if (window.getSelection()?.toString()) return;
-                beginBlock.current(block.from, block.to);
-              }}
-              onKeyDown={(event) => {
-                if (event.target !== event.currentTarget || !["Enter", " "].includes(event.key))
-                  return;
-                event.preventDefault();
                 beginBlock.current(block.from, block.to);
               }}
             >
@@ -201,7 +200,8 @@ export function NoteEditablePreview({
             </div>
             <InlineAction
               type="button"
-              label={t("Edit note block")}
+              data-note-block-edit=""
+              label={blockEditLabel(t, block.text)}
               onClick={() => beginBlock.current(block.from, block.to)}
             >
               <Pencil className="icon-sm" />

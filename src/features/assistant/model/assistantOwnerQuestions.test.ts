@@ -306,6 +306,32 @@ it("separates drafts by actual environment and question version and never dispat
   expect(() => draft.submit(answer, f.request, 3600000)).toThrow("could not be saved");
   expect(f.calls).toEqual([]);
 });
+it("leaves an unchanged draft alone when another card's typing notifies it, even if it lost authority", () => {
+  const f = fixture(),
+    card = f.model();
+  const typed = { step: 0, answers: answer.answers, custom: {} };
+  card.saveDraft(typed);
+  const writes = vi.spyOn(f.storage, "setItem");
+  f.allowed = false;
+  expect(() => card.saveDraft(structuredClone(typed))).not.toThrow();
+  expect(writes).not.toHaveBeenCalled();
+  expect(() => card.saveDraft({ ...typed, custom: { "host-question": "changed" } })).toThrow(
+    "visibility changed",
+  );
+});
+it("retries a draft write that failed once the next notification arrives", () => {
+  const f = fixture(),
+    card = f.model(),
+    setItem = f.storage.setItem;
+  const typed = { step: 0, answers: answer.answers, custom: {} };
+  f.storage.setItem = () => {
+    throw new Error("quota");
+  };
+  expect(() => card.saveDraft(typed)).toThrow("could not be saved");
+  f.storage.setItem = setItem;
+  card.saveDraft(structuredClone(typed));
+  expect(f.model().formDraft).toMatchObject({ answers: answer.answers });
+});
 it("conceals mixed and unknown contributors while allowing only verified global proposal shapes", () => {
   expect(ownerQuestionVisible({ ...question(), projectIds: ["p", "hidden"] }, ["p"])).toBe(false);
   expect(ownerQuestionVisible({ ...question(), projectIds: [] }, ["p"])).toBe(false);

@@ -7,9 +7,15 @@ import { getSessions, setSessions } from "../../sessions/model/sessionsStore";
 import { newSession } from "../../sessions/model/session";
 import type { ManagedWorkspace } from "../model/contracts";
 import { getWorkspaceCapabilities, workspaceRequest } from "../model/workspaceClient";
-import { SessionWorkspaceActions, TEMPORARY_RELOAD_MS } from "./SessionWorkspaceActions";
+import {
+  SessionWorkspaceActions,
+  TEMPORARY_RELOAD_ATTEMPTS,
+  TEMPORARY_RELOAD_MAX_MS,
+  TEMPORARY_RELOAD_MS,
+} from "./SessionWorkspaceActions";
 import { notifyRemoteRecovered } from "../../connections/model/remoteHealth";
 import { remotePath } from "../../connections/model/remoteProjects";
+import { shouldPersistSession, upsertSession } from "../../sessions/data/sessionStore";
 
 const connection = vi.hoisted(() => ({ status: "connected", reconnecting: false }));
 vi.mock("../../connections/model/useRemoteConnection", () => ({
@@ -28,7 +34,7 @@ vi.mock("../model/workspaceClient", () => ({
   }),
 }));
 vi.mock("../../sessions/data/sessionStore", () => ({
-  shouldPersistSession: () => false,
+  shouldPersistSession: vi.fn(() => false),
   upsertSession: vi.fn(),
 }));
 const workspace: ManagedWorkspace = {
@@ -170,6 +176,62 @@ it("leaves shared connection recovery to the conversation and reloads only for i
   );
   await act(async () => notifyRemoteRecovered("env"));
   expect(container.textContent).toContain("Resume");
+});
+
+it("keeps the workspace actions while the same session reloads, and drops them for another one", async () => {
+  const render = (cwd: string) =>
+    act(async () => root.render(createElement(SessionWorkspaceActions, { sessionId: "session", cwd })));
+  await render(remotePath("env", "/project"));
+  expect(container.textContent).toContain("Resume");
+  vi.mocked(workspaceRequest).mockImplementation(() => new Promise(() => {}));
+  await act(async () => notifyRemoteRecovered("env"));
+  expect(container.textContent).toContain("Resume");
+  await render(remotePath("env", "/other"));
+  expect(container.textContent).not.toContain("Resume");
+});
+
+it("does not save the session again when a reload finds the same workspace", async () => {
+  vi.mocked(shouldPersistSession).mockReturnValue(true);
+  try {
+    await act(async () =>
+      root.render(
+        createElement(SessionWorkspaceActions, { sessionId: "session", cwd: remotePath("env", "/project") }),
+      ),
+    );
+    expect(upsertSession).toHaveBeenCalledTimes(1);
+    await act(async () => notifyRemoteRecovered("env"));
+    await act(async () => notifyRemoteRecovered("env"));
+    expect(upsertSession).toHaveBeenCalledTimes(1);
+  } finally {
+    vi.mocked(shouldPersistSession).mockReturnValue(false);
+  }
+});
+
+it("backs off temporary read failures and stops after a bounded number of attempts", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  try {
+    vi.mocked(workspaceRequest).mockRejectedValue(
+      Object.assign(new Error("Host request was cancelled before dispatch"), {
+        code: "RPC_WS_CANCELLED",
+      }),
+    );
+    await act(async () =>
+      root.render(
+        createElement(SessionWorkspaceActions, { sessionId: "session", cwd: "/project" }),
+      ),
+    );
+    expect(vi.mocked(getWorkspaceCapabilities)).toHaveBeenCalledTimes(1);
+    await act(async () => vi.advanceTimersByTime(TEMPORARY_RELOAD_MS));
+    expect(vi.mocked(getWorkspaceCapabilities)).toHaveBeenCalledTimes(2);
+    // The second wait is longer than the first.
+    await act(async () => vi.advanceTimersByTime(TEMPORARY_RELOAD_MS));
+    expect(vi.mocked(getWorkspaceCapabilities)).toHaveBeenCalledTimes(2);
+    await act(async () => vi.advanceTimersByTime(TEMPORARY_RELOAD_MAX_MS * 10));
+    expect(vi.mocked(getWorkspaceCapabilities)).toHaveBeenCalledTimes(TEMPORARY_RELOAD_ATTEMPTS + 1);
+    expect(container.textContent).toContain("Retry workspace");
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it("shows loading state without an extra retry before the workspace result", async () => {

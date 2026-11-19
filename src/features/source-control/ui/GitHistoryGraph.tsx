@@ -61,8 +61,6 @@ type Props = {
 
 import { EMPTY_HISTORY_FILTERS, matchesHistoryFilters } from "../model/gitHistoryFilters";
 
-const HISTORY_PAGE = 200;
-
 export function GitHistoryGraph({
   cwd,
   enabled,
@@ -79,7 +77,6 @@ export function GitHistoryGraph({
   const stateKey = `git-history:${pathKey(cwd)}`;
   const [showAll, setShowAll] = useRetainedState(`${stateKey}:all`, false);
   const [fullShowAll, setFullShowAll] = useRetainedState(`${stateKey}:full-all`, true);
-  const [limit, setLimit] = useRetainedState(`${stateKey}:limit:${showAll}`, HISTORY_PAGE);
   const [searchOpen, setSearchOpen] = useRetainedState(`${stateKey}:search`, false);
   const [query, setQuery] = useRetainedState(`${stateKey}:query`, "");
   const deferredQuery = useDeferredValue(query);
@@ -93,11 +90,10 @@ export function GitHistoryGraph({
   const [commitMode, setCommitMode] = useState<"changes" | "blame">("changes");
   const [resolutionDirty, setResolutionDirty] = useState(false);
   const [resolutionReset, setResolutionReset] = useState(0);
-  const { commits, failure, loading, error, refresh } = useGitHistory(
+  const { commits, hasMore, loadMore, failure, loading, error, refresh } = useGitHistory(
     cwd,
     enabled && (expanded || fullOpen),
     actions && (fullOpen ? fullShowAll : showAll),
-    limit,
   );
   const [busy] = useGitPanelState(cwd, "busy");
   const rows = useMemo(() => layoutGitGraph(commits), [commits]);
@@ -116,7 +112,6 @@ export function GitHistoryGraph({
         return row ? [{ commit, row }] : [];
       });
   }, [commits, deferredQuery, searching, rowBySha, columnsActive, columnFilters]);
-  const hasMore = commits.length >= limit;
 
   const [menu, setMenu] = useState<{
     x: number;
@@ -339,7 +334,7 @@ export function GitHistoryGraph({
         hasMore={hasMore && !loading && !error && !failure}
         empty={empty}
         suspendHover={menu !== null}
-        onLoadMore={() => setLimit((value) => value + HISTORY_PAGE)}
+        onLoadMore={loadMore}
         onOpen={(commit, pin) => {
           if (variant === "workspace") void selectFullCommit(commit);
           else onOpenCommit(commit, pin);
@@ -490,7 +485,7 @@ export function GitHistoryGraph({
       {expanded ? list("compact") : null}
       {fullOpen ? (
         <GitGraphDialog
-          title={t("Commit Graph")}
+          title={t("Commit graph")}
           expandable
           onClose={() => void closeFull()}
           toolbar={

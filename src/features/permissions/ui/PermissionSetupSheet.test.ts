@@ -95,12 +95,23 @@ it("owns one manual check and keeps failure visible", async () => {
   expect(check.disabled).toBe(false);
   expect(document.body.textContent).toContain("Permission status is unavailable.");
 });
+it("renders each step as one instruction without label paragraphs", async () => {
+  state.loading = false;
+  state.entry = { ...state.entry, state: "denied", canRequest: true, canOpenSettings: true };
+  await render();
+  const paragraphs = Array.from(document.querySelectorAll("p"), (p) => p.textContent);
+  expect(paragraphs).not.toContain("Ask for access");
+  expect(paragraphs).not.toContain("Change the system setting");
+  expect(paragraphs).not.toContain("Check access");
+  expect(button("Open settings")).toBeDefined();
+});
+
 it("opens OS settings only from explicit sheet action and cleans up helper", async () => {
   state.loading = false;
   state.entry = { ...state.entry, state: "denied", canOpenSettings: true };
   await render();
   expect(state.open).not.toHaveBeenCalled();
-  await act(async () => button("Open Settings").click());
+  await act(async () => button("Open settings").click());
   expect(state.open).toHaveBeenCalledExactlyOnceWith("microphone");
   expect(state.request).not.toHaveBeenCalled();
 });

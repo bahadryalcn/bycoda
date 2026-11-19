@@ -110,6 +110,23 @@ fn next_link_stays_on_graph() {
 }
 
 #[test]
+fn older_pages_follow_only_this_chats_message_links() {
+    let chat = encode_segment("19:abc@thread.v2");
+    let own = format!("{GRAPH}/chats/{chat}/messages?$top=50&$skiptoken=abc");
+    assert!(chat_next_link(&own, &chat));
+    // Graph may change the case of the percent escapes.
+    assert!(chat_next_link(&own.replace("%3A", "%3a"), &chat));
+    let other = format!("{GRAPH}/chats/{}/messages?$skiptoken=abc", encode_segment("19:zzz@thread.v2"));
+    assert!(!chat_next_link(&other, &chat));
+    assert!(!chat_next_link(&format!("{GRAPH}/me/chats?$skiptoken=abc"), &chat));
+    assert!(!chat_next_link(&format!("{GRAPH}/chats/{chat}/messagesX"), &chat));
+    assert!(!chat_next_link(&format!("{GRAPH}/chats/{chat}/messages"), &chat));
+    assert!(!chat_next_link("https://evil.example/v1.0/chats/x/messages?a=1", &chat));
+    assert!(!chat_next_link(&format!("{own}\r\nHost: y"), &chat));
+    assert!(!chat_next_link("é", &chat));
+}
+
+#[test]
 fn retry_after_is_honored_only_when_short() {
     assert_eq!(retry_delay(Some("2")), Some(Duration::from_secs(2)));
     assert_eq!(retry_delay(Some(" 5 ")), Some(Duration::from_secs(5)));

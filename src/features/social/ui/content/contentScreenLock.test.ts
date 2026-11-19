@@ -27,7 +27,12 @@ type DataState = {
 };
 const state: { data: DataState } = { data: { programs: [], loading: false, refetch: () => {} } };
 vi.mock("./useContentData", () => ({
-  useContentData: () => state.data,
+  useContentData: () => ({
+    scheduledJobs: [],
+    scheduledCampaigns: [],
+    scheduledLoading: false,
+    ...state.data,
+  }),
 }));
 
 const LOCK_TEXT = "This post was already scheduled or sent, so it can't be edited here.";
@@ -165,5 +170,19 @@ describe("ContentScreen edit lock", () => {
     );
     act(() => newPost?.click());
     expect(editor()).toEqual({ locked: "", campaign: "" });
+  });
+
+  it("opens and locks a post that only the visible calendar range returned", () => {
+    // Neither the post nor its job is in the newest pages; the scheduled range carries both.
+    load([]);
+    const data = state.data as Record<string, unknown>;
+    state.data = {
+      ...data,
+      scheduledJobs: [job("far-job", "far", "queued")],
+      scheduledCampaigns: [campaign("far", "Scheduled long ago")],
+    } as DataState;
+    render();
+    act(() => element.querySelector<HTMLButtonElement>(".content-entry")!.click());
+    expect(editor()).toEqual({ locked: LOCK_TEXT, campaign: "far" });
   });
 });

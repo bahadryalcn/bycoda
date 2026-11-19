@@ -20,6 +20,7 @@ vi.mock("../../../../features/providers/model/providerBinaryPaths", () => ({
 }));
 
 import {
+  CATALOG_ACQUIRE_TIMEOUT_MS,
   parseOpenCodeServiceUrl,
   releaseOwnedOpenCodeForCapability,
   resolveOwnedOpenCodeCatalog,
@@ -112,6 +113,96 @@ describe("OpenCode v2 background service", () => {
     // An unknown outcome may have been accepted natively; the same operation ID
     // lets the native side return that reference instead of leaking it.
     expect(acquired[1]).toBe(acquired[0]);
+  });
+
+  describe("catalog acquire timeout", () => {
+    const source = { serviceId: "s", referenceId: "r", endpoint: "http://127.0.0.1:2" };
+
+    function stubCatalogInvoke(acquire: (operationId: unknown) => Promise<unknown>) {
+      const operationIds: unknown[] = [];
+      mocks.invoke.mockImplementation((command: string, args: Record<string, unknown>) => {
+        if (command === "canonical_store_page_token") return Promise.resolve("page");
+        if (command === "harness_management_grant")
+          return Promise.resolve({ token: "grant", routeId: "route" });
+        operationIds.push(args.operationId);
+        return acquire(args.operationId);
+      });
+      return operationIds;
+    }
+
+    it("fails a hung acquire at the deadline and joins it instead of replaying", async () => {
+      vi.useFakeTimers();
+      try {
+        const hung = Promise.withResolvers<unknown>();
+        const operationIds = stubCatalogInvoke(() => hung.promise);
+
+        const first = resolveOwnedOpenCodeCatalog("/opencode", "/timeout-join");
+        const firstFailure = expect(first).rejects.toThrow(
+          `timed out after ${CATALOG_ACQUIRE_TIMEOUT_MS}ms`,
+        );
+        await vi.advanceTimersByTimeAsync(CATALOG_ACQUIRE_TIMEOUT_MS);
+        await firstFailure;
+
+        // Outcome is unknown: the next call waits on the same native acquire
+        // under a fresh deadline and does not issue a second one.
+        const second = resolveOwnedOpenCodeCatalog("/opencode", "/timeout-join");
+        const secondFailure = expect(second).rejects.toThrow("timed out");
+        await vi.advanceTimersByTimeAsync(CATALOG_ACQUIRE_TIMEOUT_MS);
+        await secondFailure;
+        expect(operationIds).toHaveLength(1);
+
+        // A late success after the deadline is kept, not dropped or re-acquired.
+        const third = resolveOwnedOpenCodeCatalog("/opencode", "/timeout-join");
+        hung.resolve(source);
+        await expect(third).resolves.toMatchObject({
+          url: source.endpoint,
+          nativeOwnedService: { serviceId: "s", referenceId: "r" },
+        });
+        await expect(
+          resolveOwnedOpenCodeCatalog("/opencode", "/timeout-join"),
+        ).resolves.toMatchObject({ url: source.endpoint });
+        expect(operationIds).toHaveLength(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("retries with the original operation ID after a timed-out acquire later rejects", async () => {
+      vi.useFakeTimers();
+      try {
+        const hung = Promise.withResolvers<unknown>();
+        let calls = 0;
+        const operationIds = stubCatalogInvoke(() =>
+          ++calls === 1 ? hung.promise : Promise.resolve(source),
+        );
+
+        const timedOut = resolveOwnedOpenCodeCatalog("/opencode", "/timeout-reject");
+        const failure = expect(timedOut).rejects.toThrow("timed out");
+        await vi.advanceTimersByTimeAsync(CATALOG_ACQUIRE_TIMEOUT_MS);
+        await failure;
+
+        hung.reject(new Error("Background service failed to start"));
+        await vi.advanceTimersByTimeAsync(0);
+
+        await expect(
+          resolveOwnedOpenCodeCatalog("/opencode", "/timeout-reject"),
+        ).resolves.toMatchObject({ url: source.endpoint });
+        expect(operationIds).toHaveLength(2);
+        expect(operationIds[1]).toBe(operationIds[0]);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("does not arm a deadline for an already settled acquire", async () => {
+      const operationIds = stubCatalogInvoke(() => Promise.resolve(source));
+      const settled = await resolveOwnedOpenCodeCatalog("/opencode", "/timeout-settled");
+
+      await expect(resolveOwnedOpenCodeCatalog("/opencode", "/timeout-settled")).resolves.toBe(
+        settled,
+      );
+      expect(operationIds).toHaveLength(1);
+    });
   });
 
   it("coalesces session acquires and retries a rejection with the original operation ID", async () => {

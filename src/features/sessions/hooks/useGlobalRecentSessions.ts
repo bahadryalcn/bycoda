@@ -7,11 +7,17 @@ import {
   type SessionSummary,
 } from "../data/sessionStore";
 import type { Session } from "../model/session";
-import { buildGlobalRecentSessions, GLOBAL_RECENT_WINDOW_MS } from "../model/globalRecentSessions";
+import {
+  GLOBAL_RECENT_WINDOW_MS,
+  mergeGlobalRecentSessions,
+  withinGlobalRecentWindow,
+} from "../model/globalRecentSessions";
 import { isRemoteProjectPath } from "../../projects/public/recents";
 import { t } from "../../../shared/i18n";
 import { useStableValue } from "../../../shared/hooks/useStableValue";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
+
+const NO_ROWS: SessionSummary[] = [];
 
 // Summaries contain only small wire metadata, never transcript bodies. Compare
 // nested metadata too: updatedAt alone does not cover pin or provider changes.
@@ -65,21 +71,21 @@ export function useGlobalRecentSessions(
   const running = useRef<Promise<void> | null>(null);
   const refreshRun = useRef<(() => void) | null>(null);
   const refresh = useCallback(() => refreshRun.current?.(), []);
-  const projectedRows = useMemo(
-    () => buildGlobalRecentSessions(stored, history, sessions, allowedProjectKeys, clock),
-    [stored, history, sessions, allowedProjectKeys, clock],
+  // Only the open panel reads the rows, so a closed one builds nothing: tool starts and status
+  // changes in any open session would otherwise re-merge all history and rescan every live
+  // transcript. Opening builds from the current inputs in the same render.
+  const merged = useMemo(
+    () =>
+      enabled
+        ? mergeGlobalRecentSessions(stored, history, sessions, allowedProjectKeys)
+        : NO_ROWS,
+    [enabled, stored, history, sessions, allowedProjectKeys],
   );
+  const projectedRows = useMemo(() => withinGlobalRecentWindow(merged, clock), [merged, clock]);
   const rows = useStableValue(projectedRows, sameRecentRows);
   const updateClock = useStableCallback(() => {
     const now = Date.now();
-    if (
-      !sameRecentRows(
-        rows,
-        buildGlobalRecentSessions(stored, history, sessions, allowedProjectKeys, now),
-      )
-    ) {
-      setClock(now);
-    }
+    if (!sameRecentRows(rows, withinGlobalRecentWindow(merged, now))) setClock(now);
   });
   const publishStored = useStableCallback((next: SessionSummary[]) => {
     if (!sameRecentRows(stored, next)) setStored(next);

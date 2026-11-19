@@ -200,27 +200,61 @@ export type NotificationPreferencesView = {
   muted: ReadonlySet<string>;
 };
 
-let viewCache: { json: string; view: NotificationPreferencesView } | null = null;
+type ViewCache = {
+  /** Stored text the view came from; undefined when storage could not be read. */
+  raw: string | null | undefined;
+  preferences: Preferences;
+  view: NotificationPreferencesView;
+  /** Muted ids stay the same until this earliest future mute deadline. */
+  validUntil: number;
+};
 
-/** The view of the current snapshot, with one identity while the snapshot string is unchanged (for `useSyncExternalStore`). */
-export function notificationPreferencesViewSnapshot(): NotificationPreferencesView {
-  const json = notificationPreferencesSnapshot();
-  if (viewCache?.json !== json) {
-    const parsed = JSON.parse(json) as {
-      unavailable: boolean;
-      preferences: Preferences;
-      muted: string[];
-    };
-    viewCache = {
-      json,
-      view: {
-        preferences: parsed.preferences,
-        unavailable: parsed.unavailable,
-        muted: new Set(parsed.muted),
-      },
-    };
+let viewCache: ViewCache | null = null;
+
+function readRawPreferences(): string | null | undefined {
+  try {
+    return localStorage.getItem(KEY);
+  } catch {
+    return undefined;
   }
-  return viewCache.view;
+}
+
+function sameIds(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
+  return a.size === b.size && [...a].every((id) => b.has(id));
+}
+
+/**
+ * The view of the current preferences, with one identity while the stored text
+ * and the muted ids are unchanged (for `useSyncExternalStore`). Storage is parsed
+ * only when its text changes; a passed mute deadline only recomputes muted ids.
+ */
+export function notificationPreferencesViewSnapshot(): NotificationPreferencesView {
+  const raw = readRawPreferences();
+  const cached = viewCache;
+  // Unreadable storage is never trusted as unchanged, so it re-checks each call.
+  const sameStored = cached !== null && raw !== undefined && cached.raw === raw;
+  if (sameStored && Date.now() < cached.validUntil) return cached.view;
+  const preferences = sameStored ? cached.preferences : loadNotificationPreferences();
+  const unavailable = sameStored ? cached.view.unavailable : preferencesReadFailed;
+  const now = Date.now();
+  const muted = new Set<string>();
+  let validUntil = Infinity;
+  for (const [id, preference] of Object.entries(preferences)) {
+    if (isProjectMuted(preference, now)) muted.add(id);
+    if (typeof preference.mutedUntil === "number" && preference.mutedUntil > now)
+      validUntil = Math.min(validUntil, preference.mutedUntil);
+  }
+  if (
+    cached?.preferences === preferences &&
+    cached.view.unavailable === unavailable &&
+    sameIds(cached.view.muted, muted)
+  ) {
+    viewCache = { ...cached, raw, validUntil };
+    return cached.view;
+  }
+  const view = { preferences, unavailable, muted };
+  viewCache = { raw, preferences, view, validUntil };
+  return view;
 }
 
 export function subscribeNotificationPreferences(listener: () => void): () => void {
@@ -228,7 +262,7 @@ export function subscribeNotificationPreferences(listener: () => void): () => vo
   const schedule = () => {
     clearTimeout(timer);
     const now = Date.now();
-    const deadlines = Object.values(loadNotificationPreferences())
+    const deadlines = Object.values(notificationPreferencesViewSnapshot().preferences)
       .map((preference) => preference.mutedUntil)
       .filter((deadline): deadline is number => typeof deadline === "number" && deadline > now);
     if (deadlines.length)

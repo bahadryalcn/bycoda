@@ -13,13 +13,23 @@ import type { DecisionModelsClient } from "../model/decisionModelsClient";
 import {
   MAX_EXTRA_FOLDERS,
   MAX_EXTRA_PORTS,
+  folderExample,
   formatFolders,
   formatPorts,
   parseFolders,
   parsePorts,
+  type FolderPlatform,
 } from "../model/scanSettings";
+import { IS_LINUX, IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
 import { ErrorNotice } from "./ErrorNotice";
+import { useDecisionTarget } from "./DecisionTarget";
 type FieldErrors = { ports?: string; folders?: string };
+function localFolderPlatform(): FolderPlatform | undefined {
+  if (IS_WIN) return "win32";
+  if (IS_MAC) return "darwin";
+  if (IS_LINUX) return "linux";
+  return undefined;
+}
 /** Extra ports and folders for the scan, saved through the discovery settings RPC. */
 export function ScanSettings({
   hostId,
@@ -34,6 +44,8 @@ export function ScanSettings({
 }) {
   const instanceId = useId();
   const identity = hostId ?? instanceId;
+  const target = useDecisionTarget();
+  const example = target ? undefined : folderExample(localFolderPlatform());
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState<unknown>(null);
   const [attempt, setAttempt] = useState(0);
@@ -105,7 +117,9 @@ export function ScanSettings({
       nextErrors.folders =
         folderResult.error === "count"
           ? t("Enter at most {p1} folders.", { p1: String(MAX_EXTRA_FOLDERS) })
-          : t("Enter full folder paths, for example D:\\Models.");
+          : example !== undefined
+            ? t("Enter full folder paths, for example {p1}.", { p1: example })
+            : t("Enter full folder paths, one per line.");
     }
     setFieldErrors(nextErrors);
     if (!portResult.ok || !folderResult.ok) return;
@@ -157,7 +171,7 @@ export function ScanSettings({
         <TextareaField
           label={t("Extra folders")}
           hideLabel
-          placeholder={"D:\\Models"}
+          placeholder={example ?? t("Folder path, one per line")}
           value={folders}
           minRows={2}
           monospace

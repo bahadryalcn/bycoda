@@ -10,6 +10,7 @@ import {
   hitsFromContentMatches,
   hitsFromSessionSearch,
   mergeHits,
+  recencyBonus,
   searchConversationTitles,
   searchRecentProjects,
   searchSessionMessages,
@@ -276,6 +277,32 @@ describe("conversationRowsFrom", () => {
     live.title = "cursor · Live title";
     const rows = conversationRowsFrom([summary("s1", "/tmp/a", "cursor · Old title", 5)], [live]);
     expect(rows).toEqual([expect.objectContaining({ id: "s1", title: "cursor · Live title" })]);
+  });
+
+  it("gives a live session without history no wall-clock recency", () => {
+    const live = newSession("cursor", "/repo");
+    live.id = "unsaved";
+    const [row] = conversationRowsFrom([], [live]);
+    expect(row.updatedAt).toBe(0);
+    expect(recencyBonus(row.updatedAt)).toBe(0);
+    expect(conversationRowsFrom([], [live])[0].updatedAt).toBe(row.updatedAt);
+  });
+
+  it("uses a live session's own recorded timestamp when history lacks it", () => {
+    const live = newSession("cursor", "/repo");
+    live.id = "unsaved";
+    live.turnStoppedAt = 1_700_000_000_000;
+    live.statusRunningSince = 1_600_000_000_000;
+    const [row] = conversationRowsFrom([], [live]);
+    expect(row.updatedAt).toBe(1_700_000_000_000);
+  });
+
+  it("keeps history recency for a live session that has a history row", () => {
+    const live = newSession("cursor", "/repo");
+    live.id = "s1";
+    live.turnStoppedAt = 1_800_000_000_000;
+    const [row] = conversationRowsFrom([summary("s1", "/repo", "Saved", 42)], [live]);
+    expect(row.updatedAt).toBe(42);
   });
 });
 

@@ -11,6 +11,7 @@ import {
   ATTACHMENT_MISSING_MESSAGE,
   MAX_REMOTE_ATTACHMENT_BYTES,
   collectAttachmentGarbage,
+  resolveAttachments,
 } from "./attachments";
 import { HostDomainRefusalError } from "../domains/context";
 import { attachmentMissingOnHost } from "../../src/features/connections/model/remoteAttachmentPreviews";
@@ -428,4 +429,29 @@ it("collects old orphans only with complete references and preserves queue, othe
   await collectAttachmentGarbage(store, () => new Set(ids), Date.now());
   await upload;
   expect(readFileSync(attachmentPath(store, current), "utf8")).toBe("abc");
+});
+it("resolves send references asynchronously and keeps the size and ID authority", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "remote-resolve-test-"));
+  const store = new HostStore(join(directory, "host.db"));
+  cleanups.push(async () => {
+    await store.close();
+    rmSync(directory, { recursive: true, force: true });
+  });
+  const id = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+  await writeAttachmentChunk(store, {
+    id,
+    offset: 0,
+    size: 3,
+    data: Buffer.from("abc").toString("base64"),
+  });
+  const ref = { id, name: "note.txt", mimeType: "text/plain", kind: "file" as const, size: 3 };
+  const pending = resolveAttachments(store, [ref]);
+  expect(pending).toBeInstanceOf(Promise);
+  await expect(pending).resolves.toEqual([{ ...ref, path: attachmentPath(store, id) }]);
+  await expect(resolveAttachments(store, [{ ...ref, size: 4 }])).rejects.toThrow(
+    "Attachment note.txt is incomplete",
+  );
+  await expect(
+    resolveAttachments(store, [{ ...ref, id: "not-a-uuid" }]),
+  ).rejects.toThrow("Invalid attachment ID");
 });

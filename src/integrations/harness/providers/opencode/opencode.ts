@@ -1,3 +1,4 @@
+import { errorText } from "../../../../shared/lib/errors";
 import {
   queueProviderOperation,
   assertProviderOperation,
@@ -12,6 +13,7 @@ import {
 
 import { killChild } from "../../core/child";
 import { withSlowStartupNotice } from "../../core/providerStartupStatus";
+import { compactionFailedText } from "../../core/providerNotices";
 import {
   createProviderRetirementLedger,
   ProviderRetirementError,
@@ -32,8 +34,8 @@ import { TurnLatch } from "../../../../shared/lib/turnLatch";
 import { TurnNotReadyError } from "../../core/types";
 import { nativeSessionCapability } from "../../core/controlTurn";
 import {
-  COMPACTED_TEXT,
-  COMPACTING_TEXT,
+  compactedText,
+  compactingText,
   COMPACTION_STATUS_KEY,
 } from "../../../../features/sessions/model/compactionStatus";
 import { modelContextWindow, nativeModelId } from "../../../../features/sessions/model/models";
@@ -47,7 +49,6 @@ import {
 import {
   closeHarnessSse,
   execChild,
-  freeHarnessPort,
   resolveOpenCodeBinary,
   spawnChild,
   watchChild,
@@ -880,11 +881,12 @@ async function ensureLive(
         },
       );
 
-      const port = await freeHarnessPort();
+      // Port 0: opencode binds the ephemeral port itself and prints it, which
+      // observeUrl reads. A probed port could be taken before serve binds it.
       await spawnChild(
         handle,
         path,
-        ["serve", `--hostname=127.0.0.1`, `--port=${port}`],
+        ["serve", `--hostname=127.0.0.1`, `--port=0`],
         input.cwd,
         undefined,
         "opencode",
@@ -1006,7 +1008,7 @@ async function ensureLive(
             nativeOutputSink(work, () =>
               live.onEvent({
                 type: "session.error",
-                message: `Could not route OpenCode event: ${error instanceof Error ? error.message : String(error)}`,
+                message: `Could not route OpenCode event: ${errorText(error)}`,
               }),
             )();
             nativeOutputSink(work, finishActiveTurn)(live);
@@ -1135,7 +1137,7 @@ async function runTurn(live: Live, input: SendTurnInput, client = live.client): 
     if (live.cancelled) return;
     live.onEvent({
       type: "session.error",
-      message: error instanceof Error ? error.message : String(error),
+      message: errorText(error),
     });
     throw error;
   } finally {
@@ -1476,20 +1478,20 @@ async function handleEvent(live: Live, event: Record<string, unknown>): Promise<
             type: "status",
             key: COMPACTION_STATUS_KEY,
             running: true,
-            text: COMPACTING_TEXT,
+            text: compactingText(),
           });
         } else if (type === "session.compaction.ended") {
           emitNative({
             type: "status",
             key: COMPACTION_STATUS_KEY,
             running: false,
-            text: COMPACTED_TEXT,
+            text: compactedText(),
           });
         } else if (type === "session.compaction.failed") {
           emitNative({ type: "status", key: COMPACTION_STATUS_KEY, running: false, text: "" });
           // A manual compaction reports its failure as the turn error instead.
           if (live.awaitedInbox?.kind !== "compaction") {
-            emitNative({ type: "status", text: "Could not compact context" });
+            emitNative({ type: "status", text: compactionFailedText() });
           }
         }
       }

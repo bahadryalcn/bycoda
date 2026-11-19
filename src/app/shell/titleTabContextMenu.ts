@@ -38,7 +38,7 @@ export type TitleTabContextMenuOptions = {
   t: ReturnType<typeof useT>;
   detached: boolean;
   closeShortcut?: string | null;
-  idleTabCount?: number;
+  countIdleTabs?: () => number;
   hasReturnTabToMain: boolean;
   hasMoveToNewWindow: boolean;
   hasCloseIdleTabs: boolean;
@@ -62,7 +62,7 @@ export function buildTitleTabContextMenuItems({
   t,
   detached,
   closeShortcut,
-  idleTabCount,
+  countIdleTabs,
   hasReturnTabToMain,
   hasMoveToNewWindow,
   hasCloseIdleTabs,
@@ -106,7 +106,7 @@ export function buildTitleTabContextMenuItems({
                 kind: "item" as const,
                 id: "cancel-new-window",
                 get label() {
-                  return t("Cancel Move to New Window");
+                  return t("Cancel move to new window");
                 },
                 get description() {
                   return t("Waiting for the running response to finish");
@@ -116,7 +116,7 @@ export function buildTitleTabContextMenuItems({
                 kind: "item" as const,
                 id: "new-window",
                 get label() {
-                  return t("Move to New Window");
+                  return t("Move to new window");
                 },
                 disabled: !titleTabCanMoveToNewWindow(contextTab),
                 description: contextTab.movingWindow
@@ -142,7 +142,7 @@ export function buildTitleTabContextMenuItems({
       kind: "item",
       id: "right",
       get label() {
-        return t("Close Tabs to the Right");
+        return t("Close tabs to the right");
       },
       disabled: contextCloseIds.right.length === 0,
     },
@@ -150,7 +150,7 @@ export function buildTitleTabContextMenuItems({
       kind: "item",
       id: "left",
       get label() {
-        return t("Close Tabs to the Left");
+        return t("Close tabs to the left");
       },
       disabled: contextCloseIds.left.length === 0,
     },
@@ -162,7 +162,10 @@ export function buildTitleTabContextMenuItems({
             get label() {
               return t("Close Idle Tabs");
             },
-            disabled: !idleTabCount,
+            // Counted when the menu renders its items, not when the tab strip renders.
+            get disabled() {
+              return !countIdleTabs?.();
+            },
           },
         ]
       : []),

@@ -302,7 +302,10 @@ fn thread_messages_are_oldest_first_and_mark_outbound() {
               "author": { "id": OTHER, "username": "ana" } }
         ]),
     );
-    let messages = thread_messages_with(&mut fake, CHANNEL).unwrap();
+    let page = thread_messages_with(&mut fake, CHANNEL, None).unwrap();
+    // A short page is the whole history: no cursor for older messages.
+    assert_eq!(page.earlier, None);
+    let messages = page.messages;
     let bodies: Vec<&str> = messages
         .iter()
         .map(|message| message.body.as_str())
@@ -322,6 +325,53 @@ fn thread_messages_are_oldest_first_and_mark_outbound() {
         fake.calls[1].0,
         format!("/channels/{CHANNEL}/messages?limit=50")
     );
+}
+
+fn history_page(newest: u64, count: u64) -> Value {
+    Value::Array(
+        (0..count)
+            .map(|offset| {
+                let id = newest - offset;
+                json!({ "id": id.to_string(), "content": format!("m{id}"),
+                        "timestamp": "2024-01-01T00:00:00+00:00",
+                        "author": { "id": OTHER, "username": "ana" } })
+            })
+            .collect(),
+    )
+}
+
+#[test]
+fn a_full_page_offers_older_messages_before_its_oldest_id() {
+    let mut fake = Fake::default()
+        .ok("/users/@me", me())
+        .ok(
+            "/messages?limit=50",
+            history_page(300_000_000_000_000_100, 50),
+        );
+    let page = thread_messages_with(&mut fake, CHANNEL, None).unwrap();
+    assert_eq!(page.messages.len(), 50);
+    assert_eq!(page.earlier.as_deref(), Some("300000000000000051"));
+
+    let mut older = Fake::default()
+        .ok("/users/@me", me())
+        .ok(
+            "before=300000000000000051",
+            history_page(300_000_000_000_000_050, 3),
+        );
+    let page = thread_messages_with(&mut older, CHANNEL, page.earlier.as_deref()).unwrap();
+    assert_eq!(page.messages.len(), 3);
+    assert_eq!(page.earlier, None);
+    assert_eq!(
+        older.calls[1].0,
+        format!("/channels/{CHANNEL}/messages?limit=50&before=300000000000000051")
+    );
+}
+
+#[test]
+fn history_cursor_must_be_a_snowflake() {
+    assert!(!is_snowflake("1&limit=100"));
+    assert!(!is_snowflake("../x"));
+    assert!(is_snowflake("300000000000000051"));
 }
 
 #[test]

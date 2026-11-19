@@ -1,3 +1,4 @@
+import { errorText } from "../../../../shared/lib/errors";
 import type { JsonRpcWriterView } from "../turnWriter";
 
 export class CodexArchivedThreadError extends Error {
@@ -6,7 +7,7 @@ export class CodexArchivedThreadError extends Error {
     override readonly cause: unknown,
   ) {
     super(
-      `Codex session ${threadId} is archived: ${cause instanceof Error ? cause.message : String(cause)}`,
+      `Codex session ${threadId} is archived: ${errorText(cause)}`,
     );
     this.name = "CodexArchivedThreadError";
   }
@@ -24,7 +25,7 @@ export async function resumeCodexThread<T extends { thread?: { id?: string } }>(
   try {
     result = await resume();
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = errorText(error);
     // Codex words this as "session <id> is archived." or "thread <id> is archived"; only the exact id qualifies.
     if (!message.includes(threadId) || !/\bis archived\b/i.test(message)) throw error;
     const archived = new CodexArchivedThreadError(threadId, error);

@@ -1,3 +1,4 @@
+import { errorText } from "../../shared/lib/errors";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isRemoteProjectPath, sameProjectPath } from "../../features/projects/model/recents";
 import { isBlankSession } from "../../features/projects/model/projectReturn";
@@ -182,7 +183,7 @@ export function useWorkspaceNavigation(options: Options) {
             }
             setError({
               project: next.project,
-              message: caught instanceof Error ? caught.message : String(caught),
+              message: errorText(caught),
             });
           }
         } finally {

@@ -104,9 +104,7 @@ export function SessionListSettings() {
             label={t("Archive settled after")}
             value={autoSettle.archiveAfterDays}
             options={AUTO_ARCHIVE_DAY_OPTIONS}
-            onChange={(archiveAfterDays) =>
-              autoSettle.change({ afterDays: autoSettle.afterDays, archiveAfterDays })
-            }
+            onChange={(archiveAfterDays) => autoSettle.change({ archiveAfterDays })}
           />
         </Row>
       ) : null}

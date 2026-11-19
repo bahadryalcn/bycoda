@@ -11,6 +11,7 @@ import {
   hostAutomationFromDraft,
   hostProjectCwd,
   previewHostAutomation,
+  setHostAutomationEnabled,
 } from "./hostAutomationClient";
 import type { HostAutomation } from "./hostAutomations";
 import { createAutomationTrigger } from "./automations";
@@ -181,5 +182,47 @@ it("preserves projectless continuous and Project scan contracts through editing"
     trigger: source.trigger,
     template: source.template,
     missedRunGraceMinutes: 15,
+  });
+});
+
+describe("pausing a background automation", () => {
+  it("sends only the Host's own record, flipped, as the guarded save", async () => {
+    // A legacy row has no missedRunGraceMinutes; rebuilding it from the board's
+    // copy would add one and the Host would call that a concurrent edit.
+    const automation = automationFromHost(mac, "remote://env-mac/Users/me/app", stored);
+    const remote = vi.spyOn(connections, "remoteRequest").mockResolvedValue(stored);
+    try {
+      await setHostAutomationEnabled(automation, false);
+      const [machineId, method, params] = remote.mock.calls[0];
+      expect(machineId).toBe("machine-mac");
+      expect(method).toBe("automations.save");
+      const { automation: sent } = params as {
+        automation: HostAutomation & { expectedConfiguration: HostAutomation };
+      };
+      expect(sent).toEqual({ ...stored, enabled: false, expectedConfiguration: stored });
+      expect(sent).not.toHaveProperty("missedRunGraceMinutes");
+    } finally {
+      remote.mockRestore();
+    }
+  });
+
+  it("keeps the opened record when a later list rewrites the board row", () => {
+    const automation = automationFromHost(mac, "remote://env-mac/Users/me/app", stored);
+    expect(automation.host?.configuration).toEqual(stored);
+    expect(automation.host?.configuration).not.toBe(stored);
+  });
+
+  it("refuses without calling the Host when the row has no opened record", async () => {
+    const automation = automationFromHost(mac, "remote://env-mac/Users/me/app", stored);
+    const legacy = { ...automation, host: { ...automation.host!, configuration: undefined } };
+    const remote = vi.spyOn(connections, "remoteRequest").mockResolvedValue(stored);
+    try {
+      await expect(setHostAutomationEnabled(legacy, false)).rejects.toThrow(
+        "Configuration changed in another client",
+      );
+      expect(remote).not.toHaveBeenCalled();
+    } finally {
+      remote.mockRestore();
+    }
   });
 });

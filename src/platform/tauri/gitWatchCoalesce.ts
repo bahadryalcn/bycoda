@@ -15,10 +15,12 @@ export function sameCheckout(a: string, b: string): boolean {
 }
 
 type Pending = {
+  /** Folder the notification is delivered for: the first reporter still pending. */
   cwd: string;
-  refs: boolean;
   firstAt: number;
   timer?: ReturnType<typeof setTimeout>;
+  /** Undelivered reports per reporting folder (`keyOf`), each with its own refs flag. */
+  reports: Map<string, { cwd: string; refs: boolean }>;
 };
 
 /**
@@ -31,13 +33,14 @@ type Pending = {
 export function createGitWatchCoalescer(
   notify: (cwd: string, scope: "checkout" | "index") => void,
 ) {
-  const pending = new Map<string, Pending>();
+  // Keyed by entry identity: an entry's first folder may be cancelled while its merged reports stay.
+  const pending = new Set<Pending>();
   const keyOf = (cwd: string) => cwd.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
 
-  function fire(key: string, entry: Pending) {
-    if (pending.get(key) !== entry) return;
-    pending.delete(key);
-    notify(entry.cwd, entry.refs ? "checkout" : "index");
+  function fire(entry: Pending) {
+    if (!pending.delete(entry)) return;
+    const refs = [...entry.reports.values()].some((report) => report.refs);
+    notify(entry.cwd, refs ? "checkout" : "index");
   }
 
   return {
@@ -45,30 +48,38 @@ export function createGitWatchCoalescer(
       const now = Date.now();
       for (const report of reports) {
         // Nested folders of one checkout share their listeners: they join one pending report.
-        const nested = [...pending].find(([, prior]) => sameCheckout(prior.cwd, report.cwd));
-        const key = nested?.[0] ?? keyOf(report.cwd);
-        let entry = nested?.[1];
-        if (!entry) {
-          entry = { cwd: report.cwd, refs: false, firstAt: now };
-          pending.set(key, entry);
-        }
-        entry.refs ||= report.refs;
+        const entry: Pending =
+          [...pending].find((prior) =>
+            [...prior.reports.values()].some((source) => sameCheckout(source.cwd, report.cwd)),
+          ) ?? { cwd: report.cwd, firstAt: now, reports: new Map() };
+        pending.add(entry);
+        const source = keyOf(report.cwd);
+        const prior = entry.reports.get(source);
+        entry.reports.set(source, { cwd: report.cwd, refs: (prior?.refs ?? false) || report.refs });
         if (entry.timer !== undefined) clearTimeout(entry.timer);
         const wait = Math.min(GIT_WATCH_QUIET_MS, entry.firstAt + GIT_WATCH_MAX_WAIT_MS - now);
         if (wait <= 0) {
-          fire(key, entry);
+          fire(entry);
         } else {
-          const scheduled = entry;
-          entry.timer = setTimeout(() => fire(key, scheduled), wait);
+          entry.timer = setTimeout(() => fire(entry), wait);
         }
       }
     },
-    /** Drops a checkout's undelivered report, e.g. once it is no longer watched. */
+    /**
+     * Drops one folder's undelivered report, e.g. once it is no longer watched. Reports of
+     * other folders of the same checkout stay pending; the entry goes once none remain.
+     */
     cancel(cwd: string) {
-      const key = keyOf(cwd);
-      const entry = pending.get(key);
-      if (entry?.timer !== undefined) clearTimeout(entry.timer);
-      pending.delete(key);
+      const source = keyOf(cwd);
+      for (const entry of pending) {
+        if (!entry.reports.delete(source)) continue;
+        if (entry.reports.size === 0) {
+          if (entry.timer !== undefined) clearTimeout(entry.timer);
+          pending.delete(entry);
+        } else if (keyOf(entry.cwd) === source) {
+          entry.cwd = [...entry.reports.values()][0].cwd;
+        }
+      }
     },
   };
 }

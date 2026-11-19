@@ -2,10 +2,13 @@ import { createContext, useContext, useState, type ReactNode } from "react";
 import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
 import { toolSettingsTabForAnchor, type ToolSettingsTab } from "../model/toolSettingsSections";
 import {
+  resetToolPreferences,
   toolPreferences,
+  ToolPreferencesResetError,
   validBrowserHome,
   validBrowserSearchTemplate,
 } from "../../host-tools/public/toolPreferences";
+import type { ToolPreferenceKey } from "../../host-tools/public/toolPreferences";
 import { TextField } from "../../../shared/ui/TextField";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
@@ -77,6 +80,7 @@ export function ToolSettingsPage({ revealRequest = 0 }: { revealRequest?: number
 }
 
 type Preference<T> = {
+  defaultValue: T;
   load: () => T;
   save: (value: T) => void;
   subscribe: (change: () => void) => () => void;
@@ -109,7 +113,6 @@ function DraftPreference<T extends string | number>({
   description,
   dependency,
   preference,
-  fallback,
   parse,
   valid,
   invalidMessage,
@@ -118,7 +121,6 @@ function DraftPreference<T extends string | number>({
   id: string;
   label: string;
   preference: Preference<T>;
-  fallback: T;
   parse: (draft: string) => T;
   valid: (draft: string) => boolean;
   invalidMessage: string;
@@ -184,8 +186,8 @@ function DraftPreference<T extends string | number>({
       description={description}
       dependency={dependency}
       stacked
-      modified={value !== fallback || dirty}
-      onReset={() => commit(String(fallback))}
+      modified={value !== preference.defaultValue || dirty}
+      onReset={() => commit(String(preference.defaultValue))}
     >
       {bounds ? (
         <NumberField {...props} min={bounds.min} max={bounds.max} step={1} />
@@ -200,20 +202,18 @@ function BooleanPreference({
   id,
   label,
   preference,
-  fallback,
 }: {
   id: string;
   label: string;
   preference: Preference<boolean>;
-  fallback: boolean;
 }) {
   const { value, save, feedback } = useToolPreference(preference);
   return (
     <Row
       id={id}
       label={label}
-      modified={value !== fallback}
-      onReset={() => save(fallback)}
+      modified={value !== preference.defaultValue}
+      onReset={() => save(preference.defaultValue)}
       feedback={feedback}
     >
       <Toggle label={label} on={value} onChange={save} />
@@ -225,14 +225,12 @@ function ChoicePreference<T extends string | number>({
   id,
   label,
   preference,
-  fallback,
   options,
   description,
 }: {
   id: string;
   label: string;
   preference: Preference<T>;
-  fallback: T;
   options: { value: T; label: string }[];
   description?: string;
 }) {
@@ -242,8 +240,8 @@ function ChoicePreference<T extends string | number>({
       id={id}
       label={label}
       description={description}
-      modified={value !== fallback}
-      onReset={() => save(fallback)}
+      modified={value !== preference.defaultValue}
+      onReset={() => save(preference.defaultValue)}
       feedback={feedback}
     >
       <Select
@@ -264,27 +262,29 @@ function ToolSettingsGroup({
   tab,
   title,
   description,
-  reset,
+  keys,
   children,
 }: {
   tab: ToolSettingsTab;
   title: string;
   description?: string;
-  reset: () => void;
+  /** Every preference this topic restores; nothing outside it is touched. */
+  keys: readonly ToolPreferenceKey[];
   children: ReactNode;
 }) {
-  const [failed, setFailed] = useState(false);
+  const [failed, setFailed] = useState<"none" | "unchanged" | "partial">("none");
   const activeTab = useContext(ActiveToolSettingsTab);
   const [resetVersion, setResetVersion] = useState(0);
   useSettingsPageReset(
     activeTab === null || activeTab === tab
       ? () => {
           try {
-            reset();
-            setFailed(false);
+            resetToolPreferences(keys);
+            setFailed("none");
             setResetVersion((value) => value + 1);
-          } catch {
-            setFailed(true);
+          } catch (error) {
+            // Drafts stay: a failed reset must not discard what the owner typed.
+            setFailed(error instanceof ToolPreferencesResetError ? "partial" : "unchanged");
           }
         }
       : null,
@@ -293,14 +293,15 @@ function ToolSettingsGroup({
     <Group
       title={title}
       layout="full"
-      description={
-        description ??
-        t("Defaults apply when opening a new tool view. Existing views keep their local choices.")
-      }
+      description={description}
       feedback={
-        failed ? (
-          <SettingsFeedback state="error">{t("Could not save tool preferences.")}</SettingsFeedback>
-        ) : undefined
+        failed === "none" ? undefined : (
+          <SettingsFeedback state="error">
+            {failed === "partial"
+              ? t("Some settings could not be reset. Retry to finish restoring defaults.")
+              : t("Could not save tool preferences.")}
+          </SettingsFeedback>
+        )
       }
     >
       <ToolSettingsResetVersion.Provider value={resetVersion}>
@@ -330,23 +331,21 @@ export function BrowserSettingsPage() {
     <ToolSettingsGroup
       tab="browser"
       title={t("Browser")}
-      reset={() => {
-        toolPreferences.browserViewport.save("desktop");
-        toolPreferences.browserLiveView.save(true);
-        toolPreferences.browserActualSize.save(false);
-        toolPreferences.browserViewportWidth.save(1280);
-        toolPreferences.browserViewportHeight.save(720);
-        toolPreferences.browserHomeUrl.save("http://localhost:3000");
-        toolPreferences.browserSearchEngine.save("disabled");
-        toolPreferences.browserSearchTemplate.save("https://duckduckgo.com/?q={query}");
-      }}
+      keys={[
+        "browserViewport",
+        "browserLiveView",
+        "browserActualSize",
+        "browserViewportWidth",
+        "browserViewportHeight",
+        "browserHomeUrl",
+        "browserSearchEngine",
+        "browserSearchTemplate",
+      ]}
     >
       <ChoicePreference
         id="browser-viewport"
         label={t("Default viewport")}
-        description={t("Applies when opening a new browser session.")}
         preference={toolPreferences.browserViewport}
-        fallback="desktop"
         options={[
           { value: "desktop", label: t("Desktop (1280 × 720)") },
           { value: "tablet", label: t("Tablet (768 × 1024)") },
@@ -360,7 +359,6 @@ export function BrowserSettingsPage() {
           label={t("Width")}
           dependency={t("Used with the Custom viewport.")}
           preference={toolPreferences.browserViewportWidth}
-          fallback={1280}
           parse={Number}
           valid={(draft) =>
             draft.trim() !== "" &&
@@ -376,7 +374,6 @@ export function BrowserSettingsPage() {
           label={t("Height")}
           dependency={t("Used with the Custom viewport.")}
           preference={toolPreferences.browserViewportHeight}
-          fallback={720}
           parse={Number}
           valid={(draft) =>
             draft.trim() !== "" &&
@@ -391,9 +388,7 @@ export function BrowserSettingsPage() {
       <DraftPreference
         id="browser-home-url"
         label={t("Initial address")}
-        description={t("Prefills a new browser view. Open it when ready.")}
         preference={toolPreferences.browserHomeUrl}
-        fallback="http://localhost:3000"
         parse={(draft) => draft}
         valid={validBrowserHome}
         invalidMessage={t("Enter an HTTP or HTTPS address without credentials.")}
@@ -403,7 +398,6 @@ export function BrowserSettingsPage() {
         label={t("Search engine")}
         description={t("Search terms use this engine when you open them from the address bar.")}
         preference={toolPreferences.browserSearchEngine}
-        fallback="disabled"
         options={[
           { value: "disabled", label: t("Disabled") },
           { value: "duckduckgo", label: "DuckDuckGo" },
@@ -419,7 +413,6 @@ export function BrowserSettingsPage() {
           description={t("{query} is replaced with your encoded search terms.")}
           dependency={t("Used with Custom search.")}
           preference={toolPreferences.browserSearchTemplate}
-          fallback="https://duckduckgo.com/?q={query}"
           parse={(draft) => draft}
           valid={validBrowserSearchTemplate}
           invalidMessage={t(
@@ -431,13 +424,11 @@ export function BrowserSettingsPage() {
         id="browser-live-view"
         label={t("Live view by default")}
         preference={toolPreferences.browserLiveView}
-        fallback={true}
       />
       <BooleanPreference
         id="browser-actual-size"
         label={t("Actual size by default")}
         preference={toolPreferences.browserActualSize}
-        fallback={false}
       />
     </ToolSettingsGroup>
   );
@@ -449,22 +440,17 @@ export function DevicesSettingsPage() {
     <ToolSettingsGroup
       tab="devices"
       title={t("Devices")}
-      reset={() => {
-        toolPreferences.deviceAutoLive.save(true);
-        toolPreferences.devicePreviewScale.save(1);
-      }}
+      keys={["deviceAutoLive", "devicePreviewScale"]}
     >
       <BooleanPreference
         id="device-auto-live"
         label={t("Live view by default")}
         preference={toolPreferences.deviceAutoLive}
-        fallback={true}
       />
       <ChoicePreference
         id="device-preview-scale"
         label={t("Preview scale")}
         preference={toolPreferences.devicePreviewScale}
-        fallback={1}
         options={([1, 1.5, 2, 3] as const).map((value) => ({
           value,
           label: formatNumber(value, { style: "percent" }),
@@ -480,29 +466,22 @@ export function LogsSettingsPage() {
     <ToolSettingsGroup
       tab="logs"
       title={t("Logs")}
-      reset={() => {
-        toolPreferences.logsFollow.save(true);
-        toolPreferences.logsGrouped.save(true);
-        toolPreferences.logsRefreshInterval.save(1500);
-      }}
+      keys={["logsFollow", "logsGrouped", "logsRefreshInterval"]}
     >
       <BooleanPreference
         id="logs-follow"
         label={t("Follow new logs")}
         preference={toolPreferences.logsFollow}
-        fallback={true}
       />
       <BooleanPreference
         id="logs-grouped"
         label={t("Group repeated logs")}
         preference={toolPreferences.logsGrouped}
-        fallback={true}
       />
       <ChoicePreference
         id="logs-refresh-interval"
         label={t("Refresh interval")}
         preference={toolPreferences.logsRefreshInterval}
-        fallback={1500}
         options={[
           { value: 1500, label: t("1.5 seconds") },
           { value: 3000, label: t("3 seconds") },
@@ -518,23 +497,18 @@ export function DevServersSettingsPage() {
   return (
     <ToolSettingsGroup
       tab="devServers"
-      title={t("Development Servers")}
-      reset={() => {
-        toolPreferences.serversAutoRefresh.save(true);
-        toolPreferences.serversRefreshInterval.save(15000);
-      }}
+      title={t("Development servers")}
+      keys={["serversAutoRefresh", "serversRefreshInterval"]}
     >
       <BooleanPreference
         id="servers-auto-refresh"
         label={t("Automatic refresh")}
         preference={toolPreferences.serversAutoRefresh}
-        fallback={true}
       />
       <ChoicePreference
         id="servers-refresh-interval"
         label={t("Refresh interval")}
         preference={toolPreferences.serversRefreshInterval}
-        fallback={15000}
         options={[
           { value: 15000, label: t("15 seconds") },
           { value: 30000, label: t("30 seconds") },
@@ -554,13 +528,12 @@ export function BykitSettingsPage() {
       description={t(
         "When bykit is installed, agents are told to use it for large files, diffs, long command output and bulk edits. Applies to the next agent turn.",
       )}
-      reset={() => toolPreferences.bykitInstructions.save(true)}
+      keys={["bykitInstructions"]}
     >
       <BooleanPreference
         id="bykit-instructions"
         label={t("Tell agents to use bykit")}
         preference={toolPreferences.bykitInstructions}
-        fallback={true}
       />
     </ToolSettingsGroup>
   );

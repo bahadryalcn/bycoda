@@ -9,6 +9,7 @@ import {
   entrySettings,
   findUnavailableOrderEntry,
   groupEntriesByKind,
+  nextOrderPoolName,
   orderDraft,
   reorderKind,
   prepareOrderSave,
@@ -178,6 +179,16 @@ describe("model routing order draft", () => {
     expect(prepareOrderSave(edit).limits.dailyAgentMinutes).toBe(minutes);
   });
 
+  it("saves empty and 0 run and daily limits as no limit", () => {
+    const edit = draft();
+    for (const text of ["", "0"]) {
+      edit.maxRunMinutes = text;
+      edit.limits.dailyAgentMinutes = text;
+      expect(prepareOrderSave(edit).routing.defaultMaxRunMinutes).toBeUndefined();
+      expect(prepareOrderSave(edit).limits.dailyAgentMinutes).toBe(0);
+    }
+  });
+
   it("rejects duplicate IDs, missing references, blank names and invalid account providers", () => {
     const edit = draft();
     edit.routing.entries.push(entry("a"));
@@ -199,6 +210,26 @@ describe("model routing order draft", () => {
     expect(() => prepareOrderSave(edit)).not.toThrow();
     edit.routing.entries[0]!.harness = "opencode";
     expect(() => prepareOrderSave(edit)).toThrow("no account choice");
+  });
+
+  it("rejects group names that repeat another group's name, ignoring case and outer spaces", () => {
+    const edit = draft();
+    edit.routing.entries.push(entry("c"));
+    edit.routing.pools.push({ id: "q", name: "Other", entryIds: ["c"] });
+    expect(() => prepareOrderSave(edit)).not.toThrow();
+    edit.routing.pools[1]!.name = "  work ";
+    expect(() => prepareOrderSave(edit)).toThrow("Group names must be unique");
+  });
+
+  it("names a new group with the first free number and keeps existing ids", () => {
+    const pools = [
+      { id: "p", name: "New group", entryIds: ["a"] },
+      { id: "q", name: "new group 2", entryIds: ["b"] },
+    ];
+    expect(nextOrderPoolName([], "New group")).toBe("New group");
+    expect(nextOrderPoolName(pools, "New group")).toBe("New group 3");
+    expect(nextOrderPoolName(pools.slice(1), "New group")).toBe("New group");
+    expect(pools.map((pool) => pool.id)).toEqual(["p", "q"]);
   });
 
   it("empty main order is valid and one shared draft includes numeric text edits", () => {

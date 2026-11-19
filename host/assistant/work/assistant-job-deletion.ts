@@ -13,6 +13,7 @@ import type {
   AssistantJobDeleteReview,
 } from "../../../src/shared/model/host-contracts/assistant";
 import { assertAssistantGoalProjects } from "./assistant-job-scope";
+import { purgeJobSessionReceipts } from "./assistant-receipt-retention";
 import { assistantJobProjectIds } from "../../../src/shared/model/assistantProjects";
 import { newRequestId } from "../../../src/shared/lib/id/requestId";
 
@@ -420,5 +421,6 @@ export class HostAssistantJobDeletion {
     await this.store.db
       .prepare("DELETE FROM assistant_job_deletion_history WHERE job_id=?")
       .run(id);
+    await purgeJobSessionReceipts(this.store, id);
   }
 }

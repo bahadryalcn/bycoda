@@ -32,6 +32,17 @@ it("reports an unsupported server instead of presenting an empty sprint list as 
   expect(mocks.request).not.toHaveBeenCalled();
 });
 
+it("keeps a passing transport error quiet but unavailable, and shows a real failure's message", async () => {
+  const machine = { id: "mac", environmentId: "mac", name: "Mac" } as RemoteMachine;
+  mocks.capabilities.mockResolvedValue([HOST_SPRINTS]);
+  mocks.request.mockRejectedValueOnce(new Error("[RPC_TIMEOUT] The Host did not answer."));
+  const transient = await readSprintCatalogSource(machine);
+  expect(transient).toMatchObject({ failed: true, error: null });
+  mocks.request.mockRejectedValueOnce(new Error("Host rejected request: Sprint store is locked"));
+  const rejected = await readSprintCatalogSource(machine);
+  expect(rejected).toMatchObject({ failed: true, error: "Sprint store is locked" });
+});
+
 it("publishes servers independently, retains offline answers and discards changed routes", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.useFakeTimers();

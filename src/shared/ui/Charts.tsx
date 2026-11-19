@@ -92,6 +92,7 @@ export function ActivityHeatmap(props: ActivityHeatmapProps) {
       weekStartsOn={1}
       lessLabel={t("Less")}
       moreLabel={t("More")}
+      legendLabel={t("Highlight days by level")}
       {...props}
       className={["bycoda-arc bycoda-arc-chart", styles.series, props.className]
         .filter(Boolean)

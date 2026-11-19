@@ -25,6 +25,7 @@ Owns OS permission presentation under `src/features/permissions/`, the typed pla
 - Opening a page only reads status. Only owner clicks can request access.
 - Unknown and failed reads never imply access. Clear stale grants after failures.
 - Helper permissions belong to its own process; app grants do not establish helper grants.
+- Every `usePermissionStatus` consumer shares one report store (`hooks/permissionStatusStore.ts`): one focus listener, one native-event subscription, focus reads join a current read, and only an explicit `refresh` always reads again.
 - Poll only while a setup sheet is open. Native events use window-scoped listeners.
 - A webview refusal after a native microphone grant needs capture retry, not an OS settings redirect.
 - Keep stable capture and elevated-target error codes intact.

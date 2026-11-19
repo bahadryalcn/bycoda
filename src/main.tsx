@@ -7,8 +7,7 @@ import "./features/settings/public/agentDefaultsSync";
 import "./features/connections/public/storedBlockForm";
 import { readToolWindow } from "./app/model/toolWindows";
 import { loadWindowSurface, readHostToolsWindow } from "./app/model/hostToolsWindow";
-import { t, languageReady } from "./shared/i18n";
-import { PRODUCT_IDENTITY } from "./shared/lib/productIdentity";
+import { languageReady } from "./shared/i18n";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { listen } from "@tauri-apps/api/event";
@@ -55,8 +54,8 @@ if (import.meta.hot)
 import { bootstrap } from "./app/model/bootstrap";
 import { BootFailure } from "./app/shell/BootFailure";
 import { RecoveryBoundary } from "./shared/ui/RecoveryBoundary";
-import { Button } from "./shared/ui/Button";
 import { BootGate } from "./app/shell/BootGate";
+import { BOOT_SLOW_AFTER_MS, BootLoading } from "./app/shell/BootLoading";
 import { NoteDraftRecoveryNotice } from "./features/notes/ui/NoteDraftRecoveryNotice";
 import { PrivacyLaunchGate } from "./features/group-lock/ui/PrivacyLaunchGate";
 
@@ -65,7 +64,7 @@ import { initPerformanceTracing } from "./shared/lib/performanceTraceSettings";
 import { withTimeout } from "./shared/lib/withTimeout";
 
 /** Non-data boot reads (home dir, language) must not hold the splash forever; data reads never use this. */
-const BOOT_STEP_TIMEOUT_MS = 10_000;
+const BOOT_STEP_TIMEOUT_MS = BOOT_SLOW_AFTER_MS;
 function bootStep<T>(promise: Promise<T>, fallback: T, label: string): Promise<T> {
   return withTimeout(promise, BOOT_STEP_TIMEOUT_MS, label).catch((error: unknown) => {
     // Only a timeout falls back; a real failure keeps its existing recovery path.
@@ -164,33 +163,7 @@ const appRoot = ReactDOM.createRoot(document.getElementById("root") as HTMLEleme
 // blank draft write from racing the saved draft read.
 appRoot.render(
   <BootGate transferred={false} onMounted={dismissBootSplash}>
-    <div
-      role="status"
-      aria-live="polite"
-      style={{
-        height: "100vh",
-        display: "grid",
-        placeContent: "center",
-        gap: 12,
-        textAlign: "center",
-        background: "var(--ui-startup-surface)",
-        color: "var(--ui-startup-text)",
-      }}
-    >
-      <img
-        src="/brand/bycoda/mark-tea-red-loading.svg"
-        alt=""
-        aria-hidden="true"
-        width={72}
-        height={72}
-        style={{ inlineSize: 72, blockSize: 72, objectFit: "contain", justifySelf: "center" }}
-      />
-      <strong>{PRODUCT_IDENTITY.displayName}</strong>
-      <span>{t("Restoring your workspace and saved drafts...")}</span>
-      <Button motion="none" onClick={() => window.location.reload()}>
-        {t("Retry loading")}
-      </Button>
-    </div>
+    <BootLoading onRetry={() => window.location.reload()} />
   </BootGate>,
 );
 performance.mark("bycoda:shell-ready");
@@ -206,7 +179,7 @@ void bootstrap(
         ? Promise.resolve({ windowTransfer: null, resumed: null, history: [], historyCwd: null })
         : // Data-bearing read: never replaced by an empty fallback, because the
           // snapshot sync would then persist the empty workspace over the saved one.
-          // The splash stays up with its retry control while this is slow.
+          // The shell shows its status and Retry once this has been slow for BOOT_SLOW_AFTER_MS.
           loadBootWorkspace(),
       // Saved drafts are in the cache before the first composer mounts. An empty
       // fallback here would let a blank draft write replace the saved draft.

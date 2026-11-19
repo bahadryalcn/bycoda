@@ -1,14 +1,12 @@
-import { useEffect, useRef, useState, type FormEvent, type MouseEvent } from "react";
+import { useRef, useState, type FormEvent, type MouseEvent } from "react";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { Heading } from "../../../../shared/ui/Heading";
 import { Text } from "../../../../shared/ui/Text";
 import { TextField } from "../../../../shared/ui/TextField";
-import type { BrowserViewFrame, BrowserViewInput } from "../../model/socialActions";
+import { useLiveBrowserView, type LiveBrowserViewStatus } from "../../hooks/useLiveBrowserView";
+import type { BrowserViewInput } from "../../model/socialActions";
 import type { SocialClient } from "../../model/socialClient";
-
-/** Frames are requested about twice a second; the Host stops the screencast when requests stop. */
-const POLL_MS = 700;
 
 export type LiveBrowserPanelProps = {
   client: SocialClient;
@@ -17,40 +15,12 @@ export type LiveBrowserPanelProps = {
   onClose(): void;
 };
 
-type Status = "connecting" | "live" | "waiting" | "error";
-
 /** Live view of one account's hidden browser window. The owner clicks, types and presses keys here. */
 export function LiveBrowserPanel({ client, accountId, onClose }: LiveBrowserPanelProps) {
-  const [frame, setFrame] = useState<BrowserViewFrame | null>(null);
-  const [status, setStatus] = useState<Status>("connecting");
+  const { frame, status, retry, markError } = useLiveBrowserView(client, accountId);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const imageRef = useRef<HTMLImageElement>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const tick = async () => {
-      try {
-        const next = await client.browserViewFrame(accountId);
-        if (cancelled) return;
-        if (next) {
-          setFrame(next);
-          setStatus("live");
-        } else {
-          setStatus("waiting");
-        }
-      } catch {
-        if (!cancelled) setStatus("error");
-      }
-      if (!cancelled) timer = setTimeout(tick, POLL_MS);
-    };
-    void tick().catch(() => setStatus("error"));
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [client, accountId]);
 
   const send = async (event: BrowserViewInput): Promise<boolean> => {
     setBusy(true);
@@ -58,7 +28,7 @@ export function LiveBrowserPanel({ client, accountId, onClose }: LiveBrowserPane
       await client.browserViewInput(accountId, event);
       return true;
     } catch {
-      setStatus("error");
+      markError(client, accountId);
       return false;
     } finally {
       setBusy(false);
@@ -66,7 +36,7 @@ export function LiveBrowserPanel({ client, accountId, onClose }: LiveBrowserPane
   };
 
   const sendInput = (event: BrowserViewInput) => {
-    void send(event).catch(() => setStatus("error"));
+    void send(event).catch(() => markError(client, accountId));
   };
 
   // detail 0 is a keyboard or assistive activation: it has no pointer position, so it sends no click.
@@ -87,7 +57,7 @@ export function LiveBrowserPanel({ client, accountId, onClose }: LiveBrowserPane
     if (await send({ type: "type", text })) setText("");
   };
 
-  const message: Record<Status, string> = {
+  const message: Record<LiveBrowserViewStatus, string> = {
     connecting: t("Connecting to the browser window…"),
     live: t("Live. Click the page to interact."),
     waiting: t("Waiting for the browser window to start."),
@@ -102,9 +72,16 @@ export function LiveBrowserPanel({ client, accountId, onClose }: LiveBrowserPane
           {t("Close view")}
         </Button>
       </header>
-      <Text as="p" tone={status === "error" ? "danger" : "secondary"}>
-        {message[status]}
-      </Text>
+      <div className="flex flex-wrap items-center gap-2">
+        <Text as="p" tone={status === "error" ? "danger" : "secondary"}>
+          {message[status]}
+        </Text>
+        {status === "error" ? (
+          <Button type="button" variant="secondary" size="sm" onClick={retry}>
+            {t("Retry")}
+          </Button>
+        ) : null}
+      </div>
       {frame ? (
         <Button variant="item" layout="media" type="button" onClick={onImageClick}>
           <img

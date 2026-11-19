@@ -15,7 +15,6 @@ import { homeDir } from "../../../platform/tauri/fs";
 export type { JsonRpcMessage };
 
 const SESSION_METHODS = ["session/new", "session/load", "session/resume", "session/fork"];
-
 function isHomeRelative(cwd: string): boolean {
   return cwd === "~" || cwd.startsWith("~/") || cwd.startsWith("~\\");
 }

@@ -92,6 +92,35 @@ it("reuses identical scoped content, expires snapshots and bounds retained/admit
   expect(retain("owner", "three", { value: 3 }).transferId).not.toBe(third.transferId);
 });
 
+it("keeps a transfer alive past its first deadline while chunks are read, within the hard cap", () => {
+  const { pool, retain, advance } = fixture({ ttlMs: 100, maxLifetimeMs: 250 });
+  const descriptor = retain("owner", "one", { text: "a".repeat(60) });
+  expect(descriptor.totalBytes).toBeGreaterThan(descriptor.chunkBytes * 4);
+  // Each read lands before the idle window closes, so the 100 ms descriptor deadline is outlived.
+  for (const offset of [0, 1, 2, 3].map((index) => index * descriptor.chunkBytes)) {
+    advance(60);
+    expect(pool.chunk("owner", descriptor.transferId, offset).length).toBeGreaterThan(0);
+  }
+  // Reads at 60-240 ms outlived the descriptor's 100 ms expiresAt; 300 ms is past the 250 ms cap.
+  advance(60);
+  expect(() => pool.chunk("owner", descriptor.transferId, 4 * descriptor.chunkBytes)).toThrow(
+    "unavailable",
+  );
+});
+
+it("reclaims an abandoned transfer and ignores unauthorized reads when sliding expiry", () => {
+  const { pool, retain, advance } = fixture({ ttlMs: 100, maxLifetimeMs: 10_000 });
+  const descriptor = retain("owner", "one", { text: "a".repeat(60) });
+  advance(90);
+  expect(() => pool.chunk("other", descriptor.transferId, 0)).toThrow("unavailable");
+  advance(20);
+  expect(() => pool.chunk("owner", descriptor.transferId, 0)).toThrow("unavailable");
+  const second = retain("owner", "two", { text: "b".repeat(60) });
+  pool.chunk("owner", second.transferId, 0);
+  advance(100);
+  expect(() => pool.chunk("owner", second.transferId, second.chunkBytes)).toThrow("unavailable");
+});
+
 it("never evicts a transfer that is still being downloaded and caps the overflow", () => {
   const { pool, retain, advance } = fixture({ maxTransfers: 1, ttlMs: 100_000 });
   const first = retain("owner", "one", { text: "a".repeat(60) });

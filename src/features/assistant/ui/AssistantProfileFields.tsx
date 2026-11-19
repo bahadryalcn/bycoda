@@ -1,5 +1,6 @@
 import type { AssistantProfilePatch } from "../../../shared/model/host-contracts/assistant";
 import { t } from "../../../shared/i18n";
+import { LANGUAGES as APP_LANGUAGES } from "../../../shared/i18n/languages";
 import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { Text } from "../../../shared/ui/Text";
@@ -253,17 +254,11 @@ function ShowTitle({
   );
 }
 
-const LANGUAGES = [
+/** Auto follows the spoken language; every other option is an app language saved by its region tag. */
+const LANGUAGE_OPTIONS: readonly (readonly [string, string])[] = [
   ["auto", "Auto"],
-  ["tr-TR", "Türkçe"],
-  ["en-US", "English"],
-  ["de-DE", "Deutsch"],
-  ["fr-FR", "Français"],
-  ["es-ES", "Español"],
-  ["pt-PT", "Português"],
-  ["zh-CN", "简体中文"],
-  ["ja-JP", "日本語"],
-] as const;
+  ...APP_LANGUAGES.map(({ tag, label }) => [tag, label] as const),
+];
 
 /** Language select: a row with a one-line description in settings, the select plus info popover in setup. */
 function ProfileLanguage({
@@ -291,7 +286,7 @@ function ProfileLanguage({
             hideLabel
             label={t("Language")}
             value={value}
-            options={LANGUAGES.map(([id, label]) => ({
+            options={LANGUAGE_OPTIONS.map(([id, label]) => ({
               value: id,
               label: id === "auto" ? t(label) : label,
             }))}
@@ -305,7 +300,7 @@ function ProfileLanguage({
       <ProfileSelect
         label="Language"
         value={value}
-        options={LANGUAGES}
+        options={LANGUAGE_OPTIONS}
         onValueChange={onValueChange}
       />
       <InfoPopover label={t("About language")}>

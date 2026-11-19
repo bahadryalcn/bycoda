@@ -1,4 +1,4 @@
-import { useMemo, type ComponentType } from "react";
+import { Activity, useMemo, type ComponentType } from "react";
 import { socialClient } from "../../model/socialClient";
 import { AccountsScreen } from "../accounts/AccountsScreen";
 import { AudienceScreen } from "../audience/AudienceScreen";
@@ -35,6 +35,9 @@ export type HostPanelsProps = {
 /**
  * Every section one Host has opened, kept mounted so drafts survive navigation and Host switches.
  * Only the current section of the active Host is visible; `active` tells it to pause timers.
+ * Hidden sections sit in `Activity` hidden mode: their state is kept, but their effects are
+ * paused and their re-renders are deferred, so an invisible list does not render on every
+ * shell change.
  */
 export function HostPanels({
   machineId,
@@ -53,17 +56,19 @@ export function HostPanels({
         const Screen = SCREENS[id];
         const current = active && id === screen;
         return (
-          <div key={id} className="social-shell-panel" hidden={!current}>
-            <Screen
-              client={client}
-              machineId={machineId}
-              projectId={projectId}
-              shellState={shellState}
-              active={current}
-              target={id === screen ? target : undefined}
-              onNavigate={onNavigate}
-            />
-          </div>
+          <Activity key={id} mode={current ? "visible" : "hidden"}>
+            <div className="social-shell-panel" hidden={!current}>
+              <Screen
+                client={client}
+                machineId={machineId}
+                projectId={projectId}
+                shellState={shellState}
+                active={current}
+                target={id === screen ? target : undefined}
+                onNavigate={onNavigate}
+              />
+            </div>
+          </Activity>
         );
       })}
     </div>

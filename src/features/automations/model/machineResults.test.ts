@@ -124,4 +124,35 @@ describe("machine results", () => {
     expect(oldResult).toMatchObject({ status: "error", data: [], stale: false });
     expect(lastGood.get(mac.id)).toEqual([{ id: "new-host" }]);
   });
+
+  it("keeps a slow older reply from replacing a newer list of the same machine", async () => {
+    const lastGood: LastGoodLists<Card> = new Map();
+    let resolveOld!: (value: Card[]) => void;
+    const oldRead = collectMachineResults(
+      lastGood,
+      [mac],
+      () =>
+        new Promise<Card[]>((resolve) => {
+          resolveOld = resolve;
+        }),
+      markStale,
+    );
+    await collectMachineResults(lastGood, [mac], async () => [{ id: "newer" }], markStale);
+    resolveOld([{ id: "older" }]);
+    const [oldResult] = await oldRead;
+    expect(oldResult).toMatchObject({ status: "ok", stale: false, data: [{ id: "newer" }] });
+    expect(lastGood.get(mac.id)).toEqual([{ id: "newer" }]);
+
+    const [down] = await collectMachineResults(
+      lastGood,
+      [mac],
+      () => Promise.reject(new Error("host unreachable")),
+      markStale,
+    );
+    expect(down).toMatchObject({
+      status: "error",
+      stale: true,
+      data: [{ id: "newer", stale: true }],
+    });
+  });
 });

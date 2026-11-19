@@ -58,15 +58,27 @@ export function subscribeComposerDraftPresence(listener: () => void): () => void
   return () => presenceListeners.delete(listener);
 }
 
+/** Sessions whose draft currently counts as unsent. Presence listeners hear only about flips of this set. */
+const presentIds = new Set<string>();
+
 function notifyPresence() {
   for (const listener of presenceListeners) listener();
+}
+
+/** Notify presence listeners only when this session's answer flips, not on every keystroke. */
+function syncPresence(sessionId: string) {
+  const present = hasUnsentComposerDraft(sessionId);
+  if (present === presentIds.has(sessionId)) return;
+  if (present) presentIds.add(sessionId);
+  else presentIds.delete(sessionId);
+  notifyPresence();
 }
 
 function changed(sessionId: string, work?: PersistenceWork) {
   rendererPersistenceDrain.noteMutation([sessionId], work);
   changedAt.set(sessionId, ++revision);
   for (const listener of listeners) listener(sessionId, work);
-  notifyPresence();
+  syncPresence(sessionId);
 }
 
 export function getComposerDraft(sessionId: string): string | undefined {
@@ -179,7 +191,7 @@ export function restoreComposerDraft(
   if (saved.sourceDraftId && saved.sourceDraftDigest)
     sourceDraftDigests.set(sessionId, saved.sourceDraftDigest);
   if (saved.notice) notices.set(sessionId, saved.notice);
-  notifyPresence();
+  syncPresence(sessionId);
   return true;
 }
 
@@ -249,8 +261,7 @@ export function setComposerDraftSnapshot(
 
 /** Typed text or an attachment that has not been sent. Whitespace alone is not a message. */
 export function hasUnsentComposerDraft(sessionId: string): boolean {
-  const draft = composerDraftOf(sessionId);
-  return draft.text.trim().length > 0 || draft.attachments.length > 0;
+  return !!drafts.get(sessionId)?.trim() || !!attachments.get(sessionId)?.length;
 }
 
 export function clearComposerDraft(sessionId: string, work?: PersistenceWork): void {

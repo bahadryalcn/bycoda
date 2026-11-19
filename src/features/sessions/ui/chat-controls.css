@@ -14,13 +14,6 @@
   margin-block: 0;
   overflow: clip;
 }
-.zen-phase-body[data-open="true"] > .zen-phase-summary {
-  max-block-size: 7rem;
-}
-.zen-phase-body[data-open="true"] > .zen-phase-summary:has([data-tool-inspection]) {
-  max-block-size: none;
-}
-
 [data-composer] .composer-field {
   min-block-size: calc(2lh + 1.5rem);
 }

@@ -703,6 +703,37 @@ describe("history and blame", () => {
     expect(detached[0].head).toBe(true);
     expect(detached[0].refs).not.toContainEqual({ name: "HEAD", kind: "local" });
   });
+
+  it("continues one topological history walk with skip instead of re-reading pages", async () => {
+    const r = repo();
+    r.commit("a.txt", "first\n", "first");
+    r.git("checkout", "-q", "-b", "side");
+    r.commit("b.txt", "side\n", "on side");
+    r.git("checkout", "-q", "main");
+    r.commit("c.txt", "main\n", "on main");
+    r.git("merge", "--no-ff", "-q", "-m", "merge side", "side");
+    r.commit("d.txt", "after\n", "after merge");
+    const commands = new WorkspaceCommands(
+      { projects: () => [{ cwd: r.cwd }], attachmentDir: join(r.cwd, "attachments") } as never,
+      (async (_id: string, action: () => Promise<unknown>) => action()) as never,
+    );
+    type Page = { head: string; commits: { sha: string }[] };
+    const history = (input: Record<string, unknown>) =>
+      commands.run("git_history", { cwd: r.cwd, ...input }) as Promise<Page>;
+    for (const all of [false, true]) {
+      const whole = await history({ all });
+      const first = await history({ all, limit: 2 });
+      const second = await history({ all, limit: 2, skip: 2 });
+      const rest = await history({ all, skip: 4 });
+      expect([...first.commits, ...second.commits, ...rest.commits]).toEqual(whole.commits);
+      expect(second.head).toBe(whole.head);
+    }
+    // A negative or non-integer skip is not an offset.
+    const ignored = await history({ limit: 2, skip: -3 });
+    expect(ignored.commits.map((c) => c.sha)).toEqual(
+      (await history({ limit: 2 })).commits.map((c) => c.sha),
+    );
+  });
 });
 
 describe("stopped operations", () => {

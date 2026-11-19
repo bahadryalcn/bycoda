@@ -284,6 +284,20 @@ describe("jira issue details cache", () => {
     expect(peekJiraIssueDetails("LRU-1")).toBeNull();
     expect(peekJiraIssueDetails("LRU-128")).not.toBeNull();
   });
+
+  it("caps thread entries at 128, evicting the least recently read", async () => {
+    clearJiraCache();
+    vi.mocked(invoke).mockImplementation(
+      async (_command, args) => ({ comments: [], key: (args as { key: string }).key }) as never,
+    );
+    for (let i = 0; i < 128; i++) await jiraIssueThread(`THR-${i}`);
+    expect(peekJiraIssueThread("THR-0")).not.toBeNull();
+    await jiraIssueThread("THR-128");
+
+    expect(peekJiraIssueThread("THR-0")).not.toBeNull();
+    expect(peekJiraIssueThread("THR-1")).toBeNull();
+    expect(peekJiraIssueThread("THR-128")).not.toBeNull();
+  });
 });
 
 describe("jira saved project scope", () => {

@@ -13,11 +13,30 @@ import {
   dispatchOwnerRpc,
   HOST_STOP_GRACE_MS,
   HostStoppingError,
+  isInternalFailure,
   OwnerRpcDeadlineError,
   ownerRpcDeadlineMs,
   rpcFailureFields,
   slowRpcThresholdMs,
 } from "./owner-rpc";
+
+it("answers 500 only for runtime and system faults, not for client-facing errors", () => {
+  expect(isInternalFailure(new TypeError("Cannot read properties of undefined"))).toBe(true);
+  expect(isInternalFailure(new RangeError("Invalid array length"))).toBe(true);
+  expect(
+    isInternalFailure(
+      Object.assign(new Error("EACCES: permission denied, open 'C:\\secret\\x'"), {
+        syscall: "open",
+      }),
+    ),
+  ).toBe(true);
+  expect(
+    isInternalFailure(new HostDomainRefusalError("LEASE_HELD", "conflict", true, "Busy.")),
+  ).toBe(false);
+  expect(isInternalFailure(new HostDomainOutcomeError("Not saved", "not-sent"))).toBe(false);
+  expect(isInternalFailure(new Error("Unsupported host method"))).toBe(false);
+  expect(isInternalFailure("plain string")).toBe(false);
+});
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -156,7 +175,10 @@ it("answers a stuck handler with HOST_STOPPING once the stop grace passes after 
 it("gives long-running methods a deadline beyond their client's and owner commands none", () => {
   expect(ownerRpcDeadlineMs("sessions.get", {})).toBe(120_000);
   expect(ownerRpcDeadlineMs("machine.changes", { waitMs: 10_000 })).toBe(120_000);
-  expect(ownerRpcDeadlineMs("git.action", {})).toBe(480_000);
+  expect(ownerRpcDeadlineMs("git.action", {})).toBe(640_000);
+  expect(ownerRpcDeadlineMs("git.switch", {})).toBe(480_000);
+  expect(ownerRpcDeadlineMs("appearance.backgroundImage", {})).toBe(280_000);
+  expect(ownerRpcDeadlineMs("devices.capture", {})).toBe(220_000);
   expect(ownerRpcDeadlineMs("browser.setup", {})).toBe(1_260_000);
   expect(ownerRpcDeadlineMs("workspace.run", {})).toBe(Infinity);
   expect(ownerRpcDeadlineMs("assistant.request", {})).toBe(Infinity);

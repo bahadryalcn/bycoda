@@ -388,7 +388,7 @@ for (const mode of ["file", "inline", "split"]) {
         const panel = editor.locator(".cm-find");
         const bounds = await panel.boundingBox();
         expect(bounds!.width).toBeLessThanOrEqual(520);
-        await expect(panel.getByRole("button", { name: "Toggle Replace" })).toBeInViewport();
+        await expect(panel.getByRole("button", { name: "Toggle replace" })).toBeInViewport();
         for (const control of await panel.locator("input, button, .cm-find-count").all()) {
           if (!(await control.isVisible())) continue;
           const box = (await control.boundingBox())!;
@@ -417,9 +417,9 @@ for (const mode of ["file", "inline", "split"]) {
     await page.screenshot({ path: info.outputPath(`find-${mode}.png`) });
     await find.press("Enter");
     await expect(editor.locator(".cm-find-count")).toContainText("2 of 300");
-    await editor.getByRole("button", { name: "Toggle Replace" }).click();
+    await editor.getByRole("button", { name: "Toggle replace" }).click();
     await expect(replace).toBeHidden();
-    await editor.getByRole("button", { name: "Toggle Replace" }).press("Enter");
+    await editor.getByRole("button", { name: "Toggle replace" }).press("Enter");
     await expect(editor.getByRole("textbox", { name: "Replace", exact: true })).toBeVisible();
     await find.press("Escape");
     await expect(find).toHaveCount(0);

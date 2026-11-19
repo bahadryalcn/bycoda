@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { DevicePanel } from "./DevicePanel";
+import { DECODE_QUEUE_LIMIT } from "./model/liveStreamRecovery";
 import type { DeviceHostStatus, DevicePanelApi, DeviceStreamChunk } from "./types";
 
 const status: DeviceHostStatus = {
@@ -57,20 +58,42 @@ const makeApi = (stream: DevicePanelApi["stream"]): DevicePanelApi => ({
 class FakeVideoDecoder {
   static configured: string[] = [];
   static decoded: string[] = [];
+  static instances = 0;
+  static resets = 0;
+  /** Decoding never catches up while true: every decoded chunk stays queued. */
+  static stalled = false;
+  static maxQueue = 0;
+  /** The next decode fails the way a real decoder does: it reports the error and closes. */
+  static failNext = false;
+  static queue = 0;
   state = "unconfigured";
-  decodeQueueSize = 0;
-  constructor(private init: { output: (frame: unknown) => void; error: (cause: Error) => void }) {}
+  get decodeQueueSize() {
+    return FakeVideoDecoder.queue;
+  }
+  constructor(private init: { output: (frame: unknown) => void; error: (cause: Error) => void }) {
+    FakeVideoDecoder.instances++;
+  }
   configure(config: { codec: string }) {
     this.state = "configured";
     FakeVideoDecoder.configured.push(config.codec);
   }
   decode(value: { type: string }) {
-    if (value.type === "broken") return this.init.error(new Error("decode failed"));
+    if (value.type === "broken" || FakeVideoDecoder.failNext) {
+      FakeVideoDecoder.failNext = false;
+      this.state = "closed";
+      return this.init.error(new Error("decode failed"));
+    }
     FakeVideoDecoder.decoded.push(value.type);
+    if (FakeVideoDecoder.stalled) {
+      FakeVideoDecoder.queue++;
+      FakeVideoDecoder.maxQueue = Math.max(FakeVideoDecoder.maxQueue, FakeVideoDecoder.queue);
+    }
     this.init.output({ displayWidth: 50, displayHeight: 100, close: () => {} });
   }
   reset() {
     this.state = "unconfigured";
+    FakeVideoDecoder.resets++;
+    FakeVideoDecoder.queue = 0;
   }
   close() {
     this.state = "closed";
@@ -99,6 +122,12 @@ beforeEach(() => {
   );
   FakeVideoDecoder.configured = [];
   FakeVideoDecoder.decoded = [];
+  FakeVideoDecoder.instances = 0;
+  FakeVideoDecoder.resets = 0;
+  FakeVideoDecoder.stalled = false;
+  FakeVideoDecoder.maxQueue = 0;
+  FakeVideoDecoder.failNext = false;
+  FakeVideoDecoder.queue = 0;
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -176,4 +205,114 @@ it("waits for a key picture after a reset and ignores a stream without WebCodecs
   await act(async () => root.render(createElement(DevicePanel, { api: makeApi(unused) })));
   await settle();
   expect(unused).not.toHaveBeenCalled();
+});
+
+const advance = (ms: number) => act(async () => vi.advanceTimersByTimeAsync(ms));
+const transient = () => new Error("RPC_WS_DEADLINE: The Host did not answer in time.");
+
+it("retries a transient stream failure from a fresh key picture and returns to video", async () => {
+  const stream = vi
+    .fn<NonNullable<DevicePanelApi["stream"]>>()
+    .mockResolvedValueOnce(chunk({ cursor: 22, reset: true, base64: keyPicture }))
+    .mockRejectedValueOnce(transient())
+    .mockResolvedValueOnce(chunk({ cursor: 44, reset: true, base64: keyPicture }))
+    .mockReturnValue(new Promise(() => {}));
+  await act(async () => root.render(createElement(DevicePanel, { api: makeApi(stream) })));
+  await settle();
+  // Backing off: the frozen picture is gone, so it cannot pass as live.
+  expect(stream).toHaveBeenCalledTimes(2);
+  expect(container.querySelector("canvas.device-panel-live")).toBeNull();
+  await advance(600);
+  // The retry reads the same device from the start of the stream, not from the old cursor.
+  expect(stream.mock.calls[2]).toEqual(["emulator", undefined]);
+  expect(FakeVideoDecoder.decoded).toEqual(["key", "key"]);
+  expect(container.querySelector("canvas.device-panel-live")).not.toBeNull();
+});
+
+it("gives up after the retry cap and keeps still captures", async () => {
+  const stream = vi.fn<NonNullable<DevicePanelApi["stream"]>>().mockRejectedValue(transient());
+  const api = makeApi(stream);
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  await settle();
+  await advance(3600);
+  expect(stream).toHaveBeenCalledTimes(4);
+  expect(stream.mock.calls.every(([, cursor]) => cursor === undefined)).toBe(true);
+  await advance(10_000);
+  expect(stream).toHaveBeenCalledTimes(4);
+  expect(container.querySelector("canvas.device-panel-live")).toBeNull();
+  const captures = vi.mocked(api.capture).mock.calls.length;
+  await advance(2000);
+  expect(vi.mocked(api.capture).mock.calls.length).toBeGreaterThan(captures);
+});
+
+it.each([
+  "DEVICE_AUTHORITY_REVOKED: Device access changed.",
+  "Host rejected request [RPC_AUTHORIZATION]",
+  "Boot the device before viewing",
+])("does not retry a failure no retry can fix: %s", async (message) => {
+  const stream = vi
+    .fn<NonNullable<DevicePanelApi["stream"]>>()
+    .mockRejectedValue(new Error(message));
+  await act(async () => root.render(createElement(DevicePanel, { api: makeApi(stream) })));
+  await settle();
+  await advance(5000);
+  expect(stream).toHaveBeenCalledTimes(1);
+  expect(container.querySelector("canvas.device-panel-live")).toBeNull();
+});
+
+it("replaces a decoder that reported an error and decodes again from a key picture", async () => {
+  FakeVideoDecoder.failNext = true;
+  const stream = vi
+    .fn<NonNullable<DevicePanelApi["stream"]>>()
+    .mockResolvedValueOnce(chunk({ cursor: 22, reset: true, base64: keyPicture }))
+    .mockResolvedValueOnce(chunk({ cursor: 44, reset: true, base64: keyPicture }))
+    .mockReturnValue(new Promise(() => {}));
+  await act(async () => root.render(createElement(DevicePanel, { api: makeApi(stream) })));
+  await settle();
+  expect(FakeVideoDecoder.decoded).toEqual([]);
+  expect(container.querySelector("canvas.device-panel-live")).toBeNull();
+  await advance(600);
+  expect(stream.mock.calls[1]).toEqual(["emulator", undefined]);
+  expect(FakeVideoDecoder.instances).toBe(2);
+  expect(FakeVideoDecoder.configured).toEqual(["avc1.42c02a", "avc1.42c02a"]);
+  expect(FakeVideoDecoder.decoded).toEqual(["key"]);
+  expect(container.querySelector("canvas.device-panel-live")).not.toBeNull();
+});
+
+it("drops a decode backlog and resumes at the next key picture instead of lagging behind", async () => {
+  FakeVideoDecoder.stalled = true;
+  const delta = [0, 0, 0, 1, 0x41, 0x9a, 0x01];
+  const burst = btoa(
+    [...keyBytes, ...Array.from({ length: 20 }, () => delta).flat()]
+      .map((value) => String.fromCharCode(value))
+      .join(""),
+  );
+  const stream = vi
+    .fn<NonNullable<DevicePanelApi["stream"]>>()
+    .mockResolvedValueOnce(chunk({ cursor: 500, reset: true, base64: burst }))
+    .mockResolvedValueOnce(chunk({ cursor: 600, base64: keyPicture }))
+    .mockReturnValue(new Promise(() => {}));
+  await act(async () => root.render(createElement(DevicePanel, { api: makeApi(stream) })));
+  await settle();
+  await advance(600);
+  // The queue stalls at the limit, its backlog is discarded, and the rest of the burst's
+  // deltas are skipped: nothing is decoded on top of a broken reference chain.
+  expect(FakeVideoDecoder.decoded).toEqual(["key", ...Array(8).fill("delta"), "key"]);
+  expect(FakeVideoDecoder.maxQueue).toBeLessThanOrEqual(DECODE_QUEUE_LIMIT + 1);
+  expect(FakeVideoDecoder.configured).toEqual(["avc1.42c02a", "avc1.42c02a"]);
+  expect(container.querySelector("canvas.device-panel-live")).not.toBeNull();
+});
+
+it("does not read again once viewing ends during a retry backoff", async () => {
+  const stream = vi
+    .fn<NonNullable<DevicePanelApi["stream"]>>()
+    .mockRejectedValueOnce(transient())
+    .mockReturnValue(new Promise(() => {}));
+  await act(async () => root.render(createElement(DevicePanel, { api: makeApi(stream) })));
+  await settle();
+  expect(stream).toHaveBeenCalledTimes(1);
+  act(() => root.unmount());
+  await advance(5000);
+  expect(stream).toHaveBeenCalledTimes(1);
+  root = createRoot(container);
 });

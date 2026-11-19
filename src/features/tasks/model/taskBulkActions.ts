@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import type { BoardTask } from "./taskClient";
 import { hasUnmergedBranch, orderTasksForDeletion, taskRequiresInstructions } from "./taskRules";
 
@@ -56,7 +57,7 @@ export async function runTaskBulkAction(
   onResult?: (result: TaskBulkResult, completed: number, total: number) => void,
   // Injected so this shared model stays free of the desktop-only error presenter (mobile reuses it).
   describeError: (error: unknown) => string = (error) =>
-    error instanceof Error ? error.message : String(error),
+    errorText(error),
 ): Promise<TaskBulkResult[]> {
   const tasks = [...new Map(selected.map((task) => [bulkTaskKey(task), task])).values()];
   const results: TaskBulkResult[] = [];

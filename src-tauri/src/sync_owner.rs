@@ -3,7 +3,43 @@
 use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
+use std::time::{Duration, Instant};
+
+/// Bounded wait for a page whose provider work is still pending. A timeout only
+/// stops this waiter: the cycle rows stay held, and the next sync begin or
+/// completion re-reads the status and performs cleanup if it has since settled.
+const RETIREMENT_POLL_START: Duration = Duration::from_millis(250);
+const RETIREMENT_POLL_CAP: Duration = Duration::from_secs(5);
+const RETIREMENT_WAIT_LIMIT: Duration = Duration::from_secs(300);
+
+#[derive(Debug, PartialEq, Eq)]
+enum Settle {
+    Confirmed,
+    Unknown,
+    TimedOut,
+}
+
+async fn settle_retirement(
+    mut status: impl FnMut() -> crate::harness::PageRetirement,
+    limit: Duration,
+) -> Settle {
+    let started = Instant::now();
+    let mut delay = RETIREMENT_POLL_START;
+    loop {
+        match status() {
+            crate::harness::PageRetirement::Confirmed => return Settle::Confirmed,
+            crate::harness::PageRetirement::Unknown => return Settle::Unknown,
+            crate::harness::PageRetirement::Pending => {}
+        }
+        let remaining = limit.saturating_sub(started.elapsed());
+        if remaining.is_zero() {
+            return Settle::TimedOut;
+        }
+        tokio::time::sleep(delay.min(remaining)).await;
+        delay = (delay * 2).min(RETIREMENT_POLL_CAP);
+    }
+}
 
 struct Cycle {
     issuer: Arc<crate::control::receipts::WindowIssuer>,
@@ -190,13 +226,21 @@ pub(crate) fn page_retired(
     let app = app.clone();
     let issuer = issuer.clone();
     tauri::async_runtime::spawn(async move {
-        loop {
-            match crate::harness::page_retirement_status(&page) {
-                crate::harness::PageRetirement::Confirmed => break,
-                crate::harness::PageRetirement::Unknown => return,
-                crate::harness::PageRetirement::Pending => {
-                    tokio::time::sleep(std::time::Duration::from_millis(250)).await
-                }
+        match settle_retirement(
+            || crate::harness::page_retirement_status(&page),
+            RETIREMENT_WAIT_LIMIT,
+        )
+        .await
+        {
+            Settle::Confirmed => {}
+            Settle::Unknown => return,
+            Settle::TimedOut => {
+                log::warn!(
+                    "page retirement still pending after {}s; sync cycles stay held until it settles",
+                    RETIREMENT_WAIT_LIMIT.as_secs()
+                );
+                let _ = app.emit_to("main", "session-recovery-changed", ());
+                return;
             }
         }
         let work = tauri::async_runtime::spawn_blocking(move || {
@@ -416,5 +460,56 @@ mod tests {
         assert!(!prior_instance_retired(&second.lock_conn().unwrap(), &second_id).unwrap());
         drop(second);
         std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    fn block_on<T>(future: impl std::future::Future<Output = T>) -> T {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(future)
+    }
+
+    #[test]
+    fn retirement_that_stays_pending_times_out_with_bounded_polling() {
+        let polls = std::cell::Cell::new(0usize);
+        let started = Instant::now();
+        let outcome = block_on(settle_retirement(
+            || {
+                polls.set(polls.get() + 1);
+                crate::harness::PageRetirement::Pending
+            },
+            Duration::from_millis(40),
+        ));
+        assert_eq!(outcome, Settle::TimedOut);
+        assert!(polls.get() >= 2);
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn retirement_settling_while_waiting_is_confirmed() {
+        let polls = std::cell::Cell::new(0usize);
+        let outcome = block_on(settle_retirement(
+            || {
+                polls.set(polls.get() + 1);
+                if polls.get() < 3 {
+                    crate::harness::PageRetirement::Pending
+                } else {
+                    crate::harness::PageRetirement::Confirmed
+                }
+            },
+            RETIREMENT_WAIT_LIMIT,
+        ));
+        assert_eq!(outcome, Settle::Confirmed);
+        assert_eq!(polls.get(), 3);
+    }
+
+    #[test]
+    fn unknown_retirement_stops_waiting_immediately() {
+        let outcome = block_on(settle_retirement(
+            || crate::harness::PageRetirement::Unknown,
+            RETIREMENT_WAIT_LIMIT,
+        ));
+        assert_eq!(outcome, Settle::Unknown);
     }
 }

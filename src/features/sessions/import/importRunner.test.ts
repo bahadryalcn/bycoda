@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { setLanguagePreference } from "../../../shared/i18n";
 import type {
   ClaudeTranscript,
   CodexTranscript,
@@ -24,6 +25,10 @@ import {
 } from "./importRunner";
 
 beforeEach(() => localStorage.clear());
+
+afterEach(async () => {
+  await setLanguagePreference("en");
+});
 
 function candidate(overrides: Partial<ImportCandidate> = {}): ImportCandidate {
   return {
@@ -415,5 +420,32 @@ describe("fitBlocks", () => {
   it("leaves a transcript that fits alone", () => {
     const blocks = [block(1), block(2)];
     expect(fitBlocks(blocks)).toEqual({ blocks, trimmed: false });
+  });
+});
+
+describe("import notes and failure reasons", () => {
+  it("writes the import note in the language active at import time", async () => {
+    await setLanguagePreference("de");
+    const h = harness();
+    expect(await run(h, [candidate()])).toMatchObject({ imported: 1 });
+    expect(h.persisted[0].session.blocks[0].text).toBe(
+      "Importiert aus Claude Code. Eine neue Nachricht setzt dieselbe Unterhaltung fort.",
+    );
+  });
+
+  it("reports an app-raised failure by reason, not by English text", async () => {
+    const h = harness({
+      readClaude: async () => ({
+        text: "invalid json",
+        truncated: false,
+        totalRecords: 1,
+        keptRecords: 0,
+        oversizeSkipped: 0,
+      }),
+    });
+    const summary = await run(h, [candidate()]);
+    expect(summary.imported).toBe(0);
+    expect(summary.failed).toHaveLength(1);
+    expect(summary.failed[0]).toMatchObject({ reason: "noMessages" });
   });
 });

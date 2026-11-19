@@ -1,3 +1,4 @@
+import { errorText } from "../../shared/lib/errors";
 import { Button } from "../../shared/ui/Button";
 import { useRef, useState, useSyncExternalStore } from "react";
 import { FULLSCREEN_SHORTCUT } from "../../platform/tauri/platform";
@@ -20,7 +21,7 @@ async function runFullscreenToggle(onError: (message: string) => void): Promise<
     await setNativeFullscreen();
     await refreshWindowState().catch(() => null);
   } catch (failure) {
-    onError(failure instanceof Error ? failure.message : String(failure));
+    onError(errorText(failure));
   }
 }
 
@@ -38,7 +39,7 @@ export function FullscreenButton() {
     await runFullscreenToggle(setError);
     pending.current = false;
   };
-  const label = fullscreen ? t("Restore window") : t("Full screen");
+  const label = fullscreen ? t("Exit full screen") : t("Full screen");
   const Icon = fullscreen ? Minimize2 : Maximize2;
 
   return (

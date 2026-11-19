@@ -81,6 +81,7 @@ export function ConversationPanel(props: ConversationPanelProps) {
     history,
     onHistoryScroll,
     messageElements,
+    keepEnd,
     query,
     loadedThreads,
   } = c;
@@ -135,7 +136,12 @@ export function ConversationPanel(props: ConversationPanelProps) {
             />
           )}
           {messageElements.length > 0 && (
-            <MessageTimeline label={t("Messages")} items={messageElements} />
+            <MessageTimeline
+              windowed
+              label={t("Messages")}
+              items={messageElements}
+              onSizeChange={keepEnd}
+            />
           )}
         </div>
         <LiveText className="sr-only" mode="assertive" text={error} />
@@ -143,7 +149,7 @@ export function ConversationPanel(props: ConversationPanelProps) {
           className="sr-only"
           text={
             searching
-              ? t("Loading...")
+              ? t("Loading…")
               : summaryRefreshing
                 ? t("Updating conversation summary")
                 : summaryLabel || ""

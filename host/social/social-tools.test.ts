@@ -105,8 +105,11 @@ describe("Social tool receipt transport", () => {
       ],
       call,
     );
-    expect(call).toHaveBeenNthCalledWith(1, "replies.send", { id: "draft-1" }, "retry:draft-1");
-    expect(call).toHaveBeenNthCalledWith(2, "replies.send", { id: "draft-1" }, "retry:draft-1");
+    // The server also passes a cancellation signal after the env/fetch slots; only the first three matter here.
+    expect(call.mock.calls.map((args) => args.slice(0, 3))).toEqual([
+      ["replies.send", { id: "draft-1" }, "retry:draft-1"],
+      ["replies.send", { id: "draft-1" }, "retry:draft-1"],
+    ]);
     expect(responses.every((response) => response.result.isError !== true)).toBe(true);
   });
 

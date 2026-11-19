@@ -102,6 +102,7 @@ function parseMetadata(text: string, sessionId: string): HandoffHistory & Record
  * Blobs and materializations are content-addressed; `collectUnreferenced` deletes the ones
  * no live manifest names, and `retireSession` drops a deleted session's manifest. */
 export class HandoffHistoryStore {
+  private legacyCache?: { path: string; mtimeMs: number; size: number; history: HandoffHistory };
   constructor(private readonly directory: string) {}
   private base(): string {
     return join(this.directory, "handoff-history");
@@ -233,6 +234,19 @@ export class HandoffHistoryStore {
     await sweep("exports", exports);
     return { removed };
   }
+  /** Parses a single-file archive once per file version so paging it is not quadratic. */
+  private async legacy(sessionId: string): Promise<HandoffHistory> {
+    const path = this.legacyPath(sessionId);
+    // The stamp is taken before the read, so a file replaced mid-read is parsed again next time.
+    const info = await stat(path);
+    const cached = this.legacyCache;
+    if (cached?.path === path && cached.mtimeMs === info.mtimeMs && cached.size === info.size)
+      return cached.history;
+    const history = JSON.parse(await readFile(path, "utf8")) as HandoffHistory;
+    // shortcut: one cached archive, replaced when another session is paged; add an LRU if two are paged at once.
+    this.legacyCache = { path, mtimeMs: info.mtimeMs, size: info.size, history };
+    return history;
+  }
   async read(
     sessionId: string,
     cursor = 0,
@@ -249,9 +263,7 @@ export class HandoffHistoryStore {
       manifest = parseManifest(await readFile(this.manifestPath(sessionId), "utf8"));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      const legacy = JSON.parse(
-        await readFile(this.legacyPath(sessionId), "utf8"),
-      ) as HandoffHistory;
+      const legacy = await this.legacy(sessionId);
       return {
         messages: legacy.messages.slice(start, end),
         ...(start === 0 && legacy.retainedContext

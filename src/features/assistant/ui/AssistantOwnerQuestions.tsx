@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Text } from "../../../shared/ui/Text";
@@ -30,6 +31,7 @@ import {
 } from "../model/assistantOwnerQuestions";
 import styles from "./AssistantOwnerQuestions.module.css";
 import {
+  OwnerQuestionPresentationPending,
   pendingOwnerQuestionPresentations,
   retryOwnerQuestionPresentation,
   type OwnerQuestionPresentation,
@@ -155,8 +157,13 @@ function PendingPresentation({
       await retryOwnerQuestionPresentation(value, storage, request, (ids) => guard.current(ids));
       notify();
       onChanged?.();
-    } catch {
-      setError(t("Saving this question is unconfirmed. Retry to verify the original card."));
+    } catch (cause) {
+      // Unknown delivery keeps the exact draft for a later retry; authority and draft mismatches keep their own message.
+      setError(
+        cause instanceof OwnerQuestionPresentationPending
+          ? t("Still unconfirmed after retry. Check the Host connection.")
+          : actionError(cause),
+      );
     } finally {
       checking.current = false;
       setPending(false);
@@ -221,7 +228,7 @@ function OwnerQuestionCard({
         ),
       };
     } catch (error) {
-      return { error: error instanceof Error ? error.message : String(error) };
+      return { error: errorText(error) };
     }
   }, [environmentId, question, storage, epoch]);
   const model = creation.model,
@@ -254,7 +261,7 @@ function OwnerQuestionCard({
       try {
         model.saveDraft(draft);
       } catch (cause) {
-        if (alive.current) setError(cause instanceof Error ? cause.message : String(cause));
+        if (alive.current) setError(errorText(cause));
       }
     });
   }, [model, prompt]);
@@ -267,7 +274,7 @@ function OwnerQuestionCard({
         onChanged?.();
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(errorText(cause));
     }
   }, [model, current, prompt, onChanged]);
   function complete(value: AssistantOwnerQuestion) {
@@ -418,7 +425,7 @@ function OwnerQuestionCard({
         />
       ) : (
         <LoadingText delay={false} className={styles.status}>
-          {t("Loading...")}
+          {t("Loading…")}
         </LoadingText>
       )}
       {error && (!ready || snoozed || stale) ? <InlineError>{t(error)}</InlineError> : null}
@@ -433,7 +440,7 @@ function OwnerQuestionCard({
             {t("Retry")}
           </Button>
           <Text as="p" size="caption" tone="secondary" leading="inherit" className={styles.status}>
-            {t("The answer is unconfirmed. Your original choice is kept.")}
+            {t("Your answer could not be confirmed. Your original choice is kept.")}
           </Text>
         </div>
       ) : null}

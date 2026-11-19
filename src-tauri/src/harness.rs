@@ -29,6 +29,7 @@ pub(crate) mod management_authority;
 #[cfg(windows)]
 mod mcp_auth;
 pub(crate) mod owned_opencode;
+mod owned_opencode_diagnostics;
 pub(crate) mod process_lifecycle;
 mod process_receipts;
 pub(crate) mod tool_grants;
@@ -628,18 +629,11 @@ fn emit_output_batch<P: Serialize + Clone>(
             complete = false;
         }
         if !delivered {
-            let mut observed = metadata.clone();
-            if let Some(observed) = &mut observed {
-                observed.owner_epoch = None;
-                observed.available = false;
-                observed
-                    .unavailable_reason
-                    .get_or_insert(UnavailableReason::BroadcastOwner);
-            }
-            // Preserve existing fallback delivery; it never supplies an exact
-            // physical consumer or a prospective Native checkpoint seal.
-            let sent = app.emit(event, make(observed)).is_ok();
-            stream.observe_prepared_delivery(metadata.as_ref(), None, prepared.as_ref(), sent);
+            // Provider output is owner-scoped: when no owner window accepted the
+            // batch it is withheld, never broadcast to every webview. The stream
+            // records it as undelivered with no owner, so it can't be claimed as
+            // delivered, and the batch stays available to an owner's replay.
+            stream.observe_prepared_delivery(metadata.as_ref(), None, prepared.as_ref(), false);
             complete = false;
         }
         complete
@@ -2651,21 +2645,90 @@ pub struct HarnessTextWorkspace {
     log_path: String,
 }
 
+/// Directory and file creation runs on the blocking pool so a slow disk or antivirus
+/// scan cannot stall the main thread.
 #[tauri::command]
-pub fn harness_prepare_text_workspace(content: String) -> Result<HarnessTextWorkspace, String> {
+pub async fn harness_prepare_text_workspace(
+    content: String,
+) -> Result<HarnessTextWorkspace, String> {
     if content.len() > 20_000 {
         return Err("Invalid text agent profile".into());
     }
-    // Directory age does not establish whether an agent still owns its cwd.
-    let cwd =
-        std::env::temp_dir().join(format!("bycoda-antigravity-text-{}", uuid::Uuid::new_v4()));
-    let profile = cwd.join(".agents").join("agents");
-    std::fs::create_dir_all(&profile).map_err(|e| e.to_string())?;
-    std::fs::write(profile.join("bycoda-text.md"), content).map_err(|e| e.to_string())?;
-    Ok(HarnessTextWorkspace {
-        log_path: cwd.join("agent.log").to_string_lossy().into_owned(),
-        cwd: cwd.to_string_lossy().into_owned(),
+    run_blocking("harness_prepare_text_workspace", move || {
+        // Directory age does not establish whether an agent still owns its cwd.
+        let cwd =
+            std::env::temp_dir().join(format!("bycoda-antigravity-text-{}", uuid::Uuid::new_v4()));
+        let profile = cwd.join(".agents").join("agents");
+        let written = std::fs::create_dir_all(&profile)
+            .and_then(|_| std::fs::write(profile.join("bycoda-text.md"), content));
+        if let Err(error) = written {
+            // Nobody holds this workspace yet, so a failed prepare leaves nothing behind.
+            let _ = std::fs::remove_dir_all(&cwd);
+            return Err(error.to_string());
+        }
+        Ok(HarnessTextWorkspace {
+            log_path: cwd.join("agent.log").to_string_lossy().into_owned(),
+            cwd: cwd.to_string_lossy().into_owned(),
+        })
     })
+    .await
+}
+
+const TEXT_WORKSPACE_PREFIX: &str = "bycoda-antigravity-text-";
+
+/// Remove one workspace from `harness_prepare_text_workspace`. The path must be a
+/// real directory directly under the temp dir whose name is this command's prefix
+/// plus a UUID, so a caller can never target any other file or folder.
+/// The caller removes it only after the agent process that used it has exited.
+#[tauri::command]
+pub fn harness_remove_text_workspace(cwd: String) -> Result<(), String> {
+    let path = PathBuf::from(&cwd);
+    let root = std::env::temp_dir();
+    let name = path.file_name().and_then(|name| name.to_str()).unwrap_or_default();
+    let id = name.strip_prefix(TEXT_WORKSPACE_PREFIX).unwrap_or_default();
+    if path.parent() != Some(root.as_path()) || uuid::Uuid::parse_str(id).is_err() {
+        return Err("Not a text agent workspace".into());
+    }
+    match std::fs::symlink_metadata(&path) {
+        Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {}
+        Ok(_) => return Err("Not a text agent workspace".into()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.to_string()),
+    }
+    std::fs::remove_dir_all(&path).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod text_workspace_tests {
+    use super::{harness_prepare_text_workspace, harness_remove_text_workspace};
+
+    #[test]
+    fn removes_only_its_own_text_workspace() {
+        let workspace =
+            tauri::async_runtime::block_on(harness_prepare_text_workspace("agent".into()))
+                .unwrap();
+        assert!(std::path::Path::new(&workspace.cwd).is_dir());
+        harness_remove_text_workspace(workspace.cwd.clone()).unwrap();
+        assert!(!std::path::Path::new(&workspace.cwd).exists());
+        // Already removed (for example a retry) is not an error.
+        harness_remove_text_workspace(workspace.cwd).unwrap();
+    }
+
+    #[test]
+    fn refuses_paths_outside_the_text_workspace_shape() {
+        let foreign = std::env::temp_dir().join(format!("bycoda-output-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&foreign).unwrap();
+        let not_uuid = std::env::temp_dir().join("bycoda-antigravity-text-not-a-uuid");
+        std::fs::create_dir_all(&not_uuid).unwrap();
+        assert!(harness_remove_text_workspace(foreign.to_string_lossy().into_owned()).is_err());
+        assert!(harness_remove_text_workspace(not_uuid.to_string_lossy().into_owned()).is_err());
+        assert!(foreign.exists() && not_uuid.exists());
+        // A traversal that resolves outside the temp root is refused too.
+        let traversal = std::env::temp_dir().join("..").join(foreign.file_name().unwrap());
+        assert!(harness_remove_text_workspace(traversal.to_string_lossy().into_owned()).is_err());
+        std::fs::remove_dir_all(foreign).unwrap();
+        std::fs::remove_dir_all(not_uuid).unwrap();
+    }
 }
 
 /// Bind an ephemeral loopback port for `opencode serve`.
@@ -4267,6 +4330,20 @@ pub async fn harness_kill_all(app: AppHandle) -> Result<(), String> {
     .await
 }
 
+/// Renderer-chosen `harness_http` deadlines are clamped to this range. The cap
+/// is the longest deadline the Host sends (`summarize`, 30 minutes).
+const HARNESS_HTTP_DEFAULT_TIMEOUT_MS: u64 = 30_000;
+const HARNESS_HTTP_MAX_TIMEOUT_MS: u64 = 30 * 60_000;
+/// Calls that may hold a blocking-pool thread at once; extra calls wait async.
+const HARNESS_HTTP_MAX_CONCURRENT: usize = 16;
+static HARNESS_HTTP_PERMITS: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
+
+fn harness_http_permits() -> Arc<tokio::sync::Semaphore> {
+    HARNESS_HTTP_PERMITS
+        .get_or_init(|| Arc::new(tokio::sync::Semaphore::new(HARNESS_HTTP_MAX_CONCURRENT)))
+        .clone()
+}
+
 static HTTP_AGENT: OnceLock<ureq::Agent> = OnceLock::new();
 
 /// One agent so calls to the local provider server reuse connections. The
@@ -4280,6 +4357,8 @@ fn localhost_http_agent_builder() -> ureq::AgentBuilder {
     ureq::AgentBuilder::new().redirects(0)
 }
 
+/// Timeout is clamped to 1 ms..30 min (default 30 s). Concurrency is bounded by
+/// `HARNESS_HTTP_MAX_CONCURRENT`; waiting callers do not hold a blocking thread.
 #[tauri::command]
 // AppHandle plus the existing flat IPC fields and optional authority provenance.
 pub async fn harness_http(
@@ -4298,7 +4377,12 @@ pub async fn harness_http(
     >,
     native_owned_service: Option<owned_opencode::ServiceHandle>,
 ) -> Result<HarnessHttpResponse, String> {
+    let http_permit = harness_http_permits()
+        .acquire_owned()
+        .await
+        .map_err(|e| e.to_string())?;
     tauri::async_runtime::spawn_blocking(move || {
+        let _http_permit = http_permit;
         assert_loopback(&url)?;
         let _legacy_utility_pin =
             if crate::session_store::canonical_store::SESSION_EFFECT_GUARD_ENABLED
@@ -4442,7 +4526,11 @@ pub async fn harness_http(
         if let Some(lease) = authority.as_mut() {
             lease.begin_external()?;
         }
-        let timeout = Duration::from_millis(timeout_ms.unwrap_or(30_000).max(1));
+        let timeout = Duration::from_millis(
+            timeout_ms
+                .unwrap_or(HARNESS_HTTP_DEFAULT_TIMEOUT_MS)
+                .clamp(1, HARNESS_HTTP_MAX_TIMEOUT_MS),
+        );
         let mut request = http_agent().request(&method, &url).timeout(timeout);
         if let Some(headers) = &headers {
             for (key, value) in headers {
@@ -4711,7 +4799,9 @@ fn harness_sse_open_blocking(
         let _session_admission = _session_admission;
         let agent = localhost_http_agent_builder()
             .timeout_connect(Duration::from_secs(10))
-            .timeout_read(Duration::from_secs(60 * 60 * 6))
+            // A short socket read bounds how long `harness_sse_close` waits on a
+            // silent stream; the overall idle limit is `SSE_IDLE_LIMIT`.
+            .timeout_read(SSE_STOP_POLL)
             .timeout_write(Duration::from_secs(30))
             .build();
         let mut request = agent.get(&url).set("Accept", "text/event-stream");
@@ -5060,6 +5150,27 @@ fn read_sse<R: BufRead>(
     })
 }
 
+/// Longest the SSE reader or header wait blocks before it re-checks `stop`.
+const SSE_STOP_POLL: Duration = Duration::from_secs(1);
+/// Keeps the previous bound: a stream or header wait with no bytes this long fails.
+const SSE_IDLE_LIMIT: Duration = Duration::from_secs(60 * 60 * 6);
+
+/// Unix reports an expired socket read timeout as `WouldBlock`, Windows as `TimedOut`.
+fn is_poll_timeout(error: &std::io::Error) -> bool {
+    matches!(
+        error.kind(),
+        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+    )
+}
+
+/// Only a response-header read timeout (`ErrorKind::Io`); connect failures keep failing.
+fn sse_poll_timeout(error: &ureq::Transport) -> bool {
+    error.kind() == ureq::ErrorKind::Io
+        && std::error::Error::source(error)
+            .and_then(|source| source.downcast_ref::<std::io::Error>())
+            .is_some_and(is_poll_timeout)
+}
+
 fn read_sse_batches<R: BufRead, F: FnMut(Vec<String>) + Send + 'static>(
     reader: R,
     stop: &AtomicBool,
@@ -5068,12 +5179,46 @@ fn read_sse_batches<R: BufRead, F: FnMut(Vec<String>) + Send + 'static>(
     let batcher = LineBatcher::new(emit);
     let mut data = String::new();
     let mut success = true;
-    for line in reader.lines() {
+    let mut reader = reader;
+    // Bytes of a partly read line survive a poll timeout in `raw`.
+    let mut raw: Vec<u8> = Vec::new();
+    let mut active_at = Instant::now();
+    loop {
         if stop.load(Ordering::SeqCst) {
             success = false;
             break;
         }
-        let Ok(line) = line else {
+        let before = raw.len();
+        match reader.read_until(b'\n', &mut raw) {
+            Ok(0) => break,
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) if is_poll_timeout(&error) => {
+                if raw.len() > before {
+                    active_at = Instant::now();
+                } else if active_at.elapsed() >= SSE_IDLE_LIMIT {
+                    success = false;
+                    break;
+                }
+                continue;
+            }
+            Err(_) => {
+                success = false;
+                break;
+            }
+        }
+        active_at = Instant::now();
+        if stop.load(Ordering::SeqCst) {
+            success = false;
+            break;
+        }
+        if raw.last() == Some(&b'\n') {
+            raw.pop();
+            if raw.last() == Some(&b'\r') {
+                raw.pop();
+            }
+        }
+        let Ok(line) = String::from_utf8(std::mem::take(&mut raw)) else {
             success = false;
             break;
         };
@@ -5478,11 +5623,38 @@ fn output_wait<C: Into<OwnedChild>>(child: C) -> OutputWait {
 /// Data observation only: the output never certifies retirement. The process
 /// owner reports an unverified retirement itself.
 fn exec_command_output(
-    mut cmd: Command,
+    cmd: Command,
     command: &str,
     timeout: Duration,
 ) -> Result<std::process::Output, String> {
+    exec_command_observed(cmd, command, timeout, |_| {})
+}
+
+/// Like `exec_output_with_env`, but hands the spawned process's owner to `observe`
+/// right after spawn, so another caller can stop that process while it runs.
+pub(crate) fn exec_output_with_env_observed(
+    command: &str,
+    args: &[String],
+    timeout: Duration,
+    env: &[(&str, &str)],
+    observe: impl FnOnce(Arc<process_lifecycle::ProcessOwner>),
+) -> Result<std::process::Output, String> {
+    exec_command_observed(
+        configured_exec_command(command, args, None, env),
+        command,
+        timeout,
+        observe,
+    )
+}
+
+fn exec_command_observed(
+    mut cmd: Command,
+    command: &str,
+    timeout: Duration,
+    observe: impl FnOnce(Arc<process_lifecycle::ProcessOwner>),
+) -> Result<std::process::Output, String> {
     let rx = spawn_output_wait(&mut cmd).map_err(|e| format!("Failed to run {command}: {e}"))?;
+    observe(rx.owner.clone());
 
     match rx.recv_timeout(timeout) {
         Ok(Ok(output)) => Ok(output),
@@ -9087,6 +9259,29 @@ mod reap_logic_tests {
 }
 
 #[cfg(test)]
+#[cfg(test)]
+mod owner_scoped_output_source_tests {
+    /// #504: provider output batches reach only their owner windows. When none
+    /// accepts the batch it is withheld, never broadcast with `app.emit`.
+    #[test]
+    fn provider_output_batches_are_never_broadcast_to_every_webview() {
+        let source = include_str!("harness.rs")
+            .split_once("fn emit_output_batch<")
+            .expect("emit_output_batch must exist")
+            .1
+            .split_once("fn route_output_state<")
+            .expect("route_output_state must follow emit_output_batch")
+            .0;
+        assert!(source.contains("app.emit_to(label.as_str(), event"));
+        assert!(
+            !source.contains("app.emit(event"),
+            "provider output must not fall back to a webview broadcast"
+        );
+        assert!(source.contains("None, prepared.as_ref(), false)"));
+    }
+}
+
+#[cfg(test)]
 mod native_output_integration_tests {
     // Real production batching/reader paths and an isolated owned test child.
     // Source/owner fixtures do not attest an actual GUI or applied/SQL state.
@@ -9524,6 +9719,90 @@ mod native_output_integration_tests {
             output.terminal_delivery(true);
             assert_eq!(output.observation().state, EmissionState::Unavailable);
         }
+    }
+
+    /// Mocked provider socket: each step is bytes, a read timeout or EOF. Past the
+    /// script it stays silent and sets `stop` after `silent_polls` timeouts.
+    struct ScriptedSocket {
+        steps: std::collections::VecDeque<Option<&'static [u8]>>,
+        silent_polls: usize,
+        polls: Arc<AtomicU64>,
+        stop: Arc<AtomicBool>,
+        kind: std::io::ErrorKind,
+    }
+
+    impl Read for ScriptedSocket {
+        fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
+            match self.steps.pop_front() {
+                Some(Some(bytes)) if bytes.is_empty() => Ok(0),
+                Some(Some(bytes)) => {
+                    out[..bytes.len()].copy_from_slice(bytes);
+                    Ok(bytes.len())
+                }
+                Some(None) => {
+                    self.polls.fetch_add(1, Ordering::SeqCst);
+                    Err(self.kind.into())
+                }
+                None => {
+                    if self.polls.fetch_add(1, Ordering::SeqCst) + 1 >= self.silent_polls as u64 {
+                        self.stop.store(true, Ordering::SeqCst);
+                    }
+                    Err(self.kind.into())
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn sse_reader_releases_a_silent_stream_when_stop_is_set_between_polls() {
+        for kind in [
+            std::io::ErrorKind::TimedOut,
+            std::io::ErrorKind::WouldBlock,
+        ] {
+            let stop = Arc::new(AtomicBool::new(false));
+            let polls = Arc::new(AtomicU64::new(0));
+            let socket = ScriptedSocket {
+                steps: Default::default(),
+                silent_polls: 3,
+                polls: polls.clone(),
+                stop: stop.clone(),
+                kind,
+            };
+            let (sent, received) = mpsc::channel();
+            let result = read_sse_batches(BufReader::new(socket), &stop, move |items| {
+                let _ = sent.send(items);
+            });
+            // Returns instead of blocking for the old six-hour read timeout.
+            assert!(!result);
+            assert_eq!(polls.load(Ordering::SeqCst), 3);
+            assert!(received.try_iter().next().is_none());
+        }
+    }
+
+    #[test]
+    fn sse_reader_keeps_a_partial_line_across_a_poll_timeout() {
+        let stop = Arc::new(AtomicBool::new(false));
+        let socket = ScriptedSocket {
+            steps: [
+                Some(&b"data: sp"[..]),
+                None,
+                Some(&b"lit\n\n"[..]),
+                None,
+                Some(&b""[..]),
+            ]
+            .into(),
+            silent_polls: usize::MAX,
+            polls: Arc::new(AtomicU64::new(0)),
+            stop: stop.clone(),
+            kind: std::io::ErrorKind::TimedOut,
+        };
+        let (sent, received) = mpsc::channel();
+        let result = read_sse_batches(BufReader::new(socket), &stop, move |items| {
+            let _ = sent.send(items);
+        });
+        assert!(result);
+        let events: Vec<String> = received.try_iter().flatten().collect();
+        assert_eq!(events, vec!["split"]);
     }
 
     #[test]

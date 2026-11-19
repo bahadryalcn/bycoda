@@ -1,4 +1,5 @@
 import { t } from "../../../shared/i18n/core";
+import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import type {
   PermissionEntry,
   PermissionId,
@@ -70,10 +71,12 @@ export function permissionInstructions(
 ) {
   if (platform === "macos") {
     if (id === "notifications")
-      return t("Open System Settings > Notifications > bycoda. Turn on Allow notifications.");
+      return t("Open System Settings > Notifications > {p0}. Turn on Allow notifications.", {
+        p0: PRODUCT_IDENTITY.displayName,
+      });
     return t(
-      "Open System Settings > Privacy & Security > {p0}. Turn on bycoda. If it is missing, add bycoda with the + button.",
-      { p0: permissionInfo(id).toggle },
+      "Open System Settings > Privacy & Security > {p0}. Turn on {p1}. If it is missing, add it with the + button.",
+      { p0: permissionInfo(id).toggle, p1: PRODUCT_IDENTITY.displayName },
     );
   }
   if (platform === "windows") {
@@ -86,14 +89,19 @@ export function permissionInstructions(
         "Open Settings > Privacy & security > Camera. Turn on Camera access and Let desktop apps access your camera.",
       );
     if (id === "notifications")
-      return t("Open Settings > System > Notifications. Turn on Notifications and bycoda.");
+      return t("Open Settings > System > Notifications. Turn on Notifications and {p0}.", {
+        p0: PRODUCT_IDENTITY.displayName,
+      });
     return t(
       "Windows has no separate privacy toggle for this access. Desktop control cannot control an elevated app from a non-elevated process.",
     );
   }
-  if (platform === "linux")
-    return t(
-      "Linux asks through your desktop portal when a tool starts. Choose the screen or device in that dialog. Check your desktop privacy settings and sandbox permissions if access fails.",
-    );
+  if (platform === "linux") return linuxPermissionInstructions();
   return t("Permission status is unavailable. Check again from the desktop app.");
+}
+// Shared by the per-permission help and the Linux banner in PermissionsSettings.
+export function linuxPermissionInstructions() {
+  return t(
+    "Linux asks through your desktop portal when a tool starts. Choose the screen or device in that dialog. Check your desktop privacy settings and sandbox permissions if access fails.",
+  );
 }

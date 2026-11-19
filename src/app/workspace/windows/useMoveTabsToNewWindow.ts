@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { remoteSessionOwnershipKey } from "../../model/sessionWindowOwnership";
 import { remoteSessionFor } from "../../../features/connections/model/connections";
 import { parseRemotePath } from "../../../features/connections/model/remoteProjects";
@@ -275,7 +276,7 @@ export function useMoveTabsToNewWindow(deps: MoveTabsToNewWindowDeps): {
           toast.show({
             tone: "danger",
             title: t("Could not move the conversation to a new window. Your tab is still here."),
-            message: error instanceof Error ? error.message : String(error),
+            message: errorText(error),
           });
           return "failed" as const;
         }

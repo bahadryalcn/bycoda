@@ -10,8 +10,8 @@ import {
 } from "../../../features/sessions/model/session";
 import { type setSessions } from "../../../features/sessions/model/sessionsStore";
 import {
-  COMPACTED_TEXT,
-  COMPACTING_TEXT,
+  compactedText,
+  compactingText,
   COMPACTION_STATUS_KEY,
 } from "../../../features/sessions/model/compactionStatus";
 import {
@@ -161,7 +161,7 @@ export function useCompactAndRewind({
                 type: "status",
                 key: COMPACTION_STATUS_KEY,
                 running: true,
-                text: COMPACTING_TEXT,
+                text: compactingText(),
               },
             )
           : session,
@@ -200,7 +200,7 @@ export function useCompactAndRewind({
             type: "status",
             key: COMPACTION_STATUS_KEY,
             running: false,
-            text: COMPACTED_TEXT,
+            text: compactedText(),
           });
         } catch (error: unknown) {
           if (turnGen.current.get(sessionId) !== gen) return;

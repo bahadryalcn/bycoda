@@ -6,20 +6,30 @@ import type { UsageBudget, BudgetReading } from "../model/usageBudgets";
 const readings = vi.hoisted(() => ({
   budgets: [] as UsageBudget[],
   reading: null as BudgetReading | null,
+  ruleReads: 0,
+  groupReads: 0,
 }));
 vi.mock("../../group-lock/hooks/useGroupLock", () => ({
   useLockSnapshot: () => ({ lockedGroupIds: new Set(), lockedPaths: [] }),
 }));
 vi.mock("../../group-lock/model/lockState", () => ({ isProjectLockedIn: () => false }));
 vi.mock("../../projects/model/recents", () => ({ loadRecents: () => [] }));
-vi.mock("../../projects/model/projectGroups", () => ({ loadProjectGroups: () => [] }));
+vi.mock("../../projects/model/projectGroups", () => ({
+  loadProjectGroups: () => {
+    readings.groupReads++;
+    return [];
+  },
+}));
 vi.mock("../../providers/model/providerAccounts", () => ({ providerAccounts: () => [] }));
 vi.mock("../../sessions/model/sessionsStore", () => ({
   useShellSessions: () => [],
   getSessions: () => [],
 }));
 vi.mock("../model/usageBudgetStore", () => ({
-  loadUsageBudgets: () => readings.budgets,
+  loadUsageBudgets: () => {
+    readings.ruleReads++;
+    return readings.budgets;
+  },
   subscribeUsageBudgets: () => () => {},
   saveUsageBudget: vi.fn(),
   deleteUsageBudget: vi.fn(),
@@ -123,6 +133,56 @@ it("localizes threshold comparisons and shows the known reset without changing i
     readings.budgets = [];
     readings.reading = null;
     await setLanguagePreference("en");
+    vi.unstubAllGlobals();
+  }
+});
+
+it("skips minute re-reads while the tab is hidden and re-reads once when it becomes visible", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  let hidden = false;
+  vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => root.render(createElement(UsageBudgets)));
+    const mountedRuleReads = readings.ruleReads;
+    hidden = true;
+    await act(async () => {
+      vi.advanceTimersByTime(180_000);
+    });
+    expect(readings.ruleReads).toBe(mountedRuleReads);
+    hidden = false;
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(readings.ruleReads).toBe(mountedRuleReads + 1);
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("lists blocking limits as short bullets in the budget help popover", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => root.render(createElement(UsageBudgets)));
+    const help = container.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!;
+    await act(async () => help.click());
+    const bullets = Array.from(document.querySelectorAll("li"), (item) => item.textContent);
+    expect(bullets).toContain("Running turns can exceed a budget.");
+    expect(bullets).toContain("Missing or stale data blocks new turns only when blocking is enabled.");
+    expect(document.body.textContent).not.toContain("Token budgets include input");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
     vi.unstubAllGlobals();
   }
 });

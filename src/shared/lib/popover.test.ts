@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { placePopover, popupListWidth, type AnchorRect } from "./popover";
+import { placePopover, popupListWidth, popupSizeWidth, type AnchorRect } from "./popover";
 
 function anchor(left: number, top: number, width: number, height: number): AnchorRect {
   return { left, top, width, height, right: left + width, bottom: top + height };
@@ -189,6 +189,15 @@ describe("placePopover", () => {
       expect(position.left).toBeGreaterThanOrEqual(8);
       expect(position.left + position.width).toBeLessThanOrEqual(300 - 8);
     });
+  });
+});
+
+describe("popupSizeWidth", () => {
+  it("resolves the named sizes from the root font size", () => {
+    expect(popupSizeWidth("sm", 16)).toBe(248);
+    expect(popupSizeWidth("md", 16)).toBe(280);
+    expect(popupSizeWidth("lg", 16)).toBe(320);
+    expect(popupSizeWidth("lg", 20)).toBe(400);
   });
 });
 

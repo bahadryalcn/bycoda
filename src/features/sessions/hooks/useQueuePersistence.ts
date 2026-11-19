@@ -1,42 +1,48 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useState } from "react";
+import { t } from "../../../shared/i18n";
+import { toast } from "../../../shared/ui/ToastRegion";
 import { setSessionQueue } from "../data/sessionStore";
-import { isRemoteProjectPath } from "../../projects/public/recents";
-import type { QueuedMessage } from "../model/session";
+import { createQueuePersistenceSync } from "../model/queuePersistenceSync";
 import { getShellSessions, subscribeShell } from "../model/sessionsStore";
+
+const UNSAVED_NOTICE_ID = "queue-persistence-unsaved";
 
 /**
  * Write each session's queued follow-ups through to the store the moment they
- * change (add, edit, remove, send), so a crash or kill loses nothing. Queue
- * arrays are replaced rather than mutated, so identity says whether one changed.
+ * change (add, edit, remove, send), so a crash or kill loses nothing. A failed
+ * write is retried on a backoff timer and, once it keeps failing, a persistent
+ * notice says the queue is only in memory until a write succeeds.
  * Remote sessions have no app-side queue: their host owns the conversation.
  */
 export function useQueuePersistence(): void {
-  const written = useRef(new Map<string, QueuedMessage[] | undefined>());
-  useEffect(() => {
-    const sync = () => {
-      const sessions = getShellSessions();
-      const live = new Set(sessions.map((session) => session.id));
-      for (const id of written.current.keys()) {
-        if (!live.has(id)) written.current.delete(id);
-      }
-      for (const session of sessions) {
-        if (session.inboxAsk || isRemoteProjectPath(session.cwd)) continue;
-        const queue = session.queuedMessages;
-        if (written.current.get(session.id) === queue) continue;
-        // Nothing queued and nothing ever written: no row to create or clear.
-        if (!queue?.length && !written.current.has(session.id)) {
-          written.current.set(session.id, queue);
-          continue;
+  // One controller per mount, kept across a StrictMode remount so nothing is written twice.
+  const [sync] = useState(() =>
+    createQueuePersistenceSync({
+      sessions: getShellSessions,
+      write: (sessionId, queue) => setSessionQueue(sessionId, queue),
+      onUnsavedChange: (unsaved, retry) => {
+        if (!unsaved) {
+          toast.dismiss(UNSAVED_NOTICE_ID);
+          return;
         }
-        written.current.set(session.id, queue);
-        void setSessionQueue(session.id, queue).catch(() => {
-          // Retry on the next change instead of trusting a write that failed.
-          if (written.current.get(session.id) === queue) written.current.delete(session.id);
+        toast.show({
+          id: UNSAVED_NOTICE_ID,
+          tone: "warning",
+          title: t("Queued follow-ups not saved"),
+          message: t("They are only kept in memory and will be lost if the app closes."),
+          durationMs: null,
+          action: { label: t("Retry"), onClick: retry },
         });
-      }
+      },
+    }),
+  );
+  // Follows the shell store for the app's lifetime; cleanup stops the retry timers and the notice.
+  useEffect(() => {
+    sync.start();
+    const unsubscribe = subscribeShell(sync.sync);
+    return () => {
+      unsubscribe();
+      sync.stop();
     };
-    const unsubscribe = subscribeShell(sync);
-    sync();
-    return unsubscribe;
-  }, []);
+  }, [sync]);
 }

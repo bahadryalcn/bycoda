@@ -1,3 +1,4 @@
+import { errorText } from "../../shared/lib/errors";
 import { Tooltip } from "../../shared/ui/Tooltip";
 import { Alert } from "../../shared/ui/Alert";
 import { useConnectionErrorShownCentrally } from "../../shared/ui/connectionErrorGate";
@@ -232,7 +233,7 @@ function ConversationHostTools({
           if (alive) setMachines(values);
         },
         (cause) => {
-          if (alive) setMachinesError(cause instanceof Error ? cause.message : String(cause));
+          if (alive) setMachinesError(errorText(cause));
         },
       )
       .finally(() => {

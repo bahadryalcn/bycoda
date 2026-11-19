@@ -274,6 +274,115 @@ fn an_incomplete_existing_namespace_is_not_silently_repaired() {
     assert!(!namespace.join("writers.lock").exists());
 }
 
+fn namespaces(root: &Path) -> Vec<String> {
+    let mut names = fs::read_dir(root)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|name| name.starts_with("physical-v1-"))
+        .collect::<Vec<_>>();
+    names.sort();
+    names
+}
+
+/// #1439: the first binder used to create the directory while every concurrent
+/// binder failed on the not-yet-created sidecars.
+#[test]
+fn concurrent_first_binders_converge_on_one_complete_namespace() {
+    const ROUNDS: usize = 16;
+    const BINDERS: usize = 8;
+    let fixture = Fixture::new();
+    let root = fixture.root();
+    for round in 0..ROUNDS {
+        let database = fixture.0.join(format!("race-{round}.db"));
+        fs::write(&database, b"racing first bind").unwrap();
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(BINDERS));
+        let binders = (0..BINDERS)
+            .map(|_| {
+                let (root, database) = (root.clone(), database.clone());
+                let barrier = std::sync::Arc::clone(&barrier);
+                std::thread::spawn(move || {
+                    let registry = Registry::open(&root).unwrap();
+                    let file = File::open(&database).unwrap();
+                    barrier.wait();
+                    registry.bind(file)
+                })
+            })
+            .collect::<Vec<_>>();
+        let stores = binders
+            .into_iter()
+            .map(|binder| binder.join().unwrap().expect("a concurrent first bind must succeed"))
+            .collect::<Vec<_>>();
+        // Every binder must share the SAME lock inodes. A split cohort would let
+        // the last binder drain past the first binder's live writer.
+        let writer = stores[0].try_writer().unwrap();
+        let closing = waiting(stores[BINDERS - 1].try_begin_close().unwrap());
+        drop(writer);
+        drop(closing.try_upgrade().unwrap());
+    }
+    // One complete namespace per database, and no staging leftovers.
+    assert_eq!(namespaces(&root).len(), ROUNDS);
+    assert_eq!(fs::read_dir(&root).unwrap().count(), ROUNDS);
+    for name in namespaces(&root) {
+        assert!(root.join(&name).join("turnstile.lock").is_file());
+        assert!(root.join(&name).join("writers.lock").is_file());
+    }
+}
+
+/// #1439: a crash during first bind can only strand a staging directory, which
+/// is never adopted as a namespace and never blocks a later bind.
+#[test]
+fn a_crashed_first_bind_staging_directory_is_ignored_and_never_adopted() {
+    let fixture = Fixture::new();
+    let registry = fixture.registry();
+    let orphan = fixture.root().join("staging-v1-crashed");
+    fs::create_dir(&orphan).unwrap();
+    fs::write(orphan.join("turnstile.lock"), b"").unwrap();
+    let store = registry.bind(fixture.file()).unwrap();
+    drop(store.try_writer().unwrap());
+    assert_eq!(namespaces(&fixture.root()).len(), 1);
+    assert!(orphan.join("turnstile.lock").exists());
+    assert!(!orphan.join("writers.lock").exists());
+}
+
+/// #1439 must not become a repair: an existing final directory that lost its
+/// sidecars may still have live lock holders on the removed inodes.
+#[test]
+fn an_existing_namespace_directory_without_sidecars_is_refused_and_left_empty() {
+    let fixture = Fixture::new();
+    let registry = fixture.registry();
+    let store = registry.bind(fixture.file()).unwrap();
+    let namespace = fixture.namespace();
+    drop(store);
+    fs::remove_file(namespace.join("turnstile.lock")).unwrap();
+    fs::remove_file(namespace.join("writers.lock")).unwrap();
+    assert!(matches!(
+        registry.bind(fixture.file()),
+        Err(Error::Io { .. })
+    ));
+    assert_eq!(fs::read_dir(&namespace).unwrap().count(), 0);
+    assert_eq!(namespaces(&fixture.root()).len(), 1);
+}
+
+/// #1440: admission now locks the handles verification opened. A sidecar
+/// replaced by a different inode must still be refused before any lock is taken.
+#[cfg(unix)]
+#[test]
+fn a_replaced_sidecar_inode_is_rejected_before_admission_locks_it() {
+    use std::os::unix::fs::OpenOptionsExt;
+    let fixture = Fixture::new();
+    let store = fixture.registry().bind(fixture.file()).unwrap();
+    let path = fixture.namespace().join("writers.lock");
+    fs::remove_file(&path).unwrap();
+    OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&path)
+        .unwrap();
+    assert!(matches!(store.try_writer(), Err(Error::Changed(_))));
+    assert!(matches!(store.try_begin_close(), Err(Error::Changed(_))));
+}
+
 #[test]
 fn non_regular_roots_and_physical_files_are_refused_before_admission() {
     let fixture = Fixture::new();
