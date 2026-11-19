@@ -103,15 +103,25 @@ export async function materializeManagedWorkspace(
       // update-ref transactions atomically reserve the branch and its complete owner ID.
       const input = `start\ncreate ${workspace.branchRef} ${workspace.baseCommit}\ncreate ${marker} ${workspace.baseCommit}\nprepare\ncommit\n`;
       await new Promise<void>((done, reject) => {
+        // spawn ignores `timeout`; the abort signal enforces the same mutation deadline.
+        const deadline = options(cwd, true);
+        const signal = AbortSignal.timeout(deadline.timeout);
         const child = spawn("git", ["update-ref", "--stdin"], {
-          ...options(cwd, true),
+          ...deadline,
+          signal,
           stdio: ["pipe", "ignore", "pipe"],
         });
         let error = "";
         child.stderr.setEncoding("utf8").on("data", (chunk: string) => {
           if (error.length < 2000) error += chunk.slice(0, 2000 - error.length);
         });
-        child.on("error", reject);
+        child.on("error", (cause) =>
+          reject(
+            signal.aborted
+              ? new Error("Workspace branch reservation timed out")
+              : cause,
+          ),
+        );
         child.on("close", (code) =>
           code === 0
             ? done()

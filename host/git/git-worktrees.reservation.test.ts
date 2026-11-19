@@ -70,3 +70,64 @@ it("bounds failed reservation diagnostics and retains the inherited Git deadline
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+it("rejects a hung reservation with a timeout message when its deadline aborts git", async () => {
+  const root = mkdtempSync(join(tmpdir(), "bycoda-ref-reservation-hung-"));
+  const cwd = join(root, "repo");
+  mkdirSync(cwd);
+  const git = (...args: string[]) =>
+    execFileSync("git", args, { cwd, windowsHide: true, timeout: 10_000 }).toString().trim();
+  const controller = new AbortController();
+  const deadline = vi
+    .spyOn(AbortSignal, "timeout")
+    .mockReturnValueOnce(controller.signal as AbortSignal);
+  try {
+    git("init", "-q");
+    writeFileSync(join(cwd, "file"), "initial");
+    git("add", "file");
+    git(
+      "-c",
+      "user.name=Fixture",
+      "-c",
+      "user.email=fixture@example.com",
+      "commit",
+      "-qm",
+      "initial",
+    );
+    const child = Object.assign(new EventEmitter(), {
+      stdin: new PassThrough(),
+      stderr: new PassThrough(),
+    });
+    processMock.spawn.mockImplementationOnce((_command, _args, options) => {
+      // Like Node's spawn, an aborted signal kills the child and emits "error"; it never closes.
+      (options.signal as AbortSignal).addEventListener("abort", () =>
+        child.emit("error", Object.assign(new Error("aborted"), { name: "AbortError" })),
+      );
+      queueMicrotask(() => controller.abort());
+      return child;
+    });
+    const workspace = {
+      id: "fixture-reservation-hung",
+      path: join(root, "workspace"),
+      branchRef: "refs/heads/bycoda/s/fixture-hung",
+      baseCommit: git("rev-parse", "HEAD"),
+      repositoryId: await hostGitRepositoryKey(cwd),
+    } as ManagedWorkspace;
+    const error = await materializeManagedWorkspace(cwd, workspace, true).then(
+      () => null,
+      (error: Error) => error,
+    );
+    expect(error?.message).toBe("Workspace branch reservation timed out");
+    expect(deadline).toHaveBeenCalledWith(120_000);
+    expect(processMock.spawn).toHaveBeenCalledWith(
+      "git",
+      ["update-ref", "--stdin"],
+      expect.objectContaining({ signal: controller.signal }),
+    );
+    expect(git("for-each-ref", "refs/bycoda/workspaces/fixture-reservation-hung")).toBe("");
+  } finally {
+    deadline.mockRestore();
+    processMock.spawn.mockReset();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
