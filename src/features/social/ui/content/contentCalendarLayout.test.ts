@@ -39,7 +39,7 @@ it("drops the minimum height for both stacked agendas", () => {
 
 it("turns day hairlines into row rules in the stacked agenda", () => {
   expect(narrow![1]).toMatch(
-    /\.content-day\[data-surface-frame\]\[data-surface-edge\] \{\s*border-width: 0;\s*border-block-start-width: 1px;/,
+    /\.content-calendar \.content-day\s*\{[^}]*--surface-frame-stacked:\s*1;[^}]*--surface-frame-inline-start-visible:\s*0;/,
   );
 });
 

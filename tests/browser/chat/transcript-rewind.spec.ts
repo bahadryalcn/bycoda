@@ -24,13 +24,15 @@ for (const width of [1280, 800])
         await expect.poll(distance).toBeGreaterThan(100);
         // WebKit keeps animating a wheel scroll after its first event. Press the button only
         // once the reader's scroll has stopped, so a late wheel frame cannot undo the jump.
+        // One equal pair can be a pause between momentum frames, so require several in a row.
         let previous = -1;
+        let steady = 0;
         await expect
           .poll(async () => {
             const now = await distance();
-            const settled = now === previous;
+            steady = now === previous ? steady + 1 : 0;
             previous = now;
-            return settled;
+            return steady >= 4;
           })
           .toBe(true);
       };

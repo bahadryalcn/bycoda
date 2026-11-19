@@ -1212,11 +1212,15 @@ test("chat busy actions explain steering and queuing without losing the draft", 
   for (const width of [320, 420, 1000]) {
     await page.setViewportSize({ width, height: 800 });
     await expect(send).toBeInViewport();
-    expect(
-      await page
-        .locator("[data-composer-box]")
-        .evaluate((box) => box.scrollWidth <= box.clientWidth + 1),
-    ).toBe(true);
+    // The composer collapses controls from a resize observer, a frame after the viewport changes,
+    // so the width is read until it settles instead of once.
+    await expect
+      .poll(() =>
+        page
+          .locator("[data-composer-box]")
+          .evaluate((box) => box.scrollWidth <= box.clientWidth + 1),
+      )
+      .toBe(true);
   }
   await expect(page.locator("[data-activity-dock]")).toBeVisible();
   // The summary row never paints a patch over the dock it sits in: it is transparent (or matches).
@@ -2280,7 +2284,11 @@ for (const theme of ["light", "dark"])
         theme === "light",
       );
       const editor = page.getByRole("textbox", { name: "External picker editor" });
-      await editor.focus();
+      // A loaded runner can move focus after the first call (mount effects), so retry until held.
+      await expect(async () => {
+        await editor.focus();
+        await expect(editor).toBeFocused({ timeout: 1000 });
+      }).toPass();
       const skills = page.getByRole("listbox", { name: "Commands and skills" });
       await expect(skills.getByRole("option")).toHaveCount(2);
       await skills.getByRole("option").first().click();

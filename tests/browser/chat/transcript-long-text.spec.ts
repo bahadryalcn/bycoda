@@ -24,30 +24,42 @@ test("long text opens only on demand and its rendered Markdown can be selected a
     // and the drag selection below proves it.
     await expect(pre).not.toHaveCSS("user-select", "none");
     await page.evaluate(() => document.fonts.ready.then(() => undefined));
-    // Visibility alone can catch the preview/modal during its scale animation.
-    // Hover waits for stable geometry before we measure real mouse coordinates.
-    await pre.hover();
-    const points = await pre.evaluate((element) => {
-      const node = element.firstChild!;
-      const range = document.createRange();
-      range.setStart(node, 0);
-      range.setEnd(node, "Selectable excerpt".length);
-      const rect = range.getBoundingClientRect();
-      return {
-        x: rect.x + 1,
-        y: rect.y + rect.height / 2,
-        // The excerpt is the entire first line. Land beyond its final glyph so
-        // fractional coordinate rounding cannot omit the last character.
-        end: rect.right + 2,
-      };
-    });
-    await page.mouse.move(points.x, points.y);
-    await page.mouse.down();
-    await page.mouse.move(points.end, points.y, { steps: 10 });
-    await page.mouse.up();
-    await expect
-      .poll(() => page.evaluate(() => window.getSelection()?.toString()))
-      .toBe("Selectable excerpt");
+    // Visibility alone can catch the preview/modal during its scale animation, and a loaded runner
+    // can move the dialog between measuring and pressing. Measure and drag again until the
+    // selection lands.
+    await expect(async () => {
+      await page.evaluate(() =>
+        Promise.all(
+          document
+            .getAnimations()
+            .filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity)
+            .map((animation) => animation.finished),
+        ).then(() => undefined),
+      );
+      // Hover waits for stable geometry before we measure real mouse coordinates.
+      await pre.hover();
+      const points = await pre.evaluate((element) => {
+        const node = element.firstChild!;
+        const range = document.createRange();
+        range.setStart(node, 0);
+        range.setEnd(node, "Selectable excerpt".length);
+        const rect = range.getBoundingClientRect();
+        return {
+          x: rect.x + 1,
+          y: rect.y + rect.height / 2,
+          // The excerpt is the entire first line. Land beyond its final glyph so
+          // fractional coordinate rounding cannot omit the last character.
+          end: rect.right + 2,
+        };
+      });
+      await page.mouse.move(points.x, points.y);
+      await page.mouse.down();
+      await page.mouse.move(points.end, points.y, { steps: 10 });
+      await page.mouse.up();
+      expect(await page.evaluate(() => window.getSelection()?.toString())).toBe(
+        "Selectable excerpt",
+      );
+    }).toPass({ timeout: 15_000 });
     if (browserName === "chromium") {
       await page.keyboard.press("Control+c");
       await expect

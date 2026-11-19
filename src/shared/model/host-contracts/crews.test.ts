@@ -282,7 +282,7 @@ it("inventories all declared Crew/candidate/policy/run and catalog/question fiel
     ["ModelSettingChoice", dto.CrewModelSettingChoiceSchema],
   ] as const)
     expect(Object.keys(schema.shape).sort()).toEqual(
-      declaredKeys("src/features/sessions/model/models.ts", name),
+      declaredKeys("src/shared/model/agentModel.ts", name),
     );
   for (const [name, schema] of [
     ["UserQuestionPrompt", dto.CrewUserQuestionPromptSchema],

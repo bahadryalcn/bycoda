@@ -296,6 +296,7 @@ export const CrewCatalogModelSchema = z.strictObject({
   settings: z.array(CrewModelSettingSchema).optional(),
   fastVariant: z.strictObject({ id: text, nativeId: text }).optional(),
   contextWindow: z.number().optional(),
+  free: z.boolean().optional(),
 });
 function providerMap<S extends z.ZodType>(schema: S) {
   const fields = Object.fromEntries(

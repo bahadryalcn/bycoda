@@ -224,29 +224,23 @@ for (const theme of ["dark", "light"] as const) {
     await page.mouse.up();
   });
 
-  test(`explorer disables creating with a visible reason while the machine is unreachable (${theme})`, async ({
+  // A machine that cannot be asked never shows the tree: the shared notice replaces it, so there
+  // is no create action to disable. The disabled-with-reason state of an offline machine that
+  // already has a listing is covered in FileTree.create.test.ts.
+  test(`explorer shows the machine notice instead of create actions while the machine is unreachable (${theme})`, async ({
     page,
   }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto(`/tests/browser/files/file-tree.html?theme=${theme}&remote=down`);
-    const newFile = page.locator('[data-explorer-action="new-file"]');
-    const newFolder = page.locator('[data-explorer-action="new-folder"]');
-    await expect(newFile).toBeDisabled();
-    await expect(newFolder).toBeDisabled();
-    await expect(newFile).toHaveAttribute("aria-label", /This machine is unreachable/);
-    // The shared tooltip (not a native title bubble) shows the reason to pointer users.
-    await newFile.hover();
-    await expect(page.getByRole("tooltip")).toContainText("This machine is unreachable");
+    const notice = page.locator("[data-machine-unavailable]");
+    await expect(notice).toBeVisible();
+    await expect(notice).toContainText("This project’s machine isn’t available");
+    await expect(page.locator("[data-explorer-root]")).toHaveCount(0);
+    await expect(page.locator('[data-explorer-action="new-file"]')).toHaveCount(0);
+    await expect(page.locator('[data-explorer-action="new-folder"]')).toHaveCount(0);
     await page.screenshot({
-      path: `${shotDir}/explorer-create-disabled-header-${theme}-1280x800.png`,
-      clip: { x: 0, y: 0, width: 640, height: 200 },
-    });
-    await page.locator("[data-explorer-root]").click({ button: "right" });
-    const item = page.getByRole("menuitem", { name: /^New File/ });
-    await expect(item).toContainText("This machine is unreachable");
-    await expect(item).toBeDisabled();
-    await page.screenshot({
-      path: `${shotDir}/explorer-create-disabled-menu-${theme}-1280x800.png`,
+      path: `${shotDir}/explorer-machine-unavailable-${theme}-1280x800.png`,
+      clip: { x: 0, y: 0, width: 640, height: 400 },
     });
   });
 }

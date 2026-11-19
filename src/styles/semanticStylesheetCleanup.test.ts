@@ -32,13 +32,15 @@ describe("removed dead stylesheet rules", () => {
   });
 });
 
-// #338: the composer frame follows the popup radius token with a flat selector.
+// #338: the composer frame follows the popup radius token.
 describe("composer surface", () => {
-  it("uses the popup radius token and no html-prefixed selector chain", () => {
+  it("uses the popup radius token on the composer box and docked question form", () => {
     const css = read("bycoda.css");
-    expect(css).not.toMatch(/html\s+\[data-composer-box\]/);
-    const rule = css.match(/\n\[data-composer-box\],[^{]*\{([^}]*)\}/);
+    const rule = css.match(
+      /\bhtml\s+\[data-composer-box\]\[data-ui-focus-group\],\s*\[data-composer\]\s*>\s*\[data-question-form\]\s*>\s*form\s*\{([^}]*)\}/,
+    );
     expect(rule?.[1]).toContain("border-radius: var(--ui-radius-popup);");
+    expect(rule?.[1]).toContain("background: var(--ui-composer-surface);");
     expect(rule?.[1]).not.toMatch(/border-radius:\s*\d+px/);
   });
 });

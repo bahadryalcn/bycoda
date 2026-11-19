@@ -238,7 +238,10 @@ console.error('final marker');
     let current = fs::metadata(fixture.0.join("host.log")).unwrap().len();
     assert!(current <= LOG_LIMIT, "host.log grew to {current}");
     assert!(fs::metadata(fixture.0.join("host.log.old")).unwrap().len() > 0);
-    assert!(log_of(&fixture, "host.log").contains("final marker"));
+    // stdout and stderr are separate pipes: the last stdout chunk can land after the
+    // stderr marker and rotate it into host.log.old, so the marker survives in one of them.
+    let kept = log_of(&fixture, "host.log") + &log_of(&fixture, "host.log.old");
+    assert!(kept.contains("final marker"));
 }
 
 #[test]

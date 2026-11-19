@@ -82,6 +82,12 @@ export const sessionsRef = { current: [] };
 export const getSessions = () => sessionsRef.current;
 export const useSessionsSelector = <T>(select: (sessions: typeof sessionsRef.current) => T): T =>
   select(sessionsRef.current);
+export const getShellSessions = () => sessionsRef.current;
+export const useShellSessionsSelector = <T>(
+  select: (sessions: typeof sessionsRef.current) => T,
+): T => select(sessionsRef.current);
+export const selectSessionById = (sessions: readonly { id: string }[], id: string | undefined) =>
+  id === undefined ? undefined : sessions.find((session) => session.id === id);
 export const subscribeSessionCommits = () => () => {};
 export const useSession = () => undefined;
 export const converseWithSession = () =>

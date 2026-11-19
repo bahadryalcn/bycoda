@@ -31,4 +31,6 @@ export type AgentModel = {
   fastVariant?: { id: string; nativeId: string };
   /** Context window, when the harness catalog reports one. */
   contextWindow?: number;
+  /** The provider catalog explicitly reports zero token prices. */
+  free?: boolean;
 };

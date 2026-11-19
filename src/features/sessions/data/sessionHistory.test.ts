@@ -524,7 +524,7 @@ describe("pinned sessions", () => {
     expect(rows.find((row) => row.id === "second")?.providerHistory).toEqual({
       providers: ["codex"],
       activeHarness: "codex",
-      activeModel: "gpt",
+      activeModel: "GPT",
     });
     expect(rows.find((row) => row.id === "unsaved")).toBeDefined();
   });
