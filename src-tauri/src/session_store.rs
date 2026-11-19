@@ -119,7 +119,8 @@ impl SessionStore {
         ensure_window_in_flight(&conn).map_err(|e| e.to_string())?;
         authority::clear_stale_cli_ingress(&conn, started_at);
         crate::ssh_group_defaults::migrate(&conn)?;
-        crate::worktrees::reconcile_removals(&conn)?;
+        // Only the fast, Git-free half of removal recovery runs during launch.
+        crate::worktrees::block_pending_removals(&conn)?;
         let open_reader = || reader::open_reader(&path, &conn);
         let read_conn = open_reader()?;
         let list_conn = open_reader()?;
@@ -293,6 +294,7 @@ pub fn init(app: &AppHandle) -> Result<(), String> {
             app.manage(store);
         },
     )?;
+    crate::worktrees::start_removal_recovery(app);
     start_search_indexing(app);
     wal_watchdog::start(app);
     legacy_blob::start(app);

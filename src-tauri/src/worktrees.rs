@@ -1237,59 +1237,121 @@ fn finish_removal(
     tx.commit().map_err(|e| e.to_string())
 }
 
-pub(crate) fn reconcile_removals(conn: &rusqlite::Connection) -> Result<(), String> {
-    let pending = conn
-        .prepare("SELECT path, sessions_json FROM worktree_removals")
+fn pending_removals(conn: &rusqlite::Connection) -> Result<Vec<(String, String)>, String> {
+    conn.prepare("SELECT path, sessions_json FROM worktree_removals")
         .map_err(|e| e.to_string())?
         .query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })
         .map_err(|e| e.to_string())?
         .collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(|e| e.to_string())?;
-    for (path, json) in pending {
-        let (project, saved) = serde_json::from_str::<SessionRemovalJournal>(&json)
-            .map_err(|e| e.to_string())?
-            .into_parts();
-        if let Some(project) = project {
-            let root = Path::new(&project);
-            match native_removal_receipts(root, Path::new(&path)) {
-                Ok(receipts) if !receipts.is_empty() => {
-                    crate::worktree_lifecycle::block_removal_recovery(Path::new(&path));
-                    // Registered partial removals need a fresh explicit review;
-                    // never force through new source changes during startup.
-                    let registered = list(root)?.iter().any(|entry| entry.path == path);
-                    if registered {
-                        continue;
-                    }
-                    if let Err(error) = recover_remnants(root, Path::new(&path)) {
-                        log::warn!("Worktree cleanup remains pending: {error}");
-                        continue;
-                    }
-                    crate::worktree_lifecycle::finish_removal_recovery(Path::new(&path));
-                }
-                Ok(_) => {}
-                Err(error) => {
-                    crate::worktree_lifecycle::block_removal_recovery(Path::new(&path));
-                    log::warn!("Cannot reconcile pending worktree cleanup: {error}");
-                    continue;
-                }
-            }
+        .map_err(|e| e.to_string())
+}
+
+/// Startup half of removal recovery: only a database read. Every pending
+/// project worktree refuses new processes until the background pass decides it.
+pub(crate) fn block_pending_removals(conn: &rusqlite::Connection) -> Result<(), String> {
+    for (path, json) in pending_removals(conn)? {
+        // An unreadable journal stays blocked; a project-less one never touches Git.
+        let blocked = serde_json::from_str::<SessionRemovalJournal>(&json)
+            .map_or(true, |journal| journal.into_parts().0.is_some());
+        if blocked {
+            crate::worktree_lifecycle::block_removal_recovery(Path::new(&path));
         }
-        // A surviving Git link means removal did not finish. If the link/folder
-        // is gone, the already-persisted detached sessions are the final state.
-        let restore = if Path::new(&path)
-            .join(".git")
-            .try_exists()
-            .map_err(|e| e.to_string())?
-        {
-            saved
-        } else {
-            Vec::new()
-        };
-        finish_removal(conn, &path, &restore)?;
     }
     Ok(())
+}
+
+/// Finishes interrupted removals off the launch path. Git and filesystem work
+/// runs without the session store lock, and a row that cannot be decided now
+/// (missing project, Git failure, busy worktree) stays pending for a later launch.
+pub(crate) fn start_removal_recovery(app: &tauri::AppHandle) {
+    let app = app.clone();
+    let spawned = std::thread::Builder::new()
+        .name("worktree-removal-recovery".into())
+        .spawn(move || {
+            let store = app.state::<SessionStore>();
+            if let Err(error) = reconcile_removals_with(|| store.lock_conn().map(StoreConn)) {
+                log::warn!("Worktree cleanup recovery failed: {error}");
+            }
+        });
+    if let Err(error) = spawned {
+        log::warn!("worktree removal recovery thread: {error}");
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn reconcile_removals(conn: &rusqlite::Connection) -> Result<(), String> {
+    reconcile_removals_with(|| Ok(conn))
+}
+
+fn reconcile_removals_with<G: std::ops::Deref<Target = rusqlite::Connection>>(
+    db: impl Fn() -> Result<G, String>,
+) -> Result<(), String> {
+    let pending = pending_removals(&*db()?)?;
+    for (path, json) in pending {
+        if let Err(error) = reconcile_removal(&db, &path, &json) {
+            log::warn!("Worktree cleanup remains pending: {error}");
+        }
+    }
+    Ok(())
+}
+
+fn reconcile_removal<G: std::ops::Deref<Target = rusqlite::Connection>>(
+    db: &impl Fn() -> Result<G, String>,
+    path: &str,
+    json: &str,
+) -> Result<(), String> {
+    let worktree = Path::new(path);
+    let (project, saved) = serde_json::from_str::<SessionRemovalJournal>(json)
+        .map_err(|e| e.to_string())?
+        .into_parts();
+    let Some(project) = project else {
+        return finish_detached_removal(&*db()?, path, saved);
+    };
+    let root = Path::new(&project);
+    // A user removal of the same folder owns it meanwhile; retry next launch.
+    let _reservation = crate::worktree_lifecycle::reserve_removal(worktree)?;
+    crate::fs::with_git_mutation(root, || {
+        match native_removal_receipts(root, worktree) {
+            Ok(receipts) if !receipts.is_empty() => {
+                // Registered partial removals need a fresh explicit review;
+                // never force through new source changes during startup.
+                let registered = list(root)?.iter().any(|entry| entry.path == path);
+                if registered {
+                    return Ok(());
+                }
+                recover_remnants(root, worktree)?;
+                crate::worktree_lifecycle::finish_removal_recovery(worktree);
+            }
+            Ok(_) => crate::worktree_lifecycle::finish_removal_recovery(worktree),
+            Err(error) => {
+                return Err(format!(
+                    "Cannot reconcile pending worktree cleanup: {error}"
+                ))
+            }
+        }
+        finish_detached_removal(&*db()?, path, saved)
+    })
+}
+
+fn finish_detached_removal(
+    conn: &rusqlite::Connection,
+    path: &str,
+    saved: Vec<SessionBeforeRemoval>,
+) -> Result<(), String> {
+    // A surviving Git link means removal did not finish. If the link/folder
+    // is gone, the already-persisted detached sessions are the final state.
+    let restore = if Path::new(path)
+        .join(".git")
+        .try_exists()
+        .map_err(|e| e.to_string())?
+    {
+        saved
+    } else {
+        Vec::new()
+    };
+    finish_removal(conn, path, &restore)
 }
 
 /// Each database phase takes its own short lock: Git and filesystem removal can take

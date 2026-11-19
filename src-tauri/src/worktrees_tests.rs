@@ -758,6 +758,14 @@ fn startup_recovers_interruptions_before_and_after_git_removal() {
         }
         let store = SessionStore::open(db).unwrap();
         let conn = store.lock_conn().unwrap();
+        // Opening only fences the worktree; Git recovery runs after launch.
+        let deferred: i64 = conn
+            .query_row("SELECT COUNT(*) FROM worktree_removals", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(deferred, 1);
+        reconcile_removals(&conn).unwrap();
         let state: StoredContext = conn.query_row(
             "SELECT cwd, worktree_cwd, worktree_removed, branch, provider_session_id, context_used, context_window FROM sessions WHERE id = 's1'", [],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?)),
@@ -903,4 +911,47 @@ fn worktree_removal_releases_session_store_during_filesystem_removal() {
         "a session store lock spanned the directory removal"
     );
     assert!(locks.get() >= 3);
+}
+
+#[test]
+fn startup_defers_removal_recovery_and_keeps_unlistable_rows_pending() {
+    let repo = repo();
+    let missing_root = repo.0.join("moved-project");
+    let blocked = repo.0.join("orphan-worktree");
+    std::fs::create_dir_all(blocked.join(".git")).unwrap();
+    let legacy = repo.0.join("legacy-worktree");
+    let database = repo.0.join("startup-recovery.db");
+    {
+        let store = SessionStore::open(database.clone()).unwrap();
+        let conn = store.lock_conn().unwrap();
+        let current = serde_json::json!({
+            "project_cwd": path_to_js(&missing_root),
+            "sessions": [],
+        });
+        conn.execute(
+            "INSERT INTO worktree_removals (path, sessions_json) VALUES (?1, ?2), (?3, '[]'), ('bad', 'not json')",
+            rusqlite::params![path_to_js(&blocked), current.to_string(), path_to_js(&legacy)],
+        )
+        .unwrap();
+    }
+    // Opening must neither run Git nor fail on an unreachable project root or
+    // a corrupt journal; it only fences process starts in pending worktrees.
+    let store = SessionStore::open(database).unwrap();
+    assert!(crate::worktree_lifecycle::reserve_spawn(&blocked).is_err());
+    let conn = store.lock_conn().unwrap();
+    let pending = |conn: &rusqlite::Connection| -> Vec<String> {
+        conn.prepare("SELECT path FROM worktree_removals ORDER BY path")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap()
+    };
+    assert_eq!(pending(&conn).len(), 3);
+    // The deferred pass settles what it can and leaves the rest for a retry.
+    reconcile_removals(&conn).unwrap();
+    let mut expected = vec![path_to_js(&blocked), "bad".to_string()];
+    expected.sort();
+    assert_eq!(pending(&conn), expected);
+    assert!(crate::worktree_lifecycle::reserve_spawn(&blocked).is_err());
 }
